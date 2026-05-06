@@ -2,6 +2,8 @@ require "faraday"
 require "json"
 
 class OpenAIClient
+  Response = Data.define(:message, :reasoning)
+
   def initialize(url:, model:, api_key:)
     @model = model
     @conn = Faraday.new(url: url) do |f|
@@ -17,6 +19,14 @@ class OpenAIClient
       messages: [{ role: "user", content: message }]
     })
     raise "OpenAI request failed: #{response.status} #{response.body}" unless response.success?
-    response.body.dig("choices", 0, "message", "content")
+
+    choices = response.body["choices"]
+    raise "Expected exactly 1 choice, got #{choices&.size.inspect}: #{response.body}" unless choices.is_a?(Array) && choices.size == 1
+
+    msg = choices[0]["message"]
+    content = msg && msg["content"]
+    raise "Missing message content in response: #{response.body}" if content.nil?
+
+    Response.new(message: content, reasoning: msg["reasoning_content"])
   end
 end
