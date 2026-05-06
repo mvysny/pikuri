@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 require "bundler/setup"
+require "rainbow"
 require_relative "lib/openai_client"
 
 client = OpenAIClient.new(
@@ -9,4 +10,6 @@ client = OpenAIClient.new(
 )
 
 prompt = File.read(File.join(__dir__, "prompt.txt"))
-puts client.chat(prompt)
+response = client.chat(prompt)
+puts Rainbow(response.reasoning).darkgray if response.reasoning
+puts response.message
