@@ -8,3 +8,5 @@ gem "nokogiri", "~> 1.19"
 gem "rspec-core", "~> 3.13", group: :test
 
 gem "minitest", "~> 6.0", group: :test
+
+gem "yard", "~> 0.9.43", group: :development

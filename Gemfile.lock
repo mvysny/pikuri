@@ -24,6 +24,7 @@ GEM
       rspec-support (~> 3.13.0)
     rspec-support (3.13.7)
     uri (1.1.1)
+    yard (0.9.43)
 
 PLATFORMS
   x86_64-linux
@@ -34,6 +35,7 @@ DEPENDENCIES
   nokogiri (~> 1.19)
   rainbow (~> 3.1)
   rspec-core (~> 3.13)
+  yard (~> 0.9.43)
 
 CHECKSUMS
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
@@ -50,6 +52,7 @@ CHECKSUMS
   rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
   rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
   uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
+  yard (0.9.43) sha256=cf8733a8f0485df2a162927e9b5f182215a61f6d22de096b8f402c726a1c5821
 
 BUNDLED WITH
   4.0.6
