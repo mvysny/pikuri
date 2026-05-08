@@ -47,6 +47,8 @@ class ChatLog
       super(role: role, content: content, tool_calls: tool_calls, tool_call_id: tool_call_id)
     end
 
+    def to_s = "#{role}: #{content}"
+
     private
 
     def validate!(role, content, tool_calls, tool_call_id)

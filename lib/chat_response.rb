@@ -51,7 +51,7 @@ class ChatResponse
   #     +function.arguments+; not yet validated against {Tool#parameters}
   # @!attribute [r] id
   #   @return [String] OpenAI tool-call id, e.g. +"call_abc123"+
-  ToolCall = Data.define(:tool, :arguments, :id) do
+  class ToolCall < Data.define(:tool, :arguments, :id)
     # Validate {#arguments} against the tool's parameter schema and run it.
     #
     # @return [String] observation text to feed back as the next +tool+
@@ -61,6 +61,8 @@ class ChatResponse
     def run
       tool.run(arguments)
     end
+
+    def to_s = "#{tool.name}(#{arguments.map { |k, v| "#{k}=#{v}" } .join(",")})"
   end
 end
 

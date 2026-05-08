@@ -41,7 +41,7 @@ MAX_STEPS.times do
     log.assistant(content: response.message, tool_calls: response.tool_calls)
     response.tool_calls.each do |tc|
       result = tc.run
-      puts Rainbow("→ #{tc.tool.name}(#{tc.arguments.inspect}) = #{result.inspect}").cyan
+      puts Rainbow("→ #{tc} = #{result.inspect}").cyan
       log.tool(result, tool_call_id: tc.id)
     end
   else
