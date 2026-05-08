@@ -14,11 +14,12 @@ RSpec.describe Tool::Calculator do
       assert_equal '1024', described_class.calculate('2**10')
     end
 
-    it 'returns a plain-decimal string for division (no scientific notation)' do
-      # Exercises both the float-division-by-default behavior and the
-      # BigDecimal#to_s('F') formatting path.
+    it 'rounds BigDecimal results to 3 places, plain decimal' do
+      # Exercises the float-division-by-default behavior and the
+      # round(3).to_s('F') formatting path. Trailing zeros are stripped,
+      # so 1/2 renders as "0.5" rather than "0.500".
       assert_equal '0.5', described_class.calculate('1 / 2')
-      assert described_class.calculate('155 / (58 * 1000.0 / 3600)').start_with?('9.6')
+      assert_equal '9.621', described_class.calculate('155 / (58 * 1000.0 / 3600)')
     end
 
     it 'returns an Error: string for parse failures rather than raising' do

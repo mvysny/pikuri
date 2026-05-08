@@ -42,12 +42,13 @@ class Tool
     end
 
     # Dentaku returns BigDecimal for any expression that touches division
-    # or a decimal literal, and BigDecimal#to_s defaults to scientific
-    # notation (+"0.5e0"+). Force plain-decimal output so the model sees
-    # readable numbers; pass everything else through unchanged.
+    # or a decimal literal, with full BigDecimal precision (47-digit tails
+    # for the leopard expression). Round to 3 places and strip the
+    # default scientific-notation formatting so the model sees a short
+    # readable number; integer/other results pass through unchanged.
     def self.format_result(result)
       case result
-      when BigDecimal then result.to_s('F')
+      when BigDecimal then result.round(3).to_s('F')
       else result.to_s
       end
     end
