@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'rainbow'
+require 'tty-markdown'
 require_relative 'chat_log'
 require_relative 'openai_client'
 
@@ -47,7 +48,7 @@ class Agent
       response = @client.chat(log)
 
       puts Rainbow(response.reasoning).darkgray if response.reasoning && !response.reasoning.empty?
-      puts response.message if response.message && !response.message.empty?
+      puts TTY::Markdown.parse(response.message) if response.message && !response.message.empty?
 
       log.assistant(content: response.message, tool_calls: response.tool_calls)
 
