@@ -47,7 +47,11 @@ class ChatLog
       super(role: role, content: content, tool_calls: tool_calls, tool_call_id: tool_call_id)
     end
 
-    def to_s = "#{role}: #{content}"
+    def to_s
+      s = "#{role}: #{content}"
+      s += " ->#{tool_calls.join(',')}" unless tool_calls.nil? || tool_calls.empty?
+      s
+    end
 
     private
 
@@ -160,4 +164,6 @@ class ChatLog
   def tool(content, tool_call_id:)
     add(Message.new(role: :tool, content: content, tool_call_id: tool_call_id))
   end
+
+  def to_s = @messages.join("\n")
 end

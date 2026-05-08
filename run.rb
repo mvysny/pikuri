@@ -49,3 +49,6 @@ MAX_STEPS.times do
   end
 end
 raise "Agent loop exceeded #{MAX_STEPS} steps without finishing" unless done
+
+puts log
+
