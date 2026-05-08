@@ -17,6 +17,6 @@ agent = Agent.new(
   system_prompt: File.read('smolagents-system-prompt.txt')
 )
 
-agent.run_loop(user_message: "How many seconds would it take for a leopard at full speed to run through Pont des Arts?")
+agent.run_loop(user_message: 'How many seconds would it take for a leopard at full speed to run through Pont des Arts?')
 
 puts agent.log

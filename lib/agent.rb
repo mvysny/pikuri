@@ -29,10 +29,12 @@ class Agent
 
   # Run the agent loop for a single user turn.
   #
-  # Builds a fresh {ChatLog} seeded with the system prompt and +user_message+,
-  # then iterates: ask the model, execute any returned tool calls, feed the
-  # observations back, until the model returns +:stop+. Reasoning, assistant
-  # messages, and tool invocations are printed to stdout as they happen.
+  # Appends +user_message+ to {#log} (which already carries the system prompt
+  # and any prior turns), then iterates: ask the model, execute any returned
+  # tool calls, feed the observations back, until the model returns +:stop+.
+  # Reasoning, assistant messages, and tool invocations are printed to stdout
+  # as they happen. Subsequent calls keep building on the same log, so the
+  # model sees full multi-turn history.
   #
   # @param user_message [String] the user's request for this turn
   # @return [nil] nothing
