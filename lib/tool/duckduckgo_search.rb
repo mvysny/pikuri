@@ -1,0 +1,118 @@
+# frozen_string_literal: true
+
+require 'faraday'
+require 'nokogiri'
+require 'uri'
+
+# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
+# assumes that order, and exposing it as +Tool::WEB_SEARCH+ requires +Tool+
+# already be a class.
+class Tool
+  # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and renders
+  # the results as smolagents-style Markdown. Split into a thin HTTP fetch
+  # (#search) and a pure parser (#parse) so tests can exercise the parser
+  # against fixture HTML without hitting the network.
+  #
+  # DuckDuckGo is Bing in disguise which means Microsoft which means no privacy: don't trust
+  # this search for anything private.
+  module DuckDuckGoSearch
+    # @return [String] HTML search endpoint
+    ENDPOINT = 'https://html.duckduckgo.com/html/'
+    # @return [String] User-Agent sent with each request; DDG often rejects
+    #   requests with no UA or an obvious bot UA
+    USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
+                 '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    # @return [Integer] default number of results returned, matching smolagents
+    DEFAULT_MAX_RESULTS = 10
+    # @return [Float] minimum seconds between consecutive {.search} calls; DDG
+    #   bans IPs that hammer the HTML endpoint from a script
+    MIN_INTERVAL = 2.0
+
+    # Fetch results for +query+ and render them as smolagents-style Markdown.
+    # The query is whitespace-trimmed and runs of whitespace are collapsed to
+    # a single space before being sent to DuckDuckGo. Calls are throttled to
+    # at most one every {MIN_INTERVAL} seconds; if the previous call was more
+    # recent the method blocks until the budget elapses.
+    #
+    # @param query [String] search query
+    # @param max_results [Integer] maximum number of result entries to render
+    # @return [String] Markdown-formatted result list, or +"No results found."+
+    # @raise [ArgumentError] if the query is empty after normalization
+    # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails
+    def self.search(query, max_results: DEFAULT_MAX_RESULTS)
+      cleaned = query.to_s.strip.gsub(/\s+/, ' ')
+      raise ArgumentError, 'query is empty' if cleaned.empty?
+
+      if @last_query_at
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
+        sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
+      end
+      @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
+      raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
+
+      parse(response.body, max_results: max_results)
+    end
+
+    # Parse a +html.duckduckgo.com+ result page into smolagents-style Markdown:
+    # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined by
+    # blank lines. +<b>+ highlights inside snippets are stripped.
+    #
+    # @param html [String] HTML document body from html.duckduckgo.com
+    # @param max_results [Integer] maximum number of result entries to render
+    # @return [String] Markdown-formatted result list, or +"No results found."+
+    def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
+      doc = Nokogiri::HTML(html)
+      results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
+        title_link = node.at_css('a.result__a')
+        next nil if title_link.nil?
+
+        snippet = node.at_css('a.result__snippet')
+        {
+          title: title_link.text.strip,
+          href: extract_url(title_link['href']),
+          body: snippet&.text&.strip.to_s
+        }
+      end
+
+      return 'No results found.' if results.empty?
+
+      "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
+    end
+
+    # Decode DuckDuckGo's +//duckduckgo.com/l/?uddg=<encoded>+ redirect wrapper
+    # back to the real target URL.
+    #
+    # @param href [String, nil] href as found on the search-result page
+    # @return [String] the decoded target URL, or +href+ unchanged when it is
+    #   not a recognized DDG redirect or cannot be parsed
+    def self.extract_url(href)
+      return href if href.nil? || href.empty?
+
+      uri = URI.parse(href.start_with?('//') ? "https:#{href}" : href)
+      return href unless uri.host&.end_with?('duckduckgo.com') && uri.path == '/l/'
+
+      params = URI.decode_www_form(uri.query.to_s).to_h
+      params['uddg'] || href
+    rescue URI::InvalidURIError
+      href
+    end
+  end
+
+  # DuckDuckGo-backed web-search tool. Thin wrapper over
+  # {Tool::DuckDuckGoSearch.search} that exposes it to the agent loop in
+  # OpenAI tool-call shape.
+  #
+  # @return [Tool]
+  WEB_SEARCH = new(
+    name: 'web_search',
+    description: 'Performs a web search for a query and returns the top ' \
+                 'results formatted as Markdown with titles, links, and ' \
+                 'descriptions.',
+    parameters: Parameters.build { |p|
+      p.required_string :query, 'The search query to perform.'
+    },
+    execute: ->(query:) { DuckDuckGoSearch.search(query) }
+  )
+end

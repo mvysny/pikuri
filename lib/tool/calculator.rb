@@ -53,4 +53,25 @@ class Tool
     end
     private_class_method :format_result
   end
+
+  # Arithmetic-evaluation tool backed by {Tool::Calculator.calculate}.
+  # Accepts Python-flavored operator syntax (+, -, *, /, ** for
+  # exponentiation, %, parentheses, decimals) so the model can emit the
+  # syntax it already knows.
+  #
+  # @return [Tool]
+  CALCULATOR = new(
+    name: 'calculator',
+    description: 'Evaluates a basic arithmetic expression and returns ' \
+                 'the numeric result. Supports +, -, *, /, ** ' \
+                 '(exponentiation), %, parentheses, and decimal ' \
+                 'numbers. No variables or functions — pass concrete ' \
+                 'numbers only.',
+    parameters: Parameters.build { |p|
+      p.required_string :expression,
+                        'Arithmetic expression to evaluate, e.g. ' \
+                        '"155 / (58 * 1000.0 / 3600)" or "2**10".'
+    },
+    execute: ->(expression:) { Calculator.calculate(expression) }
+  )
 end

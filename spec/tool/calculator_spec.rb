@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-require 'tools'
+require 'tool'
+require 'tool/calculator'
 
 RSpec.describe Tool::Calculator do
   describe '.calculate' do

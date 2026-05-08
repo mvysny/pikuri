@@ -2,7 +2,7 @@
 
 require 'chat_log'
 require 'chat_response'
-require 'tools'
+require 'tool'
 
 RSpec.describe ChatLog do
   describe 'construction and iteration' do

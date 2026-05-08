@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
-require_relative 'tools'
+require_relative 'tool'
 
 # Higher-level view of a single OpenAI chat-completion response. Wraps the one
 # +choice+ we expect from a non-streaming, non-+n+ request and exposes the

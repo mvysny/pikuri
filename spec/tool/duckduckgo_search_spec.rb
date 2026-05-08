@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-require 'duckduckgo_search'
+require 'tool'
+require 'tool/duckduckgo_search'
 
-RSpec.describe DuckDuckGoSearch do
-  let(:fixture) { File.read(File.expand_path('fixtures/ddg_ruby_language.html', __dir__)) }
+RSpec.describe Tool::DuckDuckGoSearch do
+  let(:fixture) { File.read(File.expand_path('../fixtures/ddg_ruby_language.html', __dir__)) }
 
   describe '.parse' do
     it 'renders results in smolagents-style markdown' do
@@ -38,5 +39,18 @@ RSpec.describe DuckDuckGoSearch do
     it 'returns a friendly message when no results are present' do
       assert_equal 'No results found.', described_class.parse('<html><body></body></html>')
     end
+  end
+end
+
+RSpec.describe 'Tool::WEB_SEARCH' do
+  it 'is advertised to the LLM as `web_search`' do
+    assert_equal 'web_search', Tool::WEB_SEARCH.name
+  end
+
+  it 'declares a required string `query` parameter' do
+    schema = Tool::WEB_SEARCH.parameters.to_h
+    assert_equal({ type: 'string', description: 'The search query to perform.' },
+                 schema[:properties][:query])
+    assert_equal ['query'], schema[:required]
   end
 end

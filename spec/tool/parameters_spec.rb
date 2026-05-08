@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'tools'
+require 'tool'
 
 RSpec.describe Tool::Parameters do
   let(:single_required) do

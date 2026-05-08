@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'tools'
+require 'tool'
 
 RSpec.describe Tool do
   let(:tool) do
@@ -28,19 +28,5 @@ RSpec.describe Tool do
       assert_raises(Tool::Parameters::ValidationError) { tool_with_spy.run({}) }
       refute called, 'execute must not be called when validation fails'
     end
-  end
-
-end
-
-RSpec.describe 'WEB_SEARCH_TOOL' do
-  it 'is advertised to the LLM as `web_search`' do
-    assert_equal 'web_search', WEB_SEARCH_TOOL.name
-  end
-
-  it 'declares a required string `query` parameter' do
-    schema = WEB_SEARCH_TOOL.parameters.to_h
-    assert_equal({ type: 'string', description: 'The search query to perform.' },
-                 schema[:properties][:query])
-    assert_equal ['query'], schema[:required]
   end
 end
