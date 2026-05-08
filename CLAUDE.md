@@ -35,6 +35,8 @@ over generality.
 
 - **Ruby, no Rails.** Plain classes, `Data.define` for value objects, Faraday
   for HTTP, Rainbow for terminal color.
+- **`# frozen_string_literal: true`** at the top of every Ruby file (`lib/`,
+  `spec/`, `run.rb`, etc.). Add it to any new file you create.
 - **Bundler.** Run things via `bundle exec ruby run.rb`. Add gems to `Gemfile`
   with conservative pessimistic constraints (`~>`).
 - **Errors are loud.** On unexpected API responses, raise with the offending

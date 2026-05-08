@@ -1,4 +1,6 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 require "bundler/setup"
 require "rainbow"
 require_relative "lib/openai_client"
