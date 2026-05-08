@@ -1,0 +1,47 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user is asking for two things:\n1. Weather in Tokyo right now\n2. Schedule a team meeting for tomorrow at 2pm for 90 minutes\n\nFor the first request, I can use the `get_weather` tool with location \"Tokyo, Japan\". The unit is optional, so I won't specify it.\n\nFor the second request, I need to use the `create_calendar_event` tool. The parameters required are:\n- title: \"Team meeting\" (provided by user)\n- date: \"tomorrow\" - I need to figure out what date tomorrow is. Since I don't have the current date, I should ask the user for the specific date, or I can try to infer it if the system provides it. Actually, I don't have access to the current date, so I should ask for the specific date. Wait, let me check the function description again. It says \"Date in ISO 8601 format, e.g. 2026-05-08\". Since I don't know what today is, I cannot determine what \"tomorrow\" is. I should ask the user for the specific date.\n- time: \"14:00\" (2pm in 24h format)\n- duration_minutes: 90 (provided by user)\n\nActually, let me first get the weather, and then ask for the specific date for the meeting. Or I can ask for the date first. But I think it's better to get the weather first since that doesn't require additional info, and then ask for the date.\n\nWait, I should check if I can proceed with the weather request. Yes, I have all required parameters.\n\nLet me make the weather call first.\nThen I'll ask for the specific date for the meeting.\nActually, the instructions say \"Always confirm actions like creating calendar events with the user before proceeding.\" So I should ask for the date and confirm before creating the event.\n\nLet's start with the weather.\n",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\":\"Tokyo, Japan\"}"
+            },
+            "id": "0rGsHLjAQXxjhvn8IdAPxOLjx8XCvw8H"
+          }
+        ]
+      }
+    }
+  ],
+  "created": 1778237586,
+  "model": "unsloth/Qwen3.6-35B-A3B-GGUF",
+  "system_fingerprint": "b8681-Debian",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 453,
+    "prompt_tokens": 640,
+    "total_tokens": 1093,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "id": "chatcmpl-IhUvVppTgrNOIYc57aFPhyvBii1kmTVA",
+  "timings": {
+    "cache_n": 0,
+    "prompt_n": 640,
+    "prompt_ms": 2175.192,
+    "prompt_per_token_ms": 3.3987375,
+    "prompt_per_second": 294.22690042993906,
+    "predicted_n": 453,
+    "predicted_ms": 19757.137,
+    "predicted_per_token_ms": 43.613988962472405,
+    "predicted_per_second": 22.928423283191286
+  }
+}
