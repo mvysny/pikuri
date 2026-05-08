@@ -5,6 +5,8 @@ gem 'rainbow', '~> 3.1'
 
 gem 'nokogiri', '~> 1.19'
 
+gem 'dentaku', '~> 3.5'
+
 gem 'rspec-core', '~> 3.13', group: :test
 
 gem 'minitest', '~> 6.0', group: :test

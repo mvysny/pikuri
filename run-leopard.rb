@@ -9,7 +9,7 @@ client = OpenAIClient.new(
   url: 'http://192.168.122.1:8080/v1',
   model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
   api_key: 'not-needed',
-  tools: [WEB_SEARCH_TOOL]
+  tools: [WEB_SEARCH_TOOL, CALCULATOR_TOOL]
 )
 
 agent = Agent.new(
@@ -19,4 +19,4 @@ agent = Agent.new(
 
 agent.run_loop(user_message: 'How many seconds would it take for a leopard at full speed to run through Pont des Arts?')
 
-puts agent.log
+#puts agent.log
