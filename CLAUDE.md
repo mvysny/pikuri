@@ -23,13 +23,47 @@ over generality.
 
 ## Layout
 
+- `lib/agent.rb` — the Thought / Tool-call / Observation loop. `Agent#run_loop`
+  appends a user turn to its `ChatLog`, asks the model, runs any tool calls,
+  feeds observations back, and repeats until `:stop` or `max_steps`. Prints
+  reasoning (dim), assistant messages (Markdown via tty-markdown), and tool
+  invocations (cyan) as they happen.
+- `lib/chat_log.rb` — append-only conversation history. `ChatLog::Message` is a
+  validated `Data.define` covering the four roles (`:system`, `:user`,
+  `:assistant`, `:tool`); illegal role/field combinations raise in the
+  constructor so any `Message` that exists is structurally legal. Protocol-
+  agnostic: knows nothing about OpenAI wire format.
 - `lib/openai_client.rb` — thin Faraday wrapper around `POST /chat/completions`.
-  Returns a `Response` Data object with `message` and `reasoning` (the latter
-  carries `reasoning_content` from models that expose it, e.g. Qwen3 thinking).
-- `run.rb` — manual smoke-test entry point. Points at a local llama.cpp server,
-  loads `prompt.txt`, prints the model's reasoning (dim) and final message.
-- `prompt.txt` / `prompt0.txt` — captured smolagents-style system prompts used
-  as fixtures while studying the prompt structure.
+  Owns the `ChatLog` → request-body translation (the per-role wire shape lives
+  in `request_body`/`message_to_h`), and delegates response parsing to
+  `ChatParser`.
+- `lib/chat_response.rb` — `ChatResponse` Data object plus `ChatParser`. Parses
+  one non-streaming choice into `finish_reason` (`:stop`, `:tool_calls`,
+  `:length`, `:content_filter`), `message`, `reasoning` (`reasoning_content`
+  from thinking models, e.g. Qwen3), and resolved `ChatResponse::ToolCall`s.
+- `lib/tool.rb` — `Tool` value object (`Data.define(:name, :description,
+  :parameters, :execute)`). Tools are stateless single-instance constants, not
+  subclasses. `Tool#run(args)` validates against the schema and calls `execute`.
+- `lib/tool/parameters.rb` — `Tool::Parameters`: fluent builder
+  (`required_string`, `optional_integer`, `required_number`, …) that emits
+  OpenAI JSON-Schema via `to_h` and validates LLM-supplied argument hashes via
+  `validate`. Strict: unknown keys rejected (with DidYouMean suggestions),
+  wrong types rejected, all errors collected and reported together with the
+  schema reprinted — so the message can be fed back to the LLM verbatim as the
+  next observation.
+- `lib/tool/` — bundled tool implementations, each reopening `class Tool` to
+  add a module + a single `Tool` constant. Currently: `Tool::CALCULATOR`
+  (Dentaku-backed arithmetic, with `**` → `^` rewriting and BigDecimal results
+  rounded to 3 places) and `Tool::WEB_SEARCH` (DuckDuckGo HTML scrape via
+  Nokogiri, throttled to one request every 2s, rendered as smolagents-style
+  Markdown). Required explicitly by the scripts that use them.
+- `run.rb` — minimal smoke test: a single inline `get_weather` tool against a
+  local llama.cpp server, exercising the full agent loop end-to-end.
+- `run-leopard.rb` — fuller smoke test using `Tool::WEB_SEARCH` +
+  `Tool::CALCULATOR` and the smolagents-style system prompt.
+- `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
+  the prompt actually used by `run-leopard.rb`, plus the verbatim original
+  from upstream smolagents kept as a reference fixture.
 
 ## Conventions
 
