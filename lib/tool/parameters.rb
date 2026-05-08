@@ -67,6 +67,48 @@ class Tool
       add(name, 'string', description, required: false)
     end
 
+    # Add a required +integer+ property. Accepts Integers, Floats with a
+    # zero fractional part (e.g. +1.0+), and base-10 numeric Strings (after
+    # trimming) that resolve to whole numbers; rejects everything else.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def required_integer(name, description)
+      add(name, 'integer', description, required: true)
+    end
+
+    # Add an optional +integer+ property. See {#required_integer} for
+    # accepted shapes.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def optional_integer(name, description)
+      add(name, 'integer', description, required: false)
+    end
+
+    # Add a required +number+ property (JSON-Schema +number+: Integer or
+    # finite Float). Numeric Strings (after trimming) are parsed; NaN and
+    # Infinity are rejected.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def required_number(name, description)
+      add(name, 'number', description, required: true)
+    end
+
+    # Add an optional +number+ property. See {#required_number} for
+    # accepted shapes.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def optional_number(name, description)
+      add(name, 'number', description, required: false)
+    end
+
     # Schema in OpenAI JSON-Schema shape.
     #
     # @return [Hash] +{type: 'object', properties: {...}, required: [...]}+
@@ -101,12 +143,10 @@ class Tool
 
       @properties.each do |name, schema|
         if symbolized.key?(name)
-          value = symbolized[name]
-          problem = type_error(value, schema[:type])
-          if problem
-            errors << "Parameter `#{name}` #{problem}."
-          else
-            result[name] = value
+          begin
+            result[name] = coerce(symbolized[name], schema[:type])
+          rescue CoercionError => e
+            errors << "Parameter `#{name}` #{e.message}."
           end
         elsif @required.include?(name.to_s)
           errors << "Missing required parameter `#{name}` (#{schema[:type]}): #{schema[:description]}"
@@ -120,18 +160,89 @@ class Tool
 
     private
 
+    # Internal coercion failure. Caught by {#validate} and turned into a
+    # {ValidationError} message — never escapes the class.
+    class CoercionError < StandardError; end
+    private_constant :CoercionError
+
     def add(name, type, description, required:)
       @properties[name] = { type: type, description: description }
       @required << name.to_s if required
       self
     end
 
-    def type_error(value, type)
+    # Coerce +value+ to a Ruby value matching the JSON-Schema +type+,
+    # returning the coerced value. Raises {CoercionError} on failure.
+    def coerce(value, type)
       case type
       when 'string'
-        return "must be a string (got #{value.class}: #{value.inspect})" unless value.is_a?(String)
+        return value if value.is_a?(String)
+
+        raise CoercionError, type_message('string', value)
+      when 'integer'
+        coerce_integer(value)
+      when 'number'
+        coerce_number(value)
       end
-      nil
+    end
+
+    def coerce_integer(value)
+      case value
+      when Integer
+        value
+      when Float
+        raise CoercionError, type_message('integer', value) unless value.finite? && value.modulo(1).zero?
+
+        value.to_i
+      when String
+        parsed = parse_numeric_string(value)
+        raise CoercionError, type_message('integer', value) unless parsed && parsed.modulo(1).zero?
+
+        parsed.to_i
+      else
+        raise CoercionError, type_message('integer', value)
+      end
+    end
+
+    def coerce_number(value)
+      case value
+      when Integer
+        value
+      when Float
+        raise CoercionError, type_message('number', value) unless value.finite?
+
+        value
+      when String
+        parsed = parse_numeric_string(value)
+        raise CoercionError, type_message('number', value) unless parsed
+
+        parsed
+      else
+        raise CoercionError, type_message('number', value)
+      end
+    end
+
+    # Matches the decimal-numeric subset that JSON allows: optional sign,
+    # mantissa (with optional fractional part), optional decimal exponent.
+    # Rejects hex (+0x10+), underscores (+1_000+), +NaN+, +Infinity+.
+    DECIMAL_NUMERIC = /\A[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\z/
+    private_constant :DECIMAL_NUMERIC
+
+    # Strict base-10 numeric-string parse. Returns a finite Float, or +nil+
+    # for empty/whitespace/garbage/hex/NaN/Infinity input.
+    def parse_numeric_string(str)
+      trimmed = str.strip
+      return nil unless trimmed.match?(DECIMAL_NUMERIC)
+
+      parsed = Float(trimmed, exception: false)
+      return nil unless parsed&.finite?
+
+      parsed
+    end
+
+    def type_message(type, value)
+      article = type == 'integer' ? 'an' : 'a'
+      "must be #{article} #{type} (got #{value.class}: #{value.inspect})"
     end
 
     def unknown_key_error(unknown)
