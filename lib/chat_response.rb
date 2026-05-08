@@ -59,7 +59,9 @@ class ChatResponse
     # @raise [Tool::Parameters::ValidationError] if {#arguments} does not
     #   match the tool's declared schema
     def run
-      tool.run(arguments)
+      result = tool.run(arguments)
+      raise unless result.is_a? String
+      result
     end
 
     def to_s = "#{tool.name}(#{arguments.map { |k, v| "#{k}=#{v}" } .join(",")})"
