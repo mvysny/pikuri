@@ -25,9 +25,15 @@ RSpec.describe '.request_body' do
       refute body.key?(:tools), 'tools key should not be present for an empty tool list'
     end
 
-    it 'serializes each tool through Tool#to_openai_schema' do
+    it 'wraps each tool in an OpenAI function-tool envelope' do
       body = OpenAIClient.request_body(ChatLog.new.user('hi'), tools: [weather_tool], model: 'm')
-      assert_equal [weather_tool.to_openai_schema], body[:tools]
+      assert_equal 1, body[:tools].size
+      schema = body[:tools].first
+      assert_equal 'function', schema[:type]
+      assert_equal 'get_weather', schema[:function][:name]
+      assert_equal 'Gets the weather.', schema[:function][:description]
+      assert_equal 'object', schema[:function][:parameters][:type]
+      assert_equal ['location'], schema[:function][:parameters][:required]
     end
   end
 

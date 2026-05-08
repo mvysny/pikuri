@@ -60,9 +60,21 @@ class OpenAIClient
   # @return [Hash] body suitable for +Faraday.post+ with +:json+ middleware
   def self.request_body(log, tools:, model:)
     body = { model: model, messages: log.map { |msg| message_to_h(msg) } }
-    body[:tools] = tools.map(&:to_openai_schema) unless tools.empty?
+    body[:tools] = tools.map { |t| tool_to_h(t) } unless tools.empty?
     body
   end
+
+  def self.tool_to_h(tool)
+    {
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters.to_h
+      }
+    }
+  end
+  private_class_method :tool_to_h
 
   def self.message_to_h(msg)
     case msg.role

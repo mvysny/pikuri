@@ -30,16 +30,6 @@ RSpec.describe Tool do
     end
   end
 
-  describe '#to_openai_schema' do
-    it 'wraps the schema in an OpenAI function-tool envelope' do
-      schema = tool.to_openai_schema
-      assert_equal 'function', schema[:type]
-      assert_equal 'echo', schema[:function][:name]
-      assert_equal 'Echoes the input back.', schema[:function][:description]
-      assert_equal 'object', schema[:function][:parameters][:type]
-      assert_equal ['text'], schema[:function][:parameters][:required]
-    end
-  end
 end
 
 RSpec.describe 'WEB_SEARCH_TOOL' do
@@ -48,7 +38,7 @@ RSpec.describe 'WEB_SEARCH_TOOL' do
   end
 
   it 'declares a required string `query` parameter' do
-    schema = WEB_SEARCH_TOOL.to_openai_schema[:function][:parameters]
+    schema = WEB_SEARCH_TOOL.parameters.to_h
     assert_equal({ type: 'string', description: 'The search query to perform.' },
                  schema[:properties][:query])
     assert_equal ['query'], schema[:required]

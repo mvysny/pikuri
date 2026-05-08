@@ -33,13 +33,6 @@ Tool = Data.define(:name, :description, :parameters, :execute) do
     validated = parameters.validate(args)
     execute.call(**validated)
   end
-
-  # Render the tool as a single entry of the OpenAI-compatible +tools+ array.
-  #
-  # @return [Hash] +{type: 'function', function: {name:, description:, parameters:}}+
-  def to_openai_schema
-    { type: 'function', function: { name:, description:, parameters: parameters.to_h } }
-  end
 end
 
 require_relative 'tool/parameters'
