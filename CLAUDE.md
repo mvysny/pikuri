@@ -37,6 +37,12 @@ over generality.
   for HTTP, Rainbow for terminal color.
 - **`# frozen_string_literal: true`** at the top of every Ruby file (`lib/`,
   `spec/`, `run.rb`, etc.). Add it to any new file you create.
+- **YARD docs on every public module, class, and method.** Use concrete
+  types in `@param` and `@return` (`String`, `Integer`, `Array<Hash>`,
+  `Faraday::Connection`, `String, nil`) — never bare `Object` or `Any`.
+  Document expected exceptions with `@raise`. One-line summary first, then
+  blank line, then tags. This applies to `lib/`; `run.rb` and `spec/` files
+  don't need it (no public API).
 - **Bundler.** Run things via `bundle exec ruby run.rb`. Add gems to `Gemfile`
   with conservative pessimistic constraints (`~>`).
 - **Errors are loud.** On unexpected API responses, raise with the offending

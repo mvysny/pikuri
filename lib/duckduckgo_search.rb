@@ -4,12 +4,29 @@ require "faraday"
 require "nokogiri"
 require "uri"
 
+# Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and renders
+# the results as smolagents-style Markdown. Split into a thin HTTP fetch
+# (#search) and a pure parser (#parse) so tests can exercise the parser
+# against fixture HTML without hitting the network.
 module DuckDuckGoSearch
-  ENDPOINT = "https://html.duckduckgo.com/html/".freeze
+  # @return [String] HTML search endpoint
+  ENDPOINT = "https://html.duckduckgo.com/html/"
+  # @return [String] User-Agent sent with each request; DDG often rejects
+  #   requests with no UA or an obvious bot UA
   USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " \
-               "(KHTML, like Gecko) Chrome/120.0 Safari/537.36".freeze
+               "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+  # @return [Integer] default number of results returned, matching smolagents
   DEFAULT_MAX_RESULTS = 10
 
+  # Fetch results for +query+ and render them as smolagents-style Markdown.
+  # The query is whitespace-trimmed and runs of whitespace are collapsed to a
+  # single space before being sent to DuckDuckGo.
+  #
+  # @param query [String] search query
+  # @param max_results [Integer] maximum number of result entries to render
+  # @return [String] Markdown-formatted result list, or +"No results found."+
+  # @raise [ArgumentError] if the query is empty after normalization
+  # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails
   def self.search(query, max_results: DEFAULT_MAX_RESULTS)
     cleaned = query.to_s.strip.gsub(/\s+/, " ")
     raise ArgumentError, "query is empty" if cleaned.empty?
@@ -20,6 +37,13 @@ module DuckDuckGoSearch
     parse(response.body, max_results: max_results)
   end
 
+  # Parse a +html.duckduckgo.com+ result page into smolagents-style Markdown:
+  # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined by
+  # blank lines. +<b>+ highlights inside snippets are stripped.
+  #
+  # @param html [String] HTML document body from html.duckduckgo.com
+  # @param max_results [Integer] maximum number of result entries to render
+  # @return [String] Markdown-formatted result list, or +"No results found."+
   def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
     doc = Nokogiri::HTML(html)
     results = doc.css("div.result.web-result").take(max_results).filter_map do |node|
@@ -39,6 +63,12 @@ module DuckDuckGoSearch
     "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
   end
 
+  # Decode DuckDuckGo's +//duckduckgo.com/l/?uddg=<encoded>+ redirect wrapper
+  # back to the real target URL.
+  #
+  # @param href [String, nil] href as found on the search-result page
+  # @return [String] the decoded target URL, or +href+ unchanged when it is
+  #   not a recognized DDG redirect or cannot be parsed
   def self.extract_url(href)
     return href if href.nil? || href.empty?
 
