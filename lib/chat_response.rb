@@ -10,6 +10,22 @@ require_relative 'tools'
 # Construct via {ChatParser#parse}; do not build directly.
 #
 # @!attribute [r] finish_reason
+#   Why the model stopped generating. Mirrors OpenAI's documented set,
+#   symbolized:
+#
+#   - +:stop+ — natural end of generation: the model emitted its end-of-turn
+#     token (or hit a configured stop sequence). {#message} holds the final
+#     assistant text and {#tool_calls} is empty.
+#   - +:tool_calls+ — the model wants the host to execute one or more tools
+#     before continuing. {#tool_calls} is non-empty; {#message} is usually
+#     +""+ or +nil+. The agent loop must run each call and feed the
+#     observations back as +tool+ messages on the next turn.
+#   - +:length+ — generation was cut off because it hit the +max_tokens+
+#     budget (or the model's context limit). The response is partial; any
+#     tool call in flight is likely truncated and unsafe to execute.
+#   - +:content_filter+ — the backend's safety/content filter aborted the
+#     generation. Output, if any, is incomplete and should not be trusted as
+#     a finished answer.
 #   @return [Symbol] one of +:stop+, +:tool_calls+, +:length+,
 #     +:content_filter+
 # @!attribute [r] message
