@@ -8,6 +8,9 @@ require "uri"
 # the results as smolagents-style Markdown. Split into a thin HTTP fetch
 # (#search) and a pure parser (#parse) so tests can exercise the parser
 # against fixture HTML without hitting the network.
+#
+# DuckDuckGo is Bing in disguise which means Microsoft which means no privacy: don't trust
+# this search for anything private.
 module DuckDuckGoSearch
   # @return [String] HTML search endpoint
   ENDPOINT = "https://html.duckduckgo.com/html/"
