@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require "faraday"
-require "nokogiri"
-require "uri"
+require 'faraday'
+require 'nokogiri'
+require 'uri'
 
 # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and renders
 # the results as smolagents-style Markdown. Split into a thin HTTP fetch
@@ -13,11 +13,11 @@ require "uri"
 # this search for anything private.
 module DuckDuckGoSearch
   # @return [String] HTML search endpoint
-  ENDPOINT = "https://html.duckduckgo.com/html/"
+  ENDPOINT = 'https://html.duckduckgo.com/html/'
   # @return [String] User-Agent sent with each request; DDG often rejects
   #   requests with no UA or an obvious bot UA
-  USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " \
-               "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+  USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
+               '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
   # @return [Integer] default number of results returned, matching smolagents
   DEFAULT_MAX_RESULTS = 10
 
@@ -31,10 +31,10 @@ module DuckDuckGoSearch
   # @raise [ArgumentError] if the query is empty after normalization
   # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails
   def self.search(query, max_results: DEFAULT_MAX_RESULTS)
-    cleaned = query.to_s.strip.gsub(/\s+/, " ")
-    raise ArgumentError, "query is empty" if cleaned.empty?
+    cleaned = query.to_s.strip.gsub(/\s+/, ' ')
+    raise ArgumentError, 'query is empty' if cleaned.empty?
 
-    response = Faraday.get(ENDPOINT, { q: cleaned }, { "User-Agent" => USER_AGENT })
+    response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
     raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
 
     parse(response.body, max_results: max_results)
@@ -49,19 +49,19 @@ module DuckDuckGoSearch
   # @return [String] Markdown-formatted result list, or +"No results found."+
   def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
     doc = Nokogiri::HTML(html)
-    results = doc.css("div.result.web-result").take(max_results).filter_map do |node|
-      title_link = node.at_css("a.result__a")
+    results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
+      title_link = node.at_css('a.result__a')
       next nil if title_link.nil?
 
-      snippet = node.at_css("a.result__snippet")
+      snippet = node.at_css('a.result__snippet')
       {
         title: title_link.text.strip,
-        href: extract_url(title_link["href"]),
+        href: extract_url(title_link['href']),
         body: snippet&.text&.strip.to_s
       }
     end
 
-    return "No results found." if results.empty?
+    return 'No results found.' if results.empty?
 
     "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
   end
@@ -75,11 +75,11 @@ module DuckDuckGoSearch
   def self.extract_url(href)
     return href if href.nil? || href.empty?
 
-    uri = URI.parse(href.start_with?("//") ? "https:#{href}" : href)
-    return href unless uri.host&.end_with?("duckduckgo.com") && uri.path == "/l/"
+    uri = URI.parse(href.start_with?('//') ? "https:#{href}" : href)
+    return href unless uri.host&.end_with?('duckduckgo.com') && uri.path == '/l/'
 
     params = URI.decode_www_form(uri.query.to_s).to_h
-    params["uddg"] || href
+    params['uddg'] || href
   rescue URI::InvalidURIError
     href
   end

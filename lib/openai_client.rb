@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "faraday"
-require "json"
+require 'faraday'
+require 'json'
 
 # Thin Faraday-based client for OpenAI-compatible chat-completions endpoints
 # such as a local llama.cpp server or x.ai. Returned messages carry both the
@@ -28,7 +28,7 @@ class OpenAIClient
     @conn = Faraday.new(url: url) do |f|
       f.request :json
       f.response :json
-      f.headers["Authorization"] = "Bearer #{api_key}"
+      f.headers['Authorization'] = "Bearer #{api_key}"
     end
   end
 
@@ -39,19 +39,21 @@ class OpenAIClient
   # @raise [RuntimeError] if the HTTP call fails, the response shape is
   #   unexpected, or the message content is missing
   def chat(message)
-    response = @conn.post("chat/completions", {
-      model: @model,
-      messages: [{ role: "user", content: message }]
-    })
+    response = @conn.post('chat/completions', {
+                            model: @model,
+                            messages: [{ role: 'user', content: message }]
+                          })
     raise "OpenAI request failed: #{response.status} #{response.body}" unless response.success?
 
-    choices = response.body["choices"]
-    raise "Expected exactly 1 choice, got #{choices&.size.inspect}: #{response.body}" unless choices.is_a?(Array) && choices.size == 1
+    choices = response.body['choices']
+    unless choices.is_a?(Array) && choices.size == 1
+      raise "Expected exactly 1 choice, got #{choices&.size.inspect}: #{response.body}"
+    end
 
-    msg = choices[0]["message"]
-    content = msg && msg["content"]
+    msg = choices[0]['message']
+    content = msg && msg['content']
     raise "Missing message content in response: #{response.body}" if content.nil?
 
-    Response.new(message: content, reasoning: msg["reasoning_content"])
+    Response.new(message: content, reasoning: msg['reasoning_content'])
   end
 end
