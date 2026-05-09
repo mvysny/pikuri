@@ -4,7 +4,7 @@ require 'faraday'
 require 'nokogiri'
 require 'uri'
 
-require 'url_cache'
+require 'tool/search/rate_limiter'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order.
@@ -26,61 +26,39 @@ class Tool
                    '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
       # @return [Integer] default number of results returned, matching smolagents
       DEFAULT_MAX_RESULTS = 10
-      # @return [Float] minimum seconds between consecutive {.search} calls; DDG
-      #   bans IPs that hammer the HTML endpoint from a script
-      MIN_INTERVAL = 2.0
-      # @return [Mutex] serializes {.search} so the {MIN_INTERVAL} throttle and
-      #   the HTTP fetch itself remain correct under concurrent agents/threads
-      MUTEX = Mutex.new
+      # @return [RateLimiter] paces calls (DDG bans IPs that hammer the HTML
+      #   endpoint) and circuit-breaks on {Unavailable} so a soft-block
+      #   response doesn't get retried for the next 5 minutes
+      LIMITER = RateLimiter.new(min_interval: 2.0, cooldown: 300.0)
 
       # Fetch results for +query+ and render them as smolagents-style Markdown.
-      # The query is whitespace-trimmed and runs of whitespace are collapsed to
-      # a single space before being sent to DuckDuckGo. Calls are throttled to
-      # at most one every {MIN_INTERVAL} seconds; if the previous call was more
-      # recent the method blocks until the budget elapses. Concurrent calls are
-      # serialized via {MUTEX} so the throttle holds across threads.
+      # Calls are throttled to one every 2s and circuit-broken for 5 minutes
+      # after a soft-block; see {LIMITER}. The caller (typically
+      # {Tool::Search.search}) is expected to have already normalized the
+      # query and to wrap this in a result cache.
       #
-      # Results are cached on disk via {UrlCache::DEFAULT}, keyed by the
-      # cleaned query string. A cache hit skips both the throttle and the
-      # network call. +max_results+ is not part of the cache key — in
-      # practice the tool wrapper always uses {DEFAULT_MAX_RESULTS} — so
-      # callers passing a non-default value may get a result rendered with
-      # the previously-cached size.
-      #
-      # @param query [String] search query
+      # @param query [String] search query (already normalized)
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
-      # @raise [ArgumentError] if the query is empty after normalization
       # @raise [Tool::Search::Unavailable] when DDG soft-blocks the IP
       #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
       #   later" responses the cascade in {Tool::Search.search} can fall
-      #   back from.
+      #   back from. Also raised immediately if {LIMITER} is in cooldown.
       # @raise [RuntimeError] if the HTTP call fails for other reasons or
       #   the empty-results page is in an unrecognized layout. A genuine
       #   empty-results page is *not* an error; see {.parse}.
       def self.search(query, max_results: DEFAULT_MAX_RESULTS)
-        cleaned = query.to_s.strip.gsub(/\s+/, ' ')
-        raise ArgumentError, 'query is empty' if cleaned.empty?
-
-        UrlCache::DEFAULT.fetch(cleaned) do
-          MUTEX.synchronize do
-            if @last_query_at
-              elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
-              sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
-            end
-            @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-            response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
-            unless response.success?
-              if response.status == 429 || response.status >= 500
-                raise Unavailable, "HTTP #{response.status}"
-              end
-
-              raise "DuckDuckGo request failed: #{response.status} #{response.body}"
+        LIMITER.call do
+          response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
+          unless response.success?
+            if response.status == 429 || response.status >= 500
+              raise Unavailable, "HTTP #{response.status}"
             end
 
-            parse(response.body, max_results: max_results)
+            raise "DuckDuckGo request failed: #{response.status} #{response.body}"
           end
+
+          parse(response.body, max_results: max_results)
         end
       end
 

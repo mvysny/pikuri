@@ -19,4 +19,6 @@ gem 'rspec-core', '~> 3.13', group: :test
 
 gem 'minitest', '~> 6.0', group: :test
 
+gem 'timecop', '~> 0.9', group: :test
+
 gem 'yard', '~> 0.9.43', group: :development

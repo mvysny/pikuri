@@ -47,10 +47,6 @@ RSpec.describe Tool::Search::Brave do
   end
 
   describe '.search' do
-    it 'rejects an empty query' do
-      assert_raises(ArgumentError) { described_class.search('   ', api_key: 'abc') }
-    end
-
     it 'rejects a missing api key' do
       err = assert_raises(ArgumentError) { described_class.search('ruby', api_key: '') }
       assert_includes err.message, described_class::ENV_KEY

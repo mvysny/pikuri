@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
+
 require 'tool'
 require 'tool/websearch'
+require 'url_cache'
 
 RSpec.describe Tool::Search, '.providers' do
   before { @saved = ENV[Tool::Search::Brave::ENV_KEY] }
@@ -46,32 +49,43 @@ RSpec.describe Tool::Search, '.search' do
     end
   end
 
+  # Per-test isolated cache + provider list, so neither a previous run's
+  # +/tmp/pikuri+ entries nor a previous +it+ block's cached output can
+  # leak into the current example.
+  around do |example|
+    Dir.mktmpdir('pikuri-cache-test-') do |dir|
+      cache = UrlCache.new(ttl: 60, dir: dir)
+      original_cache = Tool::Search.method(:cache)
+      original_providers = Tool::Search.method(:providers)
+      Tool::Search.singleton_class.define_method(:cache) { cache }
+      begin
+        example.run
+      ensure
+        Tool::Search.singleton_class.define_method(:cache, original_cache)
+        Tool::Search.singleton_class.define_method(:providers, original_providers)
+      end
+    end
+  end
+
   def stub_providers(list)
-    original = Tool::Search.method(:providers)
     Tool::Search.singleton_class.define_method(:providers) { list }
-    yield
-  ensure
-    Tool::Search.singleton_class.define_method(:providers, original)
   end
 
   it 'returns the first successful provider output' do
-    stub_providers([good]) do
-      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
-    end
+    stub_providers([good])
+    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
   end
 
   it 'falls back past an Unavailable provider to one that succeeds' do
-    stub_providers([bad, good]) do
-      assert_equal 'ok: ruby (5)', described_class.search('ruby', max_results: 5)
-    end
+    stub_providers([bad, good])
+    assert_equal 'ok: ruby (5)', described_class.search('ruby', max_results: 5)
   end
 
   it 'returns an "Error: ..." string when every provider is unavailable' do
-    stub_providers([bad, bad]) do
-      result = described_class.search('ruby', max_results: 10)
-      assert_match(/\AError: all search providers temporarily unavailable/, result)
-      assert_includes result, 'Bad (rate-limited)'
-    end
+    stub_providers([bad, bad])
+    result = described_class.search('ruby', max_results: 10)
+    assert_match(/\AError: all search providers temporarily unavailable/, result)
+    assert_includes result, 'Bad (rate-limited)'
   end
 
   it 'lets non-Unavailable exceptions bubble up' do
@@ -83,9 +97,45 @@ RSpec.describe Tool::Search, '.search' do
         raise 'network kaboom'
       end
     end
-    stub_providers([boom, good]) do
-      assert_raises(RuntimeError) { described_class.search('ruby', max_results: 10) }
-    end
+    stub_providers([boom, good])
+    assert_raises(RuntimeError) { described_class.search('ruby', max_results: 10) }
+  end
+
+  it 'normalizes the query (trim + collapse whitespace) before dispatch' do
+    seen = nil
+    spy = Module.new
+    spy.define_singleton_method(:name) { 'Tool::Search::Spy' }
+    spy.define_singleton_method(:search) { |q, max_results:| seen = q; "ok (#{max_results})" }
+    stub_providers([spy])
+
+    described_class.search("  ruby \n  on   rails  ", max_results: 10)
+    assert_equal 'ruby on rails', seen
+  end
+
+  it 'rejects an empty query' do
+    stub_providers([good])
+    assert_raises(ArgumentError) { described_class.search('   ', max_results: 10) }
+  end
+
+  it 'caches the answer so a subsequent call with the same query skips providers' do
+    calls = 0
+    once = Module.new
+    once.define_singleton_method(:name) { 'Tool::Search::Once' }
+    once.define_singleton_method(:search) { |q, max_results:| calls += 1; "ok: #{q} (#{max_results})" }
+    stub_providers([once])
+
+    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    assert_equal 1, calls, 'second call should be served from cache'
+  end
+
+  it 'does not cache the all-unavailable error string' do
+    stub_providers([bad, bad])
+    described_class.search('ruby', max_results: 10)
+    # Now flip to a working provider — if the error had been cached, this
+    # would still return the previous "Error: ..." string.
+    stub_providers([good])
+    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
   end
 end
 
@@ -125,13 +175,19 @@ RSpec.describe 'Tool::WEB_SEARCH' do
     end
 
     around do |example|
-      original = Tool::Search.method(:providers)
-      provider = fake_provider
-      Tool::Search.singleton_class.define_method(:providers) { [provider] }
-      begin
-        example.run
-      ensure
-        Tool::Search.singleton_class.define_method(:providers, original)
+      Dir.mktmpdir('pikuri-cache-test-') do |dir|
+        cache = UrlCache.new(ttl: 60, dir: dir)
+        original_providers = Tool::Search.method(:providers)
+        original_cache = Tool::Search.method(:cache)
+        provider = fake_provider
+        Tool::Search.singleton_class.define_method(:providers) { [provider] }
+        Tool::Search.singleton_class.define_method(:cache) { cache }
+        begin
+          example.run
+        ensure
+          Tool::Search.singleton_class.define_method(:providers, original_providers)
+          Tool::Search.singleton_class.define_method(:cache, original_cache)
+        end
       end
     end
 

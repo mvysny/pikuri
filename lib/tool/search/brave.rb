@@ -4,7 +4,7 @@ require 'faraday'
 require 'json'
 require 'nokogiri'
 
-require 'url_cache'
+require 'tool/search/rate_limiter'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order.
@@ -27,39 +27,39 @@ class Tool
       DEFAULT_MAX_RESULTS = 10
       # @return [String] env var holding the API key; +X-Subscription-Token+
       ENV_KEY = 'BRAVE_SEARCH_API_KEY'
+      # @return [RateLimiter] free-tier Brave caps at 1 req/sec; the
+      #   5-minute cooldown protects the limited monthly quota from
+      #   being burned on doomed retries when a 429 hits.
+      LIMITER = RateLimiter.new(min_interval: 1.0, cooldown: 300.0)
 
       # Fetch results for +query+ and render them as smolagents-style Markdown.
-      # The query is whitespace-trimmed and runs of whitespace are collapsed to
-      # a single space before being sent to Brave.
+      # Calls are throttled to one per second and circuit-broken for 5
+      # minutes on rate-limit / quota-exhausted responses; see {LIMITER}.
+      # The caller (typically {Tool::Search.search}) is expected to have
+      # already normalized the query and to wrap this in a result cache.
       #
-      # Results are cached on disk via {UrlCache::DEFAULT}, keyed by the
-      # cleaned query string (shared with other providers — last writer
-      # wins for the TTL). +max_results+ is not part of the cache key.
-      #
-      # @param query [String] search query
+      # @param query [String] search query (already normalized)
       # @param max_results [Integer] maximum number of result entries to render;
       #   passed through as Brave's +count+ (1..20)
       # @param api_key [String] Brave Search subscription token; defaults to
       #   the {ENV_KEY} environment variable
       # @return [String] Markdown-formatted result list
-      # @raise [ArgumentError] if the query is empty after normalization, or
-      #   if no API key is available
+      # @raise [ArgumentError] if no API key is available
       # @raise [Tool::Search::Unavailable] when Brave returns HTTP 429
       #   (rate limit / quota exhausted) or 5xx — "try again later"
       #   responses the cascade in {Tool::Search.search} can fall back
-      #   from. Other non-2xx (e.g. 401/403 from a bad API key) bubble up
-      #   as +RuntimeError+ so config problems stay visible.
+      #   from. Also raised immediately if {LIMITER} is in cooldown.
+      #   Other non-2xx (e.g. 401/403 from a bad API key) bubble up as
+      #   +RuntimeError+ so config problems stay visible.
       # @raise [RuntimeError] for non-rate-limit HTTP failures or when the
       #   response shape contains no results.
       def self.search(query, max_results: DEFAULT_MAX_RESULTS, api_key: ENV.fetch(ENV_KEY, nil))
-        cleaned = query.to_s.strip.gsub(/\s+/, ' ')
-        raise ArgumentError, 'query is empty' if cleaned.empty?
         raise ArgumentError, "Brave Search API key not set (#{ENV_KEY})" if api_key.to_s.strip.empty?
 
-        UrlCache::DEFAULT.fetch(cleaned) do
+        LIMITER.call do
           response = Faraday.get(
             ENDPOINT,
-            { q: cleaned, count: max_results },
+            { q: query, count: max_results },
             { 'X-Subscription-Token' => api_key, 'Accept' => 'application/json' }
           )
           unless response.success?
