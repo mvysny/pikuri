@@ -2,11 +2,13 @@
 
 ## What this project is
 
-A small, educational Ruby reimplementation of HuggingFace's
-[smolagents](https://github.com/huggingface/smolagents). The goal is for the
-author to learn, hands-on, how LLMs accomplish tasks by calling tools — not to
-ship a production agent framework. Keep code compact and readable; favor clarity
-over generality.
+A small Ruby reimplementation of HuggingFace's
+[smolagents](https://github.com/huggingface/smolagents). The goal is to
+**demonstrate the agentic loop** — Thought / Tool-call / Observation, end to
+end against an OpenAI-compatible backend — in code that is well-structured and
+easy to read. Not the shortest possible, not obfuscated for brevity, but
+focused: the loop is the subject, and anything that doesn't serve understanding
+the loop is a candidate for removal.
 
 ## Scope decisions
 
@@ -80,8 +82,7 @@ over generality.
 - **Bundler.** Run things via `bundle exec ruby run.rb`. Add gems to `Gemfile`
   with conservative pessimistic constraints (`~>`).
 - **Errors are loud.** On unexpected API responses, raise with the offending
-  body included — this is a learning tool, silent fallbacks hide what the model
-  actually did.
+  body included — silent fallbacks hide what the model actually did.
 - **Tests: rspec-core with minitest-style asserts.** Use the `rspec-core`
   runner (`describe`/`it`) but write assertions in the minitest style
   (`assert_equal`, `assert`, `refute`, …) rather than RSpec matchers
@@ -90,10 +91,16 @@ over generality.
 
 ## Working on this codebase
 
-- This is a study project — prefer the simplest implementation that
-  demonstrates the concept. Don't add abstraction layers, plugin systems, or
-  configuration knobs that aren't needed for the next concrete step.
-- Don't introduce non-OpenAI-compatible providers or a CodeAgent path without
-  an explicit ask.
-- When touching the agent loop, keep the Thought / Tool-call / Observation
-  cycle visible in the code structure — readability beats cleverness.
+- **Focus on the loop.** The Thought / Tool-call / Observation cycle is the
+  subject of the project. Code that serves understanding it earns its place;
+  code that doesn't is a candidate for removal.
+- **Readable, not obfuscated.** Prefer the simplest implementation that
+  demonstrates the concept clearly. Don't golf code for line count, but also
+  don't add abstraction layers, plugin systems, or configuration knobs that
+  aren't needed for the next concrete step.
+- **Scope is fixed:** ToolCallingAgent only (no CodeAgent), OpenAI-compatible
+  HTTP only (no provider SDKs). Don't expand the surface area without an
+  explicit ask.
+- **Keep the loop legible in the code structure.** When touching the agent
+  loop, the Thought / Tool-call / Observation cycle should remain visible at
+  a glance — readability beats cleverness.
