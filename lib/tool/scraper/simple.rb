@@ -66,6 +66,15 @@ class Tool
         Product Article NewsArticle BlogPosting Recipe Event Book Movie
       ].freeze
 
+      # @return [Array<String>] JSON-LD fields that signal a node carries
+      #   substantive page content (not just metadata). At least one
+      #   must be present for {.best_jsonld_node} to short-circuit the
+      #   readability fallback. Without this gate, sites like Wikipedia
+      #   that ship a bare +Article+ block with only +name+/+author+/
+      #   +datePublished+ would collapse the entire page to a few lines
+      #   of metadata.
+      CONTENT_FIELDS = %w[description articleBody offers].freeze
+
       # @return [Array<String>] HTML tags preserved by the readability
       #   pass. Anything outside this list is stripped before Markdown
       #   conversion.
@@ -200,16 +209,27 @@ class Tool
       end
 
       # Pick the most useful node out of a flat JSON-LD list — the first
-      # one whose +@type+ matches {INTERESTING_TYPES}. Returns +nil+
-      # when none match, signalling that the readability fallback
-      # should run.
+      # one whose +@type+ matches {INTERESTING_TYPES} AND that carries at
+      # least one {CONTENT_FIELDS} entry. Returns +nil+ when no such
+      # node exists, signalling that the readability fallback should
+      # run.
+      #
+      # The content-field gate keeps us from short-circuiting on bare
+      # metadata blocks (e.g. Wikipedia ships an +Article+ JSON-LD with
+      # only +name+/+author+/+datePublished+ — useful page content lives
+      # in the HTML body, not the JSON-LD).
       #
       # @param nodes [Array<Hash>] JSON-LD nodes from {.parse_jsonld}
       # @return [Hash, nil]
       def self.best_jsonld_node(nodes)
         nodes.find do |n|
           types = Array(n['@type'])
-          types.any? { |t| INTERESTING_TYPES.include?(t) }
+          next false unless types.any? { |t| INTERESTING_TYPES.include?(t) }
+
+          CONTENT_FIELDS.any? do |f|
+            v = n[f]
+            !v.nil? && !(v.respond_to?(:empty?) && v.empty?)
+          end
         end
       end
 
