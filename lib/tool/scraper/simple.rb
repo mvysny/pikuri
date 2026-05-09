@@ -7,8 +7,6 @@ require 'readability'
 require 'reverse_markdown'
 require 'uri'
 
-require 'url_cache'
-
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order.
 class Tool
@@ -72,10 +70,9 @@ class Tool
 
       # Fetch +url+ and render its main content as Markdown.
       #
-      # Results are cached on disk via {UrlCache::DEFAULT} so repeat
-      # visits within the cache TTL skip the network and the extraction
-      # pass entirely. Errors raised by {.fetch} or {.extract} are not
-      # cached.
+      # No caching here — every call hits the network. Callers that want
+      # to memoize results should wrap this method themselves (see
+      # {Tool::WebFetch.visit}, which does exactly that).
       #
       # @param url [String] absolute HTTP(S) URL of the page to download
       # @return [String] full Markdown representation of the page,
@@ -85,7 +82,7 @@ class Tool
       # @raise [RuntimeError] if the HTTP response is non-success or a
       #   redirect arrives without a +Location+ header
       def self.visit(url)
-        UrlCache::DEFAULT.fetch(url) { extract(fetch(url)) }
+        extract(fetch(url))
       end
 
       # Download the body of +url+, manually following up to

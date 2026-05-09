@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'tool/scraper/simple'
+require 'url_cache'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order, and exposing it as +Tool::WEB_FETCH+ requires
@@ -26,9 +27,12 @@ class Tool
     # Fetch +url+ via {Tool::Scraper::Simple} and truncate the rendered
     # Markdown to +max_chars+ characters.
     #
-    # The scraper caches the full extracted Markdown on disk, so
-    # different +max_chars+ values for the same URL share one cache
-    # entry — truncation runs after the cache lookup.
+    # The full extracted Markdown is cached on disk via
+    # {UrlCache::DEFAULT}, keyed by URL, so repeat visits within the
+    # cache TTL skip the network and the extraction pass entirely.
+    # +max_chars+ is not part of the cache key — different values for
+    # the same URL share one entry, and truncation runs after the cache
+    # lookup. Errors raised by {Tool::Scraper::Simple} are not cached.
     #
     # @param url [String] absolute HTTP(S) URL of the page to download
     # @param max_chars [Integer] character cap on the returned Markdown.
@@ -42,7 +46,8 @@ class Tool
     #   redirect arrives without a +Location+ header
     def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
       max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
-      truncate(Scraper::Simple.visit(url), max_chars)
+      markdown = UrlCache::DEFAULT.fetch(url) { Scraper::Simple.visit(url) }
+      truncate(markdown, max_chars)
     end
 
     # Cut +markdown+ to at most +max_chars+ characters, appending a
