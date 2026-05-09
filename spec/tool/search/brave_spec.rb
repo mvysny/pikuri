@@ -38,6 +38,16 @@ RSpec.describe Tool::Search::Brave do
       assert_includes err.message, 'no results'
     end
 
+    it 'returns a no-results stub for a recognized empty Brave payload' do
+      json = JSON.dump(
+        type: 'search',
+        query: { original: 'unmatched query', bad_results: true },
+        mixed: { type: 'mixed', main: [], top: [], side: [] }
+      )
+      output = described_class.parse(json)
+      assert_equal "## Search Results\n\nNo results found.", output
+    end
+
     it 'surfaces a structured Brave error payload' do
       json = '{"error":{"code":"VALIDATION","detail":"Query too short"}}'
       err = assert_raises(RuntimeError) { described_class.parse(json) }
