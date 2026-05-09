@@ -80,6 +80,7 @@ class Agent
     raise "Agent loop exceeded #{@max_steps} steps without finishing"
   end
 
+  # Adds a `delegate` tool which allows this agent to spin up sub-agents.
   def allow_delegate
     sub_tools = @tools.dup
     @tools << Tool.delegate(client: @client, system_prompt: @system_prompt, tools: sub_tools, max_steps: @max_steps)
