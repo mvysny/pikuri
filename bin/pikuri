@@ -9,6 +9,7 @@ require 'agent'
 require 'openai_client'
 require 'tool/calculator'
 require 'tool/websearch'
+require 'tool/web_fetch'
 
 client = OpenAIClient.new(
   url: 'http://192.168.122.1:8080/v1',
@@ -19,7 +20,7 @@ client = OpenAIClient.new(
 agent = Agent.new(
   client: client,
   system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
-  tools: [Tool::WEB_SEARCH, Tool::CALCULATOR]
+  tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_FETCH]
 )
 agent.allow_sub_agent
 
