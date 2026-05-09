@@ -37,7 +37,8 @@ class OpenAIClient
   # @raise [RuntimeError] if the HTTP call fails or the response shape is
   #   unexpected (see {ChatParser#parse})
   def chat(log, tools: [])
-    response = @conn.post('chat/completions', self.class.request_body(log, tools: tools, model: @model))
+    request_json = self.class.request_body(log, tools: tools, model: @model)
+    response = @conn.post('chat/completions', request_json)
     raise "OpenAI request failed: #{response.status} #{response.body}" unless response.success?
 
     ChatParser.new(tools: tools).parse(response.body)
