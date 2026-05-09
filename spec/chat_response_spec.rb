@@ -108,14 +108,15 @@ RSpec.describe ChatParser do
 
     it 'raises when finish_reason is tool_calls but tool_calls is empty' do
       err = assert_raises(RuntimeError) { parser.parse(tool_calls_body([])) }
-      assert_includes err.message, 'tool_calls is empty'
+      assert_includes err.message, '/choices/0/message/tool_calls'
+      assert_includes err.message, 'less than'
     end
 
     it 'raises when finish_reason is tool_calls but tool_calls is missing entirely' do
       body = tool_calls_body([])
       body['choices'][0]['message'].delete('tool_calls')
       err = assert_raises(RuntimeError) { parser.parse(body) }
-      assert_includes err.message, 'tool_calls is empty or missing'
+      assert_includes err.message, 'missing required properties: tool_calls'
     end
 
     it 'raises when a tool_call references a tool not in the parser' do
@@ -156,7 +157,8 @@ RSpec.describe ChatParser do
         'function' => { 'name' => 'get_weather', 'arguments' => '{}' }
       }])
       err = assert_raises(RuntimeError) { parser.parse(body) }
-      assert_includes err.message, 'type is not `function`'
+      assert_includes err.message, '/choices/0/message/tool_calls/0/type'
+      assert_includes err.message, 'function'
     end
 
     it 'raises when tool_call.id is missing' do
@@ -165,18 +167,20 @@ RSpec.describe ChatParser do
         'function' => { 'name' => 'get_weather', 'arguments' => '{}' }
       }])
       err = assert_raises(RuntimeError) { parser.parse(body) }
-      assert_includes err.message, 'missing id'
+      assert_includes err.message, 'missing required properties: id'
     end
 
     it 'raises on unknown finish_reason' do
       body = { 'choices' => [{ 'finish_reason' => 'wat', 'message' => { 'content' => '' } }] }
       err = assert_raises(RuntimeError) { parser.parse(body) }
-      assert_includes err.message, 'Unknown finish_reason `wat`'
+      assert_includes err.message, '/choices/0/finish_reason'
+      assert_includes err.message, 'not one of'
     end
 
     it 'raises when choices is not exactly one element' do
       err = assert_raises(RuntimeError) { parser.parse({ 'choices' => [] }) }
-      assert_includes err.message, 'Expected exactly 1 choice'
+      assert_includes err.message, '/choices'
+      assert_includes err.message, 'less than'
     end
 
     it 'raises when the body is not a Hash' do

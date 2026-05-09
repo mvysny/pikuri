@@ -1,6 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'faraday', '~> 2.9'
+gem 'json_schemer', '~> 2.5'
 gem 'rainbow', '~> 3.1'
 gem 'tty-markdown', '~> 0.7'
 

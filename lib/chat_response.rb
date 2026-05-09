@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'json_schemer'
 require_relative 'tool'
 
 # Higher-level view of a single OpenAI chat-completion response. Wraps the one
@@ -72,11 +73,15 @@ end
 # the list of available {Tool}s so it can resolve tool-call names; pass an
 # empty array if the request did not advertise any tools.
 #
-# All checks are loud: any structural surprise raises +RuntimeError+ with the
-# offending body included, matching the rest of this codebase.
+# Body shape is validated against the JSON Schema vendored at
+# +schemas/chat_completion_response.json+; anything past that point (parsing
+# the JSON-string +function.arguments+, resolving tool names) is checked
+# imperatively. All checks are loud: any structural surprise raises
+# +RuntimeError+ with the offending body included.
 class ChatParser
-  # OpenAI's documented set; anything else is treated as a protocol error.
-  KNOWN_FINISH_REASONS = %i[stop tool_calls length content_filter].freeze
+  SCHEMA = JSONSchemer.schema(
+    JSON.parse(File.read(File.expand_path('../schemas/chat_completion_response.json', __dir__)))
+  )
 
   # @param tools [Array<Tool>] tools advertised on the request; used to
   #   resolve +function.name+ in tool-call responses
@@ -90,85 +95,53 @@ class ChatParser
   # @param body [Hash] JSON-decoded response body (e.g. Faraday's
   #   +response.body+ when +:json+ middleware is enabled)
   # @return [ChatResponse]
-  # @raise [RuntimeError] if the body shape is unexpected, the
-  #   +finish_reason+ is unknown, +tool_calls+ is empty when
-  #   +finish_reason+ is +tool_calls+, a tool-call references an unknown
-  #   tool, or +function.arguments+ is not a JSON object
+  # @raise [RuntimeError] if the body fails JSON Schema validation, a
+  #   tool-call references an unknown tool, or +function.arguments+ is not a
+  #   JSON object
   def parse(body)
-    raise "Expected response body to be a Hash, got #{body.class}: #{body.inspect}" unless body.is_a?(Hash)
+    validate_schema!(body)
 
-    choices = body['choices']
-    unless choices.is_a?(Array) && choices.size == 1
-      raise "Expected exactly 1 choice, got #{choices&.size.inspect}: #{body}"
-    end
-
-    choice = choices[0]
-    finish_reason = parse_finish_reason(choice['finish_reason'], body)
-
+    choice = body['choices'][0]
     msg = choice['message']
-    raise "Missing or non-Hash message in choice: #{body}" unless msg.is_a?(Hash)
+    finish_reason = choice['finish_reason'].to_sym
 
     ChatResponse.new(
       finish_reason: finish_reason,
       message: msg['content'],
       reasoning: msg['reasoning_content'],
-      tool_calls: parse_tool_calls(msg['tool_calls'], finish_reason, body)
+      tool_calls: finish_reason == :tool_calls ? msg['tool_calls'].map { |tc| parse_tool_call(tc) } : []
     )
   end
 
   private
 
-  def parse_finish_reason(raw, body)
-    raise "Missing finish_reason: #{body}" if raw.nil?
+  def validate_schema!(body)
+    errors = SCHEMA.validate(body).to_a
+    return if errors.empty?
 
-    reason = raw.to_sym
-    return reason if KNOWN_FINISH_REASONS.include?(reason)
-
-    raise "Unknown finish_reason `#{raw}` (known: #{KNOWN_FINISH_REASONS.join(', ')}): #{body}"
+    formatted = errors.map { |e| "  - #{e['data_pointer'].empty? ? '<root>' : e['data_pointer']}: #{e['error']}" }
+    raise "Invalid chat completion response:\n#{formatted.join("\n")}\nBody: #{body.inspect}"
   end
 
-  def parse_tool_calls(raw, finish_reason, body)
-    if finish_reason == :tool_calls
-      unless raw.is_a?(Array) && !raw.empty?
-        raise "finish_reason is `tool_calls` but tool_calls is empty or missing: #{body}"
-      end
-
-      raw.map { |tc| parse_tool_call(tc, body) }
-    else
-      []
-    end
-  end
-
-  def parse_tool_call(tc, body)
-    raise "tool_call entry is not a Hash: #{tc.inspect} (in #{body})" unless tc.is_a?(Hash)
-    raise "tool_call type is not `function`: #{tc.inspect} (in #{body})" unless tc['type'] == 'function'
-
-    id = tc['id']
-    raise "tool_call missing id: #{tc.inspect} (in #{body})" unless id.is_a?(String) && !id.empty?
-
+  def parse_tool_call(tc)
     function = tc['function']
-    raise "tool_call missing function block: #{tc.inspect} (in #{body})" unless function.is_a?(Hash)
-
-    tool = resolve_tool(function['name'], tc, body)
-    arguments = parse_arguments(function['arguments'], tc)
-
-    ChatResponse::ToolCall.new(tool: tool, arguments: arguments, id: id)
+    ChatResponse::ToolCall.new(
+      tool: resolve_tool(function['name']),
+      arguments: parse_arguments(function['arguments']),
+      id: tc['id']
+    )
   end
 
-  def resolve_tool(name, tc, body)
-    raise "tool_call function missing name: #{tc.inspect} (in #{body})" unless name.is_a?(String) && !name.empty?
-
+  def resolve_tool(name)
     tool = @tools_by_name[name]
     return tool if tool
 
     known = @tools_by_name.keys.map { |n| "`#{n}`" }.join(', ')
     known = '(none)' if known.empty?
-    raise "tool_call references unknown tool `#{name}` (known: #{known}): #{body}"
+    raise "tool_call references unknown tool `#{name}` (known: #{known})"
   end
 
-  def parse_arguments(raw, tc)
-    raise "tool_call function missing arguments string: #{tc.inspect}" unless raw.is_a?(String)
-
+  def parse_arguments(raw)
     decoded = begin
       JSON.parse(raw)
     rescue JSON::ParserError => e

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mvysny/smolagents-rb/schemas/chat_completion_response.json",
+  "title": "Chat completion response (tailored)",
+  "description": "Tailored slice of OpenAI's CreateChatCompletionResponse, modeled after https://github.com/openai/openai-openapi (manual_spec branch, openapi.yaml). Strict on the fields the agent loop reads — choices[0].finish_reason, message.content, message.tool_calls.{id,type,function.name,function.arguments} — and permissive on everything else (id, model, created, usage, system_fingerprint, logprobs, index, …) so backends like local llama.cpp can omit them without failing validation. Two intentional divergences from the upstream spec: (1) message.reasoning_content is allowed — Qwen3 / DeepSeek-R1 / llama.cpp emit it on thinking models, but it is not in OpenAI's official schema. (2) function_call is excluded from the finish_reason enum — it is deprecated upstream and unsupported by the parser, so we surface unknown values loudly rather than silently mapping them.",
+  "type": "object",
+  "required": ["choices"],
+  "properties": {
+    "choices": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/choice" }
+    }
+  },
+  "$defs": {
+    "choice": {
+      "type": "object",
+      "required": ["finish_reason", "message"],
+      "properties": {
+        "finish_reason": {
+          "type": "string",
+          "enum": ["stop", "tool_calls", "length", "content_filter"]
+        },
+        "message": { "$ref": "#/$defs/message" }
+      },
+      "allOf": [
+        {
+          "$comment": "Cross-field rule: finish_reason=tool_calls implies message.tool_calls is present and non-empty.",
+          "if": {
+            "required": ["finish_reason"],
+            "properties": { "finish_reason": { "const": "tool_calls" } }
+          },
+          "then": {
+            "properties": {
+              "message": {
+                "required": ["tool_calls"],
+                "properties": {
+                  "tool_calls": { "minItems": 1 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "message": {
+      "type": "object",
+      "properties": {
+        "content": { "type": ["string", "null"] },
+        "reasoning_content": { "type": ["string", "null"] },
+        "tool_calls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool_call" }
+        }
+      }
+    },
+    "tool_call": {
+      "type": "object",
+      "required": ["id", "type", "function"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "function" },
+        "function": {
+          "type": "object",
+          "required": ["name", "arguments"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "arguments": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
