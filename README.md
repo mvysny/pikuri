@@ -155,7 +155,7 @@ In `run.rb` or `run-leopard.rb`, swap the `OpenAIClient.new(...)` block for:
 ```ruby
 client = OpenAIClient.new(
   url: 'https://api.x.ai/v1',
-  model: 'grok-4',                          # or any current model from console.x.ai/models
+  model: 'grok-4.3',                          # or any current model from console.x.ai/models
   api_key: ENV.fetch('XAI_API_KEY'),
   tools: [...]
 )
