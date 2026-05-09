@@ -46,6 +46,17 @@ class Tool
     #   request
     READ_TIMEOUT = 20
 
+    # @return [Integer] default character cap on the Markdown returned by
+    #   {.visit}. Long-form articles routinely run 50K+ chars after
+    #   readability extraction; 5K is enough to give the LLM the gist of
+    #   most pages without flooding the context window.
+    DEFAULT_MAX_CHARS = 5_000
+
+    # @return [Integer] hard ceiling on the +max_chars+ argument to
+    #   {.visit}. Requests above this are clamped silently so the LLM
+    #   cannot dump an arbitrarily large page into the conversation.
+    MAX_MAX_CHARS = 100_000
+
     # @return [Array<String>] schema.org +@type+ values that we treat as
     #   "the primary entity of this page" when picking a JSON-LD node to
     #   render. Order does not matter — the first matching node wins.
@@ -65,19 +76,44 @@ class Tool
     #   Markdown conversion
     READABILITY_ATTRS = %w[href src alt title].freeze
 
-    # Fetch +url+ and render its main content as Markdown.
+    # Fetch +url+ and render its main content as Markdown, truncated to
+    # +max_chars+ characters.
     #
-    # Results are cached on disk via {UrlCache::DEFAULT} so repeat visits
-    # within the cache TTL skip the network and the extraction pass
-    # entirely. Errors raised by {.fetch} or {.extract} are not cached.
+    # The full extracted Markdown is cached on disk via {UrlCache::DEFAULT}
+    # so repeat visits within the cache TTL skip the network and the
+    # extraction pass entirely; truncation runs after the cache lookup, so
+    # different +max_chars+ values for the same URL share one cache entry.
+    # Errors raised by {.fetch} or {.extract} are not cached.
     #
     # @param url [String] absolute HTTP(S) URL of the page to download
-    # @return [String] Markdown representation of the page
+    # @param max_chars [Integer] character cap on the returned Markdown.
+    #   Clamped to +[1, {MAX_MAX_CHARS}]+; defaults to {DEFAULT_MAX_CHARS}.
+    #   When the full page exceeds the cap, output is cut and a marker
+    #   noting the original length is appended.
+    # @return [String] Markdown representation of the page, possibly
+    #   truncated
     # @raise [ArgumentError] if too many redirects are encountered
     # @raise [RuntimeError] if the HTTP response is non-success or a
     #   redirect arrives without a +Location+ header
-    def self.visit(url)
-      UrlCache::DEFAULT.fetch(url) { extract(fetch(url)) }
+    def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
+      max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
+      full = UrlCache::DEFAULT.fetch(url) { extract(fetch(url)) }
+      truncate(full, max_chars)
+    end
+
+    # Cut +markdown+ to at most +max_chars+ characters, appending a marker
+    # describing the original length when truncation actually happens.
+    # Returns +markdown+ unchanged if it already fits.
+    #
+    # @param markdown [String] full Markdown text
+    # @param max_chars [Integer] character cap; assumed already clamped
+    # @return [String]
+    def self.truncate(markdown, max_chars)
+      return markdown if markdown.length <= max_chars
+
+      "#{markdown[0, max_chars]}\n\n" \
+        "... [truncated at #{max_chars} of #{markdown.length} chars; " \
+        'call again with a larger `max_chars` to see more]'
     end
 
     # Download the body of +url+, manually following up to {MAX_REDIRECTS}
@@ -278,12 +314,23 @@ class Tool
                  'Internally tries JSON-LD structured data first (works ' \
                  'well for product, article, and recipe pages) and falls ' \
                  'back to a readability extraction of the main article ' \
-                 'body.',
+                 'body. Output is truncated to roughly 5000 characters by ' \
+                 'default — enough for the gist of most pages; pass ' \
+                 '`max_chars` to read more when the truncation marker ' \
+                 'shows the page was longer and you need the rest.',
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to visit, including ' \
                         'the scheme, e.g. "https://example.com/article".'
+      p.optional_integer :max_chars,
+                         'Maximum number of characters of Markdown to ' \
+                         'return. Defaults to 5000; hard-capped at ' \
+                         '100000. When the page is longer than this, ' \
+                         'output is cut and a marker reports the full ' \
+                         'length so you can retry with a larger value.'
     },
-    execute: ->(url:) { WebpageVisitor.visit(url) }
+    execute: ->(url:, max_chars: WebpageVisitor::DEFAULT_MAX_CHARS) {
+      WebpageVisitor.visit(url, max_chars: max_chars)
+    }
   )
 end
