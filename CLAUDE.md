@@ -65,11 +65,11 @@ area grows.
   (HTML scrape of `html.duckduckgo.com`, throttled to one request every 2s,
   prone to IP soft-blocks) and `Tool::Search::Brave` (official Web Search API
   with `X-Subscription-Token`).
-- `agent.rb` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
+- `pikuri.rb` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
   server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
   delegation enabled, and feeds it a question from `ARGV` or stdin.
 - `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
-  the system prompt used by `agent.rb`, plus a verbatim upstream reference
+  the system prompt used by `pikuri.rb`, plus a verbatim upstream reference
   fixture kept under its original filename for traceability.
 
 ## Conventions
@@ -77,14 +77,14 @@ area grows.
 - **Ruby, no Rails.** Plain classes, `Data.define` for value objects, Faraday
   for HTTP, Rainbow for terminal color.
 - **`# frozen_string_literal: true`** at the top of every Ruby file (`lib/`,
-  `spec/`, `agent.rb`, etc.). Add it to any new file you create.
+  `spec/`, `pikuri.rb`, etc.). Add it to any new file you create.
 - **YARD docs on every public module, class, and method.** Use concrete
   types in `@param` and `@return` (`String`, `Integer`, `Array<Hash>`,
   `Faraday::Connection`, `String, nil`) — never bare `Object` or `Any`.
   Document expected exceptions with `@raise`. One-line summary first, then
-  blank line, then tags. This applies to `lib/`; `agent.rb` and `spec/`
+  blank line, then tags. This applies to `lib/`; `pikuri.rb` and `spec/`
   files don't need it (no public API).
-- **Bundler.** Run things via `bundle exec ruby agent.rb`. Add gems to
+- **Bundler.** Run things via `bundle exec ruby pikuri.rb`. Add gems to
   `Gemfile` with conservative pessimistic constraints (`~>`).
 - **Errors are loud.** On unexpected API responses, raise with the offending
   body included — silent fallbacks hide what the model actually did.
