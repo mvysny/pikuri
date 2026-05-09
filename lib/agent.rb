@@ -19,7 +19,7 @@ class Agent
   #   {#run_loop} invocation; must be positive
   # @return [Agent]
   # @raise [ArgumentError] if +max_steps+ is zero or negative
-  def initialize(client:, system_prompt:, tools: [], max_steps: 10)
+  def initialize(client:, system_prompt:, tools: [], max_steps: 20)
     raise ArgumentError, "max_steps must be positive, got #{max_steps}" if max_steps <= 0
 
     @client = client
