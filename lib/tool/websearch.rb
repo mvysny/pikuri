@@ -45,7 +45,10 @@ class Tool
                  '`visit_webpage` on each to read the actual content.',
     parameters: Parameters.build { |p|
       p.required_string :query, 'The search query to perform.'
+      p.optional_integer :max_results,
+                         'Maximum number of result entries to return. ' \
+                         'Defaults to 10; most providers cap this at 20.'
     },
-    execute: ->(query:) { Search.provider.search(query) }
+    execute: ->(query:, max_results: 10) { Search.provider.search(query, max_results: max_results) }
   )
 end
