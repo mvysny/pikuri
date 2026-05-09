@@ -146,9 +146,13 @@ class Tool
   # @return [Tool]
   WEB_SEARCH = new(
     name: 'web_search',
-    description: 'Performs a web search for a query and returns the top ' \
-                 'results formatted as Markdown with titles, links, and ' \
-                 'descriptions.',
+    description: 'Searches the web for a query and returns the top results ' \
+                 'as a Markdown list of titles, links, and short snippets. ' \
+                 'The snippets are typically a sentence or two — not the ' \
+                 'page contents — so they are rarely enough to answer a ' \
+                 'question on their own. After running this tool, pick the ' \
+                 'most promising URL(s) from the results and call ' \
+                 '`visit_webpage` on each to read the actual content.',
     parameters: Parameters.build { |p|
       p.required_string :query, 'The search query to perform.'
     },

@@ -264,12 +264,15 @@ class Tool
   # @return [Tool]
   VISIT_WEBPAGE = new(
     name: 'visit_webpage',
-    description: 'Downloads the webpage at the given URL and returns its ' \
-                 'main content as Markdown. Tries JSON-LD structured data ' \
-                 'first (works well for product, article, and recipe ' \
-                 'pages) and falls back to a readability extraction of ' \
-                 'the main article body. Use after `web_search` to read ' \
-                 'the specific pages worth visiting.',
+    description: 'Reads the webpage at the given URL and returns its main ' \
+                 'content as Markdown. Use this whenever you need the ' \
+                 'actual contents of a page — after `web_search` surfaces ' \
+                 'a promising URL, when the user supplies a link, or when ' \
+                 'a search snippet is too short to answer the question. ' \
+                 'Internally tries JSON-LD structured data first (works ' \
+                 'well for product, article, and recipe pages) and falls ' \
+                 'back to a readability extraction of the main article ' \
+                 'body.',
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to visit, including ' \
