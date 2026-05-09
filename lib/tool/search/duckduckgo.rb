@@ -52,8 +52,9 @@ class Tool
       # @return [String] Markdown-formatted result list
       # @raise [ArgumentError] if the query is empty after normalization
       # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails, or if the
-      #   response contains no results (typically an anomaly/CAPTCHA page when
-      #   the IP has been soft-blocked)
+      #   response is unparseable (typically an anomaly/CAPTCHA page when the
+      #   IP has been soft-blocked). A genuine empty-results page is *not* an
+      #   error; see {.parse}.
       def self.search(query, max_results: DEFAULT_MAX_RESULTS)
         cleaned = query.to_s.strip.gsub(/\s+/, ' ')
         raise ArgumentError, 'query is empty' if cleaned.empty?
@@ -78,17 +79,19 @@ class Tool
       # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined by
       # blank lines. +<b>+ highlights inside snippets are stripped.
       #
-      # An empty result list is treated as a failure — DDG always returns at
-      # least one match for any non-empty query, so zero matches means the
-      # page is a CAPTCHA/anomaly challenge or some other non-results page.
-      # In that case the method raises with the diagnostic text extracted from
-      # the body (anomaly modal if recognized, otherwise visible page text)
-      # so the agent loop sees a real error instead of a fake "no results".
+      # When the page has zero result nodes, two cases are distinguished:
+      # a genuine "no results" page (narrow query, DDG's own "No results found"
+      # indicator) returns a Markdown stub instead of raising, so the agent
+      # gets a real observation it can act on. Anything else (anomaly modal,
+      # CAPTCHA, service-unavailable page, unknown layout) raises with the
+      # diagnostic text extracted from the body, so an IP soft-block is
+      # surfaced rather than silently masquerading as an empty search.
       #
       # @param html [String] HTML document body from html.duckduckgo.com
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
-      # @raise [RuntimeError] when the page contains no result nodes
+      # @raise [RuntimeError] when the page contains no result nodes and is
+      #   not recognized as a genuine no-results page
       def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
         doc = Nokogiri::HTML(html)
         results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
@@ -103,10 +106,30 @@ class Tool
           }
         end
 
-        raise diagnose_empty(doc) if results.empty?
+        if results.empty?
+          return "## Search Results\n\nNo results found." if genuine_no_results?(doc)
+
+          raise diagnose_empty(doc)
+        end
 
         "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
       end
+
+      # True when a results page with zero result nodes looks like DDG's own
+      # "no results found" page (narrow query) rather than an anomaly/CAPTCHA
+      # or other non-results layout. Anomaly modal wins: if the modal divs
+      # are present we never treat the page as a genuine empty result, even
+      # if the surrounding text happens to mention "No results".
+      #
+      # @param doc [Nokogiri::HTML::Document] parsed result page
+      # @return [Boolean]
+      def self.genuine_no_results?(doc)
+        return false if doc.at_css('.anomaly-modal__title') || doc.at_css('.anomaly-modal__description')
+        return true if doc.at_css('div.no-results')
+
+        doc.text.include?('No results found')
+      end
+      private_class_method :genuine_no_results?
 
       # Build an error message for a results page that yielded zero matches.
       # Recognizes the DDG anomaly modal explicitly and quotes its title and
@@ -125,8 +148,8 @@ class Tool
 
         doc.css('script, style, noscript').remove
         text = doc.text.gsub(/\s+/, ' ').strip
-        snippet = text.empty? ? '<empty body>' : text[0, 800]
-        snippet += '…' if text.length > 800
+        snippet = text.empty? ? '<empty body>' : text[0, 1500]
+        snippet += '…' if text.length > 1500
         "DuckDuckGo returned no results. Page text: #{snippet}"
       end
       private_class_method :diagnose_empty

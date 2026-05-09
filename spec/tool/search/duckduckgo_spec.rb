@@ -43,6 +43,28 @@ RSpec.describe Tool::Search::DuckDuckGo do
       assert_includes err.message, 'service is currently unavailable'
     end
 
+    it 'returns a no-results stub on a genuine "No results found" page' do
+      html = '<html><body><div class="serp__results">No results found for foobarbaz.</div></body></html>'
+      output = described_class.parse(html)
+      assert_equal "## Search Results\n\nNo results found.", output
+    end
+
+    it 'recognizes div.no-results as a genuine empty-results page' do
+      html = '<html><body><div class="no-results">Nothing here</div></body></html>'
+      output = described_class.parse(html)
+      assert_equal "## Search Results\n\nNo results found.", output
+    end
+
+    it 'still raises on the anomaly modal even when "No results found" appears in body text' do
+      html = <<~HTML
+        <html><body>
+          <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
+          <p>No results found for anything because the page is a CAPTCHA.</p>
+        </body></html>
+      HTML
+      assert_raises(RuntimeError) { described_class.parse(html) }
+    end
+
     it 'recognizes the DDG anomaly/CAPTCHA modal and surfaces its text' do
       html = <<~HTML
         <html><body>
