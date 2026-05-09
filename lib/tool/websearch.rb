@@ -108,12 +108,8 @@ class Tool
                  'training — current events, today\'s prices, latest ' \
                  'releases, specific obscure facts. For arithmetic, call ' \
                  '`calculator`; for established general knowledge, answer ' \
-    'directly without searching. This tool is often rate-limited/bot-blocked. ' \
-                 'The snippets are typically a sentence or two — ' \
-                 'not the page contents — so they are rarely enough to ' \
-                 'answer a question on their own. After running this ' \
-                 'tool, pick the most promising URL(s) from the results ' \
-                 'and call `web_fetch` on each to read the actual content.',
+                 'directly without searching. This tool is often ' \
+                 'rate-limited/bot-blocked.',
     parameters: Parameters.build { |p|
       p.required_string :query, 'The search query to perform.'
       p.optional_integer :max_results,

@@ -78,25 +78,21 @@ class Tool
 
   # Webpage download + Markdown conversion tool. Thin wrapper over
   # {Tool::WebFetch.visit} that exposes it to the agent loop in OpenAI
-  # tool-call shape. Pairs naturally with {Tool::WEB_SEARCH}: the search
-  # tool surfaces candidate URLs, this one reads them.
+  # tool-call shape.
   #
   # @return [Tool]
   WEB_FETCH = new(
     name: 'web_fetch',
     description: 'Fetches the webpage at the given URL and returns its ' \
                  'main content as Markdown — not the raw HTML; the page ' \
-                 'is parsed and rendered. Use this whenever you need the ' \
-                 'actual contents of a page — after `web_search` surfaces ' \
-                 'a promising URL, when the user supplies a link, or when ' \
-                 'a search snippet is too short to answer the question. ' \
-                 'Internally tries JSON-LD structured data first (works ' \
-                 'well for product, article, and recipe pages) and falls ' \
-                 'back to a readability extraction of the main article ' \
-                 'body. Output is truncated to roughly 5000 characters by ' \
-                 'default — enough for the gist of most pages; pass ' \
-                 '`max_chars` to read more when the truncation marker ' \
-                 'shows the page was longer and you need the rest.',
+                 'is parsed and rendered. Internally tries JSON-LD ' \
+                 'structured data first (works well for product, article, ' \
+                 'and recipe pages) and falls back to a readability ' \
+                 'extraction of the main article body. Output is ' \
+                 'truncated to roughly 5000 characters by default — ' \
+                 'enough for the gist of most pages; pass `max_chars` to ' \
+                 'read more when the truncation marker shows the page was ' \
+                 'longer and you need the rest.',
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to fetch, including ' \
