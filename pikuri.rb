@@ -8,7 +8,7 @@ require_relative 'lib/tool/calculator'
 require_relative 'lib/tool/duckduckgo_search'
 
 client = OpenAIClient.new(
-  url: 'http://127.0.0.1:8080/v1',
+  url: 'http://192.168.122.1:8080/v1',
   model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
   api_key: 'not-needed'
 )
@@ -18,8 +18,17 @@ agent = Agent.new(
   system_prompt: File.read('smolagents-system-prompt.txt'),
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR]
 )
+agent.allow_delegate
 
-agent.run_loop(user_message: 'How many seconds would it take for a leopard at full speed to run through Pont des Arts?')
+question =
+  if ARGV.empty?
+    print 'Question: '
+    gets.to_s.chomp
+  else
+    ARGV.join(' ')
+  end
+
+agent.run_loop(user_message: question)
 
 # To review the entire conversation:
 # puts agent.log
