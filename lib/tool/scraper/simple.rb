@@ -11,6 +11,17 @@ require 'uri'
 # assumes that order.
 class Tool
   module Scraper
+    # Raised by {Simple.fetch} (and re-exposed here for any future scraper)
+    # when the page could not be retrieved for a reason the LLM can react
+    # to: HTTP 4xx/5xx, network/connection/timeout failure, redirect loop,
+    # or a 3xx without a usable +Location+ header. The agent loop catches
+    # this in {Tool::WebFetch.visit} and feeds the message back to the
+    # model as the next observation, so the LLM can try a different URL or
+    # give up gracefully. Genuine bugs in the parser/extraction code keep
+    # raising their own exception types and crash loud — those need a
+    # human, not the LLM.
+    class FetchError < StandardError; end
+
     # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
     # follow redirects, and render the response body as Markdown for the
     # agent loop.
@@ -68,6 +79,13 @@ class Tool
       #   is dropped before Markdown conversion
       READABILITY_ATTRS = %w[href src alt title].freeze
 
+      # @return [Integer] maximum number of characters of an error
+      #   response body to include in a {FetchError} message. The body is
+      #   often a multi-kilobyte HTML challenge page (Cloudflare, WAF
+      #   interstitial, etc.); a short excerpt tells the LLM what kind of
+      #   page came back without flooding the next observation.
+      ERROR_BODY_EXCERPT = 200
+
       # Fetch +url+ and render its main content as Markdown.
       #
       # No caching here — every call hits the network. Callers that want
@@ -78,9 +96,9 @@ class Tool
       # @return [String] full Markdown representation of the page,
       #   uncapped — caller is responsible for any size limiting before
       #   feeding the result back to the LLM
-      # @raise [ArgumentError] if too many redirects are encountered
-      # @raise [RuntimeError] if the HTTP response is non-success or a
-      #   redirect arrives without a +Location+ header
+      # @raise [FetchError] on HTTP non-2xx, network failure, redirect
+      #   loop, or a 3xx without a +Location+ header — i.e. anything the
+      #   LLM can react to by picking a different URL
       def self.visit(url)
         extract(fetch(url))
       end
@@ -90,19 +108,30 @@ class Tool
       # middleware so behavior here mirrors the rest of the codebase
       # (see +Tool::Search::DuckDuckGo.search+).
       #
+      # All recoverable failures — HTTP 4xx/5xx, +Faraday::Error+ network
+      # blips, exhausted redirect budget, 3xx without a +Location+ —
+      # surface as {FetchError} so the caller has a single exception type
+      # to rescue. Error bodies are trimmed to {ERROR_BODY_EXCERPT}
+      # characters with whitespace collapsed, so a Cloudflare-challenge
+      # response doesn't dump kilobytes of inline HTML into the next LLM
+      # observation.
+      #
       # @param url [String] absolute HTTP(S) URL to fetch
       # @param limit [Integer] redirects remaining; recurses with
       #   +limit - 1+ on each 3xx
       # @return [String] response body for the final 2xx response
-      # @raise [ArgumentError] if +limit+ reaches zero
-      # @raise [RuntimeError] on non-2xx/3xx responses or 3xx without a
-      #   +Location+ header
+      # @raise [FetchError] on non-2xx/3xx responses, network errors,
+      #   redirect-loop exhaustion, or 3xx without a +Location+ header
       def self.fetch(url, limit: MAX_REDIRECTS)
-        raise ArgumentError, "too many redirects fetching #{url}" if limit.zero?
+        raise FetchError, "too many redirects fetching #{url}" if limit.zero?
 
-        response = Faraday.new(request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT }).get(url) do |req|
-          req.headers['User-Agent'] = USER_AGENT
-          req.headers['Accept']     = 'text/html,application/xhtml+xml'
+        response = begin
+          Faraday.new(request: { open_timeout: OPEN_TIMEOUT, timeout: READ_TIMEOUT }).get(url) do |req|
+            req.headers['User-Agent'] = USER_AGENT
+            req.headers['Accept']     = 'text/html,application/xhtml+xml'
+          end
+        rescue Faraday::Error => e
+          raise FetchError, "#{e.class.name.split('::').last} fetching #{url}: #{e.message}"
         end
 
         case response.status
@@ -110,13 +139,26 @@ class Tool
           response.body
         when 300..399
           location = response.headers['location']
-          raise "HTTP #{response.status} from #{url} with no Location header" if location.nil? || location.empty?
+          raise FetchError, "HTTP #{response.status} from #{url} with no Location header" if location.nil? || location.empty?
 
           fetch(URI.join(url, location).to_s, limit: limit - 1)
         else
-          raise "HTTP #{response.status} fetching #{url}: #{response.body}"
+          raise FetchError, "HTTP #{response.status} fetching #{url}: #{excerpt(response.body)}"
         end
       end
+
+      # Whitespace-collapse +body+ and clip to {ERROR_BODY_EXCERPT}
+      # characters, so the {FetchError} message stays a single readable
+      # line even when the server returned a multi-KB HTML challenge
+      # page.
+      #
+      # @param body [String, nil]
+      # @return [String]
+      def self.excerpt(body)
+        text = body.to_s.gsub(/\s+/, ' ').strip
+        text.length > ERROR_BODY_EXCERPT ? "#{text[0, ERROR_BODY_EXCERPT]}..." : text
+      end
+      private_class_method :excerpt
 
       # Render +html+ as Markdown, preferring the JSON-LD fast path and
       # falling back to readability extraction.

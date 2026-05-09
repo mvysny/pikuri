@@ -41,8 +41,17 @@ class Tool
     # by URL, so repeat visits within the cache TTL skip the network
     # and the extraction pass entirely. +max_chars+ is not part of the
     # cache key — different values for the same URL share one entry,
-    # and truncation runs after the cache lookup. Errors raised by
-    # {Tool::Scraper::Simple} are not cached.
+    # and truncation runs after the cache lookup.
+    #
+    # {Tool::Scraper::FetchError} (HTTP non-2xx, network failure,
+    # redirect-loop, missing +Location+ header) is caught and returned
+    # as +"Error: ..."+ in the calculator-style convention so the agent
+    # loop feeds the failure back to the model as the next observation
+    # instead of crashing — the LLM can then try a different URL or
+    # search again. The rescue lives outside {.cache}'s +fetch+ block,
+    # so failure strings are never persisted: a retry on the next call
+    # hits the network again. Other exceptions (parser bugs in our own
+    # code) bubble up unchanged.
     #
     # @param url [String] absolute HTTP(S) URL of the page to download
     # @param max_chars [Integer] character cap on the returned Markdown.
@@ -50,14 +59,13 @@ class Tool
     #   {DEFAULT_MAX_CHARS}. When the full page exceeds the cap, output
     #   is cut and a marker noting the original length is appended.
     # @return [String] Markdown representation of the page, possibly
-    #   truncated
-    # @raise [ArgumentError] if too many redirects are encountered
-    # @raise [RuntimeError] if the HTTP response is non-success or a
-    #   redirect arrives without a +Location+ header
+    #   truncated, or +"Error: ..."+ on a recoverable fetch failure
     def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
       max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
       markdown = cache.fetch(url) { Scraper::Simple.visit(url) }
       truncate(markdown, max_chars)
+    rescue Scraper::FetchError => e
+      "Error: #{e.message}"
     end
 
     # Cut +markdown+ to at most +max_chars+ characters, appending a
