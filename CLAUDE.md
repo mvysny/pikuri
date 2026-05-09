@@ -49,11 +49,22 @@ area grows.
 - `lib/tool/` — bundled tool implementations, each reopening `class Tool` to
   add a module + a single `Tool` constant. Currently: `Tool::CALCULATOR`
   (Dentaku-backed arithmetic, with `**` → `^` rewriting and BigDecimal results
-  rounded to 3 places), `Tool::WEB_SEARCH` (DuckDuckGo HTML scrape via
-  Nokogiri, throttled to one request every 2s, rendered as Markdown), and
+  rounded to 3 places), `Tool::WEB_SEARCH` (provider-pluggable web search;
+  see `lib/tool/websearch.rb` and `lib/tool/search/`), and
   `Tool.delegate(...)` (factory: spawns a fresh sub-`Agent` on a clean
   `ChatLog` and returns only its final assistant message as the parent's
   next observation).
+- `lib/tool/websearch.rb` — defines `Tool::WEB_SEARCH` and `Tool::Search.provider`,
+  which picks a provider based on which API tokens are present in ENV
+  (Brave when `BRAVE_SEARCH_API_KEY` is set, otherwise DuckDuckGo). The
+  selection is by-token, not runtime cascade — if the chosen provider
+  fails the call fails.
+- `lib/tool/search/` — search-provider modules. Each exposes
+  `.search(query, max_results:)` returning the same smolagents-style Markdown
+  shape so the LLM sees a stable format. Currently: `Tool::Search::DuckDuckGo`
+  (HTML scrape of `html.duckduckgo.com`, throttled to one request every 2s,
+  prone to IP soft-blocks) and `Tool::Search::Brave` (official Web Search API
+  with `X-Subscription-Token`).
 - `agent.rb` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
   server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
   delegation enabled, and feeds it a question from `ARGV` or stdin.

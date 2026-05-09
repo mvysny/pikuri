@@ -1,0 +1,29 @@
+{
+  "query": {
+    "original": "ruby language",
+    "show_strict_warning": false,
+    "is_navigational": false,
+    "country": "us"
+  },
+  "type": "search",
+  "web": {
+    "type": "search",
+    "results": [
+      {
+        "title": "<strong>Ruby</strong> Programming <strong>Language</strong>",
+        "url": "https://www.ruby-lang.org/en/",
+        "description": "<strong>Ruby</strong> has a simple and intuitive syntax that makes it a delight to read and write."
+      },
+      {
+        "title": "<strong>Ruby</strong> (programming <strong>language</strong>) - Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Ruby_(programming_language)",
+        "description": "<strong>Ruby</strong> is a general-purpose programming language. It was designed with an emphasis on programming productivity and simplicity."
+      },
+      {
+        "title": "Learn <strong>Ruby</strong> the Hard Way",
+        "url": "https://learnrubythehardway.org/book/",
+        "description": "An introduction to <strong>Ruby</strong> for programmers."
+      }
+    ]
+  }
+}

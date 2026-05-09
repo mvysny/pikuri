@@ -83,7 +83,7 @@ class Tool
     # Download the body of +url+, manually following up to {MAX_REDIRECTS}
     # redirects. Faraday is configured with no middleware so behavior here
     # mirrors the rest of the codebase (see
-    # +Tool::DuckDuckGoSearch.search+).
+    # +Tool::Search::DuckDuckGo.search+).
     #
     # @param url [String] absolute HTTP(S) URL to fetch
     # @param limit [Integer] redirects remaining; recurses with
