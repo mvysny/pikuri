@@ -43,8 +43,12 @@ class Tool
                    'assistant message. Use this to isolate side-quests — ' \
                    'research, multi-step lookups, exploratory tool use — ' \
                    'so their intermediate observations do not clutter ' \
-                   'your own context. The sub-agent cannot see your ' \
-                   'conversation; pass everything it needs in `task`.',
+                   'your own context. The sub-agent shares your system ' \
+                   'prompt — so persona, tool-use conventions, and ' \
+                   'output format carry over — but cannot see your ' \
+                   'conversation. Only pass task-specific context in ' \
+                   '`task`; you do not need to re-explain who you are or ' \
+                   'how to use tools.',
       parameters: Parameters.build { |p|
         p.required_string :task,
                           'Self-contained instructions for the sub-agent. ' \

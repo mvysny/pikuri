@@ -4,6 +4,7 @@ require 'rainbow'
 require 'tty-markdown'
 require_relative 'chat_log'
 require_relative 'openai_client'
+require_relative 'tool/delegate'
 
 # Drives the classic Thought / Tool-call / Observation loop against an
 # OpenAI-compatible backend: send the conversation, execute any tool calls the
@@ -25,6 +26,7 @@ class Agent
     @tools = tools
     @log = ChatLog.new
     @log.system(system_prompt)
+    @system_prompt = system_prompt
     @max_steps = max_steps
   end
 
@@ -76,5 +78,10 @@ class Agent
     end
 
     raise "Agent loop exceeded #{@max_steps} steps without finishing"
+  end
+
+  def allow_delegate
+    sub_tools = @tools.dup
+    @tools << Tool.delegate(client: @client, system_prompt: @system_prompt, tools: sub_tools, max_steps: @max_steps)
   end
 end
