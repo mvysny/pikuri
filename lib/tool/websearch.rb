@@ -42,7 +42,7 @@ class Tool
                  'page contents — so they are rarely enough to answer a ' \
                  'question on their own. After running this tool, pick the ' \
                  'most promising URL(s) from the results and call ' \
-                 '`visit_webpage` on each to read the actual content.',
+                 '`web_fetch` on each to read the actual content.',
     parameters: Parameters.build { |p|
       p.required_string :query, 'The search query to perform.'
       p.optional_integer :max_results,

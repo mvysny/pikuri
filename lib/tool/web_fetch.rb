@@ -3,15 +3,15 @@
 require 'tool/scraper/simple'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order, and exposing it as +Tool::VISIT_WEBPAGE+ requires
+# assumes that order, and exposing it as +Tool::WEB_FETCH+ requires
 # +Tool+ already be a class.
 class Tool
-  # Truncation policy and Tool spec for the +visit_webpage+ tool. The
-  # actual scraping lives in {Tool::Scraper::Simple}; this module is a
-  # thin wrapper that picks the scraper, applies a character cap so the
-  # LLM doesn't drown in long-form content, and exposes the result to
-  # the agent loop in OpenAI tool-call shape.
-  module WebpageVisitor
+  # Truncation policy and Tool spec for the +web_fetch+ tool. The actual
+  # scraping lives in {Tool::Scraper::Simple}; this module is a thin
+  # wrapper that picks the scraper, applies a character cap so the LLM
+  # doesn't drown in long-form content, and exposes the result to the
+  # agent loop in OpenAI tool-call shape.
+  module WebFetch
     # @return [Integer] default character cap on the Markdown returned
     #   by {.visit}. Long-form articles routinely run 50K+ chars after
     #   readability extraction; 5K is enough to give the LLM the gist
@@ -62,15 +62,16 @@ class Tool
   end
 
   # Webpage download + Markdown conversion tool. Thin wrapper over
-  # {Tool::WebpageVisitor.visit} that exposes it to the agent loop in
-  # OpenAI tool-call shape. Pairs naturally with {Tool::WEB_SEARCH}: the
-  # search tool surfaces candidate URLs, this one reads them.
+  # {Tool::WebFetch.visit} that exposes it to the agent loop in OpenAI
+  # tool-call shape. Pairs naturally with {Tool::WEB_SEARCH}: the search
+  # tool surfaces candidate URLs, this one reads them.
   #
   # @return [Tool]
-  VISIT_WEBPAGE = new(
-    name: 'visit_webpage',
-    description: 'Reads the webpage at the given URL and returns its main ' \
-                 'content as Markdown. Use this whenever you need the ' \
+  WEB_FETCH = new(
+    name: 'web_fetch',
+    description: 'Fetches the webpage at the given URL and returns its ' \
+                 'main content as Markdown — not the raw HTML; the page ' \
+                 'is parsed and rendered. Use this whenever you need the ' \
                  'actual contents of a page — after `web_search` surfaces ' \
                  'a promising URL, when the user supplies a link, or when ' \
                  'a search snippet is too short to answer the question. ' \
@@ -83,7 +84,7 @@ class Tool
                  'shows the page was longer and you need the rest.',
     parameters: Parameters.build { |p|
       p.required_string :url,
-                        'Absolute URL of the webpage to visit, including ' \
+                        'Absolute URL of the webpage to fetch, including ' \
                         'the scheme, e.g. "https://example.com/article".'
       p.optional_integer :max_chars,
                          'Maximum number of characters of Markdown to ' \
@@ -92,8 +93,8 @@ class Tool
                          'output is cut and a marker reports the full ' \
                          'length so you can retry with a larger value.'
     },
-    execute: ->(url:, max_chars: WebpageVisitor::DEFAULT_MAX_CHARS) {
-      WebpageVisitor.visit(url, max_chars: max_chars)
+    execute: ->(url:, max_chars: WebFetch::DEFAULT_MAX_CHARS) {
+      WebFetch.visit(url, max_chars: max_chars)
     }
   )
 end
