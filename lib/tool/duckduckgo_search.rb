@@ -27,12 +27,16 @@ class Tool
     # @return [Float] minimum seconds between consecutive {.search} calls; DDG
     #   bans IPs that hammer the HTML endpoint from a script
     MIN_INTERVAL = 2.0
+    # @return [Mutex] serializes {.search} so the {MIN_INTERVAL} throttle and
+    #   the HTTP fetch itself remain correct under concurrent agents/threads
+    MUTEX = Mutex.new
 
     # Fetch results for +query+ and render them as smolagents-style Markdown.
     # The query is whitespace-trimmed and runs of whitespace are collapsed to
     # a single space before being sent to DuckDuckGo. Calls are throttled to
     # at most one every {MIN_INTERVAL} seconds; if the previous call was more
-    # recent the method blocks until the budget elapses.
+    # recent the method blocks until the budget elapses. Concurrent calls are
+    # serialized via {MUTEX} so the throttle holds across threads.
     #
     # @param query [String] search query
     # @param max_results [Integer] maximum number of result entries to render
@@ -43,16 +47,18 @@ class Tool
       cleaned = query.to_s.strip.gsub(/\s+/, ' ')
       raise ArgumentError, 'query is empty' if cleaned.empty?
 
-      if @last_query_at
-        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
-        sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
+      MUTEX.synchronize do
+        if @last_query_at
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
+          sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
+        end
+        @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+        response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
+        raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
+
+        parse(response.body, max_results: max_results)
       end
-      @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-      response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
-      raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
-
-      parse(response.body, max_results: max_results)
     end
 
     # Parse a +html.duckduckgo.com+ result page into smolagents-style Markdown:
