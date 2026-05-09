@@ -2,26 +2,19 @@
 
 ## What this project is
 
-A small Ruby reimplementation of HuggingFace's
-[smolagents](https://github.com/huggingface/smolagents). The goal is to
-**demonstrate the agentic loop** — Thought / Tool-call / Observation, end to
-end against an OpenAI-compatible backend — in code that is well-structured and
-easy to read. Not the shortest possible, not obfuscated for brevity, but
-focused: the loop is the subject, and anything that doesn't serve understanding
-the loop is a candidate for removal.
+A Ruby implementation of a general-purpose AI assistant built around the
+Thought / Tool-call / Observation loop, talking to any OpenAI-compatible
+backend. The aim is a usable, well-structured assistant: a clean agent loop,
+a small set of solid tools, and code that stays readable as the surface
+area grows.
 
 ## Scope decisions
 
-- **ToolCallingAgent only.** The classic agent loop where the LLM emits a
-  structured tool call, the host executes the tool, and the result is fed back
-  as the next observation.
-- **No CodeAgent.** smolagents' CodeAgent has the model emit Python that the
-  host executes; sandboxing that safely (containers, syscall filters) is out of
-  scope for a learning project. Don't add it.
 - **OpenAI-compatible APIs only.** Target backends are local
-  [llama.cpp](https://github.com/ggml-org/llama.cpp) (its OpenAI-compatible HTTP
-  server) and [x.ai](https://x.ai). Both speak the OpenAI Chat Completions
-  shape, so `OpenAIClient` is the single transport. No provider-specific SDKs.
+  [llama.cpp](https://github.com/ggml-org/llama.cpp) (its OpenAI-compatible
+  HTTP server) and [x.ai](https://x.ai). Both speak the OpenAI Chat
+  Completions shape, so `OpenAIClient` is the single transport. No
+  provider-specific SDKs.
 
 ## Layout
 
@@ -56,31 +49,32 @@ the loop is a candidate for removal.
 - `lib/tool/` — bundled tool implementations, each reopening `class Tool` to
   add a module + a single `Tool` constant. Currently: `Tool::CALCULATOR`
   (Dentaku-backed arithmetic, with `**` → `^` rewriting and BigDecimal results
-  rounded to 3 places) and `Tool::WEB_SEARCH` (DuckDuckGo HTML scrape via
-  Nokogiri, throttled to one request every 2s, rendered as smolagents-style
-  Markdown). Required explicitly by the scripts that use them.
-- `run.rb` — minimal smoke test: a single inline `get_weather` tool against a
-  local llama.cpp server, exercising the full agent loop end-to-end.
-- `run-leopard.rb` — fuller smoke test using `Tool::WEB_SEARCH` +
-  `Tool::CALCULATOR` and the smolagents-style system prompt.
+  rounded to 3 places), `Tool::WEB_SEARCH` (DuckDuckGo HTML scrape via
+  Nokogiri, throttled to one request every 2s, rendered as Markdown), and
+  `Tool.delegate(...)` (factory: spawns a fresh sub-`Agent` on a clean
+  `ChatLog` and returns only its final assistant message as the parent's
+  next observation).
+- `agent.rb` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
+  server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
+  delegation enabled, and feeds it a question from `ARGV` or stdin.
 - `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
-  the prompt actually used by `run-leopard.rb`, plus the verbatim original
-  from upstream smolagents kept as a reference fixture.
+  the system prompt used by `agent.rb`, plus a verbatim upstream reference
+  fixture kept under its original filename for traceability.
 
 ## Conventions
 
 - **Ruby, no Rails.** Plain classes, `Data.define` for value objects, Faraday
   for HTTP, Rainbow for terminal color.
 - **`# frozen_string_literal: true`** at the top of every Ruby file (`lib/`,
-  `spec/`, `run.rb`, etc.). Add it to any new file you create.
+  `spec/`, `agent.rb`, etc.). Add it to any new file you create.
 - **YARD docs on every public module, class, and method.** Use concrete
   types in `@param` and `@return` (`String`, `Integer`, `Array<Hash>`,
   `Faraday::Connection`, `String, nil`) — never bare `Object` or `Any`.
   Document expected exceptions with `@raise`. One-line summary first, then
-  blank line, then tags. This applies to `lib/`; `run.rb` and `spec/` files
-  don't need it (no public API).
-- **Bundler.** Run things via `bundle exec ruby run.rb`. Add gems to `Gemfile`
-  with conservative pessimistic constraints (`~>`).
+  blank line, then tags. This applies to `lib/`; `agent.rb` and `spec/`
+  files don't need it (no public API).
+- **Bundler.** Run things via `bundle exec ruby agent.rb`. Add gems to
+  `Gemfile` with conservative pessimistic constraints (`~>`).
 - **Errors are loud.** On unexpected API responses, raise with the offending
   body included — silent fallbacks hide what the model actually did.
 - **Tests: rspec-core with minitest-style asserts.** Use the `rspec-core`
@@ -91,16 +85,13 @@ the loop is a candidate for removal.
 
 ## Working on this codebase
 
-- **Focus on the loop.** The Thought / Tool-call / Observation cycle is the
-  subject of the project. Code that serves understanding it earns its place;
-  code that doesn't is a candidate for removal.
+- **The agent loop is the spine.** The Thought / Tool-call / Observation
+  cycle is what everything else hangs off — keep it legible at a glance
+  when touching `lib/agent.rb`.
 - **Readable, not obfuscated.** Prefer the simplest implementation that
-  demonstrates the concept clearly. Don't golf code for line count, but also
-  don't add abstraction layers, plugin systems, or configuration knobs that
-  aren't needed for the next concrete step.
-- **Scope is fixed:** ToolCallingAgent only (no CodeAgent), OpenAI-compatible
-  HTTP only (no provider SDKs). Don't expand the surface area without an
-  explicit ask.
-- **Keep the loop legible in the code structure.** When touching the agent
-  loop, the Thought / Tool-call / Observation cycle should remain visible at
-  a glance — readability beats cleverness.
+  does the job. Don't golf code for line count, but also don't add
+  abstraction layers, plugin systems, or configuration knobs that aren't
+  needed for the next concrete step.
+- **Grow the assistant by adding tools, not by complicating the loop.** New
+  capabilities should land as new `Tool` constants under `lib/tool/` with
+  their own specs; the loop itself shouldn't need to know about them.
