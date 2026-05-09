@@ -4,6 +4,8 @@ require 'faraday'
 require 'nokogiri'
 require 'uri'
 
+require 'url_cache'
+
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order, and exposing it as +Tool::WEB_SEARCH+ requires +Tool+
 # already be a class.
@@ -38,6 +40,13 @@ class Tool
     # recent the method blocks until the budget elapses. Concurrent calls are
     # serialized via {MUTEX} so the throttle holds across threads.
     #
+    # Results are cached on disk via {UrlCache::DEFAULT}, keyed by the
+    # cleaned query string. A cache hit skips both the throttle and the
+    # network call. +max_results+ is not part of the cache key — in
+    # practice the tool wrapper always uses {DEFAULT_MAX_RESULTS} — so
+    # callers passing a non-default value may get a result rendered with
+    # the previously-cached size.
+    #
     # @param query [String] search query
     # @param max_results [Integer] maximum number of result entries to render
     # @return [String] Markdown-formatted result list
@@ -49,17 +58,19 @@ class Tool
       cleaned = query.to_s.strip.gsub(/\s+/, ' ')
       raise ArgumentError, 'query is empty' if cleaned.empty?
 
-      MUTEX.synchronize do
-        if @last_query_at
-          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
-          sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
+      UrlCache::DEFAULT.fetch(cleaned) do
+        MUTEX.synchronize do
+          if @last_query_at
+            elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @last_query_at
+            sleep(MIN_INTERVAL - elapsed) if elapsed < MIN_INTERVAL
+          end
+          @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+          response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
+          raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
+
+          parse(response.body, max_results: max_results)
         end
-        @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-        response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
-        raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
-
-        parse(response.body, max_results: max_results)
       end
     end
 
