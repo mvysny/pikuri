@@ -21,7 +21,7 @@ agent = Agent.new(
   system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR]
 )
-agent.allow_delegate
+agent.allow_sub_agent
 
 question =
   if ARGV.empty?

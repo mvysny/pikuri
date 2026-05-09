@@ -4,7 +4,7 @@ require 'rainbow'
 require 'tty-markdown'
 require_relative 'chat_log'
 require_relative 'openai_client'
-require_relative 'tool/delegate'
+require_relative 'tool/sub_agent'
 
 # Drives the classic Thought / Tool-call / Observation loop against an
 # OpenAI-compatible backend: send the conversation, execute any tool calls the
@@ -80,9 +80,9 @@ class Agent
     raise "Agent loop exceeded #{@max_steps} steps without finishing"
   end
 
-  # Adds a `delegate` tool which allows this agent to spin up sub-agents.
-  def allow_delegate
+  # Adds a `sub_agent` tool which allows this agent to spin up sub-agents.
+  def allow_sub_agent
     sub_tools = @tools.dup
-    @tools << Tool.delegate(client: @client, system_prompt: @system_prompt, tools: sub_tools, max_steps: @max_steps)
+    @tools << Tool.sub_agent(client: @client, system_prompt: @system_prompt, tools: sub_tools, max_steps: @max_steps)
   end
 end

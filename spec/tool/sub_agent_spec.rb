@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require 'tool/delegate'
+require 'tool/sub_agent'
 require 'chat_response'
 
-RSpec.describe '.delegate' do
+RSpec.describe '.sub_agent' do
   # Stand-in for {OpenAIClient}: records every +chat+ call (the conversation
   # log it was called with and the +tools+ kwarg) and returns a canned
   # {ChatResponse}. Keeps the spec network-free.
@@ -42,12 +42,12 @@ RSpec.describe '.delegate' do
   end
 
   describe 'tool shape' do
-    it 'returns a Tool named "delegate" with a required `task` string parameter' do
+    it 'returns a Tool named "sub_agent" with a required `task` string parameter' do
       client = fake_client_class.new(response: stop_response)
-      tool = Tool.delegate(client: client, system_prompt: 'sp', tools: [])
+      tool = Tool.sub_agent(client: client, system_prompt: 'sp', tools: [])
 
       assert_kind_of Tool, tool
-      assert_equal 'delegate', tool.name
+      assert_equal 'sub_agent', tool.name
       schema = tool.parameters.to_h
       assert_equal ['task'], schema[:required]
       assert_equal 'string', schema[:properties][:task][:type]
@@ -57,7 +57,7 @@ RSpec.describe '.delegate' do
   describe 'execution' do
     it 'runs the sub-agent loop and returns its final assistant message' do
       client = fake_client_class.new(response: stop_response)
-      tool = Tool.delegate(client: client, system_prompt: 'system!', tools: [dummy_tool])
+      tool = Tool.sub_agent(client: client, system_prompt: 'system!', tools: [dummy_tool])
 
       result = tool.run('task' => 'do the thing')
 
@@ -66,7 +66,7 @@ RSpec.describe '.delegate' do
 
     it 'sends the system prompt and the task as the sub-agent\'s first two messages' do
       client = fake_client_class.new(response: stop_response)
-      tool = Tool.delegate(client: client, system_prompt: 'be terse', tools: [])
+      tool = Tool.sub_agent(client: client, system_prompt: 'be terse', tools: [])
       tool.run('task' => 'count to three')
 
       assert_equal 1, client.calls.size
@@ -79,7 +79,7 @@ RSpec.describe '.delegate' do
 
     it 'advertises exactly the configured tool list to the sub-agent' do
       client = fake_client_class.new(response: stop_response)
-      tool = Tool.delegate(client: client, system_prompt: 'sp', tools: [dummy_tool])
+      tool = Tool.sub_agent(client: client, system_prompt: 'sp', tools: [dummy_tool])
       tool.run('task' => 'go')
 
       assert_equal [dummy_tool], client.calls.first[:tools]

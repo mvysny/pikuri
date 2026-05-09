@@ -51,7 +51,7 @@ area grows.
   (Dentaku-backed arithmetic, with `**` → `^` rewriting and BigDecimal results
   rounded to 3 places), `Tool::WEB_SEARCH` (provider-pluggable web search;
   see `lib/tool/websearch.rb` and `lib/tool/search/`), and
-  `Tool.delegate(...)` (factory: spawns a fresh sub-`Agent` on a clean
+  `Tool.sub_agent(...)` (factory: spawns a fresh sub-`Agent` on a clean
   `ChatLog` and returns only its final assistant message as the parent's
   next observation).
 - `lib/tool/websearch.rb` — defines `Tool::WEB_SEARCH`, the

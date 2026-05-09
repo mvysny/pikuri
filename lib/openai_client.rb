@@ -37,7 +37,7 @@ class OpenAIClient
   # Send the conversation in +log+ to the model and return the parsed reply.
   # Tools are passed per call rather than baked into the client, so the same
   # client can serve a parent agent and any sub-agents it spawns (e.g. via
-  # {Tool.delegate}) with different tool sets.
+  # {Tool.sub_agent}) with different tool sets.
   #
   # @param log [ChatLog] conversation history to send
   # @param tools [Array<Tool>] tools to advertise on this request; also used
