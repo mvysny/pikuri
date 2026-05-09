@@ -40,9 +40,11 @@ class Tool
     #
     # @param query [String] search query
     # @param max_results [Integer] maximum number of result entries to render
-    # @return [String] Markdown-formatted result list, or +"No results found."+
+    # @return [String] Markdown-formatted result list
     # @raise [ArgumentError] if the query is empty after normalization
-    # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails
+    # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails, or if the
+    #   response contains no results (typically an anomaly/CAPTCHA page when
+    #   the IP has been soft-blocked)
     def self.search(query, max_results: DEFAULT_MAX_RESULTS)
       cleaned = query.to_s.strip.gsub(/\s+/, ' ')
       raise ArgumentError, 'query is empty' if cleaned.empty?
@@ -65,9 +67,17 @@ class Tool
     # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined by
     # blank lines. +<b>+ highlights inside snippets are stripped.
     #
+    # An empty result list is treated as a failure — DDG always returns at
+    # least one match for any non-empty query, so zero matches means the
+    # page is a CAPTCHA/anomaly challenge or some other non-results page.
+    # In that case the method raises with the diagnostic text extracted from
+    # the body (anomaly modal if recognized, otherwise visible page text)
+    # so the agent loop sees a real error instead of a fake "no results".
+    #
     # @param html [String] HTML document body from html.duckduckgo.com
     # @param max_results [Integer] maximum number of result entries to render
-    # @return [String] Markdown-formatted result list, or +"No results found."+
+    # @return [String] Markdown-formatted result list
+    # @raise [RuntimeError] when the page contains no result nodes
     def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
       doc = Nokogiri::HTML(html)
       results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
@@ -82,10 +92,33 @@ class Tool
         }
       end
 
-      return 'No results found.' if results.empty?
+      raise diagnose_empty(doc) if results.empty?
 
       "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
     end
+
+    # Build an error message for a results page that yielded zero matches.
+    # Recognizes the DDG anomaly modal explicitly and quotes its title and
+    # description; otherwise extracts visible text from the body (with
+    # +<script>+/+<style>+/+<noscript>+ stripped and whitespace collapsed)
+    # and includes a truncated copy so the caller can see what came back.
+    #
+    # @param doc [Nokogiri::HTML::Document] parsed result page
+    # @return [String] human-readable diagnostic to feed to +raise+
+    def self.diagnose_empty(doc)
+      title = doc.at_css('.anomaly-modal__title')&.text&.strip
+      desc  = doc.at_css('.anomaly-modal__description')&.text&.strip
+      if title || desc
+        return "DuckDuckGo anomaly check (likely IP soft-block): #{[title, desc].compact.reject(&:empty?).join(' — ')}"
+      end
+
+      doc.css('script, style, noscript').remove
+      text = doc.text.gsub(/\s+/, ' ').strip
+      snippet = text.empty? ? '<empty body>' : text[0, 800]
+      snippet += '…' if text.length > 800
+      "DuckDuckGo returned no results. Page text: #{snippet}"
+    end
+    private_class_method :diagnose_empty
 
     # Decode DuckDuckGo's +//duckduckgo.com/l/?uddg=<encoded>+ redirect wrapper
     # back to the real target URL.
