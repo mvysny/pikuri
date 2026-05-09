@@ -14,13 +14,9 @@ class OpenAIClient
   # @param model [String] model identifier sent in each request body
   # @param api_key [String] bearer token; pass any non-empty placeholder for
   #   servers that do not check it (e.g. local llama.cpp)
-  # @param tools [Array<Tool>] tools advertised on every request, also used
-  #   by the response parser to resolve incoming tool-call names
   # @return [OpenAIClient]
-  def initialize(url:, model:, api_key:, tools: [])
+  def initialize(url:, model:, api_key:)
     @model = model
-    @tools = tools
-    @parser = ChatParser.new(tools: tools)
     @conn = Faraday.new(url: url) do |f|
       f.request :json
       f.response :json
@@ -29,16 +25,22 @@ class OpenAIClient
   end
 
   # Send the conversation in +log+ to the model and return the parsed reply.
+  # Tools are passed per call rather than baked into the client, so the same
+  # client can serve a parent agent and any sub-agents it spawns (e.g. via
+  # {Tool.delegate}) with different tool sets.
   #
   # @param log [ChatLog] conversation history to send
+  # @param tools [Array<Tool>] tools to advertise on this request; also used
+  #   to resolve +function.name+ in any tool-call response. Pass +[]+ for a
+  #   plain chat completion.
   # @return [ChatResponse] parsed chat-completion response
   # @raise [RuntimeError] if the HTTP call fails or the response shape is
   #   unexpected (see {ChatParser#parse})
-  def chat(log)
-    response = @conn.post('chat/completions', self.class.request_body(log, tools: @tools, model: @model))
+  def chat(log, tools: [])
+    response = @conn.post('chat/completions', self.class.request_body(log, tools: tools, model: @model))
     raise "OpenAI request failed: #{response.status} #{response.body}" unless response.success?
 
-    @parser.parse(response.body)
+    ChatParser.new(tools: tools).parse(response.body)
   end
 
   # Translate a {ChatLog} + tools + model into the request Hash POSTed to
