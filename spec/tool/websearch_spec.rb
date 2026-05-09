@@ -97,7 +97,10 @@ RSpec.describe Tool::Search, '.search' do
         raise 'network kaboom'
       end
     end
-    stub_providers([boom, good])
+    # Single provider — the cascade shuffles its provider list, so a
+    # multi-provider stub would non-deterministically pick a different one
+    # first and never trigger boom.
+    stub_providers([boom])
     assert_raises(RuntimeError) { described_class.search('ruby', max_results: 10) }
   end
 

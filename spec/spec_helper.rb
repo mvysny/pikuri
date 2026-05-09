@@ -3,6 +3,7 @@
 $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 
 require 'rspec/core'
+require 'minitest'
 require 'minitest/assertions'
 
 RSpec.configure do |config|
