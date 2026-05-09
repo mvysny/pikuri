@@ -9,6 +9,14 @@ require_relative 'chat_response'
 # such as a local llama.cpp server or x.ai. Returned messages carry both the
 # main content and any +reasoning_content+ emitted by thinking models.
 class OpenAIClient
+  # Connect/read timeout for chat-completion calls, in seconds. Local
+  # llama.cpp inference on a long prompt can easily run for several
+  # minutes, so the budget is generous; the agent loop has its own
+  # +max_steps+ guard against runaway sessions.
+  #
+  # @return [Integer]
+  TIMEOUT_SECONDS = 600
+
   # @param url [String] base URL of the OpenAI-compatible endpoint, e.g.
   #   +"http://localhost:8080/v1"+
   # @param model [String] model identifier sent in each request body
@@ -21,6 +29,8 @@ class OpenAIClient
       f.request :json
       f.response :json
       f.headers['Authorization'] = "Bearer #{api_key}"
+      f.options.open_timeout = TIMEOUT_SECONDS
+      f.options.timeout = TIMEOUT_SECONDS
     end
   end
 
