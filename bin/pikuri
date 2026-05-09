@@ -2,10 +2,13 @@
 # frozen_string_literal: true
 
 require 'bundler/setup'
-require_relative 'lib/agent'
-require_relative 'lib/openai_client'
-require_relative 'lib/tool/calculator'
-require_relative 'lib/tool/websearch'
+
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+
+require 'agent'
+require 'openai_client'
+require 'tool/calculator'
+require 'tool/websearch'
 
 client = OpenAIClient.new(
   url: 'http://192.168.122.1:8080/v1',
@@ -15,7 +18,7 @@ client = OpenAIClient.new(
 
 agent = Agent.new(
   client: client,
-  system_prompt: File.read('smolagents-system-prompt.txt'),
+  system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR]
 )
 agent.allow_delegate
