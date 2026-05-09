@@ -21,4 +21,5 @@ agent = Agent.new(
 
 agent.run_loop(user_message: 'How many seconds would it take for a leopard at full speed to run through Pont des Arts?')
 
+# To review the entire conversation:
 # puts agent.log
