@@ -44,8 +44,13 @@ class Tool
       # @return [String] Markdown-formatted result list
       # @raise [ArgumentError] if the query is empty after normalization, or
       #   if no API key is available
-      # @raise [RuntimeError] if the HTTP call to Brave fails (non-2xx) or
-      #   the response contains no results
+      # @raise [Tool::Search::Unavailable] when Brave returns HTTP 429
+      #   (rate limit / quota exhausted) or 5xx — "try again later"
+      #   responses the cascade in {Tool::Search.search} can fall back
+      #   from. Other non-2xx (e.g. 401/403 from a bad API key) bubble up
+      #   as +RuntimeError+ so config problems stay visible.
+      # @raise [RuntimeError] for non-rate-limit HTTP failures or when the
+      #   response shape contains no results.
       def self.search(query, max_results: DEFAULT_MAX_RESULTS, api_key: ENV.fetch(ENV_KEY, nil))
         cleaned = query.to_s.strip.gsub(/\s+/, ' ')
         raise ArgumentError, 'query is empty' if cleaned.empty?
@@ -57,7 +62,13 @@ class Tool
             { q: cleaned, count: max_results },
             { 'X-Subscription-Token' => api_key, 'Accept' => 'application/json' }
           )
-          raise "Brave Search request failed: #{response.status} #{response.body}" unless response.success?
+          unless response.success?
+            if response.status == 429 || response.status >= 500
+              raise Unavailable, "HTTP #{response.status}"
+            end
+
+            raise "Brave Search request failed: #{response.status} #{response.body}"
+          end
 
           parse(response.body, max_results: max_results)
         end

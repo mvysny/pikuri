@@ -51,10 +51,13 @@ class Tool
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
       # @raise [ArgumentError] if the query is empty after normalization
-      # @raise [RuntimeError] if the HTTP call to DuckDuckGo fails, or if the
-      #   response is unparseable (typically an anomaly/CAPTCHA page when the
-      #   IP has been soft-blocked). A genuine empty-results page is *not* an
-      #   error; see {.parse}.
+      # @raise [Tool::Search::Unavailable] when DDG soft-blocks the IP
+      #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
+      #   later" responses the cascade in {Tool::Search.search} can fall
+      #   back from.
+      # @raise [RuntimeError] if the HTTP call fails for other reasons or
+      #   the empty-results page is in an unrecognized layout. A genuine
+      #   empty-results page is *not* an error; see {.parse}.
       def self.search(query, max_results: DEFAULT_MAX_RESULTS)
         cleaned = query.to_s.strip.gsub(/\s+/, ' ')
         raise ArgumentError, 'query is empty' if cleaned.empty?
@@ -68,7 +71,13 @@ class Tool
             @last_query_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
             response = Faraday.get(ENDPOINT, { q: cleaned }, { 'User-Agent' => USER_AGENT })
-            raise "DuckDuckGo request failed: #{response.status} #{response.body}" unless response.success?
+            unless response.success?
+              if response.status == 429 || response.status >= 500
+                raise Unavailable, "HTTP #{response.status}"
+              end
+
+              raise "DuckDuckGo request failed: #{response.status} #{response.body}"
+            end
 
             parse(response.body, max_results: max_results)
           end
@@ -90,8 +99,12 @@ class Tool
       # @param html [String] HTML document body from html.duckduckgo.com
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
+      # @raise [Tool::Search::Unavailable] when the page is the DDG
+      #   anomaly/CAPTCHA modal (IP soft-block) — a "try again later" the
+      #   cascade can fall back from.
       # @raise [RuntimeError] when the page contains no result nodes and is
-      #   not recognized as a genuine no-results page
+      #   not recognized as either a genuine no-results page or the
+      #   anomaly modal (likely a layout change worth surfacing loudly).
       def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
         doc = Nokogiri::HTML(html)
         results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
@@ -109,11 +122,24 @@ class Tool
         if results.empty?
           return "## Search Results\n\nNo results found." if genuine_no_results?(doc)
 
-          raise diagnose_empty(doc)
+          message = diagnose_empty(doc)
+          raise(anomaly_modal?(doc) ? Unavailable : RuntimeError, message)
         end
 
         "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
       end
+
+      # True when the page contains DDG's anomaly/CAPTCHA modal — i.e. the
+      # IP has been soft-blocked. Used by {.parse} to pick between
+      # {Tool::Search::Unavailable} (recoverable, fall back to another
+      # provider) and {RuntimeError} (unknown layout, surface loudly).
+      #
+      # @param doc [Nokogiri::HTML::Document] parsed result page
+      # @return [Boolean]
+      def self.anomaly_modal?(doc)
+        !!(doc.at_css('.anomaly-modal__title') || doc.at_css('.anomaly-modal__description'))
+      end
+      private_class_method :anomaly_modal?
 
       # True when a results page with zero result nodes looks like DDG's own
       # "no results found" page (narrow query) rather than an anomaly/CAPTCHA

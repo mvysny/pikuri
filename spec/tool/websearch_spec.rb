@@ -3,23 +3,89 @@
 require 'tool'
 require 'tool/websearch'
 
-RSpec.describe Tool::Search, '.provider' do
+RSpec.describe Tool::Search, '.providers' do
   before { @saved = ENV[Tool::Search::Brave::ENV_KEY] }
   after  { ENV[Tool::Search::Brave::ENV_KEY] = @saved }
 
-  it 'falls back to DuckDuckGo when no Brave key is set' do
+  it 'lists only DuckDuckGo when no Brave key is set' do
     ENV.delete(Tool::Search::Brave::ENV_KEY)
-    assert_equal Tool::Search::DuckDuckGo, described_class.provider
+    assert_equal [Tool::Search::DuckDuckGo], described_class.providers
   end
 
   it 'treats a blank Brave key as unset' do
     ENV[Tool::Search::Brave::ENV_KEY] = '   '
-    assert_equal Tool::Search::DuckDuckGo, described_class.provider
+    assert_equal [Tool::Search::DuckDuckGo], described_class.providers
   end
 
-  it 'picks Brave when its key is set' do
+  it 'includes Brave when its key is set' do
     ENV[Tool::Search::Brave::ENV_KEY] = 'fake-key'
-    assert_equal Tool::Search::Brave, described_class.provider
+    assert_equal [Tool::Search::DuckDuckGo, Tool::Search::Brave].sort_by(&:name),
+                 described_class.providers.sort_by(&:name)
+  end
+end
+
+RSpec.describe Tool::Search, '.search' do
+  let(:good) do
+    Module.new do
+      def self.name = 'Tool::Search::Good'
+
+      def self.search(query, max_results:)
+        "ok: #{query} (#{max_results})"
+      end
+    end
+  end
+
+  let(:bad) do
+    Module.new do
+      def self.name = 'Tool::Search::Bad'
+
+      def self.search(_query, max_results:)
+        _ = max_results
+        raise Tool::Search::Unavailable, 'rate-limited'
+      end
+    end
+  end
+
+  def stub_providers(list)
+    original = Tool::Search.method(:providers)
+    Tool::Search.singleton_class.define_method(:providers) { list }
+    yield
+  ensure
+    Tool::Search.singleton_class.define_method(:providers, original)
+  end
+
+  it 'returns the first successful provider output' do
+    stub_providers([good]) do
+      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    end
+  end
+
+  it 'falls back past an Unavailable provider to one that succeeds' do
+    stub_providers([bad, good]) do
+      assert_equal 'ok: ruby (5)', described_class.search('ruby', max_results: 5)
+    end
+  end
+
+  it 'returns an "Error: ..." string when every provider is unavailable' do
+    stub_providers([bad, bad]) do
+      result = described_class.search('ruby', max_results: 10)
+      assert_match(/\AError: all search providers temporarily unavailable/, result)
+      assert_includes result, 'Bad (rate-limited)'
+    end
+  end
+
+  it 'lets non-Unavailable exceptions bubble up' do
+    boom = Module.new do
+      def self.name = 'Tool::Search::Boom'
+
+      def self.search(_query, max_results:)
+        _ = max_results
+        raise 'network kaboom'
+      end
+    end
+    stub_providers([boom, good]) do
+      assert_raises(RuntimeError) { described_class.search('ruby', max_results: 10) }
+    end
   end
 end
 
@@ -41,11 +107,13 @@ RSpec.describe 'Tool::WEB_SEARCH' do
     refute_includes schema[:required], 'max_results'
   end
 
-  describe 'dispatch to the selected provider' do
+  describe 'dispatch through the cascade' do
     let(:fake_provider) do
       Module.new do
         class << self
           attr_reader :calls
+
+          def name = 'Tool::Search::Fake'
 
           def search(query, max_results:)
             @calls ||= []
@@ -57,13 +125,13 @@ RSpec.describe 'Tool::WEB_SEARCH' do
     end
 
     around do |example|
-      original = Tool::Search.method(:provider)
+      original = Tool::Search.method(:providers)
       provider = fake_provider
-      Tool::Search.singleton_class.define_method(:provider) { provider }
+      Tool::Search.singleton_class.define_method(:providers) { [provider] }
       begin
         example.run
       ensure
-        Tool::Search.singleton_class.define_method(:provider, original)
+        Tool::Search.singleton_class.define_method(:providers, original)
       end
     end
 

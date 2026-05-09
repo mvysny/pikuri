@@ -64,7 +64,8 @@ class Tool
   CALCULATOR = new(
     name: 'calculator',
     description: 'Evaluates a basic arithmetic expression and returns ' \
-                 'the numeric result. Supports +, -, *, /, ** ' \
+                 'the numeric result. Use this for any arithmetic ' \
+    'beyond simple mental math. Supports +, -, *, /, ** ' \
                  '(exponentiation), %, parentheses, and decimal ' \
                  'numbers. No variables or functions — pass concrete ' \
                  'numbers only.',

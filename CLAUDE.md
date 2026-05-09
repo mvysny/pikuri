@@ -54,17 +54,26 @@ area grows.
   `Tool.delegate(...)` (factory: spawns a fresh sub-`Agent` on a clean
   `ChatLog` and returns only its final assistant message as the parent's
   next observation).
-- `lib/tool/websearch.rb` — defines `Tool::WEB_SEARCH` and `Tool::Search.provider`,
-  which picks a provider based on which API tokens are present in ENV
-  (Brave when `BRAVE_SEARCH_API_KEY` is set, otherwise DuckDuckGo). The
-  selection is by-token, not runtime cascade — if the chosen provider
-  fails the call fails.
+- `lib/tool/websearch.rb` — defines `Tool::WEB_SEARCH`, the
+  `Tool::Search::Unavailable` exception, `Tool::Search.providers` (the
+  list of currently-configured providers — DuckDuckGo always, Brave when
+  `BRAVE_SEARCH_API_KEY` is set), and `Tool::Search.search`, which runs
+  the cascade: shuffles `providers` randomly and tries each until one
+  succeeds, falling back only on `Unavailable` (rate-limit / bot-block /
+  quota-exhausted). Anything else (network errors, parse failures, bad
+  API keys returning 401/403) bubbles up as the original exception. If
+  every provider reports `Unavailable`, returns an `"Error: ..."` string
+  in the calculator-style convention so the agent loop can feed the
+  failure back to the model as the next observation.
 - `lib/tool/search/` — search-provider modules. Each exposes
-  `.search(query, max_results:)` returning the same smolagents-style Markdown
-  shape so the LLM sees a stable format. Currently: `Tool::Search::DuckDuckGo`
-  (HTML scrape of `html.duckduckgo.com`, throttled to one request every 2s,
-  prone to IP soft-blocks) and `Tool::Search::Brave` (official Web Search API
-  with `X-Subscription-Token`).
+  `.search(query, max_results:)` returning the same smolagents-style
+  Markdown shape so the LLM sees a stable format, and raises
+  `Tool::Search::Unavailable` on rate-limit / bot-block / quota signals
+  (DDG anomaly modal, HTTP 429, HTTP 5xx). Currently:
+  `Tool::Search::DuckDuckGo` (HTML scrape of `html.duckduckgo.com`,
+  throttled to one request every 2s, prone to IP soft-blocks) and
+  `Tool::Search::Brave` (official Web Search API with
+  `X-Subscription-Token`).
 - `bin/pikuri` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
   server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
   delegation enabled, and feeds it a question from `ARGV` or stdin.

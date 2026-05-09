@@ -55,24 +55,24 @@ RSpec.describe Tool::Search::DuckDuckGo do
       assert_equal "## Search Results\n\nNo results found.", output
     end
 
-    it 'still raises on the anomaly modal even when "No results found" appears in body text' do
+    it 'still flags the anomaly modal even when "No results found" appears in body text' do
       html = <<~HTML
         <html><body>
           <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
           <p>No results found for anything because the page is a CAPTCHA.</p>
         </body></html>
       HTML
-      assert_raises(RuntimeError) { described_class.parse(html) }
+      assert_raises(Tool::Search::Unavailable) { described_class.parse(html) }
     end
 
-    it 'recognizes the DDG anomaly/CAPTCHA modal and surfaces its text' do
+    it 'raises Unavailable on the DDG anomaly/CAPTCHA modal so the cascade can fall back' do
       html = <<~HTML
         <html><body>
           <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
           <div class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</div>
         </body></html>
       HTML
-      err = assert_raises(RuntimeError) { described_class.parse(html) }
+      err = assert_raises(Tool::Search::Unavailable) { described_class.parse(html) }
       assert_includes err.message, 'anomaly check'
       assert_includes err.message, 'Unfortunately, bots use DuckDuckGo too.'
     end
