@@ -6,6 +6,8 @@ gem 'rainbow', '~> 3.1'
 gem 'tty-markdown', '~> 0.7'
 
 gem 'nokogiri', '~> 1.19'
+gem 'ruby-readability', '~> 0.7'
+gem 'reverse_markdown', '~> 3.0'
 
 gem 'dentaku', '~> 3.5'
 # Dentaku 3.5 transitively requires tsort, which was a default gem in
