@@ -13,7 +13,7 @@ weather_tool = Tool.new(
 )
 
 client = OpenAIClient.new(
-  url: 'http://192.168.122.1:8080/v1',
+  url: 'http://127.0.0.1:8080/v1',
   model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
   api_key: 'not-needed',
   tools: [weather_tool]
@@ -26,4 +26,5 @@ agent = Agent.new(
 
 agent.run_loop(user_message: "What's the weather in Helsinki?")
 
-puts agent.log
+# To review the entire conversation:
+# puts agent.log
