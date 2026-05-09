@@ -24,15 +24,25 @@ class Tool
     #   cannot dump an arbitrarily large page into the conversation.
     MAX_MAX_CHARS = 100_000
 
+    # On-disk cache used by {.visit} to memoize fetched pages. Defined
+    # as a method so specs can swap it for an isolated cache or
+    # {UrlCache::NULL} without touching the shared instance.
+    #
+    # @return [UrlCache, #fetch]
+    CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_fetch")
+    def self.cache
+      CACHE
+    end
+
     # Fetch +url+ via {Tool::Scraper::Simple} and truncate the rendered
     # Markdown to +max_chars+ characters.
     #
-    # The full extracted Markdown is cached on disk via
-    # {UrlCache::DEFAULT}, keyed by URL, so repeat visits within the
-    # cache TTL skip the network and the extraction pass entirely.
-    # +max_chars+ is not part of the cache key — different values for
-    # the same URL share one entry, and truncation runs after the cache
-    # lookup. Errors raised by {Tool::Scraper::Simple} are not cached.
+    # The full extracted Markdown is cached on disk via {.cache}, keyed
+    # by URL, so repeat visits within the cache TTL skip the network
+    # and the extraction pass entirely. +max_chars+ is not part of the
+    # cache key — different values for the same URL share one entry,
+    # and truncation runs after the cache lookup. Errors raised by
+    # {Tool::Scraper::Simple} are not cached.
     #
     # @param url [String] absolute HTTP(S) URL of the page to download
     # @param max_chars [Integer] character cap on the returned Markdown.
@@ -46,7 +56,7 @@ class Tool
     #   redirect arrives without a +Location+ header
     def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
       max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
-      markdown = UrlCache::DEFAULT.fetch(url) { Scraper::Simple.visit(url) }
+      markdown = cache.fetch(url) { Scraper::Simple.visit(url) }
       truncate(markdown, max_chars)
     end
 

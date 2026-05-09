@@ -30,13 +30,14 @@ class Tool
       list
     end
 
-    # On-disk cache used by {.search} to memoize answered queries. Defined
-    # as a method so specs can swap it for an isolated, throwaway cache
-    # without touching the shared default.
+    # On-disk cache used by {.search} to memoize answered queries.
+    # Defined as a method so specs can swap it for an isolated cache
+    # or {UrlCache::NULL} without touching the shared instance.
     #
-    # @return [UrlCache]
+    # @return [UrlCache, #fetch]
+    CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
     def self.cache
-      UrlCache::DEFAULT
+      CACHE
     end
 
     # Run +query+ through the configured providers in random order, falling

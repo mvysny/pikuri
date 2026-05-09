@@ -3,12 +3,18 @@
 require 'digest'
 require 'fileutils'
 
-# On-disk cache for URL-keyed text payloads. Used by the bundled tools to
-# avoid re-fetching the same page or re-issuing the same web-search query
-# within a TTL window: {Tool::Scraper::Simple.visit} caches the rendered
+# On-disk cache for string-keyed text payloads. Used by the bundled tools
+# to avoid re-fetching the same page or re-issuing the same web-search
+# query within a TTL window: {Tool::WebFetch.visit} caches the rendered
 # Markdown for a URL, and the {Tool::Search} provider modules cache the
 # rendered result list for a query (the query string itself acts as the
-# "URL" — keys are SHA-256 hashed, so any opaque string works).
+# key — keys are SHA-256 hashed, so any opaque string works).
+#
+# Each tool wires its own {UrlCache} instance against a dedicated
+# subdirectory under {ROOT_DIR}, so a +web_search+ query string and a
+# +web_fetch+ URL string can never collide on the same cache file. There
+# is no global default singleton — pass a fresh instance to whichever
+# code needs caching, or use {NULL} to disable caching entirely.
 #
 # One file per entry, named +<sha256>.txt+ under {#initialize}'s +dir+.
 # Freshness is tracked via the file's mtime; there is no sidecar metadata.
@@ -19,10 +25,13 @@ require 'fileutils'
 # and both write the same file. That is the intended tradeoff to keep this
 # under a few dozen lines — the worst-case cost is a duplicate fetch.
 class UrlCache
-  # Default cache directory under +/tmp+. Writeable on Linux/macOS and
-  # cleared on reboot, which is fine for a downloads cache.
+  # Root directory under which per-tool cache subdirectories live.
+  # Writeable on Linux/macOS and cleared on reboot, which is fine for a
+  # downloads cache. Each tool picks its own subdir
+  # (e.g. +"#{ROOT_DIR}/web_fetch"+) so keys from different tools cannot
+  # collide.
   # @return [String]
-  DEFAULT_DIR = '/tmp/pikuri/cache/url'
+  ROOT_DIR = '/tmp/pikuri/cache'
 
   # Default freshness window: 24 hours, in seconds.
   # @return [Integer]
@@ -32,7 +41,7 @@ class UrlCache
   #   mtime older than this are treated as misses
   # @param dir [String] directory under which cache files live; created
   #   lazily on first write
-  def initialize(ttl:, dir: DEFAULT_DIR)
+  def initialize(ttl:, dir:)
     @ttl = ttl
     @dir = dir
   end
@@ -69,8 +78,12 @@ class UrlCache
     File.join(@dir, "#{Digest::SHA256.hexdigest(url)}.txt")
   end
 
-  # Single shared instance used by the bundled tools. Tests or alternative
-  # wirings can build a fresh {UrlCache} with their own +ttl+/+dir+.
-  # @return [UrlCache]
-  DEFAULT = new(ttl: DEFAULT_TTL)
+  # Null cache: a drop-in replacement that always misses and never
+  # persists. Use this in tests (or anywhere else you want caching off)
+  # without giving up the {UrlCache#fetch} contract.
+  NULL = Object.new
+  def NULL.fetch(_key)
+    yield
+  end
+  NULL.freeze
 end

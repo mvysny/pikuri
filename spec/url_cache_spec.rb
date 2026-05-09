@@ -69,4 +69,23 @@ RSpec.describe UrlCache do
       assert_equal File.join(tmp, "#{digest}.txt"), cache.path_for(key)
     end
   end
+
+  describe 'NULL' do
+    it 'always yields and returns the block result' do
+      calls = 0
+      result = UrlCache::NULL.fetch('https://example.com') do
+        calls += 1
+        'fresh'
+      end
+      assert_equal 'fresh', result
+      assert_equal 1, calls
+    end
+
+    it 'never persists, so a second call yields again' do
+      calls = 0
+      UrlCache::NULL.fetch('k') { calls += 1; 'x' }
+      UrlCache::NULL.fetch('k') { calls += 1; 'x' }
+      assert_equal 2, calls
+    end
+  end
 end

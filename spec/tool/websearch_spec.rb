@@ -49,26 +49,34 @@ RSpec.describe Tool::Search, '.search' do
     end
   end
 
-  # Per-test isolated cache + provider list, so neither a previous run's
-  # +/tmp/pikuri+ entries nor a previous +it+ block's cached output can
-  # leak into the current example.
+  # Save and restore +.providers+ around each example so +stub_providers+
+  # cannot leak across +it+ blocks. The cache is +UrlCache::NULL+ globally
+  # (see +spec_helper.rb+); the two examples that actually exercise
+  # caching opt back into a real tmpdir cache themselves.
   around do |example|
-    Dir.mktmpdir('pikuri-cache-test-') do |dir|
-      cache = UrlCache.new(ttl: 60, dir: dir)
-      original_cache = Tool::Search.method(:cache)
-      original_providers = Tool::Search.method(:providers)
-      Tool::Search.singleton_class.define_method(:cache) { cache }
-      begin
-        example.run
-      ensure
-        Tool::Search.singleton_class.define_method(:cache, original_cache)
-        Tool::Search.singleton_class.define_method(:providers, original_providers)
-      end
+    original_providers = Tool::Search.method(:providers)
+    begin
+      example.run
+    ensure
+      Tool::Search.singleton_class.define_method(:providers, original_providers)
     end
   end
 
   def stub_providers(list)
     Tool::Search.singleton_class.define_method(:providers) { list }
+  end
+
+  def with_real_cache
+    Dir.mktmpdir('pikuri-cache-test-') do |dir|
+      cache = UrlCache.new(ttl: 60, dir: dir)
+      original_cache = Tool::Search.method(:cache)
+      Tool::Search.singleton_class.define_method(:cache) { cache }
+      begin
+        yield
+      ensure
+        Tool::Search.singleton_class.define_method(:cache, original_cache)
+      end
+    end
   end
 
   it 'returns the first successful provider output' do
@@ -121,24 +129,28 @@ RSpec.describe Tool::Search, '.search' do
   end
 
   it 'caches the answer so a subsequent call with the same query skips providers' do
-    calls = 0
-    once = Module.new
-    once.define_singleton_method(:name) { 'Tool::Search::Once' }
-    once.define_singleton_method(:search) { |q, max_results:| calls += 1; "ok: #{q} (#{max_results})" }
-    stub_providers([once])
+    with_real_cache do
+      calls = 0
+      once = Module.new
+      once.define_singleton_method(:name) { 'Tool::Search::Once' }
+      once.define_singleton_method(:search) { |q, max_results:| calls += 1; "ok: #{q} (#{max_results})" }
+      stub_providers([once])
 
-    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
-    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
-    assert_equal 1, calls, 'second call should be served from cache'
+      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+      assert_equal 1, calls, 'second call should be served from cache'
+    end
   end
 
   it 'does not cache the all-unavailable error string' do
-    stub_providers([bad, bad])
-    described_class.search('ruby', max_results: 10)
-    # Now flip to a working provider — if the error had been cached, this
-    # would still return the previous "Error: ..." string.
-    stub_providers([good])
-    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    with_real_cache do
+      stub_providers([bad, bad])
+      described_class.search('ruby', max_results: 10)
+      # Now flip to a working provider — if the error had been cached, this
+      # would still return the previous "Error: ..." string.
+      stub_providers([good])
+      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    end
   end
 end
 
@@ -178,19 +190,13 @@ RSpec.describe 'Tool::WEB_SEARCH' do
     end
 
     around do |example|
-      Dir.mktmpdir('pikuri-cache-test-') do |dir|
-        cache = UrlCache.new(ttl: 60, dir: dir)
-        original_providers = Tool::Search.method(:providers)
-        original_cache = Tool::Search.method(:cache)
-        provider = fake_provider
-        Tool::Search.singleton_class.define_method(:providers) { [provider] }
-        Tool::Search.singleton_class.define_method(:cache) { cache }
-        begin
-          example.run
-        ensure
-          Tool::Search.singleton_class.define_method(:providers, original_providers)
-          Tool::Search.singleton_class.define_method(:cache, original_cache)
-        end
+      original_providers = Tool::Search.method(:providers)
+      provider = fake_provider
+      Tool::Search.singleton_class.define_method(:providers) { [provider] }
+      begin
+        example.run
+      ensure
+        Tool::Search.singleton_class.define_method(:providers, original_providers)
       end
     end
 
