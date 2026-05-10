@@ -8,10 +8,14 @@ class Tool
   # agent loop in OpenAI tool-call shape.
   module WebScrape
     # @return [Integer] default character cap on the Markdown returned
-    #   by {.visit}. Long-form articles routinely run 50K+ chars after
-    #   readability extraction; 5K is enough to give the LLM the gist
-    #   of most pages without flooding the context window.
-    DEFAULT_MAX_CHARS = 5_000
+    #   by {.visit}. Sized to cover most post-readability article bodies
+    #   in full on the first call, so the LLM doesn't have to re-request
+    #   with a larger cap and pollute its context with the same prefix
+    #   twice. ~5K tokens at the typical char/token ratio — light even
+    #   for small local models. The genuinely long pages (long Wikipedia
+    #   entries, multi-section docs) still get cut, and the truncation
+    #   marker invites a deliberate larger {.visit} call when needed.
+    DEFAULT_MAX_CHARS = 20_000
 
     # @return [Integer] hard ceiling on the +max_chars+ argument to
     #   {.visit}. Requests above this are clamped silently so the LLM
@@ -85,18 +89,23 @@ class Tool
   # @return [Tool]
   WEB_SCRAPE = new(
     name: 'web_scrape',
-    description: 'Scrapes the rendered webpage, PDF or text file at the given URL and returns its ' \
-    'main content as Markdown.',
+    description: <<~DESC,
+      Scrapes the rendered webpage, PDF, or text file at the given URL and returns its main content as Markdown.
+
+      Usage:
+      - Use for HTML pages or PDFs where you want readable content — readability extraction strips nav, sidebars, and boilerplate.
+      - For raw textual payloads (JSON, CSV, robots.txt, source files), use fetch instead — it returns bytes verbatim, while web_scrape would corrupt them with a Markdown pass.
+    DESC
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to scrape, including ' \
                         'the scheme, e.g. "https://example.com/article".'
       p.optional_integer :max_chars,
                          'Maximum number of characters of Markdown to ' \
-                         'return. Defaults to 5000; hard-capped at ' \
+                         'return. Defaults to 20000; hard-capped at ' \
                          '100000. When the page is longer than this, ' \
                          'output is cut and a marker reports the full ' \
-        'length.'
+                         'length.'
     },
     execute: ->(url:, max_chars: WebScrape::DEFAULT_MAX_CHARS) {
       WebScrape.visit(url, max_chars: max_chars)

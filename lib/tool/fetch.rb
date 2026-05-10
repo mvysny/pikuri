@@ -13,8 +13,10 @@ class Tool
   # where any rendering pass would corrupt the payload.
   module Fetch
     # @return [Integer] default character cap on the body returned by
-    #   {.fetch}. Matches {Tool::WebScrape::DEFAULT_MAX_CHARS} so the
-    #   LLM sees consistent truncation behavior across both tools.
+    #   {.fetch}. Smaller than {Tool::WebScrape::DEFAULT_MAX_CHARS}
+    #   because fetch's content profile is bimodal — most JSON/XML/CSV
+    #   responses are tiny, and the long-tail (large data dumps) is
+    #   better re-requested deliberately than padded into every default.
     DEFAULT_MAX_CHARS = 5_000
 
     # @return [Integer] hard ceiling on the +max_chars+ argument to
