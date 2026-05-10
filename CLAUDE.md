@@ -79,18 +79,21 @@ bundled tools.
   `Tool::WEB_SCRAPE` and `Tool::FETCH` (HTML/PDF→Markdown via Faraday
   + readability + reverse_markdown; see `lib/tool/scraper/`), and the
   `Tool.sub_agent(...)` factory described above.
-- `lib/tool/websearch.rb` — defines `Tool::WEB_SEARCH`, the
-  `Tool::Search::Unavailable` exception, `Tool::Search.providers` (the
-  list of currently-configured providers — DuckDuckGo always, Brave
-  when `BRAVE_SEARCH_API_KEY` is set), and `Tool::Search.search`,
-  which runs the cascade: shuffles `providers` randomly and tries each
-  until one succeeds, falling back only on `Unavailable` (rate-limit /
-  bot-block / quota-exhausted). Anything else (network errors, parse
-  failures, bad API keys returning 401/403) bubbles up as the original
-  exception. If every provider reports `Unavailable`, returns an
-  `"Error: ..."` string in the calculator-style convention so the
-  agent loop can feed the failure back to the model as the next
-  observation.
+- `lib/tool/search.rb` — `Tool::Search`: search-orchestration
+  namespace. Defines `Tool::Search::Unavailable` (raised by providers
+  on rate-limit / bot-block / quota-exhausted), `Tool::Search.providers`
+  (DuckDuckGo always, Brave when `BRAVE_SEARCH_API_KEY` is set,
+  recomputed every call), and `Tool::Search.search`, which runs the
+  cascade: shuffles `providers` randomly, tries each until one
+  succeeds, falling back only on `Unavailable`. Anything else (network
+  errors, parse failures, bad API keys returning 401/403) bubbles up
+  as the original exception. If every provider reports `Unavailable`,
+  returns an `"Error: ..."` string so the agent loop can feed the
+  failure back to the model as the next observation.
+- `lib/tool/web_search.rb` — defines the LLM-facing `Tool::WEB_SEARCH`
+  constant (a thin wrapper that calls `Tool::Search.search`). The
+  search orchestration itself lives in `lib/tool/search.rb`; this
+  file owns only the OpenAI tool-call shape.
 - `lib/tool/search/` — search-provider modules. Each exposes
   `.search(query, max_results:)` returning the same smolagents-style
   Markdown shape so the LLM sees a stable format, and raises

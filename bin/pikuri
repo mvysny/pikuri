@@ -8,7 +8,7 @@ $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 require 'ruby_llm'
 require 'agent'
 require 'tool/calculator'
-require 'tool/websearch'
+require 'tool/web_search'
 require 'tool/web_scrape'
 require 'tool/fetch'
 

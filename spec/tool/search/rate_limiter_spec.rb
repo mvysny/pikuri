@@ -2,7 +2,6 @@
 
 require 'timecop'
 require 'tool'
-require 'tool/websearch'
 require 'tool/search/rate_limiter'
 
 RSpec.describe Tool::Search::RateLimiter do
