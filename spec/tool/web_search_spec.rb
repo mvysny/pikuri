@@ -10,7 +10,7 @@ RSpec.describe 'Tool::WEB_SEARCH' do
 
   it 'declares a required string `query` parameter' do
     schema = Tool::WEB_SEARCH.parameters.to_h
-    assert_equal({ type: 'string', description: 'The search query to perform.' },
+    assert_equal({ type: 'string', description: 'The search query, e.g. "BigDecimal precision Ruby".' },
                  schema[:properties][:query])
     assert_includes schema[:required], 'query'
   end
