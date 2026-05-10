@@ -50,22 +50,69 @@ confined to one or two files.
 
 ## The seam
 
-Files allowed to reference `RubyLLM::*`:
+Pikuri sits *on top of* ruby_llm; we don't pretend otherwise. The seam
+protects **consumers of pikuri's library code** — anything that
+`require`s `lib/`. The boot/wiring layer (`bin/pikuri`) is allowed to
+talk to both, because it's the script that wires them together.
 
-- `lib/agent.rb` — constructs `RubyLLM::Chat`, attaches event
-  listeners, calls `complete`.
-- `lib/tool.rb` — `Tool.new(...)` becomes a factory that emits a
-  synthetic `RubyLLM::Tool` subclass.
-- `lib/llm/config.rb` (new, optional) — translates pikuri's
-  `(url:, model:, api_key:)` into ruby_llm config.
-
-Everything else — bundled tools, scrapers, search providers, specs,
-`bin/pikuri` — talks to pikuri's surface (`Agent`, `Tool::CALCULATOR`,
-…), not to ruby_llm.
+| Layer | May reference `RubyLLM::*`? | Why |
+| --- | --- | --- |
+| `bin/pikuri` | ✅ | Boot/wiring layer. Configures the underlying ruby_llm runtime. |
+| `lib/agent.rb` | ✅ | Constructs `RubyLLM::Chat`, attaches event listeners, calls `complete`. |
+| `lib/tool.rb` | ✅ | `Tool.new(...)` factory emits a synthetic `RubyLLM::Tool` subclass. |
+| Everything else in `lib/` (bundled tools, scrapers, search providers) | ❌ | Talks to pikuri's surface (`Tool.new`, `Tool::Parameters`, …), not to ruby_llm. |
+| Specs | only when testing the seam | A spec for `Agent` may stub `RubyLLM::Chat`; a spec for `Tool::CALCULATOR` should not see ruby_llm at all. |
 
 The "fork or swap" contingency is a fixed-cost operation against this
-seam: rewriting these three files plus the listener wiring inside
-`Agent` brings the loop back in-house.
+seam: rewriting `Agent` (replace `RubyLLM::Chat` with an in-house
+loop) and `Tool` (replace the synthetic-subclass factory with
+pikuri's old `Data.define` value object) brings the loop back
+in-house.
+
+## Configuration split
+
+ruby_llm is the underlying transport layer; pikuri is the agent layer
+on top. Each owns its own configuration:
+
+| Goes in `RubyLLM.configure` | Goes in `Agent.new` |
+| --- | --- |
+| `openai_api_base`, `openai_api_key` (and similar for other providers) | `system_prompt` (agent identity) |
+| `request_timeout`, `max_retries`, `retry_*`, `http_proxy` (transport policy) | `tools` (agent capability) |
+| `default_model` (process-wide fallback) | `model` (this agent's choice; defaults to `RubyLLM.config.default_model`) |
+| `logger`, `log_*` (observability of transport) | `max_steps` and any future agent-specific knobs |
+
+Concrete boot:
+
+```ruby
+# bin/pikuri
+RubyLLM.configure do |c|
+  c.openai_api_base = 'http://192.168.122.1:8080/v1'
+  c.openai_api_key  = 'not-needed'
+end
+
+agent = Agent.new(
+  model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
+  system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
+  tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH]
+)
+agent.run_loop(user_message: question)
+```
+
+`Agent#initialize` builds the `RubyLLM::Chat` from those args:
+
+```ruby
+# lib/agent.rb (sketch)
+def initialize(model: RubyLLM.config.default_model, system_prompt:, tools: [], max_steps: 20)
+  @chat = RubyLLM.chat(model: model)
+  @chat.with_instructions(system_prompt)
+  tools.each { |t| @chat.with_tool(t.to_ruby_llm) }
+  @max_steps = max_steps
+end
+```
+
+For test isolation, prefer `RubyLLM.context { |c| ... }` over mutating
+the global `RubyLLM.configure` between tests; the context returns a
+forked config without touching process-wide state.
 
 ## File-by-file plan
 
@@ -76,12 +123,12 @@ seam: rewriting these three files plus the listener wiring inside
 | `lib/openai_client.rb` | **delete** | Replaced by ruby_llm. |
 | `lib/chat_response.rb` | **delete** | Replaced by ruby_llm's `Message`/`Response` types. |
 | `schemas/chat_completion_response.json` | **delete** | Drop JSON Schema response validation. |
-| `lib/llm/config.rb` | **new** | Tiny adapter: takes pikuri's `(url:, model:, api_key:)` and configures ruby_llm (global config + per-Chat overrides). The seam for transport config. |
+| `lib/llm/config.rb` | **not needed** | Initially planned, but the configuration-split decision (see "Configuration split" section below) means `bin/pikuri` calls `RubyLLM.configure` directly. No pikuri-side wrapper required. |
 | `lib/tool.rb` | rewrite | `Tool.new(name:, description:, parameters:, execute:)` becomes a factory: builds and returns a synthetic `RubyLLM::Tool` subclass whose `execute` body runs pikuri's `Parameters#validate` first, then the user-supplied callable. Public surface (constants like `Tool::CALCULATOR`) unchanged. |
 | `lib/tool/parameters.rb` | keep | Validation ordering is the load-bearing detail — see "Tool validation ordering" below. The synthetic ruby_llm tool advertises a permissive schema; pikuri's validator does the actual check. |
 | `lib/tool/*.rb` (calculator, web_search, web_scrape, fetch, sub_agent) | keep | All defined via `Tool.new(...)` constants. No changes — the factory rewrite preserves the call shape. |
 | `lib/tool/scraper/*.rb`, `lib/tool/search/*.rb` | keep | Unaffected. |
-| `bin/pikuri` | refactor | Configure ruby_llm (URL, model, API key). Construct `Agent`. Call `run_loop`. |
+| `bin/pikuri` | refactor | `RubyLLM.configure { ... }` for transport (api_base, api_key); `Agent.new(model:, system_prompt:, tools:)` for agent identity. See "Configuration split" below. |
 | `spec/openai_client_spec.rb`, `spec/chat_response_spec.rb`, `spec/chat_log_spec.rb` | **delete** | Replaced/dropped per above. |
 | `CLAUDE.md` | rewrite | Not just the Layout section. Scope decisions and Conventions both need updating — "loop is the spine" is gone, "OpenAI-compatible only / no SDKs" is gone. Replace with: *reuse ruby_llm as runtime; pikuri owns the extension surface and the strict validation.* |
 
@@ -167,22 +214,17 @@ hash, or the keyrest-bypass in `validate_keyword_arguments`.
 
 ## Open questions to settle before step 2
 
-1. **Configuration shape.** ruby_llm prefers a global
-   `RubyLLM.configure` block + per-Chat overrides. Pikuri uses
-   explicit constructor args. Decide whether to lean into ruby_llm's
-   global config (simpler) or keep per-instance configuration via Chat
-   options (cleaner for tests).
-2. **Reasoning content.** Pikuri prints `reasoning_content` from
+1. **Reasoning content.** Pikuri prints `reasoning_content` from
    thinking models dimmed inline. Verify ruby_llm exposes this on
    `Message` (README mentions a `thinking` field). If aligned, render
    via the listener attached in step 3. If not, may need
    `Message#raw` as a fallback.
-3. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
+2. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
    ruby_llm sometimes returns `{error: "..."}` hashes. Verify a
    synthetic tool returning a string from `execute` lands as a normal
    tool-result message (model sees the string), not a structured-error
    path that the model treats specially.
-4. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
+3. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
    a clean log. Under B, "fresh `Agent`" means a fresh
    `RubyLLM::Chat`. Verify there's no shared global state in ruby_llm
    that would leak between parent and sub-agent (model config, API
