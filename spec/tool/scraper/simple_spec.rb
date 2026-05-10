@@ -102,6 +102,32 @@ RSpec.describe Tool::Scraper::Simple, '.fetch' do
   end
 end
 
+# End-to-end +.visit+ tests covering behavior layered on top of
+# +fetch+ + +dispatch+ — currently just the trailing-whitespace strip.
+RSpec.describe Tool::Scraper::Simple, '.visit' do
+  let(:stubs) { Faraday::Adapter::Test::Stubs.new }
+
+  around do |example|
+    original_new = Faraday.method(:new)
+    test_stubs = stubs
+    Faraday.define_singleton_method(:new) do |*_, **_|
+      Faraday::Connection.new { |b| b.adapter :test, test_stubs }
+    end
+    begin
+      example.run
+    ensure
+      Faraday.define_singleton_method(:new, original_new)
+    end
+  end
+
+  it 'strips leading and trailing whitespace from the dispatched body but preserves interior structure' do
+    body = "\n\n  # Title\n\nparagraph one\n\n    indented line\n\n\n"
+    stubs.get('https://example.com/doc.md') { [200, { 'content-type' => 'text/markdown' }, body] }
+    out = described_class.visit('https://example.com/doc.md')
+    assert_equal "# Title\n\nparagraph one\n\n    indented line", out
+  end
+end
+
 # Exercise the content-type dispatch in +.dispatch+ directly, against
 # hand-built {Fetched} values — no network. The HTML and (future) PDF
 # extractors are tested separately; here we only verify that the right

@@ -79,15 +79,23 @@ class Tool
       # to memoize results should wrap this method themselves (see
       # {Tool::WebScrape.visit}, which does exactly that).
       #
+      # The dispatcher's output is +String#strip+'d so the LLM never
+      # sees a body that opens or closes with blank lines — common with
+      # +pdf-reader+'s page-feed whitespace and with text bodies that
+      # carry a trailing newline. Interior whitespace is preserved
+      # because Markdown paragraph breaks and source-code indentation
+      # are load-bearing.
+      #
       # @param url [String] absolute HTTP(S) URL of the page to download
-      # @return [String] full Markdown representation of the page,
-      #   uncapped — caller is responsible for any size limiting before
-      #   feeding the result back to the LLM
+      # @return [String] full Markdown representation of the page with
+      #   leading/trailing whitespace trimmed, uncapped otherwise —
+      #   caller is responsible for any size limiting before feeding
+      #   the result back to the LLM
       # @raise [FetchError] on HTTP non-2xx, network failure, redirect
       #   loop, a 3xx without a +Location+ header, or a response whose
       #   content-type the dispatcher does not recognize
       def self.visit(url)
-        dispatch(fetch(url))
+        dispatch(fetch(url)).strip
       end
 
       # Download the body of +url+, manually following up to
