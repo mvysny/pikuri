@@ -2,37 +2,28 @@
 
 require 'ruby_llm'
 
-# Factory for tools the LLM can request via OpenAI-style tool calling.
-# +Tool.new(name:, description:, parameters:, execute:)+ returns a synthetic
-# +RubyLLM::Tool+ subclass — *not* a value object — so the result can be
-# handed straight to ruby_llm's runtime via +Chat#with_tool+ while still
-# answering pikuri's class-level surface (+name+, +description+,
-# +parameters+, +run+) for everything that talked to the old +Data.define+
-# shape.
+# A tool the LLM can request via OpenAI-style tool calling.
+#
+# {Tool} is a plain value object: +name+, +description+, +parameters+,
+# and an +execute+ Proc that produces the observation. Pikuri's own
+# code talks to this surface (the bundled tools, the sub-agent factory,
+# the +Agent+ constructor); the conversion to ruby_llm's runtime shape
+# happens at exactly one named seam — {#to_ruby_llm_tool} — which the
+# +Agent+ calls when wiring tools into the underlying +RubyLLM::Chat+.
 #
 # Bundled tool implementations live under +lib/tool/+ and are required
 # explicitly by the scripts that use them; +lib/tool.rb+ itself only
-# introduces the {Tool} factory and {Tool::Parameters} machinery.
-#
-# == Why a factory
-#
-# +RubyLLM::Chat+ runs the agent loop. +Chat#with_tool+ expects a
-# +RubyLLM::Tool+ subclass and instantiates it with +tool.new+, so
-# pikuri's tools have to *be* those subclasses. The factory builds one
-# per call, capturing pikuri's {Parameters} validator and the user-
-# supplied callable in a closure that both the class-level +run+ (used
-# directly by pikuri's specs) and the instance-level +execute+ (used
-# by ruby_llm's tool-calling path) delegate to.
+# introduces the {Tool} class and {Tool::Parameters} machinery.
 #
 # == Validation ordering
 #
 # Pikuri's {Parameters#validate} — DidYouMean suggestions, type coercion,
 # all-errors-collected — is what the LLM must see when it emits bad
-# arguments, not ruby_llm's keyword-presence checker. The synthetic class
-# defines +execute(**args)+: the keyrest signature makes
-# +RubyLLM::Tool#validate_keyword_arguments+ no-op (it bails out at the
-# +accepts_extra_keywords+ check), and pikuri's validator runs inside the
-# shared runner before any user code does.
+# arguments, not ruby_llm's keyword-presence checker. The synthetic
+# class produced by {#to_ruby_llm_tool} defines +execute(**args)+: the
+# keyrest signature makes +RubyLLM::Tool#validate_keyword_arguments+
+# no-op (it bails out at the +accepts_extra_keywords+ check), so
+# pikuri's validator runs inside {#run} before any user code does.
 #
 # == Error handling convention
 #
@@ -48,52 +39,78 @@ require 'ruby_llm'
 #   misconfigured clients, ...). These keep raising. The LLM cannot fix
 #   them; a human needs to.
 #
-# Argument-validation failures from {Parameters#validate} are caught by the
-# shared runner and turned into +"Error: ..."+ observations. The +execute+
-# Proc owns the rest — it should follow the same convention internally for
+# Argument-validation failures from {Parameters#validate} are caught by
+# {#run} and turned into +"Error: ..."+ observations. The +execute+ Proc
+# owns the rest — it should follow the same convention internally for
 # tool-specific recoverable failures, and let bugs raise.
 class Tool
-  # Build a synthetic +RubyLLM::Tool+ subclass.
-  #
+  # @return [String] function name advertised to the LLM
+  attr_reader :name
+
+  # @return [String] human-readable description used by the LLM to decide
+  #   when to call the tool
+  attr_reader :description
+
+  # @return [Tool::Parameters] declared schema; validates incoming
+  #   arguments and serializes to the JSON Schema shape advertised to the
+  #   LLM
+  attr_reader :parameters
+
+  # @return [Proc] callable invoked once arguments have been validated;
+  #   receives validated keyword arguments and returns a +String+
+  #   observation
+  attr_reader :execute
+
   # @param name [String] function name advertised to the LLM
   # @param description [String] human-readable description used by the LLM
   #   to decide when to call the tool
-  # @param parameters [Tool::Parameters] declared schema; validates incoming
-  #   arguments and serializes to the JSON Schema shape advertised to the
-  #   LLM
-  # @param execute [Proc] callable invoked once arguments have been
-  #   validated; receives validated keyword arguments and returns a +String+
-  #   observation. Recoverable failures should be returned as
-  #   +"Error: <message>"+ Strings rather than raised — see "Error handling
-  #   convention" above.
-  # @return [Class] anonymous +RubyLLM::Tool+ subclass that responds to
-  #   +.name+, +.description+, +.parameters+, +.run(args)+ at the class
-  #   level (pikuri's surface) and to +#execute(**args)+ at the instance
-  #   level (ruby_llm's surface)
-  def self.new(name:, description:, parameters:, execute:)
-    runner = lambda do |args|
-      validated = parameters.validate(args)
-      execute.call(**validated)
-    rescue Tool::Parameters::ValidationError => e
-      "Error: #{e.message}"
-    end
+  # @param parameters [Tool::Parameters] declared schema
+  # @param execute [Proc] callable invoked with validated keyword arguments
+  #   that returns a +String+ observation. Recoverable failures should be
+  #   returned as +"Error: <message>"+ Strings rather than raised — see
+  #   "Error handling convention" above.
+  # @return [Tool]
+  def initialize(name:, description:, parameters:, execute:)
+    @name = name
+    @description = description
+    @parameters = parameters
+    @execute = execute
+  end
 
-    schema     = parameters.to_h
-    tool_name  = name
-    tool_desc  = description
-    tool_parms = parameters
+  # Validate +args+ against {#parameters} and forward them as keyword
+  # arguments to {#execute}. Validation failures are caught and rendered
+  # as +"Error: <message>"+ Strings so the agent loop can feed them back
+  # to the LLM as the next observation; everything else bubbles up.
+  #
+  # @param args [Hash] raw arguments supplied by the LLM
+  # @return [String] tool observation, or +"Error: ..."+ on validation
+  #   failure
+  def run(args)
+    validated = @parameters.validate(args)
+    @execute.call(**validated)
+  rescue Tool::Parameters::ValidationError => e
+    "Error: #{e.message}"
+  end
+
+  # Build a synthetic +RubyLLM::Tool+ subclass that wraps this Tool. The
+  # subclass is what +RubyLLM::Chat#with_tool+ accepts: ruby_llm
+  # instantiates it (+tool.new+) and routes tool calls through
+  # +instance.call(args)+, which lands in +#execute(**args)+ and
+  # delegates back to {#run} on this instance.
+  #
+  # @return [Class] anonymous +RubyLLM::Tool+ subclass
+  def to_ruby_llm_tool
+    pikuri_tool = self
+    schema      = @parameters.to_h
+    tool_name   = @name
+    tool_desc   = @description
 
     Class.new(RubyLLM::Tool) do
       description(tool_desc)
       params(schema)
 
-      define_singleton_method(:name)        { tool_name }
-      define_singleton_method(:description) { tool_desc }
-      define_singleton_method(:parameters)  { tool_parms }
-      define_singleton_method(:run)         { |args| runner.call(args) }
-
-      define_method(:name)    { tool_name }
-      define_method(:execute) { |**args| runner.call(args) }
+      define_singleton_method(:name) { tool_name }
+      define_method(:execute) { |**args| pikuri_tool.run(args) }
     end
   end
 end

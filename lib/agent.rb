@@ -15,9 +15,9 @@ class Agent
   #   +RubyLLM.config.default_model+ so transport configuration can pick
   #   the model
   # @param system_prompt [String] system message prepended to the chat
-  # @param tools [Array<Class>] synthetic +RubyLLM::Tool+ subclasses (the
-  #   shape returned by {Tool.new}). Registered with the underlying chat
-  #   in declaration order.
+  # @param tools [Array<Tool>] pikuri tools registered with the underlying
+  #   chat in declaration order. Each is converted to ruby_llm's runtime
+  #   shape via {Tool#to_ruby_llm_tool} when wired in.
   # @param max_steps [Integer] hard cap on tool-call rounds per
   #   {#run_loop} invocation; must be positive. Counted in the
   #   +before_tool_call+ listener and reset at the start of each run.
@@ -42,7 +42,7 @@ class Agent
 
     @chat = RubyLLM.chat(model: @model, provider: provider, assume_model_exists: assume_model_exists)
     @chat.with_instructions(@system_prompt)
-    @tools.each { |t| @chat.with_tool(t) }
+    @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
     install_listeners
   end
 
@@ -95,7 +95,7 @@ class Agent
       max_steps: @max_steps
     )
     @tools << sub_tool
-    @chat.with_tool(sub_tool)
+    @chat.with_tool(sub_tool.to_ruby_llm_tool)
   end
 
   private

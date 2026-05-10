@@ -84,7 +84,10 @@ RSpec.describe Agent do
       Agent.new(model: 'm', system_prompt: 'be terse', tools: [tool])
 
       assert_equal 'be terse', fake_chat.instructions
-      assert_equal [tool], fake_chat.tools
+      assert_equal 1, fake_chat.tools.size
+      wired = fake_chat.tools.first
+      assert_operator wired, :<, RubyLLM::Tool
+      assert_equal 't', wired.name
     end
 
     it 'rejects non-positive max_steps' do

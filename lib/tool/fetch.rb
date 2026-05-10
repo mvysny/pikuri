@@ -134,7 +134,7 @@ class Tool
   # files); use {Tool::WEB_SCRAPE} for rendered web pages or PDFs where
   # readability extraction makes the result usable.
   #
-  # @return [Class] synthetic +RubyLLM::Tool+ subclass
+  # @return [Tool]
   FETCH = new(
     name: 'fetch',
     description: 'Downloads the given URL and returns its body verbatim. ' \

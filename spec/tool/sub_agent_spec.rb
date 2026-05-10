@@ -67,10 +67,10 @@ RSpec.describe '.sub_agent' do
   end
 
   describe 'tool shape' do
-    it 'returns a RubyLLM::Tool subclass named "sub_agent" with a required `task` string parameter' do
+    it 'returns a Tool named "sub_agent" with a required `task` string parameter' do
       tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [])
 
-      assert_operator tool, :<, RubyLLM::Tool
+      assert_kind_of Tool, tool
       assert_equal 'sub_agent', tool.name
       schema = tool.parameters.to_h
       assert_equal ['task'], schema[:required]
@@ -102,7 +102,10 @@ RSpec.describe '.sub_agent' do
       tool.run('task' => 'go')
 
       sub_chat = @fake_chats.first
-      assert_equal [dummy_tool], sub_chat.tools
+      assert_equal 1, sub_chat.tools.size
+      wired = sub_chat.tools.first
+      assert_operator wired, :<, RubyLLM::Tool
+      assert_equal 'dummy', wired.name
     end
   end
 end

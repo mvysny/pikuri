@@ -12,6 +12,15 @@ RSpec.describe Tool do
     )
   end
 
+  describe 'attributes' do
+    it 'exposes name, description, parameters, and execute' do
+      assert_equal 'echo', tool.name
+      assert_equal 'Echoes the input back.', tool.description
+      assert_kind_of Tool::Parameters, tool.parameters
+      assert_kind_of Proc, tool.execute
+    end
+  end
+
   describe '#run' do
     it 'validates and forwards kwargs to the execute Proc' do
       assert_equal 'echo: hi', tool.run('text' => 'hi')
@@ -42,24 +51,26 @@ RSpec.describe Tool do
     end
   end
 
-  describe 'RubyLLM::Tool integration' do
-    # Same shape ruby_llm's Chat will see: it does `tool.new` and then routes
+  describe '#to_ruby_llm_tool' do
+    # Same shape ruby_llm's Chat will see: it does `klass.new` and then routes
     # tool calls through `instance.call(args)`. We bypass Chat here and drive
-    # `Tool#call` directly so the test stays network-free and pinned to the
-    # exact integration seam.
+    # the synthetic class directly so the test stays network-free and pinned
+    # to the exact integration seam.
+
+    let(:rl_tool) { tool.to_ruby_llm_tool }
 
     it 'is a RubyLLM::Tool subclass that advertises pikuri\'s schema' do
-      assert_operator tool, :<, RubyLLM::Tool
-      schema = tool.new.params_schema
-      assert_equal 'echo', tool.name
-      assert_equal 'Echoes the input back.', tool.description
+      assert_operator rl_tool, :<, RubyLLM::Tool
+      schema = rl_tool.new.params_schema
+      assert_equal 'echo', rl_tool.name
+      assert_equal 'Echoes the input back.', rl_tool.description
       assert_equal 'object', schema['type']
       assert_equal 'string', schema['properties']['text']['type']
       assert_equal ['text'], schema['required']
     end
 
     it 'routes a valid Chat#call through to the execute Proc' do
-      assert_equal 'echo: hello', tool.new.call('text' => 'hello')
+      assert_equal 'echo: hello', rl_tool.new.call('text' => 'hello')
     end
 
     it 'lets pikuri\'s validator (not ruby_llm\'s) produce the LLM-facing error' do
@@ -68,7 +79,7 @@ RSpec.describe Tool do
         description: 'Adds one.',
         parameters: Tool::Parameters.build { |p| p.required_integer :count, 'A whole number.' },
         execute: ->(count:) { (count + 1).to_s }
-      )
+      ).to_ruby_llm_tool
 
       missing = typed.new.call({})
       assert missing.start_with?('Error:'), "expected pikuri-style error, got #{missing.inspect}"

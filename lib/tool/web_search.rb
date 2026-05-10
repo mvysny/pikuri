@@ -13,7 +13,7 @@ class Tool
   # providers render their output in the same smolagents-style Markdown
   # shape, so the LLM sees a stable format regardless of which one ran.
   #
-  # @return [Class] synthetic +RubyLLM::Tool+ subclass
+  # @return [Tool]
   WEB_SEARCH = new(
     name: 'web_search',
     description: 'Searches the web for a query and returns the top results ' \

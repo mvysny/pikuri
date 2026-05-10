@@ -28,13 +28,13 @@ class Tool
     #   defers to +RubyLLM.config.default_model+
     # @param system_prompt [String] system prompt for the sub-agent;
     #   typically the same prompt the parent agent uses
-    # @param tools [Array<Class>] tools the sub-agent is allowed to call.
+    # @param tools [Array<Tool>] tools the sub-agent is allowed to call.
     #   Should not include the sub-agent tool itself (recursion guard).
     # @param max_steps [Integer] step budget for each sub-agent run,
     #   forwarded to {Agent#initialize}
-    # @return [Class] a fresh sub-agent tool (a synthetic +RubyLLM::Tool+
-    #   subclass); not a singleton, since each invocation closes over a
-    #   specific +model+, +system_prompt+, and +tools+
+    # @return [Tool] a fresh sub-agent tool; not a singleton, since each
+    #   invocation closes over a specific +model+, +system_prompt+, and
+    #   +tools+
     def self.build(system_prompt:, tools:, model: nil, max_steps: 10)
       Tool.new(
         name: 'sub_agent',

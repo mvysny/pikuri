@@ -82,7 +82,7 @@ class Tool
   # {Tool::WebScrape.visit} that exposes it to the agent loop in OpenAI
   # tool-call shape.
   #
-  # @return [Class] synthetic +RubyLLM::Tool+ subclass
+  # @return [Tool]
   WEB_SCRAPE = new(
     name: 'web_scrape',
     description: 'Scrapes the rendered webpage, PDF or text file at the given URL and returns its ' \

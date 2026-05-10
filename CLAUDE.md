@@ -23,8 +23,9 @@ bundled tools.
 - **The seam.** All `RubyLLM::*` references are confined to three
   files: `bin/pikuri` (boot/wiring — calls `RubyLLM.configure`),
   `lib/agent.rb` (constructs the Chat, attaches listeners, calls
-  `ask`), and `lib/tool.rb` (the factory that emits the synthetic
-  `RubyLLM::Tool` subclass). Everything else in `lib/` (bundled tools,
+  `ask`), and `lib/tool.rb` (the `Tool` value class plus its
+  `#to_ruby_llm_tool` adapter that emits a synthetic `RubyLLM::Tool`
+  subclass on demand). Everything else in `lib/` (bundled tools,
   scrapers, search providers) talks to pikuri's surface (`Tool.new`,
   `Tool::Parameters`, …) and never references ruby_llm. This is the
   fork-or-swap contingency: replacing the loop becomes a fixed-cost
@@ -53,11 +54,15 @@ bundled tools.
   `Agent#run_loop(user_message:)` resets the counter and forwards to
   `Chat#ask`. `Agent#last_assistant_content` walks `Chat#messages` for
   the sub-agent's final-reply needs.
-- `lib/tool.rb` — `Tool.new(name:, description:, parameters:, execute:)`
-  is a *factory* that returns an anonymous `RubyLLM::Tool` subclass.
-  Class-level `.name`/`.description`/`.parameters`/`.run` keep the
-  pikuri call shape; the instance `#execute(**args)` is the seam
-  ruby_llm's Chat routes tool calls through. The `**args` keyrest
+- `lib/tool.rb` — `Tool` is a plain value class with `name`,
+  `description`, `parameters`, and an `execute` Proc. `Tool#run(args)`
+  validates via `Parameters#validate` and forwards to `execute`,
+  catching `Parameters::ValidationError` and returning it as
+  `"Error: ..."` so the LLM sees a self-correctable observation.
+  `Tool#to_ruby_llm_tool` is the named adapter the `Agent` calls when
+  wiring a tool into the underlying `RubyLLM::Chat`: it builds an
+  anonymous `RubyLLM::Tool` subclass whose `execute(**args)` delegates
+  back to `#run` on the originating instance. The `**args` keyrest
   signature makes ruby_llm's keyword-presence checker no-op so
   pikuri's `Parameters` validator (DidYouMean, type coercion, all
   errors collected) is what the LLM sees on bad input.
@@ -71,8 +76,8 @@ bundled tools.
 - `lib/tool/sub_agent.rb` — `Tool::SubAgent.build(model:,
   system_prompt:, tools:, max_steps:)` factory (with a one-line
   `Tool.sub_agent` alias at the `Tool` level). Each call returns a
-  fresh synthetic `RubyLLM::Tool` subclass whose `execute` body spawns
-  a fresh `Agent` (and therefore a fresh `RubyLLM::Chat` with its own
+  fresh `Tool` whose `execute` Proc spawns a fresh `Agent` (and
+  therefore a fresh `RubyLLM::Chat` with its own
   `messages`/`tools`/listeners), runs the requested task on a clean
   conversation, and returns only the sub-agent's final assistant
   message back as the parent's next observation. Wired in via
@@ -214,17 +219,18 @@ bundled tools.
 - **Validation ordering is load-bearing.** Pikuri's
   `Parameters#validate` is what produces the LLM-facing error message;
   ruby_llm's keyword-presence checker is bypassed by the `**args`
-  keyrest signature on the synthetic class's `execute`. When touching
-  `lib/tool.rb`, preserve that — DidYouMean / coercion / all-errors-
-  collected only work if pikuri's validator runs first.
+  keyrest signature on the synthetic class's `execute` (built by
+  `Tool#to_ruby_llm_tool`). When touching `lib/tool.rb`, preserve that
+  — DidYouMean / coercion / all-errors-collected only work if pikuri's
+  validator runs first.
 - **Readable, not obfuscated.** Prefer the simplest implementation that
   does the job. Don't golf code for line count, but also don't add
   abstraction layers, plugin systems, or configuration knobs that
   aren't needed for the next concrete step.
 - **Grow the assistant by adding tools, not by complicating the loop.**
   New capabilities should land as new `Tool` constants under
-  `lib/tool/` with their own specs; neither the factory in
-  `lib/tool.rb` nor ruby_llm's loop should need to know about them.
+  `lib/tool/` with their own specs; neither `Tool` itself nor
+  ruby_llm's loop should need to know about them.
 
 ## Risks worth tracking
 
@@ -235,6 +241,7 @@ bundled tools.
   surface in the listener wiring or the synthetic-tool factory.
 - **Synthetic-tool fragility.** If ruby_llm refactors its tool DSL
   (how `params(hash)` accepts a raw schema, the keyrest bypass on
-  `validate_keyword_arguments`, or how `execute` is invoked), the
-  factory in `lib/tool.rb` breaks. The seam contains the blast — the
-  break is in one file, not spread across the codebase.
+  `validate_keyword_arguments`, or how `execute` is invoked),
+  `Tool#to_ruby_llm_tool` in `lib/tool.rb` breaks. The seam contains
+  the blast — the break is in one file, not spread across the
+  codebase.
