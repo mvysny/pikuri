@@ -30,6 +30,10 @@ gem 'ruby-readability', '~> 0.7'
 # LLM Markdown rather than raw HTML.
 gem 'reverse_markdown', '~> 3.0'
 
+# PDF text extraction. Used by Tool::Scraper::PDF to render application/pdf
+# responses as plain text for the agent loop.
+gem 'pdf-reader', '~> 2.15'
+
 # Arithmetic backend for Tool::CALCULATOR.
 gem 'dentaku', '~> 3.5'
 # Dentaku 3.5 transitively requires tsort, which was a default gem in

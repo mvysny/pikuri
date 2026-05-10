@@ -128,6 +128,20 @@ RSpec.describe Tool::Scraper::Simple, '.dispatch' do
     assert_includes described_class.dispatch(fetched), 'xhtml content'
   end
 
+  it 'routes application/pdf through Scraper::PDF.extract' do
+    # Don't reach into PDF.extract for real PDF bytes — that path is
+    # tested in pdf_spec. Here we just verify the dispatch arm exists by
+    # stubbing PDF.extract.
+    original = Tool::Scraper::PDF.method(:extract)
+    Tool::Scraper::PDF.singleton_class.define_method(:extract) { |bytes| "PDF[#{bytes}]" }
+    begin
+      fetched = fetched_class.new(body: 'pdf-bytes', content_type: 'application/pdf', url: 'https://example.com/doc.pdf')
+      assert_equal 'PDF[pdf-bytes]', described_class.dispatch(fetched)
+    ensure
+      Tool::Scraper::PDF.singleton_class.define_method(:extract, original)
+    end
+  end
+
   it 'raises FetchError for an unsupported content-type' do
     fetched = fetched_class.new(body: '{}', content_type: 'application/json', url: 'https://example.com/')
     err = assert_raises(Tool::Scraper::FetchError) { described_class.dispatch(fetched) }

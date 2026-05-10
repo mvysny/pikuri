@@ -91,16 +91,9 @@ class Tool
   # @return [Tool]
   WEB_FETCH = new(
     name: 'web_fetch',
-    description: 'Fetches the webpage at the given URL and returns its ' \
-                 'main content as Markdown — not the raw HTML; the page ' \
-                 'is parsed and rendered. Internally tries JSON-LD ' \
-                 'structured data first (works well for product, article, ' \
-                 'and recipe pages) and falls back to a readability ' \
-                 'extraction of the main article body. Output is ' \
-                 'truncated to roughly 5000 characters by default — ' \
-                 'enough for the gist of most pages; pass `max_chars` to ' \
-                 'read more when the truncation marker shows the page was ' \
-                 'longer and you need the rest.',
+    description: 'Scrapes the webpage at the given URL and returns its ' \
+                 'main content as Markdown — not the raw HTML/PDF; the page ' \
+                 'is parsed and rendered.',
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to fetch, including ' \
@@ -110,7 +103,7 @@ class Tool
                          'return. Defaults to 5000; hard-capped at ' \
                          '100000. When the page is longer than this, ' \
                          'output is cut and a marker reports the full ' \
-                         'length so you can retry with a larger value.'
+        'length.'
     },
     execute: ->(url:, max_chars: WebFetch::DEFAULT_MAX_CHARS) {
       WebFetch.visit(url, max_chars: max_chars)

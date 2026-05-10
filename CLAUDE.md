@@ -86,16 +86,24 @@ area grows.
   fetches and routes the response to the right extractor by
   `content_type`. Owns `Scraper::FetchError` (HTTP 4xx/5xx, network
   failure, redirect-loop, missing `Location`, or an unsupported
-  content-type — all the failures the LLM can react to). Currently
-  routes `text/html` and `application/xhtml+xml` to `Scraper::HTML`;
-  other types raise `FetchError` with a legible message. "Simple"
-  because everything is one Faraday GET — no headless browser, no JS.
+  content-type — all the failures the LLM can react to). Routes
+  `text/html`/`application/xhtml+xml` to `Scraper::HTML` and
+  `application/pdf` to `Scraper::PDF`; other types raise `FetchError`
+  with a legible message. "Simple" because everything is one Faraday
+  GET — no headless browser, no JS.
 - `lib/tool/scraper/html.rb` — pure HTML→Markdown extractor.
   `HTML.extract(html)` runs a JSON-LD fast path (preferring
   schema.org `Product`/`Article`/`Recipe`/... nodes that carry a
   `description`/`articleBody`/`offers`) and falls back to a
   `Readability` + `reverse_markdown` rendering. No I/O — drive it from
   fixture HTML.
+- `lib/tool/scraper/pdf.rb` — pure PDF→text extractor. `PDF.extract(bytes)`
+  uses `pdf-reader` to walk every page and concatenate the extracted
+  text. No OCR, so scanned PDFs come back empty. Re-raises
+  `pdf-reader`'s `MalformedPDFError`/`InvalidPageError`/
+  `UnsupportedFeatureError` as `Scraper::FetchError` so the LLM treats
+  unparseable PDFs the same way it treats HTTP 4xx — try a different
+  URL.
 - `bin/pikuri` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
   server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
   delegation enabled, and feeds it a question from `ARGV` or stdin.

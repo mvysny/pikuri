@@ -4,6 +4,7 @@ require 'faraday'
 require 'uri'
 
 require 'tool/scraper/html'
+require 'tool/scraper/pdf'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
 # assumes that order.
@@ -24,9 +25,10 @@ class Tool
 
     # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
     # follow redirects, and dispatch the response body to the parser
-    # matching its +Content-Type+. Currently only HTML is wired up
-    # ({HTML.extract}); other types raise {FetchError} so the LLM
-    # observes the failure instead of receiving an empty rendering.
+    # matching its +Content-Type+. HTML and XHTML route to
+    # {HTML.extract}; +application/pdf+ routes to {PDF.extract}; other
+    # types raise {FetchError} so the LLM observes the failure instead
+    # of receiving an empty rendering.
     #
     # Split into a thin HTTP fetch ({.fetch}) and a content-type
     # dispatcher ({.visit}) so tests can drive each piece in isolation.
@@ -142,6 +144,8 @@ class Tool
         case fetched.content_type
         when 'text/html', 'application/xhtml+xml'
           HTML.extract(fetched.body)
+        when 'application/pdf'
+          PDF.extract(fetched.body)
         else
           raise FetchError, "unsupported content-type #{fetched.content_type.inspect} for #{fetched.url}"
         end
