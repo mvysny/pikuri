@@ -1,13 +1,8 @@
 source 'https://rubygems.org'
 
-# HTTP client. Used by OpenAIClient for /chat/completions, by the web-fetch
-# scraper, and by the Brave / DuckDuckGo search providers.
+# HTTP client. Used by the web-fetch scraper, the Brave / DuckDuckGo
+# search providers, and (transitively) by ruby_llm.
 gem 'faraday', '~> 2.9'
-
-# JSON Schema validator. Used by ChatParser to validate /chat/completions
-# response shape before parsing, and by Tool::Parameters to validate
-# LLM-supplied tool arguments.
-gem 'json_schemer', '~> 2.5'
 
 # ANSI color for terminal output (reasoning dim, tool calls cyan, …) in
 # the agent loop.
