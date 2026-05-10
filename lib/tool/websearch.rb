@@ -103,12 +103,7 @@ class Tool
     name: 'web_search',
     description: 'Searches the web for a query and returns the top results ' \
                  'as a Markdown list of titles, links, and short snippets. ' \
-                 'Use this only when you need information you don\'t ' \
-                 'already know or that may have changed since your ' \
-                 'training — current events, today\'s prices, latest ' \
-                 'releases, specific obscure facts. For arithmetic, call ' \
-                 '`calculator`; for established general knowledge, answer ' \
-                 'directly without searching. This tool is often ' \
+                 'This tool is often ' \
                  'rate-limited/bot-blocked.',
     parameters: Parameters.build { |p|
       p.required_string :query, 'The search query to perform.'
