@@ -1,11 +1,5 @@
 # frozen_string_literal: true
 
-require_relative '../tool'
-require_relative 'search'
-
-# +class Tool+ reopening below assumes the {Tool} factory and
-# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
-# regardless of caller load order.
 class Tool
   # Namespace marker matching the file path. The actual search
   # orchestration lives in {Tool::Search}; this file owns only the

@@ -97,5 +97,3 @@ class Tool
     end
   end
 end
-
-require_relative 'tool/parameters'

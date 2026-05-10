@@ -2,11 +2,6 @@
 
 require 'pdf-reader'
 require 'stringio'
-require_relative '../scraper'
-
-# +class Tool+ / +module Scraper+ reopening below assumes the namespace
-# is loaded; the +require_relative+ above ensures that regardless of
-# caller load order.
 class Tool
   module Scraper
     # PDF → text extractor used by {Simple.visit} when the fetched

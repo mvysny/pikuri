@@ -6,11 +6,7 @@ require 'rspec/core'
 require 'minitest'
 require 'minitest/assertions'
 
-require 'url_cache'
-require 'tool'
-require 'tool/web_scrape'
-require 'tool/fetch'
-require 'tool/web_search'
+require 'pikuri'
 
 # Disable on-disk caching by default in the test suite. The specs that
 # genuinely exercise caching behavior opt back in by stubbing +.cache+

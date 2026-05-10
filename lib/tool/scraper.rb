@@ -1,10 +1,5 @@
 # frozen_string_literal: true
 
-require_relative '../tool'
-
-# +class Tool+ reopening below assumes the {Tool} factory is loaded;
-# the +require_relative+ above ensures that regardless of caller load
-# order.
 class Tool
   # Namespace for the HTTP→Markdown scraper stack: {Simple} owns the
   # Faraday GET + content-type dispatch, {HTML} and {PDF} are pure

@@ -34,6 +34,11 @@ gem 'pdf-reader', '~> 2.15'
 # (1.15 normalized token field names, etc.).
 gem 'ruby_llm', '~> 1.15'
 
+# Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets
+# every file declare exactly the constant matching its path without the
+# require_relative ceremony that creeps in once a project grows.
+gem 'zeitwerk', '~> 2.7'
+
 # Arithmetic backend for Tool::CALCULATOR.
 gem 'dentaku', '~> 3.5'
 # Dentaku 3.5 transitively requires tsort, which was a default gem in

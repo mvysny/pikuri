@@ -5,12 +5,7 @@ require 'bundler/setup'
 
 $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 
-require 'ruby_llm'
-require 'agent'
-require 'tool/calculator'
-require 'tool/web_search'
-require 'tool/web_scrape'
-require 'tool/fetch'
+require 'pikuri'
 
 RubyLLM.configure do |c|
   c.openai_api_base = 'http://192.168.122.1:8080/v1'

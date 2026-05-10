@@ -1,11 +1,5 @@
 # frozen_string_literal: true
 
-require_relative '../tool'
-require_relative '../agent'
-
-# +class Tool+ reopening below assumes the {Tool} factory and
-# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
-# regardless of caller load order.
 class Tool
   # Factory namespace for the +sub_agent+ tool. The canonical entry point
   # is {SubAgent.build}; {Tool.sub_agent} is a one-line alias kept at the

@@ -3,11 +3,6 @@
 require 'faraday'
 require 'nokogiri'
 require 'uri'
-
-require 'tool/search/rate_limiter'
-
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order.
 class Tool
   module Search
     # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and renders

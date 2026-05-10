@@ -3,7 +3,6 @@
 require 'rainbow'
 require 'tty-markdown'
 require 'ruby_llm'
-require_relative 'tool/sub_agent'
 
 # Thin wrapper around +RubyLLM::Chat+: pikuri owns the *extension surface*
 # (event listeners that print reasoning, assistant messages, tool calls,

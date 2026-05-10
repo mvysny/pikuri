@@ -2,14 +2,6 @@
 
 require 'faraday'
 require 'uri'
-require_relative '../scraper'
-
-require 'tool/scraper/html'
-require 'tool/scraper/pdf'
-
-# +class Tool+ / +module Scraper+ reopening below assumes
-# {Tool::Scraper::FetchError} is defined; the +require_relative+ above
-# ensures that regardless of caller load order.
 class Tool
   module Scraper
     # Plain HTTP scraper: GET the URL with a real-browser User-Agent,

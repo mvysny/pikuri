@@ -3,11 +3,6 @@
 require 'faraday'
 require 'json'
 require 'nokogiri'
-
-require 'tool/search/rate_limiter'
-
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order.
 class Tool
   module Search
     # Performs a Brave Search via the official Web Search API and renders

@@ -1,14 +1,5 @@
 # frozen_string_literal: true
 
-require 'url_cache'
-require_relative '../tool'
-
-require 'tool/search/duckduckgo'
-require 'tool/search/brave'
-
-# +class Tool+ reopening below assumes the {Tool} factory and
-# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
-# regardless of caller load order.
 class Tool
   # Search-orchestration namespace: providers, cache, and the cascade.
   # The LLM-facing tool itself ({Tool::WEB_SEARCH}) lives in

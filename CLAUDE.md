@@ -36,6 +36,13 @@ bundled tools.
 
 ## Layout
 
+- `lib/pikuri.rb` — boot file. Configures a Zeitwerk loader over the
+  whole `lib/` tree and eager-loads it, so `require 'pikuri'` is the
+  one require any caller needs. Inflector overrides cover the
+  acronym/camelCase mismatches (`HTML`, `PDF`, `DuckDuckGo`); eager-
+  loading is the design choice that lets `Tool::CALCULATOR` /
+  `WEB_SEARCH` / `WEB_SCRAPE` / `FETCH` be `ALL_CAPS` value constants
+  rather than classes Zeitwerk could autoload on its own.
 - `lib/agent.rb` — thin wrapper around `RubyLLM::Chat`. The ctor builds
   a Chat, registers system prompt and tools on it, and installs three
   listeners: `after_message` renders reasoning (dim) + assistant
@@ -61,21 +68,22 @@ bundled tools.
   DidYouMean suggestions), wrong types rejected, all errors collected
   and reported together with the schema reprinted — so the message
   can be fed back to the LLM verbatim as the next observation.
-- `lib/tool/sub_agent.rb` — `Tool.sub_agent(model:, system_prompt:,
-  tools:, max_steps:)` factory. Each call returns a fresh synthetic
-  `RubyLLM::Tool` subclass whose `execute` body spawns a fresh
-  `Agent` (and therefore a fresh `RubyLLM::Chat` with its own
+- `lib/tool/sub_agent.rb` — `Tool::SubAgent.build(model:,
+  system_prompt:, tools:, max_steps:)` factory (with a one-line
+  `Tool.sub_agent` alias at the `Tool` level). Each call returns a
+  fresh synthetic `RubyLLM::Tool` subclass whose `execute` body spawns
+  a fresh `Agent` (and therefore a fresh `RubyLLM::Chat` with its own
   `messages`/`tools`/listeners), runs the requested task on a clean
   conversation, and returns only the sub-agent's final assistant
   message back as the parent's next observation. Wired in via
   `Agent#allow_sub_agent`.
 - `lib/tool/` — bundled tool implementations, each reopening
-  `class Tool` to add a module + a single `Tool` constant. Each file
-  starts with `require_relative '../tool'` so it's load-order-safe
-  regardless of caller. Currently: `Tool::CALCULATOR` (Dentaku-backed
-  arithmetic, with `**` → `^` rewriting and BigDecimal results
-  rounded to 3 places), `Tool::WEB_SEARCH` (provider-pluggable web
-  search; see `lib/tool/websearch.rb` and `lib/tool/search/`),
+  `class Tool` to add a module + a single `Tool` constant. Currently:
+  `Tool::CALCULATOR` (Dentaku-backed arithmetic, with `**` → `^`
+  rewriting and BigDecimal results rounded to 3 places),
+  `Tool::WEB_SEARCH` (LLM-facing web-search tool; see
+  `lib/tool/web_search.rb` plus `lib/tool/search.rb` for the cascade
+  and `lib/tool/search/` for individual providers),
   `Tool::WEB_SCRAPE` and `Tool::FETCH` (HTML/PDF→Markdown via Faraday
   + readability + reverse_markdown; see `lib/tool/scraper/`), and the
   `Tool.sub_agent(...)` factory described above.
@@ -174,11 +182,14 @@ bundled tools.
   LLM cannot fix the second category — a human needs to. ruby_llm
   passes the String through verbatim, so this convention is what the
   model sees.
-- **Tool files self-require `'../tool'`.** Every file under `lib/tool/`
-  that reopens `class Tool` starts with `require_relative '../tool'`
-  so it's load-order-safe. Without this, requiring `tool/calculator`
-  before `tool` NameErrors on `Tool::Parameters` at constant-init
-  time.
+- **Zeitwerk autoloads everything under `lib/`.** Don't add
+  `require_relative` chains inside `lib/`; let the loader resolve
+  internal references. The boot file (`lib/pikuri.rb`) eager-loads at
+  startup so `ALL_CAPS` value constants (`Tool::CALCULATOR`, …) are
+  defined alongside the autoloadable classes/modules. New files must
+  define exactly the camelcased constant matching their path; if you
+  want an acronym (`HTML`, `PDF`, `DuckDuckGo`), add an entry to the
+  `inflector.inflect` block in `lib/pikuri.rb`.
 - **Tests: rspec-core with minitest-style asserts.** Use the
   `rspec-core` runner (`describe`/`it`) but write assertions in the
   minitest style (`assert_equal`, `assert`, `refute`, …) rather than
