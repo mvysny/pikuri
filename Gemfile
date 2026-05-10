@@ -34,6 +34,11 @@ gem 'reverse_markdown', '~> 3.0'
 # responses as plain text for the agent loop.
 gem 'pdf-reader', '~> 2.15'
 
+# LLM transport. Pikuri sits on top of ruby_llm; see MIGRATION.md.
+# Pinned tightly because of bus-factor-1 and recent internal-API churn
+# (1.15 normalized token field names, etc.).
+gem 'ruby_llm', '~> 1.15'
+
 # Arithmetic backend for Tool::CALCULATOR.
 gem 'dentaku', '~> 3.5'
 # Dentaku 3.5 transitively requires tsort, which was a default gem in
