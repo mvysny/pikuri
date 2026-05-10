@@ -91,9 +91,8 @@ class Tool
   # @return [Tool]
   WEB_SCRAPE = new(
     name: 'web_scrape',
-    description: 'Scrapes the webpage at the given URL and returns its ' \
-                 'main content as Markdown — not the raw HTML/PDF; the page ' \
-                 'is parsed and rendered.',
+    description: 'Scrapes the rendered webpage, PDF or text file at the given URL and returns its ' \
+    'main content as Markdown.',
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL of the webpage to scrape, including ' \
