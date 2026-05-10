@@ -46,7 +46,55 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
                     'JSON-LD path should not have fired — that block has no description/articleBody'
   end
 
-  it 'uses the JSON-LD fast path when an Article carries a description' do
+  it 'falls through to readability when an Article ships only a teaser description (Britannica-shape)' do
+    # Britannica (and most news/encyclopedia sites) embed an Article
+    # JSON-LD whose +description+ is a 200-400 char lede summary, not
+    # the article body. Treating that as the canonical content drops
+    # the whole page — the actual sections (Distribution, Natural
+    # history, Conservation status, ...) live in the HTML body. So
+    # for Article-shaped types we require +articleBody+ specifically;
+    # a bare +description+ is not enough to fire the fast path.
+    html = <<~HTML
+      <html>
+        <head>
+          <title>Leopard | Description, Habitat, &amp; Facts | Britannica</title>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Article",
+              "headline": "leopard",
+              "description": "Leopard, also called panther, large cat closely related to the lion, tiger, and jaguar.",
+              "author": { "@type": "Organization", "name": "Britannica Editors" },
+              "datePublished": "1999-05-04T00:00:00Z"
+            }
+          </script>
+        </head>
+        <body>
+          <article>
+            <h1>leopard</h1>
+            <h2>Distribution</h2>
+            <p>The leopard's range stretches across sub-Saharan Africa and into south and east Asia,
+            with isolated populations in the Russian Far East and the Arabian Peninsula.</p>
+            <h2>Conservation status</h2>
+            <p>The IUCN classifies Panthera pardus as a vulnerable species, with the number of
+            leopards worldwide estimated at several hundred thousand individuals.</p>
+          </article>
+        </body>
+      </html>
+    HTML
+
+    out = described_class.extract(html)
+    assert_includes out, "leopard's range stretches across sub-Saharan Africa"
+    assert_includes out, 'IUCN classifies Panthera pardus'
+    refute_includes out, '**Author:** Britannica Editors',
+                    'JSON-LD fast path should not have fired — Article needs articleBody, not just description'
+  end
+
+  it 'uses the JSON-LD fast path when an Article carries an articleBody' do
+    # When the JSON-LD really does carry the article copy (some
+    # publishers ship the full body in the schema.org block), the
+    # fast path is the right call — the structured fields are cleaner
+    # than what Readability would extract.
     html = <<~HTML
       <html>
         <head>
@@ -55,7 +103,7 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
               "@context": "https://schema.org",
               "@type": "Article",
               "name": "Hello",
-              "description": "Short article summary that the LLM actually wants.",
+              "articleBody": "Full article text the publisher embedded in the JSON-LD payload.",
               "author": "Jane Doe"
             }
           </script>
@@ -66,8 +114,9 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
 
     out = described_class.extract(html)
     assert_includes out, '# Hello'
-    assert_includes out, 'Short article summary that the LLM actually wants.'
     assert_includes out, '**Author:** Jane Doe'
+    assert_includes out, 'Full article text the publisher embedded in the JSON-LD payload.'
+    refute_includes out, 'chrome and ads'
   end
 
   it 'falls back to <main> when Readability collapses a div/list-heavy page' do

@@ -34,13 +34,35 @@ class Tool
         Product Article NewsArticle BlogPosting Recipe Event Book Movie
       ].freeze
 
-      # @return [Array<String>] JSON-LD fields that signal a node carries
-      #   substantive page content (not just metadata). At least one
-      #   must be present for {.best_jsonld_node} to short-circuit the
-      #   readability fallback. Without this gate, sites like Wikipedia
-      #   that ship a bare +Article+ block with only +name+/+author+/
-      #   +datePublished+ would collapse the entire page to a few lines
-      #   of metadata.
+      # @return [Array<String>] +@type+ values for which the JSON-LD
+      #   +description+ field is a teaser (lede paragraph,
+      #   +<meta name="description">+ echo) rather than the article
+      #   body itself. For these types we require {ARTICLE_CONTENT_FIELDS}
+      #   to fire the fast path. Without this carve-out, encyclopedia
+      #   and news pages (Britannica, most news sites) would render
+      #   only a 200-300 char summary while the article body in the
+      #   HTML body got dropped.
+      ARTICLE_TYPES = %w[Article NewsArticle BlogPosting].freeze
+      private_constant :ARTICLE_TYPES
+
+      # @return [Array<String>] JSON-LD fields that, on
+      #   {ARTICLE_TYPES} nodes, signal the JSON-LD payload actually
+      #   carries the article copy (not just a teaser). +description+
+      #   is deliberately excluded here — see {ARTICLE_TYPES}.
+      ARTICLE_CONTENT_FIELDS = %w[articleBody].freeze
+      private_constant :ARTICLE_CONTENT_FIELDS
+
+      # @return [Array<String>] JSON-LD fields that signal a non-article
+      #   node carries substantive page content (not just metadata). At
+      #   least one must be present for {.best_jsonld_node} to short-
+      #   circuit the readability fallback. Without this gate, sites
+      #   like Wikipedia that ship a bare +Article+ block with only
+      #   +name+/+author+/+datePublished+ would collapse the entire
+      #   page to a few lines of metadata. For
+      #   +Product+/+Recipe+/+Event+/+Book+/+Movie+ the
+      #   +description+ field IS the substantive copy, so it stays in
+      #   this list; {ARTICLE_TYPES} use the stricter
+      #   {ARTICLE_CONTENT_FIELDS} instead.
       CONTENT_FIELDS = %w[description articleBody offers].freeze
 
       # @return [Array<String>] HTML tags preserved by the readability
@@ -112,10 +134,15 @@ class Tool
       end
 
       # Pick the most useful node out of a flat JSON-LD list — the first
-      # one whose +@type+ matches {INTERESTING_TYPES} AND that carries at
-      # least one {CONTENT_FIELDS} entry. Returns +nil+ when no such
-      # node exists, signalling that the readability fallback should
-      # run.
+      # one whose +@type+ matches {INTERESTING_TYPES} AND that carries
+      # at least one applicable content-field entry. Returns +nil+ when
+      # no such node exists, signalling that the readability fallback
+      # should run.
+      #
+      # Which fields qualify depends on +@type+: {ARTICLE_TYPES} require
+      # {ARTICLE_CONTENT_FIELDS} (i.e. +articleBody+), since their
+      # +description+ is typically a lede teaser; everything else uses
+      # {CONTENT_FIELDS} (where +description+ is the substantive copy).
       #
       # The content-field gate keeps us from short-circuiting on bare
       # metadata blocks (e.g. Wikipedia ships an +Article+ JSON-LD with
@@ -129,7 +156,8 @@ class Tool
           types = Array(n['@type'])
           next false unless types.any? { |t| INTERESTING_TYPES.include?(t) }
 
-          CONTENT_FIELDS.any? do |f|
+          fields = types.any? { |t| ARTICLE_TYPES.include?(t) } ? ARTICLE_CONTENT_FIELDS : CONTENT_FIELDS
+          fields.any? do |f|
             v = n[f]
             !v.nil? && !(v.respond_to?(:empty?) && v.empty?)
           end
@@ -139,7 +167,12 @@ class Tool
       # Render a single JSON-LD +node+ as Markdown: a top-level title
       # from +name+/+headline+, a bullet list of common useful fields
       # (brand, SKU, price, rating, author, published date, ...), the
-      # description paragraph, and the lead image.
+      # body copy, and the lead image.
+      #
+      # When the node carries +articleBody+ (the full publisher-supplied
+      # article text), that wins over +description+ — the description
+      # is typically a lede teaser and would just repeat the article's
+      # opening lines.
       #
       # @param node [Hash] JSON-LD node, typically picked by
       #   {.best_jsonld_node}
@@ -174,8 +207,8 @@ class Tool
           out << "\n"
         end
 
-        if (desc = node['description'])
-          out << "#{desc}\n\n"
+        if (body = node['articleBody'] || node['description'])
+          out << "#{body}\n\n"
         end
 
         if (img = node['image'])
