@@ -23,9 +23,17 @@ class Agent
   # @param max_steps [Integer] hard cap on tool-call rounds per
   #   {#run_loop} invocation; must be positive. Counted in the
   #   +before_tool_call+ listener and reset at the start of each run.
+  # @param provider [Symbol, nil] forwarded to +RubyLLM.chat+. Required
+  #   together with +assume_model_exists+ when pointing at a local
+  #   OpenAI-compatible server (llama.cpp, gpustack, ...) whose model
+  #   ids are not in ruby_llm's registry.
+  # @param assume_model_exists [Boolean] forwarded to +RubyLLM.chat+;
+  #   set to +true+ to skip the registry lookup and trust the supplied
+  #   +model+ id. Requires +provider+.
   # @return [Agent]
   # @raise [ArgumentError] if +max_steps+ is zero or negative
-  def initialize(model: nil, system_prompt:, tools: [], max_steps: 20)
+  def initialize(model: nil, system_prompt:, tools: [], max_steps: 20,
+                 provider: nil, assume_model_exists: false)
     raise ArgumentError, "max_steps must be positive, got #{max_steps}" if max_steps <= 0
 
     @model = model || RubyLLM.config.default_model
@@ -34,7 +42,7 @@ class Agent
     @max_steps = max_steps
     @step = 0
 
-    @chat = RubyLLM.chat(model: @model)
+    @chat = RubyLLM.chat(model: @model, provider: provider, assume_model_exists: assume_model_exists)
     @chat.with_instructions(@system_prompt)
     @tools.each { |t| @chat.with_tool(t) }
     install_listeners

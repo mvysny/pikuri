@@ -5,21 +5,22 @@ require 'bundler/setup'
 
 $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 
+require 'ruby_llm'
 require 'agent'
-require 'openai_client'
 require 'tool/calculator'
 require 'tool/websearch'
 require 'tool/web_scrape'
 require 'tool/fetch'
 
-client = OpenAIClient.new(
-  url: 'http://192.168.122.1:8080/v1',
-  model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
-  api_key: 'not-needed'
-)
+RubyLLM.configure do |c|
+  c.openai_api_base = 'http://192.168.122.1:8080/v1'
+  c.openai_api_key  = 'not-needed'
+end
 
 agent = Agent.new(
-  client: client,
+  model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
+  provider: :openai,
+  assume_model_exists: true,
   system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH]
 )
@@ -34,6 +35,3 @@ question =
   end
 
 agent.run_loop(user_message: question)
-
-# To review the entire conversation:
-# puts agent.log
