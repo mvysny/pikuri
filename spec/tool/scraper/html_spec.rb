@@ -2,16 +2,20 @@
 
 require 'tool/scraper/html'
 
-# Exercise the JSON-LD vs. readability decision in +HTML.extract+
-# directly. Each example feeds a small HTML fixture and asserts which
-# path won.
+# Exercise +HTML.extract+'s dump-both behavior — when an interesting
+# JSON-LD node is present, the rendered output should contain *both*
+# the JSON-LD section (title + metadata bullets + body copy when
+# available) AND the readability/+<main>+ section, joined by a
+# horizontal rule. The earlier "is the JSON-LD authoritative for this
+# page?" heuristic is gone; we hand the LLM both views and let it
+# pick.
 RSpec.describe Tool::Scraper::HTML, '.extract' do
-  it 'falls through to readability when JSON-LD has no content fields (Wikipedia-shape)' do
+  it 'emits the JSON-LD metadata header AND the readability body for a Wikipedia-shape page' do
     # Wikipedia ships an Article JSON-LD block with only metadata —
     # name, author, datePublished, dateModified — and the actual page
-    # content lives in the HTML body. Without the content-field gate
-    # in best_jsonld_node, the scraper would emit a few lines of
-    # metadata and drop the article.
+    # content lives in the HTML body. Under dump-both we render the
+    # metadata bullets up top (useful, concrete facts) and the
+    # readability body underneath (the actual article).
     html = <<~HTML
       <html>
         <head>
@@ -40,20 +44,23 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     HTML
 
     out = described_class.extract(html)
+    # Readability body — the article copy.
     assert_includes out, 'x86 is a family of complex instruction set computer'
     assert_includes out, '8086 was introduced in 1978'
-    refute_includes out, '**Author:**',
-                    'JSON-LD path should not have fired — that block has no description/articleBody'
+    # JSON-LD header — metadata bullets are additive, not a replacement.
+    assert_includes out, '**Author:** Contributors to Wikimedia projects'
+    assert_includes out, '**Published:** 2001-10-31T13:12:04Z'
+    # Section separator.
+    assert_includes out, "\n---\n"
   end
 
-  it 'falls through to readability when an Article ships only a teaser description (Britannica-shape)' do
+  it 'emits both the JSON-LD teaser and the full readability body for a Britannica-shape Article' do
     # Britannica (and most news/encyclopedia sites) embed an Article
     # JSON-LD whose +description+ is a 200-400 char lede summary, not
-    # the article body. Treating that as the canonical content drops
-    # the whole page — the actual sections (Distribution, Natural
-    # history, Conservation status, ...) live in the HTML body. So
-    # for Article-shaped types we require +articleBody+ specifically;
-    # a bare +description+ is not enough to fire the fast path.
+    # the article body. Under the old type-based carve-out we suppressed
+    # the JSON-LD branch on Articles missing +articleBody+ to avoid
+    # dropping the real body. Dump-both renders the teaser AND the
+    # body — some duplication of the lede, but the LLM sees everything.
     html = <<~HTML
       <html>
         <head>
@@ -84,17 +91,19 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     HTML
 
     out = described_class.extract(html)
+    # Readability body — sections that lived only in the HTML.
     assert_includes out, "leopard's range stretches across sub-Saharan Africa"
     assert_includes out, 'IUCN classifies Panthera pardus'
-    refute_includes out, '**Author:** Britannica Editors',
-                    'JSON-LD fast path should not have fired — Article needs articleBody, not just description'
+    # JSON-LD section — teaser + metadata are now in the output too.
+    assert_includes out, 'Leopard, also called panther, large cat'
+    assert_includes out, '**Author:** Britannica Editors'
   end
 
-  it 'uses the JSON-LD fast path when an Article carries an articleBody' do
-    # When the JSON-LD really does carry the article copy (some
-    # publishers ship the full body in the schema.org block), the
-    # fast path is the right call — the structured fields are cleaner
-    # than what Readability would extract.
+  it 'emits both the JSON-LD articleBody and the readability body when a publisher embeds the article in the schema' do
+    # Some publishers ship the full article copy inside the JSON-LD
+    # payload. Dump-both renders that copy in the JSON-LD section AND
+    # whatever readability extracts from the HTML body — even if the
+    # HTML body is just chrome, the LLM can ignore it.
     html = <<~HTML
       <html>
         <head>
@@ -116,7 +125,11 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     assert_includes out, '# Hello'
     assert_includes out, '**Author:** Jane Doe'
     assert_includes out, 'Full article text the publisher embedded in the JSON-LD payload.'
-    refute_includes out, 'chrome and ads'
+    # Readability also runs and surfaces whatever's in the body.
+    # On a real page that's the article copy with chrome stripped; on
+    # this contrived fixture it's the lone "chrome and ads" paragraph.
+    # Either way the LLM sees the JSON-LD copy first.
+    assert_includes out, 'chrome and ads'
   end
 
   it 'falls back to <main> when Readability collapses a div/list-heavy page' do
@@ -175,7 +188,7 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     refute_includes out, '<article>'
   end
 
-  it 'uses the JSON-LD fast path when a Product carries offers (no description needed)' do
+  it 'renders Product metadata bullets alongside the readability body' do
     html = <<~HTML
       <html>
         <head>
@@ -197,5 +210,21 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     assert_includes out, '# Widget'
     assert_includes out, '**Price:** 9.99 USD'
     assert_includes out, '**SKU:** W-1'
+  end
+
+  it 'emits only the readability section when no interesting JSON-LD node is present' do
+    # Sanity check the "either section may be missing" path — pages
+    # without Product/Article/Recipe JSON-LD should not get a leading
+    # horizontal rule or empty section header.
+    html = <<~HTML
+      <html>
+        <head><title>Plain</title></head>
+        <body><article><p>#{'p' * 600}</p></article></body>
+      </html>
+    HTML
+
+    out = described_class.extract(html)
+    assert_includes out, '# Plain'
+    refute_includes out, "\n---\n", 'no JSON-LD section, so no separator should appear'
   end
 end

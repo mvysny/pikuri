@@ -9,18 +9,25 @@ class Tool
     # HTML → Markdown extractor used by {Simple.visit} when the fetched
     # response carries an HTML content-type.
     #
-    # Two-stage strategy:
+    # Always renders both views of the page when available:
     #
-    # 1. JSON-LD fast path. Many sites embed
-    #    +<script type="application/ld+json">+ blocks describing the
-    #    primary entity (Product, Article, Recipe, ...). When such a node
-    #    is present we render it directly. This handles SPA pages whose
-    #    visible markup is largely empty, and produces tight output on
-    #    product/recipe pages where the LLM mostly wants the structured
-    #    fields.
-    # 2. Readability fallback. If no useful JSON-LD is found, run
-    #    +Readability+ over the HTML to isolate the main content node,
-    #    then convert it to Markdown via +reverse_markdown+.
+    # 1. JSON-LD section. Any +<script type="application/ld+json">+ node
+    #    whose +@type+ matches a substantive schema.org content type
+    #    (Product, Article, Recipe, ...) is rendered as a header — title,
+    #    metadata bullets (brand, SKU, price, rating, author, published),
+    #    and the +articleBody+/+description+ copy when present.
+    # 2. Readability section. The page is run through +Readability+ +
+    #    +reverse_markdown+, with a +<main>+/+<article>+ fallback for
+    #    pages whose content sits mostly outside +<p>+ tags.
+    #
+    # Concatenated with a horizontal rule, so the LLM gets both the
+    # structured metadata and the rendered body and can pick whichever
+    # is more useful for the task. Trades some duplication (when a
+    # publisher embeds the article body in JSON-LD AND in HTML) for
+    # fewer type-based heuristics on which branch should win — the
+    # earlier "is this Article's +description+ a teaser or the real
+    # body?" carve-out is no longer needed because both end up in
+    # the output regardless.
     #
     # Pure parser — no I/O. {.extract} takes an HTML string and returns
     # Markdown, so tests can drive it against fixture HTML without a
@@ -29,41 +36,12 @@ class Tool
       # @return [Array<String>] schema.org +@type+ values that we treat
       #   as "the primary entity of this page" when picking a JSON-LD
       #   node to render. Order does not matter — the first matching
-      #   node wins.
+      #   node wins. Skips noise nodes (Organization, BreadcrumbList,
+      #   WebSite, ...) that ship on most pages but carry no page
+      #   content.
       INTERESTING_TYPES = %w[
         Product Article NewsArticle BlogPosting Recipe Event Book Movie
       ].freeze
-
-      # @return [Array<String>] +@type+ values for which the JSON-LD
-      #   +description+ field is a teaser (lede paragraph,
-      #   +<meta name="description">+ echo) rather than the article
-      #   body itself. For these types we require {ARTICLE_CONTENT_FIELDS}
-      #   to fire the fast path. Without this carve-out, encyclopedia
-      #   and news pages (Britannica, most news sites) would render
-      #   only a 200-300 char summary while the article body in the
-      #   HTML body got dropped.
-      ARTICLE_TYPES = %w[Article NewsArticle BlogPosting].freeze
-      private_constant :ARTICLE_TYPES
-
-      # @return [Array<String>] JSON-LD fields that, on
-      #   {ARTICLE_TYPES} nodes, signal the JSON-LD payload actually
-      #   carries the article copy (not just a teaser). +description+
-      #   is deliberately excluded here — see {ARTICLE_TYPES}.
-      ARTICLE_CONTENT_FIELDS = %w[articleBody].freeze
-      private_constant :ARTICLE_CONTENT_FIELDS
-
-      # @return [Array<String>] JSON-LD fields that signal a non-article
-      #   node carries substantive page content (not just metadata). At
-      #   least one must be present for {.best_jsonld_node} to short-
-      #   circuit the readability fallback. Without this gate, sites
-      #   like Wikipedia that ship a bare +Article+ block with only
-      #   +name+/+author+/+datePublished+ would collapse the entire
-      #   page to a few lines of metadata. For
-      #   +Product+/+Recipe+/+Event+/+Book+/+Movie+ the
-      #   +description+ field IS the substantive copy, so it stays in
-      #   this list; {ARTICLE_TYPES} use the stricter
-      #   {ARTICLE_CONTENT_FIELDS} instead.
-      CONTENT_FIELDS = %w[description articleBody offers].freeze
 
       # @return [Array<String>] HTML tags preserved by the readability
       #   pass. Anything outside this list is stripped before Markdown
@@ -94,18 +72,42 @@ class Tool
       #   tiny pages where Readability is doing the right thing.
       MAIN_FALLBACK_MIN_CHARS = 500
 
-      # Render +html+ as Markdown, preferring the JSON-LD fast path and
-      # falling back to readability extraction.
+      # Render +html+ as Markdown by emitting both the JSON-LD section
+      # (when an interesting node is present) and the readability /
+      # +<main>+ section, joined by a horizontal rule. Either section
+      # may be missing — pages with no JSON-LD return only the
+      # readability output, and a malformed page with no extractable
+      # body returns only the JSON-LD render.
       #
       # @param html [String] HTML document body
       # @return [String] Markdown representation
       def self.extract(html)
-        nodes = parse_jsonld(html)
-        if (node = best_jsonld_node(nodes))
-          return jsonld_to_markdown(node)
-        end
+        sections = [jsonld_section(html), readability_to_markdown(html)]
+        sections.reject! { |s| s.nil? || s.strip.empty? }
+        sections.join("\n\n---\n\n")
+      end
 
-        readability_to_markdown(html)
+      # Pick the first JSON-LD node whose +@type+ matches one of
+      # {INTERESTING_TYPES} and render it as Markdown. Returns +nil+
+      # when no such node exists, in which case {.extract} emits only
+      # the readability section.
+      #
+      # No content-field gating: a node carrying just +name+/+author+/
+      # +datePublished+ still renders (as a metadata-only header),
+      # because the readability pass independently produces the page
+      # body. That is the trade-off that lets us drop the type-based
+      # "is this teaser or article copy?" heuristics — duplication is
+      # acceptable when both views are available, and the LLM can
+      # pick whichever it needs.
+      #
+      # @param html [String] HTML document body
+      # @return [String, nil] Markdown render of the picked JSON-LD
+      #   node, or +nil+ when nothing matched
+      def self.jsonld_section(html)
+        node = parse_jsonld(html).find do |n|
+          Array(n['@type']).any? { |t| INTERESTING_TYPES.include?(t) }
+        end
+        node ? jsonld_to_markdown(node) : nil
       end
 
       # Collect every JSON-LD payload embedded in +html+, flattening
@@ -133,37 +135,6 @@ class Tool
         end
       end
 
-      # Pick the most useful node out of a flat JSON-LD list — the first
-      # one whose +@type+ matches {INTERESTING_TYPES} AND that carries
-      # at least one applicable content-field entry. Returns +nil+ when
-      # no such node exists, signalling that the readability fallback
-      # should run.
-      #
-      # Which fields qualify depends on +@type+: {ARTICLE_TYPES} require
-      # {ARTICLE_CONTENT_FIELDS} (i.e. +articleBody+), since their
-      # +description+ is typically a lede teaser; everything else uses
-      # {CONTENT_FIELDS} (where +description+ is the substantive copy).
-      #
-      # The content-field gate keeps us from short-circuiting on bare
-      # metadata blocks (e.g. Wikipedia ships an +Article+ JSON-LD with
-      # only +name+/+author+/+datePublished+ — useful page content lives
-      # in the HTML body, not the JSON-LD).
-      #
-      # @param nodes [Array<Hash>] JSON-LD nodes from {.parse_jsonld}
-      # @return [Hash, nil]
-      def self.best_jsonld_node(nodes)
-        nodes.find do |n|
-          types = Array(n['@type'])
-          next false unless types.any? { |t| INTERESTING_TYPES.include?(t) }
-
-          fields = types.any? { |t| ARTICLE_TYPES.include?(t) } ? ARTICLE_CONTENT_FIELDS : CONTENT_FIELDS
-          fields.any? do |f|
-            v = n[f]
-            !v.nil? && !(v.respond_to?(:empty?) && v.empty?)
-          end
-        end
-      end
-
       # Render a single JSON-LD +node+ as Markdown: a top-level title
       # from +name+/+headline+, a bullet list of common useful fields
       # (brand, SKU, price, rating, author, published date, ...), the
@@ -175,7 +146,7 @@ class Tool
       # opening lines.
       #
       # @param node [Hash] JSON-LD node, typically picked by
-      #   {.best_jsonld_node}
+      #   {.jsonld_section}
       # @return [String] Markdown representation
       def self.jsonld_to_markdown(node)
         out = +''
