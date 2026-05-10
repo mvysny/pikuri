@@ -139,13 +139,14 @@ class Tool
   # @return [Tool]
   FETCH = new(
     name: 'fetch',
-    description: 'Downloads the given URL and returns its body verbatim. ' \
-                 'Accepts text/* and a fixed allowlist of textual ' \
-                 'application/* types (JSON, XML, JavaScript, XHTML, RSS, ' \
-                 'Atom); refuses PDFs, images, and other binary content. ' \
-                 'Prefer web_scrape for rendered HTML pages or PDFs — ' \
-                 'web_scrape extracts the readable content, while fetch ' \
-                 'returns the raw bytes.',
+    description: <<~DESC,
+      Downloads the given URL and returns its body verbatim.
+
+      Usage:
+      - Use for raw textual payloads: JSON APIs, CSV files, robots.txt, sitemaps, source files — anywhere a rendering pass would corrupt the data.
+      - For rendered HTML pages or PDFs, use web_scrape — it extracts readable content; fetch returns the raw HTML/PDF bytes unchanged.
+      - Accepts text/* and common textual application/* types (JSON, XML, JS, XHTML, RSS, Atom). Refuses PDFs, images, and other binaries.
+    DESC
     parameters: Parameters.build { |p|
       p.required_string :url,
                         'Absolute URL to download, including the scheme, ' \
