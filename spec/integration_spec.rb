@@ -167,6 +167,45 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
     assert_equal final_assistant_text, agent.last_assistant_content
   end
 
+  # Focused on the description channel: tool-level description and per-
+  # parameter descriptions are the strings the LLM actually reads to
+  # decide whether to call a tool and how to fill its arguments. If
+  # +Tool::Parameters#to_h+ ever drops +description+ from a property, or
+  # if ruby_llm's +params(hash)+ filters them out, the model will start
+  # calling tools with garbage arguments — but every other check (types,
+  # required, dispatch) keeps passing. This test pins the wire shape.
+  it 'propagates tool and parameter descriptions onto the OpenAI request' do
+    described_tool = Tool.new(
+      name: tool_call_name,
+      description: 'Echoes its input verbatim — useful when the user asks to repeat text.',
+      parameters: Tool::Parameters.build do |p|
+        p.required_string :text, 'The exact text the assistant should echo back.'
+        p.optional_integer :repeat, 'Number of times to repeat the echo (default 1).'
+      end,
+      execute: ->(text:, repeat: 1) { (["echo: #{text}"] * repeat).join("\n") }
+    )
+
+    agent = Agent.new(
+      model: 'test-model',
+      provider: :openai,
+      assume_model_exists: true,
+      system_prompt: 'be terse',
+      tools: [described_tool]
+    )
+
+    capture_stdout { agent.run_loop(user_message: 'please echo hi') }
+
+    advertised = @captured_requests[0]['tools'][0]
+    assert_equal 'Echoes its input verbatim — useful when the user asks to repeat text.',
+                 advertised['function']['description']
+
+    properties = advertised['function']['parameters']['properties']
+    assert_equal 'The exact text the assistant should echo back.',
+                 properties['text']['description']
+    assert_equal 'Number of times to repeat the echo (default 1).',
+                 properties['repeat']['description']
+  end
+
   def capture_stdout
     original = $stdout
     $stdout = StringIO.new
