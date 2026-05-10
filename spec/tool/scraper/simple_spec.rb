@@ -142,6 +142,21 @@ RSpec.describe Tool::Scraper::Simple, '.dispatch' do
     end
   end
 
+  it 'passes text/plain bodies through verbatim' do
+    fetched = fetched_class.new(body: "User-agent: *\nDisallow: /private", content_type: 'text/plain', url: 'https://example.com/robots.txt')
+    assert_equal "User-agent: *\nDisallow: /private", described_class.dispatch(fetched)
+  end
+
+  it 'passes text/markdown bodies through verbatim' do
+    fetched = fetched_class.new(body: "# Title\n\nbody text", content_type: 'text/markdown', url: 'https://example.com/README.md')
+    assert_equal "# Title\n\nbody text", described_class.dispatch(fetched)
+  end
+
+  it 'passes other text/* bodies (e.g. text/x-markdown) through verbatim' do
+    fetched = fetched_class.new(body: '## heading', content_type: 'text/x-markdown', url: 'https://example.com/notes')
+    assert_equal '## heading', described_class.dispatch(fetched)
+  end
+
   it 'raises FetchError for an unsupported content-type' do
     fetched = fetched_class.new(body: '{}', content_type: 'application/json', url: 'https://example.com/')
     err = assert_raises(Tool::Scraper::FetchError) { described_class.dispatch(fetched) }

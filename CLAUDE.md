@@ -87,10 +87,12 @@ area grows.
   `content_type`. Owns `Scraper::FetchError` (HTTP 4xx/5xx, network
   failure, redirect-loop, missing `Location`, or an unsupported
   content-type — all the failures the LLM can react to). Routes
-  `text/html`/`application/xhtml+xml` to `Scraper::HTML` and
-  `application/pdf` to `Scraper::PDF`; other types raise `FetchError`
-  with a legible message. "Simple" because everything is one Faraday
-  GET — no headless browser, no JS.
+  `text/html`/`application/xhtml+xml` to `Scraper::HTML`,
+  `application/pdf` to `Scraper::PDF`, and any other `text/*` body
+  (plain text, Markdown, source files, …) is passed through verbatim
+  since the LLM can already read it; remaining types raise
+  `FetchError` with a legible message. "Simple" because everything is
+  one Faraday GET — no headless browser, no JS.
 - `lib/tool/scraper/html.rb` — pure HTML→Markdown extractor.
   `HTML.extract(html)` runs a JSON-LD fast path (preferring
   schema.org `Product`/`Article`/`Recipe`/... nodes that carry a

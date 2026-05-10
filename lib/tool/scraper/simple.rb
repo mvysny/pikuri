@@ -26,9 +26,11 @@ class Tool
     # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
     # follow redirects, and dispatch the response body to the parser
     # matching its +Content-Type+. HTML and XHTML route to
-    # {HTML.extract}; +application/pdf+ routes to {PDF.extract}; other
-    # types raise {FetchError} so the LLM observes the failure instead
-    # of receiving an empty rendering.
+    # {HTML.extract}; +application/pdf+ routes to {PDF.extract}; any
+    # other +text/*+ type (plain text, Markdown, source files, …) is
+    # passed through verbatim since the LLM can already read it; the
+    # remaining types raise {FetchError} so the LLM observes the
+    # failure instead of receiving an empty rendering.
     #
     # Split into a thin HTTP fetch ({.fetch}) and a content-type
     # dispatcher ({.visit}) so tests can drive each piece in isolation.
@@ -42,8 +44,10 @@ class Tool
       # @return [String] +Accept+ header sent with each request. Lists
       #   every content-type the dispatcher in {.visit} knows how to
       #   render, so servers that content-negotiate hand back something
-      #   we can use.
-      ACCEPT = 'text/html,application/xhtml+xml,application/pdf'
+      #   we can use. The trailing +text/*;q=0.8+ covers the verbatim
+      #   pass-through arm (plain text, Markdown, source files, …) at a
+      #   lower preference than rendered HTML/PDF.
+      ACCEPT = 'text/html,application/xhtml+xml,application/pdf,text/*;q=0.8'
       # @return [Integer] maximum number of HTTP redirects to follow
       #   before giving up
       MAX_REDIRECTS = 5
@@ -146,6 +150,8 @@ class Tool
           HTML.extract(fetched.body)
         when 'application/pdf'
           PDF.extract(fetched.body)
+        when %r{\Atext/}
+          fetched.body
         else
           raise FetchError, "unsupported content-type #{fetched.content_type.inspect} for #{fetched.url}"
         end
