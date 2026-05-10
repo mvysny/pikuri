@@ -6,11 +6,10 @@ require 'ruby_llm'
 
 # Thin wrapper around +RubyLLM::Chat+: pikuri owns the *extension surface*
 # (event listeners that print reasoning, assistant messages, tool calls,
-# and the +max_steps+ guard) while ruby_llm owns the loop itself. See
-# +MIGRATION.md+ for the larger framing — pikuri's Thought / Tool-call /
-# Observation iteration moved into +Chat#complete+, and what used to be
-# the body of +run_loop+ became the listener set installed in
-# {#install_listeners}.
+# and the +max_steps+ guard) while ruby_llm owns the loop itself. The
+# Thought / Tool-call / Observation iteration lives in +Chat#complete+;
+# what would otherwise be the body of {#run_loop} is the listener set
+# installed in {#install_listeners}.
 class Agent
   # @param model [String, nil] LLM identifier; defaults to
   #   +RubyLLM.config.default_model+ so transport configuration can pick

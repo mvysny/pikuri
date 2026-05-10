@@ -14,15 +14,15 @@ require 'ruby_llm'
 # explicitly by the scripts that use them; +lib/tool.rb+ itself only
 # introduces the {Tool} factory and {Tool::Parameters} machinery.
 #
-# == Why a factory rather than a +Data.define+
+# == Why a factory
 #
-# The migration to ruby_llm (see +MIGRATION.md+) hands the agent loop to
-# +RubyLLM::Chat+. +Chat#with_tool+ expects a +RubyLLM::Tool+ subclass and
-# instantiates it with +tool.new+, so pikuri's tools have to *be* those
-# subclasses. The factory builds one per call, capturing pikuri's
-# {Parameters} validator and the user-supplied callable in a closure that
-# both the class-level +run+ (used directly by pikuri) and the instance-
-# level +execute+ (used by ruby_llm's tool-calling path) delegate to.
+# +RubyLLM::Chat+ runs the agent loop. +Chat#with_tool+ expects a
+# +RubyLLM::Tool+ subclass and instantiates it with +tool.new+, so
+# pikuri's tools have to *be* those subclasses. The factory builds one
+# per call, capturing pikuri's {Parameters} validator and the user-
+# supplied callable in a closure that both the class-level +run+ (used
+# directly by pikuri's specs) and the instance-level +execute+ (used
+# by ruby_llm's tool-calling path) delegate to.
 #
 # == Validation ordering
 #

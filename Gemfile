@@ -29,9 +29,9 @@ gem 'reverse_markdown', '~> 3.0'
 # responses as plain text for the agent loop.
 gem 'pdf-reader', '~> 2.15'
 
-# LLM transport. Pikuri sits on top of ruby_llm; see MIGRATION.md.
-# Pinned tightly because of bus-factor-1 and recent internal-API churn
-# (1.15 normalized token field names, etc.).
+# LLM transport + agent loop. Pikuri sits on top of ruby_llm; see
+# CLAUDE.md "Risks worth tracking" for the bus-factor and Chat-API-churn
+# rationale behind the tight pin.
 gem 'ruby_llm', '~> 1.15'
 
 # Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets

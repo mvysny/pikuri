@@ -57,7 +57,7 @@ class Tool
   # exponentiation, %, parentheses, decimals) so the model can emit the
   # syntax it already knows.
   #
-  # @return [Tool]
+  # @return [Class] synthetic +RubyLLM::Tool+ subclass
   CALCULATOR = new(
     name: 'calculator',
     description: 'Evaluates a basic arithmetic expression and returns ' \
