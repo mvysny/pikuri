@@ -17,12 +17,15 @@ class Tool
   # @return [Tool]
   WEB_SEARCH = new(
     name: 'web_search',
-    description: 'Searches the web for a query and returns the top results ' \
-                 'as a Markdown list of titles, links, and short snippets. ' \
-                 'This tool is often ' \
-                 'rate-limited/bot-blocked.',
+    description: <<~DESC,
+      Searches the web for a query and returns the top results as a Markdown list of titles, URLs, and short snippets.
+
+      Usage:
+      - Use this to find candidate URLs, then call web_scrape on the most promising one(s) for full content. Snippets alone rarely answer a question.
+    DESC
     parameters: Parameters.build { |p|
-      p.required_string :query, 'The search query to perform.'
+      p.required_string :query,
+                        'The search query, e.g. "BigDecimal precision Ruby".'
       p.optional_integer :max_results,
                          'Maximum number of result entries to return. ' \
                          'Defaults to 10; most providers cap this at 20.'
