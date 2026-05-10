@@ -212,6 +212,20 @@ bundled tools.
   `before` and restore in `after`. See `spec/agent_spec.rb` for the
   pattern.
 
+- **Tool descriptions follow opencode-shape: summary + `Usage:` bullets.**
+  A `description:` heredoc with a one-line summary, a blank line,
+  then a `Usage:` bullet list. Use `Do NOT` / `ALL` capitalization
+  sparingly on bullets where the LLM commonly errs. Keep facts in
+  their semantic home — the tool description is for "when do I pick
+  this? how does it chain with other tools?"; per-argument constraints
+  (defaults, caps, value format) live in the parameter description and
+  must NOT be duplicated in the tool description. Universal failure-
+  recovery guidance ("on `Error: ...`, use what you have or admit
+  defeat to the user") lives in `smolagents-system-prompt.txt`, not
+  per-tool. Add an example value (`'..., e.g. "https://example.com"'`)
+  to every parameter description; the LLM's argument-filling reliability
+  is measurably better with one.
+
 ## Working on this codebase
 
 - **Agent owns the extension surface; ruby_llm owns the loop.** When

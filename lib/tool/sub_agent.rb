@@ -38,23 +38,20 @@ class Tool
     def self.build(system_prompt:, tools:, model: nil, max_steps: 10)
       Tool.new(
         name: 'sub_agent',
-        description: 'Delegate a self-contained task to a fresh sub-agent ' \
-                     'that has the same tools as you (except `sub_agent` ' \
-                     'itself, so it cannot recurse). The sub-agent runs its ' \
-                     'own Thought / Tool-call / Observation loop from a ' \
-                     'clean conversation and returns only its final ' \
-                     'assistant message. Use this to isolate side-quests — ' \
-                     'research, multi-step lookups, exploratory tool use — ' \
-                     'so their intermediate observations do not clutter ' \
-                     'your own context. The sub-agent shares your system ' \
-                     'prompt — so persona, tool-use conventions, and ' \
-                     'output format carry over — but cannot see your ' \
-                     'conversation. Only pass task-specific context in ' \
-                     '`task`; you do not need to re-explain who you are or ' \
-                     'how to use tools.',
+        description: <<~DESC,
+          Delegate a self-contained task to a fresh sub-agent that runs its own Thought / Tool-call / Observation loop on a clean conversation, returning only its final assistant message.
+
+          Usage:
+          - Use to isolate side-quests — research, multi-step lookups, exploratory tool use — so intermediate observations do not clutter your own context.
+          - The sub-agent has your tools minus `sub_agent` itself, so it cannot recurse.
+          - It shares your system prompt — persona, tool-use conventions, and output format carry over. Do NOT re-explain who you are or how to use tools.
+          - It cannot see your conversation. Put ALL task-specific context inside `task`; the sub-agent has zero memory of what came before.
+        DESC
         parameters: Parameters.build { |p|
           p.required_string :task,
-                            'Self-contained instructions for the sub-agent. ' \
+                            'Self-contained instructions for the sub-agent, ' \
+                            'e.g. "Find the populations of Reykjavik and ' \
+                            'Helsinki in 2024 and report both numbers." ' \
                             'It has no access to the parent conversation, ' \
                             'so include all necessary context.'
         },
