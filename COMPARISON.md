@@ -120,36 +120,35 @@ This is the section most worth reading. The LLM only gets to see the
 `description` and per-parameter strings; their quality directly affects how
 often the model picks the right tool with the right arguments.
 
-### pikuri (verbatim)
+### pikuri (verbatim — post-cleanup)
+
+All five tools follow a single heredoc shape: one-line summary, blank
+line, `Usage:` bullet list. Showing `web_scrape` as the exemplar — this
+tool had the biggest jump, its old description was a single line:
 
 ```
-calculator:
-  Evaluates a basic arithmetic expression and returns the numeric result.
-  Use this for any arithmetic beyond simple mental math. Supports +, -, *,
-  /, ** (exponentiation), %, parentheses, and decimal numbers. No variables
-  or functions — pass concrete numbers only.
+Scrapes the rendered webpage, PDF, or text file at the given URL and returns its main content as Markdown.
 
-web_search:
-  Searches the web for a query and returns the top results as a Markdown
-  list of titles, links, and short snippets. This tool is often
-  rate-limited/bot-blocked.
-
-web_scrape:
-  Scrapes the rendered webpage, PDF or text file at the given URL and
-  returns its main content as Markdown.
-
-fetch:
-  Downloads the given URL and returns its body verbatim. Accepts text/* and
-  a fixed allowlist of textual application/* types (JSON, XML, JavaScript,
-  XHTML, RSS, Atom); refuses PDFs, images, and other binary content. Prefer
-  web_scrape for rendered HTML pages or PDFs — web_scrape extracts the
-  readable content, while fetch returns the raw bytes.
+Usage:
+- Use for HTML pages or PDFs where you want readable content — readability extraction strips nav, sidebars, and boilerplate.
+- For raw textual payloads (JSON, CSV, robots.txt, source files), use fetch instead — it returns bytes verbatim, while web_scrape would corrupt them with a Markdown pass.
 ```
 
-Pikuri's are inconsistent: `fetch` and `sub_agent` have explicit "use this for
-X, not Y" guidance baked in; `web_scrape` is one line; `web_search` doesn't
-say anything about caching or what `max_results` actually does at the high
-end.
+Two cross-cutting decisions fell out of the pass:
+
+- **Universal `Error: ...` recovery lives in
+  `smolagents-system-prompt.txt`** as one rule, not per-tool. The same
+  guidance (use what you have, or tell the user; do not retry the same
+  call) covers search rate-limits, scrape 404s, fetch refusals, and
+  calculator parse errors — writing it once avoids per-tool drift.
+- **Per-argument constraints stay in the parameter description**, never
+  duplicated in the tool description. String parameters use inline
+  `e.g. "..."` examples in the ruby_llm pattern below; integer
+  parameters (`max_results`, `max_chars`) state default and cap as the
+  anchoring equivalent.
+
+The convention is documented in `CLAUDE.md` under "Conventions" so new
+tools land at the same bar without per-PR re-litigation.
 
 ### ruby_llm (from spec fixture — there are no shipped tools)
 
@@ -211,9 +210,11 @@ existing files", "NEVER write new files unless explicitly required",
 an error...").
 
 **Takeaway.** opencode's pattern — _summary, then bullet list of usage
-constraints, including failure modes the LLM can hit_ — is the gold standard.
-Pikuri's `sub_agent` description already does most of this; the other tools
-should be brought up to that bar (see the "Ideas to borrow" section).
+constraints_ — is the gold standard, and pikuri now applies it uniformly
+across all five tools. The one place pikuri diverges: opencode bakes
+failure-mode hints inline ("If the path does not exist, an error is
+returned"), pikuri factors them into a single universal rule in the
+system prompt. Cheaper to maintain, loses some tool-specific specificity.
 
 ---
 
@@ -334,15 +335,19 @@ existing primitive.
 
 ### A-tier — high fit, low cost
 
-1. **Bring all tool descriptions up to the opencode bar.** One-line summary,
-   blank line, `Usage:` bullet list with explicit constraints and failure
-   modes the LLM can hit. Pikuri's `sub_agent` already does this; `web_scrape`
-   and `web_search` don't. Files: `lib/tool/web_search.rb`,
-   `lib/tool/web_scrape.rb`, `lib/tool/calculator.rb`. No code change —
-   just descriptions.
-2. **Examples in parameter descriptions.** ruby_llm's `Latitude (e.g.,
-   52.5200)` pattern is free quality. Pikuri's calculator does this; nothing
-   else does. Audit every `p.required_*` / `p.optional_*` call site.
+1. **Bring all tool descriptions up to the opencode bar** — **DONE**.
+   All five tools (calculator, web_search, web_scrape, fetch, sub_agent)
+   now use the heredoc summary + `Usage:` bullets shape. The pikuri
+   variant of the pattern factors universal `Error: ...` recovery into
+   the system prompt rather than restating it per-tool. Convention
+   documented in `CLAUDE.md`. The pass also bumped `web_scrape`'s
+   default `max_chars` from 5K → 20K so the LLM doesn't double-request
+   the same prefix on common-length articles.
+2. **Examples in parameter descriptions** — **DONE**. Every string
+   parameter now carries an inline `e.g. "..."` example in the ruby_llm
+   pattern. Integer parameters (`max_results`, `max_chars`) describe
+   their default and cap, which serves as the anchoring equivalent.
+   Codified in `CLAUDE.md`.
 3. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
    `halt("done")` from `execute` ends the chat without a follow-up
