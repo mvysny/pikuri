@@ -145,12 +145,36 @@ forked config without touching process-wide state.
    "Validation ordering" below). Spec coverage: a synthetic tool round-
    trips through ruby_llm's tool-calling path with pikuri's strict
    validator producing the LLM-facing error string. Commit.
-3. **Agent rewrite.** Replace `Agent#run_loop`'s iterating body with:
-   construct `RubyLLM::Chat`, register tools (now ruby_llm-native
-   thanks to step 2), attach listeners that mirror today's inline
-   output (reasoning dim, tool-call cyan, assistant Markdown), call
-   `Chat#complete`. Specs that assert step-by-step loop behavior get
-   rewritten as listener assertions. Commit.
+3. **Agent rewrite.** Replace `Agent#run_loop`'s iterating body with
+   listener wiring + an `ask`/`complete` call. Concrete recipe:
+
+   ```ruby
+   def run_loop(user_message:)
+     @chat.after_message do |msg|
+       next unless msg.role == :assistant
+       puts Rainbow(msg.thinking.text).darkgray if msg.thinking&.text && !msg.thinking.text.empty?
+       puts TTY::Markdown.parse(msg.content)    if msg.content && !msg.content.empty?
+     end
+     @chat.before_tool_call  { |tc| @step += 1; raise "agent exceeded #{@max_steps} steps" if @step > @max_steps; puts Rainbow("→ #{tc.name}(#{tc.arguments})").cyan }
+     @chat.after_tool_result { |r|  puts Rainbow("= #{r}").cyan }
+     @chat.ask(user_message)
+   end
+   ```
+
+   The thinking/content/tool-call/tool-result rendering matches today's
+   inline output 1:1. Reasoning content reaches us via
+   `Message#thinking.text` — verified that the OpenAI provider extracts
+   `reasoning_content` from llama.cpp/Qwen3-style responses
+   (`lib/ruby_llm/providers/openai/chat.rb:166`).
+
+   `max_steps` becomes a counter incremented in `before_tool_call`
+   that raises when exceeded. ruby_llm's `Chat` has no built-in
+   step budget; without this guard, a buggy tool that always returns
+   the same observation could loop indefinitely.
+
+   Specs that assert step-by-step loop behavior get rewritten as
+   listener assertions (capture what the callbacks emit instead of
+   what `run_loop` prints). Commit.
 4. **`bin/pikuri` rewire.** Replace `OpenAIClient` construction with
    ruby_llm config; pass nothing transport-shaped to `Agent`. Real
    end-to-end invocation against a local llama.cpp server is the
@@ -214,17 +238,12 @@ hash, or the keyrest-bypass in `validate_keyword_arguments`.
 
 ## Open questions to settle before step 2
 
-1. **Reasoning content.** Pikuri prints `reasoning_content` from
-   thinking models dimmed inline. Verify ruby_llm exposes this on
-   `Message` (README mentions a `thinking` field). If aligned, render
-   via the listener attached in step 3. If not, may need
-   `Message#raw` as a fallback.
-2. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
+1. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
    ruby_llm sometimes returns `{error: "..."}` hashes. Verify a
    synthetic tool returning a string from `execute` lands as a normal
    tool-result message (model sees the string), not a structured-error
    path that the model treats specially.
-3. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
+2. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
    a clean log. Under B, "fresh `Agent`" means a fresh
    `RubyLLM::Chat`. Verify there's no shared global state in ruby_llm
    that would leak between parent and sub-agent (model config, API
