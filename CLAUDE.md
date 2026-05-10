@@ -228,11 +228,6 @@ bundled tools.
 
 ## Risks worth tracking
 
-- **Bus factor on ruby_llm.** crmne wrote ~97% of the gem's commits.
-  Pin tightly (currently `~> 1.15`); re-evaluate the pin
-  periodically. Contingency is a fork that brings the loop in-house —
-  effectively reversing this migration. Doable, not free; the seam
-  (`lib/agent.rb` + `lib/tool.rb`) bounds the cost.
 - **`RubyLLM::Chat` API churn.** Pikuri couples to Chat semantics
   (listener names, message/thinking shapes, `with_tool` taking a
   class). Watch minor releases — 1.15 already normalized token field
