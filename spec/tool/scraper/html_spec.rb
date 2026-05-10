@@ -70,6 +70,62 @@ RSpec.describe Tool::Scraper::HTML, '.extract' do
     assert_includes out, '**Author:** Jane Doe'
   end
 
+  it 'falls back to <main> when Readability collapses a div/list-heavy page' do
+    # Real-world capture of vaadin.com/company. The page renders its
+    # main content using divs, lists and spans — zero <p> tags except
+    # in one trailing "Sustainability" block. Readability's
+    # paragraph-density scoring picks only that block (~500 chars of
+    # markdown), missing the About us / Our values / Serving
+    # customers sections. The <main> fallback should kick in and
+    # surface the full page.
+    html = File.read(File.expand_path('../../fixtures/vaadin_company.html', __dir__))
+
+    out = described_class.extract(html)
+
+    assert_includes out, '# Vaadin – The Company Behind the Full-Stack Java Platform'
+    assert_includes out, '## About us'
+    assert_includes out, 'Vaadin makes developing and modernizing Java-based applications'
+    assert_includes out, '## Our values'
+    assert_includes out, '## Choose the Herd'
+    assert_includes out, '## Own the Solution'
+    assert_includes out, '## Dare to Explore'
+    assert_includes out, '## Serving customers globally'
+    # And the original Sustainability block Readability did pick
+    # should still be present, not lost in the swap:
+    assert_includes out, '## Sustainability'
+    assert_operator out.length, :>, 3000,
+                    'expected the <main> fallback to surface the full page (Readability alone returns ~500 chars)'
+  end
+
+  it 'keeps Readability output when <article> text is comparable in length' do
+    # The fallback ratio gate (container >= 2x readability) must not
+    # fire on pages where Readability is already doing its job —
+    # otherwise we'd lose its noise filtering on every semantic-HTML
+    # page. This Wikipedia-shape document has its content inside
+    # <article>, but Readability extracts essentially the same text,
+    # so the fallback should stay quiet and leave the output alone.
+    paragraph = 'x' * 600
+    html = <<~HTML
+      <html>
+        <head><title>Comparable</title></head>
+        <body>
+          <article>
+            <h1>Comparable</h1>
+            <p>#{paragraph}</p>
+          </article>
+        </body>
+      </html>
+    HTML
+
+    out = described_class.extract(html)
+    assert_includes out, '# Comparable'
+    assert_includes out, paragraph
+    # The <article> wrapper itself should not appear — that would
+    # mean we routed through the fallback and reverse_markdown
+    # passed the unknown <article> tag through.
+    refute_includes out, '<article>'
+  end
+
   it 'uses the JSON-LD fast path when a Product carries offers (no description needed)' do
     html = <<~HTML
       <html>

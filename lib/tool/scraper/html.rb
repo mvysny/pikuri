@@ -59,6 +59,22 @@ class Tool
       #   is dropped before Markdown conversion
       READABILITY_ATTRS = %w[href src alt title].freeze
 
+      # @return [Float] minimum +<main>+/+<article>+ to Readability
+      #   text-length ratio that triggers the semantic-container
+      #   fallback in {.readability_to_markdown}. Picked low enough to
+      #   catch the failure mode (Readability collapsing a page that
+      #   uses divs/lists instead of +<p>+ — e.g. +vaadin.com/company+,
+      #   ~5x) but high enough that pages where both produce
+      #   comparable output keep Readability's noise filtering.
+      MAIN_FALLBACK_RATIO = 2.0
+
+      # @return [Integer] minimum text length the
+      #   +<main>+/+<article>+ container must hold before the fallback
+      #   in {.readability_to_markdown} can fire. Below this, the
+      #   ratio comparison is dominated by noise and we'd swap on
+      #   tiny pages where Readability is doing the right thing.
+      MAIN_FALLBACK_MIN_CHARS = 500
+
       # Render +html+ as Markdown, preferring the JSON-LD fast path and
       # falling back to readability extraction.
       #
@@ -178,24 +194,65 @@ class Tool
       # then convert that to Markdown via +reverse_markdown+. The page
       # +<title>+ is rendered as a top-level heading.
       #
+      # When the page uses semantic HTML5 (+<main>+ or +<article>+) but
+      # leaves most of its content outside +<p>+ tags — divs, lists,
+      # spans — Readability's paragraph-density scoring collapses the
+      # extraction to a sliver of the page. In that case we render the
+      # +<main>+/+<article>+ container directly. The fallback only
+      # fires when the container holds substantially more text than
+      # Readability picked up (see {MAIN_FALLBACK_RATIO} /
+      # {MAIN_FALLBACK_MIN_CHARS}); on pages where both agree we keep
+      # Readability so its noise filtering still strips nav/ads/etc.
+      #
       # @param html [String] HTML document body
       # @return [String] Markdown representation
       def self.readability_to_markdown(html)
-        doc = Readability::Document.new(
+        rdoc = Readability::Document.new(
           html,
           tags: READABILITY_TAGS,
           attributes: READABILITY_ATTRS,
           remove_empty_nodes: true
         )
+        readability_html = rdoc.content
+        title = rdoc.title
 
-        title = doc.title
-        body  = ReverseMarkdown.convert(doc.content, unknown_tags: :bypass, github_flavored: true)
+        body_html = main_fallback_html(html, readability_html) || readability_html
+        body = ReverseMarkdown.convert(body_html, unknown_tags: :bypass, github_flavored: true)
 
         out = +''
         out << "# #{title.strip}\n\n" if title && !title.strip.empty?
         out << body
         out
       end
+
+      # If +html+ has a +<main>+ or +<article>+ element holding
+      # substantially more text than Readability extracted, return that
+      # container's HTML so the caller can render it instead. Returns
+      # +nil+ when the fallback should not fire — when there is no
+      # semantic container, when it's too small to be meaningful, or
+      # when Readability's output is already comparable.
+      #
+      # @param html [String] full HTML document body, used to locate
+      #   the +<main>+/+<article>+ container
+      # @param readability_html [String] HTML produced by
+      #   +Readability::Document#content+, used as the comparison
+      #   baseline
+      # @return [String, nil] container HTML when the fallback should
+      #   fire, +nil+ otherwise
+      def self.main_fallback_html(html, readability_html)
+        doc = Nokogiri::HTML(html)
+        container = doc.at_css('main') || doc.at_css('article')
+        return nil unless container
+
+        container_text_len = container.text.gsub(/\s+/, ' ').strip.length
+        return nil if container_text_len < MAIN_FALLBACK_MIN_CHARS
+
+        readability_text_len = Nokogiri::HTML(readability_html).text.gsub(/\s+/, ' ').strip.length
+        return nil if container_text_len < MAIN_FALLBACK_RATIO * readability_text_len
+
+        container.to_html
+      end
+      private_class_method :main_fallback_html
 
       # JSON-LD fields can be a string, hash, or array of either.
       # Normalize to a single hash (the first one if it's a list) so
