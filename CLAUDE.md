@@ -225,3 +225,21 @@ bundled tools.
   New capabilities should land as new `Tool` constants under
   `lib/tool/` with their own specs; neither the factory in
   `lib/tool.rb` nor ruby_llm's loop should need to know about them.
+
+## Risks worth tracking
+
+- **Bus factor on ruby_llm.** crmne wrote ~97% of the gem's commits.
+  Pin tightly (currently `~> 1.15`); re-evaluate the pin
+  periodically. Contingency is a fork that brings the loop in-house —
+  effectively reversing this migration. Doable, not free; the seam
+  (`lib/agent.rb` + `lib/tool.rb`) bounds the cost.
+- **`RubyLLM::Chat` API churn.** Pikuri couples to Chat semantics
+  (listener names, message/thinking shapes, `with_tool` taking a
+  class). Watch minor releases — 1.15 already normalized token field
+  names, that's the failure mode to expect. Pin reads here would
+  surface in the listener wiring or the synthetic-tool factory.
+- **Synthetic-tool fragility.** If ruby_llm refactors its tool DSL
+  (how `params(hash)` accepts a raw schema, the keyrest bypass on
+  `validate_keyword_arguments`, or how `execute` is invoked), the
+  factory in `lib/tool.rb` breaks. The seam contains the blast — the
+  break is in one file, not spread across the codebase.
