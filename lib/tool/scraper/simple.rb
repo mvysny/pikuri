@@ -2,27 +2,16 @@
 
 require 'faraday'
 require 'uri'
+require_relative '../scraper'
 
 require 'tool/scraper/html'
 require 'tool/scraper/pdf'
 
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order.
+# +class Tool+ / +module Scraper+ reopening below assumes
+# {Tool::Scraper::FetchError} is defined; the +require_relative+ above
+# ensures that regardless of caller load order.
 class Tool
   module Scraper
-    # Raised by {Simple.fetch} (and re-exposed at the {Scraper} module
-    # level so any future scraper can share it) when the page could not
-    # be retrieved or rendered for a reason the LLM can react to: HTTP
-    # 4xx/5xx, network/connection/timeout failure, redirect loop, a 3xx
-    # without a usable +Location+ header, or a content-type the
-    # dispatcher does not know how to render. The agent loop catches
-    # this in {Tool::WebScrape.visit} and feeds the message back to the
-    # model as the next observation, so the LLM can try a different URL
-    # or give up gracefully. Genuine bugs in the parser/extraction code
-    # keep raising their own exception types and crash loud — those need
-    # a human, not the LLM.
-    class FetchError < StandardError; end
-
     # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
     # follow redirects, and dispatch the response body to the parser
     # matching its +Content-Type+. HTML and XHTML route to
