@@ -74,8 +74,8 @@ area grows.
   throttled to one request every 2s, prone to IP soft-blocks) and
   `Tool::Search::Brave` (official Web Search API with
   `X-Subscription-Token`).
-- `lib/tool/web_fetch.rb` — defines `Tool::WEB_FETCH`, the LLM-facing
-  `web_fetch` tool. Thin wrapper over `Tool::Scraper::Simple.visit`:
+- `lib/tool/web_scrape.rb` — defines `Tool::WEB_SCRAPE`, the LLM-facing
+  `web_scrape` tool. Thin wrapper over `Tool::Scraper::Simple.visit`:
   caches the rendered Markdown on disk via `UrlCache`, truncates to
   `max_chars`, and turns `Scraper::FetchError` into an `"Error: ..."`
   observation so the agent loop feeds the failure back to the model

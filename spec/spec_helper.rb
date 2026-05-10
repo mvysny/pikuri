@@ -8,13 +8,13 @@ require 'minitest/assertions'
 
 require 'url_cache'
 require 'tool'
-require 'tool/web_fetch'
+require 'tool/web_scrape'
 require 'tool/websearch'
 
 # Disable on-disk caching by default in the test suite. The two specs
 # that genuinely exercise caching behavior opt back in by stubbing
 # +.cache+ with a real {UrlCache} pointed at a tmpdir.
-[Tool::WebFetch, Tool::Search].each do |mod|
+[Tool::WebScrape, Tool::Search].each do |mod|
   mod.singleton_class.define_method(:cache) { UrlCache::NULL }
 end
 

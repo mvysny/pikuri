@@ -5,14 +5,14 @@ require 'fileutils'
 
 # On-disk cache for string-keyed text payloads. Used by the bundled tools
 # to avoid re-fetching the same page or re-issuing the same web-search
-# query within a TTL window: {Tool::WebFetch.visit} caches the rendered
+# query within a TTL window: {Tool::WebScrape.visit} caches the rendered
 # Markdown for a URL, and the {Tool::Search} provider modules cache the
 # rendered result list for a query (the query string itself acts as the
 # key — keys are SHA-256 hashed, so any opaque string works).
 #
 # Each tool wires its own {UrlCache} instance against a dedicated
 # subdirectory under {ROOT_DIR}, so a +web_search+ query string and a
-# +web_fetch+ URL string can never collide on the same cache file. There
+# +web_scrape+ URL string can never collide on the same cache file. There
 # is no global default singleton — pass a fresh instance to whichever
 # code needs caching, or use {NULL} to disable caching entirely.
 #
@@ -28,7 +28,7 @@ class UrlCache
   # Root directory under which per-tool cache subdirectories live.
   # Writeable on Linux/macOS and cleared on reboot, which is fine for a
   # downloads cache. Each tool picks its own subdir
-  # (e.g. +"#{ROOT_DIR}/web_fetch"+) so keys from different tools cannot
+  # (e.g. +"#{ROOT_DIR}/web_scrape"+) so keys from different tools cannot
   # collide.
   # @return [String]
   ROOT_DIR = '/tmp/pikuri/cache'

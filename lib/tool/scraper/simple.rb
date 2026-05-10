@@ -16,7 +16,7 @@ class Tool
     # 4xx/5xx, network/connection/timeout failure, redirect loop, a 3xx
     # without a usable +Location+ header, or a content-type the
     # dispatcher does not know how to render. The agent loop catches
-    # this in {Tool::WebFetch.visit} and feeds the message back to the
+    # this in {Tool::WebScrape.visit} and feeds the message back to the
     # model as the next observation, so the LLM can try a different URL
     # or give up gracefully. Genuine bugs in the parser/extraction code
     # keep raising their own exception types and crash loud — those need
@@ -73,7 +73,7 @@ class Tool
       #
       # No caching here — every call hits the network. Callers that want
       # to memoize results should wrap this method themselves (see
-      # {Tool::WebFetch.visit}, which does exactly that).
+      # {Tool::WebScrape.visit}, which does exactly that).
       #
       # @param url [String] absolute HTTP(S) URL of the page to download
       # @return [String] full Markdown representation of the page,

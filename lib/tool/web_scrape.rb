@@ -4,15 +4,15 @@ require 'tool/scraper/simple'
 require 'url_cache'
 
 # Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order, and exposing it as +Tool::WEB_FETCH+ requires
+# assumes that order, and exposing it as +Tool::WEB_SCRAPE+ requires
 # +Tool+ already be a class.
 class Tool
-  # Truncation policy and Tool spec for the +web_fetch+ tool. The actual
+  # Truncation policy and Tool spec for the +web_scrape+ tool. The actual
   # scraping lives in {Tool::Scraper::Simple}; this module is a thin
   # wrapper that picks the scraper, applies a character cap so the LLM
   # doesn't drown in long-form content, and exposes the result to the
   # agent loop in OpenAI tool-call shape.
-  module WebFetch
+  module WebScrape
     # @return [Integer] default character cap on the Markdown returned
     #   by {.visit}. Long-form articles routinely run 50K+ chars after
     #   readability extraction; 5K is enough to give the LLM the gist
@@ -29,7 +29,7 @@ class Tool
     # {UrlCache::NULL} without touching the shared instance.
     #
     # @return [UrlCache, #fetch]
-    CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_fetch")
+    CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_scrape")
     def self.cache
       CACHE
     end
@@ -85,18 +85,18 @@ class Tool
   end
 
   # Webpage download + Markdown conversion tool. Thin wrapper over
-  # {Tool::WebFetch.visit} that exposes it to the agent loop in OpenAI
+  # {Tool::WebScrape.visit} that exposes it to the agent loop in OpenAI
   # tool-call shape.
   #
   # @return [Tool]
-  WEB_FETCH = new(
-    name: 'web_fetch',
+  WEB_SCRAPE = new(
+    name: 'web_scrape',
     description: 'Scrapes the webpage at the given URL and returns its ' \
                  'main content as Markdown — not the raw HTML/PDF; the page ' \
                  'is parsed and rendered.',
     parameters: Parameters.build { |p|
       p.required_string :url,
-                        'Absolute URL of the webpage to fetch, including ' \
+                        'Absolute URL of the webpage to scrape, including ' \
                         'the scheme, e.g. "https://example.com/article".'
       p.optional_integer :max_chars,
                          'Maximum number of characters of Markdown to ' \
@@ -105,8 +105,8 @@ class Tool
                          'output is cut and a marker reports the full ' \
         'length.'
     },
-    execute: ->(url:, max_chars: WebFetch::DEFAULT_MAX_CHARS) {
-      WebFetch.visit(url, max_chars: max_chars)
+    execute: ->(url:, max_chars: WebScrape::DEFAULT_MAX_CHARS) {
+      WebScrape.visit(url, max_chars: max_chars)
     }
   )
 end

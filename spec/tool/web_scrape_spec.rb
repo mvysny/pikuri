@@ -3,12 +3,12 @@
 require 'tmpdir'
 
 require 'tool'
-require 'tool/web_fetch'
+require 'tool/web_scrape'
 require 'url_cache'
 
-RSpec.describe Tool::WebFetch, '.visit' do
+RSpec.describe Tool::WebScrape, '.visit' do
   # +Scraper::Simple.visit+ is the unit boundary here: stub it per-test
-  # so we can drive WebFetch's truncation/error/cache behavior without
+  # so we can drive WebScrape's truncation/error/cache behavior without
   # any HTTP. The +around+ hook restores the original method afterwards
   # so the stub cannot leak across examples.
   around do |example|
@@ -91,9 +91,9 @@ RSpec.describe Tool::WebFetch, '.visit' do
   end
 end
 
-RSpec.describe 'Tool::WEB_FETCH' do
-  it 'is advertised to the LLM as `web_fetch`' do
-    assert_equal 'web_fetch', Tool::WEB_FETCH.name
+RSpec.describe 'Tool::WEB_SCRAPE' do
+  it 'is advertised to the LLM as `web_scrape`' do
+    assert_equal 'web_scrape', Tool::WEB_SCRAPE.name
   end
 
   it 'returns an "Error: ..." string when Scraper raises FetchError, instead of crashing the agent loop' do
@@ -102,7 +102,7 @@ RSpec.describe 'Tool::WEB_FETCH' do
       raise Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found"
     end
     begin
-      result = Tool::WEB_FETCH.run('url' => 'https://example.com/missing')
+      result = Tool::WEB_SCRAPE.run('url' => 'https://example.com/missing')
       assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
       assert_includes result, 'HTTP 404'
     ensure
