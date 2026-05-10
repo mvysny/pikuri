@@ -236,14 +236,40 @@ The synthetic class uses only ruby_llm's public API (`params`,
 ruby_llm changes the semantics of `params(schema)` accepting a raw
 hash, or the keyrest-bypass in `validate_keyword_arguments`.
 
+## Tool-result error shape
+
+Pikuri's tools return `"Error: ..."` Strings on recoverable failures.
+ruby_llm's docs recommend `{ error: "..." }` Hashes. Both flow through
+`Chat#handle_tool_calls` (`chat.rb:283–285`):
+
+```ruby
+content = content_like?(tool_payload) ? tool_payload : tool_payload.to_s
+```
+
+`content_like?` matches only `Content`/`Content::Raw`, so Strings and
+Hashes both go through `.to_s`. The OpenAI provider passes
+`msg.content` straight to the wire (`providers/openai/chat.rb:128`),
+so this is literally what the model receives:
+
+| Tool returns | Wire content |
+| --- | --- |
+| `"Error: division by zero"` (String) | `"Error: division by zero"` |
+| `{ error: "division by zero" }` (Hash) | `"{:error=>\"division by zero\"}"` |
+
+Pikuri's String shape is strictly better on the wire — clean,
+human-readable, no Ruby-inspect noise. **Keep the existing
+`"Error: ..."` convention as-is.** The synthetic `execute` body just
+returns whatever `pikuri_tool.run(args)` returns; ruby_llm passes it
+through verbatim. Zero conversion work in the migration.
+
+The recoverable/unrecoverable split (recoverable = return string,
+unrecoverable = raise) is identical between pikuri and ruby_llm — only
+the shape recommendation differs. Pikuri's existing convention wins on
+the merits.
+
 ## Open questions to settle before step 2
 
-1. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
-   ruby_llm sometimes returns `{error: "..."}` hashes. Verify a
-   synthetic tool returning a string from `execute` lands as a normal
-   tool-result message (model sees the string), not a structured-error
-   path that the model treats specially.
-2. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
+1. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
    a clean log. Under B, "fresh `Agent`" means a fresh
    `RubyLLM::Chat`. Verify there's no shared global state in ruby_llm
    that would leak between parent and sub-agent (model config, API
