@@ -60,12 +60,15 @@ class Tool
   # @return [Tool]
   CALCULATOR = new(
     name: 'calculator',
-    description: 'Evaluates a basic arithmetic expression and returns ' \
-                 'the numeric result. Use this for any arithmetic ' \
-    'beyond simple mental math. Supports +, -, *, /, ** ' \
-                 '(exponentiation), %, parentheses, and decimal ' \
-                 'numbers. No variables or functions — pass concrete ' \
-                 'numbers only.',
+    description: <<~DESC,
+      Evaluates a basic arithmetic expression and returns the numeric result.
+
+      Usage:
+      - Use this for any arithmetic beyond simple mental math — do not eyeball multi-digit work.
+      - Operators supported: +, -, *, /, ** (exponentiation), %, parentheses, decimal numbers.
+      - Decimal results are rounded to 3 places; integer results are exact.
+      - Failures (parse error, division by zero) come back as "Error: ..." — read the message and re-call with a corrected expression.
+    DESC
     parameters: Parameters.build { |p|
       p.required_string :expression,
                         'Arithmetic expression to evaluate, e.g. ' \
