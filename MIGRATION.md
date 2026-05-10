@@ -267,13 +267,63 @@ unrecoverable = raise) is identical between pikuri and ruby_llm — only
 the shape recommendation differs. Pikuri's existing convention wins on
 the merits.
 
-## Open questions to settle before step 2
+## Subagent isolation
 
-1. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
-   a clean log. Under B, "fresh `Agent`" means a fresh
-   `RubyLLM::Chat`. Verify there's no shared global state in ruby_llm
-   that would leak between parent and sub-agent (model config, API
-   key, etc. should be per-Chat-overridable).
+Verified: `RubyLLM::Chat` instances are properly isolated. Every
+state-bearing field is initialized fresh per-instance
+(`chat.rb:14–34`):
+
+```ruby
+@messages = []                                # fresh
+@tools = {}                                    # fresh
+@tool_prefs = { choice: nil, calls: nil }      # fresh
+@params = {}; @headers = {}; @schema = nil     # fresh
+@thinking = nil; @on = {...}                   # fresh
+@callbacks = Hash.new { |c, n| c[n] = [] }     # fresh
+@provider, @connection = ...                   # fresh per Chat
+```
+
+Module-level data is read-only: `RubyLLM.config` is referenced but
+never written from inside `Chat` or `Tool` (grep confirms no
+`RubyLLM.config.X = ...` in either file, no class variables `@@`
+anywhere). The `Models` registry (`models.rb`) is a singleton, but
+it's read-only metadata.
+
+The synthetic `RubyLLM::Tool` subclass from step 2 is shared as a
+*class*, but `Chat#with_tool` calls `tool.new` (`chat.rb:57`), so
+each Chat gets its own tool instance — no leak across sub-agent
+boundaries.
+
+Sub-agent recipe under Option B:
+
+```ruby
+# lib/tool/sub_agent.rb (sketch)
+def self.sub_agent(model:, system_prompt:, tools:)
+  Tool.new(
+    name: 'sub_agent',
+    description: '...',
+    parameters: Parameters.build { |p| p.required_string :task, '...' },
+    execute: lambda { |task:|
+      sub = Agent.new(model: model, system_prompt: system_prompt, tools: tools)
+      sub.run_loop(user_message: task)
+      sub.last_assistant_content
+    }
+  )
+end
+```
+
+Each invocation builds a fresh `Agent` → fresh `Chat` → fresh
+`@messages`/`@tools`/`@callbacks`. Parent and sub-agent share the same
+global config (transport URL, API key) — desired for sub-agents that
+should reach the same backend. If a future sub-agent needs different
+config (different model, different API), wrap construction in
+`RubyLLM.context { |c| ... }` to fork the config without touching
+process-wide state.
+
+One small subtlety, noted only for future awareness: the `Models`
+singleton can be rebuilt via `Models.refresh` (`models.rb:66`), which
+*would* be process-wide. Pikuri shouldn't call that during normal
+operation. Not a concern today.
 
 ## Risks worth tracking
 
