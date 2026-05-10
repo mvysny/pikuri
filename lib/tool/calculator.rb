@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require 'dentaku'
+require_relative '../tool'
 
-# Loaded by +lib/tools.rb+ after {Tool} itself is defined; the +class Tool+
-# reopening below assumes that order.
+# +class Tool+ reopening below assumes the {Tool} factory and
+# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
+# regardless of caller load order.
 class Tool
   # Evaluates a basic arithmetic expression using Dentaku, with light
   # preprocessing so the LLM can emit Python-flavored syntax (notably

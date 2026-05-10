@@ -1,13 +1,14 @@
 # frozen_string_literal: true
 
 require 'url_cache'
+require_relative '../tool'
 
 require 'tool/search/duckduckgo'
 require 'tool/search/brave'
 
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order, and exposing it as +Tool::WEB_SEARCH+ requires +Tool+
-# already be a class.
+# +class Tool+ reopening below assumes the {Tool} factory and
+# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
+# regardless of caller load order.
 class Tool
   module Search
     # Raised by a provider when it is temporarily unavailable (rate-limited,

@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
+require_relative '../tool'
 require_relative '../agent'
 
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order.
+# +class Tool+ reopening below assumes the {Tool} factory and
+# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
+# regardless of caller load order.
 class Tool
   # Factory for a +sub_agent+ tool: when the model calls it, the host spawns
   # a fresh {Agent} that runs its own conversation against +RubyLLM::Chat+

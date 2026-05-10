@@ -2,10 +2,11 @@
 
 require 'tool/scraper/simple'
 require 'url_cache'
+require_relative '../tool'
 
-# Loaded after {Tool} itself is defined; the +class Tool+ reopening below
-# assumes that order, and exposing it as +Tool::WEB_SCRAPE+ requires
-# +Tool+ already be a class.
+# +class Tool+ reopening below assumes the {Tool} factory and
+# {Tool::Parameters} are loaded; the +require_relative+ above ensures that
+# regardless of caller load order.
 class Tool
   # Truncation policy and Tool spec for the +web_scrape+ tool. The actual
   # scraping lives in {Tool::Scraper::Simple}; this module is a thin
