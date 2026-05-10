@@ -121,55 +121,68 @@ come as separate post-migration commits — out of scope here.
 
 ## Validation ordering (the load-bearing detail)
 
-Pikuri's `Tool::Parameters` validator (DidYouMean, type coercion,
-all-errors-collected, schema reprinted on failure) is what we want the
-LLM to see when it emits bad arguments. ruby_llm has its own validator.
-Whichever runs first wins.
+We want pikuri's `Tool::Parameters` validator (DidYouMean, type
+coercion, all-errors-collected, schema reprinted on failure) to be
+what the LLM sees when it emits bad arguments — not ruby_llm's
+keyword-presence checker.
 
-ruby_llm validates against the schema declared on the `RubyLLM::Tool`
-subclass. To make pikuri's validator the LLM-facing one:
+ruby_llm's `Tool#call` (`lib/ruby_llm/tool.rb:106–150`) does two
+distinct things, and they're separable:
 
-- Synthesize the `RubyLLM::Tool` subclass with **no `param` declarations
-  and a wildcard `**extra` in `execute`** so ruby_llm's validator
-  rubber-stamps anything.
-- Inside the synthetic `execute(**args)` body, run pikuri's
-  `Parameters#validate(args)` first. On failure, return its error
-  string — same shape as today (`"Error: ..."` becomes the LLM-facing
-  observation, just routed through ruby_llm's tool-result message
-  instead of pikuri's `tool` log entry).
-- The schema pikuri ships to the LLM (in the request body's `tools`
-  array) still comes from `Parameters#to_h`. The synthetic class
-  overrides whatever ruby_llm would emit so the LLM sees pikuri's
-  schema, not an empty one.
+1. **Schema emission** — what's advertised to the LLM in the request
+   body's `tools` array. Built by `params_schema` from either
+   `param :name` declarations, a `params(schema)` call (which accepts
+   a raw JSON Schema hash), or method reflection.
+2. **Runtime validation** — `validate_keyword_arguments` reflects on
+   `method(:execute).parameters` and checks keyword presence only.
+   It does **not** type-check, and it bypasses entirely when `execute`
+   accepts `**rest`:
 
-This means the synthetic class is *not* a normal `RubyLLM::Tool` — it's
-a hand-built one that bypasses ruby_llm's schema-generation and
-validation pipelines. Verify ruby_llm exposes the right hooks to do
-this cleanly before committing to the design.
+   ```ruby
+   return nil if accepts_extra_keywords  # tool.rb:143
+   ```
+
+The synthesis recipe:
+
+```ruby
+schema = pikuri_tool.parameters.to_h          # pikuri's JSON Schema
+klass  = Class.new(RubyLLM::Tool) do
+  description pikuri_tool.description
+  params schema                                # advertised to the LLM
+  define_method(:execute) do |**args|          # **args disables ruby_llm's check
+    pikuri_tool.run(args)                      # pikuri's strict validate + execute
+  end
+end
+```
+
+That's it. The LLM sees pikuri's schema; ruby_llm's runtime validator
+no-ops on the keyrest signature; pikuri's `Parameters#validate` runs
+inside `Tool#run` and produces the LLM-facing error string on failure.
+DidYouMean and coercion both survive.
+
+The synthetic class uses only ruby_llm's public API (`params`,
+`description`, `execute`). The fragility risk is bounded to whether
+ruby_llm changes the semantics of `params(schema)` accepting a raw
+hash, or the keyrest-bypass in `validate_keyword_arguments`.
 
 ## Open questions to settle before step 2
 
-1. **Can the synthetic tool override ruby_llm's schema emission?**
-   We need the LLM to see pikuri's JSON Schema in the request body, not
-   ruby_llm's reflection-based one. Read `RubyLLM::Tool::SchemaDefinition`
-   and confirm there's a clean override point. If not, the migration
-   needs reshaping.
-2. **Configuration shape.** ruby_llm prefers a global
+1. **Configuration shape.** ruby_llm prefers a global
    `RubyLLM.configure` block + per-Chat overrides. Pikuri uses
    explicit constructor args. Decide whether to lean into ruby_llm's
    global config (simpler) or keep per-instance configuration via Chat
    options (cleaner for tests).
-3. **Reasoning content.** Pikuri prints `reasoning_content` from
+2. **Reasoning content.** Pikuri prints `reasoning_content` from
    thinking models dimmed inline. Verify ruby_llm exposes this on
    `Message` (README mentions a `thinking` field). If aligned, render
    via the listener attached in step 3. If not, may need
    `Message#raw` as a fallback.
-4. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
+3. **Tool-result error shape.** Pikuri returns `"Error: ..."` strings;
    ruby_llm sometimes returns `{error: "..."}` hashes. Verify a
    synthetic tool returning a string from `execute` lands as a normal
    tool-result message (model sees the string), not a structured-error
    path that the model treats specially.
-5. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
+4. **Subagent factory.** `Tool.sub_agent` constructs a fresh `Agent` on
    a clean log. Under B, "fresh `Agent`" means a fresh
    `RubyLLM::Chat`. Verify there's no shared global state in ruby_llm
    that would leak between parent and sub-agent (model config, API
