@@ -46,7 +46,7 @@ RSpec.describe '.sub_agent' do
       client = fake_client_class.new(response: stop_response)
       tool = Tool.sub_agent(client: client, system_prompt: 'sp', tools: [])
 
-      assert_kind_of Tool, tool
+      assert_operator tool, :<, RubyLLM::Tool
       assert_equal 'sub_agent', tool.name
       schema = tool.parameters.to_h
       assert_equal ['task'], schema[:required]
