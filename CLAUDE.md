@@ -74,6 +74,28 @@ area grows.
   throttled to one request every 2s, prone to IP soft-blocks) and
   `Tool::Search::Brave` (official Web Search API with
   `X-Subscription-Token`).
+- `lib/tool/web_fetch.rb` — defines `Tool::WEB_FETCH`, the LLM-facing
+  `web_fetch` tool. Thin wrapper over `Tool::Scraper::Simple.visit`:
+  caches the rendered Markdown on disk via `UrlCache`, truncates to
+  `max_chars`, and turns `Scraper::FetchError` into an `"Error: ..."`
+  observation so the agent loop feeds the failure back to the model
+  instead of crashing.
+- `lib/tool/scraper/simple.rb` — content-type-dispatching HTTP scraper.
+  `Simple.fetch(url)` returns a `Simple::Fetched` (`body`,
+  `content_type`, final `url` after redirects); `Simple.visit(url)`
+  fetches and routes the response to the right extractor by
+  `content_type`. Owns `Scraper::FetchError` (HTTP 4xx/5xx, network
+  failure, redirect-loop, missing `Location`, or an unsupported
+  content-type — all the failures the LLM can react to). Currently
+  routes `text/html` and `application/xhtml+xml` to `Scraper::HTML`;
+  other types raise `FetchError` with a legible message. "Simple"
+  because everything is one Faraday GET — no headless browser, no JS.
+- `lib/tool/scraper/html.rb` — pure HTML→Markdown extractor.
+  `HTML.extract(html)` runs a JSON-LD fast path (preferring
+  schema.org `Product`/`Article`/`Recipe`/... nodes that carry a
+  `description`/`articleBody`/`offers`) and falls back to a
+  `Readability` + `reverse_markdown` rendering. No I/O — drive it from
+  fixture HTML.
 - `bin/pikuri` — entry-point script. Wires `OpenAIClient` to a local llama.cpp
   server, builds an `Agent` with `Tool::WEB_SEARCH` + `Tool::CALCULATOR` and
   delegation enabled, and feeds it a question from `ARGV` or stdin.

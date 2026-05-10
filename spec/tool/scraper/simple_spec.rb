@@ -27,15 +27,26 @@ RSpec.describe Tool::Scraper::Simple, '.fetch' do
     end
   end
 
-  it 'returns the response body on a 2xx' do
-    stubs.get('https://example.com/page') { [200, {}, '<html>ok</html>'] }
-    assert_equal '<html>ok</html>', described_class.fetch('https://example.com/page')
+  it 'returns a Fetched with the body, normalized content-type, and URL on a 2xx' do
+    stubs.get('https://example.com/page') { [200, { 'content-type' => 'text/html; charset=UTF-8' }, '<html>ok</html>'] }
+    result = described_class.fetch('https://example.com/page')
+    assert_kind_of Tool::Scraper::Simple::Fetched, result
+    assert_equal '<html>ok</html>', result.body
+    assert_equal 'text/html', result.content_type
+    assert_equal 'https://example.com/page', result.url
   end
 
-  it 'follows a 3xx redirect that has a Location header' do
+  it 'normalizes a missing content-type header to an empty string' do
+    stubs.get('https://example.com/page') { [200, {}, 'body'] }
+    assert_equal '', described_class.fetch('https://example.com/page').content_type
+  end
+
+  it 'follows a 3xx redirect that has a Location header and reports the final URL' do
     stubs.get('https://example.com/a') { [302, { 'location' => 'https://example.com/b' }, ''] }
-    stubs.get('https://example.com/b') { [200, {}, 'final'] }
-    assert_equal 'final', described_class.fetch('https://example.com/a')
+    stubs.get('https://example.com/b') { [200, { 'content-type' => 'text/html' }, 'final'] }
+    result = described_class.fetch('https://example.com/a')
+    assert_equal 'final', result.body
+    assert_equal 'https://example.com/b', result.url
   end
 
   it 'raises FetchError on HTTP 4xx with a short body excerpt' do
@@ -91,95 +102,43 @@ RSpec.describe Tool::Scraper::Simple, '.fetch' do
   end
 end
 
-# Exercise the JSON-LD vs. readability decision in +.extract+ directly,
-# without going through the network. Each example feeds a small HTML
-# fixture and asserts which path won.
-RSpec.describe Tool::Scraper::Simple, '.extract' do
-  it 'falls through to readability when JSON-LD has no content fields (Wikipedia-shape)' do
-    # Wikipedia ships an Article JSON-LD block with only metadata —
-    # name, author, datePublished, dateModified — and the actual page
-    # content lives in the HTML body. Without the content-field gate
-    # in best_jsonld_node, the scraper would emit a few lines of
-    # metadata and drop the article.
-    html = <<~HTML
-      <html>
-        <head>
-          <title>X86 - Wikipedia</title>
-          <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Article",
-              "name": "X86",
-              "author": { "@type": "Organization", "name": "Contributors to Wikimedia projects" },
-              "datePublished": "2001-10-31T13:12:04Z"
-            }
-          </script>
-        </head>
-        <body>
-          <article>
-            <h1>x86</h1>
-            <p>x86 is a family of complex instruction set computer instruction set architectures
-            initially developed by Intel based on the Intel 8086 microprocessor and its 8088 variant.</p>
-            <p>The 8086 was introduced in 1978 as a fully 16-bit extension of Intel's 8-bit 8080
-            microprocessor, with memory segmentation as a solution for addressing more memory than
-            can be covered by a plain 16-bit address.</p>
-          </article>
-        </body>
-      </html>
-    HTML
+# Exercise the content-type dispatch in +.dispatch+ directly, against
+# hand-built {Fetched} values — no network. The HTML and (future) PDF
+# extractors are tested separately; here we only verify that the right
+# parser is picked and that unknown types surface as FetchError.
+RSpec.describe Tool::Scraper::Simple, '.dispatch' do
+  let(:fetched_class) { Tool::Scraper::Simple::Fetched }
 
-    out = described_class.extract(html)
-    assert_includes out, 'x86 is a family of complex instruction set computer'
-    assert_includes out, '8086 was introduced in 1978'
-    refute_includes out, '**Author:**',
-                    'JSON-LD path should not have fired — that block has no description/articleBody'
+  it 'routes text/html through Scraper::HTML.extract' do
+    fetched = fetched_class.new(
+      body: '<html><body><h1>Hi</h1><p>hello world</p></body></html>',
+      content_type: 'text/html',
+      url: 'https://example.com/'
+    )
+    out = described_class.dispatch(fetched)
+    assert_includes out, 'hello world'
   end
 
-  it 'uses the JSON-LD fast path when an Article carries a description' do
-    html = <<~HTML
-      <html>
-        <head>
-          <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Article",
-              "name": "Hello",
-              "description": "Short article summary that the LLM actually wants.",
-              "author": "Jane Doe"
-            }
-          </script>
-        </head>
-        <body><p>chrome and ads</p></body>
-      </html>
-    HTML
-
-    out = described_class.extract(html)
-    assert_includes out, '# Hello'
-    assert_includes out, 'Short article summary that the LLM actually wants.'
-    assert_includes out, '**Author:** Jane Doe'
+  it 'routes application/xhtml+xml through Scraper::HTML.extract' do
+    fetched = fetched_class.new(
+      body: '<html><body><p>xhtml content</p></body></html>',
+      content_type: 'application/xhtml+xml',
+      url: 'https://example.com/'
+    )
+    assert_includes described_class.dispatch(fetched), 'xhtml content'
   end
 
-  it 'uses the JSON-LD fast path when a Product carries offers (no description needed)' do
-    html = <<~HTML
-      <html>
-        <head>
-          <script type="application/ld+json">
-            {
-              "@context": "https://schema.org",
-              "@type": "Product",
-              "name": "Widget",
-              "sku": "W-1",
-              "offers": { "@type": "Offer", "price": "9.99", "priceCurrency": "USD" }
-            }
-          </script>
-        </head>
-        <body><p>chrome and ads</p></body>
-      </html>
-    HTML
+  it 'raises FetchError for an unsupported content-type' do
+    fetched = fetched_class.new(body: '{}', content_type: 'application/json', url: 'https://example.com/')
+    err = assert_raises(Tool::Scraper::FetchError) { described_class.dispatch(fetched) }
+    assert_includes err.message, 'unsupported content-type'
+    assert_includes err.message, 'application/json'
+    assert_includes err.message, 'https://example.com/'
+  end
 
-    out = described_class.extract(html)
-    assert_includes out, '# Widget'
-    assert_includes out, '**Price:** 9.99 USD'
-    assert_includes out, '**SKU:** W-1'
+  it 'raises FetchError when the content-type is missing' do
+    fetched = fetched_class.new(body: 'whatever', content_type: '', url: 'https://example.com/')
+    err = assert_raises(Tool::Scraper::FetchError) { described_class.dispatch(fetched) }
+    assert_includes err.message, 'unsupported content-type'
   end
 end
