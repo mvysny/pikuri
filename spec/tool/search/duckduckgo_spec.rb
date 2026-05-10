@@ -62,7 +62,7 @@ RSpec.describe Tool::Search::DuckDuckGo do
           <p>No results found for anything because the page is a CAPTCHA.</p>
         </body></html>
       HTML
-      assert_raises(Tool::Search::Unavailable) { described_class.parse(html) }
+      assert_raises(Tool::Search::Engines::Unavailable) { described_class.parse(html) }
     end
 
     it 'raises Unavailable on the DDG anomaly/CAPTCHA modal so the cascade can fall back' do
@@ -72,7 +72,7 @@ RSpec.describe Tool::Search::DuckDuckGo do
           <div class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</div>
         </body></html>
       HTML
-      err = assert_raises(Tool::Search::Unavailable) { described_class.parse(html) }
+      err = assert_raises(Tool::Search::Engines::Unavailable) { described_class.parse(html) }
       assert_includes err.message, 'anomaly check'
       assert_includes err.message, 'Unfortunately, bots use DuckDuckGo too.'
     end

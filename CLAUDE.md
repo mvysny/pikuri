@@ -87,31 +87,34 @@ bundled tools.
   `Tool::CALCULATOR` (Dentaku-backed arithmetic, with `**` → `^`
   rewriting and BigDecimal results rounded to 3 places),
   `Tool::WEB_SEARCH` (LLM-facing web-search tool; see
-  `lib/tool/web_search.rb` plus `lib/tool/search.rb` for the cascade
-  and `lib/tool/search/` for individual providers),
+  `lib/tool/web_search.rb` plus `lib/tool/search/engines.rb` for the
+  cascade and `lib/tool/search/` for individual providers),
   `Tool::WEB_SCRAPE` and `Tool::FETCH` (HTML/PDF→Markdown via Faraday
   + readability + reverse_markdown; see `lib/tool/scraper/`), and the
   `Tool.sub_agent(...)` factory described above.
-- `lib/tool/search.rb` — `Tool::Search`: search-orchestration
-  namespace. Defines `Tool::Search::Unavailable` (raised by providers
-  on rate-limit / bot-block / quota-exhausted), `Tool::Search.providers`
+- `lib/tool/search/engines.rb` — `Tool::Search::Engines`: the
+  search-orchestration entry point. Defines
+  `Tool::Search::Engines::Unavailable` (raised by providers on
+  rate-limit / bot-block / quota-exhausted), `Engines.providers`
   (DuckDuckGo always, Brave when `BRAVE_SEARCH_API_KEY` is set,
-  recomputed every call), and `Tool::Search.search`, which runs the
+  recomputed every call), and `Engines.search`, which runs the
   cascade: shuffles `providers` randomly, tries each until one
   succeeds, falling back only on `Unavailable`. Anything else (network
   errors, parse failures, bad API keys returning 401/403) bubbles up
   as the original exception. If every provider reports `Unavailable`,
   returns an `"Error: ..."` string so the agent loop can feed the
-  failure back to the model as the next observation.
+  failure back to the model as the next observation. The `Tool::Search`
+  namespace itself is implicit — Zeitwerk creates it from the
+  directory's existence.
 - `lib/tool/web_search.rb` — defines the LLM-facing `Tool::WEB_SEARCH`
-  constant (a thin wrapper that calls `Tool::Search.search`). The
-  search orchestration itself lives in `lib/tool/search.rb`; this
+  constant (a thin wrapper that calls `Tool::Search::Engines.search`).
+  The cascade itself lives in `lib/tool/search/engines.rb`; this
   file owns only the OpenAI tool-call shape.
 - `lib/tool/search/` — search-provider modules. Each exposes
   `.search(query, max_results:)` returning the same smolagents-style
   Markdown shape so the LLM sees a stable format, and raises
-  `Tool::Search::Unavailable` on rate-limit / bot-block / quota signals
-  (DDG anomaly modal, HTTP 429, HTTP 5xx). Currently:
+  `Tool::Search::Engines::Unavailable` on rate-limit / bot-block /
+  quota signals (DDG anomaly modal, HTTP 429, HTTP 5xx). Currently:
   `Tool::Search::DuckDuckGo` (HTML scrape of `html.duckduckgo.com`,
   throttled to one request every 2s, prone to IP soft-blocks) and
   `Tool::Search::Brave` (official Web Search API with

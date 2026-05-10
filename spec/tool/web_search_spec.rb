@@ -39,13 +39,13 @@ RSpec.describe 'Tool::WEB_SEARCH' do
     end
 
     around do |example|
-      original_providers = Tool::Search.method(:providers)
+      original_providers = Tool::Search::Engines.method(:providers)
       provider = fake_provider
-      Tool::Search.singleton_class.define_method(:providers) { [provider] }
+      Tool::Search::Engines.singleton_class.define_method(:providers) { [provider] }
       begin
         example.run
       ensure
-        Tool::Search.singleton_class.define_method(:providers, original_providers)
+        Tool::Search::Engines.singleton_class.define_method(:providers, original_providers)
       end
     end
 

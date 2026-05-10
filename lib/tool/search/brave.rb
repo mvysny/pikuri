@@ -30,7 +30,7 @@ class Tool
       # Fetch results for +query+ and render them as smolagents-style Markdown.
       # Calls are throttled to one per second and circuit-broken for 5
       # minutes on rate-limit / quota-exhausted responses; see {LIMITER}.
-      # The caller (typically {Tool::Search.search}) is expected to have
+      # The caller (typically {Engines.search}) is expected to have
       # already normalized the query and to wrap this in a result cache.
       #
       # @param query [String] search query (already normalized)
@@ -40,9 +40,9 @@ class Tool
       #   the {ENV_KEY} environment variable
       # @return [String] Markdown-formatted result list
       # @raise [ArgumentError] if no API key is available
-      # @raise [Tool::Search::Unavailable] when Brave returns HTTP 429
+      # @raise [Engines::Unavailable] when Brave returns HTTP 429
       #   (rate limit / quota exhausted) or 5xx — "try again later"
-      #   responses the cascade in {Tool::Search.search} can fall back
+      #   responses the cascade in {Engines.search} can fall back
       #   from. Also raised immediately if {LIMITER} is in cooldown.
       #   Other non-2xx (e.g. 401/403 from a bad API key) bubble up as
       #   +RuntimeError+ so config problems stay visible.
@@ -59,7 +59,7 @@ class Tool
           )
           unless response.success?
             if response.status == 429 || response.status >= 500
-              raise Unavailable, "HTTP #{response.status}"
+              raise Engines::Unavailable, "HTTP #{response.status}"
             end
 
             raise "Brave Search request failed: #{response.status} #{response.body}"

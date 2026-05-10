@@ -68,14 +68,14 @@ RSpec.describe Tool::Search::RateLimiter do
         slept = []
         fake_sleep(limiter, slept)
 
-        assert_raises(Tool::Search::Unavailable) do
-          limiter.call { raise Tool::Search::Unavailable, 'rate-limited' }
+        assert_raises(Tool::Search::Engines::Unavailable) do
+          limiter.call { raise Tool::Search::Engines::Unavailable, 'rate-limited' }
         end
 
         # second call within cooldown raises immediately, block not invoked
         called = false
         Timecop.travel(Time.now + 10.0)
-        err = assert_raises(Tool::Search::Unavailable) do
+        err = assert_raises(Tool::Search::Engines::Unavailable) do
           limiter.call { called = true; :nope }
         end
         refute called, 'block should not be invoked while in cooldown'
@@ -89,8 +89,8 @@ RSpec.describe Tool::Search::RateLimiter do
         slept = []
         fake_sleep(limiter, slept)
 
-        assert_raises(Tool::Search::Unavailable) do
-          limiter.call { raise Tool::Search::Unavailable, 'rate-limited' }
+        assert_raises(Tool::Search::Engines::Unavailable) do
+          limiter.call { raise Tool::Search::Engines::Unavailable, 'rate-limited' }
         end
 
         Timecop.travel(Time.now + 10.0) # past cooldown

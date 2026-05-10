@@ -8,11 +8,12 @@ class Tool
     #
     # +#call { ... }+ enforces a minimum interval between consecutive
     # invocations of the block (sleeping if the previous one was too
-    # recent), and watches for {Unavailable} raised by the block: when
-    # that happens, a cooldown deadline is recorded and further calls
-    # within the window raise {Unavailable} immediately without
-    # invoking the block. This stops a provider that has been
-    # rate-limited or bot-blocked from being hammered with retries.
+    # recent), and watches for {Engines::Unavailable} raised by the
+    # block: when that happens, a cooldown deadline is recorded and
+    # further calls within the window raise {Engines::Unavailable}
+    # immediately without invoking the block. This stops a provider
+    # that has been rate-limited or bot-blocked from being hammered
+    # with retries.
     #
     # The mutex is held across the block, so concurrent callers
     # serialize — matching the behavior {DuckDuckGo} has always
@@ -27,8 +28,8 @@ class Tool
       #   block invocations. {#call} sleeps if a previous call was more
       #   recent.
       # @param cooldown [Float] seconds to refuse calls after the block
-      #   raises {Unavailable}. Calls within this window raise
-      #   {Unavailable} immediately without invoking the block.
+      #   raises {Engines::Unavailable}. Calls within this window raise
+      #   {Engines::Unavailable} immediately without invoking the block.
       def initialize(min_interval:, cooldown:)
         @min_interval = min_interval
         @cooldown = cooldown
@@ -41,21 +42,21 @@ class Tool
       #
       # The block is invoked with the mutex held, so concurrent calls
       # serialize: only one block runs at a time per limiter instance.
-      # If the block raises {Unavailable}, the cooldown is armed and
-      # the exception is re-raised. Any other exception bubbles up
-      # without arming cooldown — only "try again later" signals from
-      # the provider are treated as backoff triggers.
+      # If the block raises {Engines::Unavailable}, the cooldown is
+      # armed and the exception is re-raised. Any other exception
+      # bubbles up without arming cooldown — only "try again later"
+      # signals from the provider are treated as backoff triggers.
       #
       # @yieldreturn [Object] block's return value is passed through
       # @return [Object] whatever the block returned
-      # @raise [Unavailable] either re-raised from the block, or
-      #   raised directly when the limiter is currently in cooldown
+      # @raise [Engines::Unavailable] either re-raised from the block,
+      #   or raised directly when the limiter is currently in cooldown
       def call
         @mutex.synchronize do
           now = Time.now
           if @cooldown_until && now < @cooldown_until
             remaining = (@cooldown_until - now).ceil
-            raise Unavailable, "rate-limiter cooldown active for another #{remaining}s"
+            raise Engines::Unavailable, "rate-limiter cooldown active for another #{remaining}s"
           end
 
           if @last_call_at
@@ -66,7 +67,7 @@ class Tool
 
           begin
             yield
-          rescue Unavailable
+          rescue Engines::Unavailable
             @cooldown_until = Time.now + @cooldown
             raise
           end

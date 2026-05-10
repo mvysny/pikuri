@@ -11,7 +11,7 @@ require 'pikuri'
 # Disable on-disk caching by default in the test suite. The specs that
 # genuinely exercise caching behavior opt back in by stubbing +.cache+
 # with a real {UrlCache} pointed at a tmpdir.
-[Tool::WebScrape, Tool::Fetch, Tool::Search].each do |mod|
+[Tool::WebScrape, Tool::Fetch, Tool::Search::Engines].each do |mod|
   mod.singleton_class.define_method(:cache) { UrlCache::NULL }
 end
 

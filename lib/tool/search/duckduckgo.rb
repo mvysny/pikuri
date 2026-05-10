@@ -22,22 +22,22 @@ class Tool
       # @return [Integer] default number of results returned, matching smolagents
       DEFAULT_MAX_RESULTS = 10
       # @return [RateLimiter] paces calls (DDG bans IPs that hammer the HTML
-      #   endpoint) and circuit-breaks on {Unavailable} so a soft-block
-      #   response doesn't get retried for the next 5 minutes
+      #   endpoint) and circuit-breaks on {Engines::Unavailable} so a
+      #   soft-block response doesn't get retried for the next 5 minutes
       LIMITER = RateLimiter.new(min_interval: 2.0, cooldown: 300.0)
 
       # Fetch results for +query+ and render them as smolagents-style Markdown.
       # Calls are throttled to one every 2s and circuit-broken for 5 minutes
       # after a soft-block; see {LIMITER}. The caller (typically
-      # {Tool::Search.search}) is expected to have already normalized the
+      # {Engines.search}) is expected to have already normalized the
       # query and to wrap this in a result cache.
       #
       # @param query [String] search query (already normalized)
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
-      # @raise [Tool::Search::Unavailable] when DDG soft-blocks the IP
+      # @raise [Engines::Unavailable] when DDG soft-blocks the IP
       #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
-      #   later" responses the cascade in {Tool::Search.search} can fall
+      #   later" responses the cascade in {Engines.search} can fall
       #   back from. Also raised immediately if {LIMITER} is in cooldown.
       # @raise [RuntimeError] if the HTTP call fails for other reasons or
       #   the empty-results page is in an unrecognized layout. A genuine
@@ -47,7 +47,7 @@ class Tool
           response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
           unless response.success?
             if response.status == 429 || response.status >= 500
-              raise Unavailable, "HTTP #{response.status}"
+              raise Engines::Unavailable, "HTTP #{response.status}"
             end
 
             raise "DuckDuckGo request failed: #{response.status} #{response.body}"
@@ -72,7 +72,7 @@ class Tool
       # @param html [String] HTML document body from html.duckduckgo.com
       # @param max_results [Integer] maximum number of result entries to render
       # @return [String] Markdown-formatted result list
-      # @raise [Tool::Search::Unavailable] when the page is the DDG
+      # @raise [Engines::Unavailable] when the page is the DDG
       #   anomaly/CAPTCHA modal (IP soft-block) — a "try again later" the
       #   cascade can fall back from.
       # @raise [RuntimeError] when the page contains no result nodes and is
@@ -96,7 +96,7 @@ class Tool
           return "## Search Results\n\nNo results found." if genuine_no_results?(doc)
 
           message = diagnose_empty(doc)
-          raise(anomaly_modal?(doc) ? Unavailable : RuntimeError, message)
+          raise(anomaly_modal?(doc) ? Engines::Unavailable : RuntimeError, message)
         end
 
         "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
@@ -104,7 +104,7 @@ class Tool
 
       # True when the page contains DDG's anomaly/CAPTCHA modal — i.e. the
       # IP has been soft-blocked. Used by {.parse} to pick between
-      # {Tool::Search::Unavailable} (recoverable, fall back to another
+      # {Engines::Unavailable} (recoverable, fall back to another
       # provider) and {RuntimeError} (unknown layout, surface loudly).
       #
       # @param doc [Nokogiri::HTML::Document] parsed result page

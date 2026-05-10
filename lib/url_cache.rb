@@ -6,7 +6,7 @@ require 'fileutils'
 # On-disk cache for string-keyed text payloads. Used by the bundled tools
 # to avoid re-fetching the same page or re-issuing the same web-search
 # query within a TTL window: {Tool::WebScrape.visit} caches the rendered
-# Markdown for a URL, and the {Tool::Search} provider modules cache the
+# Markdown for a URL, and {Tool::Search::Engines.search} caches the
 # rendered result list for a query (the query string itself acts as the
 # key — keys are SHA-256 hashed, so any opaque string works).
 #

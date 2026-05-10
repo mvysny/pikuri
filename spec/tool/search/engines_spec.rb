@@ -3,10 +3,10 @@
 require 'tmpdir'
 
 require 'tool'
-require 'tool/search'
+require 'tool/search/engines'
 require 'url_cache'
 
-RSpec.describe Tool::Search, '.providers' do
+RSpec.describe Tool::Search::Engines, '.providers' do
   before { @saved = ENV[Tool::Search::Brave::ENV_KEY] }
   after  { ENV[Tool::Search::Brave::ENV_KEY] = @saved }
 
@@ -27,7 +27,7 @@ RSpec.describe Tool::Search, '.providers' do
   end
 end
 
-RSpec.describe Tool::Search, '.search' do
+RSpec.describe Tool::Search::Engines, '.search' do
   let(:good) do
     Module.new do
       def self.name = 'Tool::Search::Good'
@@ -44,7 +44,7 @@ RSpec.describe Tool::Search, '.search' do
 
       def self.search(_query, max_results:)
         _ = max_results
-        raise Tool::Search::Unavailable, 'rate-limited'
+        raise Tool::Search::Engines::Unavailable, 'rate-limited'
       end
     end
   end
@@ -54,27 +54,27 @@ RSpec.describe Tool::Search, '.search' do
   # (see +spec_helper.rb+); the two examples that actually exercise
   # caching opt back into a real tmpdir cache themselves.
   around do |example|
-    original_providers = Tool::Search.method(:providers)
+    original_providers = Tool::Search::Engines.method(:providers)
     begin
       example.run
     ensure
-      Tool::Search.singleton_class.define_method(:providers, original_providers)
+      Tool::Search::Engines.singleton_class.define_method(:providers, original_providers)
     end
   end
 
   def stub_providers(list)
-    Tool::Search.singleton_class.define_method(:providers) { list }
+    Tool::Search::Engines.singleton_class.define_method(:providers) { list }
   end
 
   def with_real_cache
     Dir.mktmpdir('pikuri-cache-test-') do |dir|
       cache = UrlCache.new(ttl: 60, dir: dir)
-      original_cache = Tool::Search.method(:cache)
-      Tool::Search.singleton_class.define_method(:cache) { cache }
+      original_cache = Tool::Search::Engines.method(:cache)
+      Tool::Search::Engines.singleton_class.define_method(:cache) { cache }
       begin
         yield
       ensure
-        Tool::Search.singleton_class.define_method(:cache, original_cache)
+        Tool::Search::Engines.singleton_class.define_method(:cache, original_cache)
       end
     end
   end
