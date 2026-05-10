@@ -117,19 +117,24 @@ bundled tools.
   via `UrlCache`, truncate to `max_chars`, and turn
   `Scraper::FetchError` into `"Error: ..."` observations so the agent
   loop feeds the failure back to the model instead of crashing.
+- `lib/tool/scraper/fetch_error.rb` — `Tool::Scraper::FetchError`,
+  the shared exception raised across the scraper stack (HTTP 4xx/5xx,
+  network failure, redirect-loop, missing `Location`, unsupported
+  content-type, parse failure that reads as "try a different URL" to
+  the LLM). Caught in `Tool::WEB_SCRAPE` / `Tool::FETCH` and turned
+  into `"Error: ..."` observations; everything else bubbles up so
+  genuine bugs stay visible. The `Tool::Scraper` namespace itself is
+  implicit — Zeitwerk creates it from the directory's existence.
 - `lib/tool/scraper/simple.rb` — content-type-dispatching HTTP scraper.
   `Simple.fetch(url)` returns a `Simple::Fetched` (`body`,
   `content_type`, final `url` after redirects); `Simple.visit(url)`
   fetches and routes the response to the right extractor by
-  `content_type`. Owns `Scraper::FetchError` (HTTP 4xx/5xx, network
-  failure, redirect-loop, missing `Location`, or an unsupported
-  content-type — all the failures the LLM can react to). Routes
-  `text/html`/`application/xhtml+xml` to `Scraper::HTML`,
-  `application/pdf` to `Scraper::PDF`, and any other `text/*` body
-  (plain text, Markdown, source files, …) is passed through verbatim
-  since the LLM can already read it; remaining types raise
-  `FetchError` with a legible message. "Simple" because everything is
-  one Faraday GET — no headless browser, no JS.
+  `content_type`. Routes `text/html`/`application/xhtml+xml` to
+  `Scraper::HTML`, `application/pdf` to `Scraper::PDF`, and any other
+  `text/*` body (plain text, Markdown, source files, …) is passed
+  through verbatim since the LLM can already read it; remaining types
+  raise `Scraper::FetchError` with a legible message. "Simple" because
+  everything is one Faraday GET — no headless browser, no JS.
 - `lib/tool/scraper/html.rb` — pure HTML→Markdown extractor.
   `HTML.extract(html)` runs a JSON-LD fast path (preferring schema.org
   `Product`/`Article`/`Recipe`/... nodes that carry a
