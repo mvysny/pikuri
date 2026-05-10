@@ -2,87 +2,119 @@
 
 require 'rainbow'
 require 'tty-markdown'
-require_relative 'chat_log'
-require_relative 'openai_client'
+require 'ruby_llm'
 require_relative 'tool/sub_agent'
 
-# Drives the classic Thought / Tool-call / Observation loop against an
-# OpenAI-compatible backend: send the conversation, execute any tool calls the
-# model emits, append their results, and repeat until the model stops or the
-# step budget is exhausted.
+# Thin wrapper around +RubyLLM::Chat+: pikuri owns the *extension surface*
+# (event listeners that print reasoning, assistant messages, tool calls,
+# and the +max_steps+ guard) while ruby_llm owns the loop itself. See
+# +MIGRATION.md+ for the larger framing — pikuri's Thought / Tool-call /
+# Observation iteration moved into +Chat#complete+, and what used to be
+# the body of +run_loop+ became the listener set installed in
+# {#install_listeners}.
 class Agent
-  # @param client [OpenAIClient] transport used to talk to the model
-  # @param system_prompt [String] system message prepended to every run
-  # @param tools [Array<Tool>] tools the model is allowed to call; advertised
-  #   to the client on every chat request
-  # @param max_steps [Integer] hard cap on model round-trips per
-  #   {#run_loop} invocation; must be positive
+  # @param model [String, nil] LLM identifier; defaults to
+  #   +RubyLLM.config.default_model+ so transport configuration can pick
+  #   the model
+  # @param system_prompt [String] system message prepended to the chat
+  # @param tools [Array<Class>] synthetic +RubyLLM::Tool+ subclasses (the
+  #   shape returned by {Tool.new}). Registered with the underlying chat
+  #   in declaration order.
+  # @param max_steps [Integer] hard cap on tool-call rounds per
+  #   {#run_loop} invocation; must be positive. Counted in the
+  #   +before_tool_call+ listener and reset at the start of each run.
   # @return [Agent]
   # @raise [ArgumentError] if +max_steps+ is zero or negative
-  def initialize(client:, system_prompt:, tools: [], max_steps: 20)
+  def initialize(model: nil, system_prompt:, tools: [], max_steps: 20)
     raise ArgumentError, "max_steps must be positive, got #{max_steps}" if max_steps <= 0
 
-    @client = client
-    @tools = tools
-    @log = ChatLog.new
-    @log.system(system_prompt)
+    @model = model || RubyLLM.config.default_model
     @system_prompt = system_prompt
+    @tools = tools.dup
     @max_steps = max_steps
+    @step = 0
+
+    @chat = RubyLLM.chat(model: @model)
+    @chat.with_instructions(@system_prompt)
+    @tools.each { |t| @chat.with_tool(t) }
+    install_listeners
   end
 
-  # @return [ChatLog]
-  attr_reader :log
+  # @return [RubyLLM::Chat] underlying chat; the extension seam
+  attr_reader :chat
 
-  # @return [OpenAIClient]
-  attr_reader :client
+  # @return [String]
+  attr_reader :model
 
-  # @return [Array<Tool>]
-  attr_reader :tools
+  # @return [String]
+  attr_reader :system_prompt
 
-  # Run the agent loop for a single user turn.
+  # Final assistant message content across the chat's history, or +nil+ if
+  # the chat has not produced one yet. Used by {Tool.sub_agent}'s execute
+  # lambda to surface only the sub-agent's last reply back to the parent.
   #
-  # Appends +user_message+ to {#log} (which already carries the system prompt
-  # and any prior turns), then iterates: ask the model, execute any returned
-  # tool calls, feed the observations back, until the model returns +:stop+.
-  # Reasoning, assistant messages, and tool invocations are printed to stdout
-  # as they happen. Subsequent calls keep building on the same log, so the
-  # model sees full multi-turn history.
+  # @return [String, nil]
+  def last_assistant_content
+    last = @chat.messages.reverse.find { |m| m.role == :assistant }
+    last&.content
+  end
+
+  # Run the agent loop for a single user turn. Resets the step counter,
+  # forwards +user_message+ to {#chat} via +ask+, and returns nil — all
+  # rendering happens through the listeners installed at construction.
+  #
+  # Subsequent calls keep building on the same chat history, so the model
+  # sees full multi-turn context.
   #
   # @param user_message [String] the user's request for this turn
-  # @return [nil] nothing
-  # @raise [RuntimeError] if the loop exceeds +max_steps+ without the model
-  #   finishing, or if the model returns an unexpected +finish_reason+
+  # @return [nil]
+  # @raise [RuntimeError] if the loop exceeds +max_steps+ tool calls
   def run_loop(user_message:)
-    log.user(user_message)
-
-    @max_steps.times do
-      response = @client.chat(log, tools: @tools)
-
-      puts Rainbow(response.reasoning).darkgray if response.reasoning && !response.reasoning.empty?
-      puts TTY::Markdown.parse(response.message) if response.message && !response.message.empty?
-
-      log.assistant(content: response.message, tool_calls: response.tool_calls)
-
-      case response.finish_reason
-      when :stop
-        return
-      when :tool_calls
-        response.tool_calls.each do |tc|
-          result = tc.run
-          puts Rainbow("→ #{tc} = #{result.inspect}").cyan
-          log.tool(result, tool_call_id: tc.id)
-        end
-      else
-        raise "Unexpected finish_reason: #{response.finish_reason.inspect}"
-      end
-    end
-
-    raise "Agent loop exceeded #{@max_steps} steps without finishing"
+    @step = 0
+    @chat.ask(user_message)
+    nil
   end
 
-  # Adds a `sub_agent` tool which allows this agent to spin up sub-agents.
+  # Adds a +sub_agent+ tool that lets this agent spawn sub-agents which
+  # share the parent's model, system prompt, and current tool set (minus
+  # the sub-agent tool itself, so recursion is impossible).
+  #
+  # @return [void]
   def allow_sub_agent
     sub_tools = @tools.dup
-    @tools << Tool.sub_agent(client: @client, system_prompt: @system_prompt, tools: sub_tools, max_steps: @max_steps)
+    sub_tool = Tool.sub_agent(
+      model: @model,
+      system_prompt: @system_prompt,
+      tools: sub_tools,
+      max_steps: @max_steps
+    )
+    @tools << sub_tool
+    @chat.with_tool(sub_tool)
+  end
+
+  private
+
+  def install_listeners
+    @chat.after_message do |msg|
+      next unless msg.role == :assistant
+
+      thinking_text = msg.thinking&.text
+      puts Rainbow(thinking_text).darkgray if thinking_text && !thinking_text.empty?
+
+      content = msg.content
+      puts TTY::Markdown.parse(content) if content.is_a?(String) && !content.empty?
+    end
+
+    @chat.before_tool_call do |tc|
+      @step += 1
+      raise "Agent loop exceeded #{@max_steps} steps" if @step > @max_steps
+
+      args = tc.arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
+      puts Rainbow("→ #{tc.name}(#{args})").cyan
+    end
+
+    @chat.after_tool_result do |result|
+      puts Rainbow("= #{result}").cyan
+    end
   end
 end

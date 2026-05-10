@@ -1,24 +1,41 @@
 # frozen_string_literal: true
 
 require 'tool/sub_agent'
-require 'chat_response'
 
 RSpec.describe '.sub_agent' do
-  # Stand-in for {OpenAIClient}: records every +chat+ call (the conversation
-  # log it was called with and the +tools+ kwarg) and returns a canned
-  # {ChatResponse}. Keeps the spec network-free.
-  let(:fake_client_class) do
+  # Minimal stand-in for +RubyLLM::Chat+: records what +Agent+ configures
+  # on it, drops a canned assistant +Message+ into +messages+ on +ask+, and
+  # exposes +calls+ for assertions. Keeps sub-agent specs network-free.
+  let(:fake_chat_class) do
     Class.new do
-      attr_reader :calls
+      attr_reader :tools, :asks, :messages, :instructions
 
-      def initialize(response:)
-        @response = response
-        @calls = []
+      def initialize(reply: 'sub-agent reply')
+        @tools = []
+        @asks = []
+        @messages = []
+        @reply = reply
       end
 
-      def chat(log, tools: [])
-        @calls << { log: log, tools: tools }
-        @response
+      def with_instructions(text)
+        @instructions = text
+        self
+      end
+
+      def with_tool(tool)
+        @tools << tool
+        self
+      end
+
+      def before_message(&); self; end
+      def after_message(&); self; end
+      def before_tool_call(&); self; end
+      def after_tool_result(&); self; end
+
+      def ask(message)
+        @asks << message
+        @messages << RubyLLM::Message.new(role: :assistant, content: @reply)
+        @messages.last
       end
     end
   end
@@ -32,19 +49,26 @@ RSpec.describe '.sub_agent' do
     )
   end
 
-  let(:stop_response) do
-    ChatResponse.new(
-      finish_reason: :stop,
-      message: 'sub-agent reply',
-      reasoning: nil,
-      tool_calls: []
-    )
+  before do
+    @fake_chats = []
+    fake_class = fake_chat_class
+    captured = @fake_chats
+    @original_chat = RubyLLM.method(:chat)
+    RubyLLM.define_singleton_method(:chat) do |**_|
+      chat = fake_class.new
+      captured << chat
+      chat
+    end
+  end
+
+  after do
+    original = @original_chat
+    RubyLLM.define_singleton_method(:chat) { |**kwargs| original.call(**kwargs) }
   end
 
   describe 'tool shape' do
-    it 'returns a Tool named "sub_agent" with a required `task` string parameter' do
-      client = fake_client_class.new(response: stop_response)
-      tool = Tool.sub_agent(client: client, system_prompt: 'sp', tools: [])
+    it 'returns a RubyLLM::Tool subclass named "sub_agent" with a required `task` string parameter' do
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [])
 
       assert_operator tool, :<, RubyLLM::Tool
       assert_equal 'sub_agent', tool.name
@@ -56,33 +80,29 @@ RSpec.describe '.sub_agent' do
 
   describe 'execution' do
     it 'runs the sub-agent loop and returns its final assistant message' do
-      client = fake_client_class.new(response: stop_response)
-      tool = Tool.sub_agent(client: client, system_prompt: 'system!', tools: [dummy_tool])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'system!', tools: [dummy_tool])
 
       result = tool.run('task' => 'do the thing')
 
       assert_equal 'sub-agent reply', result
     end
 
-    it 'sends the system prompt and the task as the sub-agent\'s first two messages' do
-      client = fake_client_class.new(response: stop_response)
-      tool = Tool.sub_agent(client: client, system_prompt: 'be terse', tools: [])
+    it 'configures the sub-agent\'s chat with the system prompt and asks it the task' do
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'be terse', tools: [])
       tool.run('task' => 'count to three')
 
-      assert_equal 1, client.calls.size
-      messages = client.calls.first[:log].to_a
-      assert_equal :system, messages[0].role
-      assert_equal 'be terse', messages[0].content
-      assert_equal :user, messages[1].role
-      assert_equal 'count to three', messages[1].content
+      assert_equal 1, @fake_chats.size
+      sub_chat = @fake_chats.first
+      assert_equal 'be terse', sub_chat.instructions
+      assert_equal ['count to three'], sub_chat.asks
     end
 
     it 'advertises exactly the configured tool list to the sub-agent' do
-      client = fake_client_class.new(response: stop_response)
-      tool = Tool.sub_agent(client: client, system_prompt: 'sp', tools: [dummy_tool])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [dummy_tool])
       tool.run('task' => 'go')
 
-      assert_equal [dummy_tool], client.calls.first[:tools]
+      sub_chat = @fake_chats.first
+      assert_equal [dummy_tool], sub_chat.tools
     end
   end
 end

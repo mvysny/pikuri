@@ -6,33 +6,33 @@ require_relative '../agent'
 # assumes that order.
 class Tool
   # Factory for a +sub_agent+ tool: when the model calls it, the host spawns
-  # a fresh {Agent} that runs its own Thought / Tool-call / Observation loop
-  # on a clean {ChatLog}, then returns only the sub-agent's final assistant
-  # message back as the parent's next observation.
+  # a fresh {Agent} that runs its own conversation against +RubyLLM::Chat+
+  # on a clean message history, then returns only the sub-agent's final
+  # assistant message back as the parent's next observation.
   #
-  # The sub-agent reuses the parent's transport (the same {OpenAIClient}) and
-  # the parent's system prompt, so it shares the same persona and tool-use
-  # conventions. Its tool list is whatever the caller passes in +tools+ —
-  # typically the parent agent's tools minus this sub-agent tool, so the
-  # sub-agent cannot spawn further sub-agents recursively.
+  # The sub-agent reuses the parent's model and system prompt, so it
+  # shares the same persona and tool-use conventions. Its tool list is
+  # whatever the caller passes in +tools+ — typically the parent agent's
+  # tools minus this sub-agent tool, so the sub-agent cannot spawn
+  # further sub-agents recursively.
   #
   # @example wiring
   #   sub_tools = [Tool::WEB_SEARCH, Tool::CALCULATOR]
-  #   sub_agent_tool = Tool.sub_agent(client: client, system_prompt: prompt, tools: sub_tools)
-  #   agent = Agent.new(client: client, system_prompt: prompt,
-  #                     tools: sub_tools + [sub_agent_tool])
+  #   sub_agent_tool = Tool.sub_agent(model: 'gpt-4', system_prompt: prompt, tools: sub_tools)
+  #   agent = Agent.new(model: 'gpt-4', system_prompt: prompt, tools: sub_tools + [sub_agent_tool])
   #
-  # @param client [OpenAIClient] transport for the sub-agent (same one the
-  #   parent uses)
+  # @param model [String, nil] LLM identifier for the sub-agent; +nil+
+  #   defers to +RubyLLM.config.default_model+
   # @param system_prompt [String] system prompt for the sub-agent; typically
   #   the same prompt the parent agent uses
-  # @param tools [Array<Tool>] tools the sub-agent is allowed to call. Should
-  #   not include the sub-agent tool itself (recursion guard).
+  # @param tools [Array<Class>] tools the sub-agent is allowed to call.
+  #   Should not include the sub-agent tool itself (recursion guard).
   # @param max_steps [Integer] step budget for each sub-agent run, forwarded
   #   to {Agent#initialize}
-  # @return [Tool] a fresh sub-agent tool; not a singleton, since each
-  #   instance closes over a specific +client+, +system_prompt+, and +tools+
-  def self.sub_agent(client:, system_prompt:, tools:, max_steps: 10)
+  # @return [Class] a fresh sub-agent tool (a synthetic +RubyLLM::Tool+
+  #   subclass); not a singleton, since each invocation closes over a
+  #   specific +model+, +system_prompt+, and +tools+
+  def self.sub_agent(system_prompt:, tools:, model: nil, max_steps: 10)
     new(
       name: 'sub_agent',
       description: 'Delegate a self-contained task to a fresh sub-agent ' \
@@ -56,14 +56,14 @@ class Tool
                           'so include all necessary context.'
       },
       execute: lambda { |task:|
-        sub_agent = Agent.new(
-          client: client,
+        sub = Agent.new(
+          model: model,
           system_prompt: system_prompt,
           tools: tools,
           max_steps: max_steps
         )
-        sub_agent.run_loop(user_message: task)
-        sub_agent.log.to_a.last.content
+        sub.run_loop(user_message: task)
+        sub.last_assistant_content
       }
     )
   end
