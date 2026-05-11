@@ -25,6 +25,8 @@ class Agent
           puts Rainbow("→ #{name}(#{args})").cyan
         in Message::ToolResult(content:)
           puts Rainbow("= #{content}").cyan
+        in Message::FallbackNotice(reason:)
+          puts Rainbow("! #{reason}").yellow
         in Message::User
           # No-op: the user just typed this; echoing it back is noise.
         end

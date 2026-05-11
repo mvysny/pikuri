@@ -53,21 +53,27 @@ bundled tools.
   freshly-built `Message::User` out to every listener before calling
   `Chat#ask`; that user-message broadcast is also what triggers
   `StepLimit` to reset its counter, so Agent itself has no
-  step-budget knowledge or lifecycle ceremony. `Agent#to_s` produces
-  a one-line config dump suitable for a startup banner
+  step-budget knowledge or lifecycle ceremony. If a `StepLimit`
+  trips during `ask`, the rescue branch emits a `Message::FallbackNotice`,
+  builds a fresh chat via `RubyLLM.chat` (using the same `provider:` /
+  `assume_model_exists:` the parent was constructed with), and hands
+  off to `Synthesizer.run`; the synth's answer is stashed and surfaces
+  through `Agent#last_assistant_content`, so `Tool::SubAgent` callers
+  still see a usable reply. `Agent#to_s` produces a one-line config
+  dump suitable for a startup banner
   (`Agent(model=..., tools=N, listeners=[Terminal, StepLimit(max=20)])`).
-  `Agent#last_assistant_content` walks `Chat#messages` for the
-  sub-agent's final-reply needs.
 - `lib/agent/message.rb` — `Agent::Message`, a sealed
   `Data.define` hierarchy describing one event in the agent's
   normalized stream: `User` / `Thinking` / `Assistant` /
-  `ToolResult` (all carry `:content`) and `ToolCall` (`:name`,
-  `:arguments`). Value equality and pattern-match deconstruction come
-  for free, which is what makes the listener `case msg in
-  Message::X(...)` dispatch and the spec equality assertions read
-  cleanly. The variants serialize uniformly to JSON for a future web
-  sink — that ergonomic win is what drove choosing one
-  `on_message(msg)` entry point over per-variant `on_*` methods.
+  `ToolResult` (all carry `:content`), `ToolCall` (`:name`,
+  `:arguments`), and `FallbackNotice` (`:reason`, emitted by
+  `Agent#run_loop` when the synthesizer rescue fires). Value equality
+  and pattern-match deconstruction come for free, which is what makes
+  the listener `case msg in Message::X(...)` dispatch and the spec
+  equality assertions read cleanly. The variants serialize uniformly
+  to JSON for a future web sink — that ergonomic win is what drove
+  choosing one `on_message(msg)` entry point over per-variant `on_*`
+  methods.
 - `lib/agent/listener/message_listener.rb` —
   `Agent::Listener::MessageListener`, abstract base for listeners
   consuming the `Agent::Message` stream. `#attach(chat)` wires
@@ -105,6 +111,20 @@ bundled tools.
   out at the start of every turn — `StepLimit` doesn't need a
   bespoke lifecycle method and Agent doesn't need a reference back to
   it.
+- `lib/agent/synthesizer.rb` — `Agent::Synthesizer`, the
+  step-exhaustion rescue. `Synthesizer.run(chat:, parent_messages:,
+  user_message:, listeners:)` sets a strict "answer from the
+  evidence; no tools; admit gaps" system prompt on a *fresh* chat
+  the caller provides, attaches the parent's listeners so the synth
+  output flows through the same surface (terminal renders it,
+  in-memory recorder captures it), and asks once with a paired-up
+  transcript of tool calls and results. Tool calls without matching
+  `:tool`-role results are dropped — the exhausting call never
+  executed, citing it would mislead the model.
+  `Synthesizer.build_prompt` is a pure function and is tested
+  directly. `Agent` owns the `RubyLLM.chat` call for the synth chat,
+  so this file does not reference `RubyLLM::*` — the seam stays at
+  three files.
 - `lib/tool.rb` — `Tool` is a plain value class with `name`,
   `description`, `parameters`, and an `execute` Proc. `Tool#run(args)`
   validates via `Parameters#validate` and forwards to `execute`,

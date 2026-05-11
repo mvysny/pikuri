@@ -44,5 +44,12 @@ class Agent
     # {Tool#run}. Recoverable failures arrive here as +"Error: ..."+
     # strings (per the pikuri error convention), not as exceptions.
     ToolResult = Data.define(:content)
+
+    # Out-of-band notice that the agent had to take a rescue path —
+    # currently emitted by {Agent#run_loop} when {Listener::StepLimit}
+    # trips and the synthesizer fallback runs. Lets listeners (Terminal,
+    # future web UI) surface the divergence to the user before the
+    # synthesizer's own assistant output flows through.
+    FallbackNotice = Data.define(:reason)
   end
 end

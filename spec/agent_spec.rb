@@ -226,4 +226,90 @@ RSpec.describe Agent do
                    agent.to_s
     end
   end
+
+  describe 'step-exhaustion rescue' do
+    # Stub +Agent::Synthesizer.run+ so the rescue branch can be tested
+    # without standing up a second fake chat. Captured kwargs let the
+    # spec assert on exactly what Agent handed to the synthesizer.
+    before do
+      @synth_calls = []
+      captured = @synth_calls
+      @original_run = Agent::Synthesizer.method(:run)
+      Agent::Synthesizer.define_singleton_method(:run) do |**kwargs|
+        captured << kwargs
+        'rescued answer'
+      end
+    end
+
+    after do
+      original = @original_run
+      Agent::Synthesizer.define_singleton_method(:run) { |**kw| original.call(**kw) }
+    end
+
+    # Helper: arrange for the parent chat's +ask+ to raise once, as if
+    # a StepLimit deep inside its +before_tool_call+ tripped.
+    def arrange_step_exhaustion(max_steps)
+      err = Agent::Listener::StepLimit::Exceeded.new(max_steps)
+      fake_chat.define_singleton_method(:ask) do |msg|
+        @asks << msg
+        raise err
+      end
+    end
+
+    it 'catches Exceeded, emits a FallbackNotice, and returns nil from run_loop' do
+      agent = Agent.new(model: 'm', system_prompt: 's',
+                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      arrange_step_exhaustion(2)
+
+      assert_nil agent.run_loop(user_message: 'compare two cities')
+
+      assert_includes in_memory.events, Agent::Message::User.new(content: 'compare two cities')
+      notice = in_memory.events.find { |m| m.is_a?(Agent::Message::FallbackNotice) }
+      refute_nil notice, 'expected a FallbackNotice in the listener stream'
+      assert_includes notice.reason, 'exhausted 2 steps'
+    end
+
+    it 'invokes Synthesizer.run with the parent chat history, listeners, and original question' do
+      listeners = [in_memory, Agent::Listener::StepLimit.new(max: 2)]
+      agent = Agent.new(model: 'm', system_prompt: 's', listeners: listeners)
+      fake_chat.add_assistant('plan: do stuff')
+      arrange_step_exhaustion(2)
+
+      agent.run_loop(user_message: 'why?')
+
+      assert_equal 1, @synth_calls.size
+      call = @synth_calls.first
+      refute_nil call[:chat], 'expected a fresh synth chat to be passed'
+      assert_equal fake_chat.messages, call[:parent_messages]
+      assert_equal 'why?', call[:user_message]
+      assert_equal listeners, call[:listeners]
+    end
+
+    it "prefers the synth's answer for last_assistant_content after a rescue" do
+      agent = Agent.new(model: 'm', system_prompt: 's',
+                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      arrange_step_exhaustion(2)
+
+      agent.run_loop(user_message: 'q?')
+
+      assert_equal 'rescued answer', agent.last_assistant_content
+    end
+
+    it 'clears the prior synth answer at the start of each new turn' do
+      agent = Agent.new(model: 'm', system_prompt: 's',
+                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      arrange_step_exhaustion(2)
+      agent.run_loop(user_message: 'turn 1')
+      assert_equal 'rescued answer', agent.last_assistant_content
+
+      # Make the next turn succeed: replace ask with one that just adds an assistant message.
+      fake_chat.define_singleton_method(:ask) do |msg|
+        @asks << msg
+        @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
+      end
+      agent.run_loop(user_message: 'turn 2')
+
+      assert_equal 'normal answer', agent.last_assistant_content
+    end
+  end
 end

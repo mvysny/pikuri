@@ -16,6 +16,16 @@ require 'ruby_llm'
 # step budget) reproduces pikuri's standard CLI behavior; callers
 # wanting structured event capture or a different step cap supply
 # their own list.
+#
+# == Step-exhaustion rescue
+#
+# If a {Listener::StepLimit} in {#listeners} trips during +Chat#ask+,
+# {#run_loop} catches the +Exceeded+ exception, emits a
+# {Message::FallbackNotice} to every listener, and hands off to
+# {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth's answer
+# becomes the value reported by {#last_assistant_content}, so callers
+# (notably {Tool::SubAgent}) still get a usable reply instead of
+# raising past +bin/pikuri+.
 class Agent
   # @param model [String, nil] LLM identifier; defaults to
   #   +RubyLLM.config.default_model+ so transport configuration can pick
@@ -34,7 +44,8 @@ class Agent
   # @param provider [Symbol, nil] forwarded to +RubyLLM.chat+. Required
   #   together with +assume_model_exists+ when pointing at a local
   #   OpenAI-compatible server (llama.cpp, gpustack, ...) whose model
-  #   ids are not in ruby_llm's registry.
+  #   ids are not in ruby_llm's registry. Stored so the synthesizer
+  #   rescue can construct a fresh chat with the same transport.
   # @param assume_model_exists [Boolean] forwarded to +RubyLLM.chat+;
   #   set to +true+ to skip the registry lookup and trust the supplied
   #   +model+ id. Requires +provider+.
@@ -46,8 +57,11 @@ class Agent
     @system_prompt = system_prompt
     @tools = tools.dup
     @listeners = listeners
+    @provider = provider
+    @assume_model_exists = assume_model_exists
+    @synth_answer = nil
 
-    @chat = RubyLLM.chat(model: @model, provider: provider, assume_model_exists: assume_model_exists)
+    @chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
     @chat.with_instructions(@system_prompt)
     @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
     @listeners.each { |l| l.attach(@chat) }
@@ -66,12 +80,15 @@ class Agent
   #   order they were supplied
   attr_reader :listeners
 
-  # Final assistant message content across the chat's history, or +nil+ if
-  # the chat has not produced one yet. Used by {Tool.sub_agent}'s execute
-  # lambda to surface only the sub-agent's final reply back to the parent.
+  # Final assistant message content for the most recent {#run_loop}.
+  # When the synthesizer rescue fired, returns its answer; otherwise
+  # walks the underlying chat's history. Returns +nil+ if neither
+  # source has produced an assistant turn yet.
   #
   # @return [String, nil]
   def last_assistant_content
+    return @synth_answer if @synth_answer
+
     last = @chat.messages.reverse.find { |m| m.role == :assistant }
     last&.content
   end
@@ -82,17 +99,35 @@ class Agent
   # {#chat} via +ask+. Returns nil; rendering and any other observable
   # output is the listeners' responsibility.
   #
+  # If a {Listener::StepLimit} trips during +ask+, the rescue branch
+  # emits a {Message::FallbackNotice} and runs {Synthesizer.run} on a
+  # fresh +RubyLLM::Chat+. The synth's answer is captured for
+  # {#last_assistant_content}; the exception does not bubble out.
+  #
   # Subsequent calls keep building on the same chat history, so the
   # model sees full multi-turn context.
   #
   # @param user_message [String] the user's request for this turn
   # @return [nil]
-  # @raise [Listener::StepLimit::Exceeded] if a {Listener::StepLimit}
-  #   in {#listeners} trips during +Chat#ask+
   def run_loop(user_message:)
+    @synth_answer = nil
     user_msg = Message::User.new(content: user_message)
     @listeners.each { |l| l.on_message(user_msg) }
     @chat.ask(user_message)
+    nil
+  rescue Listener::StepLimit::Exceeded => e
+    notice = Message::FallbackNotice.new(
+      reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"
+    )
+    @listeners.each { |l| l.on_message(notice) }
+
+    synth_chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
+    @synth_answer = Synthesizer.run(
+      chat: synth_chat,
+      parent_messages: @chat.messages,
+      user_message: user_message,
+      listeners: @listeners
+    )
     nil
   end
 
