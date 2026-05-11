@@ -31,37 +31,44 @@ RSpec.describe Agent::Listener::TokenLog do
   describe '#on_tokens' do
     let(:listener) { described_class.new }
 
-    it 'logs one info line per emission, summing per-turn deltas but never the context size' do
-      # input is already cumulative per turn (the whole prompt sent
-      # this round), so the session: portion deliberately omits it.
-      # output IS a per-turn delta, so it sums.
-      listener.on_tokens(tokens(input: 10_240, output: 1024))
-      listener.on_tokens(tokens(input: 20_480, output: 2048))
+    it 'logs one info line per emission: ctx is the latest snapshot, deltas accumulate' do
+      # input is a per-turn delta (the uncached portion of THIS turn's
+      # prompt). ctx is a snapshot — input + cached + cache_creation —
+      # and the session: ctx= is just the latest one, never summed.
+      # All deltas (input/output/cached/cache_creation/thinking) DO
+      # sum into the session totals.
+      listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
+      listener.on_tokens(tokens(input: 2048, cached: 10_240, output: 2048))
 
       lines = buf.string.lines
       assert_equal 2, lines.size
-      assert_includes lines[0], 'msg #1: ctx=10.0k out=1.0k | session: out=1.0k'
-      assert_includes lines[1], 'msg #2: ctx=20.0k out=2.0k | session: out=3.0k'
-      lines.each do |l|
-        refute_match(/session:[^|\n]*(ctx|in)=/, l,
-                     'session: must not carry the cumulative-input snapshot — summing it would double-count')
-      end
+      # Turn 1: ctx = 1024 + 9216 = 10240 → 10.0k.
+      assert_includes lines[0], 'msg #1: ctx=10.0k in=1.0k out=1.0k cached=9.0k'
+      assert_includes lines[0], 'session: ctx=10.0k in=1.0k out=1.0k cached=9.0k'
+      # Turn 2: ctx = 2048 + 10240 = 12288 → 12.0k. session sums in (3.0k), out (3.0k), cached (19.0k).
+      assert_includes lines[1], 'msg #2: ctx=12.0k in=2.0k out=2.0k cached=10.0k'
+      assert_includes lines[1], 'session: ctx=12.0k in=3.0k out=3.0k cached=19.0k'
     end
 
-    it 'omits thinking and cached from the line when they are zero' do
+    it 'omits thinking, cached, and cache_creation when zero' do
       listener.on_tokens(tokens(input: 10_240, output: 1024))
 
       line = buf.string.lines.first
       refute_includes line, 'thinking='
       refute_includes line, 'cached='
+      refute_includes line, 'cache_creation='
     end
 
-    it 'includes thinking and cached fields when non-zero' do
-      listener.on_tokens(tokens(input: 10_240, output: 1024, thinking: 5120, cached: 8192))
+    it 'includes thinking, cached, and cache_creation when non-zero' do
+      listener.on_tokens(tokens(
+                           input: 1024, output: 1024,
+                           cached: 8192, cache_creation: 2048, thinking: 5120
+                         ))
 
       line = buf.string.lines.first
-      assert_includes line, 'thinking=5.0k'
       assert_includes line, 'cached=8.0k'
+      assert_includes line, 'cache_creation=2.0k'
+      assert_includes line, 'thinking=5.0k'
     end
 
     it 'treats nil token fields as zero so providers that report nothing still log a line' do
@@ -71,7 +78,7 @@ RSpec.describe Agent::Listener::TokenLog do
                          ))
 
       line = buf.string.lines.first
-      assert_includes line, 'msg #1: ctx=0.0k out=0.0k | session: out=0.0k'
+      assert_includes line, 'msg #1: ctx=0.0k in=0.0k out=0.0k | session: ctx=0.0k in=0.0k out=0.0k'
     end
   end
 
@@ -80,19 +87,31 @@ RSpec.describe Agent::Listener::TokenLog do
       assert_equal 0, described_class.new.context_window_size
     end
 
-    it 'reflects the LATEST input value, not a sum and not the max' do
+    it 'is the LATEST input + cached + cache_creation, the three exclusive portions of this turn\'s prompt' do
       listener = described_class.new
 
-      listener.on_tokens(tokens(input: 10_000))
-      listener.on_tokens(tokens(input: 15_000))
-      # Latest could legitimately be smaller than the previous max
-      # if ruby_llm ever pruned messages between turns.
-      listener.on_tokens(tokens(input: 12_000))
+      # Turn 1: full prompt is 1000 uncached + 5000 cached + 200 newly-cached = 6200.
+      listener.on_tokens(tokens(input: 1000, cached: 5000, cache_creation: 200))
+      assert_equal 6200, listener.context_window_size
+
+      # Turn 2: prompt grows. cache_creation 0 (already-warm cache).
+      listener.on_tokens(tokens(input: 500, cached: 6500, cache_creation: 0))
+      assert_equal 7000, listener.context_window_size
+    end
+
+    it 'reflects only the LATEST snapshot, not a sum and not the max' do
+      listener = described_class.new
+
+      listener.on_tokens(tokens(input: 10_000, cached: 0))
+      listener.on_tokens(tokens(input: 15_000, cached: 0))
+      # Smaller than the previous turn — legitimate if ruby_llm ever
+      # pruned messages between turns. "Current" means latest, not peak.
+      listener.on_tokens(tokens(input: 12_000, cached: 0))
 
       assert_equal 12_000, listener.context_window_size
     end
 
-    it 'treats nil input as zero' do
+    it 'treats nil inputs as zero' do
       listener = described_class.new
       listener.on_tokens(Agent::Tokens.new(
                            input: nil, output: 10, cached: nil, cache_creation: nil,
@@ -123,16 +142,14 @@ RSpec.describe Agent::Listener::TokenLog do
       parent = described_class.new
       child  = described_class.new
 
-      # Child's totals being separate from the parent's would show up
-      # as 'session: out=0.5k', not '1.5k' if state leaked across.
       parent.on_tokens(tokens(input: 10_240, output: 1024))
       child.on_tokens(tokens(input: 5120, output: 512))
 
-      parent_line = buf.string.lines.find { |l| l.include?('ctx=10.0k') }
-      child_line  = buf.string.lines.find { |l| l.include?('ctx=5.0k') }
+      parent_line = buf.string.lines.find { |l| l.include?('msg #1: ctx=10.0k') }
+      child_line  = buf.string.lines.find { |l| l.include?('msg #1: ctx=5.0k') }
 
-      assert_includes parent_line, 'session: out=1.0k'
-      assert_includes child_line,  'session: out=0.5k'
+      assert_includes parent_line, 'session: ctx=10.0k in=10.0k out=1.0k'
+      assert_includes child_line,  'session: ctx=5.0k in=5.0k out=0.5k'
     end
   end
 
@@ -143,9 +160,9 @@ RSpec.describe Agent::Listener::TokenLog do
 
     it 'reflects the latest context-window snapshot after on_tokens fires' do
       listener = described_class.new
-      listener.on_tokens(tokens(input: 12_345))
+      # 1024 uncached + 11321 cached = 12345 → 12345 / 1024 ≈ 12.1k.
+      listener.on_tokens(tokens(input: 1024, cached: 11_321))
 
-      # 12_345 / 1024 ≈ 12.0556 → 12.1k
       assert_equal 'TokenLog(ctx=12.1k)', listener.to_s
     end
   end
