@@ -78,17 +78,17 @@ class Agent
     end
 
     # Return a new {ListenerList} with each {Listener::TokenLog}
-    # replaced by a fresh instance (zero session totals). Non-+TokenLog+
-    # listeners are passed by reference — same convention as
-    # {#with_max_steps}, so terminal output and other rendering still
-    # flow continuously into the parent's instances.
+    # replaced by a fresh instance (zeroed context-window snapshot).
+    # Non-+TokenLog+ listeners are passed by reference — same
+    # convention as {#with_max_steps}, so terminal output and other
+    # rendering still flow continuously into the parent's instances.
     #
     # Used by {Tool::SubAgent.build} (chained after {#with_max_steps})
-    # so a sub-agent's token counts log against its own +RubyLLM::Chat+
-    # rather than mixing into the parent's running totals. Deliberately
-    # NOT used by {Agent}'s synth rescue: the synthesizer's tokens are
-    # part of the same user question's cost and should accumulate into
-    # the parent's +TokenLog+.
+    # so a sub-agent's context-window snapshot tracks its own
+    # +RubyLLM::Chat+ rather than the parent's. Deliberately NOT used
+    # by {Agent}'s synth rescue: the synthesizer's tokens are part of
+    # the same conversation and should continue the parent's
+    # +TokenLog+ readings.
     #
     # No-op (besides the +dup+) if the receiver contains no +TokenLog+.
     #
@@ -98,6 +98,24 @@ class Agent
         l.is_a?(Listener::TokenLog) ? Listener::TokenLog.new : l
       end
       self.class.new(swapped)
+    end
+
+    # Set the context-window cap on every {Listener::TokenLog} in the
+    # list. Called by {Agent#initialize} once
+    # {Agent::ContextWindowDetector} has resolved a value, so the
+    # +ctx=<used>/<cap>+ form lights up across all token loggers without
+    # the caller having to know which listeners they registered.
+    #
+    # Non-+TokenLog+ listeners are left alone — they have no cap to
+    # carry.
+    #
+    # @param cap [Integer, nil] cap to apply; +nil+ is allowed (and
+    #   keeps the existing +ctx=<used>+ form)
+    # @return [void]
+    def context_window_cap=(cap)
+      @listeners.each do |l|
+        l.context_window_cap = cap if l.is_a?(Listener::TokenLog)
+      end
     end
 
     # @example

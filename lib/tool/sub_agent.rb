@@ -41,14 +41,19 @@ class Tool
     #   list; the spawned sub-agent gets
     #   +listeners.with_max_steps(max_steps).with_zero_tokens+ — same
     #   renderers/recorders, fresh +StepLimit+, fresh +TokenLog+ (so
-    #   sub-agent token counts don't bleed into the parent's session
-    #   totals; the sub-agent has its own +RubyLLM::Chat+).
+    #   the sub-agent's context-window snapshot tracks its own
+    #   +RubyLLM::Chat+ rather than the parent's).
     # @param max_steps [Integer] step budget for each sub-agent run,
     #   forwarded to {Agent::ListenerList#with_max_steps}
+    # @param context_window [Integer, nil] context-window cap for the
+    #   sub-agent, forwarded as the +context_window:+ override on its
+    #   {Agent}. Typically the parent's {Agent#context_window_cap} so
+    #   the sub-agent inherits the same cap (same model, same server)
+    #   without re-probing on every invocation.
     # @return [Tool] a fresh sub-agent tool; not a singleton, since each
     #   invocation closes over a specific +model+, +system_prompt+,
     #   +tools+, and +listeners+
-    def self.build(system_prompt:, tools:, listeners:, model: nil, max_steps: 10)
+    def self.build(system_prompt:, tools:, listeners:, model: nil, max_steps: 10, context_window: nil)
       Tool.new(
         name: 'sub_agent',
         description: <<~DESC,
@@ -73,7 +78,8 @@ class Tool
             model: model,
             system_prompt: system_prompt,
             tools: tools,
-            listeners: listeners.with_max_steps(max_steps).with_zero_tokens
+            listeners: listeners.with_max_steps(max_steps).with_zero_tokens,
+            context_window: context_window
           )
           sub.run_loop(user_message: task)
           sub.last_assistant_content
@@ -83,10 +89,10 @@ class Tool
   end
 
   # Convenience alias at the +Tool+ level. See {SubAgent.build}.
-  def self.sub_agent(system_prompt:, tools:, listeners:, model: nil, max_steps: 10)
+  def self.sub_agent(system_prompt:, tools:, listeners:, model: nil, max_steps: 10, context_window: nil)
     SubAgent.build(
       system_prompt: system_prompt, tools: tools, listeners: listeners,
-      model: model, max_steps: max_steps
+      model: model, max_steps: max_steps, context_window: context_window
     )
   end
 end

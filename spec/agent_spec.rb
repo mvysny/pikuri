@@ -8,15 +8,28 @@ RSpec.describe Agent do
   # +Message+/+ToolCall+ payloads, and records what +Agent+ configures
   # (system prompt, tools, +ask+ calls). Lets us pin the agent-level
   # wiring without going anywhere near a real provider.
+  # +RubyLLM::Model::Info+ stand-in just so +Agent#initialize+ can read
+  # +@chat.model.context_window+ for {Agent::ContextWindowDetector}.
+  # Returns +nil+, which is what +Model::Info.default+ produces for any
+  # model that isn't in ruby_llm's bundled registry — the path our
+  # local-llama deployment exercises.
+  fake_model = Struct.new(:context_window).new(nil)
+
   let(:fake_chat_class) do
+    captured_model = fake_model
     Class.new do
       attr_reader :tools, :asks, :messages, :instructions, :listeners
 
-      def initialize
+      define_method(:initialize) do
         @tools = []
         @asks = []
         @messages = []
         @listeners = Hash.new { |h, k| h[k] = [] }
+        @model_info = captured_model
+      end
+
+      def model
+        @model_info
       end
 
       def with_instructions(text)
@@ -105,6 +118,84 @@ RSpec.describe Agent do
     it 'requires tools: — no silent default' do
       assert_raises(ArgumentError) do
         Agent.new(model: 'm', system_prompt: 's', listeners: listener_list)
+      end
+    end
+
+    describe 'context-window detection' do
+      let(:token_log) { Agent::Listener::TokenLog.new }
+      let(:list_with_tokens) { Agent::ListenerList.new([in_memory, token_log]) }
+
+      it 'pushes the detected cap onto every TokenLog in the listener list' do
+        # No ruby_llm reported value (fake .model.context_window is nil),
+        # no probe URL — explicit override wins.
+        Agent.new(model: 'm', system_prompt: 's', tools: [],
+                  listeners: list_with_tokens, context_window: 32_768)
+
+        assert_equal 32_768, token_log.context_window_cap
+      end
+
+      it 'falls back to ruby_llm reported value when no override is given' do
+        # Rebind the fake_chat's model to one that reports a window.
+        fake_chat.instance_variable_set(:@model_info, Struct.new(:context_window).new(200_000))
+
+        Agent.new(model: 'm', system_prompt: 's', tools: [],
+                  listeners: list_with_tokens)
+
+        assert_equal 200_000, token_log.context_window_cap
+      end
+
+      it 'exposes the resolved cap via #context_window_cap' do
+        agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                          listeners: list_with_tokens, context_window: 8_192)
+
+        assert_equal 8_192, agent.context_window_cap
+      end
+
+      it 'leaves cap nil when nothing produces a value (no override, no registry, no probe URL)' do
+        agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                          listeners: list_with_tokens)
+
+        assert_nil agent.context_window_cap
+        assert_nil token_log.context_window_cap
+      end
+    end
+  end
+
+  describe '#allow_sub_agent' do
+    it "forwards the parent's resolved context_window_cap as the sub-agent tool's override" do
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]),
+                        context_window: 12_345)
+      agent.allow_sub_agent(max_steps: 3)
+
+      # The sub_agent tool is the last one wired onto the chat. We can
+      # introspect it by running its execute lambda and seeing what
+      # Agent.new is called with — but easier: capture the next
+      # +RubyLLM.chat+ call and check its produced agent's cap.
+      captured_caps = []
+      hook = lambda do |sub_agent|
+        captured_caps << sub_agent.context_window_cap
+        'sub reply'
+      end
+
+      # Stub Agent.new globally just for this test: record the
+      # +context_window+ kwarg the sub-agent factory passes.
+      original_new = Agent.method(:new)
+      received_kwargs = nil
+      Agent.define_singleton_method(:new) do |**kwargs|
+        received_kwargs = kwargs
+        original_new.call(**kwargs).tap do |a|
+          a.define_singleton_method(:run_loop) { |**_| nil }
+          a.define_singleton_method(:last_assistant_content) { 'sub reply' }
+        end
+      end
+
+      begin
+        sub_tool = agent.instance_variable_get(:@tools).last
+        sub_tool.run('task' => 'do the thing')
+        assert_equal 12_345, received_kwargs[:context_window]
+      ensure
+        Agent.define_singleton_method(:new) { |**kw| original_new.call(**kw) }
       end
     end
   end

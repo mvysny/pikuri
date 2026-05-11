@@ -6,15 +6,25 @@ RSpec.describe '.sub_agent' do
   # Minimal stand-in for +RubyLLM::Chat+: records what +Agent+ configures
   # on it, drops a canned assistant +Message+ into +messages+ on +ask+, and
   # exposes +calls+ for assertions. Keeps sub-agent specs network-free.
+  # +RubyLLM::Model::Info+ stand-in just so +Agent#initialize+ can read
+  # +@chat.model.context_window+ for {Agent::ContextWindowDetector}.
+  fake_model = Struct.new(:context_window).new(nil)
+
   let(:fake_chat_class) do
+    captured_model = fake_model
     Class.new do
       attr_reader :tools, :asks, :messages, :instructions
 
-      def initialize(reply: 'sub-agent reply')
+      define_method(:initialize) do |reply: 'sub-agent reply'|
         @tools = []
         @asks = []
         @messages = []
         @reply = reply
+        @model_info = captured_model
+      end
+
+      def model
+        @model_info
       end
 
       def with_instructions(text)

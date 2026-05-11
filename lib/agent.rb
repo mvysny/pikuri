@@ -52,9 +52,22 @@ class Agent
   # @param assume_model_exists [Boolean] forwarded to +RubyLLM.chat+;
   #   set to +true+ to skip the registry lookup and trust the supplied
   #   +model+ id. Requires +provider+.
+  # @param context_window [Integer, nil] explicit override for the
+  #   model's context-window cap. When set, it wins over ruby_llm's
+  #   reported value and the llama.cpp probe — see
+  #   {ContextWindowDetector} for precedence. Resolved cap is pushed to
+  #   every {Listener::TokenLog} so the +ctx=<used>/<cap>+ headline
+  #   lights up.
+  # @param llama_probe_url [String, nil] llama.cpp +/props+ URL used as
+  #   the third detection source. Only consulted when neither
+  #   +context_window+ nor ruby_llm's reported value is set. Typically
+  #   derived by +bin/pikuri+ from its configured +openai_api_base+;
+  #   leave +nil+ when the configured server is anything other than
+  #   llama.cpp.
   # @return [Agent]
   def initialize(system_prompt:, tools:, listeners:, model: nil,
-                 provider: nil, assume_model_exists: false)
+                 provider: nil, assume_model_exists: false,
+                 context_window: nil, llama_probe_url: nil)
     @model = model || RubyLLM.config.default_model
     @system_prompt = system_prompt
     @tools = tools.dup
@@ -66,6 +79,13 @@ class Agent
     @chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
     @chat.with_instructions(@system_prompt)
     @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
+
+    @context_window_cap = ContextWindowDetector.new(
+      override: context_window,
+      ruby_llm_reported: @chat.model.context_window,
+      llama_probe_url: llama_probe_url
+    ).detect
+    @listeners.context_window_cap = @context_window_cap
     @listeners.attach(@chat)
   end
 
@@ -81,6 +101,13 @@ class Agent
   # @return [ListenerList] the listener list attached to this agent's
   #   chat
   attr_reader :listeners
+
+  # @return [Integer, nil] context-window cap resolved by
+  #   {ContextWindowDetector} at construction time. +nil+ when no
+  #   source produced a value (custom local model with no override and
+  #   no reachable llama.cpp +/props+). Read by {#allow_sub_agent} so
+  #   spawned sub-agents inherit the same cap without re-probing.
+  attr_reader :context_window_cap
 
   # Final assistant message content for the most recent {#run_loop}.
   # When the synthesizer rescue fired, returns its answer; otherwise
@@ -152,7 +179,12 @@ class Agent
       system_prompt: @system_prompt,
       tools: sub_tools,
       listeners: @listeners,
-      max_steps: max_steps
+      max_steps: max_steps,
+      # Pass the parent's resolved cap as the sub-agent's override so it
+      # doesn't re-probe /props on every invocation. If the parent's
+      # detection returned nil, the sub-agent sees nil too — same model,
+      # same server, same outcome.
+      context_window: @context_window_cap
     )
     @tools << sub_tool
     @chat.with_tool(sub_tool.to_ruby_llm_tool)

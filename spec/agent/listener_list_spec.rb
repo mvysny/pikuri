@@ -168,6 +168,43 @@ RSpec.describe Agent::ListenerList do
     end
   end
 
+  describe '#context_window_cap=' do
+    let(:terminal) { Agent::Listener::Terminal.new }
+
+    it 'sets the cap on every TokenLog in the list' do
+      log_a = Agent::Listener::TokenLog.new
+      log_b = Agent::Listener::TokenLog.new
+      list = described_class.new([terminal, log_a, recorder, log_b])
+
+      list.context_window_cap = 32_768
+
+      assert_equal 32_768, log_a.context_window_cap
+      assert_equal 32_768, log_b.context_window_cap
+    end
+
+    it 'leaves non-TokenLog listeners alone — no respond_to? mismatch' do
+      log = Agent::Listener::TokenLog.new
+      list = described_class.new([terminal, recorder, log])
+
+      # Should not raise on Terminal/InMemoryList; only TokenLog gets the cap.
+      list.context_window_cap = 4_096
+
+      assert_equal 4_096, log.context_window_cap
+      refute_respond_to terminal, :context_window_cap
+      refute_respond_to recorder, :context_window_cap
+    end
+
+    it 'accepts nil so callers without a resolved cap can still wire it through' do
+      log = Agent::Listener::TokenLog.new
+      log.context_window_cap = 16_000
+      list = described_class.new([log])
+
+      list.context_window_cap = nil
+
+      assert_nil log.context_window_cap
+    end
+  end
+
   describe '#to_s' do
     it 'renders the bracket-and-comma listener label' do
       list = described_class.new([

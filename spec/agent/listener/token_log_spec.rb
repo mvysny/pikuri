@@ -31,44 +31,25 @@ RSpec.describe Agent::Listener::TokenLog do
   describe '#on_tokens' do
     let(:listener) { described_class.new }
 
-    it 'logs one info line per emission: ctx is the latest snapshot, deltas accumulate' do
-      # input is a per-turn delta (the uncached portion of THIS turn's
-      # prompt). ctx is a snapshot — input + cached + cache_creation —
-      # and the session: ctx= is just the latest one, never summed.
-      # All deltas (input/output/cached/cache_creation/thinking) DO
-      # sum into the session totals.
+    it 'logs one info line per emission with ctx, Δ from previous ctx, and per-turn ↑/↓' do
+      # Turn 1: ctx = 1024 + 9216 = 10240 → 10.0k. No prior ctx, so Δ
+      # is from the implicit baseline of zero — Δ equals ctx.
       listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
+      # Turn 2: ctx = 2048 + 10240 = 12288 → 12.0k. Δ = +2.0k.
       listener.on_tokens(tokens(input: 2048, cached: 10_240, output: 2048))
 
       lines = buf.string.lines
       assert_equal 2, lines.size
-      # Turn 1: ctx = 1024 + 9216 = 10240 → 10.0k.
-      assert_includes lines[0], 'msg #1: ctx=10.0k in=1.0k out=1.0k cached=9.0k'
-      assert_includes lines[0], 'session: ctx=10.0k in=1.0k out=1.0k cached=9.0k'
-      # Turn 2: ctx = 2048 + 10240 = 12288 → 12.0k. session sums in (3.0k), out (3.0k), cached (19.0k).
-      assert_includes lines[1], 'msg #2: ctx=12.0k in=2.0k out=2.0k cached=10.0k'
-      assert_includes lines[1], 'session: ctx=12.0k in=3.0k out=3.0k cached=19.0k'
+      assert_includes lines[0], 'msg #1: ctx=10.0k  Δ+10.0k  ↑1.0k  ↓1.0k'
+      assert_includes lines[1], 'msg #2: ctx=12.0k  Δ+2.0k  ↑2.0k  ↓2.0k'
     end
 
-    it 'omits thinking, cached, and cache_creation when zero' do
-      listener.on_tokens(tokens(input: 10_240, output: 1024))
+    it 'renders a negative Δ when ctx shrinks (legitimate if ruby_llm prunes between turns)' do
+      listener.on_tokens(tokens(input: 10_240))
+      listener.on_tokens(tokens(input: 8192))
 
-      line = buf.string.lines.first
-      refute_includes line, 'thinking='
-      refute_includes line, 'cached='
-      refute_includes line, 'cache_creation='
-    end
-
-    it 'includes thinking, cached, and cache_creation when non-zero' do
-      listener.on_tokens(tokens(
-                           input: 1024, output: 1024,
-                           cached: 8192, cache_creation: 2048, thinking: 5120
-                         ))
-
-      line = buf.string.lines.first
-      assert_includes line, 'cached=8.0k'
-      assert_includes line, 'cache_creation=2.0k'
-      assert_includes line, 'thinking=5.0k'
+      line = buf.string.lines[1]
+      assert_includes line, 'msg #2: ctx=8.0k  Δ-2.0k  ↑8.0k  ↓0.0k'
     end
 
     it 'treats nil token fields as zero so providers that report nothing still log a line' do
@@ -78,7 +59,15 @@ RSpec.describe Agent::Listener::TokenLog do
                          ))
 
       line = buf.string.lines.first
-      assert_includes line, 'msg #1: ctx=0.0k in=0.0k out=0.0k | session: ctx=0.0k in=0.0k out=0.0k'
+      assert_includes line, 'msg #1: ctx=0.0k  Δ+0.0k  ↑0.0k  ↓0.0k'
+    end
+
+    it 'includes cache_creation in ctx (it is one of the three exclusive prompt portions)' do
+      listener.on_tokens(tokens(input: 1024, cached: 8192, cache_creation: 2048, output: 1024))
+
+      # ctx = 1024 + 8192 + 2048 = 11264 → 11.0k.
+      line = buf.string.lines.first
+      assert_includes line, 'msg #1: ctx=11.0k'
     end
   end
 
@@ -122,6 +111,33 @@ RSpec.describe Agent::Listener::TokenLog do
     end
   end
 
+  describe '#context_window_cap' do
+    it 'is nil by default — without a detected cap, the ctx= field stays bare' do
+      assert_nil described_class.new.context_window_cap
+    end
+
+    it 'when set, renders ctx as <used>/<cap> in the log line' do
+      listener = described_class.new
+      listener.context_window_cap = 32_768
+
+      listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
+
+      # used = 1024 + 9216 = 10240 → 10.0k; cap = 32768 → 32.0k.
+      line = buf.string.lines.first
+      assert_includes line, 'ctx=10.0k/32.0k'
+      assert_includes line, 'Δ+10.0k'
+    end
+
+    it 'when nil, omits the slash form and renders ctx as <used> only' do
+      listener = described_class.new
+      listener.on_tokens(tokens(input: 10_240))
+
+      line = buf.string.lines.first
+      assert_includes line, 'ctx=10.0k '
+      refute_includes line, 'ctx=10.0k/'
+    end
+  end
+
   describe '#on_message' do
     it 'does nothing — Message variants are not the token channel' do
       listener = described_class.new
@@ -138,7 +154,7 @@ RSpec.describe Agent::Listener::TokenLog do
   end
 
   describe 'isolation between instances' do
-    it 'each TokenLog has its own session totals (sub-agent does not inherit parent counts)' do
+    it 'each TokenLog tracks its own ctx (sub-agent does not inherit parent ctx)' do
       parent = described_class.new
       child  = described_class.new
 
@@ -148,8 +164,8 @@ RSpec.describe Agent::Listener::TokenLog do
       parent_line = buf.string.lines.find { |l| l.include?('msg #1: ctx=10.0k') }
       child_line  = buf.string.lines.find { |l| l.include?('msg #1: ctx=5.0k') }
 
-      assert_includes parent_line, 'session: ctx=10.0k in=10.0k out=1.0k'
-      assert_includes child_line,  'session: ctx=5.0k in=5.0k out=0.5k'
+      assert_includes parent_line, 'Δ+10.0k  ↑10.0k  ↓1.0k'
+      assert_includes child_line,  'Δ+5.0k  ↑5.0k  ↓0.5k'
     end
   end
 
@@ -164,6 +180,14 @@ RSpec.describe Agent::Listener::TokenLog do
       listener.on_tokens(tokens(input: 1024, cached: 11_321))
 
       assert_equal 'TokenLog(ctx=12.1k)', listener.to_s
+    end
+
+    it 'shows ctx as <used>/<cap> when a context_window_cap is set' do
+      listener = described_class.new
+      listener.context_window_cap = 32_768
+      listener.on_tokens(tokens(input: 1024, cached: 11_321))
+
+      assert_equal 'TokenLog(ctx=12.1k/32.0k)', listener.to_s
     end
   end
 end
