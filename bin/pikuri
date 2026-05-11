@@ -33,4 +33,10 @@ question =
     ARGV.join(' ')
   end
 
-agent.run_loop(user_message: question)
+begin
+  agent.run_loop(user_message: question)
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+end
