@@ -20,6 +20,24 @@ class Tool
     # a short neural-ranked snippet — the closest analog to Brave's
     # +description+ field, keeping the rendered Markdown shape stable
     # across providers.
+    #
+    # == Privacy posture
+    #
+    # Exa's Privacy Policy states +Query Data is used to improve our
+    # products and technology, including by training and fine-tuning
+    # models that power our Services+, and the Terms of Service §1.2(c)
+    # grant Exa a +perpetual and irrevocable+, +sub-licensable+,
+    # worldwide license over User Input that can be disclosed to third
+    # parties +as needed+. Business customers under a Master Subscription
+    # Agreement / DPA get carve-outs; the default pay-as-you-go API key
+    # (which is what pikuri uses) does not.
+    #
+    # Bottom line: Exa does not sell queries to data brokers, but it
+    # does mine them to train competing models, and the license it
+    # claims is effectively "do what we want with this, forever". If a
+    # query would be embarrassing or sensitive in a training set, drop
+    # Exa out of the cascade by unsetting {ENV_KEY} — {Engines.providers}
+    # is recomputed every call.
     module Exa
       # @return [String] Search endpoint (POST, JSON body)
       ENDPOINT = 'https://api.exa.ai/search'

@@ -14,6 +14,22 @@ class Tool
     # Requires a Brave Search API key. Get one at
     # https://api-dashboard.search.brave.com — the free "Data for Search"
     # tier allows 1 query/sec and ~2k queries/month.
+    #
+    # == Privacy posture
+    #
+    # Brave's API Privacy Notice retains Search Query Logs for 90 days
+    # (billing / troubleshooting) and states +Brave does not collect any
+    # identifiers that can link a search query to an individual or their
+    # devices+. Brave publicly commits that the Search API does not use
+    # query data to train its own models, and offers Zero Data Retention
+    # — but only on the Enterprise plan, not on the free "Data for
+    # Search" tier pikuri defaults to.
+    #
+    # Bottom line: of pikuri's three providers Brave has the cleanest
+    # API-level posture — no training-on-queries, no IP linkage, capped
+    # 90-day retention by default, real ZDR if you pay for it. Still a
+    # logged 90-day window on the cheap tier, so not a substitute for
+    # ZDR for genuinely sensitive queries.
     module Brave
       # @return [String] Web Search endpoint
       ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'

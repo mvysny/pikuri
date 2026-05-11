@@ -10,8 +10,23 @@ class Tool
     # (#search) and a pure parser (#parse) so tests can exercise the parser
     # against fixture HTML without hitting the network.
     #
-    # DuckDuckGo is Bing in disguise which means Microsoft which means no privacy: don't trust
-    # this search for anything private.
+    # == Privacy posture
+    #
+    # DuckDuckGo's privacy policy states +We don't save your IP address
+    # or any unique identifiers alongside your searches+ and +We have
+    # never sold any personal information+, and they proxy requests on
+    # the user's behalf so downstream content providers can't build a
+    # per-user search history. That part is real — but DDG is mainly a
+    # relay over Bing for web results, so the *query content* still
+    # reaches Microsoft for fulfillment even though DDG strips
+    # identifying info on the way out.
+    #
+    # Bottom line: DDG is a genuine privacy improvement over hitting
+    # Bing directly (your IP isn't tied to the query, no per-user
+    # profile is built on DDG's side), but query content still lands at
+    # Microsoft, who has no comparable no-training pledge. Better than
+    # Exa for sensitive queries, worse than Brave; for anything
+    # genuinely embarrassing, don't search the web at all.
     module DuckDuckGo
       # @return [String] HTML search endpoint
       ENDPOINT = 'https://html.duckduckgo.com/html/'
