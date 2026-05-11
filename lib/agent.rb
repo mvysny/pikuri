@@ -10,37 +10,40 @@ require 'ruby_llm'
 # notifying the listeners of the new {Message::User} so any that care
 # about turn boundaries (notably {Listener::StepLimit}) can react.
 #
-# Listeners are duck-typed against a tiny protocol — +#attach(chat)+
-# and +#on_message(msg)+. The constructor's default listener list
-# (+Listener::Terminal+ for rendering + +Listener::StepLimit+ for the
-# step budget) reproduces pikuri's standard CLI behavior; callers
-# wanting structured event capture or a different step cap supply
-# their own list.
+# Listeners live in a {ListenerList} the caller supplies — duck-typed
+# against a tiny +attach(chat)+ / +on_message(msg)+ protocol, with the
+# list itself implementing the same protocol so +Agent+ never touches
+# the underlying +Array+. There are no defaults for +tools:+ or
+# +listeners:+ on {#initialize}: both are conscious decisions the
+# caller must state every time.
 #
 # == Step-exhaustion rescue
 #
 # If a {Listener::StepLimit} in {#listeners} trips during +Chat#ask+,
 # {#run_loop} catches the +Exceeded+ exception, emits a
 # {Message::FallbackNotice} to every listener, and hands off to
-# {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth's answer
-# becomes the value reported by {#last_assistant_content}, so callers
-# (notably {Tool::SubAgent}) still get a usable reply instead of
-# raising past +bin/pikuri+.
+# {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth reuses the
+# parent's {ListenerList} (via {ListenerList#with_max_steps} called
+# with +1+ — the synth has no tools, so the cap is defensive
+# hardening) so its reasoning and answer flow through the same
+# surface. The synth's answer becomes the value reported by
+# {#last_assistant_content}, so callers (notably {Tool::SubAgent})
+# still get a usable reply instead of raising past +bin/pikuri+.
 class Agent
   # @param model [String, nil] LLM identifier; defaults to
   #   +RubyLLM.config.default_model+ so transport configuration can pick
   #   the model
   # @param system_prompt [String] system message prepended to the chat
-  # @param tools [Array<Tool>] pikuri tools registered with the underlying
-  #   chat in declaration order. Each is converted to ruby_llm's runtime
-  #   shape via {Tool#to_ruby_llm_tool} when wired in.
-  # @param listeners [Array] consumers of the normalized event stream.
-  #   Each must respond to +#attach(chat)+ (register Chat hooks) and
-  #   +#on_message(msg)+ (consume one {Message}). Default:
-  #   +[Listener::Terminal.new, Listener::StepLimit.new(max: 20)]+,
-  #   which matches pikuri's pre-refactor behavior. Pass an explicit
-  #   list to swap renderers, add structured capture
-  #   ({Listener::InMemoryList}), or change the step budget.
+  # @param tools [Array<Tool>] pikuri tools registered with the
+  #   underlying chat in declaration order. Each is converted to
+  #   ruby_llm's runtime shape via {Tool#to_ruby_llm_tool} when wired
+  #   in. Required — no default, because the tool set is a deliberate
+  #   per-call decision (pass +[]+ for a tools-free agent).
+  # @param listeners [ListenerList] the listener list whose +attach+
+  #   the constructor calls on the underlying chat. Required — no
+  #   default, because the renderer and step-budget choices are
+  #   deliberate per-call decisions. Typical CLI shape:
+  #   +ListenerList.new([Listener::Terminal.new, Listener::StepLimit.new(max: 20)])+.
   # @param provider [Symbol, nil] forwarded to +RubyLLM.chat+. Required
   #   together with +assume_model_exists+ when pointing at a local
   #   OpenAI-compatible server (llama.cpp, gpustack, ...) whose model
@@ -50,8 +53,7 @@ class Agent
   #   set to +true+ to skip the registry lookup and trust the supplied
   #   +model+ id. Requires +provider+.
   # @return [Agent]
-  def initialize(model: nil, system_prompt:, tools: [],
-                 listeners: [Listener::Terminal.new, Listener::StepLimit.new(max: 20)],
+  def initialize(system_prompt:, tools:, listeners:, model: nil,
                  provider: nil, assume_model_exists: false)
     @model = model || RubyLLM.config.default_model
     @system_prompt = system_prompt
@@ -64,7 +66,7 @@ class Agent
     @chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
     @chat.with_instructions(@system_prompt)
     @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
-    @listeners.each { |l| l.attach(@chat) }
+    @listeners.attach(@chat)
   end
 
   # @return [RubyLLM::Chat] underlying chat; the extension seam
@@ -76,8 +78,8 @@ class Agent
   # @return [String]
   attr_reader :system_prompt
 
-  # @return [Array] the listeners attached to this agent's chat, in the
-  #   order they were supplied
+  # @return [ListenerList] the listener list attached to this agent's
+  #   chat
   attr_reader :listeners
 
   # Final assistant message content for the most recent {#run_loop}.
@@ -111,22 +113,21 @@ class Agent
   # @return [nil]
   def run_loop(user_message:)
     @synth_answer = nil
-    user_msg = Message::User.new(content: user_message)
-    @listeners.each { |l| l.on_message(user_msg) }
+    @listeners.on_message(Message::User.new(content: user_message))
     @chat.ask(user_message)
     nil
   rescue Listener::StepLimit::Exceeded => e
     notice = Message::FallbackNotice.new(
       reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"
     )
-    @listeners.each { |l| l.on_message(notice) }
+    @listeners.on_message(notice)
 
     synth_chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
     @synth_answer = Synthesizer.run(
       chat: synth_chat,
       parent_messages: @chat.messages,
       user_message: user_message,
-      listeners: @listeners
+      listeners: @listeners.with_max_steps(1)
     )
     nil
   end
@@ -135,9 +136,11 @@ class Agent
   # share the parent's model, system prompt, and current tool set (minus
   # the sub-agent tool itself, so recursion is impossible).
   #
-  # Sub-agents are independent: each call constructs a fresh +Agent+
-  # with its own default listener list (Terminal + StepLimit), so the
-  # parent's listeners are not shared.
+  # Each sub-agent run gets a derived {ListenerList} via
+  # {ListenerList#with_max_steps} — the non-+StepLimit+ listeners
+  # (Terminal, InMemoryList, ...) are shared so the sub-agent's
+  # events render and capture continuously with the parent's, but
+  # the +StepLimit+ is fresh so its tool-call budget is independent.
   #
   # @param max_steps [Integer] step budget for each sub-agent run,
   #   passed through to {Tool::SubAgent.build}
@@ -148,6 +151,7 @@ class Agent
       model: @model,
       system_prompt: @system_prompt,
       tools: sub_tools,
+      listeners: @listeners,
       max_steps: max_steps
     )
     @tools << sub_tool
@@ -155,7 +159,7 @@ class Agent
   end
 
   # Short, single-line config dump suitable for a startup banner or a
-  # debug print. Each listener contributes its own +#to_s+.
+  # debug print. Delegates the listener rendering to {ListenerList#to_s}.
   #
   # @example
   #   agent.to_s
@@ -163,6 +167,6 @@ class Agent
   #
   # @return [String]
   def to_s
-    "Agent(model=#{@model}, tools=#{@tools.size}, listeners=[#{@listeners.map(&:to_s).join(', ')}])"
+    "Agent(model=#{@model}, tools=#{@tools.size}, listeners=#{@listeners})"
   end
 end

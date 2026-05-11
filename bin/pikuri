@@ -17,7 +17,11 @@ agent = Agent.new(
   provider: :openai,
   assume_model_exists: true,
   system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
-  tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH]
+  tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH],
+  listeners: Agent::ListenerList.new([
+    Agent::Listener::Terminal.new,
+    Agent::Listener::StepLimit.new(max: 20)
+  ])
 )
 agent.allow_sub_agent(max_steps: 20)
 

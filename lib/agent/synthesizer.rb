@@ -49,14 +49,17 @@ class Agent
     #   Used to build the evidence transcript.
     # @param user_message [String] the user's original question from
     #   the parent turn that exhausted.
-    # @param listeners [Array] listeners to attach to the synth chat.
-    #   Typically the parent agent's listener list, reused verbatim
-    #   so output flows to the same place.
+    # @param listeners [Agent::ListenerList] listeners to attach to
+    #   the synth chat. Typically the parent agent's list with the
+    #   +StepLimit+ swapped for a defensive +StepLimit.new(max: 1)+
+    #   via {ListenerList#copy} — the synth has no tools so the cap
+    #   should never trip, but the swap keeps the parent's mutable
+    #   counter out of the synth chat.
     # @return [String, nil] the synth's final assistant content, or
     #   +nil+ if the synth somehow produced no assistant message
     def self.run(chat:, parent_messages:, user_message:, listeners:)
       chat.with_instructions(SYSTEM_PROMPT)
-      listeners.each { |l| l.attach(chat) }
+      listeners.attach(chat)
       chat.ask(build_prompt(parent_messages: parent_messages, user_message: user_message))
       chat.messages.reverse.find { |m| m.role == :assistant }&.content
     end

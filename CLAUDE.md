@@ -46,22 +46,44 @@ bundled tools.
   rather than classes Zeitwerk could autoload on its own.
 - `lib/agent.rb` — thin wrapper around `RubyLLM::Chat`. The ctor builds
   a Chat, registers system prompt and tools, and attaches a
-  caller-supplied `listeners:` array — each element is duck-typed to
-  the `(attach(chat), on_message(msg))` protocol. The default list is
-  `[Listener::Terminal.new, Listener::StepLimit.new(max: 20)]`, which
-  reproduces pikuri's pre-refactor behavior. `Agent#run_loop` fans the
-  freshly-built `Message::User` out to every listener before calling
-  `Chat#ask`; that user-message broadcast is also what triggers
-  `StepLimit` to reset its counter, so Agent itself has no
-  step-budget knowledge or lifecycle ceremony. If a `StepLimit`
-  trips during `ask`, the rescue branch emits a `Message::FallbackNotice`,
-  builds a fresh chat via `RubyLLM.chat` (using the same `provider:` /
-  `assume_model_exists:` the parent was constructed with), and hands
-  off to `Synthesizer.run`; the synth's answer is stashed and surfaces
-  through `Agent#last_assistant_content`, so `Tool::SubAgent` callers
-  still see a usable reply. `Agent#to_s` produces a one-line config
-  dump suitable for a startup banner
-  (`Agent(model=..., tools=N, listeners=[Terminal, StepLimit(max=20)])`).
+  caller-supplied `listeners:` (an `Agent::ListenerList`). Both
+  `tools:` and `listeners:` are required kwargs with no defaults —
+  the tool set and the renderer/step-budget choice are deliberate
+  per-call decisions, so the absence forces the caller to state
+  intent. `Agent#run_loop` fans the freshly-built `Message::User` out
+  to the listener list before calling `Chat#ask`; that user-message
+  broadcast is also what triggers `StepLimit` to reset its counter,
+  so Agent itself has no step-budget knowledge or lifecycle ceremony.
+  If a `StepLimit` trips during `ask`, the rescue branch emits a
+  `Message::FallbackNotice`, builds a fresh chat via `RubyLLM.chat`
+  (using the same `provider:` / `assume_model_exists:` the parent was
+  constructed with), and hands off to `Synthesizer.run` with
+  `@listeners.with_max_steps(1)` — the swap is defensive (the synth
+  has no tools so the cap should never trip) and isolates the
+  parent's mutable `StepLimit` counter from the synth chat. The
+  synth's answer is stashed and surfaces through
+  `Agent#last_assistant_content`, so `Tool::SubAgent` callers still
+  see a usable reply. `Agent#to_s` produces a one-line config dump
+  suitable for a startup banner
+  (`Agent(model=..., tools=N, listeners=[Terminal, StepLimit(max=20)])`),
+  delegating the listener rendering to `ListenerList#to_s`.
+- `lib/agent/listener_list.rb` — `Agent::ListenerList`, the value
+  object an `Agent` owns instead of a raw `Array`. Implements the
+  same `attach(chat)` / `on_message(msg)` protocol as an individual
+  listener (fans every call out to the underlying list) so callers
+  never write `each` inline. The load-bearing method is
+  `#with_max_steps(max_steps)`, used by the synth rescue and the
+  sub-agent factory to derive a list for a sub-context: non-
+  `StepLimit` listeners pass through by reference (so the parent's
+  `Terminal` / `InMemoryList` are shared and output flows
+  continuously), while the `StepLimit` is swapped for a fresh
+  instance — same listener cannot govern two chats safely because
+  it carries shared `@step` state and registers a `before_tool_call`
+  hook per chat. `max_steps` is a required positional with tri-state
+  semantics: an `Integer` ensures exactly one `StepLimit` at that
+  cap (replacing existing, or appending if absent); `nil` strips
+  every `StepLimit` (no cap on the derived list). The required
+  positional forces every internal call site to state intent.
 - `lib/agent/message.rb` — `Agent::Message`, a sealed
   `Data.define` hierarchy describing one event in the agent's
   normalized stream: `User` / `Thinking` / `Assistant` /
@@ -93,8 +115,8 @@ bundled tools.
   `#on_message` with a `case msg in ...` pattern-match: dim grey
   Thinking, Markdown-rendered Assistant via tty-markdown, cyan
   `→ name(args)` and `= result` lines for ToolCall/ToolResult, no-op
-  for User (the user typed it). Default listener attached by
-  `Agent#initialize`; reproduces pikuri's standard CLI output.
+  for User (the user typed it). Typical CLI renderer; `bin/pikuri`
+  wires it via the `ListenerList` it passes to `Agent.new`.
 - `lib/agent/listener/in_memory_list.rb` —
   `Agent::Listener::InMemoryList < MessageListener`. `#on_message`
   appends the `Agent::Message` straight to `#events`. Used by specs
@@ -115,16 +137,19 @@ bundled tools.
   step-exhaustion rescue. `Synthesizer.run(chat:, parent_messages:,
   user_message:, listeners:)` sets a strict "answer from the
   evidence; no tools; admit gaps" system prompt on a *fresh* chat
-  the caller provides, attaches the parent's listeners so the synth
-  output flows through the same surface (terminal renders it,
-  in-memory recorder captures it), and asks once with a paired-up
-  transcript of tool calls and results. Tool calls without matching
-  `:tool`-role results are dropped — the exhausting call never
-  executed, citing it would mislead the model.
-  `Synthesizer.build_prompt` is a pure function and is tested
-  directly. `Agent` owns the `RubyLLM.chat` call for the synth chat,
-  so this file does not reference `RubyLLM::*` — the seam stays at
-  three files.
+  the caller provides, attaches the supplied `ListenerList` so the
+  synth output flows through the same surface as the parent
+  (terminal renders it, in-memory recorder captures it), and asks
+  once with a paired-up transcript of tool calls and results. Tool
+  calls without matching `:tool`-role results are dropped — the
+  exhausting call never executed, citing it would mislead the model.
+  The `listeners:` argument is typically the parent's list passed
+  through `ListenerList#with_max_steps(1)` so the StepLimit doesn't
+  share state with the parent's chat (defensive — the synth has no
+  tools, so the cap should never trip). `Synthesizer.build_prompt`
+  is a pure function and is tested directly. `Agent` owns the
+  `RubyLLM.chat` call for the synth chat, so this file does not
+  reference `RubyLLM::*` — the seam stays at three files.
 - `lib/tool.rb` — `Tool` is a plain value class with `name`,
   `description`, `parameters`, and an `execute` Proc. `Tool#run(args)`
   validates via `Parameters#validate` and forwards to `execute`,
@@ -144,15 +169,19 @@ bundled tools.
   DidYouMean suggestions), wrong types rejected, all errors collected
   and reported together with the schema reprinted — so the message
   can be fed back to the LLM verbatim as the next observation.
-- `lib/tool/sub_agent.rb` — `Tool::SubAgent.build(model:,
-  system_prompt:, tools:, max_steps:)` factory (with a one-line
+- `lib/tool/sub_agent.rb` — `Tool::SubAgent.build(system_prompt:,
+  tools:, listeners:, model:, max_steps:)` factory (with a one-line
   `Tool.sub_agent` alias at the `Tool` level). Each call returns a
-  fresh `Tool` whose `execute` Proc spawns a fresh `Agent` (and
-  therefore a fresh `RubyLLM::Chat` with its own
-  `messages`/`tools`/listeners), runs the requested task on a clean
-  conversation, and returns only the sub-agent's final assistant
-  message back as the parent's next observation. Wired in via
-  `Agent#allow_sub_agent`.
+  fresh `Tool` whose `execute` Proc spawns a fresh `Agent` on a
+  clean `RubyLLM::Chat` and runs the requested task there, returning
+  only the sub-agent's final assistant message back as the parent's
+  next observation. The sub-agent's `ListenerList` is the parent's
+  `listeners.with_max_steps(max_steps)` — non-`StepLimit` listeners
+  (Terminal, InMemoryList, …) are shared with the parent so rendering
+  and structured capture flow continuously across the boundary, but
+  the sub-agent gets its own fresh `StepLimit` so the budgets are
+  independent. Wired in via `Agent#allow_sub_agent`, which passes
+  `self.listeners` through.
 - `lib/tool/` — bundled tool implementations, each reopening
   `class Tool` to add a module + a single `Tool` constant. Currently:
   `Tool::CALCULATOR` (Dentaku-backed arithmetic, with `**` → `^`
@@ -235,8 +264,10 @@ bundled tools.
   provider via `RubyLLM.configure { |c| c.openai_api_base = ...;
   c.openai_api_key = ... }` for the local llama.cpp server, builds an
   `Agent` with `model:`/`provider:`/`assume_model_exists:`/
-  `system_prompt:`/`tools:`, enables sub-agents via
-  `agent.allow_sub_agent`, and feeds it a question from `ARGV` or stdin.
+  `system_prompt:`/`tools:`/`listeners:` (an
+  `Agent::ListenerList.new([Terminal, StepLimit(max: 20)])`), enables
+  sub-agents via `agent.allow_sub_agent`, and feeds it a question
+  from `ARGV` or stdin.
 - `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
   the system prompt used by `bin/pikuri`, plus a verbatim upstream reference
   fixture kept under its original filename for traceability.

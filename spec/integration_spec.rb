@@ -129,7 +129,11 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
       provider: :openai,
       assume_model_exists: true,
       system_prompt: 'be terse',
-      tools: [echo_tool]
+      tools: [echo_tool],
+      listeners: Agent::ListenerList.new([
+        Agent::Listener::Terminal.new,
+        Agent::Listener::StepLimit.new(max: 20)
+      ])
     )
 
     # Silence the listener output so the spec doesn't pollute test output.
@@ -190,7 +194,11 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
       provider: :openai,
       assume_model_exists: true,
       system_prompt: 'be terse',
-      tools: [described_tool]
+      tools: [described_tool],
+      listeners: Agent::ListenerList.new([
+        Agent::Listener::Terminal.new,
+        Agent::Listener::StepLimit.new(max: 20)
+      ])
     )
 
     capture_stdout { agent.run_loop(user_message: 'please echo hi') }

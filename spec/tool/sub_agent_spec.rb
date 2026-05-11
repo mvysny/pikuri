@@ -66,9 +66,16 @@ RSpec.describe '.sub_agent' do
     RubyLLM.define_singleton_method(:chat) { |**kwargs| original.call(**kwargs) }
   end
 
+  let(:parent_listeners) do
+    Agent::ListenerList.new([
+      Agent::Listener::InMemoryList.new,
+      Agent::Listener::StepLimit.new(max: 99)
+    ])
+  end
+
   describe 'tool shape' do
     it 'returns a Tool named "sub_agent" with a required `task` string parameter' do
-      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [], listeners: parent_listeners)
 
       assert_kind_of Tool, tool
       assert_equal 'sub_agent', tool.name
@@ -80,7 +87,8 @@ RSpec.describe '.sub_agent' do
 
   describe 'execution' do
     it 'runs the sub-agent loop and returns its final assistant message' do
-      tool = Tool.sub_agent(model: 'm', system_prompt: 'system!', tools: [dummy_tool])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'system!', tools: [dummy_tool],
+                            listeners: parent_listeners)
 
       result = tool.run('task' => 'do the thing')
 
@@ -88,7 +96,8 @@ RSpec.describe '.sub_agent' do
     end
 
     it 'configures the sub-agent\'s chat with the system prompt and asks it the task' do
-      tool = Tool.sub_agent(model: 'm', system_prompt: 'be terse', tools: [])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'be terse', tools: [],
+                            listeners: parent_listeners)
       tool.run('task' => 'count to three')
 
       assert_equal 1, @fake_chats.size
@@ -98,7 +107,8 @@ RSpec.describe '.sub_agent' do
     end
 
     it 'advertises exactly the configured tool list to the sub-agent' do
-      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [dummy_tool])
+      tool = Tool.sub_agent(model: 'm', system_prompt: 'sp', tools: [dummy_tool],
+                            listeners: parent_listeners)
       tool.run('task' => 'go')
 
       sub_chat = @fake_chats.first

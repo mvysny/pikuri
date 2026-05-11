@@ -14,14 +14,21 @@ class Tool
   # shares the same persona and tool-use conventions. Its tool list is
   # whatever the caller passes in +tools+ — typically the parent agent's
   # tools minus this sub-agent tool, so the sub-agent cannot spawn
-  # further sub-agents recursively.
+  # further sub-agents recursively. Its listener list comes from the
+  # parent's {Agent::ListenerList} via
+  # {Agent::ListenerList#with_max_steps}, so non-+StepLimit+ listeners
+  # are shared with the parent (terminal output flows continuously, an
+  # +InMemoryList+ sees both streams) while the sub-agent's tool-call
+  # budget stays its own.
   module SubAgent
     # Build a sub-agent tool that closes over a specific model / system
-    # prompt / tool list.
+    # prompt / tool list / listener list.
     #
     # @example wiring
     #   sub_tools = [Tool::WEB_SEARCH, Tool::CALCULATOR]
-    #   sub_agent_tool = Tool::SubAgent.build(model: 'gpt-4', system_prompt: prompt, tools: sub_tools)
+    #   sub_agent_tool = Tool::SubAgent.build(
+    #     model: 'gpt-4', system_prompt: prompt, tools: sub_tools, listeners: agent.listeners
+    #   )
     #   agent = Agent.new(model: 'gpt-4', system_prompt: prompt, tools: sub_tools + [sub_agent_tool])
     #
     # @param model [String, nil] LLM identifier for the sub-agent; +nil+
@@ -30,12 +37,16 @@ class Tool
     #   typically the same prompt the parent agent uses
     # @param tools [Array<Tool>] tools the sub-agent is allowed to call.
     #   Should not include the sub-agent tool itself (recursion guard).
+    # @param listeners [Agent::ListenerList] parent agent's listener
+    #   list; the spawned sub-agent gets
+    #   +listeners.with_max_steps(max_steps)+ — same renderers/
+    #   recorders, fresh +StepLimit+.
     # @param max_steps [Integer] step budget for each sub-agent run,
-    #   forwarded to {Agent#initialize}
+    #   forwarded to {Agent::ListenerList#with_max_steps}
     # @return [Tool] a fresh sub-agent tool; not a singleton, since each
-    #   invocation closes over a specific +model+, +system_prompt+, and
-    #   +tools+
-    def self.build(system_prompt:, tools:, model: nil, max_steps: 10)
+    #   invocation closes over a specific +model+, +system_prompt+,
+    #   +tools+, and +listeners+
+    def self.build(system_prompt:, tools:, listeners:, model: nil, max_steps: 10)
       Tool.new(
         name: 'sub_agent',
         description: <<~DESC,
@@ -60,10 +71,7 @@ class Tool
             model: model,
             system_prompt: system_prompt,
             tools: tools,
-            listeners: [
-              Agent::Listener::Terminal.new,
-              Agent::Listener::StepLimit.new(max: max_steps)
-            ]
+            listeners: listeners.with_max_steps(max_steps)
           )
           sub.run_loop(user_message: task)
           sub.last_assistant_content
@@ -73,7 +81,10 @@ class Tool
   end
 
   # Convenience alias at the +Tool+ level. See {SubAgent.build}.
-  def self.sub_agent(system_prompt:, tools:, model: nil, max_steps: 10)
-    SubAgent.build(system_prompt: system_prompt, tools: tools, model: model, max_steps: max_steps)
+  def self.sub_agent(system_prompt:, tools:, listeners:, model: nil, max_steps: 10)
+    SubAgent.build(
+      system_prompt: system_prompt, tools: tools, listeners: listeners,
+      model: model, max_steps: max_steps
+    )
   end
 end

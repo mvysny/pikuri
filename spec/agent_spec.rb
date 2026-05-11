@@ -54,6 +54,7 @@ RSpec.describe Agent do
   let(:fake_chat)    { fake_chat_class.new }
   let(:in_memory)    { Agent::Listener::InMemoryList.new }
   let(:step_limit_2) { Agent::Listener::StepLimit.new(max: 2) }
+  let(:listener_list) { Agent::ListenerList.new([in_memory, step_limit_2]) }
 
   before do
     captured = fake_chat
@@ -73,7 +74,8 @@ RSpec.describe Agent do
         parameters: Tool::Parameters.build { |p| p.required_string :x, 'x' },
         execute: ->(x:) { x }
       )
-      Agent.new(model: 'm', system_prompt: 'be terse', tools: [tool], listeners: [in_memory])
+      Agent.new(model: 'm', system_prompt: 'be terse', tools: [tool],
+                listeners: Agent::ListenerList.new([in_memory]))
 
       assert_equal 'be terse', fake_chat.instructions
       assert_equal 1, fake_chat.tools.size
@@ -83,7 +85,7 @@ RSpec.describe Agent do
     end
 
     it 'attaches every listener in the supplied list to the chat' do
-      Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory, step_limit_2])
+      Agent.new(model: 'm', system_prompt: 's', tools: [], listeners: listener_list)
 
       # InMemoryList (a MessageListener) wires after_message +
       # before_tool_call + after_tool_result; StepLimit adds its own
@@ -94,12 +96,16 @@ RSpec.describe Agent do
       assert_equal 1, fake_chat.listeners[:after_tool_result].size
     end
 
-    it 'defaults the listener list to Terminal + StepLimit(max=20)' do
-      agent = Agent.new(model: 'm', system_prompt: 's')
+    it 'requires listeners: — no silent default' do
+      assert_raises(ArgumentError) do
+        Agent.new(model: 'm', system_prompt: 's', tools: [])
+      end
+    end
 
-      assert_equal 2, agent.listeners.size
-      assert_kind_of Agent::Listener::Terminal,  agent.listeners[0]
-      assert_kind_of Agent::Listener::StepLimit, agent.listeners[1]
+    it 'requires tools: — no silent default' do
+      assert_raises(ArgumentError) do
+        Agent.new(model: 'm', system_prompt: 's', listeners: listener_list)
+      end
     end
   end
 
@@ -107,21 +113,23 @@ RSpec.describe Agent do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: {}) }
 
     it 'forwards user_message to chat.ask' do
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
       agent.run_loop(user_message: 'hello?')
 
       assert_equal ['hello?'], fake_chat.asks
     end
 
     it 'emits a Message::User to every listener before asking the chat' do
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
       agent.run_loop(user_message: 'hello?')
 
       assert_includes in_memory.events, Agent::Message::User.new(content: 'hello?')
     end
 
     it "resets the step counter between turns via StepLimit's User reset" do
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory, step_limit_2])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [], listeners: listener_list)
 
       # Burn the budget on turn 1.
       fake_chat.fire(:before_tool_call, tool_call)
@@ -140,7 +148,8 @@ RSpec.describe Agent do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: { 'text' => 'hi' }) }
 
     before do
-      Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory])
+      Agent.new(model: 'm', system_prompt: 's', tools: [],
+                listeners: Agent::ListenerList.new([in_memory]))
     end
 
     it 'forwards assistant messages as Thinking + Assistant' do
@@ -184,7 +193,7 @@ RSpec.describe Agent do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: {}) }
 
     it 'raises Listener::StepLimit::Exceeded once the cap is exceeded' do
-      Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory, step_limit_2])
+      Agent.new(model: 'm', system_prompt: 's', tools: [], listeners: listener_list)
 
       fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:before_tool_call, tool_call)
@@ -198,7 +207,8 @@ RSpec.describe Agent do
 
   describe '#last_assistant_content' do
     it 'returns the most recent assistant message content' do
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
       fake_chat.add_assistant('first')
       fake_chat.add_assistant('second')
 
@@ -206,7 +216,8 @@ RSpec.describe Agent do
     end
 
     it 'returns nil when no assistant message has been produced yet' do
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: [in_memory])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
 
       assert_nil agent.last_assistant_content
     end
@@ -220,7 +231,7 @@ RSpec.describe Agent do
         execute: ->(x:) { x }
       )
       agent = Agent.new(model: 'm', system_prompt: 's', tools: [tool],
-                        listeners: [in_memory, step_limit_2])
+                        listeners: listener_list)
 
       assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryList, StepLimit(max=2)])',
                    agent.to_s
@@ -257,8 +268,8 @@ RSpec.describe Agent do
     end
 
     it 'catches Exceeded, emits a FallbackNotice, and returns nil from run_loop' do
-      agent = Agent.new(model: 'm', system_prompt: 's',
-                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory, Agent::Listener::StepLimit.new(max: 2)]))
       arrange_step_exhaustion(2)
 
       assert_nil agent.run_loop(user_message: 'compare two cities')
@@ -269,9 +280,9 @@ RSpec.describe Agent do
       assert_includes notice.reason, 'exhausted 2 steps'
     end
 
-    it 'invokes Synthesizer.run with the parent chat history, listeners, and original question' do
-      listeners = [in_memory, Agent::Listener::StepLimit.new(max: 2)]
-      agent = Agent.new(model: 'm', system_prompt: 's', listeners: listeners)
+    it 'invokes Synthesizer.run with the parent chat history, a swapped-StepLimit listener list, and original question' do
+      listeners = Agent::ListenerList.new([in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [], listeners: listeners)
       fake_chat.add_assistant('plan: do stuff')
       arrange_step_exhaustion(2)
 
@@ -282,12 +293,18 @@ RSpec.describe Agent do
       refute_nil call[:chat], 'expected a fresh synth chat to be passed'
       assert_equal fake_chat.messages, call[:parent_messages]
       assert_equal 'why?', call[:user_message]
-      assert_equal listeners, call[:listeners]
+
+      # The handed-off list is a derived one, not the parent's instance —
+      # ListenerList#with_max_steps returns a new object so the synth
+      # chat doesn't share the parent's StepLimit counter.
+      refute_same listeners, call[:listeners]
+      assert_kind_of Agent::ListenerList, call[:listeners]
+      assert_equal '[InMemoryList, StepLimit(max=1)]', call[:listeners].to_s
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do
-      agent = Agent.new(model: 'm', system_prompt: 's',
-                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory, Agent::Listener::StepLimit.new(max: 2)]))
       arrange_step_exhaustion(2)
 
       agent.run_loop(user_message: 'q?')
@@ -296,8 +313,8 @@ RSpec.describe Agent do
     end
 
     it 'clears the prior synth answer at the start of each new turn' do
-      agent = Agent.new(model: 'm', system_prompt: 's',
-                        listeners: [in_memory, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(model: 'm', system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory, Agent::Listener::StepLimit.new(max: 2)]))
       arrange_step_exhaustion(2)
       agent.run_loop(user_message: 'turn 1')
       assert_equal 'rescued answer', agent.last_assistant_content

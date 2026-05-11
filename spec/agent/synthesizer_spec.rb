@@ -111,17 +111,18 @@ RSpec.describe Agent::Synthesizer do
       end
     end
 
-    let(:synth_chat) { synth_chat_class.new }
-    let(:listener)   { Agent::Listener::InMemoryList.new }
+    let(:synth_chat)    { synth_chat_class.new }
+    let(:listener)      { Agent::Listener::InMemoryList.new }
+    let(:listener_list) { Agent::ListenerList.new([listener]) }
 
     it 'sets the synth system prompt on the chat' do
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: [listener])
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
 
       assert_equal Agent::Synthesizer::SYSTEM_PROMPT, synth_chat.instructions
     end
 
     it 'attaches every listener to the synth chat' do
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: [listener])
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
 
       # InMemoryList (a MessageListener) wires three Chat callbacks.
       assert_equal 3, synth_chat.attach_count
@@ -129,13 +130,13 @@ RSpec.describe Agent::Synthesizer do
 
     it 'asks the chat with the build_prompt output' do
       expected = described_class.build_prompt(parent_messages: [], user_message: 'q?')
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: [listener])
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
 
       assert_equal [expected], synth_chat.asks
     end
 
     it "returns the synth's final assistant content" do
-      result = described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: [listener])
+      result = described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
 
       assert_equal 'rescued answer', result
     end
