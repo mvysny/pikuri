@@ -1,0 +1,54 @@
+{
+  "requestId": "fixture-ruby-language-001",
+  "searchType": "auto",
+  "results": [
+    {
+      "id": "https://www.ruby-lang.org/en/",
+      "title": "Ruby Programming Language",
+      "url": "https://www.ruby-lang.org/en/",
+      "publishedDate": "2024-04-15T00:00:00.000Z",
+      "author": null,
+      "highlights": [
+        "Ruby is a dynamic, open source programming language with a focus on simplicity and productivity. It has an elegant syntax that is natural to read and easy to write."
+      ],
+      "highlightScores": [0.812]
+    },
+    {
+      "id": "https://en.wikipedia.org/wiki/Ruby_(programming_language)",
+      "title": "Ruby (programming language) - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Ruby_(programming_language)",
+      "publishedDate": "2025-01-20T00:00:00.000Z",
+      "author": "Wikipedia contributors",
+      "highlights": [
+        "Ruby is a   general-purpose programming language. It was   designed with an emphasis on programming productivity and simplicity."
+      ],
+      "highlightScores": [0.774]
+    },
+    {
+      "id": "https://www.ruby-lang.org/en/documentation/",
+      "title": "Documentation - Ruby Programming Language",
+      "url": "https://www.ruby-lang.org/en/documentation/",
+      "publishedDate": "2024-09-10T00:00:00.000Z",
+      "author": null,
+      "highlights": [
+        "There are many resources available online to learn Ruby — guides, tutorials, references, and community forums covering everything from beginner topics to advanced metaprogramming."
+      ],
+      "highlightScores": [0.701]
+    },
+    {
+      "id": "https://rubygems.org",
+      "title": "RubyGems.org",
+      "url": "https://rubygems.org",
+      "publishedDate": "2024-12-01T00:00:00.000Z",
+      "author": null,
+      "highlights": [],
+      "highlightScores": []
+    }
+  ],
+  "costDollars": {
+    "total": 0.007,
+    "breakDown": [
+      { "search": 0.005, "contents": 0.002 }
+    ]
+  }
+}

@@ -7,8 +7,8 @@ class Tool
     # the cascade uses to fall back. The LLM-facing tool itself
     # ({Tool::WEB_SEARCH}) lives in +lib/tool/web_search.rb+ and calls
     # into {.search} below. Each {Tool::Search} provider module
-    # ({DuckDuckGo}, {Brave}) raises {Unavailable} when it wants the
-    # cascade to try the next one.
+    # ({DuckDuckGo}, {Brave}, {Exa}) raises {Unavailable} when it wants
+    # the cascade to try the next one.
     module Engines
       # Raised by a provider when it is temporarily unavailable (rate-limited,
       # bot-blocked, quota-exhausted, or otherwise saying "try again later"
@@ -18,15 +18,17 @@ class Tool
       class Unavailable < StandardError; end
 
       # All providers that are currently configured. {DuckDuckGo} is always
-      # available (no API key needed); {Brave} joins the list when its API
-      # token is present in the environment. Recomputed on every call so a
-      # process picks up a newly-set token without a restart.
+      # available (no API key needed); {Brave} and {Exa} each join the
+      # list when their API token is present in the environment. Recomputed
+      # on every call so a process picks up a newly-set token without a
+      # restart.
       #
       # @return [Array<Module>] +Tool::Search::*+ provider modules, each
       #   exposing +.search(query, max_results:)+ → Markdown
       def self.providers
         list = [DuckDuckGo]
         list << Brave unless ENV[Brave::ENV_KEY].to_s.strip.empty?
+        list << Exa unless ENV[Exa::ENV_KEY].to_s.strip.empty?
         list
       end
 

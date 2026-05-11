@@ -96,16 +96,16 @@ bundled tools.
   search-orchestration entry point. Defines
   `Tool::Search::Engines::Unavailable` (raised by providers on
   rate-limit / bot-block / quota-exhausted), `Engines.providers`
-  (DuckDuckGo always, Brave when `BRAVE_SEARCH_API_KEY` is set,
-  recomputed every call), and `Engines.search`, which runs the
-  cascade: shuffles `providers` randomly, tries each until one
-  succeeds, falling back only on `Unavailable`. Anything else (network
-  errors, parse failures, bad API keys returning 401/403) bubbles up
-  as the original exception. If every provider reports `Unavailable`,
-  returns an `"Error: ..."` string so the agent loop can feed the
-  failure back to the model as the next observation. The `Tool::Search`
-  namespace itself is implicit — Zeitwerk creates it from the
-  directory's existence.
+  (DuckDuckGo always, Brave when `BRAVE_SEARCH_API_KEY` is set, Exa
+  when `EXA_API_KEY` is set, recomputed every call), and
+  `Engines.search`, which runs the cascade: shuffles `providers`
+  randomly, tries each until one succeeds, falling back only on
+  `Unavailable`. Anything else (network errors, parse failures, bad
+  API keys returning 401/403) bubbles up as the original exception.
+  If every provider reports `Unavailable`, returns an `"Error: ..."`
+  string so the agent loop can feed the failure back to the model as
+  the next observation. The `Tool::Search` namespace itself is
+  implicit — Zeitwerk creates it from the directory's existence.
 - `lib/tool/web_search.rb` — defines the LLM-facing `Tool::WEB_SEARCH`
   constant (a thin wrapper that calls `Tool::Search::Engines.search`).
   The cascade itself lives in `lib/tool/search/engines.rb`; this
@@ -116,9 +116,13 @@ bundled tools.
   `Tool::Search::Engines::Unavailable` on rate-limit / bot-block /
   quota signals (DDG anomaly modal, HTTP 429, HTTP 5xx). Currently:
   `Tool::Search::DuckDuckGo` (HTML scrape of `html.duckduckgo.com`,
-  throttled to one request every 2s, prone to IP soft-blocks) and
+  throttled to one request every 2s, prone to IP soft-blocks),
   `Tool::Search::Brave` (official Web Search API with
-  `X-Subscription-Token`).
+  `X-Subscription-Token`), and `Tool::Search::Exa` (paid neural-search
+  API, POSTs to `api.exa.ai/search` with `x-api-key`, requests
+  `type: "auto"` plus `contents: { highlights: true }` so each result
+  carries a short neural-ranked snippet matching Brave's `description`
+  shape).
 - `lib/tool/web_scrape.rb` and `lib/tool/fetch.rb` — define
   `Tool::WEB_SCRAPE` and `Tool::FETCH`, both thin wrappers over
   `Tool::Scraper::Simple.visit`: cache the rendered Markdown on disk

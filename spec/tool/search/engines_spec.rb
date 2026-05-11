@@ -7,11 +7,18 @@ require 'tool/search/engines'
 require 'url_cache'
 
 RSpec.describe Tool::Search::Engines, '.providers' do
-  before { @saved = ENV[Tool::Search::Brave::ENV_KEY] }
-  after  { ENV[Tool::Search::Brave::ENV_KEY] = @saved }
-
-  it 'lists only DuckDuckGo when no Brave key is set' do
+  before do
+    @saved_brave = ENV[Tool::Search::Brave::ENV_KEY]
+    @saved_exa = ENV[Tool::Search::Exa::ENV_KEY]
     ENV.delete(Tool::Search::Brave::ENV_KEY)
+    ENV.delete(Tool::Search::Exa::ENV_KEY)
+  end
+  after do
+    ENV[Tool::Search::Brave::ENV_KEY] = @saved_brave
+    ENV[Tool::Search::Exa::ENV_KEY] = @saved_exa
+  end
+
+  it 'lists only DuckDuckGo when no provider keys are set' do
     assert_equal [Tool::Search::DuckDuckGo], described_class.providers
   end
 
@@ -20,9 +27,27 @@ RSpec.describe Tool::Search::Engines, '.providers' do
     assert_equal [Tool::Search::DuckDuckGo], described_class.providers
   end
 
+  it 'treats a blank Exa key as unset' do
+    ENV[Tool::Search::Exa::ENV_KEY] = '   '
+    assert_equal [Tool::Search::DuckDuckGo], described_class.providers
+  end
+
   it 'includes Brave when its key is set' do
     ENV[Tool::Search::Brave::ENV_KEY] = 'fake-key'
     assert_equal [Tool::Search::DuckDuckGo, Tool::Search::Brave].sort_by(&:name),
+                 described_class.providers.sort_by(&:name)
+  end
+
+  it 'includes Exa when its key is set' do
+    ENV[Tool::Search::Exa::ENV_KEY] = 'fake-key'
+    assert_equal [Tool::Search::DuckDuckGo, Tool::Search::Exa].sort_by(&:name),
+                 described_class.providers.sort_by(&:name)
+  end
+
+  it 'includes Brave and Exa together when both keys are set' do
+    ENV[Tool::Search::Brave::ENV_KEY] = 'fake-brave'
+    ENV[Tool::Search::Exa::ENV_KEY] = 'fake-exa'
+    assert_equal [Tool::Search::Brave, Tool::Search::DuckDuckGo, Tool::Search::Exa].sort_by(&:name),
                  described_class.providers.sort_by(&:name)
   end
 end
