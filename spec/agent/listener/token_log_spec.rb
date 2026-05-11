@@ -31,25 +31,25 @@ RSpec.describe Agent::Listener::TokenLog do
   describe '#on_tokens' do
     let(:listener) { described_class.new }
 
-    it 'logs one info line per emission, summing per-turn deltas but never input' do
+    it 'logs one info line per emission, summing per-turn deltas but never the context size' do
       # input is already cumulative per turn (the whole prompt sent
       # this round), so the session: portion deliberately omits it.
       # output IS a per-turn delta, so it sums.
-      listener.on_tokens(tokens(input: 100, output: 20))
-      listener.on_tokens(tokens(input: 250, output: 30))
+      listener.on_tokens(tokens(input: 10_240, output: 1024))
+      listener.on_tokens(tokens(input: 20_480, output: 2048))
 
       lines = buf.string.lines
       assert_equal 2, lines.size
-      assert_includes lines[0], 'msg #1: in=100 out=20 | session: out=20'
-      assert_includes lines[1], 'msg #2: in=250 out=30 | session: out=50'
+      assert_includes lines[0], 'msg #1: ctx=10.0k out=1.0k | session: out=1.0k'
+      assert_includes lines[1], 'msg #2: ctx=20.0k out=2.0k | session: out=3.0k'
       lines.each do |l|
-        refute_match(/session:[^|\n]*in=/, l,
-                     'session: must not carry an in= field (summing snapshots would double-count)')
+        refute_match(/session:[^|\n]*(ctx|in)=/, l,
+                     'session: must not carry the cumulative-input snapshot — summing it would double-count')
       end
     end
 
     it 'omits thinking and cached from the line when they are zero' do
-      listener.on_tokens(tokens(input: 100, output: 20))
+      listener.on_tokens(tokens(input: 10_240, output: 1024))
 
       line = buf.string.lines.first
       refute_includes line, 'thinking='
@@ -57,11 +57,11 @@ RSpec.describe Agent::Listener::TokenLog do
     end
 
     it 'includes thinking and cached fields when non-zero' do
-      listener.on_tokens(tokens(input: 100, output: 20, thinking: 50, cached: 80))
+      listener.on_tokens(tokens(input: 10_240, output: 1024, thinking: 5120, cached: 8192))
 
       line = buf.string.lines.first
-      assert_includes line, 'thinking=50'
-      assert_includes line, 'cached=80'
+      assert_includes line, 'thinking=5.0k'
+      assert_includes line, 'cached=8.0k'
     end
 
     it 'treats nil token fields as zero so providers that report nothing still log a line' do
@@ -71,7 +71,35 @@ RSpec.describe Agent::Listener::TokenLog do
                          ))
 
       line = buf.string.lines.first
-      assert_includes line, 'msg #1: in=0 out=0 | session: out=0'
+      assert_includes line, 'msg #1: ctx=0.0k out=0.0k | session: out=0.0k'
+    end
+  end
+
+  describe '#context_window_size' do
+    it 'is zero before any tokens have been seen' do
+      assert_equal 0, described_class.new.context_window_size
+    end
+
+    it 'reflects the LATEST input value, not a sum and not the max' do
+      listener = described_class.new
+
+      listener.on_tokens(tokens(input: 10_000))
+      listener.on_tokens(tokens(input: 15_000))
+      # Latest could legitimately be smaller than the previous max
+      # if ruby_llm ever pruned messages between turns.
+      listener.on_tokens(tokens(input: 12_000))
+
+      assert_equal 12_000, listener.context_window_size
+    end
+
+    it 'treats nil input as zero' do
+      listener = described_class.new
+      listener.on_tokens(Agent::Tokens.new(
+                           input: nil, output: 10, cached: nil, cache_creation: nil,
+                           thinking: nil, model_id: nil
+                         ))
+
+      assert_equal 0, listener.context_window_size
     end
   end
 
@@ -95,23 +123,30 @@ RSpec.describe Agent::Listener::TokenLog do
       parent = described_class.new
       child  = described_class.new
 
-      # Two emissions per side, so the child's totals being separate
-      # from the parent's would show up as 'session: out=10', not
-      # 'session: out=110' if state leaked across instances.
-      parent.on_tokens(tokens(input: 1000, output: 100))
-      child.on_tokens(tokens(input: 50, output: 10))
+      # Child's totals being separate from the parent's would show up
+      # as 'session: out=0.5k', not '1.5k' if state leaked across.
+      parent.on_tokens(tokens(input: 10_240, output: 1024))
+      child.on_tokens(tokens(input: 5120, output: 512))
 
-      parent_line = buf.string.lines.find { |l| l.include?('in=1000') }
-      child_line  = buf.string.lines.find { |l| l.include?('in=50 out=10') }
+      parent_line = buf.string.lines.find { |l| l.include?('ctx=10.0k') }
+      child_line  = buf.string.lines.find { |l| l.include?('ctx=5.0k') }
 
-      assert_includes parent_line, 'session: out=100'
-      assert_includes child_line,  'session: out=10'
+      assert_includes parent_line, 'session: out=1.0k'
+      assert_includes child_line,  'session: out=0.5k'
     end
   end
 
   describe '#to_s' do
-    it 'renders the short label' do
-      assert_equal 'TokenLog', described_class.new.to_s
+    it 'shows zero context until the first tokens arrive' do
+      assert_equal 'TokenLog(ctx=0.0k)', described_class.new.to_s
+    end
+
+    it 'reflects the latest context-window snapshot after on_tokens fires' do
+      listener = described_class.new
+      listener.on_tokens(tokens(input: 12_345))
+
+      # 12_345 / 1024 ≈ 12.0556 → 12.1k
+      assert_equal 'TokenLog(ctx=12.1k)', listener.to_s
     end
   end
 end
