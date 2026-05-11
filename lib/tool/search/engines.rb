@@ -85,7 +85,9 @@ class Tool
         current_providers = providers
         log_providers(current_providers)
 
-        cache.fetch(cleaned) do
+        hit = true
+        result = cache.fetch(cleaned) do
+          hit = false
           failures = []
           results = nil
           chosen = nil
@@ -107,6 +109,8 @@ class Tool
           end
           render(results)
         end
+        LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{result.bytesize}" } if hit
+        result
       rescue Unavailable => e
         "Error: #{e.message}"
       end

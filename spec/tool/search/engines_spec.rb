@@ -269,6 +269,25 @@ RSpec.describe Tool::Search::Engines, 'logging' do
     assert_equal 1, log_io.string.scan(/engines available:/).count
   end
 
+  it 'logs a cache=hit line when a subsequent search is served from cache' do
+    Dir.mktmpdir('pikuri-cache-test-') do |dir|
+      cache = UrlCache.new(ttl: 60, dir: dir)
+      original_cache = Tool::Search::Engines.method(:cache)
+      Tool::Search::Engines.singleton_class.define_method(:cache) { cache }
+      begin
+        stub_providers([pair_provider])
+        described_class.search('ruby', max_results: 10)
+        log_io.truncate(0)
+        log_io.rewind
+        described_class.search('ruby', max_results: 10)
+        assert_match(/INFO -- Engines: cache=hit query="ruby" bytes=\d+/, log_io.string)
+        refute_match(/engine=Pair/, log_io.string)
+      ensure
+        Tool::Search::Engines.singleton_class.define_method(:cache, original_cache)
+      end
+    end
+  end
+
   it 'relogs the available-engines line when the provider set changes' do
     other = Module.new do
       def self.name = 'Tool::Search::Other'
