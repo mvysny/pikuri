@@ -73,11 +73,16 @@ class Tool
         cleaned = query.to_s.strip.gsub(/\s+/, ' ')
         raise ArgumentError, 'query is empty' if cleaned.empty?
 
+        current_providers = providers
+        log_providers(current_providers)
+
         cache.fetch(cleaned) do
           failures = []
           result = nil
-          providers.shuffle.each do |provider|
+          chosen = nil
+          current_providers.shuffle.each do |provider|
             result = provider.search(cleaned, max_results: max_results)
+            chosen = provider
             break
           rescue Unavailable => e
             failures << "#{provider.name.split('::').last} (#{e.message})"
@@ -87,10 +92,34 @@ class Tool
           # for this query until the TTL expires. The outer +rescue+ turns
           # the raise back into the calculator-style "Error: …" string.
           result or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
+
+          Pikuri.logger.info do
+            count = result.scan(/^\[[^\]\n]+\]\(/).count
+            "search engine=#{chosen.name.split('::').last} query=#{cleaned.inspect} results=#{count}"
+          end
+          result
         end
       rescue Unavailable => e
         "Error: #{e.message}"
       end
+
+      # Emit an INFO log line listing the currently-available providers,
+      # but only when the set differs from the last one we logged.
+      # {.providers} is recomputed on every {.search} call so a process
+      # picks up newly-set API keys without a restart; the memo here
+      # keeps the log to one line per distinct configuration rather
+      # than one per search.
+      #
+      # @param current [Array<Module>] providers returned by {.providers}
+      # @return [void]
+      def self.log_providers(current)
+        return if @last_logged_providers == current
+
+        @last_logged_providers = current
+        names = current.map { |p| p.name.split('::').last }.join(', ')
+        Pikuri.logger.info("search engines available: #{names}")
+      end
+      private_class_method :log_providers
     end
   end
 end
