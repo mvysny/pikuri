@@ -9,10 +9,11 @@ class Agent
     # running session totals.
     #
     # Use this to spot context-window growth before the provider raises
-    # +RubyLLM::ContextLengthExceededError+: +input+ is the climb to
-    # watch — it grows monotonically with each round trip because
-    # ruby_llm re-sends the full +@messages+ array every iteration —
-    # and once it nears the model's window, the next request will fail.
+    # +RubyLLM::ContextLengthExceededError+: the per-msg +in=+ is the
+    # climb to watch — it grows monotonically with each round trip
+    # because ruby_llm re-sends the full +@messages+ array every
+    # iteration — and once it nears the model's window, the next
+    # request will fail.
     #
     # == State and scope
     #
@@ -23,22 +24,29 @@ class Agent
     # keeps using the parent's instance because synth tokens are part
     # of the same user-question's cost and should accumulate.
     #
+    # +input+ is **not** summed across turns: each turn's +input+ is
+    # already the whole prompt seen by the model (history + system +
+    # tools + new message), so summing snapshots would double-count.
+    # The per-msg +in=+ field already shows it climbing. The +session:+
+    # portion only carries fields that are genuinely per-turn deltas
+    # — +out+, +thinking+, +cached+, +cache_creation+ — and therefore
+    # additive across the run.
+    #
     # == Log line shape
     #
-    #   msg #5: in=12453 out=320 | session: in=58201 out=1840
-    #   msg #6: in=13100 out=288 thinking=120 | session: in=71301 out=2128 thinking=120
+    #   msg #5: in=12453 out=320 | session: out=1840
+    #   msg #6: in=13100 out=288 thinking=120 | session: out=2128 thinking=120
     #
-    # The +thinking+ and +cached+ fields appear only when non-zero;
-    # +in+ and +out+ always appear (zero or +nil+ → 0). Numbers are
-    # plain integers — grepping for +session: in=+ tracks the growth
-    # curve across a run.
+    # +thinking+ and +cached+ appear only when non-zero; +in+ and
+    # +out+ always appear (zero or +nil+ → 0). Numbers are plain
+    # integers — grepping for +msg #+ and watching +in=+ tracks the
+    # growth curve across a run.
     class TokenLog < MessageListener
       LOGGER = Pikuri.logger_for('Tokens')
 
       def initialize
         super
         @msg = 0
-        @total_input = 0
         @total_output = 0
         @total_cached = 0
         @total_cache_creation = 0
@@ -51,7 +59,6 @@ class Agent
       # @return [void]
       def on_tokens(tokens)
         @msg += 1
-        @total_input          += tokens.input.to_i
         @total_output         += tokens.output.to_i
         @total_cached         += tokens.cached.to_i
         @total_cache_creation += tokens.cache_creation.to_i
@@ -72,7 +79,7 @@ class Agent
         per_msg << " thinking=#{t.thinking}" if t.thinking&.positive?
         per_msg << " cached=#{t.cached}"     if t.cached&.positive?
 
-        session = +"in=#{@total_input} out=#{@total_output}"
+        session = +"out=#{@total_output}"
         session << " thinking=#{@total_thinking}" if @total_thinking.positive?
         session << " cached=#{@total_cached}"     if @total_cached.positive?
 

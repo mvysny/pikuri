@@ -28,7 +28,11 @@ class Agent
   #   grows monotonically across the loop (ruby_llm re-sends the
   #   whole +@messages+ array each iteration), bounded by the
   #   model's context window. This is the number to watch for
-  #   approaching +RubyLLM::ContextLengthExceededError+.
+  #   approaching +RubyLLM::ContextLengthExceededError+. **Do NOT
+  #   sum +input+ across turns** — each value is already cumulative
+  #   (a snapshot of the whole prompt), so summing snapshots would
+  #   double-count. The other fields below *are* per-turn deltas and
+  #   sum normally.
   # - +output+ — tokens in this single assistant reply. Per-turn,
   #   does NOT accumulate across turns. Bounded by the provider's
   #   max-output cap (typically 4-8K for chat completions).

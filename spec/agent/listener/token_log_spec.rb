@@ -31,14 +31,21 @@ RSpec.describe Agent::Listener::TokenLog do
   describe '#on_tokens' do
     let(:listener) { described_class.new }
 
-    it 'logs one info line per emission with per-msg and session counts' do
+    it 'logs one info line per emission, summing per-turn deltas but never input' do
+      # input is already cumulative per turn (the whole prompt sent
+      # this round), so the session: portion deliberately omits it.
+      # output IS a per-turn delta, so it sums.
       listener.on_tokens(tokens(input: 100, output: 20))
       listener.on_tokens(tokens(input: 250, output: 30))
 
       lines = buf.string.lines
       assert_equal 2, lines.size
-      assert_includes lines[0], 'msg #1: in=100 out=20 | session: in=100 out=20'
-      assert_includes lines[1], 'msg #2: in=250 out=30 | session: in=350 out=50'
+      assert_includes lines[0], 'msg #1: in=100 out=20 | session: out=20'
+      assert_includes lines[1], 'msg #2: in=250 out=30 | session: out=50'
+      lines.each do |l|
+        refute_match(/session:[^|\n]*in=/, l,
+                     'session: must not carry an in= field (summing snapshots would double-count)')
+      end
     end
 
     it 'omits thinking and cached from the line when they are zero' do
@@ -64,7 +71,7 @@ RSpec.describe Agent::Listener::TokenLog do
                          ))
 
       line = buf.string.lines.first
-      assert_includes line, 'msg #1: in=0 out=0 | session: in=0 out=0'
+      assert_includes line, 'msg #1: in=0 out=0 | session: out=0'
     end
   end
 
@@ -88,14 +95,17 @@ RSpec.describe Agent::Listener::TokenLog do
       parent = described_class.new
       child  = described_class.new
 
+      # Two emissions per side, so the child's totals being separate
+      # from the parent's would show up as 'session: out=10', not
+      # 'session: out=110' if state leaked across instances.
       parent.on_tokens(tokens(input: 1000, output: 100))
       child.on_tokens(tokens(input: 50, output: 10))
 
       parent_line = buf.string.lines.find { |l| l.include?('in=1000') }
       child_line  = buf.string.lines.find { |l| l.include?('in=50 out=10') }
 
-      assert_includes parent_line, 'session: in=1000 out=100'
-      assert_includes child_line,  'session: in=50 out=10'
+      assert_includes parent_line, 'session: out=100'
+      assert_includes child_line,  'session: out=10'
     end
   end
 
