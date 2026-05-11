@@ -7,47 +7,48 @@ RSpec.describe Tool::Search::Exa do
   let(:fixture) { File.read(File.expand_path('../../fixtures/exa_ruby_language.json', __dir__)) }
 
   describe '.parse' do
-    it 'renders results in smolagents-style markdown' do
-      output = described_class.parse(fixture)
-      assert output.start_with?("## Search Results\n\n"), 'missing smolagents header'
-      assert_includes output, "[Ruby Programming Language](https://www.ruby-lang.org/en/)\n"
+    it 'returns Result rows with title, url, and body' do
+      results = described_class.parse(fixture)
+      assert results.is_a?(Array)
+      assert(results.all? { |r| r.is_a?(Tool::Search::Result) })
+
+      ruby_lang = results.find { |r| r.url == 'https://www.ruby-lang.org/en/' }
+      refute_nil ruby_lang, 'expected the ruby-lang.org result row'
+      assert_equal 'Ruby Programming Language', ruby_lang.title
     end
 
     it 'preserves parentheses in URLs without escaping' do
-      output = described_class.parse(fixture)
-      assert_includes output,
-                      '[Ruby (programming language) - Wikipedia]' \
-                      '(https://en.wikipedia.org/wiki/Ruby_(programming_language))'
+      results = described_class.parse(fixture)
+      wiki = results.find { |r| r.title.include?('Wikipedia') }
+      refute_nil wiki
+      assert_equal 'https://en.wikipedia.org/wiki/Ruby_(programming_language)', wiki.url
     end
 
-    it 'renders the top highlight as the result body' do
-      output = described_class.parse(fixture)
-      assert_includes output, 'Ruby is a dynamic, open source programming language'
+    it 'uses the top highlight as the result body' do
+      results = described_class.parse(fixture)
+      assert(results.any? { |r| r.body.include?('Ruby is a dynamic, open source programming language') })
     end
 
     it 'collapses whitespace inside highlights' do
-      output = described_class.parse(fixture)
-      assert_includes output, 'Ruby is a general-purpose programming language.'
-      refute_includes output, 'Ruby is a   general-purpose'
+      results = described_class.parse(fixture)
+      assert(results.any? { |r| r.body.include?('Ruby is a general-purpose programming language.') })
+      refute(results.any? { |r| r.body.include?('Ruby is a   general-purpose') })
     end
 
-    it 'renders results with empty highlights as title + url only' do
-      output = described_class.parse(fixture)
-      # RubyGems entry has highlights: []; the entry is still rendered as
-      # [title](href) followed by an empty body line, not omitted entirely.
-      assert output.end_with?("[RubyGems.org](https://rubygems.org)\n"),
-             "expected trailing entry to render without a highlight, got:\n#{output.lines.last(3).join}"
+    it 'leaves body empty for results with no highlights' do
+      results = described_class.parse(fixture)
+      rubygems = results.find { |r| r.url == 'https://rubygems.org' }
+      refute_nil rubygems, 'expected the rubygems.org result row'
+      assert_equal '', rubygems.body
     end
 
     it 'respects max_results' do
-      output = described_class.parse(fixture, max_results: 2)
-      assert_equal 2, output.scan(/^\[/).size
+      assert_equal 2, described_class.parse(fixture, max_results: 2).size
     end
 
-    it 'returns a no-results stub for a recognized empty Exa payload' do
+    it 'returns an empty array for a recognized empty Exa payload' do
       json = JSON.dump(requestId: 'fixture-empty-001', searchType: 'auto', results: [])
-      output = described_class.parse(json)
-      assert_equal "## Search Results\n\nNo results found.", output
+      assert_equal [], described_class.parse(json)
     end
 
     it 'raises with body snippet when no results are present and no requestId' do

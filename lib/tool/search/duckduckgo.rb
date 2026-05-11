@@ -5,10 +5,11 @@ require 'nokogiri'
 require 'uri'
 class Tool
   module Search
-    # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and renders
-    # the results as smolagents-style Markdown. Split into a thin HTTP fetch
-    # (#search) and a pure parser (#parse) so tests can exercise the parser
-    # against fixture HTML without hitting the network.
+    # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and
+    # returns the hits as a list of {Result} rows. Split into a thin HTTP
+    # fetch (#search) and a pure parser (#parse) so tests can exercise
+    # the parser against fixture HTML without hitting the network. The
+    # cascade in {Engines.search} owns the final Markdown rendering.
     #
     # == Privacy posture
     #
@@ -41,15 +42,16 @@ class Tool
       #   soft-block response doesn't get retried for the next 5 minutes
       LIMITER = RateLimiter.new(min_interval: 2.0, cooldown: 300.0)
 
-      # Fetch results for +query+ and render them as smolagents-style Markdown.
+      # Fetch results for +query+ and return them as an +Array<Result>+.
       # Calls are throttled to one every 2s and circuit-broken for 5 minutes
       # after a soft-block; see {LIMITER}. The caller (typically
       # {Engines.search}) is expected to have already normalized the
       # query and to wrap this in a result cache.
       #
       # @param query [String] search query (already normalized)
-      # @param max_results [Integer] maximum number of result entries to render
-      # @return [String] Markdown-formatted result list
+      # @param max_results [Integer] maximum number of result entries
+      # @return [Array<Result>] hits, possibly empty when DDG ran the
+      #   query and matched nothing
       # @raise [Engines::Unavailable] when DDG soft-blocks the IP
       #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
       #   later" responses the cascade in {Engines.search} can fall
@@ -72,21 +74,22 @@ class Tool
         end
       end
 
-      # Parse a +html.duckduckgo.com+ result page into smolagents-style Markdown:
-      # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined by
-      # blank lines. +<b>+ highlights inside snippets are stripped.
+      # Parse a +html.duckduckgo.com+ result page into a list of {Result}
+      # rows. +<b>+ highlights inside snippets are stripped.
       #
       # When the page has zero result nodes, two cases are distinguished:
-      # a genuine "no results" page (narrow query, DDG's own "No results found"
-      # indicator) returns a Markdown stub instead of raising, so the agent
-      # gets a real observation it can act on. Anything else (anomaly modal,
-      # CAPTCHA, service-unavailable page, unknown layout) raises with the
-      # diagnostic text extracted from the body, so an IP soft-block is
-      # surfaced rather than silently masquerading as an empty search.
+      # a genuine "no results" page (narrow query, DDG's own "No results
+      # found" indicator) returns an empty array instead of raising, so
+      # {Engines.search} can render its standard no-results stub.
+      # Anything else (anomaly modal, CAPTCHA, service-unavailable page,
+      # unknown layout) raises with the diagnostic text extracted from
+      # the body, so an IP soft-block is surfaced rather than silently
+      # masquerading as an empty search.
       #
       # @param html [String] HTML document body from html.duckduckgo.com
-      # @param max_results [Integer] maximum number of result entries to render
-      # @return [String] Markdown-formatted result list
+      # @param max_results [Integer] maximum number of result entries
+      # @return [Array<Result>] hits, possibly empty on a genuine
+      #   no-results page
       # @raise [Engines::Unavailable] when the page is the DDG
       #   anomaly/CAPTCHA modal (IP soft-block) — a "try again later" the
       #   cascade can fall back from.
@@ -100,21 +103,21 @@ class Tool
           next nil if title_link.nil?
 
           snippet = node.at_css('a.result__snippet')
-          {
+          Result.new(
+            url: extract_url(title_link['href']),
             title: title_link.text.strip,
-            href: extract_url(title_link['href']),
             body: snippet&.text&.strip.to_s
-          }
+          )
         end
 
         if results.empty?
-          return "## Search Results\n\nNo results found." if genuine_no_results?(doc)
+          return [] if genuine_no_results?(doc)
 
           message = diagnose_empty(doc)
           raise(anomaly_modal?(doc) ? Engines::Unavailable : RuntimeError, message)
         end
 
-        "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
+        results
       end
 
       # True when the page contains DDG's anomaly/CAPTCHA modal — i.e. the

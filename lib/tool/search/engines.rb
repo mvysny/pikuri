@@ -30,7 +30,7 @@ class Tool
       # restart.
       #
       # @return [Array<Module>] +Tool::Search::*+ provider modules, each
-      #   exposing +.search(query, max_results:)+ → Markdown
+      #   exposing +.search(query, max_results:)+ → +Array<Result>+
       def self.providers
         list = [DuckDuckGo]
         list << Brave unless ENV[Brave::ENV_KEY].to_s.strip.empty?
@@ -54,14 +54,17 @@ class Tool
       # (and exhausted first); revisit if it stops being the right default.
       #
       # The query is whitespace-trimmed and runs of whitespace collapsed
-      # to a single space before the cascade runs. Results are cached on
-      # disk via {.cache}, keyed by the cleaned query, so a cache hit
-      # short-circuits the cascade entirely (and benefits whichever
-      # provider would have answered next time too — once a query is
-      # cached, the cooldown state of the original answering provider no
-      # longer matters). +max_results+ is not part of the cache key, so
-      # callers passing a non-default value may get a result rendered
-      # with the previously-cached size.
+      # to a single space before the cascade runs. The winning provider's
+      # +Array<Result>+ is rendered into smolagents-style Markdown here
+      # (+"## Search Results"+ header, then +[title](url)\nbody+ entries
+      # joined by blank lines; an empty array becomes +"No results found."+),
+      # and the rendered Markdown is cached on disk via {.cache}, keyed by
+      # the cleaned query. A cache hit short-circuits the cascade entirely
+      # (and benefits whichever provider would have answered next time too
+      # — once a query is cached, the cooldown state of the original
+      # answering provider no longer matters). +max_results+ is not part
+      # of the cache key, so callers passing a non-default value may get
+      # a result rendered with the previously-cached size.
       #
       # If every provider reports temporary unavailability, returns an
       # +"Error: ..."+ string instead of raising — same convention as
@@ -84,10 +87,10 @@ class Tool
 
         cache.fetch(cleaned) do
           failures = []
-          result = nil
+          results = nil
           chosen = nil
           current_providers.shuffle.each do |provider|
-            result = provider.search(cleaned, max_results: max_results)
+            results = provider.search(cleaned, max_results: max_results)
             chosen = provider
             break
           rescue Unavailable => e
@@ -97,17 +100,31 @@ class Tool
           # message — otherwise that string would block every future search
           # for this query until the TTL expires. The outer +rescue+ turns
           # the raise back into the calculator-style "Error: …" string.
-          result or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
+          chosen or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
 
           LOGGER.info do
-            count = result.scan(/^\[[^\]\n]+\]\(/).count
-            "engine=#{chosen.name.split('::').last} query=#{cleaned.inspect} results=#{count}"
+            "engine=#{chosen.name.split('::').last} query=#{cleaned.inspect} results=#{results.size}"
           end
-          result
+          render(results)
         end
       rescue Unavailable => e
         "Error: #{e.message}"
       end
+
+      # Render an +Array<Result>+ into the smolagents-style Markdown the
+      # LLM consumes: +"## Search Results"+ header, then +[title](url)\nbody+
+      # entries joined by blank lines. An empty array becomes the
+      # +"No results found."+ stub so the agent still gets a real
+      # observation to act on.
+      #
+      # @param results [Array<Result>] hits from the winning provider
+      # @return [String] Markdown-formatted result list
+      def self.render(results)
+        return "## Search Results\n\nNo results found." if results.empty?
+
+        "## Search Results\n\n" + results.map { |r| "[#{r.title}](#{r.url})\n#{r.body}" }.join("\n\n")
+      end
+      private_class_method :render
 
       # Emit an INFO log line listing the currently-available providers,
       # but only when the set differs from the last one we logged.

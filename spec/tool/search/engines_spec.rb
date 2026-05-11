@@ -53,12 +53,22 @@ RSpec.describe Tool::Search::Engines, '.providers' do
 end
 
 RSpec.describe Tool::Search::Engines, '.search' do
-  let(:good) do
-    Module.new do
-      def self.name = 'Tool::Search::Good'
+  # Single-row helper so the test providers can describe what they
+  # received in their one synthetic Result without repetition.
+  def good_result(query, max_results)
+    [Tool::Search::Result.new(
+      url: 'https://example.com/ok',
+      title: "ok: #{query} (#{max_results})",
+      body: ''
+    )]
+  end
 
-      def self.search(query, max_results:)
-        "ok: #{query} (#{max_results})"
+  let(:good) do
+    parent = self
+    Module.new do
+      define_singleton_method(:name) { 'Tool::Search::Good' }
+      define_singleton_method(:search) do |query, max_results:|
+        parent.good_result(query, max_results)
       end
     end
   end
@@ -72,6 +82,13 @@ RSpec.describe Tool::Search::Engines, '.search' do
         raise Tool::Search::Engines::Unavailable, 'rate-limited'
       end
     end
+  end
+
+  # Markdown-rendered output for what +good_result+ produces, so the
+  # +Engines.search+ contract (String back to the caller) stays
+  # readable in the assertions below.
+  def good_markdown(query, max_results)
+    "## Search Results\n\n[ok: #{query} (#{max_results})](https://example.com/ok)\n"
   end
 
   # Save and restore +.providers+ around each example so +stub_providers+
@@ -104,14 +121,23 @@ RSpec.describe Tool::Search::Engines, '.search' do
     end
   end
 
-  it 'returns the first successful provider output' do
+  it 'returns the first successful provider output rendered as Markdown' do
     stub_providers([good])
-    assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+    assert_equal good_markdown('ruby', 10), described_class.search('ruby', max_results: 10)
   end
 
   it 'falls back past an Unavailable provider to one that succeeds' do
     stub_providers([bad, good])
-    assert_equal 'ok: ruby (5)', described_class.search('ruby', max_results: 5)
+    assert_equal good_markdown('ruby', 5), described_class.search('ruby', max_results: 5)
+  end
+
+  it 'renders an empty result list as the standard no-results stub' do
+    empty = Module.new do
+      def self.name = 'Tool::Search::Empty'
+      def self.search(_q, max_results:) = (_ = max_results; [])
+    end
+    stub_providers([empty])
+    assert_equal "## Search Results\n\nNo results found.", described_class.search('ruby', max_results: 10)
   end
 
   it 'returns an "Error: ..." string when every provider is unavailable' do
@@ -141,7 +167,10 @@ RSpec.describe Tool::Search::Engines, '.search' do
     seen = nil
     spy = Module.new
     spy.define_singleton_method(:name) { 'Tool::Search::Spy' }
-    spy.define_singleton_method(:search) { |q, max_results:| seen = q; "ok (#{max_results})" }
+    spy.define_singleton_method(:search) do |q, max_results:|
+      seen = q
+      [Tool::Search::Result.new(url: 'https://example.com', title: "ok (#{max_results})", body: '')]
+    end
     stub_providers([spy])
 
     described_class.search("  ruby \n  on   rails  ", max_results: 10)
@@ -158,11 +187,15 @@ RSpec.describe Tool::Search::Engines, '.search' do
       calls = 0
       once = Module.new
       once.define_singleton_method(:name) { 'Tool::Search::Once' }
-      once.define_singleton_method(:search) { |q, max_results:| calls += 1; "ok: #{q} (#{max_results})" }
+      once.define_singleton_method(:search) do |q, max_results:|
+        calls += 1
+        [Tool::Search::Result.new(url: 'https://example.com', title: "ok: #{q} (#{max_results})", body: '')]
+      end
       stub_providers([once])
 
-      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
-      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+      expected = "## Search Results\n\n[ok: ruby (10)](https://example.com)\n"
+      assert_equal expected, described_class.search('ruby', max_results: 10)
+      assert_equal expected, described_class.search('ruby', max_results: 10)
       assert_equal 1, calls, 'second call should be served from cache'
     end
   end
@@ -174,7 +207,7 @@ RSpec.describe Tool::Search::Engines, '.search' do
       # Now flip to a working provider — if the error had been cached, this
       # would still return the previous "Error: ..." string.
       stub_providers([good])
-      assert_equal 'ok: ruby (10)', described_class.search('ruby', max_results: 10)
+      assert_equal good_markdown('ruby', 10), described_class.search('ruby', max_results: 10)
     end
   end
 end
@@ -182,15 +215,16 @@ end
 RSpec.describe Tool::Search::Engines, 'logging' do
   let(:log_io) { StringIO.new }
 
-  let(:markdown_pair) do
+  let(:pair_provider) do
     Module.new do
       def self.name = 'Tool::Search::Pair'
 
       def self.search(query, max_results:)
         _ = max_results
-        "## Search Results\n\n" \
-          "[Result A](https://example.com/a)\nbody a — about #{query}\n\n" \
-          '[Result B](https://example.com/b)' "\nbody b"
+        [
+          Tool::Search::Result.new(url: 'https://example.com/a', title: 'Result A', body: "body a — about #{query}"),
+          Tool::Search::Result.new(url: 'https://example.com/b', title: 'Result B', body: 'body b')
+        ]
       end
     end
   end
@@ -217,19 +251,19 @@ RSpec.describe Tool::Search::Engines, 'logging' do
   end
 
   it 'logs the available engines, tagged with the Engines progname, on first search' do
-    stub_providers([markdown_pair])
+    stub_providers([pair_provider])
     described_class.search('ruby', max_results: 10)
     assert_includes log_io.string, 'INFO -- Engines: engines available: Pair'
   end
 
   it 'logs the chosen engine, query, and result count for a successful search' do
-    stub_providers([markdown_pair])
+    stub_providers([pair_provider])
     described_class.search('ruby on rails', max_results: 10)
     assert_includes log_io.string, 'INFO -- Engines: engine=Pair query="ruby on rails" results=2'
   end
 
   it 'does not relog the available-engines line when the provider set is unchanged' do
-    stub_providers([markdown_pair])
+    stub_providers([pair_provider])
     described_class.search('first', max_results: 10)
     described_class.search('second', max_results: 10)
     assert_equal 1, log_io.string.scan(/engines available:/).count
@@ -241,11 +275,11 @@ RSpec.describe Tool::Search::Engines, 'logging' do
 
       def self.search(_query, max_results:)
         _ = max_results
-        "## Search Results\n\n[Only](https://example.com/only)\nbody"
+        [Tool::Search::Result.new(url: 'https://example.com/only', title: 'Only', body: 'body')]
       end
     end
 
-    stub_providers([markdown_pair])
+    stub_providers([pair_provider])
     described_class.search('first', max_results: 10)
     stub_providers([other])
     described_class.search('second', max_results: 10)

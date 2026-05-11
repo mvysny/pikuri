@@ -32,7 +32,11 @@ RSpec.describe 'Tool::WEB_SEARCH' do
           def search(query, max_results:)
             @calls ||= []
             @calls << { query: query, max_results: max_results }
-            "result for #{query} (#{max_results})"
+            [Tool::Search::Result.new(
+              url: 'https://example.com',
+              title: "result for #{query} (#{max_results})",
+              body: ''
+            )]
           end
         end
       end

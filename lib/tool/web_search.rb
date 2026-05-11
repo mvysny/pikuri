@@ -10,9 +10,10 @@ class Tool
   # Calls {Tool::Search::Engines.search}, which cascades through whichever
   # providers are configured (DuckDuckGo always, Brave when its API key is
   # present) in random order, falling back on temporary-unavailability
-  # errors. All providers render their output in the same smolagents-style
-  # Markdown shape, so the LLM sees a stable format regardless of which
-  # one ran.
+  # errors. Providers return structured {Tool::Search::Result} rows;
+  # +Engines.search+ renders the winning provider's rows into the
+  # smolagents-style Markdown shape the LLM sees, so the format stays
+  # stable regardless of which provider ran.
   #
   # @return [Tool]
   WEB_SEARCH = new(

@@ -5,11 +5,11 @@ require 'json'
 require 'nokogiri'
 class Tool
   module Search
-    # Performs a Brave Search via the official Web Search API and renders
-    # the results as smolagents-style Markdown matching the {DuckDuckGo}
-    # provider's output. Split into a thin HTTP fetch (#search) and a pure
-    # parser (#parse) so tests can exercise the parser against fixture
-    # JSON without hitting the network.
+    # Performs a Brave Search via the official Web Search API and returns
+    # the hits as a list of {Result} rows. Split into a thin HTTP fetch
+    # (#search) and a pure parser (#parse) so tests can exercise the
+    # parser against fixture JSON without hitting the network. The
+    # cascade in {Engines.search} owns the final Markdown rendering.
     #
     # Requires a Brave Search API key. Get one at
     # https://api-dashboard.search.brave.com — the free "Data for Search"
@@ -43,18 +43,19 @@ class Tool
       #   being burned on doomed retries when a 429 hits.
       LIMITER = RateLimiter.new(min_interval: 1.0, cooldown: 300.0)
 
-      # Fetch results for +query+ and render them as smolagents-style Markdown.
+      # Fetch results for +query+ and return them as an +Array<Result>+.
       # Calls are throttled to one per second and circuit-broken for 5
       # minutes on rate-limit / quota-exhausted responses; see {LIMITER}.
       # The caller (typically {Engines.search}) is expected to have
       # already normalized the query and to wrap this in a result cache.
       #
       # @param query [String] search query (already normalized)
-      # @param max_results [Integer] maximum number of result entries to render;
+      # @param max_results [Integer] maximum number of result entries;
       #   passed through as Brave's +count+ (1..20)
       # @param api_key [String] Brave Search subscription token; defaults to
       #   the {ENV_KEY} environment variable
-      # @return [String] Markdown-formatted result list
+      # @return [Array<Result>] hits, possibly empty when Brave ran the
+      #   query and matched nothing
       # @raise [ArgumentError] if no API key is available
       # @raise [Engines::Unavailable] when Brave returns HTTP 429
       #   (rate limit / quota exhausted) or 5xx — "try again later"
@@ -85,21 +86,22 @@ class Tool
         end
       end
 
-      # Parse a Brave Web Search JSON response into smolagents-style Markdown:
-      # +"## Search Results"+ followed by +[title](href)\nbody+ entries joined
-      # by blank lines. HTML highlight tags (+<strong>+) inside +title+ and
-      # +description+ are stripped via Nokogiri so the output is plain text.
+      # Parse a Brave Web Search JSON response into a list of {Result} rows.
+      # HTML highlight tags (+<strong>+) inside +title+ and +description+
+      # are stripped via Nokogiri so the output is plain text.
       #
-      # When the response yields zero result nodes, two cases are distinguished:
-      # a genuine "no results" payload (recognized search shape with empty
-      # +mixed.main+/+top+/+side+ — typically a too-narrow query Brave couldn't
-      # match) returns a Markdown stub instead of raising, so the agent gets
-      # a real observation it can act on. Anything else (unknown layout,
-      # structured error) raises with a diagnostic so the failure surfaces.
+      # When the response yields zero result nodes, two cases are
+      # distinguished: a genuine "no results" payload (recognized search
+      # shape with empty +mixed.main+/+top+/+side+ — typically a too-narrow
+      # query Brave couldn't match) returns an empty array instead of
+      # raising, so {Engines.search} can render its standard no-results
+      # stub. Anything else (unknown layout, structured error) raises
+      # with a diagnostic so the failure surfaces.
       #
       # @param json [String] response body from {ENDPOINT}
-      # @param max_results [Integer] maximum number of result entries to render
-      # @return [String] Markdown-formatted result list
+      # @param max_results [Integer] maximum number of result entries
+      # @return [Array<Result>] hits, possibly empty on a recognized
+      #   empty-results payload
       # @raise [RuntimeError] when the response yields no result entries and
       #   is not recognized as a genuine empty-results payload
       def self.parse(json, max_results: DEFAULT_MAX_RESULTS)
@@ -108,20 +110,20 @@ class Tool
           href = r['url'].to_s
           next nil if href.empty?
 
-          {
+          Result.new(
+            url: href,
             title: strip_html(r['title']),
-            href: href,
             body: strip_html(r['description'])
-          }
+          )
         end
 
         if results.empty?
-          return "## Search Results\n\nNo results found." if genuine_no_results?(data)
+          return [] if genuine_no_results?(data)
 
           raise diagnose_empty(data, json)
         end
 
-        "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
+        results
       end
 
       # Strip HTML markup (notably +<strong>+ highlights Brave wraps around

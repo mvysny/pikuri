@@ -7,33 +7,35 @@ RSpec.describe Tool::Search::DuckDuckGo do
   let(:fixture) { File.read(File.expand_path('../../fixtures/ddg_ruby_language.html', __dir__)) }
 
   describe '.parse' do
-    it 'renders results in smolagents-style markdown' do
-      output = described_class.parse(fixture)
-      assert output.start_with?("## Search Results\n\n"), 'missing smolagents header'
-      assert_includes output, "[Ruby Programming Language](https://www.ruby-lang.org/en/)\n"
+    it 'returns Result rows with title, url, and body' do
+      results = described_class.parse(fixture)
+      assert results.is_a?(Array)
+      assert(results.all? { |r| r.is_a?(Tool::Search::Result) })
+
+      ruby_lang = results.find { |r| r.url == 'https://www.ruby-lang.org/en/' }
+      refute_nil ruby_lang, 'expected the ruby-lang.org result row'
+      assert_equal 'Ruby Programming Language', ruby_lang.title
     end
 
     it 'decodes the uddg redirect to the real URL, parens preserved' do
-      output = described_class.parse(fixture)
-      assert_includes output,
-                      '[Ruby (programming language) - Wikipedia]' \
-                      '(https://en.wikipedia.org/wiki/Ruby_(programming_language))'
+      results = described_class.parse(fixture)
+      wiki = results.find { |r| r.title.include?('Wikipedia') }
+      refute_nil wiki
+      assert_equal 'https://en.wikipedia.org/wiki/Ruby_(programming_language)', wiki.url
     end
 
     it 'strips <b> highlights from the snippet body' do
-      output = described_class.parse(fixture)
-      refute_includes output, '<b>'
-      assert_includes output, 'Ruby has a simple and intuitive syntax'
+      results = described_class.parse(fixture)
+      refute(results.any? { |r| r.body.include?('<b>') })
+      assert(results.any? { |r| r.body.include?('Ruby has a simple and intuitive syntax') })
     end
 
     it 'respects max_results' do
-      output = described_class.parse(fixture, max_results: 3)
-      assert_equal 3, output.scan(/^\[/).size
+      assert_equal 3, described_class.parse(fixture, max_results: 3).size
     end
 
     it 'defaults to 10 results' do
-      output = described_class.parse(fixture)
-      assert_equal 10, output.scan(/^\[/).size
+      assert_equal 10, described_class.parse(fixture).size
     end
 
     it 'raises with the page text when no results are present' do
@@ -43,16 +45,14 @@ RSpec.describe Tool::Search::DuckDuckGo do
       assert_includes err.message, 'service is currently unavailable'
     end
 
-    it 'returns a no-results stub on a genuine "No results found" page' do
+    it 'returns an empty array on a genuine "No results found" page' do
       html = '<html><body><div class="serp__results">No results found for foobarbaz.</div></body></html>'
-      output = described_class.parse(html)
-      assert_equal "## Search Results\n\nNo results found.", output
+      assert_equal [], described_class.parse(html)
     end
 
     it 'recognizes div.no-results as a genuine empty-results page' do
       html = '<html><body><div class="no-results">Nothing here</div></body></html>'
-      output = described_class.parse(html)
-      assert_equal "## Search Results\n\nNo results found.", output
+      assert_equal [], described_class.parse(html)
     end
 
     it 'still flags the anomaly modal even when "No results found" appears in body text' do

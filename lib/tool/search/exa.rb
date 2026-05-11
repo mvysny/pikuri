@@ -5,10 +5,10 @@ require 'json'
 class Tool
   module Search
     # Performs an Exa search via the official +/search+ endpoint and
-    # renders the results as smolagents-style Markdown matching the
-    # {DuckDuckGo} and {Brave} providers' output. Split into a thin HTTP
+    # returns the hits as a list of {Result} rows. Split into a thin HTTP
     # fetch (#search) and a pure parser (#parse) so tests can exercise
-    # the parser against fixture JSON without hitting the network.
+    # the parser against fixture JSON without hitting the network. The
+    # cascade in {Engines.search} owns the final Markdown rendering.
     #
     # Requires an Exa API key. Get one at https://exa.ai — the service is
     # paid, so the cascade in {Engines.providers} only includes Exa when
@@ -18,8 +18,8 @@ class Tool
     # Calls request +type: "auto"+ (Exa picks neural vs keyword per
     # query) and +contents: { highlights: true }+ so each result carries
     # a short neural-ranked snippet — the closest analog to Brave's
-    # +description+ field, keeping the rendered Markdown shape stable
-    # across providers.
+    # +description+ field, populating {Result#body} consistently across
+    # providers.
     #
     # == Privacy posture
     #
@@ -53,18 +53,19 @@ class Tool
       #   condition persists.
       LIMITER = RateLimiter.new(min_interval: 0.0, cooldown: 300.0)
 
-      # Fetch results for +query+ and render them as smolagents-style Markdown.
+      # Fetch results for +query+ and return them as an +Array<Result>+.
       # Calls are circuit-broken for 5 minutes on rate-limit / unavailable
       # responses; see {LIMITER}. The caller (typically {Engines.search})
       # is expected to have already normalized the query and to wrap this
       # in a result cache.
       #
       # @param query [String] search query (already normalized)
-      # @param max_results [Integer] maximum number of result entries to render;
+      # @param max_results [Integer] maximum number of result entries;
       #   passed through as Exa's +numResults+
       # @param api_key [String] Exa API key; defaults to the {ENV_KEY}
       #   environment variable
-      # @return [String] Markdown-formatted result list
+      # @return [Array<Result>] hits, possibly empty when Exa ran the
+      #   query and matched nothing
       # @raise [ArgumentError] if no API key is available
       # @raise [Engines::Unavailable] when Exa returns HTTP 429
       #   (rate limit / quota exhausted) or 5xx — "try again later"
@@ -102,23 +103,23 @@ class Tool
         end
       end
 
-      # Parse an Exa Search JSON response into smolagents-style Markdown:
-      # +"## Search Results"+ followed by +[title](href)\nbody+ entries
-      # joined by blank lines, where +body+ is the first non-empty
-      # +highlights+ snippet (empty when Exa returned no highlight for
-      # that result — e.g. for navigational results).
+      # Parse an Exa Search JSON response into a list of {Result} rows,
+      # where +body+ is the first non-empty +highlights+ snippet (empty
+      # when Exa returned no highlight for that result — e.g. for
+      # navigational results).
       #
       # When the response yields zero result entries, two cases are
       # distinguished: a genuine "no results" payload (response carries
       # a +requestId+ and an empty +results+ array — Exa ran the query
-      # but matched nothing) returns a Markdown stub instead of raising,
-      # so the agent gets a real observation it can act on. Anything
-      # else (unknown shape, structured error) raises with a diagnostic
-      # so the failure surfaces.
+      # but matched nothing) returns an empty array instead of raising,
+      # so {Engines.search} can render its standard no-results stub.
+      # Anything else (unknown shape, structured error) raises with a
+      # diagnostic so the failure surfaces.
       #
       # @param json [String] response body from {ENDPOINT}
-      # @param max_results [Integer] maximum number of result entries to render
-      # @return [String] Markdown-formatted result list
+      # @param max_results [Integer] maximum number of result entries
+      # @return [Array<Result>] hits, possibly empty on a recognized
+      #   empty-results payload
       # @raise [RuntimeError] when the response yields no result entries and
       #   is not recognized as a genuine empty-results payload
       def self.parse(json, max_results: DEFAULT_MAX_RESULTS)
@@ -127,20 +128,20 @@ class Tool
           href = r['url'].to_s
           next nil if href.empty?
 
-          {
+          Result.new(
+            url: href,
             title: clean(r['title']) || href,
-            href: href,
             body: first_highlight(r['highlights'])
-          }
+          )
         end
 
         if results.empty?
-          return "## Search Results\n\nNo results found." if genuine_no_results?(data)
+          return [] if genuine_no_results?(data)
 
           raise diagnose_empty(data, json)
         end
 
-        "## Search Results\n\n" + results.map { |r| "[#{r[:title]}](#{r[:href]})\n#{r[:body]}" }.join("\n\n")
+        results
       end
 
       # Collapse whitespace and strip; returns +nil+ for nil/empty input
