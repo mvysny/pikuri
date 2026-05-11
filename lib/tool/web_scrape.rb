@@ -95,6 +95,7 @@ class Tool
       Usage:
       - Use for HTML pages or PDFs where you want readable content — readability extraction strips nav, sidebars, and boilerplate.
       - For raw textual payloads (JSON, CSV, robots.txt, source files), use fetch instead — it returns bytes verbatim, while web_scrape would corrupt them with a Markdown pass.
+      - A Single Page App may return very little or no content. Do NOT retry with a larger max_chars; try a different URL instead.
     DESC
     parameters: Parameters.build { |p|
       p.required_string :url,
