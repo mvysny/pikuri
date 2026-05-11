@@ -136,32 +136,12 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   the iteration itself lives in `RubyLLM::Chat#complete`. Don't
   reimplement the loop in pikuri; reach for a different listener
   instead.
-- **Validation ordering is load-bearing.** Pikuri's
-  `Parameters#validate` is what produces the LLM-facing error message;
-  ruby_llm's keyword-presence checker is bypassed by the `**args`
-  keyrest signature on the synthetic class's `execute` (built by
-  `Tool#to_ruby_llm_tool`). When touching `lib/tool.rb`, preserve that
-  — DidYouMean / coercion / all-errors-collected only work if pikuri's
-  validator runs first.
 - **Readable, not obfuscated.** Prefer the simplest implementation that
   does the job. Don't golf code for line count, but also don't add
   abstraction layers, plugin systems, or configuration knobs that
   aren't needed for the next concrete step.
-- **Grow the assistant by adding tools, not by complicating the loop.**
-  New capabilities should land as new `Tool` constants under
-  `lib/tool/` with their own specs; neither `Tool` itself nor
-  ruby_llm's loop should need to know about them.
-
-## Risks worth tracking
-
-- **`RubyLLM::Chat` API churn.** Pikuri couples to Chat semantics
-  (listener names, message/thinking shapes, `with_tool` taking a
-  class). Watch minor releases — 1.15 already normalized token field
-  names, that's the failure mode to expect. Pin reads here would
-  surface in the listener wiring or the synthetic-tool factory.
-- **Synthetic-tool fragility.** If ruby_llm refactors its tool DSL
-  (how `params(hash)` accepts a raw schema, the keyrest bypass on
-  `validate_keyword_arguments`, or how `execute` is invoked),
-  `Tool#to_ruby_llm_tool` in `lib/tool.rb` breaks. The seam contains
-  the blast — the break is in one file, not spread across the
-  codebase.
+- **Grow the assistant by adding tools and listeners, not by
+  complicating the loop.** New capabilities should land as new `Tool`
+  constants under `lib/tool/` or new listeners under
+  `lib/agent/listener/`, each with their own specs; neither `Tool`,
+  the `Agent`, nor ruby_llm's loop should need to know about them.
