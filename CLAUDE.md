@@ -108,7 +108,15 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   regressions, schema misuse, misconfigured clients) keep raising. The
   LLM cannot fix the second category — a human needs to. ruby_llm
   passes the String through verbatim, so this convention is what the
-  model sees.
+  model sees. The carve-out: third-party bugs in rendering/display
+  paths *secondary to the loop* (e.g. `tty-markdown` choking on an
+  ANSI-in-table edge case while rendering assistant output) get
+  rescued narrowly, logged as a warning via `Pikuri.logger_for(...)`
+  with the exception class and message, and fall back to a degraded
+  rendering. Raising would abort an in-flight conversation over a
+  cosmetic upstream bug we can't fix from here. This does **not**
+  extend to errors from libraries on the actual chat path (ruby_llm,
+  Faraday inside a tool) — those stay loud.
 - **Zeitwerk autoloads everything under `lib/`.** Don't add
   `require_relative` chains inside `lib/`; let the loader resolve
   internal references. The boot file (`lib/pikuri.rb`) eager-loads at

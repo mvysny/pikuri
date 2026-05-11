@@ -11,6 +11,8 @@ class Agent
     # the user typed it, so re-rendering it adds nothing on the CLI.
     # This is the default listener attached by {Agent#initialize}.
     class Terminal < MessageListener
+      LOGGER = Pikuri.logger_for('Terminal')
+
       # @param message [Agent::Message] one of the {Agent::Message}
       #   variants; see {Agent::Message} for the full list
       # @return [void]
@@ -19,7 +21,7 @@ class Agent
         in Message::Thinking(content:)
           puts Rainbow(content).darkgray
         in Message::Assistant(content:)
-          puts TTY::Markdown.parse(content)
+          puts render_markdown(content)
         in Message::ToolCall(name:, arguments:)
           args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
           puts Rainbow("→ #{name}(#{args})").cyan
@@ -35,6 +37,24 @@ class Agent
       # @return [String] short label for {Agent#to_s}
       def to_s
         'Terminal'
+      end
+
+      private
+
+      # Render assistant Markdown for the terminal, degrading to the
+      # raw string when the renderer raises. tty-markdown / strings
+      # have known bugs around ANSI inside tables (e.g.
+      # +Strings::Wrap.insert_ansi+ raising +IndexError+); we'd rather
+      # show ugly Markdown than abort an in-flight conversation.
+      #
+      # @param content [String] assistant Markdown
+      # @return [String] rendered ANSI text, or +content+ unchanged on
+      #   render failure
+      def render_markdown(content)
+        TTY::Markdown.parse(content)
+      rescue StandardError => e
+        LOGGER.warn("TTY::Markdown render failed (#{e.class}: #{e.message}); falling back to raw text")
+        content
       end
     end
   end

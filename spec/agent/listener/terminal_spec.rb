@@ -53,6 +53,37 @@ RSpec.describe Agent::Listener::Terminal do
     end
   end
 
+  describe 'Markdown render failure' do
+    let(:log_io) { StringIO.new }
+
+    around do |example|
+      original_io = Pikuri.log_io
+      Pikuri.log_io = log_io
+      begin
+        example.run
+      ensure
+        Pikuri.log_io = original_io
+      end
+    end
+
+    # Outer +before+ stubs parse to a passthrough; this nested +before+
+    # runs after it and replaces the stub with one that raises the same
+    # kind of error tty-markdown / strings surface on ANSI-in-table
+    # edge cases. The outer +after+ restores the original method either
+    # way.
+    before do
+      TTY::Markdown.define_singleton_method(:parse) { |_text, **| raise IndexError, 'boom' }
+    end
+
+    it 'falls back to the raw content and warns through the Terminal logger' do
+      out = capture_stdout { listener.on_message(Agent::Message::Assistant.new(content: '**hi**')) }
+      assert_includes out, '**hi**'
+      assert_includes log_io.string, 'WARN -- Terminal'
+      assert_includes log_io.string, 'IndexError'
+      assert_includes log_io.string, 'boom'
+    end
+  end
+
   def capture_stdout
     original = $stdout
     captured = StringIO.new
