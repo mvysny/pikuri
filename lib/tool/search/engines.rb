@@ -10,6 +10,12 @@ class Tool
     # ({DuckDuckGo}, {Brave}, {Exa}) raises {Unavailable} when it wants
     # the cascade to try the next one.
     module Engines
+      # Subsystem logger; set its level with +PIKURI_LOG_ENGINES+
+      # (e.g. +PIKURI_LOG_ENGINES=debug+) or the global +PIKURI_LOG+.
+      #
+      # @return [Logger]
+      LOGGER = Pikuri.logger_for('Engines')
+
       # Raised by a provider when it is temporarily unavailable (rate-limited,
       # bot-blocked, quota-exhausted, or otherwise saying "try again later"
       # rather than "your request is wrong"). The cascade in {Engines.search}
@@ -93,9 +99,9 @@ class Tool
           # the raise back into the calculator-style "Error: …" string.
           result or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
 
-          Pikuri.logger.info do
+          LOGGER.info do
             count = result.scan(/^\[[^\]\n]+\]\(/).count
-            "search engine=#{chosen.name.split('::').last} query=#{cleaned.inspect} results=#{count}"
+            "engine=#{chosen.name.split('::').last} query=#{cleaned.inspect} results=#{count}"
           end
           result
         end
@@ -117,7 +123,7 @@ class Tool
 
         @last_logged_providers = current
         names = current.map { |p| p.name.split('::').last }.join(', ')
-        Pikuri.logger.info("search engines available: #{names}")
+        LOGGER.info("engines available: #{names}")
       end
       private_class_method :log_providers
     end

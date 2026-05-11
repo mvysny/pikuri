@@ -88,13 +88,17 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   `require 'bundler/setup'`, so callers don't need the `bundle exec`
   ceremony. Add gems to `Gemfile` with conservative pessimistic
   constraints (`~>`).
-- **Diagnostics go through `Pikuri.logger`.** A process-wide stdlib
-  `Logger` on `$stderr`, default level `INFO`, overridable via the
-  `PIKURI_LOG` env var (`debug|info|warn|error|fatal`). Use it
-  instead of `puts`/`warn`/`$stderr.puts` for anything that's a log
-  line rather than user-facing output. Listener-driven rendering of
-  the LLM stream (assistant Markdown, tool calls, observations)
-  stays on stdout via the `Terminal` listener — that's not logging.
+- **Diagnostics go through per-module loggers from
+  `Pikuri.logger_for('Name')`.** Each subsystem holds its own
+  memoized stdlib `Logger`, tagged with a `progname:` (e.g.
+  `LOGGER = Pikuri.logger_for('Engines')`), all writing through
+  `Pikuri.log_io` (default `$stderr`). Level resolves as
+  `PIKURI_LOG_<NAME>` (e.g. `PIKURI_LOG_ENGINES=debug`) →
+  `PIKURI_LOG` → `INFO`. Use these instead of
+  `puts`/`warn`/`$stderr.puts` for anything that's a log line rather
+  than user-facing output. Listener-driven rendering of the LLM
+  stream (assistant Markdown, tool calls, observations) stays on
+  stdout via the `Terminal` listener — that's not logging.
 - **Errors are loud.** On unexpected internal state, raise with the
   offending data included — silent fallbacks hide what actually
   happened. Tools split this into two buckets: failures the LLM can

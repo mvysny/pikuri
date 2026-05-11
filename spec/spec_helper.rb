@@ -15,11 +15,11 @@ require 'pikuri'
   mod.singleton_class.define_method(:cache) { UrlCache::NULL }
 end
 
-# Silence Pikuri's default $stderr logger for the suite so production
+# Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output. Specs that exercise logging
-# (e.g. spec/tool/search/engines_spec.rb) swap in their own +Logger+
-# pointed at a +StringIO+.
-Pikuri.logger = Logger.new(File::NULL)
+# (e.g. spec/tool/search/engines_spec.rb) swap +Pikuri.log_io+ to a
+# +StringIO+ and restore it.
+Pikuri.log_io = File.open(File::NULL, 'w')
 
 RSpec.configure do |config|
   config.include Minitest::Assertions

@@ -197,13 +197,10 @@ RSpec.describe Tool::Search::Engines, 'logging' do
 
   around do |example|
     original_providers = Tool::Search::Engines.method(:providers)
-    original_logger = Pikuri.logger
+    original_io = Pikuri.log_io
     original_last = Tool::Search::Engines.instance_variable_get(:@last_logged_providers)
 
-    replacement = Logger.new(log_io)
-    replacement.level = Logger::DEBUG
-    replacement.formatter = ->(severity, _t, _p, msg) { "#{severity}: #{msg}\n" }
-    Pikuri.logger = replacement
+    Pikuri.log_io = log_io
     Tool::Search::Engines.instance_variable_set(:@last_logged_providers, nil)
 
     begin
@@ -211,7 +208,7 @@ RSpec.describe Tool::Search::Engines, 'logging' do
     ensure
       Tool::Search::Engines.singleton_class.define_method(:providers, original_providers)
       Tool::Search::Engines.instance_variable_set(:@last_logged_providers, original_last)
-      Pikuri.logger = original_logger
+      Pikuri.log_io = original_io
     end
   end
 
@@ -219,23 +216,23 @@ RSpec.describe Tool::Search::Engines, 'logging' do
     Tool::Search::Engines.singleton_class.define_method(:providers) { list }
   end
 
-  it 'logs the available engines on first search' do
+  it 'logs the available engines, tagged with the Engines progname, on first search' do
     stub_providers([markdown_pair])
     described_class.search('ruby', max_results: 10)
-    assert_includes log_io.string, 'INFO: search engines available: Pair'
+    assert_includes log_io.string, 'INFO -- Engines: engines available: Pair'
   end
 
   it 'logs the chosen engine, query, and result count for a successful search' do
     stub_providers([markdown_pair])
     described_class.search('ruby on rails', max_results: 10)
-    assert_includes log_io.string, 'INFO: search engine=Pair query="ruby on rails" results=2'
+    assert_includes log_io.string, 'INFO -- Engines: engine=Pair query="ruby on rails" results=2'
   end
 
   it 'does not relog the available-engines line when the provider set is unchanged' do
     stub_providers([markdown_pair])
     described_class.search('first', max_results: 10)
     described_class.search('second', max_results: 10)
-    assert_equal 1, log_io.string.scan(/search engines available:/).count
+    assert_equal 1, log_io.string.scan(/engines available:/).count
   end
 
   it 'relogs the available-engines line when the provider set changes' do
@@ -253,7 +250,7 @@ RSpec.describe Tool::Search::Engines, 'logging' do
     stub_providers([other])
     described_class.search('second', max_results: 10)
 
-    assert_includes log_io.string, 'INFO: search engines available: Pair'
-    assert_includes log_io.string, 'INFO: search engines available: Other'
+    assert_includes log_io.string, 'INFO -- Engines: engines available: Pair'
+    assert_includes log_io.string, 'INFO -- Engines: engines available: Other'
   end
 end
