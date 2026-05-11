@@ -20,6 +20,7 @@ agent = Agent.new(
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH],
   listeners: Agent::ListenerList.new([
     Agent::Listener::Terminal.new,
+    Agent::Listener::TokenLog.new,
     Agent::Listener::StepLimit.new(max: 20)
   ])
 )

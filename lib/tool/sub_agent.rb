@@ -39,8 +39,10 @@ class Tool
     #   Should not include the sub-agent tool itself (recursion guard).
     # @param listeners [Agent::ListenerList] parent agent's listener
     #   list; the spawned sub-agent gets
-    #   +listeners.with_max_steps(max_steps)+ — same renderers/
-    #   recorders, fresh +StepLimit+.
+    #   +listeners.with_max_steps(max_steps).with_zero_tokens+ — same
+    #   renderers/recorders, fresh +StepLimit+, fresh +TokenLog+ (so
+    #   sub-agent token counts don't bleed into the parent's session
+    #   totals; the sub-agent has its own +RubyLLM::Chat+).
     # @param max_steps [Integer] step budget for each sub-agent run,
     #   forwarded to {Agent::ListenerList#with_max_steps}
     # @return [Tool] a fresh sub-agent tool; not a singleton, since each
@@ -71,7 +73,7 @@ class Tool
             model: model,
             system_prompt: system_prompt,
             tools: tools,
-            listeners: listeners.with_max_steps(max_steps)
+            listeners: listeners.with_max_steps(max_steps).with_zero_tokens
           )
           sub.run_loop(user_message: task)
           sub.last_assistant_content

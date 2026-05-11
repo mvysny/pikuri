@@ -77,6 +77,29 @@ class Agent
       self.class.new(stripped)
     end
 
+    # Return a new {ListenerList} with each {Listener::TokenLog}
+    # replaced by a fresh instance (zero session totals). Non-+TokenLog+
+    # listeners are passed by reference — same convention as
+    # {#with_max_steps}, so terminal output and other rendering still
+    # flow continuously into the parent's instances.
+    #
+    # Used by {Tool::SubAgent.build} (chained after {#with_max_steps})
+    # so a sub-agent's token counts log against its own +RubyLLM::Chat+
+    # rather than mixing into the parent's running totals. Deliberately
+    # NOT used by {Agent}'s synth rescue: the synthesizer's tokens are
+    # part of the same user question's cost and should accumulate into
+    # the parent's +TokenLog+.
+    #
+    # No-op (besides the +dup+) if the receiver contains no +TokenLog+.
+    #
+    # @return [ListenerList]
+    def with_zero_tokens
+      swapped = @listeners.map do |l|
+        l.is_a?(Listener::TokenLog) ? Listener::TokenLog.new : l
+      end
+      self.class.new(swapped)
+    end
+
     # @example
     #   list.to_s # => "[Terminal, StepLimit(max=20)]"
     #

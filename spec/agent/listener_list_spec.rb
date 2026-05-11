@@ -122,6 +122,52 @@ RSpec.describe Agent::ListenerList do
     end
   end
 
+  describe '#with_zero_tokens' do
+    let(:terminal) { Agent::Listener::Terminal.new }
+
+    it 'replaces every TokenLog with a fresh instance' do
+      original_log = Agent::Listener::TokenLog.new
+      list = described_class.new([terminal, original_log])
+
+      derived = list.with_zero_tokens
+
+      derived_log = derived.instance_variable_get(:@listeners).find do |l|
+        l.is_a?(Agent::Listener::TokenLog)
+      end
+      refute_nil derived_log
+      refute_same original_log, derived_log
+    end
+
+    it 'preserves non-TokenLog listener identities so output keeps flowing' do
+      list = described_class.new([recorder, Agent::Listener::TokenLog.new])
+
+      derived = list.with_zero_tokens
+      derived.on_message(Agent::Message::User.new(content: 'forked'))
+
+      assert_equal [Agent::Message::User.new(content: 'forked')], recorder.events
+    end
+
+    it 'leaves the original list untouched' do
+      original_log = Agent::Listener::TokenLog.new
+      list = described_class.new([terminal, original_log])
+
+      list.with_zero_tokens
+
+      # Same instance still in the original list.
+      still_there = list.instance_variable_get(:@listeners).find { |l| l.is_a?(Agent::Listener::TokenLog) }
+      assert_same original_log, still_there
+    end
+
+    it 'is a copy-only no-op when no TokenLog is present' do
+      list = described_class.new([terminal, recorder])
+
+      derived = list.with_zero_tokens
+
+      assert_equal '[Terminal, InMemoryList]', derived.to_s
+      refute_same list, derived
+    end
+  end
+
   describe '#to_s' do
     it 'renders the bracket-and-comma listener label' do
       list = described_class.new([

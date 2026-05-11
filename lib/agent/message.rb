@@ -22,6 +22,10 @@ class Agent
   #   tool's name and the LLM-supplied argument hash.
   # * {ToolResult} — emitted on +Chat#after_tool_result+, carrying the
   #   observation string the tool produced.
+  #
+  # Provider-reported token usage is *not* a {Message} variant — it's
+  # metadata about an exchange, not an event in it. See {Agent::Tokens}
+  # and {Listener::MessageListener#on_tokens}.
   module Message
     # User's input for a turn, as passed to {Agent#run_loop}.
     User = Data.define(:content)

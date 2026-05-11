@@ -11,7 +11,13 @@ class Agent
     # builds the appropriate {Message} variant from each payload, and
     # forwards it into {#on_message}. Empty +thinking+ and +assistant+
     # content is filtered here so subclasses never receive vacuous
-    # events. {Message::User} is not a +Chat+ event — {Agent#run_loop}
+    # events.
+    #
+    # Provider-reported token usage is a separate channel: every
+    # assistant +after_message+ event (including pure tool-call turns
+    # with empty content) emits an {Agent::Tokens} through {#on_tokens}
+    # so listeners that track context-window growth see every round
+    # trip. {Message::User} is not a +Chat+ event — {Agent#run_loop}
     # constructs it directly and calls {#on_message}.
     class MessageListener
       # Wire the receiver into +chat+'s callback API. After this
@@ -34,12 +40,34 @@ class Agent
       # through.
       #
       # @param message [Message::User, Message::Thinking,
-      #   Message::Assistant, Message::ToolCall, Message::ToolResult]
+      #   Message::Assistant, Message::ToolCall, Message::ToolResult,
+      #   Message::FallbackNotice]
       # @return [void]
       def on_message(message); end
 
+      # Hook for provider-reported token usage. Fires once per
+      # assistant turn (including pure tool-call turns with empty
+      # content) from {#dispatch_chat_message}. Default is a no-op so
+      # listeners that don't care — {Terminal}, {InMemoryList} —
+      # ignore it; {TokenLog} overrides this to log and accumulate.
+      #
+      # @param tokens [Agent::Tokens]
+      # @return [void]
+      def on_tokens(tokens); end
+
       private
 
+      # Normalizes a +RubyLLM::Chat+ +after_message+ payload into the
+      # appropriate {Message} variants for {#on_message}, plus an
+      # {Agent::Tokens} for {#on_tokens}.
+      #
+      # +msg+ is a +RubyLLM::Message+. Beyond +role+, +content+,
+      # +thinking+, and +tokens+ used here, it also carries
+      # +msg.tool_calls+ on assistant turns that requested one and
+      # +msg.raw+ for the unparsed provider payload.
+      #
+      # @param msg [RubyLLM::Message]
+      # @return [void]
       def dispatch_chat_message(msg)
         return unless msg.role == :assistant
 
@@ -48,6 +76,15 @@ class Agent
 
         content = msg.content
         on_message(Message::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
+
+        on_tokens(Agent::Tokens.new(
+                    input: msg.input_tokens,
+                    output: msg.output_tokens,
+                    cached: msg.cached_tokens,
+                    cache_creation: msg.cache_creation_tokens,
+                    thinking: msg.thinking_tokens,
+                    model_id: msg.model_id
+                  ))
       end
     end
   end
