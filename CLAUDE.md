@@ -45,15 +45,66 @@ bundled tools.
   `WEB_SEARCH` / `WEB_SCRAPE` / `FETCH` be `ALL_CAPS` value constants
   rather than classes Zeitwerk could autoload on its own.
 - `lib/agent.rb` — thin wrapper around `RubyLLM::Chat`. The ctor builds
-  a Chat, registers system prompt and tools on it, and installs three
-  listeners: `after_message` renders reasoning (dim) + assistant
-  content (Markdown via tty-markdown), `before_tool_call` prints the
-  cyan `→ name(args)` line and increments the `max_steps` counter
-  (raises on overrun — ruby_llm has no built-in step budget),
-  `after_tool_result` prints the cyan `= result` line.
-  `Agent#run_loop(user_message:)` resets the counter and forwards to
-  `Chat#ask`. `Agent#last_assistant_content` walks `Chat#messages` for
-  the sub-agent's final-reply needs.
+  a Chat, registers system prompt and tools, and attaches a
+  caller-supplied `listeners:` array — each element is duck-typed to
+  the `(attach(chat), on_message(msg))` protocol. The default list is
+  `[Listener::Terminal.new, Listener::StepLimit.new(max: 20)]`, which
+  reproduces pikuri's pre-refactor behavior. `Agent#run_loop` fans the
+  freshly-built `Message::User` out to every listener before calling
+  `Chat#ask`; that user-message broadcast is also what triggers
+  `StepLimit` to reset its counter, so Agent itself has no
+  step-budget knowledge or lifecycle ceremony. `Agent#to_s` produces
+  a one-line config dump suitable for a startup banner
+  (`Agent(model=..., tools=N, listeners=[Terminal, StepLimit(max=20)])`).
+  `Agent#last_assistant_content` walks `Chat#messages` for the
+  sub-agent's final-reply needs.
+- `lib/agent/message.rb` — `Agent::Message`, a sealed
+  `Data.define` hierarchy describing one event in the agent's
+  normalized stream: `User` / `Thinking` / `Assistant` /
+  `ToolResult` (all carry `:content`) and `ToolCall` (`:name`,
+  `:arguments`). Value equality and pattern-match deconstruction come
+  for free, which is what makes the listener `case msg in
+  Message::X(...)` dispatch and the spec equality assertions read
+  cleanly. The variants serialize uniformly to JSON for a future web
+  sink — that ergonomic win is what drove choosing one
+  `on_message(msg)` entry point over per-variant `on_*` methods.
+- `lib/agent/listener/message_listener.rb` —
+  `Agent::Listener::MessageListener`, abstract base for listeners
+  consuming the `Agent::Message` stream. `#attach(chat)` wires
+  `after_message` / `before_tool_call` / `after_tool_result` once,
+  builds the appropriate `Message` variant from each payload, and
+  forwards it into a single `#on_message(msg)` hook. Empty
+  `thinking.text` and empty `content` are filtered at the dispatch
+  site so subclasses never see vacuous events. `Message::User` does
+  not come from a Chat hook — `Agent#run_loop` builds it and calls
+  `#on_message` directly. Default `#on_message` is a no-op so
+  partial subclasses can pattern-match the variants they care about
+  and let the rest fall through. The `Agent::Listener` namespace
+  itself is implicit — Zeitwerk creates it from the directory's
+  existence.
+- `lib/agent/listener/terminal.rb` —
+  `Agent::Listener::Terminal < MessageListener`. Single
+  `#on_message` with a `case msg in ...` pattern-match: dim grey
+  Thinking, Markdown-rendered Assistant via tty-markdown, cyan
+  `→ name(args)` and `= result` lines for ToolCall/ToolResult, no-op
+  for User (the user typed it). Default listener attached by
+  `Agent#initialize`; reproduces pikuri's standard CLI output.
+- `lib/agent/listener/in_memory_list.rb` —
+  `Agent::Listener::InMemoryList < MessageListener`. `#on_message`
+  appends the `Agent::Message` straight to `#events`. Used by specs
+  to assert on emissions via `assert_equal Message::X.new(...)`
+  without parsing stdout, and as the rough shape a future
+  structured consumer (web sink, telemetry pipe) would take.
+- `lib/agent/listener/step_limit.rb` — `Agent::Listener::StepLimit`,
+  standalone listener (not a `MessageListener` — its job is control
+  flow, not surfacing events, and `#attach` registers a `before_tool_call`
+  counter rather than the Message-dispatch wiring). Counts tool calls
+  on the underlying chat and raises
+  `Agent::Listener::StepLimit::Exceeded` once the cap is crossed. The
+  listener resets its counter on `Message::User`, which `Agent` fans
+  out at the start of every turn — `StepLimit` doesn't need a
+  bespoke lifecycle method and Agent doesn't need a reference back to
+  it.
 - `lib/tool.rb` — `Tool` is a plain value class with `name`,
   `description`, `parameters`, and an `execute` Proc. `Tool#run(args)`
   validates via `Parameters#validate` and forwards to `execute`,

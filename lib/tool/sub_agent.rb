@@ -60,7 +60,10 @@ class Tool
             model: model,
             system_prompt: system_prompt,
             tools: tools,
-            max_steps: max_steps
+            listeners: [
+              Agent::Listener::Terminal.new,
+              Agent::Listener::StepLimit.new(max: max_steps)
+            ]
           )
           sub.run_loop(user_message: task)
           sub.last_assistant_content
