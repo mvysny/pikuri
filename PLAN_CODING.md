@@ -92,20 +92,21 @@ session — listed here so they don't get rediscovered three times.
    "the file is already correct, move on" or "my arguments were wrong,
    re-read and try again". This is the same "errors are loud" principle
    from `CLAUDE.md` applied at the tool surface. Specific cases land in
-   Steps 4 (Write) and 5 (Edit).
+   Steps 5 (Write) and 6 (Edit).
 
 2. **Workspace.** Read/write/edit/grep/glob/bash all need to refuse
    paths outside the agent's permitted scope. The abstraction is
-   `Tool::Workspace` — abstract base with `resolve_for_read(path)` and
-   `resolve_for_write(path)`. v1 ships one concrete impl,
-   `Tool::Workspace::Cwd`, which locks read+write to a single subtree
-   (CWD captured at `bin/pikuri-code` startup). v2 will add a multi-root
-   workspace where read includes `~/.claude/skills` while write stays
-   bounded to CWD, plus `Tool::Workspace::ALLOW_ALL` for Docker /
-   dev-container mode. Tools take `workspace:` via constructor.
-   Failures raise `Tool::Workspace::Error`, which tools catch and
-   convert to `"Error: ..."` observations. Step 2 has the locked-in
-   algorithm.
+   `Tool::Workspace` — abstract base with `cwd`, `resolve_for_read(path)`,
+   and `resolve_for_write(path)`. `cwd` is the project anchor — where
+   shells run and where modifications are made. v1 ships one concrete
+   impl, `Tool::Workspace::Cwd`, which locks read+write to a single
+   subtree (CWD captured at `bin/pikuri-code` startup; `cwd == root`).
+   v2 will add a multi-root workspace where read includes
+   `~/.claude/skills` while write stays bounded to CWD, plus
+   `Tool::Workspace::ALLOW_ALL` for Docker / dev-container mode.
+   Tools take `workspace:` via constructor. Failures raise
+   `Tool::Workspace::Error`, which tools catch and convert to
+   `"Error: ..."` observations. Step 2 has the locked-in algorithm.
 
 3. **Tool shape: constant vs. constructor.** Tools that need no
    per-session wiring (calculator) stay as `ALL_CAPS` constants. Tools
@@ -128,7 +129,7 @@ session — listed here so they don't get rediscovered three times.
    distinct prompt — terse, action-oriented, oriented around "make the
    change, run the tests, report". `bin/pikuri-code` will read
    `coding-system-prompt.txt`; the prompt itself is its own chunk of
-   work (Step 9), separate from any single tool.
+   work (Step 10), separate from any single tool.
 
 6. **Existing tools carry over.** `bin/pikuri-code` keeps web_search,
    web_scrape, fetch, calculator, sub_agent — a coding agent benefits
@@ -163,7 +164,7 @@ class Tool
   #       creates decision fatigue.
   #   (b) agentic destructive-or-not classifier — deferred to v2.
   # The intended escape from confirmation prompts today is sandboxing
-  # (docker / dev-container) plus the --yolo flag (see Step 10).
+  # (docker / dev-container) plus the --yolo flag (see Step 11).
   class Confirmer
     # @param prompt [String] human-readable question composed by the
     #   calling tool (Bash, Write). The confirmer renders it and parses
@@ -245,6 +246,12 @@ class Tool
   class Workspace
     class Error < StandardError; end
 
+    # Project anchor — where shells run, where modifications are made.
+    # @return [Pathname]
+    def cwd
+      raise NotImplementedError, "#{self.class}#cwd must be implemented"
+    end
+
     # @param path [String]
     # @return [Pathname]
     # @raise [Error]
@@ -265,8 +272,7 @@ class Tool
         @root = Pathname.new(root).realpath  # resolve once at construction
       end
 
-      attr_reader :root
-
+      def cwd = @root
       def resolve_for_read(path)  = resolve(path)
       def resolve_for_write(path) = resolve(path)
 
@@ -279,7 +285,7 @@ class Tool
 
         # Walk up to the deepest existing ancestor — handles paths whose
         # leaf and/or intermediate components don't exist yet (Write
-        # creates parents freely; see Step 4).
+        # creates parents freely; see Step 5).
         existing = cleaned
         existing = existing.parent until existing.exist? || existing.parent == existing
         anchor = existing.realpath          # filesystem: resolves symlinks in the existing portion
@@ -334,7 +340,163 @@ Decisions left for the session:
   symlink-in for the security tests, one non-existent-intermediate
   for the Write case.
 
-### Step 3 — Read tool
+### Step 3 — Subprocess manager (`Pikuri::Subprocess`)
+
+Build the chokepoint for all subprocess spawning in pikuri. Lands as
+`lib/pikuri/subprocess.rb`. The Bash tool depends on this; vector DB /
+Docker workers in v2 will too.
+
+**Namespacing — temporary inconsistency, deliberate direction:** this
+is the first pikuri class actually under the `Pikuri::` namespace.
+Existing domain classes (`Tool`, `Agent`, `URLCache`) are top-level.
+We're starting a convention: **library-level infrastructure under
+`Pikuri::`; domain objects stay flat for now**, with the eventual
+direction being `Pikuri::Tool` / `Pikuri::Agent` (separate refactor,
+not part of this work). Documented in `CLAUDE.md` (Step 13).
+
+**Locked-in design** (the session implements; doesn't re-design):
+
+```ruby
+module Pikuri
+  # All subprocess spawning in pikuri goes through here. Forces a new
+  # process group, tracks pgids for at_exit cleanup, captures combined
+  # stdout+stderr (the model can suppress either side in shell with
+  # `2>/dev/null` etc.). Timeout is the caller's job — wrap the argv
+  # with coreutils' `timeout` binary if you want one.
+  #
+  # State is process-global (one Set, one at_exit). Single-threaded
+  # REPL today; the mutex is cheap insurance for the at_exit / register
+  # race more than for current callers.
+  class Subprocess
+    Result = Data.define(:output, :status)
+
+    @active = Set.new
+    @mutex  = Mutex.new
+
+    # @param argv [Array<String>] command and args. Caller does shell
+    #   wrapping when shell interpretation is wanted
+    #   (e.g., 'bash', '-c', cmd).
+    # @param chdir [String, Pathname] working directory
+    # @return [Subprocess] handle — call #wait to block for completion
+    def self.spawn(*argv, chdir:)
+      stdin, io, wait_thr = Open3.popen2e(*argv, chdir: chdir.to_s, pgroup: true)
+      stdin.close
+      register(wait_thr.pid)
+      new(io: io, wait_thr: wait_thr)
+    end
+
+    attr_reader :pid, :pgid, :io
+    def initialize(io:, wait_thr:)
+      @io       = io
+      @wait_thr = wait_thr
+      @pid      = wait_thr.pid
+      @pgid     = wait_thr.pid  # pgroup:true → pgid == pid
+    end
+
+    # Block until exit, read remaining output, return Result.
+    # @return [Result]
+    def wait
+      output = @io.read
+      @io.close
+      Result.new(output: output, status: @wait_thr.value)
+    ensure
+      self.class.send(:prune, @pgid)
+    end
+
+    class << self
+      # Live tracked pgroups (side-effect: prunes dead ones).
+      # @return [Array<Integer>]
+      def active
+        @mutex.synchronize do
+          @active.delete_if { |g| !alive?(g) }
+          @active.to_a
+        end
+      end
+
+      # SIGTERM every tracked pgroup. Best-effort; ignores errors.
+      # Used by at_exit (production) and `after` blocks (specs).
+      def cleanup!
+        @mutex.synchronize do
+          @active.each { |g| Process.kill('-TERM', g) rescue nil }
+          @active.clear
+        end
+      end
+
+      private
+
+      def register(pgid)
+        @mutex.synchronize { @active << pgid }
+      end
+
+      def prune(pgid)
+        @mutex.synchronize { @active.delete(pgid) unless alive?(pgid) }
+      end
+
+      def alive?(pgid)
+        Process.kill(0, -pgid); true
+      rescue Errno::ESRCH
+        false
+      end
+    end
+  end
+end
+
+at_exit { Pikuri::Subprocess.cleanup! }
+```
+
+**Why `Open3.popen2e`:** stdlib helper that combines stdout+stderr
+onto one pipe (the `e` in `2e`), gives back a wait thread (auto-reaps),
+and accepts `pgroup:`. ~5 lines vs ~25 hand-rolled.
+
+**Why blocking `.wait`, not implementing timeout in Ruby:** the caller
+wraps argv with coreutils' `timeout` binary. When `timeout` and all
+its FD-inheriting children die, the pipe closes, `io.read` returns.
+No Ruby `Timeout.timeout` (which can't kill subprocesses), no
+`IO.select` loop. The cost: timeout machinery lives in the Bash
+call site, not here — which is correct, since other future callers
+(vector DB, Docker) may not want a timeout at all.
+
+**Why `.spawn` returning a handle, not blocking `.run`:** the `io`
+attribute is the seam for future live streaming. v1 callers do
+`Pikuri::Subprocess.spawn(...).wait` one-liner. A v2 TUI listener can
+read `sp.io` in chunks before calling `sp.wait`. Costs nothing extra
+to admit the future.
+
+**Backgrounded subprocesses:** the pgid stays in `@active` after our
+direct child exits if any process in the group is still alive
+(`#prune` checks via `Process.kill(0, -pgid)`). On pikuri exit, `at_exit`
+SIGTERMs the group. Model can opt out via `nohup` or `setsid` in
+the shell command — both detach from our pgroup.
+
+**Discipline / seam rule (codify in `CLAUDE.md`):**
+**All subprocess spawning in `lib/` goes through `Pikuri::Subprocess.spawn`.**
+Direct `Process.spawn` / `Open3.*` / `system` / backticks anywhere in
+`lib/` are bugs. Easy to grep-enforce:
+`grep -rn 'Process\.spawn\|Open3\|system\|backtick' lib/` should only
+hit `lib/pikuri/subprocess.rb`.
+
+**Test discipline:** each spec calls `Pikuri::Subprocess.cleanup!` in
+`after` to SIGTERM any leaked subprocesses from the spec. Cleaner than
+a `_for_test!` private method — same API, same shape as production.
+
+**Out of scope for v1:**
+- Live streaming consumer (the seam exists; no caller).
+- `stdin:` kwarg (callers can extend the API when needed).
+- Between-turn reporting of active subprocesses + `/bg` REPL command.
+  Hooks exist (`Pikuri::Subprocess.active`); UI doesn't.
+- SIGKILL escalation after at_exit SIGTERM. Pikuri is exiting anyway;
+  surviving group members will be reparented to init.
+
+Decisions left for the session:
+- File header YARD: include the seam-rule note and the temporary
+  namespacing inconsistency note pointing at the future `Pikuri::Tool` /
+  `Pikuri::Agent` direction.
+- Spec setup: how to spawn cheap subprocesses for testing (`'sleep', '5'`
+  to test the `active` tracking; `'echo', 'hi'` for happy-path).
+- Whether `Subprocess.active` should sort by pgid for stable output
+  (matters once a `/bg` command exists; ignorable today).
+
+### Step 4 — Read tool
 
 `Tool::Read.new(workspace:)`. Constant export not viable because of the
 workspace capture; `bin/pikuri-code` instantiates it. Internally calls
@@ -353,7 +515,7 @@ Decisions for the session:
 - Description: opencode's `read.txt` is the model. Adapt to pikuri's
   heredoc + `Usage:` shape.
 
-### Step 4 — Write tool
+### Step 5 — Write tool
 
 `Tool::Write.new(workspace:, confirmer:)`. Calls
 `workspace.resolve_for_write(path)`. Confirmer is needed because
@@ -397,7 +559,7 @@ Decisions for the session:
   succeeds, write fails — empty dir is left behind. Accept the
   artifact for v1.
 
-### Step 5 — Edit tool
+### Step 6 — Edit tool
 
 `Tool::Edit.new(workspace:)`. Calls `workspace.resolve_for_write(path)`
 (Edit modifies, so it uses the write-set even though it doesn't create
@@ -411,7 +573,7 @@ Decisions for the session:
   `"Error: old_string and new_string are identical — this edit is a
   no-op."`. Cheap syntactic check, no state needed; same "be loud
   about no-ops" principle that drives the identical-content Write
-  error in Step 4.
+  error in Step 5.
 - Behavior when `old_string` not found: error.
 - Behavior when `old_string` found multiple times and `replace_all=false`:
   error with a hint to add more context or use `replace_all`.
@@ -419,36 +581,109 @@ Decisions for the session:
   strict here; the model has to send exact bytes.
 - Description heredoc — model after opencode's `edit.txt`.
 
-### Step 6 — Bash tool
+### Step 7 — Bash tool
 
 `Tool::Bash.new(workspace:, confirmer:)`. First tool that needs the
 confirmer. Bash doesn't path-resolve individual args — the command
-string is opaque shell syntax. The workspace is needed for the CWD
-the shell runs in (see "shell cwd" decision below).
+string is opaque shell syntax. Shell runs in `workspace.cwd`.
 
-Decisions for the session:
+**Locked-in lookup table:**
 
-- Execution: `Open3.capture3` for stdout/stderr/status, or
-  `Process.spawn` with timeouts?
-- Default timeout — 120s? Configurable per-call via parameter?
-- Output truncation: total bytes cap (e.g. 30KB) with "[truncated]"
-  marker. Same on stderr.
-- **Shell cwd:** for v1's `Workspace::Cwd`, the shell runs in
-  `workspace.root`. The abstract `Workspace` doesn't expose `root`
-  (ALLOW_ALL won't have one) — either Bash accepts a separate `cwd:`
-  kwarg threaded by `bin/pikuri-code`, or v1 narrows Bash to
-  `Workspace::Cwd` specifically and reads `.root`. Decide in the
-  session. Refuse `cd` semantics: model can `cd && cmd` as one
-  command if it wants, but pwd doesn't persist between calls.
-- Confirmation prompt format: "OK to run bash <description / command>?".
-  Show the command verbatim. The session needs to design this together
-  with the `Terminal` listener so the prompt isn't visually buried.
-- What's the recoverable-error story? Non-zero exit isn't an internal
-  bug — return stdout+stderr+exit status as the observation and let the
-  LLM react. Confirmation rejection: return `"Error: user declined the
-  command"`.
+| Topic | Decision |
+|---|---|
+| Execution | `Pikuri::Subprocess.spawn('timeout', '--signal=TERM', '--kill-after=5s', "#{timeout}s", 'bash', '-c', command, chdir: workspace.cwd.to_s).wait` |
+| Shell | `bash -c`, not `/bin/sh -c`, not `bash -lc` |
+| Default timeout | 120s |
+| Timeout param range | optional Integer, max 600s |
+| Output capture | combined stdout+stderr (Subprocess does this via popen2e) |
+| Output truncation | fixed: 15K head + 15K tail with `\n... [N bytes omitted; total was M bytes] ...\n` marker between. No per-call param — both opencode and pi converged on fixed truncation; the model has shell tools (`head`, `tail`, `grep`, `wc`) to control output volume |
+| Non-zero exit | normal observation (`<output>\n\nexit status: <N>`); not a tool error |
+| Timeout exit (124 / 137) | `"Error: command timed out after Ns (sent SIGTERM, then SIGKILL).\n\n<partial output>"` |
+| Confirmation rejection | `"Error: user declined the bash command."` |
+| Confirmation prompt format | composed by the tool — see below |
+| Startup binary checks | `Tool::Bash#initialize` verifies `bash` and `timeout` on PATH via `system('command -v <bin> > /dev/null 2>&1')`; raises if missing |
+| Terminal rendering | Rainbow: bold for the question line, dim for the command echo |
+| Backgrounded subprocesses | handled by `Pikuri::Subprocess` — pgid tracked, SIGTERM'd on pikuri exit |
+| `command` param | required String; echoed via `visible()` sanitizer (see below) |
+| `description` param | optional String; subordinate label, NOT a substitute for the command echo |
+| `timeout` param | optional Integer, default 120, max 600 |
 
-### Step 7 — Grep tool
+**Confirmation prompt format** (composed by `Tool::Bash`):
+
+```
+OK to run bash: <description, if present>
+$ <visible(command)>
+[timeout 300s]            ← only if non-default timeout
+(y/n)? 
+```
+
+The `description` line is omitted when no description is given. The
+`[timeout Ns]` line is omitted at the 120s default. The `$ ` prefix on
+the command line is conventional shell-echo and visually distinct from
+prose.
+
+**Command echo is mandatory and verbatim.** Security: if we displayed
+only `description`, the model could craft `description: "ls cwd"` with
+`command: "rm -rf ~/"` and the user would confirm the wrong thing.
+Always echo the real command.
+
+**Terminal-escape sanitization** (`visible()` helper):
+
+```ruby
+def visible(command)
+  command.gsub(/[\x00-\x09\x0b-\x1f\x7f]/) { |c| "\\x%02x" % c.ord }
+end
+```
+
+Preserves `\n` (multi-line shell commands are normal). Escapes `\r`,
+`\x1b` (ESC, the ANSI escape introducer), `\b`, NUL, DEL, etc., so the
+model can't smuggle in `\r\033[2K rm -rf ~/` to visually hide the
+dangerous part of the command after the echo. The *execution* uses
+the raw command; only the *display* goes through `visible()`.
+
+**Observation format on the normal-exit path:**
+
+```
+$ <visible(command)>
+<combined output, possibly truncated>
+
+exit status: <N>
+```
+
+The `$ <command>` echo line at the top helps the model line up the
+output against what it asked for. Both opencode and Claude Code do
+this (well, Claude Code does; opencode doesn't — mild lean for echo).
+
+**Known limitations to document in the tool description** (heredoc +
+`Usage:` bullets):
+
+- No pwd persistence between calls. Use `cd /path && cmd` within one
+  command.
+- No stdin to the subprocess (closed immediately). Interactive
+  commands hang until timeout. The model should use non-interactive
+  flags (`apt -y`, `git commit -m`).
+- Backgrounded commands (`cmd &`) detach from our blocking wait but
+  remain in our pgroup; they get SIGTERM on pikuri exit. Use `nohup
+  cmd &` or `setsid cmd &` to opt out and survive pikuri.
+- Prefer `Read` / `Write` / `Edit` / `Grep` / `Glob` over `cat` /
+  `tee` / `sed` / `rg` / `find`. The dedicated tools are workspace-
+  resolved and integrate with the agent's path conventions.
+
+Decisions left for the session:
+
+- Wording of the bash tool's `description` heredoc (the LLM-facing
+  string). Adopt the limitations list above as bullets; keep the
+  summary one-line.
+- Exact text of the truncation marker (`...` vs `…`, whether to
+  show byte counts).
+- Whether `description` should also appear in the *observation*
+  (e.g., echo `# Run tests` above the command on the way back to the
+  model), or only in the confirmation prompt. Recommend confirmation
+  only — observation should not have model-supplied text the model
+  could later confuse for tool output.
+- Color/formatting details: which Rainbow effects on which lines.
+
+### Step 8 — Grep tool
 
 `Tool::Grep.new(workspace:)`. Wraps `rg` if present, falls back to a
 Ruby implementation. Calls `workspace.resolve_for_read(path)` when a
@@ -464,7 +699,7 @@ Decisions for the session:
   `case_insensitive`. Match opencode's surface.
 - Output truncation — cap at N matches or N lines.
 
-### Step 8 — Glob tool
+### Step 9 — Glob tool
 
 `Tool::Glob.new(workspace:)`. `Dir.glob` with `FNM_PATHNAME` semantics.
 Calls `workspace.resolve_for_read(path)` for an optional path arg;
@@ -477,7 +712,7 @@ Decisions for the session:
 - Excludes: respect `.gitignore`? Probably out of scope for v1.
 - Cap on result count.
 
-### Step 9 — Coding system prompt
+### Step 10 — Coding system prompt
 
 Write `coding-system-prompt.txt` for `bin/pikuri-code`. Read opencode's
 prompts under `packages/opencode/src/session/prompt/` (or wherever they
@@ -496,7 +731,7 @@ Decisions for the session:
   is research-shaped; a coding agent's last turn is usually a summary
   of the diff and what to do next. Probably no template.
 
-### Step 10 — `bin/pikuri-code`
+### Step 11 — `bin/pikuri-code`
 
 Entry point, modelled on `bin/pikuri-chat`. Self-bootstraps via Bundler,
 configures the same llama.cpp endpoint, builds the agent with the new
@@ -524,12 +759,14 @@ Decisions for the session:
   `lib/`, or duplicate? Recommendation: duplicate for now (2 sites,
   each ~10 lines); extract on the third binary.
 
-### Step 11 — Specs
+### Step 12 — Specs
 
 Each new tool gets a spec under `spec/tool/` following the existing
 `spec/tool/calculator_spec.rb` style (rspec-core + minitest asserts).
-The workspace and confirmer get their own specs. Tool specs use
-`Tool::Confirmer::AUTO_APPROVE` and `Tool::Workspace::Cwd.new(root: Dir.mktmpdir)`.
+The workspace, confirmer, and subprocess manager each get their own
+specs. Tool specs use `Tool::Confirmer::AUTO_APPROVE` and
+`Tool::Workspace::Cwd.new(root: Dir.mktmpdir)`.
+
 `Tool::Confirmer::Terminal` specs stub `$stdin` / `$stdout` — pattern
 is `StringIO` reassignment in `before`, restore in `after` (same
 shape as `RubyLLM.chat` stubbing in `spec/agent_spec.rb`).
@@ -542,6 +779,16 @@ shape as `RubyLLM.chat` stubbing in `spec/agent_spec.rb`).
   doesn't exist — resolves cleanly inside).
 - One `..`-escape test (`lib/../../etc/passwd` blocked).
 
+`Pikuri::Subprocess` specs:
+- Every spec calls `Pikuri::Subprocess.cleanup!` in `after` to SIGTERM
+  any survivors. Same API as the production `at_exit` cleanup — no
+  separate `_for_test!` method needed.
+- Use cheap test commands: `'sleep', '5'` for tracking-while-alive tests,
+  `'echo', 'hi'` for the happy-path Result-shape tests.
+- Pgroup tracking: spawn `'bash', '-c', 'sleep 5 & wait'`, then after
+  `.wait` returns, assert the pgid is still in `.active` (the
+  backgrounded sleep is still alive). Then `.cleanup!` clears it.
+
 Decisions for the session:
 
 - Stub `Open3.capture3` for bash specs or run real commands inside a
@@ -550,15 +797,32 @@ Decisions for the session:
   loop? Probably out of scope — the existing `integration_spec.rb`
   pattern can extend later if needed.
 
-### Step 12 — CLAUDE.md updates
+### Step 13 — CLAUDE.md updates
 
 Once the binary lands, update `CLAUDE.md`:
 
 - "What this project is" mentions two binaries (chat + code).
 - "Layout" gets the new files (each tool file, the confirmer, the
-  workspace, the new prompt, `bin/pikuri-code`).
-- "Conventions" gets the confirmer-as-seam rule and the workspace
-  rule under a new "Coding tools" subsection.
+  workspace, `lib/pikuri/subprocess.rb`, the new prompt,
+  `bin/pikuri-code`).
+- "Conventions" gets three new rules under a new "Coding tools"
+  subsection:
+  1. **Confirmer-as-seam.** Tools that need user confirmation take a
+     `Tool::Confirmer` via constructor; never call `gets` / `puts`
+     directly.
+  2. **Workspace.** Tools that touch files take a `Tool::Workspace`
+     via constructor and resolve all paths through
+     `resolve_for_read` / `resolve_for_write`.
+  3. **Subprocess seam.** All subprocess spawning in `lib/` goes
+     through `Pikuri::Subprocess.spawn`. Direct `Process.spawn` /
+     `Open3.*` / `system` / backticks anywhere in `lib/` are bugs.
+     Grep-enforceable.
+- **Namespacing direction.** Library-level infrastructure (new code)
+  lives under `Pikuri::` (current example: `Pikuri::Subprocess`).
+  Domain classes (`Tool`, `Agent`, `URLCache`) remain top-level for
+  now as a legacy convention; an eventual refactor moves them under
+  `Pikuri::` too. Until then, new infrastructure starts at
+  `Pikuri::Whatever` from the outset.
 - Update `COMPARISON.md`'s "Available tools" row for pikuri.
 
 ## Out of scope for v1
