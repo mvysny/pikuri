@@ -9,11 +9,12 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–8 (the foundation —
+> **Current status (2026-05-12):** Steps 1–9 (the foundation —
 > `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read`, `Tool::Write`, `Tool::Edit`, `Tool::Bash`, and
-> `Tool::Grep`) are implemented and tested; specs land at 514 examples
-> / 0 failures. Next session picks up at **Step 9 (Glob)**.
+> `Tool::Read`, `Tool::Write`, `Tool::Edit`, `Tool::Bash`,
+> `Tool::Grep`, and `Tool::Glob`) are implemented and tested; specs
+> land at 538 examples / 0 failures. Next session picks up at
+> **Step 10 (Coding system prompt)**.
 
 ## Orientation for fresh Claude
 
@@ -972,16 +973,96 @@ Decisions for the session:
 
 ### Step 9 — Glob tool
 
-`Tool::Glob.new(workspace:)`. `Dir.glob` with `FNM_PATHNAME` semantics.
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/glob.rb`. Spec: `spec/tool/glob_spec.rb`
+> (24 examples). Design notes below kept as the historical record.
+> Skip ahead to Step 10 if you're picking up the work.
+>
+> Key surprises / decisions taken in the session:
+>
+> - **The original stub said `Dir.glob` with `FNM_PATHNAME`. We
+>   landed on `rg --files` + Ruby `File.fnmatch?`** — a hybrid that
+>   the stub didn't anticipate. The original `Dir.glob` choice
+>   predated Step 8 settling on a hard rg dependency; with rg
+>   already a dep, leaning on it for the gitignore-respecting baseline
+>   was free.
+> - **Why not pass the user pattern to rg as `--glob`?** Discovered
+>   during spec failure on the gitignore test: rg's man page says
+>   *"This always overrides any other ignore logic."* So
+>   `--glob '**/*.rb'` re-includes gitignored Ruby files. opencode's
+>   `filesArgs` ([ripgrep.ts](../tmp/pikuri-code-plan/opencode/packages/opencode/src/file/ripgrep.ts)
+>   line 196) has the same shape and presumably the same latent
+>   bypass. We can't fix it via rg flags — there's no flag that
+>   tells `--glob` to defer to `.gitignore`. The fix is structural:
+>   let rg produce the gitignore-respecting full list (no
+>   user-`--glob`), then filter in Ruby.
+> - **Filter dialect: `File.fnmatch?` with `FNM_PATHNAME |
+>   FNM_EXTGLOB | FNM_DOTMATCH`.** Verified against rg's behavior
+>   for the patterns the LLM actually emits (`**/*.rb`, `*.rb`,
+>   `lib/**/*_spec.rb`, `**/*.{ts,tsx}`, `**/*` matching dotfiles).
+>   The three flags map to: `**` recursion, `{a,b}` alternation,
+>   dotfile inclusion (matching rg's `--hidden`). Edge-case
+>   divergences from gitignore semantics (trailing `/` for
+>   directory-match, the `**` adjacent-segment subtleties) accepted
+>   — none of them surface in the patterns the model writes.
+> - **`.git/` exclusion stays on the rg side** (`--glob='!.git/*'`)
+>   so its contents never reach the Ruby filter. The earlier draft
+>   put the user pattern in rg's argv and worried about
+>   ordering-vs-`.git/`; with the user pattern removed, the
+>   exclusion is unconditional and order-independent.
+> - **`MAX_BYTES = 50 * 1024` is re-declared in `Tool::Glob`** rather
+>   than referenced as `Tool::Grep::MAX_BYTES`. Zeitwerk's eager-load
+>   order between siblings isn't guaranteed, so cross-class constant
+>   references at load time are a load-order trap; we duplicate the
+>   value with a header comment instead.
+> - **`mtime_sort` uses `[-mtime, path]` as the sort key.** Files
+>   written in quick succession often share an mtime (filesystem
+>   resolution); the path-ascending tiebreaker makes tests
+>   deterministic and gives the model a stable scan order. Spec
+>   coverage: one test that forces distinct mtimes via `File.utime`,
+>   one that asserts the path-tiebreaker on equal mtimes.
+> - **`format_output` mirrors `Tool::Grep.format_output`** —
+>   `[stripped, '', footer + truncation_marker].join("\n")`. Same
+>   shape so a reader who knows one knows the other.
+> - **Description language is dialect-agnostic.** The first draft
+>   said "rg dialect"; with the implementation now using
+>   `File.fnmatch?`, the parameter description and the Usage bullet
+>   describe the pattern by behavior (`**` recursion, `{a,b}`
+>   alternation) rather than naming a backend.
+
+`Tool::Glob.new(workspace:)`. Reads the workspace's gitignore-respecting
+file list via `rg --files`, then filters with `File.fnmatch?`.
 Calls `workspace.resolve_for_read(path)` for an optional path arg;
 default search root is the workspace's read-set.
 
-Decisions for the session:
+**Locked-in lookup table** (the session implements; doesn't re-design):
 
-- Args: `pattern`, optional `path`.
-- Sort by mtime (Claude Code does this) or alphabetically?
-- Excludes: respect `.gitignore`? Probably out of scope for v1.
-- Cap on result count.
+| Topic | Decision |
+|---|---|
+| Implementation | `rg --files --color=never --hidden --glob='!.git/*' -- <path>` → Ruby `File.fnmatch?` filter |
+| `.gitignore` respect | yes (rg side); escape: `bash rg --no-ignore --files -g …` |
+| `--hidden` + `--glob='!.git/*'` | search dotfiles, exclude `.git/` noise |
+| Sort | mtime descending; path ascending tiebreaker |
+| `File.fnmatch?` flags | `FNM_PATHNAME \| FNM_EXTGLOB \| FNM_DOTMATCH` |
+| Count cap | none — head-truncate by bytes is the safety net |
+| Truncation | head-truncate at `MAX_BYTES = 50 * 1024`, last-newline boundary |
+| Empty pattern | fast reject: `"Error: empty pattern."` |
+| Path is regular file | reject: `"Error: <path> is a file, not a directory; use the read tool to view it."` |
+| Path not found | `"Error: path not found: <path>"` |
+| Path outside workspace | rescued from `Tool::Workspace::Error` → `"Error: ..."` |
+| No matches | `"No files match pattern '<pattern>'"` (+ ` in <path>` if given) |
+| `./` prefix stripping | yes, `gsub(%r{\A\./}, '')` on each row |
+| Footer | `"Found N file(s)."` + truncation marker |
+| rg exit 1 | normal — no-files message |
+| rg exit ≥ 2 | `"Error: ripgrep: <stderr>"` |
+| `check_binaries!` | own probe at construction; raises with install hint |
+
+Decisions left for the session:
+
+- Args: `pattern`, optional `path`. — adopted
+- Sort by mtime (Claude Code does this) or alphabetically? — mtime desc
+- Excludes: respect `.gitignore`? Probably out of scope for v1. — adopted IN scope after Step 8 (rg dep already paid for); the rg-vs-Ruby-fnmatch hybrid solves it cleanly
+- Cap on result count. — none; rely on 50 KB head-truncate
 
 ### Step 10 — Coding system prompt
 
