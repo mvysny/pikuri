@@ -212,6 +212,20 @@ RSpec.describe Agent do
         Agent.define_singleton_method(:new) { |**kw| original_new.call(**kw) }
       end
     end
+
+    it 'raises when called twice on the same agent' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
+      agent.allow_sub_agent
+
+      err = assert_raises(RuntimeError) { agent.allow_sub_agent }
+      assert_match(/already registered/, err.message)
+
+      # @tools still has exactly one SubAgent — the failed second call
+      # didn't half-register anything.
+      tools = agent.instance_variable_get(:@tools)
+      assert_equal 1, tools.count { |t| t.is_a?(Tool::SubAgent) }
+    end
   end
 
   describe '#run_loop' do

@@ -225,8 +225,15 @@ class Agent
   #
   # @param max_steps [Integer] step budget for each sub-agent run,
   #   passed through to {Tool::SubAgent#initialize}
+  # @raise [RuntimeError] if a {Tool::SubAgent} is already registered
+  #   on this agent — calling twice would advertise two identically
+  #   named tools to ruby_llm and double the sub-agent's tool list
+  #   (the second snapshot would contain the first sub-agent tool).
   # @return [void]
   def allow_sub_agent(max_steps: 10)
+    raise "Tool::SubAgent already registered on this agent; allow_sub_agent may only be called once" \
+      if @tools.any?(Tool::SubAgent)
+
     sub_tool = Tool::SubAgent.new(self, max_steps: max_steps)
     @tools << sub_tool
     @chat.with_tool(sub_tool.to_ruby_llm_tool)
