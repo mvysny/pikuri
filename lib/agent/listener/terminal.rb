@@ -60,7 +60,7 @@ class Agent
       def on_message(message)
         case message
         in Message::Thinking(content:)
-          puts indent(Rainbow(content).darkgray)
+          puts indent(Rainbow(content).color(85, 85, 85))
         in Message::Assistant(content:)
           puts indent(render_markdown(content))
         in Message::ToolCall(name:, arguments:)
