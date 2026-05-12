@@ -37,18 +37,32 @@ agent = Agent.new(
 )
 agent.allow_sub_agent(max_steps: 20)
 
-question =
-  if ARGV.empty?
-    print 'Question: '
-    gets.to_s.chomp
-  else
-    ARGV.join(' ')
-  end
-
-begin
-  agent.run_loop(user_message: question)
+run_turn = lambda do |message|
+  agent.run_loop(user_message: message)
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"
   warn 'The conversation has grown too large for the model. Start a fresh question.'
   exit 1
 end
+
+puts 'Pikuri Chatbot. Press Ctrl+C or Ctrl+D to quit.'
+
+run_turn.call(ARGV.join(' ')) unless ARGV.empty?
+
+begin
+  loop do
+    print '> '
+    $stdout.flush
+    line = $stdin.gets
+    break if line.nil? # Ctrl+D / EOF on empty line
+
+    message = line.chomp
+    next if message.strip.empty?
+
+    run_turn.call(message)
+  end
+rescue Interrupt
+  # Ctrl+C — fall through to clean exit
+end
+
+puts
