@@ -9,11 +9,11 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–7 (the foundation —
+> **Current status (2026-05-12):** Steps 1–8 (the foundation —
 > `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read`, `Tool::Write`, `Tool::Edit`, and `Tool::Bash`) are
-> implemented and tested; specs land at 485 examples / 0 failures.
-> Next session picks up at **Step 8 (Grep)**.
+> `Tool::Read`, `Tool::Write`, `Tool::Edit`, `Tool::Bash`, and
+> `Tool::Grep`) are implemented and tested; specs land at 514 examples
+> / 0 failures. Next session picks up at **Step 9 (Glob)**.
 
 ## Orientation for fresh Claude
 
@@ -901,9 +901,64 @@ Decisions left for the session:
 
 ### Step 8 — Grep tool
 
-`Tool::Grep.new(workspace:)`. Wraps `rg` if present, falls back to a
-Ruby implementation. Calls `workspace.resolve_for_read(path)` when a
-path arg is provided; default search root is the workspace's read-set.
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/grep.rb`. Spec: `spec/tool/grep_spec.rb`
+> (29 examples). Design notes below kept as the historical record.
+> Skip ahead to Step 9 if you're picking up the work.
+>
+> Decisions taken in the session, beyond what was already locked in:
+>
+> - **Hard dependency on `rg`, checked at construction** (mirrors
+>   `Tool::Bash`'s `check_binaries!`). The Ruby-fallback path was
+>   rejected without code — replicating rg's Rust-regex dialect,
+>   glob handling, and `.gitignore` parsing is a research-loop dead
+>   end. Failure message: `Tool::Grep requires 'rg' (ripgrep) on
+>   PATH; install via your distro's package manager (e.g. 'apt
+>   install ripgrep').`
+> - **5 parameters**: `pattern` (required), `path`, `glob`,
+>   `case_insensitive`, `output_mode`. Dropped `context`, `literal`,
+>   and `limit` from pi's surface — `context` is redundant with a
+>   follow-up `read`, `literal` is rare and recoverable via `\Q…\E`,
+>   `limit` is a knob the model wouldn't tune in practice. `output_mode`
+>   stays because the files-only mode genuinely changes information
+>   density on scoping queries.
+> - **`output_mode` is enum-validated in-tool**, not by the
+>   `Parameters` schema (no enum support there). Unknown value →
+>   `"Error: output_mode must be one of content, files_with_matches,
+>   count, got <value>."`.
+> - **rg argv always carries an explicit path** (defaults to `.`).
+>   Without a path argument, rg uses a stdin heuristic — and
+>   `Pikuri::Subprocess.spawn` gives the child a piped (non-tty)
+>   stdin via `popen2e`, which rg then "searches" (we close our end,
+>   so zero matches). Discovered during spec failure on the simplest
+>   happy path; rg's `--debug` output shows the heuristic firing
+>   (`heuristic chose to search stdin`). Documented in the class
+>   header so the next reader doesn't try to "simplify" it away.
+> - **Leading `./` stripped from output paths**. rg prefixes every
+>   row with `./` when the search path is `.` (always, after the
+>   above fix). Post-process with a `gsub(/^\.\//, '')` so the model
+>   sees clean workspace-relative paths.
+> - **Footers derived from rg's text output**, not a separate
+>   `--stats` invocation. Content mode: count rows, count unique
+>   first-`:`-segment. Files mode: count lines. Count mode: sum the
+>   last-`:`-segment integers per line. Edge case (path with `:` in
+>   it) accepted — uncommon on Linux, no real harm.
+> - **Head-only truncation at MAX_BYTES (50 KB)**, cut at the last
+>   newline boundary so the final row is never partial. Opposite
+>   bias from `Tool::Bash`'s head+tail — grep tails carry less
+>   signal than the first matches.
+> - **Long-line truncation delegated to rg** via `--max-columns=2000
+>   --max-columns-preview`. Saves implementing the per-line cap
+>   ourselves; rg's preview marker reads `[... omitted end of long
+>   line]`.
+> - **Constants reused from sibling tools where they line up.**
+>   `MAX_BYTES = 50 * 1024` matches `Tool::Read::MAX_BYTES`;
+>   `MAX_LINE_LENGTH = 2000` matches `Tool::Read::MAX_LINE_LENGTH`.
+>   Shared budget shape between the two file-touching tools.
+
+`Tool::Grep.new(workspace:)`. Calls `workspace.resolve_for_read(path)`
+when a path arg is provided; default search root is the workspace's
+read-set (passed as `.` to rg, see above).
 
 Decisions for the session:
 
