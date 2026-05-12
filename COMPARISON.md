@@ -300,8 +300,8 @@ shape is the right one to copy.
 
 ## Sub-agents
 
-- **pikuri** (`Tool::SubAgent.build`, with a `Tool.sub_agent` alias):
-  factory; each invocation spawns a fresh `Agent` and therefore a fresh
+- **pikuri** (`Tool::SubAgent < Tool`, constructed by `Agent#allow_sub_agent`):
+  each invocation spawns a fresh `Agent` and therefore a fresh
   `RubyLLM::Chat` (its own `messages`/`tools`/listeners), runs the
   requested task, and returns only the sub-agent's final assistant
   message. The sub-agent reuses the parent's model, system prompt, and

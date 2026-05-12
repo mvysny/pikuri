@@ -53,7 +53,8 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   listener surface around it.
 - `lib/tool.rb`, `lib/tool/parameters.rb`, `lib/tool/sub_agent.rb` — `Tool`
   value class with its `#to_ruby_llm_tool` adapter, the strict `Parameters`
-  builder/validator, and the `Tool.sub_agent(...)` factory.
+  builder/validator, and `Tool::SubAgent < Tool` — instantiated by
+  `Agent#allow_sub_agent` with the parent agent itself, no kwargs explosion.
 - `lib/tool/calculator.rb`, `lib/tool/web_search.rb`, `lib/tool/web_scrape.rb`,
   `lib/tool/fetch.rb` — bundled tool constants (`Tool::CALCULATOR`,
   `Tool::WEB_SEARCH`, `Tool::WEB_SCRAPE`, `Tool::FETCH`).

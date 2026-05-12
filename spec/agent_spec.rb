@@ -247,6 +247,32 @@ RSpec.describe Agent do
       fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:before_tool_call, tool_call)
     end
+
+    describe 'blank input rejection' do
+      let(:agent) do
+        Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                  listeners: Agent::ListenerList.new([in_memory]))
+      end
+
+      it 'raises ArgumentError on nil and never reaches the chat or listeners' do
+        err = assert_raises(ArgumentError) { agent.run_loop(user_message: nil) }
+        assert_match(/blank/, err.message)
+        assert_equal [], fake_chat.asks
+        assert_equal [], in_memory.events
+      end
+
+      it 'raises ArgumentError on an empty string' do
+        err = assert_raises(ArgumentError) { agent.run_loop(user_message: '') }
+        assert_match(/blank/, err.message)
+        assert_equal [], fake_chat.asks
+      end
+
+      it 'raises ArgumentError on a whitespace-only string' do
+        err = assert_raises(ArgumentError) { agent.run_loop(user_message: "  \n\t ") }
+        assert_match(/blank/, err.message)
+        assert_equal [], fake_chat.asks
+      end
+    end
   end
 
   describe 'listener routing' do

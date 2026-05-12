@@ -2,7 +2,7 @@
 
 require 'tool/sub_agent'
 
-RSpec.describe '.sub_agent' do
+RSpec.describe Tool::SubAgent do
   # Minimal stand-in for +RubyLLM::Chat+: records what +Agent+ configures
   # on it, drops a canned assistant +Message+ into +messages+ on +ask+, and
   # exposes +calls+ for assertions. Keeps sub-agent specs network-free.
@@ -83,9 +83,23 @@ RSpec.describe '.sub_agent' do
     ])
   end
 
+  # Build a minimal parent Agent against the fake +RubyLLM.chat+ stubbed
+  # in the outer +before+. Each spec uses this to get an +Agent+ the
+  # factory can read +transport+/+system_prompt+/+tools+/+listeners+/
+  # +context_window_cap+/+name+ off of.
+  def build_parent(system_prompt: 'sp', tools: [], listeners: parent_listeners, name: '')
+    Agent.new(
+      transport: Agent::ChatTransport.new(model: 'm'),
+      system_prompt: system_prompt,
+      tools: tools,
+      listeners: listeners,
+      name: name
+    )
+  end
+
   describe 'tool shape' do
     it 'returns a Tool named "sub_agent" with a required `task` string parameter' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [], listeners: parent_listeners)
+      tool = Tool::SubAgent.new(build_parent)
 
       assert_kind_of Tool, tool
       assert_equal 'sub_agent', tool.name
@@ -97,31 +111,31 @@ RSpec.describe '.sub_agent' do
 
   describe 'execution' do
     it 'runs the sub-agent loop and returns its final assistant message' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'system!', tools: [dummy_tool],
-                            listeners: parent_listeners)
+      tool = Tool::SubAgent.new(build_parent(system_prompt: 'system!', tools: [dummy_tool]))
 
       result = tool.run('task' => 'do the thing')
 
+      # The parent build also went through the stubbed +RubyLLM.chat+, so
+      # the captured chats list contains [parent, sub]. Inspect the last.
       assert_equal 'sub-agent reply', result
     end
 
-    it 'configures the sub-agent\'s chat with the system prompt and asks it the task' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'be terse', tools: [],
-                            listeners: parent_listeners)
+    it "configures the sub-agent's chat with the system prompt and asks it the task" do
+      tool = Tool::SubAgent.new(build_parent(system_prompt: 'be terse'))
       tool.run('task' => 'count to three')
 
-      assert_equal 1, @fake_chats.size
-      sub_chat = @fake_chats.first
+      # Two chats now: the parent's (built by +build_parent+) and the
+      # sub's (built by the factory's +execute+ lambda). The sub is last.
+      sub_chat = @fake_chats.last
       assert_equal 'be terse', sub_chat.instructions
       assert_equal ['count to three'], sub_chat.asks
     end
 
-    it 'advertises exactly the configured tool list to the sub-agent' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [dummy_tool],
-                            listeners: parent_listeners)
+    it 'advertises exactly the parent-snapshot tool list to the sub-agent' do
+      tool = Tool::SubAgent.new(build_parent(tools: [dummy_tool]))
       tool.run('task' => 'go')
 
-      sub_chat = @fake_chats.first
+      sub_chat = @fake_chats.last
       assert_equal 1, sub_chat.tools.size
       wired = sub_chat.tools.first
       assert_operator wired, :<, RubyLLM::Tool
@@ -152,9 +166,8 @@ RSpec.describe '.sub_agent' do
       end
     end
 
-    it 'generates monotonic flat names when parent_name is empty' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
-                            listeners: parent_listeners)
+    it 'generates monotonic flat names when the parent has no name' do
+      tool = Tool::SubAgent.new(build_parent)
 
       with_captured_agent_new do |kwargs|
         tool.run('task' => 'first')
@@ -165,9 +178,8 @@ RSpec.describe '.sub_agent' do
       end
     end
 
-    it 'generates hierarchical names when parent_name is set' do
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
-                            listeners: parent_listeners, parent_name: '0')
+    it 'generates hierarchical names when the parent has a name' do
+      tool = Tool::SubAgent.new(build_parent(name: '0'))
 
       with_captured_agent_new do |kwargs|
         tool.run('task' => 'a')
@@ -177,11 +189,12 @@ RSpec.describe '.sub_agent' do
       end
     end
 
-    it "threads the generated name to listeners.for_sub_agent(name:)" do
+    it 'threads max_steps and the generated name to listeners.for_sub_agent' do
       # Spy that records every for_sub_agent call's kwargs. Stays
       # ListenerList-shaped so the +execute+ lambda can keep calling
       # +.for_sub_agent+ on the result if it had to (it doesn't, but
-      # the API surface still has to match).
+      # the API surface still has to match). Also satisfies the
+      # +Agent+ constructor's +attach+ / +context_window_cap=+ calls.
       recorded = []
       spy = Class.new do
         define_method(:initialize) { |out| @out = out }
@@ -194,8 +207,7 @@ RSpec.describe '.sub_agent' do
         end
       end.new(recorded)
 
-      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
-                            listeners: spy, max_steps: 7)
+      tool = Tool::SubAgent.new(build_parent(listeners: spy), max_steps: 7)
 
       with_captured_agent_new do |_|
         tool.run('task' => 'go')

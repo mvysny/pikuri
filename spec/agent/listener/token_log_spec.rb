@@ -208,7 +208,7 @@ RSpec.describe Agent::Listener::TokenLog do
 
       # The sub-agent isn't named by inheritance — it gets a fresh, empty
       # name unless the caller threads one through. Matches the contract
-      # in Tool::SubAgent.build, which always passes a generated name.
+      # in Tool::SubAgent, which always passes a generated name.
       assert_equal '', derived.name
     end
   end
