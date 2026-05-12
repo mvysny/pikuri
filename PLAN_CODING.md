@@ -9,10 +9,10 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–3 (the foundation —
-> `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess`) are
-> implemented and tested; specs land at 374 examples / 0 failures.
-> Next session picks up at **Step 4 (Read)**.
+> **Current status (2026-05-12):** Steps 1–4 (the foundation —
+> `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
+> `Tool::Read`) are implemented and tested; specs land at 395
+> examples / 0 failures. Next session picks up at **Step 5 (Write)**.
 
 ## Orientation for fresh Claude
 
@@ -530,22 +530,53 @@ Decisions left for the session:
 
 ### Step 4 — Read tool
 
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/read.rb`. Spec: `spec/tool/read_spec.rb`
+> (21 examples). Design notes below kept as the historical record of
+> the decisions taken. Skip ahead to Step 5 if you're picking up the
+> work.
+
 `Tool::Read.new(workspace:)`. Constant export not viable because of the
 workspace capture; `bin/pikuri-code` instantiates it. Internally calls
 `workspace.resolve_for_read(path)`.
 
-Decisions for the session:
+**Decisions taken in the session:**
 
-- Output format. opencode uses `<line>: <content>`. Claude Code uses
-  cat-n (`     1\tcontent`). Pick one — opencode's is cheaper to parse
-  but the LLM is more familiar with cat-n.
-- Defaults: `offset` default 1, `limit` default 2000? Cap at 2000?
-- Line-length truncation: opencode truncates lines > 2000 chars with a
-  marker. Adopt verbatim.
-- Image/PDF handling: out of scope for v1. Refuse with "Error: image
-  reading not supported" or fall through to raw bytes?
-- Description: opencode's `read.txt` is the model. Adapt to pikuri's
-  heredoc + `Usage:` shape.
+- **Output format: cat-n** (`"%6d\t%s"`). Claude Code uses it; opencode
+  uses `"<n>: <content>"`; pi omits line numbers entirely. Picked cat-n
+  for breadth of training-data exposure (`cat -n` is on every Stack
+  Overflow page) — even small local models recognize the shape. Cost
+  vs. opencode is ~4K extra tokens per 2K-line file; pays back when
+  the model has to cite ranges or pick `Edit` boundaries.
+- **Defaults: `offset` 1, `limit` 2000.** Match opencode/Claude Code.
+- **Byte cap: 50 KB, internal.** Not exposed as a parameter — three
+  knobs (offset/limit/max_bytes) is more than the model needs;
+  bypassable via paging. Counted on input line bytes + 1 for the
+  joining newline (slight underestimate of rendered output because of
+  the `"%6d\t"` prefix; acceptable).
+- **Long-line truncation: 2000 char cap per line**, marker
+  `... (line truncated to 2000 chars)`. Adopted verbatim from opencode.
+- **Directory handling: refuse**, point at `glob` tool. `Error: <path>
+  is a directory; use the glob tool to list files.` Keeps tool roles
+  non-overlapping with Step 9.
+- **Binary detection: content sniff alone** (no extension blacklist).
+  Read first 4 KB; any NUL byte → binary; or >30% bytes outside
+  printable `\t \n \v \f \r` + ASCII 32..126 → binary. UTF-8
+  continuation bytes (0x80-0xBF) pass through unflagged.
+- **File-not-found: bare error** (`Error: file not found: <path>`).
+  No fuzzy-sibling suggestions for v1 — the model can re-call with
+  `glob` if it guessed wrong.
+- **Empty file:** special-case `(Empty file)` rather than letting the
+  generic EOF marker render `(End of file - total 0 lines)`. One
+  branch, much nicer output.
+- **Offset past EOF:** `Error: offset N is beyond end of file (M lines
+  total)` (opencode wording).
+- **Offset/limit < 1:** rejected with explicit error messages.
+- **Continuation markers:**
+  - Line cap: `(Showing lines X-Y of Z. Use offset=N to continue.)`
+  - Byte cap: `(Output capped at 50 KB. Showing lines X-Y. Use offset=N
+    to continue.)` — no total because we break before counting EOF.
+  - Complete: `(End of file - total Z lines)`
 
 ### Step 5 — Write tool
 
