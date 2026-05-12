@@ -18,7 +18,8 @@ in scope of the design exercise, considered, and left out on purpose.
   `ask` glob rules. v1 ships with two coarse modes (interactive
   `Tool::Confirmer::TERMINAL` on `Write` / `Bash`; `--yolo` swaps in
   `AUTO_APPROVE`). Revisit once `bin/pikuri-code` has lived a while
-  and we know where the friction is.
+  and we know where the friction is. Where things are headed:
+  yolo-in-docker, or ClaudeCode's agentic review of the command + automatic approval/denial.
 - **Image / PDF in `Tool::Read`.** Read refuses binaries today
   (`lib/tool/read.rb` rejects on a null-byte heuristic). Multimodal
   Read needs vision-capable models and the streaming/encoding path
