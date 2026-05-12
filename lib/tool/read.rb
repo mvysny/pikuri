@@ -166,6 +166,11 @@ class Tool
     # outside the non-printable ranges and pass through unflagged,
     # letting UTF-8 text read fine.
     #
+    # Public because {Tool::Edit} reuses it to refuse binary targets —
+    # if Edit accepted a binary file the model has no way to have read,
+    # it could corrupt bytes the model never inspected. Same sniff, same
+    # threshold, one definition.
+    #
     # @param bytes [String] sample bytes
     # @return [Boolean]
     def self.binary?(bytes)
@@ -179,7 +184,6 @@ class Tool
       end
       non_printable.to_f / bytes.bytesize > BINARY_NONPRINTABLE_THRESHOLD
     end
-    private_class_method :binary?
 
     # Stream the file line-by-line, collect at most +limit+ lines
     # starting at +offset+, and stop early if {MAX_BYTES} is reached.
