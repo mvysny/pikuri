@@ -9,12 +9,12 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–9 (the foundation —
-> `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read`, `Tool::Write`, `Tool::Edit`, `Tool::Bash`,
-> `Tool::Grep`, and `Tool::Glob`) are implemented and tested; specs
-> land at 538 examples / 0 failures. Next session picks up at
-> **Step 10 (Coding system prompt)**.
+> **Current status (2026-05-12):** Steps 1–10 are done. The Step 1–9
+> foundation (`Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess`,
+> and the six file/shell tools — `Read`, `Write`, `Edit`, `Bash`, `Grep`,
+> `Glob`) is implemented and tested (538 examples / 0 failures). Step 10
+> shipped `prompts/coding-system-prompt.txt`. Next session picks up at
+> **Step 11 (`bin/pikuri-code`)**.
 
 ## Orientation for fresh Claude
 
@@ -1066,22 +1066,58 @@ Decisions left for the session:
 
 ### Step 10 — Coding system prompt
 
-Write `coding-system-prompt.txt` for `bin/pikuri-code`. Read opencode's
-prompts under `packages/opencode/src/session/prompt/` (or wherever they
-live in the clone) as the template.
-
-Decisions for the session:
-
-- Persona / tone (terse / action-oriented vs. exploratory).
-- Tool-use guidance: when to read vs. grep vs. glob; how to chain.
-- Universal error-recovery rule (the smolagents prompt has this; carry
-  over the wording).
-- "Make minimal changes; don't refactor unprompted" — adopt from
-  CLAUDE.md "Doing tasks" section's spirit.
-- Whether to include any "Final answer:" template or let the model
-  speak Markdown freely. The smolagents prompt's Final-answer template
-  is research-shaped; a coding agent's last turn is usually a summary
-  of the diff and what to do next. Probably no template.
+> **Status: IMPLEMENTED** (2026-05-12).
+> File: `prompts/coding-system-prompt.txt` (~35 lines). Design notes
+> below kept as the historical record. Skip ahead to Step 11 if you're
+> picking up the work.
+>
+> Decisions taken in the session:
+>
+> - **Shape: extend pikuri-chat.txt's style, not opencode's.**
+>   pikuri-chat.txt (16 lines, terse single voice) is the strong
+>   reference. Opencode's prompts are 100–150 lines and visibly bloated —
+>   TodoWrite ceremony we don't have, frontend dictums irrelevant to a
+>   CLI agent, repeated "IMPORTANT" stacking. Landed at ~35 lines.
+> - **Per-tool constraints stay in tool descriptions, per CLAUDE.md.**
+>   The system prompt is for *cross-tool choices* (which tool to pick,
+>   how they chain) and meta-rules (no-repeat, error recovery,
+>   finishing). Discipline that keeps the file from drifting toward
+>   opencode-sized.
+> - **Carry over verbatim from pikuri-chat.txt:** the tool-call mechanism
+>   note, the parallel-calls rule, the error-recovery paragraph (with
+>   coding-flavored examples swapped in: "test runner isn't on PATH",
+>   "file is outside the workspace"), and the finishing-by-plain-text
+>   rule. These are universal.
+> - **Choosing a tool — grouped by purpose**, not a flat per-tool list.
+>   Five groups: file reading, editing, running, research, calculator.
+>   Includes explicit "do NOT use `bash` for cat/sed/awk/rg/find" — the
+>   single most common cross-tool error from a small model.
+> - **Read-before-edit as a prose hint**, not enforced state. Since
+>   Step 6 punted the must-read-before-edit invariant to v2, the prompt
+>   bridges the gap with one sentence: `edit`'s `old_string` must match
+>   exact bytes, so always `read` first. Costs us a sentence; saves the
+>   strict-match retry loops on un-read files.
+> - **Workspace mentioned once.** One paragraph that file tools resolve
+>   within a workspace dir and escape returns an error, plus that
+>   `bash`/`write` may prompt and a decline shouldn't be retried. Saves
+>   "why does this fail" loops without bloating into per-tool surface.
+> - **Engineering discipline section** ("Working on code") condenses
+>   CLAUDE.md's "Doing tasks" spirit: look at neighbors, smallest
+>   change, grep for callers before editing, run tests after a
+>   substantive change, no ceremonial comments, never commit unless
+>   asked. The `grep` for callers line is the one addition beyond the
+>   pre-decided list — small models tend to edit without checking
+>   ripple effects.
+> - **No "Final answer:" template.** The plan pre-decided this; the
+>   finishing rule is verbatim from chat ("reply in plain text with no
+>   tool call... That is how you finish") plus "short summary of what
+>   changed and any next steps".
+> - **Deliberately omitted:** TodoWrite/plan tools (we don't have
+>   them), frontend design dictums, CLAUDE.md auto-discovery framing
+>   in the prompt body (handled in Step 11 wiring instead), YOLO flag
+>   / confirmer internals (transparent to the model), workspace-escape
+>   error wording (in tool descriptions), CWD / date footer (Step 11
+>   wiring).
 
 ### Step 11 — `bin/pikuri-code`
 
@@ -1096,6 +1132,24 @@ remaining ARGV as the first user message. The banner gets an extra
 line in yolo mode (`"YOLO mode: confirmations auto-approved. Use only
 inside a docker / dev-container sandbox."`) so the user can't forget
 the flag is on.
+
+**Project-context auto-load** (locked in): after reading
+`prompts/coding-system-prompt.txt`, append the contents of `AGENTS.md`
+(or, falling back if it doesn't exist, `CLAUDE.md`) from the workspace
+root. Pikuri-code's `Tool::Workspace::Cwd` is rooted at `Dir.pwd` at
+startup, so the lookup is relative to that. ~2 lines of Ruby:
+
+```ruby
+md_path = ['AGENTS.md', 'CLAUDE.md'].find { |f| File.exist?(f) }
+prompt += "\n\n# Project Context\n\n" + File.read(md_path) if md_path
+```
+
+The `# Project Context\n\n` header tells the model the appended block
+is workspace-authoritative project guidance, not part of the universal
+prompt. Decisions left for the session: exact header wording (Project
+Context vs. Workspace Instructions vs. Repository Conventions), and
+whether to log to stderr which file (if any) was loaded — recommend
+yes, brief one-liner, helps the user see which file is in scope.
 
 Decisions for the session:
 
