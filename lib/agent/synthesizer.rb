@@ -50,11 +50,13 @@ class Agent
     # @param user_message [String] the user's original question from
     #   the parent turn that exhausted.
     # @param listeners [Agent::ListenerList] listeners to attach to
-    #   the synth chat. Typically the parent agent's list with the
-    #   +StepLimit+ swapped for a defensive +StepLimit.new(max: 1)+
-    #   via {ListenerList#copy} — the synth has no tools so the cap
-    #   should never trip, but the swap keeps the parent's mutable
-    #   counter out of the synth chat.
+    #   the synth chat. Typically the parent agent's list run through
+    #   {ListenerList#for_sub_agent} with +max_steps: 1+ — same
+    #   transformation a sub-agent invocation gets, since the synth
+    #   runs on a fresh +RubyLLM::Chat+: +TokenLog+ zeroed, +Terminal+
+    #   padded, +StepLimit+ at the defensive cap (the synth has no
+    #   tools so it should never trip), shared listeners (e.g.
+    #   +InMemoryList+) kept by reference.
     # @return [String, nil] the synth's final assistant content, or
     #   +nil+ if the synth somehow produced no assistant message
     def self.run(chat:, parent_messages:, user_message:, listeners:)

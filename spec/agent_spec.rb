@@ -371,7 +371,7 @@ RSpec.describe Agent do
       assert_includes notice.reason, 'exhausted 2 steps'
     end
 
-    it 'invokes Synthesizer.run with the parent chat history, a swapped-StepLimit listener list, and original question' do
+    it 'invokes Synthesizer.run with the parent chat history, a sub-agent-derived listener list, and original question' do
       listeners = Agent::ListenerList.new([in_memory, Agent::Listener::StepLimit.new(max: 2)])
       agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listeners)
       fake_chat.add_assistant('plan: do stuff')
@@ -386,8 +386,9 @@ RSpec.describe Agent do
       assert_equal 'why?', call[:user_message]
 
       # The handed-off list is a derived one, not the parent's instance —
-      # ListenerList#with_max_steps returns a new object so the synth
-      # chat doesn't share the parent's StepLimit counter.
+      # ListenerList#for_sub_agent returns a new object so the synth
+      # chat doesn't share the parent's StepLimit counter, and gets a
+      # fresh TokenLog / padded Terminal in passing.
       refute_same listeners, call[:listeners]
       assert_kind_of Agent::ListenerList, call[:listeners]
       assert_equal '[InMemoryList, StepLimit(max=1)]', call[:listeners].to_s

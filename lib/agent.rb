@@ -23,10 +23,12 @@ require 'ruby_llm'
 # {#run_loop} catches the +Exceeded+ exception, emits a
 # {Message::FallbackNotice} to every listener, and hands off to
 # {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth reuses the
-# parent's {ListenerList} (via {ListenerList#with_max_steps} called
-# with +1+ — the synth has no tools, so the cap is defensive
-# hardening) so its reasoning and answer flow through the same
-# surface. The synth's answer becomes the value reported by
+# parent's {ListenerList} via {ListenerList#for_sub_agent} with
+# +max_steps: 1+ — same transformation a sub-agent invocation gets,
+# since the synth is a fresh context: +TokenLog+ zeroed, +Terminal+
+# padded, +StepLimit+ at the defensive cap (the synth has no tools so
+# it should never trip), +InMemoryList+ shared by reference. The
+# synth's answer becomes the value reported by
 # {#last_assistant_content}, so callers (notably {Tool::SubAgent})
 # still get a usable reply instead of raising past +bin/pikuri+.
 class Agent
@@ -161,7 +163,7 @@ class Agent
       chat: synth_chat,
       parent_messages: @chat.messages,
       user_message: user_message,
-      listeners: @listeners.with_max_steps(1)
+      listeners: @listeners.for_sub_agent(max_steps: 1)
     )
     nil
   end

@@ -17,10 +17,9 @@ class Agent
   #    The dispatch lives on the listener — +Terminal+ swaps in a
   #    padded fresh instance, +TokenLog+ resets its snapshot,
   #    +StepLimit+ picks +max_steps+ out of the params hash — so this
-  #    class doesn't grow a method per new listener type. {#with_max_steps}
-  #    is the one remaining type-dispatched knob, kept because it's a
-  #    cross-context cap (the synthesizer rescue also uses it), not a
-  #    sub-agent specialization.
+  #    class doesn't grow a method per new listener type. The
+  #    synthesizer rescue uses the same hook with +max_steps: 1+,
+  #    since a step-exhausted synth is just another fresh-context run.
   #
   # 2. {#attach} / {#on_message} replace +each { |l| l.attach(chat) }+
   #    and +each { |l| l.on_message(msg) }+ at the call sites, which
@@ -49,49 +48,6 @@ class Agent
     # @return [void]
     def on_message(message)
       @listeners.each { |l| l.on_message(message) }
-    end
-
-    # Return a new {ListenerList} with the same non-+StepLimit+
-    # listeners, plus a +StepLimit+ governed by +max_steps+:
-    #
-    # - +max_steps+ is an +Integer+: ensure exactly one
-    #   {Listener::StepLimit} with that cap. Any existing +StepLimit+
-    #   is replaced with a fresh +Listener::StepLimit.new(max: max_steps)+;
-    #   if none exists in the list, the fresh one is appended.
-    # - +max_steps+ is +nil+: strip every +StepLimit+ from the new
-    #   list. The derived list has no step cap.
-    #
-    # +max_steps+ is positional and required — every internal caller
-    # ({Agent}'s synth rescue today; sub-agent callers go through
-    # {#for_sub_agent} instead) makes a deliberate decision about the
-    # sub-context's budget, and the missing-default forces that
-    # decision to be stated.
-    #
-    # == Why this stays type-dispatched
-    #
-    # Unlike the rest of the sub-agent transformations (which moved
-    # onto each listener's {Listener::MessageListener#for_sub_agent}
-    # in service of open-closed extension), this knob has a *caller-
-    # provided* parameter that two different contexts use with
-    # different values: the synthesizer rescue passes +1+, sub-agents
-    # pass their own +max_steps+. It's a cross-context cap, not a
-    # sub-agent specialization, so keeping it here as a parameterized
-    # helper is the natural shape. If a second cross-context knob ever
-    # appears, the question of generalizing this pattern is worth
-    # revisiting then.
-    #
-    # Non-+StepLimit+ listeners are passed by reference: a {Terminal}
-    # or {InMemoryList} in the parent is the same instance the new
-    # list holds, so output and structured capture flow continuously
-    # across parent + sub-context. +StepLimit+ is the one variant
-    # where sharing is unsafe (mutable counter, per-chat callback).
-    #
-    # @param max_steps [Integer, nil] required; see above
-    # @return [ListenerList]
-    def with_max_steps(max_steps)
-      stripped = @listeners.reject { |l| l.is_a?(Listener::StepLimit) }
-      stripped << Listener::StepLimit.new(max: max_steps) unless max_steps.nil?
-      self.class.new(stripped)
     end
 
     # Return a new {ListenerList} in which every listener has been
