@@ -2,14 +2,31 @@
 # frozen_string_literal: true
 
 require 'bundler/setup'
+require 'optparse'
 
 $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 
 require 'pikuri'
 
-# Parse --yolo before joining ARGV as the first user message. Anywhere in
-# argv is fine; ARGV.delete returns the matched string (truthy) or nil.
-yolo = ARGV.delete('--yolo')
+yolo = false
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-code [options] [initial message...]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--yolo', 'Auto-approve all confirmations (use only inside a sandbox)') { yolo = true }
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption => e
+  warn e.message
+  warn parser
+  exit 2
+end
 
 # Workspace is captured once at startup; all file-touching tools share it.
 # Cwd locks read+write to the launch directory and its subtree.
