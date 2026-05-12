@@ -9,11 +9,11 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–5 (the foundation —
+> **Current status (2026-05-12):** Steps 1–6 (the foundation —
 > `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read` and `Tool::Write`) are implemented and tested; specs
-> land at 415 examples / 0 failures. Next session picks up at
-> **Step 6 (Edit)**.
+> `Tool::Read`, `Tool::Write`, and `Tool::Edit`) are implemented and
+> tested; specs land at 451 examples / 0 failures. Next session picks
+> up at **Step 7 (Bash)**.
 
 ## Orientation for fresh Claude
 
@@ -656,6 +656,55 @@ Decisions for the session:
   artifact for v1.
 
 ### Step 6 — Edit tool
+
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/edit.rb`. Spec: `spec/tool/edit_spec.rb`
+> (25 examples). Two collateral changes also landed:
+> - `Tool::Parameters` gained `required_boolean` / `optional_boolean`
+>   (with case-sensitive `"true"`/`"false"` String coercion). 11 specs.
+> - `Tool::Read.binary?` was promoted from `private_class_method` to
+>   public so Edit can reuse the same sniff without duplication.
+> Design notes below kept as the historical record. Skip ahead to
+> Step 7 if you're picking up the work.
+>
+> Key surprises / decisions taken in the session:
+>
+> - **opencode's docs lie.** Its `edit.txt` says "must match exactly,
+>   including whitespace, indentation, and line endings", but `edit.ts`
+>   runs a 9-replacer cascade (SimpleReplacer → LineTrimmed →
+>   BlockAnchor with Levenshtein → WhitespaceNormalized → … →
+>   ContextAware → MultiOccurrence). pi stays strict.
+>   **Pikuri matches pi:** strict byte match, no fuzz cascade.
+>   Rationale: clear failure mode (re-Read on miss) beats compounding-
+>   heuristic risk and ~500 LOC of cascade code. Easiest single future
+>   addition would be opencode's `LineTrimmedReplacer` alone if real
+>   friction shows up.
+> - **CRLF normalization is the one structural exception to strict
+>   bytes.** `Tool::Read` `chomp`s line endings, so the model only ever
+>   sees LF in cat-n output. A CRLF file would therefore never match a
+>   model-supplied `old_string` without normalization. Algorithm: detect
+>   CRLF in the file, normalize content + old_string + new_string to LF
+>   (symmetric), match/replace in LF space, restore CRLF on the way back
+>   to disk. opencode + pi both do this for the same reason.
+> - **Empty `old_string` is rejected**, pointing at the Write tool. Keeps
+>   tool roles non-overlapping (opencode special-cases empty as
+>   create-or-overwrite; we don't).
+> - **Binary refusal** reuses the promoted `Tool::Read.binary?` sniff
+>   so the heuristic stays one definition. Edit refuses binary even
+>   though the implicit-read-check argument should already keep the
+>   model away from binary files — defense in depth.
+> - **No confirmer.** The `old_string` argument is the read-check.
+> - **Replacement uses gsub's block form** (`content.gsub(needle) { patch }`)
+>   and explicit slicing for the single-occurrence case, so `\1` / `\&`
+>   in `new_string` are literal — no surprise regex interpolation.
+> - **Success observation**: `"Edited <path>: replaced N occurrence(s)."`,
+>   pluralized at 1. `replace_all=false` always reports 1; `replace_all=true`
+>   reports the actual count.
+> - **Parameters `boolean` coercion** accepts Ruby `true`/`false` and
+>   the literal Strings `"true"`/`"false"` (some models surface JSON
+>   booleans as Strings) after `.strip` — but not case-insensitive
+>   variants, not `"yes"`/`"no"`, not `0`/`1`. Mirrors JSON's strict
+>   boolean syntax.
 
 `Tool::Edit.new(workspace:)`. Calls `workspace.resolve_for_write(path)`
 (Edit modifies, so it uses the write-set even though it doesn't create
