@@ -32,16 +32,16 @@ RSpec.describe Agent::Listener::TokenLog do
     let(:listener) { described_class.new }
 
     it 'logs one info line per emission with ctx, Δ from previous ctx, and per-turn ↑/↓' do
-      # Turn 1: ctx = 1024 + 9216 = 10240 → 10.0k. No prior ctx, so Δ
-      # is from the implicit baseline of zero — Δ equals ctx.
+      # Turn 1: ctx = 1024 + 9216 + 1024 = 11264 → 11.0k. No prior ctx,
+      # so Δ is from the implicit baseline of zero — Δ equals ctx.
       listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
-      # Turn 2: ctx = 2048 + 10240 = 12288 → 12.0k. Δ = +2.0k.
+      # Turn 2: ctx = 2048 + 10240 + 2048 = 14336 → 14.0k. Δ = +3.0k.
       listener.on_tokens(tokens(input: 2048, cached: 10_240, output: 2048))
 
       lines = buf.string.lines
       assert_equal 2, lines.size
-      assert_includes lines[0], 'msg #1: ctx=10.0k  Δ+10.0k  ↑1.0k  ↓1.0k'
-      assert_includes lines[1], 'msg #2: ctx=12.0k  Δ+2.0k  ↑2.0k  ↓2.0k'
+      assert_includes lines[0], 'msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k'
+      assert_includes lines[1], 'msg #2: ctx=14.0k  Δ+3.0k  ↑2.0k  ↓2.0k'
     end
 
     it 'renders a negative Δ when ctx shrinks (legitimate if ruby_llm prunes between turns)' do
@@ -62,12 +62,12 @@ RSpec.describe Agent::Listener::TokenLog do
       assert_includes line, 'msg #1: ctx=0.0k  Δ+0.0k  ↑0.0k  ↓0.0k'
     end
 
-    it 'includes cache_creation in ctx (it is one of the three exclusive prompt portions)' do
+    it 'includes cache_creation in ctx (one of the three prompt portions alongside output)' do
       listener.on_tokens(tokens(input: 1024, cached: 8192, cache_creation: 2048, output: 1024))
 
-      # ctx = 1024 + 8192 + 2048 = 11264 → 11.0k.
+      # ctx = 1024 + 8192 + 2048 + 1024 = 12288 → 12.0k.
       line = buf.string.lines.first
-      assert_includes line, 'msg #1: ctx=11.0k'
+      assert_includes line, 'msg #1: ctx=12.0k'
     end
   end
 
@@ -76,16 +76,17 @@ RSpec.describe Agent::Listener::TokenLog do
       assert_equal 0, described_class.new.context_window_size
     end
 
-    it 'is the LATEST input + cached + cache_creation, the three exclusive portions of this turn\'s prompt' do
+    it "is the LATEST input + cached + cache_creation + output — this turn's prompt plus its reply" do
       listener = described_class.new
 
-      # Turn 1: full prompt is 1000 uncached + 5000 cached + 200 newly-cached = 6200.
-      listener.on_tokens(tokens(input: 1000, cached: 5000, cache_creation: 200))
-      assert_equal 6200, listener.context_window_size
+      # Turn 1: prompt 1000 uncached + 5000 cached + 200 newly-cached = 6200,
+      # plus 300 of reply = 6500 consumed through this turn.
+      listener.on_tokens(tokens(input: 1000, cached: 5000, cache_creation: 200, output: 300))
+      assert_equal 6500, listener.context_window_size
 
       # Turn 2: prompt grows. cache_creation 0 (already-warm cache).
-      listener.on_tokens(tokens(input: 500, cached: 6500, cache_creation: 0))
-      assert_equal 7000, listener.context_window_size
+      listener.on_tokens(tokens(input: 500, cached: 6500, cache_creation: 0, output: 400))
+      assert_equal 7400, listener.context_window_size
     end
 
     it 'reflects only the LATEST snapshot, not a sum and not the max' do
@@ -103,7 +104,7 @@ RSpec.describe Agent::Listener::TokenLog do
     it 'treats nil inputs as zero' do
       listener = described_class.new
       listener.on_tokens(Agent::Tokens.new(
-                           input: nil, output: 10, cached: nil, cache_creation: nil,
+                           input: nil, output: nil, cached: nil, cache_creation: nil,
                            thinking: nil, model_id: nil
                          ))
 
@@ -122,10 +123,10 @@ RSpec.describe Agent::Listener::TokenLog do
 
       listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
 
-      # used = 1024 + 9216 = 10240 → 10.0k; cap = 32768 → 32.0k.
+      # used = 1024 + 9216 + 1024 = 11264 → 11.0k; cap = 32768 → 32.0k.
       line = buf.string.lines.first
-      assert_includes line, 'ctx=10.0k/32.0k'
-      assert_includes line, 'Δ+10.0k'
+      assert_includes line, 'ctx=11.0k/32.0k'
+      assert_includes line, 'Δ+11.0k'
     end
 
     it 'when nil, omits the slash form and renders ctx as <used> only' do
@@ -161,11 +162,11 @@ RSpec.describe Agent::Listener::TokenLog do
       parent.on_tokens(tokens(input: 10_240, output: 1024))
       child.on_tokens(tokens(input: 5120, output: 512))
 
-      parent_line = buf.string.lines.find { |l| l.include?('msg #1: ctx=10.0k') }
-      child_line  = buf.string.lines.find { |l| l.include?('msg #1: ctx=5.0k') }
+      parent_line = buf.string.lines.find { |l| l.include?('msg #1: ctx=11.0k') }
+      child_line  = buf.string.lines.find { |l| l.include?('msg #1: ctx=5.5k') }
 
-      assert_includes parent_line, 'Δ+10.0k  ↑10.0k  ↓1.0k'
-      assert_includes child_line,  'Δ+5.0k  ↑5.0k  ↓0.5k'
+      assert_includes parent_line, 'Δ+11.0k  ↑10.0k  ↓1.0k'
+      assert_includes child_line,  'Δ+5.5k  ↑5.0k  ↓0.5k'
     end
   end
 
@@ -220,7 +221,7 @@ RSpec.describe Agent::Listener::TokenLog do
       listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
 
       line = buf.string.lines.first
-      assert_includes line, '[0] msg #1: ctx=10.0k'
+      assert_includes line, '[0] msg #1: ctx=11.0k'
     end
 
     it 'omits the prefix when name is empty (main agent)' do

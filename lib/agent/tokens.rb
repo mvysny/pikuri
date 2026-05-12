@@ -42,11 +42,13 @@ class Agent
   #
   # == Computing "current context window size"
   #
-  # The full size of the prompt the model processed on this turn —
-  # i.e. the conversation's current consumption against the model's
-  # context-window cap — is +input + cached + cache_creation+. That
-  # number is what climbs toward +RubyLLM::ContextLengthExceededError+
+  # +input + cached + cache_creation+ is the size of the prompt
+  # processed on this turn. Add +output+ to get tokens consumed by the
+  # conversation *through* this turn — this turn's prompt plus its
+  # reply, both of which the model will re-process on the next turn.
+  # That's what climbs toward +RubyLLM::ContextLengthExceededError+
   # and is the snapshot {Listener::TokenLog#context_window_size}
-  # tracks.
+  # tracks (without the +output+ term, a long reply stays invisible
+  # in the headline until the next turn pulls it in as cached prompt).
   Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking, :model_id)
 end

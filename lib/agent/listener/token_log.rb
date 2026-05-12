@@ -8,11 +8,12 @@ class Agent
     #
     # Existence rationale: catch context-window growth before the
     # provider raises +RubyLLM::ContextLengthExceededError+. +ctx+ is
-    # the headline number — the size of the prompt the model processed
-    # this turn. The +Δ+ field shows the climb between turns; +↑+ /
-    # +↓+ are the per-turn input / output sizes that drove it
-    # (matching Claude Code's convention: +↑+ is what's sent to the
-    # model, +↓+ is what comes back).
+    # the headline number — tokens consumed by the conversation
+    # *through* this turn: this turn's prompt plus its reply, both of
+    # which the model will re-process on the next turn. The +Δ+ field
+    # shows the climb between turns; +↑+ / +↓+ are the per-turn input
+    # / output sizes that drove it (matching Claude Code's convention:
+    # +↑+ is what's sent to the model, +↓+ is what comes back).
     #
     # == State and scope
     #
@@ -28,7 +29,7 @@ class Agent
     # Without a cap (no detection source — see {Agent::ContextWindowDetector}):
     #
     #   msg #1: ctx=6.8k  Δ+6.8k  ↑6.8k  ↓0.0k
-    #   msg #2: ctx=9.1k  Δ+2.3k  ↑1.0k  ↓0.6k
+    #   msg #2: ctx=8.4k  Δ+1.6k  ↑1.0k  ↓0.6k
     #
     # With a cap of e.g. 32k (set by {Agent#initialize} after detection):
     #
@@ -39,10 +40,13 @@ class Agent
     #
     #   [sub_agent 0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
     #
-    # +ctx+ is the snapshot (+input + cached + cache_creation+; see
-    # {Agent::Tokens}), optionally suffixed with +/<cap>+ when
+    # +ctx+ is the snapshot (+input + cached + cache_creation + output+;
+    # see {Agent::Tokens}), optionally suffixed with +/<cap>+ when
     # {#context_window_cap} is set so the operator can see how close
-    # the conversation is to the limit. +Δ+ is signed: +Δ+X+ for growth,
+    # the conversation is to the limit. Including +output+ makes this
+    # turn's reply visible immediately — leaving it out would hide a
+    # long reply in the +ctx=+ headline until the next turn pulled it
+    # in as cached prompt. +Δ+ is signed: +Δ+X+ for growth,
     # +Δ-X+ for shrinkage (legitimate if ruby_llm ever prunes between
     # turns). On the first message the baseline is implicitly zero, so
     # +Δ+ equals +ctx+. Sizes are scaled by 1024 and shown with one
@@ -50,10 +54,10 @@ class Agent
     class TokenLog < MessageListener
       LOGGER = Pikuri.logger_for('Tokens')
 
-      # Size of the prompt the model processed on the most recent
-      # turn — the conversation's current consumption against the
-      # model's context-window cap. Equals
-      # +input + cached + cache_creation+ from the latest
+      # Tokens consumed by the conversation through the most recent
+      # turn — this turn's prompt plus its reply, which together make
+      # up the bulk of what the next turn will re-process. Equals
+      # +input + cached + cache_creation + output+ from the latest
       # {#on_tokens}. Zero until the first {#on_tokens} fires.
       #
       # @return [Integer]
@@ -115,7 +119,7 @@ class Agent
         cache_creation_now = tokens.cache_creation.to_i
 
         prev_ctx = @context_window_size
-        @context_window_size = input_now + cached_now + cache_creation_now
+        @context_window_size = input_now + cached_now + cache_creation_now + tokens.output.to_i
         delta = @context_window_size - prev_ctx
 
         LOGGER.info(format_line(input_now, tokens.output.to_i, delta))
