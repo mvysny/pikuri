@@ -662,9 +662,15 @@ this (well, Claude Code does; opencode doesn't — mild lean for echo).
 - No stdin to the subprocess (closed immediately). Interactive
   commands hang until timeout. The model should use non-interactive
   flags (`apt -y`, `git commit -m`).
-- Backgrounded commands (`cmd &`) detach from our blocking wait but
-  remain in our pgroup; they get SIGTERM on pikuri exit. Use `nohup
-  cmd &` or `setsid cmd &` to opt out and survive pikuri.
+- Backgrounded commands (`cmd &`) inherit our combined-output pipe by
+  default, which means `#wait` blocks until they exit anyway — `&`
+  alone does NOT detach. To genuinely background a command, redirect
+  its stdout and stderr away from our pipe: `cmd >/dev/null 2>&1 &`.
+  Such commands stay in our pgroup and get SIGTERM on pikuri exit;
+  use `nohup` or `setsid` plus redirection to opt out of cleanup and
+  survive pikuri exit. (Verified empirically during Subprocess
+  implementation — see `spec/pikuri/subprocess_spec.rb` for the
+  reproduction.)
 - Prefer `Read` / `Write` / `Edit` / `Grep` / `Glob` over `cat` /
   `tee` / `sed` / `rg` / `find`. The dedicated tools are workspace-
   resolved and integrate with the agent's path conventions.
