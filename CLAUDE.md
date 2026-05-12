@@ -31,6 +31,18 @@ bundled tools.
   fork-or-swap contingency: replacing the loop becomes a fixed-cost
   rewrite of those two `lib/` files.
 
+- **Subprocess seam.** All subprocess spawning in `lib/` goes through
+  `Pikuri::Subprocess.spawn`. Direct `Process.spawn` / `Open3.*` /
+  `system` / backticks anywhere in `lib/` are bugs. The chokepoint
+  forces a new process group per invocation, tracks pgids in a
+  process-global set, and SIGTERMs everything tracked via `at_exit`
+  so backgrounded shell children don't outlive pikuri uncontrolled.
+  Timeouts are the caller's job — wrap argv with coreutils' `timeout`
+  binary; the chokepoint deliberately doesn't implement a Ruby-side
+  timeout (can't kill subprocesses cleanly). Grep-enforceable:
+  `grep -rn 'Process\.spawn\|Open3\|system' lib/` should only hit
+  `lib/pikuri/subprocess.rb`.
+
 - **Streaming, multi-provider config, vision/audio, embeddings — out
   of scope.** Available via ruby_llm if/when needed; not part of
   pikuri today.
@@ -124,6 +136,14 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   define exactly the camelcased constant matching their path; if you
   want an acronym (`HTML`, `PDF`, `DuckDuckGo`), add an entry to the
   `inflector.inflect` block in `lib/pikuri.rb`.
+- **Namespacing direction.** New library-level infrastructure lives
+  under the `Pikuri::` namespace (current example:
+  `Pikuri::Subprocess` at `lib/pikuri/subprocess.rb`). The older
+  domain classes (`Tool`, `Agent`, `URLCache`) are top-level as a
+  legacy convention — an eventual refactor moves them under `Pikuri::`
+  too. Until that lands, the rule for new code is: library-level
+  infrastructure under `Pikuri::` from the start; domain classes
+  stay where they are.
 - **Tests: rspec-core with minitest-style asserts.** Use the
   `rspec-core` runner (`describe`/`it`) but write assertions in the
   minitest style (`assert_equal`, `assert`, `refute`, …) rather than
