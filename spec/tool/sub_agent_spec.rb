@@ -128,4 +128,80 @@ RSpec.describe '.sub_agent' do
       assert_equal 'dummy', wired.name
     end
   end
+
+  describe 'sub-agent naming' do
+    # Capture every kwarg handed to Agent.new so the spec can read the
+    # generated +name:+ without having to introspect a built Agent. The
+    # underlying chat is still the fake from the outer +before+, so the
+    # constructed agents are inert (their +run_loop+ resolves through
+    # the fake chat which records but doesn't drive a real loop).
+    def with_captured_agent_new
+      received = []
+      original_new = Agent.method(:new)
+      Agent.define_singleton_method(:new) do |**kwargs|
+        received << kwargs
+        original_new.call(**kwargs).tap do |a|
+          a.define_singleton_method(:run_loop)               { |**_| nil }
+          a.define_singleton_method(:last_assistant_content) { 'sub reply' }
+        end
+      end
+      begin
+        yield received
+      ensure
+        Agent.define_singleton_method(:new) { |**kw| original_new.call(**kw) }
+      end
+    end
+
+    it 'generates monotonic flat names when parent_name is empty' do
+      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
+                            listeners: parent_listeners)
+
+      with_captured_agent_new do |kwargs|
+        tool.run('task' => 'first')
+        tool.run('task' => 'second')
+        tool.run('task' => 'third')
+
+        assert_equal %w[0 1 2], kwargs.map { |kw| kw[:name] }
+      end
+    end
+
+    it 'generates hierarchical names when parent_name is set' do
+      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
+                            listeners: parent_listeners, parent_name: '0')
+
+      with_captured_agent_new do |kwargs|
+        tool.run('task' => 'a')
+        tool.run('task' => 'b')
+
+        assert_equal %w[0_0 0_1], kwargs.map { |kw| kw[:name] }
+      end
+    end
+
+    it "threads the generated name to listeners.for_sub_agent(name:)" do
+      # Spy that records every for_sub_agent call's kwargs. Stays
+      # ListenerList-shaped so the +execute+ lambda can keep calling
+      # +.for_sub_agent+ on the result if it had to (it doesn't, but
+      # the API surface still has to match).
+      recorded = []
+      spy = Class.new do
+        define_method(:initialize) { |out| @out = out }
+        def attach(_); end
+        def on_message(_); end
+        def context_window_cap=(_); end
+        define_method(:for_sub_agent) do |**params|
+          @out << params
+          self
+        end
+      end.new(recorded)
+
+      tool = Tool.sub_agent(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'sp', tools: [],
+                            listeners: spy, max_steps: 7)
+
+      with_captured_agent_new do |_|
+        tool.run('task' => 'go')
+      end
+
+      assert_equal [{ max_steps: 7, name: '0' }], recorded
+    end
+  end
 end

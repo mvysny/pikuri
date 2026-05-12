@@ -34,6 +34,11 @@ class Agent
     #
     #   msg #1: ctx=6.8k/32.0k  Δ+6.8k  ↑6.8k  ↓0.0k
     #
+    # When the owning {Agent} has a non-empty {Agent#name} (i.e. a
+    # sub-agent), the line is prefixed with +[name] +:
+    #
+    #   [0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
+    #
     # +ctx+ is the snapshot (+input + cached + cache_creation+; see
     # {Agent::Tokens}), optionally suffixed with +/<cap>+ when
     # {#context_window_cap} is set so the operator can see how close
@@ -65,8 +70,19 @@ class Agent
       # @return [Integer, nil]
       attr_accessor :context_window_cap
 
-      def initialize
-        super
+      # @return [String] owning agent's identifier. Empty by default
+      #   (main agent); set by {#for_sub_agent} from the sub-agent's
+      #   generated name so the log lines can be prefixed with
+      #   +[<name>] +. Read-only — for a sub-agent's listener you get a
+      #   fresh instance via {#for_sub_agent}.
+      attr_reader :name
+
+      # @param name [String] agent identifier prepended to each log
+      #   line as +[<name>] + when non-empty. Defaults to +""+ for the
+      #   main agent.
+      def initialize(name: '')
+        super()
+        @name = name
         @msg = 0
         @context_window_size = 0
         @context_window_cap = nil
@@ -74,15 +90,18 @@ class Agent
 
       # Sub-agent variant: a fresh +TokenLog+ with a zeroed snapshot so
       # the sub-agent's context-window readings track its own
-      # +RubyLLM::Chat+ rather than continuing the parent's. The cap is
-      # left +nil+ here; the sub-agent's {Agent#initialize} pushes the
-      # resolved cap onto every +TokenLog+ in its list via
-      # {ListenerList#context_window_cap=} immediately after
-      # construction. Ignores any params it's handed.
+      # +RubyLLM::Chat+ rather than continuing the parent's. Picks the
+      # sub-agent's +name:+ out of the forwarded params so its log
+      # lines carry the +[<name>] + prefix; defaults to +""+ when
+      # absent. The cap is left +nil+ here; the sub-agent's
+      # {Agent#initialize} pushes the resolved cap onto every
+      # +TokenLog+ in its list via {ListenerList#context_window_cap=}
+      # immediately after construction.
       #
+      # @param name [String] sub-agent's identifier
       # @return [TokenLog]
-      def for_sub_agent(**)
-        self.class.new
+      def for_sub_agent(name: '', **)
+        self.class.new(name: name)
       end
 
       # Update the context-window snapshot, then log one +INFO+ line.
@@ -112,7 +131,8 @@ class Agent
 
       def format_line(input, output, delta)
         sign = delta.negative? ? '-' : '+'
-        "msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
+        prefix = @name.empty? ? '' : "[#{@name}] "
+        "#{prefix}msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
       end
 
       # +<used>+ when no cap is set, +<used>/<cap>+ when one is. Shared

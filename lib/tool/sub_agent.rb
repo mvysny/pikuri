@@ -46,12 +46,13 @@ class Tool
     #   Should not include the sub-agent tool itself (recursion guard).
     # @param listeners [Agent::ListenerList] parent agent's listener
     #   list; the spawned sub-agent gets
-    #   +listeners.for_sub_agent(max_steps: max_steps)+, which forwards
-    #   to each listener's own sub-agent hook — same renderers and
-    #   recorders shared by reference, fresh +StepLimit+ at the
-    #   sub-agent's cap, fresh +TokenLog+ (so the sub-agent's
+    #   +listeners.for_sub_agent(max_steps: max_steps, name: sub_name)+,
+    #   which forwards to each listener's own sub-agent hook — same
+    #   renderers and recorders shared by reference, fresh +StepLimit+
+    #   at the sub-agent's cap, fresh +TokenLog+ (so the sub-agent's
     #   context-window snapshot tracks its own +RubyLLM::Chat+ rather
-    #   than the parent's), and a fresh +Terminal+ indented by
+    #   than the parent's, and its log lines carry a +[<sub_name>] +
+    #   prefix), and a fresh +Terminal+ indented by
     #   {Agent::Listener::Terminal::SUB_AGENT_PADDING} so sub-agent
     #   output is visually nested under the parent's.
     # @param max_steps [Integer] step budget for each sub-agent run,
@@ -63,11 +64,19 @@ class Tool
     #   {Agent}. Typically the parent's {Agent#context_window_cap} so
     #   the sub-agent inherits the same cap (same model, same server)
     #   without re-probing on every invocation.
+    # @param parent_name [String] name of the calling agent; used to
+    #   build hierarchical sub-agent ids. Empty (the main agent's
+    #   default) produces flat names +"0"+, +"1"+, ...; a non-empty
+    #   value like +"0"+ produces +"0_0"+, +"0_1"+, ... A per-call
+    #   counter lives in the closure of this factory invocation, so
+    #   each +allow_sub_agent+ wiring gets its own monotonic stream of
+    #   indices.
     # @return [Tool] a fresh sub-agent tool; not a singleton, since each
     #   invocation closes over a specific +transport+, +system_prompt+,
     #   +tools+, and +listeners+
     def self.build(transport:, system_prompt:, tools:, listeners:,
-                   max_steps: 10, context_window: nil)
+                   max_steps: 10, context_window: nil, parent_name: '')
+      sub_counter = 0
       Tool.new(
         name: 'sub_agent',
         description: <<~DESC,
@@ -88,12 +97,17 @@ class Tool
                             'so include all necessary context.'
         },
         execute: lambda { |task:|
+          idx = sub_counter
+          sub_counter += 1
+          sub_name = parent_name.empty? ? idx.to_s : "#{parent_name}_#{idx}"
+
           sub = Agent.new(
             transport: transport,
             system_prompt: system_prompt,
             tools: tools,
-            listeners: listeners.for_sub_agent(max_steps: max_steps),
-            context_window: context_window
+            listeners: listeners.for_sub_agent(max_steps: max_steps, name: sub_name),
+            context_window: context_window,
+            name: sub_name
           )
           sub.run_loop(user_message: task)
           sub.last_assistant_content
@@ -104,10 +118,10 @@ class Tool
 
   # Convenience alias at the +Tool+ level. See {SubAgent.build}.
   def self.sub_agent(transport:, system_prompt:, tools:, listeners:,
-                     max_steps: 10, context_window: nil)
+                     max_steps: 10, context_window: nil, parent_name: '')
     SubAgent.build(
       transport: transport, system_prompt: system_prompt, tools: tools, listeners: listeners,
-      max_steps: max_steps, context_window: context_window
+      max_steps: max_steps, context_window: context_window, parent_name: parent_name
     )
   end
 end

@@ -196,6 +196,42 @@ RSpec.describe Agent::Listener::TokenLog do
 
       assert_equal 10_240, original.context_window_size
     end
+
+    it 'carries the forwarded name: kwarg onto the derived instance' do
+      derived = described_class.new.for_sub_agent(name: '0_1', max_steps: 5)
+
+      assert_equal '0_1', derived.name
+    end
+
+    it "defaults the derived instance's name to '' when no name is forwarded" do
+      derived = described_class.new(name: 'parent').for_sub_agent(max_steps: 5)
+
+      # The sub-agent isn't named by inheritance — it gets a fresh, empty
+      # name unless the caller threads one through. Matches the contract
+      # in Tool::SubAgent.build, which always passes a generated name.
+      assert_equal '', derived.name
+    end
+  end
+
+  describe 'name prefix' do
+    it 'prefixes log lines with [name] when name is non-empty' do
+      listener = described_class.new(name: '0')
+
+      listener.on_tokens(tokens(input: 1024, cached: 9216, output: 1024))
+
+      line = buf.string.lines.first
+      assert_includes line, '[0] msg #1: ctx=10.0k'
+    end
+
+    it 'omits the prefix when name is empty (main agent)' do
+      listener = described_class.new
+
+      listener.on_tokens(tokens(input: 1024))
+
+      line = buf.string.lines.first
+      refute_match(/\A\[/, line.lstrip)
+      assert_includes line, 'msg #1:'
+    end
   end
 
   describe '#to_s' do

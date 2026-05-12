@@ -121,6 +121,20 @@ RSpec.describe Agent do
       end
     end
 
+    it 'defaults name to empty (main agent)' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]))
+
+      assert_equal '', agent.name
+    end
+
+    it 'exposes an explicitly passed name' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                        listeners: Agent::ListenerList.new([in_memory]), name: '0_1')
+
+      assert_equal '0_1', agent.name
+    end
+
     describe 'context-window detection' do
       let(:token_log) { Agent::Listener::TokenLog.new }
       let(:list_with_tokens) { Agent::ListenerList.new([in_memory, token_log]) }
@@ -392,6 +406,41 @@ RSpec.describe Agent do
       refute_same listeners, call[:listeners]
       assert_kind_of Agent::ListenerList, call[:listeners]
       assert_equal '[InMemoryList, StepLimit(max=1)]', call[:listeners].to_s
+    end
+
+    it "tags the synth's listener name as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do
+      # Use a TokenLog as the visible carrier of the name: ListenerList
+      # only retains the kwarg on listeners whose for_sub_agent acts on
+      # it, so the derived list's TokenLog#name is the assertable thing.
+      parent_log = Agent::Listener::TokenLog.new
+      listeners  = Agent::ListenerList.new([parent_log, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                        listeners: listeners)
+      arrange_step_exhaustion(2)
+
+      agent.run_loop(user_message: 'q?')
+
+      synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
+      synth_log = synth_listeners.find { |l| l.is_a?(Agent::Listener::TokenLog) }
+      refute_nil synth_log
+      assert_equal 'synthesizer', synth_log.name
+
+      # And the parent's TokenLog is untouched.
+      assert_equal '', parent_log.name
+    end
+
+    it "uses '<parent_name>_synthesizer' when the agent itself has a name" do
+      parent_log = Agent::Listener::TokenLog.new
+      listeners  = Agent::ListenerList.new([parent_log, Agent::Listener::StepLimit.new(max: 2)])
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
+                        listeners: listeners, name: '0_1')
+      arrange_step_exhaustion(2)
+
+      agent.run_loop(user_message: 'q?')
+
+      synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
+      synth_log = synth_listeners.find { |l| l.is_a?(Agent::Listener::TokenLog) }
+      assert_equal '0_1_synthesizer', synth_log.name
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do
