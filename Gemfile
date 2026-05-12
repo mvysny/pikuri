@@ -63,4 +63,8 @@ end
 group :development do
   # Generates YARD docs from the inline tags required by CLAUDE.md.
   gem 'yard', '~> 0.9.43'
+
+  # REPL for bin/console. Was a default gem in Ruby <= 3.x and dropped
+  # from defaults in 4.0, so it must be declared explicitly.
+  gem 'irb', '~> 1.14'
 end
