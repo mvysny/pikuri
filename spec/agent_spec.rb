@@ -473,14 +473,14 @@ RSpec.describe Agent do
       parent_log = Agent::Listener::TokenLog.new
       listeners  = Agent::ListenerList.new([parent_log, Agent::Listener::StepLimit.new(max: 2)])
       agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: listeners, name: '0_1')
+                        listeners: listeners, name: 'sub_agent 0_1')
       arrange_step_exhaustion(2)
 
       agent.run_loop(user_message: 'q?')
 
       synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
       synth_log = synth_listeners.find { |l| l.is_a?(Agent::Listener::TokenLog) }
-      assert_equal '0_1_synthesizer', synth_log.name
+      assert_equal 'sub_agent 0_1_synthesizer', synth_log.name
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do

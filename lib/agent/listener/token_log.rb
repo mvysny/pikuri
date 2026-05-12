@@ -37,7 +37,7 @@ class Agent
     # When the owning {Agent} has a non-empty {Agent#name} (i.e. a
     # sub-agent), the line is prefixed with +[name] +:
     #
-    #   [0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
+    #   [sub_agent 0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
     #
     # +ctx+ is the snapshot (+input + cached + cache_creation+; see
     # {Agent::Tokens}), optionally suffixed with +/<cap>+ when

@@ -174,18 +174,18 @@ RSpec.describe Tool::SubAgent do
         tool.run('task' => 'second')
         tool.run('task' => 'third')
 
-        assert_equal %w[0 1 2], kwargs.map { |kw| kw[:name] }
+        assert_equal ['sub_agent 0', 'sub_agent 1', 'sub_agent 2'], kwargs.map { |kw| kw[:name] }
       end
     end
 
     it 'generates hierarchical names when the parent has a name' do
-      tool = Tool::SubAgent.new(build_parent(name: '0'))
+      tool = Tool::SubAgent.new(build_parent(name: 'sub_agent 0'))
 
       with_captured_agent_new do |kwargs|
         tool.run('task' => 'a')
         tool.run('task' => 'b')
 
-        assert_equal %w[0_0 0_1], kwargs.map { |kw| kw[:name] }
+        assert_equal ['sub_agent 0_0', 'sub_agent 0_1'], kwargs.map { |kw| kw[:name] }
       end
     end
 
@@ -213,7 +213,7 @@ RSpec.describe Tool::SubAgent do
         tool.run('task' => 'go')
       end
 
-      assert_equal [{ max_steps: 7, name: '0' }], recorded
+      assert_equal [{ max_steps: 7, name: 'sub_agent 0' }], recorded
     end
   end
 end

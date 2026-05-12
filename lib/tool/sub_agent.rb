@@ -29,9 +29,11 @@ class Tool
   #
   # All parent state is captured by value at construction — the closure
   # does not chase +parent_agent+ mutations later. The one piece of
-  # mutable state is a monotonic counter used to generate sub-agent ids
-  # (+"0"+, +"1"+, ... at the top level; +"0_0"+, +"0_1"+, ... under a
-  # parent named +"0"+).
+  # mutable state is a monotonic counter used to generate sub-agent ids:
+  # +"sub_agent 0"+, +"sub_agent 1"+, ... at the top level; nested
+  # children of +"sub_agent 0"+ are +"sub_agent 0_0"+, +"sub_agent 0_1"+,
+  # ... — the +"sub_agent "+ prefix appears once at the top and the
+  # underscore-separated counter chain records depth.
   class SubAgent < Tool
     # Description shown to the LLM. Follows the opencode-shape (summary
     # + +Usage:+ bullets) prescribed by the project's tool-description
@@ -79,7 +81,7 @@ class Tool
         execute: lambda { |task:|
           idx = sub_counter
           sub_counter += 1
-          sub_name = parent_name.empty? ? idx.to_s : "#{parent_name}_#{idx}"
+          sub_name = parent_name.empty? ? "sub_agent #{idx}" : "#{parent_name}_#{idx}"
 
           sub = Agent.new(
             transport: transport,
