@@ -9,10 +9,11 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–4 (the foundation —
+> **Current status (2026-05-12):** Steps 1–5 (the foundation —
 > `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read`) are implemented and tested; specs land at 395
-> examples / 0 failures. Next session picks up at **Step 5 (Write)**.
+> `Tool::Read` and `Tool::Write`) are implemented and tested; specs
+> land at 415 examples / 0 failures. Next session picks up at
+> **Step 6 (Edit)**.
 
 ## Orientation for fresh Claude
 
@@ -579,6 +580,38 @@ workspace capture; `bin/pikuri-code` instantiates it. Internally calls
   - Complete: `(End of file - total Z lines)`
 
 ### Step 5 — Write tool
+
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/write.rb`. Spec: `spec/tool/write_spec.rb`
+> (20 examples). Design notes below kept as the historical record.
+> Skip ahead to Step 6 if you're picking up the work.
+>
+> Decisions taken in the session, beyond what was already locked in:
+> - **Strict bytes**, no trailing-newline normalization — predictability
+>   over friction; if model is repeatedly hit by 1-byte diffs that's
+>   itself a useful signal it isn't tracking state.
+> - **Read-side EACCES** returns its own error message
+>   (`"Error: cannot read <path> for overwrite check: ..."`) — distinct
+>   from the write-side `"Error: cannot write <path>: ..."`. The
+>   identical-check read raises a private `Tool::Write::Error` on
+>   `Errno::EACCES`, rescued at the top of `.write` alongside
+>   `Tool::Workspace::Error`; the bottom `Errno::EACCES` rescue then
+>   only catches genuine write-side failures (`mkdir_p` / `File.write`).
+>   Symmetric with how the workspace surfaces boundary violations.
+> - **Plain `File.write`**, no atomic temp-file+rename — matches both
+>   opencode (`fs.writeFileString` + retry-with-mkdir on NotFound) and
+>   pi (`mkdir(dir)` then `writeFile(path, content)`).
+> - **Success observation**: `"Created <path> (<n> bytes)"` for new
+>   files, `"Updated <path> (<old> → <new> bytes)"` for overwrites
+>   (chose the create/update split over pi's single-shape message
+>   because it gives the model a concrete signal whether the file was
+>   pre-existing).
+> - **Confirmation prompt** rendered as a single line:
+>   `"OK to overwrite <path>: <old> → <new> bytes? (y/n)"` — `Confirmer`
+>   adds the leading blank line; trailing punctuation belongs to the
+>   caller per the port contract.
+> - **Directory-at-path** is checked explicitly up front rather than
+>   relying on `Errno::EISDIR` to bubble through the rescue.
 
 `Tool::Write.new(workspace:, confirmer:)`. Calls
 `workspace.resolve_for_write(path)`. Confirmer is needed because
