@@ -9,12 +9,15 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–10 are done. The Step 1–9
+> **Current status (2026-05-12):** Steps 1–11 are done. The Step 1–9
 > foundation (`Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess`,
 > and the six file/shell tools — `Read`, `Write`, `Edit`, `Bash`, `Grep`,
 > `Glob`) is implemented and tested (538 examples / 0 failures). Step 10
-> shipped `prompts/coding-system-prompt.txt`. Next session picks up at
-> **Step 11 (`bin/pikuri-code`)**.
+> shipped `prompts/coding-system-prompt.txt`. Step 11 shipped
+> `bin/pikuri-code`. Next session picks up at **Step 12 (Specs)** — though
+> per-tool specs already exist; what's left is whatever integration /
+> smoke spec we want for the binary itself, plus Step 13 (CLAUDE.md
+> updates).
 
 ## Orientation for fresh Claude
 
@@ -1121,49 +1124,62 @@ Decisions left for the session:
 
 ### Step 11 — `bin/pikuri-code`
 
-Entry point, modelled on `bin/pikuri-chat`. Self-bootstraps via Bundler,
-configures the same llama.cpp endpoint, builds the agent with the new
-tool set + existing tools + sub-agents, REPLs until Ctrl+C / Ctrl+D.
-
-**`--yolo` flag** (locked in): `bin/pikuri-code --yolo` swaps
-`Tool::Confirmer::TERMINAL` for `Tool::Confirmer::AUTO_APPROVE`. Parse
-with a one-liner (`yolo = ARGV.delete('--yolo')`) before forwarding
-remaining ARGV as the first user message. The banner gets an extra
-line in yolo mode (`"YOLO mode: confirmations auto-approved. Use only
-inside a docker / dev-container sandbox."`) so the user can't forget
-the flag is on.
-
-**Project-context auto-load** (locked in): after reading
-`prompts/coding-system-prompt.txt`, append the contents of `AGENTS.md`
-(or, falling back if it doesn't exist, `CLAUDE.md`) from the workspace
-root. Pikuri-code's `Tool::Workspace::Cwd` is rooted at `Dir.pwd` at
-startup, so the lookup is relative to that. ~2 lines of Ruby:
-
-```ruby
-md_path = ['AGENTS.md', 'CLAUDE.md'].find { |f| File.exist?(f) }
-prompt += "\n\n# Project Context\n\n" + File.read(md_path) if md_path
-```
-
-The `# Project Context\n\n` header tells the model the appended block
-is workspace-authoritative project guidance, not part of the universal
-prompt. Decisions left for the session: exact header wording (Project
-Context vs. Workspace Instructions vs. Repository Conventions), and
-whether to log to stderr which file (if any) was loaded — recommend
-yes, brief one-liner, helps the user see which file is in scope.
-
-Decisions for the session:
-
-- Workspace construction: `Tool::Workspace::Cwd.new(root: Dir.pwd)` at
-  startup, shared across all file-touching tools.
-- Banner: "Pikuri Coding Agent. Working in <CWD>. Press Ctrl+C or
-  Ctrl+D to quit." (+ the yolo-mode line when applicable).
-- Step budget — coding turns chain more tool calls than chat turns; 20
-  is probably too low. 40? 50? Settle in the session.
-- Reuse the boot wiring with `bin/pikuri-chat`? Both share
-  `RubyLLM.configure`, the llama_probe_url derivation, the rescue for
-  `ContextLengthExceededError`. Worth extracting a small helper into
-  `lib/`, or duplicate? Recommendation: duplicate for now (2 sites,
-  each ~10 lines); extract on the third binary.
+> **Status: IMPLEMENTED** (2026-05-12).
+> File: `bin/pikuri-code` (~100 lines). Smoke-tested: banner +
+> REPL boot from project root, `--yolo` line, AGENTS.md preference
+> over CLAUDE.md from a clean cwd, CWD reflected in banner + system
+> prompt footer. Design notes below kept as the historical record.
+>
+> Decisions taken in the session:
+>
+> - **Step budget: 40.** Chat's 20 is too low for coding turns where
+>   a single user request often chains read-grep-edit-test-re-edit-
+>   re-test for 15–25 calls; with retries on errors, 30+ is normal.
+>   40 is the middle of the band that gives real work room while
+>   still bounding a runaway loop (≈ 80K tokens at 2K avg per step).
+> - **Sub-agent budget: 20.** Same as chat. Coding sub-agents are
+>   mostly research delegation; they inherit the parent's tools so
+>   they technically *could* edit, but the typical use is "go read
+>   X and report back".
+> - **Tool order: file/shell first, web second, calculator last.**
+>   Read, Grep, Glob, Edit, Write, Bash, then WEB_SEARCH, WEB_SCRAPE,
+>   FETCH, CALCULATOR. RubyLLM presents tools in declaration order;
+>   some models bias toward earlier ones, so the coding-relevant set
+>   comes first.
+> - **CWD + date footer ON.** Appended after the project-context
+>   block: `Current date: 2026-05-12\nCurrent working directory:
+>   /path`. Saves the model a `bash pwd` round-trip and gives it the
+>   absolute root that workspace-relative paths resolve against.
+> - **`Time.now.strftime('%Y-%m-%d')`, not `Date.today`.** Avoids a
+>   `require 'date'` since the binary doesn't otherwise need it;
+>   `Time` is built-in.
+> - **Banner stack:** main line + optional context-loaded line +
+>   optional yolo line:
+>   ```
+>   Pikuri Coding Agent. Working in <CWD>. Press Ctrl+C or Ctrl+D to quit.
+>   Loaded project context from AGENTS.md.        ← only if loaded
+>   YOLO mode: confirmations auto-approved. ...   ← only if --yolo
+>   ```
+>   All on stdout — same surface as the banner, not stderr.
+> - **Boot duplicated, not extracted.** Two binaries with ~10 lines
+>   of shared RubyLLM.configure + llama_probe_url derivation +
+>   ContextLengthExceededError rescue. Extract on the third binary.
+> - **Model id: same as chat** (`unsloth/Qwen3.6-35B-A3B-GGUF`).
+>   Same local llama.cpp server.
+> - **`--yolo` parsed via `ARGV.delete`**, anywhere in argv; truthy
+>   if matched, removed from argv so the rest joins cleanly as the
+>   initial user message.
+>
+> What was NOT done (and is worth surfacing):
+>
+> - No `--help`, no argparse — positional ARGV is the first user
+>   message, same convention as chat.
+> - No file-size cap on AGENTS.md / CLAUDE.md content — trust the
+>   user; revisit if a 10K-line file shows up.
+> - No encoding sniff on the project-context file — `File.read` and
+>   let the bytes flow.
+> - No extracted boot helper in `lib/` — third binary triggers the
+>   refactor.
 
 ### Step 12 — Specs
 
