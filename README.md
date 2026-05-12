@@ -61,6 +61,23 @@ It's the same author's small didactic project, written precisely so
 the source is the lesson. Pikuri is the production-shaped sibling:
 same loop, plus tools, listeners, sub-agents, and ergonomics.
 
+# More Substance
+
+pikuri-chat builds your understanding of pikuri underpinnings, but it's just a toy.
+The real fun begins now.
+
+## pikuri-code
+
+TODO to be described. A simple version of Claude Code, opencode or pi-code.
+
+Skeletal impl in `bin/pikuri-code` - you can toy with it but not all privacy
+and features are in place.
+
+## pikuri-assistant
+
+Has access to your private documents, can read and respond to e-mails, remembers
+stuff. TODO implemented in the future.
+
 ## Tests
 
 ```sh
