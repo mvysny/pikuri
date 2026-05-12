@@ -26,7 +26,7 @@ agent = Agent.new(
     provider: :openai,
     assume_model_exists: true
   ),
-  system_prompt: File.read("#{__dir__}/../smolagents-system-prompt.txt"),
+  system_prompt: File.read("#{__dir__}/../prompts/pikuri-chat.txt"),
   tools: [Tool::WEB_SEARCH, Tool::CALCULATOR, Tool::WEB_SCRAPE, Tool::FETCH],
   listeners: Agent::ListenerList.new([
     Agent::Listener::Terminal.new,

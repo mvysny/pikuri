@@ -66,9 +66,7 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
 - `bin/pikuri-chat` — CLI entry point: configures ruby_llm for the local llama.cpp
   server, builds an `Agent` wired with `Terminal` + `StepLimit` listeners,
   enables sub-agents, and feeds a question from `ARGV` or stdin.
-- `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
-  the system prompt used by `bin/pikuri-chat`, plus a verbatim upstream reference
-  fixture kept under its original filename for traceability.
+- `prompts/pikuri-chat.txt` — the system prompt used by `bin/pikuri-chat`.
 
 ## Conventions
 
@@ -144,7 +142,7 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   (defaults, caps, value format) live in the parameter description and
   must NOT be duplicated in the tool description. Universal failure-
   recovery guidance ("on `Error: ...`, use what you have or admit
-  defeat to the user") lives in `smolagents-system-prompt.txt`, not
+  defeat to the user") lives in `prompts/pikuri-chat.txt`, not
   per-tool. Add an example value (`'..., e.g. "https://example.com"'`)
   to every parameter description; the LLM's argument-filling reliability
   is measurably better with one.
