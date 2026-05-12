@@ -33,7 +33,7 @@ require 'ruby_llm'
 # from the parent's normal turns in any name-aware log line. The
 # synth's answer becomes the value reported by
 # {#last_assistant_content}, so callers (notably {Tool::SubAgent})
-# still get a usable reply instead of raising past +bin/pikuri+.
+# still get a usable reply instead of raising past +bin/pikuri-chat+.
 class Agent
   # @param transport [ChatTransport] the model-resolution triple
   #   (+model+ / +provider+ / +assume_model_exists+) forwarded to
@@ -64,7 +64,7 @@ class Agent
   # @param llama_probe_url [String, nil] llama.cpp +/props+ URL used as
   #   the third detection source. Only consulted when neither
   #   +context_window+ nor ruby_llm's reported value is set. Typically
-  #   derived by +bin/pikuri+ from its configured +openai_api_base+;
+  #   derived by +bin/pikuri-chat+ from its configured +openai_api_base+;
   #   leave +nil+ when the configured server is anything other than
   #   llama.cpp.
   # @param name [String] identifier for this agent. Empty for the main

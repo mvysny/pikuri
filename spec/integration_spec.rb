@@ -54,7 +54,7 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
       end
     end
 
-    # Pikuri's bin/pikuri does this for the local llama.cpp server; the spec
+    # Pikuri's bin/pikuri-chat does this for the local llama.cpp server; the spec
     # has to do the same so RubyLLM::Connection#ensure_configured! is happy.
     RubyLLM.configure do |c|
       c.openai_api_base = 'https://example.test/v1'

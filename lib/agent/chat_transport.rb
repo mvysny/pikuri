@@ -14,7 +14,7 @@ class Agent
   # can't silently miss a field.
   #
   # Pure data carrier: no +RubyLLM+ references here, so the seam stays
-  # in {Agent}, +bin/pikuri+, and {Tool}.
+  # in {Agent}, +bin/pikuri-chat+, and {Tool}.
   #
   # @!attribute [r] model
   #   @return [String, nil] LLM identifier; +nil+ defers to

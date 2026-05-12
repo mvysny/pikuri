@@ -21,7 +21,7 @@ bundled tools.
   bad arguments.
 
 - **The seam.** All `RubyLLM::*` references are confined to three
-  files: `bin/pikuri` (boot/wiring — calls `RubyLLM.configure`),
+  files: `bin/pikuri-chat` (boot/wiring — calls `RubyLLM.configure`),
   `lib/agent.rb` (constructs the Chat, attaches listeners, calls
   `ask`), and `lib/tool.rb` (the `Tool` value class plus its
   `#to_ruby_llm_tool` adapter that emits a synthetic `RubyLLM::Tool`
@@ -63,11 +63,11 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
 - `lib/tool/scraper/` — `Simple` content-type-dispatching fetcher, the pure
   `HTML` and `PDF` extractors, and the shared `FetchError`.
 - `lib/url_cache.rb` — on-disk TTL cache used by the bundled web tools.
-- `bin/pikuri` — CLI entry point: configures ruby_llm for the local llama.cpp
+- `bin/pikuri-chat` — CLI entry point: configures ruby_llm for the local llama.cpp
   server, builds an `Agent` wired with `Terminal` + `StepLimit` listeners,
   enables sub-agents, and feeds a question from `ARGV` or stdin.
 - `smolagents-system-prompt.txt` / `smolagents-system-prompt-original.txt` —
-  the system prompt used by `bin/pikuri`, plus a verbatim upstream reference
+  the system prompt used by `bin/pikuri-chat`, plus a verbatim upstream reference
   fixture kept under its original filename for traceability.
 
 ## Conventions
@@ -76,16 +76,16 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
   Faraday for HTTP, Rainbow for terminal color. ruby_llm is the LLM
   transport — don't add provider-specific SDKs alongside it.
 - **`# frozen_string_literal: true`** at the top of every Ruby file
-  (`lib/`, `spec/`, `bin/pikuri`, etc.). Add it to any new file you
+  (`lib/`, `spec/`, `bin/pikuri-chat`, etc.). Add it to any new file you
   create.
 - **YARD docs on every public module, class, and method.** Use concrete
   types in `@param` and `@return` (`String`, `Integer`, `Array<Hash>`,
   `Faraday::Connection`, `String, nil`) — never bare `Object` or `Any`.
   Document expected exceptions with `@raise`. One-line summary first,
-  then blank line, then tags. This applies to `lib/`; `bin/pikuri` and
+  then blank line, then tags. This applies to `lib/`; `bin/pikuri-chat` and
   `spec/` files don't need it (no public API).
 - **Bundler.** The entry-point script lives in `bin/` and is run
-  directly (`./bin/pikuri "question"`); it self-bootstraps via
+  directly (`./bin/pikuri-chat "question"`); it self-bootstraps via
   `require 'bundler/setup'`, so callers don't need the `bundle exec`
   ceremony. Add gems to `Gemfile` with conservative pessimistic
   constraints (`~>`).

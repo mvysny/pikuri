@@ -53,7 +53,7 @@ addition to) printing.
 
 ## Provider / transport abstraction
 
-- **pikuri**: delegates to ruby_llm. `bin/pikuri` configures the OpenAI
+- **pikuri**: delegates to ruby_llm. `bin/pikuri-chat` configures the OpenAI
   provider for the local llama.cpp server (`openai_api_base` +
   `assume_model_exists: true`); switching to Anthropic / Gemini /
   Bedrock / Ollama / etc. is a one-block edit in `RubyLLM.configure` —
@@ -68,7 +68,7 @@ addition to) printing.
 **Takeaway.** Pikuri inherits ruby_llm's "canonical schema + thin
 per-provider adapter" shape — chosen over opencode's SDK-of-SDKs
 approach because we already wrote tools against the OpenAI tool-call
-shape and ruby_llm preserves that as the canonical form. Today bin/pikuri
+shape and ruby_llm preserves that as the canonical form. Today bin/pikuri-chat
 is hard-coded for the local llama.cpp setup; multi-provider wiring would
 be a small `bin/`-level change rather than a library-level rewrite.
 
@@ -384,7 +384,7 @@ existing primitive.
 9. **Multi-provider abstraction** — **DONE** via the ruby_llm
    migration. Switching pikuri from llama.cpp/OpenAI-shape to
    Anthropic / Gemini / Bedrock / Ollama / etc. is a one-block edit
-   in `bin/pikuri`'s `RubyLLM.configure`. No library code change.
+   in `bin/pikuri-chat`'s `RubyLLM.configure`. No library code change.
 
 ### Out of scope
 
@@ -392,7 +392,7 @@ existing primitive.
     a project this size.
 11. **LSP integration** (opencode). Pikuri isn't a coding agent.
 12. **Steering / follow-up message queues** (pi). Useful for an interactive
-    REPL; `bin/pikuri` is one-shot.
+    REPL; `bin/pikuri-chat` is one-shot.
 13. **Persistent / resumable subagent sessions** (opencode). Requires a
     session store. Not worth it for one feature.
 

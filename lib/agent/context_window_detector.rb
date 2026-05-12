@@ -27,7 +27,7 @@ class Agent
   #    +/props+ endpoint. The server exposes the launched +n_ctx+ at
   #    +default_generation_settings.n_ctx+ there. Probed only when the
   #    first two are +nil+. Provider-specific to llama.cpp; the caller
-  #    (typically +bin/pikuri+) derives the right URL from its configured
+  #    (typically +bin/pikuri-chat+) derives the right URL from its configured
   #    base.
   #
   # == Failure handling

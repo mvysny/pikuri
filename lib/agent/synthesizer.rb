@@ -11,7 +11,7 @@ class Agent
   # == Why this exists
   #
   # Without a rescue, a step-exhausted run just raises a stack trace
-  # past +bin/pikuri+ and the user gets nothing despite the agent
+  # past +bin/pikuri-chat+ and the user gets nothing despite the agent
   # having gathered useful information in the first N-1 steps. The
   # observed failure mode is the "wait, but what about X?" death-loop:
   # the agent collects sound evidence in the first few rounds, then

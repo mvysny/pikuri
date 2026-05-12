@@ -13,7 +13,7 @@ Install dependencies:
 bundle install
 ```
 
-Point `bin/pikuri` at your backend by editing the `OpenAIClient.new(...)` call
+Point `bin/pikuri-chat` at your backend by editing the `OpenAIClient.new(...)` call
 (`url`, `model`, `api_key`).
 
 If you want web search via Brave, set `BRAVE_SEARCH_API_KEY`; otherwise it
@@ -22,13 +22,13 @@ falls back to scraping DuckDuckGo.
 Then ask it something:
 
 ```sh
-./bin/pikuri "What is 17 * 23, and who won the 2022 World Cup?"
+./bin/pikuri-chat "What is 17 * 23, and who won the 2022 World Cup?"
 ```
 
 Or run it without arguments for an interactive prompt:
 
 ```sh
-./bin/pikuri
+./bin/pikuri-chat
 ```
 
 ## Tests
