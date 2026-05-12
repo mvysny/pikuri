@@ -168,6 +168,60 @@ RSpec.describe Agent::ListenerList do
     end
   end
 
+  describe '#with_padding' do
+    it 'replaces every Terminal with a fresh instance carrying the new padding' do
+      original_terminal = Agent::Listener::Terminal.new
+      list = described_class.new([original_terminal, recorder])
+
+      derived = list.with_padding(2)
+
+      derived_terminal = derived.instance_variable_get(:@listeners).find do |l|
+        l.is_a?(Agent::Listener::Terminal)
+      end
+      refute_nil derived_terminal
+      refute_same original_terminal, derived_terminal
+      assert_equal 2, derived_terminal.padding
+    end
+
+    it 'is absolute, not additive: chaining twice sets the padding to the last value' do
+      list = described_class.new([Agent::Listener::Terminal.new])
+
+      derived = list.with_padding(2).with_padding(2)
+
+      derived_terminal = derived.instance_variable_get(:@listeners).find do |l|
+        l.is_a?(Agent::Listener::Terminal)
+      end
+      assert_equal 2, derived_terminal.padding
+    end
+
+    it 'leaves the original Terminal at its previous padding' do
+      original_terminal = Agent::Listener::Terminal.new
+      list = described_class.new([original_terminal])
+
+      list.with_padding(2)
+
+      assert_equal 0, original_terminal.padding
+    end
+
+    it 'preserves non-Terminal listener identities so output keeps flowing' do
+      list = described_class.new([recorder, Agent::Listener::Terminal.new])
+
+      derived = list.with_padding(2)
+      derived.on_message(Agent::Message::User.new(content: 'forked'))
+
+      assert_equal [Agent::Message::User.new(content: 'forked')], recorder.events
+    end
+
+    it 'is a copy-only no-op when no Terminal is present' do
+      list = described_class.new([recorder, Agent::Listener::StepLimit.new(max: 4)])
+
+      derived = list.with_padding(2)
+
+      assert_equal '[InMemoryList, StepLimit(max=4)]', derived.to_s
+      refute_same list, derived
+    end
+  end
+
   describe '#context_window_cap=' do
     let(:terminal) { Agent::Listener::Terminal.new }
 

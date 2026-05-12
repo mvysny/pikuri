@@ -100,6 +100,32 @@ class Agent
       self.class.new(swapped)
     end
 
+    # Return a new {ListenerList} with each {Listener::Terminal} swapped
+    # for a fresh instance carrying +padding+ leading spaces on every
+    # rendered line. Used by {Tool::SubAgent.build} so sub-agent output
+    # is visually indented under the parent's stream; the parent's
+    # +Terminal+ is left at padding 0.
+    #
+    # Absolute, not additive: chaining +with_padding(2)+ twice yields a
+    # list whose +Terminal+s render at 2 spaces, not 4 — same precedent
+    # as {#with_max_steps} ("set this knob") rather than composing.
+    # Sub-agent recursion is already blocked (the sub-agent's tool set
+    # excludes +sub_agent+ itself), so the depth never exceeds 1 in
+    # practice.
+    #
+    # Non-+Terminal+ listeners are passed by reference — same convention
+    # as {#with_zero_tokens}. No-op (besides the +dup+) if the receiver
+    # contains no +Terminal+.
+    #
+    # @param padding [Integer] non-negative number of leading spaces
+    # @return [ListenerList]
+    def with_padding(padding)
+      swapped = @listeners.map do |l|
+        l.is_a?(Listener::Terminal) ? Listener::Terminal.new(padding: padding) : l
+      end
+      self.class.new(swapped)
+    end
+
     # Set the context-window cap on every {Listener::TokenLog} in the
     # list. Called by {Agent#initialize} once
     # {Agent::ContextWindowDetector} has resolved a value, so the

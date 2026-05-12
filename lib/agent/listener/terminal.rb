@@ -10,6 +10,11 @@ class Agent
     # and tool-result lines. {Message::User} is intentionally silent —
     # the user typed it, so re-rendering it adds nothing on the CLI.
     # This is the default listener attached by {Agent#initialize}.
+    #
+    # Optionally prepends a fixed number of leading spaces to every
+    # rendered line via the +padding:+ kwarg. Sub-agents get a fresh
+    # padded instance through {Agent::ListenerList#with_padding} so
+    # their output is visually indented under the parent's stream.
     class Terminal < MessageListener
       LOGGER = Pikuri.logger_for('Terminal')
 
@@ -19,33 +24,63 @@ class Agent
       # char return apart from a 50KB HTML dump.
       MAX_TOOL_RESULT_CHARS = 200
 
+      # @param padding [Integer] non-negative number of leading spaces
+      #   prepended to every rendered line. Defaults to 0; sub-agents
+      #   set this to 2 via {Agent::ListenerList#with_padding}.
+      def initialize(padding: 0)
+        super()
+        @padding = padding
+      end
+
+      # @return [Integer] current padding width; exposed so
+      #   {Agent::ListenerList#with_padding} can introspect it (and so
+      #   tests can assert it).
+      attr_reader :padding
+
       # @param message [Agent::Message] one of the {Agent::Message}
       #   variants; see {Agent::Message} for the full list
       # @return [void]
       def on_message(message)
         case message
         in Message::Thinking(content:)
-          puts Rainbow(content).darkgray
+          puts indent(Rainbow(content).darkgray)
         in Message::Assistant(content:)
-          puts render_markdown(content)
+          puts indent(render_markdown(content))
         in Message::ToolCall(name:, arguments:)
           args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
-          puts Rainbow("→ #{name}(#{args})").cyan
+          puts indent(Rainbow("→ #{name}(#{args})").cyan)
         in Message::ToolResult(content:)
-          puts Rainbow("= #{truncate_tool_result(content)}").cyan
+          puts indent(Rainbow("= #{truncate_tool_result(content)}").cyan)
         in Message::FallbackNotice(reason:)
-          puts Rainbow("! #{reason}").yellow
+          puts indent(Rainbow("! #{reason}").yellow)
         in Message::User
           # No-op: the user just typed this; echoing it back is noise.
         end
       end
 
-      # @return [String] short label for {Agent#to_s}
+      # @return [String] short label for {Agent#to_s}; includes the
+      #   padding suffix only when non-zero so the default form stays
+      #   +"Terminal"+
       def to_s
-        'Terminal'
+        @padding.zero? ? 'Terminal' : "Terminal(padding=#{@padding})"
       end
 
       private
+
+      # Prepend +@padding+ spaces to every line of +text+. Splits on
+      # +each_line+ rather than a +gsub+ trick so a trailing newline
+      # in the input doesn't produce a stray padded blank line at the
+      # end — +puts+ adds the final newline if missing, same as
+      # before.
+      #
+      # @param text [String]
+      # @return [String]
+      def indent(text)
+        return text if @padding.zero?
+
+        prefix = ' ' * @padding
+        text.to_s.each_line.map { |line| prefix + line }.join
+      end
 
       # Render assistant Markdown for the terminal, degrading to the
       # raw string when the renderer raises. tty-markdown / strings

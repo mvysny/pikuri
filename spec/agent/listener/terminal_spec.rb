@@ -73,6 +73,50 @@ RSpec.describe Agent::Listener::Terminal do
     it 'renders as "Terminal"' do
       assert_equal 'Terminal', described_class.new.to_s
     end
+
+    it 'renders the padding suffix when padding is non-zero' do
+      assert_equal 'Terminal(padding=2)', described_class.new(padding: 2).to_s
+    end
+  end
+
+  describe 'padding' do
+    let(:padded) { described_class.new(padding: 2) }
+
+    it 'prepends N spaces to every rendered line of Assistant content' do
+      content = "line one\nline two"
+      out = capture_stdout { padded.on_message(Agent::Message::Assistant.new(content: content)) }
+      assert_equal "  line one\n  line two\n", out
+    end
+
+    it 'prepends N spaces to ToolCall, ToolResult, Thinking, and FallbackNotice' do
+      out = capture_stdout do
+        padded.on_message(Agent::Message::Thinking.new(content: 'pondered'))
+        padded.on_message(Agent::Message::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
+        padded.on_message(Agent::Message::ToolResult.new(content: '42'))
+        padded.on_message(Agent::Message::FallbackNotice.new(reason: 'budget exhausted'))
+      end
+      out.each_line do |line|
+        assert line.start_with?('  '), "expected line to start with 2 spaces, got: #{line.inspect}"
+      end
+    end
+
+    it 'does not add a trailing padded blank line when input ends with newline' do
+      # each_line splits "hi\n" into ["hi\n"], not ["hi\n", ""], so the
+      # joined output is "  hi\n" — no stray "  \n" tacked on.
+      out = capture_stdout { padded.on_message(Agent::Message::Assistant.new(content: "hi\n")) }
+      assert_equal "  hi\n", out
+    end
+
+    it 'is a no-op when padding is 0 (default)' do
+      content = "line one\nline two"
+      out = capture_stdout { listener.on_message(Agent::Message::Assistant.new(content: content)) }
+      assert_equal "line one\nline two\n", out
+    end
+
+    it 'exposes the current padding via #padding' do
+      assert_equal 0, described_class.new.padding
+      assert_equal 4, described_class.new(padding: 4).padding
+    end
   end
 
   describe 'Markdown render failure' do
