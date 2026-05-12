@@ -9,11 +9,11 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–6 (the foundation —
+> **Current status (2026-05-12):** Steps 1–7 (the foundation —
 > `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess` — plus
-> `Tool::Read`, `Tool::Write`, and `Tool::Edit`) are implemented and
-> tested; specs land at 451 examples / 0 failures. Next session picks
-> up at **Step 7 (Bash)**.
+> `Tool::Read`, `Tool::Write`, `Tool::Edit`, and `Tool::Bash`) are
+> implemented and tested; specs land at 485 examples / 0 failures.
+> Next session picks up at **Step 8 (Grep)**.
 
 ## Orientation for fresh Claude
 
@@ -727,6 +727,71 @@ Decisions for the session:
 - Description heredoc — model after opencode's `edit.txt`.
 
 ### Step 7 — Bash tool
+
+> **Status: IMPLEMENTED** (2026-05-12).
+> Code: `lib/tool/bash.rb`. Spec: `spec/tool/bash_spec.rb`
+> (34 examples). Design notes below kept as the historical record.
+> Skip ahead to Step 8 if you're picking up the work.
+>
+> Decisions taken in the session, beyond what was already locked in:
+>
+> - **uutils-coreutils workaround.** GNU coreutils' `timeout` exits
+>   124 (SIGTERM) / 137 (SIGKILL) on a fired timeout. The
+>   uutils-coreutils 0.2.2 reimplementation (shipped on some distros)
+>   sends the SIGTERM correctly but mis-reports exit **125** when
+>   `--kill-after` is in play. Pikuri accepts 124, 125, and 137 as
+>   timeout indicators; the false-positive risk on real GNU coreutils
+>   is low (our argv is fixed, so 125 there would be a PATH config
+>   bug rather than a routine timeout). Caveat: 137 is also
+>   ambiguous with an OOM-killer SIGKILL of the command itself —
+>   accepted for v1; the user-facing message says "sent SIGTERM,
+>   then SIGKILL" either way.
+> - **Confirmation prompt is three lines** with the colon dropped when
+>   there's no description (a trailing colon with nothing after reads
+>   as broken) and the timeout suffix omitted at the default 120s:
+>     - desc + non-default timeout:
+>       `OK to run bash: Run unit tests [Timeout: 300s]`
+>     - desc + default timeout: `OK to run bash: Run unit tests`
+>     - no desc + default: `OK to run bash`
+>     - no desc + non-default: `OK to run bash [Timeout: 300s]`
+>   Then `$ <visible(command)>` (dimgray) and `(y/n)?` on their own
+>   lines. Bold on the header line; the body cue is plain.
+> - **Description echo lives in the confirmation prompt only**, not in
+>   the observation fed back to the model — keeps the model from
+>   confusing its own description text for tool output on the next
+>   turn. A future agent that auto-generates descriptions can wire in
+>   without touching the observation shape.
+> - **`description` stays optional.** Forcing it would either teach
+>   the model to fill junk to satisfy the schema or make oneliners
+>   (`ls`, `pwd`) feel ceremonial. The description's value is to the
+>   user at confirmation time; a v2 sub-agent that derives it from the
+>   command is the better answer.
+> - **Startup binary check routes through `Pikuri::Subprocess.spawn`,
+>   not `system`.** Refinement on the plan, which predated the
+>   subprocess-seam discipline added in commit `dcacc74`. One probe
+>   (`bash -c 'command -v timeout >/dev/null'`) catches both binaries:
+>   bash-missing surfaces as `Errno::ENOENT` from `popen2e`,
+>   timeout-missing as a non-zero exit from `command -v`.
+> - **Truncation marker reports both omitted-bytes and total-bytes**,
+>   so the model knows the scale of what it's missing and can pick
+>   `head` / `tail` / `grep` / `wc` accordingly. ASCII three-dot
+>   ellipsis, no Unicode.
+> - **`exit status: N` always rendered**, including on `0`. The model
+>   needs the signal; consistency over terseness.
+> - **Empty / whitespace-only command** is rejected up front before
+>   consulting the confirmer.
+>
+> Implementation-detail notes worth recording so future-Claude doesn't
+> rediscover:
+>
+> - `Pikuri::Subprocess#wait` blocks on `io.read`. If a child of bash
+>   inherits the popen2e pipe (sleep does this by default), bash dying
+>   after SIGTERM doesn't unblock the read — sleep does. For an
+>   ignore-SIGTERM-loop-forever command, the `--kill-after` escalation
+>   is the only line of defense before the at-exit pgroup SIGTERM.
+>   Document this constraint in the YARD header rather than papering
+>   over it.
+> - `Rainbow(...).dimgray` (not `.dim`, which doesn't exist on Rainbow).
 
 `Tool::Bash.new(workspace:, confirmer:)`. First tool that needs the
 confirmer. Bash doesn't path-resolve individual args — the command
