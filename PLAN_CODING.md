@@ -9,15 +9,15 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
-> **Current status (2026-05-12):** Steps 1–11 are done. The Step 1–9
+> **Current status (2026-05-12):** Steps 1–12 are done. The Step 1–9
 > foundation (`Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess`,
 > and the six file/shell tools — `Read`, `Write`, `Edit`, `Bash`, `Grep`,
 > `Glob`) is implemented and tested (538 examples / 0 failures). Step 10
 > shipped `prompts/coding-system-prompt.txt`. Step 11 shipped
-> `bin/pikuri-code`. Next session picks up at **Step 12 (Specs)** — though
-> per-tool specs already exist; what's left is whatever integration /
-> smoke spec we want for the binary itself, plus Step 13 (CLAUDE.md
-> updates).
+> `bin/pikuri-code`. Step 12's per-tool, workspace, confirmer, and
+> subprocess specs all shipped alongside their respective implementations;
+> open decisions resolved (see step header). Next session picks up at
+> **Step 13 (CLAUDE.md updates)**.
 
 ## Orientation for fresh Claude
 
@@ -1182,6 +1182,27 @@ Decisions left for the session:
 >   refactor.
 
 ### Step 12 — Specs
+
+> **Status: IMPLEMENTED** (2026-05-12). Per-tool specs shipped alongside
+> each tool in Steps 1–9; nothing additional was needed at Step 12 time.
+> The two open decisions below resolved as:
+>
+> - **(a) Stub `Open3.capture3` for bash specs or run real commands?** —
+>   Real commands inside a `Dir.mktmpdir` workspace, running through
+>   `Pikuri::Subprocess` end-to-end. See `spec/tool/bash_spec.rb:7`. The
+>   stubbing path was rejected: the subprocess seam is the thing under
+>   test, and stubbing `Open3` would have meant stubbing the very layer
+>   we wrote in Step 3.
+> - **(b) Integration spec for the whole `bin/pikuri-code` loop?** —
+>   Skipped. `spec/integration_spec.rb` already pins the
+>   `Tool ↔ ruby_llm` wire shape via a synthetic `echo` tool; per-tool
+>   specs cover the bundled coding tools individually. The only gap a
+>   binary-level spec would close is "did `bin/pikuri-code` wire the
+>   tools with the right `workspace` / `confirmer` args?", which breaks
+>   visibly the first time anyone runs it. A boot-only smoke spec would
+>   also have required an entrypoint refactor (the binary auto-runs at
+>   top level with no `if __FILE__ == $0` guard) — disproportionate for
+>   a 60-line script.
 
 Each new tool gets a spec under `spec/tool/` following the existing
 `spec/tool/calculator_spec.rb` style (rspec-core + minitest asserts).
