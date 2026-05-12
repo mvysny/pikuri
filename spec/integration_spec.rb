@@ -125,9 +125,11 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
     )
 
     agent = Agent.new(
-      model: 'test-model',
-      provider: :openai,
-      assume_model_exists: true,
+      transport: Agent::ChatTransport.new(
+        model: 'test-model',
+        provider: :openai,
+        assume_model_exists: true
+      ),
       system_prompt: 'be terse',
       tools: [echo_tool],
       listeners: Agent::ListenerList.new([
@@ -190,9 +192,11 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
     )
 
     agent = Agent.new(
-      model: 'test-model',
-      provider: :openai,
-      assume_model_exists: true,
+      transport: Agent::ChatTransport.new(
+        model: 'test-model',
+        provider: :openai,
+        assume_model_exists: true
+      ),
       system_prompt: 'be terse',
       tools: [described_tool],
       listeners: Agent::ListenerList.new([

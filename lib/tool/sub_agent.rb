@@ -21,18 +21,23 @@ class Tool
   # +InMemoryList+ sees both streams) while the sub-agent's tool-call
   # budget stays its own.
   module SubAgent
-    # Build a sub-agent tool that closes over a specific model / system
-    # prompt / tool list / listener list.
+    # Build a sub-agent tool that closes over a specific transport /
+    # system prompt / tool list / listener list.
     #
     # @example wiring
     #   sub_tools = [Tool::WEB_SEARCH, Tool::CALCULATOR]
+    #   transport = Agent::ChatTransport.new(model: 'gpt-4')
     #   sub_agent_tool = Tool::SubAgent.build(
-    #     model: 'gpt-4', system_prompt: prompt, tools: sub_tools, listeners: agent.listeners
+    #     transport: transport, system_prompt: prompt, tools: sub_tools, listeners: agent.listeners
     #   )
-    #   agent = Agent.new(model: 'gpt-4', system_prompt: prompt, tools: sub_tools + [sub_agent_tool])
+    #   agent = Agent.new(transport: transport, system_prompt: prompt, tools: sub_tools + [sub_agent_tool])
     #
-    # @param model [String, nil] LLM identifier for the sub-agent; +nil+
-    #   defers to +RubyLLM.config.default_model+
+    # @param transport [Agent::ChatTransport] model-resolution bundle
+    #   for the spawned sub-agent. Typically the parent's
+    #   {Agent#transport} so the sub-agent's chat hits the same
+    #   server with the same registry-bypass posture; passing them as
+    #   a single value object is how this method avoids the recurring
+    #   bug where individual kwargs got missed at the forwarding site.
     # @param system_prompt [String] system prompt for the sub-agent;
     #   typically the same prompt the parent agent uses
     # @param tools [Array<Tool>] tools the sub-agent is allowed to call.
@@ -51,9 +56,10 @@ class Tool
     #   the sub-agent inherits the same cap (same model, same server)
     #   without re-probing on every invocation.
     # @return [Tool] a fresh sub-agent tool; not a singleton, since each
-    #   invocation closes over a specific +model+, +system_prompt+,
+    #   invocation closes over a specific +transport+, +system_prompt+,
     #   +tools+, and +listeners+
-    def self.build(system_prompt:, tools:, listeners:, model: nil, max_steps: 10, context_window: nil)
+    def self.build(transport:, system_prompt:, tools:, listeners:,
+                   max_steps: 10, context_window: nil)
       Tool.new(
         name: 'sub_agent',
         description: <<~DESC,
@@ -75,7 +81,7 @@ class Tool
         },
         execute: lambda { |task:|
           sub = Agent.new(
-            model: model,
+            transport: transport,
             system_prompt: system_prompt,
             tools: tools,
             listeners: listeners.with_max_steps(max_steps).with_zero_tokens,
@@ -89,10 +95,11 @@ class Tool
   end
 
   # Convenience alias at the +Tool+ level. See {SubAgent.build}.
-  def self.sub_agent(system_prompt:, tools:, listeners:, model: nil, max_steps: 10, context_window: nil)
+  def self.sub_agent(transport:, system_prompt:, tools:, listeners:,
+                     max_steps: 10, context_window: nil)
     SubAgent.build(
-      system_prompt: system_prompt, tools: tools, listeners: listeners,
-      model: model, max_steps: max_steps, context_window: context_window
+      transport: transport, system_prompt: system_prompt, tools: tools, listeners: listeners,
+      max_steps: max_steps, context_window: context_window
     )
   end
 end

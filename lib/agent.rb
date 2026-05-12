@@ -30,9 +30,15 @@ require 'ruby_llm'
 # {#last_assistant_content}, so callers (notably {Tool::SubAgent})
 # still get a usable reply instead of raising past +bin/pikuri+.
 class Agent
-  # @param model [String, nil] LLM identifier; defaults to
-  #   +RubyLLM.config.default_model+ so transport configuration can pick
-  #   the model
+  # @param transport [ChatTransport] the model-resolution triple
+  #   (+model+ / +provider+ / +assume_model_exists+) forwarded to
+  #   +RubyLLM.chat+. Bundled into one value object so every
+  #   construction site — this constructor, the synthesizer rescue
+  #   below, and {Tool::SubAgent.build} — can forward all three with
+  #   one assignment instead of three kwargs (where dropping one would
+  #   silently route the chat elsewhere or raise
+  #   +RubyLLM::ModelNotFoundError+). If +transport.model+ is +nil+,
+  #   it's filled in from +RubyLLM.config.default_model+.
   # @param system_prompt [String] system message prepended to the chat
   # @param tools [Array<Tool>] pikuri tools registered with the
   #   underlying chat in declaration order. Each is converted to
@@ -44,14 +50,6 @@ class Agent
   #   default, because the renderer and step-budget choices are
   #   deliberate per-call decisions. Typical CLI shape:
   #   +ListenerList.new([Listener::Terminal.new, Listener::StepLimit.new(max: 20)])+.
-  # @param provider [Symbol, nil] forwarded to +RubyLLM.chat+. Required
-  #   together with +assume_model_exists+ when pointing at a local
-  #   OpenAI-compatible server (llama.cpp, gpustack, ...) whose model
-  #   ids are not in ruby_llm's registry. Stored so the synthesizer
-  #   rescue can construct a fresh chat with the same transport.
-  # @param assume_model_exists [Boolean] forwarded to +RubyLLM.chat+;
-  #   set to +true+ to skip the registry lookup and trust the supplied
-  #   +model+ id. Requires +provider+.
   # @param context_window [Integer, nil] explicit override for the
   #   model's context-window cap. When set, it wins over ruby_llm's
   #   reported value and the llama.cpp probe — see
@@ -65,18 +63,15 @@ class Agent
   #   leave +nil+ when the configured server is anything other than
   #   llama.cpp.
   # @return [Agent]
-  def initialize(system_prompt:, tools:, listeners:, model: nil,
-                 provider: nil, assume_model_exists: false,
+  def initialize(transport:, system_prompt:, tools:, listeners:,
                  context_window: nil, llama_probe_url: nil)
-    @model = model || RubyLLM.config.default_model
+    @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
     @system_prompt = system_prompt
     @tools = tools.dup
     @listeners = listeners
-    @provider = provider
-    @assume_model_exists = assume_model_exists
     @synth_answer = nil
 
-    @chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
+    @chat = RubyLLM.chat(**@transport.to_h)
     @chat.with_instructions(@system_prompt)
     @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
 
@@ -92,8 +87,20 @@ class Agent
   # @return [RubyLLM::Chat] underlying chat; the extension seam
   attr_reader :chat
 
-  # @return [String]
-  attr_reader :model
+  # @return [ChatTransport] the resolved transport bundle this agent
+  #   was constructed with — same model id / provider /
+  #   assume-model-exists flag passed to every +RubyLLM.chat+ call
+  #   originating from this agent (the main chat, the synthesizer
+  #   rescue, the sub-agent factory). Read by {#allow_sub_agent} so
+  #   spawned sub-agents reuse the same transport without each call
+  #   site re-listing the three fields.
+  attr_reader :transport
+
+  # @return [String] resolved model id from {#transport}. Convenience
+  #   delegator for callers that don't need the full transport bundle.
+  def model
+    @transport.model
+  end
 
   # @return [String]
   attr_reader :system_prompt
@@ -149,7 +156,7 @@ class Agent
     )
     @listeners.on_message(notice)
 
-    synth_chat = RubyLLM.chat(model: @model, provider: @provider, assume_model_exists: @assume_model_exists)
+    synth_chat = RubyLLM.chat(**@transport.to_h)
     @synth_answer = Synthesizer.run(
       chat: synth_chat,
       parent_messages: @chat.messages,
@@ -175,7 +182,7 @@ class Agent
   def allow_sub_agent(max_steps: 10)
     sub_tools = @tools.dup
     sub_tool = Tool.sub_agent(
-      model: @model,
+      transport: @transport,
       system_prompt: @system_prompt,
       tools: sub_tools,
       listeners: @listeners,
@@ -199,6 +206,6 @@ class Agent
   #
   # @return [String]
   def to_s
-    "Agent(model=#{@model}, tools=#{@tools.size}, listeners=#{@listeners})"
+    "Agent(model=#{model}, tools=#{@tools.size}, listeners=#{@listeners})"
   end
 end
