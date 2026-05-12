@@ -98,7 +98,7 @@ next to the schema, which is hard to give up entirely.
 
 | | calc | shell/bash | read | write | edit | grep | glob | search | scrape/fetch | sub-agent | todo/plan | LSP |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pikuri | ✅ | — | — | — | — | — | — | ✅ web_search | ✅ web_scrape + fetch | ✅ | — | — |
+| pikuri | ✅ | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ glob | ✅ web_search | ✅ web_scrape + fetch | ✅ | — | — |
 | ruby_llm | — (SDK only — no bundled tools) | | | | | | | | | | | |
 | pi | — | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ find | — | — | — (extension) | — (extension) | — |
 | opencode | — | ✅ shell | ✅ read | ✅ write | ✅ edit + patch | ✅ grep | ✅ glob | ✅ search (Exa) | ✅ fetch | ✅ task | ✅ todo + plan | ✅ |
@@ -108,9 +108,16 @@ ruby_llm ships **no tools at all** — it's an SDK; the developer subclasses
 sub-agents, etc. are pushed to extensions. opencode is the most batteries-
 included.
 
-**Takeaway.** Pikuri's tool set (calc, web_search, web_scrape, fetch,
-sub_agent) is well-scoped for a *general-purpose* assistant — the pi/opencode
-file/shell stack is what you want for a *coding* agent. They don't overlap.
+The pikuri row reflects the union of both bundled binaries:
+`bin/pikuri-chat` wires calc + web_search + web_scrape + fetch +
+sub_agent; `bin/pikuri-code` wires the file/shell stack (read, write,
+edit, grep, glob, bash) plus the same web/calc/sub_agent set as
+auxiliaries. Two binaries on a shared `Agent` + `Tool` core.
+
+**Takeaway.** Pikuri now covers both the *general-purpose* and the
+*coding* tool surfaces from one codebase. The remaining gaps versus
+opencode are todo/plan tools and LSP — both deliberately deferred (see
+`PLAN_CODING.md` "Out of scope for v1").
 
 ---
 
