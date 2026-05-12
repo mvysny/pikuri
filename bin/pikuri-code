@@ -47,7 +47,7 @@ system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nCurrent working directory: #{workspace.cwd}"
 
-openai_api_base = 'http://192.168.122.1:8080/v1'
+openai_api_base = 'http://localhost:8080/v1'
 
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base

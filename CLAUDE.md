@@ -17,6 +17,27 @@ LLM-actionable error messages, listener-based rendering of reasoning /
 assistant Markdown / tool calls, a `max_steps` budget, sub-agents, and
 a small set of solid bundled tools.
 
+## Why this exists
+
+The motivating frustration: the existing agent stacks (the "PI" and
+"OpenClaw" projects) have grown big and now have a very steep
+learning curve. A privacy-conscious user arriving fresh hits a wall
+of massive JSON configuration with no clear start-here. Pikuri is
+the deliberate counter-move:
+
+- **Start slowly.** Sane defaults out of the box, two small binaries,
+  no config file required to get a first conversation going. The
+  surface area grows as the user grows into it, not before.
+- **Privacy-first.** Defaults wire the local llama.cpp server — no
+  cloud account, no API key, no telemetry, no request leaving the
+  machine unless the user explicitly opts in by configuring an
+  external provider via ruby_llm.
+- **Educates along the way.** The code is meant to be read: per-file
+  YARD headers explain *why* each piece exists, the system prompts
+  are plain text checked into `prompts/`, and the conventions in this
+  document are deliberately verbose so the project doubles as a tour
+  of how a small agent runtime actually works.
+
 ## Scope decisions
 
 - **Reuse ruby_llm as runtime; pikuri owns the extension surface and
