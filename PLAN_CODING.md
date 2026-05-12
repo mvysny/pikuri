@@ -94,19 +94,22 @@ session — listed here so they don't get rediscovered three times.
    from `CLAUDE.md` applied at the tool surface. Specific cases land in
    Steps 4 (Write) and 5 (Edit).
 
-2. **Path sandbox.** Read/write/edit/grep/glob/bash all need to refuse
-   paths outside the working tree. One helper (`Tool::PathSandbox` or
-   similar) that takes a `root:` and resolves an input path with
-   `Pathname#realpath` (or `realdirpath` for files-to-be-created), then
-   verifies the resolved path is `root` or a descendant. Symlinks must
-   not let the LLM escape. Failures return `"Error: ..."` so the LLM
-   self-corrects. The `root` is captured at `bin/pikuri-code` startup
-   (`Dir.pwd`) and threaded into each tool's constructor — not re-read
-   per call.
+2. **Workspace.** Read/write/edit/grep/glob/bash all need to refuse
+   paths outside the agent's permitted scope. The abstraction is
+   `Tool::Workspace` — abstract base with `resolve_for_read(path)` and
+   `resolve_for_write(path)`. v1 ships one concrete impl,
+   `Tool::Workspace::Cwd`, which locks read+write to a single subtree
+   (CWD captured at `bin/pikuri-code` startup). v2 will add a multi-root
+   workspace where read includes `~/.claude/skills` while write stays
+   bounded to CWD, plus `Tool::Workspace::ALLOW_ALL` for Docker /
+   dev-container mode. Tools take `workspace:` via constructor.
+   Failures raise `Tool::Workspace::Error`, which tools catch and
+   convert to `"Error: ..."` observations. Step 2 has the locked-in
+   algorithm.
 
 3. **Tool shape: constant vs. constructor.** Tools that need no
    per-session wiring (calculator) stay as `ALL_CAPS` constants. Tools
-   that capture session state (the sandbox root, the confirmer, optional
+   that capture session state (the workspace, the confirmer, optional
    "files-read-so-far" tracking) follow the `Tool::SubAgent` pattern:
    a `Tool` subclass instantiated by `bin/pikuri-code`. Read/write/edit/
    grep/glob/bash will all be the second shape.
@@ -209,28 +212,133 @@ Decisions left for the session:
 - File header YARD: include the v2 design-space note above so the
   next reader doesn't think bool was unconsidered.
 
-### Step 2 — Path sandbox helper
+### Step 2 — Workspace (`Tool::Workspace`)
 
-Build a single helper used by every file-touching tool to resolve and
-validate paths against a root. Lands as `lib/tool/path_sandbox.rb` (or
-similar — name TBD).
+Build the abstract base + the v1 concrete impl (`Cwd`). Lands as
+`lib/tool/workspace.rb` (Zeitwerk autoloads; `lib/pikuri.rb`'s eager-
+load pulls it in). No tool depends on it yet — this step is the
+abstraction + its specs in isolation.
 
-Decisions for the session:
+**Why "Workspace", not "PathSandbox":** the v2 design admits multiple
+roots with different permissions (CWD = read+write, `~/.claude/skills`
+= read-only). That's a workspace concept (set of accessible paths),
+not a sandbox concept (one boundary). Naming for the v2 shape so we
+don't rename later.
 
-- Class or module? Probably a small value object holding `@root`.
-- Method names: `resolve(path)` returning `Pathname`, raising on
-  outside-root? Or `resolve_or_error(path)` returning a tagged result?
-- How to handle paths to files that don't exist yet (write/edit-create):
-  `realpath` fails — use `realdirpath` on the parent, or do the check on
-  the parent and then append the basename.
-- Symlink policy: follow and verify, or refuse entirely?
-- Error message format — the LLM will see this. "Error: path X is
-  outside the working tree (root: Y)" or similar.
+**Locked-in design** (the session implements; doesn't re-design):
+
+```ruby
+class Tool
+  # Defines which paths the agent can see and write to. Subclass and
+  # implement #resolve_for_read / #resolve_for_write. Returned Pathnames
+  # are absolute, post-symlink-resolution.
+  #
+  # For v1 Cwd, the two methods are the same — read-set and write-set
+  # are both the CWD subtree. The interface admits future impls where
+  # they differ:
+  #   - Multi-root workspace: ~/.claude/skills readable, CWD writable.
+  #   - ALLOW_ALL: no restriction (planned for Docker mode in v2).
+  #
+  # Existence is not the workspace's concern. resolve_for_read('foo.rb')
+  # succeeds (returns a Pathname) even if foo.rb doesn't exist; the
+  # caller (Read) errors with file-not-found when it tries to open it.
+  class Workspace
+    class Error < StandardError; end
+
+    # @param path [String]
+    # @return [Pathname]
+    # @raise [Error]
+    def resolve_for_read(path)
+      raise NotImplementedError, "#{self.class}#resolve_for_read must be implemented"
+    end
+
+    # @param path [String]
+    # @return [Pathname]
+    # @raise [Error]
+    def resolve_for_write(path)
+      raise NotImplementedError, "#{self.class}#resolve_for_write must be implemented"
+    end
+
+    # Locks read+write to a single subtree.
+    class Cwd < Workspace
+      def initialize(root:)
+        @root = Pathname.new(root).realpath  # resolve once at construction
+      end
+
+      attr_reader :root
+
+      def resolve_for_read(path)  = resolve(path)
+      def resolve_for_write(path) = resolve(path)
+
+      private
+
+      def resolve(path)
+        pn = Pathname.new(path)
+        pn = @root + pn unless pn.absolute?
+        cleaned = pn.cleanpath              # lexical: collapses .. and .
+
+        # Walk up to the deepest existing ancestor — handles paths whose
+        # leaf and/or intermediate components don't exist yet (Write
+        # creates parents freely; see Step 4).
+        existing = cleaned
+        existing = existing.parent until existing.exist? || existing.parent == existing
+        anchor = existing.realpath          # filesystem: resolves symlinks in the existing portion
+
+        unless anchor == @root || anchor.to_s.start_with?(@root.to_s + File::SEPARATOR)
+          raise Error, "path '#{path}' is outside the workspace '#{@root}'"
+        end
+
+        anchor + cleaned.relative_path_from(existing)
+      end
+    end
+  end
+end
+```
+
+**Why walk-up-then-realpath:** four cases this algorithm must handle
+correctly. Tracing each on `@root = /home/me/proj`:
+
+| Case | Trace | Outcome |
+|---|---|---|
+| `lib/foo.rb` (exists) | existing = full path, anchor in root | ✅ |
+| `lib/new/dir/foo.rb` (intermediates missing) | walks up to `@root/lib`, anchor in root | ✅ returns intended new path |
+| `lib/../../etc/passwd` (`..` escape) | cleanpath → `/home/etc/passwd`, walks to `/home`, anchor outside root | Error |
+| `link/foo.rb` where `@root/link → /etc` (symlink escape) | existing = `@root/link`, anchor.realpath = `/etc`, outside root | Error |
+
+Lexical-only (`cleanpath` + prefix check) would miss the symlink-escape
+case. The walk-up step adds five lines and closes that gap.
+
+**Single error class with descriptive messages**, not a hierarchy.
+Tools `rescue Tool::Workspace::Error => e` and emit `"Error: #{e.message}"`.
+
+**`~` expansion: not handled.** Either it lexically becomes `@root/~/...`
+(file-not-found) or, if we expanded, resolves to `$HOME/...` (outside
+workspace). Same outcome both ways; simpler to skip the expansion.
+
+**Out of scope for v1**, worth naming so we don't drift:
+- `Tool::Workspace::ALLOW_ALL` (Docker mode). No call site in v1 —
+  yolo mode only swaps the confirmer. Document as a future extension
+  point in the YARD header; do not ship a dead `AllowAll` class.
+- `.env` / `.git/` / secrets filtering. Needs the permission system.
+- Hardlink detection. Can't, generally.
+- Windows path handling. Pikuri targets Linux.
+
+Decisions left for the session:
+
+- Visual layout of the `Cwd` impl: tiny `def resolve_for_read = resolve(...)`
+  one-liners plus a private `#resolve`, or inline both? Recommend the
+  one-liners — makes the read/write asymmetry visible at the public
+  surface for future readers.
+- YARD wording for the "not yet shipped" `ALLOW_ALL` extension point.
+- Spec setup: `Dir.mktmpdir` for the root, one symlink-out + one
+  symlink-in for the security tests, one non-existent-intermediate
+  for the Write case.
 
 ### Step 3 — Read tool
 
-`Tool::Read.new(sandbox:)`. Constant export not viable because of the
-sandbox capture; `bin/pikuri-code` instantiates it.
+`Tool::Read.new(workspace:)`. Constant export not viable because of the
+workspace capture; `bin/pikuri-code` instantiates it. Internally calls
+`workspace.resolve_for_read(path)`.
 
 Decisions for the session:
 
@@ -247,7 +355,8 @@ Decisions for the session:
 
 ### Step 4 — Write tool
 
-`Tool::Write.new(sandbox:, confirmer:)`. Confirmer is needed because
+`Tool::Write.new(workspace:, confirmer:)`. Calls
+`workspace.resolve_for_write(path)`. Confirmer is needed because
 overwrite of an existing file requires confirmation (see policy below).
 
 **Policy** (locked in — adjust only with a counter-proposal):
@@ -280,12 +389,20 @@ Decisions for the session:
 - Path display in the prompt: echo the path *as the model sent it*
   (relative or absolute) so the terminal echo matches the tool-call
   line the user just saw above.
-- Directory creation: `mkdir -p` the parent, or refuse?
+- **Parent directory creation: locked in — Write does `mkdir_p`.**
+  The workspace's `resolve_for_write` already tolerates non-existent
+  intermediates and returns a valid Pathname; Write then
+  `FileUtils.mkdir_p(resolved.dirname)` before `File.write`. Matches
+  the `git add lib/new/dir/foo.rb` mental model. Edge case: mkdir
+  succeeds, write fails — empty dir is left behind. Accept the
+  artifact for v1.
 
 ### Step 5 — Edit tool
 
-`Tool::Edit.new(sandbox:)`. Exact-string replacement, uniqueness
-required unless `replace_all`.
+`Tool::Edit.new(workspace:)`. Calls `workspace.resolve_for_write(path)`
+(Edit modifies, so it uses the write-set even though it doesn't create
+files). Exact-string replacement, uniqueness required unless
+`replace_all`.
 
 Decisions for the session:
 
@@ -304,8 +421,10 @@ Decisions for the session:
 
 ### Step 6 — Bash tool
 
-`Tool::Bash.new(sandbox:, confirmer:)`. First tool that needs the
-confirmer.
+`Tool::Bash.new(workspace:, confirmer:)`. First tool that needs the
+confirmer. Bash doesn't path-resolve individual args — the command
+string is opaque shell syntax. The workspace is needed for the CWD
+the shell runs in (see "shell cwd" decision below).
 
 Decisions for the session:
 
@@ -314,9 +433,13 @@ Decisions for the session:
 - Default timeout — 120s? Configurable per-call via parameter?
 - Output truncation: total bytes cap (e.g. 30KB) with "[truncated]"
   marker. Same on stderr.
-- Working directory: `sandbox.root` always; refuse `cd` semantics for v1
-  (model can `cd && cmd` as one command if it wants, but the resulting
-  pwd doesn't persist between calls).
+- **Shell cwd:** for v1's `Workspace::Cwd`, the shell runs in
+  `workspace.root`. The abstract `Workspace` doesn't expose `root`
+  (ALLOW_ALL won't have one) — either Bash accepts a separate `cwd:`
+  kwarg threaded by `bin/pikuri-code`, or v1 narrows Bash to
+  `Workspace::Cwd` specifically and reads `.root`. Decide in the
+  session. Refuse `cd` semantics: model can `cd && cmd` as one
+  command if it wants, but pwd doesn't persist between calls.
 - Confirmation prompt format: "OK to run bash <description / command>?".
   Show the command verbatim. The session needs to design this together
   with the `Terminal` listener so the prompt isn't visually buried.
@@ -327,8 +450,9 @@ Decisions for the session:
 
 ### Step 7 — Grep tool
 
-`Tool::Grep.new(sandbox:)`. Wraps `rg` if present, falls back to a Ruby
-implementation.
+`Tool::Grep.new(workspace:)`. Wraps `rg` if present, falls back to a
+Ruby implementation. Calls `workspace.resolve_for_read(path)` when a
+path arg is provided; default search root is the workspace's read-set.
 
 Decisions for the session:
 
@@ -342,7 +466,9 @@ Decisions for the session:
 
 ### Step 8 — Glob tool
 
-`Tool::Glob.new(sandbox:)`. `Dir.glob` with `FNM_PATHNAME` semantics.
+`Tool::Glob.new(workspace:)`. `Dir.glob` with `FNM_PATHNAME` semantics.
+Calls `workspace.resolve_for_read(path)` for an optional path arg;
+default search root is the workspace's read-set.
 
 Decisions for the session:
 
@@ -386,8 +512,8 @@ the flag is on.
 
 Decisions for the session:
 
-- Where is `sandbox.root` captured? `Dir.pwd` at startup is the obvious
-  answer.
+- Workspace construction: `Tool::Workspace::Cwd.new(root: Dir.pwd)` at
+  startup, shared across all file-touching tools.
 - Banner: "Pikuri Coding Agent. Working in <CWD>. Press Ctrl+C or
   Ctrl+D to quit." (+ the yolo-mode line when applicable).
 - Step budget — coding turns chain more tool calls than chat turns; 20
@@ -402,12 +528,19 @@ Decisions for the session:
 
 Each new tool gets a spec under `spec/tool/` following the existing
 `spec/tool/calculator_spec.rb` style (rspec-core + minitest asserts).
-The sandbox helper and confirmer get their own specs. Use
-`Tool::Confirmer::AUTO_APPROVE` and a `Dir.mktmpdir` sandbox root in
-tool specs. `Tool::Confirmer::Terminal` specs need to stub `$stdin` /
-`$stdout` — pattern is to use `StringIO` and reassign with
-`$stdin = StringIO.new("y\n")` in a `before`, restore in `after`
-(same shape as `RubyLLM.chat` stubbing in `spec/agent_spec.rb`).
+The workspace and confirmer get their own specs. Tool specs use
+`Tool::Confirmer::AUTO_APPROVE` and `Tool::Workspace::Cwd.new(root: Dir.mktmpdir)`.
+`Tool::Confirmer::Terminal` specs stub `$stdin` / `$stdout` — pattern
+is `StringIO` reassignment in `before`, restore in `after` (same
+shape as `RubyLLM.chat` stubbing in `spec/agent_spec.rb`).
+
+`Tool::Workspace::Cwd` specs need:
+- `Dir.mktmpdir` for the root.
+- One symlink-out test (workspace blocks `link/foo.rb` when `link → /etc`).
+- One symlink-in test (workspace allows `link/foo.rb` when `link → sub/`).
+- One non-existent-intermediate test (Write case: `a/b/c.rb` where `a/`
+  doesn't exist — resolves cleanly inside).
+- One `..`-escape test (`lib/../../etc/passwd` blocked).
 
 Decisions for the session:
 
@@ -423,8 +556,8 @@ Once the binary lands, update `CLAUDE.md`:
 
 - "What this project is" mentions two binaries (chat + code).
 - "Layout" gets the new files (each tool file, the confirmer, the
-  sandbox helper, the new prompt, `bin/pikuri-code`).
-- "Conventions" gets the confirmer-as-seam rule and the path-sandbox
+  workspace, the new prompt, `bin/pikuri-code`).
+- "Conventions" gets the confirmer-as-seam rule and the workspace
   rule under a new "Coding tools" subsection.
 - Update `COMPARISON.md`'s "Available tools" row for pikuri.
 
