@@ -9,12 +9,21 @@ bearings.
 This is a planning artifact, not a permanent part of the codebase. Delete
 when implementation is complete.
 
+> **Current status (2026-05-12):** Steps 1–3 (the foundation —
+> `Tool::Confirmer`, `Tool::Workspace`, `Pikuri::Subprocess`) are
+> implemented and tested; specs land at 374 examples / 0 failures.
+> Next session picks up at **Step 4 (Read)**.
+
 ## Orientation for fresh Claude
 
-- **Read first.** `CLAUDE.md` (project conventions), `COMPARISON.md`
-  (where each design choice came from), `lib/tool.rb`, `lib/tool/sub_agent.rb`,
-  `lib/agent.rb`, `bin/pikuri-chat`. These are the load-bearing files for
-  this work.
+- **Read first.** `CLAUDE.md` (project conventions, including the
+  subprocess-seam and `Pikuri::` namespacing rules added during this
+  work), `COMPARISON.md` (where each design choice came from),
+  `lib/tool.rb`, `lib/tool/sub_agent.rb`, `lib/agent.rb`,
+  `bin/pikuri-chat`. For the foundation already in place, also read
+  `lib/tool/confirmer.rb`, `lib/tool/workspace.rb`, and
+  `lib/pikuri/subprocess.rb` — they're the API contracts that the
+  remaining tools build against.
 - **The seam principle.** All `RubyLLM::*` references stay in three files
   (`bin/pikuri-chat`, `lib/agent.rb`, `lib/tool.rb`). New coding tools
   must obey this — they speak `Tool.new` + `Tool::Parameters`, nothing
@@ -146,6 +155,12 @@ pre-decided spec.
 
 ### Step 1 — Confirmation seam (`Tool::Confirmer`)
 
+> **Status: IMPLEMENTED** in commit `414834f` (2026-05-12).
+> Code: `lib/tool/confirmer.rb`. Spec: `spec/tool/confirmer_spec.rb`
+> (14 examples).
+> Design notes below kept as the historical record of why
+> this shape. Skip ahead to Step 4 if you're picking up the work.
+
 Build the abstract base + two concrete implementations. Lands as
 `lib/tool/confirmer.rb` (Zeitwerk autoloads it; `lib/pikuri.rb`'s
 eager-load brings the constants in). No tool depends on it yet — this
@@ -214,6 +229,12 @@ Decisions left for the session:
   next reader doesn't think bool was unconsidered.
 
 ### Step 2 — Workspace (`Tool::Workspace`)
+
+> **Status: IMPLEMENTED** in commit `e312fd3` (2026-05-12).
+> Code: `lib/tool/workspace.rb`. Spec: `spec/tool/workspace_spec.rb`
+> (14 examples, including symlink-escape and `..`-escape).
+> Design notes below kept as the historical record. Skip ahead
+> to Step 4 if you're picking up the work.
 
 Build the abstract base + the v1 concrete impl (`Cwd`). Lands as
 `lib/tool/workspace.rb` (Zeitwerk autoloads; `lib/pikuri.rb`'s eager-
@@ -341,6 +362,17 @@ Decisions left for the session:
   for the Write case.
 
 ### Step 3 — Subprocess manager (`Pikuri::Subprocess`)
+
+> **Status: IMPLEMENTED** in commits `abbe833` (code) and `dcacc74`
+> (CLAUDE.md conventions for subprocess seam + `Pikuri::` namespacing
+> direction), both 2026-05-12.
+> Code: `lib/pikuri/subprocess.rb`. Spec: `spec/pikuri/subprocess_spec.rb`
+> (13 examples). One spec-driven correction made to the Bash plan
+> below (Step 7): bare `cmd &` does NOT detach from `#wait` because
+> the backgrounded child inherits the popen2e pipe — the model must
+> redirect fds explicitly (`cmd >/dev/null 2>&1 &`) to background.
+> Design notes below kept as the historical record. Skip ahead to
+> Step 4 if you're picking up the work.
 
 Build the chokepoint for all subprocess spawning in pikuri. Lands as
 `lib/pikuri/subprocess.rb`. The Bash tool depends on this; vector DB /
