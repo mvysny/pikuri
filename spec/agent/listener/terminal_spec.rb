@@ -42,6 +42,28 @@ RSpec.describe Agent::Listener::Terminal do
     assert_includes out, '42'
   end
 
+  it 'flattens whitespace in ToolResult content to a single line' do
+    content = "line one\n  line two\n\n\tline three"
+    out = capture_stdout { listener.on_message(Agent::Message::ToolResult.new(content: content)) }
+    assert_includes out, 'line one line two line three'
+    refute_includes out, "\n  line two"
+  end
+
+  it 'truncates long ToolResult content and reports the original byte count' do
+    long_content = 'x' * 5_000
+    out = capture_stdout { listener.on_message(Agent::Message::ToolResult.new(content: long_content)) }
+    assert_includes out, '…'
+    assert_includes out, '5000 bytes total'
+    refute_includes out, 'x' * 5_000
+  end
+
+  it 'leaves short ToolResult content untouched (no truncation marker)' do
+    out = capture_stdout { listener.on_message(Agent::Message::ToolResult.new(content: 'hello')) }
+    assert_includes out, 'hello'
+    refute_includes out, '…'
+    refute_includes out, 'bytes total'
+  end
+
   it 'is silent for User messages (terminal user already typed it)' do
     out = capture_stdout { listener.on_message(Agent::Message::User.new(content: 'hello?')) }
     assert_equal '', out

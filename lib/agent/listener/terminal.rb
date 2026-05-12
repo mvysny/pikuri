@@ -13,6 +13,12 @@ class Agent
     class Terminal < MessageListener
       LOGGER = Pikuri.logger_for('Terminal')
 
+      # Cap, in characters, applied to tool-result content rendered to
+      # the terminal. Anything longer is truncated with a marker that
+      # reports the original byte size so the reader can tell a 200-
+      # char return apart from a 50KB HTML dump.
+      MAX_TOOL_RESULT_CHARS = 200
+
       # @param message [Agent::Message] one of the {Agent::Message}
       #   variants; see {Agent::Message} for the full list
       # @return [void]
@@ -26,7 +32,7 @@ class Agent
           args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
           puts Rainbow("→ #{name}(#{args})").cyan
         in Message::ToolResult(content:)
-          puts Rainbow("= #{content}").cyan
+          puts Rainbow("= #{truncate_tool_result(content)}").cyan
         in Message::FallbackNotice(reason:)
           puts Rainbow("! #{reason}").yellow
         in Message::User
@@ -55,6 +61,22 @@ class Agent
       rescue StandardError => e
         LOGGER.warn("TTY::Markdown render failed (#{e.class}: #{e.message}); falling back to raw text")
         content
+      end
+
+      # Flatten whitespace and cap to {MAX_TOOL_RESULT_CHARS}. The cap
+      # keeps multi-screen dumps (rendered HTML, PDF text) from
+      # drowning the terminal stream; the byte-count suffix on a
+      # truncated result distinguishes "tool returned exactly this"
+      # from "tool returned much more, you're seeing a slice."
+      #
+      # @param content [String] tool observation
+      # @return [String] single-line display form, possibly truncated
+      def truncate_tool_result(content)
+        original_bytes = content.to_s.bytesize
+        flattened = content.to_s.gsub(/\s+/, ' ').strip
+        return flattened if flattened.length <= MAX_TOOL_RESULT_CHARS
+
+        "#{flattened[0, MAX_TOOL_RESULT_CHARS]}… (#{original_bytes} bytes total)"
       end
     end
   end
