@@ -137,7 +137,7 @@ Usage:
 Two cross-cutting decisions fell out of the pass:
 
 - **Universal `Error: ...` recovery lives in
-  `smolagents-system-prompt.txt`** as one rule, not per-tool. The same
+  `prompts/pikuri-chat.txt`** as one rule, not per-tool. The same
   guidance (use what you have, or tell the user; do not retry the same
   call) covers search rate-limits, scrape 404s, fetch refusals, and
   calculator parse errors — writing it once avoids per-tool drift.
