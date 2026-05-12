@@ -299,6 +299,58 @@ RSpec.describe Tool::Parameters do
     end
   end
 
+  describe 'boolean fields' do
+    let(:bool_required) do
+      described_class.build { |p| p.required_boolean :flag, 'Enable the thing.' }
+    end
+
+    it 'serializes the boolean type in to_h' do
+      schema = bool_required.to_h
+      assert_equal 'boolean', schema[:properties][:flag][:type]
+      assert_equal ['flag'], schema[:required]
+    end
+
+    it 'has an optional_boolean variant that does not appear in required' do
+      schema = described_class.build { |p| p.optional_boolean :flag, 'f' }.to_h
+      assert_equal [], schema[:required]
+    end
+
+    it 'accepts true as-is' do
+      assert_equal({ flag: true }, bool_required.validate('flag' => true))
+    end
+
+    it 'accepts false as-is' do
+      assert_equal({ flag: false }, bool_required.validate('flag' => false))
+    end
+
+    it 'accepts the String "true" and coerces to true' do
+      assert_equal({ flag: true }, bool_required.validate('flag' => 'true'))
+    end
+
+    it 'accepts the String "false" and coerces to false' do
+      assert_equal({ flag: false }, bool_required.validate('flag' => 'false'))
+    end
+
+    it 'trims whitespace around the boolean String' do
+      assert_equal({ flag: true }, bool_required.validate('flag' => '  true  '))
+    end
+
+    it 'rejects "True" / "FALSE" (case-sensitive, matching JSON)' do
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => 'True') }
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => 'FALSE') }
+    end
+
+    it 'rejects truthy/falsy proxies like "yes" / "1" / 0' do
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => 'yes') }
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => '1') }
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => 0) }
+    end
+
+    it 'rejects nil' do
+      assert_raises(Tool::Parameters::ValidationError) { bool_required.validate('flag' => nil) }
+    end
+  end
+
   describe 'mixed types in one schema' do
     let(:mixed_types) do
       described_class.build do |p|

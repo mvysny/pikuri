@@ -109,6 +109,29 @@ class Tool
       add(name, 'number', description, required: false)
     end
 
+    # Add a required +boolean+ property. Accepts Ruby +true+/+false+
+    # as-is, and the literal Strings +"true"+/+"false"+ (some models
+    # surface JSON booleans as Strings) after trimming surrounding
+    # whitespace. Other Strings, numbers, and +nil+ are rejected —
+    # there is no truthy-coercion of +"yes"+ / +0+ / etc.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def required_boolean(name, description)
+      add(name, 'boolean', description, required: true)
+    end
+
+    # Add an optional +boolean+ property. See {#required_boolean} for
+    # accepted shapes.
+    #
+    # @param name [Symbol] property name
+    # @param description [String] human-readable description shown to the LLM
+    # @return [self]
+    def optional_boolean(name, description)
+      add(name, 'boolean', description, required: false)
+    end
+
     # Schema in OpenAI JSON-Schema shape.
     #
     # @return [Hash] +{type: 'object', properties: {...}, required: [...]}+
@@ -183,7 +206,22 @@ class Tool
         coerce_integer(value)
       when 'number'
         coerce_number(value)
+      when 'boolean'
+        coerce_boolean(value)
       end
+    end
+
+    def coerce_boolean(value)
+      return value if value == true || value == false
+
+      if value.is_a?(String)
+        case value.strip
+        when 'true'  then return true
+        when 'false' then return false
+        end
+      end
+
+      raise CoercionError, type_message('boolean', value)
     end
 
     def coerce_integer(value)
