@@ -117,7 +117,7 @@ auxiliaries. Two binaries on a shared `Agent` + `Tool` core.
 **Takeaway.** Pikuri now covers both the *general-purpose* and the
 *coding* tool surfaces from one codebase. The remaining gaps versus
 opencode are todo/plan tools and LSP — both deliberately deferred (see
-`PLAN_CODING.md` "Out of scope for v1").
+`IDEAS.md` "Coding-agent deferrals").
 
 ---
 

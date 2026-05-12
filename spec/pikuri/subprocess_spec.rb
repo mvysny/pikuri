@@ -79,7 +79,9 @@ RSpec.describe Pikuri::Subprocess do
       # The backgrounded sleep must redirect its stdout/stderr away from
       # our pipe; otherwise it inherits the pipe and our #wait blocks
       # until sleep ends. This is a real production limitation of the
-      # Bash tool — see PLAN_CODING.md Step 7.
+      # Bash tool — documented in +lib/tool/bash.rb+'s "Backgrounded
+      # subprocesses" RDoc section and surfaced to the LLM via the
+      # tool description.
       sp = described_class.spawn('bash', '-c', 'sleep 5 >/dev/null 2>&1 &', chdir: '/tmp')
       pgid = sp.pgid
       sp.wait
