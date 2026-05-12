@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Symlink pikuri-chat and pikuri-code into $PREFIX (default ~/.local/bin) so
+# they're on $PATH. The scripts pin BUNDLE_GEMFILE to this checkout's Gemfile,
+# so they work from any working directory once installed.
+#
+# Usage:
+#   ./bin/install                # install into ~/.local/bin
+#   PREFIX=~/bin ./bin/install   # install into a different directory
+set -euo pipefail
+IFS=$'\n\t'
+
+DEST="${PREFIX:-$HOME/.local/bin}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+mkdir -p "$DEST"
+for name in pikuri-chat pikuri-code; do
+  ln -sfn "$ROOT/bin/$name" "$DEST/$name"
+  echo "  $DEST/$name -> $ROOT/bin/$name"
+done
+
+case ":$PATH:" in
+  *":$DEST:"*) ;;
+  *) echo; echo "note: $DEST is not on \$PATH" ;;
+esac

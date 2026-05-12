@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Remove the pikuri-chat / pikuri-code symlinks created by bin/install.
+# Only removes entries that are symlinks pointing back into this checkout —
+# an unrelated file or symlink with the same name in $PREFIX is left alone.
+#
+# Usage:
+#   ./bin/uninstall                # uninstall from ~/.local/bin
+#   PREFIX=~/bin ./bin/uninstall   # uninstall from a different directory
+set -euo pipefail
+IFS=$'\n\t'
+
+DEST="${PREFIX:-$HOME/.local/bin}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+for name in pikuri-chat pikuri-code; do
+  link="$DEST/$name"
+  if [ ! -L "$link" ]; then
+    echo "  skip $link (not a symlink)"
+    continue
+  fi
+  target="$(readlink -f "$link")"
+  expected="$ROOT/bin/$name"
+  if [ "$target" != "$expected" ]; then
+    echo "  skip $link -> $target (not this checkout)"
+    continue
+  fi
+  rm "$link"
+  echo "  removed $link"
+done
