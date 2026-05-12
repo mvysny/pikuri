@@ -13,8 +13,9 @@ class Agent
     #
     # Optionally prepends a fixed number of leading spaces to every
     # rendered line via the +padding:+ kwarg. Sub-agents get a fresh
-    # padded instance through {Agent::ListenerList#with_padding} so
-    # their output is visually indented under the parent's stream.
+    # padded instance through this listener's {#for_sub_agent} hook
+    # (dispatched by {Agent::ListenerList#for_sub_agent}) so their
+    # output is visually indented under the parent's stream.
     class Terminal < MessageListener
       LOGGER = Pikuri.logger_for('Terminal')
 
@@ -24,18 +25,34 @@ class Agent
       # char return apart from a 50KB HTML dump.
       MAX_TOOL_RESULT_CHARS = 200
 
+      # Padding applied to a sub-agent's rendered stream. Absolute, not
+      # additive — sub-agent recursion is blocked (the sub-agent's tool
+      # set excludes +sub_agent+ itself), so the depth never exceeds 1
+      # in practice and a fixed indent reads cleanly.
+      SUB_AGENT_PADDING = 2
+
       # @param padding [Integer] non-negative number of leading spaces
       #   prepended to every rendered line. Defaults to 0; sub-agents
-      #   set this to 2 via {Agent::ListenerList#with_padding}.
+      #   get a fresh instance with {SUB_AGENT_PADDING} via
+      #   {#for_sub_agent}.
       def initialize(padding: 0)
         super()
         @padding = padding
       end
 
-      # @return [Integer] current padding width; exposed so
-      #   {Agent::ListenerList#with_padding} can introspect it (and so
-      #   tests can assert it).
+      # @return [Integer] current padding width; exposed so callers can
+      #   introspect it (and so tests can assert it).
       attr_reader :padding
+
+      # Sub-agent variant: a fresh +Terminal+ at {SUB_AGENT_PADDING} so
+      # sub-agent output is visually indented under the parent's
+      # stream. Called by {Agent::ListenerList#for_sub_agent}; ignores
+      # any params it's handed (Terminal has no caller-provided knobs).
+      #
+      # @return [Terminal]
+      def for_sub_agent(**)
+        self.class.new(padding: SUB_AGENT_PADDING)
+      end
 
       # @param message [Agent::Message] one of the {Agent::Message}
       #   variants; see {Agent::Message} for the full list

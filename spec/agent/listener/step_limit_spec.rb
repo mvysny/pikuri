@@ -78,6 +78,47 @@ RSpec.describe Agent::Listener::StepLimit do
     end
   end
 
+  describe '#for_sub_agent' do
+    it 'returns a fresh StepLimit at the caller-supplied max_steps' do
+      original = described_class.new(max: 99)
+      derived  = original.for_sub_agent(max_steps: 5)
+
+      refute_same original, derived
+      assert_equal 'StepLimit(max=5)', derived.to_s
+    end
+
+    it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
+      derived = described_class.new(max: 99).for_sub_agent(max_steps: 4, anything_else: :nope)
+      assert_equal 'StepLimit(max=4)', derived.to_s
+    end
+
+    it 'defaults max_steps to the receiver\'s own cap when the key is absent' do
+      derived = described_class.new(max: 99).for_sub_agent
+      assert_equal 'StepLimit(max=99)', derived.to_s
+    end
+
+    it 'rejects non-positive max_steps via StepLimit#initialize' do
+      assert_raises(ArgumentError) { described_class.new(max: 99).for_sub_agent(max_steps: 0) }
+    end
+
+    it 'does not share its mutable counter with the parent' do
+      parent = described_class.new(max: 4)
+      parent_chat = fake_chat_class.new
+      parent.attach(parent_chat)
+
+      derived = parent.for_sub_agent(max_steps: 4)
+      derived_chat = fake_chat_class.new
+      derived.attach(derived_chat)
+
+      # Burn 3 calls on the parent (under its cap).
+      3.times { parent_chat.fire }
+
+      # The derived chat hasn't seen any tool calls yet, so 3 must land
+      # without raising — they would already trip if the counter were shared.
+      3.times { derived_chat.fire }
+    end
+  end
+
   describe '#to_s' do
     it 'renders the configured cap' do
       assert_equal 'StepLimit(max=20)', described_class.new(max: 20).to_s

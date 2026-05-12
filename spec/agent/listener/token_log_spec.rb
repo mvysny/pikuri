@@ -169,6 +169,35 @@ RSpec.describe Agent::Listener::TokenLog do
     end
   end
 
+  describe '#for_sub_agent' do
+    it 'returns a fresh TokenLog with a zeroed snapshot and nil cap' do
+      original = described_class.new
+      original.context_window_cap = 32_768
+      original.on_tokens(tokens(input: 10_240))
+      refute_equal 0, original.context_window_size
+
+      derived = original.for_sub_agent
+
+      refute_same original, derived
+      assert_equal 0, derived.context_window_size
+      assert_nil derived.context_window_cap
+    end
+
+    it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
+      derived = described_class.new.for_sub_agent(max_steps: 5, anything_else: :nope)
+      assert_equal 0, derived.context_window_size
+    end
+
+    it 'leaves the parent TokenLog snapshot intact' do
+      original = described_class.new
+      original.on_tokens(tokens(input: 10_240))
+
+      original.for_sub_agent
+
+      assert_equal 10_240, original.context_window_size
+    end
+  end
+
   describe '#to_s' do
     it 'shows zero context until the first tokens arrive' do
       assert_equal 'TokenLog(ctx=0.0k)', described_class.new.to_s

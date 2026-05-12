@@ -171,10 +171,12 @@ class Agent
   # the sub-agent tool itself, so recursion is impossible).
   #
   # Each sub-agent run gets a derived {ListenerList} via
-  # {ListenerList#with_max_steps} — the non-+StepLimit+ listeners
-  # (Terminal, InMemoryList, ...) are shared so the sub-agent's
-  # events render and capture continuously with the parent's, but
-  # the +StepLimit+ is fresh so its tool-call budget is independent.
+  # {ListenerList#for_sub_agent} — listeners that define a sub-agent
+  # variant return a fresh instance (e.g. +StepLimit+ at the new cap,
+  # +Terminal+ with sub-agent padding, +TokenLog+ zeroed); listeners
+  # without the hook (+InMemoryList+, ...) are shared by reference so
+  # the sub-agent's events render and capture continuously with the
+  # parent's.
   #
   # @param max_steps [Integer] step budget for each sub-agent run,
   #   passed through to {Tool::SubAgent.build}

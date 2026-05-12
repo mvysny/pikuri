@@ -119,6 +119,31 @@ RSpec.describe Agent::Listener::Terminal do
     end
   end
 
+  describe '#for_sub_agent' do
+    it 'returns a fresh Terminal at SUB_AGENT_PADDING regardless of receiver padding' do
+      derived = described_class.new(padding: 0).for_sub_agent
+      assert_equal described_class::SUB_AGENT_PADDING, derived.padding
+
+      # Absolute, not additive — a parent that's already padded (shouldn't
+      # happen given recursion is blocked, but the contract is "set this
+      # knob") still hands back the standard sub-agent padding.
+      from_padded = described_class.new(padding: 7).for_sub_agent
+      assert_equal described_class::SUB_AGENT_PADDING, from_padded.padding
+    end
+
+    it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
+      derived = described_class.new.for_sub_agent(max_steps: 5, anything_else: :nope)
+      assert_equal described_class::SUB_AGENT_PADDING, derived.padding
+    end
+
+    it 'returns a different instance (so the parent Terminal is not mutated)' do
+      original = described_class.new
+      derived  = original.for_sub_agent
+      refute_same original, derived
+      assert_equal 0, original.padding
+    end
+  end
+
   describe 'Markdown render failure' do
     let(:log_io) { StringIO.new }
 

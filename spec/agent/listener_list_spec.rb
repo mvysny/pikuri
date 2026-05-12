@@ -122,103 +122,76 @@ RSpec.describe Agent::ListenerList do
     end
   end
 
-  describe '#with_zero_tokens' do
-    let(:terminal) { Agent::Listener::Terminal.new }
+  describe '#for_sub_agent' do
+    it 'forwards to each listener that defines for_sub_agent and keeps the rest by reference' do
+      terminal      = Agent::Listener::Terminal.new
+      token_log     = Agent::Listener::TokenLog.new
+      step_limit    = Agent::Listener::StepLimit.new(max: 99)
+      list = described_class.new([terminal, recorder, token_log, step_limit])
 
-    it 'replaces every TokenLog with a fresh instance' do
-      original_log = Agent::Listener::TokenLog.new
-      list = described_class.new([terminal, original_log])
+      derived = list.for_sub_agent(max_steps: 5)
 
-      derived = list.with_zero_tokens
+      derived_listeners = derived.instance_variable_get(:@listeners)
+      derived_terminal  = derived_listeners.find { |l| l.is_a?(Agent::Listener::Terminal) }
+      derived_recorder  = derived_listeners.find { |l| l.is_a?(Agent::Listener::InMemoryList) }
+      derived_token_log = derived_listeners.find { |l| l.is_a?(Agent::Listener::TokenLog) }
+      derived_step      = derived_listeners.find { |l| l.is_a?(Agent::Listener::StepLimit) }
 
-      derived_log = derived.instance_variable_get(:@listeners).find do |l|
-        l.is_a?(Agent::Listener::TokenLog)
-      end
-      refute_nil derived_log
-      refute_same original_log, derived_log
+      # Listeners with for_sub_agent: fresh instances.
+      refute_same terminal,   derived_terminal
+      refute_same token_log,  derived_token_log
+      refute_same step_limit, derived_step
+
+      # Listener without for_sub_agent: passed by reference so structured
+      # capture continues to flow into the parent's instance.
+      assert_same recorder, derived_recorder
     end
 
-    it 'preserves non-TokenLog listener identities so output keeps flowing' do
-      list = described_class.new([recorder, Agent::Listener::TokenLog.new])
+    it "applies each listener's own sub-agent semantics (Terminal padding, StepLimit cap)" do
+      list = described_class.new([
+                                   Agent::Listener::Terminal.new,
+                                   Agent::Listener::StepLimit.new(max: 99)
+                                 ])
 
-      derived = list.with_zero_tokens
-      derived.on_message(Agent::Message::User.new(content: 'forked'))
+      derived = list.for_sub_agent(max_steps: 5)
 
-      assert_equal [Agent::Message::User.new(content: 'forked')], recorder.events
+      # Terminal: SUB_AGENT_PADDING; StepLimit: caller-supplied cap.
+      assert_equal "[Terminal(padding=#{Agent::Listener::Terminal::SUB_AGENT_PADDING}), StepLimit(max=5)]",
+                   derived.to_s
     end
 
     it 'leaves the original list untouched' do
-      original_log = Agent::Listener::TokenLog.new
-      list = described_class.new([terminal, original_log])
+      original_token_log = Agent::Listener::TokenLog.new
+      original_terminal  = Agent::Listener::Terminal.new
+      list = described_class.new([original_terminal, original_token_log])
 
-      list.with_zero_tokens
+      list.for_sub_agent(max_steps: 5)
 
-      # Same instance still in the original list.
-      still_there = list.instance_variable_get(:@listeners).find { |l| l.is_a?(Agent::Listener::TokenLog) }
-      assert_same original_log, still_there
-    end
-
-    it 'is a copy-only no-op when no TokenLog is present' do
-      list = described_class.new([terminal, recorder])
-
-      derived = list.with_zero_tokens
-
-      assert_equal '[Terminal, InMemoryList]', derived.to_s
-      refute_same list, derived
-    end
-  end
-
-  describe '#with_padding' do
-    it 'replaces every Terminal with a fresh instance carrying the new padding' do
-      original_terminal = Agent::Listener::Terminal.new
-      list = described_class.new([original_terminal, recorder])
-
-      derived = list.with_padding(2)
-
-      derived_terminal = derived.instance_variable_get(:@listeners).find do |l|
-        l.is_a?(Agent::Listener::Terminal)
-      end
-      refute_nil derived_terminal
-      refute_same original_terminal, derived_terminal
-      assert_equal 2, derived_terminal.padding
-    end
-
-    it 'is absolute, not additive: chaining twice sets the padding to the last value' do
-      list = described_class.new([Agent::Listener::Terminal.new])
-
-      derived = list.with_padding(2).with_padding(2)
-
-      derived_terminal = derived.instance_variable_get(:@listeners).find do |l|
-        l.is_a?(Agent::Listener::Terminal)
-      end
-      assert_equal 2, derived_terminal.padding
-    end
-
-    it 'leaves the original Terminal at its previous padding' do
-      original_terminal = Agent::Listener::Terminal.new
-      list = described_class.new([original_terminal])
-
-      list.with_padding(2)
-
+      still_there_tl = list.instance_variable_get(:@listeners).find { |l| l.is_a?(Agent::Listener::TokenLog) }
+      still_there_t  = list.instance_variable_get(:@listeners).find { |l| l.is_a?(Agent::Listener::Terminal) }
+      assert_same original_token_log, still_there_tl
+      assert_same original_terminal,  still_there_t
       assert_equal 0, original_terminal.padding
     end
 
-    it 'preserves non-Terminal listener identities so output keeps flowing' do
-      list = described_class.new([recorder, Agent::Listener::Terminal.new])
+    it 'works with no params — listeners fall back to their own defaults' do
+      list = described_class.new([Agent::Listener::StepLimit.new(max: 4), recorder])
 
-      derived = list.with_padding(2)
-      derived.on_message(Agent::Message::User.new(content: 'forked'))
+      derived = list.for_sub_agent
 
-      assert_equal [Agent::Message::User.new(content: 'forked')], recorder.events
+      # StepLimit inherits the parent's cap when max_steps: is absent;
+      # the listener without a hook (InMemoryList) is preserved.
+      assert_equal '[StepLimit(max=4), InMemoryList]', derived.to_s
     end
 
-    it 'is a copy-only no-op when no Terminal is present' do
-      list = described_class.new([recorder, Agent::Listener::StepLimit.new(max: 4)])
+    it 'is a copy-only no-op when no listener defines for_sub_agent' do
+      list = described_class.new([recorder])
 
-      derived = list.with_padding(2)
+      derived = list.for_sub_agent
 
-      assert_equal '[InMemoryList, StepLimit(max=4)]', derived.to_s
+      assert_equal '[InMemoryList]', derived.to_s
       refute_same list, derived
+      assert_same recorder, derived.instance_variable_get(:@listeners).first
     end
   end
 

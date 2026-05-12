@@ -65,6 +65,27 @@ class Agent
         end
       end
 
+      # Sub-agent variant: a fresh +StepLimit+ at the caller-supplied
+      # +max_steps:+, or — when the key is absent from the forwarded
+      # params — at the receiver's own cap. The mutable counter and
+      # the +before_tool_call+ registration are per-chat, so the
+      # parent's instance cannot govern a sub-agent's chat; every
+      # sub-agent needs its own.
+      #
+      # The +max_steps+ default to +@max+ makes the method safe to
+      # call with no arguments, which keeps
+      # {Agent::ListenerList#for_sub_agent} usable as a bare
+      # +.for_sub_agent+ — a caller that doesn't care about the cap
+      # gets a sensible inheritance instead of an exception.
+      #
+      # @param max_steps [Integer] positive step cap for the sub-agent;
+      #   defaults to the receiver's current cap
+      # @return [StepLimit]
+      # @raise [ArgumentError] if +max_steps+ is non-positive
+      def for_sub_agent(max_steps: @max, **)
+        self.class.new(max: max_steps)
+      end
+
       # @return [String] short config dump for {Agent#to_s}
       def to_s
         "StepLimit(max=#{@max})"

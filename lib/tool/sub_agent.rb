@@ -16,10 +16,12 @@ class Tool
   # tools minus this sub-agent tool, so the sub-agent cannot spawn
   # further sub-agents recursively. Its listener list comes from the
   # parent's {Agent::ListenerList} via
-  # {Agent::ListenerList#with_max_steps}, so non-+StepLimit+ listeners
-  # are shared with the parent (terminal output flows continuously, an
-  # +InMemoryList+ sees both streams) while the sub-agent's tool-call
-  # budget stays its own.
+  # {Agent::ListenerList#for_sub_agent}, which forwards to each
+  # listener's own +for_sub_agent+ hook: +Terminal+ swaps to a padded
+  # fresh instance, +TokenLog+ resets its snapshot, +StepLimit+ picks
+  # +max_steps:+ out of the params, and listeners without the hook
+  # ({Listener::InMemoryList}, …) are shared by reference so structured
+  # capture and other stateful renderers flow continuously.
   module SubAgent
     # Build a sub-agent tool that closes over a specific transport /
     # system prompt / tool list / listener list.
@@ -44,14 +46,18 @@ class Tool
     #   Should not include the sub-agent tool itself (recursion guard).
     # @param listeners [Agent::ListenerList] parent agent's listener
     #   list; the spawned sub-agent gets
-    #   +listeners.with_max_steps(max_steps).with_zero_tokens.with_padding(2)+ —
-    #   same renderers/recorders, fresh +StepLimit+, fresh +TokenLog+
-    #   (so the sub-agent's context-window snapshot tracks its own
-    #   +RubyLLM::Chat+ rather than the parent's), and a fresh
-    #   +Terminal+ that indents every rendered line two spaces so
-    #   sub-agent output is visually nested under the parent's.
+    #   +listeners.for_sub_agent(max_steps: max_steps)+, which forwards
+    #   to each listener's own sub-agent hook — same renderers and
+    #   recorders shared by reference, fresh +StepLimit+ at the
+    #   sub-agent's cap, fresh +TokenLog+ (so the sub-agent's
+    #   context-window snapshot tracks its own +RubyLLM::Chat+ rather
+    #   than the parent's), and a fresh +Terminal+ indented by
+    #   {Agent::Listener::Terminal::SUB_AGENT_PADDING} so sub-agent
+    #   output is visually nested under the parent's.
     # @param max_steps [Integer] step budget for each sub-agent run,
-    #   forwarded to {Agent::ListenerList#with_max_steps}
+    #   forwarded as the +max_steps:+ kwarg to
+    #   {Agent::ListenerList#for_sub_agent} (consumed by
+    #   {Agent::Listener::StepLimit#for_sub_agent})
     # @param context_window [Integer, nil] context-window cap for the
     #   sub-agent, forwarded as the +context_window:+ override on its
     #   {Agent}. Typically the parent's {Agent#context_window_cap} so
@@ -86,7 +92,7 @@ class Tool
             transport: transport,
             system_prompt: system_prompt,
             tools: tools,
-            listeners: listeners.with_max_steps(max_steps).with_zero_tokens.with_padding(2),
+            listeners: listeners.for_sub_agent(max_steps: max_steps),
             context_window: context_window
           )
           sub.run_loop(user_message: task)

@@ -18,10 +18,10 @@ class Agent
     #
     # The latest snapshot lives on the instance, so one +TokenLog+ is
     # per-conversation. Sub-agents (with their own +RubyLLM::Chat+) get
-    # a fresh instance via {ListenerList#with_zero_tokens} so their
-    # counts log against their own chat. The synthesizer rescue keeps
-    # using the parent's instance because synth turns extend the same
-    # conversation.
+    # a fresh instance via {#for_sub_agent} (dispatched by
+    # {ListenerList#for_sub_agent}) so their counts log against their
+    # own chat. The synthesizer rescue keeps using the parent's
+    # instance because synth turns extend the same conversation.
     #
     # == Log line shape
     #
@@ -60,7 +60,7 @@ class Agent
       # {Agent#initialize} pushes the detected value here via
       # {ListenerList#context_window_cap=} once it has run the detector,
       # so an instance constructed bare (e.g. by callers, in tests, or
-      # by {ListenerList#with_zero_tokens}) defaults to +nil+.
+      # by {#for_sub_agent}) defaults to +nil+.
       #
       # @return [Integer, nil]
       attr_accessor :context_window_cap
@@ -70,6 +70,19 @@ class Agent
         @msg = 0
         @context_window_size = 0
         @context_window_cap = nil
+      end
+
+      # Sub-agent variant: a fresh +TokenLog+ with a zeroed snapshot so
+      # the sub-agent's context-window readings track its own
+      # +RubyLLM::Chat+ rather than continuing the parent's. The cap is
+      # left +nil+ here; the sub-agent's {Agent#initialize} pushes the
+      # resolved cap onto every +TokenLog+ in its list via
+      # {ListenerList#context_window_cap=} immediately after
+      # construction. Ignores any params it's handed.
+      #
+      # @return [TokenLog]
+      def for_sub_agent(**)
+        self.class.new
       end
 
       # Update the context-window snapshot, then log one +INFO+ line.

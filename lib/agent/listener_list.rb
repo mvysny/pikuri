@@ -11,13 +11,16 @@ class Agent
   #
   # Two operations want one home rather than scattered helpers:
   #
-  # 1. {#with_max_steps} produces a derived list for a sub-context
-  #    (sub-agent run, synthesizer rescue) with the +StepLimit+
-  #    swapped to a fresh instance. {Listener::StepLimit} carries
-  #    shared +@step+ state and registers a +before_tool_call+ hook
-  #    on whatever chat it's attached to, so the *same* instance
-  #    cannot govern two chats independently. {#with_max_steps} is
-  #    the load-bearing reason this class exists.
+  # 1. {#for_sub_agent} produces a derived list for a sub-agent run by
+  #    forwarding to each listener's own +for_sub_agent(**params)+
+  #    hook (default identity for listeners that don't define one).
+  #    The dispatch lives on the listener — +Terminal+ swaps in a
+  #    padded fresh instance, +TokenLog+ resets its snapshot,
+  #    +StepLimit+ picks +max_steps+ out of the params hash — so this
+  #    class doesn't grow a method per new listener type. {#with_max_steps}
+  #    is the one remaining type-dispatched knob, kept because it's a
+  #    cross-context cap (the synthesizer rescue also uses it), not a
+  #    sub-agent specialization.
   #
   # 2. {#attach} / {#on_message} replace +each { |l| l.attach(chat) }+
   #    and +each { |l| l.on_message(msg) }+ at the call sites, which
@@ -59,9 +62,23 @@ class Agent
     #   list. The derived list has no step cap.
     #
     # +max_steps+ is positional and required — every internal caller
-    # ({Agent}'s synth rescue, {Tool::SubAgent} factory) makes a
-    # deliberate decision about the sub-context's budget, and the
-    # missing-default forces that decision to be stated.
+    # ({Agent}'s synth rescue today; sub-agent callers go through
+    # {#for_sub_agent} instead) makes a deliberate decision about the
+    # sub-context's budget, and the missing-default forces that
+    # decision to be stated.
+    #
+    # == Why this stays type-dispatched
+    #
+    # Unlike the rest of the sub-agent transformations (which moved
+    # onto each listener's {Listener::MessageListener#for_sub_agent}
+    # in service of open-closed extension), this knob has a *caller-
+    # provided* parameter that two different contexts use with
+    # different values: the synthesizer rescue passes +1+, sub-agents
+    # pass their own +max_steps+. It's a cross-context cap, not a
+    # sub-agent specialization, so keeping it here as a parameterized
+    # helper is the natural shape. If a second cross-context knob ever
+    # appears, the question of generalizing this pattern is worth
+    # revisiting then.
     #
     # Non-+StepLimit+ listeners are passed by reference: a {Terminal}
     # or {InMemoryList} in the parent is the same instance the new
@@ -77,51 +94,34 @@ class Agent
       self.class.new(stripped)
     end
 
-    # Return a new {ListenerList} with each {Listener::TokenLog}
-    # replaced by a fresh instance (zeroed context-window snapshot).
-    # Non-+TokenLog+ listeners are passed by reference — same
-    # convention as {#with_max_steps}, so terminal output and other
-    # rendering still flow continuously into the parent's instances.
+    # Return a new {ListenerList} in which every listener has been
+    # asked for its sub-agent variant. Each listener that defines
+    # +for_sub_agent(**params)+ receives the forwarded +params+ and
+    # returns either +self+ or a replacement; listeners that don't
+    # define the method are kept by reference (output, structured
+    # capture, and anything else stateful flow continuously into the
+    # parent's instances).
     #
-    # Used by {Tool::SubAgent.build} (chained after {#with_max_steps})
-    # so a sub-agent's context-window snapshot tracks its own
-    # +RubyLLM::Chat+ rather than the parent's. Deliberately NOT used
-    # by {Agent}'s synth rescue: the synthesizer's tokens are part of
-    # the same conversation and should continue the parent's
-    # +TokenLog+ readings.
+    # The dispatch lives on the listener so adding a new listener type
+    # with sub-agent-specific behavior doesn't change this class — see
+    # {Listener::Terminal#for_sub_agent} (fresh padded instance),
+    # {Listener::TokenLog#for_sub_agent} (fresh, zeroed snapshot), and
+    # {Listener::StepLimit#for_sub_agent} (fresh cap from +max_steps:+).
     #
-    # No-op (besides the +dup+) if the receiver contains no +TokenLog+.
+    # +params+ is a flat hash forwarded as kwargs to every listener's
+    # hook; each listener picks the keys it cares about and ignores
+    # the rest (the +**+ catch-all in their signatures). Calling with
+    # no params is always valid — every listener's +for_sub_agent+
+    # treats its consumed keys as optional (e.g. +StepLimit+ falls
+    # back to its own cap when +max_steps:+ is absent).
     #
+    # @param params [Hash{Symbol => Object}] kwargs forwarded to each
+    #   listener's +for_sub_agent+. Currently +max_steps:+ is the only
+    #   key any listener consumes.
     # @return [ListenerList]
-    def with_zero_tokens
+    def for_sub_agent(**params)
       swapped = @listeners.map do |l|
-        l.is_a?(Listener::TokenLog) ? Listener::TokenLog.new : l
-      end
-      self.class.new(swapped)
-    end
-
-    # Return a new {ListenerList} with each {Listener::Terminal} swapped
-    # for a fresh instance carrying +padding+ leading spaces on every
-    # rendered line. Used by {Tool::SubAgent.build} so sub-agent output
-    # is visually indented under the parent's stream; the parent's
-    # +Terminal+ is left at padding 0.
-    #
-    # Absolute, not additive: chaining +with_padding(2)+ twice yields a
-    # list whose +Terminal+s render at 2 spaces, not 4 — same precedent
-    # as {#with_max_steps} ("set this knob") rather than composing.
-    # Sub-agent recursion is already blocked (the sub-agent's tool set
-    # excludes +sub_agent+ itself), so the depth never exceeds 1 in
-    # practice.
-    #
-    # Non-+Terminal+ listeners are passed by reference — same convention
-    # as {#with_zero_tokens}. No-op (besides the +dup+) if the receiver
-    # contains no +Terminal+.
-    #
-    # @param padding [Integer] non-negative number of leading spaces
-    # @return [ListenerList]
-    def with_padding(padding)
-      swapped = @listeners.map do |l|
-        l.is_a?(Listener::Terminal) ? Listener::Terminal.new(padding: padding) : l
+        l.respond_to?(:for_sub_agent) ? l.for_sub_agent(**params) : l
       end
       self.class.new(swapped)
     end
