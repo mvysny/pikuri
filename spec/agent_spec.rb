@@ -510,4 +510,86 @@ RSpec.describe Agent do
       assert_equal 'normal answer', agent.last_assistant_content
     end
   end
+
+  describe 'skill_catalog wiring' do
+    # Minimal stand-in for a non-empty catalog: lets the specs assert
+    # Agent's auto-wiring without spinning up the on-disk Bundled scanner.
+    fake_catalog_class = Class.new(Tool::SkillCatalog) do
+      def initialize(skills)
+        super()
+        @skills = skills
+      end
+
+      def list
+        @skills
+      end
+
+      def get(name)
+        @skills.find { |s| s.name == name }
+      end
+    end
+
+    let(:sample_skill) do
+      Tool::SkillCatalog::Skill.new(
+        name: 'sample',
+        description: 'Sample skill description.',
+        location: '/tmp/sample/SKILL.md',
+        body: 'do the thing.'
+      )
+    end
+
+    let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
+
+    it 'defaults to EMPTY: no system-prompt augmentation and no skill tool registered' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
+                        tools: [], listeners: Agent::ListenerList.new([in_memory]))
+
+      assert_equal 'base', agent.system_prompt
+      assert_equal Tool::SkillCatalog::EMPTY, agent.skill_catalog
+      assert agent.tools.none?(Tool::Skill), 'EMPTY catalog must NOT register Tool::Skill'
+      assert fake_chat.tools.none? { |t| t.name == 'skill' },
+             'EMPTY catalog must NOT register a `skill` tool on the chat'
+    end
+
+    it 'appends the catalog block to the system prompt when non-empty' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
+                        tools: [], listeners: Agent::ListenerList.new([in_memory]),
+                        skill_catalog: non_empty_catalog)
+
+      assert agent.system_prompt.start_with?('base'), agent.system_prompt
+      assert agent.system_prompt.include?('<available_skills>'), agent.system_prompt
+      assert agent.system_prompt.include?('<name>sample</name>'), agent.system_prompt
+      # The augmented prompt must be the one actually pushed to the chat,
+      # not just the value cached on Agent.
+      assert_equal agent.system_prompt, fake_chat.instructions
+    end
+
+    it 'auto-registers a Tool::Skill bound to the catalog when non-empty' do
+      agent = Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
+                        tools: [], listeners: Agent::ListenerList.new([in_memory]),
+                        skill_catalog: non_empty_catalog)
+
+      skill_tool = agent.tools.find { |t| t.is_a?(Tool::Skill) }
+      refute_nil skill_tool, 'expected non-empty catalog to auto-register a Tool::Skill'
+      # And it must reach the chat — not just sit on the tools array.
+      wired = fake_chat.tools.find { |t| t.name == 'skill' }
+      refute_nil wired, 'expected the `skill` tool to be wired on the underlying chat'
+
+      # Verify the bound catalog is the one we passed (the tool resolves
+      # the sample skill we put in it).
+      result = skill_tool.run('name' => 'sample')
+      assert result.include?('do the thing'), result
+    end
+
+    it 'raises if a Tool::Skill is also passed in tools: alongside a non-empty catalog' do
+      manual_skill_tool = Tool::Skill.new(catalog: non_empty_catalog)
+
+      err = assert_raises(RuntimeError) do
+        Agent.new(transport: Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
+                  tools: [manual_skill_tool], listeners: Agent::ListenerList.new([in_memory]),
+                  skill_catalog: non_empty_catalog)
+      end
+      assert_match(/auto-registers/, err.message)
+    end
+  end
 end

@@ -73,15 +73,34 @@ class Agent
   #   by {Tool::SubAgent} from the parent's name + a per-parent counter.
   #   Forwarded to listeners through {ListenerList#for_sub_agent} so
   #   name-aware ones (notably {Listener::TokenLog}) can tag their output.
+  # @param skill_catalog [Tool::SkillCatalog] catalog of on-disk skills
+  #   the agent may load on demand. Defaults to
+  #   +Tool::SkillCatalog::EMPTY+, which is a no-op singleton. When
+  #   non-empty: the catalog's prompt block ({Tool::SkillCatalog#format_for_prompt})
+  #   is appended to +system_prompt+ so the LLM can see what's available,
+  #   and a {Tool::Skill} bound to the catalog is appended to +tools+
+  #   so the LLM can actually load them. The two changes are coupled —
+  #   advertising skills without a loader (or vice versa) would be a
+  #   bug, so the catalog is the single source of truth for both.
   # @return [Agent]
   def initialize(transport:, system_prompt:, tools:, listeners:,
-                 context_window: nil, llama_probe_url: nil, name: '')
+                 context_window: nil, llama_probe_url: nil, name: '',
+                 skill_catalog: Tool::SkillCatalog::EMPTY)
     @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
-    @system_prompt = system_prompt
+    @system_prompt = skill_catalog.empty? ? system_prompt : system_prompt + skill_catalog.format_for_prompt
+    @skill_catalog = skill_catalog
     @tools = tools.dup
     @listeners = listeners
     @name = name
     @synth_answer = nil
+
+    unless skill_catalog.empty?
+      raise 'Tool::Skill cannot be passed in tools: when skill_catalog is non-empty; ' \
+            'Agent auto-registers it from the catalog.' \
+        if @tools.any?(Tool::Skill)
+
+      @tools << Tool::Skill.new(catalog: skill_catalog)
+    end
 
     @chat = RubyLLM.chat(**@transport.to_h)
     @chat.with_instructions(@system_prompt)
@@ -120,8 +139,18 @@ class Agent
     @transport.model
   end
 
-  # @return [String]
+  # @return [String] system prompt actually sent to the chat — equal to
+  #   the constructor's +system_prompt:+ argument plus, when a non-
+  #   empty +skill_catalog:+ was supplied, the catalog's
+  #   +<available_skills>+ block. {Tool::SubAgent} forwards this
+  #   already-augmented value to spawned sub-agents, so they see the
+  #   same catalog without needing the +skill_catalog:+ kwarg themselves.
   attr_reader :system_prompt
+
+  # @return [Tool::SkillCatalog] catalog passed to the constructor;
+  #   +Tool::SkillCatalog::EMPTY+ if none was supplied. Read by callers
+  #   that want to inspect the loaded skills (e.g. for a startup banner).
+  attr_reader :skill_catalog
 
   # @return [ListenerList] the listener list attached to this agent's
   #   chat

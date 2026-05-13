@@ -38,6 +38,24 @@ the deliberate counter-move:
   document are deliberately verbose so the project doubles as a tour
   of how a small agent runtime actually works.
 
+## Reference projects
+
+When designing new pikuri features, the closest prior art to mine for
+good ideas is:
+
+- **opencode** — <https://github.com/anomalyco/opencode/>. TypeScript /
+  Effect-TS / Bun. Worth studying for: tool registry shape, skill loading
+  (dedicated `skill` tool whose description is dynamically populated with
+  the available-skill list), permission system.
+- **PI** — <https://github.com/earendil-works/pi>. TypeScript / Bun.
+  Worth studying for: Agent Skills standard implementation (skill
+  discovery + validation + `<available_skills>` injection into the
+  system prompt), `.agents/` cross-harness skill directory convention.
+
+Both implement the [Agent Skills standard](https://agentskills.io/specification),
+which is also what Claude Code follows — useful baseline if pikuri ever
+grows a skill system.
+
 ## Scope decisions
 
 - **Reuse ruby_llm as runtime; pikuri owns the extension surface and

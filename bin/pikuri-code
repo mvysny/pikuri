@@ -47,7 +47,7 @@ system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nCurrent working directory: #{workspace.cwd}"
 
-openai_api_base = 'http://localhost:8080/v1'
+openai_api_base = 'http://192.168.122.1:8080/v1'
 
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base
@@ -60,6 +60,14 @@ end
 # which is unknown to ruby_llm's bundled model registry.
 llama_probe_url = openai_api_base.sub(%r{/v1/?\z}, '') + '/props'
 
+# Scan the user's skill directories (~/.pikuri/skills, ~/.claude/skills,
+# ~/.agents/skills) and the project's (.pikuri/skills, .claude/skills,
+# .agents/skills, walked up to the git root) so the LLM can load any
+# matching skill on demand. Empty catalogs are fine — Agent skips both
+# the system-prompt augmentation and the `skill` tool when nothing was
+# discovered, so the no-skills case is indistinguishable from before.
+skill_catalog = Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.to_s)
+
 agent = Agent.new(
   transport: Agent::ChatTransport.new(
     model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
@@ -69,7 +77,8 @@ agent = Agent.new(
   system_prompt: system_prompt,
   # File/shell tools first (declaration order biases some models toward
   # earlier tools, and this is the coding-relevant set); web + calculator
-  # last as auxiliary.
+  # last as auxiliary. The `skill` tool, when the catalog is non-empty,
+  # is appended by Agent itself — see Agent#initialize.
   tools: [
     Tool::Read.new(workspace: workspace),
     Tool::Grep.new(workspace: workspace),
@@ -87,7 +96,8 @@ agent = Agent.new(
     Agent::Listener::TokenLog.new,
     Agent::Listener::StepLimit.new(max: 40)
   ]),
-  llama_probe_url: llama_probe_url
+  llama_probe_url: llama_probe_url,
+  skill_catalog: skill_catalog
 )
 agent.allow_sub_agent(max_steps: 20)
 
@@ -101,6 +111,10 @@ end
 
 puts "Pikuri Coding Agent. Working in #{workspace.cwd}. Press Ctrl+C or Ctrl+D to quit."
 puts "Loaded project context from #{md_path}." if md_path
+unless skill_catalog.empty?
+  names = skill_catalog.list.map(&:name).sort.join(', ')
+  puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
+end
 puts 'YOLO mode: confirmations auto-approved. Use only inside a docker / dev-container sandbox.' if yolo
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?
