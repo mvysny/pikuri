@@ -49,7 +49,7 @@ module Pikuri
         # Hook for provider-reported token usage. Fires once per
         # assistant turn (including pure tool-call turns with empty
         # content) from {#dispatch_chat_message}. Default is a no-op so
-        # listeners that don't care — {Terminal}, {InMemoryList} —
+        # listeners that don't care — {Terminal}, {InMemoryMessageList} —
         # ignore it; {TokenLog} overrides this to log and accumulate.
         #
         # @param tokens [Agent::Tokens]

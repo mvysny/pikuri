@@ -57,7 +57,7 @@ module Pikuri
       #   runs on a fresh +RubyLLM::Chat+: +TokenLog+ zeroed, +Terminal+
       #   padded, +StepLimit+ at the defensive cap (the synth has no
       #   tools so it should never trip), shared listeners (e.g.
-      #   +InMemoryList+) kept by reference.
+      #   +InMemoryMessageList+) kept by reference.
       # @return [String, nil] the synth's final assistant content, or
       #   +nil+ if the synth somehow produced no assistant message
       def self.run(chat:, parent_messages:, user_message:, listeners:)

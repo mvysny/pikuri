@@ -133,7 +133,7 @@ and a small shared cache.
   `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Message` variants
   (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`),
   the `Pikuri::Agent::Listener::*` set (`MessageListener` base, `Terminal`,
-  `InMemoryList`, `StepLimit`), and `Pikuri::Agent::Synthesizer` (the
+  `InMemoryMessageList`, `StepLimit`), and `Pikuri::Agent::Synthesizer` (the
   step-exhaustion rescue). The Thought/Tool-call/Observation loop lives in
   ruby_llm; everything here is the listener surface around it.
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,

@@ -76,7 +76,7 @@ RSpec.describe Pikuri::Tool::SubAgent do
 
   let(:parent_listeners) do
     Pikuri::Agent::ListenerList.new([
-      Pikuri::Agent::Listener::InMemoryList.new,
+      Pikuri::Agent::Listener::InMemoryMessageList.new,
       Pikuri::Agent::Listener::StepLimit.new(max: 99)
     ])
   end

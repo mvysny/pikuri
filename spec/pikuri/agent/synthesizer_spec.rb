@@ -110,7 +110,7 @@ RSpec.describe Pikuri::Agent::Synthesizer do
     end
 
     let(:synth_chat)    { synth_chat_class.new }
-    let(:listener)      { Pikuri::Agent::Listener::InMemoryList.new }
+    let(:listener)      { Pikuri::Agent::Listener::InMemoryMessageList.new }
     let(:listener_list) { Pikuri::Agent::ListenerList.new([listener]) }
 
     it 'sets the synth system prompt on the chat' do
@@ -122,7 +122,7 @@ RSpec.describe Pikuri::Agent::Synthesizer do
     it 'attaches every listener to the synth chat' do
       described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
 
-      # InMemoryList (a MessageListener) wires three Chat callbacks.
+      # InMemoryMessageList (a MessageListener) wires three Chat callbacks.
       assert_equal 3, synth_chat.attach_count
     end
 

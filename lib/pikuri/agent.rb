@@ -28,7 +28,7 @@ module Pikuri
   # +max_steps: 1+ — same transformation a sub-agent invocation gets,
   # since the synth is a fresh context: +TokenLog+ zeroed, +Terminal+
   # padded, +StepLimit+ at the defensive cap (the synth has no tools so
-  # it should never trip), +InMemoryList+ shared by reference. The
+  # it should never trip), +InMemoryMessageList+ shared by reference. The
   # listener +name:+ becomes +"<@name>_synthesizer"+ (or just
   # +"synthesizer"+ for the main agent) so the synth turn is distinct
   # from the parent's normal turns in any name-aware log line. The
@@ -251,7 +251,7 @@ module Pikuri
     # {ListenerList#for_sub_agent} — listeners that define a sub-agent
     # variant return a fresh instance (e.g. +StepLimit+ at the new cap,
     # +Terminal+ with sub-agent padding, +TokenLog+ zeroed); listeners
-    # without the hook (+InMemoryList+, ...) are shared by reference so
+    # without the hook (+InMemoryMessageList+, ...) are shared by reference so
     # the sub-agent's events render and capture continuously with the
     # parent's.
     #

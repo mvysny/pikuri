@@ -25,7 +25,7 @@ module Pikuri
     # listener's own +for_sub_agent+ hook: +Terminal+ swaps to a padded
     # fresh instance, +TokenLog+ resets its snapshot, +StepLimit+ picks
     # +max_steps:+ out of the params, and listeners without the hook
-    # ({Agent::Listener::InMemoryList}, …) are shared by reference so
+    # ({Agent::Listener::InMemoryMessageList}, …) are shared by reference so
     # structured capture and other stateful renderers flow continuously.
     #
     # All parent state is captured by value at construction — the closure

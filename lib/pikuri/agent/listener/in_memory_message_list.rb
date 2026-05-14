@@ -7,7 +7,7 @@ module Pikuri
       # to an in-memory list. Used by specs to assert on emissions
       # without parsing stdout, and as the rough shape a future
       # structured consumer (web sink, telemetry pipe) would take.
-      class InMemoryList < MessageListener
+      class InMemoryMessageList < MessageListener
         # @return [Array<Agent::Message>] every message the listener has
         #   seen, in order; never nil
         attr_reader :events
@@ -25,7 +25,7 @@ module Pikuri
 
         # @return [String] short label for {Agent#to_s}
         def to_s
-          'InMemoryList'
+          'InMemoryMessageList'
         end
       end
     end

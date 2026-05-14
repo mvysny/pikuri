@@ -63,7 +63,7 @@ RSpec.describe Pikuri::Agent do
   end
 
   let(:fake_chat)    { fake_chat_class.new }
-  let(:in_memory)    { Pikuri::Agent::Listener::InMemoryList.new }
+  let(:in_memory)    { Pikuri::Agent::Listener::InMemoryMessageList.new }
   let(:step_limit_2) { Pikuri::Agent::Listener::StepLimit.new(max: 2) }
   let(:listener_list) { Pikuri::Agent::ListenerList.new([in_memory, step_limit_2]) }
 
@@ -98,7 +98,7 @@ RSpec.describe Pikuri::Agent do
     it 'attaches every listener in the supplied list to the chat' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listener_list)
 
-      # InMemoryList (a MessageListener) wires after_message +
+      # InMemoryMessageList (a MessageListener) wires after_message +
       # before_tool_call + after_tool_result; StepLimit adds its own
       # before_tool_call. Expect 2 before_tool_call callbacks and 1 of
       # the other two.
@@ -376,7 +376,7 @@ RSpec.describe Pikuri::Agent do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [tool],
                         listeners: listener_list)
 
-      assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryList, StepLimit(max=2)])',
+      assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryMessageList, StepLimit(max=2)])',
                    agent.to_s
     end
   end
@@ -443,7 +443,7 @@ RSpec.describe Pikuri::Agent do
       # fresh TokenLog / padded Terminal in passing.
       refute_same listeners, call[:listeners]
       assert_kind_of Pikuri::Agent::ListenerList, call[:listeners]
-      assert_equal '[InMemoryList, StepLimit(max=1)]', call[:listeners].to_s
+      assert_equal '[InMemoryMessageList, StepLimit(max=1)]', call[:listeners].to_s
     end
 
     it "tags the synth's listener name as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Agent::Listener::InMemoryList do
+RSpec.describe Pikuri::Agent::Listener::InMemoryMessageList do
   let(:listener) { described_class.new }
 
   it 'starts with no events' do
@@ -21,8 +21,8 @@ RSpec.describe Pikuri::Agent::Listener::InMemoryList do
   end
 
   describe '#to_s' do
-    it 'renders as "InMemoryList"' do
-      assert_equal 'InMemoryList', described_class.new.to_s
+    it 'renders as "InMemoryMessageList"' do
+      assert_equal 'InMemoryMessageList', described_class.new.to_s
     end
   end
 end

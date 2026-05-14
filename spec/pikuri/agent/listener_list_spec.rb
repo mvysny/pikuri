@@ -18,7 +18,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
   end
 
   let(:fake_chat) { fake_chat_class.new }
-  let(:recorder)  { Pikuri::Agent::Listener::InMemoryList.new }
+  let(:recorder)  { Pikuri::Agent::Listener::InMemoryMessageList.new }
 
   describe '#attach' do
     it 'fans attach out to every listener' do
@@ -35,7 +35,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
 
   describe '#on_message' do
     it 'fans on_message out to every listener' do
-      other = Pikuri::Agent::Listener::InMemoryList.new
+      other = Pikuri::Agent::Listener::InMemoryMessageList.new
       list = described_class.new([recorder, other])
 
       msg = Pikuri::Agent::Message::User.new(content: 'hi')
@@ -57,7 +57,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
 
       derived_listeners = derived.instance_variable_get(:@listeners)
       derived_terminal  = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::Terminal) }
-      derived_recorder  = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::InMemoryList) }
+      derived_recorder  = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::InMemoryMessageList) }
       derived_token_log = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
       derived_step      = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::StepLimit) }
 
@@ -104,8 +104,8 @@ RSpec.describe Pikuri::Agent::ListenerList do
       derived = list.for_sub_agent
 
       # StepLimit inherits the parent's cap when max_steps: is absent;
-      # the listener without a hook (InMemoryList) is preserved.
-      assert_equal '[StepLimit(max=4), InMemoryList]', derived.to_s
+      # the listener without a hook (InMemoryMessageList) is preserved.
+      assert_equal '[StepLimit(max=4), InMemoryMessageList]', derived.to_s
     end
 
     it 'is a copy-only no-op when no listener defines for_sub_agent' do
@@ -113,7 +113,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
 
       derived = list.for_sub_agent
 
-      assert_equal '[InMemoryList]', derived.to_s
+      assert_equal '[InMemoryMessageList]', derived.to_s
       refute_same list, derived
       assert_same recorder, derived.instance_variable_get(:@listeners).first
     end
@@ -137,7 +137,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
       log = Pikuri::Agent::Listener::TokenLog.new
       list = described_class.new([terminal, recorder, log])
 
-      # Should not raise on Terminal/InMemoryList; only TokenLog gets the cap.
+      # Should not raise on Terminal/InMemoryMessageList; only TokenLog gets the cap.
       list.context_window_cap = 4_096
 
       assert_equal 4_096, log.context_window_cap
