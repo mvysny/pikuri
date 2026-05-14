@@ -140,7 +140,7 @@ tools, listeners, and sub-agents.
 
 ## What tools `bin/pikuri-chat` ships with
 
-Four tools, all defined in `lib/tool/` and wired in `bin/pikuri-chat`:
+Four tools, all defined in `lib/pikuri/tool/` and wired in `bin/pikuri-chat`:
 
 - **`calculator`** — evaluates an arithmetic expression with Dentaku.
   Local, no network.
@@ -163,7 +163,7 @@ the main context.
 ## Search providers and their privacy trade-offs
 
 `web_search` is a cascade across whichever providers you have
-configured. The orchestration lives in `lib/tool/search/engines.rb`;
+configured. The orchestration lives in `lib/pikuri/tool/search/engines.rb`;
 each provider's privacy posture is documented in detail at the top of
 its source file.
 
@@ -178,7 +178,7 @@ web results, so the *query content* still reaches Microsoft for
 fulfillment, even though identifying info is stripped on the way out.
 
 Good enough for everyday curiosity. See
-`lib/tool/search/duckduckgo.rb` for the full write-up.
+`lib/pikuri/tool/search/duckduckgo.rb` for the full write-up.
 
 ### Brave Search API (recommended for sensitive queries)
 
@@ -198,7 +198,7 @@ export BRAVE_SEARCH_API_KEY=your-key-here
 ```
 
 Once the env var is set, Brave joins the cascade and may be chosen
-over DuckDuckGo for any given query. See `lib/tool/search/brave.rb`.
+over DuckDuckGo for any given query. See `lib/pikuri/tool/search/brave.rb`.
 
 ### Exa (paid, weakest privacy)
 
@@ -209,7 +209,7 @@ submit, and their privacy policy explicitly says queries are used for
 training. Don't enable Exa if your search history would be
 embarrassing or sensitive in a training set.
 
-See `lib/tool/search/exa.rb` for the full privacy posture.
+See `lib/pikuri/tool/search/exa.rb` for the full privacy posture.
 
 ### Recommended setup for best privacy
 

@@ -6,7 +6,7 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ## [Unreleased]
 
-## [0.0.1] — first packaged release
+## [0.0.1] - 2026-05-14 — first packaged release
 
 The initial gem release. Pikuri is shipped as a **library** — there are
 no executables installed by `gem install pikuri`. The `bin/pikuri-chat`

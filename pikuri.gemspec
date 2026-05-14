@@ -46,16 +46,54 @@ Gem::Specification.new do |spec|
   ]
   spec.require_paths = ['lib']
 
-  # Runtime deps — keep in sync with Gemfile (which now uses `gemspec`).
+  # Runtime deps — alphabetical. The Gemfile pulls these in via `gemspec`
+  # so this list is the single source of truth.
+
+  # Arithmetic backend for Pikuri::Tool::CALCULATOR.
   spec.add_dependency 'dentaku',          '~> 3.5'
+
+  # HTTP client. Used by the web-fetch scraper, the Brave / DuckDuckGo
+  # search providers, and (transitively) by ruby_llm.
   spec.add_dependency 'faraday',          '~> 2.9'
+
+  # HTML parser. Used by the web-fetch scraper and by both search
+  # providers (Brave, DuckDuckGo) to extract results from HTML responses.
   spec.add_dependency 'nokogiri',         '~> 1.19'
+
+  # PDF text extraction. Used by Pikuri::Tool::Scraper::PDF to render
+  # application/pdf responses as plain text for the agent loop.
   spec.add_dependency 'pdf-reader',       '~> 2.15'
+
+  # ANSI color for terminal output (reasoning dim, tool calls cyan, …)
+  # in the agent loop.
   spec.add_dependency 'rainbow',          '~> 3.1'
+
+  # HTML → Markdown conversion. Used by Pikuri::Tool::Scraper::Simple to
+  # hand the LLM Markdown rather than raw HTML.
   spec.add_dependency 'reverse_markdown', '~> 3.0'
+
+  # Readability-style main-content extraction (require 'readability').
+  # Used by Pikuri::Tool::Scraper::Simple to strip chrome from fetched
+  # pages before converting to Markdown.
   spec.add_dependency 'ruby-readability', '~> 0.7'
+
+  # LLM transport + agent loop. Pikuri sits on top of ruby_llm and owns
+  # only the extension surface (see CLAUDE.md "Scope decisions" and "The
+  # seam"). The tight pin reflects the bus-factor and Chat-API-churn risk
+  # of leaning on a single upstream for the loop itself.
   spec.add_dependency 'ruby_llm',         '~> 1.15'
+
+  # tsort is transitively required by Dentaku. It was a default gem in
+  # Ruby <= 4.0 and is removed from defaults in 4.1; declaring it here
+  # silences the load-time deprecation warning on 4.1+.
   spec.add_dependency 'tsort',            '~> 0.2'
+
+  # Renders the assistant's Markdown replies to a terminal-friendly form
+  # in the agent loop.
   spec.add_dependency 'tty-markdown',     '~> 0.7'
+
+  # Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets
+  # every file declare exactly the constant matching its path without the
+  # require_relative ceremony that creeps in once a project grows.
   spec.add_dependency 'zeitwerk',         '~> 2.7'
 end
