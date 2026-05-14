@@ -31,6 +31,30 @@ RSpec.describe Pikuri::Agent::ListenerList do
       assert_equal 2, fake_chat.hooks[:before_tool_call].size
       assert_equal 1, fake_chat.hooks[:after_tool_result].size
     end
+
+    it 'pokes listener_list = self on listeners that define the setter' do
+      # Stand-in listener that records the poke.
+      capturer_class = Class.new do
+        attr_accessor :listener_list
+        def attach(_chat); end
+      end
+      capturer = capturer_class.new
+
+      list = described_class.new([recorder, capturer])
+      list.attach(fake_chat)
+
+      assert_same list, capturer.listener_list
+    end
+
+    it 'does not call listener_list = on listeners that do not define the setter' do
+      # InMemoryMessageList does not respond to listener_list=; attach
+      # must not raise NoMethodError.
+      list = described_class.new([recorder])
+
+      list.attach(fake_chat)
+
+      refute_respond_to recorder, :listener_list=
+    end
   end
 
   describe '#on_message' do
@@ -116,6 +140,23 @@ RSpec.describe Pikuri::Agent::ListenerList do
       assert_equal '[InMemoryMessageList]', derived.to_s
       refute_same list, derived
       assert_same recorder, derived.instance_variable_get(:@listeners).first
+    end
+
+    it 'compacts nil returns out of the derived list — a listener can opt out of sub-agent propagation' do
+      # Stand-in listener whose for_sub_agent returns nil — the
+      # documented opt-out convention used by Interloper.
+      optout_class = Class.new do
+        def attach(_chat); end
+        def on_message(_); end
+        def for_sub_agent(**) = nil
+        def to_s = 'Optout'
+      end
+
+      list = described_class.new([recorder, optout_class.new, Pikuri::Agent::Listener::StepLimit.new(max: 7)])
+
+      derived = list.for_sub_agent(max_steps: 3)
+
+      assert_equal '[InMemoryMessageList, StepLimit(max=3)]', derived.to_s
     end
   end
 

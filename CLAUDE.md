@@ -149,11 +149,21 @@ and a small shared cache.
   `DuckDuckGo`).
 - `lib/pikuri/agent.rb`, `lib/pikuri/agent/` — `Pikuri::Agent`,
   `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Message` variants
-  (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`),
-  the `Pikuri::Agent::Listener::*` set (`MessageListener` base, `Terminal`,
-  `InMemoryMessageList`, `StepLimit`), and `Pikuri::Agent::Synthesizer` (the
-  step-exhaustion rescue). The Thought/Tool-call/Observation loop lives in
-  ruby_llm; everything here is the listener surface around it.
+  (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`/`Cancelled`;
+  `User` carries a `mid_loop_run` flag — `false` for turn-starting input,
+  `true` for `Interloper`-delivered mid-loop injections), the
+  `Pikuri::Agent::Listener::*` set (`MessageListener` base, `Terminal`,
+  `InMemoryMessageList`, `StepLimit`, `TokenLog`, `Cancellable`,
+  `Interloper`), and `Pikuri::Agent::Synthesizer` (the step-exhaustion
+  rescue). The Thought/Tool-call/Observation loop lives in ruby_llm;
+  everything here is the listener surface around it. Two `ListenerList`
+  conventions are duck-typed across the set: a listener that defines
+  `listener_list=` is given a back-reference by `ListenerList#attach`
+  (used by `Interloper` to emit injected `User` events back into the
+  stream), and a listener whose `for_sub_agent` returns `nil` is dropped
+  from the derived sub-agent list (used by `Interloper` so the host's
+  injection channel terminates at the main agent — sub-agents are
+  private to their parent).
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
   `lib/pikuri/tool/sub_agent.rb` — `Pikuri::Tool` value class with its
   `#to_ruby_llm_tool` adapter, the strict `Pikuri::Tool::Parameters`

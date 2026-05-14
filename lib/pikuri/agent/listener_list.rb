@@ -37,10 +37,21 @@ module Pikuri
       # to each listener's +#attach+ — see {Listener::MessageListener#attach}
       # and {Listener::StepLimit#attach} for what each one registers.
       #
+      # Listeners that need to emit events *back* into the listener
+      # stream (notably {Listener::Interloper}, which surfaces injected
+      # messages as +Message::User+ events for the other listeners)
+      # opt in by defining +listener_list=+; the receiver pokes itself
+      # via that setter before calling +attach+. Listeners that don't
+      # respond to the setter are skipped — the protocol is duck-typed,
+      # not part of any base class, so it costs nothing when unused.
+      #
       # @param chat [RubyLLM::Chat]
       # @return [void]
       def attach(chat)
-        @listeners.each { |l| l.attach(chat) }
+        @listeners.each do |l|
+          l.listener_list = self if l.respond_to?(:listener_list=)
+          l.attach(chat)
+        end
       end
 
       # Dispatch one message to every listener.
@@ -54,16 +65,23 @@ module Pikuri
       # Return a new {ListenerList} in which every listener has been
       # asked for its sub-agent variant. Each listener that defines
       # +for_sub_agent(**params)+ receives the forwarded +params+ and
-      # returns either +self+ or a replacement; listeners that don't
-      # define the method are kept by reference (output, structured
-      # capture, and anything else stateful flow continuously into the
-      # parent's instances).
+      # returns either +self+, a replacement instance, or +nil+ to
+      # opt out of propagation entirely — the resulting list compacts
+      # +nil+ entries away. Listeners that don't define the method are
+      # kept by reference (output, structured capture, and anything else
+      # stateful flow continuously into the parent's instances).
       #
       # The dispatch lives on the listener so adding a new listener type
       # with sub-agent-specific behavior doesn't change this class — see
       # {Listener::Terminal#for_sub_agent} (fresh padded instance),
-      # {Listener::TokenLog#for_sub_agent} (fresh, zeroed snapshot), and
-      # {Listener::StepLimit#for_sub_agent} (fresh cap from +max_steps:+).
+      # {Listener::TokenLog#for_sub_agent} (fresh, zeroed snapshot),
+      # {Listener::StepLimit#for_sub_agent} (fresh cap from +max_steps:+),
+      # {Listener::Cancellable#for_sub_agent} (same instance, shared by
+      # reference so a parent cancel kills sub-agents too), and
+      # {Listener::Interloper#for_sub_agent} (+nil+, since sub-agents
+      # are private to the parent and the host never holds a handle to
+      # them — the host's injection channel must terminate at the main
+      # agent).
       #
       # +params+ is a flat hash forwarded as kwargs to every listener's
       # hook; each listener picks the keys it cares about and ignores
@@ -73,13 +91,13 @@ module Pikuri
       # back to its own cap when +max_steps:+ is absent).
       #
       # @param params [Hash{Symbol => Object}] kwargs forwarded to each
-      #   listener's +for_sub_agent+. Currently +max_steps:+ is the only
-      #   key any listener consumes.
+      #   listener's +for_sub_agent+. Currently +max_steps:+ and +name:+
+      #   are the keys consumed by bundled listeners.
       # @return [ListenerList]
       def for_sub_agent(**params)
         swapped = @listeners.map do |l|
           l.respond_to?(:for_sub_agent) ? l.for_sub_agent(**params) : l
-        end
+        end.compact
         self.class.new(swapped)
       end
 

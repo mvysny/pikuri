@@ -103,6 +103,22 @@ RSpec.describe Pikuri::Agent::Listener::Cancellable do
       assert flag.cancelled?
       assert_raises(described_class::Cancelled) { fake_chat.fire }
     end
+
+    it 'does NOT reset the flag on mid-loop User injections — the cancel-then-inject hazard' do
+      # Scenario: host calls cancel! and inject_user_message in either
+      # order. The Interloper's delivery emits Message::User(mid_loop_run:
+      # true) at the next after_tool_result; if that reset the flag,
+      # the cancellation would be silently lost on the next
+      # before_tool_call. Guard against that.
+      flag = described_class.new
+      flag.attach(fake_chat)
+      flag.cancel!
+
+      flag.on_message(Pikuri::Agent::Message::User.new(content: 'also do X', mid_loop_run: true))
+
+      assert flag.cancelled?
+      assert_raises(described_class::Cancelled) { fake_chat.fire }
+    end
   end
 
   describe 'cross-thread cancellation' do

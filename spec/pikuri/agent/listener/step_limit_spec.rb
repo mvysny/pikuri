@@ -74,6 +74,20 @@ RSpec.describe Pikuri::Agent::Listener::StepLimit do
 
       assert_raises(described_class::Exceeded) { fake_chat.fire }
     end
+
+    it 'does NOT reset the budget on mid-loop User injections' do
+      # An Interloper-delivered Message::User(mid_loop_run: true) is
+      # additional context for the same turn, not a fresh turn. If the
+      # step counter reset here, a chatty user could keep refreshing the
+      # budget by injecting; cap that off.
+      limiter = described_class.new(max: 1)
+      limiter.attach(fake_chat)
+      fake_chat.fire # uses the one allowed call
+
+      limiter.on_message(Pikuri::Agent::Message::User.new(content: 'also do X', mid_loop_run: true))
+
+      assert_raises(described_class::Exceeded) { fake_chat.fire }
+    end
   end
 
   describe '#for_sub_agent' do

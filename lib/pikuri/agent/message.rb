@@ -14,7 +14,12 @@ module Pikuri
     # == Where each variant comes from
     #
     # * {User} — synthesized by {Agent#run_loop} before forwarding the
-    #   turn to +Chat#ask+. Never appears in ruby_llm's listener stream.
+    #   turn to +Chat#ask+ (with +mid_loop_run: false+), or by
+    #   {Listener::Interloper} when a host-side
+    #   {Listener::Interloper#inject_user_message} call lands inside the
+    #   loop at the next +after_tool_result+ boundary (with
+    #   +mid_loop_run: true+). Never appears in ruby_llm's listener
+    #   stream — both producers route through the listener list directly.
     # * {Thinking} / {Assistant} — extracted from a +Chat#after_message+
     #   payload when the role is +:assistant+. Empty +thinking.text+ and
     #   empty +content+ are filtered out at the dispatch site so
@@ -34,8 +39,23 @@ module Pikuri
     # metadata about an exchange, not an event in it. See {Agent::Tokens}
     # and {Listener::MessageListener#on_tokens}.
     module Message
-      # User's input for a turn, as passed to {Agent#run_loop}.
-      User = Data.define(:content)
+      # User's input for a turn (+mid_loop_run: false+, the default) or
+      # a host-supplied injection delivered while the loop is running
+      # (+mid_loop_run: true+, emitted by {Listener::Interloper}). The
+      # flag exists so listeners that treat the +User+ message as a turn
+      # boundary (notably {Listener::StepLimit} and
+      # {Listener::Cancellable}, which reset their internal state on a
+      # new turn) can ignore mid-loop injections — those are *additional
+      # context* for the same turn, not a fresh one.
+      User = Data.define(:content, :mid_loop_run) do
+        # @param content [String] user-supplied text
+        # @param mid_loop_run [Boolean] +false+ for a turn-starting
+        #   message (the default); +true+ when the message was injected
+        #   mid-loop by {Listener::Interloper}
+        def initialize(content:, mid_loop_run: false)
+          super
+        end
+      end
 
       # Assistant reasoning ("thinking") block, extracted from the
       # +thinking.text+ field on a +RubyLLM::Message+ with role

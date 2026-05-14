@@ -50,16 +50,20 @@ module Pikuri
           end
         end
 
-        # Listener protocol hook. Resets the step counter on
-        # {Agent::Message::User} — the User message marks the start of a
-        # new turn by definition, so it doubles as the lifecycle signal.
-        # Every other variant is a no-op.
+        # Listener protocol hook. Resets the step counter on a
+        # turn-starting {Agent::Message::User} (+mid_loop_run: false+) —
+        # that variant marks the start of a new turn by definition, so
+        # it doubles as the lifecycle signal. Mid-loop injections
+        # (+mid_loop_run: true+, emitted by {Listener::Interloper}) are
+        # *not* a new turn and must not refresh the budget; the user
+        # could otherwise refresh forever by injecting. Every other
+        # variant is a no-op.
         #
         # @param message [Agent::Message]
         # @return [void]
         def on_message(message)
           case message
-          in Agent::Message::User
+          in Agent::Message::User(mid_loop_run: false)
             @step = 0
           else
             # no-op

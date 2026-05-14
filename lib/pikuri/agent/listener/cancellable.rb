@@ -98,17 +98,22 @@ module Pikuri
           end
         end
 
-        # Listener protocol hook. Resets the flag on
-        # {Agent::Message::User} — the +User+ message marks the start of
-        # a new turn by definition, so a stale cancellation from a prior
-        # turn does not poison the next one. Every other variant is a
-        # no-op.
+        # Listener protocol hook. Resets the flag on a turn-starting
+        # {Agent::Message::User} (+mid_loop_run: false+) — that variant
+        # marks the start of a new turn by definition, so a stale
+        # cancellation from a prior turn does not poison the next one.
+        # Mid-loop injections (+mid_loop_run: true+, emitted by
+        # {Listener::Interloper}) must *not* clear the flag — otherwise
+        # the cancel-then-inject ordering would lose the cancellation:
+        # +cancel!+ sets the flag, the injection's +Message::User+ lands
+        # and resets it, and the next +before_tool_call+ no longer
+        # raises. Every other variant is a no-op.
         #
         # @param message [Agent::Message]
         # @return [void]
         def on_message(message)
           case message
-          in Agent::Message::User
+          in Agent::Message::User(mid_loop_run: false)
             @cancelled = false
           else
             # no-op
