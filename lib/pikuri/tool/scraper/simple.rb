@@ -5,6 +5,12 @@ require 'uri'
 
 module Pikuri
   class Tool
+    # Namespace for the URL-to-Markdown scraping stack used by
+    # {Tool::WEB_SCRAPE} and {Tool::FETCH}: a content-type-dispatching
+    # fetcher ({Simple}), pure content extractors ({HTML}, {PDF}), and a
+    # shared error type ({FetchError}). Nothing here knows about the LLM
+    # — the tools that wrap these layers turn rendered Markdown (or
+    # +FetchError+) into the next observation.
     module Scraper
       # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
       # follow redirects, and dispatch the response body to the parser

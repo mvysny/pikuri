@@ -2,6 +2,11 @@
 
 module Pikuri
   class Tool
+    # Namespace for the web-search stack used by {Tool::WEB_SEARCH}: per-
+    # provider modules ({DuckDuckGo}, {Brave}, {Exa}), the {Result} value
+    # object they all return, the cross-provider {Engines} cascade with
+    # its on-disk cache, and the shared {RateLimiter} a provider can wire
+    # in to back off when a quota header says so.
     module Search
       # Search-orchestration entry point: the cascade across configured
       # providers, the result cache, and the {Unavailable} protocol marker
@@ -45,6 +50,10 @@ module Pikuri
         #
         # @return [UrlCache, #fetch]
         CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
+        # Accessor for {CACHE}; specs override this to swap in
+        # {UrlCache::NULL} or an isolated cache.
+        #
+        # @return [UrlCache, #fetch]
         def self.cache
           CACHE
         end

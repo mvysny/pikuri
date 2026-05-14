@@ -18,6 +18,12 @@ module Pikuri
       # (dispatched by {Agent::ListenerList#for_sub_agent}) so their
       # output is visually indented under the parent's stream.
       class Terminal < MessageListener
+        # Subsystem logger; set its level with +PIKURI_LOG_TERMINAL+ or
+        # the global +PIKURI_LOG+. Used for the narrow rescue around
+        # third-party rendering (+tty-markdown+ choking on assistant
+        # output) — see the CLAUDE.md "secondary to the loop" carve-out.
+        #
+        # @return [Logger]
         LOGGER = Pikuri.logger_for('Terminal')
 
         # Cap, in characters, applied to tool-result content rendered to

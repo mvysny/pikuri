@@ -2,6 +2,10 @@
 
 module Pikuri
   class Agent
+    # Namespace for listeners that consume the +Agent+'s normalized event
+    # stream. Concrete listeners — {Terminal}, {InMemoryMessageList},
+    # {StepLimit}, {TokenLog} — extend {MessageListener} and override its
+    # hooks; {Agent::ListenerList} owns the fan-out across the set.
     module Listener
       # Abstract base for listeners that consume the +Agent+'s normalized
       # event stream as {Message} value objects. Concrete subclasses

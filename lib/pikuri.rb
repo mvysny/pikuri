@@ -145,6 +145,12 @@ module Pikuri
     end
   end
 
+  # Zeitwerk loader managing every constant under +lib/pikuri/+. Exposed
+  # as a constant (rather than scoped to the boot block) so a downstream
+  # host that wants to add ignore rules or extend the load path can reach
+  # it without monkey-patching. Most callers should not need to touch it.
+  #
+  # @return [Zeitwerk::Loader]
   Loader = Zeitwerk::Loader.new
   Loader.tag = 'pikuri'
   Loader.push_dir(File.expand_path('.', __dir__))

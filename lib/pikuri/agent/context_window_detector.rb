@@ -40,12 +40,22 @@ module Pikuri
     # non-llama.cpp server should not abort agent construction over a
     # cosmetic readout.
     class ContextWindowDetector
+      # Subsystem logger; set its level with
+      # +PIKURI_LOG_CONTEXTWINDOWDETECTOR+ or the global +PIKURI_LOG+.
+      #
+      # @return [Logger]
       LOGGER = Pikuri.logger_for('ContextWindowDetector')
 
-      # Probe timeouts in seconds. Short on purpose: this runs synchronously
-      # during +Agent.new+ and a wedged server should not stall startup
-      # noticeably.
+      # Connect timeout in seconds for the llama.cpp +/props+ probe.
+      # Short on purpose: this runs synchronously during +Agent.new+ and
+      # a wedged server should not stall startup noticeably.
+      #
+      # @return [Integer]
       OPEN_TIMEOUT = 2
+      # Read timeout in seconds for the llama.cpp +/props+ probe; matches
+      # {OPEN_TIMEOUT} for the same reason.
+      #
+      # @return [Integer]
       READ_TIMEOUT = 2
 
       # @param override [Integer, nil] explicit cap from the caller; wins if

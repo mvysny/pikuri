@@ -53,6 +53,11 @@ module Pikuri
       # +Δ+ equals +ctx+. Sizes are scaled by 1024 and shown with one
       # decimal + a +k+ suffix.
       class TokenLog < MessageListener
+        # Subsystem logger; the per-turn context-window line is emitted
+        # at +INFO+ level. Set its level with +PIKURI_LOG_TOKENS+ or the
+        # global +PIKURI_LOG+.
+        #
+        # @return [Logger]
         LOGGER = Pikuri.logger_for('Tokens')
 
         # Tokens consumed by the conversation through the most recent

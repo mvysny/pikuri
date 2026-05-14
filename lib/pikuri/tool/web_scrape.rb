@@ -29,6 +29,10 @@ module Pikuri
       #
       # @return [UrlCache, #fetch]
       CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_scrape")
+      # Accessor for {CACHE}; specs override this to swap in
+      # {UrlCache::NULL} or an isolated cache.
+      #
+      # @return [UrlCache, #fetch]
       def self.cache
         CACHE
       end

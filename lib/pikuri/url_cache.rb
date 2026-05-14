@@ -98,6 +98,12 @@ module Pikuri
     # persists. Use this in tests (or anywhere else you want caching off)
     # without giving up the {UrlCache#fetch} contract.
     NULL = Object.new
+    # Singleton +fetch+ on {NULL} that mirrors {UrlCache#fetch}'s shape:
+    # ignores +_key+, always yields, never persists.
+    #
+    # @param _key [String] cache key; ignored
+    # @yieldreturn [String] freshly-computed payload
+    # @return [String] whatever the block returned
     def NULL.fetch(_key)
       yield
     end
