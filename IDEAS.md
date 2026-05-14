@@ -189,7 +189,7 @@ section, summarised here so they show up in a doc-only sweep:
   intended for Docker / dev-container mode where the whole sandbox is
   the workspace. Pairs naturally with `--yolo`.
 - Support for sandboxed bash (via bubblewrap)? Not bad, but what
-  should be allowed? E.g. ~/.m2/repository and/or ~/.gradle/caches for Maven/Gradle builders? RW? Rogue prompt could overwrite malicious jar files.
+  should be allowed? E.g. ~/.m2/repository and/or ~/.gradle/caches for Maven/Gradle builders? RW? Rogue prompt could overwrite malicious jar files. What about Mise-bundled jvm and ruby?
   Everything except ~/.ssh and ~/.aws? Too permissive.
 
 ## Security perspective
