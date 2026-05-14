@@ -1,16 +1,22 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Pin Bundler to Pikuri's own Gemfile so the script works when invoked via a
-# symlink (e.g. ~/.local/bin/pikuri-code) from any working directory. `__dir__`
-# resolves through symlinks, so this points at the real checkout's Gemfile.
-ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+# Running from a source checkout: pin Bundler to pikuri's own Gemfile so
+# locked dependency versions win and the script works when invoked via a
+# symlink (e.g. ~/.local/bin/pikuri-code) from any working directory.
+# `__dir__` resolves through symlinks, so this points at the real checkout.
+#
+# Running as an installed gem (`gem install pikuri`): no Gemfile is shipped,
+# so we fall through to RubyGems' default activation. The `require 'pikuri'`
+# below picks up the gem's lib/ via the load path RubyGems sets up.
+gemfile = File.expand_path('../Gemfile', __dir__)
+if File.exist?(gemfile)
+  ENV['BUNDLE_GEMFILE'] ||= gemfile
+  require 'bundler/setup'
+  $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+end
 
-require 'bundler/setup'
 require 'optparse'
-
-$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
-
 require 'pikuri'
 
 yolo = false

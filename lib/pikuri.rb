@@ -97,6 +97,11 @@ module Pikuri
   Loader.tag = 'pikuri'
   Loader.push_dir(File.expand_path('.', __dir__))
   Loader.ignore(__FILE__)
+  # +lib/pikuri/version.rb+ defines +Pikuri::VERSION+ (an ALL_CAPS value
+  # constant for the gemspec), not +Pikuri::Version+ as Zeitwerk would
+  # expect from the filename. The gemspec +require_relative+'s it
+  # explicitly, so the loader has no work to do here.
+  Loader.ignore(File.expand_path('pikuri/version.rb', __dir__))
   Loader.inflector.inflect(
     'html'       => 'HTML',
     'pdf'        => 'PDF',

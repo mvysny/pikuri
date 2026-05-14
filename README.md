@@ -10,7 +10,7 @@ model itself decides to call a tool.
 ## Quick start
 
 ```sh
-git clone https://github.com/mvysny/pikuri.git
+git clone https://codeberg.org/mvysny/pikuri.git
 cd pikuri
 
 # Ruby 3.x + bundler (Ubuntu/Debian)

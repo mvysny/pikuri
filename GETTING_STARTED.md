@@ -8,7 +8,7 @@ you're elsewhere.
 ## 1. Clone and install
 
 ```sh
-git clone https://github.com/mvysny/pikuri.git
+git clone https://codeberg.org/mvysny/pikuri.git
 cd pikuri
 
 # Ruby 3.x and Bundler. Pikuri has no Rails or native-extension
