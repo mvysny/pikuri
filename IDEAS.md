@@ -188,6 +188,9 @@ section, summarised here so they show up in a doc-only sweep:
 - **`Tool::Workspace::ALLOW_ALL`.** Unrestricted reads + writes,
   intended for Docker / dev-container mode where the whole sandbox is
   the workspace. Pairs naturally with `--yolo`.
+- Support for sandboxed bash (via bubblewrap)? Not bad, but what
+  should be allowed? E.g. ~/.m2/repository and/or ~/.gradle/caches for Maven/Gradle builders? RW? Rogue prompt could overwrite malicious jar files.
+  Everything except ~/.ssh and ~/.aws? Too permissive.
 
 ## Security perspective
 
