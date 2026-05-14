@@ -233,6 +233,8 @@ read, and the model often complies. Mitigations to consider:
   (untrusted-content markers). Cheap, partial.
 - **Egress allowlist** for `fetch` / `bash` when in interactive mode
   (auto-deny non-allowlisted hosts, prompt for first-use additions).
+- Prompt injection from skill descriptions?
+- Prompt injection from contents of web_scrape?
 
 ### DinD — why both flavors are broken
 
