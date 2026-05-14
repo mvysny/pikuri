@@ -179,6 +179,17 @@ and a small shared cache.
   constructor wiring (workspace + confirmer where needed) — same pattern
   as `Pikuri::Tool::SubAgent`, not the bare `ALL_CAPS` constant style used
   by the stateless web/calc tools.
+- `lib/pikuri/tool/skill_catalog.rb`, `lib/pikuri/tool/skill.rb` —
+  pikuri's implementation of the [Agent Skills standard](https://agentskills.io/specification).
+  `Pikuri::Tool::SkillCatalog` is the discovery + validation layer
+  (abstract base + bundled `Empty`/`EMPTY` and `Bundled` scanners that
+  walk `.pikuri/skills`, `.claude/skills`, `.agents/skills`).
+  `Pikuri::Tool::Skill < Pikuri::Tool` is the loading tool, instantiated
+  by `Agent#initialize` whenever the wired-in catalog is non-empty;
+  same constructor-wiring pattern as `SubAgent` and the coding tools.
+  Catalog + tool form a seam: a future host can plug in a synthetic
+  catalog (virtual filesystem, in-memory test fixture) without touching
+  `Tool::Skill` or `Agent`.
 - `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
   (see Scope decisions). The single point where `Open3` / `Process.spawn`
   are allowed; everything else in `lib/` routes through here.

@@ -40,9 +40,18 @@ module Pikuri
       File.join(cache_home, 'pikuri', 'url_cache')
     end.freeze
 
-    # Default freshness window: 24 hours, in seconds.
+    # Default freshness window: 2 hours, in seconds.
+    #
+    # Long enough to cover a single interactive session — revisiting
+    # a scraped page or re-running a similar search within the same
+    # working window hits the cache. Short enough that resuming the
+    # next day doesn't serve stale news, docs, or search results.
+    # Reference points: opencode keeps no cache, the +pi-web-fetch+
+    # community extension uses 15 minutes, +pi-web-search+ uses 5;
+    # 2 hours sits comfortably above the "single follow-up" window
+    # those numbers are aimed at without holding content across days.
     # @return [Integer]
-    DEFAULT_TTL = 24 * 60 * 60
+    DEFAULT_TTL = 2 * 60 * 60
 
     # @param ttl [Integer] freshness window in seconds; entries with an
     #   mtime older than this are treated as misses

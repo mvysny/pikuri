@@ -3,6 +3,14 @@
 require 'logger'
 require 'zeitwerk'
 
+# +Pikuri::VERSION+ lives in its own tiny file so the gemspec can read
+# the version constant via +require_relative+ at build time without
+# loading Zeitwerk and every runtime dep. Requiring it here makes the
+# constant available to ordinary +require 'pikuri'+ callers too —
+# without this line, Zeitwerk's ignore-rule below would leave
+# +Pikuri::VERSION+ undefined for anyone using the installed gem.
+require_relative 'pikuri/version'
+
 # Boot file: configures the Zeitwerk autoloader for every file under
 # +lib/pikuri/+ and eager-loads them all. After +require 'pikuri'+,
 # every constant pikuri ships (+Pikuri::Agent+, +Pikuri::Tool+,
@@ -142,9 +150,10 @@ module Pikuri
   Loader.push_dir(File.expand_path('.', __dir__))
   Loader.ignore(__FILE__)
   # +lib/pikuri/version.rb+ defines +Pikuri::VERSION+ (an ALL_CAPS value
-  # constant for the gemspec), not +Pikuri::Version+ as Zeitwerk would
-  # expect from the filename. The gemspec +require_relative+'s it
-  # explicitly, so the loader has no work to do here.
+  # constant), not +Pikuri::Version+ as Zeitwerk would expect from the
+  # filename — so tell the loader to skip it. The file is +require_relative+'d
+  # at the top of this file (and also by the gemspec at build time), so
+  # the constant is defined before Zeitwerk runs.
   Loader.ignore(File.expand_path('pikuri/version.rb', __dir__))
   Loader.inflector.inflect(
     'html'       => 'HTML',

@@ -27,6 +27,15 @@ points; production binaries built on pikuri (notably the planned
 - `Tool::Bash` emits a loud warning at construction: the tool runs
   commands unsandboxed under pikuri's UID and can read `~/.ssh`, AWS
   credentials, etc. A future release will gate this behind a sandbox.
+- `Pikuri::Tool::SkillCatalog` + `Pikuri::Tool::Skill` — pikuri's
+  implementation of the [Agent Skills standard](https://agentskills.io/specification).
+  `SkillCatalog` discovers and validates `SKILL.md` files under the
+  standard `.pikuri/skills`, `.claude/skills`, `.agents/skills`
+  directories (precedence in that order); `Tool::Skill` is auto-
+  registered by `Agent#initialize` whenever the wired-in catalog is
+  non-empty, and the catalog's prompt block is appended to the system
+  prompt so the LLM sees the available inventory without an extra
+  round-trip.
 - `mise.toml` pinning Ruby 3.3, matching the gemspec floor.
 - `CHANGELOG.md` (this file).
 
