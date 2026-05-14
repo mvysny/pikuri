@@ -62,20 +62,21 @@ grows a skill system.
   the strict validation.** ruby_llm 1.15 handles the chat loop, tool
   invocation, reasoning extraction, and the OpenAI / Anthropic /
   local-server matrix. Pikuri's job is the layer above: tool ergonomics
-  (`Tool.new` + `Tool::Parameters`), the rendering callbacks, sub-agent
-  isolation, and the LLM-actionable error messages the model sees on
-  bad arguments.
+  (`Pikuri::Tool.new` + `Pikuri::Tool::Parameters`), the rendering
+  callbacks, sub-agent isolation, and the LLM-actionable error messages
+  the model sees on bad arguments.
 
 - **The seam.** All `RubyLLM::*` references are confined to four
   files: `bin/pikuri-chat` and `bin/pikuri-code` (boot/wiring — call
-  `RubyLLM.configure`), `lib/agent.rb` (constructs the Chat, attaches
-  listeners, calls `ask`), and `lib/tool.rb` (the `Tool` value class
-  plus its `#to_ruby_llm_tool` adapter that emits a synthetic
-  `RubyLLM::Tool` subclass on demand). Everything else in `lib/`
-  (bundled tools, scrapers, search providers) talks to pikuri's
-  surface (`Tool.new`, `Tool::Parameters`, …) and never references
-  ruby_llm. This is the fork-or-swap contingency: replacing the loop
-  becomes a fixed-cost rewrite of those two `lib/` files.
+  `RubyLLM.configure`), `lib/pikuri/agent.rb` (constructs the Chat,
+  attaches listeners, calls `ask`), and `lib/pikuri/tool.rb` (the
+  `Pikuri::Tool` value class plus its `#to_ruby_llm_tool` adapter that
+  emits a synthetic `RubyLLM::Tool` subclass on demand). Everything
+  else in `lib/` (bundled tools, scrapers, search providers) talks to
+  pikuri's surface (`Pikuri::Tool.new`, `Pikuri::Tool::Parameters`, …)
+  and never references ruby_llm. This is the fork-or-swap contingency:
+  replacing the loop becomes a fixed-cost rewrite of those two `lib/`
+  files.
 
 - **Subprocess seam.** All subprocess spawning in `lib/` goes through
   `Pikuri::Subprocess.spawn`. Direct `Process.spawn` / `Open3.*` /
@@ -90,24 +91,25 @@ grows a skill system.
   `lib/pikuri/subprocess.rb`.
 
 - **Workspace seam.** Tools that touch files (`Read`, `Write`, `Edit`,
-  `Grep`, `Glob`, `Bash`) take a `Tool::Workspace` via constructor and
-  route every path through `#resolve_for_read(path)` /
+  `Grep`, `Glob`, `Bash`) take a `Pikuri::Tool::Workspace` via
+  constructor and route every path through `#resolve_for_read(path)` /
   `#resolve_for_write(path)` before touching the filesystem. The
-  bundled `Tool::Workspace::Cwd.new(root:)` locks reads + writes to
-  the launch directory's subtree, rejecting `..`-escapes and symlinks
-  that resolve outside the root. The seam exists so a future
-  in-editor pikuri can swap in a workspace mirroring the IDE's open
-  project root or a virtual filesystem without rewriting tool guts.
+  bundled `Pikuri::Tool::Workspace::Cwd.new(root:)` locks reads +
+  writes to the launch directory's subtree, rejecting `..`-escapes
+  and symlinks that resolve outside the root. The seam exists so a
+  future in-editor pikuri can swap in a workspace mirroring the IDE's
+  open project root or a virtual filesystem without rewriting tool
+  guts.
 
 - **Confirmer seam.** Tools that mutate user state (`Write`, `Bash`)
-  take a `Tool::Confirmer` via constructor and route every prompt
-  through `#confirm?(prompt:)` — never `gets` / `puts` /
+  take a `Pikuri::Tool::Confirmer` via constructor and route every
+  prompt through `#confirm?(prompt:)` — never `gets` / `puts` /
   `$stdin` / `$stdout` directly. Two bundled implementations:
-  `Tool::Confirmer::TERMINAL` (prompts on stdin/stdout) and
-  `Tool::Confirmer::AUTO_APPROVE` (yes-to-everything; used by
+  `Pikuri::Tool::Confirmer::TERMINAL` (prompts on stdin/stdout) and
+  `Pikuri::Tool::Confirmer::AUTO_APPROVE` (yes-to-everything; used by
   `--yolo` mode and specs). Same rationale as the workspace seam: a
-  later TUI / IDE host plugs in by writing a new `Confirmer`
-  subclass, not by editing tool internals.
+  later TUI / IDE host plugs in by writing a new `Confirmer` subclass,
+  not by editing tool internals.
 
 - **Streaming, multi-provider config, vision/audio, embeddings — out
   of scope.** Available via ruby_llm if/when needed; not part of
@@ -116,54 +118,64 @@ grows a skill system.
 ## Layout
 
 Per-file rationale lives in each source file's YARD header — this is just the
-package map. The two halves of the codebase are the agent runtime (`lib/agent.rb`
-+ `lib/agent/`) and the tool framework with its bundled tools (`lib/tool.rb` +
-`lib/tool/`); the rest of `lib/` is boot and a small shared cache.
+package map. Everything pikuri ships lives under the `Pikuri::` namespace:
+`lib/pikuri.rb` is the boot file, and `lib/pikuri/**/*.rb` is loaded by
+Zeitwerk into the matching `Pikuri::*` constants. The two halves of the
+codebase are the agent runtime (`lib/pikuri/agent.rb` + `lib/pikuri/agent/`)
+and the tool framework with its bundled tools (`lib/pikuri/tool.rb` +
+`lib/pikuri/tool/`); the rest of `lib/pikuri/` is the subprocess chokepoint
+and a small shared cache.
 
 - `lib/pikuri.rb` — Zeitwerk loader + eager-load over `lib/`; one require for
   callers. Inflector overrides cover acronym mismatches (`HTML`, `PDF`,
   `DuckDuckGo`).
-- `lib/agent.rb`, `lib/agent/` — `Agent`, `ListenerList`, the `Message`
-  variants (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`),
-  the `Listener::*` set (`MessageListener` base, `Terminal`, `InMemoryList`,
-  `StepLimit`), and `Synthesizer` (the step-exhaustion rescue). The
-  Thought/Tool-call/Observation loop lives in ruby_llm; everything here is the
-  listener surface around it.
-- `lib/tool.rb`, `lib/tool/parameters.rb`, `lib/tool/sub_agent.rb` — `Tool`
-  value class with its `#to_ruby_llm_tool` adapter, the strict `Parameters`
-  builder/validator, and `Tool::SubAgent < Tool` — instantiated by
-  `Agent#allow_sub_agent` with the parent agent itself, no kwargs explosion.
-- `lib/tool/calculator.rb`, `lib/tool/web_search.rb`, `lib/tool/web_scrape.rb`,
-  `lib/tool/fetch.rb` — bundled tool constants (`Tool::CALCULATOR`,
-  `Tool::WEB_SEARCH`, `Tool::WEB_SCRAPE`, `Tool::FETCH`).
-- `lib/tool/search/` — search providers (`DuckDuckGo`, `Brave`, `Exa`) plus
-  the `Engines` cascade and its `Unavailable` fallback protocol.
-- `lib/tool/scraper/` — `Simple` content-type-dispatching fetcher, the pure
-  `HTML` and `PDF` extractors, and the shared `FetchError`.
-- `lib/tool/confirmer.rb`, `lib/tool/workspace.rb` — abstract bases +
-  bundled implementations for the two coding-tool seams (see Scope
+- `lib/pikuri/agent.rb`, `lib/pikuri/agent/` — `Pikuri::Agent`,
+  `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Message` variants
+  (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`),
+  the `Pikuri::Agent::Listener::*` set (`MessageListener` base, `Terminal`,
+  `InMemoryList`, `StepLimit`), and `Pikuri::Agent::Synthesizer` (the
+  step-exhaustion rescue). The Thought/Tool-call/Observation loop lives in
+  ruby_llm; everything here is the listener surface around it.
+- `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
+  `lib/pikuri/tool/sub_agent.rb` — `Pikuri::Tool` value class with its
+  `#to_ruby_llm_tool` adapter, the strict `Pikuri::Tool::Parameters`
+  builder/validator, and `Pikuri::Tool::SubAgent < Pikuri::Tool` —
+  instantiated by `Pikuri::Agent#allow_sub_agent` with the parent agent
+  itself, no kwargs explosion.
+- `lib/pikuri/tool/calculator.rb`, `lib/pikuri/tool/web_search.rb`,
+  `lib/pikuri/tool/web_scrape.rb`, `lib/pikuri/tool/fetch.rb` — bundled
+  tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,
+  `Pikuri::Tool::WEB_SCRAPE`, `Pikuri::Tool::FETCH`).
+- `lib/pikuri/tool/search/` — search providers (`DuckDuckGo`, `Brave`,
+  `Exa`) plus the `Engines` cascade and its `Unavailable` fallback protocol.
+- `lib/pikuri/tool/scraper/` — `Simple` content-type-dispatching fetcher,
+  the pure `HTML` and `PDF` extractors, and the shared `FetchError`.
+- `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` — abstract
+  bases + bundled implementations for the two coding-tool seams (see Scope
   decisions). `Confirmer` ships `TERMINAL` / `AUTO_APPROVE`; `Workspace`
   ships `Cwd`.
-- `lib/tool/read.rb`, `lib/tool/write.rb`, `lib/tool/edit.rb`,
-  `lib/tool/grep.rb`, `lib/tool/glob.rb`, `lib/tool/bash.rb` — the six
-  coding tools. Each is a `Tool` subclass instantiated per-binary with
-  the constructor wiring (workspace + confirmer where needed) — same
-  pattern as `Tool::SubAgent`, not the bare `ALL_CAPS` constant style
-  used by the stateless web/calc tools.
+- `lib/pikuri/tool/read.rb`, `lib/pikuri/tool/write.rb`,
+  `lib/pikuri/tool/edit.rb`, `lib/pikuri/tool/grep.rb`,
+  `lib/pikuri/tool/glob.rb`, `lib/pikuri/tool/bash.rb` — the six coding
+  tools. Each is a `Pikuri::Tool` subclass instantiated per-binary with the
+  constructor wiring (workspace + confirmer where needed) — same pattern
+  as `Pikuri::Tool::SubAgent`, not the bare `ALL_CAPS` constant style used
+  by the stateless web/calc tools.
 - `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
   (see Scope decisions). The single point where `Open3` / `Process.spawn`
   are allowed; everything else in `lib/` routes through here.
-- `lib/url_cache.rb` — on-disk TTL cache used by the bundled web tools.
+- `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL cache
+  used by the bundled web tools.
 - `bin/pikuri-chat` — CLI entry point for the general-purpose chat
-  agent: configures ruby_llm for the local llama.cpp server, builds an
-  `Agent` wired with `Terminal` + `StepLimit` listeners, enables
+  agent: configures ruby_llm for the local llama.cpp server, builds a
+  `Pikuri::Agent` wired with `Terminal` + `StepLimit` listeners, enables
   sub-agents, and feeds a question from `ARGV` or stdin.
 - `bin/pikuri-code` — CLI entry point for the in-repo coding agent:
   same ruby_llm wiring as `pikuri-chat`, but registers the six coding
-  tools (with a `Workspace::Cwd` rooted at `Dir.pwd` and a
-  `Confirmer::TERMINAL` — `--yolo` swaps in `AUTO_APPROVE`), prepends
-  any `AGENTS.md` / `CLAUDE.md` in the workspace as project context,
-  and runs an interactive REPL.
+  tools (with a `Pikuri::Tool::Workspace::Cwd` rooted at `Dir.pwd` and
+  a `Pikuri::Tool::Confirmer::TERMINAL` — `--yolo` swaps in
+  `AUTO_APPROVE`), prepends any `AGENTS.md` / `CLAUDE.md` in the
+  workspace as project context, and runs an interactive REPL.
 - `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
 - `prompts/coding-system-prompt.txt` — system prompt used by
   `bin/pikuri-code`. Contains the universal `Error: ...` recovery
@@ -220,19 +232,18 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
 - **Zeitwerk autoloads everything under `lib/`.** Don't add
   `require_relative` chains inside `lib/`; let the loader resolve
   internal references. The boot file (`lib/pikuri.rb`) eager-loads at
-  startup so `ALL_CAPS` value constants (`Tool::CALCULATOR`, …) are
-  defined alongside the autoloadable classes/modules. New files must
-  define exactly the camelcased constant matching their path; if you
-  want an acronym (`HTML`, `PDF`, `DuckDuckGo`), add an entry to the
-  `inflector.inflect` block in `lib/pikuri.rb`.
-- **Namespacing direction.** New library-level infrastructure lives
-  under the `Pikuri::` namespace (current example:
-  `Pikuri::Subprocess` at `lib/pikuri/subprocess.rb`). The older
-  domain classes (`Tool`, `Agent`, `URLCache`) are top-level as a
-  legacy convention — an eventual refactor moves them under `Pikuri::`
-  too. Until that lands, the rule for new code is: library-level
-  infrastructure under `Pikuri::` from the start; domain classes
-  stay where they are.
+  startup so `ALL_CAPS` value constants (`Pikuri::Tool::CALCULATOR`, …)
+  are defined alongside the autoloadable classes/modules. New files
+  must define exactly the camelcased constant matching their path; if
+  you want an acronym (`HTML`, `PDF`, `DuckDuckGo`), add an entry to
+  the `inflector.inflect` block in `lib/pikuri.rb`.
+- **Namespacing direction.** Everything pikuri ships lives under the
+  `Pikuri::` namespace — `Pikuri::Agent`, `Pikuri::Tool`,
+  `Pikuri::Tool::Search::DuckDuckGo`, `Pikuri::UrlCache`,
+  `Pikuri::Subprocess`. New files follow the standard gem layout:
+  define a single `Pikuri::*` constant per file at the path Zeitwerk
+  expects (`lib/pikuri/foo/bar.rb` → `Pikuri::Foo::Bar`). Don't
+  introduce top-level constants.
 - **Tests: rspec-core with minitest-style asserts.** Use the
   `rspec-core` runner (`describe`/`it`) but write assertions in the
   minitest style (`assert_equal`, `assert`, `refute`, …) rather than
@@ -260,16 +271,17 @@ package map. The two halves of the codebase are the agent runtime (`lib/agent.rb
 ## Working on this codebase
 
 - **Agent owns the extension surface; ruby_llm owns the loop.** When
-  changing `lib/agent.rb`, the question is "what hooks fire when?" —
-  the iteration itself lives in `RubyLLM::Chat#complete`. Don't
-  reimplement the loop in pikuri; reach for a different listener
+  changing `lib/pikuri/agent.rb`, the question is "what hooks fire
+  when?" — the iteration itself lives in `RubyLLM::Chat#complete`.
+  Don't reimplement the loop in pikuri; reach for a different listener
   instead.
 - **Readable, not obfuscated.** Prefer the simplest implementation that
   does the job. Don't golf code for line count, but also don't add
   abstraction layers, plugin systems, or configuration knobs that
   aren't needed for the next concrete step.
 - **Grow the assistant by adding tools and listeners, not by
-  complicating the loop.** New capabilities should land as new `Tool`
-  constants under `lib/tool/` or new listeners under
-  `lib/agent/listener/`, each with their own specs; neither `Tool`,
-  the `Agent`, nor ruby_llm's loop should need to know about them.
+  complicating the loop.** New capabilities should land as new
+  `Pikuri::Tool` constants under `lib/pikuri/tool/` or new listeners
+  under `lib/pikuri/agent/listener/`, each with their own specs;
+  neither `Pikuri::Tool`, the `Pikuri::Agent`, nor ruby_llm's loop
+  should need to know about them.

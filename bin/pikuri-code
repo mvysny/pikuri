@@ -35,8 +35,8 @@ end
 
 # Workspace is captured once at startup; all file-touching tools share it.
 # Cwd locks read+write to the launch directory and its subtree.
-workspace = Tool::Workspace::Cwd.new(root: Dir.pwd)
-confirmer = yolo ? Tool::Confirmer::AUTO_APPROVE : Tool::Confirmer::TERMINAL
+workspace = Pikuri::Tool::Workspace::Cwd.new(root: Dir.pwd)
+confirmer = yolo ? Pikuri::Tool::Confirmer::AUTO_APPROVE : Pikuri::Tool::Confirmer::TERMINAL
 
 # Build the system prompt: static base + optional project context + footer.
 # AGENTS.md wins over CLAUDE.md when both exist; CWD lookup is relative to
@@ -66,10 +66,10 @@ llama_probe_url = openai_api_base.sub(%r{/v1/?\z}, '') + '/props'
 # matching skill on demand. Empty catalogs are fine — Agent skips both
 # the system-prompt augmentation and the `skill` tool when nothing was
 # discovered, so the no-skills case is indistinguishable from before.
-skill_catalog = Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.to_s)
+skill_catalog = Pikuri::Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.to_s)
 
-agent = Agent.new(
-  transport: Agent::ChatTransport.new(
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.new(
     model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
     provider: :openai,
     assume_model_exists: true
@@ -80,21 +80,21 @@ agent = Agent.new(
   # last as auxiliary. The `skill` tool, when the catalog is non-empty,
   # is appended by Agent itself — see Agent#initialize.
   tools: [
-    Tool::Read.new(workspace: workspace),
-    Tool::Grep.new(workspace: workspace),
-    Tool::Glob.new(workspace: workspace),
-    Tool::Edit.new(workspace: workspace),
-    Tool::Write.new(workspace: workspace, confirmer: confirmer),
-    Tool::Bash.new(workspace: workspace, confirmer: confirmer),
-    Tool::WEB_SEARCH,
-    Tool::WEB_SCRAPE,
-    Tool::FETCH,
-    Tool::CALCULATOR
+    Pikuri::Tool::Read.new(workspace: workspace),
+    Pikuri::Tool::Grep.new(workspace: workspace),
+    Pikuri::Tool::Glob.new(workspace: workspace),
+    Pikuri::Tool::Edit.new(workspace: workspace),
+    Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer),
+    Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer),
+    Pikuri::Tool::WEB_SEARCH,
+    Pikuri::Tool::WEB_SCRAPE,
+    Pikuri::Tool::FETCH,
+    Pikuri::Tool::CALCULATOR
   ],
-  listeners: Agent::ListenerList.new([
-    Agent::Listener::Terminal.new,
-    Agent::Listener::TokenLog.new,
-    Agent::Listener::StepLimit.new(max: 40)
+  listeners: Pikuri::Agent::ListenerList.new([
+    Pikuri::Agent::Listener::Terminal.new,
+    Pikuri::Agent::Listener::TokenLog.new,
+    Pikuri::Agent::Listener::StepLimit.new(max: 40)
   ]),
   llama_probe_url: llama_probe_url,
   skill_catalog: skill_catalog

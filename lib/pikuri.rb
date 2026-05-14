@@ -4,30 +4,29 @@ require 'logger'
 require 'zeitwerk'
 
 # Boot file: configures the Zeitwerk autoloader for every file under
-# +lib/+ and eager-loads them all. After +require 'pikuri'+, every
-# constant pikuri ships (`Agent`, `Tool`, `Tool::Calculator`,
-# `Tool::Scraper::HTML`, …) is defined and resolvable.
+# +lib/pikuri/+ and eager-loads them all. After +require 'pikuri'+,
+# every constant pikuri ships (+Pikuri::Agent+, +Pikuri::Tool+,
+# +Pikuri::Tool::Calculator+, +Pikuri::Tool::Scraper::HTML+, ...) is
+# defined and resolvable.
 #
 # Beyond loading, the +Pikuri+ module owns the logging surface — see
 # {.logger_for}, {.log_io=}, and the +PIKURI_LOG+ /
 # +PIKURI_LOG_<NAME>+ env vars. Each subsystem holds its own
 # memoized +Logger+, all writing through a shared IO that
 # {.log_io=} can swap in one shot (handy in tests, daemons, or
-# anywhere stderr isn't the right sink). Otherwise the interesting
-# code lives under top-level constants (`Tool`, `Agent`, `UrlCache`)
-# that Zeitwerk discovers from filenames — pikuri is a CLI, not a
-# library people import as a namespace.
+# anywhere stderr isn't the right sink).
 #
 # == Why eager-load
 #
-# Tool implementations (`Tool::CALCULATOR`, `Tool::WEB_SEARCH`,
-# `Tool::WEB_SCRAPE`, `Tool::FETCH`) are +ALL_CAPS+ value constants
-# rather than classes/modules, and Zeitwerk only auto-loads constants
-# that match its filename-↔-CamelCase convention. Eager-loading at
-# boot guarantees the files defining those values run, so the bin
-# script can splat them straight into +Agent.new(tools: [...])+
-# without per-file +require+ ceremony. The cost is a few milliseconds
-# of startup — negligible compared to a single LLM round-trip.
+# Tool implementations (+Pikuri::Tool::CALCULATOR+,
+# +Pikuri::Tool::WEB_SEARCH+, +Pikuri::Tool::WEB_SCRAPE+,
+# +Pikuri::Tool::FETCH+) are +ALL_CAPS+ value constants rather than
+# classes/modules, and Zeitwerk only auto-loads constants that match
+# its filename-↔-CamelCase convention. Eager-loading at boot guarantees
+# the files defining those values run, so the bin script can splat them
+# straight into +Pikuri::Agent.new(tools: [...])+ without per-file
+# +require+ ceremony. The cost is a few milliseconds of startup —
+# negligible compared to a single LLM round-trip.
 module Pikuri
   # Mapping from +PIKURI_LOG+ env-var values (lowercased) to
   # {Logger} level constants. Anything else falls back to +INFO+.

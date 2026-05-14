@@ -7,13 +7,13 @@ require 'faraday/adapter/test'
 # End-to-end happy path: drive a real +RubyLLM::Chat#ask+ through ruby_llm's
 # OpenAI provider, intercepting the HTTP call at Faraday's adapter layer to
 # return canned responses. Pinned here as the load-bearing test for
-# {Tool#to_ruby_llm_tool} — it's the one place that exercises ruby_llm's
+# {Pikuri::Tool#to_ruby_llm_tool} — it's the one place that exercises ruby_llm's
 # full request-serialization, response-parsing, and tool-dispatch pipeline
 # against the synthetic +RubyLLM::Tool+ subclass our adapter produces. If
 # ruby_llm's tool DSL ever shifts (how +params(hash)+ accepts a raw schema,
 # the keyrest bypass on +validate_keyword_arguments+, how +execute+ is
 # invoked), this is what catches the regression before any real LLM does.
-RSpec.describe 'Agent end-to-end tool dispatch' do
+RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
   let(:test_stubs) { Faraday::Adapter::Test::Stubs.new }
 
   # Whatever the first turn does, the second turn always returns this; the
@@ -112,29 +112,29 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
     }
   end
 
-  it 'wires a Tool through ruby_llm: tool advertised, dispatched, result fed back, final text returned' do
+  it 'wires a Pikuri::Tool through ruby_llm: tool advertised, dispatched, result fed back, final text returned' do
     received_args = nil
-    echo_tool = Tool.new(
+    echo_tool = Pikuri::Tool.new(
       name: 'echo',
       description: 'Echoes its input.',
-      parameters: Tool::Parameters.build { |p| p.required_string :text, 'Text to echo.' },
+      parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :text, 'Text to echo.' },
       execute: lambda { |text:|
         received_args = { text: text }
         "echo: #{text}"
       }
     )
 
-    agent = Agent.new(
-      transport: Agent::ChatTransport.new(
+    agent = Pikuri::Agent.new(
+      transport: Pikuri::Agent::ChatTransport.new(
         model: 'test-model',
         provider: :openai,
         assume_model_exists: true
       ),
       system_prompt: 'be terse',
       tools: [echo_tool],
-      listeners: Agent::ListenerList.new([
-        Agent::Listener::Terminal.new,
-        Agent::Listener::StepLimit.new(max: 20)
+      listeners: Pikuri::Agent::ListenerList.new([
+        Pikuri::Agent::Listener::Terminal.new,
+        Pikuri::Agent::Listener::StepLimit.new(max: 20)
       ])
     )
 
@@ -176,32 +176,32 @@ RSpec.describe 'Agent end-to-end tool dispatch' do
   # Focused on the description channel: tool-level description and per-
   # parameter descriptions are the strings the LLM actually reads to
   # decide whether to call a tool and how to fill its arguments. If
-  # +Tool::Parameters#to_h+ ever drops +description+ from a property, or
+  # +Pikuri::Tool::Parameters#to_h+ ever drops +description+ from a property, or
   # if ruby_llm's +params(hash)+ filters them out, the model will start
   # calling tools with garbage arguments — but every other check (types,
   # required, dispatch) keeps passing. This test pins the wire shape.
   it 'propagates tool and parameter descriptions onto the OpenAI request' do
-    described_tool = Tool.new(
+    described_tool = Pikuri::Tool.new(
       name: tool_call_name,
       description: 'Echoes its input verbatim — useful when the user asks to repeat text.',
-      parameters: Tool::Parameters.build do |p|
+      parameters: Pikuri::Tool::Parameters.build do |p|
         p.required_string :text, 'The exact text the assistant should echo back.'
         p.optional_integer :repeat, 'Number of times to repeat the echo (default 1).'
       end,
       execute: ->(text:, repeat: 1) { (["echo: #{text}"] * repeat).join("\n") }
     )
 
-    agent = Agent.new(
-      transport: Agent::ChatTransport.new(
+    agent = Pikuri::Agent.new(
+      transport: Pikuri::Agent::ChatTransport.new(
         model: 'test-model',
         provider: :openai,
         assume_model_exists: true
       ),
       system_prompt: 'be terse',
       tools: [described_tool],
-      listeners: Agent::ListenerList.new([
-        Agent::Listener::Terminal.new,
-        Agent::Listener::StepLimit.new(max: 20)
+      listeners: Pikuri::Agent::ListenerList.new([
+        Pikuri::Agent::Listener::Terminal.new,
+        Pikuri::Agent::Listener::StepLimit.new(max: 20)
       ])
     )
 
