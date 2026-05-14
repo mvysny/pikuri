@@ -75,6 +75,12 @@ module Pikuri
     # * User declined the confirmation → +"Error: user declined ..."+.
     # * +timeout+ exit (+124+ / +137+) → timeout error with partial output.
     class Bash < Tool
+      # Pikuri-convention per-module logger; the +Bash+ progname tags the
+      # construction-time warning below so it's clear in the shared
+      # +Pikuri.log_io+ stream which tool issued it.
+      # @return [Logger]
+      LOGGER = Pikuri.logger_for('Bash')
+
       # @return [Integer] default value of the +timeout+ parameter (seconds).
       DEFAULT_TIMEOUT = 120
 
@@ -121,6 +127,18 @@ module Pikuri
       # @return [Bash]
       def initialize(workspace:, confirmer:)
         Bash.send(:check_binaries!)
+        # Prototype-stage capability advisory. The Bash tool runs commands
+        # with pikuri's own UID and inherits its filesystem view — there is
+        # no chroot, container, seccomp, or syscall filter today. Anything
+        # readable to the user is readable to the LLM via +cat ~/.ssh/id_*+
+        # / +aws configure list+ / etc. The per-command +Confirmer+ is the
+        # only line of defense; logged loud so anyone wiring this tool up
+        # sees the warning at startup, not on the day of an incident.
+        LOGGER.warn(
+          'Tool::Bash is a prototype: commands run unsandboxed under your UID and can read ' \
+          'sensitive files (~/.ssh, AWS credentials, browser sessions, ...). Use with care; ' \
+          'a future release will gate this behind a sandbox.'
+        )
         super(
           name: 'bash',
           description: DESCRIPTION,
