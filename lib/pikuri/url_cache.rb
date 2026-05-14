@@ -27,12 +27,18 @@ module Pikuri
   # under a few dozen lines — the worst-case cost is a duplicate fetch.
   class UrlCache
     # Root directory under which per-tool cache subdirectories live.
-    # Writeable on Linux/macOS and cleared on reboot, which is fine for a
-    # downloads cache. Each tool picks its own subdir
+    # Follows the XDG Base Directory spec: +$XDG_CACHE_HOME/pikuri/url_cache+
+    # if the env var is set to a non-empty value, else
+    # +~/.cache/pikuri/url_cache+. Each tool picks its own subdir
     # (e.g. +"#{ROOT_DIR}/web_scrape"+) so keys from different tools cannot
-    # collide.
+    # collide. The directory is created lazily on first cache write; pikuri
+    # does not pre-create it.
     # @return [String]
-    ROOT_DIR = '/tmp/pikuri/cache'
+    ROOT_DIR = begin
+      xdg = ENV['XDG_CACHE_HOME']
+      cache_home = xdg && !xdg.empty? ? xdg : File.join(Dir.home, '.cache')
+      File.join(cache_home, 'pikuri', 'url_cache')
+    end.freeze
 
     # Default freshness window: 24 hours, in seconds.
     # @return [Integer]

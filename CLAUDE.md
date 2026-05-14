@@ -37,6 +37,15 @@ the deliberate counter-move:
   are plain text checked into `prompts/`, and the conventions in this
   document are deliberately verbose so the project doubles as a tour
   of how a small agent runtime actually works.
+- **Small enough to audit.** A privacy-conscious user should be able
+  to read pikuri's sources end-to-end in an evening — and then decide
+  it's safe to run on their actual machine, outside any sandbox.
+  That target sets a hard ceiling on scope: every new feature is
+  weighed against the line count it adds to the read-it-yourself
+  surface. Abstraction layers that exist "just in case" lose every
+  argument; concrete code that does one named thing wins. The
+  reference points to learn from (opencode, PI; see below) are
+  studied for ideas, not copied at scale.
 
 ## Reference projects
 
@@ -114,6 +123,15 @@ grows a skill system.
 - **Streaming, multi-provider config, vision/audio, embeddings — out
   of scope.** Available via ruby_llm if/when needed; not part of
   pikuri today.
+
+- **Linux-first; macOS may work; Windows is unsupported.** Pikuri
+  targets Linux as the primary platform. macOS will probably keep
+  working day-to-day, but the test matrix is Linux and the eventual
+  sandbox layer (Docker / bubblewrap for the Bash tool) is Linux-
+  specific. Windows is out of scope — pikuri assumes a POSIX shell,
+  GNU coreutils' +timeout+, XDG cache layout, and SIGTERM-based
+  process-group cleanup; porting these would dilute the rest of the
+  project. CI and bug reports follow the same prioritization.
 
 ## Layout
 

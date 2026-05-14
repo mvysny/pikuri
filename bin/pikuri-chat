@@ -39,7 +39,7 @@ agent = Pikuri::Agent.new(
     provider: :openai,
     assume_model_exists: true
   ),
-  system_prompt: File.read("#{__dir__}/../prompts/pikuri-chat.txt"),
+  system_prompt: Pikuri.prompt(:'pikuri-chat'),
   tools: [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH],
   listeners: Pikuri::Agent::ListenerList.new([
     Pikuri::Agent::Listener::Terminal.new,

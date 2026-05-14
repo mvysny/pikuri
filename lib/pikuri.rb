@@ -28,6 +28,22 @@ require 'zeitwerk'
 # +require+ ceremony. The cost is a few milliseconds of startup —
 # negligible compared to a single LLM round-trip.
 module Pikuri
+  # Absolute path to the directory holding pikuri's bundled system
+  # prompts (+pikuri-chat.txt+, +coding-system-prompt.txt+). Resolves
+  # correctly both in a source checkout and in an installed gem because
+  # +__dir__+ tracks the file's actual location either way; the gem
+  # ships +prompts/+ as a sibling of +lib/+ so the same relative jump
+  # works.
+  #
+  # Exposed publicly so a downstream library user can read pikuri's
+  # prompts as a starting point for their own system prompt (or use
+  # them verbatim). Prefer {.prompt} for the common case of loading
+  # one by name; reach for this constant only if you need the
+  # directory itself (e.g. to list available prompts).
+  #
+  # @return [String]
+  PROMPTS_DIR = File.expand_path('../prompts', __dir__)
+
   # Mapping from +PIKURI_LOG+ env-var values (lowercased) to
   # {Logger} level constants. Anything else falls back to +INFO+.
   #
@@ -90,6 +106,34 @@ module Pikuri
         lg.level = LOG_LEVELS.fetch(override, @log_default)
         lg
       end
+    end
+
+    # Read a bundled prompt by basename. +name+ is matched against the
+    # files in {PROMPTS_DIR}; a +.txt+ extension is auto-appended if
+    # absent. Symbols are accepted as a convenience (+:pikuri-chat+ /
+    # +'pikuri-chat'+ / +'pikuri-chat.txt'+ all resolve to the same file).
+    #
+    # Intended for downstream library users who want to bootstrap their
+    # own +Pikuri::Agent+ wiring from pikuri's defaults — read the
+    # prompt, customize the bits they care about, hand the result to
+    # +Agent.new(system_prompt: ...)+.
+    #
+    # @example
+    #   chat_prompt = Pikuri.prompt(:'pikuri-chat')
+    #   agent = Pikuri::Agent.new(system_prompt: chat_prompt, ...)
+    #
+    # @param name [String, Symbol] basename of the prompt file
+    # @return [String] file contents
+    # @raise [ArgumentError] if no matching file exists in {PROMPTS_DIR}
+    def prompt(name)
+      basename = name.to_s
+      basename += '.txt' unless basename.end_with?('.txt')
+      path = File.join(PROMPTS_DIR, basename)
+      unless File.exist?(path)
+        available = Dir.children(PROMPTS_DIR).sort.join(', ')
+        raise ArgumentError, "Unknown pikuri prompt #{name.inspect}; available: #{available}"
+      end
+      File.read(path)
     end
   end
 

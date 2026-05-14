@@ -39,6 +39,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir[
     'lib/**/*.rb',
     'prompts/*.txt',
+    'CHANGELOG.md',
     'LICENSE',
     'README.md',
     'GETTING_STARTED.md'

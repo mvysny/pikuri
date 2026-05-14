@@ -49,7 +49,7 @@ confirmer = yolo ? Pikuri::Tool::Confirmer::AUTO_APPROVE : Pikuri::Tool::Confirm
 # Build the system prompt: static base + optional project context + footer.
 # AGENTS.md wins over CLAUDE.md when both exist; CWD lookup is relative to
 # the workspace root (== Dir.pwd at this point).
-system_prompt = File.read("#{__dir__}/../prompts/coding-system-prompt.txt")
+system_prompt = Pikuri.prompt(:'coding-system-prompt')
 md_path = ['AGENTS.md', 'CLAUDE.md'].find { |f| File.exist?(f) }
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"

@@ -26,6 +26,53 @@ The first run won't get far — pikuri-chat needs a model behind it. See
 installing `llama.cpp`, pulling a model, starting `llama-server`, and
 asking your first question.
 
+## Using pikuri as a library
+
+Pikuri is shipped as a Ruby gem you can use in your own project. The
+recommended path: **first** play with `bin/pikuri-chat`, inspect the
+sources, get a feel for the shape — *then* pull pikuri into your
+project as a library:
+
+```ruby
+# In your Gemfile
+gem 'pikuri'
+```
+
+A minimal wiring — single agent, default `llama.cpp` transport, the
+bundled calculator + web-search tools, the same system prompt
+`pikuri-chat` uses:
+
+```ruby
+require 'pikuri'
+
+RubyLLM.configure do |c|
+  c.openai_api_base = 'http://localhost:8080/v1'  # llama.cpp default
+  c.openai_api_key  = 'not-needed'
+end
+
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.new(
+    model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
+    provider: :openai,
+    assume_model_exists: true
+  ),
+  system_prompt: Pikuri.prompt(:'pikuri-chat'),
+  tools: [Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SEARCH],
+  listeners: Pikuri::Agent::ListenerList.new([
+    Pikuri::Agent::Listener::Terminal.new,
+    Pikuri::Agent::Listener::StepLimit.new(max: 20)
+  ])
+)
+
+agent.run_loop(user_message: 'What is 17 * 23?')
+```
+
+`bin/pikuri-chat` and `bin/pikuri-code` in this repo are the canonical
+working examples — they're dev/demo scripts (not installed by
+`gem install pikuri`), but they're the easiest place to crib wiring
+from. The bundled system prompts under `prompts/` are loadable as a
+starting point via `Pikuri.prompt(name)`.
+
 ## Why this exists
 
 The existing self-hosted agent stacks have grown big and now have a
