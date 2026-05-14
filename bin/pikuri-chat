@@ -33,6 +33,8 @@ end
 # which is unknown to ruby_llm's bundled model registry.
 llama_probe_url = openai_api_base.sub(%r{/v1/?\z}, '') + '/props'
 
+cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
@@ -44,18 +46,29 @@ agent = Pikuri::Agent.new(
   listeners: Pikuri::Agent::ListenerList.new([
     Pikuri::Agent::Listener::Terminal.new,
     Pikuri::Agent::Listener::TokenLog.new,
-    Pikuri::Agent::Listener::StepLimit.new(max: 20)
+    Pikuri::Agent::Listener::StepLimit.new(max: 20),
+    cancel_flag
   ]),
   llama_probe_url: llama_probe_url
 )
 agent.allow_sub_agent(max_steps: 20)
 
+# Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
+# turn flips the Cancellable flag — the next tool-call boundary raises
+# Cancelled, which we rescue below to return to the prompt. Outside a
+# turn (at the `> ` input) the default handler is restored so Ctrl+C
+# still exits the REPL the way it did before.
 run_turn = lambda do |message|
+  prev_trap = trap('INT') { cancel_flag.cancel! }
   agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Listener::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener; nothing else to do.
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"
   warn 'The conversation has grown too large for the model. Start a fresh question.'
   exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
 end
 
 puts 'Pikuri Chatbot. Press Ctrl+C or Ctrl+D to quit.'

@@ -509,6 +509,95 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
+  describe 'cancellation rescue' do
+    # Arrange for the parent chat's +ask+ to raise +Cancelled+ once, as if
+    # a Cancellable inside its +before_tool_call+ tripped mid-loop.
+    def arrange_cancellation
+      err = Pikuri::Agent::Listener::Cancellable::Cancelled.new
+      fake_chat.define_singleton_method(:ask) do |msg|
+        @asks << msg
+        raise err
+      end
+    end
+
+    it 'catches Cancelled, emits Message::Cancelled to listeners, and re-raises' do
+      cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+      agent = Pikuri::Agent.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+        system_prompt: 's',
+        tools: [],
+        listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+      )
+      arrange_cancellation
+
+      assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+        agent.run_loop(user_message: 'do a thing')
+      end
+
+      # Listener stream: User notice first, Cancelled notice last.
+      assert_includes in_memory.events, Pikuri::Agent::Message::User.new(content: 'do a thing')
+      assert_includes in_memory.events, Pikuri::Agent::Message::Cancelled.new
+    end
+
+    it 'does not invoke the synthesizer fallback' do
+      synth_calls = []
+      original_run = Pikuri::Agent::Synthesizer.method(:run)
+      Pikuri::Agent::Synthesizer.define_singleton_method(:run) do |**kwargs|
+        synth_calls << kwargs
+        'should not happen'
+      end
+
+      begin
+        cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+        agent = Pikuri::Agent.new(
+          transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+          system_prompt: 's',
+          tools: [],
+          listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+        )
+        arrange_cancellation
+
+        assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+          agent.run_loop(user_message: 'stop')
+        end
+
+        assert_empty synth_calls
+      ensure
+        Pikuri::Agent::Synthesizer.define_singleton_method(:run) { |**kw| original_run.call(**kw) }
+      end
+    end
+
+    it 'lets the same agent take a fresh turn after a cancellation' do
+      cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+      agent = Pikuri::Agent.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+        system_prompt: 's',
+        tools: [],
+        listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+      )
+      arrange_cancellation
+
+      assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+        agent.run_loop(user_message: 'turn 1')
+      end
+
+      # Make the next turn succeed: replace ask with a no-op that appends
+      # an assistant message, the same shape used in the step-exhaustion
+      # multi-turn test above.
+      fake_chat.define_singleton_method(:ask) do |msg|
+        @asks << msg
+        @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
+      end
+
+      # The Message::User emitted at the start of turn 2 resets the
+      # Cancellable flag (see Cancellable#on_message), so a stale cancel
+      # from turn 1 doesn't poison turn 2.
+      assert_nil agent.run_loop(user_message: 'turn 2')
+      refute cancel_flag.cancelled?
+      assert_equal 'normal answer', agent.last_assistant_content
+    end
+  end
+
   describe 'skill_catalog wiring' do
     # Minimal stand-in for a non-empty catalog: lets the specs assert
     # Pikuri::Agent's auto-wiring without spinning up the on-disk Bundled scanner.

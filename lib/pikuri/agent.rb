@@ -35,6 +35,18 @@ module Pikuri
   # synth's answer becomes the value reported by
   # {#last_assistant_content}, so callers (notably {Tool::SubAgent})
   # still get a usable reply instead of raising past +bin/pikuri-chat+.
+  #
+  # == Cancellation rescue
+  #
+  # If a {Listener::Cancellable} in {#listeners} trips during +Chat#ask+,
+  # {#run_loop} catches the +Cancelled+ exception, emits a
+  # {Message::Cancelled} to every listener, and re-raises. No
+  # synthesizer fallback runs: cancellation means the user asked the
+  # agent to drop everything, so salvaging a partial answer would be
+  # the wrong move. The caller (typically a REPL) rescues the re-raised
+  # exception and returns control to the user; because the cancellation
+  # flag resets on the next {Message::User}, the same agent instance can
+  # take a fresh turn immediately afterwards.
   class Agent
     # @param transport [ChatTransport] the model-resolution triple
     #   (+model+ / +provider+ / +assume_model_exists+) forwarded to
@@ -197,6 +209,11 @@ module Pikuri
     # fresh +RubyLLM::Chat+. The synth's answer is captured for
     # {#last_assistant_content}; the exception does not bubble out.
     #
+    # If a {Listener::Cancellable} trips during +ask+, the rescue branch
+    # emits a {Message::Cancelled} and re-raises the +Cancelled+
+    # exception. No synthesizer fallback runs — see the "Cancellation
+    # rescue" section in the class header.
+    #
     # Subsequent calls keep building on the same chat history, so the
     # model sees full multi-turn context.
     #
@@ -205,6 +222,9 @@ module Pikuri
     # @raise [ArgumentError] if +user_message+ is +nil+, empty, or
     #   contains only whitespace — an empty turn would poison the chat
     #   history and burn a step budget on nothing
+    # @raise [Listener::Cancellable::Cancelled] if a registered
+    #   {Listener::Cancellable} was triggered during the turn; the
+    #   listener stream sees a {Message::Cancelled} first
     # @return [nil]
     def run_loop(user_message:)
       raise ArgumentError, "user_message must not be blank, got #{user_message.inspect}" \
@@ -214,6 +234,9 @@ module Pikuri
       @listeners.on_message(Message::User.new(content: user_message))
       @chat.ask(user_message)
       nil
+    rescue Listener::Cancellable::Cancelled
+      @listeners.on_message(Message::Cancelled.new)
+      raise
     rescue Listener::StepLimit::Exceeded => e
       notice = Message::FallbackNotice.new(
         reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"

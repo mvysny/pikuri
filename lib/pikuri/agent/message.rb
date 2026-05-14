@@ -23,6 +23,12 @@ module Pikuri
     #   tool's name and the LLM-supplied argument hash.
     # * {ToolResult} — emitted on +Chat#after_tool_result+, carrying the
     #   observation string the tool produced.
+    # * {FallbackNotice} — synthesized by {Agent#run_loop} when the
+    #   step-budget rescue fires; carries the reason string the listener
+    #   should surface.
+    # * {Cancelled} — synthesized by {Agent#run_loop} when
+    #   {Listener::Cancellable} trips; emitted just before the exception
+    #   re-raises out of the loop.
     #
     # Provider-reported token usage is *not* a {Message} variant — it's
     # metadata about an exchange, not an event in it. See {Agent::Tokens}
@@ -56,6 +62,15 @@ module Pikuri
       # future web UI) surface the divergence to the user before the
       # synthesizer's own assistant output flows through.
       FallbackNotice = Data.define(:reason)
+
+      # Out-of-band notice that the user cancelled the in-flight turn via
+      # {Listener::Cancellable}. Emitted by {Agent#run_loop} just before
+      # the +Cancellable::Cancelled+ exception bubbles out so listeners
+      # (Terminal renderer, structured recorders) can mark the turn as
+      # user-aborted. Unlike {FallbackNotice}, no recovery follows — the
+      # exception is re-raised and the caller is expected to return
+      # control to the user (typically the REPL prompt).
+      Cancelled = Data.define
     end
   end
 end

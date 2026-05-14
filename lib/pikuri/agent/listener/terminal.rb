@@ -77,6 +77,8 @@ module Pikuri
             puts indent(Rainbow("= #{truncate_tool_result(content)}").cyan)
           in Message::FallbackNotice(reason:)
             puts indent(Rainbow("! #{reason}").yellow)
+          in Message::Cancelled
+            puts indent(Rainbow('! cancelled').red)
           in Message::User
             # No-op: the user just typed this; echoing it back is noise.
           end
