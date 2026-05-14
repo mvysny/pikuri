@@ -8,15 +8,17 @@ Gem::Specification.new do |spec|
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'A small, privacy-first Ruby AI assistant you run on your own machine.'
+  spec.summary     = 'A small, privacy-first Ruby toolkit for building local AI assistants.'
   spec.description = <<~DESC
-    Two CLI binaries on a shared core: pikuri-chat (general-purpose chat with
-    calculator, web search, web scrape, fetch) and pikuri-code (in-repo coding
-    agent with read/write/edit/grep/glob/bash). Wired by default to a local
-    llama.cpp server so conversations never leave your machine unless you opt
-    in. Built on top of ruby_llm, with pikuri owning the extension surface:
-    strict tool-argument validation, listener-based rendering, a step-budget
-    with synthesizer rescue, sub-agents, and bundled tools.
+    A library for assembling AI assistants: Pikuri::Agent (a thin wrapper around
+    ruby_llm's chat loop), Pikuri::Tool with strict argument validation, a
+    listener surface for rendering / budgets / sub-agents, and a small set of
+    bundled tools (calculator, web search, web scrape, fetch, plus six coding
+    tools: read / write / edit / grep / glob / bash). Downstream projects
+    (notably the planned pikuri-tui) wire these into actual binaries. The repo
+    also ships `bin/pikuri-chat` and `bin/pikuri-code` as demo entry points,
+    but they are NOT installed by `gem install pikuri` — they exist to show
+    how to wire the library together and to support development.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'
@@ -30,16 +32,17 @@ Gem::Specification.new do |spec|
     'rubygems_mfa_required' => 'true'
   }
 
+  # pikuri ships as a library. The bin/pikuri-* scripts in the repo are
+  # dev / demo conveniences — not advertised as gem executables, and not
+  # included in the gem payload. Production binaries (e.g. the planned
+  # pikuri-tui) will live in their own gems and consume pikuri-as-library.
   spec.files = Dir[
     'lib/**/*.rb',
-    'bin/pikuri-*',
     'prompts/*.txt',
     'LICENSE',
     'README.md',
     'GETTING_STARTED.md'
   ]
-  spec.bindir        = 'bin'
-  spec.executables   = ['pikuri-chat', 'pikuri-code']
   spec.require_paths = ['lib']
 
   # Runtime deps — keep in sync with Gemfile (which now uses `gemspec`).

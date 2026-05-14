@@ -166,6 +166,13 @@ and a small shared cache.
   are allowed; everything else in `lib/` routes through here.
 - `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL cache
   used by the bundled web tools.
+The two `bin/pikuri-*` scripts below are dev / demo entry points only —
+they're not installed by `gem install pikuri` and not part of the gem's
+public surface. They exist to show how to wire pikuri-as-library into a
+working binary and to support local development. Production binaries
+built on pikuri (notably the planned `pikuri-tui`) live in their own
+downstream gems.
+
 - `bin/pikuri-chat` — CLI entry point for the general-purpose chat
   agent: configures ruby_llm for the local llama.cpp server, builds a
   `Pikuri::Agent` wired with `Terminal` + `StepLimit` listeners, enables

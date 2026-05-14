@@ -1,20 +1,22 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Running from a source checkout: pin Bundler to pikuri's own Gemfile so
-# locked dependency versions win and the script works when invoked via a
-# symlink (e.g. ~/.local/bin/pikuri-chat) from any working directory.
-# `__dir__` resolves through symlinks, so this points at the real checkout.
+# Dev / demo entry point — runs from a source checkout only. The pikuri
+# gem ships as a library; this script is not installed by `gem install
+# pikuri`. It exists to demonstrate how to wire Pikuri::Agent +
+# Pikuri::Tool::* into a working chat binary, and to support development.
+# Production binaries built on pikuri (e.g. the planned pikuri-tui) live
+# in their own gems.
 #
-# Running as an installed gem (`gem install pikuri`): no Gemfile is shipped,
-# so we fall through to RubyGems' default activation. The `require 'pikuri'`
-# below picks up the gem's lib/ via the load path RubyGems sets up.
-gemfile = File.expand_path('../Gemfile', __dir__)
-if File.exist?(gemfile)
-  ENV['BUNDLE_GEMFILE'] ||= gemfile
-  require 'bundler/setup'
-  $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
-end
+# Pin Bundler to pikuri's own Gemfile so locked dependency versions win
+# and the script works when invoked via a symlink (e.g. ~/.local/bin/
+# pikuri-chat) from any working directory. `__dir__` resolves through
+# symlinks, so this points at the real checkout.
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+
+require 'bundler/setup'
+
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 
 require 'pikuri'
 
