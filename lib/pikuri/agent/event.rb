@@ -25,38 +25,9 @@ module Pikuri
     # context-window cap rides as a one-shot {ContextCap} emitted by
     # {Agent#initialize}; everything else maps to a turn-or-tool-call
     # variant. Listeners override a single +on_event+ method and
-    # +case+-match on the variant they care about.
-    #
-    # == Where each variant comes from
-    #
-    # * {UserTurn} — synthesized by {Agent#run_loop} at the start of
-    #   each turn (+mid_loop: false+), or by {Agent}'s
-    #   +after_tool_result+ wiring when a queued
-    #   {Control::Interloper} item drains into the chat history
-    #   (+mid_loop: true+).
-    # * {Thinking} / {Assistant} — extracted by {Agent}'s
-    #   +after_message+ wiring from a +RubyLLM::Message+ with role
-    #   +:assistant+. Empty +thinking.text+ and empty +content+ are
-    #   filtered at the dispatch site so listeners never see vacuous
-    #   events.
-    # * {ToolCall} — emitted by {Agent}'s +before_tool_call+ wiring,
-    #   carrying the tool's name and the LLM-supplied argument hash.
-    # * {ToolResult} — emitted by {Agent}'s +after_tool_result+ wiring,
-    #   carrying the observation string the tool produced.
-    # * {Tokens} — emitted by {Agent}'s +after_message+ wiring on every
-    #   assistant turn, including pure tool-call turns with empty
-    #   content (those are exactly the turns where context-window
-    #   growth matters most).
-    # * {ContextCap} — emitted once by {Agent#initialize} immediately
-    #   after {Agent::ContextWindowDetector} resolves a cap. Carries
-    #   +nil+ when no source produced one — listeners that care about
-    #   the cap can treat +nil+ as "no cap known."
-    # * {FallbackNotice} — emitted by {Agent#run_loop} when the
-    #   step-budget rescue fires; carries the reason string the
-    #   listener should surface.
-    # * {Cancelled} — emitted by {Agent#run_loop} when
-    #   {Control::Cancellable} trips; emitted just before the exception
-    #   re-raises out of the loop.
+    # +case+-match on the variant they care about. The per-variant
+    # docs below name the emission site for each (which {Agent}
+    # callback wires it and what payload it carries).
     module Event
       # User's input for a turn (+mid_loop: false+, the default) or a
       # host-supplied injection delivered while the loop is running
@@ -67,6 +38,12 @@ module Pikuri
       # one). Controls themselves no longer see this event — the
       # +Agent+ pokes their +reset!+ / +tick!+ entry points directly
       # at the right boundaries.
+      #
+      # Emitted in two places: by {Agent#run_loop} at the start of
+      # each turn (with +mid_loop: false+), and by {Agent}'s
+      # +after_tool_result+ wiring when a queued
+      # {Control::Interloper} item drains into the chat history
+      # (with +mid_loop: true+).
       UserTurn = Data.define(:content, :mid_loop) do
         # @param content [String] user-supplied text
         # @param mid_loop [Boolean] +false+ for a turn-starting message
@@ -79,28 +56,35 @@ module Pikuri
 
       # Assistant reasoning ("thinking") block, extracted from the
       # +thinking.text+ field on a +RubyLLM::Message+ with role
-      # +:assistant+.
+      # +:assistant+. Emitted by {Agent}'s +after_message+ wiring;
+      # empty +thinking.text+ is filtered at the dispatch site so
+      # listeners never see vacuous events.
       Thinking = Data.define(:content)
 
       # Assistant Markdown content, extracted from a +RubyLLM::Message+
-      # with role +:assistant+.
+      # with role +:assistant+. Emitted by {Agent}'s +after_message+
+      # wiring; empty +content+ is filtered at the dispatch site
+      # (pure tool-call turns surface {Tokens} only, no +Assistant+).
       Assistant = Data.define(:content)
 
       # A tool invocation the LLM has requested but not yet observed.
       # Arguments are the raw hash ruby_llm parsed from the model's
-      # +tool_calls+ JSON — no validation has run yet.
+      # +tool_calls+ JSON — no validation has run yet. Emitted by
+      # {Agent}'s +before_tool_call+ wiring.
       ToolCall = Data.define(:name, :arguments)
 
       # The observation a tool produced, as returned by {Tool#run}.
       # Recoverable failures arrive here as +"Error: ..."+ strings
       # (per the pikuri error convention), not as exceptions.
+      # Emitted by {Agent}'s +after_tool_result+ wiring.
       ToolResult = Data.define(:content)
 
       # Provider-reported token usage for a single assistant turn,
-      # copied off a +RubyLLM::Message+'s +tokens+ block. Fires once
-      # per assistant +after_message+ event (including pure tool-call
-      # turns where {Assistant} would have been filtered for empty
-      # content).
+      # copied off a +RubyLLM::Message+'s +tokens+ block. Emitted by
+      # {Agent}'s +after_message+ wiring on every assistant turn,
+      # including pure tool-call turns where {Assistant} would have
+      # been filtered for empty content (those are exactly the turns
+      # where context-window growth matters most).
       #
       # All counts are +Integer, nil+. +nil+ means the provider did not
       # report that field — common with local llama.cpp / Ollama
@@ -141,7 +125,7 @@ module Pikuri
       # {Listener::TokenLog#context_window_size} tracks.
       Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking, :model_id)
 
-      # Model's resolved context-window cap, emitted once by
+      # Model's resolved context-window cap. Emitted once by
       # {Agent#initialize} immediately after
       # {Agent::ContextWindowDetector} runs. Carries +nil+ when no
       # source produced a value (custom local model with no override
@@ -151,22 +135,22 @@ module Pikuri
       # cache it; non-caring listeners ignore.
       ContextCap = Data.define(:cap)
 
-      # Out-of-band notice that the agent had to take a rescue path —
-      # currently emitted by {Agent#run_loop} when
-      # {Control::StepLimit} trips and the synthesizer fallback runs.
-      # Lets listeners (Terminal, future web UI) surface the
-      # divergence to the user before the synthesizer's own assistant
-      # output flows through.
+      # Out-of-band notice that the agent had to take a rescue path.
+      # Emitted by {Agent#run_loop} when {Control::StepLimit} trips
+      # and the synthesizer fallback runs; carries the reason string
+      # the listener should surface. Lets listeners (Terminal, future
+      # web UI) surface the divergence to the user before the
+      # synthesizer's own assistant output flows through.
       FallbackNotice = Data.define(:reason)
 
       # Out-of-band notice that the user cancelled the in-flight turn
       # via {Control::Cancellable}. Emitted by {Agent#run_loop} just
-      # before the +Cancellable::Cancelled+ exception bubbles out so
-      # listeners (Terminal renderer, structured recorders) can mark
-      # the turn as user-aborted. Unlike {FallbackNotice}, no recovery
-      # follows — the exception is re-raised and the caller is
-      # expected to return control to the user (typically the REPL
-      # prompt).
+      # before the +Cancellable::Cancelled+ exception re-raises out of
+      # the loop, so listeners (Terminal renderer, structured
+      # recorders) can mark the turn as user-aborted. Unlike
+      # {FallbackNotice}, no recovery follows — the exception is
+      # re-raised and the caller is expected to return control to the
+      # user (typically the REPL prompt).
       Cancelled = Data.define
     end
   end

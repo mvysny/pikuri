@@ -22,22 +22,6 @@ module Pikuri
       # Downstream hosts that *do* run the agent on a worker
       # thread can wire one in with no other changes to pikuri.
       #
-      # == What this used to do, what it does now
-      #
-      # In the previous shape, +Interloper+ lived in the
-      # listener list, wired its own +after_tool_result+ callback,
-      # and re-emitted +Message::User(mid_loop_run: true)+ events
-      # back into the listener stream through a +listener_list=+
-      # back-reference. That made it the only listener that
-      # *wrote* to the stream — which is the single most
-      # responsibility-blurring choice the old design made.
-      #
-      # The new shape splits the two jobs: this class is a pure
-      # thread-safe queue; the +Agent+ owns the +after_tool_result+
-      # drain and the +Event::UserTurn(mid_loop: true)+ emission.
-      # Listeners are pure consumers; the +Agent+ is the sole
-      # emitter; the back-reference is gone.
-      #
       # == Delivery boundary and side effects
       #
       # When the +Agent+'s +after_tool_result+ wiring fires, it
