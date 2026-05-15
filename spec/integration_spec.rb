@@ -133,9 +133,9 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
       system_prompt: 'be terse',
       tools: [echo_tool],
       listeners: Pikuri::Agent::ListenerList.new([
-        Pikuri::Agent::Listener::Terminal.new,
-        Pikuri::Agent::Listener::StepLimit.new(max: 20)
-      ])
+        Pikuri::Agent::Listener::Terminal.new
+      ]),
+      step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
     )
 
     # Silence the listener output so the spec doesn't pollute test output.
@@ -200,9 +200,9 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
       system_prompt: 'be terse',
       tools: [described_tool],
       listeners: Pikuri::Agent::ListenerList.new([
-        Pikuri::Agent::Listener::Terminal.new,
-        Pikuri::Agent::Listener::StepLimit.new(max: 20)
-      ])
+        Pikuri::Agent::Listener::Terminal.new
+      ]),
+      step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
     )
 
     capture_stdout { agent.run_loop(user_message: 'please echo hi') }

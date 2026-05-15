@@ -3,100 +3,232 @@
 require 'ruby_llm'
 
 module Pikuri
-  # Thin wrapper around +RubyLLM::Chat+: pikuri owns the *extension surface*
-  # (the listener objects that consume normalized chat events) while
-  # ruby_llm owns the loop itself. The Thought / Tool-call / Observation
-  # iteration lives in +Chat#complete+; pikuri's job is just attaching
-  # listeners at construction time, forwarding the user turn, and
-  # notifying the listeners of the new {Message::User} so any that care
-  # about turn boundaries (notably {Listener::StepLimit}) can react.
+  # Thin wrapper around +RubyLLM::Chat+: pikuri owns the *extension
+  # surface* (the event-stream listeners that consume normalized
+  # chat events, plus the controls that signal back into the loop)
+  # while ruby_llm owns the loop itself. The Thought / Tool-call /
+  # Observation iteration lives in +Chat#complete+; pikuri's job
+  # is wiring ruby_llm's three callbacks at construction time,
+  # emitting {Event} variants from each, and forwarding control
+  # signals (step-budget tick, cancellation check, mid-loop input
+  # drain) to the appropriate {Control}.
   #
-  # Listeners live in a {ListenerList} the caller supplies — duck-typed
-  # against a tiny +attach(chat)+ / +on_message(msg)+ protocol, with the
-  # list itself implementing the same protocol so +Agent+ never touches
-  # the underlying +Array+. There are no defaults for +tools:+ or
-  # +listeners:+ on {#initialize}: both are conscious decisions the
-  # caller must state every time.
+  # == Roles in this file
+  #
+  # Two seams are visible:
+  #
+  # 1. **Listeners** ({ListenerList} + {Listener::Base} subclasses)
+  #    — pure consumers of the event stream. The +Agent+ is the
+  #    sole emitter; listeners never write back. New rendering or
+  #    capture targets (a web sink, a structured log) are added
+  #    here without touching {Agent}.
+  # 2. **Controls** ({Control::StepLimit}, {Control::Cancellable},
+  #    {Control::Interloper}) — host-facing signal holders. The
+  #    +Agent+ reads from them at well-defined boundaries:
+  #    {Control::StepLimit#tick!} on every +before_tool_call+ (and
+  #    {Control::StepLimit#reset!} at turn start),
+  #    {Control::Cancellable#check!} on every +before_tool_call+
+  #    (and {Control::Cancellable#reset!} at turn start),
+  #    {Control::Interloper#drain!} on every +after_tool_result+.
+  #
+  # The previous shape mixed both roles into one "listener" concept
+  # — every listener could observe events and emit them. Naming the
+  # two roles makes "what fires when" a single grep for
+  # +@listeners.emit+ in this file.
   #
   # == Step-exhaustion rescue
   #
-  # If a {Listener::StepLimit} in {#listeners} trips during +Chat#ask+,
-  # {#run_loop} catches the +Exceeded+ exception, emits a
-  # {Message::FallbackNotice} to every listener, and hands off to
-  # {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth reuses the
-  # parent's {ListenerList} via {ListenerList#for_sub_agent} with
-  # +max_steps: 1+ — same transformation a sub-agent invocation gets,
-  # since the synth is a fresh context: +TokenLog+ zeroed, +Terminal+
-  # padded, +StepLimit+ at the defensive cap (the synth has no tools so
-  # it should never trip), +InMemoryMessageList+ shared by reference. The
-  # listener +name:+ becomes +"<@name>_synthesizer"+ (or just
-  # +"synthesizer"+ for the main agent) so the synth turn is distinct
-  # from the parent's normal turns in any name-aware log line. The
-  # synth's answer becomes the value reported by
-  # {#last_assistant_content}, so callers (notably {Tool::SubAgent})
-  # still get a usable reply instead of raising past +bin/pikuri-chat+.
+  # If the +step_limit:+ {Control::StepLimit} trips during
+  # +Chat#ask+, {#run_loop} catches the +Exceeded+ exception,
+  # emits an {Event::FallbackNotice} to the listener stream, and
+  # hands off to {Synthesizer.run} on a fresh +RubyLLM::Chat+.
+  # The synth reuses the parent's listener stream via
+  # {ListenerList#for_sub_agent} (Terminal padded, TokenLog
+  # zeroed, recorder shared by reference) with a +name:+ derived
+  # from the parent's. The synth shares the parent's
+  # +cancellable+ so a user cancel during synthesis still works,
+  # and gets a fresh +step_limit+ at +max: 1+ (defensive — the
+  # synth has no tools and shouldn't trip it). The synth's
+  # answer becomes the value reported by
+  # {#last_assistant_content}, so callers (notably
+  # {Tool::SubAgent}) still get a usable reply.
   #
   # == Cancellation rescue
   #
-  # If a {Listener::Cancellable} in {#listeners} trips during +Chat#ask+,
-  # {#run_loop} catches the +Cancelled+ exception, emits a
-  # {Message::Cancelled} to every listener, and re-raises. No
-  # synthesizer fallback runs: cancellation means the user asked the
-  # agent to drop everything, so salvaging a partial answer would be
-  # the wrong move. The caller (typically a REPL) rescues the re-raised
-  # exception and returns control to the user; because the cancellation
-  # flag resets on the next {Message::User}, the same agent instance can
-  # take a fresh turn immediately afterwards.
+  # If the +cancellable:+ {Control::Cancellable} trips during
+  # +Chat#ask+, {#run_loop} catches the +Cancelled+ exception,
+  # emits an {Event::Cancelled} to the listener stream, and
+  # re-raises. No synthesizer fallback runs: cancellation means
+  # the user asked the agent to drop everything, so salvaging a
+  # partial answer would be the wrong move. The caller (typically
+  # a REPL) rescues the re-raised exception and returns control
+  # to the user; because {#run_loop} calls
+  # {Control::Cancellable#reset!} at the start of every turn, the
+  # same agent instance can take a fresh turn immediately
+  # afterwards.
   class Agent
+    # Wire one +RubyLLM::Chat+ for pikuri's event stream and
+    # controls. Used by both {#initialize} (on the main chat) and
+    # {Synthesizer.run} (on the synth chat) so the two share one
+    # source of truth for "which callback emits which event."
+    #
+    # @param chat [RubyLLM::Chat] the chat instance to wire
+    # @param listeners [ListenerList] the listener stream events
+    #   flow into
+    # @param step_limit [Control::StepLimit, nil] when set,
+    #   {Control::StepLimit#tick!} is poked on every
+    #   +before_tool_call+ (and raises {Control::StepLimit::Exceeded}
+    #   when over budget)
+    # @param cancellable [Control::Cancellable, nil] when set,
+    #   {Control::Cancellable#check!} is poked on every
+    #   +before_tool_call+ (and raises
+    #   {Control::Cancellable::Cancelled} when the flag is up)
+    # @param interloper [Control::Interloper, nil] when set, the
+    #   queue is drained on every +after_tool_result+, each item
+    #   appended as a +role: :user+ message and emitted as
+    #   {Event::UserTurn} with +mid_loop: true+
+    # @return [void]
+    def self.wire_chat(chat, listeners:, step_limit: nil, cancellable: nil, interloper: nil)
+      chat.after_message do |msg|
+        emit_after_message(msg, listeners)
+      end
+      chat.before_tool_call do |tc|
+        listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
+        step_limit&.tick!
+        cancellable&.check!
+      end
+      chat.after_tool_result do |result|
+        listeners.emit(Event::ToolResult.new(content: result))
+        drain_interloper(interloper, chat, listeners) if interloper
+      end
+    end
+
+    # Normalize a +RubyLLM::Chat+ +after_message+ payload into
+    # zero, one, or two {Event} variants (+Thinking+ and/or
+    # +Assistant+) plus one {Event::Tokens} for the usage block.
+    # Empty thinking / empty content are filtered here so
+    # listeners never see vacuous events. Non-assistant roles
+    # (e.g. tool-role messages echoed back through
+    # +after_message+) are skipped entirely.
+    #
+    # +msg+ is a +RubyLLM::Message+. Beyond +role+, +content+,
+    # +thinking+, and the +*_tokens+ accessors used here, it also
+    # carries +msg.tool_calls+ on assistant turns that requested
+    # one and +msg.raw+ for the unparsed provider payload.
+    #
+    # @param msg [RubyLLM::Message]
+    # @param listeners [ListenerList]
+    # @return [void]
+    def self.emit_after_message(msg, listeners)
+      return unless msg.role == :assistant
+
+      text = msg.thinking&.text
+      listeners.emit(Event::Thinking.new(content: text)) if text && !text.empty?
+
+      content = msg.content
+      listeners.emit(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
+
+      listeners.emit(Event::Tokens.new(
+                       input: msg.input_tokens,
+                       output: msg.output_tokens,
+                       cached: msg.cached_tokens,
+                       cache_creation: msg.cache_creation_tokens,
+                       thinking: msg.thinking_tokens,
+                       model_id: msg.model_id
+                     ))
+    end
+    private_class_method :emit_after_message
+
+    # Drain the interloper queue: for each pending item, append a
+    # +role: :user+ message to the chat history so the next
+    # round-trip sees it, then emit an {Event::UserTurn} with
+    # +mid_loop: true+ to the listener stream so renderers see
+    # the injection.
+    #
+    # @param interloper [Control::Interloper]
+    # @param chat [RubyLLM::Chat]
+    # @param listeners [ListenerList]
+    # @return [void]
+    def self.drain_interloper(interloper, chat, listeners)
+      interloper.drain!.each do |content|
+        chat.add_message(role: :user, content: content)
+        listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
+      end
+    end
+    private_class_method :drain_interloper
+
     # @param transport [ChatTransport] the model-resolution triple
-    #   (+model+ / +provider+ / +assume_model_exists+) forwarded to
-    #   +RubyLLM.chat+. Bundled into one value object so every
-    #   construction site — this constructor and the synthesizer rescue
-    #   below — can forward all three with one assignment instead of
-    #   three kwargs (where dropping one would silently route the chat
-    #   elsewhere or raise +RubyLLM::ModelNotFoundError+). If
-    #   +transport.model+ is +nil+, it's filled in from
-    #   +RubyLLM.config.default_model+.
-    # @param system_prompt [String] system message prepended to the chat
+    #   (+model+ / +provider+ / +assume_model_exists+) forwarded
+    #   to +RubyLLM.chat+. Bundled into one value object so every
+    #   construction site — this constructor and the synthesizer
+    #   rescue below — can forward all three with one assignment
+    #   instead of three kwargs (where dropping one would silently
+    #   route the chat elsewhere or raise
+    #   +RubyLLM::ModelNotFoundError+). If +transport.model+ is
+    #   +nil+, it's filled in from +RubyLLM.config.default_model+.
+    # @param system_prompt [String] system message prepended to
+    #   the chat
     # @param tools [Array<Tool>] pikuri tools registered with the
-    #   underlying chat in declaration order. Each is converted to
-    #   ruby_llm's runtime shape via {Tool#to_ruby_llm_tool} when wired
-    #   in. Required — no default, because the tool set is a deliberate
-    #   per-call decision (pass +[]+ for a tools-free agent).
-    # @param listeners [ListenerList] the listener list whose +attach+
-    #   the constructor calls on the underlying chat. Required — no
-    #   default, because the renderer and step-budget choices are
+    #   underlying chat in declaration order. Each is converted
+    #   to ruby_llm's runtime shape via {Tool#to_ruby_llm_tool}
+    #   when wired in. Required — no default, because the tool
+    #   set is a deliberate per-call decision (pass +[]+ for a
+    #   tools-free agent).
+    # @param listeners [ListenerList] the listener list whose
+    #   listeners observe the event stream. Required — no
+    #   default, because the renderer and capture choices are
     #   deliberate per-call decisions. Typical CLI shape:
-    #   +ListenerList.new([Listener::Terminal.new, Listener::StepLimit.new(max: 20)])+.
-    # @param context_window [Integer, nil] explicit override for the
-    #   model's context-window cap. When set, it wins over ruby_llm's
-    #   reported value and the llama.cpp probe — see
-    #   {ContextWindowDetector} for precedence. Resolved cap is pushed to
-    #   every {Listener::TokenLog} so the +ctx=<used>/<cap>+ headline
-    #   lights up.
-    # @param llama_probe_url [String, nil] llama.cpp +/props+ URL used as
-    #   the third detection source. Only consulted when neither
-    #   +context_window+ nor ruby_llm's reported value is set. Typically
-    #   derived by +bin/pikuri-chat+ from its configured +openai_api_base+;
-    #   leave +nil+ when the configured server is anything other than
-    #   llama.cpp.
-    # @param name [String] identifier for this agent. Empty for the main
-    #   agent; sub-agents get monotonic hierarchical names like
-    #   +"sub_agent 0"+, +"sub_agent 1"+, +"sub_agent 0_0"+, ... generated
-    #   by {Tool::SubAgent} from the parent's name + a per-parent counter.
-    #   Forwarded to listeners through {ListenerList#for_sub_agent} so
-    #   name-aware ones (notably {Listener::TokenLog}) can tag their output.
-    # @param skill_catalog [Tool::SkillCatalog] catalog of on-disk skills
-    #   the agent may load on demand. Defaults to
-    #   +Tool::SkillCatalog::EMPTY+, which is a no-op singleton. When
-    #   non-empty: the catalog's prompt block ({Tool::SkillCatalog#format_for_prompt})
-    #   is appended to +system_prompt+ so the LLM can see what's available,
-    #   and a {Tool::Skill} bound to the catalog is appended to +tools+
-    #   so the LLM can actually load them. The two changes are coupled —
-    #   advertising skills without a loader (or vice versa) would be a
-    #   bug, so the catalog is the single source of truth for both.
+    #   +ListenerList.new([Listener::Terminal.new, Listener::TokenLog.new])+.
+    # @param step_limit [Control::StepLimit, nil] step budget
+    #   control. When set, {Control::StepLimit#tick!} fires on
+    #   every +before_tool_call+ and {Control::StepLimit#reset!}
+    #   at the start of each turn. +nil+ means "no step budget"
+    #   (the agent can loop indefinitely).
+    # @param cancellable [Control::Cancellable, nil] cancellation
+    #   control. When set, {Control::Cancellable#check!} fires on
+    #   every +before_tool_call+ and
+    #   {Control::Cancellable#reset!} at the start of each turn.
+    #   +nil+ means "not cancellable" (the host has no way to
+    #   stop a running turn except by killing the process).
+    # @param interloper [Control::Interloper, nil] mid-loop
+    #   user-input queue. When set, the queue is drained at
+    #   every +after_tool_result+ and each item becomes a
+    #   {Event::UserTurn} with +mid_loop: true+. +nil+ means
+    #   "no mid-loop injection" (the bundled CLIs default).
+    # @param context_window [Integer, nil] explicit override for
+    #   the model's context-window cap. When set, it wins over
+    #   ruby_llm's reported value and the llama.cpp probe — see
+    #   {ContextWindowDetector} for precedence. Resolved cap is
+    #   emitted as an {Event::ContextCap} immediately after
+    #   construction.
+    # @param llama_probe_url [String, nil] llama.cpp +/props+ URL
+    #   used as the third detection source. Only consulted when
+    #   neither +context_window+ nor ruby_llm's reported value is
+    #   set. Typically derived by +bin/pikuri-chat+ from its
+    #   configured +openai_api_base+; leave +nil+ when the
+    #   configured server is anything other than llama.cpp.
+    # @param name [String] identifier for this agent. Empty for
+    #   the main agent; sub-agents get monotonic hierarchical
+    #   names like +"sub_agent 0"+, +"sub_agent 1"+,
+    #   +"sub_agent 0_0"+, ... generated by {Tool::SubAgent} from
+    #   the parent's name + a per-parent counter. Forwarded to
+    #   listeners through {ListenerList#for_sub_agent} so name-
+    #   aware ones (notably {Listener::TokenLog}) can tag their
+    #   output.
+    # @param skill_catalog [Tool::SkillCatalog] catalog of on-disk
+    #   skills the agent may load on demand. Defaults to
+    #   +Tool::SkillCatalog::EMPTY+, which is a no-op singleton.
+    #   When non-empty: the catalog's prompt block
+    #   ({Tool::SkillCatalog#format_for_prompt}) is appended to
+    #   +system_prompt+ so the LLM can see what's available, and
+    #   a {Tool::Skill} bound to the catalog is appended to
+    #   +tools+ so the LLM can actually load them. The two
+    #   changes are coupled — advertising skills without a
+    #   loader (or vice versa) would be a bug, so the catalog is
+    #   the single source of truth for both.
     # @return [Agent]
     def initialize(transport:, system_prompt:, tools:, listeners:,
+                   step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Tool::SkillCatalog::EMPTY)
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
@@ -104,6 +236,9 @@ module Pikuri
       @skill_catalog = skill_catalog
       @tools = tools.dup
       @listeners = listeners
+      @step_limit = step_limit
+      @cancellable = cancellable
+      @interloper = interloper
       @name = name
       @synth_answer = nil
 
@@ -124,71 +259,108 @@ module Pikuri
         ruby_llm_reported: @chat.model.context_window,
         llama_probe_url: llama_probe_url
       ).detect
-      @listeners.context_window_cap = @context_window_cap
-      @listeners.attach(@chat)
+
+      self.class.wire_chat(
+        @chat,
+        listeners: @listeners,
+        step_limit: @step_limit,
+        cancellable: @cancellable,
+        interloper: @interloper
+      )
+
+      # One-shot context-window cap: lets every listener that
+      # cares (notably TokenLog) pick the value off the stream
+      # before any Tokens event arrives.
+      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end
 
     # @return [RubyLLM::Chat] underlying chat; the extension seam
     attr_reader :chat
 
-    # @return [ChatTransport] the resolved transport bundle this agent
-    #   was constructed with — same model id / provider /
-    #   assume-model-exists flag passed to every +RubyLLM.chat+ call
-    #   originating from this agent (the main chat, the synthesizer
-    #   rescue, the sub-agent tool). Read by {Tool::SubAgent} so
-    #   spawned sub-agents reuse the same transport.
+    # @return [ChatTransport] the resolved transport bundle this
+    #   agent was constructed with — same model id / provider /
+    #   assume-model-exists flag passed to every +RubyLLM.chat+
+    #   call originating from this agent (the main chat, the
+    #   synthesizer rescue, the sub-agent tool). Read by
+    #   {Tool::SubAgent} so spawned sub-agents reuse the same
+    #   transport.
     attr_reader :transport
 
-    # @return [Array<Tool>] this agent's tool list in declaration order.
-    #   Snapshotted by {Tool::SubAgent} so spawned sub-agents inherit
-    #   the parent's tools (minus the sub-agent tool itself, which
-    #   {#allow_sub_agent} appends to +@tools+ only after the snapshot
-    #   has been taken — recursion guard).
+    # @return [Array<Tool>] this agent's tool list in declaration
+    #   order. Snapshotted by {Tool::SubAgent} so spawned
+    #   sub-agents inherit the parent's tools (minus the
+    #   sub-agent tool itself, which {#allow_sub_agent} appends
+    #   to +@tools+ only after the snapshot has been taken —
+    #   recursion guard).
     attr_reader :tools
 
-    # @return [String] resolved model id from {#transport}. Convenience
-    #   delegator for callers that don't need the full transport bundle.
+    # @return [String] resolved model id from {#transport}.
+    #   Convenience delegator for callers that don't need the
+    #   full transport bundle.
     def model
       @transport.model
     end
 
-    # @return [String] system prompt actually sent to the chat — equal to
-    #   the constructor's +system_prompt:+ argument plus, when a non-
-    #   empty +skill_catalog:+ was supplied, the catalog's
-    #   +<available_skills>+ block. {Tool::SubAgent} forwards this
-    #   already-augmented value to spawned sub-agents, so they see the
-    #   same catalog without needing the +skill_catalog:+ kwarg themselves.
+    # @return [String] system prompt actually sent to the chat —
+    #   equal to the constructor's +system_prompt:+ argument
+    #   plus, when a non-empty +skill_catalog:+ was supplied, the
+    #   catalog's +<available_skills>+ block. {Tool::SubAgent}
+    #   forwards this already-augmented value to spawned
+    #   sub-agents, so they see the same catalog without needing
+    #   the +skill_catalog:+ kwarg themselves.
     attr_reader :system_prompt
 
-    # @return [Tool::SkillCatalog] catalog passed to the constructor;
-    #   +Tool::SkillCatalog::EMPTY+ if none was supplied. Read by callers
-    #   that want to inspect the loaded skills (e.g. for a startup banner).
+    # @return [Tool::SkillCatalog] catalog passed to the
+    #   constructor; +Tool::SkillCatalog::EMPTY+ if none was
+    #   supplied. Read by callers that want to inspect the
+    #   loaded skills (e.g. for a startup banner).
     attr_reader :skill_catalog
 
-    # @return [ListenerList] the listener list attached to this agent's
-    #   chat
+    # @return [ListenerList] the listener list attached to this
+    #   agent's chat
     attr_reader :listeners
 
-    # @return [String] this agent's identifier — empty for the main agent;
-    #   for sub-agents, the hierarchical id assigned by
-    #   {Tool::SubAgent} (e.g. +"sub_agent 0"+, +"sub_agent 1"+,
-    #   +"sub_agent 0_0"+). Read by the sub-agent tool so spawned
-    #   sub-agents prefix their own names with this one, and propagated
-    #   to listeners via {ListenerList#for_sub_agent} so name-aware ones
-    #   can tag output.
+    # @return [Control::StepLimit, nil] the step-budget control
+    #   this agent was constructed with, or +nil+ when none.
+    #   Read by {Tool::SubAgent} so spawned sub-agents derive
+    #   their own.
+    attr_reader :step_limit
+
+    # @return [Control::Cancellable, nil] the cancellation
+    #   control this agent was constructed with, or +nil+ when
+    #   none. Read by {Tool::SubAgent} so spawned sub-agents
+    #   share the same instance.
+    attr_reader :cancellable
+
+    # @return [Control::Interloper, nil] the mid-loop user-input
+    #   control this agent was constructed with, or +nil+ when
+    #   none. Not propagated to sub-agents — see
+    #   {Control::Interloper#for_sub_agent}.
+    attr_reader :interloper
+
+    # @return [String] this agent's identifier — empty for the
+    #   main agent; for sub-agents, the hierarchical id assigned
+    #   by {Tool::SubAgent} (e.g. +"sub_agent 0"+,
+    #   +"sub_agent 1"+, +"sub_agent 0_0"+). Read by the
+    #   sub-agent tool so spawned sub-agents prefix their own
+    #   names with this one, and propagated to listeners via
+    #   {ListenerList#for_sub_agent} so name-aware ones can tag
+    #   output.
     attr_reader :name
 
     # @return [Integer, nil] context-window cap resolved by
-    #   {ContextWindowDetector} at construction time. +nil+ when no
-    #   source produced a value (custom local model with no override and
-    #   no reachable llama.cpp +/props+). Read by {Tool::SubAgent} so
-    #   spawned sub-agents inherit the same cap without re-probing.
+    #   {ContextWindowDetector} at construction time. +nil+ when
+    #   no source produced a value (custom local model with no
+    #   override and no reachable llama.cpp +/props+). Read by
+    #   {Tool::SubAgent} so spawned sub-agents inherit the same
+    #   cap without re-probing.
     attr_reader :context_window_cap
 
-    # Final assistant message content for the most recent {#run_loop}.
-    # When the synthesizer rescue fired, returns its answer; otherwise
-    # walks the underlying chat's history. Returns +nil+ if neither
-    # source has produced an assistant turn yet.
+    # Final assistant message content for the most recent
+    # {#run_loop}. When the synthesizer rescue fired, returns its
+    # answer; otherwise walks the underlying chat's history.
+    # Returns +nil+ if neither source has produced an assistant
+    # turn yet.
     #
     # @return [String, nil]
     def last_assistant_content
@@ -198,92 +370,107 @@ module Pikuri
       last&.content
     end
 
-    # Run the agent loop for a single user turn. Notifies every listener of
-    # the {Message::User} — which is also how {Listener::StepLimit}
-    # learns to reset its counter — and forwards +user_message+ to
-    # {#chat} via +ask+. Returns nil; rendering and any other observable
-    # output is the listeners' responsibility.
+    # Run the agent loop for a single user turn. Emits an
+    # {Event::UserTurn} with +mid_loop: false+, resets the
+    # step-budget and cancellation controls (so a stale state
+    # from a prior turn doesn't poison this one), and forwards
+    # +user_message+ to {#chat} via +ask+. Returns nil; rendering
+    # and any other observable output is the listeners'
+    # responsibility.
     #
-    # If a {Listener::StepLimit} trips during +ask+, the rescue branch
-    # emits a {Message::FallbackNotice} and runs {Synthesizer.run} on a
-    # fresh +RubyLLM::Chat+. The synth's answer is captured for
-    # {#last_assistant_content}; the exception does not bubble out.
+    # If the +step_limit+ control trips during +ask+, the rescue
+    # branch emits an {Event::FallbackNotice} and runs
+    # {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth's
+    # answer is captured for {#last_assistant_content}; the
+    # exception does not bubble out.
     #
-    # If a {Listener::Cancellable} trips during +ask+, the rescue branch
-    # emits a {Message::Cancelled} and re-raises the +Cancelled+
-    # exception. No synthesizer fallback runs — see the "Cancellation
-    # rescue" section in the class header.
+    # If the +cancellable+ control trips during +ask+, the rescue
+    # branch emits an {Event::Cancelled} and re-raises the
+    # +Cancelled+ exception. No synthesizer fallback runs — see
+    # the "Cancellation rescue" section in the class header.
     #
-    # Subsequent calls keep building on the same chat history, so the
-    # model sees full multi-turn context.
+    # Subsequent calls keep building on the same chat history, so
+    # the model sees full multi-turn context.
     #
-    # @param user_message [String] the user's request for this turn; must
-    #   not be +nil+, empty, or whitespace-only
-    # @raise [ArgumentError] if +user_message+ is +nil+, empty, or
-    #   contains only whitespace — an empty turn would poison the chat
-    #   history and burn a step budget on nothing
-    # @raise [Listener::Cancellable::Cancelled] if a registered
-    #   {Listener::Cancellable} was triggered during the turn; the
-    #   listener stream sees a {Message::Cancelled} first
+    # @param user_message [String] the user's request for this
+    #   turn; must not be +nil+, empty, or whitespace-only
+    # @raise [ArgumentError] if +user_message+ is +nil+, empty,
+    #   or contains only whitespace — an empty turn would poison
+    #   the chat history and burn a step budget on nothing
+    # @raise [Control::Cancellable::Cancelled] if the registered
+    #   {Control::Cancellable} was triggered during the turn;
+    #   the listener stream sees an {Event::Cancelled} first
     # @return [nil]
     def run_loop(user_message:)
       raise ArgumentError, "user_message must not be blank, got #{user_message.inspect}" \
         if user_message.nil? || user_message.to_s.strip.empty?
 
       @synth_answer = nil
-      @listeners.on_message(Message::User.new(content: user_message))
+      @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
+      @step_limit&.reset!
+      @cancellable&.reset!
       @chat.ask(user_message)
       nil
-    rescue Listener::Cancellable::Cancelled
-      @listeners.on_message(Message::Cancelled.new)
+    rescue Control::Cancellable::Cancelled
+      @listeners.emit(Event::Cancelled.new)
       raise
-    rescue Listener::StepLimit::Exceeded => e
-      notice = Message::FallbackNotice.new(
-        reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"
-      )
-      @listeners.on_message(notice)
+    rescue Control::StepLimit::Exceeded => e
+      @listeners.emit(Event::FallbackNotice.new(
+                        reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"
+                      ))
 
-      synth_chat = RubyLLM.chat(**@transport.to_h)
-      # Synth runs under this agent's identity but on a fresh chat with a
-      # different system prompt, so it gets a distinct +_synthesizer+
-      # suffix on the name — same +_+ separator the sub-agent generator
-      # uses, so main becomes +"synthesizer"+ and a sub-agent
-      # +"sub_agent 0"+ becomes +"sub_agent 0_synthesizer"+. Any
-      # +TokenLog+ in the list tags the synth's prompt under that bracket
-      # so it's obvious from the log which turns were the rescue rather
+      # Synth runs under this agent's identity but on a fresh
+      # chat with a different system prompt, so it gets a
+      # distinct +_synthesizer+ suffix on the name — same +_+
+      # separator the sub-agent generator uses, so main becomes
+      # +"synthesizer"+ and a sub-agent +"sub_agent 0"+ becomes
+      # +"sub_agent 0_synthesizer"+. Any +TokenLog+ in the list
+      # tags the synth's prompt under that bracket so it's
+      # obvious from the log which turns were the rescue rather
       # than the original loop.
       synth_name = @name.empty? ? 'synthesizer' : "#{@name}_synthesizer"
+      synth_chat = RubyLLM.chat(**@transport.to_h)
+      # Defensive step limit on the synth: the synth has no
+      # tools so it should never trip +before_tool_call+, but
+      # guarding the budget anyway means a buggy provider that
+      # somehow returns a tool call doesn't loop forever.
+      synth_step_limit = @step_limit && Control::StepLimit.new(max: 1)
       @synth_answer = Synthesizer.run(
         chat: synth_chat,
         parent_messages: @chat.messages,
         user_message: user_message,
-        listeners: @listeners.for_sub_agent(max_steps: 1, name: synth_name)
+        listeners: @listeners.for_sub_agent(name: synth_name),
+        step_limit: synth_step_limit,
+        cancellable: @cancellable
       )
       nil
     end
 
-    # Adds a +sub_agent+ tool that lets this agent spawn sub-agents which
-    # share the parent's model, system prompt, and current tool set (minus
-    # the sub-agent tool itself, so recursion is impossible).
+    # Adds a +sub_agent+ tool that lets this agent spawn
+    # sub-agents which share the parent's model, system prompt,
+    # and current tool set (minus the sub-agent tool itself, so
+    # recursion is impossible).
     #
-    # {Tool::SubAgent} snapshots +@tools+ during construction; we append
-    # the new sub-agent tool to +@tools+ only after that, so the
-    # sub-agent's tool list never contains itself.
+    # {Tool::SubAgent} snapshots +@tools+ during construction; we
+    # append the new sub-agent tool to +@tools+ only after that,
+    # so the sub-agent's tool list never contains itself.
     #
     # Each sub-agent run gets a derived {ListenerList} via
-    # {ListenerList#for_sub_agent} — listeners that define a sub-agent
-    # variant return a fresh instance (e.g. +StepLimit+ at the new cap,
-    # +Terminal+ with sub-agent padding, +TokenLog+ zeroed); listeners
-    # without the hook (+InMemoryMessageList+, ...) are shared by reference so
-    # the sub-agent's events render and capture continuously with the
-    # parent's.
+    # {ListenerList#for_sub_agent} (Terminal padded, TokenLog
+    # zeroed, recorder shared by reference) and a derived
+    # control set: a fresh {Control::StepLimit} at the new cap,
+    # the same {Control::Cancellable} shared by reference (so a
+    # parent cancel kills sub-agents too), and no
+    # {Control::Interloper} (since the host has no handle to
+    # sub-agents).
     #
-    # @param max_steps [Integer] step budget for each sub-agent run,
-    #   passed through to {Tool::SubAgent#initialize}
-    # @raise [RuntimeError] if a {Tool::SubAgent} is already registered
-    #   on this agent — calling twice would advertise two identically
-    #   named tools to ruby_llm and double the sub-agent's tool list
-    #   (the second snapshot would contain the first sub-agent tool).
+    # @param max_steps [Integer] step budget for each sub-agent
+    #   run, passed through to {Tool::SubAgent#initialize}
+    # @raise [RuntimeError] if a {Tool::SubAgent} is already
+    #   registered on this agent — calling twice would advertise
+    #   two identically named tools to ruby_llm and double the
+    #   sub-agent's tool list (the second snapshot would contain
+    #   the first sub-agent tool).
     # @return [void]
     def allow_sub_agent(max_steps: 10)
       raise "Tool::SubAgent already registered on this agent; allow_sub_agent may only be called once" \
@@ -294,12 +481,12 @@ module Pikuri
       @chat.with_tool(sub_tool.to_ruby_llm_tool)
     end
 
-    # Short, single-line config dump suitable for a startup banner or a
-    # debug print. Delegates the listener rendering to {ListenerList#to_s}.
+    # Short, single-line config dump suitable for a startup
+    # banner or a debug print.
     #
     # @example
     #   agent.to_s
-    #   # => "Agent(model=qwen3-35b, tools=4, listeners=[Terminal, StepLimit(max=20)])"
+    #   # => "Agent(model=qwen3-35b, tools=4, listeners=[Terminal])"
     #
     # @return [String]
     def to_s

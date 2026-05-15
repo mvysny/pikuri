@@ -23,10 +23,16 @@ module Pikuri
     # Its listener list comes from the parent's {Agent#listeners} via
     # {Agent::ListenerList#for_sub_agent}, which forwards to each
     # listener's own +for_sub_agent+ hook: +Terminal+ swaps to a padded
-    # fresh instance, +TokenLog+ resets its snapshot, +StepLimit+ picks
-    # +max_steps:+ out of the params, and listeners without the hook
-    # ({Agent::Listener::InMemoryMessageList}, …) are shared by reference so
-    # structured capture and other stateful renderers flow continuously.
+    # fresh instance, +TokenLog+ resets its snapshot, and listeners
+    # without the hook ({Agent::Listener::InMemoryEventList}, …) are
+    # shared by reference so structured capture flows continuously.
+    #
+    # Controls are derived per the per-control rule: a fresh
+    # {Agent::Control::StepLimit} at the new cap (mutable counter is
+    # per-chat), the same {Agent::Control::Cancellable} shared by
+    # reference (one +cancel!+ stops the whole tree), and no
+    # {Agent::Control::Interloper} (the host has no handle to
+    # sub-agents).
     #
     # All parent state is captured by value at construction — the closure
     # does not chase +parent_agent+ mutations later. The one piece of
@@ -53,20 +59,22 @@ module Pikuri
 
       # @param parent_agent [Agent] the calling agent. Read for its
       #   {Agent#transport}, {Agent#system_prompt}, {Agent#tools},
-      #   {Agent#listeners}, {Agent#context_window_cap}, and {Agent#name}.
+      #   {Agent#listeners}, {Agent#step_limit}, {Agent#cancellable},
+      #   {Agent#context_window_cap}, and {Agent#name}.
       # @param max_steps [Integer] step budget for each sub-agent run,
-      #   forwarded as the +max_steps:+ kwarg to
-      #   {Agent::ListenerList#for_sub_agent} (consumed by
-      #   {Agent::Listener::StepLimit#for_sub_agent}).
+      #   used to construct the sub-agent's own
+      #   {Agent::Control::StepLimit}.
       # @return [SubAgent]
       def initialize(parent_agent, max_steps: 10)
-        transport      = parent_agent.transport
-        system_prompt  = parent_agent.system_prompt
-        sub_tools      = parent_agent.tools.dup
-        listeners      = parent_agent.listeners
-        context_window = parent_agent.context_window_cap
-        parent_name    = parent_agent.name
-        sub_counter    = 0
+        transport         = parent_agent.transport
+        system_prompt     = parent_agent.system_prompt
+        sub_tools         = parent_agent.tools.dup
+        listeners         = parent_agent.listeners
+        parent_step_limit = parent_agent.step_limit
+        parent_cancel     = parent_agent.cancellable
+        context_window    = parent_agent.context_window_cap
+        parent_name       = parent_agent.name
+        sub_counter       = 0
 
         super(
           name: 'sub_agent',
@@ -88,7 +96,9 @@ module Pikuri
               transport: transport,
               system_prompt: system_prompt,
               tools: sub_tools,
-              listeners: listeners.for_sub_agent(max_steps: max_steps, name: sub_name),
+              listeners: listeners.for_sub_agent(name: sub_name),
+              step_limit: parent_step_limit&.for_sub_agent(max_steps: max_steps),
+              cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
               name: sub_name
             )

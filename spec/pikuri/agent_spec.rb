@@ -1,28 +1,29 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Agent do
-  # Minimal stand-in for +RubyLLM::Chat+ that captures every listener
+  # Minimal stand-in for +RubyLLM::Chat+ that captures every callback
   # pikuri registers, lets the spec fire them with synthetic
-  # +Message+/+ToolCall+ payloads, and records what +Pikuri::Agent+ configures
-  # (system prompt, tools, +ask+ calls). Lets us pin the agent-level
-  # wiring without going anywhere near a real provider.
-  # +RubyLLM::Model::Info+ stand-in just so +Pikuri::Agent#initialize+ can read
+  # +RubyLLM::Message+ / +RubyLLM::ToolCall+ payloads, and records
+  # what +Pikuri::Agent+ configures (system prompt, tools, +ask+
+  # calls, +add_message+ calls). Pins the agent-level wiring
+  # without going anywhere near a real provider.
+  #
+  # +RubyLLM::Model::Info+ stand-in just so
+  # +Pikuri::Agent#initialize+ can read
   # +@chat.model.context_window+ for {Pikuri::Agent::ContextWindowDetector}.
-  # Returns +nil+, which is what +Model::Info.default+ produces for any
-  # model that isn't in ruby_llm's bundled registry — the path our
-  # local-llama deployment exercises.
   fake_model = Struct.new(:context_window).new(nil)
 
   let(:fake_chat_class) do
     captured_model = fake_model
     Class.new do
-      attr_reader :tools, :asks, :messages, :instructions, :listeners
+      attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages
 
       define_method(:initialize) do
         @tools = []
         @asks = []
         @messages = []
-        @listeners = Hash.new { |h, k| h[k] = [] }
+        @added_messages = []
+        @hooks = Hash.new { |h, k| h[k] = [] }
         @model_info = captured_model
       end
 
@@ -40,9 +41,13 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
-      def after_message(&block);     @listeners[:after_message] << block;     self; end
-      def before_tool_call(&block);  @listeners[:before_tool_call] << block;  self; end
-      def after_tool_result(&block); @listeners[:after_tool_result] << block; self; end
+      def after_message(&block);     @hooks[:after_message] << block;     self; end
+      def before_tool_call(&block);  @hooks[:before_tool_call] << block;  self; end
+      def after_tool_result(&block); @hooks[:after_tool_result] << block; self; end
+
+      def add_message(attrs)
+        @added_messages << attrs
+      end
 
       def ask(message)
         @asks << message
@@ -50,7 +55,7 @@ RSpec.describe Pikuri::Agent do
       end
 
       def fire(name, *args)
-        @listeners[name].each { |cb| cb.call(*args) }
+        @hooks[name].each { |cb| cb.call(*args) }
       end
 
       def add_assistant(content, thinking: nil)
@@ -62,10 +67,10 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  let(:fake_chat)    { fake_chat_class.new }
-  let(:in_memory)    { Pikuri::Agent::Listener::InMemoryMessageList.new }
-  let(:step_limit_2) { Pikuri::Agent::Listener::StepLimit.new(max: 2) }
-  let(:listener_list) { Pikuri::Agent::ListenerList.new([in_memory, step_limit_2]) }
+  let(:fake_chat)  { fake_chat_class.new }
+  let(:recorder)   { Pikuri::Agent::Listener::InMemoryEventList.new }
+  let(:listeners)  { Pikuri::Agent::ListenerList.new([recorder]) }
+  let(:step_limit) { Pikuri::Agent::Control::StepLimit.new(max: 2) }
 
   before do
     captured = fake_chat
@@ -85,8 +90,8 @@ RSpec.describe Pikuri::Agent do
         parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :x, 'x' },
         execute: ->(x:) { x }
       )
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 'be terse', tools: [tool],
-                listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 'be terse', tools: [tool], listeners: listeners)
 
       assert_equal 'be terse', fake_chat.instructions
       assert_equal 1, fake_chat.tools.size
@@ -95,53 +100,66 @@ RSpec.describe Pikuri::Agent do
       assert_equal 't', wired.name
     end
 
-    it 'attaches every listener in the supplied list to the chat' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listener_list)
+    it 'wires exactly one callback per chat-event channel — the Agent is the sole emitter' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners,
+                        step_limit: step_limit,
+                        cancellable: Pikuri::Agent::Control::Cancellable.new,
+                        interloper: Pikuri::Agent::Control::Interloper.new)
 
-      # InMemoryMessageList (a MessageListener) wires after_message +
-      # before_tool_call + after_tool_result; StepLimit adds its own
-      # before_tool_call. Expect 2 before_tool_call callbacks and 1 of
-      # the other two.
-      assert_equal 1, fake_chat.listeners[:after_message].size
-      assert_equal 2, fake_chat.listeners[:before_tool_call].size
-      assert_equal 1, fake_chat.listeners[:after_tool_result].size
+      assert_equal 1, fake_chat.hooks[:after_message].size
+      assert_equal 1, fake_chat.hooks[:before_tool_call].size
+      assert_equal 1, fake_chat.hooks[:after_tool_result].size
     end
 
     it 'requires listeners: — no silent default' do
       assert_raises(ArgumentError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [])
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [])
       end
     end
 
     it 'requires tools: — no silent default' do
       assert_raises(ArgumentError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', listeners: listener_list)
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', listeners: listeners)
       end
     end
 
     it 'defaults name to empty (main agent)' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
 
       assert_equal '', agent.name
     end
 
     it 'exposes an explicitly passed name' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]), name: '0_1')
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners, name: '0_1')
 
       assert_equal '0_1', agent.name
     end
 
+    it 'emits a one-shot Event::ContextCap at construction so TokenLog can pick the cap up' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners,
+                        context_window: 32_768)
+
+      cap_events = recorder.events.select { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) }
+      assert_equal 1, cap_events.size
+      assert_equal 32_768, cap_events.first.cap
+    end
+
     describe 'context-window detection' do
       let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
-      let(:list_with_tokens) { Pikuri::Agent::ListenerList.new([in_memory, token_log]) }
+      let(:list_with_tokens) { Pikuri::Agent::ListenerList.new([recorder, token_log]) }
 
-      it 'pushes the detected cap onto every TokenLog in the listener list' do
+      it 'pushes the detected cap onto every TokenLog via the ContextCap event' do
         # No ruby_llm reported value (fake .model.context_window is nil),
         # no probe URL — explicit override wins.
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                  listeners: list_with_tokens, context_window: 32_768)
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [],
+                          listeners: list_with_tokens, context_window: 32_768)
 
         assert_equal 32_768, token_log.context_window_cap
       end
@@ -150,22 +168,23 @@ RSpec.describe Pikuri::Agent do
         # Rebind the fake_chat's model to one that reports a window.
         fake_chat.instance_variable_set(:@model_info, Struct.new(:context_window).new(200_000))
 
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                  listeners: list_with_tokens)
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [], listeners: list_with_tokens)
 
         assert_equal 200_000, token_log.context_window_cap
       end
 
       it 'exposes the resolved cap via #context_window_cap' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                          listeners: list_with_tokens, context_window: 8_192)
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's', tools: [],
+                                  listeners: list_with_tokens, context_window: 8_192)
 
         assert_equal 8_192, agent.context_window_cap
       end
 
       it 'leaves cap nil when nothing produces a value (no override, no registry, no probe URL)' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                          listeners: list_with_tokens)
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's', tools: [], listeners: list_with_tokens)
 
         assert_nil agent.context_window_cap
         assert_nil token_log.context_window_cap
@@ -175,20 +194,10 @@ RSpec.describe Pikuri::Agent do
 
   describe '#allow_sub_agent' do
     it "forwards the parent's resolved context_window_cap as the sub-agent tool's override" do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]),
-                        context_window: 12_345)
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                context_window: 12_345)
       agent.allow_sub_agent(max_steps: 3)
-
-      # The sub_agent tool is the last one wired onto the chat. We can
-      # introspect it by running its execute lambda and seeing what
-      # Pikuri::Agent.new is called with — but easier: capture the next
-      # +RubyLLM.chat+ call and check its produced agent's cap.
-      captured_caps = []
-      hook = lambda do |sub_agent|
-        captured_caps << sub_agent.context_window_cap
-        'sub reply'
-      end
 
       # Stub Pikuri::Agent.new globally just for this test: record the
       # +context_window+ kwarg the sub-agent factory passes.
@@ -212,8 +221,8 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'raises when called twice on the same agent' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
       agent.allow_sub_agent
 
       err = assert_raises(RuntimeError) { agent.allow_sub_agent }
@@ -230,47 +239,76 @@ RSpec.describe Pikuri::Agent do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: {}) }
 
     it 'forwards user_message to chat.ask' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
       agent.run_loop(user_message: 'hello?')
 
       assert_equal ['hello?'], fake_chat.asks
     end
 
-    it 'emits a Message::User to every listener before asking the chat' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+    it 'emits an Event::UserTurn(mid_loop: false) to every listener before asking the chat' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
       agent.run_loop(user_message: 'hello?')
 
-      assert_includes in_memory.events, Pikuri::Agent::Message::User.new(content: 'hello?')
+      turn = recorder.events.find do |e|
+        e.is_a?(Pikuri::Agent::Event::UserTurn) && e.content == 'hello?'
+      end
+      refute_nil turn
+      refute turn.mid_loop
     end
 
-    it "resets the step counter between turns via StepLimit's User reset" do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listener_list)
+    it 'resets the step_limit between turns so a fresh turn can spend the budget again' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                step_limit: step_limit)
 
-      # Burn the budget on turn 1.
+      # Burn the budget on turn 1 by firing the chat's before_tool_call
+      # callback the agent installed during construction.
       fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:before_tool_call, tool_call)
 
       agent.run_loop(user_message: 'turn 2 starts now')
 
       # Two fresh tool calls land without raising — counter was reset
-      # when StepLimit#on_message received the new Message::User.
+      # when run_loop called step_limit.reset! at the turn boundary.
       fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:before_tool_call, tool_call)
     end
 
+    it 'resets the cancellable at the turn boundary so a stale flag does not poison the next turn' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                cancellable: cancel)
+
+      # Pre-set the flag (e.g. left over from a prior rescue path).
+      cancel.cancel!
+      assert cancel.cancelled?
+
+      # run_loop calls reset! at the turn boundary before forwarding to
+      # chat.ask, so the stale flag is cleared.
+      agent.run_loop(user_message: 'turn')
+
+      refute cancel.cancelled?
+    end
+
     describe 'blank input rejection' do
-      let(:agent) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                  listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      # Force eager construction so the ContextCap event emitted at
+      # construction time doesn't get attributed to run_loop's
+      # observable behaviour.
+      let!(:agent) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [], listeners: listeners)
       end
 
       it 'raises ArgumentError on nil and never reaches the chat or listeners' do
+        before_events = recorder.events.size
+
         err = assert_raises(ArgumentError) { agent.run_loop(user_message: nil) }
         assert_match(/blank/, err.message)
         assert_equal [], fake_chat.asks
-        assert_equal [], in_memory.events
+        assert_equal before_events, recorder.events.size
       end
 
       it 'raises ArgumentError on an empty string' do
@@ -287,71 +325,171 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'listener routing' do
+  describe 'event routing through wire_chat' do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: { 'text' => 'hi' }) }
 
     before do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners)
     end
 
-    it 'forwards assistant messages as Thinking + Assistant' do
+    it 'forwards assistant messages as Thinking + Assistant + Tokens' do
       msg = fake_chat.add_assistant('**hi**', thinking: 'pondered')
       fake_chat.fire(:after_message, msg)
 
+      assistant_events = recorder.events.reject { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) }
       assert_equal(
         [
-          Pikuri::Agent::Message::Thinking.new(content: 'pondered'),
-          Pikuri::Agent::Message::Assistant.new(content: '**hi**')
+          Pikuri::Agent::Event::Thinking.new(content: 'pondered'),
+          Pikuri::Agent::Event::Assistant.new(content: '**hi**'),
+          Pikuri::Agent::Event::Tokens.new(input: nil, output: nil, cached: nil,
+                                           cache_creation: nil, thinking: nil, model_id: nil)
         ],
-        in_memory.events
+        assistant_events
       )
+    end
+
+    it 'skips Thinking when content is empty' do
+      msg = RubyLLM::Message.new(role: :assistant, content: 'hi', thinking: RubyLLM::Thinking.new(text: ''))
+
+      fake_chat.fire(:after_message, msg)
+
+      assert_includes recorder.events, Pikuri::Agent::Event::Assistant.new(content: 'hi')
+      refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::Thinking) }
+    end
+
+    it 'skips Assistant when content is empty (pure tool-call turn) but still emits Tokens' do
+      msg = RubyLLM::Message.new(role: :assistant, content: '', thinking: RubyLLM::Thinking.new(text: 'just thinking'))
+
+      fake_chat.fire(:after_message, msg)
+
+      assert_includes recorder.events, Pikuri::Agent::Event::Thinking.new(content: 'just thinking')
+      refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::Assistant) }
+      assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::Tokens) }
     end
 
     it 'skips tool-role messages entirely' do
       tool_msg = RubyLLM::Message.new(role: :tool, content: 'observation', tool_call_id: 'call_1')
+      before = recorder.events.size
 
       fake_chat.fire(:after_message, tool_msg)
 
-      assert_equal [], in_memory.events
+      assert_equal before, recorder.events.size
     end
 
     it 'forwards tool calls as ToolCall with name and arguments' do
       fake_chat.fire(:before_tool_call, tool_call)
 
-      assert_equal(
-        [Pikuri::Agent::Message::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' })],
-        in_memory.events
-      )
+      assert_includes recorder.events,
+                      Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' })
     end
 
     it 'forwards tool results as ToolResult' do
       fake_chat.fire(:after_tool_result, '42')
 
-      assert_equal [Pikuri::Agent::Message::ToolResult.new(content: '42')], in_memory.events
+      assert_includes recorder.events, Pikuri::Agent::Event::ToolResult.new(content: '42')
+    end
+
+    it 'populates Event::Tokens fields from the underlying RubyLLM::Message' do
+      msg = RubyLLM::Message.new(
+        role: :assistant, content: 'reply', model_id: 'qwen3-35b',
+        input_tokens: 12_453, output_tokens: 320,
+        cached_tokens: 12_000, cache_creation_tokens: 256,
+        thinking_tokens: 80
+      )
+
+      fake_chat.fire(:after_message, msg)
+
+      tokens = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::Tokens) && e.model_id == 'qwen3-35b' }
+      refute_nil tokens
+      assert_equal 12_453,    tokens.input
+      assert_equal 320,       tokens.output
+      assert_equal 12_000,    tokens.cached
+      assert_equal 256,       tokens.cache_creation
+      assert_equal 80,        tokens.thinking
     end
   end
 
-  describe 'step-limit enforcement at the Pikuri::Agent level' do
+  describe 'step-limit enforcement at the Agent level' do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: {}) }
 
-    it 'raises Listener::StepLimit::Exceeded once the cap is exceeded' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listener_list)
+    it 'raises Control::StepLimit::Exceeded once the cap is exceeded' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners,
+                        step_limit: step_limit)
 
       fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:before_tool_call, tool_call)
 
-      err = assert_raises(Pikuri::Agent::Listener::StepLimit::Exceeded) do
+      err = assert_raises(Pikuri::Agent::Control::StepLimit::Exceeded) do
         fake_chat.fire(:before_tool_call, tool_call)
       end
       assert_equal 2, err.max_steps
+    end
+
+    it 'does not enforce a budget when step_limit: is nil (default)' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners)
+
+      100.times { fake_chat.fire(:before_tool_call, tool_call) } # no raise
+    end
+  end
+
+  describe 'interloper drain on after_tool_result' do
+    let(:interloper) { Pikuri::Agent::Control::Interloper.new }
+
+    it 'drains the queue and appends each item as a user-role message + Event::UserTurn(mid_loop: true)' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners,
+                        interloper: interloper)
+      interloper.inject_user_message('first')
+      interloper.inject_user_message('second')
+
+      fake_chat.fire(:after_tool_result, 'observation')
+
+      assert_equal(
+        [
+          { role: :user, content: 'first' },
+          { role: :user, content: 'second' }
+        ],
+        fake_chat.added_messages
+      )
+
+      injections = recorder.events.select do |e|
+        e.is_a?(Pikuri::Agent::Event::UserTurn) && e.mid_loop
+      end
+      assert_equal 2, injections.size
+      assert_equal 'first',  injections[0].content
+      assert_equal 'second', injections[1].content
+    end
+
+    it 'is a no-op when interloper: is nil (default)' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners)
+
+      fake_chat.fire(:after_tool_result, 'observation') # must not raise
+
+      assert_equal [], fake_chat.added_messages
+    end
+
+    it 'drains exactly once per fire — subsequent fires with an empty queue are no-ops' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', tools: [], listeners: listeners,
+                        interloper: interloper)
+      interloper.inject_user_message('only once')
+
+      fake_chat.fire(:after_tool_result, 'a')
+      fake_chat.fire(:after_tool_result, 'b')
+      fake_chat.fire(:after_tool_result, 'c')
+
+      assert_equal [{ role: :user, content: 'only once' }], fake_chat.added_messages
     end
   end
 
   describe '#last_assistant_content' do
     it 'returns the most recent assistant message content' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
       fake_chat.add_assistant('first')
       fake_chat.add_assistant('second')
 
@@ -359,8 +497,8 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'returns nil when no assistant message has been produced yet' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
 
       assert_nil agent.last_assistant_content
     end
@@ -373,18 +511,18 @@ RSpec.describe Pikuri::Agent do
         parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :x, 'x' },
         execute: ->(x:) { x }
       )
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [tool],
-                        listeners: listener_list)
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [tool], listeners: listeners)
 
-      assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryMessageList, StepLimit(max=2)])',
+      assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryEventList])',
                    agent.to_s
     end
   end
 
   describe 'step-exhaustion rescue' do
-    # Stub +Pikuri::Agent::Synthesizer.run+ so the rescue branch can be tested
-    # without standing up a second fake chat. Captured kwargs let the
-    # spec assert on exactly what Pikuri::Agent handed to the synthesizer.
+    # Stub +Pikuri::Agent::Synthesizer.run+ so the rescue branch can be
+    # tested without standing up a second fake chat. Captured kwargs let
+    # the spec assert on exactly what +Pikuri::Agent+ handed to the synth.
     before do
       @synth_calls = []
       captured = @synth_calls
@@ -403,7 +541,7 @@ RSpec.describe Pikuri::Agent do
     # Helper: arrange for the parent chat's +ask+ to raise once, as if
     # a StepLimit deep inside its +before_tool_call+ tripped.
     def arrange_step_exhaustion(max_steps)
-      err = Pikuri::Agent::Listener::StepLimit::Exceeded.new(max_steps)
+      err = Pikuri::Agent::Control::StepLimit::Exceeded.new(max_steps)
       fake_chat.define_singleton_method(:ask) do |msg|
         @asks << msg
         raise err
@@ -411,21 +549,25 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'catches Exceeded, emits a FallbackNotice, and returns nil from run_loop' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory, Pikuri::Agent::Listener::StepLimit.new(max: 2)]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
       arrange_step_exhaustion(2)
 
       assert_nil agent.run_loop(user_message: 'compare two cities')
 
-      assert_includes in_memory.events, Pikuri::Agent::Message::User.new(content: 'compare two cities')
-      notice = in_memory.events.find { |m| m.is_a?(Pikuri::Agent::Message::FallbackNotice) }
+      notice = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) }
       refute_nil notice, 'expected a FallbackNotice in the listener stream'
       assert_includes notice.reason, 'exhausted 2 steps'
     end
 
-    it 'invokes Synthesizer.run with the parent chat history, a sub-agent-derived listener list, and original question' do
-      listeners = Pikuri::Agent::ListenerList.new([in_memory, Pikuri::Agent::Listener::StepLimit.new(max: 2)])
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [], listeners: listeners)
+    it 'invokes Synthesizer.run with the parent chat history, a sub-agent-derived listener list, a defensive step_limit, and the original cancellable' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      parent_listeners = Pikuri::Agent::ListenerList.new([recorder])
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: parent_listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
+                                cancellable: cancel)
       fake_chat.add_assistant('plan: do stuff')
       arrange_step_exhaustion(2)
 
@@ -439,21 +581,25 @@ RSpec.describe Pikuri::Agent do
 
       # The handed-off list is a derived one, not the parent's instance —
       # ListenerList#for_sub_agent returns a new object so the synth
-      # chat doesn't share the parent's StepLimit counter, and gets a
-      # fresh TokenLog / padded Terminal in passing.
-      refute_same listeners, call[:listeners]
+      # chat doesn't share the parent's mutation surface.
+      refute_same parent_listeners, call[:listeners]
       assert_kind_of Pikuri::Agent::ListenerList, call[:listeners]
-      assert_equal '[InMemoryMessageList, StepLimit(max=1)]', call[:listeners].to_s
+
+      # Defensive step_limit on the synth (max=1, since synth has no tools).
+      assert_kind_of Pikuri::Agent::Control::StepLimit, call[:step_limit]
+      assert_equal 1, call[:step_limit].max
+
+      # Cancellable shared by reference so a user cancel during
+      # synthesis still works.
+      assert_same cancel, call[:cancellable]
     end
 
     it "tags the synth's listener name as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do
-      # Use a TokenLog as the visible carrier of the name: ListenerList
-      # only retains the kwarg on listeners whose for_sub_agent acts on
-      # it, so the derived list's TokenLog#name is the assertable thing.
       parent_log = Pikuri::Agent::Listener::TokenLog.new
-      listeners  = Pikuri::Agent::ListenerList.new([parent_log, Pikuri::Agent::Listener::StepLimit.new(max: 2)])
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: listeners)
+      parent_listeners = Pikuri::Agent::ListenerList.new([parent_log])
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: parent_listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
       arrange_step_exhaustion(2)
 
       agent.run_loop(user_message: 'q?')
@@ -469,9 +615,11 @@ RSpec.describe Pikuri::Agent do
 
     it "uses '<parent_name>_synthesizer' when the agent itself has a name" do
       parent_log = Pikuri::Agent::Listener::TokenLog.new
-      listeners  = Pikuri::Agent::ListenerList.new([parent_log, Pikuri::Agent::Listener::StepLimit.new(max: 2)])
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: listeners, name: 'sub_agent 0_1')
+      parent_listeners = Pikuri::Agent::ListenerList.new([parent_log])
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: parent_listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
+                                name: 'sub_agent 0_1')
       arrange_step_exhaustion(2)
 
       agent.run_loop(user_message: 'q?')
@@ -482,8 +630,9 @@ RSpec.describe Pikuri::Agent do
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory, Pikuri::Agent::Listener::StepLimit.new(max: 2)]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
       arrange_step_exhaustion(2)
 
       agent.run_loop(user_message: 'q?')
@@ -492,8 +641,9 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'clears the prior synth answer at the start of each new turn' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 's', tools: [],
-                        listeners: Pikuri::Agent::ListenerList.new([in_memory, Pikuri::Agent::Listener::StepLimit.new(max: 2)]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
       arrange_step_exhaustion(2)
       agent.run_loop(user_message: 'turn 1')
       assert_equal 'rescued answer', agent.last_assistant_content
@@ -510,33 +660,31 @@ RSpec.describe Pikuri::Agent do
   end
 
   describe 'cancellation rescue' do
-    # Arrange for the parent chat's +ask+ to raise +Cancelled+ once, as if
-    # a Cancellable inside its +before_tool_call+ tripped mid-loop.
+    # Arrange for the parent chat's +ask+ to raise +Cancelled+ once, as
+    # if a Cancellable inside its +before_tool_call+ tripped mid-loop.
     def arrange_cancellation
-      err = Pikuri::Agent::Listener::Cancellable::Cancelled.new
+      err = Pikuri::Agent::Control::Cancellable::Cancelled.new
       fake_chat.define_singleton_method(:ask) do |msg|
         @asks << msg
         raise err
       end
     end
 
-    it 'catches Cancelled, emits Message::Cancelled to listeners, and re-raises' do
-      cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+    it 'catches Cancelled, emits Event::Cancelled to listeners, and re-raises' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
       agent = Pikuri::Agent.new(
         transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-        system_prompt: 's',
-        tools: [],
-        listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+        system_prompt: 's', tools: [], listeners: listeners,
+        cancellable: cancel
       )
       arrange_cancellation
 
-      assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
         agent.run_loop(user_message: 'do a thing')
       end
 
-      # Listener stream: User notice first, Cancelled notice last.
-      assert_includes in_memory.events, Pikuri::Agent::Message::User.new(content: 'do a thing')
-      assert_includes in_memory.events, Pikuri::Agent::Message::Cancelled.new
+      assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::Cancelled) },
+             'expected Event::Cancelled in the listener stream'
     end
 
     it 'does not invoke the synthesizer fallback' do
@@ -548,16 +696,15 @@ RSpec.describe Pikuri::Agent do
       end
 
       begin
-        cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+        cancel = Pikuri::Agent::Control::Cancellable.new
         agent = Pikuri::Agent.new(
           transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-          system_prompt: 's',
-          tools: [],
-          listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+          system_prompt: 's', tools: [], listeners: listeners,
+          cancellable: cancel
         )
         arrange_cancellation
 
-        assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+        assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
           agent.run_loop(user_message: 'stop')
         end
 
@@ -568,32 +715,28 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'lets the same agent take a fresh turn after a cancellation' do
-      cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+      cancel = Pikuri::Agent::Control::Cancellable.new
       agent = Pikuri::Agent.new(
         transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-        system_prompt: 's',
-        tools: [],
-        listeners: Pikuri::Agent::ListenerList.new([in_memory, cancel_flag])
+        system_prompt: 's', tools: [], listeners: listeners,
+        cancellable: cancel
       )
       arrange_cancellation
 
-      assert_raises(Pikuri::Agent::Listener::Cancellable::Cancelled) do
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
         agent.run_loop(user_message: 'turn 1')
       end
 
-      # Make the next turn succeed: replace ask with a no-op that appends
-      # an assistant message, the same shape used in the step-exhaustion
-      # multi-turn test above.
+      # Make the next turn succeed.
       fake_chat.define_singleton_method(:ask) do |msg|
         @asks << msg
         @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
       end
 
-      # The Message::User emitted at the start of turn 2 resets the
-      # Cancellable flag (see Cancellable#on_message), so a stale cancel
-      # from turn 1 doesn't poison turn 2.
+      # run_loop calls cancel.reset! at the turn boundary, so a stale
+      # cancel from turn 1 doesn't poison turn 2.
       assert_nil agent.run_loop(user_message: 'turn 2')
-      refute cancel_flag.cancelled?
+      refute cancel.cancelled?
       assert_equal 'normal answer', agent.last_assistant_content
     end
   end
@@ -628,8 +771,8 @@ RSpec.describe Pikuri::Agent do
     let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
 
     it 'defaults to EMPTY: no system-prompt augmentation and no skill tool registered' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
-                        tools: [], listeners: Pikuri::Agent::ListenerList.new([in_memory]))
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 'base', tools: [], listeners: listeners)
 
       assert_equal 'base', agent.system_prompt
       assert_equal Pikuri::Tool::SkillCatalog::EMPTY, agent.skill_catalog
@@ -639,9 +782,9 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'appends the catalog block to the system prompt when non-empty' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
-                        tools: [], listeners: Pikuri::Agent::ListenerList.new([in_memory]),
-                        skill_catalog: non_empty_catalog)
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 'base', tools: [], listeners: listeners,
+                                skill_catalog: non_empty_catalog)
 
       assert agent.system_prompt.start_with?('base'), agent.system_prompt
       assert agent.system_prompt.include?('<available_skills>'), agent.system_prompt
@@ -652,9 +795,9 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'auto-registers a Pikuri::Tool::Skill bound to the catalog when non-empty' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
-                        tools: [], listeners: Pikuri::Agent::ListenerList.new([in_memory]),
-                        skill_catalog: non_empty_catalog)
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 'base', tools: [], listeners: listeners,
+                                skill_catalog: non_empty_catalog)
 
       skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Tool::Skill) }
       refute_nil skill_tool, 'expected non-empty catalog to auto-register a Pikuri::Tool::Skill'
@@ -672,9 +815,9 @@ RSpec.describe Pikuri::Agent do
       manual_skill_tool = Pikuri::Tool::Skill.new(catalog: non_empty_catalog)
 
       err = assert_raises(RuntimeError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'), system_prompt: 'base',
-                  tools: [manual_skill_tool], listeners: Pikuri::Agent::ListenerList.new([in_memory]),
-                  skill_catalog: non_empty_catalog)
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 'base', tools: [manual_skill_tool], listeners: listeners,
+                          skill_catalog: non_empty_catalog)
       end
       assert_match(/auto-registers/, err.message)
     end

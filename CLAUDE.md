@@ -148,22 +148,28 @@ and a small shared cache.
   callers. Inflector overrides cover acronym mismatches (`HTML`, `PDF`,
   `DuckDuckGo`).
 - `lib/pikuri/agent.rb`, `lib/pikuri/agent/` — `Pikuri::Agent`,
-  `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Message` variants
-  (`User`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`FallbackNotice`/`Cancelled`;
-  `User` carries a `mid_loop_run` flag — `false` for turn-starting input,
-  `true` for `Interloper`-delivered mid-loop injections), the
-  `Pikuri::Agent::Listener::*` set (`MessageListener` base, `Terminal`,
-  `InMemoryMessageList`, `StepLimit`, `TokenLog`, `Cancellable`,
+  `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Event` variants
+  (`UserTurn`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
+  `UserTurn` carries a `mid_loop` flag — `false` for turn-starting input,
+  `true` for `Interloper`-drained mid-loop injections), the pure-consumer
+  `Pikuri::Agent::Listener::*` set (`Base`, `Terminal`,
+  `InMemoryEventList`, `TokenLog`), the host-facing
+  `Pikuri::Agent::Control::*` set (`StepLimit`, `Cancellable`,
   `Interloper`), and `Pikuri::Agent::Synthesizer` (the step-exhaustion
   rescue). The Thought/Tool-call/Observation loop lives in ruby_llm;
-  everything here is the listener surface around it. Two `ListenerList`
-  conventions are duck-typed across the set: a listener that defines
-  `listener_list=` is given a back-reference by `ListenerList#attach`
-  (used by `Interloper` to emit injected `User` events back into the
-  stream), and a listener whose `for_sub_agent` returns `nil` is dropped
-  from the derived sub-agent list (used by `Interloper` so the host's
-  injection channel terminates at the main agent — sub-agents are
-  private to their parent).
+  the `Agent` wires three callbacks on the chat (via `Agent.wire_chat`
+  — used by both `Agent#initialize` and `Synthesizer.run`), emits the
+  `Event` stream, and pokes controls at the right boundaries
+  (`step_limit.tick!`/`reset!`, `cancellable.check!`/`reset!`,
+  `interloper.drain!`). Listeners are pure consumers — they override
+  one `on_event(event)` method and never write back; the `Agent` is
+  the sole emitter. Two `ListenerList` conventions stay duck-typed
+  across the listener set: defining `for_sub_agent(**)` to return
+  `self` / a fresh instance / `nil` controls how the listener
+  propagates to sub-agents (used by `Terminal` for padding, `TokenLog`
+  for name + zero-snapshot). Controls have their own `for_sub_agent`
+  per-class — fresh `StepLimit`, shared `Cancellable`, `nil`
+  `Interloper`.
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
   `lib/pikuri/tool/sub_agent.rb` — `Pikuri::Tool` value class with its
   `#to_ruby_llm_tool` adapter, the strict `Pikuri::Tool::Parameters`
@@ -214,8 +220,9 @@ downstream gems.
 
 - `bin/pikuri-chat` — CLI entry point for the general-purpose chat
   agent: configures ruby_llm for the local llama.cpp server, builds a
-  `Pikuri::Agent` wired with `Terminal` + `StepLimit` listeners, enables
-  sub-agents, and feeds a question from `ARGV` or stdin.
+  `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners and
+  `StepLimit` + `Cancellable` controls, enables sub-agents, and feeds
+  a question from `ARGV` or stdin.
 - `bin/pikuri-code` — CLI entry point for the in-repo coding agent:
   same ruby_llm wiring as `pikuri-chat`, but registers the six coding
   tools (with a `Pikuri::Tool::Workspace::Cwd` rooted at `Dir.pwd` and
@@ -325,9 +332,10 @@ downstream gems.
   does the job. Don't golf code for line count, but also don't add
   abstraction layers, plugin systems, or configuration knobs that
   aren't needed for the next concrete step.
-- **Grow the assistant by adding tools and listeners, not by
-  complicating the loop.** New capabilities should land as new
-  `Pikuri::Tool` constants under `lib/pikuri/tool/` or new listeners
-  under `lib/pikuri/agent/listener/`, each with their own specs;
-  neither `Pikuri::Tool`, the `Pikuri::Agent`, nor ruby_llm's loop
-  should need to know about them.
+- **Grow the assistant by adding tools, listeners, or controls, not
+  by complicating the loop.** New capabilities should land as new
+  `Pikuri::Tool` constants under `lib/pikuri/tool/`, new pure-consumer
+  listeners under `lib/pikuri/agent/listener/`, or new host-facing
+  controls under `lib/pikuri/agent/control/`, each with their own
+  specs; neither `Pikuri::Tool`, the `Pikuri::Agent`, nor ruby_llm's
+  loop should need to know about them.

@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Tool::SubAgent do
-  # Minimal stand-in for +RubyLLM::Chat+: records what +Pikuri::Agent+ configures
-  # on it, drops a canned assistant +Message+ into +messages+ on +ask+, and
-  # exposes +calls+ for assertions. Keeps sub-agent specs network-free.
-  # +RubyLLM::Model::Info+ stand-in just so +Pikuri::Agent#initialize+ can read
-  # +@chat.model.context_window+ for {Pikuri::Agent::ContextWindowDetector}.
+  # Minimal stand-in for +RubyLLM::Chat+: records what +Pikuri::Agent+
+  # configures on it, drops a canned assistant +Message+ into +messages+
+  # on +ask+, and exposes +calls+ for assertions. Keeps sub-agent specs
+  # network-free.
+  # +RubyLLM::Model::Info+ stand-in just so +Pikuri::Agent#initialize+
+  # can read +@chat.model.context_window+ for {Pikuri::Agent::ContextWindowDetector}.
   fake_model = Struct.new(:context_window).new(nil)
 
   let(:fake_chat_class) do
@@ -35,7 +36,6 @@ RSpec.describe Pikuri::Tool::SubAgent do
         self
       end
 
-      def before_message(&); self; end
       def after_message(&); self; end
       def before_tool_call(&); self; end
       def after_tool_result(&); self; end
@@ -75,22 +75,23 @@ RSpec.describe Pikuri::Tool::SubAgent do
   end
 
   let(:parent_listeners) do
-    Pikuri::Agent::ListenerList.new([
-      Pikuri::Agent::Listener::InMemoryMessageList.new,
-      Pikuri::Agent::Listener::StepLimit.new(max: 99)
-    ])
+    Pikuri::Agent::ListenerList.new([Pikuri::Agent::Listener::InMemoryEventList.new])
   end
 
-  # Build a minimal parent Pikuri::Agent against the fake +RubyLLM.chat+ stubbed
-  # in the outer +before+. Each spec uses this to get an +Pikuri::Agent+ the
-  # factory can read +transport+/+system_prompt+/+tools+/+listeners+/
-  # +context_window_cap+/+name+ off of.
-  def build_parent(system_prompt: 'sp', tools: [], listeners: parent_listeners, name: '')
+  # Build a minimal parent Pikuri::Agent against the fake +RubyLLM.chat+
+  # stubbed in the outer +before+. Each spec uses this to get an +Agent+
+  # the factory can read +transport+ / +system_prompt+ / +tools+ /
+  # +listeners+ / +step_limit+ / +cancellable+ / +context_window_cap+ /
+  # +name+ off of.
+  def build_parent(system_prompt: 'sp', tools: [], listeners: parent_listeners,
+                   step_limit: nil, cancellable: nil, name: '')
     Pikuri::Agent.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt: system_prompt,
       tools: tools,
       listeners: listeners,
+      step_limit: step_limit,
+      cancellable: cancellable,
       name: name
     )
   end
@@ -142,11 +143,12 @@ RSpec.describe Pikuri::Tool::SubAgent do
   end
 
   describe 'sub-agent naming' do
-    # Capture every kwarg handed to Pikuri::Agent.new so the spec can read the
-    # generated +name:+ without having to introspect a built Pikuri::Agent. The
-    # underlying chat is still the fake from the outer +before+, so the
-    # constructed agents are inert (their +run_loop+ resolves through
-    # the fake chat which records but doesn't drive a real loop).
+    # Capture every kwarg handed to Pikuri::Agent.new so the spec can
+    # read the generated +name:+ without having to introspect a built
+    # Pikuri::Agent. The underlying chat is still the fake from the
+    # outer +before+, so the constructed agents are inert (their
+    # +run_loop+ resolves through the fake chat which records but
+    # doesn't drive a real loop).
     def with_captured_agent_new
       received = []
       original_new = Pikuri::Agent.method(:new)
@@ -187,18 +189,15 @@ RSpec.describe Pikuri::Tool::SubAgent do
       end
     end
 
-    it 'threads max_steps and the generated name to listeners.for_sub_agent' do
-      # Spy that records every for_sub_agent call's kwargs. Stays
-      # ListenerList-shaped so the +execute+ lambda can keep calling
-      # +.for_sub_agent+ on the result if it had to (it doesn't, but
-      # the API surface still has to match). Also satisfies the
-      # +Pikuri::Agent+ constructor's +attach+ / +context_window_cap=+ calls.
+    it 'threads the generated name to listeners.for_sub_agent' do
+      # Spy that records every for_sub_agent call's kwargs. Returns
+      # itself so the +execute+ lambda's downstream Agent.new call
+      # gets a working ListenerList-shaped object. Satisfies the
+      # ListenerList duck-type (emit + for_sub_agent).
       recorded = []
       spy = Class.new do
         define_method(:initialize) { |out| @out = out }
-        def attach(_); end
-        def on_message(_); end
-        def context_window_cap=(_); end
+        def emit(_); end
         define_method(:for_sub_agent) do |**params|
           @out << params
           self
@@ -211,7 +210,45 @@ RSpec.describe Pikuri::Tool::SubAgent do
         tool.run('task' => 'go')
       end
 
-      assert_equal [{ max_steps: 7, name: 'sub_agent 0' }], recorded
+      # Listeners get only +name:+ — controls now have their own
+      # +for_sub_agent+ method invoked separately.
+      assert_equal [{ name: 'sub_agent 0' }], recorded
+    end
+
+    it 'derives a fresh StepLimit at max_steps for the sub-agent' do
+      parent_step = Pikuri::Agent::Control::StepLimit.new(max: 99)
+      tool = Pikuri::Tool::SubAgent.new(build_parent(step_limit: parent_step), max_steps: 7)
+
+      with_captured_agent_new do |kwargs|
+        tool.run('task' => 'go')
+
+        sub_step = kwargs.first[:step_limit]
+        assert_kind_of Pikuri::Agent::Control::StepLimit, sub_step
+        refute_same parent_step, sub_step
+        assert_equal 7, sub_step.max
+      end
+    end
+
+    it 'shares the parent Cancellable by reference with the sub-agent (one cancel stops the tree)' do
+      parent_cancel = Pikuri::Agent::Control::Cancellable.new
+      tool = Pikuri::Tool::SubAgent.new(build_parent(cancellable: parent_cancel))
+
+      with_captured_agent_new do |kwargs|
+        tool.run('task' => 'go')
+
+        assert_same parent_cancel, kwargs.first[:cancellable]
+      end
+    end
+
+    it 'passes nil step_limit / cancellable when the parent had none' do
+      tool = Pikuri::Tool::SubAgent.new(build_parent)
+
+      with_captured_agent_new do |kwargs|
+        tool.run('task' => 'go')
+
+        assert_nil kwargs.first[:step_limit]
+        assert_nil kwargs.first[:cancellable]
+      end
     end
   end
 end

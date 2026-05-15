@@ -76,7 +76,7 @@ llama_probe_url = openai_api_base.sub(%r{/v1/?\z}, '') + '/props'
 # discovered, so the no-skills case is indistinguishable from before.
 skill_catalog = Pikuri::Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.to_s)
 
-cancel_flag = Pikuri::Agent::Listener::Cancellable.new
+cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
@@ -103,10 +103,10 @@ agent = Pikuri::Agent.new(
   ],
   listeners: Pikuri::Agent::ListenerList.new([
     Pikuri::Agent::Listener::Terminal.new,
-    Pikuri::Agent::Listener::TokenLog.new,
-    Pikuri::Agent::Listener::StepLimit.new(max: 40),
-    cancel_flag
+    Pikuri::Agent::Listener::TokenLog.new
   ]),
+  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
+  cancellable: cancel_flag,
   llama_probe_url: llama_probe_url,
   skill_catalog: skill_catalog
 )
@@ -120,7 +120,7 @@ agent.allow_sub_agent(max_steps: 20)
 run_turn = lambda do |message|
   prev_trap = trap('INT') { cancel_flag.cancel! }
   agent.run_loop(user_message: message)
-rescue Pikuri::Agent::Listener::Cancellable::Cancelled
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener; nothing else to do.
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"

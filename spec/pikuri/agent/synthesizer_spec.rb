@@ -79,17 +79,17 @@ RSpec.describe Pikuri::Agent::Synthesizer do
   end
 
   describe '.run' do
-    # Synth chat fake: records what Synthesizer pokes at it, and on
-    # +#ask+ appends a synthetic assistant message so the return-value
-    # lookup at the end of +.run+ has something to find.
+    # Synth chat fake: records what Synthesizer + Agent.wire_chat poke
+    # at it, and on +#ask+ appends a synthetic assistant message so the
+    # return-value lookup at the end of +.run+ has something to find.
     let(:synth_chat_class) do
       Class.new do
-        attr_reader :asks, :instructions, :messages, :attach_count
+        attr_reader :asks, :instructions, :messages, :hooks
 
         def initialize
           @asks = []
           @messages = []
-          @attach_count = 0
+          @hooks = Hash.new { |h, k| h[k] = [] }
         end
 
         def with_instructions(text)
@@ -97,9 +97,9 @@ RSpec.describe Pikuri::Agent::Synthesizer do
           self
         end
 
-        def after_message(&_);     @attach_count += 1; end
-        def before_tool_call(&_);  @attach_count += 1; end
-        def after_tool_result(&_); @attach_count += 1; end
+        def after_message(&b);     @hooks[:after_message] << b;     self; end
+        def before_tool_call(&b);  @hooks[:before_tool_call] << b;  self; end
+        def after_tool_result(&b); @hooks[:after_tool_result] << b; self; end
 
         def ask(prompt)
           @asks << prompt
@@ -109,34 +109,50 @@ RSpec.describe Pikuri::Agent::Synthesizer do
       end
     end
 
-    let(:synth_chat)    { synth_chat_class.new }
-    let(:listener)      { Pikuri::Agent::Listener::InMemoryMessageList.new }
-    let(:listener_list) { Pikuri::Agent::ListenerList.new([listener]) }
+    let(:synth_chat) { synth_chat_class.new }
+    let(:listener)   { Pikuri::Agent::Listener::InMemoryEventList.new }
+    let(:listeners)  { Pikuri::Agent::ListenerList.new([listener]) }
 
     it 'sets the synth system prompt on the chat' do
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
 
       assert_equal Pikuri::Agent::Synthesizer::SYSTEM_PROMPT, synth_chat.instructions
     end
 
-    it 'attaches every listener to the synth chat' do
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
+    it 'wires the event stream on the synth chat (exactly one callback per channel)' do
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
 
-      # InMemoryMessageList (a MessageListener) wires three Chat callbacks.
-      assert_equal 3, synth_chat.attach_count
+      assert_equal 1, synth_chat.hooks[:after_message].size
+      assert_equal 1, synth_chat.hooks[:before_tool_call].size
+      assert_equal 1, synth_chat.hooks[:after_tool_result].size
     end
 
     it 'asks the chat with the build_prompt output' do
       expected = described_class.build_prompt(parent_messages: [], user_message: 'q?')
-      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
 
       assert_equal [expected], synth_chat.asks
     end
 
     it "returns the synth's final assistant content" do
-      result = described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listener_list)
+      result = described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
 
       assert_equal 'rescued answer', result
+    end
+
+    it 'passes step_limit and cancellable through to wire_chat so the synth respects them' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      step   = Pikuri::Agent::Control::StepLimit.new(max: 1)
+
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?',
+                          listeners: listeners, step_limit: step, cancellable: cancel)
+
+      # Cancellation: trip the flag and fire before_tool_call — the
+      # wired callback must call check! and raise.
+      cancel.cancel!
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        synth_chat.hooks[:before_tool_call].each { |cb| cb.call(RubyLLM::ToolCall.new(id: 'x', name: 'n', arguments: {})) }
+      end
     end
   end
 end

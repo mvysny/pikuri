@@ -19,53 +19,77 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
   end
 
   it 'prints Thinking content as dim text' do
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::Thinking.new(content: 'pondered')) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Thinking.new(content: 'pondered')) }
     assert_includes out, 'pondered'
   end
 
   it 'prints Assistant content as Markdown' do
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::Assistant.new(content: '**hi**')) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**')) }
     assert_includes out, 'hi'
   end
 
   it 'prints ToolCall with name and arguments' do
     out = capture_stdout do
-      listener.on_message(Pikuri::Agent::Message::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
+      listener.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
     end
     assert_includes out, 'echo'
     assert_includes out, 'text='
   end
 
   it 'prints ToolResult with its content' do
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::ToolResult.new(content: '42')) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: '42')) }
     assert_includes out, '42'
   end
 
   it 'flattens whitespace in ToolResult content to a single line' do
     content = "line one\n  line two\n\n\tline three"
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::ToolResult.new(content: content)) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: content)) }
     assert_includes out, 'line one line two line three'
     refute_includes out, "\n  line two"
   end
 
   it 'truncates long ToolResult content and reports the original byte count' do
     long_content = 'x' * 5_000
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::ToolResult.new(content: long_content)) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: long_content)) }
     assert_includes out, '…'
     assert_includes out, '5000 bytes total'
     refute_includes out, 'x' * 5_000
   end
 
   it 'leaves short ToolResult content untouched (no truncation marker)' do
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::ToolResult.new(content: 'hello')) }
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: 'hello')) }
     assert_includes out, 'hello'
     refute_includes out, '…'
     refute_includes out, 'bytes total'
   end
 
-  it 'is silent for User messages (terminal user already typed it)' do
-    out = capture_stdout { listener.on_message(Pikuri::Agent::Message::User.new(content: 'hello?')) }
+  it 'is silent for UserTurn events (terminal user already typed it)' do
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::UserTurn.new(content: 'hello?')) }
     assert_equal '', out
+  end
+
+  it 'is silent for Tokens events (TokenLog handles those)' do
+    tokens = Pikuri::Agent::Event::Tokens.new(input: 10, output: 5, cached: nil,
+                                              cache_creation: nil, thinking: nil, model_id: nil)
+    out = capture_stdout { listener.on_event(tokens) }
+    assert_equal '', out
+  end
+
+  it 'is silent for ContextCap events' do
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768)) }
+    assert_equal '', out
+  end
+
+  it 'prints FallbackNotice in yellow with the reason' do
+    out = capture_stdout do
+      listener.on_event(Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'))
+    end
+    assert_includes out, 'budget exhausted'
+  end
+
+  it 'prints Cancelled notice in red' do
+    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Cancelled.new) }
+    assert_includes out, 'cancelled'
   end
 
   describe '#to_s' do
@@ -83,16 +107,16 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
 
     it 'prepends N spaces to every rendered line of Assistant content' do
       content = "line one\nline two"
-      out = capture_stdout { padded.on_message(Pikuri::Agent::Message::Assistant.new(content: content)) }
+      out = capture_stdout { padded.on_event(Pikuri::Agent::Event::Assistant.new(content: content)) }
       assert_equal "  line one\n  line two\n", out
     end
 
     it 'prepends N spaces to ToolCall, ToolResult, Thinking, and FallbackNotice' do
       out = capture_stdout do
-        padded.on_message(Pikuri::Agent::Message::Thinking.new(content: 'pondered'))
-        padded.on_message(Pikuri::Agent::Message::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
-        padded.on_message(Pikuri::Agent::Message::ToolResult.new(content: '42'))
-        padded.on_message(Pikuri::Agent::Message::FallbackNotice.new(reason: 'budget exhausted'))
+        padded.on_event(Pikuri::Agent::Event::Thinking.new(content: 'pondered'))
+        padded.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
+        padded.on_event(Pikuri::Agent::Event::ToolResult.new(content: '42'))
+        padded.on_event(Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'))
       end
       out.each_line do |line|
         assert line.start_with?('  '), "expected line to start with 2 spaces, got: #{line.inspect}"
@@ -102,13 +126,13 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     it 'does not add a trailing padded blank line when input ends with newline' do
       # each_line splits "hi\n" into ["hi\n"], not ["hi\n", ""], so the
       # joined output is "  hi\n" — no stray "  \n" tacked on.
-      out = capture_stdout { padded.on_message(Pikuri::Agent::Message::Assistant.new(content: "hi\n")) }
+      out = capture_stdout { padded.on_event(Pikuri::Agent::Event::Assistant.new(content: "hi\n")) }
       assert_equal "  hi\n", out
     end
 
     it 'is a no-op when padding is 0 (default)' do
       content = "line one\nline two"
-      out = capture_stdout { listener.on_message(Pikuri::Agent::Message::Assistant.new(content: content)) }
+      out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: content)) }
       assert_equal "line one\nline two\n", out
     end
 
@@ -131,7 +155,7 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     end
 
     it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
-      derived = described_class.new.for_sub_agent(max_steps: 5, anything_else: :nope)
+      derived = described_class.new.for_sub_agent(name: 'sub_agent 0', anything_else: :nope)
       assert_equal described_class::SUB_AGENT_PADDING, derived.padding
     end
 
@@ -166,7 +190,7 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     end
 
     it 'falls back to the raw content and warns through the Terminal logger' do
-      out = capture_stdout { listener.on_message(Pikuri::Agent::Message::Assistant.new(content: '**hi**')) }
+      out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**')) }
       assert_includes out, '**hi**'
       assert_includes log_io.string, 'WARN -- Terminal'
       assert_includes log_io.string, 'IndexError'
