@@ -14,11 +14,7 @@ module Pikuri
     # effect is to react to events the +Agent+ has already emitted.
     # No listener writes back into the stream — the +Agent+ is the
     # only emitter — and no listener reaches into ruby_llm's chat
-    # callbacks. That used to be different (the old
-    # +Listener::MessageListener+ wired three +Chat+ callbacks
-    # itself, and +Interloper+ poked +User+ events back through a
-    # +listener_list=+ setter); both responsibilities now live in
-    # {Agent} where they coordinate naturally.
+    # callbacks. Both responsibilities live in {Agent}.
     #
     # Host-facing signal holders — step budget, cancellation flag,
     # mid-loop user input queue — are *controls*, not listeners.

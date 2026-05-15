@@ -36,12 +36,11 @@ module Pikuri
       #    see the injection as a normal +UserTurn+ event with the
       #    +mid_loop:+ flag set.
       #
-      # Controls themselves no longer respond to events; the
-      # +Agent+ pokes {Control::StepLimit#reset!} and
-      # {Control::Cancellable#reset!} only at the start of each
-      # turn — never on a mid-loop injection — so the "cancel-
-      # then-inject" hazard and the "refresh-budget-by-injecting"
-      # hazard from the old design are both gone by construction.
+      # Controls do not respond to events; the +Agent+ pokes
+      # {Control::StepLimit#reset!} and {Control::Cancellable#reset!}
+      # only at the start of each turn — never on a mid-loop
+      # injection — so the "cancel-then-inject" hazard and the
+      # "refresh-budget-by-injecting" hazard cannot arise.
       #
       # == Boundary caveats
       #

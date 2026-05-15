@@ -31,10 +31,8 @@ module Pikuri
   #    (and {Control::Cancellable#reset!} at turn start),
   #    {Control::Interloper#drain!} on every +after_tool_result+.
   #
-  # The previous shape mixed both roles into one "listener" concept
-  # — every listener could observe events and emit them. Naming the
-  # two roles makes "what fires when" a single grep for
-  # +@listeners.emit+ in this file.
+  # The two roles are named separately so "what fires when" is a
+  # single grep for +@listeners.emit+ in this file.
   #
   # == Step-exhaustion rescue
   #

@@ -9,19 +9,13 @@ module Pikuri
     #
     # == What this is, what it isn't
     #
-    # This used to do three jobs: fan out, attach listeners to a
-    # +RubyLLM::Chat+ (each listener wired its own callbacks), and
-    # push the context-window cap onto every +TokenLog+ via a
-    # special setter. The first job is the only one that survives:
-    # the +Agent+ now wires ruby_llm's callbacks itself, and the
-    # context-window cap rides the event stream as a one-shot
-    # {Event::ContextCap}.
-    #
-    # The list is also where the sub-agent derivation rule lives —
-    # see {#for_sub_agent}. Controls (step budget, cancellation
-    # flag, mid-loop input queue) are not listeners and do not
-    # appear in this list; their sub-agent derivation lives on each
-    # control class instead.
+    # One job: fan out. The +Agent+ wires ruby_llm's callbacks
+    # itself, the context-window cap rides the event stream as a
+    # one-shot {Event::ContextCap}, and the sub-agent derivation
+    # rule lives in {#for_sub_agent}. Controls (step budget,
+    # cancellation flag, mid-loop input queue) are not listeners
+    # and do not appear in this list; their sub-agent derivation
+    # lives on each control class instead.
     class ListenerList
       # @param listeners [Array<Listener::Base>] listeners that
       #   define +on_event(event)+

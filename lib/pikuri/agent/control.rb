@@ -11,22 +11,12 @@ module Pikuri
     #
     # == Why they're separated
     #
-    # The previous shape modelled these as listeners that also
-    # signalled back into the stream: +StepLimit+ counted tool
-    # calls inside its own +attach+, +Cancellable+ raised from its
-    # own callback, +Interloper+ poked +Message::User+ events
-    # back through a +listener_list=+ setter. The roles weren't
-    # distinct — every listener might write to the stream, every
-    # listener might read from it — and the "what fires when" was
-    # spread across nine files.
-    #
-    # The new shape names the two roles: listeners are pure
-    # consumers of the event stream; controls are host-facing
-    # signal holders that the +Agent+ reads from. The +Agent+ is
-    # the only entity that emits events, the only entity that
-    # ticks the step counter, the only entity that checks the
-    # cancellation flag, and the only entity that drains the
-    # interloper queue. "What fires when" is a single grep for
+    # Listeners are pure consumers of the event stream; controls
+    # are host-facing signal holders that the +Agent+ reads from.
+    # The +Agent+ is the only entity that emits events, the only
+    # entity that ticks the step counter, the only entity that
+    # checks the cancellation flag, and the only entity that drains
+    # the interloper queue. "What fires when" is a single grep for
     # +@listeners.emit+ in +agent.rb+.
     #
     # == What each control does

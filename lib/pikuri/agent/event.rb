@@ -12,16 +12,7 @@ module Pikuri
     #
     # == One stream, no side channels
     #
-    # Pikuri used to ship two parallel channels — a +Message+ stream
-    # (User / Thinking / Assistant / ToolCall / ToolResult /
-    # FallbackNotice / Cancelled) and an +on_tokens+ side channel for
-    # provider-reported usage — plus a special +context_window_cap=+
-    # setter that the +ListenerList+ poked just at +TokenLog+. That
-    # design forced every new listener to know which hook to override
-    # and which to ignore.
-    #
-    # The new shape collapses all three into one event stream:
-    # provider-reported token usage rides as {Tokens}; the detected
+    # Provider-reported token usage rides as {Tokens}; the detected
     # context-window cap rides as a one-shot {ContextCap} emitted by
     # {Agent#initialize}; everything else maps to a turn-or-tool-call
     # variant. Listeners override a single +on_event+ method and
