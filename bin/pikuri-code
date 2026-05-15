@@ -22,11 +22,15 @@ $LOAD_PATH.unshift File.expand_path('../lib', __dir__)
 require 'pikuri'
 
 yolo = false
+server = 'http://localhost:8080'
+model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-code [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
   opts.on('--yolo', 'Auto-approve all confirmations (use only inside a sandbox)') { yolo = true }
+  opts.on('--server URL', "LLM server base URL (default: #{server})") { |v| server = v }
+  opts.on('--model NAME', "Model identifier (default: #{model})") { |v| model = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -35,7 +39,7 @@ end
 
 begin
   parser.parse!
-rescue OptionParser::InvalidOption => e
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   warn e.message
   warn parser
   exit 2
@@ -55,7 +59,8 @@ system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nCurrent working directory: #{workspace.cwd}"
 
-openai_api_base = 'http://localhost:8080/v1'
+server = server.chomp('/')
+openai_api_base = "#{server}/v1"
 
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base
@@ -66,7 +71,7 @@ end
 # host (NOT under +/v1+). Hand the derived URL to {Agent::ContextWindowDetector}
 # so the +ctx=<used>/<cap>+ headline lights up against this local server,
 # which is unknown to ruby_llm's bundled model registry.
-llama_probe_url = openai_api_base.sub(%r{/v1/?\z}, '') + '/props'
+llama_probe_url = "#{server}/props"
 
 # Scan the user's skill directories (~/.pikuri/skills, ~/.claude/skills,
 # ~/.agents/skills) and the project's (.pikuri/skills, .claude/skills,
@@ -80,7 +85,7 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
-    model: 'unsloth/Qwen3.6-35B-A3B-GGUF',
+    model: model,
     provider: :openai,
     assume_model_exists: true
   ),
