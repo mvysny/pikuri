@@ -148,7 +148,12 @@ and a small shared cache.
   callers. Inflector overrides cover acronym mismatches (`HTML`, `PDF`,
   `DuckDuckGo`).
 - `lib/pikuri/agent.rb`, `lib/pikuri/agent/` — `Pikuri::Agent`,
-  `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Event` variants
+  `Pikuri::Agent::ChatTransport` (the `model`/`provider`/`assume_model_exists`
+  value bundle passed to every `RubyLLM.chat` originating from an agent),
+  `Pikuri::Agent::ContextWindowDetector` (resolves the model's context-window
+  cap from override → ruby_llm registry → llama.cpp `/props` probe at
+  construction time), `Pikuri::Agent::ListenerList`, the
+  `Pikuri::Agent::Event` variants
   (`UserTurn`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
   `UserTurn` carries a `mid_loop` flag — `false` for turn-starting input,
   `true` for `Interloper`-drained mid-loop injections), the pure-consumer
@@ -181,7 +186,9 @@ and a small shared cache.
   tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,
   `Pikuri::Tool::WEB_SCRAPE`, `Pikuri::Tool::FETCH`).
 - `lib/pikuri/tool/search/` — search providers (`DuckDuckGo`, `Brave`,
-  `Exa`) plus the `Engines` cascade and its `Unavailable` fallback protocol.
+  `Exa`), the shared `Result` value type they all return, the `RateLimiter`
+  pacing + circuit-breaker wrapper a provider can wire in, and the
+  `Engines` cascade with its `Unavailable` fallback protocol.
 - `lib/pikuri/tool/scraper/` — `Simple` content-type-dispatching fetcher,
   the pure `HTML` and `PDF` extractors, and the shared `FetchError`.
 - `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` — abstract
