@@ -169,7 +169,7 @@ and a small shared cache.
   `true` for `Interloper`-drained mid-loop injections; `*Delta` variants
   only fire when the agent was constructed with `streaming: true`), the pure-consumer
   `Pikuri::Agent::Listener::*` set (`Base`, `Terminal`,
-  `InMemoryEventList`, `TokenLog`), the host-facing
+  `InMemoryEventList`, `TokenLog`, `RateLimited`), the host-facing
   `Pikuri::Agent::Control::*` set (`StepLimit`, `Cancellable`,
   `Interloper`), and `Pikuri::Agent::Synthesizer` (the step-exhaustion
   rescue). The Thought/Tool-call/Observation loop lives in ruby_llm;
