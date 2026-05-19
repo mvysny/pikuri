@@ -120,14 +120,36 @@ module Pikuri
     # it) because +Chat#ask+ takes the streaming block as an
     # argument rather than a registered callback, so both
     # {#run_loop} and {Synthesizer.run} pass it inline at the call
-    # site with +&Agent.streaming_block(listeners: ...)+.
+    # site with +&Agent.streaming_block(listeners: ..., cancellable: ...)+.
+    #
+    # == Cancellation polling
+    #
+    # When +cancellable+ is non-nil, {Control::Cancellable#check!}
+    # fires *before* each chunk's emit. The +before_tool_call+
+    # wiring in {.wire_chat} only fires when the model requests a
+    # tool, which leaves a no-tool turn (e.g. a plain greeting)
+    # with zero cancellation points — Ctrl+C trips the flag but
+    # nothing reads it. Polling on every streamed chunk closes
+    # that gap: an in-flight Cancellation+check! raises on the
+    # next chunk delivered after the flag flips, the exception
+    # propagates out through ruby_llm's streaming path
+    # (+Chat#ask+ doesn't rescue), and {#run_loop} catches it,
+    # emits {Event::Cancelled}, and re-raises. The pre-emit
+    # ordering is deliberate: a chunk that arrives after a cancel
+    # request shouldn't render — the user has said stop.
     #
     # @param listeners [ListenerList] the listener stream chunk
     #   events flow into
+    # @param cancellable [Control::Cancellable, nil] when non-nil,
+    #   polled on every chunk so a flag flipped mid-stream raises
+    #   {Control::Cancellable::Cancelled} on the very next chunk
     # @return [Proc] a +-> (chunk) { ... }+ proc suitable for
     #   passing to +Chat#ask+ with +&+
-    def self.streaming_block(listeners:)
-      ->(chunk) { emit_chunk(chunk, listeners) }
+    def self.streaming_block(listeners:, cancellable: nil)
+      ->(chunk) {
+        cancellable&.check!
+        emit_chunk(chunk, listeners)
+      }
     end
 
     # Normalize a +RubyLLM::Chat+ +after_message+ payload into
@@ -479,7 +501,7 @@ module Pikuri
       @step_limit&.reset!
       @cancellable&.reset!
       if @streaming
-        @chat.ask(user_message, &self.class.streaming_block(listeners: @listeners))
+        @chat.ask(user_message, &self.class.streaming_block(listeners: @listeners, cancellable: @cancellable))
       else
         @chat.ask(user_message)
       end

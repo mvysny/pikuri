@@ -440,6 +440,30 @@ RSpec.describe Pikuri::Agent do
       )
     end
 
+    it 'polls the cancellable on every chunk so a flag flipped mid-stream raises Cancelled' do
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                cancellable: cancel, streaming: true)
+      agent.run_loop(user_message: 'hi')
+
+      # First chunk flows normally — flag still armed.
+      fake_chat.fire_chunk(thinking: 'pondering')
+      assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ThinkingDelta) }
+
+      # SIGINT trap fires on the main thread, flips the flag.
+      cancel.cancel!
+
+      # Next chunk arrives — streaming block must raise before emitting,
+      # so no delta is rendered for content the user already asked to drop.
+      before = recorder.events.size
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        fake_chat.fire_chunk(content: 'should not render')
+      end
+      assert_equal before, recorder.events.size,
+                   'expected the cancelled chunk to not produce any delta event'
+    end
+
     it 'filters empty/nil thinking and content from chunks (no vacuous deltas)' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners,

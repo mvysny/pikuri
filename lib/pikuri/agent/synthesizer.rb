@@ -84,7 +84,7 @@ module Pikuri
         Agent.wire_chat(chat, listeners: listeners, step_limit: step_limit, cancellable: cancellable)
         prompt = build_prompt(parent_messages: parent_messages, user_message: user_message)
         if streaming
-          chat.ask(prompt, &Agent.streaming_block(listeners: listeners))
+          chat.ask(prompt, &Agent.streaming_block(listeners: listeners, cancellable: cancellable))
         else
           chat.ask(prompt)
         end
