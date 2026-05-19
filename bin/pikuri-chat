@@ -23,6 +23,7 @@ require 'pikuri'
 
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
+streaming = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-chat [options] [initial message...]'
@@ -69,12 +70,13 @@ agent = Pikuri::Agent.new(
   system_prompt: Pikuri.prompt(:'pikuri-chat'),
   tools: [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH],
   listeners: Pikuri::Agent::ListenerList.new([
-    Pikuri::Agent::Listener::Terminal.new,
+    Pikuri::Agent::Listener::Terminal.new(streaming: streaming),
     Pikuri::Agent::Listener::TokenLog.new
   ]),
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
   cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url
+  llama_probe_url: llama_probe_url,
+  streaming: streaming
 )
 agent.allow_sub_agent(max_steps: 20)
 
