@@ -120,9 +120,19 @@ grows a skill system.
   later TUI / IDE host plugs in by writing a new `Confirmer` subclass,
   not by editing tool internals.
 
-- **Streaming, multi-provider config, vision/audio, embeddings — out
-  of scope.** Available via ruby_llm if/when needed; not part of
-  pikuri today.
+- **Streaming is opt-in via `Agent.new(..., streaming: true)`.** When
+  true, `Agent#run_loop` passes a streaming block to `Chat#ask` and
+  the per-chunk `Event::ThinkingDelta` / `Event::AssistantDelta`
+  deltas flow on the listener stream alongside the message-level
+  `Event::Thinking` / `Event::Assistant` bookends. The flag
+  propagates to `Synthesizer.run` and `Tool::SubAgent` so the whole
+  agent tree streams or doesn't, consistently. Defaults to `false`
+  because the bundled `Terminal` listener still renders the full
+  message on `Event::Assistant`; a future delta-renderer mode will
+  flip the bundled bins to `streaming: true`.
+
+- **Multi-provider config, vision/audio, embeddings — out of scope.**
+  Available via ruby_llm if/when needed; not part of pikuri today.
 
 - **Linux-first; macOS may work; Windows is unsupported.** Pikuri
   targets Linux as the primary platform. macOS will probably keep
@@ -154,9 +164,10 @@ and a small shared cache.
   cap from override → ruby_llm registry → llama.cpp `/props` probe at
   construction time), `Pikuri::Agent::ListenerList`, the
   `Pikuri::Agent::Event` variants
-  (`UserTurn`/`Thinking`/`Assistant`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
+  (`UserTurn`/`Thinking`/`ThinkingDelta`/`Assistant`/`AssistantDelta`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
   `UserTurn` carries a `mid_loop` flag — `false` for turn-starting input,
-  `true` for `Interloper`-drained mid-loop injections), the pure-consumer
+  `true` for `Interloper`-drained mid-loop injections; `*Delta` variants
+  only fire when the agent was constructed with `streaming: true`), the pure-consumer
   `Pikuri::Agent::Listener::*` set (`Base`, `Terminal`,
   `InMemoryEventList`, `TokenLog`), the host-facing
   `Pikuri::Agent::Control::*` set (`StepLimit`, `Cancellable`,

@@ -69,14 +69,25 @@ module Pikuri
       #   cancellation control. Typically the parent's instance,
       #   shared by reference so a user cancel during synthesis
       #   still works. Pass +nil+ to skip.
+      # @param streaming [Boolean] mirror the parent agent's
+      #   +streaming+ flag. When +true+, {Agent.streaming_block}
+      #   is passed to +chat.ask+ so the synth's reasoning and
+      #   answer flow through the listener stream as deltas in
+      #   addition to the final {Event::Thinking} / {Event::Assistant}
+      #   bookends.
       # @return [String, nil] the synth's final assistant
       #   content, or +nil+ if the synth somehow produced no
       #   assistant message
       def self.run(chat:, parent_messages:, user_message:, listeners:,
-                   step_limit: nil, cancellable: nil)
+                   step_limit: nil, cancellable: nil, streaming: false)
         chat.with_instructions(SYSTEM_PROMPT)
         Agent.wire_chat(chat, listeners: listeners, step_limit: step_limit, cancellable: cancellable)
-        chat.ask(build_prompt(parent_messages: parent_messages, user_message: user_message))
+        prompt = build_prompt(parent_messages: parent_messages, user_message: user_message)
+        if streaming
+          chat.ask(prompt, &Agent.streaming_block(listeners: listeners))
+        else
+          chat.ask(prompt)
+        end
         chat.messages.reverse.find { |m| m.role == :assistant }&.content
       end
 

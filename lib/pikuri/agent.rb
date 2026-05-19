@@ -70,6 +70,12 @@ module Pikuri
     # {Synthesizer.run} (on the synth chat) so the two share one
     # source of truth for "which callback emits which event."
     #
+    # Handles the three message-level registered callbacks
+    # (+after_message+, +before_tool_call+, +after_tool_result+);
+    # the per-chunk streaming callback is separate because
+    # ruby_llm takes it as a block to +Chat#ask+ rather than a
+    # registered hook — see {.streaming_block}.
+    #
     # @param chat [RubyLLM::Chat] the chat instance to wire
     # @param listeners [ListenerList] the listener stream events
     #   flow into
@@ -99,6 +105,29 @@ module Pikuri
         listeners.emit(Event::ToolResult.new(content: result))
         drain_interloper(interloper, chat, listeners) if interloper
       end
+    end
+
+    # Build the per-chunk streaming block passed to +Chat#ask+.
+    # Each invocation of the returned proc converts one
+    # +RubyLLM::Chunk+ into zero, one, or two delta events
+    # ({Event::ThinkingDelta} / {Event::AssistantDelta}) on
+    # +listeners+. Tool-call chunks are intentionally ignored —
+    # partial JSON has no useful rendering; the assembled
+    # +tool_calls+ surface through {Event::ToolCall} once the
+    # message completes.
+    #
+    # Lives parallel to {.wire_chat} (instead of being folded into
+    # it) because +Chat#ask+ takes the streaming block as an
+    # argument rather than a registered callback, so both
+    # {#run_loop} and {Synthesizer.run} pass it inline at the call
+    # site with +&Agent.streaming_block(listeners: ...)+.
+    #
+    # @param listeners [ListenerList] the listener stream chunk
+    #   events flow into
+    # @return [Proc] a +-> (chunk) { ... }+ proc suitable for
+    #   passing to +Chat#ask+ with +&+
+    def self.streaming_block(listeners:)
+      ->(chunk) { emit_chunk(chunk, listeners) }
     end
 
     # Normalize a +RubyLLM::Chat+ +after_message+ payload into
@@ -136,6 +165,29 @@ module Pikuri
                      ))
     end
     private_class_method :emit_after_message
+
+    # Normalize a +RubyLLM::Chunk+ from a streaming +Chat#ask+
+    # into zero, one, or two delta events
+    # ({Event::ThinkingDelta} / {Event::AssistantDelta}). Empty
+    # +thinking.text+ and empty +content+ are filtered here so
+    # listeners never see vacuous fragments. Tool-call deltas are
+    # intentionally skipped — see {.streaming_block}.
+    #
+    # +chunk+ is a +RubyLLM::Chunk+ (subclass of +RubyLLM::Message+),
+    # so the same +.thinking+ / +.content+ accessors used in
+    # {.emit_after_message} apply.
+    #
+    # @param chunk [RubyLLM::Chunk]
+    # @param listeners [ListenerList]
+    # @return [void]
+    def self.emit_chunk(chunk, listeners)
+      thinking = chunk.thinking&.text
+      listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+
+      content = chunk.content
+      listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
+    end
+    private_class_method :emit_chunk
 
     # Drain the interloper queue: for each pending item, append a
     # +role: :user+ message to the chat history so the next
@@ -224,11 +276,22 @@ module Pikuri
     #   changes are coupled — advertising skills without a
     #   loader (or vice versa) would be a bug, so the catalog is
     #   the single source of truth for both.
+    # @param streaming [Boolean] opt into chunk-level streaming.
+    #   When +true+, {#run_loop} passes the block returned by
+    #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
+    #   SSE responses from the provider — chunks are normalized
+    #   into {Event::ThinkingDelta} / {Event::AssistantDelta} on
+    #   the listener stream as they arrive. When +false+ (the
+    #   default), +Chat#ask+ runs in single-shot mode and only
+    #   the message-level {Event::Thinking} / {Event::Assistant}
+    #   bookends fire from +after_message+. Read by
+    #   {Tool::SubAgent} so spawned sub-agents inherit the same
+    #   mode without an extra kwarg.
     # @return [Agent]
     def initialize(transport:, system_prompt:, tools:, listeners:,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
-                   skill_catalog: Tool::SkillCatalog::EMPTY)
+                   skill_catalog: Tool::SkillCatalog::EMPTY, streaming: false)
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @system_prompt = skill_catalog.empty? ? system_prompt : system_prompt + skill_catalog.format_for_prompt
       @skill_catalog = skill_catalog
@@ -238,6 +301,7 @@ module Pikuri
       @cancellable = cancellable
       @interloper = interloper
       @name = name
+      @streaming = streaming
       @synth_answer = nil
 
       unless skill_catalog.empty?
@@ -346,6 +410,13 @@ module Pikuri
     #   output.
     attr_reader :name
 
+    # @return [Boolean] +true+ when this agent opted into
+    #   chunk-level streaming (see the +streaming:+ kwarg on
+    #   {#initialize}); +false+ otherwise. Read by
+    #   {Tool::SubAgent} so spawned sub-agents inherit the same
+    #   mode.
+    attr_reader :streaming
+
     # @return [Integer, nil] context-window cap resolved by
     #   {ContextWindowDetector} at construction time. +nil+ when
     #   no source produced a value (custom local model with no
@@ -407,7 +478,11 @@ module Pikuri
       @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
       @step_limit&.reset!
       @cancellable&.reset!
-      @chat.ask(user_message)
+      if @streaming
+        @chat.ask(user_message, &self.class.streaming_block(listeners: @listeners))
+      else
+        @chat.ask(user_message)
+      end
       nil
     rescue Control::Cancellable::Cancelled
       @listeners.emit(Event::Cancelled.new)
@@ -439,7 +514,8 @@ module Pikuri
         user_message: user_message,
         listeners: @listeners.for_sub_agent(name: synth_name),
         step_limit: synth_step_limit,
-        cancellable: @cancellable
+        cancellable: @cancellable,
+        streaming: @streaming
       )
       nil
     end

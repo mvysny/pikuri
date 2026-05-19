@@ -58,6 +58,48 @@ module Pikuri
       # (pure tool-call turns surface {Tokens} only, no +Assistant+).
       Assistant = Data.define(:content)
 
+      # Streaming fragment of an assistant reasoning block, pulled
+      # off a +RubyLLM::Chunk+ during a +Chat#ask+ stream. Emitted
+      # by the per-chunk streaming block {Agent.streaming_block}
+      # builds and {Agent#run_loop} / {Synthesizer.run} pass to
+      # +ask+; empty fragments are filtered at the dispatch site.
+      #
+      # Preview-only, not authoritative: the {Thinking} event
+      # emitted from +after_message+ at the end of the round-trip
+      # is the final reasoning text. Providers may normalize
+      # whitespace, and Anthropic thinking blocks include a
+      # signature that never appears in deltas, so
+      # +concat(deltas) == final.content+ is not guaranteed.
+      #
+      # == Ordering
+      #
+      # Per round-trip: all {ThinkingDelta}s (and {AssistantDelta}s)
+      # for a round arrive before that round's {Thinking} /
+      # {Assistant} / {Tokens} bookend, because the streaming block
+      # fires synchronously inside +Chat#ask+'s SSE read and
+      # +after_message+ fires once the message is complete. Within
+      # the delta stream itself, ordering between {ThinkingDelta}
+      # and {AssistantDelta} is provider-dependent (in practice
+      # non-interleaved on Anthropic and OpenAI reasoning models,
+      # but pikuri does not enforce it).
+      ThinkingDelta = Data.define(:content)
+
+      # Streaming fragment of an assistant Markdown content block,
+      # pulled off a +RubyLLM::Chunk+ during a +Chat#ask+ stream.
+      # Emitted by the per-chunk streaming block
+      # {Agent.streaming_block} builds and {Agent#run_loop} /
+      # {Synthesizer.run} pass to +ask+; empty fragments are
+      # filtered at the dispatch site.
+      #
+      # Preview-only, same semantics as {ThinkingDelta}: the
+      # {Assistant} event emitted from +after_message+ at the end
+      # of the round-trip is the authoritative final text;
+      # listeners that need an exact concat of fragments should
+      # consume {Assistant} instead. Per-round-trip ordering is
+      # guaranteed; per-modality ordering within the delta stream
+      # is best-effort.
+      AssistantDelta = Data.define(:content)
+
       # A tool invocation the LLM has requested but not yet observed.
       # Arguments are the raw hash ruby_llm parsed from the model's
       # +tool_calls+ JSON — no validation has run yet. Emitted by

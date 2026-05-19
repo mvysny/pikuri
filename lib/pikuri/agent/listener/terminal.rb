@@ -86,7 +86,11 @@ module Pikuri
           in Event::Cancelled
             puts indent(Rainbow('! cancelled').red)
           else
-            # UserTurn / Tokens / ContextCap: silent on the terminal.
+            # UserTurn / Tokens / ContextCap silent on the terminal.
+            # ThinkingDelta / AssistantDelta also silent for now —
+            # the final Thinking / Assistant bookend already renders
+            # the full text; a future delta-renderer mode would
+            # match these to print live tokens.
           end
         end
 

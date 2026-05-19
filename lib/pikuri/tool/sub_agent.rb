@@ -74,6 +74,7 @@ module Pikuri
         parent_cancel     = parent_agent.cancellable
         context_window    = parent_agent.context_window_cap
         parent_name       = parent_agent.name
+        streaming         = parent_agent.streaming
         sub_counter       = 0
 
         super(
@@ -100,7 +101,8 @@ module Pikuri
               step_limit: parent_step_limit&.for_sub_agent(max_steps: max_steps),
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
-              name: sub_name
+              name: sub_name,
+              streaming: streaming
             )
             sub.run_loop(user_message: task)
             sub.last_assistant_content

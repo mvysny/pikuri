@@ -42,8 +42,9 @@ module Pikuri
         # selectively and let everything else fall through.
         #
         # @param event [Event::UserTurn, Event::Thinking,
-        #   Event::Assistant, Event::ToolCall, Event::ToolResult,
-        #   Event::Tokens, Event::ContextCap,
+        #   Event::ThinkingDelta, Event::Assistant,
+        #   Event::AssistantDelta, Event::ToolCall,
+        #   Event::ToolResult, Event::Tokens, Event::ContextCap,
         #   Event::FallbackNotice, Event::Cancelled]
         # @return [void]
         def on_event(event); end

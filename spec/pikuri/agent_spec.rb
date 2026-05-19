@@ -16,7 +16,7 @@ RSpec.describe Pikuri::Agent do
   let(:fake_chat_class) do
     captured_model = fake_model
     Class.new do
-      attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages
+      attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages, :stream_block
 
       define_method(:initialize) do
         @tools = []
@@ -25,6 +25,7 @@ RSpec.describe Pikuri::Agent do
         @added_messages = []
         @hooks = Hash.new { |h, k| h[k] = [] }
         @model_info = captured_model
+        @stream_block = nil
       end
 
       def model
@@ -49,13 +50,27 @@ RSpec.describe Pikuri::Agent do
         @added_messages << attrs
       end
 
-      def ask(message)
+      def ask(message, &block)
         @asks << message
+        @stream_block = block
         nil
       end
 
       def fire(name, *args)
         @hooks[name].each { |cb| cb.call(*args) }
+      end
+
+      # Synthesize a chunk and feed it through the streaming block
+      # the agent passed to +#ask+. Tests use this to assert the
+      # per-chunk emit logic without depending on the real
+      # +RubyLLM::Chunk+ class (we duck-type +.thinking+ and
+      # +.content+).
+      def fire_chunk(content: nil, thinking: nil)
+        chunk = Struct.new(:content, :thinking).new(
+          content,
+          thinking ? RubyLLM::Thinking.new(text: thinking) : nil
+        )
+        @stream_block&.call(chunk)
       end
 
       def add_assistant(content, thinking: nil)
@@ -388,6 +403,56 @@ RSpec.describe Pikuri::Agent do
       fake_chat.fire(:after_tool_result, '42')
 
       assert_includes recorder.events, Pikuri::Agent::Event::ToolResult.new(content: '42')
+    end
+
+    it 'does not pass a streaming block when streaming: defaults to false' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
+      agent.run_loop(user_message: 'hi')
+
+      assert_nil fake_chat.stream_block,
+                 'expected non-streaming run_loop to call chat.ask without a block'
+    end
+
+    it 'passes a streaming block to chat.ask that emits ThinkingDelta + AssistantDelta per chunk when streaming: true' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                streaming: true)
+      agent.run_loop(user_message: 'hi')
+
+      refute_nil fake_chat.stream_block, 'expected run_loop to pass a streaming block to chat.ask'
+
+      fake_chat.fire_chunk(thinking: 'pon')
+      fake_chat.fire_chunk(content: 'hel')
+      fake_chat.fire_chunk(thinking: 'der', content: 'lo')
+
+      deltas = recorder.events.select do |e|
+        e.is_a?(Pikuri::Agent::Event::ThinkingDelta) || e.is_a?(Pikuri::Agent::Event::AssistantDelta)
+      end
+      assert_equal(
+        [
+          Pikuri::Agent::Event::ThinkingDelta.new(content: 'pon'),
+          Pikuri::Agent::Event::AssistantDelta.new(content: 'hel'),
+          Pikuri::Agent::Event::ThinkingDelta.new(content: 'der'),
+          Pikuri::Agent::Event::AssistantDelta.new(content: 'lo')
+        ],
+        deltas
+      )
+    end
+
+    it 'filters empty/nil thinking and content from chunks (no vacuous deltas)' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                streaming: true)
+      agent.run_loop(user_message: 'hi')
+
+      fake_chat.fire_chunk
+      fake_chat.fire_chunk(content: '')
+      fake_chat.fire_chunk(thinking: '')
+      fake_chat.fire_chunk(content: nil, thinking: nil)
+
+      refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ThinkingDelta) }
+      refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::AssistantDelta) }
     end
 
     it 'populates Event::Tokens fields from the underlying RubyLLM::Message' do

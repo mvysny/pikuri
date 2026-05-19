@@ -84,12 +84,13 @@ RSpec.describe Pikuri::Agent::Synthesizer do
     # return-value lookup at the end of +.run+ has something to find.
     let(:synth_chat_class) do
       Class.new do
-        attr_reader :asks, :instructions, :messages, :hooks
+        attr_reader :asks, :instructions, :messages, :hooks, :stream_block
 
         def initialize
           @asks = []
           @messages = []
           @hooks = Hash.new { |h, k| h[k] = [] }
+          @stream_block = nil
         end
 
         def with_instructions(text)
@@ -101,8 +102,9 @@ RSpec.describe Pikuri::Agent::Synthesizer do
         def before_tool_call(&b);  @hooks[:before_tool_call] << b;  self; end
         def after_tool_result(&b); @hooks[:after_tool_result] << b; self; end
 
-        def ask(prompt)
+        def ask(prompt, &block)
           @asks << prompt
+          @stream_block = block
           @messages << RubyLLM::Message.new(role: :assistant, content: 'rescued answer')
           nil
         end
@@ -138,6 +140,25 @@ RSpec.describe Pikuri::Agent::Synthesizer do
       result = described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
 
       assert_equal 'rescued answer', result
+    end
+
+    it 'does not pass a streaming block when streaming: defaults to false' do
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?', listeners: listeners)
+
+      assert_nil synth_chat.stream_block,
+                 'expected non-streaming Synthesizer.run to call chat.ask without a block'
+    end
+
+    it 'passes a streaming block to the synth chat when streaming: true so synth deltas reach listeners' do
+      described_class.run(chat: synth_chat, parent_messages: [], user_message: 'q?',
+                          listeners: listeners, streaming: true)
+
+      refute_nil synth_chat.stream_block, 'expected Synthesizer.run to pass a streaming block to chat.ask'
+
+      chunk = Struct.new(:content, :thinking).new('synth-frag', nil)
+      synth_chat.stream_block.call(chunk)
+
+      assert_includes listener.events, Pikuri::Agent::Event::AssistantDelta.new(content: 'synth-frag')
     end
 
     it 'passes step_limit and cancellable through to wire_chat so the synth respects them' do
