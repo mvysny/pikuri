@@ -100,6 +100,15 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     it 'renders the padding suffix when padding is non-zero' do
       assert_equal 'Terminal(padding=2)', described_class.new(padding: 2).to_s
     end
+
+    it 'renders a streaming marker when streaming: true' do
+      assert_equal 'Terminal(streaming)', described_class.new(streaming: true).to_s
+    end
+
+    it 'renders both knobs when both are set' do
+      assert_equal 'Terminal(padding=2, streaming)',
+                   described_class.new(padding: 2, streaming: true).to_s
+    end
   end
 
   describe 'padding' do
@@ -164,6 +173,76 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
       derived  = original.for_sub_agent
       refute_same original, derived
       assert_equal 0, original.padding
+    end
+
+    it 'inherits the streaming flag so the agent tree renders consistently' do
+      streaming_derived     = described_class.new(streaming: true).for_sub_agent
+      non_streaming_derived = described_class.new(streaming: false).for_sub_agent
+      assert streaming_derived.streaming
+      refute non_streaming_derived.streaming
+    end
+  end
+
+  describe 'streaming mode' do
+    let(:streaming_listener) { described_class.new(streaming: true) }
+
+    it 'prints ThinkingDelta fragments live with no trailing newline' do
+      out = capture_stdout do
+        streaming_listener.on_event(Pikuri::Agent::Event::ThinkingDelta.new(content: 'hel'))
+        streaming_listener.on_event(Pikuri::Agent::Event::ThinkingDelta.new(content: 'lo'))
+      end
+      assert_includes out, 'hel'
+      assert_includes out, 'lo'
+      # Two fragments, both grey-colored, neither closing the line —
+      # the assembled output must NOT contain a newline between them.
+      refute_match(/hel.*\n.*lo/m, out)
+    end
+
+    it 'prints AssistantDelta fragments raw (no Markdown render) with no trailing newline' do
+      # If Markdown were being applied, "**hi**" would lose its asterisks
+      # under the passthrough stub (or pick up ANSI bold under the real
+      # renderer). The streaming path must emit it untouched.
+      out = capture_stdout do
+        streaming_listener.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: '**hi**'))
+      end
+      assert_includes out, '**hi**'
+      refute out.end_with?("\n"), 'streaming fragment should not append a newline'
+    end
+
+    it 'is silent for ThinkingDelta / AssistantDelta in non-streaming mode (default)' do
+      out = capture_stdout do
+        listener.on_event(Pikuri::Agent::Event::ThinkingDelta.new(content: 'hel'))
+        listener.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: 'lo'))
+      end
+      assert_equal '', out
+    end
+
+    it 'prints exactly one terminator newline (no content) on the Thinking bookend in streaming mode' do
+      out = capture_stdout do
+        streaming_listener.on_event(Pikuri::Agent::Event::Thinking.new(content: 'reasoning text'))
+      end
+      refute_includes out, 'reasoning text', 'streaming Thinking bookend must NOT re-render the content'
+      assert_equal "\n", out
+    end
+
+    it 'prints exactly one terminator newline (no content) on the Assistant bookend in streaming mode' do
+      out = capture_stdout do
+        streaming_listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**'))
+      end
+      refute_includes out, '**hi**', 'streaming Assistant bookend must NOT re-render the content'
+      assert_equal "\n", out
+    end
+
+    it 'pads the start of every line of a streamed fragment when padding is non-zero' do
+      padded_stream = described_class.new(padding: 2, streaming: true)
+      out = capture_stdout do
+        # First fragment starts at line-start → padded; mid-fragment newline
+        # is followed by more content → padded again; trailing chars on the
+        # current line are NOT re-padded.
+        padded_stream.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: "foo\nbar"))
+        padded_stream.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: 'baz'))
+      end
+      assert_equal "  foo\n  barbaz", out
     end
   end
 

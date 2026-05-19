@@ -19,6 +19,29 @@ module Pikuri
       # get a fresh padded instance through {#for_sub_agent}
       # (dispatched by {ListenerList#for_sub_agent}) so their
       # output is visually indented under the parent's stream.
+      #
+      # == Streaming mode
+      #
+      # When constructed with +streaming: true+ (typically because
+      # the host's {Agent} was constructed with the matching flag):
+      #
+      # - {Event::ThinkingDelta} fragments print live in the same
+      #   dim grey as the non-streaming {Event::Thinking}, with no
+      #   trailing newline so the next fragment continues the line.
+      # - {Event::AssistantDelta} fragments print live, *raw* — no
+      #   Markdown render. tty-markdown can't render half-finished
+      #   Markdown (broken code blocks, half-rendered tables), so
+      #   the live stream gives up formatting in exchange for
+      #   liveness.
+      # - {Event::Thinking} and {Event::Assistant} bookends print
+      #   a single blank line as a stream terminator, not their
+      #   content (the content already landed via the deltas). The
+      #   terminator gives the next event (tool call, next round,
+      #   final REPL prompt) a clean line to start on.
+      #
+      # In non-streaming mode (+streaming: false+, the default),
+      # the deltas are silently ignored and the bookend events
+      # render the full text the way they always have.
       class Terminal < Base
         # Subsystem logger; set its level with +PIKURI_LOG_TERMINAL+
         # or the global +PIKURI_LOG+. Used for the narrow rescue
@@ -47,24 +70,36 @@ module Pikuri
         #   spaces prepended to every rendered line. Defaults to 0;
         #   sub-agents get a fresh instance with
         #   {SUB_AGENT_PADDING} via {#for_sub_agent}.
-        def initialize(padding: 0)
+        # @param streaming [Boolean] render the chunk-level delta
+        #   stream live. See the class header's "Streaming mode"
+        #   section for the behavior swap. Defaults to +false+.
+        def initialize(padding: 0, streaming: false)
           super()
           @padding = padding
+          @streaming = streaming
+          @at_line_start = true
         end
 
         # @return [Integer] current padding width; exposed so
         #   callers can introspect it (and so tests can assert it).
         attr_reader :padding
 
+        # @return [Boolean] +true+ when this Terminal is in
+        #   streaming mode (deltas rendered live; bookends emit a
+        #   terminator newline only).
+        attr_reader :streaming
+
         # Sub-agent variant: a fresh +Terminal+ at
-        # {SUB_AGENT_PADDING} so sub-agent output is visually
-        # indented under the parent's stream. Called by
+        # {SUB_AGENT_PADDING}, carrying the same +streaming+ flag
+        # the parent had, so sub-agent output is visually indented
+        # under the parent's stream and the stream mode stays
+        # consistent across the agent tree. Called by
         # {ListenerList#for_sub_agent}; ignores any params it's
         # handed (Terminal has no caller-provided knobs).
         #
         # @return [Terminal]
         def for_sub_agent(**)
-          self.class.new(padding: SUB_AGENT_PADDING)
+          self.class.new(padding: SUB_AGENT_PADDING, streaming: @streaming)
         end
 
         # @param event [Agent::Event] one of the {Agent::Event}
@@ -73,35 +108,106 @@ module Pikuri
         def on_event(event)
           case event
           in Event::Thinking(content:)
-            puts indent(Rainbow(content).color(85, 85, 85))
+            if @streaming
+              terminate_stream
+            else
+              println(indent(Rainbow(content).color(85, 85, 85)))
+            end
           in Event::Assistant(content:)
-            puts indent(render_markdown(content))
+            if @streaming
+              terminate_stream
+            else
+              println(indent(render_markdown(content)))
+            end
+          in Event::ThinkingDelta(content:)
+            stream_fragment(Rainbow(content).color(85, 85, 85)) if @streaming
+          in Event::AssistantDelta(content:)
+            stream_fragment(content) if @streaming
           in Event::ToolCall(name:, arguments:)
             args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
-            puts indent(Rainbow("→ #{name}(#{args})").cyan)
+            println(indent(Rainbow("→ #{name}(#{args})").cyan))
           in Event::ToolResult(content:)
-            puts indent(Rainbow("= #{truncate_tool_result(content)}").cyan)
+            println(indent(Rainbow("= #{truncate_tool_result(content)}").cyan))
           in Event::FallbackNotice(reason:)
-            puts indent(Rainbow("! #{reason}").yellow)
+            println(indent(Rainbow("! #{reason}").yellow))
           in Event::Cancelled
-            puts indent(Rainbow('! cancelled').red)
+            println(indent(Rainbow('! cancelled').red))
           else
             # UserTurn / Tokens / ContextCap silent on the terminal.
-            # ThinkingDelta / AssistantDelta also silent for now —
-            # the final Thinking / Assistant bookend already renders
-            # the full text; a future delta-renderer mode would
-            # match these to print live tokens.
+            # In non-streaming mode the deltas fall through here
+            # too (the final Thinking / Assistant bookend already
+            # renders the full text).
           end
         end
 
-        # @return [String] short label for {Agent#to_s}; includes the
-        #   padding suffix only when non-zero so the default form
-        #   stays +"Terminal"+
+        # @return [String] short label for {Agent#to_s}; appends
+        #   each non-default knob (+padding+, +streaming+) so the
+        #   default form stays +"Terminal"+
         def to_s
-          @padding.zero? ? 'Terminal' : "Terminal(padding=#{@padding})"
+          suffix = []
+          suffix << "padding=#{@padding}" unless @padding.zero?
+          suffix << 'streaming' if @streaming
+          suffix.empty? ? 'Terminal' : "Terminal(#{suffix.join(', ')})"
         end
 
         private
+
+        # +puts+ wrapper that also resets the streaming line-state
+        # to "at line start" — every full-line print necessarily
+        # leaves the cursor at column 0, so the next fragment
+        # printed in streaming mode knows to insert padding before
+        # its first character. Used by every branch in
+        # {#on_event} except the delta branches.
+        #
+        # @param text [String]
+        # @return [void]
+        def println(text)
+          puts text
+          @at_line_start = true
+        end
+
+        # Emit a single newline as a stream terminator and reset
+        # the line-state. Called on {Event::Thinking} /
+        # {Event::Assistant} bookends in streaming mode, where the
+        # content has already been rendered via the delta stream
+        # and what's left to do is give the next event a clean
+        # line to start on.
+        #
+        # @return [void]
+        def terminate_stream
+          puts
+          @at_line_start = true
+        end
+
+        # Print one streaming fragment to stdout *without* a
+        # trailing newline (so the next fragment continues the
+        # line) and flush so the bytes actually reach the
+        # terminal. Threads padding through any mid-fragment
+        # newlines: a fragment that contains "foo\nbar" with
+        # padding 2 prints +"  foo\n  bar"+ when the cursor was
+        # at line start.
+        #
+        # @param text [String] the fragment to emit; +nil+ / empty
+        #   short-circuits
+        # @return [void]
+        def stream_fragment(text)
+          return if text.nil? || text.empty?
+
+          if @padding.zero?
+            print(text)
+            @at_line_start = text.end_with?("\n")
+          else
+            buf = String.new
+            prefix = ' ' * @padding
+            text.each_char do |ch|
+              buf << prefix if @at_line_start
+              buf << ch
+              @at_line_start = (ch == "\n")
+            end
+            print(buf)
+          end
+          $stdout.flush
+        end
 
         # Prepend +@padding+ spaces to every line of +text+. Splits
         # on +each_line+ rather than a +gsub+ trick so a trailing
