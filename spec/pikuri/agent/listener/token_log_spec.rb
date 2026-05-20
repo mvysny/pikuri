@@ -250,6 +250,36 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
     end
   end
 
+  describe '#status_line' do
+    it 'is empty until the first Tokens event arrives' do
+      assert_equal '', described_class.new.status_line
+    end
+
+    it 'mirrors the most recent log line, including the [name] prefix when a sub-agent' do
+      listener = described_class.new(name: '0_1')
+      listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
+
+      assert_equal '[0_1] msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k', listener.status_line
+    end
+
+    it 'updates to the latest snapshot after each Tokens emission' do
+      listener = described_class.new
+      listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
+      first_line = listener.status_line
+      listener.on_event(tokens(input: 2048, cached: 10_240, output: 2048))
+
+      refute_equal first_line, listener.status_line
+      assert_equal 'msg #2: ctx=14.0k  Δ+3.0k  ↑2.0k  ↓2.0k', listener.status_line
+    end
+
+    it 'is exactly what LOGGER.info was handed (no formatting drift between log and status)' do
+      listener = described_class.new
+      listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
+
+      assert_includes buf.string, listener.status_line
+    end
+  end
+
   describe '#to_s' do
     it 'shows zero context until the first tokens arrive' do
       assert_equal 'TokenLog(ctx=0.0k)', described_class.new.to_s

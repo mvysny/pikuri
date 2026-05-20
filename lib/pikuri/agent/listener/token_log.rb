@@ -97,6 +97,22 @@ module Pikuri
         #   {#for_sub_agent}.
         attr_reader :name
 
+        # The most recent log line, in the exact format written to
+        # {LOGGER} (including any +[<name>] + prefix). Empty until
+        # the first {Event::Tokens} has been processed. Hosts that
+        # want to surface the current context-window snapshot in
+        # their own UI (e.g. a TUI status footer) read this
+        # instead of re-implementing the formatting.
+        #
+        # Thread safety: a single instance-variable read of a
+        # +String+ — safe to read from any thread; readers may
+        # briefly see the previous turn's line during an in-flight
+        # {#on_event} call, which is acceptable for a status
+        # display.
+        #
+        # @return [String]
+        attr_reader :status_line
+
         # @param name [String] agent identifier prepended to each
         #   log line as +[<name>] + when non-empty. Defaults to
         #   +""+ for the main agent.
@@ -106,6 +122,7 @@ module Pikuri
           @msg = 0
           @context_window_size = 0
           @context_window_cap = nil
+          @status_line = ''
         end
 
         # Sub-agent variant: a fresh +TokenLog+ with a zeroed
@@ -161,7 +178,8 @@ module Pikuri
           @context_window_size = input_now + cached_now + cache_creation_now + tokens.output.to_i
           delta = @context_window_size - prev_ctx
 
-          LOGGER.info(format_line(input_now, tokens.output.to_i, delta))
+          @status_line = format_line(input_now, tokens.output.to_i, delta)
+          LOGGER.info(@status_line)
         end
 
         def format_line(input, output, delta)
