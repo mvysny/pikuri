@@ -82,10 +82,19 @@ module Pikuri
     #   thinker + cache) when its +synthesize_descriptions:+ kwarg
     #   is true. Pass +nil+ (the default) to skip synthesis and rely
     #   on the static fallback chain.
+    # @param verifier [Verifier, nil] when set, invoked from
+    #   {#start_one} after +client.tools+ but before
+    #   {#resolve_description}. A {Verifier::InjectionDetected} raise
+    #   aborts startup for that server (transport closed, exception
+    #   propagated). {Agent#initialize} builds + threads a real
+    #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
+    #   Pass +nil+ (the default) to skip injection-checking and
+    #   trust whatever the server emits.
     # @return [Servers]
-    def initialize(registry, synthesizer: nil)
+    def initialize(registry, synthesizer: nil, verifier: nil)
       @registry    = registry
       @synthesizer = synthesizer
+      @verifier    = verifier
       @clients     = {} # id => MCP::Client (only for servers that started)
       @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
       @tools_cache = {} # id => Array<MCP::Client::Tool>
@@ -214,6 +223,17 @@ module Pikuri
       client.connect
 
       tools = client.tools
+
+      # Verification, when wired, runs BEFORE the server enters
+      # @live_ids and BEFORE its description is resolved — a
+      # rejected server never gets surfaced to the LLM at all. An
+      # InjectionDetected raise propagates out through the rescue
+      # below; it is intentionally not caught as a generic
+      # StandardError because we want the user to see the
+      # rejection, not have it logged as a per-server "Failed to
+      # start" warning.
+      @verifier&.call(entry: entry, client: client, tools: tools)
+
       @clients[entry.id]      = client
       @transports[entry.id]   = transport
       @tools_cache[entry.id]  = tools
@@ -221,12 +241,12 @@ module Pikuri
       @live_ids << entry.id
 
       log_audit(entry, client, tools)
-    rescue Agent::Control::Cancellable::Cancelled
-      # Boot-time synthesis was cancelled by the user; abort the
-      # whole startup rather than logging it as a per-server
-      # "Failed to start" warning. The partial-startup cleanup
-      # below still runs via ensure-equivalent (we have to inline
-      # it because the original rescue is the cleanup site).
+    rescue Agent::Control::Cancellable::Cancelled, Verifier::InjectionDetected
+      # Cancellation or verifier rejection — abort startup rather
+      # than logging this as a per-server "Failed to start" warning,
+      # so the user sees the actual reason. Partial-startup cleanup
+      # runs inline (we have to do it here because the more general
+      # rescue below is the only other cleanup site).
       begin
         transport&.close
       rescue StandardError

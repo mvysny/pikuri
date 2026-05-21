@@ -808,10 +808,12 @@ RSpec.describe Pikuri::Agent do
     let(:capturing_mcp_servers_class) do
       Class.new do
         @last_synthesizer = nil
-        class << self; attr_accessor :last_synthesizer; end
+        @last_verifier = nil
+        class << self; attr_accessor :last_synthesizer, :last_verifier; end
 
-        def initialize(_registry, synthesizer: nil)
+        def initialize(_registry, synthesizer: nil, verifier: nil)
           self.class.last_synthesizer = synthesizer
+          self.class.last_verifier = verifier
         end
 
         def empty?; true; end

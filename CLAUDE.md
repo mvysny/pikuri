@@ -240,8 +240,9 @@ and a small shared cache.
   catalog (virtual filesystem, in-memory test fixture) without touching
   `Tool::Skill` or `Agent`.
 - `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
-  `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/cache.rb` — MCP
-  (Model Context Protocol) support under the `Pikuri::Mcp` namespace.
+  `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/verifier.rb`,
+  `lib/pikuri/mcp/cache.rb` — MCP (Model Context Protocol) support
+  under the `Pikuri::Mcp` namespace.
   `Pikuri::Mcp::Registry` is the pure config layer (`StdioEntry`/
   `HttpEntry` data classes, `EMPTY` singleton — same shape as
   `SkillCatalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
@@ -256,11 +257,22 @@ and a small shared cache.
   description summarization: the prompt, its `PROMPT_VERSION`, the
   cleanup, and the fail-soft / Cancelled-propagating contract.
   Servers delegates to its `#call` from `#resolve_description` when
-  one was wired in. `Pikuri::Mcp::Cache` is the on-disk cache the
-  synthesizer reads/writes — wraps `UrlCache` with a TTL of infinity,
+  one was wired in. `Pikuri::Mcp::Verifier` is the pre-flight
+  injection check — a mechanical Unicode pre-pass (zero-width /
+  bidi / Unicode tag chars) plus an LLM-driven inspection of every
+  text field for instruction-override, exfiltration, tool-chain
+  hijacking, and authority-impersonation patterns. Wired into
+  `start_one` after `client.tools` but before `resolve_description`;
+  `Verifier::InjectionDetected` aborts startup for that server.
+  Caches only `"OK"` (rejections re-verify on each boot).
+  `Pikuri::Mcp::Cache` is the on-disk cache both Synthesizer and
+  Verifier read/write — wraps `UrlCache` with a TTL of infinity,
   keys on the full server surface (transport, server name/version,
   every tool's name/description/schema) so any change auto-
-  invalidates. MCP tools bypass `Pikuri::Tool` entirely — they're
+  invalidates. Synthesizer and Verifier each get their own `Cache`
+  instance pointing at a separate directory (`mcp_descriptions/`
+  and `mcp_verifications/`) so the two caches stay independent.
+  MCP tools bypass `Pikuri::Tool` entirely — they're
   synthesised as raw `RubyLLM::Tool` subclasses inside `Mcp::Servers`
   and fed in via `Agent#internal_add_tool`. This is also the
   documented exception to the `Subprocess.spawn` chokepoint (see

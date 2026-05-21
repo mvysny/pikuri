@@ -379,6 +379,20 @@ module Pikuri
     #   way, the runtime is *not* owned by this agent — {#close}
     #   leaves it alone (the parent or whoever constructed it is
     #   responsible).
+    # @param verify_mcp_servers [Boolean] when +true+ and a
+    #   non-empty +mcp_registry:+ is also passed, threads a
+    #   {Mcp::Verifier} into {Mcp::Servers#initialize} so every
+    #   configured server is checked for prompt-injection /
+    #   exfiltration / tool-chain-hijacking patterns in its
+    #   handshake + tool surface before it can register tools with
+    #   the agent. The verifier reuses the agent's thinker closure
+    #   (same model the agent itself uses) and has its own on-disk
+    #   cache rooted at +.../mcp_verifications+ — independent of the
+    #   description-synthesis cache so flipping one feature on/off
+    #   doesn't invalidate the other. Off by default; flip on for
+    #   any binary that wires MCP servers from untrusted sources.
+    #   See {Mcp::Verifier} for the threat model and false-positive
+    #   philosophy.
     # @param synthesize_descriptions [Boolean] when +true+ and a
     #   non-empty +mcp_registry:+ is also passed, threads a thinker
     #   closure into {Mcp::Servers#initialize} so any server whose
@@ -410,6 +424,7 @@ module Pikuri
                    skill_catalog: Tool::SkillCatalog::EMPTY,
                    mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
                    synthesize_descriptions: false,
+                   verify_mcp_servers: false,
                    streaming: false)
       if mcp_servers && !mcp_registry.empty?
         raise ArgumentError,
@@ -438,14 +453,37 @@ module Pikuri
         @mcp_servers = mcp_servers
         @owns_mcp_servers = false
       elsif !mcp_registry.empty?
-        if synthesize_descriptions
-          cache = Mcp::Cache.new(
-            model_id: @transport.model,
-            prompt_version: Mcp::Synthesizer::PROMPT_VERSION
-          )
-          synthesizer = Mcp::Synthesizer.new(thinker: build_thinker, cache: cache)
+        # Build the thinker once when either feature is enabled —
+        # both Synthesizer and Verifier capture it. Separate
+        # {Cache} instances per feature (different dir, different
+        # prompt_version) so the two caches stay independent.
+        if synthesize_descriptions || verify_mcp_servers
+          thinker = build_thinker
         end
-        @mcp_servers = Mcp::Servers.new(mcp_registry, synthesizer: synthesizer)
+        if synthesize_descriptions
+          synthesizer = Mcp::Synthesizer.new(
+            thinker: thinker,
+            cache: Mcp::Cache.new(
+              model_id: @transport.model,
+              prompt_version: Mcp::Synthesizer::PROMPT_VERSION
+            )
+          )
+        end
+        if verify_mcp_servers
+          verifier = Mcp::Verifier.new(
+            thinker: thinker,
+            cache: Mcp::Cache.new(
+              model_id: @transport.model,
+              prompt_version: Mcp::Verifier::PROMPT_VERSION,
+              dir: File.join(File.dirname(Mcp::Cache::DIR), 'mcp_verifications')
+            )
+          )
+        end
+        @mcp_servers = Mcp::Servers.new(
+          mcp_registry,
+          synthesizer: synthesizer,
+          verifier: verifier
+        )
         @owns_mcp_servers = true
       else
         @mcp_servers = nil
