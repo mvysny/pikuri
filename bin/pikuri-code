@@ -83,6 +83,25 @@ skill_catalog = Pikuri::Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
+# MCP servers available to the assistant. Hand-edit this array to add
+# providers — id is what the LLM references via +mcp_connect("...")+,
+# +command:+ is the argv that spawns the server. Empty by default;
+# pikuri-assistant will behave identically to pikuri-chat until at
+# least one entry is added here.
+#
+# == Examples
+#
+#   Pikuri::McpRegistry::Entry.new(
+#     id:      'maven-tools',
+#     command: ['npx', 'mcp-maven-deps']
+#   ),
+#   Pikuri::McpRegistry::Entry.new(
+#     id:      'gmail',
+#     command: ['npx', '@gongrzhe/server-gmail-autoauth-mcp']
+#   ),
+mcp_registry = Pikuri::McpRegistry.new(entries: [
+])
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: model,
@@ -113,7 +132,8 @@ agent = Pikuri::Agent.new(
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
   cancellable: cancel_flag,
   llama_probe_url: llama_probe_url,
-  skill_catalog: skill_catalog
+  skill_catalog: skill_catalog,
+  mcp_registry: mcp_registry
 )
 agent.allow_sub_agent(max_steps: 20)
 
