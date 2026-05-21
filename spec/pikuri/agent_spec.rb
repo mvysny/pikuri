@@ -822,7 +822,7 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    it 'passes synthesizer: nil to Mcp::Servers when synthesize_descriptions: false (the default)' do
+    it 'passes synthesizer: nil + verifier: nil to Mcp::Servers when both flags are false' do
       stub = capturing_mcp_servers_class
       original_new = Pikuri::Mcp::Servers.method(:new)
       Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
@@ -832,8 +832,11 @@ RSpec.describe Pikuri::Agent do
         ])
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's', tools: [], listeners: listeners,
-                          mcp_registry: registry)
+                          mcp_registry: registry,
+                          synthesize_descriptions: false,
+                          verify_mcp_servers: false)
         assert_nil stub.last_synthesizer
+        assert_nil stub.last_verifier
       ensure
         Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end

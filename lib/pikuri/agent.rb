@@ -389,9 +389,12 @@ module Pikuri
     #   (same model the agent itself uses) and has its own on-disk
     #   cache rooted at +.../mcp_verifications+ — independent of the
     #   description-synthesis cache so flipping one feature on/off
-    #   doesn't invalidate the other. Off by default; flip on for
-    #   any binary that wires MCP servers from untrusted sources.
-    #   See {Mcp::Verifier} for the threat model and false-positive
+    #   doesn't invalidate the other. On by default — pikuri is
+    #   security-first and the boot-time tax is paid once per server
+    #   per surface (cached entries skip the check entirely). Flip
+    #   to +false+ only if you've audited the configured servers and
+    #   want to skip the cold-boot verification cost. See
+    #   {Mcp::Verifier} for the threat model and false-positive
     #   philosophy.
     # @param synthesize_descriptions [Boolean] when +true+ and a
     #   non-empty +mcp_registry:+ is also passed, threads a thinker
@@ -401,11 +404,18 @@ module Pikuri
     #   description for the +<available_mcps>+ block. The closure
     #   captures this agent's +@transport+ and +@cancellable+ and
     #   calls {.think} with the same model the agent itself will
-    #   use. Off by default: short CLI invocations should not pay
-    #   the synthesis tax (typically 5–10 s per missing description
-    #   against a local llama.cpp model). Flip to +true+ in
-    #   interactive binaries (e.g. +bin/pikuri-assistant+). Has no
-    #   effect when no MCP runtime is wired.
+    #   use. On by default — without a description in
+    #   +<available_mcps>+ the LLM has no signal that an MCP exists
+    #   (its tools aren't listed up-front; the model has to call
+    #   +mcp_connect+ to discover them), so paying the one-time
+    #   synthesis tax (typically 5–10 s per missing description
+    #   against a local llama.cpp model) buys the entire reason to
+    #   wire the server in the first place. Subsequent boots hit the
+    #   on-disk cache and pay nothing. Flip to +false+ if every
+    #   configured server already provides its own +instructions+
+    #   string, or to skip the cold-boot synthesis cost on short
+    #   one-shot CLI invocations. Has no effect when no MCP runtime
+    #   is wired.
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -423,8 +433,8 @@ module Pikuri
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Tool::SkillCatalog::EMPTY,
                    mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
-                   synthesize_descriptions: false,
-                   verify_mcp_servers: false,
+                   synthesize_descriptions: true,
+                   verify_mcp_servers: true,
                    streaming: false)
       if mcp_servers && !mcp_registry.empty?
         raise ArgumentError,
