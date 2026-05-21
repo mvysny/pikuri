@@ -614,8 +614,7 @@ module Pikuri
     # Release agent-owned resources — currently the {McpServers}
     # runtime when this agent constructed it (i.e. was created with a
     # non-empty +mcp_registry:+). Idempotent; safe to call multiple
-    # times. Safe to call on agents that have no MCP runtime at all
-    # (no-op).
+    # times.
     #
     # == Ownership rule
     #
@@ -625,13 +624,6 @@ module Pikuri
     # * Sub-agent built from +mcp_servers:+ (a {McpServers::View} the
     #   parent threaded in) — does not own. +#close+ does NOT close —
     #   that would kill the parent's runtime out from under it.
-    #
-    # The +at_exit { close }+ hook in {McpServers#initialize} is the
-    # safety net for callers who forget to call +#close+ (it fires
-    # on process exit regardless). Explicit +#close+ is for long-
-    # running processes that spin up and tear down agents during
-    # their lifetime — daemon-style apps where leaving MCP server
-    # subprocesses alive until process exit would leak.
     #
     # == Block form
     #
