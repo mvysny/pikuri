@@ -167,14 +167,173 @@ Reading the table:
   it's an independent implementation that may lag the spec.
 
 **Decision: when we build it, use `mcp` (official).** One new
-runtime dep, spec authority, and the adapter to pikuri's `Tool` is
-shaped the same way `Tool::Skill` and `Tool::SubAgent` are — a small
-lib class that hangs off a `Tool` subclass via constructor injection.
-The `ruby_llm-mcp` headline integration doesn't actually save us code,
-because pikuri's `Tool` isn't a `RubyLLM::Tool` — we'd still write
-the adapter ourselves. Trading a small amount of integration code for
-a narrower dependency surface and keeping the validation-error
-contract pikuri commits to.
+runtime dep, spec authority, and we control the registration adapter
+either way (provenance prefix, naming, audit logging — see "v1
+implementation shape" below). The `ruby_llm-mcp` headline integration
+doesn't actually save us code, because pikuri's tools route through
+ruby_llm via an adapter we'd own regardless. Trading a small amount of
+integration code for a narrower dependency surface.
+
+### v1 implementation shape
+
+The decisions above settle *whether* and *which gem*; what follows is
+the *how*. Captured from a brainstorm so the next pass doesn't have to
+redo it.
+
+**Two classes, clean split between config and runtime:**
+
+- **`Pikuri::McpRegistry`** — pure config, no I/O. Holds an array of
+  `Entry = Data.define(:id, :command)` where `command` is an argv array
+  (not a shell string; aligns with `Pikuri::Subprocess.spawn`
+  conventions even though MCP doesn't actually go through the
+  chokepoint — see below). Has an `EMPTY` constant matching
+  `Tool::SkillCatalog::EMPTY`.
+- **`Pikuri::McpServers`** — runtime. Constructed *from* a registry;
+  this is the seam where the dependency on the `mcp` gem lives.
+  Eagerly starts every configured server at `#initialize` (one
+  subprocess per entry, via the gem's `MCP::Client::Stdio`), fetches
+  each server's tool list + descriptions, holds the live clients in
+  an internal hash. Exposes `#system_prompt_snippet`,
+  `#activate(id, agent)`, `#view_for_sub_agent`, `#close`.
+- **`Pikuri::McpServers::View`** — facade for sub-agents. Holds a
+  reference to the parent `McpServers` + the (currently unfiltered)
+  registry. `#activate` delegates to the parent's clients hash;
+  `#close` does nothing — only the root owns lifecycle.
+- **`Pikuri::McpServers::McpConnect`** — private inner `Pikuri::Tool`
+  subclass. Auto-instantiated by `Agent#initialize` whenever the
+  registry is non-empty. Validates ID against the agent's
+  `McpServers`/`View`, errors loud on re-activation with an
+  LLM-actionable string ("Error: server `gmail` is already connected;
+  its tools are in your toolset, just call them").
+
+**Skills aren't involved.** Considered routing MCP descriptions
+through `SkillCatalog` so each MCP became a skill entry, but that adds
+a wasted hop: LLM reads `<available_skills>` → calls `skill("gmail")`
+to load body → body says "call `mcp.connect`" → calls `mcp.connect`.
+The skill mechanism exists for human-authored progressive disclosure;
+the MCP list is auto-generated and structurally identical across
+servers, so it doesn't benefit from that machinery. Direct
+`<available_mcps>` injection into the system prompt (right after
+`<available_skills>`, same shape) collapses the dance to a single hop.
+
+**Per-agent activation, no propagation.** Activation is strictly local
+to each agent — adding gmail to the parent does *not* grow a
+sub-agent's toolset, and vice versa. The existing `Tool::SubAgent`
+`@tools` snapshot pattern already handles this for free, and is
+*strengthened* by the next decision: MCP tools never enter `@tools` at
+all, so the snapshot literally cannot include them. The clients (live
+subprocesses) are shared between parent and sub-agent via `View`; the
+activation state (which tools are registered to a given chat) is
+local. v1 has no `sub_agent_visible` per-MCP filter — every MCP is
+sub-agent-visible. The filter is the obvious extension if a use case
+shows up.
+
+**MCP tools bypass `Pikuri::Tool` entirely.** Single new method on
+`Agent`: `#internal_add_tool(ruby_llm_tool)`, one line that calls
+`@chat.with_tool(ruby_llm_tool)`. The `internal_` prefix signals "this
+bypasses the strict-validation seam; you almost certainly don't want
+it." The only intended caller is `McpServers::McpConnect`. MCP tools
+are raw `RubyLLM::Tool` subclasses synthesised inside `McpServers`,
+*not* `Pikuri::Tool` instances — `Pikuri::Tool::McpProxy`
+deliberately does not exist. The strict-validation contract
+(`Pikuri::Tool::Parameters` + LLM-actionable error messages on bad
+args) is *not* extended to MCP tools in v1; MCP-side validation is
+trusted to catch malformed input. This is an explicit trade — we
+observe in practice before extending. The federated envelope and a
+full JSON-Schema-to-Parameters translation both remain available if
+v1's validation thinness hurts.
+
+  Implementation wrinkle: even going to RubyLLM directly isn't zero
+  translation. `RubyLLM::Tool` uses its own DSL (`param :name, type:,
+  ...`) as the source of truth, so the adapter inside `McpServers`
+  converts MCP JSON Schema → RubyLLM DSL. For top-level scalar
+  properties this is straightforward; for nested objects / `oneOf` /
+  `$ref`, the adapter degrades to declaring the param as a free-form
+  String and lets the MCP server reject invalid input.
+
+**Provenance prefix.** Every MCP tool's description gets
+`[From MCP server "<id>"]\n\n` prepended at registration time. Cheap
+injection-defense marker so the model sees context provenance —
+partial mitigation against the "tool description is a prompt-injection
+vector" threat captured in "MCP threats compound the existing ones".
+
+**Tool name collisions.** Namespace as `<server_id>__<tool_name>` at
+registration time so two MCPs both exposing `search` don't conflict,
+and so an MCP's `search` doesn't collide with pikuri's native
+`web_search`. Verify on `maven-tools` (small, fast) during initial
+implementation whether the `mcp` gem already namespaces; if so adopt
+its scheme, otherwise the adapter adds the prefix.
+
+**Failed-startup behavior.** If an MCP server fails to start (binary
+missing, handshake timeout, malformed schema), log a warning via
+`Pikuri.logger_for('McpServers')`, drop the entry from the live
+registry, and skip it in the system-prompt snippet entirely. The LLM
+sees nothing — no "foo-mcp: failed to start, unavailable" listing.
+Mirrors Claude Code's current behavior. The LLM can't fix a config
+bug; surfacing it just wastes tokens.
+
+**No reconnection.** If a server crashes mid-conversation, tool calls
+return `Error: MCP server "<id>" not responding`; the LLM copes. v1
+doesn't auto-restart. Defer to whenever we observe pain.
+
+**Empty registry short-circuits.** When `mcp_registry:
+McpRegistry::EMPTY` (the default for `Agent.new`), `Agent#initialize`
+skips `McpServers` construction, skips the `McpConnect` tool, and
+emits no `<available_mcps>` snippet. Identical short-circuit shape to
+the existing `SkillCatalog::EMPTY` path. `bin/pikuri-chat` simply
+omits the kwarg.
+
+**Subprocess lifecycle — carve-out from the `Pikuri::Subprocess.spawn`
+chokepoint.** The `mcp` gem owns its subprocess spawn
+(`MCP::Client::Stdio` calls `Process.spawn` internally). Forcing it
+through pikuri's chokepoint would mean either forking the gem or
+threading custom IO pipes through its API — duplicating work the gem
+is built to do. So: `McpServers` registers `at_exit { close }` in
+`#initialize`, and `#close` iterates its clients and asks the gem to
+terminate each cleanly (closing stdin → server's read loop hits EOF →
+server self-exits, per spec). The `grep -rn
+'Process\.spawn|Open3|system' lib/` invariant from CLAUDE.md stays
+clean because the spawn happens inside the gem, not in pikuri's
+`lib/`. If we ever observe zombies surviving exit, the fallback is to
+read PIDs from the gem and register them in the `Subprocess` tracker
+— but don't build it prophylactically.
+
+**INFO-level audit log at startup.** At `McpServers#initialize`, after
+each successful server connects, log one INFO event per server
+containing the *raw* schema as the gem returns it: server description,
+every tool's name + full description + params (with descriptions) +
+return shape. Wall of text, deliberately. Provides a
+privacy-conscious user a one-stop auditable trail to scan at boot —
+what each MCP claims to be, what each tool actually does, what it'll
+receive and return. The provenance prefix
+(`[From MCP server "<id>"]`) is a *context-side* concern; the log
+shows the unprefixed original.
+
+**Binary wiring.** `bin/pikuri-chat` stays minimal — omits the
+`mcp_registry:` kwarg, no MCP-related plumbing in the script. The new
+`bin/pikuri-assistant` (initially a copy of `pikuri-chat`) is where
+MCP development happens; for the time being, MCPs are hand-edited
+into the binary as constructor args. Long-term, downstream gems
+building on pikuri (e.g. `pikuri-tui`) ship their own config-file
+plumbing. `prompts/pikuri-assistant.txt` is a new sibling system
+prompt — the chat voice and scope assumptions don't extend cleanly to
+"I have access to your Gmail."
+
+**Testing — in-tree test MCP server.** The official `mcp` gem
+provides both `MCP::Server` and `MCP::Client`, so
+`spec/support/test_mcp_server.rb` (~30 lines) uses the gem's server
+side over `StdioTransport` to expose a small fixture of
+deliberately-shaped tools: `echo` (happy path), `divide`
+(error-on-bad-args, e.g. division by zero), `slow` (timeout /
+cancellation), `crash` (`Process.exit(1)` mid-call, exercising
+mid-conversation server death). Integration specs spawn the test
+server via a real `McpRegistry::Entry` and exercise the full path:
+spawn → handshake → `tools/list` → `tools/call` → close. Net test
+pyramid: unit specs for `McpRegistry` value semantics +
+`McpServers::View` filtering, integration specs for `McpServers`
+lifecycle + `McpConnect` behavior driven by the test server, and
+manual smoke on real third-party MCPs via `bin/pikuri-assistant`. CI
+stays hermetic — no `npx`, no Node, no network.
 
 ## Workspace v2
 
