@@ -308,14 +308,19 @@ module Pikuri
     #   its toolset on demand. Mutually exclusive with +mcp_servers:+
     #   — main agents pass a registry, sub-agents inherit the
     #   already-running runtime via +mcp_servers:+. Same auto-wiring
-    #   contract as +skill_catalog:+ above.
+    #   contract as +skill_catalog:+ above. The constructed
+    #   {McpServers} is *owned* by this agent — {#close} will
+    #   terminate its MCP server subprocesses.
     # @param mcp_servers [McpServers, McpServers::View, nil] used by
     #   {Tool::SubAgent} to thread the parent's already-running
     #   {McpServers} into spawned sub-agents (via
     #   {McpServers#view_for_sub_agent}) so child agents share the
     #   live clients without re-spawning. Application code (the
     #   +bin/pikuri-*+ scripts) should pass +mcp_registry:+ instead
-    #   and let {Agent} construct the runtime.
+    #   and let {Agent} construct the runtime. When passed in this
+    #   way, the runtime is *not* owned by this agent — {#close}
+    #   leaves it alone (the parent or whoever constructed it is
+    #   responsible).
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -342,7 +347,24 @@ module Pikuri
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @skill_catalog = skill_catalog
-      @mcp_servers = mcp_servers || (mcp_registry.empty? ? nil : McpServers.new(mcp_registry))
+
+      # Resolve the MCP runtime + ownership: we own and must close
+      # only the runtime *we* constructed. If +mcp_servers:+ was
+      # passed (sub-agent path), the caller owns lifecycle. If
+      # +mcp_registry:+ was passed non-empty (main-agent path), we
+      # build a fresh runtime here and own its +#close+. See {#close}.
+      if mcp_servers
+        @mcp_servers = mcp_servers
+        @owns_mcp_servers = false
+      elsif !mcp_registry.empty?
+        @mcp_servers = McpServers.new(mcp_registry)
+        @owns_mcp_servers = true
+      else
+        @mcp_servers = nil
+        @owns_mcp_servers = false
+      end
+      @closed = false
+
       @system_prompt = system_prompt + skill_catalog.format_for_prompt
       @system_prompt += @mcp_servers.system_prompt_snippet if @mcp_servers
       @tools = tools.dup
@@ -587,6 +609,61 @@ module Pikuri
         streaming: @streaming
       )
       nil
+    end
+
+    # Release agent-owned resources — currently the {McpServers}
+    # runtime when this agent constructed it (i.e. was created with a
+    # non-empty +mcp_registry:+). Idempotent; safe to call multiple
+    # times. Safe to call on agents that have no MCP runtime at all
+    # (no-op).
+    #
+    # == Ownership rule
+    #
+    # An agent owns its {McpServers} iff it constructed it. Two cases:
+    #
+    # * Main agent built from +mcp_registry:+ — owns. +#close+ closes.
+    # * Sub-agent built from +mcp_servers:+ (a {McpServers::View} the
+    #   parent threaded in) — does not own. +#close+ does NOT close —
+    #   that would kill the parent's runtime out from under it.
+    #
+    # The +at_exit { close }+ hook in {McpServers#initialize} is the
+    # safety net for callers who forget to call +#close+ (it fires
+    # on process exit regardless). Explicit +#close+ is for long-
+    # running processes that spin up and tear down agents during
+    # their lifetime — daemon-style apps where leaving MCP server
+    # subprocesses alive until process exit would leak.
+    #
+    # == Block form
+    #
+    # {.open} wraps +Agent.new+ + +#close+ in an +ensure+ for the
+    # common case where lifecycle matches a scope.
+    #
+    # @return [void]
+    def close
+      return if @closed
+      @closed = true
+      @mcp_servers.close if @owns_mcp_servers && @mcp_servers
+    end
+
+    # Construct an agent, yield it to the block, and call {#close} on
+    # the way out. Follows Ruby's +File.open+ convention.
+    #
+    # @example
+    #   Pikuri::Agent.open(transport: ..., system_prompt: ..., tools: [], listeners: ll,
+    #                      mcp_registry: my_registry) do |agent|
+    #     agent.run_loop(user_message: "Hello")
+    #   end
+    #   # McpServers and any spawned MCP subprocesses are closed here.
+    #
+    # @yieldparam agent [Agent]
+    # @return the return value of the block.
+    def self.open(**kwargs)
+      agent = new(**kwargs)
+      begin
+        yield agent
+      ensure
+        agent.close
+      end
     end
 
     # Register a raw +RubyLLM::Tool+ subclass on this agent's

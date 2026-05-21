@@ -113,8 +113,17 @@ module Pikuri
               mcp_servers: mcp_servers,
               streaming: streaming
             )
-            sub.run_loop(user_message: task)
-            sub.last_assistant_content
+            begin
+              sub.run_loop(user_message: task)
+              sub.last_assistant_content
+            ensure
+              # Defensive: sub-agents don't own their +mcp_servers+
+              # (they received a +View+), so this is a no-op today
+              # for MCP. Calling +#close+ anyway means any future
+              # agent-owned resource gets released without revisiting
+              # this site. See {Agent#close}.
+              sub.close
+            end
           }
         )
       end

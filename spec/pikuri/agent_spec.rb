@@ -147,6 +147,146 @@ RSpec.describe Pikuri::Agent do
 
       assert_equal '', agent.name
     end
+  end
+
+  # Minimal McpServers stand-in for ownership-semantics tests. Real
+  # McpServers instances would spawn subprocesses on construction,
+  # which we don't want for unit-level lifecycle tests. This stub
+  # implements only the surface +Agent#initialize+ touches.
+  let(:tracker_mcp_servers_class) do
+    Class.new do
+      attr_reader :close_calls
+      def initialize
+        @close_calls = 0
+      end
+
+      def empty?
+        true # skip auto-McpConnect-tool registration in Agent#initialize
+      end
+
+      def system_prompt_snippet
+        ''
+      end
+
+      def close
+        @close_calls += 1
+      end
+    end
+  end
+
+  describe '#close' do
+    it 'closes the McpServers it constructed from mcp_registry:' do
+      tracker = tracker_mcp_servers_class.new
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+        ])
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's', tools: [], listeners: listeners,
+                                  mcp_registry: registry)
+
+        assert_same tracker, agent.mcp_servers
+        assert_equal 0, tracker.close_calls
+        agent.close
+        assert_equal 1, tracker.close_calls
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+      end
+    end
+
+    it 'does NOT close a McpServers passed via mcp_servers: (sub-agent path)' do
+      tracker = tracker_mcp_servers_class.new
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners,
+                                mcp_servers: tracker)
+
+      assert_same tracker, agent.mcp_servers
+      agent.close
+      assert_equal 0, tracker.close_calls
+    end
+
+    it 'is idempotent — repeat calls do not re-invoke McpServers#close' do
+      tracker = tracker_mcp_servers_class.new
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+        ])
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's', tools: [], listeners: listeners,
+                                  mcp_registry: registry)
+        agent.close
+        agent.close
+        agent.close
+        assert_equal 1, tracker.close_calls
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+      end
+    end
+
+    it 'is a no-op when no MCP runtime is wired' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners)
+      assert_nil agent.mcp_servers
+      # Must not raise.
+      agent.close
+      agent.close
+    end
+  end
+
+  describe '.open' do
+    it 'yields the agent to the block and returns the block result' do
+      result = Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's', tools: [], listeners: listeners) do |agent|
+        assert_kind_of Pikuri::Agent, agent
+        :block_return_value
+      end
+      assert_equal :block_return_value, result
+    end
+
+    it 'calls #close after the block returns' do
+      tracker = tracker_mcp_servers_class.new
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+        ])
+        Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                           system_prompt: 's', tools: [], listeners: listeners,
+                           mcp_registry: registry) do |_agent|
+          assert_equal 0, tracker.close_calls
+        end
+        assert_equal 1, tracker.close_calls
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+      end
+    end
+
+    it 'calls #close even when the block raises (resource cleanup on exception)' do
+      tracker = tracker_mcp_servers_class.new
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+        ])
+        err = assert_raises(RuntimeError) do
+          Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                             system_prompt: 's', tools: [], listeners: listeners,
+                             mcp_registry: registry) do |_agent|
+            raise 'boom from inside the block'
+          end
+        end
+        assert_equal 'boom from inside the block', err.message
+        assert_equal 1, tracker.close_calls
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+      end
+    end
 
     it 'exposes an explicitly passed name' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
