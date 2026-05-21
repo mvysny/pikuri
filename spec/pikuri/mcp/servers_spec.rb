@@ -46,7 +46,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       servers = Pikuri::Mcp::Servers.new(fresh_registry)
       log = captured.string
       assert_match(/MCP server "test" started/, log)
-      assert_match(/Tools \(4\)/, log)
+      assert_match(/Tools \(5\)/, log)
       assert_match(/- echo$/m, log)
       assert_match(/- divide$/m, log)
       assert_match(/input_schema:/, log)
@@ -126,8 +126,8 @@ RSpec.describe Pikuri::Mcp::Servers do
       servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       count = servers.register_tools_with_agent('test', agent)
-      assert_equal 4, count
-      assert_equal 4, agent.added_tools.size
+      assert_equal 5, count
+      assert_equal 5, agent.added_tools.size
       assert(agent.added_tools.all? { |t| t < RubyLLM::Tool })
     ensure
       servers&.close
@@ -288,8 +288,8 @@ RSpec.describe Pikuri::Mcp::Servers do
       view = servers.view_for_sub_agent
       agent = fake_agent
       count = view.register_tools_with_agent('test', agent)
-      assert_equal 4, count
-      assert_equal 4, agent.added_tools.size
+      assert_equal 5, count
+      assert_equal 5, agent.added_tools.size
     ensure
       servers&.close
     end
@@ -321,8 +321,8 @@ RSpec.describe Pikuri::Mcp::Servers do
       tool = servers.build_mcp_connect_tool(agent)
       result = tool.run('id' => 'test')
       assert_match(/Connected to MCP server 'test'/, result)
-      assert_match(/Added 4 tools/, result)
-      assert_equal 4, agent.added_tools.size
+      assert_match(/Added 5 tools/, result)
+      assert_equal 5, agent.added_tools.size
     ensure
       servers&.close
     end
@@ -334,7 +334,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       tool.run('id' => 'test')
       result = tool.run('id' => 'test')
       assert_match(/\AError: server 'test' is already connected/, result)
-      assert_equal 4, agent.added_tools.size # not 8
+      assert_equal 5, agent.added_tools.size # not 10
     ensure
       servers&.close
     end
@@ -348,8 +348,8 @@ RSpec.describe Pikuri::Mcp::Servers do
       tool1.run('id' => 'test')
       result2 = tool2.run('id' => 'test') # fresh activation set
       assert_match(/Connected to MCP server 'test'/, result2)
-      assert_equal 4, agent1.added_tools.size
-      assert_equal 4, agent2.added_tools.size
+      assert_equal 5, agent1.added_tools.size
+      assert_equal 5, agent2.added_tools.size
     ensure
       servers&.close
     end

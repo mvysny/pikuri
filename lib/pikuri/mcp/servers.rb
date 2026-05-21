@@ -1,27 +1,26 @@
 # frozen_string_literal: true
 
-require 'mcp'
 require 'set'
 
 module Pikuri
   module Mcp
   # Runtime side of MCP support: spawns the configured servers, holds
-  # the live clients, and is the seam where the +mcp+ gem dependency
-  # lives. Constructed from a {Registry} (config), eager-starts
-  # every entry at +#initialize+, registers an +at_exit+ hook to close
-  # cleanly on process exit.
+  # one {ClientWrapper} per live server, and orchestrates the
+  # {Verifier} / {Synthesizer} passes that turn a raw MCP surface into
+  # the +<available_mcps>+ snippet. The +mcp+ gem dependency now lives
+  # one level down in {ClientWrapper}. Constructed from a {Registry}
+  # (config), eager-starts every entry at +#initialize+, registers an
+  # +at_exit+ hook to close cleanly on process exit.
   #
   # == Transports
   #
-  # Each {Registry} entry maps to one of the +mcp+ gem's transports:
-  #
-  # * {Registry::StdioEntry} → +MCP::Client::Stdio+ (local subprocess).
-  # * {Registry::HttpEntry}  → +MCP::Client::HTTP+ (remote endpoint).
-  #
-  # +#start_one+ pattern-matches on the entry type and constructs the
-  # right transport; everything downstream (client, tools cache, audit
-  # log, +#close+) is polymorphic — both transport classes expose
-  # +#close+ with the same idempotent contract.
+  # Transport selection (stdio vs HTTP) and the +mcp+ gem's
+  # +MCP::Client::Stdio+ / +MCP::Client::HTTP+ construction live inside
+  # {ClientWrapper}. {Servers} stays transport-agnostic: it asks the
+  # wrapper for +server_info+ / +tools+ at boot and delegates
+  # per-tool calls back to the wrapper, which handles restart-on-
+  # subprocess-death retry internally (see {ClientWrapper} for the
+  # retry contract).
   #
   # == Lifecycle and the +Subprocess.spawn+ carve-out
   #
@@ -32,11 +31,11 @@ module Pikuri
   # either forking the gem or threading custom IO pipes through its
   # API — duplicating work the gem exists to do. So stdio MCP is the
   # documented exception to the chokepoint convention in CLAUDE.md
-  # "Scope decisions": the gem spawns, we own +#close+, and
-  # +at_exit { close }+ runs from inside {#initialize} to make sure
-  # cleanup happens on every exit path. Graceful close on a stdio
-  # transport closes stdin → server's read loop hits EOF → server
-  # self-terminates, per the MCP spec.
+  # "Scope decisions": the gem spawns, we own +#close+ (via
+  # {ClientWrapper#close}), and +at_exit { close }+ runs from inside
+  # {#initialize} to make sure cleanup happens on every exit path.
+  # Graceful close on a stdio transport closes stdin → server's read
+  # loop hits EOF → server self-terminates, per the MCP spec.
   #
   # HTTP entries don't spawn anything — they're plain Faraday — so the
   # carve-out doesn't apply. +at_exit { close }+ still runs to send the
@@ -44,13 +43,16 @@ module Pikuri
   #
   # == What lives where
   #
-  # * {Servers}: eager startup, audit logging, the client/transport
-  #   hash, +#close+, the +<available_mcps>+ snippet renderer, and the
+  # * {ClientWrapper}: the per-server client/transport lifecycle plus
+  #   restart-and-retry on stdio subprocess death. {Servers} holds one
+  #   wrapper per live server in +@wrappers+.
+  # * {Servers}: eager startup, audit logging, the wrappers hash,
+  #   +#close+, the +<available_mcps>+ snippet renderer, and the
   #   shared +register_tools_with_agent+ that actually wires MCP tools
   #   into a given agent's underlying +RubyLLM::Chat+.
   # * {View}: thin facade for sub-agents — same public surface as
   #   {Servers} but every method delegates to the root. Sub-agents
-  #   share the parent's live clients; only the root owns +#close+.
+  #   share the parent's live wrappers; only the root owns +#close+.
   # * {Connect}: the +mcp_connect+ tool the LLM calls. Private inner
   #   {Pikuri::Tool} subclass instantiated per-agent by
   #   {Agent#initialize}. Tracks its own +Set+ of activated ids so
@@ -83,30 +85,29 @@ module Pikuri
     #   is true. Pass +nil+ (the default) to skip synthesis and rely
     #   on the static fallback chain.
     # @param verifier [Verifier, nil] when set, invoked from
-    #   {#start_one} after +client.tools+ but before
+    #   {#start_one} after +wrapper.tools+ but before
     #   {#resolve_description}. A {Verifier::InjectionDetected} raise
-    #   aborts startup for that server (transport closed, exception
+    #   aborts startup for that server (wrapper closed, exception
     #   propagated). {Agent#initialize} builds + threads a real
     #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
     #   Pass +nil+ (the default) to skip injection-checking and
     #   trust whatever the server emits.
     # @return [Servers]
     def initialize(registry, synthesizer: nil, verifier: nil)
-      @registry    = registry
-      @synthesizer = synthesizer
-      @verifier    = verifier
-      @clients     = {} # id => MCP::Client (only for servers that started)
-      @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
-      @tools_cache = {} # id => Array<MCP::Client::Tool>
+      @registry     = registry
+      @synthesizer  = synthesizer
+      @verifier     = verifier
+      @wrappers     = {} # id => ClientWrapper (only for servers that started)
+      @tools_cache  = {} # id => Array<MCP::Client::Tool>
       @descriptions = {} # id => short description shown in <available_mcps>
-      @live_ids    = []
-      @closed      = false
+      @live_ids     = []
+      @closed       = false
 
       # Register cleanup *before* starting any server. If a later
       # +start_one+ raises (notably Cancelled from synthesis), the
       # exception propagates out of {#initialize} and the at_exit
       # handler still fires at process exit to close any
-      # transports that did get opened.
+      # wrappers that did get opened.
       register_at_exit
       start_all
     end
@@ -184,10 +185,10 @@ module Pikuri
     def register_tools_with_agent(id, agent)
       raise ArgumentError, "MCP server #{id.inspect} is not live" unless @live_ids.include?(id)
 
-      client = @clients.fetch(id)
+      wrapper = @wrappers.fetch(id)
       tools = @tools_cache.fetch(id)
       tools.each do |mcp_tool|
-        rb_tool = synthesize_ruby_llm_tool(server_id: id, client: client, mcp_tool: mcp_tool)
+        rb_tool = synthesize_ruby_llm_tool(server_id: id, wrapper: wrapper, mcp_tool: mcp_tool)
         agent.internal_add_tool(rb_tool)
       end
       tools.size
@@ -197,17 +198,14 @@ module Pikuri
     # subprocesses. Idempotent. Registered via +at_exit+ from
     # {#initialize} so process exit always cleans up, but callers may
     # invoke it explicitly (e.g. tests that swap in a fresh
-    # {Servers}).
+    # {Servers}). {ClientWrapper#close} catches and logs its own
+    # transport-close errors, so the loop here doesn't need a rescue.
     #
     # @return [void]
     def close
       return if @closed
 
-      @transports.each do |id, transport|
-        transport.close
-      rescue StandardError => e
-        LOGGER.warn("Error closing MCP server #{id.inspect}: #{e.class}: #{e.message}")
-      end
+      @wrappers.each_value(&:close)
       @closed = true
     end
 
@@ -218,11 +216,8 @@ module Pikuri
     end
 
     def start_one(entry)
-      transport = build_transport(entry)
-      client = MCP::Client.new(transport: transport)
-      client.connect
-
-      tools = client.tools
+      wrapper = ClientWrapper.new(entry)
+      tools = wrapper.tools
 
       # Verification, when wired, runs BEFORE the server enters
       # @live_ids and BEFORE its description is resolved — a
@@ -232,54 +227,33 @@ module Pikuri
       # StandardError because we want the user to see the
       # rejection, not have it logged as a per-server "Failed to
       # start" warning.
-      @verifier&.call(entry: entry, client: client, tools: tools)
+      @verifier&.call(entry: entry, client: wrapper.client, tools: tools)
 
-      @clients[entry.id]      = client
-      @transports[entry.id]   = transport
+      @wrappers[entry.id]     = wrapper
       @tools_cache[entry.id]  = tools
-      @descriptions[entry.id] = resolve_description(entry, client, tools)
+      @descriptions[entry.id] = resolve_description(entry, wrapper.client, tools)
       @live_ids << entry.id
 
-      log_audit(entry, client, tools)
+      log_audit(entry, wrapper.client, tools)
     rescue Agent::Control::Cancellable::Cancelled, Verifier::InjectionDetected
       # Cancellation or verifier rejection — abort startup rather
       # than logging this as a per-server "Failed to start" warning,
-      # so the user sees the actual reason. Partial-startup cleanup
-      # runs inline (we have to do it here because the more general
-      # rescue below is the only other cleanup site).
-      begin
-        transport&.close
-      rescue StandardError
-        nil
-      end
+      # so the user sees the actual reason. {ClientWrapper.new}
+      # cleans up its own half-opened transport on failure, so
+      # +wrapper+ is either nil (handshake failed inside the wrapper)
+      # or a fully-initialized object that we have to close here.
+      wrapper&.close
       raise
     rescue StandardError => e
       LOGGER.warn(
         "Failed to start MCP server #{entry.id.inspect} " \
         "(#{describe_entry(entry)}): #{e.class}: #{e.message}"
       )
-      # Try to clean up a partially-opened transport so we don't leak
-      # state on partial-startup failure (stdio: spawn succeeded but
-      # handshake didn't; http: session opened but initialize 4xx'd).
-      begin
-        transport&.close
-      rescue StandardError
-        nil
-      end
-    end
-
-    def build_transport(entry)
-      case entry
-      when Registry::StdioEntry
-        MCP::Client::Stdio.new(
-          command: entry.command.first,
-          args: entry.command.drop(1)
-        )
-      when Registry::HttpEntry
-        MCP::Client::HTTP.new(url: entry.url, headers: entry.headers)
-      else
-        raise ArgumentError, "Unknown MCP entry type: #{entry.class}"
-      end
+      # Same as above — {ClientWrapper.new}'s own rescue handles the
+      # half-opened-transport case, so +wrapper+ here is either nil
+      # or fully initialized. Closing covers the "verifier passed but
+      # resolve_description / log_audit raised" path.
+      wrapper&.close
     end
 
     # Short human-readable identifier for an entry's transport, used in
@@ -364,6 +338,11 @@ module Pikuri
     # to the provider, so each property's +"description"+ field
     # reaches the LLM.
     #
+    # The execute closure captures the {ClientWrapper}, not the raw
+    # +MCP::Client+. This is what makes restart-on-subprocess-death
+    # transparent to the LLM: the wrapper handles close + respawn +
+    # retry internally, so the call site stays a plain +call_tool+.
+    #
     # Note: +mcp_tool.output_schema+ has no destination — RubyLLM has
     # no return-schema slot in its +Tool+ surface (no equivalent of
     # +params+ for outputs), and providers don't accept one in the
@@ -371,14 +350,15 @@ module Pikuri
     # audit log (+#log_audit+) so a privacy-conscious user can still
     # see what an MCP server claims to return, and otherwise the
     # data simply lives in the call response.
-    def synthesize_ruby_llm_tool(server_id:, client:, mcp_tool:)
+    def synthesize_ruby_llm_tool(server_id:, wrapper:, mcp_tool:)
       namespaced_name = "#{server_id}__#{mcp_tool.name}"
       prefixed_desc = %([From MCP server "#{server_id}"]\n\n#{mcp_tool.description})
       schema = normalize_schema(mcp_tool.input_schema)
 
-      # Capture the client + tool for the execute closure. The closure
-      # converts the MCP::Tool::Response into the +"Error: ..."+ /
-      # plain-text shape pikuri's tool-call observation contract uses.
+      # Capture the wrapper + tool for the execute closure. The
+      # closure converts the MCP::Tool::Response into the
+      # +"Error: ..."+ / plain-text shape pikuri's tool-call
+      # observation contract uses.
       Class.new(RubyLLM::Tool) do
         description(prefixed_desc)
         params(schema)
@@ -386,12 +366,14 @@ module Pikuri
         define_singleton_method(:name) { namespaced_name }
 
         define_method(:execute) do |**args|
-          # +MCP::Client#call_tool+ returns the raw JSON-RPC response
+          # +ClientWrapper#call_tool+ returns the raw JSON-RPC response
           # Hash: +{"jsonrpc", "id", "result" => {"content" => [...],
           # "isError" => bool}}+ on success, or +{... "error" => {...}}+
-          # on JSON-RPC-level failure.
+          # on JSON-RPC-level failure. Subprocess-death retries are
+          # handled inside the wrapper; we only see them here if all
+          # {ClientWrapper::MAX_CALL_ATTEMPTS} attempts failed.
           begin
-            response = client.call_tool(tool: mcp_tool, arguments: args)
+            response = wrapper.call_tool(tool: mcp_tool, arguments: args)
           rescue StandardError => e
             next "Error: MCP server #{server_id.inspect} call failed: #{e.class}: #{e.message}"
           end

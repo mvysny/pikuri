@@ -18,6 +18,13 @@
 #                   mid-conversation server death is surfaced as an
 #                   +Error: ...+ observation rather than crashing the
 #                   agent loop.
+# * +flaky_crash+ — crashes on the first call (writes a marker file then
+#                   +Process.exit(1)+), succeeds on subsequent calls when
+#                   the marker file already exists. Used to exercise the
+#                   restart-then-succeed path in {Mcp::ClientWrapper};
+#                   requires +PIKURI_TEST_FLAKY_MARKER+ to be set to the
+#                   marker path (cross-process state, since each crash
+#                   discards the previous subprocess's memory).
 
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
@@ -100,6 +107,26 @@ class CrashTool < MCP::Tool
   end
 end
 
+class FlakyCrashTool < MCP::Tool
+  tool_name 'flaky_crash'
+  description 'Crashes on the first call (writes marker, exits 1); succeeds on subsequent calls.'
+  input_schema
+
+  def self.call(server_context:)
+    marker = ENV['PIKURI_TEST_FLAKY_MARKER']
+    raise 'flaky_crash requires PIKURI_TEST_FLAKY_MARKER to be set' unless marker
+
+    if File.exist?(marker)
+      MCP::Tool::Response.new([{ type: 'text', text: 'recovered' }])
+    else
+      # The marker has to be written + flushed before exit so the next
+      # subprocess (spawned by ClientWrapper#restart!) sees it on disk.
+      File.write(marker, 'crashed')
+      Process.exit(1)
+    end
+  end
+end
+
 # +PIKURI_TEST_SKIP_INSTRUCTIONS=1+ omits the +instructions:+ field so
 # specs can exercise the Mcp::Servers description-synthesis fallback
 # (instructions-less servers are the common case in the wild — see
@@ -107,7 +134,7 @@ end
 server_kwargs = {
   name: 'pikuri-test-mcp',
   version: '0.0.1',
-  tools: [EchoTool, DivideTool, SlowTool, CrashTool]
+  tools: [EchoTool, DivideTool, SlowTool, CrashTool, FlakyCrashTool]
 }
 unless ENV['PIKURI_TEST_SKIP_INSTRUCTIONS']
   server_kwargs[:instructions] = 'In-tree fixture used by pikuri specs to exercise the MCP integration end-to-end.'
