@@ -108,39 +108,57 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 mcp_registry = Pikuri::McpRegistry.new(entries: [
 ])
 
-agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: model,
-    provider: :openai,
-    assume_model_exists: true
-  ),
-  system_prompt: system_prompt,
-  # File/shell tools first (declaration order biases some models toward
-  # earlier tools, and this is the coding-relevant set); web + calculator
-  # last as auxiliary. The `skill` tool, when the catalog is non-empty,
-  # is appended by Agent itself — see Agent#initialize.
-  tools: [
-    Pikuri::Tool::Read.new(workspace: workspace),
-    Pikuri::Tool::Grep.new(workspace: workspace),
-    Pikuri::Tool::Glob.new(workspace: workspace),
-    Pikuri::Tool::Edit.new(workspace: workspace),
-    Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer),
-    Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer),
-    Pikuri::Tool::WEB_SEARCH,
-    Pikuri::Tool::WEB_SCRAPE,
-    Pikuri::Tool::FETCH,
-    Pikuri::Tool::CALCULATOR
-  ],
-  listeners: Pikuri::Agent::ListenerList.new([
-    Pikuri::Agent::Listener::Terminal.new,
-    Pikuri::Agent::Listener::TokenLog.new
-  ]),
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
-  cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url,
-  skill_catalog: skill_catalog,
-  mcp_registry: mcp_registry
-)
+# Boot-time work — notably the synthesize_descriptions: pass that
+# calls Agent.think against each MCP server lacking instructions /
+# title — can take tens of seconds. Trap SIGINT around Agent.new so
+# the same Ctrl+C the user expects to interrupt a turn also aborts
+# a slow boot. See bin/pikuri-assistant for the same pattern.
+prev_boot_trap = trap('INT') { cancel_flag.cancel! }
+begin
+  agent = Pikuri::Agent.new(
+    transport: Pikuri::Agent::ChatTransport.new(
+      model: model,
+      provider: :openai,
+      assume_model_exists: true
+    ),
+    system_prompt: system_prompt,
+    # File/shell tools first (declaration order biases some models toward
+    # earlier tools, and this is the coding-relevant set); web + calculator
+    # last as auxiliary. The `skill` tool, when the catalog is non-empty,
+    # is appended by Agent itself — see Agent#initialize.
+    tools: [
+      Pikuri::Tool::Read.new(workspace: workspace),
+      Pikuri::Tool::Grep.new(workspace: workspace),
+      Pikuri::Tool::Glob.new(workspace: workspace),
+      Pikuri::Tool::Edit.new(workspace: workspace),
+      Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer),
+      Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer),
+      Pikuri::Tool::WEB_SEARCH,
+      Pikuri::Tool::WEB_SCRAPE,
+      Pikuri::Tool::FETCH,
+      Pikuri::Tool::CALCULATOR
+    ],
+    listeners: Pikuri::Agent::ListenerList.new([
+      Pikuri::Agent::Listener::Terminal.new,
+      Pikuri::Agent::Listener::TokenLog.new
+    ]),
+    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
+    cancellable: cancel_flag,
+    llama_probe_url: llama_probe_url,
+    skill_catalog: skill_catalog,
+    mcp_registry: mcp_registry,
+    synthesize_descriptions: true
+  )
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  warn 'Cancelled during startup'
+  exit 130
+ensure
+  trap('INT', prev_boot_trap || 'DEFAULT')
+end
+# Reset in case the user pressed Ctrl+C between MCP synthesis calls — the
+# trap fired but Agent.new finished before the next .think check could
+# raise. Otherwise the first turn would inherit a stale cancellation.
+cancel_flag.reset!
 agent.allow_sub_agent(max_steps: 20)
 
 # Explicit close is the user-facing contract for Pikuri::Agent.
