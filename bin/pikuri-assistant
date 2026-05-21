@@ -99,13 +99,12 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
-# Boot-time work — notably the synthesize_descriptions: pass that
-# calls Agent.think against each MCP server lacking instructions /
-# title — can take tens of seconds. Trap SIGINT around Agent.new so
-# the same Ctrl+C the user expects to interrupt a turn also aborts
-# a slow boot. The Agent constructor builds a thinker that honors
-# cancel_flag, so the next .think call after Ctrl+C raises
-# Cancelled and unwinds.
+# Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
+# each call Agent.think once per configured MCP server on a cold
+# cache (description synthesis on servers without instructions, then
+# the injection verifier on every server). Both honor cancel_flag,
+# so trap SIGINT around Agent.new and a Ctrl+C unwinds startup on
+# the next .think check. Cached entries skip both passes entirely.
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(
@@ -125,6 +124,7 @@ begin
     llama_probe_url: llama_probe_url,
     mcp_registry: mcp_registry,
     synthesize_descriptions: true,
+    verify_mcp_servers: true,
     streaming: streaming
   )
 rescue Pikuri::Agent::Control::Cancellable::Cancelled

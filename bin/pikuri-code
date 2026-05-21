@@ -108,11 +108,10 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
-# Boot-time work — notably the synthesize_descriptions: pass that
-# calls Agent.think against each MCP server lacking instructions /
-# title — can take tens of seconds. Trap SIGINT around Agent.new so
-# the same Ctrl+C the user expects to interrupt a turn also aborts
-# a slow boot. See bin/pikuri-assistant for the same pattern.
+# Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
+# each call Agent.think once per configured MCP server on a cold
+# cache. Trap SIGINT around Agent.new so a Ctrl+C unwinds startup.
+# See bin/pikuri-assistant for the same pattern.
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(
@@ -147,7 +146,8 @@ begin
     llama_probe_url: llama_probe_url,
     skill_catalog: skill_catalog,
     mcp_registry: mcp_registry,
-    synthesize_descriptions: true
+    synthesize_descriptions: true,
+    verify_mcp_servers: true
   )
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   warn 'Cancelled during startup'
