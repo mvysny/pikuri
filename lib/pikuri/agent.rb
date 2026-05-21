@@ -298,6 +298,24 @@ module Pikuri
     #   changes are coupled — advertising skills without a
     #   loader (or vice versa) would be a bug, so the catalog is
     #   the single source of truth for both.
+    # @param mcp_registry [McpRegistry] configured MCP servers to
+    #   eager-start. Defaults to +McpRegistry::EMPTY+, which is a
+    #   no-op singleton. When non-empty: an {McpServers} runtime is
+    #   constructed (spawning every server immediately), its
+    #   +<available_mcps>+ block is appended to +system_prompt+ so
+    #   the LLM can see what's available, and an +mcp_connect+ tool
+    #   is appended to +tools+ so the LLM can pull MCP tools into
+    #   its toolset on demand. Mutually exclusive with +mcp_servers:+
+    #   — main agents pass a registry, sub-agents inherit the
+    #   already-running runtime via +mcp_servers:+. Same auto-wiring
+    #   contract as +skill_catalog:+ above.
+    # @param mcp_servers [McpServers, McpServers::View, nil] used by
+    #   {Tool::SubAgent} to thread the parent's already-running
+    #   {McpServers} into spawned sub-agents (via
+    #   {McpServers#view_for_sub_agent}) so child agents share the
+    #   live clients without re-spawning. Application code (the
+    #   +bin/pikuri-*+ scripts) should pass +mcp_registry:+ instead
+    #   and let {Agent} construct the runtime.
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -313,10 +331,20 @@ module Pikuri
     def initialize(transport:, system_prompt:, tools:, listeners:,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
-                   skill_catalog: Tool::SkillCatalog::EMPTY, streaming: false)
+                   skill_catalog: Tool::SkillCatalog::EMPTY,
+                   mcp_registry: McpRegistry::EMPTY, mcp_servers: nil,
+                   streaming: false)
+      if mcp_servers && !mcp_registry.empty?
+        raise ArgumentError,
+              'Agent.new: pass either mcp_registry: (main agent — builds a fresh McpServers) ' \
+              'or mcp_servers: (sub-agent — inherits the parent\'s runtime), not both.'
+      end
+
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
-      @system_prompt = skill_catalog.empty? ? system_prompt : system_prompt + skill_catalog.format_for_prompt
       @skill_catalog = skill_catalog
+      @mcp_servers = mcp_servers || (mcp_registry.empty? ? nil : McpServers.new(mcp_registry))
+      @system_prompt = system_prompt + skill_catalog.format_for_prompt
+      @system_prompt += @mcp_servers.system_prompt_snippet if @mcp_servers
       @tools = tools.dup
       @listeners = listeners
       @step_limit = step_limit
@@ -332,6 +360,15 @@ module Pikuri
           if @tools.any?(Tool::Skill)
 
         @tools << Tool::Skill.new(catalog: skill_catalog)
+      end
+
+      if @mcp_servers && !@mcp_servers.empty?
+        if @tools.any?(McpServers::McpConnect)
+          raise 'McpServers::McpConnect cannot be passed in tools: when an MCP runtime is wired; ' \
+                'Agent auto-registers it.'
+        end
+
+        @tools << @mcp_servers.build_mcp_connect_tool(self)
       end
 
       @chat = RubyLLM.chat(**@transport.to_h)
@@ -399,6 +436,16 @@ module Pikuri
     #   supplied. Read by callers that want to inspect the
     #   loaded skills (e.g. for a startup banner).
     attr_reader :skill_catalog
+
+    # @return [McpServers, McpServers::View, nil] the MCP runtime
+    #   wired into this agent — a freshly-constructed
+    #   {McpServers} for the main agent (from the constructor's
+    #   +mcp_registry:+), a {McpServers::View} delegating to the
+    #   parent's runtime for a sub-agent (from +mcp_servers:+), or
+    #   +nil+ when no MCPs are configured. Read by
+    #   {Tool::SubAgent} so spawned sub-agents inherit the
+    #   parent's live clients via {McpServers#view_for_sub_agent}.
+    attr_reader :mcp_servers
 
     # @return [ListenerList] the listener list attached to this
     #   agent's chat
@@ -540,6 +587,30 @@ module Pikuri
         streaming: @streaming
       )
       nil
+    end
+
+    # Register a raw +RubyLLM::Tool+ subclass on this agent's
+    # underlying chat, bypassing the {Pikuri::Tool} strict-validation
+    # seam. Sole intended caller: {McpServers::McpConnect}, which uses
+    # this to lazy-add MCP-exposed tools after the LLM invokes
+    # +mcp_connect+ in a turn.
+    #
+    # The +internal_+ prefix is the warning: native pikuri tools
+    # should go through {Pikuri::Tool} so they get
+    # {Tool::Parameters} validation and the LLM-actionable
+    # +"Error: ..."+ contract. MCP tools deliberately don't — see
+    # IDEAS.md §"v1 implementation shape" / "MCP tools bypass
+    # +Pikuri::Tool+ entirely."
+    #
+    # The added tool does NOT enter +@tools+, only +@chat+'s tool
+    # list. {Tool::SubAgent} therefore cannot snapshot it (which is
+    # the whole point — activation is strictly per-agent, see
+    # IDEAS.md §"Per-agent activation, no propagation").
+    #
+    # @param ruby_llm_tool [Class] subclass of +RubyLLM::Tool+
+    # @return [void]
+    def internal_add_tool(ruby_llm_tool)
+      @chat.with_tool(ruby_llm_tool)
     end
 
     # Adds a +sub_agent+ tool that lets this agent spawn

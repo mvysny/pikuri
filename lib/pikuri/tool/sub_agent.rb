@@ -75,6 +75,14 @@ module Pikuri
         context_window    = parent_agent.context_window_cap
         parent_name       = parent_agent.name
         streaming         = parent_agent.streaming
+        # Threaded into the sub-agent so it shares the parent's live MCP
+        # clients (no re-spawn) and can lazy-add MCP tools to its own
+        # chat via +mcp_connect+. Activation state stays per-agent —
+        # the view's +build_mcp_connect_tool+ produces a fresh
+        # +McpConnect+ with its own activation set inside the child's
+        # +Agent#initialize+. +nil+ when the parent has no MCP runtime.
+        # See IDEAS.md §"Per-agent activation, no propagation".
+        mcp_servers       = parent_agent.mcp_servers&.view_for_sub_agent
         sub_counter       = 0
 
         super(
@@ -102,6 +110,7 @@ module Pikuri
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
               name: sub_name,
+              mcp_servers: mcp_servers,
               streaming: streaming
             )
             sub.run_loop(user_message: task)

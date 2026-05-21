@@ -57,6 +57,14 @@ Gem::Specification.new do |spec|
   # search providers, and (transitively) by ruby_llm.
   spec.add_dependency 'faraday',          '~> 2.9'
 
+  # Model Context Protocol client + server. Used by
+  # Pikuri::McpServers to spawn and talk to external MCP servers, and
+  # by spec/support/test_mcp_server.rb (the in-tree test server side).
+  # The gem owns subprocess lifecycle, JSON-RPC framing, and the
+  # tools/list / tools/call round-trips; pikuri's adapter converts
+  # discovered MCP tools into RubyLLM::Tool subclasses.
+  spec.add_dependency 'mcp',              '~> 0.17'
+
   # HTML parser. Used by the web-fetch scraper and by both search
   # providers (Brave, DuckDuckGo) to extract results from HTML responses.
   spec.add_dependency 'nokogiri',         '~> 1.19'
