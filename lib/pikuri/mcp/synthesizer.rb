@@ -63,6 +63,11 @@ module Pikuri
       #   boot-time Ctrl+C aborts startup.
       def call(entry:, client:, tools:)
         raw = @cache.fetch(entry: entry, client: client, tools: tools) do
+          # Only fires on cache miss — synthesis is the slow path (LLM
+          # round-trip, easily 30+ s on a local model); a heads-up is
+          # warranted so the user doesn't wonder if pikuri is hung.
+          # Cache hits skip this and the thinker.call entirely.
+          LOGGER.info("Synthesizing description for MCP server #{entry.id.inspect}, please wait...")
           @thinker.call(build_prompt(entry, tools))
         end
         cleaned = raw.to_s.strip.gsub(/\s+/, ' ')

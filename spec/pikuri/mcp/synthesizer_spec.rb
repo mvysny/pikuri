@@ -66,6 +66,42 @@ RSpec.describe Pikuri::Mcp::Synthesizer do
       Pikuri.log_io = original if original
     end
 
+    it 'logs an INFO heads-up before invoking the thinker (so the user knows to wait)' do
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      synthesizer = described_class.new(thinker: ->(_p) { 'done' })
+      synthesizer.call(entry: entry, client: client, tools: tools)
+      assert_match(/Synthesizing description for MCP server "probe", please wait/, captured.string)
+    ensure
+      Pikuri.log_io = original if original
+    end
+
+    it 'does NOT log the heads-up on a cache hit (synthesis is skipped, so is the message)' do
+      Dir.mktmpdir('pikuri-synth-hint') do |dir|
+        # Prime the cache with one synthesis pass.
+        primer = described_class.new(
+          thinker: ->(_p) { 'primed' },
+          cache: Pikuri::Mcp::Cache.new(model_id: 'm', prompt_version: described_class::PROMPT_VERSION, dir: dir)
+        )
+        primer.call(entry: entry, client: client, tools: tools)
+
+        # Now exercise a hit, capturing only the second call's logs.
+        captured = StringIO.new
+        original = Pikuri.log_io
+        Pikuri.log_io = captured
+        hit_synth = described_class.new(
+          thinker: ->(_p) { raise 'should not be called' },
+          cache: Pikuri::Mcp::Cache.new(model_id: 'm', prompt_version: described_class::PROMPT_VERSION, dir: dir)
+        )
+        result = hit_synth.call(entry: entry, client: client, tools: tools)
+        assert_equal 'primed', result
+        refute_match(/Synthesizing description/, captured.string)
+      ensure
+        Pikuri.log_io = original if original
+      end
+    end
+
     it 'routes through the cache: hit short-circuits the thinker' do
       Dir.mktmpdir('pikuri-synth-cache') do |dir|
         cache = Pikuri::Mcp::Cache.new(model_id: 'm', prompt_version: described_class::PROMPT_VERSION, dir: dir)
