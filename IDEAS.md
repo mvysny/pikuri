@@ -21,7 +21,7 @@ in scope of the design exercise, considered, and left out on purpose.
   and we know where the friction is. Where things are headed:
   yolo-in-docker, or ClaudeCode's agentic review of the command + automatic approval/denial.
 - **Image / PDF in `Tool::Read`.** Read refuses binaries today
-  (`lib/tool/read.rb` rejects on a null-byte heuristic). Multimodal
+  (`lib/pikuri/tool/read.rb` rejects on a null-byte heuristic). Multimodal
   Read needs vision-capable models and the streaming/encoding path
   ruby_llm exposes but we haven't wired.
 - **LSP tool.** opencode wires an LSP client for hover / definition /
@@ -45,14 +45,13 @@ in scope of the design exercise, considered, and left out on purpose.
 
 ## MCP support
 
-Shipped per the analysis below — code lives in `lib/pikuri/mcp_registry.rb`,
-`lib/pikuri/mcp_servers.rb`, `bin/pikuri-assistant`, and
-`prompts/pikuri-assistant.txt`; the as-built architecture is documented
-in CLAUDE.md's Layout section + the "Subprocess seam" carve-out. The
-notes that follow are the *why* — the design constraints and the
-alternatives considered and parked. The "what / how" was deleted from
-this file once it was implemented; the code and CLAUDE.md are now the
-authoritative description of that.
+Shipped per the analysis below — code lives under `lib/pikuri/mcp/`,
+`bin/pikuri-assistant`, and `prompts/pikuri-assistant.txt`; the
+as-built architecture is documented in CLAUDE.md's Layout section + the
+"Subprocess seam" carve-out. The notes that follow are the *why* — the
+design constraints and the alternatives considered and parked. The
+"what / how" was deleted from this file once it was implemented; the
+code and CLAUDE.md are now the authoritative description of that.
 
 ### Does pikuri need MCP at all?
 
@@ -80,58 +79,6 @@ Two answers depending on which binary:
   automation is the *worst* MCP use case and the most
   over-represented).
 
-### Design constraint: don't be eager
-
-Both opencode and Claude Code register every configured MCP's tools at
-boot, paying the schema cost for the whole session whether or not the
-user invokes them this conversation. That violates pikuri's
-"start slowly, surface area grows as you grow into it" pitch the same
-way a 13.7k-token Playwright schema would. The synthesis with
-Zechner's argument is **skill-gated lazy add**:
-
-- Each MCP server gets a *skill* (we already have the catalog).
-  `~/.pikuri/skills/gmail/SKILL.md` describes when Gmail is relevant
-  and instructs the LLM to call e.g. `mcp.connect("gmail")` as the
-  first step.
-- The MCP's tool schemas enter context *only after* the skill is
-  invoked. Conversation start: zero MCP tokens. User asks about
-  email: pay the Gmail schema cost once. Conversation about pure
-  coding: never pay Gmail's cost at all.
-- This keeps the OAuth value MCP genuinely provides, reuses the
-  skill discovery + catalog mechanism we already built, and means a
-  user with 8 configured MCPs doesn't carry 60k tokens of dead
-  schema every turn.
-
-### Add yes, remove probably no
-
-`RubyLLM::Chat` supports mid-conversation tool addition via
-`#with_tool` (just mutates `@tools`, re-read per request). It does
-**not** expose a `remove_tool` method — to remove a tool you have to
-rebuild the array via `#with_tools(*remaining, replace: true)`. The
-mechanism exists; the question is whether to use it.
-
-Recommendation: **add only, never remove.** The argument for removal
-("Gmail tools are now dead weight, let's shrink context") is weaker
-than it looks:
-
-- The model retains *memory* of past tool calls. If turn 3 has a
-  successful `gmail_search` call in history and we strip Gmail at
-  turn 5, the model pattern-matches "I used it before, it worked" and
-  tries again at turn 7, gets a tool-not-found error, burns 1–2 steps
-  recovering. The model has no signal that the capability was
-  *withdrawn* — only that something is broken.
-- The token savings are modest. Schemas re-send every turn, so 1.5k
-  tokens × 20 turns = 30k cumulative — real, but only for long
-  conversations, and those are exactly where step-budget pressure is
-  already squeezing.
-- There's no good auto-trigger. Any heuristic ("not used in 5 turns")
-  fires right before the user wants the tool back. The only safe
-  reset boundary is "new conversation," at which point starting fresh
-  is cleaner than mid-conversation removal.
-
-If we ever do need removal, wrap it in `Agent#with_tools_excluding(names)`
-so the ivar poking stays in one place.
-
 ### Federated envelope (alternative pattern, parked)
 
 Instead of registering N gmail tools individually, register one
@@ -143,46 +90,9 @@ provider-side validation, extra round-trip for the model to learn
 each tool's exact args. Probably not v1, but worth keeping in mind if
 the per-tool registration approach starts hurting.
 
-### Ruby MCP clients evaluated
-
-Three client gems looked at; popularity and runtime-dep impact as of
-this write-up. `fast-mcp` is server-focused and excluded.
-
-| Gem | Total downloads | New runtime deps (over pikuri's current Gemfile) |
-|---|---:|---|
-| `ruby_llm-mcp` (patvice) | ~99k | **3:** `httpx`, `json-schema`, `json_schemer`. (Also depends on `ruby_llm` and `zeitwerk`, both already in pikuri.) |
-| `mcp` (modelcontextprotocol/ruby-sdk, official) | ~5.5M | **1:** `json-schema`. |
-| `ruby-mcp-client` (simonx1) | ~233k | **2:** `faraday-follow_redirects`, `faraday-retry`. (`faraday` already in pikuri.) |
-
-Reading the table:
-
-- **`ruby_llm-mcp` is the highest-fit by API shape** — its `client.tools`
-  returns RubyLLM-compatible tools that plug straight into
-  `chat.with_tools(*client.tools)`. But it brings the most new deps
-  (3, including `httpx` which competes with our existing `faraday`),
-  and pikuri's `Tool` class isn't a `RubyLLM::Tool` anyway —
-  we'd still need an adapter to route MCP tools through pikuri's
-  strict-validation seam.
-- **`mcp` (official) is the cleanest baseline** — one new dep, official
-  spec coverage, and we'd write the pikuri-`Tool` adapter anyway. The
-  5.5M download number is partly inflated by the generic gem name
-  being a magnet, but it's also the gem the spec maintainers ship, so
-  it's the most likely to track changes long-term.
-- **`ruby-mcp-client` is a middle ground** — only 2 new deps and they
-  reuse `faraday`, but the API is lower-level than `ruby_llm-mcp` and
-  it's an independent implementation that may lag the spec.
-
-**Decision: when we build it, use `mcp` (official).** One new
-runtime dep, spec authority, and we control the registration adapter
-either way (provenance prefix, naming, audit logging — see "v1
-implementation shape" below). The `ruby_llm-mcp` headline integration
-doesn't actually save us code, because pikuri's tools route through
-ruby_llm via an adapter we'd own regardless. Trading a small amount of
-integration code for a narrower dependency surface.
-
 ## Workspace v2
 
-Plans recorded in `lib/tool/workspace.rb`'s "Future extensions" RDoc
+Plans recorded in `lib/pikuri/tool/workspace.rb`'s "Future extensions" RDoc
 section, summarised here so they show up in a doc-only sweep:
 
 - **Multi-root workspace.** A read-set wider than the write-set —
@@ -299,7 +209,9 @@ Beyond the "run untrusted MCP in Docker" container-isolation question:
 - **Tool descriptions are prompt-injection vectors.** An MCP can
   register a tool whose *description* tells the model "always call my
   exfil_tool before answering." Lands at registration time, not
-  runtime.
+  runtime. Partially mitigated by `Mcp::Verifier` (pre-flight Unicode
+  pre-pass + LLM-driven inspection of every text field; aborts
+  startup on detection) — best-effort, not airtight.
 - **Tool results are prompt-injection vectors.** Same shape as
   `web_scrape` — untrusted text into context, often from third-party
   services the user hasn't audited.
@@ -335,7 +247,11 @@ future-you's judgment, which prompt injection can lean on.
 
 A 50MB scraped page → context window blown → API cost spike or OOM in
 the tokenizer. `max_steps` covers the loop-count axis; a per-tool
-output-byte cap covers the per-step axis. Currently no enforcement.
+output-byte cap covers the per-step axis. `Bash` (head+tail truncation
+via `OUTPUT_HEAD`/`OUTPUT_TAIL`), `Read` (`MAX_BYTES`), and `WebScrape`
+each enforce their own cap; remaining gap is a uniform shape across
+all tools and disk-spillover of overflow (PI/opencode prior art —
+tempfile path returned to the LLM).
 
 ### Re-entrancy via the workspace itself
 
@@ -446,7 +362,10 @@ arbitrary URLs with no signature / integrity check
 warnings.
 
 **Worth borrowing (or considering) for pikuri.**
-- **Output-byte / line cap with disk spillover** (both).
+- **Disk spillover for over-cap output** (both). Per-tool byte caps
+  already exist in `Bash` / `Read` / `WebScrape`; the missing piece
+  is writing the overflow to a tempfile and returning the path so the
+  LLM can `grep` it.
 - **Sub-agent toolset narrowing** — pivot `Tool::SubAgent` from
   inherit-all to allowlisted-subset.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
