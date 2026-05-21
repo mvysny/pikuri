@@ -32,8 +32,15 @@ class EchoTool < MCP::Tool
   tool_name 'echo'
   description 'Echoes the given message back to the caller.'
   input_schema(
-    properties: { message: { type: 'string' } },
+    properties: {
+      message: { type: 'string', description: 'The message to echo back verbatim.' }
+    },
     required: ['message']
+  )
+  output_schema(
+    properties: {
+      echoed: { type: 'string', description: 'The echoed text.' }
+    }
   )
 
   def self.call(message:, server_context:)
@@ -46,8 +53,8 @@ class DivideTool < MCP::Tool
   description 'Divides a by b. Returns an MCP error when b == 0.'
   input_schema(
     properties: {
-      a: { type: 'number' },
-      b: { type: 'number' }
+      a: { type: 'number', description: 'The numerator.' },
+      b: { type: 'number', description: 'The denominator. Must be non-zero.' }
     },
     required: %w[a b]
   )
@@ -68,7 +75,9 @@ class SlowTool < MCP::Tool
   tool_name 'slow'
   description 'Sleeps for `ms` milliseconds before returning ack.'
   input_schema(
-    properties: { ms: { type: 'integer' } },
+    properties: {
+      ms: { type: 'integer', description: 'Milliseconds to sleep before returning.' }
+    },
     required: ['ms']
   )
 

@@ -244,7 +244,20 @@ module Pikuri
     # tool. Name is namespaced as +"<server_id>__<tool_name>"+ to avoid
     # collisions across servers (and with pikuri's native tools).
     # Description is prefixed with +[From MCP server "<id>"]+ as the
-    # cheap provenance / injection-defense marker.
+    # cheap provenance / injection-defense marker. Input-parameter
+    # descriptions from +mcp_tool.input_schema+ flow through verbatim:
+    # +RubyLLM::Tool.params(schema_hash)+ stores the JSON Schema and
+    # +instance.params_schema+ deep-dups + stringifies it on the way
+    # to the provider, so each property's +"description"+ field
+    # reaches the LLM.
+    #
+    # Note: +mcp_tool.output_schema+ has no destination — RubyLLM has
+    # no return-schema slot in its +Tool+ surface (no equivalent of
+    # +params+ for outputs), and providers don't accept one in the
+    # tool-call schema either. We surface output schemas in the INFO
+    # audit log (+#log_audit+) so a privacy-conscious user can still
+    # see what an MCP server claims to return, and otherwise the
+    # data simply lives in the call response.
     def synthesize_ruby_llm_tool(server_id:, client:, mcp_tool:)
       namespaced_name = "#{server_id}__#{mcp_tool.name}"
       prefixed_desc = %([From MCP server "#{server_id}"]\n\n#{mcp_tool.description})

@@ -137,6 +137,75 @@ RSpec.describe Pikuri::McpServers do
       servers&.close
     end
 
+    it 'preserves the MCP tool description verbatim after the provenance prefix' do
+      servers = Pikuri::McpServers.new(fresh_registry)
+      agent = fake_agent
+      servers.register_tools_with_agent('test', agent)
+      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      assert_equal(
+        %([From MCP server "test"]\n\nEchoes the given message back to the caller.),
+        echo.description
+      )
+    ensure
+      servers&.close
+    end
+
+    it 'propagates input-parameter descriptions to the RubyLLM wire schema' do
+      # RubyLLM::Tool#params_schema is the JSON Schema that ships to
+      # the provider for tool calling. Asserting against it directly
+      # verifies that per-property descriptions from the MCP server's
+      # input_schema make it all the way through deep_dup +
+      # stringify_keys without being dropped.
+      servers = Pikuri::McpServers.new(fresh_registry)
+      agent = fake_agent
+      servers.register_tools_with_agent('test', agent)
+
+      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      schema = echo.new.params_schema
+      assert_equal 'object', schema['type']
+      assert_includes schema['required'], 'message'
+      assert_equal 'The message to echo back verbatim.',
+                   schema.dig('properties', 'message', 'description')
+      assert_equal 'string',
+                   schema.dig('properties', 'message', 'type')
+
+      divide = agent.added_tools.find { |t| t.name == 'test__divide' }
+      div_schema = divide.new.params_schema
+      assert_equal 'The numerator.',
+                   div_schema.dig('properties', 'a', 'description')
+      assert_equal 'The denominator. Must be non-zero.',
+                   div_schema.dig('properties', 'b', 'description')
+    ensure
+      servers&.close
+    end
+
+    it 'strips the $schema URI to avoid provider-side rejection of extra top-level keys' do
+      servers = Pikuri::McpServers.new(fresh_registry)
+      agent = fake_agent
+      servers.register_tools_with_agent('test', agent)
+      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      schema = echo.new.params_schema
+      refute schema.key?('$schema'), "expected $schema URI to be stripped, got: #{schema.inspect}"
+    ensure
+      servers&.close
+    end
+
+    it 'logs output_schema in the audit log when the MCP server declares one' do
+      # output_schema has no destination in RubyLLM's Tool surface
+      # (no return-schema slot), so the audit log is the only place
+      # it survives. The test fixture's `echo` tool declares one;
+      # asserting it shows up confirms we don't quietly drop it.
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      servers = Pikuri::McpServers.new(fresh_registry)
+      log = captured.string
+      assert_match(/output_schema:.*echoed/, log)
+    ensure
+      Pikuri.log_io = original if original
+      servers&.close
+    end
+
     it 'raises ArgumentError for an unknown id (loud-on-bugs, not Error: ...)' do
       servers = Pikuri::McpServers.new(fresh_registry)
       assert_raises(ArgumentError) do
