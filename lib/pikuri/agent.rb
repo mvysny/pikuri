@@ -439,13 +439,13 @@ module Pikuri
         @owns_mcp_servers = false
       elsif !mcp_registry.empty?
         if synthesize_descriptions
-          thinker = build_thinker
           cache = Mcp::Cache.new(
             model_id: @transport.model,
-            prompt_version: Mcp::Servers::PROMPT_VERSION
+            prompt_version: Mcp::Synthesizer::PROMPT_VERSION
           )
+          synthesizer = Mcp::Synthesizer.new(thinker: build_thinker, cache: cache)
         end
-        @mcp_servers = Mcp::Servers.new(mcp_registry, thinker: thinker, cache: cache)
+        @mcp_servers = Mcp::Servers.new(mcp_registry, synthesizer: synthesizer)
         @owns_mcp_servers = true
       else
         @mcp_servers = nil

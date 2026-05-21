@@ -74,32 +74,18 @@ module Pikuri
     private_constant :LOGGER
 
     # @param registry [Registry] configured servers to start.
-    # @param thinker [Proc, nil] one-arg callable invoked as
-    #   +thinker.call(prompt)+ when a server's +initialize+ handshake
-    #   doesn't carry an +instructions+ or +serverInfo.title+ field
-    #   useful enough to show the LLM. The callable should perform a
-    #   one-shot LLM inference and return the result as a String —
-    #   typically +-> (p) { Agent.think(transport: ..., prompt: p,
-    #   cancellable: ...) }+. {Agent#initialize} builds and threads
-    #   this closure when its +synthesize_descriptions:+ kwarg is
-    #   true. Synthesis errors are logged and the heuristic falls
-    #   back to +serverInfo.name+; +Cancelled+ bubbles up so the
-    #   user can abort a slow boot. Pass +nil+ (the default) to
-    #   skip synthesis and rely on the static fallback chain.
-    # @param cache [Cache, Cache::NULL, nil] optional disk cache for
-    #   synthesis results. When set, +#try_synthesize_description+
-    #   routes the thinker call through +cache.fetch+ — an unchanged
-    #   surface fingerprint (model, prompt version, transport, server
-    #   name/version, full tools surface) short-circuits to the
-    #   stored description with no LLM round-trip. Defaults to +nil+,
-    #   meaning every boot resynthesizes. {Agent#initialize} provides
-    #   a real {Cache} when its +synthesize_descriptions:+ kwarg is
-    #   true.
+    # @param synthesizer [Synthesizer, nil] when set, invoked from
+    #   {#resolve_description} for servers whose +initialize+
+    #   handshake doesn't carry an +instructions+ or
+    #   +serverInfo.title+ field useful enough to show the LLM.
+    #   {Agent#initialize} builds and threads a {Synthesizer} (with
+    #   thinker + cache) when its +synthesize_descriptions:+ kwarg
+    #   is true. Pass +nil+ (the default) to skip synthesis and rely
+    #   on the static fallback chain.
     # @return [Servers]
-    def initialize(registry, thinker: nil, cache: nil)
+    def initialize(registry, synthesizer: nil)
       @registry    = registry
-      @thinker     = thinker
-      @cache       = cache || Cache::NULL
+      @synthesizer = synthesizer
       @clients     = {} # id => MCP::Client (only for servers that started)
       @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
       @tools_cache = {} # id => Array<MCP::Client::Tool>
@@ -295,12 +281,13 @@ module Pikuri
     # 2. +info['serverInfo']['title']+ — human-readable name. Less
     #    informative than instructions but usually still better
     #    than +name+.
-    # 3. Synthesized from the tool list via +@thinker+, when wired.
-    #    This is the path that turns a no-+instructions+,
-    #    no-+title+ server (the common case in the wild — most
-    #    server authors skip both) from a useless +serverInfo.name+
-    #    echo into a real "this is what the server does" sentence.
-    #    Errors are logged and the chain continues to step 4;
+    # 3. Synthesized via +@synthesizer+, when wired. This is the
+    #    path that turns a no-+instructions+, no-+title+ server
+    #    (the common case in the wild — most server authors skip
+    #    both) from a useless +serverInfo.name+ echo into a real
+    #    "this is what the server does" sentence. Errors inside
+    #    {Synthesizer#call} are logged at WARN there and surface
+    #    here as a +nil+ return; the chain continues to step 4.
     #    +Cancellable::Cancelled+ propagates so a boot-time Ctrl+C
     #    aborts the whole startup.
     # 4. +info['serverInfo']['name']+ — operational identifier,
@@ -317,64 +304,12 @@ module Pikuri
       return info['instructions']  if info['instructions'] && !info['instructions'].to_s.strip.empty?
       return server_info['title']  if server_info['title']  && !server_info['title'].to_s.strip.empty?
 
-      if @thinker
-        synthesized = try_synthesize_description(entry, client, tools)
+      if @synthesizer
+        synthesized = @synthesizer.call(entry: entry, client: client, tools: tools)
         return synthesized if synthesized
       end
 
       server_info['name'] || '(no description)'
-    end
-
-    # Build the synthesis prompt from the server's tool list, hand
-    # it to +@thinker+ (through +@cache+ if one was wired), and clean
-    # up the response into a single-line description suitable for the
-    # +<available_mcps>+ block. Returns +nil+ when synthesis fails
-    # (logged + caller falls back to the next step in
-    # {#resolve_description}). +Cancellable::Cancelled+ is intentionally
-    # not rescued here — it must propagate so the user's Ctrl+C aborts
-    # startup rather than silently producing a useless description.
-    #
-    # The cache is invoked with the full surface fingerprint —
-    # transport descriptor, server name/version, and every tool's
-    # name/description/input_schema — so any change to what the
-    # server exposes invalidates the cached description.
-    def try_synthesize_description(entry, client, tools)
-      raw = @cache.fetch(entry: entry, client: client, tools: tools) do
-        prompt = build_synthesis_prompt(entry, tools)
-        @thinker.call(prompt)
-      end
-      cleaned = raw.to_s.strip.gsub(/\s+/, ' ')
-      return nil if cleaned.empty?
-
-      cleaned
-    rescue Agent::Control::Cancellable::Cancelled
-      raise
-    rescue StandardError => e
-      LOGGER.warn(
-        "MCP description synthesis failed for #{entry.id.inspect} " \
-        "(#{e.class}: #{e.message}); falling back to serverInfo.name."
-      )
-      nil
-    end
-
-    # Prompt sent to the synthesizer. Version constant lives next to
-    # the prompt so any edit here gets paired with a version bump that
-    # invalidates {Cache} entries built against the old text. {Cache}
-    # reads {PROMPT_VERSION} via its initializer kwarg, never directly
-    # — the dependency direction stays one-way.
-    PROMPT_VERSION = 1
-    def build_synthesis_prompt(entry, tools)
-      lines = []
-      lines << 'You are summarizing an MCP (Model Context Protocol) server for an AI agent that decides which servers to connect to.'
-      lines << ''
-      lines << 'Given the server id and the names + descriptions of the tools it exposes, write ONE short sentence (under 30 words) describing what the server does and when an agent would call its tools. Do not list the tools. Do not echo the server id. No preamble, no quotes, no markdown — just the sentence.'
-      lines << ''
-      lines << "Server id: #{entry.id}"
-      lines << 'Tools:'
-      tools.each do |t|
-        lines << "- #{t.name}: #{t.description}"
-      end
-      lines.join("\n")
     end
 
     def log_audit(entry, client, tools)

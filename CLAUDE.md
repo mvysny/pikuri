@@ -240,27 +240,32 @@ and a small shared cache.
   catalog (virtual filesystem, in-memory test fixture) without touching
   `Tool::Skill` or `Agent`.
 - `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
-  `lib/pikuri/mcp/cache.rb` — MCP (Model Context Protocol) support
-  under the `Pikuri::Mcp` namespace. `Pikuri::Mcp::Registry` is the
-  pure config layer (`StdioEntry`/`HttpEntry` data classes, `EMPTY`
-  singleton — same shape as `SkillCatalog::EMPTY`).
-  `Pikuri::Mcp::Servers` is the runtime: constructed from a registry,
-  eager-starts every configured server via the `mcp` gem's
-  `MCP::Client::Stdio` / `MCP::Client::HTTP`, holds the live clients,
-  emits an INFO audit log per server, registers `at_exit { close }`
-  for cleanup. `Mcp::Servers::View` is the sub-agent facade (shares
-  clients, delegates lifecycle), and `Mcp::Servers::Connect` is the
-  private inner `Pikuri::Tool` subclass auto-instantiated by
-  `Agent#initialize` when the registry is non-empty.
-  `Pikuri::Mcp::Cache` is the on-disk cache for synthesized server
-  descriptions — wraps `UrlCache` with a TTL of infinity, keys on the
-  full server surface (transport, server name/version, every tool's
-  name/description/schema) so any change auto-invalidates. MCP tools
-  bypass `Pikuri::Tool` entirely — they're synthesised as raw
-  `RubyLLM::Tool` subclasses inside `Mcp::Servers` and fed in via
-  `Agent#internal_add_tool`. This is also the documented exception to
-  the `Subprocess.spawn` chokepoint (see Scope decisions). See
-  IDEAS.md §"v1 implementation shape" for the full rationale.
+  `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/cache.rb` — MCP
+  (Model Context Protocol) support under the `Pikuri::Mcp` namespace.
+  `Pikuri::Mcp::Registry` is the pure config layer (`StdioEntry`/
+  `HttpEntry` data classes, `EMPTY` singleton — same shape as
+  `SkillCatalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
+  constructed from a registry, eager-starts every configured server
+  via the `mcp` gem's `MCP::Client::Stdio` / `MCP::Client::HTTP`,
+  holds the live clients, emits an INFO audit log per server,
+  registers `at_exit { close }` for cleanup. `Mcp::Servers::View` is
+  the sub-agent facade (shares clients, delegates lifecycle), and
+  `Mcp::Servers::Connect` is the private inner `Pikuri::Tool`
+  subclass auto-instantiated by `Agent#initialize` when the registry
+  is non-empty. `Pikuri::Mcp::Synthesizer` owns the LLM-driven
+  description summarization: the prompt, its `PROMPT_VERSION`, the
+  cleanup, and the fail-soft / Cancelled-propagating contract.
+  Servers delegates to its `#call` from `#resolve_description` when
+  one was wired in. `Pikuri::Mcp::Cache` is the on-disk cache the
+  synthesizer reads/writes — wraps `UrlCache` with a TTL of infinity,
+  keys on the full server surface (transport, server name/version,
+  every tool's name/description/schema) so any change auto-
+  invalidates. MCP tools bypass `Pikuri::Tool` entirely — they're
+  synthesised as raw `RubyLLM::Tool` subclasses inside `Mcp::Servers`
+  and fed in via `Agent#internal_add_tool`. This is also the
+  documented exception to the `Subprocess.spawn` chokepoint (see
+  Scope decisions). See IDEAS.md §"v1 implementation shape" for the
+  full rationale.
 - `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
   (see Scope decisions). The single point where `Open3` / `Process.spawn`
   are allowed; everything else in `lib/` routes through here (except
