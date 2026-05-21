@@ -259,7 +259,7 @@ module Pikuri
     # Errors from the provider (HTTP failure, malformed response,
     # +RubyLLM+ raising) propagate to the caller verbatim — there
     # is no recovery layer here. Callers that want "fail soft on
-    # synthesis errors" (e.g. {McpServers}) rescue at their level
+    # synthesis errors" (e.g. {Mcp::Servers}) rescue at their level
     # and fall back to a default; this method stays loud.
     #
     # @param transport [ChatTransport] same model-resolution
@@ -356,9 +356,9 @@ module Pikuri
     #   changes are coupled — advertising skills without a
     #   loader (or vice versa) would be a bug, so the catalog is
     #   the single source of truth for both.
-    # @param mcp_registry [McpRegistry] configured MCP servers to
-    #   eager-start. Defaults to +McpRegistry::EMPTY+, which is a
-    #   no-op singleton. When non-empty: an {McpServers} runtime is
+    # @param mcp_registry [Mcp::Registry] configured MCP servers to
+    #   eager-start. Defaults to +Mcp::Registry::EMPTY+, which is a
+    #   no-op singleton. When non-empty: an {Mcp::Servers} runtime is
     #   constructed (spawning every server immediately), its
     #   +<available_mcps>+ block is appended to +system_prompt+ so
     #   the LLM can see what's available, and an +mcp_connect+ tool
@@ -367,12 +367,12 @@ module Pikuri
     #   — main agents pass a registry, sub-agents inherit the
     #   already-running runtime via +mcp_servers:+. Same auto-wiring
     #   contract as +skill_catalog:+ above. The constructed
-    #   {McpServers} is *owned* by this agent — {#close} will
+    #   {Mcp::Servers} is *owned* by this agent — {#close} will
     #   terminate its MCP server subprocesses.
-    # @param mcp_servers [McpServers, McpServers::View, nil] used by
+    # @param mcp_servers [Mcp::Servers, Mcp::Servers::View, nil] used by
     #   {Tool::SubAgent} to thread the parent's already-running
-    #   {McpServers} into spawned sub-agents (via
-    #   {McpServers#view_for_sub_agent}) so child agents share the
+    #   {Mcp::Servers} into spawned sub-agents (via
+    #   {Mcp::Servers#view_for_sub_agent}) so child agents share the
     #   live clients without re-spawning. Application code (the
     #   +bin/pikuri-*+ scripts) should pass +mcp_registry:+ instead
     #   and let {Agent} construct the runtime. When passed in this
@@ -381,7 +381,7 @@ module Pikuri
     #   responsible).
     # @param synthesize_descriptions [Boolean] when +true+ and a
     #   non-empty +mcp_registry:+ is also passed, threads a thinker
-    #   closure into {McpServers#initialize} so any server whose
+    #   closure into {Mcp::Servers#initialize} so any server whose
     #   +initialize+ handshake lacks an +instructions+ /
     #   +serverInfo.title+ field gets a one-shot LLM-synthesized
     #   description for the +<available_mcps>+ block. The closure
@@ -408,12 +408,12 @@ module Pikuri
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Tool::SkillCatalog::EMPTY,
-                   mcp_registry: McpRegistry::EMPTY, mcp_servers: nil,
+                   mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
                    synthesize_descriptions: false,
                    streaming: false)
       if mcp_servers && !mcp_registry.empty?
         raise ArgumentError,
-              'Agent.new: pass either mcp_registry: (main agent — builds a fresh McpServers) ' \
+              'Agent.new: pass either mcp_registry: (main agent — builds a fresh Mcp::Servers) ' \
               'or mcp_servers: (sub-agent — inherits the parent\'s runtime), not both.'
       end
 
@@ -427,19 +427,25 @@ module Pikuri
       # +mcp_registry:+ was passed non-empty (main-agent path), we
       # build a fresh runtime here and own its +#close+. See {#close}.
       #
-      # The +thinker:+ closure handed to McpServers (when
+      # The +thinker:+ closure handed to Mcp::Servers (when
       # +synthesize_descriptions:+ is true) captures @transport and
       # @cancellable so the synthesis pass uses the same model the
       # agent itself uses and honors the same cancel flag. It must
       # be built after @transport / @cancellable are set but
-      # before McpServers.new — the closure is invoked synchronously
+      # before Mcp::Servers.new — the closure is invoked synchronously
       # during start_one.
       if mcp_servers
         @mcp_servers = mcp_servers
         @owns_mcp_servers = false
       elsif !mcp_registry.empty?
-        thinker = build_thinker if synthesize_descriptions
-        @mcp_servers = McpServers.new(mcp_registry, thinker: thinker)
+        if synthesize_descriptions
+          thinker = build_thinker
+          cache = Mcp::Cache.new(
+            model_id: @transport.model,
+            prompt_version: Mcp::Servers::PROMPT_VERSION
+          )
+        end
+        @mcp_servers = Mcp::Servers.new(mcp_registry, thinker: thinker, cache: cache)
         @owns_mcp_servers = true
       else
         @mcp_servers = nil
@@ -466,8 +472,8 @@ module Pikuri
       end
 
       if @mcp_servers && !@mcp_servers.empty?
-        if @tools.any?(McpServers::McpConnect)
-          raise 'McpServers::McpConnect cannot be passed in tools: when an MCP runtime is wired; ' \
+        if @tools.any?(Mcp::Servers::Connect)
+          raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \
                 'Agent auto-registers it.'
         end
 
@@ -540,14 +546,14 @@ module Pikuri
     #   loaded skills (e.g. for a startup banner).
     attr_reader :skill_catalog
 
-    # @return [McpServers, McpServers::View, nil] the MCP runtime
+    # @return [Mcp::Servers, Mcp::Servers::View, nil] the MCP runtime
     #   wired into this agent — a freshly-constructed
-    #   {McpServers} for the main agent (from the constructor's
-    #   +mcp_registry:+), a {McpServers::View} delegating to the
+    #   {Mcp::Servers} for the main agent (from the constructor's
+    #   +mcp_registry:+), a {Mcp::Servers::View} delegating to the
     #   parent's runtime for a sub-agent (from +mcp_servers:+), or
     #   +nil+ when no MCPs are configured. Read by
     #   {Tool::SubAgent} so spawned sub-agents inherit the
-    #   parent's live clients via {McpServers#view_for_sub_agent}.
+    #   parent's live clients via {Mcp::Servers#view_for_sub_agent}.
     attr_reader :mcp_servers
 
     # @return [ListenerList] the listener list attached to this
@@ -692,17 +698,17 @@ module Pikuri
       nil
     end
 
-    # Release agent-owned resources — currently the {McpServers}
+    # Release agent-owned resources — currently the {Mcp::Servers}
     # runtime when this agent constructed it (i.e. was created with a
     # non-empty +mcp_registry:+). Idempotent; safe to call multiple
     # times.
     #
     # == Ownership rule
     #
-    # An agent owns its {McpServers} iff it constructed it. Two cases:
+    # An agent owns its {Mcp::Servers} iff it constructed it. Two cases:
     #
     # * Main agent built from +mcp_registry:+ — owns. +#close+ closes.
-    # * Sub-agent built from +mcp_servers:+ (a {McpServers::View} the
+    # * Sub-agent built from +mcp_servers:+ (a {Mcp::Servers::View} the
     #   parent threaded in) — does not own. +#close+ does NOT close —
     #   that would kill the parent's runtime out from under it.
     #
@@ -726,7 +732,7 @@ module Pikuri
     #                      mcp_registry: my_registry) do |agent|
     #     agent.run_loop(user_message: "Hello")
     #   end
-    #   # McpServers and any spawned MCP subprocesses are closed here.
+    #   # Mcp::Servers and any spawned MCP subprocesses are closed here.
     #
     # @yieldparam agent [Agent]
     # @return the return value of the block.
@@ -741,7 +747,7 @@ module Pikuri
 
     # Register a raw +RubyLLM::Tool+ subclass on this agent's
     # underlying chat, bypassing the {Pikuri::Tool} strict-validation
-    # seam. Sole intended caller: {McpServers::McpConnect}, which uses
+    # seam. Sole intended caller: {Mcp::Servers::Connect}, which uses
     # this to lazy-add MCP-exposed tools after the LLM invokes
     # +mcp_connect+ in a turn.
     #
@@ -800,12 +806,12 @@ module Pikuri
 
     private
 
-    # Build the one-arg thinker closure passed to {McpServers#initialize}
+    # Build the one-arg thinker closure passed to {Mcp::Servers#initialize}
     # when +synthesize_descriptions:+ is true. Captures +@transport+
     # and +@cancellable+ so the synthesis pass uses the same model
     # the agent itself uses and honors the same cancel flag — Ctrl+C
     # during boot synthesis raises {Control::Cancellable::Cancelled}
-    # from the next {.think} call, McpServers re-raises (without
+    # from the next {.think} call, Mcp::Servers re-raises (without
     # logging it as a synthesis "failure"), and the exception
     # propagates out of +Agent.new+ to the bin script's rescue.
     def build_thinker

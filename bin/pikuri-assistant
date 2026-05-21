@@ -4,7 +4,7 @@
 # Dev / demo entry point — runs from a source checkout only. The pikuri
 # gem ships as a library; this script is not installed by `gem install
 # pikuri`. It exists to demonstrate how to wire Pikuri::Agent +
-# Pikuri::Tool::* + Pikuri::McpServers into a working assistant binary
+# Pikuri::Tool::* + Pikuri::Mcp::Servers into a working assistant binary
 # with access to OAuth-gated SaaS via MCP, and to support development.
 # Production binaries built on pikuri (e.g. the planned pikuri-tui)
 # live in their own gems.
@@ -12,10 +12,10 @@
 # This binary differs from `pikuri-chat` in three places:
 #   * +prompts/pikuri-assistant.txt+ — assistant voice + MCP-aware
 #     guidance.
-#   * The +McpRegistry+ block below — hand-edit to add MCP servers
+#   * The +Mcp::Registry+ block below — hand-edit to add MCP servers
 #     (id + argv pair). Empty by default so a fresh checkout runs
 #     identically to `pikuri-chat` until the user opts in.
-#   * The MCP audit log fires at INFO via `Pikuri.logger_for('McpServers')`
+#   * The MCP audit log fires at INFO via `Pikuri.logger_for('Mcp::Servers')`
 #     once servers start.
 #
 # Pin Bundler to pikuri's own Gemfile so locked dependency versions win
@@ -83,20 +83,20 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 #
 # == Examples
 #
-#   Pikuri::McpRegistry::StdioEntry.new(
+#   Pikuri::Mcp::Registry::StdioEntry.new(
 #     id:      'maven-tools',
 #     command: ['npx', 'mcp-maven-deps']
 #   ),
-#   Pikuri::McpRegistry::StdioEntry.new(
+#   Pikuri::Mcp::Registry::StdioEntry.new(
 #     id:      'gmail',
 #     command: ['npx', '@gongrzhe/server-gmail-autoauth-mcp']
 #   ),
-#   Pikuri::McpRegistry::HttpEntry.new(
+#   Pikuri::Mcp::Registry::HttpEntry.new(
 #     id:      'hubspot',
 #     url:     'https://mcp.example.com/v1',
 #     headers: { 'Authorization' => "Bearer #{ENV.fetch('HUBSPOT_TOKEN')}" }
 #   ),
-mcp_registry = Pikuri::McpRegistry.new(entries: [
+mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
 # Boot-time work — notably the synthesize_descriptions: pass that

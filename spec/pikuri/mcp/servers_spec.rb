@@ -8,14 +8,14 @@ require 'set'
 # the schema-adapter or subprocess lifecycle would get wrong against
 # a real server, without needing +npx+ or network egress.
 #
-# Each spec spawns its own +McpServers+ so a server crash / close in
+# Each spec spawns its own +Mcp::Servers+ so a server crash / close in
 # one example can't leak into the next.
-RSpec.describe Pikuri::McpServers do
-  TEST_SERVER_COMMAND = ['bundle', 'exec', 'ruby', File.expand_path('../support/test_mcp_server.rb', __dir__)].freeze
+RSpec.describe Pikuri::Mcp::Servers do
+  TEST_SERVER_COMMAND = ['bundle', 'exec', 'ruby', File.expand_path('../../support/test_mcp_server.rb', __dir__)].freeze
 
   def fresh_registry
-    Pikuri::McpRegistry.new(entries: [
-      Pikuri::McpRegistry::StdioEntry.new(id: 'test', command: TEST_SERVER_COMMAND)
+    Pikuri::Mcp::Registry.new(entries: [
+      Pikuri::Mcp::Registry::StdioEntry.new(id: 'test', command: TEST_SERVER_COMMAND)
     ])
   end
 
@@ -32,7 +32,7 @@ RSpec.describe Pikuri::McpServers do
 
   describe '#initialize against the test fixture' do
     it 'spawns the server, lists tools, exposes them via live_ids' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       assert_equal ['test'], servers.live_ids
       refute servers.empty?
     ensure
@@ -43,7 +43,7 @@ RSpec.describe Pikuri::McpServers do
       captured = StringIO.new
       original = Pikuri.log_io
       Pikuri.log_io = captured
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       log = captured.string
       assert_match(/MCP server "test" started/, log)
       assert_match(/Tools \(4\)/, log)
@@ -59,10 +59,10 @@ RSpec.describe Pikuri::McpServers do
       captured = StringIO.new
       original = Pikuri.log_io
       Pikuri.log_io = captured
-      bogus = Pikuri::McpRegistry.new(entries: [
-        Pikuri::McpRegistry::StdioEntry.new(id: 'bogus', command: ['/nonexistent/binary/path'])
+      bogus = Pikuri::Mcp::Registry.new(entries: [
+        Pikuri::Mcp::Registry::StdioEntry.new(id: 'bogus', command: ['/nonexistent/binary/path'])
       ])
-      servers = Pikuri::McpServers.new(bogus)
+      servers = Pikuri::Mcp::Servers.new(bogus)
       assert servers.empty?
       assert_equal [], servers.live_ids
       assert_match(/Failed to start MCP server "bogus"/, captured.string)
@@ -79,10 +79,10 @@ RSpec.describe Pikuri::McpServers do
       captured = StringIO.new
       original = Pikuri.log_io
       Pikuri.log_io = captured
-      bogus = Pikuri::McpRegistry.new(entries: [
-        Pikuri::McpRegistry::HttpEntry.new(id: 'bogus-http', url: 'http://127.0.0.1:1/mcp')
+      bogus = Pikuri::Mcp::Registry.new(entries: [
+        Pikuri::Mcp::Registry::HttpEntry.new(id: 'bogus-http', url: 'http://127.0.0.1:1/mcp')
       ])
-      servers = Pikuri::McpServers.new(bogus)
+      servers = Pikuri::Mcp::Servers.new(bogus)
       assert servers.empty?
       assert_equal [], servers.live_ids
       assert_match(/Failed to start MCP server "bogus-http"/, captured.string)
@@ -93,7 +93,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'still constructs (empty) when the registry itself is empty' do
-      servers = Pikuri::McpServers.new(Pikuri::McpRegistry::EMPTY)
+      servers = Pikuri::Mcp::Servers.new(Pikuri::Mcp::Registry::EMPTY)
       assert servers.empty?
       assert_equal '', servers.system_prompt_snippet
     ensure
@@ -103,7 +103,7 @@ RSpec.describe Pikuri::McpServers do
 
   describe '#system_prompt_snippet' do
     it 'renders an <available_mcps> block listing live servers + descriptions' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       snippet = servers.system_prompt_snippet
       assert_match(/<available_mcps>/, snippet)
       assert_match(%r{<id>test</id>}, snippet)
@@ -114,7 +114,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'returns empty string when no servers are live' do
-      servers = Pikuri::McpServers.new(Pikuri::McpRegistry::EMPTY)
+      servers = Pikuri::Mcp::Servers.new(Pikuri::Mcp::Registry::EMPTY)
       assert_equal '', servers.system_prompt_snippet
     ensure
       servers&.close
@@ -123,7 +123,7 @@ RSpec.describe Pikuri::McpServers do
 
   describe '#register_tools_with_agent' do
     it 'adds one RubyLLM::Tool subclass per MCP-exposed tool to the agent' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       count = servers.register_tools_with_agent('test', agent)
       assert_equal 4, count
@@ -134,7 +134,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'namespaces tool names as <server_id>__<tool_name>' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       names = agent.added_tools.map(&:name)
@@ -146,7 +146,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'prefixes every tool description with the provenance marker' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       agent.added_tools.each do |t|
@@ -159,7 +159,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'preserves the MCP tool description verbatim after the provenance prefix' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       echo = agent.added_tools.find { |t| t.name == 'test__echo' }
@@ -177,7 +177,7 @@ RSpec.describe Pikuri::McpServers do
       # verifies that per-property descriptions from the MCP server's
       # input_schema make it all the way through deep_dup +
       # stringify_keys without being dropped.
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
 
@@ -201,7 +201,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'strips the $schema URI to avoid provider-side rejection of extra top-level keys' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       echo = agent.added_tools.find { |t| t.name == 'test__echo' }
@@ -219,7 +219,7 @@ RSpec.describe Pikuri::McpServers do
       captured = StringIO.new
       original = Pikuri.log_io
       Pikuri.log_io = captured
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       log = captured.string
       assert_match(/output_schema:.*echoed/, log)
     ensure
@@ -228,7 +228,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'raises ArgumentError for an unknown id (loud-on-bugs, not Error: ...)' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       assert_raises(ArgumentError) do
         servers.register_tools_with_agent('nope', fake_agent)
       end
@@ -239,7 +239,7 @@ RSpec.describe Pikuri::McpServers do
 
   describe 'synthesized RubyLLM::Tool execute paths' do
     it 'returns the raw text content on success' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       echo = agent.added_tools.find { |t| t.name == 'test__echo' }
@@ -249,7 +249,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'converts MCP-side tool errors into Error: ... observations' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       divide = agent.added_tools.find { |t| t.name == 'test__divide' }
@@ -261,7 +261,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'surfaces mid-call server death as an Error: ... observation' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       servers.register_tools_with_agent('test', agent)
       crash = agent.added_tools.find { |t| t.name == 'test__crash' }
@@ -274,9 +274,9 @@ RSpec.describe Pikuri::McpServers do
 
   describe '#view_for_sub_agent' do
     it 'returns a View that delegates live_ids and snippet to the root' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       view = servers.view_for_sub_agent
-      assert_kind_of Pikuri::McpServers::View, view
+      assert_kind_of Pikuri::Mcp::Servers::View, view
       assert_equal servers.live_ids, view.live_ids
       assert_equal servers.system_prompt_snippet, view.system_prompt_snippet
     ensure
@@ -284,7 +284,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'delegates register_tools_with_agent to the root (shared clients, no re-spawn)' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       view = servers.view_for_sub_agent
       agent = fake_agent
       count = view.register_tools_with_agent('test', agent)
@@ -295,7 +295,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'returns self when called on a View (nested sub-agents share the same view)' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       view = servers.view_for_sub_agent
       assert_same view, view.view_for_sub_agent
     ensure
@@ -303,9 +303,9 @@ RSpec.describe Pikuri::McpServers do
     end
   end
 
-  describe Pikuri::McpServers::McpConnect do
+  describe Pikuri::Mcp::Servers::Connect do
     it 'returns an Error: ... for an unknown id' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       tool = servers.build_mcp_connect_tool(agent)
       result = tool.run('id' => 'unknown')
@@ -316,7 +316,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'connects an unknown-to-this-instance server and reports the tool count' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       tool = servers.build_mcp_connect_tool(agent)
       result = tool.run('id' => 'test')
@@ -328,7 +328,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'rejects re-activation with an Error: ... (and does not re-register tools)' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent = fake_agent
       tool = servers.build_mcp_connect_tool(agent)
       tool.run('id' => 'test')
@@ -340,7 +340,7 @@ RSpec.describe Pikuri::McpServers do
     end
 
     it 'tracks activation per-instance — a fresh McpConnect can reactivate' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       agent1 = fake_agent
       agent2 = fake_agent
       tool1 = servers.build_mcp_connect_tool(agent1)
@@ -357,7 +357,7 @@ RSpec.describe Pikuri::McpServers do
 
   describe '#close' do
     it 'is idempotent' do
-      servers = Pikuri::McpServers.new(fresh_registry)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry)
       servers.close
       # second call must not raise
       servers.close
@@ -371,8 +371,8 @@ RSpec.describe Pikuri::McpServers do
   describe 'description synthesis via thinker:' do
     def no_instructions_registry
       cmd = ['env', 'PIKURI_TEST_SKIP_INSTRUCTIONS=1', *TEST_SERVER_COMMAND]
-      Pikuri::McpRegistry.new(entries: [
-        Pikuri::McpRegistry::StdioEntry.new(id: 'test', command: cmd)
+      Pikuri::Mcp::Registry.new(entries: [
+        Pikuri::Mcp::Registry::StdioEntry.new(id: 'test', command: cmd)
       ])
     end
 
@@ -382,7 +382,7 @@ RSpec.describe Pikuri::McpServers do
         received_prompt = prompt
         'Provides four demo tools used by pikuri specs to exercise MCP wiring.'
       end
-      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       assert_match(/Tools:/, received_prompt)
       assert_match(/- echo: /, received_prompt)
       assert_match(/- divide: /, received_prompt)
@@ -395,7 +395,7 @@ RSpec.describe Pikuri::McpServers do
 
     it 'collapses multi-line / surrounding-whitespace synthesizer output into a single line' do
       thinker = ->(_p) { "\n  multi\n  line\n  result\n  " }
-      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
       assert_equal 'multi line result', desc
     ensure
@@ -405,7 +405,7 @@ RSpec.describe Pikuri::McpServers do
     it 'skips synthesis when the server already supplied instructions' do
       called = false
       thinker = ->(_p) { called = true; 'unused' }
-      servers = Pikuri::McpServers.new(fresh_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(fresh_registry, thinker: thinker)
       refute called, 'thinker should not be called when instructions: is present'
       assert_match(/In-tree fixture used by pikuri specs/, servers.system_prompt_snippet)
     ensure
@@ -417,7 +417,7 @@ RSpec.describe Pikuri::McpServers do
       original = Pikuri.log_io
       Pikuri.log_io = captured
       thinker = ->(_p) { raise 'simulated synth blip' }
-      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       assert_match(/MCP description synthesis failed for "test"/, captured.string)
       assert_match(/simulated synth blip/, captured.string)
       desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
@@ -429,20 +429,20 @@ RSpec.describe Pikuri::McpServers do
 
     it 'falls back to serverInfo.name when the thinker returns blank' do
       thinker = ->(_p) { "   \n  \n" }
-      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
       assert_equal 'pikuri-test-mcp', desc
     ensure
       servers&.close
     end
 
-    it 'propagates Cancelled out of McpServers.new without rescuing it as a synthesis failure' do
+    it 'propagates Cancelled out of Mcp::Servers.new without rescuing it as a synthesis failure' do
       thinker = ->(_p) { raise Pikuri::Agent::Control::Cancellable::Cancelled }
       captured = StringIO.new
       original = Pikuri.log_io
       Pikuri.log_io = captured
       assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
-        Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+        Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       end
       refute_match(/synthesis failed/, captured.string)
       refute_match(/Failed to start MCP server/, captured.string)
@@ -455,11 +455,33 @@ RSpec.describe Pikuri::McpServers do
       original = Pikuri.log_io
       Pikuri.log_io = captured
       thinker = ->(_p) { 'Synthesized blurb for the test fixture.' }
-      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      servers = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: thinker)
       assert_match(/Description:\s+Synthesized blurb for the test fixture\./, captured.string)
     ensure
       Pikuri.log_io = original if original
       servers&.close
+    end
+
+    it 'second boot with the same surface hits the cache and skips the thinker' do
+      Dir.mktmpdir('pikuri-mcp-cache-spec') do |cache_dir|
+        cache = Pikuri::Mcp::Cache.new(model_id: 'spec-model', prompt_version: 1, dir: cache_dir)
+        first_calls = 0
+        first_thinker = ->(_p) { first_calls += 1; 'cached description' }
+        servers1 = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: first_thinker, cache: cache)
+        assert_equal 1, first_calls
+        assert_match(/cached description/, servers1.system_prompt_snippet)
+        servers1.close
+
+        # Boot again with the same registry surface + same cache dir.
+        # The thinker on this run must NOT be called.
+        cache2 = Pikuri::Mcp::Cache.new(model_id: 'spec-model', prompt_version: 1, dir: cache_dir)
+        second_calls = 0
+        second_thinker = ->(_p) { second_calls += 1; 'should not be invoked' }
+        servers2 = Pikuri::Mcp::Servers.new(no_instructions_registry, thinker: second_thinker, cache: cache2)
+        assert_equal 0, second_calls
+        assert_match(/cached description/, servers2.system_prompt_snippet)
+        servers2.close
+      end
     end
   end
 end

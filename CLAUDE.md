@@ -99,17 +99,17 @@ grows a skill system.
   `grep -rn 'Process\.spawn\|Open3\|system' lib/` should only hit
   `lib/pikuri/subprocess.rb`.
 
-  *Carve-out:* `Pikuri::McpServers` is the documented exception, and
-  only for stdio MCP entries (`McpRegistry::StdioEntry`). The `mcp` gem
+  *Carve-out:* `Pikuri::Mcp::Servers` is the documented exception, and
+  only for stdio MCP entries (`Mcp::Registry::StdioEntry`). The `mcp` gem
   spawns the server via its own `MCP::Client::Stdio` transport —
   routing that through `Subprocess.spawn` would mean forking the gem
   or threading custom IO pipes through its API, duplicating work the
-  gem exists to do. Instead, `McpServers#initialize` registers
+  gem exists to do. Instead, `Mcp::Servers#initialize` registers
   `at_exit { close }` and `#close` calls the gem's per-transport
   `close` (which closes stdin → server hits EOF and self-terminates
   per spec). The grep invariant above still holds because the spawn
   happens inside the gem, not in pikuri's `lib/`. HTTP MCP entries
-  (`McpRegistry::HttpEntry`) don't fall under the carve-out — they're
+  (`Mcp::Registry::HttpEntry`) don't fall under the carve-out — they're
   plain Faraday inside the gem, no subprocess involved. See IDEAS.md
   §"v1 implementation shape" / "Subprocess lifecycle" for the full
   rationale.
@@ -239,27 +239,32 @@ and a small shared cache.
   Catalog + tool form a seam: a future host can plug in a synthetic
   catalog (virtual filesystem, in-memory test fixture) without touching
   `Tool::Skill` or `Agent`.
-- `lib/pikuri/mcp_registry.rb`, `lib/pikuri/mcp_servers.rb` — MCP
-  (Model Context Protocol) support. `Pikuri::McpRegistry` is the pure
-  config layer (`Entry = Data.define(:id, :command)`, `EMPTY`
+- `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
+  `lib/pikuri/mcp/cache.rb` — MCP (Model Context Protocol) support
+  under the `Pikuri::Mcp` namespace. `Pikuri::Mcp::Registry` is the
+  pure config layer (`StdioEntry`/`HttpEntry` data classes, `EMPTY`
   singleton — same shape as `SkillCatalog::EMPTY`).
-  `Pikuri::McpServers` is the runtime: constructed from a registry,
+  `Pikuri::Mcp::Servers` is the runtime: constructed from a registry,
   eager-starts every configured server via the `mcp` gem's
-  `MCP::Client::Stdio`, holds the live clients, emits an INFO audit
-  log per server, registers `at_exit { close }` for cleanup.
-  `McpServers::View` is the sub-agent facade (shares clients,
-  delegates lifecycle), and `McpServers::McpConnect` is the private
-  inner `Pikuri::Tool` subclass auto-instantiated by `Agent#initialize`
-  when the registry is non-empty. MCP tools bypass `Pikuri::Tool`
-  entirely — they're synthesised as raw `RubyLLM::Tool` subclasses
-  inside `McpServers` and fed in via `Agent#internal_add_tool`. This
-  is also the documented exception to the `Subprocess.spawn`
-  chokepoint (see Scope decisions). See IDEAS.md §"v1 implementation
-  shape" for the full rationale.
+  `MCP::Client::Stdio` / `MCP::Client::HTTP`, holds the live clients,
+  emits an INFO audit log per server, registers `at_exit { close }`
+  for cleanup. `Mcp::Servers::View` is the sub-agent facade (shares
+  clients, delegates lifecycle), and `Mcp::Servers::Connect` is the
+  private inner `Pikuri::Tool` subclass auto-instantiated by
+  `Agent#initialize` when the registry is non-empty.
+  `Pikuri::Mcp::Cache` is the on-disk cache for synthesized server
+  descriptions — wraps `UrlCache` with a TTL of infinity, keys on the
+  full server surface (transport, server name/version, every tool's
+  name/description/schema) so any change auto-invalidates. MCP tools
+  bypass `Pikuri::Tool` entirely — they're synthesised as raw
+  `RubyLLM::Tool` subclasses inside `Mcp::Servers` and fed in via
+  `Agent#internal_add_tool`. This is also the documented exception to
+  the `Subprocess.spawn` chokepoint (see Scope decisions). See
+  IDEAS.md §"v1 implementation shape" for the full rationale.
 - `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
   (see Scope decisions). The single point where `Open3` / `Process.spawn`
   are allowed; everything else in `lib/` routes through here (except
-  `mcp_servers.rb`, which carves out — see above).
+  `mcp/servers.rb`, which carves out — see above).
 - `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL cache
   used by the bundled web tools.
 The two `bin/pikuri-*` scripts below are dev / demo entry points only —
@@ -282,7 +287,7 @@ downstream gems.
   workspace as project context, and runs an interactive REPL.
 - `bin/pikuri-assistant` — CLI entry point for an assistant binary
   that adds MCP support to the pikuri-chat tool set. Same ruby_llm
-  wiring as `pikuri-chat`, plus a `Pikuri::McpRegistry` constructor
+  wiring as `pikuri-chat`, plus a `Pikuri::Mcp::Registry` constructor
   argument the developer hand-edits to add MCP servers (id + argv).
   Empty by default — runs identically to `pikuri-chat` until the
   developer opts in by adding entries. The third dev/demo binary

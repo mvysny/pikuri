@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 module Pikuri
+  module Mcp
   # Pure configuration for MCP servers — id → transport descriptor
-  # pairs and nothing more. No I/O, no live state. {McpServers}
+  # pairs and nothing more. No I/O, no live state. {Servers}
   # consumes a registry at construction time to start the actual
   # clients.
   #
-  # Split from {McpServers} so the dependency on the +mcp+ gem and on
+  # Split from {Servers} so the dependency on the +mcp+ gem and on
   # subprocess / network lifecycle is confined to the runtime side.
   # Tests that only need to exercise registry value semantics never
   # have to load the gem or open a transport.
@@ -14,7 +15,7 @@ module Pikuri
   # == Entry types
   #
   # Two sibling value classes, picked per server. The registry holds
-  # a mixed array; {McpServers#start_one} dispatches on the type.
+  # a mixed array; {Servers#start_one} dispatches on the type.
   #
   # * {StdioEntry} — local subprocess, +command:+ argv. The +mcp+ gem
   #   spawns it; see CLAUDE.md "Subprocess seam" carve-out.
@@ -26,13 +27,13 @@ module Pikuri
   #
   # The +EMPTY+ singleton is the default for {Agent#initialize}'s
   # +mcp_registry:+ kwarg. When the registry is empty {Agent}
-  # short-circuits — no {McpServers} is built, no +mcp_connect+ tool is
+  # short-circuits — no {Servers} is built, no +mcp_connect+ tool is
   # registered, no +<available_mcps>+ block is appended to the system
   # prompt. The +pikuri-chat+ binary relies on this short-circuit so it
   # can omit the kwarg entirely.
   #
   # Same shape as {Tool::SkillCatalog::EMPTY}.
-  class McpRegistry
+  class Registry
     # One local-subprocess MCP server's configuration: a unique id
     # (used by the LLM to call +mcp_connect+) and the argv array used
     # to spawn the server process.
@@ -78,7 +79,7 @@ module Pikuri
 
     # @param entries [Array<StdioEntry, HttpEntry>] zero or more server
     #   definitions. Order is preserved; duplicate ids raise.
-    # @return [McpRegistry]
+    # @return [Registry]
     # @raise [ArgumentError] if two entries share an id.
     def initialize(entries: [])
       seen = {}
@@ -117,5 +118,6 @@ module Pikuri
     # Frozen empty registry. Used as the default for
     # {Agent#initialize}'s +mcp_registry:+ kwarg.
     EMPTY = new.freeze
+  end
   end
 end

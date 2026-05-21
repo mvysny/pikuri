@@ -92,20 +92,20 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 #
 # == Examples
 #
-#   Pikuri::McpRegistry::StdioEntry.new(
+#   Pikuri::Mcp::Registry::StdioEntry.new(
 #     id:      'maven-tools',
 #     command: ['npx', 'mcp-maven-deps']
 #   ),
-#   Pikuri::McpRegistry::StdioEntry.new(
+#   Pikuri::Mcp::Registry::StdioEntry.new(
 #     id:      'gmail',
 #     command: ['npx', '@gongrzhe/server-gmail-autoauth-mcp']
 #   ),
-#   Pikuri::McpRegistry::HttpEntry.new(
+#   Pikuri::Mcp::Registry::HttpEntry.new(
 #     id:      'hubspot',
 #     url:     'https://mcp.example.com/v1',
 #     headers: { 'Authorization' => "Bearer #{ENV.fetch('HUBSPOT_TOKEN')}" }
 #   ),
-mcp_registry = Pikuri::McpRegistry.new(entries: [
+mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
 # Boot-time work — notably the synthesize_descriptions: pass that

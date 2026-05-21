@@ -4,18 +4,19 @@ require 'mcp'
 require 'set'
 
 module Pikuri
+  module Mcp
   # Runtime side of MCP support: spawns the configured servers, holds
   # the live clients, and is the seam where the +mcp+ gem dependency
-  # lives. Constructed from an {McpRegistry} (config), eager-starts
+  # lives. Constructed from a {Registry} (config), eager-starts
   # every entry at +#initialize+, registers an +at_exit+ hook to close
   # cleanly on process exit.
   #
   # == Transports
   #
-  # Each {McpRegistry} entry maps to one of the +mcp+ gem's transports:
+  # Each {Registry} entry maps to one of the +mcp+ gem's transports:
   #
-  # * {McpRegistry::StdioEntry} → +MCP::Client::Stdio+ (local subprocess).
-  # * {McpRegistry::HttpEntry}  → +MCP::Client::HTTP+ (remote endpoint).
+  # * {Registry::StdioEntry} → +MCP::Client::Stdio+ (local subprocess).
+  # * {Registry::HttpEntry}  → +MCP::Client::HTTP+ (remote endpoint).
   #
   # +#start_one+ pattern-matches on the entry type and constructs the
   # right transport; everything downstream (client, tools cache, audit
@@ -43,14 +44,14 @@ module Pikuri
   #
   # == What lives where
   #
-  # * {McpServers}: eager startup, audit logging, the client/transport
+  # * {Servers}: eager startup, audit logging, the client/transport
   #   hash, +#close+, the +<available_mcps>+ snippet renderer, and the
   #   shared +register_tools_with_agent+ that actually wires MCP tools
   #   into a given agent's underlying +RubyLLM::Chat+.
   # * {View}: thin facade for sub-agents — same public surface as
-  #   {McpServers} but every method delegates to the root. Sub-agents
+  #   {Servers} but every method delegates to the root. Sub-agents
   #   share the parent's live clients; only the root owns +#close+.
-  # * {McpConnect}: the +mcp_connect+ tool the LLM calls. Private inner
+  # * {Connect}: the +mcp_connect+ tool the LLM calls. Private inner
   #   {Pikuri::Tool} subclass instantiated per-agent by
   #   {Agent#initialize}. Tracks its own +Set+ of activated ids so
   #   re-activation comes back as an LLM-actionable +"Error: ..."+
@@ -68,11 +69,11 @@ module Pikuri
   # extended to MCP tools in v1; MCP-side validation catches bad input,
   # and the provenance prefix + audit log are the compensating
   # transparency.
-  class McpServers
-    LOGGER = Pikuri.logger_for('McpServers')
+  class Servers
+    LOGGER = Pikuri.logger_for('Mcp::Servers')
     private_constant :LOGGER
 
-    # @param registry [McpRegistry] configured servers to start.
+    # @param registry [Registry] configured servers to start.
     # @param thinker [Proc, nil] one-arg callable invoked as
     #   +thinker.call(prompt)+ when a server's +initialize+ handshake
     #   doesn't carry an +instructions+ or +serverInfo.title+ field
@@ -85,10 +86,20 @@ module Pikuri
     #   back to +serverInfo.name+; +Cancelled+ bubbles up so the
     #   user can abort a slow boot. Pass +nil+ (the default) to
     #   skip synthesis and rely on the static fallback chain.
-    # @return [McpServers]
-    def initialize(registry, thinker: nil)
+    # @param cache [Cache, Cache::NULL, nil] optional disk cache for
+    #   synthesis results. When set, +#try_synthesize_description+
+    #   routes the thinker call through +cache.fetch+ — an unchanged
+    #   surface fingerprint (model, prompt version, transport, server
+    #   name/version, full tools surface) short-circuits to the
+    #   stored description with no LLM round-trip. Defaults to +nil+,
+    #   meaning every boot resynthesizes. {Agent#initialize} provides
+    #   a real {Cache} when its +synthesize_descriptions:+ kwarg is
+    #   true.
+    # @return [Servers]
+    def initialize(registry, thinker: nil, cache: nil)
       @registry    = registry
       @thinker     = thinker
+      @cache       = cache || Cache::NULL
       @clients     = {} # id => MCP::Client (only for servers that started)
       @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
       @tools_cache = {} # id => Array<MCP::Client::Tool>
@@ -107,7 +118,7 @@ module Pikuri
 
     # @return [Array<String>] ids of servers that successfully started.
     #   Excludes any whose subprocess spawn or handshake failed (those
-    #   are logged as warnings and dropped). Identical to {McpRegistry#ids}
+    #   are logged as warnings and dropped). Identical to {Registry#ids}
     #   when no startup failures occurred.
     attr_reader :live_ids
 
@@ -128,12 +139,12 @@ module Pikuri
     # Build the +mcp_connect+ tool bound to the given agent. The agent
     # passes itself so the tool can call +agent.internal_add_tool+
     # without a circular constructor dance. Each call returns a fresh
-    # {McpConnect} with an empty activation set.
+    # {Connect} with an empty activation set.
     #
     # @param agent [Agent]
-    # @return [McpConnect]
+    # @return [Connect]
     def build_mcp_connect_tool(agent)
-      McpConnect.new(view: self, agent: agent)
+      Connect.new(view: self, agent: agent)
     end
 
     # System-prompt block advertising every live MCP server to the LLM.
@@ -167,9 +178,9 @@ module Pikuri
 
     # Register every tool exposed by server +id+ into +agent+'s
     # underlying +RubyLLM::Chat+. Public so {View#register_tools_with_agent}
-    # can delegate; intended caller is {McpConnect} via
+    # can delegate; intended caller is {Connect} via
     # {Agent#internal_add_tool}. Doesn't track activation — that's
-    # {McpConnect}'s job (each agent's tool instance owns its own set).
+    # {Connect}'s job (each agent's tool instance owns its own set).
     #
     # @param id [String] server id; must be in {#live_ids}.
     # @param agent [Agent]
@@ -191,7 +202,7 @@ module Pikuri
     # subprocesses. Idempotent. Registered via +at_exit+ from
     # {#initialize} so process exit always cleans up, but callers may
     # invoke it explicitly (e.g. tests that swap in a fresh
-    # {McpServers}).
+    # {Servers}).
     #
     # @return [void]
     def close
@@ -253,12 +264,12 @@ module Pikuri
 
     def build_transport(entry)
       case entry
-      when McpRegistry::StdioEntry
+      when Registry::StdioEntry
         MCP::Client::Stdio.new(
           command: entry.command.first,
           args: entry.command.drop(1)
         )
-      when McpRegistry::HttpEntry
+      when Registry::HttpEntry
         MCP::Client::HTTP.new(url: entry.url, headers: entry.headers)
       else
         raise ArgumentError, "Unknown MCP entry type: #{entry.class}"
@@ -269,8 +280,8 @@ module Pikuri
     # the warning log when startup fails.
     def describe_entry(entry)
       case entry
-      when McpRegistry::StdioEntry then "command: #{entry.command.join(' ')}"
-      when McpRegistry::HttpEntry  then "url: #{entry.url}"
+      when Registry::StdioEntry then "command: #{entry.command.join(' ')}"
+      when Registry::HttpEntry  then "url: #{entry.url}"
       else                              entry.class.to_s
       end
     end
@@ -307,7 +318,7 @@ module Pikuri
       return server_info['title']  if server_info['title']  && !server_info['title'].to_s.strip.empty?
 
       if @thinker
-        synthesized = try_synthesize_description(entry, tools)
+        synthesized = try_synthesize_description(entry, client, tools)
         return synthesized if synthesized
       end
 
@@ -315,16 +326,23 @@ module Pikuri
     end
 
     # Build the synthesis prompt from the server's tool list, hand
-    # it to +@thinker+, and clean up the response into a single-line
-    # description suitable for the +<available_mcps>+ block. Returns
-    # +nil+ when synthesis fails (logged + caller falls back to the
-    # next step in {#resolve_description}). +Cancellable::Cancelled+
-    # is intentionally not rescued here — it must propagate so the
-    # user's Ctrl+C aborts startup rather than silently producing a
-    # useless description.
-    def try_synthesize_description(entry, tools)
-      prompt = build_synthesis_prompt(entry, tools)
-      raw = @thinker.call(prompt)
+    # it to +@thinker+ (through +@cache+ if one was wired), and clean
+    # up the response into a single-line description suitable for the
+    # +<available_mcps>+ block. Returns +nil+ when synthesis fails
+    # (logged + caller falls back to the next step in
+    # {#resolve_description}). +Cancellable::Cancelled+ is intentionally
+    # not rescued here — it must propagate so the user's Ctrl+C aborts
+    # startup rather than silently producing a useless description.
+    #
+    # The cache is invoked with the full surface fingerprint —
+    # transport descriptor, server name/version, and every tool's
+    # name/description/input_schema — so any change to what the
+    # server exposes invalidates the cached description.
+    def try_synthesize_description(entry, client, tools)
+      raw = @cache.fetch(entry: entry, client: client, tools: tools) do
+        prompt = build_synthesis_prompt(entry, tools)
+        @thinker.call(prompt)
+      end
       cleaned = raw.to_s.strip.gsub(/\s+/, ' ')
       return nil if cleaned.empty?
 
@@ -339,6 +357,12 @@ module Pikuri
       nil
     end
 
+    # Prompt sent to the synthesizer. Version constant lives next to
+    # the prompt so any edit here gets paired with a version bump that
+    # invalidates {Cache} entries built against the old text. {Cache}
+    # reads {PROMPT_VERSION} via its initializer kwarg, never directly
+    # — the dependency direction stays one-way.
+    PROMPT_VERSION = 1
     def build_synthesis_prompt(entry, tools)
       lines = []
       lines << 'You are summarizing an MCP (Model Context Protocol) server for an AI agent that decides which servers to connect to.'
@@ -461,14 +485,14 @@ module Pikuri
     end
 
     # Sub-agent-facing facade. Shares the parent's clients, never owns
-    # lifecycle. Constructed via {McpServers#view_for_sub_agent}.
+    # lifecycle. Constructed via {Servers#view_for_sub_agent}.
     #
     # Recursive sub-agents (a sub-agent spawning its own sub-agent)
     # share the same {View} instance — {#view_for_sub_agent} returns
     # +self+ rather than wrapping again, since clients are already
     # delegated to root.
     class View
-      # @param root [McpServers]
+      # @param root [Servers]
       def initialize(root)
         @root = root
       end
@@ -494,9 +518,9 @@ module Pikuri
       end
 
       # @param agent [Agent]
-      # @return [McpConnect]
+      # @return [Connect]
       def build_mcp_connect_tool(agent)
-        McpConnect.new(view: self, agent: agent)
+        Connect.new(view: self, agent: agent)
       end
 
       # @param id [String]
@@ -509,16 +533,16 @@ module Pikuri
     end
 
     # The +mcp_connect+ tool exposed to the LLM. Private inner class —
-    # instantiated only by {McpServers#build_mcp_connect_tool} (called
+    # instantiated only by {Servers#build_mcp_connect_tool} (called
     # from {Agent#initialize}), never by application code.
     #
     # Tracks its own activation +Set+ so re-connecting an already-active
     # server returns a recoverable +"Error: ..."+ String (the LLM has
     # the tools in its toolset and should just call them). Each agent
-    # owns its own {McpConnect} instance and therefore its own
+    # owns its own {Connect} instance and therefore its own
     # activation set — activation does not propagate between parent and
     # sub-agent. See IDEAS.md §"v1 implementation shape".
-    class McpConnect < Pikuri::Tool
+    class Connect < Pikuri::Tool
       DESCRIPTION = <<~DESC
         Connect to an MCP (Model Context Protocol) server, adding its tools to your toolset for the rest of this conversation.
 
@@ -529,7 +553,7 @@ module Pikuri
         - On `Error: unknown MCP server id ...`, pick an id that actually appears in `<available_mcps>`.
       DESC
 
-      # @param view [McpServers, View] runtime view this tool resolves
+      # @param view [Servers, View] runtime view this tool resolves
       #   ids against.
       # @param agent [Agent] agent into whose chat the activated tools
       #   are registered.
@@ -539,7 +563,7 @@ module Pikuri
         super(
           name: 'mcp_connect',
           description: DESCRIPTION,
-          parameters: Parameters.build { |p|
+          parameters: Pikuri::Tool::Parameters.build { |p|
             p.required_string :id,
                               'Id of the MCP server to connect to. ' \
                               'Must match one of the ids listed under ' \
@@ -562,5 +586,6 @@ module Pikuri
         )
       end
     end
+  end
   end
 end

@@ -101,9 +101,9 @@ class CrashTool < MCP::Tool
 end
 
 # +PIKURI_TEST_SKIP_INSTRUCTIONS=1+ omits the +instructions:+ field so
-# specs can exercise the McpServers description-synthesis fallback
+# specs can exercise the Mcp::Servers description-synthesis fallback
 # (instructions-less servers are the common case in the wild — see
-# +McpServers#resolve_description+).
+# +Mcp::Servers#resolve_description+).
 server_kwargs = {
   name: 'pikuri-test-mcp',
   version: '0.0.1',
