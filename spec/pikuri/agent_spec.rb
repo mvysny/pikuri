@@ -178,7 +178,7 @@ RSpec.describe Pikuri::Agent do
     it 'closes the McpServers it constructed from mcp_registry:' do
       tracker = tracker_mcp_servers_class.new
       original_new = Pikuri::McpServers.method(:new)
-      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry, **_| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
           Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
@@ -192,7 +192,7 @@ RSpec.describe Pikuri::Agent do
         agent.close
         assert_equal 1, tracker.close_calls
       ensure
-        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
@@ -210,7 +210,7 @@ RSpec.describe Pikuri::Agent do
     it 'is idempotent — repeat calls do not re-invoke McpServers#close' do
       tracker = tracker_mcp_servers_class.new
       original_new = Pikuri::McpServers.method(:new)
-      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry, **_| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
           Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
@@ -223,7 +223,7 @@ RSpec.describe Pikuri::Agent do
         agent.close
         assert_equal 1, tracker.close_calls
       ensure
-        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
@@ -250,7 +250,7 @@ RSpec.describe Pikuri::Agent do
     it 'calls #close after the block returns' do
       tracker = tracker_mcp_servers_class.new
       original_new = Pikuri::McpServers.method(:new)
-      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry, **_| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
           Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
@@ -262,14 +262,14 @@ RSpec.describe Pikuri::Agent do
         end
         assert_equal 1, tracker.close_calls
       ensure
-        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
     it 'calls #close even when the block raises (resource cleanup on exception)' do
       tracker = tracker_mcp_servers_class.new
       original_new = Pikuri::McpServers.method(:new)
-      Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
+      Pikuri::McpServers.define_singleton_method(:new) { |_registry, **_| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
           Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
@@ -284,7 +284,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal 'boom from inside the block', err.message
         assert_equal 1, tracker.close_calls
       ensure
-        Pikuri::McpServers.define_singleton_method(:new) { |r| original_new.call(r) }
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
@@ -745,6 +745,131 @@ RSpec.describe Pikuri::Agent do
 
       assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryEventList])',
                    agent.to_s
+    end
+  end
+
+  describe '.think' do
+    let(:transport) { Pikuri::Agent::ChatTransport.new(model: 'm') }
+
+    it 'sends the prompt as the user message and returns the assistant content' do
+      fake_chat.add_assistant('synthesized: a tool')
+      result = Pikuri::Agent.think(transport: transport, prompt: 'Summarize X')
+      assert_equal ['Summarize X'], fake_chat.asks
+      assert_equal 'synthesized: a tool', result
+    end
+
+    it 'returns "" when no assistant message landed (e.g. provider returned nothing)' do
+      result = Pikuri::Agent.think(transport: transport, prompt: 'p')
+      assert_equal '', result
+    end
+
+    it 'rejects nil/empty/whitespace prompt with ArgumentError' do
+      [nil, '', '   '].each do |bad|
+        err = assert_raises(ArgumentError) do
+          Pikuri::Agent.think(transport: transport, prompt: bad)
+        end
+        assert_match(/prompt must not be blank/, err.message)
+      end
+    end
+
+    it 'fills in RubyLLM.config.default_model when transport.model is nil' do
+      captured_kwargs = nil
+      captured = fake_chat
+      RubyLLM.define_singleton_method(:chat) do |**kw|
+        captured_kwargs = kw
+        captured
+      end
+
+      original_default = RubyLLM.config.default_model
+      RubyLLM.config.default_model = 'default-model-id'
+      begin
+        Pikuri::Agent.think(transport: Pikuri::Agent::ChatTransport.new(model: nil), prompt: 'p')
+        assert_equal 'default-model-id', captured_kwargs[:model]
+      ensure
+        RubyLLM.config.default_model = original_default
+      end
+    end
+
+    it 'raises Cancelled when the cancellable is already tripped before the call' do
+      cancellable = Pikuri::Agent::Control::Cancellable.new
+      cancellable.cancel!
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        Pikuri::Agent.think(transport: transport, prompt: 'p', cancellable: cancellable)
+      end
+      # Pre-call check should fire before ask is invoked.
+      assert_empty fake_chat.asks
+    end
+  end
+
+  describe 'synthesize_descriptions: kwarg plumbing' do
+    # Captures the thinker McpServers received so the spec can poke it
+    # to verify the closure captures @transport and @cancellable as
+    # promised by the docstring on +#build_thinker+.
+    let(:capturing_mcp_servers_class) do
+      Class.new do
+        @last_thinker = nil
+        class << self; attr_accessor :last_thinker; end
+
+        def initialize(_registry, thinker: nil)
+          self.class.last_thinker = thinker
+        end
+
+        def empty?; true; end
+        def system_prompt_snippet; ''; end
+        def close; end
+      end
+    end
+
+    it 'passes thinker: nil to McpServers when synthesize_descriptions: false (the default)' do
+      stub = capturing_mcp_servers_class
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
+        ])
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [], listeners: listeners,
+                          mcp_registry: registry)
+        assert_nil stub.last_thinker
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
+      end
+    end
+
+    it 'passes a thinker closure that delegates to Agent.think with the agent transport + cancellable' do
+      stub = capturing_mcp_servers_class
+      original_new = Pikuri::McpServers.method(:new)
+      Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
+
+      cancellable = Pikuri::Agent::Control::Cancellable.new
+      captured_call = nil
+      original_think = Pikuri::Agent.method(:think)
+      Pikuri::Agent.define_singleton_method(:think) do |**kw|
+        captured_call = kw
+        'synth result'
+      end
+      begin
+        registry = Pikuri::McpRegistry.new(entries: [
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
+        ])
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'qwen-x'),
+                                  system_prompt: 's', tools: [], listeners: listeners,
+                                  cancellable: cancellable,
+                                  mcp_registry: registry,
+                                  synthesize_descriptions: true)
+        refute_nil stub.last_thinker
+
+        result = stub.last_thinker.call('the prompt')
+        assert_equal 'synth result', result
+        assert_equal 'the prompt', captured_call[:prompt]
+        assert_equal 'qwen-x', captured_call[:transport].model
+        assert_same cancellable, captured_call[:cancellable]
+        assert_same agent.cancellable, captured_call[:cancellable]
+      ensure
+        Pikuri::McpServers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
+        Pikuri::Agent.define_singleton_method(:think) { |**kw| original_think.call(**kw) }
+      end
     end
   end
 

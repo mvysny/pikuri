@@ -363,4 +363,103 @@ RSpec.describe Pikuri::McpServers do
       servers.close
     end
   end
+
+  # Synthesis-path tests use the fixture with +PIKURI_TEST_SKIP_INSTRUCTIONS=1+
+  # so the server's +initialize+ handshake omits the +instructions+ field
+  # — that's the real-world common case where the fallback chain in
+  # +#resolve_description+ would otherwise bottom out at +serverInfo.name+.
+  describe 'description synthesis via thinker:' do
+    def no_instructions_registry
+      cmd = ['env', 'PIKURI_TEST_SKIP_INSTRUCTIONS=1', *TEST_SERVER_COMMAND]
+      Pikuri::McpRegistry.new(entries: [
+        Pikuri::McpRegistry::StdioEntry.new(id: 'test', command: cmd)
+      ])
+    end
+
+    it 'invokes the thinker with a prompt containing every tool name + description, uses the result as the description' do
+      received_prompt = nil
+      thinker = lambda do |prompt|
+        received_prompt = prompt
+        'Provides four demo tools used by pikuri specs to exercise MCP wiring.'
+      end
+      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      assert_match(/Tools:/, received_prompt)
+      assert_match(/- echo: /, received_prompt)
+      assert_match(/- divide: /, received_prompt)
+      assert_match(/- slow: /, received_prompt)
+      assert_match(/- crash: /, received_prompt)
+      assert_match(/four demo tools/, servers.system_prompt_snippet)
+    ensure
+      servers&.close
+    end
+
+    it 'collapses multi-line / surrounding-whitespace synthesizer output into a single line' do
+      thinker = ->(_p) { "\n  multi\n  line\n  result\n  " }
+      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
+      assert_equal 'multi line result', desc
+    ensure
+      servers&.close
+    end
+
+    it 'skips synthesis when the server already supplied instructions' do
+      called = false
+      thinker = ->(_p) { called = true; 'unused' }
+      servers = Pikuri::McpServers.new(fresh_registry, thinker: thinker)
+      refute called, 'thinker should not be called when instructions: is present'
+      assert_match(/In-tree fixture used by pikuri specs/, servers.system_prompt_snippet)
+    ensure
+      servers&.close
+    end
+
+    it 'warns and falls back to serverInfo.name when the thinker raises StandardError' do
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      thinker = ->(_p) { raise 'simulated synth blip' }
+      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      assert_match(/MCP description synthesis failed for "test"/, captured.string)
+      assert_match(/simulated synth blip/, captured.string)
+      desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
+      assert_equal 'pikuri-test-mcp', desc
+    ensure
+      Pikuri.log_io = original if original
+      servers&.close
+    end
+
+    it 'falls back to serverInfo.name when the thinker returns blank' do
+      thinker = ->(_p) { "   \n  \n" }
+      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      desc = servers.system_prompt_snippet[/<description>(.+?)<\/description>/, 1]
+      assert_equal 'pikuri-test-mcp', desc
+    ensure
+      servers&.close
+    end
+
+    it 'propagates Cancelled out of McpServers.new without rescuing it as a synthesis failure' do
+      thinker = ->(_p) { raise Pikuri::Agent::Control::Cancellable::Cancelled }
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      end
+      refute_match(/synthesis failed/, captured.string)
+      refute_match(/Failed to start MCP server/, captured.string)
+    ensure
+      Pikuri.log_io = original if original
+    end
+
+    it 'logs the resolved description in the audit log so a user can see when synthesis kicked in' do
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      thinker = ->(_p) { 'Synthesized blurb for the test fixture.' }
+      servers = Pikuri::McpServers.new(no_instructions_registry, thinker: thinker)
+      assert_match(/Description:\s+Synthesized blurb for the test fixture\./, captured.string)
+    ensure
+      Pikuri.log_io = original if original
+      servers&.close
+    end
+  end
 end

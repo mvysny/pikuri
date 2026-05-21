@@ -100,12 +100,19 @@ class CrashTool < MCP::Tool
   end
 end
 
-server = MCP::Server.new(
+# +PIKURI_TEST_SKIP_INSTRUCTIONS=1+ omits the +instructions:+ field so
+# specs can exercise the McpServers description-synthesis fallback
+# (instructions-less servers are the common case in the wild — see
+# +McpServers#resolve_description+).
+server_kwargs = {
   name: 'pikuri-test-mcp',
   version: '0.0.1',
-  tools: [EchoTool, DivideTool, SlowTool, CrashTool],
-  instructions: 'In-tree fixture used by pikuri specs to exercise the MCP integration end-to-end.'
-)
+  tools: [EchoTool, DivideTool, SlowTool, CrashTool]
+}
+unless ENV['PIKURI_TEST_SKIP_INSTRUCTIONS']
+  server_kwargs[:instructions] = 'In-tree fixture used by pikuri specs to exercise the MCP integration end-to-end.'
+end
+server = MCP::Server.new(**server_kwargs)
 
 transport = MCP::Server::Transports::StdioTransport.new(server)
 transport.open

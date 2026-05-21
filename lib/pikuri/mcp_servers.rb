@@ -73,9 +73,22 @@ module Pikuri
     private_constant :LOGGER
 
     # @param registry [McpRegistry] configured servers to start.
+    # @param thinker [Proc, nil] one-arg callable invoked as
+    #   +thinker.call(prompt)+ when a server's +initialize+ handshake
+    #   doesn't carry an +instructions+ or +serverInfo.title+ field
+    #   useful enough to show the LLM. The callable should perform a
+    #   one-shot LLM inference and return the result as a String —
+    #   typically +-> (p) { Agent.think(transport: ..., prompt: p,
+    #   cancellable: ...) }+. {Agent#initialize} builds and threads
+    #   this closure when its +synthesize_descriptions:+ kwarg is
+    #   true. Synthesis errors are logged and the heuristic falls
+    #   back to +serverInfo.name+; +Cancelled+ bubbles up so the
+    #   user can abort a slow boot. Pass +nil+ (the default) to
+    #   skip synthesis and rely on the static fallback chain.
     # @return [McpServers]
-    def initialize(registry)
+    def initialize(registry, thinker: nil)
       @registry    = registry
+      @thinker     = thinker
       @clients     = {} # id => MCP::Client (only for servers that started)
       @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
       @tools_cache = {} # id => Array<MCP::Client::Tool>
@@ -83,8 +96,13 @@ module Pikuri
       @live_ids    = []
       @closed      = false
 
-      start_all
+      # Register cleanup *before* starting any server. If a later
+      # +start_one+ raises (notably Cancelled from synthesis), the
+      # exception propagates out of {#initialize} and the at_exit
+      # handler still fires at process exit to close any
+      # transports that did get opened.
       register_at_exit
+      start_all
     end
 
     # @return [Array<String>] ids of servers that successfully started.
@@ -202,10 +220,22 @@ module Pikuri
       @clients[entry.id]      = client
       @transports[entry.id]   = transport
       @tools_cache[entry.id]  = tools
-      @descriptions[entry.id] = extract_server_description(client)
+      @descriptions[entry.id] = resolve_description(entry, client, tools)
       @live_ids << entry.id
 
       log_audit(entry, client, tools)
+    rescue Agent::Control::Cancellable::Cancelled
+      # Boot-time synthesis was cancelled by the user; abort the
+      # whole startup rather than logging it as a per-server
+      # "Failed to start" warning. The partial-startup cleanup
+      # below still runs via ensure-equivalent (we have to inline
+      # it because the original rescue is the cleanup site).
+      begin
+        transport&.close
+      rescue StandardError
+        nil
+      end
+      raise
     rescue StandardError => e
       LOGGER.warn(
         "Failed to start MCP server #{entry.id.inspect} " \
@@ -245,18 +275,82 @@ module Pikuri
       end
     end
 
-    # Pull a short description out of the server's +initialize+
-    # handshake. +client.server_info+ is the raw initialize response
-    # hash from the +mcp+ gem; +instructions+ is the conventional
-    # field for a "what this server does" blurb, with operational
-    # identifiers (+serverInfo.name+, +serverInfo.title+) as fallback.
-    def extract_server_description(client)
+    # Resolve the short description shown to the LLM under
+    # +<available_mcps>+. Priority chain:
+    #
+    # 1. +info['instructions']+ — the MCP spec field for "what this
+    #    server does." When the server populates it, that's the
+    #    authoritative blurb.
+    # 2. +info['serverInfo']['title']+ — human-readable name. Less
+    #    informative than instructions but usually still better
+    #    than +name+.
+    # 3. Synthesized from the tool list via +@thinker+, when wired.
+    #    This is the path that turns a no-+instructions+,
+    #    no-+title+ server (the common case in the wild — most
+    #    server authors skip both) from a useless +serverInfo.name+
+    #    echo into a real "this is what the server does" sentence.
+    #    Errors are logged and the chain continues to step 4;
+    #    +Cancellable::Cancelled+ propagates so a boot-time Ctrl+C
+    #    aborts the whole startup.
+    # 4. +info['serverInfo']['name']+ — operational identifier,
+    #    last-resort fallback when steps 1-3 produced nothing.
+    #    Non-informative (often just the package name) but better
+    #    than nothing.
+    # 5. +'(no description)'+ — sentinel string for the unreachable
+    #    case of a server whose +initialize+ response carries
+    #    neither +instructions+ nor any +serverInfo+ fields.
+    def resolve_description(entry, client, tools)
       info = client.server_info || {}
       server_info = info['serverInfo'] || {}
-      info['instructions'] ||
-        server_info['title'] ||
-        server_info['name'] ||
-        '(no description)'
+
+      return info['instructions']  if info['instructions'] && !info['instructions'].to_s.strip.empty?
+      return server_info['title']  if server_info['title']  && !server_info['title'].to_s.strip.empty?
+
+      if @thinker
+        synthesized = try_synthesize_description(entry, tools)
+        return synthesized if synthesized
+      end
+
+      server_info['name'] || '(no description)'
+    end
+
+    # Build the synthesis prompt from the server's tool list, hand
+    # it to +@thinker+, and clean up the response into a single-line
+    # description suitable for the +<available_mcps>+ block. Returns
+    # +nil+ when synthesis fails (logged + caller falls back to the
+    # next step in {#resolve_description}). +Cancellable::Cancelled+
+    # is intentionally not rescued here — it must propagate so the
+    # user's Ctrl+C aborts startup rather than silently producing a
+    # useless description.
+    def try_synthesize_description(entry, tools)
+      prompt = build_synthesis_prompt(entry, tools)
+      raw = @thinker.call(prompt)
+      cleaned = raw.to_s.strip.gsub(/\s+/, ' ')
+      return nil if cleaned.empty?
+
+      cleaned
+    rescue Agent::Control::Cancellable::Cancelled
+      raise
+    rescue StandardError => e
+      LOGGER.warn(
+        "MCP description synthesis failed for #{entry.id.inspect} " \
+        "(#{e.class}: #{e.message}); falling back to serverInfo.name."
+      )
+      nil
+    end
+
+    def build_synthesis_prompt(entry, tools)
+      lines = []
+      lines << 'You are summarizing an MCP (Model Context Protocol) server for an AI agent that decides which servers to connect to.'
+      lines << ''
+      lines << 'Given the server id and the names + descriptions of the tools it exposes, write ONE short sentence (under 30 words) describing what the server does and when an agent would call its tools. Do not list the tools. Do not echo the server id. No preamble, no quotes, no markdown — just the sentence.'
+      lines << ''
+      lines << "Server id: #{entry.id}"
+      lines << 'Tools:'
+      tools.each do |t|
+        lines << "- #{t.name}: #{t.description}"
+      end
+      lines.join("\n")
     end
 
     def log_audit(entry, client, tools)
@@ -268,6 +362,7 @@ module Pikuri
       lines << "  Server name:     #{server_info['name'] || '(unset)'}"
       lines << "  Server version:  #{server_info['version'] || '(unset)'}"
       lines << "  Instructions:    #{info['instructions'] || '(none)'}"
+      lines << "  Description:     #{@descriptions[entry.id]}"
       lines << "  Tools (#{tools.size}):"
       tools.each do |t|
         lines << "    - #{t.name}"

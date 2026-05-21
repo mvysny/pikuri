@@ -229,6 +229,64 @@ module Pikuri
     end
     private_class_method :drain_interloper
 
+    # One-shot inference. Builds a fresh +RubyLLM::Chat+ with no
+    # tools, no MCP, no listeners, no step budget, asks +prompt+ as
+    # the single user turn, and returns the assistant's reply as a
+    # plain String. Lives parallel to {#initialize} / {#run_loop}
+    # because the use case (e.g. summarizing an MCP server's tool
+    # set into a short description block before any agent turn
+    # runs) is genuinely one-shot — there is no loop, no tool
+    # iteration, no listener stream.
+    #
+    # +prompt+ is sent as the user message. For a one-shot call
+    # there is no behavioral difference between the system slot
+    # and the user slot, so we use one parameter; pack any
+    # "instructions + data" framing into +prompt+ directly.
+    #
+    # == Cancellation
+    #
+    # {Control::Cancellable#check!} fires once before the call and
+    # once after, so a flag flipped right around the request
+    # raises {Control::Cancellable::Cancelled} promptly. The
+    # in-flight HTTP call itself is *not* interrupted — same
+    # "gentle cancel" semantic the main loop offers (see
+    # {Control::Cancellable}'s class header). For 30s synthesis
+    # passes at boot this is still a useful escape hatch: the next
+    # check raises and the call returns.
+    #
+    # == Failure
+    #
+    # Errors from the provider (HTTP failure, malformed response,
+    # +RubyLLM+ raising) propagate to the caller verbatim — there
+    # is no recovery layer here. Callers that want "fail soft on
+    # synthesis errors" (e.g. {McpServers}) rescue at their level
+    # and fall back to a default; this method stays loud.
+    #
+    # @param transport [ChatTransport] same model-resolution
+    #   triple {#initialize} uses; if +model+ is +nil+, falls
+    #   back to +RubyLLM.config.default_model+
+    # @param prompt [String] the prompt sent as the single user
+    #   turn; must be non-blank
+    # @param cancellable [Control::Cancellable, nil] when set,
+    #   checked before the call so a flag flipped right
+    #   around the request raises {Control::Cancellable::Cancelled}
+    # @return [String] the assistant's reply content
+    # @raise [ArgumentError] when +prompt+ is +nil+, empty, or
+    #   whitespace-only
+    # @raise [Control::Cancellable::Cancelled] when the
+    #   +cancellable+ flag was tripped at the pre-call check
+    def self.think(transport:, prompt:, cancellable: nil)
+      raise ArgumentError, "prompt must not be blank, got #{prompt.inspect}" \
+        if prompt.nil? || prompt.to_s.strip.empty?
+
+      transport = transport.with(model: RubyLLM.config.default_model) unless transport.model
+      cancellable&.check!
+      chat = RubyLLM.chat(**transport.to_h)
+      chat.ask(prompt)
+      last = chat.messages.reverse.find { |m| m.role == :assistant }
+      last&.content.to_s
+    end
+
     # @param transport [ChatTransport] the model-resolution triple
     #   (+model+ / +provider+ / +assume_model_exists+) forwarded
     #   to +RubyLLM.chat+. Bundled into one value object so every
@@ -321,6 +379,19 @@ module Pikuri
     #   way, the runtime is *not* owned by this agent — {#close}
     #   leaves it alone (the parent or whoever constructed it is
     #   responsible).
+    # @param synthesize_descriptions [Boolean] when +true+ and a
+    #   non-empty +mcp_registry:+ is also passed, threads a thinker
+    #   closure into {McpServers#initialize} so any server whose
+    #   +initialize+ handshake lacks an +instructions+ /
+    #   +serverInfo.title+ field gets a one-shot LLM-synthesized
+    #   description for the +<available_mcps>+ block. The closure
+    #   captures this agent's +@transport+ and +@cancellable+ and
+    #   calls {.think} with the same model the agent itself will
+    #   use. Off by default: short CLI invocations should not pay
+    #   the synthesis tax (typically 5–10 s per missing description
+    #   against a local llama.cpp model). Flip to +true+ in
+    #   interactive binaries (e.g. +bin/pikuri-assistant+). Has no
+    #   effect when no MCP runtime is wired.
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -338,6 +409,7 @@ module Pikuri
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Tool::SkillCatalog::EMPTY,
                    mcp_registry: McpRegistry::EMPTY, mcp_servers: nil,
+                   synthesize_descriptions: false,
                    streaming: false)
       if mcp_servers && !mcp_registry.empty?
         raise ArgumentError,
@@ -346,6 +418,7 @@ module Pikuri
       end
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
+      @cancellable = cancellable
       @skill_catalog = skill_catalog
 
       # Resolve the MCP runtime + ownership: we own and must close
@@ -353,11 +426,20 @@ module Pikuri
       # passed (sub-agent path), the caller owns lifecycle. If
       # +mcp_registry:+ was passed non-empty (main-agent path), we
       # build a fresh runtime here and own its +#close+. See {#close}.
+      #
+      # The +thinker:+ closure handed to McpServers (when
+      # +synthesize_descriptions:+ is true) captures @transport and
+      # @cancellable so the synthesis pass uses the same model the
+      # agent itself uses and honors the same cancel flag. It must
+      # be built after @transport / @cancellable are set but
+      # before McpServers.new — the closure is invoked synchronously
+      # during start_one.
       if mcp_servers
         @mcp_servers = mcp_servers
         @owns_mcp_servers = false
       elsif !mcp_registry.empty?
-        @mcp_servers = McpServers.new(mcp_registry)
+        thinker = build_thinker if synthesize_descriptions
+        @mcp_servers = McpServers.new(mcp_registry, thinker: thinker)
         @owns_mcp_servers = true
       else
         @mcp_servers = nil
@@ -370,7 +452,6 @@ module Pikuri
       @tools = tools.dup
       @listeners = listeners
       @step_limit = step_limit
-      @cancellable = cancellable
       @interloper = interloper
       @name = name
       @streaming = streaming
@@ -716,6 +797,24 @@ module Pikuri
       @tools << sub_tool
       @chat.with_tool(sub_tool.to_ruby_llm_tool)
     end
+
+    private
+
+    # Build the one-arg thinker closure passed to {McpServers#initialize}
+    # when +synthesize_descriptions:+ is true. Captures +@transport+
+    # and +@cancellable+ so the synthesis pass uses the same model
+    # the agent itself uses and honors the same cancel flag — Ctrl+C
+    # during boot synthesis raises {Control::Cancellable::Cancelled}
+    # from the next {.think} call, McpServers re-raises (without
+    # logging it as a synthesis "failure"), and the exception
+    # propagates out of +Agent.new+ to the bin script's rescue.
+    def build_thinker
+      transport = @transport
+      cancellable = @cancellable
+      ->(prompt) { self.class.think(transport: transport, prompt: prompt, cancellable: cancellable) }
+    end
+
+    public
 
     # Short, single-line config dump suitable for a startup
     # banner or a debug print.

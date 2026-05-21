@@ -99,24 +99,45 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 mcp_registry = Pikuri::McpRegistry.new(entries: [
 ])
 
-agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: model,
-    provider: :openai,
-    assume_model_exists: true
-  ),
-  system_prompt: system_prompt,
-  tools: [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH],
-  listeners: Pikuri::Agent::ListenerList.new([
-    Pikuri::Agent::Listener::Terminal.new(streaming: streaming),
-    Pikuri::Agent::Listener::TokenLog.new
-  ]),
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
-  cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url,
-  mcp_registry: mcp_registry,
-  streaming: streaming
-)
+# Boot-time work — notably the synthesize_descriptions: pass that
+# calls Agent.think against each MCP server lacking instructions /
+# title — can take tens of seconds. Trap SIGINT around Agent.new so
+# the same Ctrl+C the user expects to interrupt a turn also aborts
+# a slow boot. The Agent constructor builds a thinker that honors
+# cancel_flag, so the next .think call after Ctrl+C raises
+# Cancelled and unwinds.
+prev_boot_trap = trap('INT') { cancel_flag.cancel! }
+begin
+  agent = Pikuri::Agent.new(
+    transport: Pikuri::Agent::ChatTransport.new(
+      model: model,
+      provider: :openai,
+      assume_model_exists: true
+    ),
+    system_prompt: system_prompt,
+    tools: [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH],
+    listeners: Pikuri::Agent::ListenerList.new([
+      Pikuri::Agent::Listener::Terminal.new(streaming: streaming),
+      Pikuri::Agent::Listener::TokenLog.new
+    ]),
+    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
+    cancellable: cancel_flag,
+    llama_probe_url: llama_probe_url,
+    mcp_registry: mcp_registry,
+    synthesize_descriptions: true,
+    streaming: streaming
+  )
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  warn 'Cancelled during startup'
+  exit 130
+ensure
+  trap('INT', prev_boot_trap || 'DEFAULT')
+end
+# The cancel flag may have been left in a tripped state if the user
+# pressed Ctrl+C between MCP synthesis calls — the trap fired but
+# Agent.new finished before the next .think check could raise. Reset
+# so the first turn doesn't inherit a stale cancellation.
+cancel_flag.reset!
 agent.allow_sub_agent(max_steps: 20)
 
 # Release agent-owned resources — most importantly the MCP server
