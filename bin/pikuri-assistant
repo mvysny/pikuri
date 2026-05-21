@@ -75,20 +75,26 @@ system_prompt = Pikuri.prompt(:'pikuri-assistant')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 # MCP servers available to the assistant. Hand-edit this array to add
-# providers — id is what the LLM references via +mcp_connect("...")+,
-# +command:+ is the argv that spawns the server. Empty by default;
-# pikuri-assistant will behave identically to pikuri-chat until at
-# least one entry is added here.
+# providers — id is what the LLM references via +mcp_connect("...")+.
+# Two entry types: +StdioEntry+ for a local subprocess (argv to spawn)
+# and +HttpEntry+ for a remote endpoint (url + optional headers). Empty
+# by default; pikuri-assistant will behave identically to pikuri-chat
+# until at least one entry is added here.
 #
 # == Examples
 #
-#   Pikuri::McpRegistry::Entry.new(
+#   Pikuri::McpRegistry::StdioEntry.new(
 #     id:      'maven-tools',
 #     command: ['npx', 'mcp-maven-deps']
 #   ),
-#   Pikuri::McpRegistry::Entry.new(
+#   Pikuri::McpRegistry::StdioEntry.new(
 #     id:      'gmail',
 #     command: ['npx', '@gongrzhe/server-gmail-autoauth-mcp']
+#   ),
+#   Pikuri::McpRegistry::HttpEntry.new(
+#     id:      'hubspot',
+#     url:     'https://mcp.example.com/v1',
+#     headers: { 'Authorization' => "Bearer #{ENV.fetch('HUBSPOT_TOKEN')}" }
 #   ),
 mcp_registry = Pikuri::McpRegistry.new(entries: [
 ])

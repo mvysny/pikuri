@@ -181,7 +181,7 @@ RSpec.describe Pikuri::Agent do
       Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
-          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
         ])
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                   system_prompt: 's', tools: [], listeners: listeners,
@@ -213,7 +213,7 @@ RSpec.describe Pikuri::Agent do
       Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
-          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
         ])
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                   system_prompt: 's', tools: [], listeners: listeners,
@@ -253,7 +253,7 @@ RSpec.describe Pikuri::Agent do
       Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
-          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
         ])
         Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                            system_prompt: 's', tools: [], listeners: listeners,
@@ -272,7 +272,7 @@ RSpec.describe Pikuri::Agent do
       Pikuri::McpServers.define_singleton_method(:new) { |_registry| tracker }
       begin
         registry = Pikuri::McpRegistry.new(entries: [
-          Pikuri::McpRegistry::Entry.new(id: 'x', command: ['no-op'])
+          Pikuri::McpRegistry::StdioEntry.new(id: 'x', command: ['no-op'])
         ])
         err = assert_raises(RuntimeError) do
           Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),

@@ -99,17 +99,20 @@ grows a skill system.
   `grep -rn 'Process\.spawn\|Open3\|system' lib/` should only hit
   `lib/pikuri/subprocess.rb`.
 
-  *Carve-out:* `Pikuri::McpServers` is the documented exception. The
-  `mcp` gem spawns MCP servers via its own `MCP::Client::Stdio`
-  transport — routing that through `Subprocess.spawn` would mean
-  forking the gem or threading custom IO pipes through its API,
-  duplicating work the gem exists to do. Instead, `McpServers#initialize`
-  registers `at_exit { close }` and `#close` calls the gem's
-  per-transport `close` (which closes stdin → server hits EOF and
-  self-terminates per spec). The grep invariant above still holds
-  because the spawn happens inside the gem, not in pikuri's `lib/`.
-  See IDEAS.md §"v1 implementation shape" / "Subprocess lifecycle"
-  for the full rationale.
+  *Carve-out:* `Pikuri::McpServers` is the documented exception, and
+  only for stdio MCP entries (`McpRegistry::StdioEntry`). The `mcp` gem
+  spawns the server via its own `MCP::Client::Stdio` transport —
+  routing that through `Subprocess.spawn` would mean forking the gem
+  or threading custom IO pipes through its API, duplicating work the
+  gem exists to do. Instead, `McpServers#initialize` registers
+  `at_exit { close }` and `#close` calls the gem's per-transport
+  `close` (which closes stdin → server hits EOF and self-terminates
+  per spec). The grep invariant above still holds because the spawn
+  happens inside the gem, not in pikuri's `lib/`. HTTP MCP entries
+  (`McpRegistry::HttpEntry`) don't fall under the carve-out — they're
+  plain Faraday inside the gem, no subprocess involved. See IDEAS.md
+  §"v1 implementation shape" / "Subprocess lifecycle" for the full
+  rationale.
 
 - **Workspace seam.** Tools that touch files (`Read`, `Write`, `Edit`,
   `Grep`, `Glob`, `Bash`) take a `Pikuri::Tool::Workspace` via

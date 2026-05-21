@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::McpRegistry do
-  Entry = Pikuri::McpRegistry::Entry
+  StdioEntry = Pikuri::McpRegistry::StdioEntry
+  HttpEntry  = Pikuri::McpRegistry::HttpEntry
 
   describe Pikuri::McpRegistry::EMPTY do
     it 'is the canonical empty singleton' do
@@ -17,17 +18,44 @@ RSpec.describe Pikuri::McpRegistry do
     end
   end
 
-  describe Pikuri::McpRegistry::Entry do
+  describe Pikuri::McpRegistry::StdioEntry do
     it 'is a Data value class with id and command' do
-      e = Entry.new(id: 'maven', command: ['npx', 'mcp-maven'])
+      e = StdioEntry.new(id: 'maven', command: ['npx', 'mcp-maven'])
       assert_equal 'maven', e.id
       assert_equal ['npx', 'mcp-maven'], e.command
     end
 
     it 'compares by value' do
-      e1 = Entry.new(id: 'a', command: ['x'])
-      e2 = Entry.new(id: 'a', command: ['x'])
-      e3 = Entry.new(id: 'b', command: ['x'])
+      e1 = StdioEntry.new(id: 'a', command: ['x'])
+      e2 = StdioEntry.new(id: 'a', command: ['x'])
+      e3 = StdioEntry.new(id: 'b', command: ['x'])
+      assert_equal e1, e2
+      refute_equal e1, e3
+    end
+  end
+
+  describe Pikuri::McpRegistry::HttpEntry do
+    it 'is a Data value class with id, url, and headers' do
+      e = HttpEntry.new(id: 'hub', url: 'https://mcp.example.com', headers: { 'Authorization' => 'Bearer x' })
+      assert_equal 'hub', e.id
+      assert_equal 'https://mcp.example.com', e.url
+      assert_equal({ 'Authorization' => 'Bearer x' }, e.headers)
+    end
+
+    it 'defaults headers to an empty hash' do
+      e = HttpEntry.new(id: 'hub', url: 'https://mcp.example.com')
+      assert_equal({}, e.headers)
+    end
+
+    it 'freezes the headers hash' do
+      e = HttpEntry.new(id: 'hub', url: 'https://mcp.example.com', headers: { 'X' => 'y' })
+      assert e.headers.frozen?
+    end
+
+    it 'compares by value' do
+      e1 = HttpEntry.new(id: 'a', url: 'https://x', headers: { 'k' => 'v' })
+      e2 = HttpEntry.new(id: 'a', url: 'https://x', headers: { 'k' => 'v' })
+      e3 = HttpEntry.new(id: 'a', url: 'https://x', headers: { 'k' => 'other' })
       assert_equal e1, e2
       refute_equal e1, e3
     end
@@ -40,35 +68,35 @@ RSpec.describe Pikuri::McpRegistry do
       assert_equal [], r.ids
     end
 
-    it 'preserves declaration order' do
+    it 'preserves declaration order across mixed entry types' do
       r = Pikuri::McpRegistry.new(entries: [
-        Entry.new(id: 'b', command: ['x']),
-        Entry.new(id: 'a', command: ['y']),
-        Entry.new(id: 'c', command: ['z'])
+        StdioEntry.new(id: 'b', command: ['x']),
+        HttpEntry.new(id: 'a',  url: 'https://x'),
+        StdioEntry.new(id: 'c', command: ['z'])
       ])
       assert_equal %w[b a c], r.ids
     end
 
-    it 'rejects duplicate ids loudly' do
+    it 'rejects duplicate ids loudly, regardless of entry type' do
       err = assert_raises(ArgumentError) do
         Pikuri::McpRegistry.new(entries: [
-          Entry.new(id: 'x', command: ['a']),
-          Entry.new(id: 'x', command: ['b'])
+          StdioEntry.new(id: 'x', command: ['a']),
+          HttpEntry.new(id: 'x',  url: 'https://x')
         ])
       end
       assert_match(/Duplicate MCP id "x"/, err.message)
     end
 
     it 'freezes itself and its entries array after construction' do
-      r = Pikuri::McpRegistry.new(entries: [Entry.new(id: 'a', command: ['x'])])
+      r = Pikuri::McpRegistry.new(entries: [StdioEntry.new(id: 'a', command: ['x'])])
       assert r.frozen?
       assert r.entries.frozen?
     end
 
     it 'does not mutate the caller-supplied entries array' do
-      caller_entries = [Entry.new(id: 'a', command: ['x'])]
+      caller_entries = [StdioEntry.new(id: 'a', command: ['x'])]
       Pikuri::McpRegistry.new(entries: caller_entries)
-      caller_entries << Entry.new(id: 'b', command: ['y'])
+      caller_entries << StdioEntry.new(id: 'b', command: ['y'])
       # caller_entries is still mutable; the registry's own copy is frozen
       assert_equal 2, caller_entries.size
     end
@@ -77,14 +105,19 @@ RSpec.describe Pikuri::McpRegistry do
   describe '#get' do
     let(:registry) do
       Pikuri::McpRegistry.new(entries: [
-        Entry.new(id: 'gmail',   command: ['gmail-mcp']),
-        Entry.new(id: 'calendar', command: ['cal-mcp'])
+        StdioEntry.new(id: 'gmail',   command: ['gmail-mcp']),
+        HttpEntry.new(id: 'hubspot',  url: 'https://mcp.example.com')
       ])
     end
 
-    it 'returns the entry with a matching id' do
+    it 'returns the entry with a matching id (stdio)' do
       assert_equal 'gmail', registry.get('gmail').id
       assert_equal ['gmail-mcp'], registry.get('gmail').command
+    end
+
+    it 'returns the entry with a matching id (http)' do
+      assert_equal 'hubspot', registry.get('hubspot').id
+      assert_equal 'https://mcp.example.com', registry.get('hubspot').url
     end
 
     it 'returns nil for an unknown id' do

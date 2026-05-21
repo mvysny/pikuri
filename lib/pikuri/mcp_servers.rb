@@ -10,18 +10,36 @@ module Pikuri
   # every entry at +#initialize+, registers an +at_exit+ hook to close
   # cleanly on process exit.
   #
+  # == Transports
+  #
+  # Each {McpRegistry} entry maps to one of the +mcp+ gem's transports:
+  #
+  # * {McpRegistry::StdioEntry} → +MCP::Client::Stdio+ (local subprocess).
+  # * {McpRegistry::HttpEntry}  → +MCP::Client::HTTP+ (remote endpoint).
+  #
+  # +#start_one+ pattern-matches on the entry type and constructs the
+  # right transport; everything downstream (client, tools cache, audit
+  # log, +#close+) is polymorphic — both transport classes expose
+  # +#close+ with the same idempotent contract.
+  #
   # == Lifecycle and the +Subprocess.spawn+ carve-out
   #
-  # The +mcp+ gem owns the subprocess lifecycle. +MCP::Client::Stdio+
-  # calls +Process.spawn+ internally; forcing it through pikuri's
-  # {Pikuri::Subprocess.spawn} chokepoint would mean either forking the
-  # gem or threading custom IO pipes through its API — duplicating work
-  # the gem exists to do. So MCP is the documented exception to the
-  # chokepoint convention in CLAUDE.md "Scope decisions": the gem
-  # spawns, we own +#close+, and +at_exit { close }+ runs from inside
-  # {#initialize} to make sure cleanup happens on every exit path.
-  # Graceful close on a stdio transport closes stdin → server's read
-  # loop hits EOF → server self-terminates, per the MCP spec.
+  # The +Subprocess.spawn+ chokepoint carve-out applies *only* to stdio
+  # entries. The +mcp+ gem owns the subprocess lifecycle:
+  # +MCP::Client::Stdio+ calls +Process.spawn+ internally; forcing it
+  # through pikuri's {Pikuri::Subprocess.spawn} chokepoint would mean
+  # either forking the gem or threading custom IO pipes through its
+  # API — duplicating work the gem exists to do. So stdio MCP is the
+  # documented exception to the chokepoint convention in CLAUDE.md
+  # "Scope decisions": the gem spawns, we own +#close+, and
+  # +at_exit { close }+ runs from inside {#initialize} to make sure
+  # cleanup happens on every exit path. Graceful close on a stdio
+  # transport closes stdin → server's read loop hits EOF → server
+  # self-terminates, per the MCP spec.
+  #
+  # HTTP entries don't spawn anything — they're plain Faraday — so the
+  # carve-out doesn't apply. +at_exit { close }+ still runs to send the
+  # session-termination +DELETE+ per spec.
   #
   # == What lives where
   #
@@ -59,7 +77,7 @@ module Pikuri
     def initialize(registry)
       @registry    = registry
       @clients     = {} # id => MCP::Client (only for servers that started)
-      @transports  = {} # id => MCP::Client::Stdio
+      @transports  = {} # id => MCP::Client::Stdio or MCP::Client::HTTP
       @tools_cache = {} # id => Array<MCP::Client::Tool>
       @descriptions = {} # id => short description shown in <available_mcps>
       @live_ids    = []
@@ -176,10 +194,7 @@ module Pikuri
     end
 
     def start_one(entry)
-      transport = MCP::Client::Stdio.new(
-        command: entry.command.first,
-        args: entry.command.drop(1)
-      )
+      transport = build_transport(entry)
       client = MCP::Client.new(transport: transport)
       client.connect
 
@@ -194,15 +209,39 @@ module Pikuri
     rescue StandardError => e
       LOGGER.warn(
         "Failed to start MCP server #{entry.id.inspect} " \
-        "(#{entry.command.join(' ')}): #{e.class}: #{e.message}"
+        "(#{describe_entry(entry)}): #{e.class}: #{e.message}"
       )
-      # Try to clean up a partially-opened transport so we don't leak a
-      # subprocess on partial-startup failure (e.g. spawn succeeded but
-      # handshake didn't).
+      # Try to clean up a partially-opened transport so we don't leak
+      # state on partial-startup failure (stdio: spawn succeeded but
+      # handshake didn't; http: session opened but initialize 4xx'd).
       begin
         transport&.close
       rescue StandardError
         nil
+      end
+    end
+
+    def build_transport(entry)
+      case entry
+      when McpRegistry::StdioEntry
+        MCP::Client::Stdio.new(
+          command: entry.command.first,
+          args: entry.command.drop(1)
+        )
+      when McpRegistry::HttpEntry
+        MCP::Client::HTTP.new(url: entry.url, headers: entry.headers)
+      else
+        raise ArgumentError, "Unknown MCP entry type: #{entry.class}"
+      end
+    end
+
+    # Short human-readable identifier for an entry's transport, used in
+    # the warning log when startup fails.
+    def describe_entry(entry)
+      case entry
+      when McpRegistry::StdioEntry then "command: #{entry.command.join(' ')}"
+      when McpRegistry::HttpEntry  then "url: #{entry.url}"
+      else                              entry.class.to_s
       end
     end
 
@@ -224,7 +263,7 @@ module Pikuri
       info = client.server_info || {}
       server_info = info['serverInfo'] || {}
       lines = []
-      lines << "MCP server #{entry.id.inspect} started (command: #{entry.command.join(' ')})"
+      lines << "MCP server #{entry.id.inspect} started (#{describe_entry(entry)})"
       lines << "  Protocol version: #{info['protocolVersion'] || '(unset)'}"
       lines << "  Server name:     #{server_info['name'] || '(unset)'}"
       lines << "  Server version:  #{server_info['version'] || '(unset)'}"

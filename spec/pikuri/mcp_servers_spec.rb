@@ -15,7 +15,7 @@ RSpec.describe Pikuri::McpServers do
 
   def fresh_registry
     Pikuri::McpRegistry.new(entries: [
-      Pikuri::McpRegistry::Entry.new(id: 'test', command: TEST_SERVER_COMMAND)
+      Pikuri::McpRegistry::StdioEntry.new(id: 'test', command: TEST_SERVER_COMMAND)
     ])
   end
 
@@ -60,12 +60,33 @@ RSpec.describe Pikuri::McpServers do
       original = Pikuri.log_io
       Pikuri.log_io = captured
       bogus = Pikuri::McpRegistry.new(entries: [
-        Pikuri::McpRegistry::Entry.new(id: 'bogus', command: ['/nonexistent/binary/path'])
+        Pikuri::McpRegistry::StdioEntry.new(id: 'bogus', command: ['/nonexistent/binary/path'])
       ])
       servers = Pikuri::McpServers.new(bogus)
       assert servers.empty?
       assert_equal [], servers.live_ids
       assert_match(/Failed to start MCP server "bogus"/, captured.string)
+    ensure
+      Pikuri.log_io = original if original
+      servers&.close
+    end
+
+    it 'drops an HttpEntry whose endpoint refuses connections, logs the url in the warning' do
+      # Port 1 on loopback is reliably refused-connect — fails fast,
+      # mirrors the bogus-stdio test for the HTTP transport path. Real
+      # call into MCP::Client::HTTP, so this exercises build_transport
+      # dispatch + the rescue + describe_entry url branch.
+      captured = StringIO.new
+      original = Pikuri.log_io
+      Pikuri.log_io = captured
+      bogus = Pikuri::McpRegistry.new(entries: [
+        Pikuri::McpRegistry::HttpEntry.new(id: 'bogus-http', url: 'http://127.0.0.1:1/mcp')
+      ])
+      servers = Pikuri::McpServers.new(bogus)
+      assert servers.empty?
+      assert_equal [], servers.live_ids
+      assert_match(/Failed to start MCP server "bogus-http"/, captured.string)
+      assert_match(%r{url: http://127\.0\.0\.1:1/mcp}, captured.string)
     ensure
       Pikuri.log_io = original if original
       servers&.close
