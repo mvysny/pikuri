@@ -147,8 +147,325 @@ MCP and Skills touch today —
 - **Event consumption.** None of the current extensions consume events;
   the protocol may or may not need this hook.
 
-Once that enumeration is complete, the Extension protocol design
-follows mechanically.
+The design that fell out of walking through those touch points is in
+the next subsection.
+
+### Extension protocol design
+
+Two hooks on the Extension itself, a Configurator type yielded into
+the `Agent.new` block, and a small runtime surface on the Agent.
+The design splits work between *agent-agnostic setup* (`configure`,
+runs once on the parent's Configurator) and *per-agent setup*
+(`bind`, runs once per agent — parent and each sub-agent
+separately). No `for_sub_agent` on the Extension type; the same
+extension instance binds to parent and every sub-agent, and
+per-agent state lives in `bind`'s closures rather than in extension
+instance state.
+
+#### The Extension contract
+
+Duck-typed module convention — not a base class — so extensions in
+sibling gems don't need to inherit from a pikuri-core type.
+
+```ruby
+module Pikuri::Agent::Extension
+  # Required: called immediately when add_extension fires during
+  # the Agent.new block, with the parent's Configurator. Adds
+  # agent-agnostic state — shared resources (e.g. live MCP
+  # clients), system-prompt snippets advertising what's
+  # available, parent-only on_close handlers that tear down those
+  # shared resources. Runs exactly once per extension instance,
+  # regardless of how many sub-agents get spawned later.
+  def configure(c); end
+
+  # Optional: called per agent. Fires once for the parent
+  # (inside Agent.new, after configure) and once for each
+  # sub-agent (inside the sub-agent's Agent.new). Adds per-agent
+  # state — tools that need an agent back-reference, registered
+  # via agent.internal_add_tool; per-agent on_close handlers via
+  # agent.on_close. The closure captures whatever per-agent
+  # context the extension needs (e.g. a fresh activation Set).
+  def bind(agent); end
+end
+```
+
+No `for_sub_agent`. The same extension instance is bound to
+parent and every sub-agent — per-agent state lives in what
+`bind`'s closures capture (e.g. each `Connect` tool's own
+activation `Set`), not in the extension's instance state.
+
+Skills implements only `configure` — its skill tool is
+agent-agnostic, lands in pikuri's `@tools` list via
+`c.add_tool(...)`, and gets inherited by sub-agents verbatim
+through the existing tools snapshot. MCP implements both:
+`configure` sets up the shared `Mcp::Servers` and registers the
+`<available_mcps>` snippet + parent-only `on_close { servers.close }`;
+`bind(agent)` builds a fresh per-agent `Connect` tool with its own
+activation Set and registers it via `agent.internal_add_tool`.
+
+#### The Configurator surface
+
+A pikuri-internal type yielded into the `Agent.new` block.
+Extensions also receive it as the `configure(c)` parameter, so the
+same methods are callable from both block users and extension
+internals. Lives in `lib/pikuri/agent/configurator.rb` (sister
+class to `Agent`, so `agent.rb` doesn't grow wildly).
+
+```ruby
+class Pikuri::Agent::Configurator
+  # Readable attributes — set by Agent ctor before the block fires.
+  # Extensions read these to wire themselves consistently with the
+  # core (e.g. MCP's Synthesizer shares the agent's cancellable so
+  # cancel-during-synthesis works).
+  attr_reader :transport          # ChatTransport
+  attr_reader :system_prompt_base # ctor's system_prompt: arg, untouched
+  attr_reader :name               # optional, for sub-agent identification
+  attr_reader :streaming          # Boolean
+  attr_reader :step_limit         # Control::StepLimit, nil
+  attr_reader :cancellable        # Control::Cancellable, nil
+  attr_reader :interloper         # Control::Interloper, nil
+
+  # Composition — additive, declaration order preserved.
+  def append_system_prompt(snippet); end
+  def add_tool(tool); end
+  def add_listener(listener); end
+  def add_extension(extension); end  # runs configure(self) immediately
+
+  # Lifecycle — registered handlers fire on this agent's close.
+  # Symmetric to Agent#on_close: configure-time on_close lives on
+  # the parent (because configure runs once on the parent);
+  # extensions that need per-agent cleanup register it inside
+  # bind via agent.on_close.
+  def on_close(&blk); end
+end
+```
+
+Controls (`step_limit`, `cancellable`, `interloper`) stay as ctor
+kwargs — they're typed slots, not collections, and unifying them
+under the same hook mechanism is deferred (see "Refactor before
+split" above).
+
+`add_extension(extension)` runs `extension.configure(self)`
+immediately rather than collecting all extensions and configuring
+them after the block. Reason: source-order matches execution-order,
+no separate priority concept needed.
+
+**Deferred:** synchronous hook registration on Configurator
+(`on_before_tool_call` / `on_after_tool_result` / `on_after_message`).
+Neither MCP nor Skills needs them today; the listener stream and
+the configure / bind split already cover the surface we have a real
+use case for. Add the hooks when a real extension shows up that
+needs to react synchronously at those boundaries (and can raise
+to interrupt the loop — the thing listeners deliberately can't do).
+
+#### The Agent runtime surface
+
+What the Agent exposes to extensions during and after `bind`:
+
+```ruby
+class Pikuri::Agent
+  attr_reader :name, :transport, :system_prompt, :listeners
+
+  # Per-agent dynamic tool registration. Adds to ruby_llm's
+  # @chat.with_tool only — deliberately NOT to pikuri's @tools.
+  # The internal_ prefix stays as a warning: tools added here
+  # bypass Pikuri::Tool (no Tool::Parameters validation, no
+  # LLM-actionable "Error: ..." contract); they go straight to
+  # ruby_llm. Used by MCP's bind to wire per-agent Connect tools.
+  def internal_add_tool(ruby_llm_tool); end
+
+  # Per-agent close handler — symmetric to Configurator#on_close.
+  # Use from bind(agent) when an extension needs cleanup keyed to
+  # this specific agent. Same LIFO + per-handler-rescue +
+  # idempotent semantics as the configure-time registrations.
+  def on_close(&blk); end
+
+  # Existing entry point.
+  def run_loop(user_message); end
+
+  # Idempotent. Fires every on_close handler in LIFO order;
+  # exceptions logged per-handler, never propagate; sets the
+  # closed-flag so subsequent calls are no-ops. Also registered
+  # via at_exit so cleanup is guaranteed even if the host forgets.
+  def close; end
+end
+```
+
+#### Bind is part of Agent.new
+
+`Agent.new`'s body, after the block returns and the Configurator
+finalizes, walks the extensions list and calls `extension.bind(self)`
+on each. By the time `Agent.new` returns, every extension has had
+its chance to install per-agent state. Hosts never call `bind`
+explicitly — it's part of construction.
+
+Same applies to sub-agents: the sub-agent's `Agent.new` (invoked
+from inside `Tool::SubAgent.execute`) runs the same bind sweep on
+the inherited extension list before returning.
+
+#### on_close execution semantics
+
+- **LIFO order** (reverse of registration). Matches Ruby `ensure`
+  semantics — last extension to wire is first to tear down, so
+  extensions registered later can safely depend on extensions
+  registered earlier without worrying about resurrection during
+  shutdown.
+- **Per-handler rescue.** Each `on_close` callback runs inside its
+  own rescue; an exception in one handler is logged via
+  `Pikuri.logger_for(...)` but doesn't abort the rest. Cleanup is
+  best-effort — partial failure shouldn't leak other resources.
+- **Idempotent.** Calling `agent.close` twice is a no-op the second
+  time (closed-flag flips on first call). Lets the `at_exit`
+  fallback be safe even after an explicit close.
+
+Today's per-subsystem `at_exit { close }` (`Mcp::Servers#initialize`
+registers one) collapses to a single agent-level
+`at_exit { close }` whose fan-out drives every registered
+`on_close`. One chokepoint for cleanup; easier to debug; agents
+become first-class closeable resources alongside Ruby's `IO` /
+`File` / `Socket`. Hosts that want auto-close wrap
+`begin; ... ensure; agent.close; end`.
+
+The naming choice (`close` over `shutdown`) is deliberate:
+"shutdown" is process-centric (the VM is going down); "close" is
+resource-centric (this particular agent is done, but other agents
+in the host process keep running). Pikuri can have many agents in
+one process — see `pikuri-assistant`'s named-personas use case
+above — so per-agent close semantics are load-bearing.
+
+#### Sub-agent inheritance — configure-once, bind-per-agent
+
+Sub-agents mirror today's `Tool::SubAgent.initialize` flow exactly,
+just with the Extension protocol layered on top. When a sub-agent
+is spawned:
+
+1. **`Tool::SubAgent.execute` captures parent's state** at
+   construction time (same captures `SubAgent.initialize` makes
+   today): `transport`, `system_prompt` (already augmented),
+   `tools` (the static list — see invariant below), `listeners`,
+   `controls`, plus the new addition — the *list of extension
+   instances*.
+
+2. **Sub-agent's `Agent.new` runs with an empty block.** No
+   re-running of extension `configure`. Instead, the sub-agent's
+   Configurator is pre-populated from parent's captured state:
+   - tools: parent's static list, filtered (no `SubAgent` itself)
+   - system_prompt: parent's augmented prompt, verbatim (already
+     contains `<available_skills>` / `<available_mcps>` — child
+     sees the same advertised capabilities)
+   - listeners: parent's, transformed via `for_sub_agent` per
+     listener
+   - controls: parent's, per the per-control rule (fresh
+     `StepLimit`, shared `Cancellable`, nil `Interloper`)
+   - extensions: same instances as parent
+   - on_close handlers: fresh, empty list (the parent owns the
+     shared resources)
+
+3. **Sub-agent's `Agent.new` runs the bind sweep** — calls
+   `extension.bind(sub_agent)` on each inherited extension. This
+   is where per-agent setup happens fresh:
+   - MCP's `bind` registers a sub-agent-keyed `Connect` tool via
+     `sub_agent.internal_add_tool` (independent activation Set;
+     activation does not propagate from parent — sub-agent must
+     issue its own `mcp_connect`, which reuses the parent's live
+     clients via the shared extension instance but registers
+     tools on the sub-agent's own chat).
+   - Skills's `bind` is a no-op (Skills has no per-agent state).
+
+4. **Sub-agent runs.** When it finishes, `sub_agent.close` fires
+   its (mostly empty) `on_close` list and the sub-agent's wiring
+   GCs. The parent's `Mcp::Servers` stays alive — only parent's
+   `on_close` registration tears it down, and that fires only on
+   `parent.close`.
+
+#### Two invariants worth recording
+
+- **Static-vs-dynamic tool boundary.** Tools added via
+  `Configurator#add_tool` (whether by the block user or by an
+  extension's `configure`) live on pikuri's `@tools` list and
+  are inherited by sub-agents through the snapshot. Tools added
+  via `agent.internal_add_tool` (only callable from an
+  extension's `bind`, or from inside tools that fire after
+  construction such as `mcp_connect`) live *only* on ruby_llm's
+  `@chat`, never enter pikuri's `@tools`, and are NOT inherited
+  by sub-agents. This is what keeps "activation is per-agent"
+  working: parent's `mcp_connect` activates servers on parent's
+  chat only; sub-agent must call its own `mcp_connect`.
+- **Resource ownership follows configure.** Whichever Agent's
+  Configurator wired the `on_close` handler owns the resource.
+  An extension's `configure(c)` runs once on the parent, so the
+  `on_close` it registers there fires only on `parent.close`.
+  Sub-agents that share a parent-configured resource (MCP's live
+  clients) never own it — they borrow.
+
+#### Structural changes vs today's code
+
+The Extension protocol refactor is meant to be small. Compared
+to the current codebase:
+
+- **Drop** `Mcp::Servers::View` and `Mcp::Servers#view_for_sub_agent` —
+  the extension instance itself becomes the shared resource that
+  parent and sub-agents both reach through. "Share live clients
+  with sub-agents" falls out naturally because each
+  `bind(sub_agent)` reads the same `@servers` reference.
+- **Drop** the `mcp_servers:` kwarg from `Agent#initialize` and
+  the `@tools << @mcp_servers.build_mcp_connect_tool(self)` line.
+  That tool-adding logic moves into `Mcp::Extension#bind`.
+- **Drop** the `mcp_registry:` / `synthesize_descriptions:` /
+  `verify_mcp_servers:` / `skill_catalog:` kwargs from
+  `Agent#initialize`. They become constructor arguments to the
+  respective `*::Extension` classes the host passes via
+  `c.add_extension(...)` inside the block.
+- **`SubAgent.execute`** loses its `mcp_servers =
+  parent_agent.mcp_servers&.view_for_sub_agent` line. Instead it
+  captures parent's extensions list (alongside everything it
+  already captures), and the sub-agent's `Agent.new` runs the
+  bind sweep on them.
+- **`internal_add_tool`** keeps its name and its current
+  one-line implementation (`@chat.with_tool(...)`). The
+  `internal_` prefix continues to flag the abstraction leak.
+- **`Agent#close`** + the single agent-level `at_exit { close }`
+  is new; it replaces the per-subsystem `at_exit` blocks
+  scattered across the codebase today.
+
+#### Call site (worked example)
+
+```ruby
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.new(model: '...', provider: :openai),
+  system_prompt: File.read('prompts/pikuri-chat.txt'),
+  step_limit: Pikuri::Control::StepLimit.new(max: 30),
+  cancellable: Pikuri::Control::Cancellable.new,
+  streaming: true,
+) do |c|
+  c.add_listener Pikuri::Listener::Terminal.new
+  c.add_listener Pikuri::Listener::TokenLog.new
+  c.add_tool Pikuri::Tool::CALCULATOR
+  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_tool Pikuri::Tool::WEB_SCRAPE
+  c.add_tool Pikuri::Tool::FETCH
+
+  c.add_extension Pikuri::Tool::SubAgent::Extension.new
+  c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
+  c.add_extension Pikuri::Mcp::Extension.new(registry: registry)
+end
+# At this point each extension's configure has run, the agent's
+# chat is fully wired, and bind(agent) has fired on each
+# extension — so MCP's per-agent Connect tool is already in the
+# chat. The agent is ready to use.
+
+begin
+  agent.run_loop("Hello, what can you do?")
+ensure
+  agent.close
+end
+```
+
+Required scalars (`transport` / `system_prompt` / controls /
+`streaming`) stay as ctor kwargs because they're not optional or
+repeatable. The block is for additive configuration — lists of
+listeners, tools, extensions — exactly the surface where the
+Configurator earns its keep.
 
 ### Proposed gem shape (six gems, one repo)
 
