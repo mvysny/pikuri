@@ -6,6 +6,11 @@ require 'minitest/assertions'
 
 require 'pikuri-code'
 
+# Silence Pikuri's default $stderr logging for the suite so production
+# log lines don't bleed into rspec output. Specs that exercise logging
+# swap +Pikuri.log_io+ to a +StringIO+ and restore it.
+Pikuri.log_io = File.open(File::NULL, 'w')
+
 # Match pikuri-core's spec_helper minitest wiring: mix the
 # assertion module in + provide the `assertions` accessor that
 # `assert_equal` and friends require internally. CLAUDE.md's
