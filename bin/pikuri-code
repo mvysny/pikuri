@@ -19,6 +19,7 @@ require 'optparse'
 
 require 'pikuri-core'
 require 'pikuri-skills'
+require 'pikuri-workspace'
 require 'pikuri-mcp'
 
 yolo = false

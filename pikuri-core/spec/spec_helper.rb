@@ -8,6 +8,14 @@ require 'minitest/assertions'
 
 require 'pikuri-core'
 
+# Transient dev-time dep until P2-5: bash.rb still lives in
+# pikuri-core/lib/pikuri/tool/ but references +Pikuri::Tool::Workspace+
+# and +Pikuri::Tool::Confirmer+, which moved to pikuri-workspace in
+# P2-4. Once P2-5 relocates bash.rb (and its spec) into pikuri-code,
+# pikuri-core's bash_spec.rb goes with them and this require can be
+# dropped — pikuri-core's specs will run standalone again.
+require 'pikuri-workspace'
+
 # Disable on-disk caching by default in the test suite. The specs that
 # genuinely exercise caching behavior opt back in by stubbing +.cache+
 # with a real {Pikuri::UrlCache} pointed at a tmpdir.

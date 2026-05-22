@@ -11,9 +11,10 @@
 # core gem is the one exception (pikuri-core/ → pikuri-core, but the
 # convenience metagem at pikuri/ is also named +pikuri+).
 GEMS = {
-  'pikuri-core'   => 'pikuri-core',
-  'pikuri-skills' => 'pikuri-skills',
-  'pikuri-mcp'    => 'pikuri-mcp'
+  'pikuri-core'      => 'pikuri-core',
+  'pikuri-skills'    => 'pikuri-skills',
+  'pikuri-mcp'       => 'pikuri-mcp',
+  'pikuri-workspace' => 'pikuri-workspace'
 }.freeze
 
 # Path to the single source of truth for the shared version constant.

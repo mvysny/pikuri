@@ -27,6 +27,12 @@ PATH
     pikuri-skills (0.0.2)
       pikuri-core (= 0.0.2)
 
+PATH
+  remote: pikuri-workspace
+  specs:
+    pikuri-workspace (0.0.2)
+      pikuri-core (= 0.0.2)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -160,6 +166,7 @@ DEPENDENCIES
   pikuri-core!
   pikuri-mcp!
   pikuri-skills!
+  pikuri-workspace!
   rake (~> 13.0)
   rspec-core (~> 3.13)
   timecop (~> 0.9)
@@ -200,6 +207,7 @@ CHECKSUMS
   pikuri-core (0.0.2)
   pikuri-mcp (0.0.2)
   pikuri-skills (0.0.2)
+  pikuri-workspace (0.0.2)
   pp (0.6.3) sha256=2951d514450b93ccfeb1df7d021cae0da16e0a7f95ee1e2273719669d0ab9df6
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
