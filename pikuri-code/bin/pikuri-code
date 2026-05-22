@@ -162,14 +162,6 @@ end
 # raise. Otherwise the first turn would inherit a stale cancellation.
 cancel_flag.reset!
 
-# Explicit close is the user-facing contract for Pikuri::Agent.
-# Today this is a no-op (no MCP runtime), but the pattern lives
-# here so any future resource the agent owns (an MCP runtime when
-# the script grows one, an attached HTTP pool, ...) gets cleaned
-# up without revisiting the demo. See bin/pikuri-assistant for
-# the same pattern with an actual MCP runtime behind it.
-at_exit { agent.close }
-
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
 # turn flips the Cancellable flag — the next tool-call boundary raises
 # Cancelled, which we rescue below to return to the prompt. Outside a
@@ -215,3 +207,5 @@ rescue Interrupt
 end
 
 puts
+agent.close
+

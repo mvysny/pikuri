@@ -149,13 +149,6 @@ end
 # so the first turn doesn't inherit a stale cancellation.
 cancel_flag.reset!
 
-# Release agent-owned resources — most importantly the MCP server
-# subprocesses spawned at agent construction — on every exit path
-# this script supports. Explicit #close is the user-facing
-# contract for Pikuri::Agent; forgetting it would leak server
-# subprocesses until process exit.
-at_exit { agent.close }
-
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
 # turn flips the Cancellable flag — the next tool-call boundary raises
 # Cancelled, which we rescue below to return to the prompt. Outside a
@@ -198,3 +191,5 @@ rescue Interrupt
 end
 
 puts
+agent.close
+
