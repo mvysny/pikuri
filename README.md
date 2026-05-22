@@ -223,17 +223,7 @@ anything your user can do**, and approve prompts on that basis.
 Has access to your private documents, can read and respond to e-mails, remembers
 stuff. TODO implemented in the future.
 
-## Tests
+## Contributing
 
-```sh
-bundle exec rake test
-```
-
-`rake test` fans out `rspec` across every gem in the monorepo
-(`pikuri-core/spec/`, `pikuri-skills/spec/`, etc.) — same shape
-Rails (rails/rails) uses for its multi-gem monorepo. To run a
-single gem's specs in isolation:
-
-```sh
-cd pikuri-core && bundle exec rspec
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to run the test
+suite and how releases work.
