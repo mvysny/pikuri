@@ -143,12 +143,14 @@ begin
     ]),
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
     cancellable: cancel_flag,
-    llama_probe_url: llama_probe_url,
-    skill_catalog: skill_catalog,
-    mcp_registry: mcp_registry,
-    synthesize_descriptions: true,
-    verify_mcp_servers: true
+    llama_probe_url: llama_probe_url
   ) do |c|
+    c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+    c.add_extension Pikuri::Mcp::Extension.new(
+      registry: mcp_registry,
+      synthesize_descriptions: true,
+      verify_mcp_servers: true
+    )
     c.allow_sub_agent(max_steps: 20)
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled

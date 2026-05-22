@@ -172,46 +172,42 @@ RSpec.describe Pikuri::Agent do
   end
 
   describe '#close' do
-    it 'closes the Mcp::Servers it constructed from mcp_registry:' do
+    # Helper: wire MCP via the new block API + return a [agent,
+    # tracker] pair so close-related assertions can verify
+    # close_calls on the shared tracker.
+    def with_mcp_agent(listeners:)
       tracker = tracker_mcp_servers_class.new
       original_new = Pikuri::Mcp::Servers.method(:new)
       Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                  system_prompt: 's', tools: [], listeners: listeners,
-                                  mcp_registry: registry)
+      registry = Pikuri::Mcp::Registry.new(entries: [
+        Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
+      ])
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's', tools: [], listeners: listeners) do |c|
+        c.add_extension(Pikuri::Mcp::Extension.new(registry: registry))
+      end
+      yield agent, tracker
+    ensure
+      Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
+    end
 
-        assert_same tracker, agent.mcp_servers
+    it 'closes the Mcp::Servers wired in via Mcp::Extension on close' do
+      with_mcp_agent(listeners: listeners) do |agent, tracker|
         assert_equal 0, tracker.close_calls
         agent.close
         assert_equal 1, tracker.close_calls
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
     it 'does NOT close shared Mcp::Servers when sub-agent inherits via the extension list' do
-      # Post-Step-4 contract: sub-agents receive parent's
-      # extensions list via the +extensions:+ kwarg. The Mcp::
-      # Extension's on_close handler was registered on the
-      # parent's Configurator (configure runs once on the parent),
-      # so the sub-agent's close fires no MCP cleanup — only the
-      # parent.close path tears the shared runtime down.
-      tracker = tracker_mcp_servers_class.new
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        parent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                   system_prompt: 's', tools: [], listeners: listeners,
-                                   mcp_registry: registry)
+      # Sub-agents receive parent's extensions list via the
+      # +extensions:+ kwarg. The Mcp::Extension's on_close handler
+      # was registered on the parent's Configurator (configure runs
+      # once on the parent), so the sub-agent's close fires no MCP
+      # cleanup — only parent.close tears the shared runtime down.
+      with_mcp_agent(listeners: listeners) do |parent, tracker|
         # Simulate a sub-agent constructed via Tool::SubAgent.execute —
-        # gets parent's extensions, no mcp_registry of its own.
+        # gets parent's extensions, no extension of its own.
         sub = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners,
                                 extensions: parent.extensions)
@@ -220,92 +216,28 @@ RSpec.describe Pikuri::Agent do
         assert_equal 0, tracker.close_calls, 'sub-agent close must not close shared servers'
         parent.close
         assert_equal 1, tracker.close_calls, 'parent close fires the configure-time on_close handler'
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
     it 'is idempotent — repeat calls do not re-invoke Mcp::Servers#close' do
-      tracker = tracker_mcp_servers_class.new
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                  system_prompt: 's', tools: [], listeners: listeners,
-                                  mcp_registry: registry)
+      with_mcp_agent(listeners: listeners) do |agent, tracker|
         agent.close
         agent.close
         agent.close
         assert_equal 1, tracker.close_calls
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
       end
     end
 
     it 'is a no-op when no MCP runtime is wired' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners)
-      assert_nil agent.mcp_servers
       # Must not raise.
       agent.close
       agent.close
     end
   end
 
-  describe '.open' do
-    it 'yields the agent to the block and returns the block result' do
-      result = Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                  system_prompt: 's', tools: [], listeners: listeners) do |agent|
-        assert_kind_of Pikuri::Agent, agent
-        :block_return_value
-      end
-      assert_equal :block_return_value, result
-    end
-
-    it 'calls #close after the block returns' do
-      tracker = tracker_mcp_servers_class.new
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                           system_prompt: 's', tools: [], listeners: listeners,
-                           mcp_registry: registry) do |_agent|
-          assert_equal 0, tracker.close_calls
-        end
-        assert_equal 1, tracker.close_calls
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-      end
-    end
-
-    it 'calls #close even when the block raises (resource cleanup on exception)' do
-      tracker = tracker_mcp_servers_class.new
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        err = assert_raises(RuntimeError) do
-          Pikuri::Agent.open(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                             system_prompt: 's', tools: [], listeners: listeners,
-                             mcp_registry: registry) do |_agent|
-            raise 'boom from inside the block'
-          end
-        end
-        assert_equal 'boom from inside the block', err.message
-        assert_equal 1, tracker.close_calls
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-      end
-    end
-
+  describe 'agent state surface' do
     it 'exposes an explicitly passed name' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners, name: '0_1')
@@ -847,98 +779,6 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'synthesize_descriptions: kwarg plumbing' do
-    # Captures the synthesizer Mcp::Servers received so the spec can
-    # poke it to verify Agent builds + threads a real Mcp::Synthesizer
-    # with thinker + cache when synthesize_descriptions: true.
-    let(:capturing_mcp_servers_class) do
-      Class.new do
-        @last_synthesizer = nil
-        @last_verifier = nil
-        class << self; attr_accessor :last_synthesizer, :last_verifier; end
-
-        def initialize(_registry, synthesizer: nil, verifier: nil)
-          self.class.last_synthesizer = synthesizer
-          self.class.last_verifier = verifier
-        end
-
-        def empty?; true; end
-        def system_prompt_snippet; ''; end
-        def close; end
-      end
-    end
-
-    it 'passes synthesizer: nil + verifier: nil to Mcp::Servers when both flags are false' do
-      stub = capturing_mcp_servers_class
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's', tools: [], listeners: listeners,
-                          mcp_registry: registry,
-                          synthesize_descriptions: false,
-                          verify_mcp_servers: false)
-        assert_nil stub.last_synthesizer
-        assert_nil stub.last_verifier
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-      end
-    end
-
-    it 'builds a Mcp::Synthesizer whose thinker calls Agent.think with the agent transport + cancellable' do
-      stub = capturing_mcp_servers_class
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
-
-      # Sidestep the real on-disk cache so this spec doesn't see stored
-      # entries from a previous run (would skip the thinker invocation
-      # we're trying to verify).
-      original_cache_new = Pikuri::Mcp::Cache.method(:new)
-      Pikuri::Mcp::Cache.define_singleton_method(:new) { |**_| Pikuri::Mcp::Cache::NULL }
-
-      cancellable = Pikuri::Agent::Control::Cancellable.new
-      captured_call = nil
-      original_think = Pikuri::Agent.method(:think)
-      Pikuri::Agent.define_singleton_method(:think) do |**kw|
-        captured_call = kw
-        'synth result'
-      end
-      begin
-        registry = Pikuri::Mcp::Registry.new(entries: [
-          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-        ])
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'qwen-x'),
-                                  system_prompt: 's', tools: [], listeners: listeners,
-                                  cancellable: cancellable,
-                                  mcp_registry: registry,
-                                  synthesize_descriptions: true)
-        synthesizer = stub.last_synthesizer
-        refute_nil synthesizer
-        assert_kind_of Pikuri::Mcp::Synthesizer, synthesizer
-
-        # Drive the synthesizer with minimal stand-ins so the captured
-        # thinker fires Agent.think (which we've stubbed above).
-        entry = Pikuri::Mcp::Registry::StdioEntry.new(id: 'probe', command: ['noop'])
-        tool = Struct.new(:name, :description, :input_schema).new('t', 'd', {})
-        client = Struct.new(:server_info).new({ 'serverInfo' => {} })
-        result = synthesizer.call(entry: entry, client: client, tools: [tool])
-
-        assert_equal 'synth result', result
-        assert_match(/Server id: probe/, captured_call[:prompt])
-        assert_equal 'qwen-x', captured_call[:transport].model
-        assert_same cancellable, captured_call[:cancellable]
-        assert_same agent.cancellable, captured_call[:cancellable]
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-        Pikuri::Mcp::Cache.define_singleton_method(:new) { |**kw| original_cache_new.call(**kw) }
-        Pikuri::Agent.define_singleton_method(:think) { |**kw| original_think.call(**kw) }
-      end
-    end
-  end
-
   describe 'step-exhaustion rescue' do
     # Stub +Pikuri::Agent::Synthesizer.run+ so the rescue branch can be
     # tested without standing up a second fake chat. Captured kwargs let
@@ -1161,9 +1001,12 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'skill_catalog wiring' do
-    # Minimal stand-in for a non-empty catalog: lets the specs assert
-    # Pikuri::Agent's auto-wiring without spinning up the on-disk Bundled scanner.
+  # End-to-end: Skill::Extension wired via the +Agent.new+ block.
+  # The extension itself is tested directly in
+  # spec/pikuri/skill/extension_spec.rb; here we verify the
+  # integration — snippet ends up in the chat's instructions, the
+  # skill tool ends up in the chat's tool list, etc.
+  describe 'Skill::Extension wiring' do
     fake_catalog_class = Class.new(Pikuri::Skill::Catalog) do
       def initialize(skills)
         super()
@@ -1190,21 +1033,11 @@ RSpec.describe Pikuri::Agent do
 
     let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
 
-    it 'defaults to EMPTY: no system-prompt augmentation and no skill tool registered' do
+    it 'appends the catalog block to the system prompt when the extension is added' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 'base', tools: [], listeners: listeners)
-
-      assert_equal 'base', agent.system_prompt
-      assert_equal Pikuri::Skill::Catalog::EMPTY, agent.skill_catalog
-      assert agent.tools.none?(Pikuri::Skill::SkillTool), 'EMPTY catalog must NOT register Pikuri::Skill::SkillTool'
-      assert fake_chat.tools.none? { |t| t.name == 'skill' },
-             'EMPTY catalog must NOT register a `skill` tool on the chat'
-    end
-
-    it 'appends the catalog block to the system prompt when non-empty' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 'base', tools: [], listeners: listeners,
-                                skill_catalog: non_empty_catalog)
+                                system_prompt: 'base', tools: [], listeners: listeners) do |c|
+        c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
+      end
 
       assert agent.system_prompt.start_with?('base'), agent.system_prompt
       assert agent.system_prompt.include?('<available_skills>'), agent.system_prompt
@@ -1214,13 +1047,14 @@ RSpec.describe Pikuri::Agent do
       assert_equal agent.system_prompt, fake_chat.instructions
     end
 
-    it 'auto-registers a Pikuri::Skill::SkillTool bound to the catalog when non-empty' do
+    it 'auto-registers a Pikuri::Skill::SkillTool bound to the catalog when the extension is added' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 'base', tools: [], listeners: listeners,
-                                skill_catalog: non_empty_catalog)
+                                system_prompt: 'base', tools: [], listeners: listeners) do |c|
+        c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
+      end
 
       skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Skill::SkillTool) }
-      refute_nil skill_tool, 'expected non-empty catalog to auto-register a Pikuri::Skill::SkillTool'
+      refute_nil skill_tool, 'expected the extension to auto-register a Pikuri::Skill::SkillTool'
       # And it must reach the chat — not just sit on the tools array.
       wired = fake_chat.tools.find { |t| t.name == 'skill' }
       refute_nil wired, 'expected the `skill` tool to be wired on the underlying chat'
@@ -1231,16 +1065,16 @@ RSpec.describe Pikuri::Agent do
       assert result.include?('do the thing'), result
     end
 
-    it 'raises if a Pikuri::Skill::SkillTool is also passed in tools: alongside a non-empty catalog' do
-      manual_skill_tool = Pikuri::Skill::SkillTool.new(catalog: non_empty_catalog)
-
-      err = assert_raises(RuntimeError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 'base', tools: [manual_skill_tool], listeners: listeners,
-                          skill_catalog: non_empty_catalog)
-      end
-      assert_match(/auto-registers/, err.message)
-    end
+    # The kwarg-based "manual SkillTool in tools: alongside the
+    # extension" conflict is intentionally not validated post-
+    # Step-5: detecting it would require Skill::Extension to read
+    # the agent's full @tools list, but at +configure+ time only
+    # the Configurator's own additions are visible. The conflict
+    # detection for the block-API path lives in
+    # spec/pikuri/skill/extension_spec.rb. Users who pass
+    # +tools: [SkillTool.new]+ alongside the extension end up with
+    # two skill-named tools on the chat — ruby_llm's behavior, not
+    # pikuri's.
   end
 
   # New block-based configuration surface added alongside the old

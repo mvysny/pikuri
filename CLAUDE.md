@@ -177,7 +177,14 @@ and a small shared cache.
   value bundle passed to every `RubyLLM.chat` originating from an agent),
   `Pikuri::Agent::ContextWindowDetector` (resolves the model's context-window
   cap from override → ruby_llm registry → llama.cpp `/props` probe at
-  construction time), `Pikuri::Agent::ListenerList`, the
+  construction time), `Pikuri::Agent::Configurator` (the build-time
+  collector yielded into the `Agent.new` block; receives
+  `add_tool` / `add_listener` / `append_system_prompt` /
+  `add_extension` / `allow_sub_agent` / `on_close` calls from both
+  hosts and extensions), `Pikuri::Agent::Extension` (the mixin module
+  defining the duck-typed `configure(c)` + `bind(agent)` hooks with
+  empty defaults — extensions in `pikuri/skill/`, `pikuri/mcp/`, etc.
+  `include` it), `Pikuri::Agent::ListenerList`, the
   `Pikuri::Agent::Event` variants
   (`UserTurn`/`Thinking`/`ThinkingDelta`/`Assistant`/`AssistantDelta`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
   `UserTurn` carries a `mid_loop` flag — `false` for turn-starting input,
@@ -200,13 +207,22 @@ and a small shared cache.
   propagates to sub-agents (used by `Terminal` for padding, `TokenLog`
   for name + zero-snapshot). Controls have their own `for_sub_agent`
   per-class — fresh `StepLimit`, shared `Cancellable`, `nil`
-  `Interloper`.
+  `Interloper`. Sub-agents inherit the parent's extension list via the
+  `extensions:` kwarg passed by `Tool::SubAgent.execute` — each
+  inherited extension's `bind(sub_agent)` fires in the sub-agent's
+  `Agent#initialize` without re-running `configure`, per IDEAS.md
+  §"Extension protocol design".
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
   `lib/pikuri/tool/sub_agent.rb` — `Pikuri::Tool` value class with its
   `#to_ruby_llm_tool` adapter, the strict `Pikuri::Tool::Parameters`
   builder/validator, and `Pikuri::Tool::SubAgent < Pikuri::Tool` —
-  instantiated by `Pikuri::Agent#allow_sub_agent` with the parent agent
-  itself, no kwargs explosion.
+  instantiated by `Pikuri::Agent#initialize` when the host calls
+  `c.allow_sub_agent(max_steps:)` inside the `Agent.new` block. The
+  sub_agent tool snapshots the parent's `Agent#tools` at construction
+  and inherits the parent's `Agent#extensions` list — each inherited
+  extension's `bind(sub_agent)` fires inside the sub-agent's
+  `Agent#initialize`, which is how MCP's per-agent connect tool ends
+  up keyed to the sub-agent.
 - `lib/pikuri/tool/calculator.rb`, `lib/pikuri/tool/web_search.rb`,
   `lib/pikuri/tool/web_scrape.rb`, `lib/pikuri/tool/fetch.rb` — bundled
   tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,
@@ -247,19 +263,27 @@ and a small shared cache.
   inside the `Pikuri::Agent.new` block.
 - `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
   `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/verifier.rb`,
-  `lib/pikuri/mcp/cache.rb` — MCP (Model Context Protocol) support
-  under the `Pikuri::Mcp` namespace.
+  `lib/pikuri/mcp/cache.rb`, `lib/pikuri/mcp/extension.rb` — MCP
+  (Model Context Protocol) support under the `Pikuri::Mcp` namespace.
   `Pikuri::Mcp::Registry` is the pure config layer (`StdioEntry`/
   `HttpEntry` data classes, `EMPTY` singleton — same shape as
   `Pikuri::Skill::Catalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
   constructed from a registry, eager-starts every configured server
   via the `mcp` gem's `MCP::Client::Stdio` / `MCP::Client::HTTP`,
-  holds the live clients, emits an INFO audit log per server,
-  registers `at_exit { close }` for cleanup. `Mcp::Servers::View` is
-  the sub-agent facade (shares clients, delegates lifecycle), and
+  holds the live clients, emits an INFO audit log per server.
   `Mcp::Servers::Connect` is the private inner `Pikuri::Tool`
-  subclass auto-instantiated by `Agent#initialize` when the registry
-  is non-empty. `Pikuri::Mcp::Synthesizer` owns the LLM-driven
+  subclass auto-instantiated per-agent by `Mcp::Extension#bind`.
+  `Pikuri::Mcp::Extension < Pikuri::Agent::Extension` is the
+  wire-in surface — added via
+  `c.add_extension(Pikuri::Mcp::Extension.new(registry: ...))`
+  inside the `Pikuri::Agent.new` block. Its `configure(c)` builds
+  the shared `Mcp::Servers`, appends the `<available_mcps>` snippet,
+  and registers `c.on_close { servers.close }` for cleanup. Its
+  `bind(agent)` adds a fresh per-agent `Connect` tool via
+  `Agent#internal_add_tool` — sub-agents go through the same
+  `bind` (one extension instance, multiple bind calls), so each
+  agent gets its own connect tool keyed to itself but they all
+  share the parent's live MCP clients through the extension. `Pikuri::Mcp::Synthesizer` owns the LLM-driven
   description summarization: the prompt, its `PROMPT_VERSION`, the
   cleanup, and the fail-soft / Cancelled-propagating contract.
   Servers delegates to its `#call` from `#resolve_description` when
@@ -306,15 +330,20 @@ downstream gems.
   same ruby_llm wiring as `pikuri-chat`, but registers the six coding
   tools (with a `Pikuri::Tool::Workspace::Cwd` rooted at `Dir.pwd` and
   a `Pikuri::Tool::Confirmer::TERMINAL` — `--yolo` swaps in
-  `AUTO_APPROVE`), prepends any `AGENTS.md` / `CLAUDE.md` in the
-  workspace as project context, and runs an interactive REPL.
+  `AUTO_APPROVE`), adds `Pikuri::Skill::Extension` (catalog discovered
+  from `.pikuri/skills` / `.claude/skills` / `.agents/skills`) and
+  `Pikuri::Mcp::Extension` (empty registry by default — developer
+  hand-edits to add servers) via the `Agent.new` block, prepends any
+  `AGENTS.md` / `CLAUDE.md` in the workspace as project context, and
+  runs an interactive REPL.
 - `bin/pikuri-assistant` — CLI entry point for an assistant binary
   that adds MCP support to the pikuri-chat tool set. Same ruby_llm
-  wiring as `pikuri-chat`, plus a `Pikuri::Mcp::Registry` constructor
-  argument the developer hand-edits to add MCP servers (id + argv).
-  Empty by default — runs identically to `pikuri-chat` until the
-  developer opts in by adding entries. The third dev/demo binary
-  alongside `pikuri-chat` and `pikuri-code`.
+  wiring as `pikuri-chat`, plus a hand-edited `Pikuri::Mcp::Registry`
+  wired via `Pikuri::Mcp::Extension` inside the `Agent.new` block.
+  Holds the `Mcp::Extension` instance on a local variable so the
+  startup banner can read `mcp_ext.servers.live_ids` after construction.
+  Empty registry by default — runs identically to `pikuri-chat` until
+  the developer opts in by adding entries.
 - `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
 - `prompts/pikuri-assistant.txt` — system prompt used by
   `bin/pikuri-assistant`. Adds MCP-aware tool-selection guidance:

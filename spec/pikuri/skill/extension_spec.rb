@@ -75,6 +75,14 @@ RSpec.describe Pikuri::Skill::Extension do
       assert_equal [], configurator.system_prompt_additions
       assert_equal [], configurator.tools
     end
+
+    it 'raises if Pikuri::Skill::SkillTool was already pre-registered via c.add_tool' do
+      configurator.add_tool(Pikuri::Skill::SkillTool.new(catalog: non_empty_catalog))
+      ext = described_class.new(catalog: non_empty_catalog)
+
+      err = assert_raises(RuntimeError) { ext.configure(configurator) }
+      assert_match(/auto-registers/, err.message)
+    end
   end
 
   describe '#bind' do

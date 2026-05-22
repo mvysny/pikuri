@@ -61,6 +61,11 @@ module Pikuri
       def configure(c)
         return if @catalog.empty?
 
+        if c.tools.any?(Pikuri::Skill::SkillTool)
+          raise 'Pikuri::Skill::SkillTool cannot be pre-registered (in tools: or via c.add_tool) ' \
+                'when adding Pikuri::Skill::Extension — the extension auto-registers it from the catalog.'
+        end
+
         c.append_system_prompt(@catalog.format_for_prompt.lstrip)
         c.add_tool(Pikuri::Skill::SkillTool.new(catalog: @catalog))
         nil

@@ -9,12 +9,6 @@ module Pikuri
     # block with the absolute base directory, so the LLM can resolve
     # relative sidecar paths against it via the regular +read+ tool.
     #
-    # The class name has +Tool+ as a suffix (rather than just +Tool+
-    # nested inside +Skill+) to avoid shadowing the top-level
-    # +Pikuri::Tool+ class — +class Tool < Pikuri::Tool+ would read
-    # ambiguously. The LLM-facing tool name stays +skill+, matching
-    # the Agent Skills standard.
-    #
     # The catalog of available skills is *not* duplicated into this
     # tool's description. It lives in the system prompt — see
     # {Catalog#format_for_prompt} — because skills describe what the

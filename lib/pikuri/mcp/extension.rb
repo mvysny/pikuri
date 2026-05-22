@@ -101,20 +101,7 @@ module Pikuri
       # @param agent [Pikuri::Agent]
       # @return [void]
       def bind(agent)
-        return if @servers.nil? # registry was empty in #configure
-
-        # Transition layer: expose @servers as agent.mcp_servers so
-        # Tool::SubAgent.execute can still read it via
-        # +view_for_sub_agent+. Run this even when @servers is empty
-        # (no live clients) so callers that read +agent.mcp_servers+
-        # see the same value the agent's lifecycle is keyed on.
-        # Step 4 migrates SubAgent to capture the parent's extensions
-        # list directly and this ivar plumbing goes away. See
-        # IDEAS.md §"Extension protocol design" / "Structural changes
-        # vs today's code".
-        agent.instance_variable_set(:@mcp_servers, @servers) if agent.mcp_servers.nil?
-
-        return if @servers.empty?
+        return if @servers.nil? || @servers.empty?
 
         if agent.tools.any?(Mcp::Servers::Connect)
           raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \

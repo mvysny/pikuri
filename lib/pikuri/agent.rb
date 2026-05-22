@@ -348,47 +348,6 @@ module Pikuri
     #   listeners through {ListenerList#for_sub_agent} so name-
     #   aware ones (notably {Listener::TokenLog}) can tag their
     #   output.
-    # @param skill_catalog [Skill::Catalog] catalog of on-disk
-    #   skills the agent may load on demand. Defaults to
-    #   +Skill::Catalog::EMPTY+, which is a no-op singleton.
-    #   When non-empty: the catalog's prompt block
-    #   ({Skill::Catalog#format_for_prompt}) is appended to
-    #   +system_prompt+ so the LLM can see what's available, and
-    #   a {Skill::SkillTool} bound to the catalog is appended to
-    #   +tools+ so the LLM can actually load them. The two
-    #   changes are coupled — advertising skills without a
-    #   loader (or vice versa) would be a bug, so the catalog is
-    #   the single source of truth for both.
-    # @param mcp_registry [Mcp::Registry] configured MCP servers to
-    #   eager-start. Defaults to +Mcp::Registry::EMPTY+, which is a
-    #   no-op singleton. When non-empty: an {Mcp::Servers} runtime is
-    #   constructed (spawning every server immediately), its
-    #   +<available_mcps>+ block is appended to +system_prompt+ so
-    #   the LLM can see what's available, and an +mcp_connect+ tool
-    #   is appended to +tools+ so the LLM can pull MCP tools into
-    #   its toolset on demand. Mutually exclusive with +mcp_servers:+
-    #   — main agents pass a registry, sub-agents inherit the
-    #   already-running runtime via +mcp_servers:+. Same auto-wiring
-    #   contract as +skill_catalog:+ above. The constructed
-    #   {Mcp::Servers} is *owned* by this agent — {#close} will
-    #   terminate its MCP server subprocesses.
-    # @param verify_mcp_servers [Boolean] when +true+ and a
-    #   non-empty +mcp_registry:+ is also passed, threads a
-    #   {Mcp::Verifier} into {Mcp::Servers#initialize} so every
-    #   configured server is checked for prompt-injection /
-    #   exfiltration / tool-chain-hijacking patterns in its
-    #   handshake + tool surface before it can register tools with
-    #   the agent. The verifier reuses the agent's thinker closure
-    #   (same model the agent itself uses) and has its own on-disk
-    #   cache rooted at +.../mcp_verifications+ — independent of the
-    #   description-synthesis cache so flipping one feature on/off
-    #   doesn't invalidate the other. On by default — pikuri is
-    #   security-first and the boot-time tax is paid once per server
-    #   per surface (cached entries skip the check entirely). Flip
-    #   to +false+ only if you've audited the configured servers and
-    #   want to skip the cold-boot verification cost. See
-    #   {Mcp::Verifier} for the threat model and false-positive
-    #   philosophy.
     # @param extensions [Array<Extension>, nil] pre-configured
     #   extension instances inherited from a parent agent. Used
     #   exclusively by {Tool::SubAgent.execute} when spawning a
@@ -397,27 +356,9 @@ module Pikuri
     #   and the resulting state (tools / snippets / listeners) was
     #   inherited verbatim through the explicit kwargs (+tools:+,
     #   +system_prompt:+, +listeners:+). Main-agent callers leave
-    #   this +nil+.
-    # @param synthesize_descriptions [Boolean] when +true+ and a
-    #   non-empty +mcp_registry:+ is also passed, threads a thinker
-    #   closure into {Mcp::Servers#initialize} so any server whose
-    #   +initialize+ handshake lacks an +instructions+ /
-    #   +serverInfo.title+ field gets a one-shot LLM-synthesized
-    #   description for the +<available_mcps>+ block. The closure
-    #   captures this agent's +@transport+ and +@cancellable+ and
-    #   calls {.think} with the same model the agent itself will
-    #   use. On by default — without a description in
-    #   +<available_mcps>+ the LLM has no signal that an MCP exists
-    #   (its tools aren't listed up-front; the model has to call
-    #   +mcp_connect+ to discover them), so paying the one-time
-    #   synthesis tax (typically 5–10 s per missing description
-    #   against a local llama.cpp model) buys the entire reason to
-    #   wire the server in the first place. Subsequent boots hit the
-    #   on-disk cache and pay nothing. Flip to +false+ if every
-    #   configured server already provides its own +instructions+
-    #   string, or to skip the cold-boot synthesis cost on short
-    #   one-shot CLI invocations. Has no effect when no MCP runtime
-    #   is wired.
+    #   this +nil+ and use the +Agent.new+ block's
+    #   {Configurator#add_extension} for any extensions they want
+    #   (Skills, MCP, custom hosts).
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -433,10 +374,6 @@ module Pikuri
     def initialize(transport:, system_prompt:, tools: [], listeners: nil,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
-                   skill_catalog: Skill::Catalog::EMPTY,
-                   mcp_registry: Mcp::Registry::EMPTY,
-                   synthesize_descriptions: true,
-                   verify_mcp_servers: true,
                    streaming: false,
                    extensions: nil,
                    &block)
@@ -448,8 +385,6 @@ module Pikuri
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
-      @skill_catalog = skill_catalog
-      @mcp_servers = nil # back-filled by Mcp::Extension#bind (transition layer; removed in Step 5)
       @closed = false
 
       @system_prompt = system_prompt
@@ -470,19 +405,8 @@ module Pikuri
       # agent callers leave +extensions:+ unset.
       @extensions = extensions ? extensions.dup : []
 
-      # Validate manual-vs-auto Skill conflict before the extension
-      # routing runs — the user's +tools:+ kwarg shouldn't pre-
-      # register a +Skill::SkillTool+ if the +skill_catalog:+ kwarg is
-      # also wiring one in.
-      if !skill_catalog.empty? && @tools.any?(Skill::SkillTool)
-        raise 'Skill::SkillTool cannot be passed in tools: when skill_catalog is non-empty; ' \
-              'Agent auto-registers it from the catalog.'
-      end
-
-      # Single Configurator funnel: legacy kwargs route extensions
-      # in first, then the user's block can add more. Everything
-      # drains into the same agent ivars below. See IDEAS.md
-      # §"Extension protocol design".
+      # Single Configurator funnel for everything the block adds.
+      # See IDEAS.md §"Extension protocol design".
       configurator = Configurator.new(
         transport: @transport,
         system_prompt_base: system_prompt,
@@ -492,21 +416,6 @@ module Pikuri
         cancellable: @cancellable,
         interloper: @interloper
       )
-
-      # Legacy skill_catalog kwarg → Skill::Extension routing.
-      # (Sub-agents pass extensions: instead of these kwargs, so
-      # this only fires on the main-agent path.)
-      configurator.add_extension(Skill::Extension.new(catalog: skill_catalog)) \
-        unless skill_catalog.empty?
-
-      # Legacy mcp_registry kwarg → Mcp::Extension routing.
-      configurator.add_extension(
-        Mcp::Extension.new(
-          registry: mcp_registry,
-          synthesize_descriptions: synthesize_descriptions,
-          verify_mcp_servers: verify_mcp_servers
-        )
-      ) unless mcp_registry.empty?
 
       block&.call(configurator)
 
@@ -611,29 +520,14 @@ module Pikuri
     end
 
     # @return [String] system prompt actually sent to the chat —
-    #   equal to the constructor's +system_prompt:+ argument
-    #   plus, when a non-empty +skill_catalog:+ was supplied, the
-    #   catalog's +<available_skills>+ block. {Tool::SubAgent}
-    #   forwards this already-augmented value to spawned
-    #   sub-agents, so they see the same catalog without needing
-    #   the +skill_catalog:+ kwarg themselves.
+    #   equal to the constructor's +system_prompt:+ argument plus
+    #   any snippets appended by extensions during
+    #   {Configurator#append_system_prompt} (Skills'
+    #   +<available_skills>+, MCP's +<available_mcps>+, ...).
+    #   {Tool::SubAgent} forwards this already-augmented value to
+    #   spawned sub-agents so they see the same advertisements
+    #   without re-running extension configure.
     attr_reader :system_prompt
-
-    # @return [Skill::Catalog] catalog passed to the
-    #   constructor; +Skill::Catalog::EMPTY+ if none was
-    #   supplied. Read by callers that want to inspect the
-    #   loaded skills (e.g. for a startup banner).
-    attr_reader :skill_catalog
-
-    # @return [Mcp::Servers, Mcp::Servers::View, nil] the MCP runtime
-    #   wired into this agent — a freshly-constructed
-    #   {Mcp::Servers} for the main agent (from the constructor's
-    #   +mcp_registry:+), a {Mcp::Servers::View} delegating to the
-    #   parent's runtime for a sub-agent (from +mcp_servers:+), or
-    #   +nil+ when no MCPs are configured. Read by
-    #   {Tool::SubAgent} so spawned sub-agents inherit the
-    #   parent's live clients via {Mcp::Servers#view_for_sub_agent}.
-    attr_reader :mcp_servers
 
     # @return [ListenerList] the listener list attached to this
     #   agent's chat
@@ -795,11 +689,6 @@ module Pikuri
     # +Pikuri.logger_for+ but doesn't abort the rest. Idempotent —
     # subsequent calls are no-ops.
     #
-    # == Block form
-    #
-    # {.open} wraps +Agent.new+ + +#close+ in an +ensure+ for the
-    # common case where lifecycle matches a scope.
-    #
     # @return [void]
     def close
       return if @closed
@@ -825,27 +714,6 @@ module Pikuri
 
       @on_close_handlers << blk
       nil
-    end
-
-    # Construct an agent, yield it to the block, and call {#close} on
-    # the way out. Follows Ruby's +File.open+ convention.
-    #
-    # @example
-    #   Pikuri::Agent.open(transport: ..., system_prompt: ..., tools: [], listeners: ll,
-    #                      mcp_registry: my_registry) do |agent|
-    #     agent.run_loop(user_message: "Hello")
-    #   end
-    #   # Mcp::Servers and any spawned MCP subprocesses are closed here.
-    #
-    # @yieldparam agent [Agent]
-    # @return the return value of the block.
-    def self.open(**kwargs)
-      agent = new(**kwargs)
-      begin
-        yield agent
-      ensure
-        agent.close
-      end
     end
 
     # Register a raw +RubyLLM::Tool+ subclass on this agent's

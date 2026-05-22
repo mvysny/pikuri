@@ -105,6 +105,17 @@ mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 # the injection verifier on every server). Both honor cancel_flag,
 # so trap SIGINT around Agent.new and a Ctrl+C unwinds startup on
 # the next .think check. Cached entries skip both passes entirely.
+#
+# The extension is constructed here (rather than inline inside the
+# block) so we can read +mcp_ext.servers.live_ids+ for the startup
+# banner below. The extension's +configure(c)+ runs synchronously
+# inside the Configurator block, so by the time +Agent.new+ returns
+# +mcp_ext.servers+ is set.
+mcp_ext = Pikuri::Mcp::Extension.new(
+  registry: mcp_registry,
+  synthesize_descriptions: true,
+  verify_mcp_servers: true
+)
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(
@@ -122,11 +133,9 @@ begin
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
     cancellable: cancel_flag,
     llama_probe_url: llama_probe_url,
-    mcp_registry: mcp_registry,
-    synthesize_descriptions: true,
-    verify_mcp_servers: true,
     streaming: streaming
   ) do |c|
+    c.add_extension mcp_ext
     c.allow_sub_agent(max_steps: 20)
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
@@ -167,8 +176,8 @@ ensure
 end
 
 puts 'Pikuri Assistant. Press Ctrl+C or Ctrl+D to quit.'
-if agent.mcp_servers && !agent.mcp_servers.empty?
-  puts "MCP servers connected: #{agent.mcp_servers.live_ids.join(', ')}"
+if mcp_ext.servers && !mcp_ext.servers.empty?
+  puts "MCP servers connected: #{mcp_ext.servers.live_ids.join(', ')}"
 end
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?
