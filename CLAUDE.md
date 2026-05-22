@@ -2,20 +2,27 @@
 
 ## What this project is
 
-A Ruby implementation of an AI assistant, shipped as two binaries on a
-shared core: `bin/pikuri-chat` (general-purpose chat — web search,
-scraping, calculator, sub-agents) and `bin/pikuri-code` (in-repo coding
-agent — read/write/edit/grep/glob/bash, plus the web tools). Both wire
-the same `Agent`, the same `Tool` framework, and the same ruby_llm
-runtime; they differ only in their system prompt and which tools they
-register.
+A Ruby implementation of an AI assistant, shipped as a family of
+seven gems in a monorepo. The lean core (`pikuri-core`) provides the
+`Agent` runtime, the `Tool` framework with strict argument
+validation, the Extension protocol, the listener event stream, and
+four stateless bundled tools (calculator, web search, web scrape,
+fetch) + `bin/pikuri-chat` as the demo binary. Extensions live in
+sibling gems and opt in à la carte: `pikuri-skills`, `pikuri-mcp`,
+`pikuri-workspace` (filesystem tools + Confirmer/Workspace seams),
+`pikuri-code` (Bash + `bin/pikuri-code`), `pikuri-assistant` (the
+MCP-aware `bin/pikuri-assistant`). A convenience `pikuri` metagem
+declares deps on all six so `gem install pikuri` brings the whole
+family in.
 
 Pikuri sits on top of [ruby_llm](https://rubyllm.com) — the gem owns
 the transport and the Thought / Tool-call / Observation loop — and
-adds the *extension surface*: strict tool-argument validation with
-LLM-actionable error messages, listener-based rendering of reasoning /
-assistant Markdown / tool calls, a `max_steps` budget, sub-agents, and
-a small set of solid bundled tools.
+adds the *extension surface*: the strict `Tool::Parameters`
+validator, the Configurator + Extension protocol that hosts use to
+wire extra capabilities into an `Agent` via the `Agent.new` block,
+listener-based rendering of reasoning / assistant Markdown / tool
+calls, a `max_steps` budget, sub-agents, and a fixed deliberate set
+of bundled tools.
 
 ## Why this exists
 
@@ -25,9 +32,11 @@ learning curve. A privacy-conscious user arriving fresh hits a wall
 of massive JSON configuration with no clear start-here. Pikuri is
 the deliberate counter-move:
 
-- **Start slowly.** Sane defaults out of the box, two small binaries,
-  no config file required to get a first conversation going. The
-  surface area grows as the user grows into it, not before.
+- **Start slowly.** Sane defaults out of the box, three small
+  demo binaries, no config file required to get a first conversation
+  going. The surface area grows as the user grows into it — start
+  with `pikuri-core` + `bin/pikuri-chat`, opt into skills / MCP /
+  the coding stack as the need shows up.
 - **Privacy-first.** Defaults wire the local llama.cpp server — no
   cloud account, no API key, no telemetry, no request leaving the
   machine unless the user explicitly opts in by configuring an
@@ -76,43 +85,46 @@ grows a skill system.
   the model sees on bad arguments.
 
 - **The seam.** All `RubyLLM::*` references are confined to four
-  files: `bin/pikuri-chat` and `bin/pikuri-code` (boot/wiring — call
-  `RubyLLM.configure`), `lib/pikuri/agent.rb` (constructs the Chat,
-  attaches listeners, calls `ask`), and `lib/pikuri/tool.rb` (the
-  `Pikuri::Tool` value class plus its `#to_ruby_llm_tool` adapter that
-  emits a synthetic `RubyLLM::Tool` subclass on demand). Everything
-  else in `lib/` (bundled tools, scrapers, search providers) talks to
-  pikuri's surface (`Pikuri::Tool.new`, `Pikuri::Tool::Parameters`, …)
-  and never references ruby_llm. This is the fork-or-swap contingency:
-  replacing the loop becomes a fixed-cost rewrite of those two `lib/`
+  files in the monorepo: the three `bin/pikuri-*` scripts
+  (boot/wiring — call `RubyLLM.configure`),
+  `pikuri-core/lib/pikuri/agent.rb` (constructs the Chat, attaches
+  listeners, calls `ask`), and `pikuri-core/lib/pikuri/tool.rb` (the
+  `Pikuri::Tool` value class plus its `#to_ruby_llm_tool` adapter
+  that emits a synthetic `RubyLLM::Tool` subclass on demand).
+  Everything else in any pikuri-* `lib/` (bundled tools, scrapers,
+  search providers, extensions) talks to pikuri's surface
+  (`Pikuri::Tool.new`, `Pikuri::Tool::Parameters`, …) and never
+  references ruby_llm. This is the fork-or-swap contingency:
+  replacing the loop becomes a fixed-cost rewrite of those two
   files.
 
-- **Subprocess seam.** All subprocess spawning in `lib/` goes through
-  `Pikuri::Subprocess.spawn`. Direct `Process.spawn` / `Open3.*` /
-  `system` / backticks anywhere in `lib/` are bugs. The chokepoint
-  forces a new process group per invocation, tracks pgids in a
-  process-global set, and SIGTERMs everything tracked via `at_exit`
-  so backgrounded shell children don't outlive pikuri uncontrolled.
-  Timeouts are the caller's job — wrap argv with coreutils' `timeout`
-  binary; the chokepoint deliberately doesn't implement a Ruby-side
-  timeout (can't kill subprocesses cleanly). Grep-enforceable:
-  `grep -rn 'Process\.spawn\|Open3\|system' lib/` should only hit
-  `lib/pikuri/subprocess.rb`.
+- **Subprocess seam.** All subprocess spawning in any pikuri-*
+  `lib/` goes through `Pikuri::Subprocess.spawn`. Direct
+  `Process.spawn` / `Open3.*` / `system` / backticks anywhere in
+  `lib/` are bugs. The chokepoint forces a new process group per
+  invocation, tracks pgids in a process-global set, and SIGTERMs
+  everything tracked via `at_exit` so backgrounded shell children
+  don't outlive pikuri uncontrolled. Timeouts are the caller's
+  job — wrap argv with coreutils' `timeout` binary; the chokepoint
+  deliberately doesn't implement a Ruby-side timeout (can't kill
+  subprocesses cleanly). Grep-enforceable:
+  `grep -rn 'Process\.spawn\|Open3\|system' pikuri-*/lib/` should
+  only hit `pikuri-core/lib/pikuri/subprocess.rb`.
 
-  *Carve-out:* `Pikuri::Mcp::Servers` is the documented exception, and
-  only for stdio MCP entries (`Mcp::Registry::StdioEntry`). The `mcp` gem
-  spawns the server via its own `MCP::Client::Stdio` transport —
-  routing that through `Subprocess.spawn` would mean forking the gem
-  or threading custom IO pipes through its API, duplicating work the
-  gem exists to do. Instead, `Mcp::Servers#initialize` registers
-  `at_exit { close }` and `#close` calls the gem's per-transport
-  `close` (which closes stdin → server hits EOF and self-terminates
-  per spec). The grep invariant above still holds because the spawn
-  happens inside the gem, not in pikuri's `lib/`. HTTP MCP entries
-  (`Mcp::Registry::HttpEntry`) don't fall under the carve-out — they're
-  plain Faraday inside the gem, no subprocess involved. See IDEAS.md
-  §"v1 implementation shape" / "Subprocess lifecycle" for the full
-  rationale.
+  *Carve-out:* `pikuri-mcp` is the documented exception, and only
+  for stdio MCP entries (`Mcp::Registry::StdioEntry`). The `mcp`
+  gem spawns the server via its own `MCP::Client::Stdio`
+  transport — routing that through `Subprocess.spawn` would mean
+  forking the gem or threading custom IO pipes through its API,
+  duplicating work the gem exists to do. Instead,
+  `Mcp::ClientWrapper` lets the gem own subprocess lifecycle and
+  pikuri's `Mcp::Extension` registers an `on_close` handler that
+  calls `Mcp::Servers#close` (which closes stdin → server hits EOF
+  and self-terminates per spec). The grep invariant above still
+  holds because the spawn happens inside the `mcp` gem, not in any
+  pikuri-* `lib/`. HTTP MCP entries (`Mcp::Registry::HttpEntry`)
+  don't fall under the carve-out — they're plain Faraday inside
+  the gem, no subprocess involved.
 
 - **Workspace seam.** Tools that touch files (`Read`, `Write`, `Edit`,
   `Grep`, `Glob`, `Bash`) take a `Pikuri::Tool::Workspace` via
@@ -160,17 +172,37 @@ grows a skill system.
 
 ## Layout
 
-Per-file rationale lives in each source file's YARD header — this is just the
-package map. Everything pikuri ships lives under the `Pikuri::` namespace:
-`lib/pikuri.rb` is the boot file, and `lib/pikuri/**/*.rb` is loaded by
-Zeitwerk into the matching `Pikuri::*` constants. The two halves of the
-codebase are the agent runtime (`lib/pikuri/agent.rb` + `lib/pikuri/agent/`)
-and the tool framework with its bundled tools (`lib/pikuri/tool.rb` +
-`lib/pikuri/tool/`); the rest of `lib/pikuri/` is the subprocess chokepoint
-and a small shared cache.
+Pikuri ships as a Rails-shape monorepo: seven gems live in
+sibling subdirectories under the repo root. Each gem owns its own
+`lib/`, `spec/`, `<gem>.gemspec`, entry file, and (where relevant)
+`bin/` + `prompts/` — same convention Rails uses for actionpack/
+activerecord/etc. The top-level `Gemfile` wires every gem via
+`gemspec path: '<gem>'` for dev mode; the top-level `Rakefile`
+fans out `rake test` across each gem and orchestrates `rake release
+VERSION=x.y.z` in lockstep.
 
-- `lib/pikuri.rb` — Zeitwerk loader + eager-load over `lib/`; one require for
-  callers. Inflector overrides cover acronym mismatches (`HTML`, `PDF`,
+Everything pikuri ships lives under the `Pikuri::` namespace,
+contributed cooperatively by each gem's own Zeitwerk loader. Each
+gem's entry file (`<gem>/lib/<gem-name>.rb`) sets up a per-gem
+loader; loaders coexist because they manage non-overlapping file
+trees. The `Pikuri::PROMPT_DIRS` list is similarly cooperative:
+each gem appends its own `prompts/` directory at boot, so
+`Pikuri.prompt(name)` searches across every loaded gem.
+
+Per-file rationale lives in each source file's YARD header — this
+is just the package map. Per-gem layout below:
+
+### `pikuri-core/` — gem name `pikuri-core`
+
+The lean foundation. Agent runtime + Tool framework + Configurator +
+Extension protocol + listener stream + four stateless tools.
+Runtime deps: ruby_llm, Faraday, Rainbow, tty-markdown, Zeitwerk,
+Nokogiri, pdf-reader, reverse_markdown, ruby-readability, dentaku,
+tsort. No subprocess-spawning tools.
+
+- `lib/pikuri-core.rb` — gem entry. Defines `Pikuri::PROMPT_DIRS`,
+  the logger machinery, and the `pikuri-core` Zeitwerk loader.
+  Inflector overrides cover acronym mismatches (`HTML`, `PDF`,
   `DuckDuckGo`).
 - `lib/pikuri/agent.rb`, `lib/pikuri/agent/` — `Pikuri::Agent`,
   `Pikuri::Agent::ChatTransport` (the `model`/`provider`/`assume_model_exists`
@@ -233,117 +265,194 @@ and a small shared cache.
   `Engines` cascade with its `Unavailable` fallback protocol.
 - `lib/pikuri/tool/scraper/` — `Simple` content-type-dispatching fetcher,
   the pure `HTML` and `PDF` extractors, and the shared `FetchError`.
-- `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` — abstract
-  bases + bundled implementations for the two coding-tool seams (see Scope
-  decisions). `Confirmer` ships `TERMINAL` / `AUTO_APPROVE`; `Workspace`
-  ships `Cwd`.
+- `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
+  (see Scope decisions). The single point where `Open3` /
+  `Process.spawn` are allowed; everything else in any pikuri-* gem's
+  `lib/` routes through here (except `pikuri-mcp/lib/pikuri/mcp/
+  client_wrapper.rb`, which carves out — see below).
+- `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL
+  cache used by the bundled web tools and by `pikuri-mcp`'s caches.
+- `bin/pikuri-chat` — CLI entry point for the general-purpose chat
+  agent: configures ruby_llm for the local llama.cpp server, builds
+  a `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners
+  and `StepLimit` + `Cancellable` controls, enables sub-agents, and
+  feeds a question from `ARGV` or stdin.
+- `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
+
+### `pikuri-skills/` — gem name `pikuri-skills`
+
+The [Agent Skills standard](https://agentskills.io/specification)
+implementation. Depends on `pikuri-core`. No new runtime deps.
+
+- `lib/pikuri-skills.rb` — gem entry. Sets up a per-gem Zeitwerk
+  loader tagged `pikuri-skills`.
+- `lib/pikuri/skill/catalog.rb` — `Pikuri::Skill::Catalog` is the
+  discovery + validation layer (abstract base + bundled
+  `Empty`/`EMPTY` and `Bundled` scanners that walk
+  `.pikuri/skills`, `.claude/skills`, `.agents/skills`).
+- `lib/pikuri/skill/skill_tool.rb` — `Pikuri::Skill::SkillTool <
+  Pikuri::Tool` is the loading tool (the `Tool` suffix avoids the
+  `class Tool < Pikuri::Tool` shadowing — LLM-facing name stays
+  `skill`).
+- `lib/pikuri/skill/extension.rb` — `Pikuri::Skill::Extension <
+  Pikuri::Agent::Extension`. The wire-in surface: added via
+  `c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))`
+  inside the `Pikuri::Agent.new` block; auto-registers the snippet
+  + the skill tool when the catalog is non-empty.
+
+### `pikuri-workspace/` — gem name `pikuri-workspace`
+
+The "operate on a directory tree" gem: Workspace + Confirmer seams
++ Read/Write/Edit/Grep/Glob. Depends on `pikuri-core`. No new
+runtime deps (stdlib-only). No subprocess execution — `Bash` lives
+in `pikuri-code` on top.
+
+- `lib/pikuri-workspace.rb` — gem entry. Zeitwerk loader mounted
+  at the `Pikuri::Tool` namespace (rather than at this gem's lib/
+  root) so it doesn't try to redefine `Pikuri::Tool` (which
+  `pikuri-core` owns as a class) as an inferred module.
+- `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` —
+  abstract bases + bundled implementations for the two
+  coding-tool seams (see Scope decisions). `Confirmer` ships
+  `TERMINAL` / `AUTO_APPROVE`; `Workspace` ships `Cwd`.
 - `lib/pikuri/tool/read.rb`, `lib/pikuri/tool/write.rb`,
   `lib/pikuri/tool/edit.rb`, `lib/pikuri/tool/grep.rb`,
-  `lib/pikuri/tool/glob.rb`, `lib/pikuri/tool/bash.rb` — the six coding
-  tools. Each is a `Pikuri::Tool` subclass instantiated per-binary with the
-  constructor wiring (workspace + confirmer where needed) — same pattern
-  as `Pikuri::Tool::SubAgent`, not the bare `ALL_CAPS` constant style used
-  by the stateless web/calc tools.
-- `lib/pikuri/skill/catalog.rb`, `lib/pikuri/skill/skill_tool.rb`,
-  `lib/pikuri/skill/extension.rb` — pikuri's implementation of the
-  [Agent Skills standard](https://agentskills.io/specification), all
-  under the `Pikuri::Skill` namespace anticipating the future
-  `pikuri-skills` gem split. `Pikuri::Skill::Catalog` is the discovery
-  + validation layer (abstract base + bundled `Empty`/`EMPTY` and
-  `Bundled` scanners that walk `.pikuri/skills`, `.claude/skills`,
-  `.agents/skills`). `Pikuri::Skill::SkillTool < Pikuri::Tool` is the
-  loading tool (the `Tool` suffix avoids the `class Tool < Pikuri::Tool`
-  shadowing — LLM-facing name stays `skill`), registered on the agent
-  by `Pikuri::Skill::Extension` whenever the wired-in catalog is
-  non-empty. Catalog + tool form a seam: a future host can plug in a
-  synthetic catalog (virtual filesystem, in-memory test fixture)
-  without touching `Skill::SkillTool` or the agent. The Extension is
-  the wire-in surface — added via
-  `c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))`
-  inside the `Pikuri::Agent.new` block.
-- `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
-  `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/verifier.rb`,
-  `lib/pikuri/mcp/cache.rb`, `lib/pikuri/mcp/extension.rb` — MCP
-  (Model Context Protocol) support under the `Pikuri::Mcp` namespace.
-  `Pikuri::Mcp::Registry` is the pure config layer (`StdioEntry`/
-  `HttpEntry` data classes, `EMPTY` singleton — same shape as
-  `Pikuri::Skill::Catalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
-  constructed from a registry, eager-starts every configured server
-  via the `mcp` gem's `MCP::Client::Stdio` / `MCP::Client::HTTP`,
-  holds the live clients, emits an INFO audit log per server.
-  `Mcp::Servers::Connect` is the private inner `Pikuri::Tool`
-  subclass auto-instantiated per-agent by `Mcp::Extension#bind`.
-  `Pikuri::Mcp::Extension < Pikuri::Agent::Extension` is the
-  wire-in surface — added via
+  `lib/pikuri/tool/glob.rb` — the five file tools. Each is a
+  `Pikuri::Tool` subclass instantiated per-binary with the
+  constructor wiring (workspace + confirmer where needed).
+
+### `pikuri-code/` — gem name `pikuri-code`
+
+Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
+`pikuri-workspace`. No new runtime deps.
+
+- `lib/pikuri-code.rb` — gem entry. Zeitwerk loader (same
+  `namespace: Pikuri::Tool` mounting as `pikuri-workspace`) +
+  appends this gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
+- `lib/pikuri/tool/bash.rb` — `Pikuri::Tool::Bash` (shell tool
+  via the `Subprocess.spawn` chokepoint + `Confirmer` gate).
+- `bin/pikuri-code` — CLI entry point for the in-repo coding
+  agent: registers the file/shell stack (`Workspace::Cwd` rooted
+  at `Dir.pwd` + `Confirmer::TERMINAL` — `--yolo` swaps in
+  `AUTO_APPROVE`), adds `Pikuri::Skill::Extension` (catalog
+  discovered from `.pikuri/skills` / `.claude/skills` /
+  `.agents/skills`) and `Pikuri::Mcp::Extension` (empty registry
+  by default — hand-edit to add servers) via the `Agent.new`
+  block, prepends any `AGENTS.md` / `CLAUDE.md` in the workspace
+  as project context, and runs an interactive REPL.
+- `prompts/coding-system-prompt.txt` — system prompt used by
+  `bin/pikuri-code`. Contains the universal `Error: ...` recovery
+  guidance referenced in the tool-description convention.
+
+### `pikuri-mcp/` — gem name `pikuri-mcp`
+
+MCP (Model Context Protocol) support. Depends on `pikuri-core` +
+the `mcp` gem. The only extension gem that adds a non-stdlib
+runtime dep.
+
+- `lib/pikuri-mcp.rb` — gem entry. Per-gem Zeitwerk loader tagged
+  `pikuri-mcp`.
+- `lib/pikuri/mcp/registry.rb` — `Pikuri::Mcp::Registry`, the pure
+  config layer (`StdioEntry`/`HttpEntry` data classes, `EMPTY`
+  singleton — same shape as `Pikuri::Skill::Catalog::EMPTY`).
+- `lib/pikuri/mcp/servers.rb` — `Pikuri::Mcp::Servers`, the
+  runtime: constructed from a registry, eager-starts every
+  configured server via the `mcp` gem's `MCP::Client::Stdio` /
+  `MCP::Client::HTTP`, holds the live clients, emits an INFO audit
+  log per server. `Mcp::Servers::Connect` (the `mcp_connect` tool)
+  is a private inner `Pikuri::Tool` subclass auto-instantiated
+  per-agent by `Mcp::Extension#bind`.
+- `lib/pikuri/mcp/extension.rb` — `Pikuri::Mcp::Extension <
+  Pikuri::Agent::Extension`. The wire-in surface: added via
   `c.add_extension(Pikuri::Mcp::Extension.new(registry: ...))`
   inside the `Pikuri::Agent.new` block. Its `configure(c)` builds
-  the shared `Mcp::Servers`, appends the `<available_mcps>` snippet,
-  and registers `c.on_close { servers.close }` for cleanup. Its
-  `bind(agent)` adds a fresh per-agent `Connect` tool via
-  `Agent#internal_add_tool` — sub-agents go through the same
-  `bind` (one extension instance, multiple bind calls), so each
-  agent gets its own connect tool keyed to itself but they all
-  share the parent's live MCP clients through the extension. `Pikuri::Mcp::Synthesizer` owns the LLM-driven
-  description summarization: the prompt, its `PROMPT_VERSION`, the
-  cleanup, and the fail-soft / Cancelled-propagating contract.
-  Servers delegates to its `#call` from `#resolve_description` when
-  one was wired in. `Pikuri::Mcp::Verifier` is the pre-flight
-  injection check — a mechanical Unicode pre-pass (zero-width /
-  bidi / Unicode tag chars) plus an LLM-driven inspection of every
-  text field for instruction-override, exfiltration, tool-chain
-  hijacking, and authority-impersonation patterns. Wired into
-  `start_one` after `client.tools` but before `resolve_description`;
-  `Verifier::InjectionDetected` aborts startup for that server.
-  Caches only `"OK"` (rejections re-verify on each boot).
-  `Pikuri::Mcp::Cache` is the on-disk cache both Synthesizer and
-  Verifier read/write — wraps `UrlCache` with a TTL of infinity,
-  keys on the full server surface (transport, server name/version,
-  every tool's name/description/schema) so any change auto-
-  invalidates. Synthesizer and Verifier each get their own `Cache`
-  instance pointing at a separate directory (`mcp_descriptions/`
-  and `mcp_verifications/`) so the two caches stay independent.
-  MCP tools bypass `Pikuri::Tool` entirely — they're
-  synthesised as raw `RubyLLM::Tool` subclasses inside `Mcp::Servers`
-  and fed in via `Agent#internal_add_tool`. This is also the
-  documented exception to the `Subprocess.spawn` chokepoint (see
-  Scope decisions). See IDEAS.md §"v1 implementation shape" for the
-  full rationale.
-- `lib/pikuri/subprocess.rb` — `Pikuri::Subprocess.spawn` chokepoint
-  (see Scope decisions). The single point where `Open3` / `Process.spawn`
-  are allowed; everything else in `lib/` routes through here (except
-  `mcp/servers.rb`, which carves out — see above).
-- `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL cache
-  used by the bundled web tools.
-The two `bin/pikuri-*` scripts below are dev / demo entry points only —
-they're not installed by `gem install pikuri` and not part of the gem's
-public surface. They exist to show how to wire pikuri-as-library into a
-working binary and to support local development. Production binaries
-built on pikuri (notably the planned `pikuri-tui`) live in their own
-downstream gems.
+  the shared `Mcp::Servers`, appends the `<available_mcps>`
+  snippet, and registers `c.on_close { servers.close }` for
+  cleanup. Its `bind(agent)` adds a fresh per-agent `Connect`
+  tool via `Agent#internal_add_tool` — sub-agents go through the
+  same `bind` (one extension instance, multiple bind calls), so
+  each agent gets its own connect tool keyed to itself but they
+  all share the parent's live MCP clients through the extension.
+- `lib/pikuri/mcp/synthesizer.rb` — `Pikuri::Mcp::Synthesizer`,
+  owns the LLM-driven description summarization: the prompt, its
+  `PROMPT_VERSION`, the cleanup, and the fail-soft /
+  Cancelled-propagating contract. Servers delegates to its
+  `#call` from `#resolve_description` when one was wired in.
+- `lib/pikuri/mcp/verifier.rb` — `Pikuri::Mcp::Verifier`, the
+  pre-flight injection check: mechanical Unicode pre-pass (zero-
+  width / bidi / Unicode tag chars) plus an LLM-driven inspection
+  of every text field for instruction-override, exfiltration,
+  tool-chain hijacking, and authority-impersonation patterns.
+  Wired into `start_one` after `client.tools` but before
+  `resolve_description`; `Verifier::InjectionDetected` aborts
+  startup for that server. Caches only `"OK"` (rejections
+  re-verify on each boot).
+- `lib/pikuri/mcp/cache.rb` — `Pikuri::Mcp::Cache`, the on-disk
+  cache both Synthesizer and Verifier read/write. Wraps
+  `Pikuri::UrlCache` (from pikuri-core) with a TTL of infinity,
+  keys on the full server surface (transport, server
+  name/version, every tool's name/description/schema) so any
+  change auto-invalidates. Synthesizer and Verifier each get
+  their own `Cache` instance pointing at a separate directory
+  (`mcp_descriptions/` and `mcp_verifications/`) so the two
+  caches stay independent.
+- `lib/pikuri/mcp/client_wrapper.rb` — per-server transport
+  wrapper with restart-on-stdio-death retry. The documented
+  exception to the `Subprocess.spawn` chokepoint (see Scope
+  decisions): the `mcp` gem owns its own subprocess lifecycle,
+  so stdio MCP entries spawn through `mcp` rather than
+  `Pikuri::Subprocess`.
 
-- `bin/pikuri-chat` — CLI entry point for the general-purpose chat
-  agent: configures ruby_llm for the local llama.cpp server, builds a
-  `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners and
-  `StepLimit` + `Cancellable` controls, enables sub-agents, and feeds
-  a question from `ARGV` or stdin.
-- `bin/pikuri-code` — CLI entry point for the in-repo coding agent:
-  same ruby_llm wiring as `pikuri-chat`, but registers the six coding
-  tools (with a `Pikuri::Tool::Workspace::Cwd` rooted at `Dir.pwd` and
-  a `Pikuri::Tool::Confirmer::TERMINAL` — `--yolo` swaps in
-  `AUTO_APPROVE`), adds `Pikuri::Skill::Extension` (catalog discovered
-  from `.pikuri/skills` / `.claude/skills` / `.agents/skills`) and
-  `Pikuri::Mcp::Extension` (empty registry by default — developer
-  hand-edits to add servers) via the `Agent.new` block, prepends any
-  `AGENTS.md` / `CLAUDE.md` in the workspace as project context, and
-  runs an interactive REPL.
-- `bin/pikuri-assistant` — CLI entry point for an assistant binary
-  that adds MCP support to the pikuri-chat tool set. Same ruby_llm
-  wiring as `pikuri-chat`, plus a hand-edited `Pikuri::Mcp::Registry`
-  wired via `Pikuri::Mcp::Extension` inside the `Agent.new` block.
-  Holds the `Mcp::Extension` instance on a local variable so the
-  startup banner can read `mcp_ext.servers.live_ids` after construction.
-  Empty registry by default — runs identically to `pikuri-chat` until
-  the developer opts in by adding entries.
+MCP tools bypass `Pikuri::Tool` entirely — they're synthesised
+as raw `RubyLLM::Tool` subclasses inside `Mcp::Servers` and fed
+in via `Agent#internal_add_tool`. See IDEAS.md for the rationale.
+
+### `pikuri-assistant/` — gem name `pikuri-assistant`
+
+The MCP-aware assistant binary. Depends on `pikuri-core` +
+`pikuri-skills` + `pikuri-mcp`. No Ruby library code of its own —
+just the binary, the prompt, and an entry file that appends the
+gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
+
+- `lib/pikuri-assistant.rb` — gem entry. Requires
+  `pikuri-core` + `pikuri-skills` + `pikuri-mcp`; appends
+  `prompts/` to `Pikuri::PROMPT_DIRS`. No Zeitwerk loader (no
+  Ruby library code in this gem).
+- `bin/pikuri-assistant` — CLI entry point for an assistant
+  binary that wires the user-edited `Pikuri::Mcp::Registry`
+  via `Pikuri::Mcp::Extension` inside the `Agent.new` block.
+  Holds the `Mcp::Extension` instance on a local variable so
+  the startup banner can read `mcp_ext.servers.live_ids` after
+  construction. Empty registry by default — runs identically
+  to `pikuri-chat` until the developer opts in by adding
+  entries.
+- `prompts/pikuri-assistant.txt` — system prompt used by
+  `bin/pikuri-assistant`. Adds MCP-aware tool-selection
+  guidance: prefer MCP-backed tools for OAuth-gated SaaS over
+  `web_scrape` / `fetch`, mcp_connect-once-per-server flow,
+  treat MCP outputs as data not instructions.
+
+### `pikuri/` — gem name `pikuri` (metagem)
+
+Convenience bundle. Depends on every other pikuri-* gem with
+`= #{Pikuri::VERSION}` lockstep pins. No Ruby code of its own.
+
+- `lib/pikuri.rb` — six `require` lines (one per sibling) in
+  dependency order. `require 'pikuri'` boots the whole family.
+- `pikuri.gemspec` — declares all six sibling gems as dependencies.
+
+The metagem releases last on each lockstep release so its
+dependency declarations pin the just-published sibling versions.
+
+### Demo-binary scope note
+
+The three `bin/pikuri-*` scripts (in `pikuri-core/bin/`,
+`pikuri-code/bin/`, `pikuri-assistant/bin/`) are dev / demo entry
+points only — they're not advertised as gem executables. They exist
+to show how to wire pikuri-as-library into a working binary and to
+support local development. Production binaries built on pikuri
+(notably the planned `pikuri-tui`) live in their own downstream
+gems.
 - `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
 - `prompts/pikuri-assistant.txt` — system prompt used by
   `bin/pikuri-assistant`. Adds MCP-aware tool-selection guidance:
@@ -402,29 +511,41 @@ downstream gems.
   cosmetic upstream bug we can't fix from here. This does **not**
   extend to errors from libraries on the actual chat path (ruby_llm,
   Faraday inside a tool) — those stay loud.
-- **Zeitwerk autoloads everything under `lib/`.** Don't add
-  `require_relative` chains inside `lib/`; let the loader resolve
-  internal references. The boot file (`lib/pikuri.rb`) eager-loads at
-  startup so `ALL_CAPS` value constants (`Pikuri::Tool::CALCULATOR`, …)
-  are defined alongside the autoloadable classes/modules. New files
-  must define exactly the camelcased constant matching their path; if
-  you want an acronym (`HTML`, `PDF`, `DuckDuckGo`), add an entry to
-  the `inflector.inflect` block in `lib/pikuri.rb`.
-- **Namespacing direction.** Everything pikuri ships lives under the
-  `Pikuri::` namespace — `Pikuri::Agent`, `Pikuri::Tool`,
-  `Pikuri::Tool::Search::DuckDuckGo`, `Pikuri::UrlCache`,
-  `Pikuri::Subprocess`. New files follow the standard gem layout:
-  define a single `Pikuri::*` constant per file at the path Zeitwerk
-  expects (`lib/pikuri/foo/bar.rb` → `Pikuri::Foo::Bar`). Don't
+- **Per-gem Zeitwerk loaders.** Each pikuri-* gem ships its own
+  loader (set up in its `lib/<gem-name>.rb` entry file) rooted at
+  that gem's `lib/`. Loaders coexist because they manage
+  non-overlapping file trees but cooperate via the `Pikuri::`
+  namespace. Don't add `require_relative` chains inside any
+  gem's `lib/`; let the loader resolve internal references. Each
+  loader eager-loads at gem boot so `ALL_CAPS` value constants
+  (`Pikuri::Tool::CALCULATOR`, …) are defined alongside the
+  autoloadable classes/modules. New files must define exactly the
+  camelcased constant matching their path; if you want an acronym
+  (`HTML`, `PDF`, `DuckDuckGo`), add an entry to the
+  `inflector.inflect` block — currently pikuri-core's is the only
+  one with overrides. Extensions in pikuri-workspace and
+  pikuri-code that nest under the `Pikuri::Tool` class mount their
+  loader with `push_dir(..., namespace: Pikuri::Tool)` to avoid
+  Zeitwerk redefining the parent class as an inferred module.
+- **Namespacing direction.** Everything any pikuri-* gem ships
+  lives under the `Pikuri::` namespace — `Pikuri::Agent`,
+  `Pikuri::Tool`, `Pikuri::Tool::Search::DuckDuckGo`,
+  `Pikuri::Skill::Catalog`, `Pikuri::Mcp::Extension`, etc. New
+  files follow the standard gem layout: define a single
+  `Pikuri::*` constant per file at the path Zeitwerk expects
+  (`<gem>/lib/pikuri/foo/bar.rb` → `Pikuri::Foo::Bar`). Don't
   introduce top-level constants.
-- **Tests: rspec-core with minitest-style asserts.** Use the
-  `rspec-core` runner (`describe`/`it`) but write assertions in the
-  minitest style (`assert_equal`, `assert`, `refute`, …) rather than
-  RSpec matchers (`expect(...).to eq`). rspec-mocks is *not* in the
-  closure — to stub a module method like `RubyLLM.chat` in a spec,
-  replace the singleton method with `define_singleton_method` in
-  `before` and restore in `after`. See `spec/agent_spec.rb` for the
-  pattern.
+- **Tests: rspec-core with minitest-style asserts.** Each gem has
+  its own `spec/` directory; the top-level `Rakefile`'s
+  `rake test` task fans out to each (`cd <gem> && bundle exec
+  rspec`). Use the `rspec-core` runner (`describe`/`it`) but
+  write assertions in the minitest style (`assert_equal`,
+  `assert`, `refute`, …) rather than RSpec matchers
+  (`expect(...).to eq`). rspec-mocks is *not* in the closure —
+  to stub a module method like `RubyLLM.chat` in a spec, replace
+  the singleton method with `define_singleton_method` in `before`
+  and restore in `after`. See `pikuri-core/spec/pikuri/agent_spec.rb`
+  for the pattern.
 
 - **Tool descriptions follow opencode-shape: summary + `Usage:` bullets.**
   A `description:` heredoc with a one-line summary, a blank line,

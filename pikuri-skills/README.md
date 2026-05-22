@@ -1,0 +1,40 @@
+# pikuri-skills
+
+[Agent Skills standard](https://agentskills.io/specification)
+support for the [pikuri](https://codeberg.org/mvysny/pikuri)
+AI-assistant toolkit.
+
+Provides:
+- `Pikuri::Skill::Catalog` — discovery + validation of skill folders
+  under `.pikuri/skills`, `.claude/skills`, `.agents/skills` (project
+  + global). Walks from CWD up to the git root.
+- `Pikuri::Skill::SkillTool` — the loading tool the LLM uses to pull
+  a skill's body into the conversation on demand.
+- `Pikuri::Skill::Extension` — wires both into a `Pikuri::Agent` via
+  the `c.add_extension(...)` block API.
+
+## Install
+
+```ruby
+# Gemfile
+gem 'pikuri-skills'
+```
+
+## Usage
+
+```ruby
+require 'pikuri-core'
+require 'pikuri-skills'
+
+catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
+
+agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
+  c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))
+end
+```
+
+When the catalog is non-empty, the extension's `configure` appends
+`<available_skills>` to the system prompt (listing every discovered
+skill) and registers the `skill` tool. The LLM invokes `skill` with a
+name; the tool returns the skill's body wrapped with its base
+directory so the LLM can resolve sidecar files via `read`.

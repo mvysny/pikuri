@@ -1,11 +1,32 @@
 # pikuri
 
-A small Ruby AI assistant you run on your own machine. `bin/pikuri-chat`
-is a general-purpose chatbot with a calculator, web search, web
-scraping, and a fetch tool — wired by default to a
+A small Ruby AI assistant you run on your own machine, shipped as a
+family of seven gems in a monorepo. `pikuri-chat` (in
+[`pikuri-core/bin/`](pikuri-core/bin/pikuri-chat)) is a
+general-purpose chatbot with a calculator, web search, web scraping,
+and a fetch tool — wired by default to a
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server running
 locally, so the conversation never leaves your computer unless the
 model itself decides to call a tool.
+
+## What's in this repo
+
+```
+pikuri/                  ← repo root
+├── pikuri-core/         ← Agent, Tool framework, web tools, bin/pikuri-chat
+├── pikuri-skills/       ← Agent Skills standard implementation
+├── pikuri-workspace/    ← Workspace + Confirmer + Read/Write/Edit/Grep/Glob
+├── pikuri-code/         ← Bash + bin/pikuri-code
+├── pikuri-mcp/          ← Model Context Protocol support
+├── pikuri-assistant/    ← MCP-aware bin/pikuri-assistant
+└── pikuri/              ← convenience metagem (pulls in all six)
+```
+
+Each subdirectory is its own gem with its own `.gemspec`, `lib/`,
+`spec/`, and (where relevant) `bin/` + `prompts/`. See each gem's
+README for its surface and usage. The top-level `Rakefile`
+fans out tests (`bundle exec rake test`) across every gem and
+orchestrates lockstep releases (`rake release VERSION=x.y.z`).
 
 ## Quick start
 
@@ -18,7 +39,7 @@ sudo apt install ruby ruby-bundler
 
 bundle install
 
-./bin/pikuri-chat "What is 17 * 23?"
+./pikuri-core/bin/pikuri-chat "What is 17 * 23?"
 ```
 
 The first run won't get far — pikuri-chat needs a model behind it. See
@@ -28,14 +49,28 @@ asking your first question.
 
 ## Using pikuri as a library
 
-Pikuri is shipped as a Ruby gem you can use in your own project. The
-recommended path: **first** play with `bin/pikuri-chat`, inspect the
+Pikuri ships as a family of gems you can use in your own project.
+The recommended path: **first** play with `pikuri-chat`, inspect the
 sources, get a feel for the shape — *then* pull pikuri into your
-project as a library:
+project as a library.
+
+Privacy-conscious users with a minimal dep tree to audit should
+install just the lean core + the extensions they need:
 
 ```ruby
 # In your Gemfile
-gem 'pikuri'
+gem 'pikuri-core'                                 # mandatory base
+gem 'pikuri-skills'                               # Agent Skills standard
+gem 'pikuri-mcp'                                  # MCP support (adds `mcp` dep)
+gem 'pikuri-workspace'                            # file tools + Workspace/Confirmer
+gem 'pikuri-code'                                 # Bash + bin/pikuri-code
+gem 'pikuri-assistant'                            # bin/pikuri-assistant
+```
+
+For the "I want everything" case, install the convenience metagem:
+
+```ruby
+gem 'pikuri'                                      # pulls in all six above
 ```
 
 A minimal wiring — single agent, default `llama.cpp` transport, the
@@ -43,7 +78,7 @@ bundled calculator + web-search tools, the same system prompt
 `pikuri-chat` uses:
 
 ```ruby
-require 'pikuri'
+require 'pikuri-core'  # use 'pikuri' if you installed the metagem
 
 RubyLLM.configure do |c|
   c.openai_api_base = 'http://localhost:8080/v1'  # llama.cpp default
@@ -67,11 +102,13 @@ agent = Pikuri::Agent.new(
 agent.run_loop(user_message: 'What is 17 * 23?')
 ```
 
-`bin/pikuri-chat` and `bin/pikuri-code` in this repo are the canonical
-working examples — they're dev/demo scripts (not installed by
-`gem install pikuri`), but they're the easiest place to crib wiring
-from. The bundled system prompts under `prompts/` are loadable as a
-starting point via `Pikuri.prompt(name)`.
+`pikuri-core/bin/pikuri-chat`, `pikuri-code/bin/pikuri-code`, and
+`pikuri-assistant/bin/pikuri-assistant` in this repo are the
+canonical working examples — they're dev/demo scripts (not
+installed by `gem install pikuri-*`), but they're the easiest place
+to crib wiring from. Each gem's bundled system prompts under its
+own `prompts/` are loadable as a starting point via
+`Pikuri.prompt(name)`.
 
 ## Why this exists
 
@@ -129,7 +166,7 @@ Run it from the root of the repo you want it to work in:
 
 ```sh
 cd ~/code/your-project
-/path/to/pikuri/bin/pikuri-code
+/path/to/pikuri/pikuri-code/bin/pikuri-code
 ```
 
 You'll land in a REPL — type a request at the `>` prompt, hit enter,
@@ -138,7 +175,7 @@ code to satisfy it. Ctrl+D (or Ctrl+C) exits. You can also pass an
 initial message on the command line:
 
 ```sh
-/path/to/pikuri/bin/pikuri-code "find the failing spec and fix it"
+/path/to/pikuri/pikuri-code/bin/pikuri-code "find the failing spec and fix it"
 ```
 
 The first time the agent wants to write a file or run a shell command,
@@ -189,5 +226,14 @@ stuff. TODO implemented in the future.
 ## Tests
 
 ```sh
-bundle exec rspec
+bundle exec rake test
+```
+
+`rake test` fans out `rspec` across every gem in the monorepo
+(`pikuri-core/spec/`, `pikuri-skills/spec/`, etc.) — same shape
+Rails (rails/rails) uses for its multi-gem monorepo. To run a
+single gem's specs in isolation:
+
+```sh
+cd pikuri-core && bundle exec rspec
 ```

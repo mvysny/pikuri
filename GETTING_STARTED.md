@@ -24,7 +24,7 @@ That installs all the gems pikuri needs (`ruby_llm`, `faraday`,
 ## 2. Try to run pikuri-chat (and watch it fail)
 
 ```sh
-./bin/pikuri-chat "Hello"
+./pikuri-core/bin/pikuri-chat "Hello"
 ```
 
 You'll see a connection error. That's expected — pikuri-chat ships
@@ -50,7 +50,7 @@ package it, follow the build instructions at
 
 ## 4. Start the model
 
-The model `bin/pikuri-chat` is wired for is `unsloth/Qwen3.6-35B-A3B-GGUF`
+The model `pikuri-core/bin/pikuri-chat` is wired for is `unsloth/Qwen3.6-35B-A3B-GGUF`
 — a mixture-of-experts model from the Qwen series, quantized by the
 folks at Unsloth so it fits in regular hardware. `llama-server` can
 download it from Hugging Face for you on first run:
@@ -82,18 +82,18 @@ See `llama-server --help` and the
 for tuning options (`-t` for thread count, `-ngl N` for partial GPU
 offload, `--mlock`, and friends).
 
-The server binds to `127.0.0.1:8080` by default, and `bin/pikuri-chat`
+The server binds to `127.0.0.1:8080` by default, and `pikuri-core/bin/pikuri-chat`
 is wired to `http://localhost:8080/v1` — so if you're running both on
 the same machine, no further configuration is needed. If your
 `llama-server` lives on another host, edit the `openai_api_base`
-string near the top of `bin/pikuri-chat` to match.
+string near the top of `pikuri-core/bin/pikuri-chat` to match.
 
 ## 5. Talk to it
 
 In a second terminal, leaving `llama-server` running:
 
 ```sh
-./bin/pikuri-chat
+./pikuri-core/bin/pikuri-chat
 ```
 
 You'll get a `>` prompt. Try something the model can't answer from
@@ -138,9 +138,9 @@ with nothing else in the way, the sister project
 written exactly for that. Pikuri uses the same shape, just wrapped in
 tools, listeners, and sub-agents.
 
-## What tools `bin/pikuri-chat` ships with
+## What tools `pikuri-core/bin/pikuri-chat` ships with
 
-Four tools, all defined in `lib/pikuri/tool/` and wired in `bin/pikuri-chat`:
+Four tools, all defined in `pikuri-core/lib/pikuri/tool/` and wired in `pikuri-core/bin/pikuri-chat`:
 
 - **`calculator`** — evaluates an arithmetic expression with Dentaku.
   Local, no network.
@@ -163,7 +163,7 @@ the main context.
 ## Search providers and their privacy trade-offs
 
 `web_search` is a cascade across whichever providers you have
-configured. The orchestration lives in `lib/pikuri/tool/search/engines.rb`;
+configured. The orchestration lives in `pikuri-core/lib/pikuri/tool/search/engines.rb`;
 each provider's privacy posture is documented in detail at the top of
 its source file.
 
@@ -178,7 +178,7 @@ web results, so the *query content* still reaches Microsoft for
 fulfillment, even though identifying info is stripped on the way out.
 
 Good enough for everyday curiosity. See
-`lib/pikuri/tool/search/duckduckgo.rb` for the full write-up.
+`pikuri-core/lib/pikuri/tool/search/duckduckgo.rb` for the full write-up.
 
 ### Brave Search API (recommended for sensitive queries)
 
@@ -194,11 +194,11 @@ the key before starting pikuri:
 
 ```sh
 export BRAVE_SEARCH_API_KEY=your-key-here
-./bin/pikuri-chat
+./pikuri-core/bin/pikuri-chat
 ```
 
 Once the env var is set, Brave joins the cascade and may be chosen
-over DuckDuckGo for any given query. See `lib/pikuri/tool/search/brave.rb`.
+over DuckDuckGo for any given query. See `pikuri-core/lib/pikuri/tool/search/brave.rb`.
 
 ### Exa (paid, weakest privacy)
 
@@ -209,7 +209,7 @@ submit, and their privacy policy explicitly says queries are used for
 training. Don't enable Exa if your search history would be
 embarrassing or sensitive in a training set.
 
-See `lib/pikuri/tool/search/exa.rb` for the full privacy posture.
+See `pikuri-core/lib/pikuri/tool/search/exa.rb` for the full privacy posture.
 
 ### Recommended setup for best privacy
 
