@@ -5,22 +5,20 @@
 # pushes each to rubygems.org — same shape Rails (rails/rails) uses
 # for its multi-gem monorepo.
 #
-# Gem list grows as Phase 2 of the gem-split refactor lands more
-# extractions. Each entry maps directory name → gem name. The two
-# are usually identical (e.g. pikuri-skills/ → pikuri-skills); the
-# core gem is the one exception (pikuri-core/ → pikuri-core, but the
-# convenience metagem at pikuri/ is also named +pikuri+).
-GEMS = {
-  'pikuri-core'      => 'pikuri-core',
-  'pikuri-skills'    => 'pikuri-skills',
-  'pikuri-mcp'       => 'pikuri-mcp',
-  'pikuri-workspace' => 'pikuri-workspace',
-  'pikuri-code'      => 'pikuri-code',
-  'pikuri-assistant' => 'pikuri-assistant',
-  # Metagem — released last so its dependency declarations pin the
-  # versions just published by the prior six.
-  'pikuri'           => 'pikuri'
-}.freeze
+# Directory names of every gem in the monorepo, in release order.
+# Each name doubles as the gem name — every gemspec inside <name>/
+# has +spec.name = '<name>'+. The metagem +pikuri+ lives last so
+# its dependency declarations pin the versions just published by
+# the prior six.
+GEMS = %w[
+  pikuri-core
+  pikuri-skills
+  pikuri-mcp
+  pikuri-workspace
+  pikuri-code
+  pikuri-assistant
+  pikuri
+].freeze
 
 # Path to the single source of truth for the shared version constant.
 # Every release bumps this one file; the per-gem gemspec files all
@@ -33,7 +31,7 @@ VERSION_FILE = File.expand_path('pikuri-core/lib/pikuri/version.rb', __dir__).fr
 desc 'Run specs across every gem in the monorepo'
 task :test do
   failed = []
-  GEMS.each_key do |dir|
+  GEMS.each do |dir|
     next unless Dir.exist?(File.join(dir, 'spec'))
 
     puts "\n==> #{dir}"
@@ -79,7 +77,7 @@ task :release do
   system('git', 'add', VERSION_FILE) || raise('git add failed')
   system('git', 'commit', '-m', "v#{version}") || raise('git commit failed')
 
-  GEMS.each_key do |dir|
+  GEMS.each do |dir|
     puts "\n==> Building + pushing #{dir}"
     Dir.chdir(dir) do
       system('rm', '-f', *Dir.glob('*.gem'))
