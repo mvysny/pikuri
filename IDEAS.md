@@ -43,69 +43,6 @@ in scope of the design exercise, considered, and left out on purpose.
   `old_string` → `new_string` per call. opencode bundles batch edits.
   Wait until the cost of separate calls becomes obvious in practice.
 
-## MCP support
-
-Shipped per the analysis below — code lives under `lib/pikuri/mcp/`,
-`bin/pikuri-assistant`, and `prompts/pikuri-assistant.txt`; the
-as-built architecture is documented in CLAUDE.md's Layout section + the
-"Subprocess seam" carve-out. The notes that follow are the *why* — the
-design constraints and the alternatives considered and parked. The
-"what / how" was deleted from this file once it was implemented; the
-code and CLAUDE.md are now the authoritative description of that.
-
-### Does pikuri need MCP at all?
-
-Two answers depending on which binary:
-
-- **`pikuri-code`: probably no, ever.** The coding-agent surface is
-  well-served by skills + CLI tools, which is exactly what
-  [PI's "what if you don't need MCP?" post](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
-  argues for. Zechner's numbers are damning for the coding-agent case:
-  Playwright MCP eats 13.7k tokens of schema (6.8% of Claude's window),
-  Chrome DevTools MCP 18.0k (9.0%); a 225-token README pointing at a
-  CLI script delivers the same capability with 60× less context. MCP
-  output also has to round-trip through the agent's context every
-  time, so chaining "list emails → grep → extract" pays the tax three
-  times where shell pipes pay it once. For files / browsers /
-  databases / scrapers, skills win on tokens, composability, and
-  maintainability (a CLI tool's surface area is its argv).
-- **`pikuri-assistant`: yes, eventually.** OAuth-gated SaaS (Gmail,
-  Calendar, GitHub, Slack, Linear, Notion, Drive, …) is where MCP
-  genuinely earns its keep. Someone else already did the OAuth
-  dance — refresh tokens, consent screens, redirect URIs on 127.0.0.1 —
-  and packaged it as tools. Rewriting that per-provider would be a
-  different sport from writing a CLI scraper. Zechner's post never
-  engages with this category; he picks easy targets (browser
-  automation is the *worst* MCP use case and the most
-  over-represented).
-
-### Federated envelope (alternative pattern, parked)
-
-Instead of registering N gmail tools individually, register one
-`mcp_call(server, tool, args)` envelope whose *description* is
-dynamic. Adding a server appends to the envelope's description rather
-than adding new schemas. Sidesteps the "model remembers past schemas"
-problem because there never was a per-tool schema. Trade-offs: weaker
-provider-side validation, extra round-trip for the model to learn
-each tool's exact args. Probably not v1, but worth keeping in mind if
-the per-tool registration approach starts hurting.
-
-## Gem split
-
-Shipped — pikuri now lives as a seven-gem Rails-shape monorepo
-(`pikuri-core`, `pikuri-skills`, `pikuri-workspace`, `pikuri-code`,
-`pikuri-mcp`, `pikuri-assistant`, plus the `pikuri` metagem) with
-lockstep versioning driven from the top-level `Rakefile`. The
-Extension protocol (`Pikuri::Agent::Configurator` +
-`Pikuri::Agent::Extension`) is in place and MCP / Skills wire
-through it via the `Agent.new { |c| c.add_extension(...) }` block;
-`Agent#close` + a single agent-level `at_exit` replaces the
-per-subsystem cleanup that lived here originally. The as-built
-architecture is documented in CLAUDE.md's Layout section; the
-detailed design notes that lived here were deleted once they
-shipped — the code and CLAUDE.md are now the authoritative
-description.
-
 ## Workspace v2
 
 Plans recorded in `lib/pikuri/tool/workspace.rb`'s "Future extensions" RDoc
