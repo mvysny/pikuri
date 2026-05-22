@@ -82,18 +82,20 @@ RSpec.describe Pikuri::Tool::SubAgent do
   # stubbed in the outer +before+. Each spec uses this to get an +Agent+
   # the factory can read +transport+ / +system_prompt+ / +tools+ /
   # +listeners+ / +step_limit+ / +cancellable+ / +context_window_cap+ /
-  # +name+ off of.
-  def build_parent(system_prompt: 'sp', tools: [], listeners: parent_listeners,
+  # +name+ off of. Tools and listeners are wired through the Configurator
+  # block, since the ctor no longer accepts them as kwargs.
+  def build_parent(system_prompt: 'sp', tools: [], listeners: nil,
                    step_limit: nil, cancellable: nil, name: '')
     Pikuri::Agent.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt: system_prompt,
-      tools: tools,
-      listeners: listeners,
       step_limit: step_limit,
       cancellable: cancellable,
       name: name
-    )
+    ) do |c|
+      c.add_tools(tools)
+      c.add_listeners(listeners || parent_listeners)
+    end
   end
 
   describe 'tool shape' do
@@ -152,9 +154,9 @@ RSpec.describe Pikuri::Tool::SubAgent do
     def with_captured_agent_new
       received = []
       original_new = Pikuri::Agent.method(:new)
-      Pikuri::Agent.define_singleton_method(:new) do |**kwargs|
+      Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
         received << kwargs
-        original_new.call(**kwargs).tap do |a|
+        original_new.call(**kwargs, &block).tap do |a|
           a.define_singleton_method(:run_loop)               { |**_| nil }
           a.define_singleton_method(:last_assistant_content) { 'sub reply' }
         end
@@ -162,7 +164,7 @@ RSpec.describe Pikuri::Tool::SubAgent do
       begin
         yield received
       ensure
-        Pikuri::Agent.define_singleton_method(:new) { |**kw| original_new.call(**kw) }
+        Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
       end
     end
 
@@ -189,22 +191,23 @@ RSpec.describe Pikuri::Tool::SubAgent do
       end
     end
 
-    it 'threads the generated name to listeners.for_sub_agent' do
-      # Spy that records every for_sub_agent call's kwargs. Returns
-      # itself so the +execute+ lambda's downstream Agent.new call
-      # gets a working ListenerList-shaped object. Satisfies the
-      # ListenerList duck-type (emit + for_sub_agent).
+    it 'threads the generated name to each listener.for_sub_agent via ListenerList#for_sub_agent' do
+      # Spy listener that records every for_sub_agent call's kwargs.
+      # Wrapped in a real ListenerList — the parent agent always
+      # builds one — so the dispatch goes
+      # ListenerList#for_sub_agent → spy listener#for_sub_agent.
       recorded = []
-      spy = Class.new do
+      spy_listener = Class.new do
         define_method(:initialize) { |out| @out = out }
-        def emit(_); end
+        def on_event(_); end
         define_method(:for_sub_agent) do |**params|
           @out << params
           self
         end
       end.new(recorded)
 
-      tool = Pikuri::Tool::SubAgent.new(build_parent(listeners: spy), max_steps: 7)
+      parent_list = Pikuri::Agent::ListenerList.new([spy_listener])
+      tool = Pikuri::Tool::SubAgent.new(build_parent(listeners: parent_list), max_steps: 7)
 
       with_captured_agent_new do |_|
         tool.run('task' => 'go')

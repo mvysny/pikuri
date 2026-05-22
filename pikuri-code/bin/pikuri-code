@@ -123,30 +123,26 @@ begin
       assume_model_exists: true
     ),
     system_prompt: system_prompt,
-    # File/shell tools first (declaration order biases some models toward
-    # earlier tools, and this is the coding-relevant set); web + calculator
-    # last as auxiliary. The `skill` tool, when the catalog is non-empty,
-    # is appended by Agent itself — see Agent#initialize.
-    tools: [
-      Pikuri::Tool::Read.new(workspace: workspace),
-      Pikuri::Tool::Grep.new(workspace: workspace),
-      Pikuri::Tool::Glob.new(workspace: workspace),
-      Pikuri::Tool::Edit.new(workspace: workspace),
-      Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer),
-      Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer),
-      Pikuri::Tool::WEB_SEARCH,
-      Pikuri::Tool::WEB_SCRAPE,
-      Pikuri::Tool::FETCH,
-      Pikuri::Tool::CALCULATOR
-    ],
-    listeners: Pikuri::Agent::ListenerList.new([
-      Pikuri::Agent::Listener::Terminal.new,
-      Pikuri::Agent::Listener::TokenLog.new
-    ]),
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
     cancellable: cancel_flag,
     llama_probe_url: llama_probe_url
   ) do |c|
+    c.add_listener Pikuri::Agent::Listener::Terminal.new
+    c.add_listener Pikuri::Agent::Listener::TokenLog.new
+    # File/shell tools first (declaration order biases some models toward
+    # earlier tools, and this is the coding-relevant set); web + calculator
+    # last as auxiliary. The `skill` tool, when the catalog is non-empty,
+    # is appended by the Skill::Extension below.
+    c.add_tool Pikuri::Tool::Read.new(workspace: workspace)
+    c.add_tool Pikuri::Tool::Grep.new(workspace: workspace)
+    c.add_tool Pikuri::Tool::Glob.new(workspace: workspace)
+    c.add_tool Pikuri::Tool::Edit.new(workspace: workspace)
+    c.add_tool Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
+    c.add_tool Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer)
+    c.add_tool Pikuri::Tool::WEB_SEARCH
+    c.add_tool Pikuri::Tool::WEB_SCRAPE
+    c.add_tool Pikuri::Tool::FETCH
+    c.add_tool Pikuri::Tool::CALCULATOR
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
     c.add_extension Pikuri::Mcp::Extension.new(
       registry: mcp_registry,

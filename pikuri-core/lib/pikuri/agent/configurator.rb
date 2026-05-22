@@ -140,12 +140,37 @@ module Pikuri
         nil
       end
 
+      # Append several tools at once. Equivalent to calling {#add_tool}
+      # for each element of +tools+; declaration order is preserved.
+      # Sole intended caller today is {Tool::SubAgent}, which seeds a
+      # sub-agent's Configurator from the parent's tool snapshot.
+      #
+      # @param tools [Enumerable<Tool>]
+      # @return [void]
+      def add_tools(tools)
+        tools.each { |t| @tools << t }
+        nil
+      end
+
       # Append a listener to the agent's listener list.
       #
       # @param listener [Listener::Base]
       # @return [void]
       def add_listener(listener)
         @listeners << listener
+        nil
+      end
+
+      # Append several listeners at once. Accepts any enumerable
+      # (Array, {ListenerList}, …); declaration order is preserved.
+      # Sole intended caller today is {Tool::SubAgent}, which seeds a
+      # sub-agent's Configurator from the parent's listener list (run
+      # through {ListenerList#for_sub_agent}).
+      #
+      # @param listeners [Enumerable<Listener::Base>]
+      # @return [void]
+      def add_listeners(listeners)
+        listeners.each { |l| @listeners << l }
         nil
       end
 

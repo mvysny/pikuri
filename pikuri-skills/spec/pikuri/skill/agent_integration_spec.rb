@@ -81,7 +81,8 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
 
   it 'appends the catalog block to the system prompt when the extension is added' do
     agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                              system_prompt: 'base', tools: [], listeners: listeners) do |c|
+                              system_prompt: 'base') do |c|
+      c.add_listeners(listeners)
       c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
     end
 
@@ -95,7 +96,8 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
 
   it 'auto-registers a Pikuri::Skill::SkillTool bound to the catalog when the extension is added' do
     agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                              system_prompt: 'base', tools: [], listeners: listeners) do |c|
+                              system_prompt: 'base') do |c|
+      c.add_listeners(listeners)
       c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
     end
 
@@ -111,13 +113,13 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
     assert result.include?('do the thing'), result
   end
 
-  # The kwarg-based "manual SkillTool in tools: alongside the
-  # extension" conflict is intentionally not validated by Skill::
-  # Extension: detecting it would require the extension to read the
-  # agent's full @tools list, but at +configure+ time only the
-  # Configurator's own additions are visible. The block-API conflict
-  # detection (c.add_tool followed by c.add_extension) lives in
-  # spec/pikuri/skill/extension_spec.rb. Users who pass
-  # +tools: [SkillTool.new]+ alongside the extension end up with two
-  # skill-named tools on the chat — ruby_llm's behavior, not pikuri's.
+  # The "manual SkillTool added alongside the extension" conflict is
+  # intentionally not validated by Skill::Extension: detecting it
+  # would require the extension to read the agent's full @tools list,
+  # but at +configure+ time only the Configurator's own additions are
+  # visible. The block-API conflict detection (c.add_tool followed by
+  # c.add_extension) lives in spec/pikuri/skill/extension_spec.rb.
+  # Users who call +c.add_tool(SkillTool.new)+ alongside the extension
+  # end up with two skill-named tools on the chat — ruby_llm's
+  # behavior, not pikuri's.
 end

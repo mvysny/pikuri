@@ -106,19 +106,27 @@ module Pikuri
             idx = sub_counter
             sub_counter += 1
             sub_name = parent_name.empty? ? "sub_agent #{idx}" : "#{parent_name}_#{idx}"
+            sub_listeners = listeners.for_sub_agent(name: sub_name)
 
+            # Tools and listeners are seeded via the Configurator
+            # block — the main-agent API only exposes one wiring
+            # path. Extensions arrive pre-configured via the
+            # +extensions:+ kwarg so the sub-agent re-binds them
+            # without re-running +configure+ on the parent's snippet
+            # contributions.
             sub = Agent.new(
               transport: transport,
               system_prompt: system_prompt,
-              tools: sub_tools,
-              listeners: listeners.for_sub_agent(name: sub_name),
               step_limit: parent_step_limit&.for_sub_agent(max_steps: max_steps),
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
               name: sub_name,
               extensions: inherited_exts,
               streaming: streaming
-            )
+            ) do |c|
+              c.add_tools(sub_tools)
+              c.add_listeners(sub_listeners)
+            end
             begin
               sub.run_loop(user_message: task)
               sub.last_assistant_content

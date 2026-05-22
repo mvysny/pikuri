@@ -33,6 +33,18 @@ module Pikuri
         @listeners.each { |l| l.on_event(event) }
       end
 
+      # Iterate over the wrapped listeners in registration order. The
+      # method exists so a ListenerList can be passed directly to
+      # {Configurator#add_listeners} (used by {Tool::SubAgent} when
+      # seeding a sub-agent's Configurator from the parent's list).
+      #
+      # @yield [listener]
+      # @yieldparam listener [Listener::Base]
+      # @return [Enumerator] when no block given
+      def each(&block)
+        @listeners.each(&block)
+      end
+
       # Return a new {ListenerList} in which every listener has been
       # asked for its sub-agent variant. Each listener that defines
       # +for_sub_agent(**params)+ receives the forwarded +params+
@@ -65,11 +77,10 @@ module Pikuri
       end
 
       # Return a new {ListenerList} containing this list's listeners
-      # plus the given extras, in order. Used by {Agent#initialize}
-      # to merge listeners contributed inside the +Agent.new+ block
-      # (via {Configurator#add_listener}) onto the ones passed via
-      # the +listeners:+ kwarg. Returns +self+ when +extras+ is
-      # empty so the common no-op case allocates nothing.
+      # plus the given extras, in order. Used by {Synthesizer} and
+      # other internal consumers to derive a list from an existing
+      # one. Returns +self+ when +extras+ is empty so the common
+      # no-op case allocates nothing.
       #
       # @param extras [Array<Listener::Base>] listeners to append
       # @return [ListenerList]

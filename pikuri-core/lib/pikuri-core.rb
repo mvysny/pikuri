@@ -33,8 +33,8 @@ require_relative 'pikuri/version'
 # +Pikuri::Tool::FETCH+) are +ALL_CAPS+ value constants rather than
 # classes/modules, and Zeitwerk only auto-loads constants that match
 # its filename-↔-CamelCase convention. Eager-loading at boot guarantees
-# the files defining those values run, so the bin script can splat them
-# straight into +Pikuri::Agent.new(tools: [...])+ without per-file
+# the files defining those values run, so the bin script can drop them
+# straight into the +Agent.new+ block via +c.add_tool+ without per-file
 # +require+ ceremony. The cost is a few milliseconds of startup —
 # negligible compared to a single LLM round-trip.
 module Pikuri

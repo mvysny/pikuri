@@ -88,7 +88,8 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
       Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
     ])
     agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                              system_prompt: 's', tools: [], listeners: listeners) do |c|
+                              system_prompt: 's') do |c|
+      c.add_listeners(listeners)
       c.add_extension(Pikuri::Mcp::Extension.new(registry: registry))
     end
     yield agent, tracker
@@ -115,8 +116,10 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
         # Simulate a sub-agent constructed via Tool::SubAgent.execute —
         # gets parent's extensions, no extension of its own.
         sub = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', tools: [], listeners: listeners,
-                                extensions: parent.extensions)
+                                system_prompt: 's',
+                                extensions: parent.extensions) do |c|
+          c.add_listeners(listeners)
+        end
 
         sub.close
         assert_equal 0, tracker.close_calls, 'sub-agent close must not close shared servers'

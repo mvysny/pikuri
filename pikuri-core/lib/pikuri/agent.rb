@@ -300,18 +300,10 @@ module Pikuri
     #   +RubyLLM::ModelNotFoundError+). If +transport.model+ is
     #   +nil+, it's filled in from +RubyLLM.config.default_model+.
     # @param system_prompt [String] system message prepended to
-    #   the chat
-    # @param tools [Array<Tool>] pikuri tools registered with the
-    #   underlying chat in declaration order. Each is converted
-    #   to ruby_llm's runtime shape via {Tool#to_ruby_llm_tool}
-    #   when wired in. Required — no default, because the tool
-    #   set is a deliberate per-call decision (pass +[]+ for a
-    #   tools-free agent).
-    # @param listeners [ListenerList] the listener list whose
-    #   listeners observe the event stream. Required — no
-    #   default, because the renderer and capture choices are
-    #   deliberate per-call decisions. Typical CLI shape:
-    #   +ListenerList.new([Listener::Terminal.new, Listener::TokenLog.new])+.
+    #   the chat. Extensions append their advertisement blocks
+    #   (e.g. +<available_skills>+, +<available_mcps>+) onto this
+    #   base via {Configurator#append_system_prompt} during the
+    #   block.
     # @param step_limit [Control::StepLimit, nil] step budget
     #   control. When set, {Control::StepLimit#tick!} fires on
     #   every +before_tool_call+ and {Control::StepLimit#reset!}
@@ -353,10 +345,11 @@ module Pikuri
     #   exclusively by {Tool::SubAgent.execute} when spawning a
     #   child; the child Agent calls +bind(self)+ on each but does
     #   NOT re-run +configure+ — the parent already drove configure,
-    #   and the resulting state (tools / snippets / listeners) was
-    #   inherited verbatim through the explicit kwargs (+tools:+,
-    #   +system_prompt:+, +listeners:+). Main-agent callers leave
-    #   this +nil+ and use the +Agent.new+ block's
+    #   and the resulting state (tools / snippets / listeners) is
+    #   inherited verbatim by seeding the sub-agent's block with
+    #   {Configurator#add_tools} / {Configurator#add_listeners} and
+    #   threading the already-augmented +system_prompt+. Main-agent
+    #   callers leave this +nil+ and use the +Agent.new+ block's
     #   {Configurator#add_extension} for any extensions they want
     #   (Skills, MCP, custom hosts).
     # @param streaming [Boolean] opt into chunk-level streaming.
@@ -370,26 +363,30 @@ module Pikuri
     #   bookends fire from +after_message+. Read by
     #   {Tool::SubAgent} so spawned sub-agents inherit the same
     #   mode without an extra kwarg.
+    # @yield [Configurator] yields a {Configurator} that collects
+    #   tools (via {Configurator#add_tool} / {Configurator#add_tools}),
+    #   listeners (via {Configurator#add_listener} /
+    #   {Configurator#add_listeners}), system-prompt snippets (via
+    #   {Configurator#append_system_prompt}), extension instances
+    #   (via {Configurator#add_extension} — which fires +configure+
+    #   immediately), close handlers (via {Configurator#on_close}),
+    #   and an optional +sub_agent+ tool (via
+    #   {Configurator#allow_sub_agent}). The Configurator is the
+    #   *only* path for adding any of these — there are no parallel
+    #   ctor kwargs. The block is optional; an agent constructed
+    #   without one has no tools, no listeners, no extensions.
     # @return [Agent]
-    def initialize(transport:, system_prompt:, tools: [], listeners: nil,
+    def initialize(transport:, system_prompt:,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    streaming: false,
                    extensions: nil,
                    &block)
-      # +listeners:+ used to be required; with the block API it
-      # defaults to an empty +ListenerList+ so the new shape
-      # (+Agent.new(transport: ..., system_prompt: ...) { |c|
-      # c.add_listener(...) }+) doesn't need the kwarg.
-      listeners ||= ListenerList.new([])
-
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
       @closed = false
 
       @system_prompt = system_prompt
-      @tools = tools.dup
-      @listeners = listeners
       @step_limit = step_limit
       @interloper = interloper
       @name = name
@@ -398,15 +395,17 @@ module Pikuri
       @on_close_handlers = []
       # Inherited extensions arrive pre-configured (the parent
       # already drove +configure+ and the resulting tools / snippets
-      # / listeners were inherited verbatim via the explicit kwargs
-      # above). They will be re-bound to this agent below; they do
-      # NOT re-run +configure+. Used exclusively by
-      # {Tool::SubAgent.execute} for sub-agent construction; main-
-      # agent callers leave +extensions:+ unset.
+      # / listeners were inherited verbatim by seeding the sub-agent's
+      # Configurator block — see {Tool::SubAgent}). They will be
+      # re-bound to this agent below; they do NOT re-run +configure+.
+      # Used exclusively by {Tool::SubAgent.execute} for sub-agent
+      # construction; main-agent callers leave +extensions:+ unset.
       @extensions = extensions ? extensions.dup : []
 
-      # Single Configurator funnel for everything the block adds.
-      # See IDEAS.md §"Extension protocol design".
+      # Single Configurator funnel for everything the block adds —
+      # tools, listeners, system-prompt snippets, extensions,
+      # on_close handlers, and the sub-agent request. See IDEAS.md
+      # §"Extension protocol design".
       configurator = Configurator.new(
         transport: @transport,
         system_prompt_base: system_prompt,
@@ -419,13 +418,8 @@ module Pikuri
 
       block&.call(configurator)
 
-      @tools.concat(configurator.tools)
-      # Only call #with when there's something to merge — the
-      # listener kwarg is duck-typed (any object responding to
-      # +emit+ + +for_sub_agent+ works, see Tool::SubAgent specs),
-      # and we don't want to force every duck implementation to
-      # also provide +with+.
-      @listeners = @listeners.with(*configurator.listeners) if configurator.listeners.any?
+      @tools = configurator.tools.dup
+      @listeners = ListenerList.new(configurator.listeners)
       configurator.system_prompt_additions.each do |snippet|
         @system_prompt = "#{@system_prompt}\n\n#{snippet}"
       end
@@ -465,8 +459,8 @@ module Pikuri
       # itself. See {Configurator#allow_sub_agent}.
       if configurator.sub_agent_request
         if @tools.any?(Tool::SubAgent)
-          raise 'Tool::SubAgent cannot be passed in tools: when allow_sub_agent is used; ' \
-                'Agent auto-registers it from the Configurator request.'
+          raise 'Tool::SubAgent must not be added via c.add_tool when c.allow_sub_agent ' \
+                'is used; Agent auto-registers it from the Configurator request.'
         end
 
         sub_tool = Tool::SubAgent.new(self, max_steps: configurator.sub_agent_request.max_steps)

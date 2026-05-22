@@ -54,12 +54,12 @@ agent = Pikuri::Agent.new(
     assume_model_exists: true
   ),
   system_prompt: Pikuri.prompt(:'pikuri-chat'),
-  tools: [Pikuri::Tool::CALCULATOR, Pikuri::Tool::WEB_SEARCH],
-  listeners: Pikuri::Agent::ListenerList.new([
-    Pikuri::Agent::Listener::Terminal.new
-  ]),
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
-)
+) do |c|
+  c.add_tool Pikuri::Tool::CALCULATOR
+  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_listener Pikuri::Agent::Listener::Terminal.new
+end
 agent.run_loop(user_message: 'What is 17 * 23?')
 ```
 

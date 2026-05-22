@@ -34,15 +34,14 @@ confirmer = Pikuri::Tool::Confirmer::TERMINAL
 agent = Pikuri::Agent.new(
   transport: ...,
   system_prompt: ...,
-  tools: [
-    Pikuri::Tool::Read.new(workspace: workspace),
-    Pikuri::Tool::Grep.new(workspace: workspace),
-    Pikuri::Tool::Glob.new(workspace: workspace),
-    Pikuri::Tool::Edit.new(workspace: workspace),
-    Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
-  ],
-  listeners: ...
-)
+) do |c|
+  c.add_tool Pikuri::Tool::Read.new(workspace: workspace)
+  c.add_tool Pikuri::Tool::Grep.new(workspace: workspace)
+  c.add_tool Pikuri::Tool::Glob.new(workspace: workspace)
+  c.add_tool Pikuri::Tool::Edit.new(workspace: workspace)
+  c.add_tool Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
+  c.add_listener ...
+end
 ```
 
 `Workspace::Cwd` is the "look-but-don't-leak" guard around filesystem
