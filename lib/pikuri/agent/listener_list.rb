@@ -64,6 +64,21 @@ module Pikuri
         self.class.new(swapped)
       end
 
+      # Return a new {ListenerList} containing this list's listeners
+      # plus the given extras, in order. Used by {Agent#initialize}
+      # to merge listeners contributed inside the +Agent.new+ block
+      # (via {Configurator#add_listener}) onto the ones passed via
+      # the +listeners:+ kwarg. Returns +self+ when +extras+ is
+      # empty so the common no-op case allocates nothing.
+      #
+      # @param extras [Array<Listener::Base>] listeners to append
+      # @return [ListenerList]
+      def with(*extras)
+        return self if extras.empty?
+
+        self.class.new(@listeners + extras)
+      end
+
       # @example
       #   list.to_s # => "[Terminal, TokenLog(ctx=0.0k)]"
       #

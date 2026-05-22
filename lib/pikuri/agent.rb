@@ -65,6 +65,9 @@ module Pikuri
   # same agent instance can take a fresh turn immediately
   # afterwards.
   class Agent
+    LOGGER = Pikuri.logger_for('Agent')
+    private_constant :LOGGER
+
     # Wire one +RubyLLM::Chat+ for pikuri's event stream and
     # controls. Used by both {#initialize} (on the main chat) and
     # {Synthesizer.run} (on the synth chat) so the two share one
@@ -428,14 +431,20 @@ module Pikuri
     #   {Tool::SubAgent} so spawned sub-agents inherit the same
     #   mode without an extra kwarg.
     # @return [Agent]
-    def initialize(transport:, system_prompt:, tools:, listeners:,
+    def initialize(transport:, system_prompt:, tools: [], listeners: nil,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Tool::SkillCatalog::EMPTY,
                    mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
                    synthesize_descriptions: true,
                    verify_mcp_servers: true,
-                   streaming: false)
+                   streaming: false,
+                   &block)
+      # +listeners:+ used to be required; with the block API it
+      # defaults to an empty +ListenerList+ so the new shape
+      # (+Agent.new(transport: ..., system_prompt: ...) { |c|
+      # c.add_listener(...) }+) doesn't need the kwarg.
+      listeners ||= ListenerList.new([])
       if mcp_servers && !mcp_registry.empty?
         raise ArgumentError,
               'Agent.new: pass either mcp_registry: (main agent — builds a fresh Mcp::Servers) ' \
@@ -510,6 +519,8 @@ module Pikuri
       @name = name
       @streaming = streaming
       @synth_answer = nil
+      @on_close_handlers = []
+      @extensions = []
 
       unless skill_catalog.empty?
         raise 'Tool::Skill cannot be passed in tools: when skill_catalog is non-empty; ' \
@@ -526,6 +537,31 @@ module Pikuri
         end
 
         @tools << @mcp_servers.build_mcp_connect_tool(self)
+      end
+
+      # New Extension protocol path: yield a Configurator, drain
+      # everything it collected back into the agent's wiring. Runs
+      # after the legacy kwarg-driven auto-wiring (Skill / MCP
+      # above) so the new path is purely additive during the
+      # transition. See IDEAS.md §"Extension protocol design".
+      if block
+        configurator = Configurator.new(
+          transport: @transport,
+          system_prompt_base: system_prompt,
+          name: @name,
+          streaming: @streaming,
+          step_limit: @step_limit,
+          cancellable: @cancellable,
+          interloper: @interloper
+        )
+        block.call(configurator)
+        @tools.concat(configurator.tools)
+        @listeners = @listeners.with(*configurator.listeners)
+        configurator.system_prompt_additions.each do |snippet|
+          @system_prompt = "#{@system_prompt}\n\n#{snippet}"
+        end
+        @on_close_handlers.concat(configurator.on_close_handlers)
+        @extensions.concat(configurator.extensions)
       end
 
       @chat = RubyLLM.chat(**@transport.to_h)
@@ -550,6 +586,23 @@ module Pikuri
       # cares (notably TokenLog) pick the value off the stream
       # before any Tokens event arrives.
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+
+      # Bind sweep — each extension gets its chance to install
+      # per-agent state (dynamic tools via #internal_add_tool,
+      # per-agent close hooks via #on_close, etc.) now that the
+      # chat is fully wired. See IDEAS.md §"Extension protocol
+      # design" for what #configure vs #bind are each for.
+      @extensions.each { |ext| ext.bind(self) }
+
+      # Fallback cleanup: if the host forgets to call #close, the
+      # at_exit hook fires it on process exit. Idempotent, so an
+      # explicit close earlier makes this a no-op. The closure
+      # captures self, which keeps the agent reachable until
+      # process exit — fine for the handful of agents a typical
+      # host creates; if pikuri grows a long-running host that
+      # constructs many short-lived agents, switch to a single
+      # process-global registry that close-then-removes.
+      at_exit { close }
     end
 
     # @return [RubyLLM::Chat] underlying chat; the extension seam
@@ -746,19 +799,23 @@ module Pikuri
       nil
     end
 
-    # Release agent-owned resources — currently the {Mcp::Servers}
-    # runtime when this agent constructed it (i.e. was created with a
-    # non-empty +mcp_registry:+). Idempotent; safe to call multiple
-    # times.
+    # Release agent-owned resources. Fires every handler registered
+    # via {Configurator#on_close} (during the +Agent.new+ block) and
+    # {#on_close} (during {Extension#bind} or any post-construction
+    # call), in LIFO order — matches Ruby +ensure+-block semantics
+    # so handlers registered later (which may depend on handlers
+    # registered earlier) tear down first. Each handler runs inside
+    # its own +rescue+; an exception is logged via
+    # +Pikuri.logger_for+ but doesn't abort the rest. Idempotent —
+    # subsequent calls are no-ops.
     #
-    # == Ownership rule
-    #
-    # An agent owns its {Mcp::Servers} iff it constructed it. Two cases:
-    #
-    # * Main agent built from +mcp_registry:+ — owns. +#close+ closes.
-    # * Sub-agent built from +mcp_servers:+ (a {Mcp::Servers::View} the
-    #   parent threaded in) — does not own. +#close+ does NOT close —
-    #   that would kill the parent's runtime out from under it.
+    # Legacy (transition-layer) MCP cleanup: when the agent
+    # constructed its own {Mcp::Servers} from a non-empty
+    # +mcp_registry:+ kwarg, +#close+ also calls
+    # {Mcp::Servers#close} on it. Once MCP migrates to
+    # +Mcp::Extension+ (Step 3 of the gem-split refactor — see
+    # IDEAS.md), this branch goes away and the cleanup lives in an
+    # extension-registered +on_close+ handler instead.
     #
     # == Block form
     #
@@ -768,8 +825,29 @@ module Pikuri
     # @return [void]
     def close
       return if @closed
+
       @closed = true
+      @on_close_handlers.reverse_each do |handler|
+        handler.call
+      rescue StandardError => e
+        LOGGER.warn("on_close handler raised #{e.class}: #{e.message}")
+      end
       @mcp_servers.close if @owns_mcp_servers && @mcp_servers
+    end
+
+    # Register a handler called by {#close}. Symmetric to
+    # {Configurator#on_close} — same LIFO + per-handler-rescue +
+    # idempotent semantics — but available post-construction, so
+    # an {Extension}'s +bind(agent)+ can install per-agent cleanup
+    # that's keyed to this specific agent rather than the parent.
+    #
+    # @yield called with no arguments at close time
+    # @return [void]
+    def on_close(&blk)
+      raise ArgumentError, 'on_close requires a block' unless block_given?
+
+      @on_close_handlers << blk
+      nil
     end
 
     # Construct an agent, yield it to the block, and call {#close} on

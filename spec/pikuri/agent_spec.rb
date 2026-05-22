@@ -127,18 +127,15 @@ RSpec.describe Pikuri::Agent do
       assert_equal 1, fake_chat.hooks[:after_tool_result].size
     end
 
-    it 'requires listeners: — no silent default' do
-      assert_raises(ArgumentError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's', tools: [])
-      end
-    end
+    it 'defaults tools: to [] and listeners: to an empty ListenerList' do
+      # Both used to be required; the block API made them optional
+      # so +Agent.new(transport:, system_prompt:) { |c| ... }+ reads
+      # cleanly without ceremony kwargs. See Configurator.
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's')
 
-    it 'requires tools: — no silent default' do
-      assert_raises(ArgumentError) do
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's', listeners: listeners)
-      end
+      assert_equal [], agent.tools
+      assert_equal '[]', agent.listeners.to_s
     end
 
     it 'defaults name to empty (main agent)' do
@@ -355,12 +352,15 @@ RSpec.describe Pikuri::Agent do
       agent.allow_sub_agent(max_steps: 3)
 
       # Stub Pikuri::Agent.new globally just for this test: record the
-      # +context_window+ kwarg the sub-agent factory passes.
+      # +context_window+ kwarg the sub-agent factory passes. Both the
+      # stub and the restoration must forward +&block+ — Agent.new
+      # now accepts a Configurator block, and dropping it here
+      # silently breaks block-using specs that run after this one.
       original_new = Pikuri::Agent.method(:new)
       received_kwargs = nil
-      Pikuri::Agent.define_singleton_method(:new) do |**kwargs|
+      Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
         received_kwargs = kwargs
-        original_new.call(**kwargs).tap do |a|
+        original_new.call(**kwargs, &block).tap do |a|
           a.define_singleton_method(:run_loop) { |**_| nil }
           a.define_singleton_method(:last_assistant_content) { 'sub reply' }
         end
@@ -371,7 +371,7 @@ RSpec.describe Pikuri::Agent do
         sub_tool.run('task' => 'do the thing')
         assert_equal 12_345, received_kwargs[:context_window]
       ensure
-        Pikuri::Agent.define_singleton_method(:new) { |**kw| original_new.call(**kw) }
+        Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
       end
     end
 
@@ -1194,6 +1194,159 @@ RSpec.describe Pikuri::Agent do
                           skill_catalog: non_empty_catalog)
       end
       assert_match(/auto-registers/, err.message)
+    end
+  end
+
+  # New block-based configuration surface added alongside the old
+  # kwargs as a transition layer. See IDEAS.md §"Extension protocol
+  # design". The kwarg path stays exercised by the older specs above;
+  # these pin the new path and its interactions with the kwargs.
+  describe 'Configurator block' do
+    let(:tool) do
+      Pikuri::Tool.new(
+        name: 'tt', description: 'd',
+        parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :x, 'x' },
+        execute: ->(x:) { x }
+      )
+    end
+
+    it 'lets the block add tools via c.add_tool' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', listeners: listeners) do |c|
+        c.add_tool(tool)
+      end
+
+      assert_equal 1, fake_chat.tools.size
+      assert_equal 'tt', fake_chat.tools.first.name
+    end
+
+    it 'lets the block add listeners via c.add_listener; ContextCap reaches them' do
+      block_recorder = Pikuri::Agent::Listener::InMemoryEventList.new
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's') do |c|
+        c.add_listener(block_recorder)
+      end
+
+      # ContextCap fires at the end of #initialize so any listener
+      # added in the block must see it.
+      assert(block_recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
+    end
+
+    it 'concatenates kwarg listeners with block listeners (kwargs first)' do
+      kwarg_recorder = Pikuri::Agent::Listener::InMemoryEventList.new
+      block_recorder = Pikuri::Agent::Listener::InMemoryEventList.new
+      kwarg_list = Pikuri::Agent::ListenerList.new([kwarg_recorder])
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', listeners: kwarg_list) do |c|
+        c.add_listener(block_recorder)
+      end
+
+      assert(kwarg_recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
+      assert(block_recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
+    end
+
+    it 'joins append_system_prompt snippets onto the base prompt with blank-line separators' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 'base', listeners: listeners) do |c|
+        c.append_system_prompt('first snippet')
+        c.append_system_prompt('second snippet')
+      end
+
+      assert_equal "base\n\nfirst snippet\n\nsecond snippet", fake_chat.instructions
+    end
+
+    it 'runs extension.configure during the block and extension.bind once after construction' do
+      events = []
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:configure) { |c| events << [:configure, c.is_a?(Pikuri::Agent::Configurator)] }
+        define_method(:bind) { |agent| events << [:bind, agent.is_a?(Pikuri::Agent)] }
+      end
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', listeners: listeners) do |c|
+        c.add_extension(ext_class.new)
+      end
+
+      assert_equal [[:configure, true], [:bind, true]], events
+    end
+
+    it "extensions that include Extension and override only #configure inherit a no-op #bind" do
+      # Documents why Pikuri::Agent::Extension is a mixin with empty
+      # defaults: extensions can override just the hooks they need.
+      configured = false
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:configure) { |_c| configured = true }
+      end
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', listeners: listeners) do |c|
+        c.add_extension(ext_class.new)
+      end
+
+      assert configured
+    end
+  end
+
+  describe '#close + #on_close' do
+    def build_agent(&block)
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', listeners: listeners, &block)
+    end
+
+    it 'fires Configurator#on_close handlers in LIFO order' do
+      order = []
+      agent = build_agent do |c|
+        c.on_close { order << :first_registered }
+        c.on_close { order << :second_registered }
+      end
+
+      agent.close
+
+      assert_equal %i[second_registered first_registered], order
+    end
+
+    it 'fires Agent#on_close handlers (registered post-construction) in LIFO too' do
+      order = []
+      agent = build_agent
+      agent.on_close { order << :a }
+      agent.on_close { order << :b }
+
+      agent.close
+
+      assert_equal %i[b a], order
+    end
+
+    it 'is idempotent — subsequent closes are no-ops' do
+      calls = 0
+      agent = build_agent { |c| c.on_close { calls += 1 } }
+
+      agent.close
+      agent.close
+      agent.close
+
+      assert_equal 1, calls
+    end
+
+    it 'rescues a raising handler and continues firing the rest' do
+      order = []
+      agent = build_agent do |c|
+        c.on_close { order << :outer }
+        c.on_close { raise 'boom' }
+      end
+
+      # Must not propagate
+      agent.close
+
+      assert_equal [:outer], order
+    end
+
+    it 'raises ArgumentError when on_close is called without a block' do
+      agent = build_agent
+      assert_raises(ArgumentError) { agent.on_close }
     end
   end
 end
