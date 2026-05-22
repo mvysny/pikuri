@@ -16,7 +16,10 @@ GEMS = {
   'pikuri-mcp'       => 'pikuri-mcp',
   'pikuri-workspace' => 'pikuri-workspace',
   'pikuri-code'      => 'pikuri-code',
-  'pikuri-assistant' => 'pikuri-assistant'
+  'pikuri-assistant' => 'pikuri-assistant',
+  # Metagem — released last so its dependency declarations pin the
+  # versions just published by the prior six.
+  'pikuri'           => 'pikuri'
 }.freeze
 
 # Path to the single source of truth for the shared version constant.

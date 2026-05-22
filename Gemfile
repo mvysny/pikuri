@@ -14,6 +14,7 @@ gemspec path: 'pikuri-mcp'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-code'
 gemspec path: 'pikuri-assistant'
+gemspec path: 'pikuri'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write
