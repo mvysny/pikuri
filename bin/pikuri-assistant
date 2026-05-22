@@ -28,6 +28,7 @@ require 'bundler/setup'
 require 'optparse'
 
 require 'pikuri-core'
+require 'pikuri-mcp'
 
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'

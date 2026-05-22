@@ -12,7 +12,8 @@
 # convenience metagem at pikuri/ is also named +pikuri+).
 GEMS = {
   'pikuri-core'   => 'pikuri-core',
-  'pikuri-skills' => 'pikuri-skills'
+  'pikuri-skills' => 'pikuri-skills',
+  'pikuri-mcp'    => 'pikuri-mcp'
 }.freeze
 
 # Path to the single source of truth for the shared version constant.

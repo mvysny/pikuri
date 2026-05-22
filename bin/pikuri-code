@@ -18,6 +18,8 @@ require 'bundler/setup'
 require 'optparse'
 
 require 'pikuri-core'
+require 'pikuri-skills'
+require 'pikuri-mcp'
 
 yolo = false
 server = 'http://localhost:8080'

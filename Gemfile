@@ -10,6 +10,7 @@ source 'https://rubygems.org'
 # over.
 gemspec path: 'pikuri-core'
 gemspec path: 'pikuri-skills'
+gemspec path: 'pikuri-mcp'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write

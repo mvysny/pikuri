@@ -146,89 +146,13 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  # Minimal Mcp::Servers stand-in for ownership-semantics tests. Real
-  # Mcp::Servers instances would spawn subprocesses on construction,
-  # which we don't want for unit-level lifecycle tests. This stub
-  # implements only the surface +Agent#initialize+ touches.
-  let(:tracker_mcp_servers_class) do
-    Class.new do
-      attr_reader :close_calls
-      def initialize
-        @close_calls = 0
-      end
-
-      def empty?
-        true # skip auto-McpConnect-tool registration in Agent#initialize
-      end
-
-      def system_prompt_snippet
-        ''
-      end
-
-      def close
-        @close_calls += 1
-      end
-    end
-  end
-
   describe '#close' do
-    # Helper: wire MCP via the new block API + return a [agent,
-    # tracker] pair so close-related assertions can verify
-    # close_calls on the shared tracker.
-    def with_mcp_agent(listeners:)
-      tracker = tracker_mcp_servers_class.new
-      original_new = Pikuri::Mcp::Servers.method(:new)
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
-      registry = Pikuri::Mcp::Registry.new(entries: [
-        Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
-      ])
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', tools: [], listeners: listeners) do |c|
-        c.add_extension(Pikuri::Mcp::Extension.new(registry: registry))
-      end
-      yield agent, tracker
-    ensure
-      Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-    end
-
-    it 'closes the Mcp::Servers wired in via Mcp::Extension on close' do
-      with_mcp_agent(listeners: listeners) do |agent, tracker|
-        assert_equal 0, tracker.close_calls
-        agent.close
-        assert_equal 1, tracker.close_calls
-      end
-    end
-
-    it 'does NOT close shared Mcp::Servers when sub-agent inherits via the extension list' do
-      # Sub-agents receive parent's extensions list via the
-      # +extensions:+ kwarg. The Mcp::Extension's on_close handler
-      # was registered on the parent's Configurator (configure runs
-      # once on the parent), so the sub-agent's close fires no MCP
-      # cleanup — only parent.close tears the shared runtime down.
-      with_mcp_agent(listeners: listeners) do |parent, tracker|
-        # Simulate a sub-agent constructed via Tool::SubAgent.execute —
-        # gets parent's extensions, no extension of its own.
-        sub = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', tools: [], listeners: listeners,
-                                extensions: parent.extensions)
-
-        sub.close
-        assert_equal 0, tracker.close_calls, 'sub-agent close must not close shared servers'
-        parent.close
-        assert_equal 1, tracker.close_calls, 'parent close fires the configure-time on_close handler'
-      end
-    end
-
-    it 'is idempotent — repeat calls do not re-invoke Mcp::Servers#close' do
-      with_mcp_agent(listeners: listeners) do |agent, tracker|
-        agent.close
-        agent.close
-        agent.close
-        assert_equal 1, tracker.close_calls
-      end
-    end
-
-    it 'is a no-op when no MCP runtime is wired' do
+    # Extension-driven lifecycle tests (MCP's on_close handler, etc.)
+    # live in the sibling gems' spec/ directories — see
+    # pikuri-mcp/spec/pikuri/mcp/agent_integration_spec.rb. The
+    # on_close handler mechanism itself is exercised in the
+    # +#close + #on_close+ describe at the bottom of this file.
+    it 'is a no-op when no extensions register on_close handlers' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners)
       # Must not raise.
@@ -1001,81 +925,11 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  # End-to-end: Skill::Extension wired via the +Agent.new+ block.
-  # The extension itself is tested directly in
-  # spec/pikuri/skill/extension_spec.rb; here we verify the
-  # integration — snippet ends up in the chat's instructions, the
-  # skill tool ends up in the chat's tool list, etc.
-  describe 'Skill::Extension wiring' do
-    fake_catalog_class = Class.new(Pikuri::Skill::Catalog) do
-      def initialize(skills)
-        super()
-        @skills = skills
-      end
-
-      def list
-        @skills
-      end
-
-      def get(name)
-        @skills.find { |s| s.name == name }
-      end
-    end
-
-    let(:sample_skill) do
-      Pikuri::Skill::Catalog::Skill.new(
-        name: 'sample',
-        description: 'Sample skill description.',
-        location: '/tmp/sample/SKILL.md',
-        body: 'do the thing.'
-      )
-    end
-
-    let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
-
-    it 'appends the catalog block to the system prompt when the extension is added' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 'base', tools: [], listeners: listeners) do |c|
-        c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
-      end
-
-      assert agent.system_prompt.start_with?('base'), agent.system_prompt
-      assert agent.system_prompt.include?('<available_skills>'), agent.system_prompt
-      assert agent.system_prompt.include?('<name>sample</name>'), agent.system_prompt
-      # The augmented prompt must be the one actually pushed to the chat,
-      # not just the value cached on Pikuri::Agent.
-      assert_equal agent.system_prompt, fake_chat.instructions
-    end
-
-    it 'auto-registers a Pikuri::Skill::SkillTool bound to the catalog when the extension is added' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 'base', tools: [], listeners: listeners) do |c|
-        c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
-      end
-
-      skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Skill::SkillTool) }
-      refute_nil skill_tool, 'expected the extension to auto-register a Pikuri::Skill::SkillTool'
-      # And it must reach the chat — not just sit on the tools array.
-      wired = fake_chat.tools.find { |t| t.name == 'skill' }
-      refute_nil wired, 'expected the `skill` tool to be wired on the underlying chat'
-
-      # Verify the bound catalog is the one we passed (the tool resolves
-      # the sample skill we put in it).
-      result = skill_tool.run('name' => 'sample')
-      assert result.include?('do the thing'), result
-    end
-
-    # The kwarg-based "manual SkillTool in tools: alongside the
-    # extension" conflict is intentionally not validated post-
-    # Step-5: detecting it would require Skill::Extension to read
-    # the agent's full @tools list, but at +configure+ time only
-    # the Configurator's own additions are visible. The conflict
-    # detection for the block-API path lives in
-    # spec/pikuri/skill/extension_spec.rb. Users who pass
-    # +tools: [SkillTool.new]+ alongside the extension end up with
-    # two skill-named tools on the chat — ruby_llm's behavior, not
-    # pikuri's.
-  end
+  # End-to-end Skill::Extension wiring tests have moved to
+  # pikuri-skills/spec/pikuri/skill/agent_integration_spec.rb (the
+  # extension's own unit specs live there too, alongside the catalog).
+  # Same separation pattern as the MCP extension's tests in
+  # pikuri-mcp/spec/pikuri/mcp/.
 
   # New block-based configuration surface added alongside the old
   # kwargs as a transition layer. See IDEAS.md §"Extension protocol
