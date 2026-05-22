@@ -9,6 +9,7 @@ source 'https://rubygems.org'
 # for the metagem) and the gemspec's +add_dependency+ entries take
 # over.
 gemspec path: 'pikuri-core'
+gemspec path: 'pikuri-skills'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write

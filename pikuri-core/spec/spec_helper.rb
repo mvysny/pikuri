@@ -8,6 +8,15 @@ require 'minitest/assertions'
 
 require 'pikuri-core'
 
+# pikuri-core's tests cover integration between Agent and the
+# bundled extensions (Skills, MCP). Those extensions live in
+# sibling gems (pikuri-skills, pikuri-mcp); pull them in here as
+# test-time dependencies so the integration specs can reference
+# Pikuri::Skill::* and Pikuri::Mcp::*. The released pikuri-core
+# gem doesn't ship its specs, so this dev-time require is
+# invisible to gem-installed consumers.
+require 'pikuri-skills'
+
 # Disable on-disk caching by default in the test suite. The specs that
 # genuinely exercise caching behavior opt back in by stubbing +.cache+
 # with a real {Pikuri::UrlCache} pointed at a tmpdir.

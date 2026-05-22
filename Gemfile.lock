@@ -15,6 +15,12 @@ PATH
       tty-markdown (~> 0.7)
       zeitwerk (~> 2.7)
 
+PATH
+  remote: pikuri-skills
+  specs:
+    pikuri-skills (0.0.2)
+      pikuri-core (= 0.0.2)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -146,6 +152,7 @@ DEPENDENCIES
   irb (~> 1.14)
   minitest (~> 6.0)
   pikuri-core!
+  pikuri-skills!
   rake (~> 13.0)
   rspec-core (~> 3.13)
   timecop (~> 0.9)
@@ -184,6 +191,7 @@ CHECKSUMS
   pastel (0.8.0) sha256=481da9fb7d2f6e6b1a08faf11fa10363172dc40fd47848f096ae21209f805a75
   pdf-reader (2.15.1) sha256=18c6a986a84a3117fa49f4279fc2de51f5d2399b71833df5d2bccd595c7068ce
   pikuri-core (0.0.2)
+  pikuri-skills (0.0.2)
   pp (0.6.3) sha256=2951d514450b93ccfeb1df7d021cae0da16e0a7f95ee1e2273719669d0ab9df6
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
