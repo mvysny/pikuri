@@ -80,8 +80,9 @@ agent = Pikuri::Agent.new(
   cancellable: cancel_flag,
   llama_probe_url: llama_probe_url,
   streaming: streaming
-)
-agent.allow_sub_agent(max_steps: 20)
+) do |c|
+  c.allow_sub_agent(max_steps: 20)
+end
 
 # Explicit close is the user-facing contract for Pikuri::Agent.
 # Today this is a no-op (no MCP runtime), but the pattern lives

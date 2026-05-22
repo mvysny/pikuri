@@ -126,7 +126,9 @@ begin
     synthesize_descriptions: true,
     verify_mcp_servers: true,
     streaming: streaming
-  )
+  ) do |c|
+    c.allow_sub_agent(max_steps: 20)
+  end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   warn 'Cancelled during startup'
   exit 130
@@ -138,7 +140,6 @@ end
 # Agent.new finished before the next .think check could raise. Reset
 # so the first turn doesn't inherit a stale cancellation.
 cancel_flag.reset!
-agent.allow_sub_agent(max_steps: 20)
 
 # Release agent-owned resources — most importantly the MCP server
 # subprocesses spawned at agent construction — on every exit path

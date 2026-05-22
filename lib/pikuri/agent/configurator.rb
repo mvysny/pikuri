@@ -93,6 +93,20 @@ module Pikuri
       #   wiring is complete.
       attr_reader :extensions
 
+      # @return [SubAgentRequest, nil] set when the block called
+      #   {#allow_sub_agent}; +nil+ otherwise. The Agent ctor uses
+      #   this to decide whether to create a {Tool::SubAgent}
+      #   instance after the chat is wired (so the SubAgent tool's
+      #   parent.tools snapshot doesn't include itself —
+      #   recursion guard).
+      attr_reader :sub_agent_request
+
+      # Record holding the +max_steps+ value the host passed to
+      # {#allow_sub_agent}. The Agent ctor consumes one of these
+      # records to build a {Tool::SubAgent} keyed to that step
+      # budget.
+      SubAgentRequest = Data.define(:max_steps)
+
       # @param transport [Agent::ChatTransport]
       # @param system_prompt_base [String]
       # @param name [String]
@@ -178,6 +192,32 @@ module Pikuri
         raise ArgumentError, 'on_close requires a block' unless block_given?
 
         @on_close_handlers << blk
+        nil
+      end
+
+      # Enable the +sub_agent+ tool on this agent. Records the
+      # +max_steps+ budget for sub-agent runs; the Agent ctor reads
+      # {#sub_agent_request} after the block returns and constructs
+      # the actual {Tool::SubAgent} so its snapshot of the parent's
+      # tool list doesn't include itself (recursion guard).
+      #
+      # Sub-agents inherit the parent's tool list (minus +sub_agent+
+      # itself), augmented system prompt, listeners (via
+      # +for_sub_agent+ per listener), controls (per the per-control
+      # rule), and the parent's extension list. Each inherited
+      # extension's +bind(sub_agent)+ fires during the sub-agent's
+      # construction — that's how MCP's per-agent connect tool ends
+      # up keyed to the sub-agent rather than the parent.
+      #
+      # @param max_steps [Integer] step budget for each sub-agent
+      #   run, passed to {Tool::SubAgent#initialize}.
+      # @raise [RuntimeError] if called more than once on the same
+      #   Configurator.
+      # @return [void]
+      def allow_sub_agent(max_steps: 10)
+        raise 'allow_sub_agent may only be called once per agent' if @sub_agent_request
+
+        @sub_agent_request = SubAgentRequest.new(max_steps: max_steps)
         nil
       end
     end

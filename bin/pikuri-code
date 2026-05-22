@@ -148,7 +148,9 @@ begin
     mcp_registry: mcp_registry,
     synthesize_descriptions: true,
     verify_mcp_servers: true
-  )
+  ) do |c|
+    c.allow_sub_agent(max_steps: 20)
+  end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   warn 'Cancelled during startup'
   exit 130
@@ -159,7 +161,6 @@ end
 # trap fired but Agent.new finished before the next .think check could
 # raise. Otherwise the first turn would inherit a stale cancellation.
 cancel_flag.reset!
-agent.allow_sub_agent(max_steps: 20)
 
 # Explicit close is the user-facing contract for Pikuri::Agent.
 # Today this is a no-op (no MCP runtime), but the pattern lives

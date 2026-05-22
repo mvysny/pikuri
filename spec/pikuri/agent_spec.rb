@@ -193,15 +193,36 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    it 'does NOT close a Mcp::Servers passed via mcp_servers: (sub-agent path)' do
+    it 'does NOT close shared Mcp::Servers when sub-agent inherits via the extension list' do
+      # Post-Step-4 contract: sub-agents receive parent's
+      # extensions list via the +extensions:+ kwarg. The Mcp::
+      # Extension's on_close handler was registered on the
+      # parent's Configurator (configure runs once on the parent),
+      # so the sub-agent's close fires no MCP cleanup — only the
+      # parent.close path tears the shared runtime down.
       tracker = tracker_mcp_servers_class.new
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+      original_new = Pikuri::Mcp::Servers.method(:new)
+      Pikuri::Mcp::Servers.define_singleton_method(:new) { |_registry, **_| tracker }
+      begin
+        registry = Pikuri::Mcp::Registry.new(entries: [
+          Pikuri::Mcp::Registry::StdioEntry.new(id: 'x', command: ['no-op'])
+        ])
+        parent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                   system_prompt: 's', tools: [], listeners: listeners,
+                                   mcp_registry: registry)
+        # Simulate a sub-agent constructed via Tool::SubAgent.execute —
+        # gets parent's extensions, no mcp_registry of its own.
+        sub = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners,
-                                mcp_servers: tracker)
+                                extensions: parent.extensions)
 
-      assert_same tracker, agent.mcp_servers
-      agent.close
-      assert_equal 0, tracker.close_calls
+        sub.close
+        assert_equal 0, tracker.close_calls, 'sub-agent close must not close shared servers'
+        parent.close
+        assert_equal 1, tracker.close_calls, 'parent close fires the configure-time on_close handler'
+      ensure
+        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
+      end
     end
 
     it 'is idempotent — repeat calls do not re-invoke Mcp::Servers#close' do
@@ -344,18 +365,19 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe '#allow_sub_agent' do
+  describe 'Configurator#allow_sub_agent' do
     it "forwards the parent's resolved context_window_cap as the sub-agent tool's override" do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', tools: [], listeners: listeners,
-                                context_window: 12_345)
-      agent.allow_sub_agent(max_steps: 3)
+                                context_window: 12_345) do |c|
+        c.allow_sub_agent(max_steps: 3)
+      end
 
       # Stub Pikuri::Agent.new globally just for this test: record the
       # +context_window+ kwarg the sub-agent factory passes. Both the
       # stub and the restoration must forward +&block+ — Agent.new
-      # now accepts a Configurator block, and dropping it here
-      # silently breaks block-using specs that run after this one.
+      # accepts a Configurator block, and dropping it here silently
+      # breaks block-using specs that run after this one.
       original_new = Pikuri::Agent.method(:new)
       received_kwargs = nil
       Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
@@ -375,18 +397,42 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    it 'raises when called twice on the same agent' do
+    it 'raises when called twice in the same Configurator block' do
+      err = assert_raises(RuntimeError) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [], listeners: listeners) do |c|
+          c.allow_sub_agent
+          c.allow_sub_agent
+        end
+      end
+      assert_match(/may only be called once/, err.message)
+    end
+
+    it 'auto-registers exactly one Pikuri::Tool::SubAgent on @tools' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', tools: [], listeners: listeners)
-      agent.allow_sub_agent
+                                system_prompt: 's', tools: [], listeners: listeners) do |c|
+        c.allow_sub_agent
+      end
 
-      err = assert_raises(RuntimeError) { agent.allow_sub_agent }
-      assert_match(/already registered/, err.message)
-
-      # @tools still has exactly one SubAgent — the failed second call
-      # didn't half-register anything.
       tools = agent.instance_variable_get(:@tools)
       assert_equal 1, tools.count { |t| t.is_a?(Pikuri::Tool::SubAgent) }
+    end
+
+    it 'raises if a Pikuri::Tool::SubAgent is also passed via tools: alongside allow_sub_agent' do
+      manual_sub = Pikuri::Tool::SubAgent.new(
+        # parent_agent only used to resolve readers at construction time;
+        # a fully-stubbed shell would suffice but real Agent is simpler.
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [], listeners: listeners)
+      )
+
+      err = assert_raises(RuntimeError) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', tools: [manual_sub], listeners: listeners) do |c|
+          c.allow_sub_agent
+        end
+      end
+      assert_match(/auto-registers/, err.message)
     end
   end
 

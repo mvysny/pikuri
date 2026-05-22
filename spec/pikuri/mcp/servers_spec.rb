@@ -272,37 +272,6 @@ RSpec.describe Pikuri::Mcp::Servers do
     end
   end
 
-  describe '#view_for_sub_agent' do
-    it 'returns a View that delegates live_ids and snippet to the root' do
-      servers = Pikuri::Mcp::Servers.new(fresh_registry)
-      view = servers.view_for_sub_agent
-      assert_kind_of Pikuri::Mcp::Servers::View, view
-      assert_equal servers.live_ids, view.live_ids
-      assert_equal servers.system_prompt_snippet, view.system_prompt_snippet
-    ensure
-      servers&.close
-    end
-
-    it 'delegates register_tools_with_agent to the root (shared clients, no re-spawn)' do
-      servers = Pikuri::Mcp::Servers.new(fresh_registry)
-      view = servers.view_for_sub_agent
-      agent = fake_agent
-      count = view.register_tools_with_agent('test', agent)
-      assert_equal 5, count
-      assert_equal 5, agent.added_tools.size
-    ensure
-      servers&.close
-    end
-
-    it 'returns self when called on a View (nested sub-agents share the same view)' do
-      servers = Pikuri::Mcp::Servers.new(fresh_registry)
-      view = servers.view_for_sub_agent
-      assert_same view, view.view_for_sub_agent
-    ensure
-      servers&.close
-    end
-  end
-
   describe Pikuri::Mcp::Servers::Connect do
     it 'returns an Error: ... for an unknown id' do
       servers = Pikuri::Mcp::Servers.new(fresh_registry)

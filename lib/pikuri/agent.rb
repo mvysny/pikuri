@@ -372,16 +372,6 @@ module Pikuri
     #   contract as +skill_catalog:+ above. The constructed
     #   {Mcp::Servers} is *owned* by this agent — {#close} will
     #   terminate its MCP server subprocesses.
-    # @param mcp_servers [Mcp::Servers, Mcp::Servers::View, nil] used by
-    #   {Tool::SubAgent} to thread the parent's already-running
-    #   {Mcp::Servers} into spawned sub-agents (via
-    #   {Mcp::Servers#view_for_sub_agent}) so child agents share the
-    #   live clients without re-spawning. Application code (the
-    #   +bin/pikuri-*+ scripts) should pass +mcp_registry:+ instead
-    #   and let {Agent} construct the runtime. When passed in this
-    #   way, the runtime is *not* owned by this agent — {#close}
-    #   leaves it alone (the parent or whoever constructed it is
-    #   responsible).
     # @param verify_mcp_servers [Boolean] when +true+ and a
     #   non-empty +mcp_registry:+ is also passed, threads a
     #   {Mcp::Verifier} into {Mcp::Servers#initialize} so every
@@ -399,6 +389,15 @@ module Pikuri
     #   want to skip the cold-boot verification cost. See
     #   {Mcp::Verifier} for the threat model and false-positive
     #   philosophy.
+    # @param extensions [Array<Extension>, nil] pre-configured
+    #   extension instances inherited from a parent agent. Used
+    #   exclusively by {Tool::SubAgent.execute} when spawning a
+    #   child; the child Agent calls +bind(self)+ on each but does
+    #   NOT re-run +configure+ — the parent already drove configure,
+    #   and the resulting state (tools / snippets / listeners) was
+    #   inherited verbatim through the explicit kwargs (+tools:+,
+    #   +system_prompt:+, +listeners:+). Main-agent callers leave
+    #   this +nil+.
     # @param synthesize_descriptions [Boolean] when +true+ and a
     #   non-empty +mcp_registry:+ is also passed, threads a thinker
     #   closure into {Mcp::Servers#initialize} so any server whose
@@ -435,44 +434,22 @@ module Pikuri
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    skill_catalog: Skill::Catalog::EMPTY,
-                   mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
+                   mcp_registry: Mcp::Registry::EMPTY,
                    synthesize_descriptions: true,
                    verify_mcp_servers: true,
                    streaming: false,
+                   extensions: nil,
                    &block)
       # +listeners:+ used to be required; with the block API it
       # defaults to an empty +ListenerList+ so the new shape
       # (+Agent.new(transport: ..., system_prompt: ...) { |c|
       # c.add_listener(...) }+) doesn't need the kwarg.
       listeners ||= ListenerList.new([])
-      if mcp_servers && !mcp_registry.empty?
-        raise ArgumentError,
-              'Agent.new: pass either mcp_registry: (main agent — builds a fresh Mcp::Servers) ' \
-              'or mcp_servers: (sub-agent — inherits the parent\'s runtime), not both.'
-      end
 
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
       @skill_catalog = skill_catalog
-
-      # MCP wiring split between two paths during the transition:
-      # * +mcp_servers:+ kwarg (sub-agent path, set by
-      #   {Tool::SubAgent}) — caller owns the {Mcp::Servers}
-      #   lifecycle; we just thread the reference through and
-      #   register a fresh +mcp_connect+ tool further down. Step 4
-      #   migrates this into the extension protocol.
-      # * +mcp_registry:+ kwarg (main-agent path) — now routes
-      #   through {Mcp::Extension} added to the Configurator below.
-      #   The extension builds the {Mcp::Servers} runtime, registers
-      #   the snippet + connect tool + on_close, and owns close.
-      #
-      # In both paths the +@mcp_servers+ ivar holds the {Servers}
-      # reference: directly from the kwarg in the sub-agent case,
-      # via {Mcp::Extension#bind}'s back-fill (transition layer) in
-      # the main-agent case. Sub-agents read it via
-      # +parent.mcp_servers.view_for_sub_agent+; that's the only
-      # remaining caller of the legacy reader, and Step 4 removes it.
-      @mcp_servers = mcp_servers
+      @mcp_servers = nil # back-filled by Mcp::Extension#bind (transition layer; removed in Step 5)
       @closed = false
 
       @system_prompt = system_prompt
@@ -484,7 +461,14 @@ module Pikuri
       @streaming = streaming
       @synth_answer = nil
       @on_close_handlers = []
-      @extensions = []
+      # Inherited extensions arrive pre-configured (the parent
+      # already drove +configure+ and the resulting tools / snippets
+      # / listeners were inherited verbatim via the explicit kwargs
+      # above). They will be re-bound to this agent below; they do
+      # NOT re-run +configure+. Used exclusively by
+      # {Tool::SubAgent.execute} for sub-agent construction; main-
+      # agent callers leave +extensions:+ unset.
+      @extensions = extensions ? extensions.dup : []
 
       # Validate manual-vs-auto Skill conflict before the extension
       # routing runs — the user's +tools:+ kwarg shouldn't pre-
@@ -493,23 +477,6 @@ module Pikuri
       if !skill_catalog.empty? && @tools.any?(Skill::SkillTool)
         raise 'Skill::SkillTool cannot be passed in tools: when skill_catalog is non-empty; ' \
               'Agent auto-registers it from the catalog.'
-      end
-
-      # Sub-agent path: the inherited {Mcp::Servers::View} brings
-      # its own +mcp_connect+ tool keyed to *this* sub-agent (not
-      # the parent), so a sub-agent's activation set stays separate.
-      # The View doesn't append a snippet — the sub-agent inherits
-      # the parent's already-augmented system prompt verbatim (see
-      # Tool::SubAgent.execute). Step 4 migrates this into the
-      # extension protocol; until then the legacy +mcp_servers:+
-      # kwarg routes here.
-      if @mcp_servers && !@mcp_servers.empty?
-        if @tools.any?(Mcp::Servers::Connect)
-          raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \
-                'Agent auto-registers it.'
-        end
-
-        @tools << @mcp_servers.build_mcp_connect_tool(self)
       end
 
       # Single Configurator funnel: legacy kwargs route extensions
@@ -527,22 +494,19 @@ module Pikuri
       )
 
       # Legacy skill_catalog kwarg → Skill::Extension routing.
+      # (Sub-agents pass extensions: instead of these kwargs, so
+      # this only fires on the main-agent path.)
       configurator.add_extension(Skill::Extension.new(catalog: skill_catalog)) \
         unless skill_catalog.empty?
 
-      # Legacy mcp_registry kwarg → Mcp::Extension routing (main-
-      # agent path only — sub-agents come in via +mcp_servers:+
-      # above). The extension owns the {Mcp::Servers} lifecycle and
-      # registers a per-agent connect tool in its +bind+ hook.
-      if !mcp_registry.empty? && !mcp_servers
-        configurator.add_extension(
-          Mcp::Extension.new(
-            registry: mcp_registry,
-            synthesize_descriptions: synthesize_descriptions,
-            verify_mcp_servers: verify_mcp_servers
-          )
+      # Legacy mcp_registry kwarg → Mcp::Extension routing.
+      configurator.add_extension(
+        Mcp::Extension.new(
+          registry: mcp_registry,
+          synthesize_descriptions: synthesize_descriptions,
+          verify_mcp_servers: verify_mcp_servers
         )
-      end
+      ) unless mcp_registry.empty?
 
       block&.call(configurator)
 
@@ -581,6 +545,25 @@ module Pikuri
       # cares (notably TokenLog) pick the value off the stream
       # before any Tokens event arrives.
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+
+      # Sub-agent tool: constructed *after* @tools is final and
+      # @context_window_cap is set, so its snapshot of the parent's
+      # tool list doesn't include itself (recursion guard) and the
+      # cap can be threaded through to spawned sub-agents. The new
+      # +Tool::SubAgent+ instance is appended to both +@tools+ and
+      # +@chat+, so sub-agents inheriting via the snapshot still
+      # get the surrounding tool set but never the +sub_agent+ tool
+      # itself. See {Configurator#allow_sub_agent}.
+      if configurator.sub_agent_request
+        if @tools.any?(Tool::SubAgent)
+          raise 'Tool::SubAgent cannot be passed in tools: when allow_sub_agent is used; ' \
+                'Agent auto-registers it from the Configurator request.'
+        end
+
+        sub_tool = Tool::SubAgent.new(self, max_steps: configurator.sub_agent_request.max_steps)
+        @tools << sub_tool
+        @chat.with_tool(sub_tool.to_ruby_llm_tool)
+      end
 
       # Bind sweep — each extension gets its chance to install
       # per-agent state (dynamic tools via #internal_add_tool,
@@ -690,6 +673,14 @@ module Pikuri
     #   {Tool::SubAgent} so spawned sub-agents inherit the same
     #   mode.
     attr_reader :streaming
+
+    # @return [Array<Extension>] extension instances bound to this
+    #   agent — inherited via the +extensions:+ kwarg (for
+    #   sub-agents) plus any added via {Configurator#add_extension}
+    #   inside the +Agent.new+ block. Read by {Tool::SubAgent} so
+    #   spawned sub-agents inherit the parent's extension list and
+    #   re-bind them via the bind sweep.
+    attr_reader :extensions
 
     # @return [Integer, nil] context-window cap resolved by
     #   {ContextWindowDetector} at construction time. +nil+ when
@@ -879,41 +870,6 @@ module Pikuri
     # @return [void]
     def internal_add_tool(ruby_llm_tool)
       @chat.with_tool(ruby_llm_tool)
-    end
-
-    # Adds a +sub_agent+ tool that lets this agent spawn
-    # sub-agents which share the parent's model, system prompt,
-    # and current tool set (minus the sub-agent tool itself, so
-    # recursion is impossible).
-    #
-    # {Tool::SubAgent} snapshots +@tools+ during construction; we
-    # append the new sub-agent tool to +@tools+ only after that,
-    # so the sub-agent's tool list never contains itself.
-    #
-    # Each sub-agent run gets a derived {ListenerList} via
-    # {ListenerList#for_sub_agent} (Terminal padded, TokenLog
-    # zeroed, recorder shared by reference) and a derived
-    # control set: a fresh {Control::StepLimit} at the new cap,
-    # the same {Control::Cancellable} shared by reference (so a
-    # parent cancel kills sub-agents too), and no
-    # {Control::Interloper} (since the host has no handle to
-    # sub-agents).
-    #
-    # @param max_steps [Integer] step budget for each sub-agent
-    #   run, passed through to {Tool::SubAgent#initialize}
-    # @raise [RuntimeError] if a {Tool::SubAgent} is already
-    #   registered on this agent — calling twice would advertise
-    #   two identically named tools to ruby_llm and double the
-    #   sub-agent's tool list (the second snapshot would contain
-    #   the first sub-agent tool).
-    # @return [void]
-    def allow_sub_agent(max_steps: 10)
-      raise "Tool::SubAgent already registered on this agent; allow_sub_agent may only be called once" \
-        if @tools.any?(Tool::SubAgent)
-
-      sub_tool = Tool::SubAgent.new(self, max_steps: max_steps)
-      @tools << sub_tool
-      @chat.with_tool(sub_tool.to_ruby_llm_tool)
     end
 
     # Short, single-line config dump suitable for a startup

@@ -124,14 +124,6 @@ module Pikuri
       @live_ids.empty?
     end
 
-    # Build a sub-agent-facing facade. Sub-agents share the parent's
-    # live clients (no re-spawn) but track their own activation state.
-    #
-    # @return [View]
-    def view_for_sub_agent
-      View.new(self)
-    end
-
     # Build the +mcp_connect+ tool bound to the given agent. The agent
     # passes itself so the tool can call +agent.internal_add_tool+
     # without a circular constructor dance. Each call returns a fresh
@@ -140,7 +132,7 @@ module Pikuri
     # @param agent [Agent]
     # @return [Connect]
     def build_mcp_connect_tool(agent)
-      Connect.new(view: self, agent: agent)
+      Connect.new(servers: self, agent: agent)
     end
 
     # System-prompt block advertising every live MCP server to the LLM.
@@ -421,54 +413,6 @@ module Pikuri
       at_exit { me.close }
     end
 
-    # Sub-agent-facing facade. Shares the parent's clients, never owns
-    # lifecycle. Constructed via {Servers#view_for_sub_agent}.
-    #
-    # Recursive sub-agents (a sub-agent spawning its own sub-agent)
-    # share the same {View} instance — {#view_for_sub_agent} returns
-    # +self+ rather than wrapping again, since clients are already
-    # delegated to root.
-    class View
-      # @param root [Servers]
-      def initialize(root)
-        @root = root
-      end
-
-      # @return [Array<String>]
-      def live_ids
-        @root.live_ids
-      end
-
-      # @return [Boolean]
-      def empty?
-        @root.empty?
-      end
-
-      # @return [View] self (nested sub-agents share the same view).
-      def view_for_sub_agent
-        self
-      end
-
-      # @return [String]
-      def system_prompt_snippet
-        @root.system_prompt_snippet
-      end
-
-      # @param agent [Agent]
-      # @return [Connect]
-      def build_mcp_connect_tool(agent)
-        Connect.new(view: self, agent: agent)
-      end
-
-      # @param id [String]
-      # @param agent [Agent]
-      # @return [Integer] number of tools registered.
-      # @raise [ArgumentError] if +id+ isn't live.
-      def register_tools_with_agent(id, agent)
-        @root.register_tools_with_agent(id, agent)
-      end
-    end
-
     # The +mcp_connect+ tool exposed to the LLM. Private inner class —
     # instantiated only by {Servers#build_mcp_connect_tool} (called
     # from {Agent#initialize}), never by application code.
@@ -490,11 +434,11 @@ module Pikuri
         - On `Error: unknown MCP server id ...`, pick an id that actually appears in `<available_mcps>`.
       DESC
 
-      # @param view [Servers, View] runtime view this tool resolves
-      #   ids against.
+      # @param servers [Servers] shared runtime this tool resolves
+      #   ids against and registers tools through.
       # @param agent [Agent] agent into whose chat the activated tools
       #   are registered.
-      def initialize(view:, agent:)
+      def initialize(servers:, agent:)
         activated = Set.new
 
         super(
@@ -507,8 +451,8 @@ module Pikuri
                               '`<available_mcps>` in the system prompt, e.g. "maven-tools".'
           },
           execute: lambda { |id:|
-            unless view.live_ids.include?(id)
-              available = view.live_ids.empty? ? 'none' : view.live_ids.join(', ')
+            unless servers.live_ids.include?(id)
+              available = servers.live_ids.empty? ? 'none' : servers.live_ids.join(', ')
               next "Error: unknown MCP server id #{id.inspect}. Available: #{available}."
             end
 
@@ -516,7 +460,7 @@ module Pikuri
               next "Error: server '#{id}' is already connected; its tools are in your toolset, call them directly."
             end
 
-            count = view.register_tools_with_agent(id, agent)
+            count = servers.register_tools_with_agent(id, agent)
             activated << id
             "Connected to MCP server '#{id}'. Added #{count} tool#{'s' if count != 1} to your toolset."
           }

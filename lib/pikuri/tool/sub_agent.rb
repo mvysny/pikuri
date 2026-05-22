@@ -60,7 +60,9 @@ module Pikuri
       # @param parent_agent [Agent] the calling agent. Read for its
       #   {Agent#transport}, {Agent#system_prompt}, {Agent#tools},
       #   {Agent#listeners}, {Agent#step_limit}, {Agent#cancellable},
-      #   {Agent#context_window_cap}, and {Agent#name}.
+      #   {Agent#context_window_cap}, {Agent#name}, and
+      #   {Agent#extensions} (so the sub-agent inherits and re-binds
+      #   the parent's extension list).
       # @param max_steps [Integer] step budget for each sub-agent run,
       #   used to construct the sub-agent's own
       #   {Agent::Control::StepLimit}.
@@ -75,14 +77,18 @@ module Pikuri
         context_window    = parent_agent.context_window_cap
         parent_name       = parent_agent.name
         streaming         = parent_agent.streaming
-        # Threaded into the sub-agent so it shares the parent's live MCP
-        # clients (no re-spawn) and can lazy-add MCP tools to its own
-        # chat via +mcp_connect+. Activation state stays per-agent —
-        # the view's +build_mcp_connect_tool+ produces a fresh
-        # +McpConnect+ with its own activation set inside the child's
-        # +Agent#initialize+. +nil+ when the parent has no MCP runtime.
-        # See IDEAS.md §"Per-agent activation, no propagation".
-        mcp_servers       = parent_agent.mcp_servers&.view_for_sub_agent
+        # Parent's extension list, captured at SubAgent construction
+        # so spawned sub-agents share the *same* extension instances
+        # (configure has already run on the parent — the resulting
+        # tools / snippets / listeners are inherited verbatim via
+        # the kwargs above). Each inherited extension's +bind+ fires
+        # inside the sub-agent's +Agent#initialize+ — that's how
+        # MCP's per-agent connect tool ends up keyed to the
+        # sub-agent rather than the parent, while still sharing the
+        # parent's live MCP clients through the extension instance.
+        # See IDEAS.md §"Sub-agent inheritance — configure-once,
+        # bind-per-agent".
+        inherited_exts    = parent_agent.extensions
         sub_counter       = 0
 
         super(
@@ -110,18 +116,22 @@ module Pikuri
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
               name: sub_name,
-              mcp_servers: mcp_servers,
+              extensions: inherited_exts,
               streaming: streaming
             )
             begin
               sub.run_loop(user_message: task)
               sub.last_assistant_content
             ensure
-              # Defensive: sub-agents don't own their +mcp_servers+
-              # (they received a +View+), so this is a no-op today
-              # for MCP. Calling +#close+ anyway means any future
-              # agent-owned resource gets released without revisiting
-              # this site. See {Agent#close}.
+              # The sub-agent borrows the parent's MCP clients via
+              # the shared {Mcp::Extension} instance; it doesn't own
+              # them. {#close} still fires its own +on_close+ list
+              # (empty for a sub-agent — no extensions registered
+              # any handlers via the inherited path, since they only
+              # re-bind here, not re-configure), so this is a no-op
+              # today. Calling +#close+ anyway means any future
+              # sub-agent-owned resource gets released without
+              # revisiting this site. See {Agent#close}.
               sub.close
             end
           }
