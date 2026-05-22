@@ -340,18 +340,6 @@ module Pikuri
     #   listeners through {ListenerList#for_sub_agent} so name-
     #   aware ones (notably {Listener::TokenLog}) can tag their
     #   output.
-    # @param extensions [Array<Extension>, nil] pre-configured
-    #   extension instances inherited from a parent agent. Used
-    #   exclusively by {Tool::SubAgent.execute} when spawning a
-    #   child; the child Agent calls +bind(self)+ on each but does
-    #   NOT re-run +configure+ — the parent already drove configure,
-    #   and the resulting state (tools / snippets / listeners) is
-    #   inherited verbatim by seeding the sub-agent's block with
-    #   {Configurator#add_tools} / {Configurator#add_listeners} and
-    #   threading the already-augmented +system_prompt+. Main-agent
-    #   callers leave this +nil+ and use the +Agent.new+ block's
-    #   {Configurator#add_extension} for any extensions they want
-    #   (Skills, MCP, custom hosts).
     # @param streaming [Boolean] opt into chunk-level streaming.
     #   When +true+, {#run_loop} passes the block returned by
     #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
@@ -380,7 +368,6 @@ module Pikuri
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
                    streaming: false,
-                   extensions: nil,
                    &block)
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
       @cancellable = cancellable
@@ -393,19 +380,13 @@ module Pikuri
       @streaming = streaming
       @synth_answer = nil
       @on_close_handlers = []
-      # Inherited extensions arrive pre-configured (the parent
-      # already drove +configure+ and the resulting tools / snippets
-      # / listeners were inherited verbatim by seeding the sub-agent's
-      # Configurator block — see {Tool::SubAgent}). They will be
-      # re-bound to this agent below; they do NOT re-run +configure+.
-      # Used exclusively by {Tool::SubAgent.execute} for sub-agent
-      # construction; main-agent callers leave +extensions:+ unset.
-      @extensions = extensions ? extensions.dup : []
 
       # Single Configurator funnel for everything the block adds —
-      # tools, listeners, system-prompt snippets, extensions,
-      # on_close handlers, and the sub-agent request. See IDEAS.md
-      # §"Extension protocol design".
+      # tools, listeners, system-prompt snippets, extensions
+      # (both newly-configured via #add_extension and inherited
+      # via #inherit_extensions for sub-agents), on_close handlers,
+      # and the sub-agent request. See IDEAS.md §"Extension protocol
+      # design".
       configurator = Configurator.new(
         transport: @transport,
         system_prompt_base: system_prompt,
@@ -424,7 +405,7 @@ module Pikuri
         @system_prompt = "#{@system_prompt}\n\n#{snippet}"
       end
       @on_close_handlers.concat(configurator.on_close_handlers)
-      @extensions.concat(configurator.extensions)
+      @extensions = configurator.extensions.dup
 
       @chat = RubyLLM.chat(**@transport.to_h)
       @chat.with_instructions(@system_prompt)
@@ -563,8 +544,9 @@ module Pikuri
     attr_reader :streaming
 
     # @return [Array<Extension>] extension instances bound to this
-    #   agent — inherited via the +extensions:+ kwarg (for
-    #   sub-agents) plus any added via {Configurator#add_extension}
+    #   agent — added via {Configurator#add_extension} (new — runs
+    #   +configure+ now and binds later) or {Configurator#inherit_extensions}
+    #   (sub-agent inheritance — skips +configure+, just binds), both
     #   inside the +Agent.new+ block. Read by {Tool::SubAgent} so
     #   spawned sub-agents inherit the parent's extension list and
     #   re-bind them via the bind sweep.

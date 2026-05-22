@@ -108,12 +108,12 @@ module Pikuri
             sub_name = parent_name.empty? ? "sub_agent #{idx}" : "#{parent_name}_#{idx}"
             sub_listeners = listeners.for_sub_agent(name: sub_name)
 
-            # Tools and listeners are seeded via the Configurator
-            # block — the main-agent API only exposes one wiring
-            # path. Extensions arrive pre-configured via the
-            # +extensions:+ kwarg so the sub-agent re-binds them
-            # without re-running +configure+ on the parent's snippet
-            # contributions.
+            # All inherited state is seeded through the Configurator
+            # block — tools and listeners via add_tools / add_listeners,
+            # extensions via inherit_extensions which retains them for
+            # the bind sweep without re-running configure (the parent
+            # already drove that and the resulting system-prompt
+            # snippets are inherited verbatim through +system_prompt+).
             sub = Agent.new(
               transport: transport,
               system_prompt: system_prompt,
@@ -121,11 +121,11 @@ module Pikuri
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
               name: sub_name,
-              extensions: inherited_exts,
               streaming: streaming
             ) do |c|
               c.add_tools(sub_tools)
               c.add_listeners(sub_listeners)
+              c.inherit_extensions(inherited_exts)
             end
             begin
               sub.run_loop(user_message: task)

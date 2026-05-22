@@ -207,6 +207,26 @@ module Pikuri
         nil
       end
 
+      # Retain a list of already-configured extensions for the
+      # bind sweep without re-running +configure+. Sole intended
+      # caller is {Tool::SubAgent}, which seeds a sub-agent's
+      # Configurator from the parent's extension list — the parent
+      # already drove +configure+ and its system-prompt snippets /
+      # static tools are inherited by the sub-agent verbatim
+      # through {#add_tools} + {#add_listeners} + the augmented
+      # +system_prompt+; re-running +configure+ on the sub-agent
+      # would double up those contributions. The +bind(sub_agent)+
+      # sweep in {Agent#initialize} still fires on each inherited
+      # extension so per-agent state (MCP's per-agent connect tool,
+      # for example) gets installed fresh on the sub-agent.
+      #
+      # @param extensions [Enumerable<Extension>]
+      # @return [void]
+      def inherit_extensions(extensions)
+        extensions.each { |ext| @extensions << ext }
+        nil
+      end
+
       # Register a handler called by {Agent#close}. Handlers fire in
       # LIFO order, each inside its own +rescue+ — same semantics as
       # +ensure+-block cleanup discipline.
