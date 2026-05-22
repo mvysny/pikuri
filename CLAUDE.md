@@ -228,24 +228,30 @@ and a small shared cache.
   constructor wiring (workspace + confirmer where needed) — same pattern
   as `Pikuri::Tool::SubAgent`, not the bare `ALL_CAPS` constant style used
   by the stateless web/calc tools.
-- `lib/pikuri/tool/skill_catalog.rb`, `lib/pikuri/tool/skill.rb` —
-  pikuri's implementation of the [Agent Skills standard](https://agentskills.io/specification).
-  `Pikuri::Tool::SkillCatalog` is the discovery + validation layer
-  (abstract base + bundled `Empty`/`EMPTY` and `Bundled` scanners that
-  walk `.pikuri/skills`, `.claude/skills`, `.agents/skills`).
-  `Pikuri::Tool::Skill < Pikuri::Tool` is the loading tool, instantiated
-  by `Agent#initialize` whenever the wired-in catalog is non-empty;
-  same constructor-wiring pattern as `SubAgent` and the coding tools.
-  Catalog + tool form a seam: a future host can plug in a synthetic
-  catalog (virtual filesystem, in-memory test fixture) without touching
-  `Tool::Skill` or `Agent`.
+- `lib/pikuri/skill/catalog.rb`, `lib/pikuri/skill/skill_tool.rb`,
+  `lib/pikuri/skill/extension.rb` — pikuri's implementation of the
+  [Agent Skills standard](https://agentskills.io/specification), all
+  under the `Pikuri::Skill` namespace anticipating the future
+  `pikuri-skills` gem split. `Pikuri::Skill::Catalog` is the discovery
+  + validation layer (abstract base + bundled `Empty`/`EMPTY` and
+  `Bundled` scanners that walk `.pikuri/skills`, `.claude/skills`,
+  `.agents/skills`). `Pikuri::Skill::SkillTool < Pikuri::Tool` is the
+  loading tool (the `Tool` suffix avoids the `class Tool < Pikuri::Tool`
+  shadowing — LLM-facing name stays `skill`), registered on the agent
+  by `Pikuri::Skill::Extension` whenever the wired-in catalog is
+  non-empty. Catalog + tool form a seam: a future host can plug in a
+  synthetic catalog (virtual filesystem, in-memory test fixture)
+  without touching `Skill::SkillTool` or the agent. The Extension is
+  the wire-in surface — added via
+  `c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))`
+  inside the `Pikuri::Agent.new` block.
 - `lib/pikuri/mcp/registry.rb`, `lib/pikuri/mcp/servers.rb`,
   `lib/pikuri/mcp/synthesizer.rb`, `lib/pikuri/mcp/verifier.rb`,
   `lib/pikuri/mcp/cache.rb` — MCP (Model Context Protocol) support
   under the `Pikuri::Mcp` namespace.
   `Pikuri::Mcp::Registry` is the pure config layer (`StdioEntry`/
   `HttpEntry` data classes, `EMPTY` singleton — same shape as
-  `SkillCatalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
+  `Pikuri::Skill::Catalog::EMPTY`). `Pikuri::Mcp::Servers` is the runtime:
   constructed from a registry, eager-starts every configured server
   via the `mcp` gem's `MCP::Client::Stdio` / `MCP::Client::HTTP`,
   holds the live clients, emits an INFO audit log per server,

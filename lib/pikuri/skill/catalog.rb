@@ -3,9 +3,9 @@
 require 'yaml'
 
 module Pikuri
-  class Tool
+  module Skill
     # Discovery + validation of *skills* — Markdown files with YAML
-    # frontmatter that the agent loads on demand via {Tool::Skill}.
+    # frontmatter that the agent loads on demand via {Tool}.
     #
     # A skill is a directory containing a +SKILL.md+ file. The frontmatter
     # declares the skill's +name+ and +description+; everything in the
@@ -19,25 +19,24 @@ module Pikuri
     #
     # == Catalog vs. tool
     #
-    # {SkillCatalog} owns the *discovery* layer: where skills live, how
-    # the frontmatter is parsed, what wins on a name collision. The
-    # {Tool::Skill} tool is the *loading* layer: it receives a catalog at
+    # {Catalog} owns the *discovery* layer: where skills live, how the
+    # frontmatter is parsed, what wins on a name collision. The
+    # {Tool} class is the *loading* layer: it receives a catalog at
     # construction and looks names up against it when the LLM invokes
-    # +skill+. The two are paired by {Agent} — see
-    # {Agent#initialize} for the auto-registration rule (non-empty
-    # catalog ⇒ +Tool::Skill+ is appended to the tool list and the
-    # catalog's prompt block is appended to the system prompt).
+    # +skill+. The two are paired by {Extension} — non-empty catalog ⇒
+    # {Tool} is appended to the agent's tool list and the catalog's
+    # prompt block is appended to the system prompt.
     #
     # == The seam
     #
-    # {SkillCatalog} is an abstract base with two bundled
-    # implementations: {Empty} (the +EMPTY+ singleton, used by
-    # +pikuri-chat+ and as the default for any caller that doesn't have a
-    # filesystem story) and {Bundled} (the on-disk scanner). The seam
-    # lets future hosts (e.g. an in-editor pikuri reading skills from a
-    # virtual filesystem, or a synthetic test catalog) swap in without
-    # touching {Tool::Skill} or {Agent}.
-    class SkillCatalog
+    # {Catalog} is an abstract base with two bundled implementations:
+    # {Empty} (the +EMPTY+ singleton, used by +pikuri-chat+ and as the
+    # default for any caller that doesn't have a filesystem story) and
+    # {Bundled} (the on-disk scanner). The seam lets future hosts (e.g.
+    # an in-editor pikuri reading skills from a virtual filesystem, or
+    # a synthetic test catalog) swap in without touching {Tool} or
+    # {Extension}.
+    class Catalog
       # Frontmatter +name+ cap per the Agent Skills standard.
       MAX_NAME_LENGTH = 64
 
@@ -87,8 +86,8 @@ module Pikuri
         raise NotImplementedError, "#{self.class}#get must be implemented"
       end
 
-      # @return [Boolean] true when {#list} is empty. {Agent} keys its
-      #   auto-wiring (system-prompt augmentation + +Tool::Skill+
+      # @return [Boolean] true when {#list} is empty. {Extension}
+      #   keys its auto-wiring (system-prompt augmentation + {Tool}
       #   registration) off this — empty catalog ⇒ no surface change.
       def empty?
         list.empty?
@@ -139,7 +138,7 @@ module Pikuri
       # Null-object catalog. The +EMPTY+ constant is the singleton
       # instance used as the default for {Agent#initialize}; constructing
       # additional instances is harmless but pointless.
-      class Empty < SkillCatalog
+      class Empty < Catalog
         # @return [Array<Skill>] always empty
         def list
           [].freeze
@@ -176,7 +175,7 @@ module Pikuri
       # still loads with whatever could be salvaged. Skills without
       # a YAML frontmatter block at all are skipped silently (the file
       # is presumably not meant as a skill).
-      class Bundled < SkillCatalog
+      class Bundled < Catalog
         # Build a catalog from pikuri's conventional discovery roots:
         # project skills (walked from +cwd+ up to the git root or
         # filesystem root) take precedence over global skills (under

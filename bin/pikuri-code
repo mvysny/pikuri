@@ -79,7 +79,7 @@ llama_probe_url = "#{server}/props"
 # matching skill on demand. Empty catalogs are fine — Agent skips both
 # the system-prompt augmentation and the `skill` tool when nothing was
 # discovered, so the no-skills case is indistinguishable from before.
-skill_catalog = Pikuri::Tool::SkillCatalog::Bundled.discover(cwd: workspace.cwd.to_s)
+skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: workspace.cwd.to_s)
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 

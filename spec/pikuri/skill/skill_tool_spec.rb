@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Tool::Skill do
+RSpec.describe Pikuri::Skill::SkillTool do
   FIXTURE_VALID = File.expand_path('../../fixtures/skills/valid-tree', __dir__)
 
-  let(:catalog) { Pikuri::Tool::SkillCatalog::Bundled.new(roots: [FIXTURE_VALID]) }
+  let(:catalog) { Pikuri::Skill::Catalog::Bundled.new(roots: [FIXTURE_VALID]) }
 
   describe 'tool shape' do
     it 'is named "skill" and exposes a required `name` string parameter' do
@@ -47,7 +47,7 @@ RSpec.describe Pikuri::Tool::Skill do
     end
 
     it 'returns an Error: string mentioning "none" when the catalog is empty' do
-      tool = described_class.new(catalog: Pikuri::Tool::SkillCatalog::EMPTY)
+      tool = described_class.new(catalog: Pikuri::Skill::Catalog::EMPTY)
       out = tool.run('name' => 'anything')
 
       assert out.start_with?('Error:'), out

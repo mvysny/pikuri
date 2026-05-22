@@ -348,13 +348,13 @@ module Pikuri
     #   listeners through {ListenerList#for_sub_agent} so name-
     #   aware ones (notably {Listener::TokenLog}) can tag their
     #   output.
-    # @param skill_catalog [Tool::SkillCatalog] catalog of on-disk
+    # @param skill_catalog [Skill::Catalog] catalog of on-disk
     #   skills the agent may load on demand. Defaults to
-    #   +Tool::SkillCatalog::EMPTY+, which is a no-op singleton.
+    #   +Skill::Catalog::EMPTY+, which is a no-op singleton.
     #   When non-empty: the catalog's prompt block
-    #   ({Tool::SkillCatalog#format_for_prompt}) is appended to
+    #   ({Skill::Catalog#format_for_prompt}) is appended to
     #   +system_prompt+ so the LLM can see what's available, and
-    #   a {Tool::Skill} bound to the catalog is appended to
+    #   a {Skill::SkillTool} bound to the catalog is appended to
     #   +tools+ so the LLM can actually load them. The two
     #   changes are coupled — advertising skills without a
     #   loader (or vice versa) would be a bug, so the catalog is
@@ -434,7 +434,7 @@ module Pikuri
     def initialize(transport:, system_prompt:, tools: [], listeners: nil,
                    step_limit: nil, cancellable: nil, interloper: nil,
                    context_window: nil, llama_probe_url: nil, name: '',
-                   skill_catalog: Tool::SkillCatalog::EMPTY,
+                   skill_catalog: Skill::Catalog::EMPTY,
                    mcp_registry: Mcp::Registry::EMPTY, mcp_servers: nil,
                    synthesize_descriptions: true,
                    verify_mcp_servers: true,
@@ -510,8 +510,7 @@ module Pikuri
       end
       @closed = false
 
-      @system_prompt = system_prompt + skill_catalog.format_for_prompt
-      @system_prompt += @mcp_servers.system_prompt_snippet if @mcp_servers
+      @system_prompt = system_prompt
       @tools = tools.dup
       @listeners = listeners
       @step_limit = step_limit
@@ -522,47 +521,59 @@ module Pikuri
       @on_close_handlers = []
       @extensions = []
 
-      unless skill_catalog.empty?
-        raise 'Tool::Skill cannot be passed in tools: when skill_catalog is non-empty; ' \
-              'Agent auto-registers it from the catalog.' \
-          if @tools.any?(Tool::Skill)
-
-        @tools << Tool::Skill.new(catalog: skill_catalog)
+      # Validate manual-vs-auto Skill conflict before the extension
+      # routing runs — the user's +tools:+ kwarg shouldn't pre-
+      # register a +Skill::SkillTool+ if the +skill_catalog:+ kwarg is
+      # also wiring one in.
+      if !skill_catalog.empty? && @tools.any?(Skill::SkillTool)
+        raise 'Skill::SkillTool cannot be passed in tools: when skill_catalog is non-empty; ' \
+              'Agent auto-registers it from the catalog.'
       end
 
+      # Legacy MCP auto-wiring (transition layer — Step 3 migrates
+      # this into Mcp::Extension and drops these direct mutations).
       if @mcp_servers && !@mcp_servers.empty?
         if @tools.any?(Mcp::Servers::Connect)
           raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \
                 'Agent auto-registers it.'
         end
 
+        @system_prompt += @mcp_servers.system_prompt_snippet
         @tools << @mcp_servers.build_mcp_connect_tool(self)
       end
 
-      # New Extension protocol path: yield a Configurator, drain
-      # everything it collected back into the agent's wiring. Runs
-      # after the legacy kwarg-driven auto-wiring (Skill / MCP
-      # above) so the new path is purely additive during the
-      # transition. See IDEAS.md §"Extension protocol design".
-      if block
-        configurator = Configurator.new(
-          transport: @transport,
-          system_prompt_base: system_prompt,
-          name: @name,
-          streaming: @streaming,
-          step_limit: @step_limit,
-          cancellable: @cancellable,
-          interloper: @interloper
-        )
-        block.call(configurator)
-        @tools.concat(configurator.tools)
-        @listeners = @listeners.with(*configurator.listeners)
-        configurator.system_prompt_additions.each do |snippet|
-          @system_prompt = "#{@system_prompt}\n\n#{snippet}"
-        end
-        @on_close_handlers.concat(configurator.on_close_handlers)
-        @extensions.concat(configurator.extensions)
+      # Single Configurator funnel: legacy kwargs route extensions
+      # in first, then the user's block can add more. Everything
+      # drains into the same agent ivars below. See IDEAS.md
+      # §"Extension protocol design".
+      configurator = Configurator.new(
+        transport: @transport,
+        system_prompt_base: system_prompt,
+        name: @name,
+        streaming: @streaming,
+        step_limit: @step_limit,
+        cancellable: @cancellable,
+        interloper: @interloper
+      )
+
+      # Legacy skill_catalog kwarg → Skill::Extension routing.
+      configurator.add_extension(Skill::Extension.new(catalog: skill_catalog)) \
+        unless skill_catalog.empty?
+
+      block&.call(configurator)
+
+      @tools.concat(configurator.tools)
+      # Only call #with when there's something to merge — the
+      # listener kwarg is duck-typed (any object responding to
+      # +emit+ + +for_sub_agent+ works, see Tool::SubAgent specs),
+      # and we don't want to force every duck implementation to
+      # also provide +with+.
+      @listeners = @listeners.with(*configurator.listeners) if configurator.listeners.any?
+      configurator.system_prompt_additions.each do |snippet|
+        @system_prompt = "#{@system_prompt}\n\n#{snippet}"
       end
+      @on_close_handlers.concat(configurator.on_close_handlers)
+      @extensions.concat(configurator.extensions)
 
       @chat = RubyLLM.chat(**@transport.to_h)
       @chat.with_instructions(@system_prompt)
@@ -641,8 +652,8 @@ module Pikuri
     #   the +skill_catalog:+ kwarg themselves.
     attr_reader :system_prompt
 
-    # @return [Tool::SkillCatalog] catalog passed to the
-    #   constructor; +Tool::SkillCatalog::EMPTY+ if none was
+    # @return [Skill::Catalog] catalog passed to the
+    #   constructor; +Skill::Catalog::EMPTY+ if none was
     #   supplied. Read by callers that want to inspect the
     #   loaded skills (e.g. for a startup banner).
     attr_reader :skill_catalog

@@ -1118,7 +1118,7 @@ RSpec.describe Pikuri::Agent do
   describe 'skill_catalog wiring' do
     # Minimal stand-in for a non-empty catalog: lets the specs assert
     # Pikuri::Agent's auto-wiring without spinning up the on-disk Bundled scanner.
-    fake_catalog_class = Class.new(Pikuri::Tool::SkillCatalog) do
+    fake_catalog_class = Class.new(Pikuri::Skill::Catalog) do
       def initialize(skills)
         super()
         @skills = skills
@@ -1134,7 +1134,7 @@ RSpec.describe Pikuri::Agent do
     end
 
     let(:sample_skill) do
-      Pikuri::Tool::SkillCatalog::Skill.new(
+      Pikuri::Skill::Catalog::Skill.new(
         name: 'sample',
         description: 'Sample skill description.',
         location: '/tmp/sample/SKILL.md',
@@ -1149,8 +1149,8 @@ RSpec.describe Pikuri::Agent do
                                 system_prompt: 'base', tools: [], listeners: listeners)
 
       assert_equal 'base', agent.system_prompt
-      assert_equal Pikuri::Tool::SkillCatalog::EMPTY, agent.skill_catalog
-      assert agent.tools.none?(Pikuri::Tool::Skill), 'EMPTY catalog must NOT register Pikuri::Tool::Skill'
+      assert_equal Pikuri::Skill::Catalog::EMPTY, agent.skill_catalog
+      assert agent.tools.none?(Pikuri::Skill::SkillTool), 'EMPTY catalog must NOT register Pikuri::Skill::SkillTool'
       assert fake_chat.tools.none? { |t| t.name == 'skill' },
              'EMPTY catalog must NOT register a `skill` tool on the chat'
     end
@@ -1168,13 +1168,13 @@ RSpec.describe Pikuri::Agent do
       assert_equal agent.system_prompt, fake_chat.instructions
     end
 
-    it 'auto-registers a Pikuri::Tool::Skill bound to the catalog when non-empty' do
+    it 'auto-registers a Pikuri::Skill::SkillTool bound to the catalog when non-empty' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 'base', tools: [], listeners: listeners,
                                 skill_catalog: non_empty_catalog)
 
-      skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Tool::Skill) }
-      refute_nil skill_tool, 'expected non-empty catalog to auto-register a Pikuri::Tool::Skill'
+      skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Skill::SkillTool) }
+      refute_nil skill_tool, 'expected non-empty catalog to auto-register a Pikuri::Skill::SkillTool'
       # And it must reach the chat — not just sit on the tools array.
       wired = fake_chat.tools.find { |t| t.name == 'skill' }
       refute_nil wired, 'expected the `skill` tool to be wired on the underlying chat'
@@ -1185,8 +1185,8 @@ RSpec.describe Pikuri::Agent do
       assert result.include?('do the thing'), result
     end
 
-    it 'raises if a Pikuri::Tool::Skill is also passed in tools: alongside a non-empty catalog' do
-      manual_skill_tool = Pikuri::Tool::Skill.new(catalog: non_empty_catalog)
+    it 'raises if a Pikuri::Skill::SkillTool is also passed in tools: alongside a non-empty catalog' do
+      manual_skill_tool = Pikuri::Skill::SkillTool.new(catalog: non_empty_catalog)
 
       err = assert_raises(RuntimeError) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),

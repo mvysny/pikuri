@@ -3,7 +3,7 @@
 require 'fileutils'
 require 'tmpdir'
 
-RSpec.describe Pikuri::Tool::SkillCatalog do
+RSpec.describe Pikuri::Skill::Catalog do
   FIXTURE_ROOT = File.expand_path('../../fixtures/skills', __dir__)
 
   # Capture warning log lines so collision / validation behavior can be
@@ -29,9 +29,9 @@ RSpec.describe Pikuri::Tool::SkillCatalog do
     Pikuri.log_io = original if original
   end
 
-  describe Pikuri::Tool::SkillCatalog::EMPTY do
+  describe Pikuri::Skill::Catalog::EMPTY do
     it 'is the canonical empty singleton' do
-      assert_kind_of Pikuri::Tool::SkillCatalog, described_class
+      assert_kind_of Pikuri::Skill::Catalog, described_class
       assert described_class.empty?
       assert_equal [], described_class.list
       assert_nil described_class.get('anything')
@@ -43,7 +43,7 @@ RSpec.describe Pikuri::Tool::SkillCatalog do
     end
   end
 
-  describe Pikuri::Tool::SkillCatalog::Bundled do
+  describe Pikuri::Skill::Catalog::Bundled do
     describe '#initialize with explicit roots' do
       it 'loads every SKILL.md under one root, sorted by directory name' do
         catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'valid-tree')])
@@ -54,7 +54,7 @@ RSpec.describe Pikuri::Tool::SkillCatalog do
         assert_equal %w[data-viz pdf-tools], names
 
         pdf = catalog.get('pdf-tools')
-        assert_kind_of Pikuri::Tool::SkillCatalog::Skill, pdf
+        assert_kind_of Pikuri::Skill::Catalog::Skill, pdf
         assert_equal 'pdf-tools', pdf.name
         assert pdf.description.start_with?('Extracts text from PDF')
         assert pdf.body.include?('pdftotext')

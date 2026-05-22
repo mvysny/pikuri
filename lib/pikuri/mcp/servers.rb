@@ -146,7 +146,7 @@ module Pikuri
     # System-prompt block advertising every live MCP server to the LLM.
     # Empty string when no servers are alive so the caller can
     # unconditionally concatenate, same shape as
-    # {Tool::SkillCatalog#format_for_prompt}. The block is *not*
+    # {Pikuri::Skill::Catalog#format_for_prompt}. The block is *not*
     # duplicated into the +mcp_connect+ tool description — the
     # available-ids list lives in one semantic home.
     #

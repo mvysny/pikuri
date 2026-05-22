@@ -32,7 +32,7 @@ module Pikuri
   # prompt. The +pikuri-chat+ binary relies on this short-circuit so it
   # can omit the kwarg entirely.
   #
-  # Same shape as {Tool::SkillCatalog::EMPTY}.
+  # Same shape as {Pikuri::Skill::Catalog::EMPTY}.
   class Registry
     # One local-subprocess MCP server's configuration: a unique id
     # (used by the LLM to call +mcp_connect+) and the argv array used
@@ -98,7 +98,7 @@ module Pikuri
 
     # @return [Boolean] true when no servers are configured. {Agent}
     #   keys its MCP auto-wiring off this — empty registry ⇒ no surface
-    #   change, same pattern as {Tool::SkillCatalog#empty?}.
+    #   change, same pattern as {Pikuri::Skill::Catalog#empty?}.
     def empty?
       @entries.empty?
     end
