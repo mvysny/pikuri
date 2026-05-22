@@ -26,6 +26,7 @@ require 'pikuri-code'
 yolo = false
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
+api_key_env = 'OPENAI_API_KEY'
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-code [options] [initial message...]'
   opts.separator ''
@@ -33,6 +34,7 @@ parser = OptionParser.new do |opts|
   opts.on('--yolo', 'Auto-approve all confirmations (use only inside a sandbox)') { yolo = true }
   opts.on('--server URL', "LLM server base URL (default: #{server})") { |v| server = v }
   opts.on('--model NAME', "Model identifier (default: #{model})") { |v| model = v }
+  opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -66,7 +68,7 @@ openai_api_base = "#{server}/v1"
 
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base
-  c.openai_api_key  = 'not-needed'
+  c.openai_api_key  = ENV.fetch(api_key_env, 'not-needed')
 end
 
 # llama.cpp exposes the server's launched +n_ctx+ at +/props+ on the base
