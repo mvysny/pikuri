@@ -3,22 +3,22 @@
 require_relative 'lib/pikuri/version'
 
 Gem::Specification.new do |spec|
-  spec.name        = 'pikuri'
+  spec.name        = 'pikuri-core'
   spec.version     = Pikuri::VERSION
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'A small, privacy-first Ruby toolkit for building local AI assistants.'
+  spec.summary     = 'The minimal core of the pikuri AI-assistant toolkit (Agent, Tool framework, web tools, bin/pikuri-chat).'
   spec.description = <<~DESC
-    A library for assembling AI assistants: Pikuri::Agent (a thin wrapper around
-    ruby_llm's chat loop), Pikuri::Tool with strict argument validation, a
-    listener surface for rendering / budgets / sub-agents, and a small set of
-    bundled tools (calculator, web search, web scrape, fetch, plus six coding
-    tools: read / write / edit / grep / glob / bash). Downstream projects
-    (notably the planned pikuri-tui) wire these into actual binaries. The repo
-    also ships `bin/pikuri-chat` and `bin/pikuri-code` as demo entry points,
-    but they are NOT installed by `gem install pikuri` — they exist to show
-    how to wire the library together and to support development.
+    pikuri-core is the lean, audit-friendly foundation of the pikuri family:
+    Pikuri::Agent (a thin wrapper around ruby_llm's chat loop) with its
+    Configurator + Extension protocol, the strict Pikuri::Tool framework, a
+    listener surface for rendering / budgets / sub-agents, and four bundled
+    stateless tools (calculator, web search, web scrape, fetch). Extensions
+    (skills, MCP, workspace, coding stack, named-agent personas) live in
+    sibling gems so a privacy-conscious user can install just this core and
+    audit a minimal dependency tree. For the convenience bundle that pulls
+    in everything, see the +pikuri+ metagem.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'
@@ -33,17 +33,15 @@ Gem::Specification.new do |spec|
     'rubygems_mfa_required' => 'true'
   }
 
-  # pikuri ships as a library. The bin/pikuri-* scripts in the repo are
-  # dev / demo conveniences — not advertised as gem executables, and not
-  # included in the gem payload. Production binaries (e.g. the planned
-  # pikuri-tui) will live in their own gems and consume pikuri-as-library.
+  # pikuri-core ships as a library. The bin/pikuri-chat script in the
+  # gem payload is a dev / demo convenience — not advertised as a gem
+  # executable.
   spec.files = Dir[
     'lib/**/*.rb',
     'prompts/*.txt',
     'CHANGELOG.md',
     'LICENSE',
-    'README.md',
-    'GETTING_STARTED.md'
+    'README.md'
   ]
   spec.require_paths = ['lib']
 
@@ -58,11 +56,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'faraday',          '~> 2.9'
 
   # Model Context Protocol client + server. Used by
-  # Pikuri::McpServers to spawn and talk to external MCP servers, and
-  # by spec/support/test_mcp_server.rb (the in-tree test server side).
-  # The gem owns subprocess lifecycle, JSON-RPC framing, and the
-  # tools/list / tools/call round-trips; pikuri's adapter converts
-  # discovered MCP tools into RubyLLM::Tool subclasses.
+  # Pikuri::Mcp::Servers to spawn and talk to external MCP servers.
+  # Will move to pikuri-mcp.gemspec in P2-3 (gem split for MCP) —
+  # kept here for now because pikuri-core/lib/pikuri/mcp/ still
+  # references it until that extraction lands.
   spec.add_dependency 'mcp',              '~> 0.17'
 
   # HTML parser. Used by the web-fetch scraper and by both search

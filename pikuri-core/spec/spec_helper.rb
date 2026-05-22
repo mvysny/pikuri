@@ -6,7 +6,7 @@ require 'rspec/core'
 require 'minitest'
 require 'minitest/assertions'
 
-require 'pikuri'
+require 'pikuri-core'
 
 # Disable on-disk caching by default in the test suite. The specs that
 # genuinely exercise caching behavior opt back in by stubbing +.cache+

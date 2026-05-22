@@ -12,10 +12,20 @@ IFS=$'\n\t'
 DEST="${PREFIX:-$HOME/.local/bin}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Each pikuri binary lives in its own gem's bin/ directory after the
+# Phase 2 monorepo split. Until every binary has been extracted to
+# its gem subdir, some are still at the repo-level bin/.
+declare -A BINARIES=(
+  [pikuri-chat]="$ROOT/pikuri-core/bin/pikuri-chat"
+  [pikuri-code]="$ROOT/bin/pikuri-code"
+  [pikuri-assistant]="$ROOT/bin/pikuri-assistant"
+)
+
 mkdir -p "$DEST"
-for name in pikuri-chat pikuri-code; do
-  ln -sfn "$ROOT/bin/$name" "$DEST/$name"
-  echo "  $DEST/$name -> $ROOT/bin/$name"
+for name in "${!BINARIES[@]}"; do
+  src="${BINARIES[$name]}"
+  ln -sfn "$src" "$DEST/$name"
+  echo "  $DEST/$name -> $src"
 done
 
 case ":$PATH:" in

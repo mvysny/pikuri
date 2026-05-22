@@ -3,9 +3,7 @@
 
 require 'bundler/setup'
 
-$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
-
-require 'pikuri'
+require 'pikuri-core'
 require 'irb'
 
 IRB.start(__FILE__)

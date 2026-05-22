@@ -6,16 +6,18 @@ require 'zeitwerk'
 # +Pikuri::VERSION+ lives in its own tiny file so the gemspec can read
 # the version constant via +require_relative+ at build time without
 # loading Zeitwerk and every runtime dep. Requiring it here makes the
-# constant available to ordinary +require 'pikuri'+ callers too —
+# constant available to ordinary +require 'pikuri-core'+ callers too —
 # without this line, Zeitwerk's ignore-rule below would leave
 # +Pikuri::VERSION+ undefined for anyone using the installed gem.
 require_relative 'pikuri/version'
 
 # Boot file: configures the Zeitwerk autoloader for every file under
-# +lib/pikuri/+ and eager-loads them all. After +require 'pikuri'+,
-# every constant pikuri ships (+Pikuri::Agent+, +Pikuri::Tool+,
-# +Pikuri::Tool::Calculator+, +Pikuri::Tool::Scraper::HTML+, ...) is
-# defined and resolvable.
+# +pikuri-core/lib/pikuri/+ and eager-loads them all. After
+# +require 'pikuri-core'+, every constant pikuri-core ships
+# (+Pikuri::Agent+, +Pikuri::Tool+, +Pikuri::Tool::Calculator+, ...)
+# is defined and resolvable. Sibling gems (+pikuri-skills+,
+# +pikuri-mcp+, ...) set up their own Zeitwerk loaders rooted at
+# their own +lib/+ and contribute to the same +Pikuri::+ namespace.
 #
 # Beyond loading, the +Pikuri+ module owns the logging surface — see
 # {.logger_for}, {.log_io=}, and the +PIKURI_LOG+ /
@@ -36,21 +38,21 @@ require_relative 'pikuri/version'
 # +require+ ceremony. The cost is a few milliseconds of startup —
 # negligible compared to a single LLM round-trip.
 module Pikuri
-  # Absolute path to the directory holding pikuri's bundled system
-  # prompts (+pikuri-chat.txt+, +coding-system-prompt.txt+). Resolves
-  # correctly both in a source checkout and in an installed gem because
-  # +__dir__+ tracks the file's actual location either way; the gem
-  # ships +prompts/+ as a sibling of +lib/+ so the same relative jump
-  # works.
+  # Search path for bundled system prompts. Mutable list: each pikuri
+  # gem appends its own +prompts/+ directory when it boots, so a
+  # +Pikuri.prompt(name)+ call from a host that requires +pikuri-code+
+  # (for example) finds +coding-system-prompt.txt+ in
+  # +pikuri-code/prompts/+. The core gem registers its own
+  # +pikuri-core/prompts/+ below; sibling gems do the equivalent in
+  # their own entry files.
   #
   # Exposed publicly so a downstream library user can read pikuri's
-  # prompts as a starting point for their own system prompt (or use
-  # them verbatim). Prefer {.prompt} for the common case of loading
-  # one by name; reach for this constant only if you need the
-  # directory itself (e.g. to list available prompts).
+  # prompts as a starting point for their own system prompt (or
+  # use them verbatim). Prefer {.prompt} for the common case of
+  # loading one by name.
   #
-  # @return [String]
-  PROMPTS_DIR = File.expand_path('../prompts', __dir__)
+  # @return [Array<String>]
+  PROMPT_DIRS = [File.expand_path('../prompts', __dir__)]
 
   # Mapping from +PIKURI_LOG+ env-var values (lowercased) to
   # {Logger} level constants. Anything else falls back to +INFO+.
@@ -116,10 +118,11 @@ module Pikuri
       end
     end
 
-    # Read a bundled prompt by basename. +name+ is matched against the
-    # files in {PROMPTS_DIR}; a +.txt+ extension is auto-appended if
-    # absent. Symbols are accepted as a convenience (+:pikuri-chat+ /
-    # +'pikuri-chat'+ / +'pikuri-chat.txt'+ all resolve to the same file).
+    # Read a bundled prompt by basename. Searches every directory in
+    # {PROMPT_DIRS} in order, returning the first match. +.txt+ is
+    # auto-appended if absent. Symbols are accepted as a convenience
+    # (+:pikuri-chat+ / +'pikuri-chat'+ / +'pikuri-chat.txt'+ all
+    # resolve to the same file).
     #
     # Intended for downstream library users who want to bootstrap their
     # own +Pikuri::Agent+ wiring from pikuri's defaults — read the
@@ -132,30 +135,33 @@ module Pikuri
     #
     # @param name [String, Symbol] basename of the prompt file
     # @return [String] file contents
-    # @raise [ArgumentError] if no matching file exists in {PROMPTS_DIR}
+    # @raise [ArgumentError] if no matching file exists in any
+    #   directory in {PROMPT_DIRS}
     def prompt(name)
       basename = name.to_s
       basename += '.txt' unless basename.end_with?('.txt')
-      path = File.join(PROMPTS_DIR, basename)
-      unless File.exist?(path)
-        available = Dir.children(PROMPTS_DIR).sort.join(', ')
-        raise ArgumentError, "Unknown pikuri prompt #{name.inspect}; available: #{available}"
+      PROMPT_DIRS.each do |dir|
+        path = File.join(dir, basename)
+        return File.read(path) if File.exist?(path)
       end
-      File.read(path)
+      available = PROMPT_DIRS.flat_map { |dir| Dir.exist?(dir) ? Dir.children(dir) : [] }.sort.uniq
+      raise ArgumentError, "Unknown pikuri prompt #{name.inspect}; available: #{available.join(', ')}"
     end
   end
 
-  # Zeitwerk loader managing every constant under +lib/pikuri/+. Exposed
-  # as a constant (rather than scoped to the boot block) so a downstream
-  # host that wants to add ignore rules or extend the load path can reach
-  # it without monkey-patching. Most callers should not need to touch it.
+  # Zeitwerk loader managing every constant under
+  # +pikuri-core/lib/pikuri/+. Exposed as a constant (rather than scoped
+  # to the boot block) so a downstream host that wants to add ignore
+  # rules can reach it without monkey-patching. Sibling gems
+  # (+pikuri-skills+, +pikuri-mcp+, ...) set up their own loaders
+  # rooted at their own +lib/+ dirs — see each gem's entry file.
   #
   # @return [Zeitwerk::Loader]
   Loader = Zeitwerk::Loader.new
-  Loader.tag = 'pikuri'
+  Loader.tag = 'pikuri-core'
   Loader.push_dir(File.expand_path('.', __dir__))
   Loader.ignore(__FILE__)
-  # +lib/pikuri/version.rb+ defines +Pikuri::VERSION+ (an ALL_CAPS value
+  # +pikuri/version.rb+ defines +Pikuri::VERSION+ (an ALL_CAPS value
   # constant), not +Pikuri::Version+ as Zeitwerk would expect from the
   # filename — so tell the loader to skip it. The file is +require_relative+'d
   # at the top of this file (and also by the gemspec at build time), so

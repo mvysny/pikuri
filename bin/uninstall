@@ -12,14 +12,23 @@ IFS=$'\n\t'
 DEST="${PREFIX:-$HOME/.local/bin}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-for name in pikuri-chat pikuri-code; do
+# Mirror bin/install's per-binary source paths so we only remove
+# symlinks that point back into THIS checkout (an unrelated file or
+# symlink with the same name in $PREFIX is left alone).
+declare -A BINARIES=(
+  [pikuri-chat]="$ROOT/pikuri-core/bin/pikuri-chat"
+  [pikuri-code]="$ROOT/bin/pikuri-code"
+  [pikuri-assistant]="$ROOT/bin/pikuri-assistant"
+)
+
+for name in "${!BINARIES[@]}"; do
   link="$DEST/$name"
   if [ ! -L "$link" ]; then
     echo "  skip $link (not a symlink)"
     continue
   fi
   target="$(readlink -f "$link")"
-  expected="$ROOT/bin/$name"
+  expected="${BINARIES[$name]}"
   if [ "$target" != "$expected" ]; then
     echo "  skip $link -> $target (not this checkout)"
     continue

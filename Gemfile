@@ -1,10 +1,14 @@
 source 'https://rubygems.org'
 
-# Runtime deps are declared in pikuri.gemspec (one source of truth for
-# anyone who installs pikuri as a gem). The `gemspec` directive below
-# pulls them into Bundler's dependency graph so `bundle install` from
-# a source checkout resolves the same set.
-gemspec
+# Monorepo layout: each gem (pikuri-core, plus extensions and the
+# +pikuri+ metagem as they're extracted) lives in its own subdirectory
+# with its own gemspec. Bundler is pointed at each via +gemspec path:+
+# below so a checkout-mode +bundle install+ resolves local sibling
+# versions rather than reaching out to rubygems. After release, end
+# users install via +gem install pikuri-core+ (or +gem install pikuri+
+# for the metagem) and the gemspec's +add_dependency+ entries take
+# over.
+gemspec path: 'pikuri-core'
 
 group :test do
   # Test runner. We use the rspec-core describe/it harness but write
@@ -27,4 +31,9 @@ group :development do
   # REPL for bin/console. Was a default gem in Ruby <= 3.x and dropped
   # from defaults in 4.0, so it must be declared explicitly.
   gem 'irb', '~> 1.14'
+
+  # Drives the top-level Rakefile (lockstep release task + fan-out
+  # test task across the monorepo's gems). Was a default gem; declared
+  # explicitly so Bundler installs it for development.
+  gem 'rake', '~> 13.0'
 end
