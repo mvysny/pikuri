@@ -455,59 +455,24 @@ module Pikuri
       @cancellable = cancellable
       @skill_catalog = skill_catalog
 
-      # Resolve the MCP runtime + ownership: we own and must close
-      # only the runtime *we* constructed. If +mcp_servers:+ was
-      # passed (sub-agent path), the caller owns lifecycle. If
-      # +mcp_registry:+ was passed non-empty (main-agent path), we
-      # build a fresh runtime here and own its +#close+. See {#close}.
+      # MCP wiring split between two paths during the transition:
+      # * +mcp_servers:+ kwarg (sub-agent path, set by
+      #   {Tool::SubAgent}) — caller owns the {Mcp::Servers}
+      #   lifecycle; we just thread the reference through and
+      #   register a fresh +mcp_connect+ tool further down. Step 4
+      #   migrates this into the extension protocol.
+      # * +mcp_registry:+ kwarg (main-agent path) — now routes
+      #   through {Mcp::Extension} added to the Configurator below.
+      #   The extension builds the {Mcp::Servers} runtime, registers
+      #   the snippet + connect tool + on_close, and owns close.
       #
-      # The +thinker:+ closure handed to Mcp::Servers (when
-      # +synthesize_descriptions:+ is true) captures @transport and
-      # @cancellable so the synthesis pass uses the same model the
-      # agent itself uses and honors the same cancel flag. It must
-      # be built after @transport / @cancellable are set but
-      # before Mcp::Servers.new — the closure is invoked synchronously
-      # during start_one.
-      if mcp_servers
-        @mcp_servers = mcp_servers
-        @owns_mcp_servers = false
-      elsif !mcp_registry.empty?
-        # Build the thinker once when either feature is enabled —
-        # both Synthesizer and Verifier capture it. Separate
-        # {Cache} instances per feature (different dir, different
-        # prompt_version) so the two caches stay independent.
-        if synthesize_descriptions || verify_mcp_servers
-          thinker = build_thinker
-        end
-        if synthesize_descriptions
-          synthesizer = Mcp::Synthesizer.new(
-            thinker: thinker,
-            cache: Mcp::Cache.new(
-              model_id: @transport.model,
-              prompt_version: Mcp::Synthesizer::PROMPT_VERSION
-            )
-          )
-        end
-        if verify_mcp_servers
-          verifier = Mcp::Verifier.new(
-            thinker: thinker,
-            cache: Mcp::Cache.new(
-              model_id: @transport.model,
-              prompt_version: Mcp::Verifier::PROMPT_VERSION,
-              dir: File.join(File.dirname(Mcp::Cache::DIR), 'mcp_verifications')
-            )
-          )
-        end
-        @mcp_servers = Mcp::Servers.new(
-          mcp_registry,
-          synthesizer: synthesizer,
-          verifier: verifier
-        )
-        @owns_mcp_servers = true
-      else
-        @mcp_servers = nil
-        @owns_mcp_servers = false
-      end
+      # In both paths the +@mcp_servers+ ivar holds the {Servers}
+      # reference: directly from the kwarg in the sub-agent case,
+      # via {Mcp::Extension#bind}'s back-fill (transition layer) in
+      # the main-agent case. Sub-agents read it via
+      # +parent.mcp_servers.view_for_sub_agent+; that's the only
+      # remaining caller of the legacy reader, and Step 4 removes it.
+      @mcp_servers = mcp_servers
       @closed = false
 
       @system_prompt = system_prompt
@@ -530,15 +495,20 @@ module Pikuri
               'Agent auto-registers it from the catalog.'
       end
 
-      # Legacy MCP auto-wiring (transition layer — Step 3 migrates
-      # this into Mcp::Extension and drops these direct mutations).
+      # Sub-agent path: the inherited {Mcp::Servers::View} brings
+      # its own +mcp_connect+ tool keyed to *this* sub-agent (not
+      # the parent), so a sub-agent's activation set stays separate.
+      # The View doesn't append a snippet — the sub-agent inherits
+      # the parent's already-augmented system prompt verbatim (see
+      # Tool::SubAgent.execute). Step 4 migrates this into the
+      # extension protocol; until then the legacy +mcp_servers:+
+      # kwarg routes here.
       if @mcp_servers && !@mcp_servers.empty?
         if @tools.any?(Mcp::Servers::Connect)
           raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \
                 'Agent auto-registers it.'
         end
 
-        @system_prompt += @mcp_servers.system_prompt_snippet
         @tools << @mcp_servers.build_mcp_connect_tool(self)
       end
 
@@ -559,6 +529,20 @@ module Pikuri
       # Legacy skill_catalog kwarg → Skill::Extension routing.
       configurator.add_extension(Skill::Extension.new(catalog: skill_catalog)) \
         unless skill_catalog.empty?
+
+      # Legacy mcp_registry kwarg → Mcp::Extension routing (main-
+      # agent path only — sub-agents come in via +mcp_servers:+
+      # above). The extension owns the {Mcp::Servers} lifecycle and
+      # registers a per-agent connect tool in its +bind+ hook.
+      if !mcp_registry.empty? && !mcp_servers
+        configurator.add_extension(
+          Mcp::Extension.new(
+            registry: mcp_registry,
+            synthesize_descriptions: synthesize_descriptions,
+            verify_mcp_servers: verify_mcp_servers
+          )
+        )
+      end
 
       block&.call(configurator)
 
@@ -820,14 +804,6 @@ module Pikuri
     # +Pikuri.logger_for+ but doesn't abort the rest. Idempotent —
     # subsequent calls are no-ops.
     #
-    # Legacy (transition-layer) MCP cleanup: when the agent
-    # constructed its own {Mcp::Servers} from a non-empty
-    # +mcp_registry:+ kwarg, +#close+ also calls
-    # {Mcp::Servers#close} on it. Once MCP migrates to
-    # +Mcp::Extension+ (Step 3 of the gem-split refactor — see
-    # IDEAS.md), this branch goes away and the cleanup lives in an
-    # extension-registered +on_close+ handler instead.
-    #
     # == Block form
     #
     # {.open} wraps +Agent.new+ + +#close+ in an +ensure+ for the
@@ -843,7 +819,6 @@ module Pikuri
       rescue StandardError => e
         LOGGER.warn("on_close handler raised #{e.class}: #{e.message}")
       end
-      @mcp_servers.close if @owns_mcp_servers && @mcp_servers
     end
 
     # Register a handler called by {#close}. Symmetric to
@@ -940,24 +915,6 @@ module Pikuri
       @tools << sub_tool
       @chat.with_tool(sub_tool.to_ruby_llm_tool)
     end
-
-    private
-
-    # Build the one-arg thinker closure passed to {Mcp::Servers#initialize}
-    # when +synthesize_descriptions:+ is true. Captures +@transport+
-    # and +@cancellable+ so the synthesis pass uses the same model
-    # the agent itself uses and honors the same cancel flag — Ctrl+C
-    # during boot synthesis raises {Control::Cancellable::Cancelled}
-    # from the next {.think} call, Mcp::Servers re-raises (without
-    # logging it as a synthesis "failure"), and the exception
-    # propagates out of +Agent.new+ to the bin script's rescue.
-    def build_thinker
-      transport = @transport
-      cancellable = @cancellable
-      ->(prompt) { self.class.think(transport: transport, prompt: prompt, cancellable: cancellable) }
-    end
-
-    public
 
     # Short, single-line config dump suitable for a startup
     # banner or a debug print.
