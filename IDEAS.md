@@ -90,6 +90,201 @@ provider-side validation, extra round-trip for the model to learn
 each tool's exact args. Probably not v1, but worth keeping in mind if
 the per-tool registration approach starts hurting.
 
+## Gem split
+
+Pikuri is growing — MCP and Skills shipped, RAG/vector / LSP / named-
+agents are sketched, and each new subsystem flows into `Agent`'s
+constructor as another kwarg pair plus a couple of auto-wiring branches.
+Two pressures push toward breaking pikuri into multiple gems:
+
+- **Gentle learning curve.** A new privacy-conscious user should be able
+  to absorb the core (Agent + Tool framework + the four stateless web
+  tools + `pikuri-chat`) from one focused README, then opt into Skills,
+  MCP, the coding stack, or named-agent personas as their needs grow.
+  Today everything is documented as one README and one CLAUDE.md, which
+  is already at the upper edge of what a first-time reader can hold.
+- **Dependency-tree minimization.** The project's "small enough to audit
+  in an evening" goal extends to the *transitive* dep tree the user has
+  to review. Bundling MCP support pulls the `mcp` gem; bundling a future
+  LSP tool pulls an LSP client. A user who wants only chat shouldn't
+  have to audit those. Gem boundaries map cleanly onto dep boundaries.
+
+This isn't speculation-led; it's the audit-surface argument applied
+honestly. Splitting also forces an Agent-side architectural cleanup
+that's worth doing on its own merits — see "Refactor before split"
+below.
+
+### Refactor before split — Extension protocol
+
+The Agent ctor's N-kwarg shape is the architectural pain. If MCP is
+wired via `mcp_registry: registry, synthesize_descriptions:,
+verify_mcp_servers:` *directly* on `Agent`, then any gem split forces
+`Pikuri::Agent` to know about MCP's existence — which defeats the
+split.
+
+Pre-split refactor: each subsystem becomes an *Extension*, a class
+with a stable `wire(agent)` hook. `Agent.new(extensions: [...])` is
+all the core knows. The `EMPTY`-singleton short-circuit pattern
+already in MCP / Skills is half of this; the other half is exposing
+"register tool + augment system prompt + register at_exit cleanup
++ optionally consume events" as a documented Extension API.
+
+The exact surface area of the Extension protocol is a separate
+brainstorm. Pre-work for that conversation: enumerate exactly what
+MCP and Skills touch today —
+
+- **System prompt augmentation.** Skills appends `<available_skills>`;
+  MCP appends `<available_mcps>`.
+- **Tool registration.** Skills registers `Tool::Skill`; MCP registers
+  `Mcp::Servers::Connect` (the `mcp_connect` tool) and dynamically
+  registers MCP-backed tools at connect time via
+  `Agent#internal_add_tool`.
+- **Lifecycle.** MCP eager-starts servers at agent construction, holds
+  live clients, and registers `at_exit { close }`.
+- **Sub-agent propagation.** Skills + MCP both delegate to a parent
+  view in sub-agents (Skills shares the catalog; MCP shares the live
+  clients via `Mcp::Servers::View`).
+- **Event consumption.** None of the current extensions consume events;
+  the protocol may or may not need this hook.
+
+Once that enumeration is complete, the Extension protocol design
+follows mechanically.
+
+### Proposed gem shape (six gems, one repo)
+
+In dependency order:
+
+- **`pikuri`** — core. `Agent` + `Event` + `Listener::{Base,Terminal,
+  InMemoryEventList,TokenLog,RateLimited}` + `Tool` + `Parameters` +
+  `SubAgent` + `Control::*` + `Synthesizer` + `Subprocess` + `UrlCache`
+  + Extension protocol + the four stateless tools (Calculator /
+  WebSearch / WebScrape / Fetch) + `bin/pikuri-chat`. The "read it in
+  an evening" core. Runtime deps: `ruby_llm` + Faraday + Rainbow +
+  `tty-markdown` + Zeitwerk + the PDF/HTML extraction gems
+  WebScrape needs.
+- **`pikuri-skills`** — depends on `pikuri`. `Tool::SkillCatalog` +
+  `Tool::Skill` + the Agent Skills standard implementation +
+  Extension class. No new runtime deps (YAML is stdlib).
+- **`pikuri-workspace`** — depends on `pikuri`. `Workspace` (abstract +
+  `Cwd`) + `Confirmer` (abstract + `AUTO_APPROVE` + `TERMINAL`) +
+  `Read` + `Write` + `Edit` + `Grep` + `Glob`. Self-contained
+  "operate on a directory tree" toolkit. No new runtime deps. Memory
+  implementations (a future `pikuri-memory` or in-app wrappers)
+  consume this directly — `Workspace::Cwd` rooted at a memory dir +
+  `Read`/`Write`/`Edit`/`Grep`/`Glob` is exactly the primitive set
+  for agent memory (markdown files the agent reads / writes / edits).
+- **`pikuri-code`** — depends on `pikuri` + `pikuri-workspace`.
+  `Bash` (reuses `Confirmer::TERMINAL` from `pikuri-workspace`) +
+  future `LSP` + `bin/pikuri-code` + `prompts/coding-system-prompt.txt`.
+  The "subprocess + dev-loop" gem.
+- **`pikuri-mcp`** — depends on `pikuri`. `Mcp::Registry` +
+  `Mcp::Servers` + `Mcp::ClientWrapper` + `Mcp::Synthesizer` +
+  `Mcp::Verifier` + `Mcp::Cache` + Extension class. Adds the `mcp`
+  gem as a runtime dep — the only new gem in the tree for this
+  feature.
+- **`pikuri-assistant`** — depends on `pikuri` + `pikuri-skills` +
+  `pikuri-mcp` (and optionally `pikuri-workspace` for personas that
+  want memory). Named-agent personas: a config schema for
+  `(name, system_prompt, allowed_tools, MCP/Skills/Workspace
+  registries)`, a discovery layer (scans
+  `~/.config/pikuri/agents/*.yml` or similar), and
+  `bin/pikuri-assistant <agent-name>` to launch one. The acme
+  (walled company bot) / researcher (web-only) / default (unnamed
+  default chats) example sketch maps cleanly: each is a config, the
+  binary loads and runs it.
+
+**Confirmer goes with `pikuri-workspace`, not `pikuri-code`.** `Write`
+and `Edit` take a `Confirmer` regardless of whether the host is a
+coding agent or a memory keeper; the seam belongs with the tools that
+use it. A memory app wires `AUTO_APPROVE` (writes-to-memory are the
+whole point); a coding agent wires `TERMINAL`.
+
+**Skip a `pikuri-full` metagem at first.** Users `gem install pikuri
+pikuri-workspace pikuri-code` if they want all three — same
+`bundle add` ergonomics Rails users have always had. Add a metagem
+later if there's demand.
+
+### Monorepo, Rails-shape, lockstep versioning
+
+One repo (`pikuri/pikuri`), Rails-shape monorepo, all gems bumped
+together. The reasoning: pikuri's subsystems will be tightly coupled
+to the Extension protocol version, so independent versioning (dry-rb
+shape, separate repos per gem) would generate version-skew bugs
+without buying any independence dividend.
+
+How Rails-shape monorepo gem releases work — for the user familiar
+with Maven / Gradle multi-module builds, the machinery is different
+in shape than Gradle's seamless `implementation project(':foo')` →
+`<groupId>:foo:1.0` transform on publish. Ruby has no built-in
+equivalent; you wire two parallel mechanisms by hand:
+
+- **Repo layout.** Each gem is a subdirectory at the repo root, each
+  with its own `*.gemspec` (e.g. `pikuri/pikuri.gemspec`,
+  `pikuri-mcp/pikuri-mcp.gemspec`). Sources live under each gem's
+  own `lib/`. A shared top-level `Gemfile` and `Rakefile`
+  orchestrate development and release.
+- **Local development — Bundler `path:`.** The top-level `Gemfile`
+  uses Bundler's `path:` directive to point at each sibling gem
+  locally: `gemspec path: 'pikuri'`, `gemspec path: 'pikuri-mcp'`,
+  ... When `pikuri-mcp`'s gemspec says `add_dependency 'pikuri',
+  '~> 1.0'`, Bundler resolves that to the *local* `pikuri/` sibling
+  during development — exactly the Gradle "subproject dep" feel,
+  just spelled differently. A change to `pikuri/lib/...` is
+  immediately visible to `pikuri-mcp`'s tests; no publish step
+  required.
+- **Release — top-level Rakefile.** Rails ships a `Rakefile`
+  task (conventionally `rake release`) that:
+  1. bumps the shared `VERSION` constant in every gem's
+     `lib/<gem>/version.rb` (all gems version in lockstep);
+  2. runs `gem build *.gemspec` in each subdirectory, producing
+     `*.gem` files;
+  3. runs `gem push *.gem` for each, uploading to rubygems.org;
+  4. tags the commit (`v1.2.3`) and pushes.
+- **Post-release — `add_dependency` resolves to rubygems.org.**
+  Consumers who `bundle add pikuri-mcp` get the gemspec's
+  `add_dependency 'pikuri', '~> 1.0'` resolved against rubygems
+  proper — no `path:` involved, no monorepo knowledge required.
+  The user sees a regular gem with regular deps; the monorepo is
+  invisible to them.
+
+The seam between dev-mode (Bundler `path:`) and release-mode
+(`add_dependency` against rubygems) is the part that surprises
+Gradle / Maven users — there's no single declaration that "this is a
+subproject in dev, a published dep in release." It's two different
+mechanisms that happen to coexist: Bundler's `Gemfile path:`
+directive for development, the gemspec's `add_dependency` for
+publication. Bundler resolves `path:` *first* when both apply, so
+the local sibling wins during dev.
+
+Reference projects worth studying:
+
+- **Rails** (`rails/rails`) — the canonical example. Subdirectories
+  `actionpack/`, `activerecord/`, `activesupport/`, `railties/`, etc.;
+  shared `Gemfile`, top-level `Rakefile` orchestrating the bump-build-
+  push sequence.
+- **Bundler** itself — a smaller-scale precedent for the same shape.
+- **Hanami** — same Rails-shape monorepo with lockstep versioning,
+  smaller gem count, easier to scan as a worked example.
+- **`tty-*`** (the `tty-prompt` / `tty-table` family) — same shape at
+  a smaller scale; useful for "what does a minimal monorepo Rakefile
+  look like" than Rails' more elaborate one.
+
+The opposite pole — **dry-rb** with separate repos per gem,
+independent versioning — works when gems are loosely coupled and
+evolve on their own clocks. Doesn't fit pikuri: the Extension
+protocol means every gem is tightly coupled to a specific `pikuri`
+core version.
+
+### Order of operations
+
+1. Land the Extension protocol refactor as one PR in the current
+   single-gem layout. Architectural cleanup, no release-ceremony
+   change. Reviewable as a single before/after.
+2. Once Extension protocol has stabilized through a real release or
+   two, split the gems. The split is mechanical at that point:
+   move files, write per-gem gemspecs, wire the top-level
+   `Gemfile` + `Rakefile`, double-check the dep declarations.
+
 ## Workspace v2
 
 Plans recorded in `lib/pikuri/tool/workspace.rb`'s "Future extensions" RDoc
