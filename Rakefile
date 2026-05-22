@@ -15,7 +15,8 @@ GEMS = {
   'pikuri-skills'    => 'pikuri-skills',
   'pikuri-mcp'       => 'pikuri-mcp',
   'pikuri-workspace' => 'pikuri-workspace',
-  'pikuri-code'      => 'pikuri-code'
+  'pikuri-code'      => 'pikuri-code',
+  'pikuri-assistant' => 'pikuri-assistant'
 }.freeze
 
 # Path to the single source of truth for the shared version constant.

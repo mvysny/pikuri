@@ -22,13 +22,12 @@
 # and the script works when invoked via a symlink (e.g. ~/.local/bin/
 # pikuri-assistant) from any working directory. `__dir__` resolves
 # through symlinks, so this points at the real checkout.
-ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
 require 'optparse'
 
-require 'pikuri-core'
-require 'pikuri-mcp'
+require 'pikuri-assistant'
 
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
