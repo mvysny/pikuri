@@ -131,14 +131,23 @@ grows a skill system.
   constructor and route every path through `#resolve_for_read(path)` /
   `#resolve_for_write(path)` before touching the filesystem.
   `Pikuri::Workspace::Filesystem.new(anchor:, readable: [],
-  writable: [], temp: false)` is a single concrete class: `anchor` is
-  the project root (always readable + writable),
+  writable: [], temp: false)` is the default concrete class: `anchor`
+  is the project root (always readable + writable),
   `readable`/`writable` add extra roots, and `temp: true` mints an
   `at_exit`-cleaned playground. Every path is resolved against those
-  roots, rejecting `..`-escapes and symlinks that land outside. Hosts
-  that need a different policy subclass; an in-editor pikuri can
-  mirror the IDE's open project root or a virtual filesystem without
-  rewriting tool guts.
+  roots, rejecting `..`-escapes and symlinks that land outside.
+  `Pikuri::Workspace::Filesystem::AllowAll` is the unrestricted variant
+  for dev-container / Docker mode where the container is the security
+  boundary — same accessor surface, but `resolve_for_*` accept any
+  path *except* those under a hardcoded credential denylist
+  (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.docker`, `~/.kube`, `~/.netrc`,
+  `/etc/shadow`, plus `/root` variants) so a prompt-injection
+  exfiltration of host-mounted credentials still gets blocked. Pairs
+  with `--yolo` and `Code::Bash::Sandbox::NONE`; combining `AllowAll`
+  with `Bubblewrap` defeats both layers. Hosts that need a different
+  policy subclass either; an in-editor pikuri can mirror the IDE's
+  open project root or a virtual filesystem without rewriting tool
+  guts.
 
 - **Confirmer seam.** Tools that mutate user state (`Write`, `Bash`)
   take a `Pikuri::Workspace::Confirmer` via constructor and route every

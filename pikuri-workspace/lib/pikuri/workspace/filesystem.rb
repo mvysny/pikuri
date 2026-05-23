@@ -192,6 +192,107 @@ module Pikuri
 
         anchor + cleaned.relative_path_from(existing)
       end
+
+      # Unrestricted variant of {Filesystem}: every path resolves, with one
+      # carve-out — paths under {CREDENTIAL_DENYLIST} (the user's +~/.ssh+,
+      # +~/.aws+, +~/.gnupg+, +~/.docker+, +~/.kube+, +~/.netrc+, and
+      # +/etc/shadow+) still raise. Intended for dev-container / Docker
+      # mode where the container is the security boundary; the denylist
+      # remains as defense-in-depth against prompt-injection exfiltration
+      # of credentials that are commonly bind-mounted into a container
+      # from the host. Pairs naturally with +--yolo+ (no Confirmer
+      # prompt) — but note that combining with
+      # +Code::Bash::Sandbox::Bubblewrap+ defeats the sandbox (the
+      # whole filesystem ends up bind-mounted in), and bash inside
+      # the sandbox bypasses the denylist anyway, so the intended
+      # combo is ALLOW_ALL + +Sandbox::NONE+ inside a container.
+      #
+      # == Anchor + temp
+      #
+      # +anchor:+ is still required — it's where +Bash+ runs commands
+      # and where +Glob+/+Grep+ chdir. Unlike {Filesystem}, the anchor
+      # is NOT validated against {DENIED_ANCHORS} (passing +'/'+ is
+      # legitimate inside a container). +temp:+ behaves the same way.
+      #
+      # == Denylist semantics
+      #
+      # Each entry is realpath'd lazily at check time when it exists
+      # (so a symlink at e.g. +/tmp/decoy → ~/.ssh/id_rsa+ still gets
+      # caught — the resolved path lands under +~/.ssh+). Non-existent
+      # entries fall back to a literal-prefix match — blocks the agent
+      # from *creating* a credential dir the user doesn't have yet (e.g.
+      # planting +~/.gnupg+ for a later GPG operation to pick up). The
+      # list is hardcoded; subclass for a host with a different policy.
+      class AllowAll < Filesystem
+        # Credential locations that even ALLOW_ALL refuses. Expanded
+        # via +ENV['HOME']+ at class-load time and unioned with the
+        # +/root+ variants (dev-container default user). Frozen.
+        CREDENTIAL_DENYLIST = begin
+          homes = [ENV.fetch('HOME', nil), '/root'].compact.uniq
+          per_home = %w[.ssh .aws .gnupg .docker .kube .netrc]
+          user_paths = homes.flat_map { |h| per_home.map { |p| File.join(h, p) } }
+          (user_paths + %w[/etc/shadow]).map { |p| Pathname.new(p) }.uniq.freeze
+        end
+
+        # @param anchor [String, Pathname] absolute path used for
+        #   +Bash+ +cwd+ and as the base for relative paths. Not
+        #   validated against {DENIED_ANCHORS}.
+        # @param temp [Boolean] same semantics as {Filesystem}.
+        def initialize(anchor: Dir.pwd, temp: false)
+          @cwd = Pathname.new(anchor).realpath
+          @temp = temp ? Pathname.new(Dir.mktmpdir('pikuri-temp-')).realpath : nil
+          at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
+
+          # Advertise "everything is in scope" via the accessor surface so
+          # callers that inspect +readable+/+writable+ (system-prompt
+          # rendering, Bubblewrap bind-mount construction) see the
+          # intended semantics. The actual containment is the denylist
+          # in {#resolve_for_read}/{#resolve_for_write}.
+          @writable = [Pathname.new('/').realpath, @temp].compact.uniq
+          @readable = @writable.dup
+        end
+
+        # @param path [String]
+        # @return [Pathname]
+        # @raise [Error] if the resolved path lands under {CREDENTIAL_DENYLIST}.
+        def resolve_for_read(path)
+          resolve_unrestricted(path)
+        end
+
+        # @param path [String]
+        # @return [Pathname]
+        # @raise [Error] if the resolved path lands under {CREDENTIAL_DENYLIST}.
+        def resolve_for_write(path)
+          resolve_unrestricted(path)
+        end
+
+        private
+
+        def resolve_unrestricted(path)
+          pn = Pathname.new(path)
+          pn = @cwd + pn unless pn.absolute?
+          cleaned = pn.cleanpath
+
+          existing = cleaned
+          existing = existing.parent until existing.exist? || existing.parent == existing
+          anchor = existing.realpath
+          resolved = anchor + cleaned.relative_path_from(existing)
+
+          CREDENTIAL_DENYLIST.each do |denied|
+            candidate = denied.exist? ? denied.realpath : denied
+            next unless resolved == candidate ||
+                        resolved.to_s.start_with?(candidate.to_s + File::SEPARATOR)
+
+            raise Error,
+                  "path '#{path}' resolves under a denied credential location " \
+                  "('#{denied}') — even in ALLOW_ALL mode, ~/.ssh / ~/.aws / " \
+                  '~/.gnupg / ~/.docker / ~/.kube / ~/.netrc / /etc/shadow ' \
+                  'are off-limits.'
+          end
+
+          resolved
+        end
+      end
     end
   end
 end

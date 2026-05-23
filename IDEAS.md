@@ -43,12 +43,6 @@ in scope of the design exercise, considered, and left out on purpose.
   `old_string` → `new_string` per call. opencode bundles batch edits.
   Wait until the cost of separate calls becomes obvious in practice.
 
-## Workspace v2
-
-- **`Workspace::Filesystem::ALLOW_ALL`.** Unrestricted reads + writes,
-  intended for Docker / dev-container mode where the whole sandbox is
-  the workspace. Pairs naturally with `--yolo`.
-
 ## Security perspective
 
 Brainstormed, not decided. Captured so the next time these come up we

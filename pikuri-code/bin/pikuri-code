@@ -25,6 +25,7 @@ require 'pikuri-code'
 
 sandbox_enabled = true
 confirm_enabled = true
+yolo = false
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
 api_key_env = 'OPENAI_API_KEY'
@@ -34,9 +35,11 @@ parser = OptionParser.new do |opts|
   opts.separator 'Options:'
   opts.on('--no-sandbox', 'Disable the bubblewrap sandbox around bash commands.') { sandbox_enabled = false }
   opts.on('--no-confirm', 'Auto-approve every confirmation (skip the y/n prompt for writes + bash).') { confirm_enabled = false }
-  opts.on('--yolo', 'Shorthand for --no-sandbox --no-confirm. Use only with an outer sandbox.') do
+  opts.on('--yolo', 'Combines --no-sandbox + --no-confirm + opens the filesystem ' \
+                    '(credential denylist only). Use only inside a container.') do
     sandbox_enabled = false
     confirm_enabled = false
+    yolo = true
   end
   opts.on('--server URL', "LLM server base URL (default: #{server})") { |v| server = v }
   opts.on('--model NAME', "Model identifier (default: #{model})") { |v| model = v }
@@ -71,11 +74,21 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
 # writable playground (Dir.mktmpdir, removed at_exit) — exposed below in
 # the system prompt so the LLM knows where to put junk (downloads, unzip
 # targets, scratch artifacts).
-workspace = Pikuri::Workspace::Filesystem.new(
-  anchor:   Dir.pwd,
-  readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
-  temp:     true
-)
+#
+# --yolo swaps in +Filesystem::AllowAll+: every path resolves except
+# those under the credential denylist (~/.ssh, ~/.aws, …, /etc/shadow).
+# Intended for use inside a container where the container itself is
+# the security boundary; the toolchain/skill readable list is moot
+# since everything is reachable anyway.
+workspace = if yolo
+              Pikuri::Workspace::Filesystem::AllowAll.new(anchor: Dir.pwd, temp: true)
+            else
+              Pikuri::Workspace::Filesystem.new(
+                anchor:   Dir.pwd,
+                readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
+                temp:     true
+              )
+            end
 confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
@@ -224,6 +237,7 @@ end
 warnings = []
 warnings << 'Sandbox: DISABLED.' unless sandbox_enabled
 warnings << 'Confirmer: AUTO-APPROVE.' unless confirm_enabled
+warnings << 'Filesystem: ALLOW_ALL (credential denylist only).' if yolo
 unless warnings.empty?
   warnings << 'Use only with an outer sandbox (docker / dev-container) or in a throwaway environment.'
   puts warnings.join(' ')

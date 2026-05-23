@@ -6,6 +6,24 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ## [Unreleased]
 
+### Added
+
+- **`Pikuri::Workspace::Filesystem::AllowAll`.** Unrestricted variant
+  of `Filesystem` for dev-container / Docker mode where the container
+  is the security boundary. Same accessor surface as the base class,
+  but `resolve_for_read` / `resolve_for_write` accept any path *except*
+  those under a hardcoded credential denylist (`~/.ssh`, `~/.aws`,
+  `~/.gnupg`, `~/.docker`, `~/.kube`, `~/.netrc`, `/etc/shadow`, plus
+  `/root` variants). Pairs with `--yolo` + `Sandbox::NONE` inside a
+  container; combining with `Sandbox::Bubblewrap` defeats the sandbox
+  (and bash inside Bubblewrap bypasses the denylist anyway).
+- **`bin/pikuri-code --yolo` now activates `Filesystem::AllowAll`** in
+  addition to disabling the Bubblewrap sandbox and Confirmer prompts.
+  Help text and startup banner updated accordingly. `--no-sandbox` and
+  `--no-confirm` continue to act on their individual layers only —
+  `--yolo` is now the dedicated "I'm inside a container, just let it
+  rip" shorthand.
+
 ### Changed
 
 - **pikuri-workspace classes moved to the `Pikuri::Workspace::*`
