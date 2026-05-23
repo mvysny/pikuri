@@ -14,7 +14,7 @@ Self-contained "operate on a directory tree" toolkit:
   `Pikuri::Workspace::Write`, `Pikuri::Workspace::Edit`,
   `Pikuri::Workspace::Grep`, `Pikuri::Workspace::Glob`.
 
-No shell execution — `Pikuri::Tool::Bash` ships in
+No shell execution — `Pikuri::Code::Bash` ships in
 [`pikuri-code`](../pikuri-code/README.md) on top of these.
 
 ## Install

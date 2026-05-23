@@ -31,7 +31,7 @@ in scope of the design exercise, considered, and left out on purpose.
   per-session todo list the model can edit. Useful, but it's
   session-state machinery pikuri doesn't have today — same blocker as
   resumable sub-agents below.
-- **Streaming output from bash.** `Tool::Bash` returns a single
+- **Streaming output from bash.** `Code::Bash` returns a single
   observation `String`. Live process output is meant to stay on the
   listener stream once we add a TUI; meanwhile callers bound wall time
   with coreutils' `timeout`.

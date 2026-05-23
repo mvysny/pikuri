@@ -11,13 +11,14 @@ Gem::Specification.new do |spec|
   spec.summary     = 'In-repo coding-agent shell tool (Bash) + pikuri-code binary.'
   spec.description = <<~DESC
     pikuri-code adds the shell-and-dev-loop layer on top of
-    pikuri-workspace's filesystem tools: a +Pikuri::Tool::Bash+ that
+    pikuri-workspace's filesystem tools: a +Pikuri::Code::Bash+ that
     runs commands via the +Pikuri::Subprocess+ chokepoint with
-    +Confirmer+ gating, plus the demo +bin/pikuri-code+ binary that
-    wires file + shell + web tools into an interactive coding agent
-    rooted at the current working directory. The +Pikuri.prompt+
-    search path picks up this gem's +prompts/coding-system-prompt.txt+
-    automatically on require.
+    +Confirmer+ gating (optionally wrapped in a
+    +Pikuri::Code::Bash::Sandbox::Bubblewrap+ filesystem sandbox),
+    plus the demo +bin/pikuri-code+ binary that wires file + shell +
+    web tools into an interactive coding agent rooted at the current
+    working directory. The +Pikuri.prompt+ search path picks up this
+    gem's +prompts/coding-system-prompt.txt+ automatically on require.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'
@@ -45,6 +46,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
 
   # +Pikuri::Workspace::Filesystem+ + +Pikuri::Workspace::Confirmer+ live
-  # in pikuri-workspace; Bash takes both via constructor.
+  # in pikuri-workspace; +Pikuri::Code::Bash+ takes both via constructor.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

@@ -11,7 +11,7 @@ module Pikuri
     # == ripgrep dependency
     #
     # Hard dependency: {.check_binaries!} runs in +initialize+ and raises
-    # if +rg+ isn't on +PATH+. Mirrors {Pikuri::Tool::Bash}'s posture for
+    # if +rg+ isn't on +PATH+. Mirrors {Pikuri::Code::Bash}'s posture for
     # +bash+/+timeout+. We don't ship a Ruby fallback — replicating
     # rg's Rust-regex dialect, glob handling, and +.gitignore+ parsing
     # is a research-loop dead end. Failure message includes the install
@@ -58,7 +58,7 @@ module Pikuri
     #
     # Total output is head-truncated to {MAX_BYTES} (head-only — grep
     # tails usually carry less signal than the first matches; opposite
-    # bias from {Pikuri::Tool::Bash}). Cut at the last line boundary, with a
+    # bias from {Pikuri::Code::Bash}). Cut at the last line boundary, with a
     # marker reporting omitted bytes and the original total so the model
     # knows how much it missed.
     #

@@ -17,6 +17,14 @@ uses semver as documented in `lib/pikuri/version.rb`.
   (dropping the `namespace: Pikuri::Tool` workaround). The file
   tools still subclass `Pikuri::Tool`; only their declared
   namespace changed.
+- **pikuri-code's `Bash` tool moved to the `Pikuri::Code::*`
+  namespace.** `Pikuri::Tool::Bash` → `Pikuri::Code::Bash`;
+  `Pikuri::Tool::Bash::Sandbox::{NONE,Bubblewrap}` →
+  `Pikuri::Code::Bash::Sandbox::{NONE,Bubblewrap}`. The dual
+  Zeitwerk loader collapses into one rooted plainly at the gem's
+  `lib/` root, alongside the existing `Pikuri::Code::ToolchainPaths`.
+  `Bash` still subclasses `Pikuri::Tool`; only its declared
+  namespace changed.
 - **`Pikuri::Workspace::Filesystem` is a single concrete class.**
   The earlier abstract base + bundled `Cwd` subclass collapsed
   into one class parameterized by explicit `anchor:` /

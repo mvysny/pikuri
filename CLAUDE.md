@@ -333,11 +333,16 @@ in `pikuri-code` on top.
 Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
 `pikuri-workspace`. No new runtime deps.
 
-- `lib/pikuri-code.rb` — gem entry. Zeitwerk loader (same
-  `namespace: Pikuri::Tool` mounting as `pikuri-workspace`) +
-  appends this gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
-- `lib/pikuri/tool/bash.rb` — `Pikuri::Tool::Bash` (shell tool
-  via the `Subprocess.spawn` chokepoint + `Confirmer` gate).
+- `lib/pikuri-code.rb` — gem entry. Per-gem Zeitwerk loader
+  rooted plainly at this gem's `lib/`, plus appends `prompts/` to
+  `Pikuri::PROMPT_DIRS`.
+- `lib/pikuri/code/bash.rb`, `lib/pikuri/code/bash/sandbox.rb` —
+  `Pikuri::Code::Bash` (shell tool via the `Subprocess.spawn`
+  chokepoint + `Confirmer` gate) and its filesystem-sandbox seam
+  (`Sandbox::NONE` / `Sandbox::Bubblewrap`).
+- `lib/pikuri/code/toolchain_paths.rb` — `Pikuri::Code::ToolchainPaths`
+  helper that enumerates the read-only filesystem prefixes a coding
+  agent benefits from (system toolchains + per-user dependency caches).
 - `bin/pikuri-code` — CLI entry point for the in-repo coding
   agent: registers the file/shell stack (`Workspace` anchored
   at `Dir.pwd` with `temp: true` for a scratch playground +

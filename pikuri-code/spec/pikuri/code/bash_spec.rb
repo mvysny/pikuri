@@ -3,7 +3,7 @@
 require 'tmpdir'
 require 'fileutils'
 
-RSpec.describe Pikuri::Tool::Bash do
+RSpec.describe Pikuri::Code::Bash do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-bash-root-')).realpath }
   let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
   let(:confirmer) { build_confirmer(true) }

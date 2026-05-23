@@ -8,8 +8,10 @@ deliberately small so you can read the sources in an evening.
 Adds the shell-and-dev-loop layer on top of
 [`pikuri-workspace`](../pikuri-workspace/README.md)'s filesystem
 tools:
-- `Pikuri::Tool::Bash` — runs commands via the
-  `Pikuri::Subprocess.spawn` chokepoint with `Confirmer` gating.
+- `Pikuri::Code::Bash` — runs commands via the
+  `Pikuri::Subprocess.spawn` chokepoint with `Confirmer` gating,
+  optionally wrapped in a `Pikuri::Code::Bash::Sandbox::Bubblewrap`
+  filesystem sandbox.
 - `bin/pikuri-code` — the interactive coding-agent binary that
   wires file + shell + web tools into an agent rooted at the
   current working directory.

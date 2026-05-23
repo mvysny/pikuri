@@ -13,7 +13,7 @@ rescue Errno::ENOENT
   false
 end
 
-RSpec.describe Pikuri::Tool::Bash::Sandbox do
+RSpec.describe Pikuri::Code::Bash::Sandbox do
   describe described_class::NONE do
     it '#wrap returns argv unchanged' do
       argv = %w[timeout --signal=TERM 30s bash -c ls]

@@ -86,9 +86,9 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # expects the sandbox doesn't silently run without one. Disable with
 # --no-sandbox / --yolo.
 sandbox = if sandbox_enabled
-            Pikuri::Tool::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
+            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
           else
-            Pikuri::Tool::Bash::Sandbox::NONE
+            Pikuri::Code::Bash::Sandbox::NONE
           end
 
 # Build the system prompt: static base + optional project context + footer.
@@ -170,7 +170,7 @@ begin
     c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
-    c.add_tool Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
+    c.add_tool Pikuri::Code::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::WEB_SEARCH
     c.add_tool Pikuri::Tool::WEB_SCRAPE
     c.add_tool Pikuri::Tool::FETCH

@@ -19,7 +19,7 @@ Gem::Specification.new do |spec|
     +Pikuri::Workspace::Read+, +Pikuri::Workspace::Write+,
     +Pikuri::Workspace::Edit+, +Pikuri::Workspace::Grep+, and
     +Pikuri::Workspace::Glob+. Self-contained — no shell execution;
-    +Pikuri::Tool::Bash+ ships in pikuri-code on top of these.
+    +Pikuri::Code::Bash+ ships in pikuri-code on top of these.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'

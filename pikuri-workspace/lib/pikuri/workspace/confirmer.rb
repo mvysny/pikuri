@@ -3,7 +3,7 @@
 module Pikuri
   module Workspace
     # Port for asking the user to confirm a potentially destructive tool
-    # operation — currently {Pikuri::Tool::Bash} (every command) and
+    # operation — currently {Pikuri::Code::Bash} (every command) and
     # {Write} (overwrite of an existing file with non-identical
     # content). Subclass and implement {#confirm?}.
     #

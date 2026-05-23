@@ -3,12 +3,13 @@
 require 'rainbow'
 
 module Pikuri
-  class Tool
+  module Code
     # The +bash+ tool — run an arbitrary shell command in the workspace.
-    # Instantiating +Tool::Bash.new(workspace: ws, confirmer: c)+ produces
-    # a tool whose {Tool#to_ruby_llm_tool} wiring is identical to any
-    # bundled tool's. Same shape as {Tool::Write} (workspace + confirmer
-    # captured by the +execute+ closure at construction).
+    # Instantiating +Code::Bash.new(workspace: ws, confirmer: c)+ produces
+    # a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
+    # any bundled tool's. Same shape as {Pikuri::Workspace::Write}
+    # (workspace + confirmer captured by the +execute+ closure at
+    # construction).
     #
     # == Confirmation
     #
@@ -74,7 +75,7 @@ module Pikuri
     # * +timeout+ outside +[1, MAX_TIMEOUT]+ → bounds error.
     # * User declined the confirmation → +"Error: user declined ..."+.
     # * +timeout+ exit (+124+ / +137+) → timeout error with partial output.
-    class Bash < Tool
+    class Bash < Pikuri::Tool
       # Pikuri-convention per-module logger; the +Bash+ progname tags the
       # construction-time warning below so it's clear in the shared
       # +Pikuri.log_io+ stream which tool issued it.
@@ -124,7 +125,7 @@ module Pikuri
       #   opaque shell syntax.
       # @param confirmer [Pikuri::Workspace::Confirmer] consulted before
       #   every command.
-      # @param sandbox [Tool::Bash::Sandbox] filesystem-sandbox seam
+      # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam
       #   (default {Sandbox::NONE} — identity passthrough). Pass
       #   {Sandbox::Bubblewrap.new(workspace: workspace)+} for an
       #   isolated subprocess whose filesystem view is the workspace's
@@ -145,7 +146,7 @@ module Pikuri
         # opted out (or never opted in).
         if sandbox.equal?(Sandbox::NONE)
           LOGGER.warn(
-            'Tool::Bash is unsandboxed: commands run under your UID and can read ' \
+            'Code::Bash is unsandboxed: commands run under your UID and can read ' \
             'sensitive files (~/.ssh, AWS credentials, browser sessions, ...). ' \
             'Use Sandbox::Bubblewrap or an outer container for isolation.'
           )
@@ -177,7 +178,7 @@ module Pikuri
       #
       # @param workspace [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
-      # @param sandbox [Tool::Bash::Sandbox] wraps the spawned argv;
+      # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv;
       #   {Sandbox::NONE} for identity passthrough,
       #   {Sandbox::Bubblewrap} for filesystem isolation.
       # @param command [String] raw command as supplied by the LLM
@@ -276,9 +277,9 @@ module Pikuri
       # @raise [RuntimeError] if either binary is missing
       def self.check_binaries!
         result = Pikuri::Subprocess.spawn('bash', '-c', 'command -v timeout >/dev/null', chdir: '/').wait
-        raise "Tool::Bash requires GNU coreutils 'timeout' on PATH" unless result.status.success?
+        raise "Code::Bash requires GNU coreutils 'timeout' on PATH" unless result.status.success?
       rescue Errno::ENOENT
-        raise "Tool::Bash requires 'bash' on PATH"
+        raise "Code::Bash requires 'bash' on PATH"
       end
       private_class_method :check_binaries!
     end

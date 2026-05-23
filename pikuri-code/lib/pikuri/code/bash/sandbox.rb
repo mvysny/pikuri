@@ -3,7 +3,7 @@
 require 'set'
 
 module Pikuri
-  class Tool
+  module Code
     class Bash
       # Filesystem-sandbox seam for the bash tool. {Bash} runs +bash -c
       # <command>+ unmediated by default ({NONE}, identity wrap); host
@@ -161,11 +161,11 @@ module Pikuri
             ).wait
             return if result.status.success?
 
-            raise "Tool::Bash::Sandbox::Bubblewrap: bwrap probe failed " \
+            raise "Code::Bash::Sandbox::Bubblewrap: bwrap probe failed " \
                   "(exit #{result.status.exitstatus}). Is user-namespace " \
                   'support enabled in the kernel? Pass --no-sandbox to skip.'
           rescue Errno::ENOENT
-            raise "Tool::Bash::Sandbox::Bubblewrap: 'bwrap' not found on PATH. " \
+            raise "Code::Bash::Sandbox::Bubblewrap: 'bwrap' not found on PATH. " \
                   'Install bubblewrap (apt-get install bubblewrap / dnf install ' \
                   'bubblewrap / pacman -S bubblewrap) or pass --no-sandbox.'
           end
