@@ -341,3 +341,153 @@ agent itself is the attacker's tool; only privilege-separated
 sub-agents move the needle), and `Bash` bypassing the workspace seam
 (the seam was supposed to be load-bearing for yolo mode, but today it
 isn't for the highest-risk tool).
+
+## Personas for `Tool::SubAgent`
+
+Currently `Pikuri::Tool::SubAgent` (via `c.allow_sub_agent(max_steps:)`)
+hands the child a copy of the parent's entire toolset. The proposal is
+to flip that — the child is invoked by *picking a named persona*, and
+each persona supplies a system prompt + a curated subset of the parent's
+tools + a workspace mode. This is the concrete elaboration of the
+"sub-agent privilege separation as a feature" bullet above.
+
+The main agent picks from an enumerated list, not by authoring a fresh
+system prompt each call. Claude Code's `subagent_type`, opencode's
+`agents` map (`packages/opencode/src/agent/agent.ts:129-281`), and PI's
+`subagent` agents
+(`packages/coding-agent/examples/extensions/subagent/agents/`) all
+converged on this shape. The framing is identical across calls and
+worth keeping out of the main agent's tokens and judgment; what varies
+task-to-task is the capability surface, which the tool subset already
+expresses. If LLM-authored personas turn out to be needed, add later —
+the escape hatch is just shipping a `general` persona with `tools:`
+omitted.
+
+### File format and discovery
+
+Markdown + YAML frontmatter, same shape as `pikuri-skills`:
+
+```yaml
+---
+name: scout
+description: Read-only codebase recon. Use when locating files or symbols without loading them into the main context. Output is structured findings.
+tools: read, grep, glob, bash
+workspace: readonly_with_temp
+---
+You are a scout. ...
+```
+
+- `name` matches the file stem.
+- `description` is the one-liner the picker reads.
+- `tools` — comma list of parent tool names. Omit = inherit all.
+- `workspace` (optional, default `inherit`) — `inherit` / `readonly` /
+  `readonly_with_temp`.
+- Body is the full sub-agent system prompt — replaces, doesn't append
+  (per PI's pattern; prompts stay short and self-contained).
+
+Three discovery roots, project beats user beats none:
+`.pikuri/personas/*.md`, `.claude/agents/*.md` (Claude Code's cross-tool
+convention), `.agents/personas/*.md`. Plus cooperative per-gem bundling
+via a `Pikuri::PERSONA_DIRS` list mirroring `PROMPT_DIRS` — each gem's
+entry file appends its `personas/` directory at boot. A persona
+referencing a tool the host's agent doesn't have is pruned at boot with
+a WARN via `Pikuri.logger_for('Persona')` — not a hard error — so
+installing only `pikuri-core` shows only network-tool personas, adding
+`pikuri-workspace` unlocks fs ones, adding `pikuri-code` upgrades them
+with bash.
+
+### Workspace modes
+
+The `workspace:` key reflects what fs surface the sub-agent's tools are
+reconstructed against:
+
+- `inherit` — sub-agent reuses parent's `Filesystem` and tool instances.
+- `readonly` — derived `Filesystem` where every parent root is
+  readable, none writable. No clones, no extracts.
+- `readonly_with_temp` — same plus a fresh `temp:` scratchpad as the
+  only writable spot. The git-clone / unzip `src.zip` /
+  `mvn dependency:sources` mode.
+
+When `workspace` is not `inherit`, the `SubAgent` tool reconstructs the
+fs-touching tools (Read/Write/Edit/Grep/Glob/Bash) with the derived
+`Filesystem`; non-fs tools (web_search/calculator/fetch) pass through
+unchanged. Each fs tool already takes `Filesystem` via constructor, so
+the reconstruction is mechanical.
+
+Needed primitive in `pikuri-workspace`:
+
+```ruby
+Pikuri::Workspace::Filesystem.scoped_readonly_from(parent, with_temp: false)
+# anchor    = with_temp ? a fresh at_exit-cleaned temp dir : a frozen "/" sentinel
+# readable  = parent.anchor + parent.readable + parent.writable  (all r-only)
+# writable  = []  (only the temp anchor, if any, is writable)
+```
+
+The temp anchor doubles as the default cwd for the sub-agent's Bash —
+useful for "clone here and then poke around" while the user's project
+stays read-only-visible from inside the clone.
+
+Bash in `readonly` / `readonly_with_temp` personas uses
+`Confirmer::AUTO_APPROVE`, not the parent's confirmer. Confirmation is a
+user-facing gate; the user already approved by calling `sub_agent` with
+the chosen persona, and every command still flows through
+`Event::ToolCall` for audit. Honest caveat: fs-readonly doesn't stop
+network exfil or fork bombs. A `sandbox:` frontmatter key composing with
+`Code::Bash::Sandbox::Bubblewrap` is the natural follow-up; defer for
+v1.
+
+### Where the code lives
+
+New gem `pikuri-personas`, parallel to `pikuri-skills`. Depends on
+`pikuri-core`. No new runtime deps.
+
+- `lib/pikuri/persona.rb` — `Pikuri::Persona = Data.define(:name,
+  :description, :tool_names, :workspace_mode, :prompt)`.
+- `lib/pikuri/persona/catalog.rb` — abstract `Catalog`, `EMPTY`
+  singleton, `Bundled` scanner walking the three discovery roots plus
+  `PERSONA_DIRS`.
+- `lib/pikuri/persona/extension.rb` — `Pikuri::Persona::Extension <
+  Pikuri::Agent::Extension`. `configure(c)` appends an
+  `<available_personas>` snippet to the system prompt (same pattern as
+  `pikuri-skills` and `pikuri-mcp`).
+
+`Pikuri::Tool::SubAgent` in pikuri-core grows an optional `persona`
+parameter; at execute time it looks up the catalog from the agent's
+extension list, filters parent tools, derives the workspace per mode,
+and replaces the system prompt. With no persona extension wired in, the
+schema disallows `persona` — today's free-form behavior is preserved.
+Tool description stays static and references the snippet, same as the
+existing `skill` and `mcp_connect` tools.
+
+### Initial bundled personas
+
+Each tool-bearing gem ships personas using only its own tools:
+
+- `pikuri-workspace/personas/scout.md` — `read, grep, glob` +
+  `workspace: inherit`. Cheap fs recon, no bash.
+- `pikuri-code/personas/scout.md` — `read, grep, glob, bash` +
+  `workspace: readonly_with_temp`. Investigator with git-clone. Same
+  `name` as the workspace-only one; later-loaded gem wins, so installing
+  `pikuri-code` automatically upgrades scout from "find files" to
+  "clone things, find files."
+- `pikuri-code/personas/reviewer.md` — `read, grep, glob, bash` +
+  `workspace: readonly`. No clones, just review what's here.
+- `pikuri-core/personas/researcher.md` — `web_search, web_scrape,
+  fetch`. No fs.
+
+### Open questions
+
+- **Should "no persona" stay valid when the extension is wired?**
+  Recommend no — if you need a do-everything sub-agent, ship a `general`
+  persona with `tools:` omitted. The escape hatch is just another file.
+- **Per-tool workspace overrides instead of per-persona?** (e.g.
+  `tools: read, grep, glob, bash[readonly_with_temp]`.) Recommend
+  per-persona — the workspace mode is the persona's intent, not a
+  per-tool fact. Per-tool would allow asymmetry (read inherits, bash
+  sandboxed) but no concrete use case.
+- **Per-persona model / max_steps?** PI has both. Defer — `max_steps`
+  is currently per-`allow_sub_agent`; `model:` would require
+  `ChatTransport` variations per sub-agent. Cheap personas (haiku for
+  scout, sonnet for planner) is a real win but adds plumbing.
+- **MCP tools dynamically added by `mcp_connect`** at runtime still
+  don't reach sub-agents; orthogonal to this change.
