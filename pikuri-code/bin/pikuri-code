@@ -67,7 +67,7 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
 # targets, scratch artifacts).
 workspace = Pikuri::Tool::Workspace.new(
   anchor:   Dir.pwd,
-  readable: Pikuri::Tool::CodingPaths.readable + skill_catalog.roots,
+  readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
   temp:     true
 )
 confirmer = yolo ? Pikuri::Tool::Confirmer::AUTO_APPROVE : Pikuri::Tool::Confirmer::TERMINAL

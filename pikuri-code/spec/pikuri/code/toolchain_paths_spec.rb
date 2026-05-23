@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Tool::CodingPaths do
+RSpec.describe Pikuri::Code::ToolchainPaths do
   describe '.readable' do
     it 'returns only directories that exist' do
       paths = described_class.readable

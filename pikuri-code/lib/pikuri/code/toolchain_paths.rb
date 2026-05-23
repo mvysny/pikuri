@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
+  module Code
     # Curated list of read-only filesystem prefixes a coding agent
     # benefits from seeing: system toolchains under +/usr+ and +/opt+,
     # plus per-user toolchain managers and dependency caches
@@ -16,13 +16,7 @@ module Pikuri
     # +pikuri-workspace/lib/pikuri/tool/workspace.rb+ for the
     # containment story and CLAUDE.md's Scope decisions for the
     # Linux-first stance.
-    #
-    # Lives under +Pikuri::Tool+ to coexist with pikuri-code's single
-    # Zeitwerk loader (mounted at +lib/pikuri/tool+ to avoid the
-    # +Pikuri::Tool+ class-vs-module collision). Despite the namespace
-    # it isn't a +Pikuri::Tool+ subclass — it's a module of class
-    # methods.
-    module CodingPaths
+    module ToolchainPaths
       # @return [Array<String>] absolute paths, in stable order, each one
       #   confirmed to be an existing directory at the moment of the call.
       #   The list is *presence-filtered*: any path that doesn't currently
