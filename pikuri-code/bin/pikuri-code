@@ -23,7 +23,8 @@ require 'pikuri-workspace'
 require 'pikuri-mcp'
 require 'pikuri-code'
 
-yolo = false
+sandbox_enabled = true
+confirm_enabled = true
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
 api_key_env = 'OPENAI_API_KEY'
@@ -31,7 +32,12 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-code [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--yolo', 'Auto-approve all confirmations (use only inside a sandbox)') { yolo = true }
+  opts.on('--no-sandbox', 'Disable the bubblewrap sandbox around bash commands.') { sandbox_enabled = false }
+  opts.on('--no-confirm', 'Auto-approve every confirmation (skip the y/n prompt for writes + bash).') { confirm_enabled = false }
+  opts.on('--yolo', 'Shorthand for --no-sandbox --no-confirm. Use only with an outer sandbox.') do
+    sandbox_enabled = false
+    confirm_enabled = false
+  end
   opts.on('--server URL', "LLM server base URL (default: #{server})") { |v| server = v }
   opts.on('--model NAME', "Model identifier (default: #{model})") { |v| model = v }
   opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
@@ -70,7 +76,20 @@ workspace = Pikuri::Tool::Workspace.new(
   readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
   temp:     true
 )
-confirmer = yolo ? Pikuri::Tool::Confirmer::AUTO_APPROVE : Pikuri::Tool::Confirmer::TERMINAL
+confirmer = confirm_enabled ? Pikuri::Tool::Confirmer::TERMINAL : Pikuri::Tool::Confirmer::AUTO_APPROVE
+
+# Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
+# constrained to workspace.readable / workspace.writable plus a curated
+# OS-runtime baseline (/etc/ssl, /etc/resolv.conf, /etc/localtime, …).
+# Probes `bwrap` at construction and raises if it isn't installed or the
+# kernel lacks user-namespace support — fail-loud, so a host that
+# expects the sandbox doesn't silently run without one. Disable with
+# --no-sandbox / --yolo.
+sandbox = if sandbox_enabled
+            Pikuri::Tool::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
+          else
+            Pikuri::Tool::Bash::Sandbox::NONE
+          end
 
 # Build the system prompt: static base + optional project context + footer.
 # AGENTS.md wins over CLAUDE.md when both exist; lookup is relative to
@@ -151,7 +170,7 @@ begin
     c.add_tool Pikuri::Tool::Glob.new(workspace: workspace)
     c.add_tool Pikuri::Tool::Edit.new(workspace: workspace)
     c.add_tool Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
-    c.add_tool Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer)
+    c.add_tool Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::WEB_SEARCH
     c.add_tool Pikuri::Tool::WEB_SCRAPE
     c.add_tool Pikuri::Tool::FETCH
@@ -199,7 +218,16 @@ unless skill_catalog.empty?
   names = skill_catalog.list.map(&:name).sort.join(', ')
   puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
 end
-puts 'YOLO mode: confirmations auto-approved. Use only inside a docker / dev-container sandbox.' if yolo
+# Print reduced-safety status only when a layer is off. Silent at
+# defaults; loud when something the user might want to know about has
+# been disabled.
+warnings = []
+warnings << 'Sandbox: DISABLED.' unless sandbox_enabled
+warnings << 'Confirmer: AUTO-APPROVE.' unless confirm_enabled
+unless warnings.empty?
+  warnings << 'Use only with an outer sandbox (docker / dev-container) or in a throwaway environment.'
+  puts warnings.join(' ')
+end
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?
 

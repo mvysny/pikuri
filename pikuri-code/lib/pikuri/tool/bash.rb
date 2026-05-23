@@ -122,23 +122,32 @@ module Pikuri
       #   run in +workspace.cwd+. Bash does NOT path-resolve individual
       #   arguments — the +command+ string is opaque shell syntax.
       # @param confirmer [Tool::Confirmer] consulted before every command.
+      # @param sandbox [Tool::Bash::Sandbox] filesystem-sandbox seam
+      #   (default {Sandbox::NONE} — identity passthrough). Pass
+      #   {Sandbox::Bubblewrap.new(workspace: workspace)+} for an
+      #   isolated subprocess whose filesystem view is the workspace's
+      #   readable/writable roots plus the OS-runtime baseline. See
+      #   {Sandbox} for the rationale.
       # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+;
       #   fail-loud at construction rather than the first tool call.
       # @return [Bash]
-      def initialize(workspace:, confirmer:)
+      def initialize(workspace:, confirmer:, sandbox: Sandbox::NONE)
         Bash.send(:check_binaries!)
-        # Prototype-stage capability advisory. The Bash tool runs commands
-        # with pikuri's own UID and inherits its filesystem view — there is
-        # no chroot, container, seccomp, or syscall filter today. Anything
-        # readable to the user is readable to the LLM via +cat ~/.ssh/id_*+
-        # / +aws configure list+ / etc. The per-command +Confirmer+ is the
-        # only line of defense; logged loud so anyone wiring this tool up
-        # sees the warning at startup, not on the day of an incident.
-        LOGGER.warn(
-          'Tool::Bash is a prototype: commands run unsandboxed under your UID and can read ' \
-          'sensitive files (~/.ssh, AWS credentials, browser sessions, ...). Use with care; ' \
-          'a future release will gate this behind a sandbox.'
-        )
+        # Capability advisory when no sandbox is in play. Without a
+        # sandbox, +bash+ runs with pikuri's own UID + filesystem view —
+        # anything readable to the user is readable to the LLM via +cat
+        # ~/.ssh/id_*+ / +aws configure list+ / etc. The per-command
+        # +Confirmer+ is the only line of defense in that mode. The
+        # bundled {Sandbox::Bubblewrap} addresses this concern with a
+        # filesystem-restricted subprocess; warn only when the host has
+        # opted out (or never opted in).
+        if sandbox.equal?(Sandbox::NONE)
+          LOGGER.warn(
+            'Tool::Bash is unsandboxed: commands run under your UID and can read ' \
+            'sensitive files (~/.ssh, AWS credentials, browser sessions, ...). ' \
+            'Use Sandbox::Bubblewrap or an outer container for isolation.'
+          )
+        end
         super(
           name: 'bash',
           description: DESCRIPTION,
@@ -154,7 +163,7 @@ module Pikuri
                                "max #{MAX_TIMEOUT}, e.g. 300."
           },
           execute: ->(command:, description: nil, timeout: DEFAULT_TIMEOUT) {
-            Bash.run(workspace: workspace, confirmer: confirmer,
+            Bash.run(workspace: workspace, confirmer: confirmer, sandbox: sandbox,
                      command: command, description: description, timeout: timeout)
           }
         )
@@ -166,11 +175,14 @@ module Pikuri
       #
       # @param workspace [Tool::Workspace]
       # @param confirmer [Tool::Confirmer]
+      # @param sandbox [Tool::Bash::Sandbox] wraps the spawned argv;
+      #   {Sandbox::NONE} for identity passthrough,
+      #   {Sandbox::Bubblewrap} for filesystem isolation.
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
       # @return [String]
-      def self.run(workspace:, confirmer:, command:, description:, timeout:)
+      def self.run(workspace:, confirmer:, command:, description:, timeout:, sandbox: Sandbox::NONE)
         return 'Error: empty bash command.' if command.strip.empty?
         return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
@@ -178,11 +190,11 @@ module Pikuri
         prompt = compose_prompt(command: command, description: description, timeout: timeout)
         return 'Error: user declined the bash command.' unless confirmer.confirm?(prompt: prompt)
 
-        result = Pikuri::Subprocess.spawn(
+        argv = sandbox.wrap([
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
-          'bash', '-c', command,
-          chdir: workspace.cwd.to_s
-        ).wait
+          'bash', '-c', command
+        ])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.cwd.to_s).wait
 
         output = truncate(result.output)
         exit_code = result.status.exitstatus
