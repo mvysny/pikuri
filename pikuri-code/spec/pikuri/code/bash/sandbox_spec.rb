@@ -43,6 +43,15 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
     end
 
+    # Fires before the bwrap probe, so this test is bwrap-availability-
+    # independent.
+    it 'refuses construction when the workspace lists / as writable' do
+      ws = Pikuri::Workspace::Filesystem::AllowAll.new(anchor: root)
+      err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+      assert_includes err.message, "lists '/' as"
+      assert_includes err.message, 'Sandbox::NONE'
+    end
+
     if BWRAP_AVAILABLE
       it 'constructs successfully when bwrap is available' do
         sandbox = described_class.new(workspace: workspace)

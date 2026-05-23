@@ -23,6 +23,14 @@ uses semver as documented in `lib/pikuri/version.rb`.
   `--no-confirm` continue to act on their individual layers only —
   `--yolo` is now the dedicated "I'm inside a container, just let it
   rip" shorthand.
+- **`Code::Bash::Sandbox::Bubblewrap.new` refuses construction when
+  the supplied workspace lists `/` as writable** (typically
+  `Filesystem::AllowAll`). Bubblewrap exists for filesystem
+  containment, which is structurally meaningless when the entire
+  filesystem is the workspace; the host gets a clear error pointing
+  at `Sandbox::NONE`. Pure defense-in-depth — `pikuri-code --yolo`
+  already wires `Sandbox::NONE` alongside `AllowAll`, so this check
+  only fires for hosts that compose the pieces directly.
 
 ### Changed
 

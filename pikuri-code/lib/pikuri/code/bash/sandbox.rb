@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'pathname'
 require 'set'
 
 module Pikuri
@@ -94,9 +95,14 @@ module Pikuri
         #
         # == Failures that surface at construction
         #
-        # The constructor probes +bwrap+ with a no-op invocation. Two
-        # cases raise loudly:
+        # The constructor probes the workspace shape, then +bwrap+ with a
+        # no-op invocation. Three cases raise loudly:
         #
+        # * Workspace lists +/+ as writable (typically
+        #   {Workspace::Filesystem::AllowAll}) — Bubblewrap exists for
+        #   filesystem containment, which is structurally meaningless
+        #   when the whole filesystem is the workspace. The host should
+        #   pass {NONE} instead.
         # * +bwrap+ not on +PATH+ → +Errno::ENOENT+ wrapped as +RuntimeError+.
         # * Kernel lacks user-namespace support (some hardened distros)
         #   → +bwrap+ exits non-zero, surfaced as +RuntimeError+.
@@ -131,11 +137,17 @@ module Pikuri
           # @param workspace [Pikuri::Workspace::Filesystem] the source of
           #   per-host readable/writable roots and the +chdir+ target
           #   for the subprocess.
+          # @raise [RuntimeError] if the workspace lists +/+ as writable
+          #   (Bubblewrap is for filesystem containment, which is moot
+          #   when the entire filesystem is the workspace — typically
+          #   {Workspace::Filesystem::AllowAll}; the host should pass
+          #   {NONE} instead).
           # @raise [RuntimeError] if +bwrap+ isn't on +PATH+ or fails
           #   its probe (typically: kernel without user-namespace
           #   support).
           def initialize(workspace:)
             @workspace = workspace
+            reject_unbounded_workspace!
             check_bwrap!
           end
 
@@ -149,6 +161,22 @@ module Pikuri
           end
 
           private
+
+          # Bubblewrap's whole job is filesystem containment; that's
+          # structurally meaningless when the workspace's writable set
+          # includes the root directory (typically because the host
+          # wired in {Workspace::Filesystem::AllowAll}). Refuse to
+          # construct rather than +--bind / /+ over our own
+          # tmpfs/proc/dev layout.
+          def reject_unbounded_workspace!
+            return unless @workspace.writable.include?(Pathname.new('/').realpath)
+
+            raise "Code::Bash::Sandbox::Bubblewrap: workspace lists '/' as " \
+                  'writable (likely Workspace::Filesystem::AllowAll). ' \
+                  'Bubblewrap exists to contain the subprocess to a subset ' \
+                  'of the filesystem, which is moot when the whole filesystem ' \
+                  'is the workspace. Pass Sandbox::NONE instead.'
+          end
 
           def check_bwrap!
             result = Pikuri::Subprocess.spawn(
