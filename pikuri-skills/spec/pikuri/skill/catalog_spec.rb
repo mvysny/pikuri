@@ -36,10 +36,24 @@ RSpec.describe Pikuri::Skill::Catalog do
       assert_equal [], described_class.list
       assert_nil described_class.get('anything')
       assert_equal '', described_class.format_for_prompt
+      assert_equal [], described_class.roots
     end
 
     it 'is frozen' do
       assert described_class.frozen?
+    end
+  end
+
+  describe '#roots on Bundled' do
+    it 'returns the constructor roots stringified, preserving order' do
+      roots = [File.join(FIXTURE_ROOT, 'valid-tree'), '/nonexistent/path']
+      catalog = Pikuri::Skill::Catalog::Bundled.new(roots: roots)
+      assert_equal roots, catalog.roots
+    end
+
+    it 'returns [] for an Bundled catalog constructed with no roots' do
+      catalog = Pikuri::Skill::Catalog::Bundled.new(roots: [])
+      assert_equal [], catalog.roots
     end
   end
 

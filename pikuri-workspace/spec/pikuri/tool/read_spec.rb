@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Tool::Read do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-read-root-')).realpath }
-  let(:workspace) { Pikuri::Tool::Workspace::Cwd.new(root: root) }
+  let(:workspace) { Pikuri::Tool::Workspace.new(anchor: root) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after { FileUtils.rm_rf(root) }

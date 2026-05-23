@@ -11,10 +11,11 @@ Gem::Specification.new do |spec|
   spec.summary     = 'Filesystem tools (Read/Write/Edit/Grep/Glob) + Workspace + Confirmer seams for pikuri.'
   spec.description = <<~DESC
     pikuri-workspace adds "operate on a directory tree" to pikuri-core
-    agents: the +Pikuri::Tool::Workspace+ seam (abstract base +
-    +Workspace::Cwd+) that scopes filesystem access to a chosen root,
-    the +Pikuri::Tool::Confirmer+ seam (+AUTO_APPROVE+ + +TERMINAL+)
-    for user-state mutations, and five tools wired to those seams:
+    agents: the +Pikuri::Tool::Workspace+ class that scopes filesystem
+    access to an anchor + explicit readable / writable prefix lists
+    (with optional ephemeral temp playground), the
+    +Pikuri::Tool::Confirmer+ seam (+AUTO_APPROVE+ + +TERMINAL+) for
+    user-state mutations, and five tools wired to those seams:
     +Pikuri::Tool::Read+, +Pikuri::Tool::Write+, +Pikuri::Tool::Edit+,
     +Pikuri::Tool::Grep+, and +Pikuri::Tool::Glob+. Self-contained —
     no shell execution; +Pikuri::Tool::Bash+ ships in pikuri-code on

@@ -49,19 +49,38 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
+# Scan the user's skill directories (~/.pikuri/skills, ~/.claude/skills,
+# ~/.agents/skills) and the project's (.pikuri/skills, .claude/skills,
+# .agents/skills, walked up to the git root) so the LLM can load any
+# matching skill on demand. Catalog roots are folded into the workspace's
+# readable set below so the skill tool's sidecar +read+ flow works
+# (catalogs themselves don't enforce filesystem access).
+skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
+
 # Workspace is captured once at startup; all file-touching tools share it.
-# Cwd locks read+write to the launch directory and its subtree.
-workspace = Pikuri::Tool::Workspace::Cwd.new(root: Dir.pwd)
+# Anchor is the launch directory (project root). Readable additions:
+# system toolchains (/usr, /opt, mise/cargo/m2/…) so the LLM can grep
+# Ruby stdlib, JDK sources, dependency caches; skill catalog roots so
+# the +read+ tool can load skill sidecars. temp: true mints an ephemeral
+# writable playground (Dir.mktmpdir, removed at_exit) — exposed below in
+# the system prompt so the LLM knows where to put junk (downloads, unzip
+# targets, scratch artifacts).
+workspace = Pikuri::Tool::Workspace.new(
+  anchor:   Dir.pwd,
+  readable: Pikuri::Tool::CodingPaths.readable + skill_catalog.roots,
+  temp:     true
+)
 confirmer = yolo ? Pikuri::Tool::Confirmer::AUTO_APPROVE : Pikuri::Tool::Confirmer::TERMINAL
 
 # Build the system prompt: static base + optional project context + footer.
-# AGENTS.md wins over CLAUDE.md when both exist; CWD lookup is relative to
-# the workspace root (== Dir.pwd at this point).
+# AGENTS.md wins over CLAUDE.md when both exist; lookup is relative to
+# the workspace cwd (== Dir.pwd at this point).
 system_prompt = Pikuri.prompt(:'coding-system-prompt')
 md_path = ['AGENTS.md', 'CLAUDE.md'].find { |f| File.exist?(f) }
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nCurrent working directory: #{workspace.cwd}"
+system_prompt += "\nTemp dir (writable, ephemeral, cleared on exit): #{workspace.temp}"
 
 server = server.chomp('/')
 openai_api_base = "#{server}/v1"
@@ -76,14 +95,6 @@ end
 # so the +ctx=<used>/<cap>+ headline lights up against this local server,
 # which is unknown to ruby_llm's bundled model registry.
 llama_probe_url = "#{server}/props"
-
-# Scan the user's skill directories (~/.pikuri/skills, ~/.claude/skills,
-# ~/.agents/skills) and the project's (.pikuri/skills, .claude/skills,
-# .agents/skills, walked up to the git root) so the LLM can load any
-# matching skill on demand. Empty catalogs are fine — Agent skips both
-# the system-prompt augmentation and the `skill` tool when nothing was
-# discovered, so the no-skills case is indistinguishable from before.
-skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: workspace.cwd.to_s)
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 

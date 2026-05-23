@@ -4,8 +4,8 @@ require 'pikuri-core'
 require 'pikuri-workspace'
 
 # Entry file for the pikuri-code gem. After +require 'pikuri-code'+,
-# +Pikuri::Tool::Bash+ is defined and the gem's +prompts/+ directory
-# is appended to +Pikuri::PROMPT_DIRS+ so
+# +Pikuri::Tool::Bash+ and +Pikuri::Tool::CodingPaths+ are defined, and
+# the gem's +prompts/+ directory is appended to +Pikuri::PROMPT_DIRS+ so
 # +Pikuri.prompt(:'coding-system-prompt')+ resolves to the right
 # file regardless of which gem actually shipped it.
 #

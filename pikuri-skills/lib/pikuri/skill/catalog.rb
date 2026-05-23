@@ -93,6 +93,20 @@ module Pikuri
         list.empty?
       end
 
+      # The filesystem directories this catalog scanned for skills.
+      # Hosts wire these into +Pikuri::Tool::Workspace+'s +readable+
+      # list so the LLM's +read+ tool can pull sidecar files
+      # (+scripts/+, +references/+, …) that skills reference. Returns
+      # an empty array for catalogs that don't have a filesystem
+      # source ({Empty}, future virtual-filesystem catalogs).
+      #
+      # @return [Array<String>] absolute paths, in the order they were
+      #   scanned. Empty for the {Empty} catalog.
+      # @raise [NotImplementedError] in the abstract base
+      def roots
+        raise NotImplementedError, "#{self.class}#roots must be implemented"
+      end
+
       # System-prompt block advertising every loaded skill to the LLM.
       # Follows the Agent Skills standard's XML shape (PI uses the same
       # one) so a skill folder authored against any compliant harness
@@ -147,6 +161,11 @@ module Pikuri
         # @return [nil]
         def get(_name)
           nil
+        end
+
+        # @return [Array<String>] always empty
+        def roots
+          [].freeze
         end
       end
 
@@ -236,8 +255,9 @@ module Pikuri
         # @return [Bundled]
         def initialize(roots:)
           super()
+          @roots = roots.map(&:to_s).freeze
           @skills = {}
-          roots.each { |root| scan_root(root.to_s) }
+          @roots.each { |root| scan_root(root) }
           @skills.freeze
           @list = @skills.values.freeze
           freeze
@@ -253,6 +273,12 @@ module Pikuri
         def get(name)
           @skills[name]
         end
+
+        # @return [Array<String>] the +roots:+ supplied at construction,
+        #   stringified. Includes non-existent paths verbatim — callers
+        #   that need an existence-filtered list should filter
+        #   downstream.
+        attr_reader :roots
 
         private
 
