@@ -129,13 +129,15 @@ grows a skill system.
 - **Workspace seam.** Tools that touch files (`Read`, `Write`, `Edit`,
   `Grep`, `Glob`, `Bash`) take a `Pikuri::Tool::Workspace` via
   constructor and route every path through `#resolve_for_read(path)` /
-  `#resolve_for_write(path)` before touching the filesystem. The
-  bundled `Pikuri::Tool::Workspace::Cwd.new(root:)` locks reads +
-  writes to the launch directory's subtree, rejecting `..`-escapes
-  and symlinks that resolve outside the root. The seam exists so a
-  future in-editor pikuri can swap in a workspace mirroring the IDE's
-  open project root or a virtual filesystem without rewriting tool
-  guts.
+  `#resolve_for_write(path)` before touching the filesystem.
+  `Pikuri::Tool::Workspace.new(anchor:, readable: [], writable: [],
+  temp: false)` is a single concrete class: `anchor` is the project
+  root (always readable + writable), `readable`/`writable` add extra
+  roots, and `temp: true` mints an `at_exit`-cleaned playground.
+  Every path is resolved against those roots, rejecting `..`-escapes
+  and symlinks that land outside. Hosts that need a different policy
+  subclass; an in-editor pikuri can mirror the IDE's open project
+  root or a virtual filesystem without rewriting tool guts.
 
 - **Confirmer seam.** Tools that mutate user state (`Write`, `Bash`)
   take a `Pikuri::Tool::Confirmer` via constructor and route every
@@ -312,9 +314,11 @@ in `pikuri-code` on top.
   root) so it doesn't try to redefine `Pikuri::Tool` (which
   `pikuri-core` owns as a class) as an inferred module.
 - `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` —
-  abstract bases + bundled implementations for the two
-  coding-tool seams (see Scope decisions). `Confirmer` ships
-  `TERMINAL` / `AUTO_APPROVE`; `Workspace` ships `Cwd`.
+  the two coding-tool seams (see Scope decisions). `Confirmer` is
+  an abstract base with bundled `TERMINAL` / `AUTO_APPROVE`
+  implementations; `Workspace` is a single concrete class
+  parameterized by `anchor:` / `readable:` / `writable:` / `temp:`
+  (subclass if a host needs a different containment policy).
 - `lib/pikuri/tool/read.rb`, `lib/pikuri/tool/write.rb`,
   `lib/pikuri/tool/edit.rb`, `lib/pikuri/tool/grep.rb`,
   `lib/pikuri/tool/glob.rb` — the five file tools. Each is a
@@ -332,9 +336,10 @@ Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
 - `lib/pikuri/tool/bash.rb` — `Pikuri::Tool::Bash` (shell tool
   via the `Subprocess.spawn` chokepoint + `Confirmer` gate).
 - `bin/pikuri-code` — CLI entry point for the in-repo coding
-  agent: registers the file/shell stack (`Workspace::Cwd` rooted
-  at `Dir.pwd` + `Confirmer::TERMINAL` — `--yolo` swaps in
-  `AUTO_APPROVE`), adds `Pikuri::Skill::Extension` (catalog
+  agent: registers the file/shell stack (`Workspace` anchored
+  at `Dir.pwd` with `temp: true` for a scratch playground +
+  `Confirmer::TERMINAL` — `--yolo` swaps in `AUTO_APPROVE`),
+  adds `Pikuri::Skill::Extension` (catalog
   discovered from `.pikuri/skills` / `.claude/skills` /
   `.agents/skills`) and `Pikuri::Mcp::Extension` (empty registry
   by default — hand-edit to add servers) via the `Agent.new`

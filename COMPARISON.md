@@ -348,12 +348,12 @@ development. Pikuri's choice is the latter — fine for its scope.
 ## Permission / sandboxing
 
 - **pikuri**: two-seam approach for v1.
-  - **`Tool::Workspace`** abstract base + `Workspace::Cwd` bundled
-    implementation: every coding tool (`Read`/`Write`/`Edit`/`Grep`/
-    `Glob`/`Bash`) takes a workspace via constructor and routes paths
-    through `#resolve_for_read(path)` / `#resolve_for_write(path)`,
-    rejecting `..`-escapes and symlinks that resolve outside the
-    launch directory's subtree.
+  - **`Tool::Workspace`** is a single concrete class with explicit
+    `anchor:` / `readable:` / `writable:` / `temp:` parameters. Every
+    coding tool (`Read`/`Write`/`Edit`/`Grep`/`Glob`/`Bash`) takes a
+    workspace via constructor and routes paths through
+    `#resolve_for_read(path)` / `#resolve_for_write(path)`, rejecting
+    `..`-escapes and symlinks that resolve outside any declared root.
   - **`Tool::Confirmer`** abstract base + `TERMINAL` / `AUTO_APPROVE`
     bundled implementations: `Write`/`Bash` route every prompt through
     `#confirm?(prompt:)` rather than touching `$stdin`/`$stdout` —

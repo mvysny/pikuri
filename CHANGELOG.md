@@ -6,6 +6,17 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ## [Unreleased]
 
+### Changed
+
+- **`Pikuri::Tool::Workspace` is now a single concrete class.** The
+  abstract base + bundled `Cwd` subclass collapsed into one class
+  parameterized by explicit `anchor:` / `readable: []` / `writable:
+  []` / `temp: false` keyword args. Multi-root containment (extra
+  read-only and writable roots beyond the anchor) and an optional
+  ephemeral `Dir.mktmpdir` playground (cleaned up via `at_exit`)
+  are now built in. Hosts that need a different containment policy
+  subclass `Workspace` directly.
+
 ## [0.0.3] - 2026-05-22 — monorepo split + extension protocol + MCP
 
 Pikuri now ships as seven sibling gems under a Rails-shape monorepo

