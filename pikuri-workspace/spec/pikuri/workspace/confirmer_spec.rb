@@ -2,14 +2,14 @@
 
 require 'stringio'
 
-RSpec.describe Pikuri::Tool::Confirmer do
+RSpec.describe Pikuri::Workspace::Confirmer do
   describe '#confirm?' do
     it 'raises NotImplementedError on the abstract base' do
       assert_raises(NotImplementedError) { described_class.new.confirm?(prompt: 'ok?') }
     end
   end
 
-  describe Pikuri::Tool::Confirmer::Terminal do
+  describe Pikuri::Workspace::Confirmer::Terminal do
     around do |example|
       orig_in, orig_out = $stdin, $stdout
       $stdout = StringIO.new
@@ -79,7 +79,7 @@ RSpec.describe Pikuri::Tool::Confirmer do
     end
   end
 
-  describe Pikuri::Tool::Confirmer::AutoApprove do
+  describe Pikuri::Workspace::Confirmer::AutoApprove do
     it 'returns true regardless of prompt' do
       assert_equal true, described_class.new.confirm?(prompt: 'anything')
       assert_equal true, described_class.new.confirm?(prompt: '')
@@ -88,11 +88,11 @@ RSpec.describe Pikuri::Tool::Confirmer do
 
   describe 'singleton constants' do
     it 'TERMINAL is a Terminal instance' do
-      assert_instance_of Pikuri::Tool::Confirmer::Terminal, Pikuri::Tool::Confirmer::TERMINAL
+      assert_instance_of Pikuri::Workspace::Confirmer::Terminal, Pikuri::Workspace::Confirmer::TERMINAL
     end
 
     it 'AUTO_APPROVE is an AutoApprove instance' do
-      assert_instance_of Pikuri::Tool::Confirmer::AutoApprove, Pikuri::Tool::Confirmer::AUTO_APPROVE
+      assert_instance_of Pikuri::Workspace::Confirmer::AutoApprove, Pikuri::Workspace::Confirmer::AUTO_APPROVE
     end
   end
 end

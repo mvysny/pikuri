@@ -3,9 +3,9 @@
 require 'tmpdir'
 require 'fileutils'
 
-RSpec.describe Pikuri::Tool::Read do
+RSpec.describe Pikuri::Workspace::Read do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-read-root-')).realpath }
-  let(:workspace) { Pikuri::Tool::Workspace.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after { FileUtils.rm_rf(root) }
@@ -94,16 +94,16 @@ RSpec.describe Pikuri::Tool::Read do
 
   describe 'long-line truncation' do
     it 'truncates lines longer than MAX_LINE_LENGTH and appends the marker' do
-      long = 'x' * (Pikuri::Tool::Read::MAX_LINE_LENGTH + 50)
+      long = 'x' * (Pikuri::Workspace::Read::MAX_LINE_LENGTH + 50)
       write_file('long.txt', "#{long}\nshort\n")
 
       result = described_class.read(workspace: workspace, path: 'long.txt', offset: 1, limit: 2000)
 
-      assert_includes result, Pikuri::Tool::Read::LINE_TRUNCATION_MARKER
+      assert_includes result, Pikuri::Workspace::Read::LINE_TRUNCATION_MARKER
       # The truncated payload should be exactly MAX_LINE_LENGTH x's followed
       # by the marker (no x's bleed past the cap).
-      assert_includes result, 'x' * Pikuri::Tool::Read::MAX_LINE_LENGTH + Pikuri::Tool::Read::LINE_TRUNCATION_MARKER
-      refute_includes result, 'x' * (Pikuri::Tool::Read::MAX_LINE_LENGTH + 1) + '.'
+      assert_includes result, 'x' * Pikuri::Workspace::Read::MAX_LINE_LENGTH + Pikuri::Workspace::Read::LINE_TRUNCATION_MARKER
+      refute_includes result, 'x' * (Pikuri::Workspace::Read::MAX_LINE_LENGTH + 1) + '.'
       assert_includes result, "     2\tshort"
     end
   end
@@ -117,7 +117,7 @@ RSpec.describe Pikuri::Tool::Read do
 
       result = described_class.read(workspace: workspace, path: 'bulky.txt', offset: 1, limit: 2000)
 
-      assert_includes result, "Output capped at #{Pikuri::Tool::Read::MAX_BYTES_LABEL}."
+      assert_includes result, "Output capped at #{Pikuri::Workspace::Read::MAX_BYTES_LABEL}."
       assert_match(/Use offset=\d+ to continue\./, result)
     end
   end

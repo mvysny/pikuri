@@ -71,12 +71,12 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
 # writable playground (Dir.mktmpdir, removed at_exit) — exposed below in
 # the system prompt so the LLM knows where to put junk (downloads, unzip
 # targets, scratch artifacts).
-workspace = Pikuri::Tool::Workspace.new(
+workspace = Pikuri::Workspace::Filesystem.new(
   anchor:   Dir.pwd,
   readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
   temp:     true
 )
-confirmer = confirm_enabled ? Pikuri::Tool::Confirmer::TERMINAL : Pikuri::Tool::Confirmer::AUTO_APPROVE
+confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
@@ -165,11 +165,11 @@ begin
     # earlier tools, and this is the coding-relevant set); web + calculator
     # last as auxiliary. The `skill` tool, when the catalog is non-empty,
     # is appended by the Skill::Extension below.
-    c.add_tool Pikuri::Tool::Read.new(workspace: workspace)
-    c.add_tool Pikuri::Tool::Grep.new(workspace: workspace)
-    c.add_tool Pikuri::Tool::Glob.new(workspace: workspace)
-    c.add_tool Pikuri::Tool::Edit.new(workspace: workspace)
-    c.add_tool Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
+    c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
+    c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
+    c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
+    c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
+    c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
     c.add_tool Pikuri::Tool::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::WEB_SEARCH
     c.add_tool Pikuri::Tool::WEB_SCRAPE

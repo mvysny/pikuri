@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Tool::Bash do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-bash-root-')).realpath }
-  let(:workspace) { Pikuri::Tool::Workspace.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
   let(:confirmer) { build_confirmer(true) }
   let(:tool)      { described_class.new(workspace: workspace, confirmer: confirmer) }
 

@@ -127,25 +127,26 @@ grows a skill system.
   the gem, no subprocess involved.
 
 - **Workspace seam.** Tools that touch files (`Read`, `Write`, `Edit`,
-  `Grep`, `Glob`, `Bash`) take a `Pikuri::Tool::Workspace` via
+  `Grep`, `Glob`, `Bash`) take a `Pikuri::Workspace::Filesystem` via
   constructor and route every path through `#resolve_for_read(path)` /
   `#resolve_for_write(path)` before touching the filesystem.
-  `Pikuri::Tool::Workspace.new(anchor:, readable: [], writable: [],
-  temp: false)` is a single concrete class: `anchor` is the project
-  root (always readable + writable), `readable`/`writable` add extra
-  roots, and `temp: true` mints an `at_exit`-cleaned playground.
-  Every path is resolved against those roots, rejecting `..`-escapes
-  and symlinks that land outside. Hosts that need a different policy
-  subclass; an in-editor pikuri can mirror the IDE's open project
-  root or a virtual filesystem without rewriting tool guts.
+  `Pikuri::Workspace::Filesystem.new(anchor:, readable: [],
+  writable: [], temp: false)` is a single concrete class: `anchor` is
+  the project root (always readable + writable),
+  `readable`/`writable` add extra roots, and `temp: true` mints an
+  `at_exit`-cleaned playground. Every path is resolved against those
+  roots, rejecting `..`-escapes and symlinks that land outside. Hosts
+  that need a different policy subclass; an in-editor pikuri can
+  mirror the IDE's open project root or a virtual filesystem without
+  rewriting tool guts.
 
 - **Confirmer seam.** Tools that mutate user state (`Write`, `Bash`)
-  take a `Pikuri::Tool::Confirmer` via constructor and route every
+  take a `Pikuri::Workspace::Confirmer` via constructor and route every
   prompt through `#confirm?(prompt:)` — never `gets` / `puts` /
   `$stdin` / `$stdout` directly. Two bundled implementations:
-  `Pikuri::Tool::Confirmer::TERMINAL` (prompts on stdin/stdout) and
-  `Pikuri::Tool::Confirmer::AUTO_APPROVE` (yes-to-everything; used by
-  `--yolo` mode and specs). Same rationale as the workspace seam: a
+  `Pikuri::Workspace::Confirmer::TERMINAL` (prompts on stdin/stdout) and
+  `Pikuri::Workspace::Confirmer::AUTO_APPROVE` (yes-to-everything; used
+  by `--yolo` mode and specs). Same rationale as the workspace seam: a
   later TUI / IDE host plugs in by writing a new `Confirmer` subclass,
   not by editing tool internals.
 
@@ -309,21 +310,23 @@ The "operate on a directory tree" gem: Workspace + Confirmer seams
 runtime deps (stdlib-only). No subprocess execution — `Bash` lives
 in `pikuri-code` on top.
 
-- `lib/pikuri-workspace.rb` — gem entry. Zeitwerk loader mounted
-  at the `Pikuri::Tool` namespace (rather than at this gem's lib/
-  root) so it doesn't try to redefine `Pikuri::Tool` (which
-  `pikuri-core` owns as a class) as an inferred module.
-- `lib/pikuri/tool/confirmer.rb`, `lib/pikuri/tool/workspace.rb` —
-  the two coding-tool seams (see Scope decisions). `Confirmer` is
-  an abstract base with bundled `TERMINAL` / `AUTO_APPROVE`
-  implementations; `Workspace` is a single concrete class
-  parameterized by `anchor:` / `readable:` / `writable:` / `temp:`
-  (subclass if a host needs a different containment policy).
-- `lib/pikuri/tool/read.rb`, `lib/pikuri/tool/write.rb`,
-  `lib/pikuri/tool/edit.rb`, `lib/pikuri/tool/grep.rb`,
-  `lib/pikuri/tool/glob.rb` — the five file tools. Each is a
-  `Pikuri::Tool` subclass instantiated per-binary with the
-  constructor wiring (workspace + confirmer where needed).
+- `lib/pikuri-workspace.rb` — gem entry. Per-gem Zeitwerk loader
+  mounted at this gem's `lib/` root; Zeitwerk auto-vivifies
+  `Pikuri::Workspace` as a module from the `pikuri/workspace/`
+  directory.
+- `lib/pikuri/workspace/confirmer.rb`,
+  `lib/pikuri/workspace/filesystem.rb` — the two coding-tool seams
+  (see Scope decisions). `Confirmer` is an abstract base with
+  bundled `TERMINAL` / `AUTO_APPROVE` implementations; `Filesystem`
+  is a single concrete class parameterized by `anchor:` /
+  `readable:` / `writable:` / `temp:` (subclass if a host needs a
+  different containment policy).
+- `lib/pikuri/workspace/read.rb`, `lib/pikuri/workspace/write.rb`,
+  `lib/pikuri/workspace/edit.rb`, `lib/pikuri/workspace/grep.rb`,
+  `lib/pikuri/workspace/glob.rb` — the five file tools. Each is a
+  `Pikuri::Tool` subclass (defined under the `Pikuri::Workspace`
+  namespace) instantiated per-binary with the constructor wiring
+  (workspace + confirmer where needed).
 
 ### `pikuri-code/` — gem name `pikuri-code`
 

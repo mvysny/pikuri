@@ -32,7 +32,7 @@ Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 module Pikuri
   # Configuration helpers for binaries built on pikuri-code. Distinct
   # from +Pikuri::Tool+ — these aren't tools, they're values the binary
-  # stitches into +Pikuri::Tool::Workspace+, the system prompt, etc.
+  # stitches into +Pikuri::Workspace::Filesystem+, the system prompt, etc.
   module Code; end
 
   class Tool

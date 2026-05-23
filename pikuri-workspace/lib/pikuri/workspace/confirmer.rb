@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
+  module Workspace
     # Port for asking the user to confirm a potentially destructive tool
-    # operation — currently {Tool::Bash} (every command) and
-    # {Tool::Write} (overwrite of an existing file with non-identical
+    # operation — currently {Pikuri::Tool::Bash} (every command) and
+    # {Write} (overwrite of an existing file with non-identical
     # content). Subclass and implement {#confirm?}.
     #
     # == Why a Boolean return

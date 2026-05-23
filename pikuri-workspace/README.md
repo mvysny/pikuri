@@ -4,14 +4,15 @@ Filesystem tools + Workspace/Confirmer seams for the
 [pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
 
 Self-contained "operate on a directory tree" toolkit:
-- `Pikuri::Tool::Workspace` — scopes filesystem access to an anchor +
-  explicit readable / writable prefix lists, with an optional
-  ephemeral temp playground. Rejects `..`-escapes and symlinks that
-  resolve outside the configured roots.
-- `Pikuri::Tool::Confirmer` — abstract base + `AUTO_APPROVE` /
+- `Pikuri::Workspace::Filesystem` — scopes filesystem access to an
+  anchor + explicit readable / writable prefix lists, with an
+  optional ephemeral temp playground. Rejects `..`-escapes and
+  symlinks that resolve outside the configured roots.
+- `Pikuri::Workspace::Confirmer` — abstract base + `AUTO_APPROVE` /
   `TERMINAL` for user-state mutations.
-- Five file tools: `Pikuri::Tool::Read`, `Pikuri::Tool::Write`,
-  `Pikuri::Tool::Edit`, `Pikuri::Tool::Grep`, `Pikuri::Tool::Glob`.
+- Five file tools: `Pikuri::Workspace::Read`,
+  `Pikuri::Workspace::Write`, `Pikuri::Workspace::Edit`,
+  `Pikuri::Workspace::Grep`, `Pikuri::Workspace::Glob`.
 
 No shell execution — `Pikuri::Tool::Bash` ships in
 [`pikuri-code`](../pikuri-code/README.md) on top of these.
@@ -29,18 +30,18 @@ gem 'pikuri-workspace'
 require 'pikuri-core'
 require 'pikuri-workspace'
 
-workspace = Pikuri::Tool::Workspace.new(anchor: Dir.pwd)
-confirmer = Pikuri::Tool::Confirmer::TERMINAL
+workspace = Pikuri::Workspace::Filesystem.new(anchor: Dir.pwd)
+confirmer = Pikuri::Workspace::Confirmer::TERMINAL
 
 agent = Pikuri::Agent.new(
   transport: ...,
   system_prompt: ...,
 ) do |c|
-  c.add_tool Pikuri::Tool::Read.new(workspace: workspace)
-  c.add_tool Pikuri::Tool::Grep.new(workspace: workspace)
-  c.add_tool Pikuri::Tool::Glob.new(workspace: workspace)
-  c.add_tool Pikuri::Tool::Edit.new(workspace: workspace)
-  c.add_tool Pikuri::Tool::Write.new(workspace: workspace, confirmer: confirmer)
+  c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
   c.add_listener ...
 end
 ```

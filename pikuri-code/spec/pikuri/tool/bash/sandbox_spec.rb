@@ -28,7 +28,7 @@ RSpec.describe Pikuri::Tool::Bash::Sandbox do
 
   describe described_class::Bubblewrap do
     let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-sb-root-')).realpath }
-    let(:workspace) { Pikuri::Tool::Workspace.new(anchor: root) }
+    let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
 
     after do
       FileUtils.rm_rf(root)
@@ -72,7 +72,7 @@ RSpec.describe Pikuri::Tool::Bash::Sandbox do
       end
 
       it '#wrap includes the temp dir as a writable bind when temp: true' do
-        ws = Pikuri::Tool::Workspace.new(anchor: root, temp: true)
+        ws = Pikuri::Workspace::Filesystem.new(anchor: root, temp: true)
         begin
           sandbox = described_class.new(workspace: ws)
           argv = sandbox.wrap(['true'])

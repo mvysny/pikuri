@@ -44,7 +44,7 @@ Gem::Specification.new do |spec|
   # version-pinned so an upgrade to either always pulls the matching peer.
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
 
-  # +Pikuri::Tool::Workspace+ + +Pikuri::Tool::Confirmer+ live in
-  # pikuri-workspace; Bash takes both via constructor.
+  # +Pikuri::Workspace::Filesystem+ + +Pikuri::Workspace::Confirmer+ live
+  # in pikuri-workspace; Bash takes both via constructor.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

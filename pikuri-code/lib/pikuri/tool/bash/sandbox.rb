@@ -128,7 +128,7 @@ module Pikuri
             /etc/hosts
           ].freeze
 
-          # @param workspace [Pikuri::Tool::Workspace] the source of
+          # @param workspace [Pikuri::Workspace::Filesystem] the source of
           #   per-host readable/writable roots and the +chdir+ target
           #   for the subprocess.
           # @raise [RuntimeError] if +bwrap+ isn't on +PATH+ or fails

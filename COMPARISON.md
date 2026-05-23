@@ -348,16 +348,18 @@ development. Pikuri's choice is the latter — fine for its scope.
 ## Permission / sandboxing
 
 - **pikuri**: two-seam approach for v1.
-  - **`Tool::Workspace`** is a single concrete class with explicit
-    `anchor:` / `readable:` / `writable:` / `temp:` parameters. Every
-    coding tool (`Read`/`Write`/`Edit`/`Grep`/`Glob`/`Bash`) takes a
-    workspace via constructor and routes paths through
-    `#resolve_for_read(path)` / `#resolve_for_write(path)`, rejecting
-    `..`-escapes and symlinks that resolve outside any declared root.
-  - **`Tool::Confirmer`** abstract base + `TERMINAL` / `AUTO_APPROVE`
-    bundled implementations: `Write`/`Bash` route every prompt through
-    `#confirm?(prompt:)` rather than touching `$stdin`/`$stdout` —
-    `--yolo` swaps in `AUTO_APPROVE`.
+  - **`Workspace::Filesystem`** is a single concrete class with
+    explicit `anchor:` / `readable:` / `writable:` / `temp:`
+    parameters. Every coding tool
+    (`Read`/`Write`/`Edit`/`Grep`/`Glob`/`Bash`) takes a workspace
+    via constructor and routes paths through
+    `#resolve_for_read(path)` / `#resolve_for_write(path)`,
+    rejecting `..`-escapes and symlinks that resolve outside any
+    declared root.
+  - **`Workspace::Confirmer`** abstract base + `TERMINAL` /
+    `AUTO_APPROVE` bundled implementations: `Write`/`Bash` route
+    every prompt through `#confirm?(prompt:)` rather than touching
+    `$stdin`/`$stdout` — `--yolo` swaps in `AUTO_APPROVE`.
   Opencode-style glob rules (`allow` / `deny` / `ask`) are deferred —
   see IDEAS.md "Coding-agent deferrals". Where things are headed
   per IDEAS.md: yolo-in-docker, or ClaudeCode-style agentic review of

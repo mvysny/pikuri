@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
+  module Workspace
     # The +glob+ tool — list files matching a glob pattern via
     # +rg --files+, sorted by modification time (newest first).
-    # Instantiating +Tool::Glob.new(workspace: ws)+ produces a tool
-    # whose {Tool#to_ruby_llm_tool} wiring is identical to any bundled
-    # tool's. Same shape as {Tool::Grep} (workspace captured by the
+    # Instantiating +Glob.new(workspace: ws)+ produces a tool
+    # whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any
+    # bundled tool's. Same shape as {Grep} (workspace captured by the
     # +execute+ closure, no confirmer — read-only).
     #
     # == Why a separate tool from Grep
@@ -63,7 +63,7 @@ module Pikuri
     # == Truncation
     #
     # Total output head-truncated to {MAX_BYTES} *after* mtime sort, so
-    # the kept rows are the newest. Matches {Tool::Grep}'s budget and
+    # the kept rows are the newest. Matches {Grep}'s budget and
     # head-bias.
     #
     # == Exit codes
@@ -82,10 +82,10 @@ module Pikuri
     #   tool.
     # * +path+ not found → +"Error: path not found: <path>"+.
     # * +path+ outside the workspace → caught from
-    #   {Tool::Workspace::Error}.
-    class Glob < Tool
+    #   {Filesystem::Error}.
+    class Glob < Pikuri::Tool
       # @return [Integer] hard byte cap on combined rg output. Same
-      #   value as {Tool::Grep::MAX_BYTES} so the two file-touching
+      #   value as {Grep::MAX_BYTES} so the two file-touching
       #   tools share a budget shape. Re-declared here rather than
       #   referenced cross-file because Zeitwerk's eager-load order
       #   isn't guaranteed between siblings.
@@ -112,7 +112,7 @@ module Pikuri
         - Output is truncated to #{MAX_BYTES_LABEL}; refine the pattern or narrow `path` if the response ends in a truncation marker.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for path resolution
+      # @param workspace [Filesystem] captured for path resolution
       #   and as +chdir+ for rg. All path arguments route through
       #   +workspace.resolve_for_read+.
       # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
@@ -144,7 +144,7 @@ module Pikuri
       # formatted listing, a "no files match" message, or
       # +"Error: ..."+.
       #
-      # @param workspace [Tool::Workspace]
+      # @param workspace [Filesystem]
       # @param pattern [String]
       # @param path [String, nil]
       # @return [String]
@@ -178,7 +178,7 @@ module Pikuri
           stderr = "exited #{exit_code}" if stderr.empty?
           "Error: ripgrep: #{stderr}"
         end
-      rescue Tool::Workspace::Error => e
+      rescue Filesystem::Error => e
         "Error: #{e.message}"
       end
 
@@ -301,7 +301,7 @@ module Pikuri
 
       # @return [String]
       def self.install_hint
-        "Tool::Glob requires 'rg' (ripgrep) on PATH; install via your " \
+        "Glob requires 'rg' (ripgrep) on PATH; install via your " \
           "distro's package manager (e.g. 'apt install ripgrep')."
       end
       private_class_method :install_hint

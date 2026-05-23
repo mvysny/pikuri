@@ -3,13 +3,13 @@
 require 'fileutils'
 
 module Pikuri
-  class Tool
-    # The +write+ tool, expressed as a {Tool} subclass: instantiating
-    # +Tool::Write.new(workspace: ws, confirmer: c)+ produces a tool whose
-    # {Tool#to_ruby_llm_tool} wiring is identical to any bundled tool's,
-    # so ruby_llm sees nothing special about it. Same shape as
-    # {Tool::SubAgent} and {Tool::Read} — workspace and confirmer are
-    # captured by the +execute+ closure at construction.
+  module Workspace
+    # The +write+ tool, expressed as a {Pikuri::Tool} subclass:
+    # instantiating +Write.new(workspace: ws, confirmer: c)+ produces a
+    # tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
+    # any bundled tool's, so ruby_llm sees nothing special about it.
+    # Same shape as {Pikuri::Tool::SubAgent} and {Read} — workspace and
+    # confirmer are captured by the +execute+ closure at construction.
     #
     # == Policy
     #
@@ -45,7 +45,7 @@ module Pikuri
     #
     # No atomic temp-file+rename. Plain +File.write+, same as opencode and
     # pi. The crash-safety story is "the user has git".
-    class Write < Tool
+    class Write < Pikuri::Tool
       # Description shown to the LLM. Follows the opencode-shape (summary
       # + +Usage:+ bullets) prescribed by the project's tool-description
       # convention. Per-parameter constraints live in the parameter
@@ -64,9 +64,9 @@ module Pikuri
         - Paths outside the workspace are refused.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for path resolution;
+      # @param workspace [Filesystem] captured for path resolution;
       #   all writes route through +workspace.resolve_for_write+.
-      # @param confirmer [Tool::Confirmer] consulted before any overwrite
+      # @param confirmer [Confirmer] consulted before any overwrite
       #   of an existing file with non-identical content.
       # @return [Write]
       def initialize(workspace:, confirmer:)
@@ -92,8 +92,8 @@ module Pikuri
       # (new / identical / differs), and return either a success
       # observation or an +"Error: ..."+ observation.
       #
-      # @param workspace [Tool::Workspace]
-      # @param confirmer [Tool::Confirmer]
+      # @param workspace [Filesystem]
+      # @param confirmer [Confirmer]
       # @param path [String] raw path as supplied by the LLM
       # @param content [String] bytes to write
       # @return [String] tool observation
@@ -120,7 +120,7 @@ module Pikuri
           write_bytes(resolved, content)
           "Created #{path} (#{content.bytesize} bytes)"
         end
-      rescue Tool::Workspace::Error, Error => e
+      rescue Filesystem::Error, Error => e
         "Error: #{e.message}"
       rescue Errno::EACCES => e
         "Error: cannot write #{path}: #{e.message}"
@@ -129,7 +129,7 @@ module Pikuri
       # Internal-only signal for LLM-actionable preconditions that Write
       # detects before any filesystem mutation — today, "existing file is
       # unreadable so the identical-content check can't run". Mirrors
-      # {Tool::Workspace::Error} in shape: caught by {.write}'s outer
+      # {Filesystem::Error} in shape: caught by {.write}'s outer
       # rescue and rendered as a +"Error: ..."+ observation. The class
       # is +private_constant+ to keep it from leaking out as a public
       # exception type; callers should never +rescue+ this directly.

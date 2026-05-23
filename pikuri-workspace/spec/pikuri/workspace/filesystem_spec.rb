@@ -3,7 +3,7 @@
 require 'tmpdir'
 require 'fileutils'
 
-RSpec.describe Pikuri::Tool::Workspace do
+RSpec.describe Pikuri::Workspace::Filesystem do
   let(:outside) { Pathname.new(Dir.mktmpdir('pikuri-ws-outside-')).realpath }
   let(:root)    { Pathname.new(Dir.mktmpdir('pikuri-ws-root-')).realpath }
   let(:extra_read)  { Pathname.new(Dir.mktmpdir('pikuri-ws-read-')).realpath }
@@ -115,7 +115,7 @@ RSpec.describe Pikuri::Tool::Workspace do
     end
 
     it 'rejects writes into the read-only extra root' do
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         ws.resolve_for_write((extra_read + 'newfile.txt').to_s)
       end
       assert_includes err.message, 'outside the workspace'
@@ -127,7 +127,7 @@ RSpec.describe Pikuri::Tool::Workspace do
     end
 
     it 'still rejects paths outside every root' do
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         ws.resolve_for_read((outside + 'secret').to_s)
       end
       assert_includes err.message, 'outside the workspace'
@@ -136,7 +136,7 @@ RSpec.describe Pikuri::Tool::Workspace do
 
   describe 'containment errors' do
     it 'raises on .. escape (lexical traversal)' do
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         workspace.resolve_for_read('lib/../../../etc/passwd')
       end
       assert_includes err.message, 'outside the workspace'
@@ -145,7 +145,7 @@ RSpec.describe Pikuri::Tool::Workspace do
     it 'raises on an absolute path outside the anchor' do
       File.write(outside + 'secret', 'x')
 
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         workspace.resolve_for_read((outside + 'secret').to_s)
       end
       assert_includes err.message, 'outside the workspace'
@@ -156,7 +156,7 @@ RSpec.describe Pikuri::Tool::Workspace do
       File.write(outside + 'leaked/secret', 'x')
       File.symlink(outside.to_s, (root + 'evil_link').to_s)
 
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         workspace.resolve_for_read('evil_link/leaked/secret')
       end
       assert_includes err.message, 'outside the workspace'
@@ -165,7 +165,7 @@ RSpec.describe Pikuri::Tool::Workspace do
     it 'raises on a symlink even when the target path does not yet exist (write case)' do
       File.symlink(outside.to_s, (root + 'evil_link').to_s)
 
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         workspace.resolve_for_write('evil_link/new_file.rb')
       end
       assert_includes err.message, 'outside the workspace'
@@ -174,13 +174,13 @@ RSpec.describe Pikuri::Tool::Workspace do
 
   describe 'anchor denylist' do
     it 'rejects /' do
-      err = assert_raises(Pikuri::Tool::Workspace::Error) { described_class.new(anchor: '/') }
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(anchor: '/') }
       assert_includes err.message, 'system or home root'
     end
 
     it 'rejects /etc, /var, /proc, /usr, /tmp, /opt' do
       %w[/etc /var /proc /usr /tmp /opt].each do |p|
-        err = assert_raises(Pikuri::Tool::Workspace::Error) { described_class.new(anchor: p) }
+        err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(anchor: p) }
         assert_includes err.message, 'system or home root'
       end
     end
@@ -195,7 +195,7 @@ RSpec.describe Pikuri::Tool::Workspace do
       candidate = home_root.children.find(&:directory?)
       skip 'no /home/* dir present' unless candidate
 
-      err = assert_raises(Pikuri::Tool::Workspace::Error) do
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
         described_class.new(anchor: candidate.to_s)
       end
       assert_includes err.message, 'system or home root'

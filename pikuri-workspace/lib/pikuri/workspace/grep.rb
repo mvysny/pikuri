@@ -1,17 +1,17 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
+  module Workspace
     # The +grep+ tool — content search across the workspace via
-    # +ripgrep+. Instantiating +Tool::Grep.new(workspace: ws)+ produces a
-    # tool whose {Tool#to_ruby_llm_tool} wiring is identical to any
-    # bundled tool's. Same shape as {Tool::Read} (workspace captured by
+    # +ripgrep+. Instantiating +Grep.new(workspace: ws)+ produces a
+    # tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
+    # any bundled tool's. Same shape as {Read} (workspace captured by
     # the +execute+ closure, no confirmer — search is read-only).
     #
     # == ripgrep dependency
     #
     # Hard dependency: {.check_binaries!} runs in +initialize+ and raises
-    # if +rg+ isn't on +PATH+. Mirrors {Tool::Bash}'s posture for
+    # if +rg+ isn't on +PATH+. Mirrors {Pikuri::Tool::Bash}'s posture for
     # +bash+/+timeout+. We don't ship a Ruby fallback — replicating
     # rg's Rust-regex dialect, glob handling, and +.gitignore+ parsing
     # is a research-loop dead end. Failure message includes the install
@@ -58,7 +58,7 @@ module Pikuri
     #
     # Total output is head-truncated to {MAX_BYTES} (head-only — grep
     # tails usually carry less signal than the first matches; opposite
-    # bias from {Tool::Bash}). Cut at the last line boundary, with a
+    # bias from {Pikuri::Tool::Bash}). Cut at the last line boundary, with a
     # marker reporting omitted bytes and the original total so the model
     # knows how much it missed.
     #
@@ -74,11 +74,11 @@ module Pikuri
     #
     # * Empty +pattern+ → fast reject.
     # * Unknown +output_mode+ → enum error listing valid values.
-    # * Path outside the workspace → caught from {Tool::Workspace::Error}.
+    # * Path outside the workspace → caught from {Filesystem::Error}.
     # * Nonexistent path → +"Error: path not found: <path>"+.
-    class Grep < Tool
+    class Grep < Pikuri::Tool
       # @return [Integer] hard byte cap on combined rg output. Same value
-      #   as {Tool::Read::MAX_BYTES} so the two file-touching tools share
+      #   as {Read::MAX_BYTES} so the two file-touching tools share
       #   a budget shape.
       MAX_BYTES = 50 * 1024
 
@@ -115,7 +115,7 @@ module Pikuri
         - Long lines are truncated to #{MAX_LINE_LENGTH} chars with a preview marker; use `read` to see full lines.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for path resolution
+      # @param workspace [Filesystem] captured for path resolution
       #   and as +chdir+ for rg. All path arguments route through
       #   +workspace.resolve_for_read+.
       # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
@@ -156,7 +156,7 @@ module Pikuri
       # rg, and render the observation. Returns either the formatted
       # results, a "no matches" string, or +"Error: ..."+.
       #
-      # @param workspace [Tool::Workspace]
+      # @param workspace [Filesystem]
       # @param pattern [String]
       # @param path [String, nil]
       # @param glob [String, nil]
@@ -197,7 +197,7 @@ module Pikuri
           stderr = "exited #{exit_code}" if stderr.empty?
           "Error: ripgrep: #{stderr}"
         end
-      rescue Tool::Workspace::Error => e
+      rescue Filesystem::Error => e
         "Error: #{e.message}"
       end
 
@@ -329,7 +329,7 @@ module Pikuri
 
       # @return [String]
       def self.install_hint
-        "Tool::Grep requires 'rg' (ripgrep) on PATH; install via your " \
+        "Grep requires 'rg' (ripgrep) on PATH; install via your " \
           "distro's package manager (e.g. 'apt install ripgrep')."
       end
       private_class_method :install_hint

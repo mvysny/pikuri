@@ -5,7 +5,7 @@ require 'tmpdir'
 require 'fileutils'
 
 module Pikuri
-  class Tool
+  module Workspace
     # Defines which paths the agent can see and write to. Constructed with
     # explicit +readable+ / +writable+ prefix lists; every Read/Write/Edit/
     # Grep/Glob/Bash path the agent supplies is checked against those lists
@@ -43,7 +43,7 @@ module Pikuri
     # == Existence is not the workspace's concern
     #
     # +resolve_for_read('foo.rb')+ succeeds (returns a +Pathname+) even if
-    # +foo.rb+ doesn't exist; the caller ({Tool::Read}) errors with
+    # +foo.rb+ doesn't exist; the caller ({Read}) errors with
     # file-not-found when it tries to open it. +resolve_for_write+
     # tolerates entirely non-existent paths (Write can create
     # +lib/new/dir/foo.rb+ even when +lib/new/+ doesn't exist) — the
@@ -83,7 +83,7 @@ module Pikuri
     # security is the +readable+/+writable+ lists. Other-OS home roots
     # (+/Users/$USER+ on macOS) are not denied; Linux-first per
     # +CLAUDE.md+.
-    class Workspace
+    class Filesystem
       # Raised for any path that resolves outside the workspace. Recoverable
       # at the tool layer — tools rescue this and emit +"Error: ..."+
       # observations so the LLM can self-correct on the next turn. Also

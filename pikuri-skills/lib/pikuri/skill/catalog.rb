@@ -94,7 +94,7 @@ module Pikuri
       end
 
       # The filesystem directories this catalog scanned for skills.
-      # Hosts wire these into +Pikuri::Tool::Workspace+'s +readable+
+      # Hosts wire these into +Pikuri::Workspace::Filesystem+'s +readable+
       # list so the LLM's +read+ tool can pull sidecar files
       # (+scripts/+, +references/+, …) that skills reference. Returns
       # an empty array for catalogs that don't have a filesystem

@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
-    # The +read+ tool, expressed as a {Tool} subclass: instantiating
-    # +Tool::Read.new(workspace: ws)+ produces a tool whose
-    # {Tool#to_ruby_llm_tool} wiring is identical to any bundled tool's,
-    # so ruby_llm sees nothing special about it. Same shape as
-    # {Tool::SubAgent} — workspace is captured by the +execute+ closure
-    # at construction.
+  module Workspace
+    # The +read+ tool, expressed as a {Pikuri::Tool} subclass: instantiating
+    # +Read.new(workspace: ws)+ produces a tool whose
+    # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
+    # tool's, so ruby_llm sees nothing special about it. Same shape as
+    # {Pikuri::Tool::SubAgent} — workspace is captured by the +execute+
+    # closure at construction.
     #
     # == Output format
     #
@@ -36,7 +36,7 @@ module Pikuri
     # == Refusals
     #
     # * Path outside the workspace → caught from
-    #   {Tool::Workspace::Error}, returned as +"Error: ..."+.
+    #   {Filesystem::Error}, returned as +"Error: ..."+.
     # * File not found, EACCES → +"Error: ..."+.
     # * Path is a directory → +"Error: ... use the glob tool"+, keeping
     #   directory listing as the glob tool's responsibility (Step 9).
@@ -46,7 +46,7 @@ module Pikuri
     #   triggers refusal. Catches images, PDFs, archives, and compiled
     #   artifacts without an extension list to maintain.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
-    class Read < Tool
+    class Read < Pikuri::Tool
       # @return [Integer] default value of the +limit+ parameter (number
       #   of lines to read per call).
       DEFAULT_LIMIT = 2000
@@ -97,7 +97,7 @@ module Pikuri
         - Avoid tiny repeated slices — if you need more context, read a larger window.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for path resolution;
+      # @param workspace [Filesystem] captured for path resolution;
       #   all reads route through +workspace.resolve_for_read+.
       # @return [Read]
       def initialize(workspace:)
@@ -126,7 +126,7 @@ module Pikuri
       # missing files, and return either the cat-n-formatted slice or an
       # +"Error: ..."+ observation.
       #
-      # @param workspace [Tool::Workspace]
+      # @param workspace [Filesystem]
       # @param path [String] raw path as supplied by the LLM
       # @param offset [Integer] 1-indexed line number to start at
       # @param limit [Integer] maximum lines to return
@@ -143,7 +143,7 @@ module Pikuri
         return "Error: cannot read binary file: #{path}" if binary?(sample)
 
         format_slice(path: path, resolved: resolved, offset: offset, limit: limit)
-      rescue Tool::Workspace::Error => e
+      rescue Filesystem::Error => e
         "Error: #{e.message}"
       rescue Errno::EACCES => e
         "Error: cannot read #{path}: #{e.message}"
@@ -167,7 +167,7 @@ module Pikuri
       # outside the non-printable ranges and pass through unflagged,
       # letting UTF-8 text read fine.
       #
-      # Public because {Tool::Edit} reuses it to refuse binary targets —
+      # Public because {Edit} reuses it to refuse binary targets —
       # if Edit accepted a binary file the model has no way to have read,
       # it could corrupt bytes the model never inspected. Same sniff, same
       # threshold, one definition.

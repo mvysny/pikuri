@@ -8,12 +8,12 @@ module Pikuri
     # (mise/asdf/cargo/maven/gradle/go/...) under +$HOME+. Not a tool —
     # a configuration helper that +bin/pikuri-code+ (and any downstream
     # coding binary built on pikuri-code) feeds into
-    # +Pikuri::Tool::Workspace.new(readable: ...)+ alongside the skill
-    # catalog's roots.
+    # +Pikuri::Workspace::Filesystem.new(readable: ...)+ alongside the
+    # skill catalog's roots.
     #
     # The list is the "allowlist a coding agent reads" surface derived
     # from the threat-model discussion that drove this gem; see
-    # +pikuri-workspace/lib/pikuri/tool/workspace.rb+ for the
+    # +pikuri-workspace/lib/pikuri/workspace/filesystem.rb+ for the
     # containment story and CLAUDE.md's Scope decisions for the
     # Linux-first stance.
     module ToolchainPaths

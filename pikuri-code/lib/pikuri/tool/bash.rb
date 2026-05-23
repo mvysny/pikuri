@@ -118,10 +118,12 @@ module Pikuri
         - The user must confirm every command before it runs; on rejection an Error is returned.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for +chdir+; commands
-      #   run in +workspace.cwd+. Bash does NOT path-resolve individual
-      #   arguments — the +command+ string is opaque shell syntax.
-      # @param confirmer [Tool::Confirmer] consulted before every command.
+      # @param workspace [Pikuri::Workspace::Filesystem] captured for
+      #   +chdir+; commands run in +workspace.cwd+. Bash does NOT
+      #   path-resolve individual arguments — the +command+ string is
+      #   opaque shell syntax.
+      # @param confirmer [Pikuri::Workspace::Confirmer] consulted before
+      #   every command.
       # @param sandbox [Tool::Bash::Sandbox] filesystem-sandbox seam
       #   (default {Sandbox::NONE} — identity passthrough). Pass
       #   {Sandbox::Bubblewrap.new(workspace: workspace)+} for an
@@ -173,8 +175,8 @@ module Pikuri
       # either +"$ ...\n<out>\n\nexit status: N"+ on a normal exit, or
       # +"Error: ..."+ on rejection / timeout / bad inputs.
       #
-      # @param workspace [Tool::Workspace]
-      # @param confirmer [Tool::Confirmer]
+      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Tool::Bash::Sandbox] wraps the spawned argv;
       #   {Sandbox::NONE} for identity passthrough,
       #   {Sandbox::Bubblewrap} for filesystem isolation.

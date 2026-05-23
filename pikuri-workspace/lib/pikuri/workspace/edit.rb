@@ -1,21 +1,21 @@
 # frozen_string_literal: true
 
 module Pikuri
-  class Tool
+  module Workspace
     # The +edit+ tool — exact-string replacement on an existing file.
-    # Instantiating +Tool::Edit.new(workspace: ws)+ produces a tool whose
-    # {Tool#to_ruby_llm_tool} wiring is identical to any bundled tool's.
-    # Same shape as {Tool::Read} (workspace captured by +execute+; no
+    # Instantiating +Edit.new(workspace: ws)+ produces a tool whose
+    # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
+    # tool's. Same shape as {Read} (workspace captured by +execute+; no
     # confirmer needed).
     #
     # == Why no confirmer
     #
     # The +old_string+ argument is itself an implicit read-check: the
     # model can't write a correct +old_string+ without having seen the
-    # file (via {Tool::Read} or out-of-band), so the blast radius of any
+    # file (via {Read} or out-of-band), so the blast radius of any
     # Edit is bounded by the model's actual knowledge of file state.
     # That makes Edit safe to execute without prompting — by contrast,
-    # {Tool::Write} requires a confirmer because a hallucinated 500-line
+    # {Write} requires a confirmer because a hallucinated 500-line
     # +content+ could clobber unread bytes.
     #
     # == Matching is strict (no fuzz cascade)
@@ -23,7 +23,7 @@ module Pikuri
     # +old_string+ must match the file byte-for-byte. v1 ships *no*
     # fallback replacer (no whitespace-normalized, line-trimmed, block-
     # anchor, etc.). Predictability beats fuzz: when an Edit fails, the
-    # model re-reads with {Tool::Read} and retries — clear failure mode,
+    # model re-reads with {Read} and retries — clear failure mode,
     # no compounding-heuristic risk. opencode runs a 9-replacer cascade
     # under the hood despite its own description saying "must match
     # exactly"; pi stays strict. We match pi.
@@ -32,7 +32,7 @@ module Pikuri
     #
     # The one structural exception to "strict bytes": files with CRLF
     # line endings get matched in LF space, and the original line ending
-    # is restored on write. Reason: {Tool::Read} renders content via
+    # is restored on write. Reason: {Read} renders content via
     # +each_line+ + +chomp+, which strips +\r\n+ to +\n+ in what the
     # model sees. A pure strict byte-match would then never succeed on
     # CRLF files because the model can only ever supply LF. opencode and
@@ -62,7 +62,7 @@ module Pikuri
     #   multi-match error suggesting more context or +replace_all+.
     # * File missing / is a directory / is binary → respective error.
     # * Workspace boundary violation / EACCES → standard rescue path.
-    class Edit < Tool
+    class Edit < Pikuri::Tool
       # Description shown to the LLM. Follows the opencode-shape (summary
       # + +Usage:+ bullets) prescribed by the project's tool-description
       # convention. Per-parameter constraints live in the parameter
@@ -82,7 +82,7 @@ module Pikuri
         - CRLF files are matched in LF space; the original line endings are preserved on write.
       DESC
 
-      # @param workspace [Tool::Workspace] captured for path resolution;
+      # @param workspace [Filesystem] captured for path resolution;
       #   all reads/writes route through +workspace.resolve_for_write+
       #   (Edit modifies, so it uses the write-set even though it doesn't
       #   create files).
@@ -122,7 +122,7 @@ module Pikuri
       # binary), match +old_string+ in line-ending-normalized form, and
       # write the result back preserving the file's original line endings.
       #
-      # @param workspace [Tool::Workspace]
+      # @param workspace [Filesystem]
       # @param path [String] raw path as supplied by the LLM
       # @param old_string [String] text to find
       # @param new_string [String] text to substitute in
@@ -138,8 +138,8 @@ module Pikuri
         return "Error: #{path} is a directory" if resolved.directory?
 
         raw = resolved.binread
-        sample = raw.byteslice(0, Tool::Read::BINARY_SAMPLE_BYTES)
-        return "Error: cannot edit binary file: #{path}" if Tool::Read.binary?(sample)
+        sample = raw.byteslice(0, Read::BINARY_SAMPLE_BYTES)
+        return "Error: cannot edit binary file: #{path}" if Read.binary?(sample)
 
         crlf    = raw.include?("\r\n")
         content = crlf ? raw.gsub("\r\n", "\n") : raw
@@ -173,7 +173,7 @@ module Pikuri
         resolved.write(final)
 
         "Edited #{path}: replaced #{replaced} occurrence#{replaced == 1 ? '' : 's'}."
-      rescue Tool::Workspace::Error => e
+      rescue Filesystem::Error => e
         "Error: #{e.message}"
       rescue Errno::EACCES => e
         "Error: cannot edit #{path}: #{e.message}"
