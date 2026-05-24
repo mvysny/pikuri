@@ -199,6 +199,128 @@ RSpec.describe Pikuri::Workspace::Read do
     end
   end
 
+  describe 'PDF extraction' do
+    # In-memory PDF builder — same approach as the scraper/pdf_spec helper:
+    # emit the smallest valid PDF +pdf-reader+ accepts, one Tj string-show op
+    # per page, computing object byte offsets as we append so the xref table
+    # stays correct. Variable arity drives the page count.
+    def build_pdf(*page_texts)
+      out = +"%PDF-1.4\n"
+      offsets = []
+      add_obj = lambda do |body|
+        offsets << out.bytesize
+        out << "#{offsets.size} 0 obj\n#{body}\nendobj\n"
+      end
+
+      page_count = page_texts.length
+      # Layout: 1=Catalog, 2=Pages, then per page (Page, Content) pairs,
+      # last object = Font.
+      font_obj_num = 2 + page_count * 2 + 1
+
+      add_obj.call('<< /Type /Catalog /Pages 2 0 R >>')
+      page_refs = (0...page_count).map { |i| "#{3 + i * 2} 0 R" }
+      add_obj.call("<< /Type /Pages /Kids [#{page_refs.join(' ')}] /Count #{page_count} >>")
+
+      page_texts.each_with_index do |text, i|
+        content_obj_num = 3 + i * 2 + 1
+        add_obj.call("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " \
+                     "/Contents #{content_obj_num} 0 R /Resources << /Font << /F1 #{font_obj_num} 0 R >> >> >>")
+        stream = "BT /F1 12 Tf 100 700 Td (#{text}) Tj ET"
+        add_obj.call("<< /Length #{stream.bytesize} >>\nstream\n#{stream}\nendstream")
+      end
+
+      add_obj.call('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+
+      xref_pos = out.bytesize
+      out << "xref\n0 #{offsets.size + 1}\n"
+      out << "0000000000 65535 f \n"
+      offsets.each { |o| out << format("%010d 00000 n \n", o) }
+      out << "trailer\n<< /Size #{offsets.size + 1} /Root 1 0 R >>\n"
+      out << "startxref\n#{xref_pos}\n%%EOF\n"
+      out
+    end
+
+    def write_pdf(rel, *page_texts)
+      path = root + rel
+      FileUtils.mkdir_p(path.dirname)
+      File.binwrite(path, build_pdf(*page_texts))
+      path
+    end
+
+    it 'extracts a one-page PDF with a page marker followed by the text' do
+      write_pdf('doc.pdf', 'Hello PDF')
+
+      result = described_class.read(workspace: workspace, path: 'doc.pdf', offset: 1, limit: 2000)
+
+      assert_includes result, "     1\t--- Page 1 ---"
+      assert_includes result, "     2\tHello PDF"
+      assert_includes result, '(End of PDF - total 2 lines)'
+    end
+
+    it 'emits one --- Page N --- marker per page, line numbering is continuous' do
+      write_pdf('multi.pdf', 'Alpha content', 'Beta content')
+
+      result = described_class.read(workspace: workspace, path: 'multi.pdf', offset: 1, limit: 2000)
+
+      assert_includes result, "     1\t--- Page 1 ---"
+      assert_includes result, "     2\tAlpha content"
+      assert_includes result, "     3\t--- Page 2 ---"
+      assert_includes result, "     4\tBeta content"
+      assert_includes result, '(End of PDF - total 4 lines)'
+    end
+
+    it 'applies line-based offset and limit to the extracted stream' do
+      write_pdf('paged.pdf', 'Alpha content', 'Beta content')
+
+      result = described_class.read(workspace: workspace, path: 'paged.pdf', offset: 3, limit: 2000)
+
+      refute_includes result, 'Alpha content'
+      assert_includes result, "     3\t--- Page 2 ---"
+      assert_includes result, "     4\tBeta content"
+    end
+
+    it 'caps at limit and emits a continuation hint without claiming a total' do
+      write_pdf('cap.pdf', 'Alpha content', 'Beta content')
+
+      result = described_class.read(workspace: workspace, path: 'cap.pdf', offset: 1, limit: 2)
+
+      assert_includes result, "     1\t--- Page 1 ---"
+      assert_includes result, "     2\tAlpha content"
+      refute_includes result, 'Page 2'
+      assert_includes result, '(Showing PDF lines 1-2. Use offset=3 to continue.)'
+    end
+
+    it 'reports an empty PDF with an LLM-actionable hint' do
+      # build_pdf('') emits a zero-length Tj, which pdf-reader collapses
+      # to empty page text — the no-extractable-text branch.
+      write_pdf('blank.pdf', '')
+
+      result = described_class.read(workspace: workspace, path: 'blank.pdf', offset: 1, limit: 2000)
+
+      assert_equal '(PDF has no extractable text; likely scanned image content)', result
+    end
+
+    it 'surfaces malformed PDF bytes as an Error string the model can react to' do
+      # Magic-prefix routes to format_pdf, but pdf-reader rejects the body.
+      path = root + 'broken.pdf'
+      File.binwrite(path, "%PDF-1.4\nthis is not a valid pdf body")
+
+      result = described_class.read(workspace: workspace, path: 'broken.pdf', offset: 1, limit: 2000)
+
+      assert result.start_with?('Error: cannot extract PDF text from broken.pdf:'),
+             "expected PDF error, got #{result.inspect}"
+      assert_includes result, 'MalformedPDFError'
+    end
+
+    it 'errors when offset is past the extracted stream' do
+      write_pdf('short.pdf', 'one liner')
+
+      result = described_class.read(workspace: workspace, path: 'short.pdf', offset: 99, limit: 2000)
+
+      assert_equal 'Error: offset 99 is beyond end of file (2 lines total)', result
+    end
+  end
+
   describe 'parameters schema' do
     it 'advertises path as required and offset/limit as optional integers' do
       schema = tool.parameters.to_h

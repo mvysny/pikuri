@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pdf-reader'
+
 module Pikuri
   module Workspace
     # The +read+ tool, expressed as a {Pikuri::Tool} subclass: instantiating
@@ -33,6 +35,24 @@ module Pikuri
     # are truncated with {LINE_TRUNCATION_MARKER} appended; the model is
     # told to reach for +grep+ to find content inside such files.
     #
+    # == PDF extraction
+    #
+    # PDFs are detected by their +%PDF-+ magic prefix in the sample bytes
+    # and routed to {.format_pdf} instead of the binary-refusal path. The
+    # extractor walks pages lazily via +pdf-reader+, emitting one synthetic
+    # +"--- Page N ---"+ header line per page followed by that page's text.
+    # The offset / limit / MAX_BYTES contract is identical to the text
+    # path — extraction stops as soon as the line or byte cap is hit, so
+    # reading the first window of a 500-page PDF only parses the few pages
+    # needed. Line numbers in PDF output are for citation back to the user
+    # only; PDFs are not editable through {Edit}.
+    #
+    # PDFs with no extractable text (scanned images, empty documents) come
+    # back with an LLM-actionable hint string rather than an empty
+    # observation. Encrypted / malformed / XFA-form PDFs surface as
+    # +"Error: cannot extract PDF text: ..."+ — same convention as other
+    # tool errors the model can react to. No OCR.
+    #
     # == Refusals
     #
     # * Path outside the workspace → caught from
@@ -43,8 +63,10 @@ module Pikuri
     # * Binary content → sniffed from the first {BINARY_SAMPLE_BYTES} of
     #   the file: any +NUL+ byte, or more than {BINARY_NONPRINTABLE_THRESHOLD}
     #   non-printable bytes (control chars outside +\t \n \v \f \r+),
-    #   triggers refusal. Catches images, PDFs, archives, and compiled
-    #   artifacts without an extension list to maintain.
+    #   triggers refusal. Catches images, archives, and compiled artifacts
+    #   without an extension list to maintain. PDFs are intercepted by the
+    #   magic-byte check before the binary sniff and routed to text
+    #   extraction instead — see "PDF extraction" above.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
     class Read < Pikuri::Tool
       # @return [Integer] default value of the +limit+ parameter (number
@@ -91,7 +113,8 @@ module Pikuri
         - Output is line-numbered in `cat -n` style so subsequent edits can reference exact line numbers.
         - Use `offset` and `limit` to page through large files; when the response ends in `Use offset=N to continue`, call again with that offset.
         - Lines longer than #{MAX_LINE_LENGTH} chars are truncated with a marker — use `grep` for content inside such files.
-        - Binary files (images, PDFs, archives, compiled artifacts) are refused; this tool reads text only.
+        - PDFs are text-extracted page-by-page with `--- Page N ---` markers in the output. Cite pages back to the user from those markers. PDFs cannot be modified with `edit`.
+        - Binary files other than PDF (images, archives, compiled artifacts) are refused; this tool reads text only.
         - Directories are refused — use the `glob` tool to list files.
         - If unsure of the path, use `glob` first to look up filenames.
         - Avoid tiny repeated slices — if you need more context, read a larger window.
@@ -140,6 +163,7 @@ module Pikuri
         return "Error: #{path} is a directory; use the glob tool to list files." if resolved.directory?
 
         sample = read_sample(resolved)
+        return format_pdf(path: path, resolved: resolved, offset: offset, limit: limit) if pdf?(sample)
         return "Error: cannot read binary file: #{path}" if binary?(sample)
 
         format_slice(path: path, resolved: resolved, offset: offset, limit: limit)
@@ -159,6 +183,19 @@ module Pikuri
         resolved.open('rb') { |io| io.read(BINARY_SAMPLE_BYTES) || +'' }
       end
       private_class_method :read_sample
+
+      # Magic-byte sniff for PDF — every conformant PDF starts with the
+      # five-byte ASCII prefix +%PDF-+ per ISO 32000-1 §7.5.2. Cheap and
+      # specific enough that we never need an extension list: a +.pdf+
+      # rename or a header-less PDF blob both produce the right answer.
+      # Used by {.read} to route to {.format_pdf} before the binary sniff
+      # would otherwise refuse the file.
+      #
+      # @param bytes [String] sample bytes from {.read_sample}
+      # @return [Boolean]
+      def self.pdf?(bytes)
+        bytes.start_with?("%PDF-")
+      end
 
       # Heuristic binary classifier matching opencode's: any NUL byte
       # forces +true+; otherwise count bytes outside the printable +\t \n
@@ -249,6 +286,93 @@ module Pikuri
         "#{body}\n\n#{trailer}"
       end
       private_class_method :format_slice
+
+      # PDF counterpart to {.format_slice}: walk +pdf-reader+'s lazy page
+      # iterator, emit a +"--- Page N ---"+ header followed by each line
+      # of the page's extracted text, and apply the same offset / limit /
+      # MAX_BYTES contract. Stops parsing as soon as the cap is hit so a
+      # 500-page PDF only touches the few pages needed for the requested
+      # window — the file handle stays open inside the +throw :done+
+      # block, which short-circuits both the inner line loop and the
+      # outer page loop in one move.
+      #
+      # The +has_more+ trailer here cannot quote a total line count the
+      # way text files do — we'd have to parse every page just to count.
+      # Instead we drop the "of N lines" claim and stick to the
+      # next-offset hint, which is all the model needs to page.
+      #
+      # @return [String]
+      def self.format_pdf(path:, resolved:, offset:, limit:)
+        start_index   = offset - 1
+        collected     = []
+        total_lines   = 0
+        bytes         = 0
+        byte_cap_hit  = false
+        has_more      = false
+
+        catch(:done) do
+          resolved.open('rb') do |io|
+            reader = ::PDF::Reader.new(io)
+            reader.pages.each_with_index do |page, idx|
+              text = page.text.strip
+              next if text.empty?
+
+              page_lines = ["--- Page #{idx + 1} ---", *text.split("\n")]
+              page_lines.each do |raw|
+                total_lines += 1
+                next if total_lines <= start_index
+
+                if collected.length >= limit
+                  has_more = true
+                  throw :done
+                end
+
+                line = raw
+                if line.length > MAX_LINE_LENGTH
+                  line = line[0, MAX_LINE_LENGTH] + LINE_TRUNCATION_MARKER
+                end
+
+                size = line.bytesize + 1
+                if bytes + size > MAX_BYTES
+                  byte_cap_hit = true
+                  has_more = true
+                  throw :done
+                end
+
+                collected << line
+                bytes += size
+              end
+            end
+          end
+        end
+
+        return '(PDF has no extractable text; likely scanned image content)' if total_lines.zero?
+
+        if start_index >= total_lines
+          return "Error: offset #{offset} is beyond end of file (#{total_lines} lines total)"
+        end
+
+        last_line = offset + collected.length - 1
+        body = collected.each_with_index.map { |line, i| format("%6d\t%s", i + offset, line) }.join("\n")
+
+        trailer =
+          if byte_cap_hit
+            "(Output capped at #{MAX_BYTES_LABEL}. Showing PDF lines #{offset}-#{last_line}. " \
+              "Use offset=#{last_line + 1} to continue.)"
+          elsif has_more
+            "(Showing PDF lines #{offset}-#{last_line}. " \
+              "Use offset=#{last_line + 1} to continue.)"
+          else
+            "(End of PDF - total #{total_lines} lines)"
+          end
+
+        "#{body}\n\n#{trailer}"
+      rescue ::PDF::Reader::MalformedPDFError,
+             ::PDF::Reader::InvalidPageError,
+             ::PDF::Reader::UnsupportedFeatureError => e
+        "Error: cannot extract PDF text from #{path}: #{e.class.name.split('::').last}: #{e.message}"
+      end
+      private_class_method :format_pdf
     end
   end
 end
