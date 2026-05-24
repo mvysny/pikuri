@@ -130,9 +130,12 @@ grows a skill system.
   `Grep`, `Glob`, `Bash`) take a `Pikuri::Workspace::Filesystem` via
   constructor and route every path through `#resolve_for_read(path)` /
   `#resolve_for_write(path)` before touching the filesystem.
-  `Pikuri::Workspace::Filesystem.new(anchor:, readable: [],
-  writable: [], temp: false)` is the default concrete class: `anchor`
-  is the project root (always readable + writable),
+  `Pikuri::Workspace::Filesystem.new(project_root:, readable: [],
+  writable: [], temp: false)` is the default concrete class:
+  `project_root` is the writable containment ceiling AND the
+  relative-path base AND the chdir target for Bash/Grep/Glob — a
+  single anchor, no separate cwd concept (hosts that want the agent
+  scoped to a subtree pass that subtree as `project_root`),
   `readable`/`writable` add extra roots, and `temp: true` mints an
   `at_exit`-cleaned playground. Every path is resolved against those
   roots, rejecting `..`-escapes and symlinks that land outside.
@@ -327,7 +330,7 @@ in `pikuri-code` on top.
   `lib/pikuri/workspace/filesystem.rb` — the two coding-tool seams
   (see Scope decisions). `Confirmer` is an abstract base with
   bundled `TERMINAL` / `AUTO_APPROVE` implementations; `Filesystem`
-  is a single concrete class parameterized by `anchor:` /
+  is a single concrete class parameterized by `project_root:` /
   `readable:` / `writable:` / `temp:` (subclass if a host needs a
   different containment policy).
 - `lib/pikuri/workspace/read.rb`, `lib/pikuri/workspace/write.rb`,
@@ -353,8 +356,11 @@ Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
   helper that enumerates the read-only filesystem prefixes a coding
   agent benefits from (system toolchains + per-user dependency caches).
 - `bin/pikuri-code` — CLI entry point for the in-repo coding
-  agent: registers the file/shell stack (`Workspace` anchored
-  at `Dir.pwd` with `temp: true` for a scratch playground +
+  agent: discovers `project_root` via `Workspace::ProjectRoot.find`
+  from the launch `Dir.pwd`, `Dir.chdir`'s the Ruby process to it
+  if needed (so process cwd and workspace agree on one anchor),
+  then registers the file/shell stack (`Workspace` anchored at the
+  discovered root + `temp: true` for a scratch playground +
   `Confirmer::TERMINAL` — `--yolo` swaps in `AUTO_APPROVE`),
   adds `Pikuri::Skill::Extension` (catalog
   discovered from `.pikuri/skills` / `.claude/skills` /
