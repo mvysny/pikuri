@@ -110,7 +110,7 @@ module Pikuri
         Usage:
         - Use for tasks the dedicated tools can't do: git, tests, package managers, multi-step shell pipelines.
         - Prefer `read` / `write` / `edit` / `grep` / `glob` over `cat` / `sed` / `rg` / `find` — they're workspace-resolved.
-        - Each call starts in the workspace root; there is no pwd persistence between calls. Use `cd /path && cmd` in one command.
+        - Working directory is ALWAYS the project root: `pwd` returns it, and relative paths in commands resolve from there. To operate in a subfolder, chain `cd` in the same command (`cd src/foo && make test`) — `cd` does NOT persist across calls; each call starts fresh at the project root.
         - stdin is closed; interactive commands hang until timeout. Use non-interactive flags (`apt -y`, `git commit -m`).
         - Plain `cmd &` does NOT detach — the backgrounded process inherits our output pipe and blocks. To genuinely background, redirect fds: `cmd >/dev/null 2>&1 &`. Add `nohup` or `setsid` to survive pikuri exit.
         - Combined stdout+stderr is returned. Suppress either via `2>/dev/null` etc.
@@ -120,9 +120,14 @@ module Pikuri
       DESC
 
       # @param workspace [Pikuri::Workspace::Filesystem] captured for
-      #   +chdir+; commands run in +workspace.cwd+. Bash does NOT
-      #   path-resolve individual arguments — the +command+ string is
-      #   opaque shell syntax.
+      #   +chdir+; commands run in +workspace.project_root+, always.
+      #   Even when the surrounding Ruby process has already chdir'd
+      #   to the project root (e.g. +bin/pikuri-code+ does this at
+      #   startup), Bash still passes the explicit +chdir:+ — so a
+      #   sub-agent, future host, or anyone embedding Bash directly
+      #   gets the same predictable cwd. Bash does NOT path-resolve
+      #   individual arguments — the +command+ string is opaque shell
+      #   syntax.
       # @param confirmer [Pikuri::Workspace::Confirmer] consulted before
       #   every command.
       # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam
@@ -197,7 +202,7 @@ module Pikuri
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
           'bash', '-c', command
         ])
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.cwd.to_s).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
 
         output = truncate(result.output)
         exit_code = result.status.exitstatus

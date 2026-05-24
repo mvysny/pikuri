@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Code::Bash do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-bash-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:confirmer) { build_confirmer(true) }
   let(:tool)      { described_class.new(workspace: workspace, confirmer: confirmer) }
 
@@ -60,7 +60,7 @@ RSpec.describe Pikuri::Code::Bash do
       assert_includes result, 'exit status: 3'
     end
 
-    it 'runs in the workspace cwd' do
+    it 'runs in the workspace project_root' do
       result = described_class.run(workspace: workspace, confirmer: confirmer,
                                    command: 'pwd', description: nil, timeout: 120)
 
@@ -275,9 +275,9 @@ RSpec.describe Pikuri::Code::Bash do
   end
 
   describe '.run workspace boundary' do
-    it 'runs in the workspace cwd regardless of what the model passes in command' do
+    it 'runs in the workspace project_root regardless of what the model passes in command' do
       # We don't path-resolve command args — bash itself interprets cd/etc.
-      # But `chdir` for the spawn is fixed to workspace.cwd. Verify by
+      # But `chdir` for the spawn is fixed to workspace.project_root. Verify by
       # writing a file from inside the command via a relative path; it
       # should land under root.
       described_class.run(workspace: workspace, confirmer: confirmer,

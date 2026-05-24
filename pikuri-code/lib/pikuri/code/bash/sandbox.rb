@@ -236,7 +236,7 @@ module Pikuri
             args.concat([
               '--unshare-all', '--share-net',
               '--die-with-parent', '--new-session',
-              '--chdir', @workspace.cwd.to_s
+              '--chdir', @workspace.project_root.to_s
             ])
             args
           end

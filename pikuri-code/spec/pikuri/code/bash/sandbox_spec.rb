@@ -28,7 +28,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
   describe described_class::Bubblewrap do
     let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-sb-root-')).realpath }
-    let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
+    let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
 
     after do
       FileUtils.rm_rf(root)
@@ -46,7 +46,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
     # Fires before the bwrap probe, so this test is bwrap-availability-
     # independent.
     it 'refuses construction when the workspace lists / as writable' do
-      ws = Pikuri::Workspace::Filesystem::AllowAll.new(anchor: root)
+      ws = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
       err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
       assert_includes err.message, "lists '/' as"
       assert_includes err.message, 'Sandbox::NONE'
@@ -63,7 +63,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         argv = sandbox.wrap(['bash', '-c', 'echo hi'])
 
         assert_equal 'bwrap', argv.first
-        # Workspace anchor is in writable; the bind for it should appear.
+        # Workspace project_root is in writable; the bind for it should appear.
         assert argv.each_cons(2).any? { |a, b| a == '--bind' && b == root.to_s },
                "expected --bind #{root} in #{argv.inspect}"
         # Isolation flags
@@ -81,7 +81,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
 
       it '#wrap includes the temp dir as a writable bind when temp: true' do
-        ws = Pikuri::Workspace::Filesystem.new(anchor: root, temp: true)
+        ws = Pikuri::Workspace::Filesystem.new(project_root: root, temp: true)
         begin
           sandbox = described_class.new(workspace: ws)
           argv = sandbox.wrap(['true'])

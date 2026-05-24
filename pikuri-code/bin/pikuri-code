@@ -58,22 +58,51 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-# Scan the user's skill directories (~/.pikuri/skills, ~/.claude/skills,
-# ~/.agents/skills) and the project's (.pikuri/skills, .claude/skills,
-# .agents/skills, walked up to the git root) so the LLM can load any
-# matching skill on demand. Catalog roots are folded into the workspace's
-# readable set below so the skill tool's sidecar +read+ flow works
-# (catalogs themselves don't enforce filesystem access).
-skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
+# Climb from the launch directory to the project root, looking for
+# a VCS marker (.git / .hg / .svn). See {Pikuri::Workspace::ProjectRoot}
+# for why build-system markers (Gemfile, pom.xml, build.gradle.kts, …)
+# are deliberately NOT in the default list (Gradle/Maven/yarn-workspaces
+# subprojects have their own copies, leading to wrong-project_root climbs).
+# Falls back to launch dir if no VCS marker is reachable.
+#
+# If the discovered project root differs from where the user launched,
+# +Dir.chdir+ the whole Ruby process to it before doing anything else.
+# Rationale: pikuri has a single project anchor and zero "cwd" concept;
+# the file tools, Bash, Grep, Glob all operate against +project_root+.
+# Keeping the Ruby process's cwd aligned with the workspace means there
+# is one truth, not two (which the LLM would otherwise have to reason
+# about — see the discussion in CLAUDE.md / IDEAS.md). Loud about it
+# so the user isn't surprised by +pwd+ output later.
+launch_cwd   = Pathname.new(Dir.pwd)
+project_root = Pikuri::Workspace::ProjectRoot.find(cwd: launch_cwd) || launch_cwd
+if Dir.pwd != project_root.to_s
+  warn "Changing working directory to project root: #{project_root}"
+  Dir.chdir(project_root.to_s)
+end
+
+# Skill catalog. Pikuri-skills deliberately does not climb on its own;
+# we assemble two skill-root tiers here — the project root's own
+# +.pikuri/skills+ / +.claude/skills+ / +.agents/skills+ subdirs (whichever
+# exist), plus the globals under +~/+ — and feed them to the catalog
+# constructor. Catalog roots are folded into the workspace's readable
+# set below so the skill tool's sidecar +read+ flow works.
+project_skill_roots = Pikuri::Skill::Catalog::SKILL_DIR_NAMES
+                      .map { |sub| project_root.join(sub).to_s }
+                      .select { |dir| File.directory?(dir) }
+skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
+  roots: project_skill_roots + Pikuri::Skill::Catalog::Bundled.discover_global_roots
+)
 
 # Workspace is captured once at startup; all file-touching tools share it.
-# Anchor is the launch directory (project root). Readable additions:
-# system toolchains (/usr, /opt, mise/cargo/m2/…) so the LLM can grep
-# Ruby stdlib, JDK sources, dependency caches; skill catalog roots so
-# the +read+ tool can load skill sidecars. temp: true mints an ephemeral
-# writable playground (Dir.mktmpdir, removed at_exit) — exposed below in
-# the system prompt so the LLM knows where to put junk (downloads, unzip
-# targets, scratch artifacts).
+# +project_root+ is the writable containment ceiling, the Bubblewrap
+# bind root, the relative-path base, and the chdir target — one anchor,
+# no separate cwd. Readable additions: system toolchains (/usr, /opt,
+# mise/cargo/m2/…) so the LLM can grep Ruby stdlib, JDK sources,
+# dependency caches; skill catalog roots so the +read+ tool can load
+# skill sidecars. temp: true mints an ephemeral writable playground
+# (Dir.mktmpdir, removed at_exit) — exposed below in the system prompt
+# so the LLM knows where to put junk (downloads, unzip targets, scratch
+# artifacts).
 #
 # --yolo swaps in +Filesystem::AllowAll+: every path resolves except
 # those under the credential denylist (~/.ssh, ~/.aws, …, /etc/shadow).
@@ -81,12 +110,15 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
 # the security boundary; the toolchain/skill readable list is moot
 # since everything is reachable anyway.
 workspace = if yolo
-              Pikuri::Workspace::Filesystem::AllowAll.new(anchor: Dir.pwd, temp: true)
+              Pikuri::Workspace::Filesystem::AllowAll.new(
+                project_root: project_root,
+                temp:         true
+              )
             else
               Pikuri::Workspace::Filesystem.new(
-                anchor:   Dir.pwd,
-                readable: Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
-                temp:     true
+                project_root: project_root,
+                readable:     Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
+                temp:         true
               )
             end
 confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
@@ -105,13 +137,13 @@ sandbox = if sandbox_enabled
           end
 
 # Build the system prompt: static base + optional project context + footer.
-# AGENTS.md wins over CLAUDE.md when both exist; lookup is relative to
-# the workspace cwd (== Dir.pwd at this point).
+# AGENTS.md wins over CLAUDE.md when both exist; lookup is at the
+# project root.
 system_prompt = Pikuri.prompt(:'coding-system-prompt')
-md_path = ['AGENTS.md', 'CLAUDE.md'].find { |f| File.exist?(f) }
+md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| workspace.project_root.join(f) }.find(&:file?)
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
-system_prompt += "\nCurrent working directory: #{workspace.cwd}"
+system_prompt += "\nProject root: #{workspace.project_root}"
 system_prompt += "\nTemp dir (writable, ephemeral, cleared on exit): #{workspace.temp}"
 
 server = server.chomp('/')
@@ -225,7 +257,7 @@ ensure
   trap('INT', prev_trap || 'DEFAULT')
 end
 
-puts "Pikuri Coding Agent. Working in #{workspace.cwd}. Press Ctrl+C or Ctrl+D to quit."
+puts "Pikuri Coding Agent. Working in #{workspace.project_root}. Press Ctrl+C or Ctrl+D to quit."
 puts "Loaded project context from #{md_path}." if md_path
 unless skill_catalog.empty?
   names = skill_catalog.list.map(&:name).sort.join(', ')
