@@ -435,15 +435,19 @@ module Pikuri
           # then fail at the *first* bash tool call with a confusing
           # mount error. Probe at boot, fail loud at boot.
           #
-          # Uses +--tmp-overlay /tmp+: layers an overlay on top of
-          # bwrap's own +/tmp+ (created by the +--ro-bind / /+ above)
-          # with tmpfs-backed RW. No host paths to manage; no leftover
-          # state.
+          # Uses +--overlay-src /usr --tmp-overlay /tmp+: declares
+          # +/usr+ as the read-only lower layer (always present on
+          # Linux, not an ancestor of +/tmp+ — overlayfs forbids
+          # ancestor relationships between layers) and lets bwrap
+          # back the upper with tmpfs. No host paths to manage, no
+          # leftover state, and the +--overlay-src+ is required —
+          # +--tmp-overlay+ refuses to construct without at least one.
           def check_overlay!
             result = Pikuri::Subprocess.spawn(
               BWRAP_BINARY,
               '--unshare-all', '--share-net',
               '--ro-bind', '/', '/',
+              '--overlay-src', '/usr',
               '--tmp-overlay', '/tmp',
               '--die-with-parent',
               '/bin/true',
