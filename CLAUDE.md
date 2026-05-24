@@ -301,6 +301,11 @@ tsort. No subprocess-spawning tools.
   client_wrapper.rb`, which carves out — see below).
 - `lib/pikuri/url_cache.rb` — `Pikuri::UrlCache`, the on-disk TTL
   cache used by the bundled web tools and by `pikuri-mcp`'s caches.
+- `lib/pikuri/file_type.rb` — `Pikuri::FileType` magic-byte content
+  sniffer: `.detect_mime(bytes)` recognises PDF + the four supported
+  image formats, `.binary?(bytes)` is the heuristic text-vs-binary
+  classifier. Shared by `Workspace::Read` (routing to format_pdf /
+  format_image / format_slice) and `Workspace::Edit` (binary refusal).
 - `bin/pikuri-chat` — CLI entry point for the general-purpose chat
   agent: configures ruby_llm for the local llama.cpp server, builds
   a `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners

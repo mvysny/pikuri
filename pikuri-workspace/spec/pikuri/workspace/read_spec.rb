@@ -322,15 +322,12 @@ RSpec.describe Pikuri::Workspace::Read do
   end
 
   describe 'image attachments' do
-    # Minimal valid magic-byte payloads. We don't need a parseable
-    # image; the magic-byte sniff is what routes to format_image, and
-    # RubyLLM::Attachment encoding is exercised by ruby_llm — pikuri's
-    # job is the routing and the metadata note.
+    # Per-format magic-byte detection is covered in
+    # spec/pikuri/file_type_spec.rb. These specs cover Read's routing
+    # contract: that a sniff-recognised image flows through to a
+    # RubyLLM::Content with the right metadata, ordering ahead of the
+    # binary refusal, and the 5 MB size cap.
     PNG_MAGIC = "\x89PNG\r\n\x1a\n".b
-    JPEG_MAGIC = "\xff\xd8\xff\xe0".b
-    GIF87_MAGIC = 'GIF87a'.b
-    GIF89_MAGIC = 'GIF89a'.b
-    WEBP_HEAD = "RIFF\x10\x00\x00\x00WEBP".b
 
     def write_image(rel, magic, padding_bytes = 32)
       path = root + rel
@@ -339,7 +336,7 @@ RSpec.describe Pikuri::Workspace::Read do
       path
     end
 
-    it 'detects PNG and returns a RubyLLM::Content with the file attached' do
+    it 'returns a RubyLLM::Content with the file attached and a metadata note' do
       path = write_image('shot.png', PNG_MAGIC)
 
       result = described_class.read(workspace: workspace, path: 'shot.png', offset: 1, limit: 2000)
@@ -353,44 +350,7 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_includes result.text, "(#{path.size} bytes, image/png)"
     end
 
-    it 'detects JPEG by magic bytes regardless of extension' do
-      write_image('photo.bin', JPEG_MAGIC)
-
-      result = described_class.read(workspace: workspace, path: 'photo.bin', offset: 1, limit: 2000)
-
-      assert_kind_of RubyLLM::Content, result
-      assert_equal 'image/jpeg', result.attachments.first.mime_type
-    end
-
-    it 'detects GIF87a' do
-      write_image('anim87.gif', GIF87_MAGIC)
-
-      result = described_class.read(workspace: workspace, path: 'anim87.gif', offset: 1, limit: 2000)
-
-      assert_kind_of RubyLLM::Content, result
-      assert_equal 'image/gif', result.attachments.first.mime_type
-    end
-
-    it 'detects GIF89a' do
-      write_image('anim89.gif', GIF89_MAGIC)
-
-      result = described_class.read(workspace: workspace, path: 'anim89.gif', offset: 1, limit: 2000)
-
-      assert_kind_of RubyLLM::Content, result
-      assert_equal 'image/gif', result.attachments.first.mime_type
-    end
-
-    it 'detects WebP via the RIFF...WEBP container marker' do
-      write_image('photo.webp', WEBP_HEAD)
-
-      result = described_class.read(workspace: workspace, path: 'photo.webp', offset: 1, limit: 2000)
-
-      assert_kind_of RubyLLM::Content, result
-      assert_equal 'image/webp', result.attachments.first.mime_type
-    end
-
-    it 'refuses images larger than MAX_IMAGE_BYTES' do
-      # PNG magic + enough zero padding to exceed the 5 MB cap.
+    it 'refuses images larger than MAX_IMAGE_BYTES with an Error string the model can react to' do
       path = root + 'huge.png'
       File.binwrite(path, PNG_MAGIC + ("\x00".b * (Pikuri::Workspace::Read::MAX_IMAGE_BYTES + 1)))
 
@@ -404,7 +364,7 @@ RSpec.describe Pikuri::Workspace::Read do
 
     it 'routes images ahead of the binary-content refusal' do
       # PNG content is dense in NUL bytes — would otherwise be refused
-      # by Read.binary?. Image-magic detection must run first.
+      # by FileType.binary?. The mime-detection branch must run first.
       write_image('nul.png', PNG_MAGIC, 1024)
 
       result = described_class.read(workspace: workspace, path: 'nul.png', offset: 1, limit: 2000)

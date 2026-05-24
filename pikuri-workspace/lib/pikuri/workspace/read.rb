@@ -90,13 +90,13 @@ module Pikuri
     # * Image larger than {MAX_IMAGE_BYTES} → +"Error: image too large…"+,
     #   leaving the model to pick a different file or ask the user to
     #   resize.
-    # * Binary content → sniffed from the first {BINARY_SAMPLE_BYTES} of
-    #   the file: any +NUL+ byte, or more than {BINARY_NONPRINTABLE_THRESHOLD}
-    #   non-printable bytes (control chars outside +\t \n \v \f \r+),
-    #   triggers refusal. Catches archives and compiled artifacts without
-    #   an extension list to maintain. PDFs and supported images are
-    #   intercepted by their respective magic-byte checks before the
-    #   binary sniff — see above.
+    # * Binary content → {Pikuri::FileType.binary?} on the sample; any
+    #   +NUL+ byte or a sample dense in control characters triggers
+    #   refusal. Catches archives and compiled artifacts without an
+    #   extension list to maintain. PDFs and supported images are
+    #   intercepted by their respective magic-byte checks via
+    #   {Pikuri::FileType.detect_mime} before the binary sniff — see
+    #   above.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
     class Read < Pikuri::Tool
       # @return [Integer] default value of the +limit+ parameter (number
@@ -121,15 +121,6 @@ module Pikuri
       #   continuation marker.
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
-      # @return [Integer] number of bytes sampled from the start of the
-      #   file for binary-content detection.
-      BINARY_SAMPLE_BYTES = 4096
-
-      # @return [Float] fraction of the sample that may be non-printable
-      #   before the file is classified as binary. Matches opencode's
-      #   30%.
-      BINARY_NONPRINTABLE_THRESHOLD = 0.30
-
       # @return [Integer] hard size cap on inline-attached images. Matches
       #   Anthropic's per-image limit; same order of magnitude on
       #   OpenAI / Gemini. Above this we refuse rather than encode a
@@ -139,19 +130,6 @@ module Pikuri
       # @return [String] human-readable form of {MAX_IMAGE_BYTES} for
       #   refusal messages.
       MAX_IMAGE_BYTES_LABEL = "#{MAX_IMAGE_BYTES / (1024 * 1024)} MB"
-
-      # @return [Hash{String => String}] magic-byte prefixes → MIME types
-      #   for the supported image formats. PNG and JPEG cover ~all
-      #   screenshots and photos; GIF and WebP round out the set
-      #   opencode / PI / Anthropic / OpenAI agree on. WebP is detected
-      #   via the +RIFF...WEBP+ pattern in {.image_mime} since its
-      #   magic-byte signature isn't a flat prefix.
-      IMAGE_MAGIC_BYTES = {
-        "\x89PNG\r\n\x1a\n".b => 'image/png',
-        "\xff\xd8\xff".b      => 'image/jpeg',
-        "GIF87a".b            => 'image/gif',
-        "GIF89a".b            => 'image/gif'
-      }.freeze
 
       # Description shown to the LLM. Follows the opencode-shape (summary
       # + +Usage:+ bullets) prescribed by the project's tool-description
@@ -220,12 +198,11 @@ module Pikuri
         return "Error: #{path} is a directory; use the glob tool to list files." if resolved.directory?
 
         sample = read_sample(resolved)
-        return format_pdf(path: path, resolved: resolved, offset: offset, limit: limit) if pdf?(sample)
+        mime = Pikuri::FileType.detect_mime(sample)
 
-        image_type = image_mime(sample)
-        return format_image(path: path, resolved: resolved, mime: image_type) if image_type
-
-        return "Error: cannot read binary file: #{path}" if binary?(sample)
+        return format_pdf(path: path, resolved: resolved, offset: offset, limit: limit) if mime == 'application/pdf'
+        return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
+        return "Error: cannot read binary file: #{path}" if Pikuri::FileType.binary?(sample)
 
         format_slice(path: path, resolved: resolved, offset: offset, limit: limit)
       rescue Filesystem::Error => e
@@ -234,78 +211,18 @@ module Pikuri
         "Error: cannot read #{path}: #{e.message}"
       end
 
-      # Read up to {BINARY_SAMPLE_BYTES} of the file in binary mode for
-      # the {.binary?} sniff. Returns an empty String for an empty file
-      # (which {.binary?} treats as not-binary).
+      # Read up to {Pikuri::FileType::SAMPLE_BYTES} of the file in
+      # binary mode for the {Pikuri::FileType} sniffs. Returns an empty
+      # String for an empty file (which {Pikuri::FileType.binary?}
+      # treats as not-binary, and {Pikuri::FileType.detect_mime} returns
+      # +nil+ for, so the empty-text path takes over).
       #
       # @param resolved [Pathname]
       # @return [String] raw bytes (ASCII-8BIT encoding)
       def self.read_sample(resolved)
-        resolved.open('rb') { |io| io.read(BINARY_SAMPLE_BYTES) || +'' }
+        resolved.open('rb') { |io| io.read(Pikuri::FileType::SAMPLE_BYTES) || +'' }
       end
       private_class_method :read_sample
-
-      # Magic-byte sniff for PDF — every conformant PDF starts with the
-      # five-byte ASCII prefix +%PDF-+ per ISO 32000-1 §7.5.2. Cheap and
-      # specific enough that we never need an extension list: a +.pdf+
-      # rename or a header-less PDF blob both produce the right answer.
-      # Used by {.read} to route to {.format_pdf} before the binary sniff
-      # would otherwise refuse the file.
-      #
-      # @param bytes [String] sample bytes from {.read_sample}
-      # @return [Boolean]
-      def self.pdf?(bytes)
-        bytes.start_with?("%PDF-")
-      end
-
-      # Magic-byte sniff for the four supported image formats. PNG /
-      # JPEG / GIF have flat prefixes (see {IMAGE_MAGIC_BYTES}); WebP
-      # uses RIFF, so the WEBP marker sits at offset 8 inside a
-      # +RIFF<size>WEBP+ container — checked separately.
-      #
-      # Returns the MIME type as a String, or +nil+ if the bytes don't
-      # look like any of the supported images. Used by {.read} to route
-      # to {.format_image} before the binary sniff would otherwise refuse
-      # the file.
-      #
-      # @param bytes [String] sample bytes from {.read_sample}
-      # @return [String, nil]
-      def self.image_mime(bytes)
-        IMAGE_MAGIC_BYTES.each do |prefix, mime|
-          return mime if bytes.start_with?(prefix)
-        end
-        return 'image/webp' if bytes.bytesize >= 12 &&
-                               bytes.byteslice(0, 4) == 'RIFF'.b &&
-                               bytes.byteslice(8, 4) == 'WEBP'.b
-
-        nil
-      end
-
-      # Heuristic binary classifier matching opencode's: any NUL byte
-      # forces +true+; otherwise count bytes outside the printable +\t \n
-      # \v \f \r+ + ASCII-32..126 range and ratio against the sample
-      # size. UTF-8 continuation bytes (0x80-0xBF) are >127 so they sit
-      # outside the non-printable ranges and pass through unflagged,
-      # letting UTF-8 text read fine.
-      #
-      # Public because {Edit} reuses it to refuse binary targets —
-      # if Edit accepted a binary file the model has no way to have read,
-      # it could corrupt bytes the model never inspected. Same sniff, same
-      # threshold, one definition.
-      #
-      # @param bytes [String] sample bytes
-      # @return [Boolean]
-      def self.binary?(bytes)
-        return false if bytes.empty?
-
-        non_printable = 0
-        bytes.each_byte do |b|
-          return true if b.zero?
-
-          non_printable += 1 if b < 9 || (b > 13 && b < 32)
-        end
-        non_printable.to_f / bytes.bytesize > BINARY_NONPRINTABLE_THRESHOLD
-      end
 
       # Stream the file line-by-line, collect at most +limit+ lines
       # starting at +offset+, and stop early if {MAX_BYTES} is reached.
