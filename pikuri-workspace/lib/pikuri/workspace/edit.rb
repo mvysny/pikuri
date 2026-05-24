@@ -137,9 +137,9 @@ module Pikuri
         return "Error: file not found: #{path}" unless resolved.exist?
         return "Error: #{path} is a directory" if resolved.directory?
 
+        return "Error: cannot edit binary file: #{path}" if Pikuri::FileType.binary?(resolved)
+
         raw = resolved.binread
-        sample = raw.byteslice(0, Pikuri::FileType::SAMPLE_BYTES)
-        return "Error: cannot edit binary file: #{path}" if Pikuri::FileType.binary?(sample)
 
         crlf    = raw.include?("\r\n")
         content = crlf ? raw.gsub("\r\n", "\n") : raw

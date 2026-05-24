@@ -13,9 +13,12 @@ module Pikuri
   #   binary. {.detect_mime} tells you what the bytes are;
   #   {.binary?} tells you whether they're safe to render as text.
   #
-  # Both methods take a +bytes+ sample — {SAMPLE_BYTES} of leading
-  # content is the recommended slice. Callers read the sample once and
-  # pass it to both, rather than re-reading.
+  # Both methods accept either a +String+ of bytes (sample taken by the
+  # caller) or a +Pathname+ — when given a path, the module opens the
+  # file in binary mode and reads {SAMPLE_BYTES} for the sniff itself.
+  # The Pathname form is the convenience path; the bytes form is for
+  # callers that already have the sample or are calling both methods on
+  # the same file and want to avoid a second open.
   #
   # == Why a separate module
   #
@@ -76,11 +79,13 @@ module Pikuri
     # "unrecognised" — callers interpret +nil+ themselves (text,
     # opaque binary, ...).
     #
-    # @param bytes [String] sample of the file's leading bytes
-    #   (typically {SAMPLE_BYTES} read with +File.binread+ or
-    #   +io.read(SAMPLE_BYTES)+)
+    # @param input [String, Pathname] the bytes to inspect, or a
+    #   +Pathname+ that this method opens in binary mode and reads up
+    #   to {SAMPLE_BYTES} from. Caller is responsible for verifying the
+    #   path exists; missing-file errors propagate as +Errno::ENOENT+.
     # @return [String, nil]
-    def detect_mime(bytes)
+    def detect_mime(input)
+      bytes = sample_of(input)
       return 'application/pdf' if bytes.start_with?(PDF_MAGIC)
 
       IMAGE_MAGIC_BYTES.each do |prefix, mime|
@@ -102,9 +107,13 @@ module Pikuri
     # sample is treated as not-binary (callers reading an empty file
     # take the empty-text path).
     #
-    # @param bytes [String] sample bytes
+    # @param input [String, Pathname] the bytes to inspect, or a
+    #   +Pathname+ that this method opens in binary mode and reads up
+    #   to {SAMPLE_BYTES} from. Caller is responsible for verifying
+    #   the path exists.
     # @return [Boolean]
-    def binary?(bytes)
+    def binary?(input)
+      bytes = sample_of(input)
       return false if bytes.empty?
 
       non_printable = 0
@@ -115,5 +124,31 @@ module Pikuri
       end
       non_printable.to_f / bytes.bytesize > BINARY_NONPRINTABLE_THRESHOLD
     end
+
+    # Coerce an +input+ argument into a bytes String for the sniffs.
+    # +String+ inputs are returned as-is (caller already sampled);
+    # +Pathname+ inputs are opened in binary mode and up to
+    # {SAMPLE_BYTES} are read off the front. Empty files come back
+    # as an empty String — {.binary?} treats that as not-binary and
+    # {.detect_mime} returns +nil+ for it, which is what the
+    # empty-text path wants.
+    #
+    # @param input [String, Pathname]
+    # @return [String] raw bytes (ASCII-8BIT encoding for the path
+    #   case; whatever the caller passed for the bytes case)
+    # @raise [ArgumentError] if +input+ is neither a +String+ nor a
+    #   +Pathname+ — refuses to guess, since a bare String could be
+    #   either a path or actual bytes.
+    def sample_of(input)
+      case input
+      when String
+        input
+      when Pathname
+        input.open('rb') { |io| io.read(SAMPLE_BYTES) || +'' }
+      else
+        raise ArgumentError, "expected String bytes or Pathname, got #{input.class}"
+      end
+    end
+    private_class_method :sample_of
   end
 end

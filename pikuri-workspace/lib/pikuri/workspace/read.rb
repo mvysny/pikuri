@@ -197,12 +197,11 @@ module Pikuri
         return "Error: file not found: #{path}" unless resolved.exist?
         return "Error: #{path} is a directory; use the glob tool to list files." if resolved.directory?
 
-        sample = read_sample(resolved)
-        mime = Pikuri::FileType.detect_mime(sample)
+        mime = Pikuri::FileType.detect_mime(resolved)
 
         return format_pdf(path: path, resolved: resolved, offset: offset, limit: limit) if mime == 'application/pdf'
         return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
-        return "Error: cannot read binary file: #{path}" if Pikuri::FileType.binary?(sample)
+        return "Error: cannot read binary file: #{path}" if Pikuri::FileType.binary?(resolved)
 
         format_slice(path: path, resolved: resolved, offset: offset, limit: limit)
       rescue Filesystem::Error => e
@@ -210,19 +209,6 @@ module Pikuri
       rescue Errno::EACCES => e
         "Error: cannot read #{path}: #{e.message}"
       end
-
-      # Read up to {Pikuri::FileType::SAMPLE_BYTES} of the file in
-      # binary mode for the {Pikuri::FileType} sniffs. Returns an empty
-      # String for an empty file (which {Pikuri::FileType.binary?}
-      # treats as not-binary, and {Pikuri::FileType.detect_mime} returns
-      # +nil+ for, so the empty-text path takes over).
-      #
-      # @param resolved [Pathname]
-      # @return [String] raw bytes (ASCII-8BIT encoding)
-      def self.read_sample(resolved)
-        resolved.open('rb') { |io| io.read(Pikuri::FileType::SAMPLE_BYTES) || +'' }
-      end
-      private_class_method :read_sample
 
       # Stream the file line-by-line, collect at most +limit+ lines
       # starting at +offset+, and stop early if {MAX_BYTES} is reached.

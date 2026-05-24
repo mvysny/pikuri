@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
+require 'fileutils'
+
 RSpec.describe Pikuri::FileType do
   PNG_MAGIC = "\x89PNG\r\n\x1a\n".b
   JPEG_MAGIC = "\xff\xd8\xff\xe0".b
@@ -93,6 +96,54 @@ RSpec.describe Pikuri::FileType do
       # 29% control bytes is below threshold (>30% required).
       content = (['a'] * 71 + ["\x01"] * 29).join.b
       refute described_class.binary?(content)
+    end
+  end
+
+  describe 'Pathname input' do
+    let(:root) { Pathname.new(Dir.mktmpdir('pikuri-file-type-')).realpath }
+
+    after { FileUtils.rm_rf(root) }
+
+    def write(rel, bytes)
+      path = root + rel
+      File.binwrite(path, bytes)
+      path
+    end
+
+    it 'detect_mime opens the path and sniffs from the first SAMPLE_BYTES' do
+      path = write('shot.png', PNG_MAGIC + ('x' * 16).b)
+      assert_equal 'image/png', described_class.detect_mime(path)
+    end
+
+    it 'binary? opens the path and applies the heuristic on the sample' do
+      path = write('plain.txt', "hello world\n".b)
+      refute described_class.binary?(path)
+
+      bin_path = write('opaque.bin', "abc\x00def".b)
+      assert described_class.binary?(bin_path)
+    end
+
+    it 'reads only up to SAMPLE_BYTES even for a much larger file' do
+      # If the implementation slurped the whole file, this test would
+      # still pass — but it ensures the cap is correct: only the
+      # leading window is consulted, so a giant otherwise-text file
+      # with PDF magic in its first bytes is still recognised as PDF.
+      tail = 'x' * (Pikuri::FileType::SAMPLE_BYTES * 4)
+      path = write('big.pdf', ('%PDF-1.4' + tail).b)
+      assert_equal 'application/pdf', described_class.detect_mime(path)
+    end
+
+    it 'treats an empty file as not-binary and unrecognised' do
+      path = write('empty', ''.b)
+      refute described_class.binary?(path)
+      assert_nil described_class.detect_mime(path)
+    end
+
+    it 'rejects inputs that are neither String nor Pathname with ArgumentError' do
+      # Refuse to guess what a stray Integer / Hash / IO means — bytes
+      # vs path ambiguity would lurk otherwise.
+      assert_raises(ArgumentError) { described_class.detect_mime(42) }
+      assert_raises(ArgumentError) { described_class.binary?(42) }
     end
   end
 end
