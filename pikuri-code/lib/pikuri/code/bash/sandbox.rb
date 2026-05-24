@@ -69,19 +69,23 @@ module Pikuri
         #   TLS handshake, DNS, timezone, hostname resolution. Nothing
         #   sensitive (no +shadow+, no +ssh_config+, no NetworkManager
         #   state).
-        # * Synthetic +/tmp+ (tmpfs), +/proc+ (synthetic, sees only the
-        #   sandbox's own processes due to +--unshare-pid+), +/dev+
-        #   (synthetic, +null+/+zero+/+random+/+tty+ only). The host's
-        #   +/tmp+ is *not* exposed; the workspace's own +temp+ dir is
-        #   bind-mounted explicitly via +workspace.writable+ so its
-        #   contents persist across bash calls + survive sandbox
-        #   teardown.
+        # * +/tmp+ — when {Workspace::Filesystem#temp} is set, bound
+        #   to the workspace temp dir (so the LLM's reflexive +/tmp+
+        #   writes land in a persistent dir that survives between bash
+        #   calls). When no workspace temp is wired in, falls back to
+        #   +--tmpfs /tmp+ (per-call ephemeral). The host's +/tmp+ is
+        #   never exposed. +/proc+ (synthetic, sees only the sandbox's
+        #   own processes due to +--unshare-pid+) and +/dev+ (synthetic,
+        #   +null+/+zero+/+random+/+tty+ only) round out the synthetic
+        #   mounts.
         # * +workspace.readable+ → +--ro-bind+ each path at the same
         #   path in the sandbox.
-        # * +workspace.writable+ → +--bind+ (read+write) each path.
-        #   Mounted *after* the synthetic +/tmp+ so the workspace temp
-        #   dir (typically +/tmp/pikuri-temp-XXX+) overlays the tmpfs
-        #   correctly.
+        # * +workspace.writable+ → +--bind+ (read+write) each path. The
+        #   workspace temp's host path (under +~/.cache/pikuri+, not
+        #   under +/tmp+) is bound at its host path too — so the same
+        #   dir is reachable via both +/tmp+ (LLM reflex) and the host
+        #   path (advertised by the system prompt, used consistently
+        #   by the file tools off the host filesystem).
         #
         # == Isolation
         #
@@ -96,13 +100,21 @@ module Pikuri
         # == Failures that surface at construction
         #
         # The constructor probes the workspace shape, then +bwrap+ with a
-        # no-op invocation. Three cases raise loudly:
+        # no-op invocation. Four cases raise loudly:
         #
         # * Workspace lists +/+ as writable (typically
         #   {Workspace::Filesystem::AllowAll}) — Bubblewrap exists for
         #   filesystem containment, which is structurally meaningless
         #   when the whole filesystem is the workspace. The host should
         #   pass {NONE} instead.
+        # * Workspace has +temp+ but +alias_tmp_to_temp+ is off —
+        #   inconsistent setup: this sandbox would bind +workspace.temp+
+        #   at +/tmp+ inside the subprocess (so the LLM's reflexive
+        #   +/tmp+ writes persist), but file tools running on the host
+        #   would still reject +/tmp/foo+ as outside the workspace.
+        #   The LLM would write via bash and then fail to read via the
+        #   file tools; fail at construction instead of letting that
+        #   trap fire mid-conversation.
         # * +bwrap+ not on +PATH+ → +Errno::ENOENT+ wrapped as +RuntimeError+.
         # * Kernel lacks user-namespace support (some hardened distros)
         #   → +bwrap+ exits non-zero, surfaced as +RuntimeError+.
@@ -142,12 +154,15 @@ module Pikuri
           #   when the entire filesystem is the workspace — typically
           #   {Workspace::Filesystem::AllowAll}; the host should pass
           #   {NONE} instead).
+          # @raise [RuntimeError] if the workspace has +temp+ set but
+          #   +alias_tmp_to_temp+ unset — see the class header.
           # @raise [RuntimeError] if +bwrap+ isn't on +PATH+ or fails
           #   its probe (typically: kernel without user-namespace
           #   support).
           def initialize(workspace:)
             @workspace = workspace
             reject_unbounded_workspace!
+            reject_unaliased_temp!
             check_bwrap!
           end
 
@@ -176,6 +191,26 @@ module Pikuri
                   'Bubblewrap exists to contain the subprocess to a subset ' \
                   'of the filesystem, which is moot when the whole filesystem ' \
                   'is the workspace. Pass Sandbox::NONE instead.'
+          end
+
+          # When the workspace has a temp dir, this sandbox binds it at
+          # +/tmp+ inside the subprocess so the LLM's reflexive +/tmp+
+          # writes persist across bash calls. That bind only pays off
+          # if the workspace also rewrites +/tmp/*+ in the file tools
+          # via +alias_tmp_to_temp+; otherwise the LLM writes via bash
+          # and then hits "outside workspace" on every Read/Write/Edit/
+          # Grep/Glob against the same +/tmp/*+ path. Fail at boot.
+          def reject_unaliased_temp!
+            return if @workspace.temp.nil?
+            return if @workspace.alias_tmp_to_temp
+
+            raise 'Code::Bash::Sandbox::Bubblewrap: workspace has temp set ' \
+                  'but alias_tmp_to_temp is off. This sandbox binds ' \
+                  'workspace.temp at /tmp inside the subprocess, which ' \
+                  'requires the workspace to rewrite /tmp/* in the file ' \
+                  'tools so bash and file tools agree on one path. ' \
+                  'Construct the workspace with alias_tmp_to_temp: true, ' \
+                  'or pass Sandbox::NONE if you do not want the bind.'
           end
 
           def check_bwrap!
@@ -210,10 +245,19 @@ module Pikuri
               mounted << p
             end
 
-            # 2. Synthetic mounts. Placed BEFORE the workspace binds so
-            #    that workspace.temp (typically /tmp/pikuri-temp-XXX)
-            #    overlays the tmpfs rather than being shadowed by it.
-            args.concat(['--tmpfs', '/tmp', '--proc', '/proc', '--dev', '/dev'])
+            # 2. Synthetic /proc + /dev. /tmp is handled separately
+            #    below — when the workspace has a temp dir we bind it
+            #    at /tmp (so the LLM's reflexive /tmp writes persist
+            #    across bash calls); otherwise we fall back to tmpfs.
+            args.concat(['--proc', '/proc', '--dev', '/dev'])
+
+            if @workspace.temp
+              args.concat(['--bind', @workspace.temp.to_s, '/tmp'])
+              mounted << '/tmp'
+            else
+              args.concat(['--tmpfs', '/tmp'])
+              mounted << '/tmp'
+            end
 
             # 3. Workspace-derived mounts. Writable wins on overlap
             #    (writable ⊆ readable in the Workspace constructor;

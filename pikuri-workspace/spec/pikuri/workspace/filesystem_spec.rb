@@ -64,6 +64,75 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     ensure
       [a, b].each { |w| FileUtils.remove_entry(w.temp.to_s) if w&.temp&.exist? }
     end
+
+    it 'mints the temp dir under CACHE_BASE (~/.cache/pikuri), not /tmp' do
+      ws = described_class.new(project_root: root, temp: true)
+      cache_base = Pathname.new(described_class::CACHE_BASE).realpath
+      assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
+             "expected #{ws.temp} under #{cache_base}"
+      refute ws.temp.to_s.start_with?('/tmp/'),
+             'temp under /tmp would recursively self-mount when bound at /tmp in bwrap'
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+  end
+
+  describe '#alias_tmp_to_temp' do
+    it 'defaults to false' do
+      ws = described_class.new(project_root: root, temp: true)
+      refute ws.alias_tmp_to_temp
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'is forced to false when temp: is not set, even if alias_tmp_to_temp: true' do
+      ws = described_class.new(project_root: root, alias_tmp_to_temp: true)
+      refute ws.alias_tmp_to_temp
+    end
+
+    it 'rewrites /tmp/foo to <host-temp>/foo for resolve_for_read' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      File.write(ws.temp + 'foo.txt', 'x')
+
+      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'rewrites /tmp/foo to <host-temp>/foo for resolve_for_write' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+
+      assert_equal ws.temp + 'sub/new.txt', ws.resolve_for_write('/tmp/sub/new.txt')
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'rewrites exactly /tmp to the host temp dir' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      assert_equal ws.temp, ws.resolve_for_read('/tmp')
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'does NOT rewrite /tmpfoo (only /tmp and /tmp/...)' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
+        ws.resolve_for_read('/tmpfoo')
+      end
+      assert_includes err.message, 'outside the workspace'
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'passes /tmp/foo through unchanged when alias is off (rejected as outside workspace)' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: false)
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
+        ws.resolve_for_read('/tmp/foo.txt')
+      end
+      assert_includes err.message, 'outside the workspace'
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
   end
 
   describe '#resolve_for_read / #resolve_for_write under the project_root' do
@@ -278,6 +347,24 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
       assert_includes workspace.writable, Pathname.new('/').realpath
     end
 
+    it 'mints the temp dir under CACHE_BASE, not /tmp (same as base Filesystem)' do
+      ws = described_class.new(project_root: root, temp: true)
+      cache_base = Pathname.new(Pikuri::Workspace::Filesystem::CACHE_BASE).realpath
+      assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
+             "expected #{ws.temp} under #{cache_base}"
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'rewrites /tmp/foo to <host-temp>/foo when alias_tmp_to_temp: true' do
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      File.write(ws.temp + 'foo.txt', 'x')
+
+      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
+      assert_equal ws.temp + 'bar.txt', ws.resolve_for_write('/tmp/bar.txt')
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
   end
 
   describe 'credential denylist' do

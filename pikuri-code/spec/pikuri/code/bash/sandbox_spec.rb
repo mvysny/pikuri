@@ -52,6 +52,20 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       assert_includes err.message, 'Sandbox::NONE'
     end
 
+    # Also fires before the bwrap probe — bwrap-availability-independent.
+    it 'refuses construction when temp is set but alias_tmp_to_temp is off' do
+      ws = Pikuri::Workspace::Filesystem.new(
+        project_root: root, temp: true, alias_tmp_to_temp: false
+      )
+      begin
+        err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+        assert_includes err.message, 'temp set'
+        assert_includes err.message, 'alias_tmp_to_temp'
+      ensure
+        FileUtils.remove_entry(ws.temp.to_s) if ws.temp&.exist?
+      end
+    end
+
     if BWRAP_AVAILABLE
       it 'constructs successfully when bwrap is available' do
         sandbox = described_class.new(workspace: workspace)
@@ -71,7 +85,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert_includes argv, '--share-net'
         assert_includes argv, '--die-with-parent'
         assert_includes argv, '--new-session'
-        # Synthetic mounts
+        # Synthetic mounts — workspace has no temp, so /tmp falls back to tmpfs.
         assert argv.each_cons(2).any? { |a, b| a == '--tmpfs' && b == '/tmp' },
                "expected --tmpfs /tmp in #{argv.inspect}"
         # User argv preserved at the tail
@@ -80,14 +94,24 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert_equal 'echo hi', argv[-1]
       end
 
-      it '#wrap includes the temp dir as a writable bind when temp: true' do
-        ws = Pikuri::Workspace::Filesystem.new(project_root: root, temp: true)
+      it '#wrap binds workspace.temp at /tmp when temp: true (NOT --tmpfs /tmp)' do
+        ws = Pikuri::Workspace::Filesystem.new(
+          project_root: root, temp: true, alias_tmp_to_temp: true
+        )
         begin
           sandbox = described_class.new(workspace: ws)
           argv = sandbox.wrap(['true'])
 
-          assert argv.each_cons(2).any? { |a, b| a == '--bind' && b == ws.temp.to_s },
-                 "expected --bind #{ws.temp} in #{argv.inspect}"
+          # /tmp is bound to the workspace temp (persistent across bash calls).
+          assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == ws.temp.to_s && c == '/tmp' },
+                 "expected --bind #{ws.temp} /tmp in #{argv.inspect}"
+          # The fallback tmpfs at /tmp is gone.
+          refute argv.each_cons(2).any? { |a, b| a == '--tmpfs' && b == '/tmp' },
+                 "did not expect --tmpfs /tmp when temp is set: #{argv.inspect}"
+          # The temp host path is ALSO bound at its host path so file tools
+          # and bash agree on a single canonical path.
+          assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == ws.temp.to_s && c == ws.temp.to_s },
+                 "expected --bind #{ws.temp} #{ws.temp} in #{argv.inspect}"
         ensure
           FileUtils.remove_entry(ws.temp.to_s) if ws.temp.exist?
         end

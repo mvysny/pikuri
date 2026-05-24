@@ -97,9 +97,18 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
 # mise/cargo/m2/…) so the LLM can grep Ruby stdlib, JDK sources,
 # dependency caches; skill catalog roots so the +read+ tool can load
 # skill sidecars. temp: true mints an ephemeral writable playground
-# (Dir.mktmpdir, removed at_exit) — exposed below in the system prompt
-# so the LLM knows where to put junk (downloads, unzip targets, scratch
-# artifacts).
+# under ~/.cache/pikuri (Dir.mktmpdir, removed at_exit) — exposed below
+# in the system prompt so the LLM knows where to put junk (downloads,
+# unzip targets, scratch artifacts).
+#
+# alias_tmp_to_temp: true is wired on when the bubblewrap sandbox is
+# enabled. It pairs with the sandbox's --bind <temp> /tmp: bash inside
+# the sandbox writes to /tmp/foo, then file tools (Read/Write/Edit/
+# Grep/Glob, which run on the host, not inside the sandbox) accept the
+# same /tmp/foo path because the workspace rewrites it to the temp's
+# host path before containment check. With the sandbox off, /tmp in
+# bash is the host's real /tmp — aliasing it would lie about what
+# `read('/tmp/foo')` actually opens, so the kwarg is left at false.
 #
 # --yolo swaps in +Filesystem::AllowAll+: every path resolves except
 # those under the credential denylist (~/.ssh, ~/.aws, …, /etc/shadow).
@@ -108,14 +117,16 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
 # since everything is reachable anyway.
 workspace = if yolo
               Pikuri::Workspace::Filesystem::AllowAll.new(
-                project_root: project_root,
-                temp:         true
+                project_root:      project_root,
+                temp:              true,
+                alias_tmp_to_temp: sandbox_enabled
               )
             else
               Pikuri::Workspace::Filesystem.new(
-                project_root: project_root,
-                readable:     Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
-                temp:         true
+                project_root:      project_root,
+                readable:          Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
+                temp:              true,
+                alias_tmp_to_temp: sandbox_enabled
               )
             end
 confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
@@ -141,7 +152,20 @@ md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| workspace.project_root.join(f) }.
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nProject root: #{workspace.project_root}"
-system_prompt += "\nTemp dir (writable, ephemeral, cleared on exit): #{workspace.temp}"
+# Tell the LLM only what's true for the current mode so it doesn't
+# need to know whether bubblewrap is on. Sandboxed: /tmp itself is the
+# scratch dir (bind-mounted to a persistent host dir under
+# ~/.cache/pikuri, and the workspace aliases /tmp/* in file tools to
+# match). Unsandboxed: /tmp is the host's real /tmp; nudge the LLM
+# toward the workspace's personal scratch dir to keep host /tmp clean.
+system_prompt += if sandbox_enabled
+                   "\nScratch space: /tmp — persistent across all bash and tool calls; " \
+                     'use for downloads, clones, unpacks. Cleared on exit.'
+                 else
+                   "\nScratch space: #{workspace.temp} — persistent across tool calls, " \
+                     'cleared on exit. Prefer it over /tmp for downloads, clones, unpacks ' \
+                     "(keeps the host's /tmp clean)."
+                 end
 
 server = server.chomp('/')
 openai_api_base = "#{server}/v1"

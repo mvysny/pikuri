@@ -34,12 +34,36 @@ module Pikuri
     # == Optional temp playground
     #
     # When constructed with +temp: true+, the workspace mints its own
-    # ephemeral directory via {Dir.mktmpdir} and adds it to +writable+.
-    # An +at_exit+ handler removes it when the process exits. {#temp}
-    # exposes the path so the binary can advertise it to the LLM (e.g.
-    # in the system prompt). Default is +false+: specs and tests that
-    # build many workspaces don't pay the mktmpdir cost, and hosts that
-    # don't need a playground don't get one.
+    # ephemeral directory under {CACHE_BASE} (+~/.cache/pikuri+) and
+    # adds it to +writable+. An +at_exit+ handler removes it when the
+    # process exits. {#temp} exposes the path so the binary can
+    # advertise it to the LLM (e.g. in the system prompt). Default is
+    # +false+: specs and tests that build many workspaces don't pay
+    # the mktmpdir cost, and hosts that don't need a playground don't
+    # get one.
+    #
+    # The temp dir deliberately lives in +~/.cache/pikuri+ rather than
+    # +/tmp+: the {Bash} {Code::Bash::Sandbox::Bubblewrap} sandbox binds
+    # the temp at +/tmp+ inside the sandbox (so the LLM's reflexive
+    # +/tmp+ writes persist across bash calls). With the temp's host
+    # path already under +/tmp+, that bind would land on top of itself
+    # and the per-call mountpoint creation would pollute the temp dir
+    # with recursive +pikuri-temp-*+ subdirs. Putting it under
+    # +~/.cache/pikuri+ avoids the collision.
+    #
+    # == Optional /tmp alias
+    #
+    # When +alias_tmp_to_temp: true+ AND +temp:+ is set, file paths
+    # supplied to {#resolve_for_read} / {#resolve_for_write} that
+    # start with +/tmp/+ (or are exactly +/tmp+) are rewritten to the
+    # host {#temp} path before containment is checked. This is the
+    # host-side counterpart to the sandbox's +--bind <temp> /tmp+: bash
+    # inside the sandbox writes to +/tmp/foo+, then the file tools
+    # (which run on the host, not in the sandbox) accept the same
+    # +/tmp/foo+ path and resolve it to the workspace temp's host
+    # path. Without this, the LLM would have to remember two paths
+    # for the same dir. Off by default; +bin/pikuri-code+ flips it on
+    # when the bubblewrap sandbox is enabled.
     #
     # == Read-set vs. write-set
     #
@@ -98,6 +122,12 @@ module Pikuri
       # raised at construction time for a denied project root.
       class Error < StandardError; end
 
+      # Parent directory under which +temp: true+ mints per-process
+      # workspace temp dirs. Honors +XDG_CACHE_HOME+ when set, else
+      # +~/.cache+; the +pikuri+ subdir is owned by us. +mkdir_p+'d
+      # lazily on first temp construction.
+      CACHE_BASE = File.join(ENV['XDG_CACHE_HOME'] || File.join(Dir.home, '.cache'), 'pikuri')
+
       # System-root project_roots the constructor refuses. Exact-match
       # (not prefix) — +/home/user/project+ passes, +/home/user+ is
       # rejected by the parent-is-/home check below. Frozen list;
@@ -137,22 +167,38 @@ module Pikuri
       #   loudly via {Pathname#realpath}.
       # @param writable [Array<String, Pathname>] additional read+write
       #   roots. Same treatment as +readable+.
-      # @param temp [Boolean] when +true+, mints an ephemeral
-      #   {Dir.mktmpdir}, adds it to +writable+, exposes via {#temp},
-      #   registers +at_exit+ cleanup.
+      # @param temp [Boolean] when +true+, mints an ephemeral dir under
+      #   {CACHE_BASE} via {Dir.mktmpdir}, adds it to +writable+,
+      #   exposes via {#temp}, registers +at_exit+ cleanup.
+      # @param alias_tmp_to_temp [Boolean] when +true+ AND +temp:+ is
+      #   set, +/tmp/*+ paths supplied to {#resolve_for_read} /
+      #   {#resolve_for_write} are rewritten to point at {#temp}.
+      #   Pairs with the bubblewrap sandbox's +--bind <temp> /tmp+.
       # @raise [Errno::ENOENT] if +project_root+ or any
       #   +readable+/+writable+ entry does not exist.
       # @raise [Error] if +project_root+ is denied (system root or
       #   +/home/*+).
-      def initialize(project_root:, readable: [], writable: [], temp: false)
+      def initialize(project_root:, readable: [], writable: [], temp: false, alias_tmp_to_temp: false)
         @project_root = Pathname.new(project_root).realpath
         validate_project_root!(@project_root)
 
-        @temp = temp ? Pathname.new(Dir.mktmpdir('pikuri-temp-')).realpath : nil
+        @temp = temp ? Filesystem.mint_temp : nil
         at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
+        @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
 
         @writable = ([@project_root] + writable.map { |p| Pathname.new(p).realpath } + [@temp].compact).uniq
         @readable = (@writable + readable.map { |p| Pathname.new(p).realpath }).uniq
+      end
+
+      # @return [Boolean] whether {#resolve_for_read} / {#resolve_for_write}
+      #   rewrite +/tmp/*+ inputs to {#temp}.
+      attr_reader :alias_tmp_to_temp
+
+      # @api private — shared between {Filesystem} and {AllowAll} so the
+      # mkdir_p + mktmpdir under {CACHE_BASE} convention stays in one place.
+      def self.mint_temp
+        FileUtils.mkdir_p(CACHE_BASE)
+        Pathname.new(Dir.mktmpdir('workspace-temp-', CACHE_BASE)).realpath
       end
 
       # Resolve a user-supplied path against the read-set (readable ∪
@@ -188,6 +234,7 @@ module Pikuri
 
       # See the class header for the algorithm rationale.
       def resolve(path, roots)
+        path = apply_tmp_alias(path)
         pn = Pathname.new(path)
         pn = @project_root + pn unless pn.absolute?
         cleaned = pn.cleanpath
@@ -203,6 +250,17 @@ module Pikuri
         end
 
         base + cleaned.relative_path_from(existing)
+      end
+
+      # Rewrite +/tmp+ / +/tmp/foo+ inputs to land under {#temp} when
+      # {#alias_tmp_to_temp} is set. Other inputs pass through. Lives
+      # in the base class so {AllowAll} inherits identical behavior.
+      def apply_tmp_alias(path)
+        return path unless @alias_tmp_to_temp
+        return @temp.to_s if path == '/tmp'
+        return File.join(@temp.to_s, path[5..]) if path.start_with?('/tmp/')
+
+        path
       end
 
       # Unrestricted variant of {Filesystem}: every path resolves, with one
@@ -251,11 +309,15 @@ module Pikuri
         # @param project_root [String, Pathname] surface-level project
         #   root. Not validated against {DENIED_PROJECT_ROOTS}.
         # @param temp [Boolean] same semantics as {Filesystem}.
-        def initialize(project_root: Dir.pwd, temp: false)
+        # @param alias_tmp_to_temp [Boolean] same semantics as
+        #   {Filesystem} — when +true+ AND +temp:+ is set, +/tmp/*+
+        #   inputs rewrite to land under {#temp}.
+        def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false)
           @project_root = Pathname.new(project_root).realpath
 
-          @temp = temp ? Pathname.new(Dir.mktmpdir('pikuri-temp-')).realpath : nil
+          @temp = temp ? Filesystem.mint_temp : nil
           at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
+          @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
 
           # Advertise "everything is in scope" via the accessor surface so
           # callers that inspect +readable+/+writable+ (system-prompt
@@ -283,6 +345,7 @@ module Pikuri
         private
 
         def resolve_unrestricted(path)
+          path = apply_tmp_alias(path)
           pn = Pathname.new(path)
           pn = @project_root + pn unless pn.absolute?
           cleaned = pn.cleanpath
