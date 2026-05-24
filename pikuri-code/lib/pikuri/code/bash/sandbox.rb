@@ -89,7 +89,7 @@ module Pikuri
         #   path (advertised by the system prompt, used consistently
         #   by the file tools off the host filesystem).
         # * +ephemeral_overlay+ — per-user dependency caches the
-        #   toolchain mutates (+~/.gradle+, +~/.m2/repository+,
+        #   toolchain mutates (+~/.gradle/caches+, +~/.m2/repository+,
         #   +~/.cargo/registry+, …). Each path is mounted as a
         #   bubblewrap overlay: the host's real dir is the lower
         #   (read-through), and a per-session upper +
@@ -101,9 +101,15 @@ module Pikuri
         #   +at_exit+. Within one pikuri-code session writes survive
         #   across bash calls (warm cache after the first build);
         #   across sessions they don't (so a session that gets
-        #   prompt-injected into poisoning +~/.gradle/init.d+ cannot
-        #   propagate the damage to the host's normal +gradle+
-        #   invocations or to a future pikuri-code session).
+        #   prompt-injected into poisoning the in-sandbox view of
+        #   gradle's cache cannot propagate the damage to the host's
+        #   normal +gradle+ invocations or to a future pikuri-code
+        #   session). Note: the overlay paths are deliberately *narrow*
+        #   subdirs (e.g. +~/.gradle/caches+, not +~/.gradle+) so
+        #   +gradle.properties+ / +init.d+ / +.credentials+ never
+        #   reach the sandbox at all — see
+        #   {Pikuri::Code::ToolchainPaths} for the credential / persistence
+        #   exclusion rationale.
         #
         # == Concurrency contract
         #

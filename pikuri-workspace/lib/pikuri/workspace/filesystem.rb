@@ -45,7 +45,7 @@ module Pikuri
     # * {#temp} — the LLM-visible playground subdir, present only when
     #   +temp: true+ (see below).
     # * The bubblewrap sandbox's per-toolchain overlay state
-    #   (+overlay-<slug>/{upper,work}+ for +~/.gradle+, +~/.m2/repository+,
+    #   (+overlay-<slug>/{upper,work}+ for +~/.gradle/caches+, +~/.m2/repository+,
     #   …), used to keep cross-project toolchain caches isolated to one
     #   pikuri-code session. See
     #   {Pikuri::Code::Bash::Sandbox::Bubblewrap}.

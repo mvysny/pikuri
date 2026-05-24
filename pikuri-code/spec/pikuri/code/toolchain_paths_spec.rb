@@ -41,7 +41,9 @@ RSpec.describe Pikuri::Code::ToolchainPaths do
         # for both lists.
         %w[
           .local/share/mise .config/mise .asdf .rbenv .pyenv .nvm .rustup
-          .cargo/registry .m2/repository .gradle .ivy2 go/pkg/mod
+          .cargo/registry .m2/repository
+          .gradle/caches .gradle/wrapper/dists .gradle/jdks
+          .ivy2/cache go/pkg/mod
           .cache/pip .cache/uv .npm .local/share/pnpm/store .nuget/packages
         ].each { |p| FileUtils.mkdir_p(File.join(fake_home, p)) }
 
@@ -75,13 +77,24 @@ RSpec.describe Pikuri::Code::ToolchainPaths do
       end
     end
 
-    it 'includes ~/.gradle when present on the host' do
+    it 'includes ~/.gradle/caches + ~/.gradle/wrapper/dists + ~/.gradle/jdks (cache content) but NOT ~/.gradle itself (which would expose gradle.properties credentials and init.d persistence)' do
       Dir.mktmpdir do |fake_home|
         original = ENV.fetch('HOME', nil)
         ENV['HOME'] = fake_home
-        FileUtils.mkdir_p(File.join(fake_home, '.gradle'))
+        FileUtils.mkdir_p(File.join(fake_home, '.gradle/caches'))
+        FileUtils.mkdir_p(File.join(fake_home, '.gradle/wrapper/dists'))
+        FileUtils.mkdir_p(File.join(fake_home, '.gradle/jdks'))
+        FileUtils.mkdir_p(File.join(fake_home, '.gradle/init.d'))
+        File.write(File.join(fake_home, '.gradle/gradle.properties'), 'signing.password=SECRET')
 
-        assert_includes described_class.ephemeral_overlay, File.join(fake_home, '.gradle')
+        paths = described_class.ephemeral_overlay
+        assert_includes paths, File.join(fake_home, '.gradle/caches')
+        assert_includes paths, File.join(fake_home, '.gradle/wrapper/dists')
+        assert_includes paths, File.join(fake_home, '.gradle/jdks')
+        refute_includes paths, File.join(fake_home, '.gradle'),
+                        'must not expose ~/.gradle wholesale — gradle.properties + init.d live there'
+        refute_includes paths, File.join(fake_home, '.gradle/init.d'),
+                        'must not expose ~/.gradle/init.d — persistence vector across sessions'
       ensure
         ENV['HOME'] = original
       end
@@ -96,6 +109,22 @@ RSpec.describe Pikuri::Code::ToolchainPaths do
         paths = described_class.ephemeral_overlay
         assert_includes paths, File.join(fake_home, '.m2/repository')
         refute_includes paths, File.join(fake_home, '.m2')
+      ensure
+        ENV['HOME'] = original
+      end
+    end
+
+    it 'includes ~/.ivy2/cache (not the whole ~/.ivy2, which would expose .credentials)' do
+      Dir.mktmpdir do |fake_home|
+        original = ENV.fetch('HOME', nil)
+        ENV['HOME'] = fake_home
+        FileUtils.mkdir_p(File.join(fake_home, '.ivy2/cache'))
+        File.write(File.join(fake_home, '.ivy2/.credentials'), 'user=alice\npass=secret')
+
+        paths = described_class.ephemeral_overlay
+        assert_includes paths, File.join(fake_home, '.ivy2/cache')
+        refute_includes paths, File.join(fake_home, '.ivy2'),
+                        'must not expose ~/.ivy2 wholesale — .credentials lives there'
       ensure
         ENV['HOME'] = original
       end

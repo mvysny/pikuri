@@ -185,21 +185,29 @@ grows a skill system.
   composes a `bwrap` argv from `workspace.readable` / `writable` plus
   a curated `/etc` baseline (TLS certs, DNS, timezone, hosts file),
   and overlays each `ephemeral_overlay:` path
-  (`Pikuri::Code::ToolchainPaths.ephemeral_overlay` — `~/.gradle`,
-  `~/.m2/repository`, `~/.cargo/registry`, …) with a per-session RW
+  (`Pikuri::Code::ToolchainPaths.ephemeral_overlay` — `~/.gradle/caches`,
+  `~/.gradle/wrapper/dists`, `~/.gradle/jdks`, `~/.m2/repository`,
+  `~/.cargo/registry`, `~/.ivy2/cache`, …) with a per-session RW
   upper layer under `workspace.internal_temp`, so toolchain caches
   survive across bash calls within one session but never pollute
-  the host's real caches. The threat model: blast-radius containment
-  for the bash subprocess + prevention of cross-project contamination
-  via shared `$HOME` caches (a session that gets prompt-injected into
-  poisoning `~/.gradle/init.d` cannot propagate to the user's normal
-  gradle invocations or to a future pikuri-code session). It is NOT
-  a malware-resistant boundary — prompt injection can still modify
-  project source, inject malicious dependencies into the project's
-  own build file, or exfiltrate over the network (`--share-net` is
-  intentional so `git pull` / `mvn` / `curl` work). Users who need
-  adversarial isolation run pikuri-code inside a container; the
-  container is the outer boundary, bwrap is the inner one.
+  the host's real caches. Every entry is a content-only subdir,
+  deliberately *not* the toolchain's whole `$HOME` directory: that
+  way `~/.gradle/gradle.properties` (signing keys, OSSRH /
+  Develocity tokens), `~/.gradle/init.d` (persistence vector),
+  `~/.ivy2/.credentials`, `~/.m2/settings.xml`,
+  `~/.cargo/credentials.toml`, etc. never appear in the sandbox at
+  all. The threat model: blast-radius containment for the bash
+  subprocess + prevention of cross-project contamination via
+  shared `$HOME` caches (a poisoned session can't reach
+  `~/.gradle/init.d` to plant a script for a future `gradle`
+  invocation, and even the cache writes it does make vanish at
+  session exit). It is NOT a malware-resistant boundary — prompt
+  injection can still modify project source, inject malicious
+  dependencies into the project's own build file, or exfiltrate over
+  the network (`--share-net` is intentional so `git pull` / `mvn` /
+  `curl` work). Users who need adversarial isolation run pikuri-code
+  inside a container; the container is the outer boundary, bwrap is
+  the inner one.
 
   *Container-socket footgun.* Exposing a container or VM control
   socket (`/var/run/docker.sock`, `containerd.sock`, `podman.sock`,
