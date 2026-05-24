@@ -12,16 +12,24 @@ module Pikuri
     # before touching the filesystem. Returned Pathnames are absolute,
     # post-symlink-resolution.
     #
-    # == Anchor, readable, writable
+    # == Project root, readable, writable
     #
-    # +anchor+ is the project root — where +Bash+ runs commands and where
-    # +Glob+/+Grep+ chdir before invoking rg. It is automatically folded
-    # into both +readable+ and +writable+; you can read and write the
-    # project unconditionally. The extra +readable+ list grants read-only
-    # access to additional roots (system toolchains, dependency caches,
-    # skill catalogs); the extra +writable+ list grants read+write to
-    # additional roots (other project directories the agent should be
-    # able to touch).
+    # +project_root+ is the writable containment ceiling — automatically
+    # folded into both +readable+ and +writable+; you can read and write
+    # anywhere under the project unconditionally. It is also the base
+    # for resolving relative paths supplied by the LLM, and the chdir
+    # target tools like {Bash} / {Grep} / {Glob} pass to the subprocess.
+    # There is deliberately no separate "cwd" concept: hosts that want
+    # the agent to operate inside a specific subtree pass that subtree
+    # as +project_root+. +bin/pikuri-code+ enforces this by
+    # +Dir.chdir+'ing the Ruby process to the discovered project root
+    # at startup if it differs from the launch +Dir.pwd+, so the
+    # workspace and the surrounding process agree on one anchor.
+    #
+    # The extra +readable+ list grants read-only access to additional
+    # roots (system toolchains, dependency caches, skill catalogs);
+    # the extra +writable+ list grants read+write to additional roots
+    # (other project directories the agent should be able to touch).
     #
     # == Optional temp playground
     #
@@ -55,10 +63,10 @@ module Pikuri
     #
     # {#resolve} walks up the input path to its deepest existing ancestor,
     # +realpath+'s that ancestor (resolving any symlinks in the existing
-    # portion), then verifies the resolved anchor matches one of the
+    # portion), then verifies the resolved base matches one of the
     # candidate roots. Four cases:
     #
-    # 1. +lib/foo.rb+ (exists) → +existing+ = full path, +anchor+ matches a
+    # 1. +lib/foo.rb+ (exists) → +existing+ = full path, +base+ matches a
     #    root → returns the realpath'd file.
     # 2. +lib/new/dir/foo.rb+ (intermediates missing) → walks up to the
     #    deepest existing parent inside a root → returns the intended new
@@ -72,44 +80,47 @@ module Pikuri
     # Pure lexical normalization (+cleanpath+ + prefix check) catches cases
     # 1–3 but misses case 4. The walk-up +realpath+ pass closes that gap.
     #
-    # == Anchor denylist
+    # == Project-root denylist
     #
-    # Anchoring at a system root or a user's home directory is almost
-    # always a misconfiguration: it makes the entire system or home tree
-    # writable. The constructor rejects {DENIED_ANCHORS} (system tops:
-    # +/+, +/etc+, +/var+, …) and any directory whose parent is +/home+
-    # (catches +/home/$USER+ and +/home/$OTHER_USER+). This is a sanity
-    # guard against fat-fingering, not a security perimeter — the real
-    # security is the +readable+/+writable+ lists. Other-OS home roots
-    # (+/Users/$USER+ on macOS) are not denied; Linux-first per
-    # +CLAUDE.md+.
+    # Setting +project_root+ to a system root or a user's home directory
+    # is almost always a misconfiguration: it makes the entire system or
+    # home tree writable. The constructor rejects {DENIED_PROJECT_ROOTS}
+    # (system tops: +/+, +/etc+, +/var+, …) and any directory whose
+    # parent is +/home+ (catches +/home/$USER+ and +/home/$OTHER_USER+).
+    # This is a sanity guard against fat-fingering, not a security
+    # perimeter — the real security is the +readable+/+writable+ lists.
+    # Other-OS home roots (+/Users/$USER+ on macOS) are not denied;
+    # Linux-first per +CLAUDE.md+.
     class Filesystem
       # Raised for any path that resolves outside the workspace. Recoverable
       # at the tool layer — tools rescue this and emit +"Error: ..."+
       # observations so the LLM can self-correct on the next turn. Also
-      # raised at construction time for a denied anchor.
+      # raised at construction time for a denied project root.
       class Error < StandardError; end
 
-      # System-root anchors the constructor refuses. Exact-match (not
-      # prefix) — +/home/user/project+ passes, +/home/user+ is rejected by
-      # the parent-is-/home check below. Frozen list; downstream hosts
-      # with unusual layouts can subclass if they really need a different
-      # policy.
-      DENIED_ANCHORS = %w[
+      # System-root project_roots the constructor refuses. Exact-match
+      # (not prefix) — +/home/user/project+ passes, +/home/user+ is
+      # rejected by the parent-is-/home check below. Frozen list;
+      # downstream hosts with unusual layouts can subclass if they
+      # really need a different policy.
+      DENIED_PROJECT_ROOTS = %w[
         / /etc /var /proc /sys /dev /boot /root
         /usr /opt /lib /lib64 /bin /sbin /tmp
       ].map { |p| Pathname.new(p) }.freeze
 
-      # @return [Pathname] project anchor, post-realpath. Where +Bash+
-      #   runs commands. Always in {#readable} and {#writable}.
-      attr_reader :cwd
+      # @return [Pathname] project root, post-realpath. The writable
+      #   containment ceiling, the base for relative-path resolution,
+      #   and the chdir target for Bash/Grep/Glob — always in
+      #   {#readable} and {#writable}.
+      attr_reader :project_root
 
       # @return [Array<Pathname>] read-only roots (in addition to writable
       #   ones, which are also readable). Post-realpath, deduped.
       attr_reader :readable
 
       # @return [Array<Pathname>] writable roots (read+write). Includes
-      #   {#cwd} and, if +temp: true+, {#temp}. Post-realpath, deduped.
+      #   {#project_root} and, if +temp: true+, {#temp}. Post-realpath,
+      #   deduped.
       attr_reader :writable
 
       # @return [Pathname, nil] the ephemeral playground (writable, owned
@@ -117,10 +128,10 @@ module Pikuri
       #   +nil+. Removed via +at_exit+ on process exit.
       attr_reader :temp
 
-      # @param anchor [String, Pathname] absolute (or working-directory-
-      #   relative) path to the project anchor. +realpath+'d once; must
-      #   exist; must not match {DENIED_ANCHORS} or be a direct child of
-      #   +/home+.
+      # @param project_root [String, Pathname] absolute (or working-
+      #   directory-relative) path to the project root. +realpath+'d
+      #   once; must exist; must not match {DENIED_PROJECT_ROOTS} or be
+      #   a direct child of +/home+.
       # @param readable [Array<String, Pathname>] additional read-only
       #   roots. +realpath+'d at construction; missing entries raise
       #   loudly via {Pathname#realpath}.
@@ -129,17 +140,18 @@ module Pikuri
       # @param temp [Boolean] when +true+, mints an ephemeral
       #   {Dir.mktmpdir}, adds it to +writable+, exposes via {#temp},
       #   registers +at_exit+ cleanup.
-      # @raise [Errno::ENOENT] if +anchor+ or any +readable+/+writable+
-      #   entry does not exist.
-      # @raise [Error] if +anchor+ is denied (system root or +/home/*+).
-      def initialize(anchor:, readable: [], writable: [], temp: false)
-        @cwd = Pathname.new(anchor).realpath
-        validate_anchor!(@cwd)
+      # @raise [Errno::ENOENT] if +project_root+ or any
+      #   +readable+/+writable+ entry does not exist.
+      # @raise [Error] if +project_root+ is denied (system root or
+      #   +/home/*+).
+      def initialize(project_root:, readable: [], writable: [], temp: false)
+        @project_root = Pathname.new(project_root).realpath
+        validate_project_root!(@project_root)
 
         @temp = temp ? Pathname.new(Dir.mktmpdir('pikuri-temp-')).realpath : nil
         at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
 
-        @writable = ([@cwd] + writable.map { |p| Pathname.new(p).realpath } + [@temp].compact).uniq
+        @writable = ([@project_root] + writable.map { |p| Pathname.new(p).realpath } + [@temp].compact).uniq
         @readable = (@writable + readable.map { |p| Pathname.new(p).realpath }).uniq
       end
 
@@ -165,32 +177,32 @@ module Pikuri
 
       private
 
-      def validate_anchor!(canonical)
-        if DENIED_ANCHORS.include?(canonical) || canonical.parent.to_s == '/home'
+      def validate_project_root!(canonical)
+        if DENIED_PROJECT_ROOTS.include?(canonical) || canonical.parent.to_s == '/home'
           raise Error,
-                "anchor '#{canonical}' is a system or home root; the workspace anchor " \
-                'must be a project subdirectory (a system or home root would expose the entire ' \
-                'tree as writable).'
+                "project_root '#{canonical}' is a system or home root; the workspace " \
+                'project_root must be a project subdirectory (a system or home root would expose ' \
+                'the entire tree as writable).'
         end
       end
 
       # See the class header for the algorithm rationale.
       def resolve(path, roots)
         pn = Pathname.new(path)
-        pn = @cwd + pn unless pn.absolute?
+        pn = @project_root + pn unless pn.absolute?
         cleaned = pn.cleanpath
 
         existing = cleaned
         existing = existing.parent until existing.exist? || existing.parent == existing
-        anchor = existing.realpath
+        base = existing.realpath
 
-        matched = roots.find { |r| anchor == r || anchor.to_s.start_with?(r.to_s + File::SEPARATOR) }
+        matched = roots.find { |r| base == r || base.to_s.start_with?(r.to_s + File::SEPARATOR) }
         unless matched
           raise Error, "path '#{path}' is outside the workspace " \
                        "(roots: #{roots.map(&:to_s).join(', ')})"
         end
 
-        anchor + cleaned.relative_path_from(existing)
+        base + cleaned.relative_path_from(existing)
       end
 
       # Unrestricted variant of {Filesystem}: every path resolves, with one
@@ -207,12 +219,14 @@ module Pikuri
       # the sandbox bypasses the denylist anyway, so the intended
       # combo is ALLOW_ALL + +Sandbox::NONE+ inside a container.
       #
-      # == Anchor + temp
+      # == Project root, temp
       #
-      # +anchor:+ is still required — it's where +Bash+ runs commands
-      # and where +Glob+/+Grep+ chdir. Unlike {Filesystem}, the anchor
-      # is NOT validated against {DENIED_ANCHORS} (passing +'/'+ is
-      # legitimate inside a container). +temp:+ behaves the same way.
+      # +project_root:+ is still accepted for parity with {Filesystem},
+      # even though it's not a real containment ceiling under AllowAll.
+      # It is NOT validated against {DENIED_PROJECT_ROOTS} (passing
+      # +'/'+ is legitimate inside a container). It still serves as the
+      # base for relative-path resolution and the chdir target tools
+      # like Bash use. +temp:+ behaves the same way as {Filesystem}.
       #
       # == Denylist semantics
       #
@@ -234,12 +248,12 @@ module Pikuri
           (user_paths + %w[/etc/shadow]).map { |p| Pathname.new(p) }.uniq.freeze
         end
 
-        # @param anchor [String, Pathname] absolute path used for
-        #   +Bash+ +cwd+ and as the base for relative paths. Not
-        #   validated against {DENIED_ANCHORS}.
+        # @param project_root [String, Pathname] surface-level project
+        #   root. Not validated against {DENIED_PROJECT_ROOTS}.
         # @param temp [Boolean] same semantics as {Filesystem}.
-        def initialize(anchor: Dir.pwd, temp: false)
-          @cwd = Pathname.new(anchor).realpath
+        def initialize(project_root: Dir.pwd, temp: false)
+          @project_root = Pathname.new(project_root).realpath
+
           @temp = temp ? Pathname.new(Dir.mktmpdir('pikuri-temp-')).realpath : nil
           at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
 
@@ -270,13 +284,13 @@ module Pikuri
 
         def resolve_unrestricted(path)
           pn = Pathname.new(path)
-          pn = @cwd + pn unless pn.absolute?
+          pn = @project_root + pn unless pn.absolute?
           cleaned = pn.cleanpath
 
           existing = cleaned
           existing = existing.parent until existing.exist? || existing.parent == existing
-          anchor = existing.realpath
-          resolved = anchor + cleaned.relative_path_from(existing)
+          base = existing.realpath
+          resolved = base + cleaned.relative_path_from(existing)
 
           CREDENTIAL_DENYLIST.each do |denied|
             candidate = denied.exist? ? denied.realpath : denied

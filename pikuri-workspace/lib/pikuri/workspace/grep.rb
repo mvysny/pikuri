@@ -36,7 +36,7 @@ module Pikuri
     # * +--sort=path+ → deterministic output (single-threaded; fine for
     #   typical repos under ~10k files). Makes specs assertable and gives
     #   the model a stable order to scan.
-    # * Subprocess runs with +chdir: workspace.cwd+ and is *always* given
+    # * Subprocess runs with +chdir: workspace.project_root+ and is *always* given
     #   an explicit path argument. {Pikuri::Subprocess.spawn} uses
     #   +popen2e+ which gives the child a piped (non-tty) stdin; rg's
     #   default heuristic on no-path-arg-with-piped-stdin is to search
@@ -175,7 +175,7 @@ module Pikuri
           resolved = workspace.resolve_for_read(path)
           return "Error: path not found: #{path}" unless resolved.exist?
 
-          rel = resolved.relative_path_from(workspace.cwd).to_s
+          rel = resolved.relative_path_from(workspace.project_root).to_s
           search_target = rel
         end
 
@@ -183,7 +183,7 @@ module Pikuri
                           case_insensitive: case_insensitive,
                           output_mode: output_mode, path: search_target)
 
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.cwd.to_s).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
         exit_code = result.status.exitstatus
 
         case exit_code

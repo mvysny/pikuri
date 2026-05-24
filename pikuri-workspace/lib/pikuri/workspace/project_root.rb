@@ -6,9 +6,9 @@ module Pikuri
   module Workspace
     # Climb from a working directory toward the project root, looking
     # for a VCS marker (+.git+ / +.hg+ / +.svn+). Used by host binaries
-    # to decide what to anchor a {Filesystem} at — the writable
-    # containment ceiling and (under the +Bubblewrap+ sandbox) the
-    # bind-mount root, so commands like +git+ and +make+ can climb
+    # to decide what to pass as the {Filesystem} +project_root:+ — the
+    # writable containment ceiling and (under the +Bubblewrap+ sandbox)
+    # the bind-mount root, so commands like +git+ and +make+ can climb
     # inside the sandbox to find +<repo>/.git+ / +<repo>/Makefile+.
     #
     # == Why VCS-only markers
@@ -21,8 +21,8 @@ module Pikuri
     # subproject has its own +build.gradle.kts+, a Maven module has
     # its own +pom.xml+, a yarn-workspaces package has its own
     # +package.json+. Climbing for those lands on the nearest subtree
-    # root, not the actual project root — and the anchor difference
-    # decides what the sandbox bind-mounts. Wrong anchor → +git+ can't
+    # root, not the actual project root — and the project_root choice
+    # decides what the sandbox bind-mounts. Wrong project_root → +git+ can't
     # see the real +.git+ inside the sandbox. The VCS markers don't
     # have this problem: git/hg/svn put their metadata only at the
     # actual root (or, for git submodules, at the submodule root,
@@ -31,14 +31,14 @@ module Pikuri
     #
     # If no VCS marker is found within the safe-climb bounds (see
     # below), {.find} returns +nil+ and the caller falls back to
-    # anchoring at the launch +cwd+. The LLM loses visibility to
+    # using the launch +cwd+ as the project_root. The LLM loses visibility to
     # sibling code outside +cwd+ in that case; the workaround is to
     # +git init+ or invoke pikuri from the actual project root.
     #
     # == Safety bounds
     #
     # The climb refuses to enter the user's home directory or any
-    # system root ({DENIED_ANCHORS}). Reaching either is treated as
+    # system root ({DENIED_CLIMB_ROOTS}). Reaching either is treated as
     # "I've left the project tree" and the climb stops. The starting
     # +cwd+ is always considered, even if it happens to be a banned
     # directory — the user explicitly invoked there. Only ancestors
@@ -53,10 +53,11 @@ module Pikuri
     # this matches user intuition: "the closest project root, however
     # it's marked."
     module ProjectRoot
-      # Climb-up boundary. Overlaps with {Filesystem::DENIED_ANCHORS}
+      # Climb-up boundary. Overlaps with {Filesystem::DENIED_PROJECT_ROOTS}
       # but kept separate: the two have different semantics
-      # (climb-up boundary vs. anchor rejection) and may drift apart.
-      DENIED_ANCHORS = %w[
+      # (climb-up boundary vs. project_root rejection) and may drift
+      # apart.
+      DENIED_CLIMB_ROOTS = %w[
         / /etc /var /proc /sys /dev /boot /root
         /usr /opt /lib /lib64 /bin /sbin /tmp
       ].map { |p| Pathname.new(p) }.freeze
@@ -91,7 +92,7 @@ module Pikuri
           parent = current.parent
           return nil if parent == current     # at the filesystem root
           return nil if parent == home        # crossing into $HOME
-          return nil if DENIED_ANCHORS.include?(parent)
+          return nil if DENIED_CLIMB_ROOTS.include?(parent)
 
           current = parent
         end

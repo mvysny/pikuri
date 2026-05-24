@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Write do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-write-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:confirmer) { build_confirmer }
   let(:tool)      { described_class.new(workspace: workspace, confirmer: confirmer) }
 

@@ -8,7 +8,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
   let(:root)    { Pathname.new(Dir.mktmpdir('pikuri-ws-root-')).realpath }
   let(:extra_read)  { Pathname.new(Dir.mktmpdir('pikuri-ws-read-')).realpath }
   let(:extra_write) { Pathname.new(Dir.mktmpdir('pikuri-ws-write-')).realpath }
-  let(:workspace)   { described_class.new(anchor: root) }
+  let(:workspace)   { described_class.new(project_root: root) }
 
   after do
     FileUtils.rm_rf(outside)
@@ -17,26 +17,26 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     FileUtils.rm_rf(extra_write)
   end
 
-  describe '#cwd' do
-    it 'returns the realpath of the configured anchor' do
-      assert_equal root, workspace.cwd
+  describe '#project_root' do
+    it 'returns the realpath of the configured project_root' do
+      assert_equal root, workspace.project_root
     end
   end
 
   describe '#readable / #writable' do
-    it 'always includes the anchor in both lists' do
+    it 'always includes the project_root in both lists' do
       assert_includes workspace.readable, root
       assert_includes workspace.writable, root
     end
 
     it 'extra writable roots are also readable' do
-      ws = described_class.new(anchor: root, writable: [extra_write])
+      ws = described_class.new(project_root: root, writable: [extra_write])
       assert_includes ws.writable, extra_write
       assert_includes ws.readable, extra_write
     end
 
     it 'extra readable roots are NOT in the writable set' do
-      ws = described_class.new(anchor: root, readable: [extra_read])
+      ws = described_class.new(project_root: root, readable: [extra_read])
       assert_includes ws.readable, extra_read
       refute_includes ws.writable, extra_read
     end
@@ -48,7 +48,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
 
     it 'mints an ephemeral writable dir when temp: true' do
-      ws = described_class.new(anchor: root, temp: true)
+      ws = described_class.new(project_root: root, temp: true)
       assert ws.temp.exist?
       assert ws.temp.directory?
       assert_includes ws.writable, ws.temp
@@ -58,16 +58,16 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
 
     it 'two workspaces with temp: true get distinct temp dirs' do
-      a = described_class.new(anchor: root, temp: true)
-      b = described_class.new(anchor: root, temp: true)
+      a = described_class.new(project_root: root, temp: true)
+      b = described_class.new(project_root: root, temp: true)
       refute_equal a.temp, b.temp
     ensure
       [a, b].each { |w| FileUtils.remove_entry(w.temp.to_s) if w&.temp&.exist? }
     end
   end
 
-  describe '#resolve_for_read / #resolve_for_write under the anchor' do
-    it 'resolves an existing file under the anchor' do
+  describe '#resolve_for_read / #resolve_for_write under the project_root' do
+    it 'resolves an existing file under the project_root' do
       FileUtils.mkdir_p(root + 'lib')
       File.write(root + 'lib/foo.rb', 'x')
 
@@ -88,7 +88,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_equal root + 'a/b/c/d.rb', result
     end
 
-    it 'accepts an absolute path inside the anchor' do
+    it 'accepts an absolute path inside the project_root' do
       FileUtils.mkdir_p(root + 'lib')
       File.write(root + 'lib/foo.rb', 'x')
 
@@ -96,7 +96,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_equal root + 'lib/foo.rb', result
     end
 
-    it 'transparently resolves a symlink that stays inside the anchor' do
+    it 'transparently resolves a symlink that stays inside the project_root' do
       FileUtils.mkdir_p(root + 'sub')
       File.write(root + 'sub/target.rb', 'x')
       File.symlink((root + 'sub').to_s, (root + 'link').to_s)
@@ -107,7 +107,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
   end
 
   describe 'multi-root behavior' do
-    let(:ws) { described_class.new(anchor: root, readable: [extra_read], writable: [extra_write]) }
+    let(:ws) { described_class.new(project_root: root, readable: [extra_read], writable: [extra_write]) }
 
     it 'resolves reads into the extra readable root' do
       File.write(extra_read + 'data.txt', 'x')
@@ -142,7 +142,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_includes err.message, 'outside the workspace'
     end
 
-    it 'raises on an absolute path outside the anchor' do
+    it 'raises on an absolute path outside the project_root' do
       File.write(outside + 'secret', 'x')
 
       err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
@@ -172,15 +172,15 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
   end
 
-  describe 'anchor denylist' do
+  describe 'project_root denylist' do
     it 'rejects /' do
-      err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(anchor: '/') }
+      err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(project_root: '/') }
       assert_includes err.message, 'system or home root'
     end
 
     it 'rejects /etc, /var, /proc, /usr, /tmp, /opt' do
       %w[/etc /var /proc /usr /tmp /opt].each do |p|
-        err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(anchor: p) }
+        err = assert_raises(Pikuri::Workspace::Filesystem::Error) { described_class.new(project_root: p) }
         assert_includes err.message, 'system or home root'
       end
     end
@@ -196,7 +196,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       skip 'no /home/* dir present' unless candidate
 
       err = assert_raises(Pikuri::Workspace::Filesystem::Error) do
-        described_class.new(anchor: candidate.to_s)
+        described_class.new(project_root: candidate.to_s)
       end
       assert_includes err.message, 'system or home root'
     end
@@ -206,13 +206,13 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       # the denylist doesn't false-positive on deep paths.
       project = root + 'project'
       FileUtils.mkdir_p(project)
-      ws = described_class.new(anchor: project.to_s)
-      assert_equal project.realpath, ws.cwd
+      ws = described_class.new(project_root: project.to_s)
+      assert_equal project.realpath, ws.project_root
     end
   end
 
   describe 'edge cases' do
-    it 'resolves the anchor itself (no traversal)' do
+    it 'resolves the project_root itself (no traversal)' do
       assert_equal root, workspace.resolve_for_read('.')
       assert_equal root, workspace.resolve_for_read('')
     end
@@ -223,7 +223,7 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
   let(:root)    { Pathname.new(Dir.mktmpdir('pikuri-allowall-root-')).realpath }
   let(:outside) { Pathname.new(Dir.mktmpdir('pikuri-allowall-outside-')).realpath }
   let(:fake_home) { Pathname.new(Dir.mktmpdir('pikuri-allowall-home-')).realpath }
-  let(:workspace) { described_class.new(anchor: root) }
+  let(:workspace) { described_class.new(project_root: root) }
 
   after do
     FileUtils.rm_rf(root)
@@ -232,12 +232,12 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
   end
 
   describe 'unrestricted resolution' do
-    it 'resolves arbitrary paths outside the anchor (read)' do
+    it 'resolves arbitrary paths outside the project_root (read)' do
       File.write(outside + 'data.txt', 'x')
       assert_equal outside + 'data.txt', workspace.resolve_for_read((outside + 'data.txt').to_s)
     end
 
-    it 'resolves arbitrary paths outside the anchor (write)' do
+    it 'resolves arbitrary paths outside the project_root (write)' do
       assert_equal outside + 'new.rb', workspace.resolve_for_write((outside + 'new.rb').to_s)
     end
 
@@ -245,28 +245,28 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
       assert_equal outside + 'a/b/c.rb', workspace.resolve_for_write((outside + 'a/b/c.rb').to_s)
     end
 
-    it 'resolves relative paths against the anchor' do
+    it 'resolves relative paths against the project_root' do
       FileUtils.mkdir_p(root + 'lib')
       File.write(root + 'lib/foo.rb', 'x')
       assert_equal root + 'lib/foo.rb', workspace.resolve_for_read('lib/foo.rb')
     end
 
-    it 'resolves a symlink that points outside the anchor' do
+    it 'resolves a symlink that points outside the project_root' do
       File.write(outside + 'target', 'x')
       File.symlink(outside.to_s, (root + 'link').to_s)
       assert_equal outside + 'target', workspace.resolve_for_read('link/target')
     end
   end
 
-  describe 'anchor + temp' do
-    it 'accepts a root anchor that the base Filesystem would reject' do
-      # Don't actually anchor at /; just verify validate_anchor! is skipped.
-      ws = described_class.new(anchor: '/')
-      assert_equal Pathname.new('/').realpath, ws.cwd
+  describe 'project_root + temp' do
+    it 'accepts a root project_root that the base Filesystem would reject' do
+      # Don't actually use / as the project root; just verify validate_project_root! is skipped.
+      ws = described_class.new(project_root: '/')
+      assert_equal Pathname.new('/').realpath, ws.project_root
     end
 
     it 'mints a temp playground when temp: true' do
-      ws = described_class.new(anchor: root, temp: true)
+      ws = described_class.new(project_root: root, temp: true)
       assert ws.temp.exist?
       assert_includes ws.writable, ws.temp
     ensure
@@ -277,6 +277,7 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
       assert_includes workspace.readable, Pathname.new('/').realpath
       assert_includes workspace.writable, Pathname.new('/').realpath
     end
+
   end
 
   describe 'credential denylist' do

@@ -4,8 +4,8 @@ Filesystem tools + Workspace/Confirmer seams for the
 [pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
 
 Self-contained "operate on a directory tree" toolkit:
-- `Pikuri::Workspace::Filesystem` — scopes filesystem access to an
-  anchor + explicit readable / writable prefix lists, with an
+- `Pikuri::Workspace::Filesystem` — scopes filesystem access to a
+  project root + explicit readable / writable prefix lists, with an
   optional ephemeral temp playground. Rejects `..`-escapes and
   symlinks that resolve outside the configured roots.
 - `Pikuri::Workspace::Confirmer` — abstract base + `AUTO_APPROVE` /
@@ -30,7 +30,7 @@ gem 'pikuri-workspace'
 require 'pikuri-core'
 require 'pikuri-workspace'
 
-workspace = Pikuri::Workspace::Filesystem.new(anchor: Dir.pwd)
+workspace = Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd)
 confirmer = Pikuri::Workspace::Confirmer::TERMINAL
 
 agent = Pikuri::Agent.new(

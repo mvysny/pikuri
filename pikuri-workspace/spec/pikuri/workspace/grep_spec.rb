@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Grep do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-grep-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after do

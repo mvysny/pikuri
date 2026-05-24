@@ -159,12 +159,12 @@ module Pikuri
             return "Error: #{path} is a file, not a directory; use the read tool to view it."
           end
 
-          rel = resolved.relative_path_from(workspace.cwd).to_s
+          rel = resolved.relative_path_from(workspace.project_root).to_s
           search_target = rel
         end
 
         argv = build_argv(path: search_target)
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.cwd.to_s).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
         exit_code = result.status.exitstatus
 
         case exit_code
@@ -217,7 +217,7 @@ module Pikuri
         paths = all_paths.select { |p| File.fnmatch?(pattern, p, FNMATCH_FLAGS) }
         return no_match_message(pattern: pattern, path: path) if paths.empty?
 
-        sorted = mtime_sort(paths, workspace.cwd)
+        sorted = mtime_sort(paths, workspace.project_root)
         joined = sorted.join("\n") + "\n"
         content, truncation_marker = head_truncate(joined)
         stripped = content.chomp
@@ -231,9 +231,9 @@ module Pikuri
       # mtime descending; path ascending for stable order on ties.
       #
       # @return [Array<String>]
-      def self.mtime_sort(paths, cwd)
+      def self.mtime_sort(paths, base)
         paths
-          .map { |p| [p, mtime_of(cwd + p)] }
+          .map { |p| [p, mtime_of(base + p)] }
           .sort_by { |(p, m)| [-m, p] }
           .map(&:first)
       end

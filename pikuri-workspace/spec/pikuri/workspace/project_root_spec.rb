@@ -88,7 +88,7 @@ RSpec.describe Pikuri::Workspace::ProjectRoot do
       end
     end
 
-    it 'stops before crossing into a DENIED_ANCHORS directory' do
+    it 'stops before crossing into a DENIED_CLIMB_ROOTS directory' do
       skip 'no /var/tmp on this host' unless File.directory?('/var/tmp')
 
       Dir.mktmpdir(nil, '/var/tmp') do |scratch|

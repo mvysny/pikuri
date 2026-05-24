@@ -5,7 +5,7 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Edit do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-edit-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(anchor: root) }
+  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after { FileUtils.rm_rf(root) }
