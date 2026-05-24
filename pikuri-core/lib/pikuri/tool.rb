@@ -58,8 +58,13 @@ module Pikuri
     attr_reader :parameters
 
     # @return [Proc] callable invoked once arguments have been validated;
-    #   receives validated keyword arguments and returns a +String+
-    #   observation
+    #   receives validated keyword arguments and returns the observation.
+    #   The usual return is a +String+; tools that want to deliver
+    #   multimodal observations (e.g. {Pikuri::Workspace::Read} on a
+    #   PNG) may instead return a +RubyLLM::Content+ with attachments,
+    #   which +RubyLLM::Chat#handle_tool_calls+ accepts via its
+    #   +content_like?+ check and the per-provider Media formatters turn
+    #   into the right image / document blocks inside +tool_result+.
     attr_reader :execute
 
     # @param name [String] function name advertised to the LLM
@@ -67,9 +72,10 @@ module Pikuri
     #   to decide when to call the tool
     # @param parameters [Tool::Parameters] declared schema
     # @param execute [Proc] callable invoked with validated keyword arguments
-    #   that returns a +String+ observation. Recoverable failures should be
-    #   returned as +"Error: <message>"+ Strings rather than raised — see
-    #   "Error handling convention" above.
+    #   that returns either a +String+ observation or a +RubyLLM::Content+
+    #   (for multimodal observations — see {#execute}). Recoverable failures
+    #   should be returned as +"Error: <message>"+ Strings rather than raised
+    #   — see "Error handling convention" above.
     # @return [Tool]
     def initialize(name:, description:, parameters:, execute:)
       @name = name
@@ -84,8 +90,10 @@ module Pikuri
     # to the LLM as the next observation; everything else bubbles up.
     #
     # @param args [Hash] raw arguments supplied by the LLM
-    # @return [String] tool observation, or +"Error: ..."+ on validation
-    #   failure
+    # @return [String, RubyLLM::Content] tool observation. Validation
+    #   failures always come back as +"Error: ..."+ Strings; the success
+    #   shape is whatever the +execute+ Proc returns (typically a String,
+    #   or a +RubyLLM::Content+ for multimodal observations).
     def run(args)
       validated = @parameters.validate(args)
       @execute.call(**validated)

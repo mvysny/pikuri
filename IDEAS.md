@@ -20,10 +20,13 @@ in scope of the design exercise, considered, and left out on purpose.
   `AUTO_APPROVE`). Revisit once `bin/pikuri-code` has lived a while
   and we know where the friction is. Where things are headed:
   yolo-in-docker, or ClaudeCode's agentic review of the command + automatic approval/denial.
-- **Image / PDF in `Workspace::Read`.** Read refuses binaries today
-  (`lib/pikuri/workspace/read.rb` rejects on a null-byte heuristic).
-  Multimodal Read needs vision-capable models and the streaming/encoding
-  path ruby_llm exposes but we haven't wired.
+- **Image auto-resize in `Workspace::Read`.** Day-one image support
+  refuses anything over 5 MB outright (see
+  `lib/pikuri/workspace/read.rb`'s `MAX_IMAGE_BYTES`). PI auto-resizes
+  to 2000×2000 with an image-processing dep; we punted on that
+  trade-off — adds mini_magick / ruby-vips for one tool's
+  ergonomics. Revisit if "Read screenshot.png" being denied on size
+  becomes a common annoyance.
 - **LSP tool.** opencode wires an LSP client for hover / definition /
   diagnostics. Big-ticket feature; deferred until there's a concrete
   use case beyond "opencode has one."

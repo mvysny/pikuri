@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'pdf-reader'
+require 'ruby_llm'
 
 module Pikuri
   module Workspace
@@ -53,6 +54,32 @@ module Pikuri
     # +"Error: cannot extract PDF text: ..."+ — same convention as other
     # tool errors the model can react to. No OCR.
     #
+    # == Image attachments
+    #
+    # PNG / JPEG / GIF / WebP files are detected by magic bytes (see
+    # {.image_mime}) and routed to {.format_image} ahead of the binary
+    # sniff. Instead of a +String+ observation, the tool returns a
+    # +RubyLLM::Content+ carrying a short metadata note ("Read image:
+    # path (bytes, mime)") plus the file as an attachment; the
+    # per-provider Media formatter turns that into the right image
+    # content block inside the +tool_result+. The text half is what the
+    # model cites back ("the image at lib/foo.png shows…"); the image
+    # half is what the model actually looks at.
+    #
+    # +offset+ / +limit+ are ignored on the image path — there's no
+    # line-paging concept. The hard size cap is {MAX_IMAGE_BYTES}; files
+    # above that come back as +"Error: image too large…"+ rather than
+    # being silently encoded into a payload the upstream API would
+    # reject. No auto-resize: pikuri doesn't pull in an image-processing
+    # dep for one tool's ergonomics. See +IDEAS.md+ for the deferred
+    # auto-resize discussion.
+    #
+    # Vision capability of the underlying model is *not* checked here.
+    # Sending an image to a non-vision model produces a provider error
+    # the LLM can react to on the next turn; coupling Read to model
+    # capability metadata (notoriously incomplete for local servers)
+    # buys less than the friction it adds.
+    #
     # == Refusals
     #
     # * Path outside the workspace → caught from
@@ -60,13 +87,16 @@ module Pikuri
     # * File not found, EACCES → +"Error: ..."+.
     # * Path is a directory → +"Error: ... use the glob tool"+, keeping
     #   directory listing as the glob tool's responsibility (Step 9).
+    # * Image larger than {MAX_IMAGE_BYTES} → +"Error: image too large…"+,
+    #   leaving the model to pick a different file or ask the user to
+    #   resize.
     # * Binary content → sniffed from the first {BINARY_SAMPLE_BYTES} of
     #   the file: any +NUL+ byte, or more than {BINARY_NONPRINTABLE_THRESHOLD}
     #   non-printable bytes (control chars outside +\t \n \v \f \r+),
-    #   triggers refusal. Catches images, archives, and compiled artifacts
-    #   without an extension list to maintain. PDFs are intercepted by the
-    #   magic-byte check before the binary sniff and routed to text
-    #   extraction instead — see "PDF extraction" above.
+    #   triggers refusal. Catches archives and compiled artifacts without
+    #   an extension list to maintain. PDFs and supported images are
+    #   intercepted by their respective magic-byte checks before the
+    #   binary sniff — see above.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
     class Read < Pikuri::Tool
       # @return [Integer] default value of the +limit+ parameter (number
@@ -100,6 +130,29 @@ module Pikuri
       #   30%.
       BINARY_NONPRINTABLE_THRESHOLD = 0.30
 
+      # @return [Integer] hard size cap on inline-attached images. Matches
+      #   Anthropic's per-image limit; same order of magnitude on
+      #   OpenAI / Gemini. Above this we refuse rather than encode a
+      #   payload the provider would reject.
+      MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+      # @return [String] human-readable form of {MAX_IMAGE_BYTES} for
+      #   refusal messages.
+      MAX_IMAGE_BYTES_LABEL = "#{MAX_IMAGE_BYTES / (1024 * 1024)} MB"
+
+      # @return [Hash{String => String}] magic-byte prefixes → MIME types
+      #   for the supported image formats. PNG and JPEG cover ~all
+      #   screenshots and photos; GIF and WebP round out the set
+      #   opencode / PI / Anthropic / OpenAI agree on. WebP is detected
+      #   via the +RIFF...WEBP+ pattern in {.image_mime} since its
+      #   magic-byte signature isn't a flat prefix.
+      IMAGE_MAGIC_BYTES = {
+        "\x89PNG\r\n\x1a\n".b => 'image/png',
+        "\xff\xd8\xff".b      => 'image/jpeg',
+        "GIF87a".b            => 'image/gif',
+        "GIF89a".b            => 'image/gif'
+      }.freeze
+
       # Description shown to the LLM. Follows the opencode-shape (summary
       # + +Usage:+ bullets) prescribed by the project's tool-description
       # convention. Per-parameter constraints (defaults, format) live in
@@ -114,7 +167,8 @@ module Pikuri
         - Use `offset` and `limit` to page through large files; when the response ends in `Use offset=N to continue`, call again with that offset.
         - Lines longer than #{MAX_LINE_LENGTH} chars are truncated with a marker — use `grep` for content inside such files.
         - PDFs are text-extracted page-by-page with `--- Page N ---` markers in the output. Cite pages back to the user from those markers. PDFs cannot be modified with `edit`.
-        - Binary files other than PDF (images, archives, compiled artifacts) are refused; this tool reads text only.
+        - PNG / JPEG / GIF / WebP files are attached as images you can see directly, alongside a short text note with the path and size. Requires a vision-capable model; on a text-only model the provider will reject the call. Images cannot be modified with `edit`.
+        - Other binary files (archives, compiled artifacts) are refused; this tool reads text otherwise.
         - Directories are refused — use the `glob` tool to list files.
         - If unsure of the path, use `glob` first to look up filenames.
         - Avoid tiny repeated slices — if you need more context, read a larger window.
@@ -153,7 +207,10 @@ module Pikuri
       # @param path [String] raw path as supplied by the LLM
       # @param offset [Integer] 1-indexed line number to start at
       # @param limit [Integer] maximum lines to return
-      # @return [String] tool observation
+      # @return [String, RubyLLM::Content] tool observation. Text and PDF
+      #   paths return a +String+; supported images return a
+      #   +RubyLLM::Content+ with the file attached so the model receives
+      #   the image inline. See "Image attachments" above.
       def self.read(workspace:, path:, offset:, limit:)
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
@@ -164,6 +221,10 @@ module Pikuri
 
         sample = read_sample(resolved)
         return format_pdf(path: path, resolved: resolved, offset: offset, limit: limit) if pdf?(sample)
+
+        image_type = image_mime(sample)
+        return format_image(path: path, resolved: resolved, mime: image_type) if image_type
+
         return "Error: cannot read binary file: #{path}" if binary?(sample)
 
         format_slice(path: path, resolved: resolved, offset: offset, limit: limit)
@@ -195,6 +256,29 @@ module Pikuri
       # @return [Boolean]
       def self.pdf?(bytes)
         bytes.start_with?("%PDF-")
+      end
+
+      # Magic-byte sniff for the four supported image formats. PNG /
+      # JPEG / GIF have flat prefixes (see {IMAGE_MAGIC_BYTES}); WebP
+      # uses RIFF, so the WEBP marker sits at offset 8 inside a
+      # +RIFF<size>WEBP+ container — checked separately.
+      #
+      # Returns the MIME type as a String, or +nil+ if the bytes don't
+      # look like any of the supported images. Used by {.read} to route
+      # to {.format_image} before the binary sniff would otherwise refuse
+      # the file.
+      #
+      # @param bytes [String] sample bytes from {.read_sample}
+      # @return [String, nil]
+      def self.image_mime(bytes)
+        IMAGE_MAGIC_BYTES.each do |prefix, mime|
+          return mime if bytes.start_with?(prefix)
+        end
+        return 'image/webp' if bytes.bytesize >= 12 &&
+                               bytes.byteslice(0, 4) == 'RIFF'.b &&
+                               bytes.byteslice(8, 4) == 'WEBP'.b
+
+        nil
       end
 
       # Heuristic binary classifier matching opencode's: any NUL byte
@@ -373,6 +457,40 @@ module Pikuri
         "Error: cannot extract PDF text from #{path}: #{e.class.name.split('::').last}: #{e.message}"
       end
       private_class_method :format_pdf
+
+      # Build a multimodal observation: a short metadata note ("Read
+      # image: …") plus the file itself attached as a path. The model
+      # sees the note as the text half of the +tool_result+ and the
+      # image as the image half — both arrive in the same turn.
+      #
+      # Anthropic's per-image cap is 5 MB on the encoded data, and the
+      # other providers we target sit in the same order of magnitude.
+      # Above {MAX_IMAGE_BYTES} we refuse rather than encoding a payload
+      # the provider will reject; the +"Error: image too large…"+ string
+      # is something the model can react to (pick a different file or
+      # ask the user to resize). Reading the file size via
+      # +Pathname#size+ avoids loading the bytes just to discover they
+      # were over-cap; +RubyLLM::Attachment+ does the actual base64
+      # encoding lazily, once the message is being formatted for the
+      # provider.
+      #
+      # @param path [String] raw path as supplied by the LLM (kept for
+      #   the metadata note)
+      # @param resolved [Pathname] workspace-resolved path
+      # @param mime [String] MIME type from {.image_mime}
+      # @return [String, RubyLLM::Content] +RubyLLM::Content+ on success;
+      #   +"Error: ..."+ String on size refusal.
+      def self.format_image(path:, resolved:, mime:)
+        size = resolved.size
+        if size > MAX_IMAGE_BYTES
+          return "Error: image too large to inline: #{path} is " \
+                 "#{size} bytes; max #{MAX_IMAGE_BYTES_LABEL}."
+        end
+
+        note = "Read image: #{path} (#{size} bytes, #{mime})"
+        RubyLLM::Content.new(note, [resolved.to_s])
+      end
+      private_class_method :format_image
     end
   end
 end

@@ -84,19 +84,33 @@ grows a skill system.
   callbacks, sub-agent isolation, and the LLM-actionable error messages
   the model sees on bad arguments.
 
-- **The seam.** All `RubyLLM::*` references are confined to four
-  files in the monorepo: the three `bin/pikuri-*` scripts
-  (boot/wiring — call `RubyLLM.configure`),
+- **The seam.** The *loop* lives in ruby_llm, and pikuri's wrapper
+  around it is confined to a small set of files: the three
+  `bin/pikuri-*` scripts (boot/wiring — call `RubyLLM.configure`),
   `pikuri-core/lib/pikuri/agent.rb` (constructs the Chat, attaches
-  listeners, calls `ask`), and `pikuri-core/lib/pikuri/tool.rb` (the
+  callbacks, calls `ask`), and `pikuri-core/lib/pikuri/tool.rb` (the
   `Pikuri::Tool` value class plus its `#to_ruby_llm_tool` adapter
-  that emits a synthetic `RubyLLM::Tool` subclass on demand).
-  Everything else in any pikuri-* `lib/` (bundled tools, scrapers,
-  search providers, extensions) talks to pikuri's surface
-  (`Pikuri::Tool.new`, `Pikuri::Tool::Parameters`, …) and never
-  references ruby_llm. This is the fork-or-swap contingency:
-  replacing the loop becomes a fixed-cost rewrite of those two
-  files.
+  that emits a synthetic `RubyLLM::Tool` subclass on demand). New
+  loop-wiring code lands in those files; don't construct a `Chat` or
+  attach callbacks from anywhere else.
+
+  *Value types are not part of the seam.* Anywhere in pikuri-*
+  `lib/` may reference ruby_llm **value types** —
+  `RubyLLM::Content`, `RubyLLM::Attachment`, `RubyLLM::Message` —
+  when the alternative is reimplementing functionality ruby_llm
+  already provides. The rule of preference: reach for the pikuri
+  API first; if none exists and one fits pikuri's objective,
+  propose adding it; if the wrapper would be a transparent
+  passthrough that adds no behavior of its own, use the ruby_llm
+  type directly. The fork-or-swap contingency still holds — the
+  loop is the swap point — but value types travel with whoever
+  drives them, so wrapping them buys nothing and costs us every
+  feature that wants to use them.
+
+  The pre-existing carve-out for `pikuri-mcp/lib/pikuri/mcp/
+  servers.rb` (which synthesizes `RubyLLM::Tool` subclasses
+  directly to absorb arbitrary JSON Schema from MCP servers) is
+  unchanged.
 
 - **Subprocess seam.** All subprocess spawning in any pikuri-*
   `lib/` goes through `Pikuri::Subprocess.spawn`. Direct
