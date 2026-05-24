@@ -31,25 +31,49 @@ module Pikuri
     # the extra +writable+ list grants read+write to additional roots
     # (other project directories the agent should be able to touch).
     #
+    # == Session umbrella ({#internal_temp})
+    #
+    # Every workspace owns a per-process umbrella dir at
+    # +~/.cache/pikuri/workspace-XXX/+ ({#internal_temp}). It is minted
+    # lazily on first access — workspaces that never touch it (most
+    # specs, hosts that don't want a playground and don't use the
+    # bubblewrap overlay) pay nothing — and removed by a single
+    # +at_exit+ handler when the process exits. Everything ephemeral
+    # this workspace produces lives inside the umbrella, so one
+    # +remove_entry+ at process exit cleans the lot:
+    #
+    # * {#temp} — the LLM-visible playground subdir, present only when
+    #   +temp: true+ (see below).
+    # * The bubblewrap sandbox's per-toolchain overlay state
+    #   (+overlay-<slug>/{upper,work}+ for +~/.gradle+, +~/.m2/repository+,
+    #   …), used to keep cross-project toolchain caches isolated to one
+    #   pikuri-code session. See
+    #   {Pikuri::Code::Bash::Sandbox::Bubblewrap}.
+    #
+    # The umbrella deliberately lives in +~/.cache/pikuri+ rather than
+    # +/tmp+: the {Pikuri::Code::Bash::Sandbox::Bubblewrap} sandbox
+    # binds {#temp} at +/tmp+ inside the sandbox (so the LLM's
+    # reflexive +/tmp+ writes persist across bash calls). With the
+    # umbrella already under +/tmp+, that bind would land on top of
+    # itself and per-call mountpoint creation would pollute the dir
+    # recursively. +~/.cache/pikuri+ avoids the collision.
+    #
+    # At gem load, {.sweep_stale_internal_temps!} prunes umbrella dirs
+    # older than seven days — a safety net for sessions that died
+    # before +at_exit+ could run (SIGKILL, OOM). Recent umbrellas are
+    # left alone so a concurrent pikuri-code in another shell isn't
+    # disturbed.
+    #
     # == Optional temp playground
     #
-    # When constructed with +temp: true+, the workspace mints its own
-    # ephemeral directory under {CACHE_BASE} (+~/.cache/pikuri+) and
-    # adds it to +writable+. An +at_exit+ handler removes it when the
-    # process exits. {#temp} exposes the path so the binary can
-    # advertise it to the LLM (e.g. in the system prompt). Default is
-    # +false+: specs and tests that build many workspaces don't pay
-    # the mktmpdir cost, and hosts that don't need a playground don't
-    # get one.
-    #
-    # The temp dir deliberately lives in +~/.cache/pikuri+ rather than
-    # +/tmp+: the {Bash} {Code::Bash::Sandbox::Bubblewrap} sandbox binds
-    # the temp at +/tmp+ inside the sandbox (so the LLM's reflexive
-    # +/tmp+ writes persist across bash calls). With the temp's host
-    # path already under +/tmp+, that bind would land on top of itself
-    # and the per-call mountpoint creation would pollute the temp dir
-    # with recursive +pikuri-temp-*+ subdirs. Putting it under
-    # +~/.cache/pikuri+ avoids the collision.
+    # When constructed with +temp: true+, the workspace adds
+    # +<internal_temp>/playground+ to +writable+ and exposes it via
+    # {#temp}. The binary advertises this path to the LLM (e.g. in the
+    # system prompt) as scratch space. Default is +false+: specs and
+    # tests that build many workspaces don't pay the mkdir cost, and
+    # hosts that don't need a playground don't get one. Either way,
+    # the umbrella is shared with everything else that wants ephemeral
+    # state — no second tempdir is minted.
     #
     # == Optional /tmp alias
     #
@@ -122,11 +146,18 @@ module Pikuri
       # raised at construction time for a denied project root.
       class Error < StandardError; end
 
-      # Parent directory under which +temp: true+ mints per-process
-      # workspace temp dirs. Honors +XDG_CACHE_HOME+ when set, else
-      # +~/.cache+; the +pikuri+ subdir is owned by us. +mkdir_p+'d
-      # lazily on first temp construction.
+      # Parent directory under which every workspace mints its
+      # umbrella ({#internal_temp}). Honors +XDG_CACHE_HOME+ when set,
+      # else +~/.cache+; the +pikuri+ subdir is owned by us.
+      # +mkdir_p+'d lazily on first umbrella access.
       CACHE_BASE = File.join(ENV['XDG_CACHE_HOME'] || File.join(Dir.home, '.cache'), 'pikuri')
+
+      # Umbrella dirs older than this are reaped by
+      # {.sweep_stale_internal_temps!} at gem load. Generous enough
+      # that a long-lived pikuri session in another shell isn't
+      # disturbed; tight enough that a process killed last week
+      # doesn't leak forever.
+      INTERNAL_TEMP_STALE_SECONDS = 7 * 24 * 60 * 60
 
       # System-root project_roots the constructor refuses. Exact-match
       # (not prefix) — +/home/user/project+ passes, +/home/user+ is
@@ -153,9 +184,10 @@ module Pikuri
       #   deduped.
       attr_reader :writable
 
-      # @return [Pathname, nil] the ephemeral playground (writable, owned
-      #   by this workspace) when constructed with +temp: true+, else
-      #   +nil+. Removed via +at_exit+ on process exit.
+      # @return [Pathname, nil] the LLM-visible scratch playground
+      #   (writable, owned by this workspace) when constructed with
+      #   +temp: true+, else +nil+. Lives at +<internal_temp>/playground+;
+      #   removed transitively when the umbrella is wiped on process exit.
       attr_reader :temp
 
       # @param project_root [String, Pathname] absolute (or working-
@@ -167,9 +199,10 @@ module Pikuri
       #   loudly via {Pathname#realpath}.
       # @param writable [Array<String, Pathname>] additional read+write
       #   roots. Same treatment as +readable+.
-      # @param temp [Boolean] when +true+, mints an ephemeral dir under
-      #   {CACHE_BASE} via {Dir.mktmpdir}, adds it to +writable+,
-      #   exposes via {#temp}, registers +at_exit+ cleanup.
+      # @param temp [Boolean] when +true+, adds
+      #   +<internal_temp>/playground+ to {#writable} and exposes it
+      #   via {#temp}. Forces the umbrella to mint up-front (the
+      #   playground is created eagerly so {#writable} reflects it).
       # @param alias_tmp_to_temp [Boolean] when +true+ AND +temp:+ is
       #   set, +/tmp/*+ paths supplied to {#resolve_for_read} /
       #   {#resolve_for_write} are rewritten to point at {#temp}.
@@ -182,8 +215,8 @@ module Pikuri
         @project_root = Pathname.new(project_root).realpath
         validate_project_root!(@project_root)
 
-        @temp = temp ? Filesystem.mint_temp : nil
-        at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
+        @internal_temp = nil
+        @temp = temp ? mint_playground : nil
         @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
 
         @writable = ([@project_root] + writable.map { |p| Pathname.new(p).realpath } + [@temp].compact).uniq
@@ -194,11 +227,51 @@ module Pikuri
       #   rewrite +/tmp/*+ inputs to {#temp}.
       attr_reader :alias_tmp_to_temp
 
-      # @api private — shared between {Filesystem} and {AllowAll} so the
-      # mkdir_p + mktmpdir under {CACHE_BASE} convention stays in one place.
-      def self.mint_temp
+      # Per-workspace ephemeral umbrella. Minted lazily on first call
+      # under {CACHE_BASE}. Registered for +at_exit+ removal the
+      # moment it's minted, so anything subsequently placed inside
+      # (the playground, {Pikuri::Code::Bash::Sandbox::Bubblewrap}'s
+      # overlay state) gets wiped together. Callers that want
+      # ephemeral state owned by the workspace should put it under
+      # this dir rather than minting their own siblings.
+      #
+      # @return [Pathname]
+      def internal_temp
+        @internal_temp ||= Filesystem.mint_internal_temp
+      end
+
+      # @api private — minting helper shared with {AllowAll}. The
+      # +FileUtils.remove_entry+ +at_exit+ guards against the dir
+      # being already gone (test cleanup, manual rm).
+      def self.mint_internal_temp
         FileUtils.mkdir_p(CACHE_BASE)
-        Pathname.new(Dir.mktmpdir('workspace-temp-', CACHE_BASE)).realpath
+        path = Pathname.new(Dir.mktmpdir('workspace-', CACHE_BASE)).realpath
+        at_exit { FileUtils.remove_entry(path.to_s) if path.exist? }
+        path
+      end
+
+      # Reap +workspace-*+ umbrella dirs that have outlived
+      # {INTERNAL_TEMP_STALE_SECONDS}. Called once at gem load via
+      # {Pikuri::Workspace} so each process boot inherits a tidy
+      # {CACHE_BASE}. Failures (permission denied, racing concurrent
+      # sweeper) are swallowed — best-effort cleanup, the real
+      # +at_exit+ path is the load-bearing one.
+      #
+      # @return [void]
+      def self.sweep_stale_internal_temps!
+        return unless File.directory?(CACHE_BASE)
+
+        cutoff = Time.now - INTERNAL_TEMP_STALE_SECONDS
+        Dir.children(CACHE_BASE).each do |entry|
+          next unless entry.start_with?('workspace-')
+          path = File.join(CACHE_BASE, entry)
+          next unless File.directory?(path)
+          next if File.mtime(path) > cutoff
+
+          FileUtils.remove_entry(path)
+        rescue StandardError
+          # best-effort sweep; never block the host on dead state
+        end
       end
 
       # Resolve a user-supplied path against the read-set (readable ∪
@@ -222,6 +295,16 @@ module Pikuri
       end
 
       private
+
+      # Eager-create +<internal_temp>/playground+. Used only when
+      # +temp: true+; touches {#internal_temp} so the umbrella is
+      # minted now (the playground needs a parent dir to live under
+      # AND has to be in {#writable} by the end of +initialize+).
+      def mint_playground
+        path = internal_temp + 'playground'
+        FileUtils.mkdir_p(path)
+        path.realpath
+      end
 
       def validate_project_root!(canonical)
         if DENIED_PROJECT_ROOTS.include?(canonical) || canonical.parent.to_s == '/home'
@@ -315,8 +398,8 @@ module Pikuri
         def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false)
           @project_root = Pathname.new(project_root).realpath
 
-          @temp = temp ? Filesystem.mint_temp : nil
-          at_exit { FileUtils.remove_entry(@temp.to_s) if @temp && @temp.exist? } if @temp
+          @internal_temp = nil
+          @temp = temp ? mint_playground : nil
           @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
 
           # Advertise "everything is in scope" via the accessor surface so

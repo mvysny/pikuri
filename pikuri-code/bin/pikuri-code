@@ -115,6 +115,18 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
 # Intended for use inside a container where the container itself is
 # the security boundary; the toolchain/skill readable list is moot
 # since everything is reachable anyway.
+# Per-user dependency caches (~/.gradle, ~/.m2/repository,
+# ~/.cargo/registry, ~/.npm, ~/go/pkg/mod, ...) that the toolchain
+# itself mutates when invoked. Included in workspace.readable so the
+# LLM can grep/read them via the file tools (which run on the host),
+# AND passed to Bubblewrap as overlay paths so the bash subprocess
+# sees a fully writable view whose writes vanish at session exit —
+# preventing a poisoned session from leaking into other projects' or
+# the user's normal builds through ~/.gradle/init.d, dep cache
+# corruption, etc. See Pikuri::Code::ToolchainPaths and
+# Pikuri::Code::Bash::Sandbox::Bubblewrap for the rationale.
+toolchain_overlay = Pikuri::Code::ToolchainPaths.ephemeral_overlay
+
 workspace = if yolo
               Pikuri::Workspace::Filesystem::AllowAll.new(
                 project_root:      project_root,
@@ -124,7 +136,9 @@ workspace = if yolo
             else
               Pikuri::Workspace::Filesystem.new(
                 project_root:      project_root,
-                readable:          Pikuri::Code::ToolchainPaths.readable + skill_catalog.roots,
+                readable:          Pikuri::Code::ToolchainPaths.readable +
+                                   toolchain_overlay +
+                                   skill_catalog.roots,
                 temp:              true,
                 alias_tmp_to_temp: sandbox_enabled
               )
@@ -133,13 +147,17 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
-# OS-runtime baseline (/etc/ssl, /etc/resolv.conf, /etc/localtime, …).
+# OS-runtime baseline (/etc/ssl, /etc/resolv.conf, /etc/localtime, …)
+# and the toolchain caches mounted as per-session overlays.
 # Probes `bwrap` at construction and raises if it isn't installed or the
 # kernel lacks user-namespace support — fail-loud, so a host that
 # expects the sandbox doesn't silently run without one. Disable with
 # --no-sandbox / --yolo.
 sandbox = if sandbox_enabled
-            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
+            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(
+              workspace:         workspace,
+              ephemeral_overlay: toolchain_overlay
+            )
           else
             Pikuri::Code::Bash::Sandbox::NONE
           end

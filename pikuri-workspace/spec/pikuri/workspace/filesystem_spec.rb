@@ -75,6 +75,98 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     ensure
       FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
     end
+
+    it 'lives at <internal_temp>/playground' do
+      ws = described_class.new(project_root: root, temp: true)
+      assert_equal ws.internal_temp + 'playground', ws.temp
+    ensure
+      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
+    end
+  end
+
+  describe '#internal_temp' do
+    it 'is lazily minted — not created on construction with temp: false' do
+      cache_base = Pathname.new(described_class::CACHE_BASE)
+      before = cache_base.exist? ? cache_base.children.size : 0
+      _ws = described_class.new(project_root: root)
+      after = cache_base.exist? ? cache_base.children.size : 0
+      assert_equal before, after,
+                   'constructing a workspace with temp: false must not mint internal_temp'
+    end
+
+    it 'is the same dir across repeated reads (memoized)' do
+      ws = described_class.new(project_root: root)
+      a = ws.internal_temp
+      b = ws.internal_temp
+      assert_equal a, b
+    ensure
+      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.instance_variable_get(:@internal_temp)&.exist?
+    end
+
+    it 'is forced to mint when temp: true (so #temp can live inside it)' do
+      ws = described_class.new(project_root: root, temp: true)
+      assert ws.internal_temp.exist?
+      assert ws.internal_temp.directory?
+      assert_equal ws.internal_temp, ws.temp.parent
+    ensure
+      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
+    end
+
+    it 'sits under CACHE_BASE with the workspace- prefix' do
+      ws = described_class.new(project_root: root)
+      cache_base = Pathname.new(described_class::CACHE_BASE).realpath
+      assert ws.internal_temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
+             "expected #{ws.internal_temp} under #{cache_base}"
+      assert ws.internal_temp.basename.to_s.start_with?('workspace-'),
+             "expected basename to start with 'workspace-', got #{ws.internal_temp.basename}"
+    ensure
+      FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
+    end
+  end
+
+  describe '.sweep_stale_internal_temps!' do
+    it 'reaps a workspace-* dir whose mtime is older than the cutoff' do
+      cache_base = Pathname.new(described_class::CACHE_BASE)
+      FileUtils.mkdir_p(cache_base)
+      stale = cache_base + "workspace-stale-#{$$}-#{rand(1_000_000)}"
+      FileUtils.mkdir_p(stale)
+      ancient = Time.now - described_class::INTERNAL_TEMP_STALE_SECONDS - 60
+      FileUtils.touch(stale.to_s, mtime: ancient)
+
+      described_class.sweep_stale_internal_temps!
+
+      refute stale.exist?, "expected #{stale} to be swept"
+    ensure
+      FileUtils.remove_entry(stale.to_s) if stale&.exist?
+    end
+
+    it 'leaves a recent workspace-* dir alone' do
+      cache_base = Pathname.new(described_class::CACHE_BASE)
+      FileUtils.mkdir_p(cache_base)
+      fresh = cache_base + "workspace-fresh-#{$$}-#{rand(1_000_000)}"
+      FileUtils.mkdir_p(fresh)
+
+      described_class.sweep_stale_internal_temps!
+
+      assert fresh.exist?, "expected #{fresh} to survive the sweep"
+    ensure
+      FileUtils.remove_entry(fresh.to_s) if fresh&.exist?
+    end
+
+    it 'ignores non-workspace-* entries (does not touch unrelated dirs in CACHE_BASE)' do
+      cache_base = Pathname.new(described_class::CACHE_BASE)
+      FileUtils.mkdir_p(cache_base)
+      foreign = cache_base + "other-#{$$}-#{rand(1_000_000)}"
+      FileUtils.mkdir_p(foreign)
+      ancient = Time.now - described_class::INTERNAL_TEMP_STALE_SECONDS - 60
+      FileUtils.touch(foreign.to_s, mtime: ancient)
+
+      described_class.sweep_stale_internal_temps!
+
+      assert foreign.exist?, 'sweep must only touch workspace-* dirs'
+    ensure
+      FileUtils.remove_entry(foreign.to_s) if foreign&.exist?
+    end
   end
 
   describe '#alias_tmp_to_temp' do

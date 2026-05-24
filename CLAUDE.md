@@ -176,6 +176,45 @@ grows a skill system.
   later TUI / IDE host plugs in by writing a new `Confirmer` subclass,
   not by editing tool internals.
 
+- **Sandbox seam.** `Pikuri::Code::Bash` takes a
+  `Pikuri::Code::Bash::Sandbox` (default `Sandbox::NONE`) and wraps
+  every spawned argv through `#wrap(argv)` — the *filesystem view* of
+  the bash subprocess is the sandbox's concern, distinct from the
+  `Workspace`'s "what the LLM observes via Read/Write/Edit/Grep/Glob."
+  `Sandbox::Bubblewrap` is the bundled non-identity implementation: it
+  composes a `bwrap` argv from `workspace.readable` / `writable` plus
+  a curated `/etc` baseline (TLS certs, DNS, timezone, hosts file),
+  and overlays each `ephemeral_overlay:` path
+  (`Pikuri::Code::ToolchainPaths.ephemeral_overlay` — `~/.gradle`,
+  `~/.m2/repository`, `~/.cargo/registry`, …) with a per-session RW
+  upper layer under `workspace.internal_temp`, so toolchain caches
+  survive across bash calls within one session but never pollute
+  the host's real caches. The threat model: blast-radius containment
+  for the bash subprocess + prevention of cross-project contamination
+  via shared `$HOME` caches (a session that gets prompt-injected into
+  poisoning `~/.gradle/init.d` cannot propagate to the user's normal
+  gradle invocations or to a future pikuri-code session). It is NOT
+  a malware-resistant boundary — prompt injection can still modify
+  project source, inject malicious dependencies into the project's
+  own build file, or exfiltrate over the network (`--share-net` is
+  intentional so `git pull` / `mvn` / `curl` work). Users who need
+  adversarial isolation run pikuri-code inside a container; the
+  container is the outer boundary, bwrap is the inner one.
+
+  *Container-socket footgun.* Exposing a container or VM control
+  socket (`/var/run/docker.sock`, `containerd.sock`, `podman.sock`,
+  `libvirt-sock`, …) to the sandbox effectively undoes it: from
+  inside, `docker run --privileged -v / /host` is a one-step root
+  escape. The pikuri default workspace never binds `/var/run` or
+  `/run`, but `Sandbox::Bubblewrap`'s constructor walks
+  `workspace.readable + workspace.writable` against
+  `DENIED_CONTAINER_SOCKETS` and refuses to construct if any
+  workspace root *contains* (equals or is an ancestor of) a known
+  socket. Downstream hosts that genuinely intend the agent to drive
+  a container daemon must pass `Sandbox::NONE` (and accept the
+  consequences). The list is conservative — common Linux engines
+  only — and a host with an unusual setup can subclass to extend.
+
 - **Streaming is opt-in via `Agent.new(..., streaming: true)`.** When
   true, `Agent#run_loop` passes a streaming block to `Chat#ask` and
   the per-chunk `Event::ThinkingDelta` / `Event::AssistantDelta`
