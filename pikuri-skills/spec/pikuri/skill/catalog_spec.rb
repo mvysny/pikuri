@@ -10,15 +10,6 @@ RSpec.describe Pikuri::Skill::Catalog do
   # asserted instead of just observed in stderr. Pikuri's logger writes
   # through +Pikuri.log_io+; the spec_helper has already pointed that at
   # +/dev/null+, so we temporarily redirect to a +StringIO+ and restore.
-  def with_captured_log_io
-    captured = StringIO.new
-    original = Pikuri.log_io
-    Pikuri.log_io = captured
-    yield captured.string.tap { captured }
-  ensure
-    Pikuri.log_io = original if original
-  end
-
   def captured_log
     captured = StringIO.new
     original = Pikuri.log_io
@@ -45,22 +36,26 @@ RSpec.describe Pikuri::Skill::Catalog do
   end
 
   describe '#roots on Bundled' do
-    it 'returns the constructor roots stringified, preserving order' do
-      roots = [File.join(FIXTURE_ROOT, 'valid-tree'), '/nonexistent/path']
-      catalog = Pikuri::Skill::Catalog::Bundled.new(roots: roots)
-      assert_equal roots, catalog.roots
+    it 'returns the expanded skill subdirs that actually exist on disk' do
+      catalog = Pikuri::Skill::Catalog::Bundled.new(
+        search_bases: [File.join(FIXTURE_ROOT, 'valid-tree'), '/nonexistent/path']
+      )
+      # Only .pikuri/skills exists under valid-tree; the other subdir
+      # conventions and the nonexistent base are filtered out.
+      assert_equal [File.join(FIXTURE_ROOT, 'valid-tree/.pikuri/skills')],
+                   catalog.roots
     end
 
-    it 'returns [] for an Bundled catalog constructed with no roots' do
-      catalog = Pikuri::Skill::Catalog::Bundled.new(roots: [])
+    it 'returns [] for a Bundled catalog constructed with no search bases' do
+      catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: [])
       assert_equal [], catalog.roots
     end
   end
 
   describe Pikuri::Skill::Catalog::Bundled do
-    describe '#initialize with explicit roots' do
-      it 'loads every SKILL.md under one root, sorted by directory name' do
-        catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'valid-tree')])
+    describe '#initialize with explicit search_bases' do
+      it 'loads every SKILL.md found under .pikuri/skills, sorted by directory name' do
+        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'valid-tree')])
 
         names = catalog.list.map(&:name)
         # Dir.children is filesystem-ordered; the scanner sorts so the
@@ -72,18 +67,18 @@ RSpec.describe Pikuri::Skill::Catalog do
         assert_equal 'pdf-tools', pdf.name
         assert pdf.description.start_with?('Extracts text from PDF')
         assert pdf.body.include?('pdftotext')
-        assert_equal File.join(FIXTURE_ROOT, 'valid-tree/pdf-tools/SKILL.md'),
+        assert_equal File.join(FIXTURE_ROOT, 'valid-tree/.pikuri/skills/pdf-tools/SKILL.md'),
                      pdf.location
       end
 
       it 'returns nil from #get for unknown names' do
-        catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'valid-tree')])
+        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'valid-tree')])
         assert_nil catalog.get('does-not-exist')
       end
 
       it 'skips skills with missing description (logs a warning)' do
         log = captured_log do
-          catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'missing-description-tree')])
+          catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'missing-description-tree')])
           assert catalog.empty?
         end
         assert_match(/missing required 'description'/, log)
@@ -91,7 +86,7 @@ RSpec.describe Pikuri::Skill::Catalog do
 
       it 'skips files without YAML frontmatter (logs a warning)' do
         log = captured_log do
-          catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'no-frontmatter-tree')])
+          catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'no-frontmatter-tree')])
           assert catalog.empty?
         end
         assert_match(/no YAML frontmatter/, log)
@@ -99,52 +94,73 @@ RSpec.describe Pikuri::Skill::Catalog do
 
       it 'still loads a skill whose frontmatter name disagrees with the dir, with a warning' do
         log = captured_log do
-          catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'name-mismatch-tree')])
+          catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'name-mismatch-tree')])
           assert_equal ['totally-different'], catalog.list.map(&:name)
         end
         assert_match(/does not match parent directory/, log)
       end
 
-      it 'silently ignores a non-existent root' do
+      it 'silently ignores a search base with no skill subdirs' do
         log = captured_log do
-          catalog = described_class.new(roots: ['/definitely/does/not/exist'])
+          catalog = described_class.new(search_bases: ['/definitely/does/not/exist'])
           assert catalog.empty?
         end
         assert_equal '', log
       end
 
-      it 'merges skills across multiple roots in the given order' do
-        catalog = described_class.new(roots: [
-          File.join(FIXTURE_ROOT, 'valid-tree'),
-          File.join(FIXTURE_ROOT, 'name-mismatch-tree')
-        ])
+      it 'merges skills across multiple bases in the given order' do
+        catalog = described_class.new(search_bases: [
+                                        File.join(FIXTURE_ROOT, 'valid-tree'),
+                                        File.join(FIXTURE_ROOT, 'name-mismatch-tree')
+                                      ])
         assert_equal %w[data-viz pdf-tools totally-different].sort,
                      catalog.list.map(&:name).sort
       end
 
-      it 'on a name collision keeps the first-listed root and logs a warning for the loser' do
+      it 'on a name collision keeps the first-listed base and logs a warning for the loser' do
         log = captured_log do
-          catalog = described_class.new(roots: [
-            File.join(FIXTURE_ROOT, 'collision-a'),
-            File.join(FIXTURE_ROOT, 'collision-b')
-          ])
+          catalog = described_class.new(search_bases: [
+                                          File.join(FIXTURE_ROOT, 'collision-a'),
+                                          File.join(FIXTURE_ROOT, 'collision-b')
+                                        ])
           winner = catalog.get('pdf-tools')
           assert winner.description.include?('should win'),
-                 "expected first-listed root to win, got description: #{winner.description.inspect}"
+                 "expected first-listed base to win, got description: #{winner.description.inspect}"
         end
         assert_match(/shadowed/, log)
         assert_match(/collision-b/, log)
+      end
+
+      it 'scans .pikuri before .claude before .agents within a single base' do
+        Dir.mktmpdir do |base|
+          %w[.pikuri/skills .claude/skills .agents/skills].each do |sub|
+            dir = File.join(base, sub, 'shared')
+            FileUtils.mkdir_p(dir)
+            File.write(File.join(dir, 'SKILL.md'), <<~MD)
+              ---
+              name: shared
+              description: From #{sub}.
+              ---
+              body from #{sub}
+            MD
+          end
+
+          catalog = described_class.new(search_bases: [base])
+          winner = catalog.get('shared')
+          assert winner.description.include?('.pikuri/skills'),
+                 "expected .pikuri to win over .claude/.agents, got: #{winner.description.inspect}"
+        end
       end
     end
 
     describe '#format_for_prompt' do
       it 'returns an empty string for an empty catalog' do
-        catalog = described_class.new(roots: [])
+        catalog = described_class.new(search_bases: [])
         assert_equal '', catalog.format_for_prompt
       end
 
       it 'emits an <available_skills> block with name/description/location' do
-        catalog = described_class.new(roots: [File.join(FIXTURE_ROOT, 'valid-tree')])
+        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'valid-tree')])
         out = catalog.format_for_prompt
 
         assert out.include?('<available_skills>'), out
@@ -152,12 +168,12 @@ RSpec.describe Pikuri::Skill::Catalog do
         assert out.include?('<name>pdf-tools</name>'), out
         assert out.include?('<name>data-viz</name>'), out
         assert out.include?('<description>Extracts text from PDF'), out
-        assert out.include?("<location>#{File.join(FIXTURE_ROOT, 'valid-tree/pdf-tools/SKILL.md')}</location>"), out
+        assert out.include?("<location>#{File.join(FIXTURE_ROOT, 'valid-tree/.pikuri/skills/pdf-tools/SKILL.md')}</location>"), out
       end
 
       it 'escapes XML metacharacters in name/description/location' do
-        Dir.mktmpdir do |root|
-          dir = File.join(root, 'xml-skill')
+        Dir.mktmpdir do |base|
+          dir = File.join(base, '.pikuri/skills/xml-skill')
           FileUtils.mkdir_p(dir)
           File.write(File.join(dir, 'SKILL.md'), <<~MD)
             ---
@@ -167,149 +183,11 @@ RSpec.describe Pikuri::Skill::Catalog do
             body
           MD
 
-          catalog = described_class.new(roots: [root])
+          catalog = described_class.new(search_bases: [base])
           out = catalog.format_for_prompt
           assert out.include?('&lt;out&gt;'), out
           assert out.include?('&quot;quotes&quot;'), out
           assert out.include?('&amp;'), out
-        end
-      end
-    end
-
-    describe '.discover' do
-      it 'finds project skills under .pikuri/skills walking up to the git root' do
-        Dir.mktmpdir do |repo|
-          # Mark the dir as a git repo so the walk stops here.
-          FileUtils.mkdir_p(File.join(repo, '.git'))
-          skill_dir = File.join(repo, '.pikuri/skills/sample-skill')
-          FileUtils.mkdir_p(skill_dir)
-          File.write(File.join(skill_dir, 'SKILL.md'), <<~MD)
-            ---
-            name: sample-skill
-            description: Project-scoped skill discovered via .discover.
-            ---
-            body
-          MD
-
-          nested = File.join(repo, 'src/deeply/nested')
-          FileUtils.mkdir_p(nested)
-
-          # Force HOME to a tmpdir that doesn't have any skills so the
-          # global side of .discover is empty during this test.
-          Dir.mktmpdir do |fake_home|
-            original_home = ENV['HOME']
-            ENV['HOME'] = fake_home
-            begin
-              catalog = described_class.discover(cwd: nested)
-              assert_equal ['sample-skill'], catalog.list.map(&:name)
-            ensure
-              ENV['HOME'] = original_home
-            end
-          end
-        end
-      end
-
-      it 'stops walking at the git root' do
-        Dir.mktmpdir do |outer|
-          # Outer dir has a skill that should NOT be discovered.
-          outer_skill = File.join(outer, '.pikuri/skills/outer')
-          FileUtils.mkdir_p(outer_skill)
-          File.write(File.join(outer_skill, 'SKILL.md'), <<~MD)
-            ---
-            name: outer
-            description: Outside the git root; must NOT be visible from inside.
-            ---
-            body
-          MD
-
-          # Inner subdir is its own git root.
-          inner = File.join(outer, 'repo')
-          FileUtils.mkdir_p(File.join(inner, '.git'))
-          inner_skill = File.join(inner, '.pikuri/skills/inner')
-          FileUtils.mkdir_p(inner_skill)
-          File.write(File.join(inner_skill, 'SKILL.md'), <<~MD)
-            ---
-            name: inner
-            description: Inside the git root; should be visible.
-            ---
-            body
-          MD
-
-          Dir.mktmpdir do |fake_home|
-            original_home = ENV['HOME']
-            ENV['HOME'] = fake_home
-            begin
-              catalog = described_class.discover(cwd: inner)
-              names = catalog.list.map(&:name)
-              assert_includes names, 'inner'
-              refute_includes names, 'outer'
-            ensure
-              ENV['HOME'] = original_home
-            end
-          end
-        end
-      end
-
-      it 'finds global skills under ~/.pikuri/skills' do
-        Dir.mktmpdir do |fake_home|
-          global_skill = File.join(fake_home, '.pikuri/skills/global-only')
-          FileUtils.mkdir_p(global_skill)
-          File.write(File.join(global_skill, 'SKILL.md'), <<~MD)
-            ---
-            name: global-only
-            description: Lives only under ~ — discovery should pick it up.
-            ---
-            body
-          MD
-
-          Dir.mktmpdir do |cwd|
-            # cwd has no project skill dirs.
-            original_home = ENV['HOME']
-            ENV['HOME'] = fake_home
-            begin
-              catalog = described_class.discover(cwd: cwd)
-              assert_equal ['global-only'], catalog.list.map(&:name)
-            ensure
-              ENV['HOME'] = original_home
-            end
-          end
-        end
-      end
-
-      it 'project skills take precedence over global skills with the same name' do
-        Dir.mktmpdir do |fake_home|
-          global_dir = File.join(fake_home, '.pikuri/skills/shared')
-          FileUtils.mkdir_p(global_dir)
-          File.write(File.join(global_dir, 'SKILL.md'), <<~MD)
-            ---
-            name: shared
-            description: Global version — should lose to the project copy.
-            ---
-            body
-          MD
-
-          Dir.mktmpdir do |repo|
-            FileUtils.mkdir_p(File.join(repo, '.git'))
-            project_dir = File.join(repo, '.pikuri/skills/shared')
-            FileUtils.mkdir_p(project_dir)
-            File.write(File.join(project_dir, 'SKILL.md'), <<~MD)
-              ---
-              name: shared
-              description: Project version — should win.
-              ---
-              body
-            MD
-
-            original_home = ENV['HOME']
-            ENV['HOME'] = fake_home
-            begin
-              catalog = described_class.discover(cwd: repo)
-              winner = catalog.get('shared')
-              assert winner.description.include?('Project version'), winner.description
-            ensure
-              ENV['HOME'] = original_home
-            end
-          end
         end
       end
     end

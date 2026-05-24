@@ -80,17 +80,14 @@ if Dir.pwd != project_root.to_s
   Dir.chdir(project_root.to_s)
 end
 
-# Skill catalog. Pikuri-skills deliberately does not climb on its own;
-# we assemble two skill-root tiers here — the project root's own
-# +.pikuri/skills+ / +.claude/skills+ / +.agents/skills+ subdirs (whichever
-# exist), plus the globals under +~/+ — and feed them to the catalog
-# constructor. Catalog roots are folded into the workspace's readable
-# set below so the skill tool's sidecar +read+ flow works.
-project_skill_roots = Pikuri::Skill::Catalog::SKILL_DIR_NAMES
-                      .map { |sub| project_root.join(sub).to_s }
-                      .select { |dir| File.directory?(dir) }
+# Skill catalog. Two search bases — the project root and +Dir.home+ —
+# under which the catalog itself scans for +.pikuri/skills+ /
+# +.claude/skills+ / +.agents/skills+. Project beats global because
+# the project base comes first. Catalog roots are folded into the
+# workspace's readable set below so the skill tool's sidecar +read+
+# flow works.
 skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
-  roots: project_skill_roots + Pikuri::Skill::Catalog::Bundled.discover_global_roots
+  search_bases: [project_root, Dir.home]
 )
 
 # Workspace is captured once at startup; all file-touching tools share it.

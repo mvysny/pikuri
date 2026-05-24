@@ -6,8 +6,9 @@ AI-assistant toolkit.
 
 Provides:
 - `Pikuri::Skill::Catalog` — discovery + validation of skill folders
-  under `.pikuri/skills`, `.claude/skills`, `.agents/skills` (project
-  + global). Walks from CWD up to the git root.
+  under `.pikuri/skills`, `.claude/skills`, `.agents/skills` beneath
+  each *search base* you supply (typically the project root and
+  `Dir.home`).
 - `Pikuri::Skill::SkillTool` — the loading tool the LLM uses to pull
   a skill's body into the conversation on demand.
 - `Pikuri::Skill::Extension` — wires both into a `Pikuri::Agent` via
@@ -26,7 +27,13 @@ gem 'pikuri-skills'
 require 'pikuri-core'
 require 'pikuri-skills'
 
-catalog = Pikuri::Skill::Catalog::Bundled.discover(cwd: Dir.pwd)
+# Pass the directories to search under. The catalog scans
+# .pikuri/skills, .claude/skills and .agents/skills beneath each base;
+# missing subdirs are skipped. Earlier bases beat later ones on a
+# name collision.
+catalog = Pikuri::Skill::Catalog::Bundled.new(
+  search_bases: [project_root, Dir.home]
+)
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))

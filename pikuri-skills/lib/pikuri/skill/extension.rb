@@ -15,7 +15,9 @@ module Pikuri
     #
     # Pass the extension via the +Agent.new+ block:
     #
-    #   catalog = Pikuri::Skill::Catalog::Bundled.discover
+    #   catalog = Pikuri::Skill::Catalog::Bundled.new(
+    #     search_bases: [project_root, Dir.home]
+    #   )
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end

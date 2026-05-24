@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Skill::SkillTool do
-  FIXTURE_VALID = File.expand_path('../../fixtures/skills/valid-tree', __dir__)
+  FIXTURE_VALID_BASE = File.expand_path('../../fixtures/skills/valid-tree', __dir__)
+  FIXTURE_VALID_SKILL_DIR = File.join(FIXTURE_VALID_BASE, '.pikuri/skills')
 
-  let(:catalog) { Pikuri::Skill::Catalog::Bundled.new(roots: [FIXTURE_VALID]) }
+  let(:catalog) { Pikuri::Skill::Catalog::Bundled.new(search_bases: [FIXTURE_VALID_BASE]) }
 
   describe 'tool shape' do
     it 'is named "skill" and exposes a required `name` string parameter' do
@@ -30,7 +31,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
 
       assert out.include?('<skill name="pdf-tools"'), out
       assert out.include?('pdftotext'), out
-      assert out.include?(File.join(FIXTURE_VALID, 'pdf-tools')), out
+      assert out.include?(File.join(FIXTURE_VALID_SKILL_DIR, 'pdf-tools')), out
       assert out.include?('</skill>'), out
     end
 

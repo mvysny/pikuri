@@ -5,37 +5,19 @@ require 'yaml'
 module Pikuri
   module Skill
     # Discovery + validation of *skills* — Markdown files with YAML
-    # frontmatter that the agent loads on demand via {Tool}.
+    # frontmatter that the agent loads on demand via {SkillTool}.
     #
-    # A skill is a directory containing a +SKILL.md+ file. The frontmatter
-    # declares the skill's +name+ and +description+; everything in the
-    # directory (helper scripts, reference notes, templates) is treated as
-    # sidecar content the LLM can pull in via the regular +read+ tool
-    # after loading the skill. Pikuri implements the
-    # {https://agentskills.io/specification Agent Skills standard}
-    # leniently — invalid frontmatter is warned about but the skill
-    # still loads, except a missing +description+ which is fatal (no
-    # description means the LLM has no signal for when to invoke it).
+    # A skill is a directory containing a +SKILL.md+ whose frontmatter
+    # declares +name+ and +description+. Sibling files (scripts,
+    # references, templates) are sidecar content the LLM pulls in via
+    # the regular +read+ tool against +File.dirname(location)+. Pikuri
+    # implements the {https://agentskills.io/specification Agent Skills
+    # standard} leniently — only a missing +description+ is fatal.
     #
-    # == Catalog vs. tool
-    #
-    # {Catalog} owns the *discovery* layer: where skills live, how the
-    # frontmatter is parsed, what wins on a name collision. The
-    # {Tool} class is the *loading* layer: it receives a catalog at
-    # construction and looks names up against it when the LLM invokes
-    # +skill+. The two are paired by {Extension} — non-empty catalog ⇒
-    # {Tool} is appended to the agent's tool list and the catalog's
-    # prompt block is appended to the system prompt.
-    #
-    # == The seam
-    #
-    # {Catalog} is an abstract base with two bundled implementations:
-    # {Empty} (the +EMPTY+ singleton, used by +pikuri-chat+ and as the
-    # default for any caller that doesn't have a filesystem story) and
-    # {Bundled} (the on-disk scanner). The seam lets future hosts (e.g.
-    # an in-editor pikuri reading skills from a virtual filesystem, or
-    # a synthetic test catalog) swap in without touching {Tool} or
-    # {Extension}.
+    # Two concrete subclasses ship: {Empty} (the +EMPTY+ singleton)
+    # and {Bundled} (the on-disk scanner). Hosts that read skills from
+    # something other than the filesystem (virtual FS, hardcoded
+    # registry) subclass directly.
     class Catalog
       # Frontmatter +name+ cap per the Agent Skills standard.
       MAX_NAME_LENGTH = 64
@@ -43,42 +25,20 @@ module Pikuri
       # Frontmatter +description+ cap per the Agent Skills standard.
       MAX_DESCRIPTION_LENGTH = 1024
 
-      # The three skill directories pikuri scans, in precedence order.
-      # +.pikuri+ first (the user's own pikuri-specific skills),
-      # +.claude+ second (so existing Claude Code skills travel along
-      # for free), +.agents+ last (the cross-harness convention PI also
-      # honors). Same names are used for both global roots
-      # (under +~/+) and project roots (relative to CWD, walked up).
-      SKILL_DIR_NAMES = ['.pikuri/skills', '.claude/skills', '.agents/skills'].freeze
-
       LOGGER = Pikuri.logger_for('Skills')
       private_constant :LOGGER
 
-      # A loaded skill record. Holds everything the catalog discovers
-      # and the tool needs to satisfy a load: +name+ and +description+
-      # for the catalog's prompt block, +location+ (absolute path to
-      # the +SKILL.md+) so the LLM can reference sidecars relative to
-      # +File.dirname(location)+, and +body+ (the SKILL.md content
-      # below the frontmatter) returned verbatim when the tool fires.
-      #
-      # Bodies are eager-loaded at scan time even though only
-      # +name+/+description+/+location+ end up in the prompt — skill
-      # files are small, eager loading keeps the tool's hot path
-      # IO-free, and there is no fault tolerance requirement that
-      # warrants the complexity of lazy I/O.
+      # A loaded skill record. Bodies are eager-loaded at scan time;
+      # SKILL.md files are small and the tool's hot path stays IO-free.
       Skill = Data.define(:name, :description, :location, :body)
 
-      # Skills available to the LLM, in stable insertion order (which
-      # equals the order they were discovered, which equals precedence).
-      #
-      # @return [Array<Skill>]
+      # @return [Array<Skill>] skills in discovery order (which equals
+      #   precedence order).
       # @raise [NotImplementedError] in the abstract base
       def list
         raise NotImplementedError, "#{self.class}#list must be implemented"
       end
 
-      # Look up a skill by name.
-      #
       # @param name [String]
       # @return [Skill, nil]
       # @raise [NotImplementedError] in the abstract base
@@ -86,35 +46,25 @@ module Pikuri
         raise NotImplementedError, "#{self.class}#get must be implemented"
       end
 
-      # @return [Boolean] true when {#list} is empty. {Extension}
-      #   keys its auto-wiring (system-prompt augmentation + {Tool}
-      #   registration) off this — empty catalog ⇒ no surface change.
+      # @return [Boolean] true when {#list} is empty. {Extension} keys
+      #   its auto-wiring off this — empty catalog ⇒ no surface change.
       def empty?
         list.empty?
       end
 
-      # The filesystem directories this catalog scanned for skills.
-      # Hosts wire these into +Pikuri::Workspace::Filesystem+'s +readable+
-      # list so the LLM's +read+ tool can pull sidecar files
-      # (+scripts/+, +references/+, …) that skills reference. Returns
-      # an empty array for catalogs that don't have a filesystem
-      # source ({Empty}, future virtual-filesystem catalogs).
+      # Absolute paths of the skill directories this catalog covers.
+      # Hosts wire these into +Pikuri::Workspace::Filesystem+'s
+      # +readable:+ list so the LLM can +read+ sidecar files.
       #
-      # @return [Array<String>] absolute paths, in the order they were
-      #   scanned. Empty for the {Empty} catalog.
+      # @return [Array<String>]
       # @raise [NotImplementedError] in the abstract base
       def roots
         raise NotImplementedError, "#{self.class}#roots must be implemented"
       end
 
-      # System-prompt block advertising every loaded skill to the LLM.
-      # Follows the Agent Skills standard's XML shape (PI uses the same
-      # one) so a skill folder authored against any compliant harness
-      # renders consistently here.
-      #
-      # Returns +""+ for an empty catalog so callers can unconditionally
-      # concatenate without an +if+. The leading +\n\n+ separates the
-      # block from whatever the caller's static system prompt ends with.
+      # System-prompt block advertising every loaded skill to the LLM,
+      # in the Agent Skills standard's XML shape. Returns +""+ for an
+      # empty catalog so callers can unconditionally concatenate.
       #
       # @return [String]
       def format_for_prompt
@@ -149,113 +99,65 @@ module Pikuri
            .gsub("'", '&apos;')
       end
 
-      # Null-object catalog. The +EMPTY+ constant is the singleton
-      # instance used as the default for {Agent#initialize}; constructing
-      # additional instances is harmless but pointless.
+      # Null-object catalog. The +EMPTY+ constant is the singleton used
+      # as the default when no skills are wired in.
       class Empty < Catalog
-        # @return [Array<Skill>] always empty
         def list
           [].freeze
         end
 
-        # @return [nil]
         def get(_name)
           nil
         end
 
-        # @return [Array<String>] always empty
         def roots
           [].freeze
         end
       end
 
-      # Shared singleton for the no-skills case. Frozen.
+      # Shared singleton for the no-skills case.
       EMPTY = Empty.new.freeze
 
-      # On-disk catalog: eager-scans the given +roots+ at construction
-      # and freezes itself. Use {.discover} to build one against
-      # pikuri's conventional locations; pass +roots:+ directly in
-      # tests so collision and ordering behavior can be exercised
-      # without staging dirs under +~/+.
+      # On-disk catalog. Constructed with a list of *search bases*
+      # (project root, home dir, …); for each base, scans
+      # +.pikuri/skills+, +.claude/skills+ and +.agents/skills+ —
+      # +.pikuri+ first (the user's own pikuri-specific skills),
+      # +.claude+ second (so Claude Code skills travel along for free),
+      # +.agents+ last (the cross-harness convention PI also honors).
+      # Missing subdirs are silently skipped.
       #
       # == Precedence
       #
-      # +roots+ is processed left to right. The *first* skill seen for
-      # a given name wins; later occurrences are dropped with a warning
-      # logged through +Pikuri.logger_for('Skills')+. Callers that want
-      # "project beats global" pass project roots first.
+      # Bases are processed left to right; within each base the subdir
+      # order above applies. The *first* skill seen for a given name
+      # wins; later occurrences are dropped with a warning. Callers
+      # that want "project beats global" pass the project root first.
       #
       # == Validation
       #
       # The Agent Skills standard is enforced leniently. A missing
       # +description+ is the only hard failure (the skill is skipped);
       # name/dir mismatch, oversized name/description, invalid name
-      # characters, malformed YAML — all log warnings and the skill
-      # still loads with whatever could be salvaged. Skills without
-      # a YAML frontmatter block at all are skipped silently (the file
-      # is presumably not meant as a skill).
+      # characters and malformed YAML all log warnings and the skill
+      # still loads with whatever could be salvaged. Files without
+      # YAML frontmatter at all are skipped silently — they're
+      # presumably not meant as skills.
       class Bundled < Catalog
-        # Build a catalog from pikuri's conventional discovery roots:
-        # project skills (walked from +cwd+ up to the git root or
-        # filesystem root) take precedence over global skills (under
-        # the user's home directory). Within each tier, the order in
-        # {SKILL_DIR_NAMES} applies (+.pikuri+ ➜ +.claude+ ➜ +.agents+).
-        #
-        # Non-existent directories are skipped silently; the loaded
-        # set is whatever existed at construction time.
-        #
-        # @param cwd [String, Pathname] working directory whose
-        #   ancestor chain is searched for project skill roots.
+        # Subdirectory names scanned under each search base, in
+        # precedence order.
+        SKILL_SUBDIRS = ['.pikuri/skills', '.claude/skills', '.agents/skills'].freeze
+        private_constant :SKILL_SUBDIRS
+
+        # @param search_bases [Array<String, Pathname>] directories
+        #   under which to look for skill subdirs. Typical values:
+        #   the project root and +Dir.home+. Processed left to right.
         # @return [Bundled]
-        def self.discover(cwd: Dir.pwd)
-          new(roots: discover_project_roots(cwd: cwd) + discover_global_roots)
-        end
-
-        # Project roots walked from +cwd+ upwards, stopping at the
-        # nearest ancestor containing +.git+ (inclusive) or at the
-        # filesystem root. The deepest directory's roots appear first,
-        # so closer-to-CWD skills win on name collisions.
-        #
-        # @param cwd [String, Pathname]
-        # @return [Array<String>] absolute paths to existing dirs
-        def self.discover_project_roots(cwd:)
-          results = []
-          current = File.expand_path(cwd.to_s)
-          loop do
-            SKILL_DIR_NAMES.each do |sub|
-              candidate = File.join(current, sub)
-              results << candidate if File.directory?(candidate)
-            end
-
-            # Stop *after* processing the git root — git roots are
-            # natural project boundaries; ancestors above are someone
-            # else's project.
-            break if File.directory?(File.join(current, '.git'))
-
-            parent = File.dirname(current)
-            break if parent == current # filesystem root
-
-            current = parent
-          end
-          results
-        end
-
-        # Global roots under the user's home directory.
-        #
-        # @return [Array<String>] absolute paths to existing dirs
-        def self.discover_global_roots
-          home = Dir.home
-          SKILL_DIR_NAMES.map { |sub| File.join(home, sub) }
-                         .select { |dir| File.directory?(dir) }
-        end
-
-        # @param roots [Array<String, Pathname>] skill directories in
-        #   precedence order — first occurrence of a given skill name
-        #   wins.
-        # @return [Bundled]
-        def initialize(roots:)
+        def initialize(search_bases:)
           super()
-          @roots = roots.map(&:to_s).freeze
+          @roots = search_bases
+                   .flat_map { |base| SKILL_SUBDIRS.map { |sub| File.join(base.to_s, sub) } }
+                   .select { |dir| File.directory?(dir) }
+                   .freeze
           @skills = {}
           @roots.each { |root| scan_root(root) }
           @skills.freeze
@@ -274,17 +176,13 @@ module Pikuri
           @skills[name]
         end
 
-        # @return [Array<String>] the +roots:+ supplied at construction,
-        #   stringified. Includes non-existent paths verbatim — callers
-        #   that need an existence-filtered list should filter
-        #   downstream.
+        # @return [Array<String>] absolute paths of the existing skill
+        #   directories this catalog covered, in scan order.
         attr_reader :roots
 
         private
 
         def scan_root(root)
-          return unless File.directory?(root)
-
           Dir.children(root).sort.each do |entry|
             skill_dir = File.join(root, entry)
             next unless File.directory?(skill_dir)
@@ -308,8 +206,7 @@ module Pikuri
         end
 
         # Read +path+ and return a {Skill}, or +nil+ if the file is
-        # unusable (no frontmatter, no description, unreadable). Warnings
-        # for soft violations are logged but do not block loading.
+        # unusable (no frontmatter, no description, unreadable).
         def parse_skill(path, parent_dir_name:)
           raw = File.read(path)
           frontmatter, body = split_frontmatter(raw)
@@ -341,11 +238,10 @@ module Pikuri
         end
 
         # Split a SKILL.md into +[frontmatter_hash, body_string]+.
-        # Returns +[nil, raw]+ when there is no detectable frontmatter
-        # block. On YAML parse failure, logs a warning and returns
-        # +[{}, body]+ so the caller can still observe an empty
-        # frontmatter (which trips the "missing description" path
-        # below and discards the skill).
+        # Returns +[nil, raw]+ when no detectable frontmatter block is
+        # present. On YAML parse failure, logs a warning and returns
+        # +[{}, body]+ so the caller's "missing description" path
+        # discards the skill.
         def split_frontmatter(content)
           normalized = content.gsub(/\r\n?/, "\n")
           return [nil, normalized] unless normalized.start_with?("---\n")
