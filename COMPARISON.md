@@ -347,30 +347,65 @@ development. Pikuri's choice is the latter — fine for its scope.
 
 ## Permission / sandboxing
 
-- **pikuri**: two-seam approach for v1.
+- **pikuri**: three-seam approach for v1.
   - **`Workspace::Filesystem`** is a single concrete class with
-    explicit `anchor:` / `readable:` / `writable:` / `temp:`
-    parameters. Every coding tool
-    (`Read`/`Write`/`Edit`/`Grep`/`Glob`/`Bash`) takes a workspace
-    via constructor and routes paths through
+    explicit `project_root:` / `readable:` / `writable:` / `temp:`
+    parameters. `project_root` is the writable containment ceiling
+    AND the relative-path base AND the chdir target for Bash /
+    Grep / Glob — one anchor, no separate cwd (hosts that want the
+    agent scoped to a subtree pass that subtree as `project_root`).
+    Every coding tool (`Read`/`Write`/`Edit`/`Grep`/`Glob`/`Bash`)
+    takes a workspace via constructor and routes paths through
     `#resolve_for_read(path)` / `#resolve_for_write(path)`,
     rejecting `..`-escapes and symlinks that resolve outside any
-    declared root.
+    declared root. `Filesystem::AllowAll` is the unrestricted
+    variant for `--yolo` / in-container use: same accessor surface,
+    but `resolve_for_*` accept any path *except* those on a
+    hardcoded credential denylist (`~/.ssh`, `~/.aws`, `~/.gnupg`,
+    `~/.kube`, `~/.docker`, `~/.netrc`, `/etc/shadow`, …).
   - **`Workspace::Confirmer`** abstract base + `TERMINAL` /
     `AUTO_APPROVE` bundled implementations: `Write`/`Bash` route
     every prompt through `#confirm?(prompt:)` rather than touching
-    `$stdin`/`$stdout` — `--yolo` swaps in `AUTO_APPROVE`.
-  Opencode-style glob rules (`allow` / `deny` / `ask`) are deferred —
-  see IDEAS.md "Coding-agent deferrals". Where things are headed
-  per IDEAS.md: yolo-in-docker, or ClaudeCode-style agentic review of
-  the command + automatic approval/denial.
-- **`Pikuri::Subprocess.spawn` chokepoint**: every subprocess spawn in
-  `lib/` goes through one entry point that creates a new process group
-  per invocation, tracks pgids, and SIGTERMs everything tracked via
-  `at_exit` so backgrounded shell children can't outlive pikuri.
-  Grep-enforceable: `grep -rn 'Process\.spawn\|Open3\|system' lib/`
-  should only hit `lib/pikuri/subprocess.rb` (one carve-out, in
-  `mcp/servers.rb` — the `mcp` gem owns its own subprocess lifecycle).
+    `$stdin`/`$stdout` — `--yolo` swaps in `AUTO_APPROVE`. The seam
+    exists so a future TUI / IDE host plugs in by writing a new
+    `Confirmer` subclass, not by editing tool internals.
+  - **`Code::Bash::Sandbox`** is a third seam, distinct from
+    Workspace: Workspace governs what the LLM observes via the
+    file tools; Sandbox governs the filesystem view of the bash
+    subprocess. `Sandbox::NONE` is the identity wrap (default for
+    `Bash.new`, what `--no-sandbox` / `--yolo` swap in);
+    `Sandbox::Bubblewrap` composes a `bwrap` argv from
+    `workspace.readable` / `writable` plus a curated `/etc`
+    baseline (`ETC_BASELINE` — TLS certs, DNS, timezone, hosts)
+    and per-toolchain ephemeral overlays for `~/.gradle/caches`,
+    `~/.m2/repository`, `~/.cargo/registry`, etc. Overlays are
+    *content-only subdirs* (not the toolchain's whole `$HOME`),
+    so credentials in `~/.gradle/gradle.properties`,
+    `~/.gradle/init.d`, `~/.m2/settings.xml`,
+    `~/.cargo/credentials.toml` never appear in the sandbox at
+    all; writes vanish at process exit. Threat model: blast-radius
+    containment + prevention of cross-project contamination via
+    shared toolchain caches — *not* malware-resistance (network
+    egress stays open by design so `git pull` / `curl` work; prompt
+    injection can still modify project sources). Construction
+    refuses if any workspace root contains a container / VM
+    control socket (`/var/run/docker.sock`, `containerd.sock`,
+    `podman.sock`, `libvirt-sock`, …) — exposing one effectively
+    undoes the sandbox via `docker run --privileged -v / /host`.
+  Opencode-style glob rules (`allow` / `deny` / `ask`) are
+  deferred — see IDEAS.md "Coding-agent deferrals". The next step
+  per IDEAS.md: ClaudeCode-style agentic review of bash commands
+  for auto-approval / -denial of the obviously-safe cases,
+  layered *on top of* (not replacing) bubblewrap.
+- **`Pikuri::Subprocess.spawn` chokepoint**: every subprocess spawn
+  in any pikuri-* `lib/` goes through one entry point that creates
+  a new process group per invocation, tracks pgids, and SIGTERMs
+  everything tracked via `at_exit` so backgrounded shell children
+  can't outlive pikuri. Grep-enforceable:
+  `grep -rn 'Process\.spawn\|Open3\|system' pikuri-*/lib/` should
+  only hit `pikuri-core/lib/pikuri/subprocess.rb` (one carve-out,
+  in `pikuri-mcp/lib/pikuri/mcp/client_wrapper.rb` — the `mcp` gem
+  owns its own subprocess lifecycle for stdio MCP entries).
 - **ruby_llm**: nothing — out of scope for an SDK.
 - **langchainrb**: nothing — `Tool::FileSystem` reads and writes anywhere
   the host process can. `Tool::RubyCodeInterpreter` uses `safe_ruby` (a
@@ -395,32 +430,51 @@ development. Pikuri's choice is the latter — fine for its scope.
   a `Deferred`, the bus emits a request, the UI replies "once" / "always" /
   "reject". Denial returns a typed error to the model.
 
-**Takeaway.** Pikuri's two-seam approach — `Workspace` locks read/write
-paths to the launch directory; `Confirmer` gates user-state mutations
-(`Write`, `Bash`) — is the v1 "good enough" answer for an interactively
-supervised agent. Opencode's three-action glob model is the obvious
-next step once friction shows up in practice; the seams are already in
-place to swap implementations without touching tool internals.
-Langchainrb is the cautionary tale here — `FileSystem.read_file` /
-`write_to_file` take arbitrary paths from the LLM with no validation.
+**Takeaway.** Pikuri's three-seam approach — `Workspace` locks the
+file tools' read/write paths to the discovered project root;
+`Confirmer` gates user-state mutations (`Write`, `Bash`);
+`Sandbox::Bubblewrap` constrains the bash subprocess's filesystem
+view to the same project + a curated runtime baseline + ephemeral
+toolchain overlays — is the v1 answer for an interactively
+supervised agent. Opencode's three-action glob model is the
+obvious next step on the *permission* axis once friction shows up
+in practice; the seams are already in place to swap
+implementations without touching tool internals. Bubblewrap is
+*not* malware-resistant — network egress stays open by design and
+in-project mutation is on the table — so adversarial isolation
+still needs a container or VM around pikuri, with bubblewrap as
+the inner layer. Langchainrb is the cautionary tale here —
+`FileSystem.read_file` / `write_to_file` take arbitrary paths
+from the LLM with no validation.
 
 ---
 
 ## Sub-agents
 
-- **pikuri** (`Tool::SubAgent < Tool`, constructed by `Agent#allow_sub_agent`):
-  each invocation spawns a fresh `Agent` and therefore a fresh
-  `RubyLLM::Chat` (its own `messages`/`tools`/listeners), runs the
-  requested task, and returns only the sub-agent's final assistant
-  message. The sub-agent reuses the parent's model, system prompt, and
-  a filtered tool list (parent's tools minus `sub_agent` itself, so it
-  can't recurse). Listeners propagate via a duck-typed
-  `for_sub_agent(**)` convention — `Terminal` indents, `TokenLog` zeros
-  its snapshot under a new name, `InMemoryEventList` shares by reference,
-  `RateLimited` shares its bucket. Controls do the same — fresh
-  `StepLimit`, shared `Cancellable`, `nil` `Interloper`. Isolation is
-  verified at the ruby_llm level — `RubyLLM::Chat` initializes every
-  state-bearing field per-instance.
+- **pikuri** (`Pikuri::SubAgent::SubAgentTool < Pikuri::Tool`,
+  shipped in the `pikuri-subagents` gem and wired via
+  `c.add_extension Pikuri::SubAgent::Extension.new(personas: [...])`
+  inside the `Agent.new` block): the LLM-visible `agent` tool
+  delegates to a fresh `Agent` by *persona name*. A `Persona` is a
+  five-field record (`name`, `description`, `tool_names`,
+  `system_prompt`, `max_steps`); spawning runs the persona's
+  `system_prompt` verbatim (no inheritance from the parent), with
+  the subset of `parent.tools` whose `name` appears in
+  `persona.tool_names` (parent tool *instances* are reused so any
+  workspace/confirmer wiring travels along), and a fresh
+  `StepLimit` at `persona.max_steps`. The parent's `transport`,
+  `cancellable`, `context_window_cap`, and `streaming` flag travel
+  through unchanged. Listeners propagate via a duck-typed
+  `for_sub_agent(id:)` convention — `Terminal` pads with the
+  child's id, `TokenLog` tags a fresh per-agent snapshot,
+  `RateLimited` splits its bucket. Controls don't use the same
+  hook (the propagation policy is inlined in
+  `SubAgentTool#execute` — fresh `StepLimit` at the persona's max,
+  shared parent `Cancellable` by reference, `nil` `Interloper`).
+  Extensions are *not* inherited — if a persona needs MCP or
+  skills, the persona ships its own wiring. Recursion is
+  structurally impossible: no bundled persona lists `agent` in its
+  `tool_names`, so a child has no `agent` tool to call.
 - **ruby_llm**: no built-in sub-agent.
 - **langchainrb**: no built-in sub-agent. Could be modeled by
   instantiating multiple `Assistant`s but there's no first-class
@@ -435,14 +489,18 @@ Langchainrb is the cautionary tale here — `FileSystem.read_file` /
   - tool list can be different (unavailable tools passed as `{name: false}`)
   - return wrapped in `<task_result>...</task_result>` tags
 
-**Takeaway.** Pikuri's `sub_agent` is conceptually identical to opencode's
-`task` minus the persistence and resumability. The new addition since the
-last writeup is the `for_sub_agent(**)` duck-typed propagation convention,
-which means every listener and control class decides for itself how a child
-agent inherits its state (fresh, shared, or nil) — no centralized "agent
-factory" in `Agent` to update. Persistence is a fair amount of
-machinery for one feature; not worth porting until pikuri has another
-reason to introduce a session store.
+**Takeaway.** Pikuri's `agent` tool is closer in spirit to
+opencode's `task` than to a simple "filter the parent's tools"
+model: each delegation is identified by a *persona* the host
+registers explicitly, so the child's toolset and system prompt
+are both declared up front rather than inherited and trimmed.
+That's where privilege separation comes from — a `SCOUT` persona
+spawned from a coding agent with `bash` in scope still doesn't
+get `bash`, because `bash` isn't in the persona's `tool_names`.
+Opencode's `task` adds session persistence and resumability on
+top, backed by SQLite; that's a fair amount of machinery for one
+feature, not worth porting until pikuri has another reason to
+introduce a session store.
 
 ### Bundled persona inventory
 
