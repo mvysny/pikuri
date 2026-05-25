@@ -9,8 +9,8 @@ module Pikuri
     # +Read.new(workspace: ws)+ produces a tool whose
     # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
     # tool's, so ruby_llm sees nothing special about it. Same shape as
-    # {Pikuri::Tool::SubAgent} — workspace is captured by the +execute+
-    # closure at construction.
+    # the +agent+ tool from +pikuri-subagents+ — workspace is captured by
+    # the +execute+ closure at construction.
     #
     # == Output format
     #

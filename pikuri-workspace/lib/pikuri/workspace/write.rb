@@ -8,8 +8,8 @@ module Pikuri
     # instantiating +Write.new(workspace: ws, confirmer: c)+ produces a
     # tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
     # any bundled tool's, so ruby_llm sees nothing special about it.
-    # Same shape as {Pikuri::Tool::SubAgent} and {Read} — workspace and
-    # confirmer are captured by the +execute+ closure at construction.
+    # Same shape as {Read} — workspace and confirmer are captured by
+    # the +execute+ closure at construction.
     #
     # == Policy
     #
