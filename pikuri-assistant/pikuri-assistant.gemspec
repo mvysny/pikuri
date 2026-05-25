@@ -39,9 +39,11 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # The assistant binary wires Agent (pikuri-core) + Skill::Extension
-  # (pikuri-skills) + Mcp::Extension (pikuri-mcp) together, so all
-  # three are runtime deps. Lockstep-pinned to the matching versions.
-  spec.add_dependency 'pikuri-core',   "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-skills', "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-mcp',    "= #{Pikuri::VERSION}"
+  # (pikuri-skills) + Mcp::Extension (pikuri-mcp) +
+  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together. All four
+  # are runtime deps, lockstep-pinned to the matching versions.
+  spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-mcp',       "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
 end

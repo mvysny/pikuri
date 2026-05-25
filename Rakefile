@@ -16,6 +16,7 @@ GEMS = %w[
   pikuri-mcp
   pikuri-workspace
   pikuri-code
+  pikuri-subagents
   pikuri-assistant
   pikuri
 ].freeze

@@ -360,9 +360,14 @@ describing every registered persona. Sub-agent system prompts no
 longer inherit from the parent (was the visible bug: "you are a
 coding assistant" leaked into a child whose actual job was a focused
 lookup); extensions no longer auto-propagate to sub-agents either.
-The first bundled persona is `Pikuri::Tool::SubAgent::RESEARCHER`
-(`web_search`/`web_scrape`/`fetch` only, 10 steps, prompt at
-`pikuri-core/prompts/persona-researcher.txt`).
+The first bundled persona is `Pikuri::Tool::SubAgent::RESEARCHER`,
+shipped in the separate `pikuri-subagents` gem alongside the
+`bin/pikuri-minions` fan-out demo (web tools only, 10 steps, prompt
+at `pikuri-subagents/prompts/persona-researcher.txt`). The
+machinery (`Tool::SubAgent`, `Persona`, `Configurator#allow_agent`)
+stays in pikuri-core; bundled `Persona` instances live in
+pikuri-subagents so studying pikuri-core doesn't drag in the
+persona concept on day one.
 
 Reference shape converges with Claude Code's `subagent_type`,
 opencode's `agents` map (`packages/opencode/src/agent/agent.ts:129-281`),
@@ -372,14 +377,16 @@ and PI's `subagent` agents
 ### Not yet shipped — follow-up work
 
 **Scout persona (next session).** Needs `pikuri-workspace`'s `read`/
-`grep`/`glob` (or `pikuri-code` adds `bash`). The hard plumbing is
-done: just a new `Persona` constant in `pikuri-workspace/lib/pikuri/
-tool/sub_agent/scout.rb` plus a `c.allow_agent(Pikuri::Tool::SubAgent::SCOUT)`
-line in the relevant bins. Bigger choice if/when added: does
-`pikuri-core` host every `Tool::SubAgent::*` constant (one namespace,
-cross-gem requires its tools to be present in the parent) or do gems
-contribute their own? Lean toward the former — the constant is
-inert until `c.allow_agent` opts in.
+`grep`/`glob`. The hard plumbing is done: just a new `Persona`
+constant + prompt file in `pikuri-subagents` (the canonical home for
+bundled personas, established when RESEARCHER moved out of
+pikuri-core) plus a `c.allow_agent(Pikuri::Tool::SubAgent::SCOUT)`
+line in `bin/pikuri-code`. The persona constant is inert at load
+time — it doesn't reference workspace tools at construction, only
+validates `tool_names` against the parent's tools at
+`c.allow_agent`-time — so pikuri-subagents stays decoupled from
+pikuri-workspace. Hosts that don't have those tools just never
+register the persona.
 
 **Workspace modes.** The persona record today doesn't include a
 `workspace_mode:` field. Scout (and later `reviewer`) work fine on

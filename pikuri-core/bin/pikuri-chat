@@ -82,7 +82,6 @@ agent = Pikuri::Agent.new(
   c.add_tool Pikuri::Tool::CALCULATOR
   c.add_tool Pikuri::Tool::WEB_SCRAPE
   c.add_tool Pikuri::Tool::FETCH
-  c.allow_agent(Pikuri::Tool::SubAgent::RESEARCHER)
 end
 
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a

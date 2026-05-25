@@ -13,6 +13,7 @@ gemspec path: 'pikuri-skills'
 gemspec path: 'pikuri-mcp'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-code'
+gemspec path: 'pikuri-subagents'
 gemspec path: 'pikuri-assistant'
 gemspec path: 'pikuri'
 

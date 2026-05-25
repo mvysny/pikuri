@@ -3,13 +3,6 @@
 module Pikuri
   class Tool
     class SubAgent
-      # Empty namespace placeholder so Zeitwerk has the
-      # filename-↔-CamelCase mapping it needs for the file that
-      # defines the LLM-facing {Tool::SubAgent::RESEARCHER}
-      # constant below. Same pattern as
-      # {Pikuri::Tool::WebSearch} / {Pikuri::Tool::WEB_SEARCH}.
-      module Researcher; end
-
       # Bundled "focused web research" persona. The first persona
       # pikuri ships — narrow toolset (network reads only, no fs,
       # no shell, no sub-agent recursion), short system prompt that

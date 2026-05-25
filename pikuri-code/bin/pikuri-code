@@ -265,7 +265,6 @@ begin
       synthesize_descriptions: true,
       verify_mcp_servers: true
     )
-    c.allow_agent(Pikuri::Tool::SubAgent::RESEARCHER)
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   warn 'Cancelled during startup'

@@ -3,17 +3,20 @@
 ## What this project is
 
 A Ruby implementation of an AI assistant, shipped as a family of
-seven gems in a monorepo. The lean core (`pikuri-core`) provides the
+eight gems in a monorepo. The lean core (`pikuri-core`) provides the
 `Agent` runtime, the `Tool` framework with strict argument
-validation, the Extension protocol, the listener event stream, and
-four stateless bundled tools (calculator, web search, web scrape,
-fetch) + `bin/pikuri-chat` as the demo binary. Extensions live in
-sibling gems and opt in à la carte: `pikuri-skills`, `pikuri-mcp`,
-`pikuri-workspace` (filesystem tools + Confirmer/Workspace seams),
-`pikuri-code` (Bash + `bin/pikuri-code`), `pikuri-assistant` (the
-MCP-aware `bin/pikuri-assistant`). A convenience `pikuri` metagem
-declares deps on all six so `gem install pikuri` brings the whole
-family in.
+validation, the Extension protocol, the listener event stream, the
+sub-agent machinery (`Tool::SubAgent` class, `Persona` record,
+`Configurator#allow_agent`), and four stateless bundled tools
+(calculator, web search, web scrape, fetch) + `bin/pikuri-chat` as
+the demo binary. Extensions live in sibling gems and opt in à la
+carte: `pikuri-skills`, `pikuri-mcp`, `pikuri-workspace` (filesystem
+tools + Confirmer/Workspace seams), `pikuri-code` (Bash +
+`bin/pikuri-code`), `pikuri-subagents` (bundled `Persona` instances —
+today just `RESEARCHER` — plus `bin/pikuri-minions` as the fan-out
+demo), `pikuri-assistant` (the MCP-aware `bin/pikuri-assistant`).
+A convenience `pikuri` metagem declares deps on all seven so `gem
+install pikuri` brings the whole family in.
 
 Pikuri sits on top of [ruby_llm](https://rubyllm.com) — the gem owns
 the transport and the Thought / Tool-call / Observation loop — and
@@ -248,7 +251,7 @@ grows a skill system.
 
 ## Layout
 
-Pikuri ships as a Rails-shape monorepo: seven gems live in
+Pikuri ships as a Rails-shape monorepo: eight gems live in
 sibling subdirectories under the repo root. Each gem owns its own
 `lib/`, `spec/`, `<gem>.gemspec`, entry file, and (where relevant)
 `bin/` + `prompts/` — same convention Rails uses for actionpack/
@@ -322,21 +325,18 @@ tsort. No subprocess-spawning tools.
   parent's `mcp_connect` tool).
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
   `lib/pikuri/tool/sub_agent.rb`,
-  `lib/pikuri/tool/sub_agent/persona.rb`,
-  `lib/pikuri/tool/sub_agent/researcher.rb` — `Pikuri::Tool`
+  `lib/pikuri/tool/sub_agent/persona.rb` — `Pikuri::Tool`
   value class with its `#to_ruby_llm_tool` adapter, the strict
   `Pikuri::Tool::Parameters` builder/validator,
   `Pikuri::Tool::SubAgent < Pikuri::Tool` (the LLM-facing
   `agent` tool — class name is `SubAgent` since that's how we
   refer to delegation internally; LLM name is `agent` because
-  from the parent's POV it is calling another agent),
+  from the parent's POV it is calling another agent), and
   `Pikuri::Tool::SubAgent::Persona` (the `(name, description,
   tool_names, system_prompt, max_steps)` record bundling
-  "what kind of agent is this"), and
-  `Pikuri::Tool::SubAgent::RESEARCHER` (the first bundled
-  persona — web-only toolset, no fs, no shell). `Tool::SubAgent`
-  is auto-instantiated by `Pikuri::Agent#initialize` when the
-  host calls `c.allow_agent(persona)` at least once in the
+  "what kind of agent is this"). `Tool::SubAgent` is
+  auto-instantiated by `Pikuri::Agent#initialize` when the host
+  calls `c.allow_agent(persona)` at least once in the
   `Agent.new` block; the personas hash is passed in via
   `Tool::SubAgent.new(self, personas: ...)`, and the
   `<available_agents>` snippet is appended to the system prompt
@@ -345,7 +345,10 @@ tsort. No subprocess-spawning tools.
   persona's `tool_names` — reusing parent tool *instances*
   (with their already-bound workspace/confirmer wiring) — and
   uses `persona.system_prompt` verbatim, with no parent-prompt
-  inheritance.
+  inheritance. *Bundled* `Persona` instances live in
+  `pikuri-subagents` (today only `RESEARCHER`); the machinery
+  here is dormant until a host wires one in via
+  `c.allow_agent(...)`.
 - `lib/pikuri/tool/calculator.rb`, `lib/pikuri/tool/web_search.rb`,
   `lib/pikuri/tool/web_scrape.rb`, `lib/pikuri/tool/fetch.rb` — bundled
   tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,
@@ -516,12 +519,49 @@ MCP tools bypass `Pikuri::Tool` entirely — they're synthesised
 as raw `RubyLLM::Tool` subclasses inside `Mcp::Servers` and fed
 in via `Agent#internal_add_tool`. See IDEAS.md for the rationale.
 
+### `pikuri-subagents/` — gem name `pikuri-subagents`
+
+Bundled `Pikuri::Tool::SubAgent::Persona` instances + the
+`bin/pikuri-minions` demo. The *machinery* (`Tool::SubAgent` class,
+`Persona` record, `Configurator#allow_agent`) lives in pikuri-core
+and is dormant when no persona is registered; this gem populates it
+with concrete personas. Depends on `pikuri-core`. No new runtime deps.
+
+No Zeitwerk loader — the gem ships a single `.rb` file (the
+`RESEARCHER` constant) loaded via `require_relative` from the gem
+entry. If a later release adds enough files to warrant autoloading,
+flip to a Zeitwerk loader mounted under `Pikuri::Tool::SubAgent`
+via `push_dir(..., namespace: Pikuri::Tool::SubAgent)`.
+
+- `lib/pikuri-subagents.rb` — gem entry. Appends `prompts/` to
+  `Pikuri::PROMPT_DIRS` and `require_relative`s the researcher
+  constant file.
+- `lib/pikuri/tool/sub_agent/researcher.rb` — defines
+  `Pikuri::Tool::SubAgent::RESEARCHER`, a `Persona` with
+  `tool_names: %w[web_search web_scrape fetch]`, `max_steps: 10`,
+  and the system prompt loaded from `prompts/persona-researcher.txt`.
+- `prompts/persona-researcher.txt` — researcher's system prompt
+  (replaces, doesn't append; the parent's prompt is not inherited
+  by sub-agents).
+- `bin/pikuri-minions` — CLI entry point for a "boss + minions" demo.
+  Wires `Pikuri::Tool::WEB_SEARCH` / `WEB_SCRAPE` / `FETCH` /
+  `CALCULATOR` plus `c.allow_agent(RESEARCHER)`, and pairs them with
+  a system prompt that biases the boss agent toward parallel
+  decomposition. Exists to teach the fan-out delegation concept in
+  one demo: ask for three independent facts, watch three researcher
+  minions spawn in parallel, get one synthesized answer back.
+- `prompts/pikuri-minions.txt` — boss-agent system prompt that
+  encourages "decompose then delegate" and parallel `agent` tool
+  calls in a single turn.
+
 ### `pikuri-assistant/` — gem name `pikuri-assistant`
 
 The MCP-aware assistant binary. Depends on `pikuri-core` +
-`pikuri-skills` + `pikuri-mcp`. No Ruby library code of its own —
-just the binary, the prompt, and an entry file that appends the
-gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
+`pikuri-skills` + `pikuri-mcp` + `pikuri-subagents` (so the
+`agent` tool with `RESEARCHER` is available in the assistant).
+No Ruby library code of its own — just the binary, the prompt,
+and an entry file that appends the gem's `prompts/` to
+`Pikuri::PROMPT_DIRS`.
 
 - `lib/pikuri-assistant.rb` — gem entry. Requires
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp`; appends
@@ -529,12 +569,13 @@ gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
   Ruby library code in this gem).
 - `bin/pikuri-assistant` — CLI entry point for an assistant
   binary that wires the user-edited `Pikuri::Mcp::Registry`
-  via `Pikuri::Mcp::Extension` inside the `Agent.new` block.
-  Holds the `Mcp::Extension` instance on a local variable so
-  the startup banner can read `mcp_ext.servers.live_ids` after
-  construction. Empty registry by default — runs identically
-  to `pikuri-chat` until the developer opts in by adding
-  entries.
+  via `Pikuri::Mcp::Extension` and `c.allow_agent(RESEARCHER)`
+  inside the `Agent.new` block. Holds the `Mcp::Extension`
+  instance on a local variable so the startup banner can read
+  `mcp_ext.servers.live_ids` after construction. Empty registry
+  by default — runs identically to `pikuri-chat` (plus the
+  researcher `agent` tool) until the developer opts in by adding
+  MCP entries.
 - `prompts/pikuri-assistant.txt` — system prompt used by
   `bin/pikuri-assistant`. Adds MCP-aware tool-selection
   guidance: prefer MCP-backed tools for OAuth-gated SaaS over
@@ -546,18 +587,19 @@ gem's `prompts/` to `Pikuri::PROMPT_DIRS`.
 Convenience bundle. Depends on every other pikuri-* gem with
 `= #{Pikuri::VERSION}` lockstep pins. No Ruby code of its own.
 
-- `lib/pikuri.rb` — six `require` lines (one per sibling) in
+- `lib/pikuri.rb` — seven `require` lines (one per sibling) in
   dependency order. `require 'pikuri'` boots the whole family.
-- `pikuri.gemspec` — declares all six sibling gems as dependencies.
+- `pikuri.gemspec` — declares all seven sibling gems as dependencies.
 
 The metagem releases last on each lockstep release so its
 dependency declarations pin the just-published sibling versions.
 
 ### Demo-binary scope note
 
-The three `bin/pikuri-*` scripts (in `pikuri-core/bin/`,
-`pikuri-code/bin/`, `pikuri-assistant/bin/`) are dev / demo entry
-points only — they're not advertised as gem executables. They exist
+The four `bin/pikuri-*` scripts (in `pikuri-core/bin/`,
+`pikuri-code/bin/`, `pikuri-subagents/bin/`, `pikuri-assistant/bin/`)
+are dev / demo entry points only — they're not advertised as gem
+executables. They exist
 to show how to wire pikuri-as-library into a working binary and to
 support local development. Production binaries built on pikuri
 (notably the planned `pikuri-tui`) live in their own downstream

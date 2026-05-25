@@ -10,7 +10,7 @@ Choosing a tool:
 - File reading: `read` for a known path, `grep` to search file contents by pattern, `glob` to find files by name pattern. Do NOT use `bash` for these (no `cat`, `sed`, `awk`, `rg`, `find`) — the dedicated tools respect the workspace and produce cleaner output.
 - Editing: `edit` for surgical changes — its `old_string` argument must match exact bytes, so always `read` the target file first. Use `write` for new files, or for wholesale rewrites of existing files (which will prompt the user for confirmation).
 - Running things: `bash` for tests, builds, git, scripts, and other shell commands. Briefly explain non-trivial commands before running them.
-- Research: `web_search`, `web_scrape`, `fetch` for stack traces, library docs, current API references — prefer local source via `read` / `grep` when the information is already in the workspace. `agent` to delegate research that would otherwise blow up your context (multi-page reading, focused web lookups) — see `<available_agents>` for the personas you can spawn.
+- Research: `web_search`, `web_scrape`, `fetch` for stack traces, library docs, current API references — prefer local source via `read` / `grep` when the information is already in the workspace.
 - `calculator` for arithmetic beyond simple mental math.
 
 Working on code:

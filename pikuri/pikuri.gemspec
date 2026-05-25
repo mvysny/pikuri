@@ -14,8 +14,8 @@ Gem::Specification.new do |spec|
     toolkit. It ships no Ruby code of its own beyond a tiny entry
     file that +require+'s each sibling gem; +gem install pikuri+
     pulls in pikuri-core, pikuri-skills, pikuri-workspace,
-    pikuri-code, pikuri-mcp, and pikuri-assistant in one shot, and
-    +require 'pikuri'+ boots all of them.
+    pikuri-code, pikuri-mcp, pikuri-subagents, and pikuri-assistant
+    in one shot, and +require 'pikuri'+ boots all of them.
 
     Privacy-conscious users who want a minimal dependency tree to
     audit should install +pikuri-core+ directly and opt into the
@@ -43,7 +43,7 @@ Gem::Specification.new do |spec|
   ]
   spec.require_paths = ['lib']
 
-  # All six sibling gems, lockstep-versioned. Bumping +pikuri+ to
+  # All seven sibling gems, lockstep-versioned. Bumping +pikuri+ to
   # +X.Y.Z+ requires every sibling already at +X.Y.Z+ — the top-level
   # Rakefile's +rake release+ task handles the lockstep bump so this
   # constraint is satisfied automatically on every release.
@@ -52,5 +52,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-mcp',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end
