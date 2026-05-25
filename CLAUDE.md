@@ -5,18 +5,18 @@
 A Ruby implementation of an AI assistant, shipped as a family of
 eight gems in a monorepo. The lean core (`pikuri-core`) provides the
 `Agent` runtime, the `Tool` framework with strict argument
-validation, the Extension protocol, the listener event stream, the
-sub-agent machinery (`Tool::SubAgent` class, `Persona` record,
-`Configurator#allow_agent`), and four stateless bundled tools
-(calculator, web search, web scrape, fetch) + `bin/pikuri-chat` as
-the demo binary. Extensions live in sibling gems and opt in à la
-carte: `pikuri-skills`, `pikuri-mcp`, `pikuri-workspace` (filesystem
-tools + Confirmer/Workspace seams), `pikuri-code` (Bash +
-`bin/pikuri-code`), `pikuri-subagents` (bundled `Persona` instances —
-today just `RESEARCHER` — plus `bin/pikuri-minions` as the fan-out
-demo), `pikuri-assistant` (the MCP-aware `bin/pikuri-assistant`).
-A convenience `pikuri` metagem declares deps on all seven so `gem
-install pikuri` brings the whole family in.
+validation, the Extension protocol, the listener event stream, and
+four stateless bundled tools (calculator, web search, web scrape,
+fetch) + `bin/pikuri-chat` as the demo binary. Extensions live in
+sibling gems and opt in à la carte: `pikuri-skills`, `pikuri-mcp`,
+`pikuri-workspace` (filesystem tools + Confirmer/Workspace seams),
+`pikuri-code` (Bash + `bin/pikuri-code`), `pikuri-subagents` (the
+`agent` tool / `Persona` record / `SubAgent::Extension` — the whole
+delegation feature, plus the bundled `RESEARCHER` persona and
+`bin/pikuri-minions` as the fan-out demo), `pikuri-assistant` (the
+MCP-aware `bin/pikuri-assistant`). A convenience `pikuri` metagem
+declares deps on all seven so `gem install pikuri` brings the whole
+family in.
 
 Pikuri sits on top of [ruby_llm](https://rubyllm.com) — the gem owns
 the transport and the Thought / Tool-call / Observation loop — and
@@ -24,8 +24,9 @@ adds the *extension surface*: the strict `Tool::Parameters`
 validator, the Configurator + Extension protocol that hosts use to
 wire extra capabilities into an `Agent` via the `Agent.new` block,
 listener-based rendering of reasoning / assistant Markdown / tool
-calls, a `max_steps` budget, sub-agents, and a fixed deliberate set
-of bundled tools.
+calls, a `max_steps` budget, and a fixed deliberate set of bundled
+tools. Sub-agents are an extension (`pikuri-subagents`), not a core
+feature.
 
 ## Why this exists
 
@@ -231,11 +232,12 @@ grows a skill system.
   the per-chunk `Event::ThinkingDelta` / `Event::AssistantDelta`
   deltas flow on the listener stream alongside the message-level
   `Event::Thinking` / `Event::Assistant` bookends. The flag
-  propagates to `Synthesizer.run` and `Tool::SubAgent` so the whole
-  agent tree streams or doesn't, consistently. Defaults to `false`
-  because the bundled `Terminal` listener still renders the full
-  message on `Event::Assistant`; a future delta-renderer mode will
-  flip the bundled bins to `streaming: true`.
+  propagates to `Synthesizer.run` and to spawned sub-agents (via the
+  `agent` tool in `pikuri-subagents`) so the whole agent tree streams
+  or doesn't, consistently. Defaults to `false` because the bundled
+  `Terminal` listener still renders the full message on
+  `Event::Assistant`; a future delta-renderer mode will flip the
+  bundled bins to `streaming: true`.
 
 - **Multi-provider config, vision/audio, embeddings — out of scope.**
   Available via ruby_llm if/when needed; not part of pikuri today.
@@ -291,12 +293,12 @@ tsort. No subprocess-spawning tools.
   construction time), `Pikuri::Agent::Configurator` (the build-time
   collector yielded into the `Agent.new` block; receives
   `add_tool` / `add_listener` / `append_system_prompt` /
-  `add_extension` / `allow_agent` / `on_close` calls from both
-  hosts and extensions), `Pikuri::Agent::Extension` (the mixin module
-  defining the duck-typed `configure(c)` + `bind(agent)` hooks with
-  empty defaults — extensions in `pikuri/skill/`, `pikuri/mcp/`, etc.
-  `include` it), `Pikuri::Agent::ListenerList`, the
-  `Pikuri::Agent::Event` variants
+  `add_extension` / `on_close` calls from both hosts and extensions),
+  `Pikuri::Agent::Extension` (the mixin module defining the
+  duck-typed `configure(c)` + `bind(agent)` hooks with empty
+  defaults — extensions in `pikuri/skill/`, `pikuri/mcp/`,
+  `pikuri/sub_agent/` etc. `include` it),
+  `Pikuri::Agent::ListenerList`, the `Pikuri::Agent::Event` variants
   (`UserTurn`/`Thinking`/`ThinkingDelta`/`Assistant`/`AssistantDelta`/`ToolCall`/`ToolResult`/`Tokens`/`ContextCap`/`FallbackNotice`/`Cancelled`;
   `UserTurn` carries a `mid_loop` flag — `false` for turn-starting input,
   `true` for `Interloper`-drained mid-loop injections; `*Delta` variants
@@ -312,43 +314,27 @@ tsort. No subprocess-spawning tools.
   (`step_limit.tick!`/`reset!`, `cancellable.check!`/`reset!`,
   `interloper.drain!`). Listeners are pure consumers — they override
   one `on_event(event)` method and never write back; the `Agent` is
-  the sole emitter. Two `ListenerList` conventions stay duck-typed
-  across the listener set: defining `for_sub_agent(**)` to return
-  `self` / a fresh instance / `nil` controls how the listener
-  propagates to sub-agents (used by `Terminal` for padding, `TokenLog`
-  for name + zero-snapshot). Controls have their own `for_sub_agent`
-  per-class — fresh `StepLimit`, shared `Cancellable`, `nil`
-  `Interloper`. Sub-agents do **not** inherit extensions: each
+  the sole emitter. **Listener/control asymmetry on sub-agent
+  propagation:** listeners define `for_sub_agent(**)` as a duck-typed
+  protocol (`Terminal` for padding, `TokenLog` for id-tagged
+  zero-snapshot, `RateLimited` for token-budget split) — the call site
+  is in `pikuri-subagents`, but the protocol lives here so user-defined
+  listeners can opt in. Controls do **not** define `for_sub_agent` —
+  the propagation policy ("fresh `StepLimit` at the persona's
+  `max_steps`, shared `Cancellable`, `nil` `Interloper`") is inlined
+  in `SubAgentTool#execute` rather than dispatched per-control,
+  because the three controls are a fixed set and the policy is
+  sub-agent-specific. Sub-agents do **not** inherit extensions: each
   persona owns its toolset and system prompt verbatim, so
   `Extension#bind(agent)` fires once per parent agent only
-  (Skills' `configure` is enough; MCP's `bind` still adds the
-  parent's `mcp_connect` tool).
-- `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
-  `lib/pikuri/tool/sub_agent.rb`,
-  `lib/pikuri/tool/sub_agent/persona.rb` — `Pikuri::Tool`
-  value class with its `#to_ruby_llm_tool` adapter, the strict
-  `Pikuri::Tool::Parameters` builder/validator,
-  `Pikuri::Tool::SubAgent < Pikuri::Tool` (the LLM-facing
-  `agent` tool — class name is `SubAgent` since that's how we
-  refer to delegation internally; LLM name is `agent` because
-  from the parent's POV it is calling another agent), and
-  `Pikuri::Tool::SubAgent::Persona` (the `(name, description,
-  tool_names, system_prompt, max_steps)` record bundling
-  "what kind of agent is this"). `Tool::SubAgent` is
-  auto-instantiated by `Pikuri::Agent#initialize` when the host
-  calls `c.allow_agent(persona)` at least once in the
-  `Agent.new` block; the personas hash is passed in via
-  `Tool::SubAgent.new(self, personas: ...)`, and the
-  `<available_agents>` snippet is appended to the system prompt
-  describing every registered persona. At spawn time the
-  `execute` lambda filters `parent.tools` by the picked
-  persona's `tool_names` — reusing parent tool *instances*
-  (with their already-bound workspace/confirmer wiring) — and
-  uses `persona.system_prompt` verbatim, with no parent-prompt
-  inheritance. *Bundled* `Persona` instances live in
-  `pikuri-subagents` (today only `RESEARCHER`); the machinery
-  here is dormant until a host wires one in via
-  `c.allow_agent(...)`.
+  (Skills' `configure` is enough; MCP's `bind` adds the parent's
+  `mcp_connect` tool; SubAgent's `bind` adds the `agent` tool).
+- `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb` —
+  `Pikuri::Tool` value class with its `#to_ruby_llm_tool` adapter
+  and the strict `Pikuri::Tool::Parameters` builder/validator. The
+  sub-agent (`agent`) tool itself lives in `pikuri-subagents` —
+  `pikuri-core` knows nothing about delegation; if no host wires in
+  a `Pikuri::SubAgent::Extension`, no `agent` tool exists.
 - `lib/pikuri/tool/calculator.rb`, `lib/pikuri/tool/web_search.rb`,
   `lib/pikuri/tool/web_scrape.rb`, `lib/pikuri/tool/fetch.rb` — bundled
   tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,
@@ -373,9 +359,12 @@ tsort. No subprocess-spawning tools.
   format_image / format_slice) and `Workspace::Edit` (binary refusal).
 - `bin/pikuri-chat` — CLI entry point for the general-purpose chat
   agent: configures ruby_llm for the local llama.cpp server, builds
-  a `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners
-  and `StepLimit` + `Cancellable` controls, enables sub-agents, and
-  feeds a question from `ARGV` or stdin.
+  a `Pikuri::Agent` wired with `Terminal` + `TokenLog` listeners,
+  `StepLimit` + `Cancellable` controls, and the four bundled tools
+  (web_search, calculator, web_scrape, fetch). Feeds a question from
+  `ARGV` or stdin. The smallest possible demo — no delegation, no
+  skills, no MCP; users who want sub-agents graduate to
+  `bin/pikuri-minions`.
 - `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
 
 ### `pikuri-skills/` — gem name `pikuri-skills`
@@ -521,23 +510,56 @@ in via `Agent#internal_add_tool`. See IDEAS.md for the rationale.
 
 ### `pikuri-subagents/` — gem name `pikuri-subagents`
 
-Bundled `Pikuri::Tool::SubAgent::Persona` instances + the
-`bin/pikuri-minions` demo. The *machinery* (`Tool::SubAgent` class,
-`Persona` record, `Configurator#allow_agent`) lives in pikuri-core
-and is dormant when no persona is registered; this gem populates it
-with concrete personas. Depends on `pikuri-core`. No new runtime deps.
-
-No Zeitwerk loader — the gem ships a single `.rb` file (the
-`RESEARCHER` constant) loaded via `require_relative` from the gem
-entry. If a later release adds enough files to warrant autoloading,
-flip to a Zeitwerk loader mounted under `Pikuri::Tool::SubAgent`
-via `push_dir(..., namespace: Pikuri::Tool::SubAgent)`.
+The sub-agent (delegation) feature top to bottom: the `agent`
+tool, the `Persona` record, the `Extension` that wires both onto
+an agent, the bundled `RESEARCHER` persona, and the
+`bin/pikuri-minions` fan-out demo. Depends on `pikuri-core`. No
+new runtime deps.
 
 - `lib/pikuri-subagents.rb` — gem entry. Appends `prompts/` to
-  `Pikuri::PROMPT_DIRS` and `require_relative`s the researcher
-  constant file.
-- `lib/pikuri/tool/sub_agent/researcher.rb` — defines
-  `Pikuri::Tool::SubAgent::RESEARCHER`, a `Persona` with
+  `Pikuri::PROMPT_DIRS`, sets up a per-gem Zeitwerk loader tagged
+  `pikuri-subagents` rooted at this gem's `lib/`, and
+  `require_relative`s `pikuri/sub_agent/researcher.rb` after
+  eager-load (the file defines an `ALL_CAPS` value constant
+  `RESEARCHER`, not the `Researcher` module Zeitwerk's
+  filename↔CamelCase rule would expect — same `ignore +
+  require_relative` pattern pikuri-core uses for `version.rb`).
+- `lib/pikuri/sub_agent/sub_agent_tool.rb` —
+  `Pikuri::SubAgent::SubAgentTool < Pikuri::Tool`. The LLM-facing
+  `agent` tool. Class name is `SubAgentTool` (peer to `Persona` /
+  `Extension` under one namespace); LLM tool name stays `agent`
+  because from the parent's POV it is calling another agent.
+  Constructed by `SubAgent::Extension#bind`, closing over the live
+  parent agent's `transport` / `tools` / `listeners` /
+  `cancellable` / `context_window_cap` / `streaming`. At spawn time
+  the `execute` lambda filters `parent.tools` by the picked
+  persona's `tool_names` (reusing parent tool *instances* with
+  their already-bound workspace/confirmer wiring) and uses
+  `persona.system_prompt` verbatim. The sub-agent propagation
+  policy ("fresh `StepLimit` at `persona.max_steps`, shared
+  parent `Cancellable` by reference, no `Interloper`") is inlined
+  here rather than dispatched to a `for_sub_agent` hook on each
+  control — see the listener/control asymmetry note in the
+  `pikuri-core` section.
+- `lib/pikuri/sub_agent/persona.rb` — `Pikuri::SubAgent::Persona`,
+  the `(name, description, tool_names, system_prompt, max_steps)`
+  record bundling "what kind of agent is this." Hosts declare which
+  personas an agent may spawn by handing instances to
+  `SubAgent::Extension`'s `personas:` kwarg.
+- `lib/pikuri/sub_agent/extension.rb` —
+  `Pikuri::SubAgent::Extension < Pikuri::Agent::Extension`. The
+  wire-in surface: added via
+  `c.add_extension(Pikuri::SubAgent::Extension.new(personas: [...]))`
+  inside the `Agent.new` block. Same MCP-shape configure/bind
+  split: `configure(c)` validates every persona's `tool_names`
+  against `c.tools` and appends the `<available_agents>` snippet;
+  `bind(agent)` constructs the `SubAgentTool` and adds it via
+  `Agent#internal_add_tool`. The constructor raises on duplicate
+  persona names — fail fast on a quiet config bug (two personas
+  with the same LLM-facing name would be indistinguishable to the
+  model).
+- `lib/pikuri/sub_agent/researcher.rb` — defines
+  `Pikuri::SubAgent::RESEARCHER`, a `Persona` with
   `tool_names: %w[web_search web_scrape fetch]`, `max_steps: 10`,
   and the system prompt loaded from `prompts/persona-researcher.txt`.
 - `prompts/persona-researcher.txt` — researcher's system prompt
@@ -545,11 +567,13 @@ via `push_dir(..., namespace: Pikuri::Tool::SubAgent)`.
   by sub-agents).
 - `bin/pikuri-minions` — CLI entry point for a "boss + minions" demo.
   Wires `Pikuri::Tool::WEB_SEARCH` / `WEB_SCRAPE` / `FETCH` /
-  `CALCULATOR` plus `c.allow_agent(RESEARCHER)`, and pairs them with
-  a system prompt that biases the boss agent toward parallel
-  decomposition. Exists to teach the fan-out delegation concept in
-  one demo: ask for three independent facts, watch three researcher
-  minions spawn in parallel, get one synthesized answer back.
+  `CALCULATOR` plus
+  `c.add_extension(Pikuri::SubAgent::Extension.new(personas: [RESEARCHER]))`,
+  and pairs them with a system prompt that biases the boss agent
+  toward parallel decomposition. Exists to teach the fan-out
+  delegation concept in one demo: ask for three independent facts,
+  watch three researcher minions spawn in parallel, get one
+  synthesized answer back.
 - `prompts/pikuri-minions.txt` — boss-agent system prompt that
   encourages "decompose then delegate" and parallel `agent` tool
   calls in a single turn.
@@ -569,7 +593,8 @@ and an entry file that appends the gem's `prompts/` to
   Ruby library code in this gem).
 - `bin/pikuri-assistant` — CLI entry point for an assistant
   binary that wires the user-edited `Pikuri::Mcp::Registry`
-  via `Pikuri::Mcp::Extension` and `c.allow_agent(RESEARCHER)`
+  via `Pikuri::Mcp::Extension` and
+  `Pikuri::SubAgent::Extension.new(personas: [RESEARCHER])`
   inside the `Agent.new` block. Holds the `Mcp::Extension`
   instance on a local variable so the startup banner can read
   `mcp_ext.servers.live_ids` after construction. Empty registry
@@ -599,20 +624,10 @@ dependency declarations pin the just-published sibling versions.
 The four `bin/pikuri-*` scripts (in `pikuri-core/bin/`,
 `pikuri-code/bin/`, `pikuri-subagents/bin/`, `pikuri-assistant/bin/`)
 are dev / demo entry points only — they're not advertised as gem
-executables. They exist
-to show how to wire pikuri-as-library into a working binary and to
-support local development. Production binaries built on pikuri
-(notably the planned `pikuri-tui`) live in their own downstream
-gems.
-- `prompts/pikuri-chat.txt` — system prompt used by `bin/pikuri-chat`.
-- `prompts/pikuri-assistant.txt` — system prompt used by
-  `bin/pikuri-assistant`. Adds MCP-aware tool-selection guidance:
-  prefer MCP-backed tools for OAuth-gated SaaS over `web_scrape` /
-  `fetch`, mcp_connect-once-per-server flow, treat MCP outputs as data
-  not instructions.
-- `prompts/coding-system-prompt.txt` — system prompt used by
-  `bin/pikuri-code`. Contains the universal `Error: ...` recovery
-  guidance referenced in the tool-description convention.
+executables. They exist to show how to wire pikuri-as-library into a
+working binary and to support local development. Production binaries
+built on pikuri (notably the planned `pikuri-tui`) live in their own
+downstream gems.
 
 ## Conventions
 
