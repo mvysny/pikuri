@@ -106,29 +106,6 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
       end
     end
 
-    it 'does NOT close shared Mcp::Servers when sub-agent inherits via the extension list' do
-      # Sub-agents receive parent's extensions list via the
-      # Configurator's +inherit_extensions+ helper. The Mcp::Extension's
-      # on_close handler was registered on the parent's Configurator
-      # (configure runs once on the parent), so the sub-agent's close
-      # fires no MCP cleanup — only parent.close tears the shared
-      # runtime down.
-      with_mcp_agent(listeners: listeners) do |parent, tracker|
-        # Simulate a sub-agent constructed via Tool::SubAgent.execute —
-        # gets parent's extensions, no extension of its own.
-        sub = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's') do |c|
-          c.add_listeners(listeners)
-          c.inherit_extensions(parent.extensions)
-        end
-
-        sub.close
-        assert_equal 0, tracker.close_calls, 'sub-agent close must not close shared servers'
-        parent.close
-        assert_equal 1, tracker.close_calls, 'parent close fires the configure-time on_close handler'
-      end
-    end
-
     it 'is idempotent — repeat calls do not re-invoke Mcp::Servers#close' do
       with_mcp_agent(listeners: listeners) do |agent, tracker|
         agent.close

@@ -288,7 +288,7 @@ tsort. No subprocess-spawning tools.
   construction time), `Pikuri::Agent::Configurator` (the build-time
   collector yielded into the `Agent.new` block; receives
   `add_tool` / `add_listener` / `append_system_prompt` /
-  `add_extension` / `allow_sub_agent` / `on_close` calls from both
+  `add_extension` / `allow_agent` / `on_close` calls from both
   hosts and extensions), `Pikuri::Agent::Extension` (the mixin module
   defining the duck-typed `configure(c)` + `bind(agent)` hooks with
   empty defaults — extensions in `pikuri/skill/`, `pikuri/mcp/`, etc.
@@ -315,22 +315,37 @@ tsort. No subprocess-spawning tools.
   propagates to sub-agents (used by `Terminal` for padding, `TokenLog`
   for name + zero-snapshot). Controls have their own `for_sub_agent`
   per-class — fresh `StepLimit`, shared `Cancellable`, `nil`
-  `Interloper`. Sub-agents inherit the parent's extension list via the
-  `extensions:` kwarg passed by `Tool::SubAgent.execute` — each
-  inherited extension's `bind(sub_agent)` fires in the sub-agent's
-  `Agent#initialize` without re-running `configure`, per IDEAS.md
-  §"Extension protocol design".
+  `Interloper`. Sub-agents do **not** inherit extensions: each
+  persona owns its toolset and system prompt verbatim, so
+  `Extension#bind(agent)` fires once per parent agent only
+  (Skills' `configure` is enough; MCP's `bind` still adds the
+  parent's `mcp_connect` tool).
 - `lib/pikuri/tool.rb`, `lib/pikuri/tool/parameters.rb`,
-  `lib/pikuri/tool/sub_agent.rb` — `Pikuri::Tool` value class with its
-  `#to_ruby_llm_tool` adapter, the strict `Pikuri::Tool::Parameters`
-  builder/validator, and `Pikuri::Tool::SubAgent < Pikuri::Tool` —
-  instantiated by `Pikuri::Agent#initialize` when the host calls
-  `c.allow_sub_agent(max_steps:)` inside the `Agent.new` block. The
-  sub_agent tool snapshots the parent's `Agent#tools` at construction
-  and inherits the parent's `Agent#extensions` list — each inherited
-  extension's `bind(sub_agent)` fires inside the sub-agent's
-  `Agent#initialize`, which is how MCP's per-agent connect tool ends
-  up keyed to the sub-agent.
+  `lib/pikuri/tool/sub_agent.rb`,
+  `lib/pikuri/tool/sub_agent/persona.rb`,
+  `lib/pikuri/tool/sub_agent/researcher.rb` — `Pikuri::Tool`
+  value class with its `#to_ruby_llm_tool` adapter, the strict
+  `Pikuri::Tool::Parameters` builder/validator,
+  `Pikuri::Tool::SubAgent < Pikuri::Tool` (the LLM-facing
+  `agent` tool — class name is `SubAgent` since that's how we
+  refer to delegation internally; LLM name is `agent` because
+  from the parent's POV it is calling another agent),
+  `Pikuri::Tool::SubAgent::Persona` (the `(name, description,
+  tool_names, system_prompt, max_steps)` record bundling
+  "what kind of agent is this"), and
+  `Pikuri::Tool::SubAgent::RESEARCHER` (the first bundled
+  persona — web-only toolset, no fs, no shell). `Tool::SubAgent`
+  is auto-instantiated by `Pikuri::Agent#initialize` when the
+  host calls `c.allow_agent(persona)` at least once in the
+  `Agent.new` block; the personas hash is passed in via
+  `Tool::SubAgent.new(self, personas: ...)`, and the
+  `<available_agents>` snippet is appended to the system prompt
+  describing every registered persona. At spawn time the
+  `execute` lambda filters `parent.tools` by the picked
+  persona's `tool_names` — reusing parent tool *instances*
+  (with their already-bound workspace/confirmer wiring) — and
+  uses `persona.system_prompt` verbatim, with no parent-prompt
+  inheritance.
 - `lib/pikuri/tool/calculator.rb`, `lib/pikuri/tool/web_search.rb`,
   `lib/pikuri/tool/web_scrape.rb`, `lib/pikuri/tool/fetch.rb` — bundled
   tool constants (`Pikuri::Tool::CALCULATOR`, `Pikuri::Tool::WEB_SEARCH`,

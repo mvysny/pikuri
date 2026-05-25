@@ -5,8 +5,9 @@ module Pikuri
     # Build-time collector yielded into the +Pikuri::Agent.new+ block.
     # Hosts and {Extension} implementations call its methods to declare
     # additional tools, listeners, system-prompt snippets, +on_close+
-    # handlers, and extension instances; {Agent#initialize} drains the
-    # collected state into the agent's final wiring before returning.
+    # handlers, extension instances, and persona-flavored sub-agents;
+    # {Agent#initialize} drains the collected state into the agent's
+    # final wiring before returning.
     #
     # == Why this exists
     #
@@ -15,7 +16,10 @@ module Pikuri
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
-    #     c.add_tool     Pikuri::Tool::CALCULATOR
+    #     c.add_tool     Pikuri::Tool::WEB_SEARCH
+    #     c.add_tool     Pikuri::Tool::WEB_SCRAPE
+    #     c.add_tool     Pikuri::Tool::FETCH
+    #     c.allow_agent  Pikuri::Tool::SubAgent::RESEARCHER
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
@@ -45,7 +49,7 @@ module Pikuri
       attr_reader :system_prompt_base
 
       # @return [String] this agent's identifier; empty for the main
-      #   agent, hierarchical (+"sub_agent 0_1"+) for sub-agents.
+      #   agent, persona-rooted (e.g. +"researcher 0"+) for sub-agents.
       attr_reader :name
 
       # @return [Boolean] +true+ when the agent opted into chunk-level
@@ -93,19 +97,13 @@ module Pikuri
       #   wiring is complete.
       attr_reader :extensions
 
-      # @return [SubAgentRequest, nil] set when the block called
-      #   {#allow_sub_agent}; +nil+ otherwise. The Agent ctor uses
-      #   this to decide whether to create a {Tool::SubAgent}
-      #   instance after the chat is wired (so the SubAgent tool's
-      #   parent.tools snapshot doesn't include itself —
-      #   recursion guard).
-      attr_reader :sub_agent_request
-
-      # Record holding the +max_steps+ value the host passed to
-      # {#allow_sub_agent}. The Agent ctor consumes one of these
-      # records to build a {Tool::SubAgent} keyed to that step
-      # budget.
-      SubAgentRequest = Data.define(:max_steps)
+      # @return [Hash{String=>Tool::SubAgent::Persona}] personas
+      #   registered via {#allow_agent}, keyed by +persona.name+ in
+      #   insertion order. Empty when no persona was registered, in
+      #   which case the Agent ctor skips creating a
+      #   {Tool::SubAgent} and never appends the +<available_agents>+
+      #   snippet to the system prompt.
+      attr_reader :personas
 
       # @param transport [Agent::ChatTransport]
       # @param system_prompt_base [String]
@@ -129,6 +127,7 @@ module Pikuri
         @system_prompt_additions = []
         @on_close_handlers = []
         @extensions = []
+        @personas = {}
       end
 
       # Append a tool to the agent's static tool list.
@@ -142,8 +141,6 @@ module Pikuri
 
       # Append several tools at once. Equivalent to calling {#add_tool}
       # for each element of +tools+; declaration order is preserved.
-      # Sole intended caller today is {Tool::SubAgent}, which seeds a
-      # sub-agent's Configurator from the parent's tool snapshot.
       #
       # @param tools [Enumerable<Tool>]
       # @return [void]
@@ -163,9 +160,6 @@ module Pikuri
 
       # Append several listeners at once. Accepts any enumerable
       # (Array, {ListenerList}, …); declaration order is preserved.
-      # Sole intended caller today is {Tool::SubAgent}, which seeds a
-      # sub-agent's Configurator from the parent's listener list (run
-      # through {ListenerList#for_sub_agent}).
       #
       # @param listeners [Enumerable<Listener::Base>]
       # @return [void]
@@ -207,26 +201,6 @@ module Pikuri
         nil
       end
 
-      # Retain a list of already-configured extensions for the
-      # bind sweep without re-running +configure+. Sole intended
-      # caller is {Tool::SubAgent}, which seeds a sub-agent's
-      # Configurator from the parent's extension list — the parent
-      # already drove +configure+ and its system-prompt snippets /
-      # static tools are inherited by the sub-agent verbatim
-      # through {#add_tools} + {#add_listeners} + the augmented
-      # +system_prompt+; re-running +configure+ on the sub-agent
-      # would double up those contributions. The +bind(sub_agent)+
-      # sweep in {Agent#initialize} still fires on each inherited
-      # extension so per-agent state (MCP's per-agent connect tool,
-      # for example) gets installed fresh on the sub-agent.
-      #
-      # @param extensions [Enumerable<Extension>]
-      # @return [void]
-      def inherit_extensions(extensions)
-        extensions.each { |ext| @extensions << ext }
-        nil
-      end
-
       # Register a handler called by {Agent#close}. Handlers fire in
       # LIFO order, each inside its own +rescue+ — same semantics as
       # +ensure+-block cleanup discipline.
@@ -240,29 +214,52 @@ module Pikuri
         nil
       end
 
-      # Enable the +sub_agent+ tool on this agent. Records the
-      # +max_steps+ budget for sub-agent runs; the Agent ctor reads
-      # {#sub_agent_request} after the block returns and constructs
-      # the actual {Tool::SubAgent} so its snapshot of the parent's
-      # tool list doesn't include itself (recursion guard).
+      # Register a persona that the agent may spawn via the +agent+
+      # tool. Each persona declares its own tool subset, system
+      # prompt, and step budget — see {Tool::SubAgent::Persona}.
       #
-      # Sub-agents inherit the parent's tool list (minus +sub_agent+
-      # itself), augmented system prompt, listeners (via
-      # +for_sub_agent+ per listener), controls (per the per-control
-      # rule), and the parent's extension list. Each inherited
-      # extension's +bind(sub_agent)+ fires during the sub-agent's
-      # construction — that's how MCP's per-agent connect tool ends
-      # up keyed to the sub-agent rather than the parent.
+      # The Agent ctor reads {#personas} after the block returns
+      # and, when non-empty, constructs one {Tool::SubAgent}
+      # instance keyed to the whole map and appends a single
+      # +<available_agents>+ snippet to the system prompt
+      # describing every registered persona.
       #
-      # @param max_steps [Integer] step budget for each sub-agent
-      #   run, passed to {Tool::SubAgent#initialize}.
-      # @raise [RuntimeError] if called more than once on the same
-      #   Configurator.
+      # == Validation
+      #
+      # +persona.tool_names+ must be a subset of the tools already
+      # registered (via {#add_tool} / {#add_tools} / an extension's
+      # +configure+). Registering a persona whose +tool_names+
+      # reference an unregistered tool raises here — surfaces as a
+      # host-side bug (forgot to wire a tool) rather than an
+      # LLM-facing validation error at runtime. Practical
+      # implication: call +c.allow_agent+ *after* the tools the
+      # persona depends on.
+      #
+      # Registering the same +persona.name+ twice raises (likely a
+      # copy-paste bug; one slot per name).
+      #
+      # @param persona [Tool::SubAgent::Persona]
+      # @raise [ArgumentError] if +persona+ is not a
+      #   {Tool::SubAgent::Persona}, the name is already
+      #   registered, or +tool_names+ references a tool not in
+      #   {#tools}
       # @return [void]
-      def allow_sub_agent(max_steps: 10)
-        raise 'allow_sub_agent may only be called once per agent' if @sub_agent_request
+      def allow_agent(persona)
+        raise ArgumentError, "expected Tool::SubAgent::Persona, got #{persona.class}" \
+          unless persona.is_a?(Tool::SubAgent::Persona)
+        raise ArgumentError, "persona #{persona.name.inspect} is already registered" \
+          if @personas.key?(persona.name)
 
-        @sub_agent_request = SubAgentRequest.new(max_steps: max_steps)
+        have = @tools.map(&:name)
+        missing = persona.tool_names - have
+        unless missing.empty?
+          raise ArgumentError,
+                "persona #{persona.name.inspect} references unregistered tool(s) " \
+                "#{missing.inspect}. Register them via c.add_tool before calling " \
+                "c.allow_agent. Currently registered: #{have.inspect}."
+        end
+
+        @personas[persona.name] = persona
         nil
       end
     end

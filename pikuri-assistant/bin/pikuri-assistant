@@ -137,7 +137,7 @@ begin
     c.add_tool Pikuri::Tool::WEB_SCRAPE
     c.add_tool Pikuri::Tool::FETCH
     c.add_extension mcp_ext
-    c.allow_sub_agent(max_steps: 20)
+    c.allow_agent(Pikuri::Tool::SubAgent::RESEARCHER)
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   warn 'Cancelled during startup'

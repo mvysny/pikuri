@@ -230,12 +230,25 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'Configurator#allow_sub_agent' do
-    it "forwards the parent's resolved context_window_cap as the sub-agent tool's override" do
+  describe 'Configurator#allow_agent' do
+    # Minimal one-tool persona used as a stand-in. Names a tool we'll
+    # also register on the parent so the tool_names validation passes.
+    let(:tiny_persona) do
+      Pikuri::Tool::SubAgent::Persona.new(
+        name: 'researcher',
+        description: 'd',
+        tool_names: %w[web_search],
+        system_prompt: 's',
+        max_steps: 3
+      )
+    end
+
+    it "forwards the parent's resolved context_window_cap as the sub-agent's context_window" do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', context_window: 12_345) do |c|
         c.add_listener recorder
-        c.allow_sub_agent(max_steps: 3)
+        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.allow_agent tiny_persona
       end
 
       # Stub Pikuri::Agent.new globally just for this test: record the
@@ -255,50 +268,110 @@ RSpec.describe Pikuri::Agent do
 
       begin
         sub_tool = agent.instance_variable_get(:@tools).last
-        sub_tool.run('task' => 'do the thing')
+        sub_tool.run('name' => 'researcher', 'task' => 'do the thing')
         assert_equal 12_345, received_kwargs[:context_window]
       ensure
         Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
       end
     end
 
-    it 'raises when called twice in the same Configurator block' do
-      err = assert_raises(RuntimeError) do
+    it 'raises when called twice with the same persona' do
+      err = assert_raises(ArgumentError) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's') do |c|
           c.add_listener recorder
-          c.allow_sub_agent
-          c.allow_sub_agent
+          c.add_tool Pikuri::Tool::WEB_SEARCH
+          c.allow_agent tiny_persona
+          c.allow_agent tiny_persona
         end
       end
-      assert_match(/may only be called once/, err.message)
+      assert_match(/already registered/, err.message)
     end
 
-    it 'auto-registers exactly one Pikuri::Tool::SubAgent on @tools' do
+    it 'raises when the persona references a tool not registered via c.add_tool' do
+      err = assert_raises(ArgumentError) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's') do |c|
+          c.add_listener recorder
+          # no c.add_tool — tiny_persona depends on web_search, which is missing
+          c.allow_agent tiny_persona
+        end
+      end
+      assert_match(/references unregistered tool/, err.message)
+      assert_match(/"web_search"/, err.message)
+    end
+
+    it 'raises when something that is not a Persona is passed' do
+      err = assert_raises(ArgumentError) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's') do |c|
+          c.add_listener recorder
+          c.allow_agent :not_a_persona
+        end
+      end
+      assert_match(/expected Tool::SubAgent::Persona/, err.message)
+    end
+
+    it 'auto-registers exactly one Pikuri::Tool::SubAgent on @tools when at least one persona is allowed' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
-        c.allow_sub_agent
+        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.allow_agent tiny_persona
       end
 
       tools = agent.instance_variable_get(:@tools)
       assert_equal 1, tools.count { |t| t.is_a?(Pikuri::Tool::SubAgent) }
     end
 
-    it 'raises if a Pikuri::Tool::SubAgent is also added via c.add_tool alongside allow_sub_agent' do
-      manual_sub = Pikuri::Tool::SubAgent.new(
-        # parent_agent only used to resolve readers at construction time;
-        # a fully-stubbed shell would suffice but real Agent is simpler.
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's') { |c| c.add_listener recorder }
+    it 'does NOT register a Pikuri::Tool::SubAgent when no persona is allowed' do
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+      end
+
+      tools = agent.instance_variable_get(:@tools)
+      assert_equal 0, tools.count { |t| t.is_a?(Pikuri::Tool::SubAgent) }
+      refute_match(/<available_agents>/, agent.system_prompt)
+    end
+
+    it 'appends a single <available_agents> snippet describing every registered persona' do
+      second = Pikuri::Tool::SubAgent::Persona.new(
+        name: 'scout',
+        description: 'fs recon',
+        tool_names: %w[web_search],
+        system_prompt: 's',
+        max_steps: 5
       )
+
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.allow_agent tiny_persona
+        c.allow_agent second
+      end
+
+      assert_match(/<available_agents>/, agent.system_prompt)
+      assert_match(/`researcher` — d/, agent.system_prompt)
+      assert_match(/`scout` — fs recon/, agent.system_prompt)
+    end
+
+    it 'raises if a Pikuri::Tool::SubAgent is also added via c.add_tool alongside allow_agent' do
+      parent_holder = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                        system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_tool Pikuri::Tool::WEB_SEARCH
+      end
+      manual_sub = Pikuri::Tool::SubAgent.new(parent_holder, personas: { 'researcher' => tiny_persona })
 
       err = assert_raises(RuntimeError) do
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's') do |c|
           c.add_listener recorder
+          c.add_tool Pikuri::Tool::WEB_SEARCH
           c.add_tool manual_sub
-          c.allow_sub_agent
+          c.allow_agent tiny_persona
         end
       end
       assert_match(/auto-registers/, err.message)
@@ -822,7 +895,7 @@ RSpec.describe Pikuri::Agent do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's',
                                 step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
-                                name: 'sub_agent 0_1') do |c|
+                                name: 'researcher 0') do |c|
         c.add_listener parent_log
       end
       arrange_step_exhaustion(2)
@@ -831,7 +904,7 @@ RSpec.describe Pikuri::Agent do
 
       synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
       synth_log = synth_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
-      assert_equal 'sub_agent 0_1_synthesizer', synth_log.name
+      assert_equal 'researcher 0_synthesizer', synth_log.name
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do

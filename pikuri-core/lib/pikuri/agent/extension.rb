@@ -57,22 +57,20 @@ module Pikuri
 
       # Called by {Agent#initialize} after the block returns and the
       # chat is fully wired, with the live {Agent} as the argument.
-      # Runs once per agent — on the parent during its construction,
-      # and once more on each sub-agent during the sub-agent's
-      # construction (same extension instance, multiple +bind+ calls
-      # — per-agent state lives in +bind+'s closures, not in
-      # extension instance state). The default is a no-op; override
-      # when you need to install *per-agent* state. Things you
-      # typically do here:
+      # Fires once per agent the extension was registered to via
+      # {Configurator#add_extension} — in the typical setup that's
+      # the parent agent only, since sub-agents do not inherit
+      # extensions. The default is a no-op; override when you need
+      # to install state keyed to the live agent object. Things
+      # you typically do here:
       #
-      # * register per-agent dynamic tools via
-      #   {Agent#internal_add_tool}
-      # * register per-agent +on_close+ handlers via
-      #   {Agent#on_close}
+      # * register dynamic tools via {Agent#internal_add_tool}
+      #   (used by {Pikuri::Mcp::Extension} for +mcp_connect+,
+      #   whose +execute+ closure needs the live agent so
+      #   activations register on the right chat)
+      # * register +on_close+ handlers via {Agent#on_close}
       # * stash an +@agent+ reference if the extension's tools need
-      #   to act on this specific agent later (e.g. when a tool
-      #   fires and wants to register more tools on its owning
-      #   chat)
+      #   to act on this specific agent later
       #
       # @param agent [Agent] the live agent, fully wired
       # @return [void]

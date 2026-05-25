@@ -13,14 +13,14 @@ module Pikuri
     # == Configure / bind split
     #
     # +configure+ runs once on the parent's Configurator and creates
-    # the *shared* {Mcp::Servers} runtime — that's the resource
-    # extensions own. +bind+ fires per agent (parent + each
-    # sub-agent in Step 4's world) and creates a *fresh* {Connect}
-    # tool keyed to whichever agent is being bound, registered via
-    # {Agent#internal_add_tool} so it lands only on that agent's
-    # +RubyLLM::Chat+ (not in pikuri's +@tools+ list — sub-agents
-    # therefore don't inherit the parent's connect tool through the
-    # snapshot, and each agent's activation Set stays per-agent).
+    # the *shared* {Mcp::Servers} runtime — that's the resource the
+    # extension owns. +bind+ fires once on the parent agent and
+    # installs a +Connect+ tool keyed to it, registered via
+    # {Agent#internal_add_tool} so the tool's +execute+ closure can
+    # call back into the right chat when the LLM activates a server.
+    # Sub-agents do not inherit extensions, so they receive neither
+    # the +Connect+ tool nor any MCP-backed tools — personas own
+    # their toolset by construction.
     #
     # == Usage
     #
