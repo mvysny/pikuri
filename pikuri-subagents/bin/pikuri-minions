@@ -78,14 +78,14 @@ agent = Pikuri::Agent.new(
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
   # The boss has only the network/arithmetic tools — research is what
-  # gets delegated. Registering RESEARCHER here populates the
+  # gets delegated. Pikuri::SubAgent::Extension populates the
   # `<available_agents>` block in the system prompt and wires the
   # `agent` tool for fan-out delegation.
   c.add_tool Pikuri::Tool::WEB_SEARCH
   c.add_tool Pikuri::Tool::WEB_SCRAPE
   c.add_tool Pikuri::Tool::FETCH
   c.add_tool Pikuri::Tool::CALCULATOR
-  c.allow_agent Pikuri::Tool::SubAgent::RESEARCHER
+  c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::RESEARCHER])
 end
 
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during
@@ -106,8 +106,8 @@ ensure
   trap('INT', prev_trap || 'DEFAULT')
 end
 
-puts 'Pikuri Minions: a boss agent delegates focused subtasks to researcher minions.'
-puts 'Try: "compare the populations of Reykjavik, Helsinki, and Oslo as of 2024."'
+puts 'Pikuri Minions: a boss agent delegates focused research to minions.'
+puts 'Try: "plan a 2-day trip to Reykjavik — weather, three sights, two restaurants."'
 puts 'Press Ctrl+C or Ctrl+D to quit.'
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?

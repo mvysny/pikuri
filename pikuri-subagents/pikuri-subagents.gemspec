@@ -8,17 +8,18 @@ Gem::Specification.new do |spec|
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'Bundled sub-agent personas + the pikuri-minions demo for pikuri.'
+  spec.summary     = 'Sub-agent / persona machinery + bundled personas + the pikuri-minions demo for pikuri.'
   spec.description = <<~DESC
-    pikuri-subagents is the home for bundled +Pikuri::Tool::SubAgent::Persona+
-    instances + the +bin/pikuri-minions+ demo that shows fan-out
-    delegation. pikuri-core hosts the machinery (the +Tool::SubAgent+
-    tool, the +Persona+ record, +Configurator#allow_agent+); this
-    gem populates it with concrete personas. Today's surface is
-    +Pikuri::Tool::SubAgent::RESEARCHER+ (network read only). Hosts
-    that want sub-agents add this gem as a runtime dep and call
-    +c.allow_agent(...)+ in their +Agent.new+ block — same opt-in
-    shape as +pikuri-skills+ / +pikuri-mcp+ extensions.
+    pikuri-subagents owns the sub-agent (delegation) feature top
+    to bottom: the +Pikuri::SubAgent::SubAgentTool+ class (exposed
+    to the LLM as the +agent+ tool), the +Persona+ record, the
+    +Extension+ that wires it onto an agent, and the bundled
+    +Pikuri::SubAgent::RESEARCHER+ persona (network-read only).
+    Hosts that want sub-agents add this gem as a runtime dep and
+    call +c.add_extension Pikuri::SubAgent::Extension.new(personas: [...])+
+    inside their +Agent.new+ block — same opt-in shape as
+    +pikuri-skills+ / +pikuri-mcp+. Also ships +bin/pikuri-minions+
+    as a fan-out delegation demo.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'
@@ -41,10 +42,9 @@ Gem::Specification.new do |spec|
   ]
   spec.require_paths = ['lib']
 
-  # +Pikuri::Tool::SubAgent::Persona+ and the +Tool::SubAgent+ class
-  # live in pikuri-core; we only contribute populated +Persona+
-  # instances on top. The bundled +RESEARCHER+ persona's
-  # +tool_names+ list (+web_search+, +web_scrape+, +fetch+) all
-  # resolve to constants in pikuri-core too.
+  # pikuri-core ships the +Agent+ runtime + +Pikuri::Tool+ base class
+  # that +SubAgentTool+ subclasses; the bundled +RESEARCHER+ persona's
+  # +tool_names+ list (+web_search+, +web_scrape+, +fetch+) also
+  # resolves to constants in pikuri-core.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
 end

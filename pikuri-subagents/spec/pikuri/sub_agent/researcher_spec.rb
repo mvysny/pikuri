@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Tool::SubAgent::RESEARCHER do
+RSpec.describe Pikuri::SubAgent::RESEARCHER do
   it 'is a Persona record named "researcher"' do
-    assert_kind_of Pikuri::Tool::SubAgent::Persona, described_class
+    assert_kind_of Pikuri::SubAgent::Persona, described_class
     assert_equal 'researcher', described_class.name
   end
 
@@ -20,7 +20,11 @@ RSpec.describe Pikuri::Tool::SubAgent::RESEARCHER do
     assert described_class.max_steps.positive?
   end
 
-  describe 'integration with Pikuri::Agent::Configurator#allow_agent' do
+  describe 'integration with Pikuri::SubAgent::Extension' do
+    let(:tools) do
+      [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH]
+    end
+
     let(:configurator) do
       Pikuri::Agent::Configurator.new(
         transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
@@ -33,23 +37,20 @@ RSpec.describe Pikuri::Tool::SubAgent::RESEARCHER do
       )
     end
 
-    it 'registers cleanly when the three bundled web tools are present' do
-      configurator.add_tool(Pikuri::Tool::WEB_SEARCH)
-      configurator.add_tool(Pikuri::Tool::WEB_SCRAPE)
-      configurator.add_tool(Pikuri::Tool::FETCH)
-
+    it 'configures cleanly when the three bundled web tools are present' do
+      tools.each { |t| configurator.add_tool(t) }
+      ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
       # No raise — the persona's tool_names are a subset of registered tools.
-      configurator.allow_agent(Pikuri::Tool::SubAgent::RESEARCHER)
-      assert_equal ['researcher'], configurator.personas.keys
+      ext.configure(configurator)
+      assert_equal ['researcher'], ext.personas.keys
     end
 
-    it "raises the persona's tool_names check when a web tool is missing" do
+    it "raises Extension#configure when one of the persona's tools is missing" do
       configurator.add_tool(Pikuri::Tool::WEB_SEARCH)
       # web_scrape and fetch deliberately missing
+      ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
 
-      err = assert_raises(ArgumentError) do
-        configurator.allow_agent(Pikuri::Tool::SubAgent::RESEARCHER)
-      end
+      err = assert_raises(ArgumentError) { ext.configure(configurator) }
       assert_match(/web_scrape/, err.message)
       assert_match(/fetch/, err.message)
     end
