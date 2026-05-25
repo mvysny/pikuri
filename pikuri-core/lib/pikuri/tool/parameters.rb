@@ -133,6 +133,38 @@ module Pikuri
         add(name, 'boolean', description, required: false)
       end
 
+      # Add a required +enum+ property — a +string+ field constrained
+      # to one of a fixed set of values. Emits JSON-Schema +enum+
+      # alongside +type: 'string'+, which the LLM treats as a closed
+      # choice. Validation rejects any string outside the set with an
+      # LLM-actionable error message listing the allowed values.
+      #
+      # @param name [Symbol] property name
+      # @param description [String] human-readable description shown to the LLM
+      # @param values [Array<String>] non-empty list of allowed values;
+      #   each entry must be a non-empty String. The list is +dup+'d
+      #   and frozen at insertion so callers can't mutate it later.
+      # @return [self]
+      # @raise [ArgumentError] if +values+ is not a non-empty Array of
+      #   non-empty Strings (build-time check — surfaces as a host-side
+      #   bug rather than an LLM-facing validation error)
+      def required_enum(name, description, values:)
+        add_enum(name, description, values, required: true)
+      end
+
+      # Add an optional +enum+ property. See {#required_enum} for the
+      # +values+ contract and validation behavior.
+      #
+      # @param name [Symbol] property name
+      # @param description [String] human-readable description shown to the LLM
+      # @param values [Array<String>] non-empty list of allowed values
+      # @return [self]
+      # @raise [ArgumentError] if +values+ is not a non-empty Array of
+      #   non-empty Strings
+      def optional_enum(name, description, values:)
+        add_enum(name, description, values, required: false)
+      end
+
       # Schema in OpenAI JSON-Schema shape.
       #
       # @return [Hash] +{type: 'object', properties: {...}, required: [...]}+
@@ -168,12 +200,15 @@ module Pikuri
         @properties.each do |name, schema|
           if symbolized.key?(name)
             begin
-              result[name] = coerce(symbolized[name], schema[:type])
+              coerced = coerce(symbolized[name], schema[:type])
+              raise CoercionError, enum_message(schema[:enum], coerced) if schema[:enum] && !schema[:enum].include?(coerced)
+
+              result[name] = coerced
             rescue CoercionError => e
               errors << "Parameter `#{name}` #{e.message}."
             end
           elsif @required.include?(name.to_s)
-            errors << "Missing required parameter `#{name}` (#{schema[:type]}): #{schema[:description]}"
+            errors << missing_required_message(name, schema)
           end
         end
 
@@ -191,6 +226,22 @@ module Pikuri
 
       def add(name, type, description, required:)
         @properties[name] = { type: type, description: description }
+        @required << name.to_s if required
+        self
+      end
+
+      def add_enum(name, description, values, required:)
+        unless values.is_a?(Array) && !values.empty? &&
+               values.all? { |v| v.is_a?(String) && !v.empty? }
+          raise ArgumentError,
+                "values: must be a non-empty Array of non-empty Strings, got #{values.inspect}"
+        end
+
+        @properties[name] = {
+          type: 'string',
+          enum: values.dup.freeze,
+          description: description
+        }
         @required << name.to_s if required
         self
       end
@@ -284,6 +335,15 @@ module Pikuri
         "must be #{article} #{type} (got #{value.class}: #{value.inspect})"
       end
 
+      def enum_message(values, got)
+        "must be one of #{values.map { |v| "`#{v}`" }.join(', ')} (got String: #{got.inspect})"
+      end
+
+      def missing_required_message(name, schema)
+        enum_part = schema[:enum] ? ", one of: #{schema[:enum].map { |v| "`#{v}`" }.join(', ')}" : ''
+        "Missing required parameter `#{name}` (#{schema[:type]}#{enum_part}): #{schema[:description]}"
+      end
+
       def unknown_key_error(unknown)
         suggestion = DidYouMean::SpellChecker
                      .new(dictionary: @properties.keys.map(&:to_s))
@@ -305,7 +365,8 @@ module Pikuri
           'Expected schema:',
           *@properties.map { |name, prop|
             req = @required.include?(name.to_s) ? 'required' : 'optional'
-            "  - `#{name}` (#{prop[:type]}, #{req}): #{prop[:description]}"
+            enum_part = prop[:enum] ? ", one of: #{prop[:enum].map { |v| "`#{v}`" }.join(', ')}" : ''
+            "  - `#{name}` (#{prop[:type]}, #{req}#{enum_part}): #{prop[:description]}"
           }
         ].join("\n")
       end

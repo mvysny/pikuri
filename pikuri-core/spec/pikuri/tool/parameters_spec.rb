@@ -349,6 +349,161 @@ RSpec.describe Pikuri::Tool::Parameters do
     end
   end
 
+  describe 'enum fields' do
+    let(:enum_required) do
+      described_class.build do |p|
+        p.required_enum :name, 'Agent persona name.', values: %w[researcher scout]
+      end
+    end
+
+    describe 'build-time validation' do
+      it 'rejects a non-Array values:' do
+        err = assert_raises(ArgumentError) do
+          described_class.build { |p| p.required_enum :n, 'd', values: 'researcher' }
+        end
+        assert_includes err.message, 'must be a non-empty Array of non-empty Strings'
+      end
+
+      it 'rejects an empty values: list' do
+        assert_raises(ArgumentError) do
+          described_class.build { |p| p.required_enum :n, 'd', values: [] }
+        end
+      end
+
+      it 'rejects non-String entries in values:' do
+        assert_raises(ArgumentError) do
+          described_class.build { |p| p.required_enum :n, 'd', values: [:researcher] }
+        end
+        assert_raises(ArgumentError) do
+          described_class.build { |p| p.required_enum :n, 'd', values: ['ok', nil] }
+        end
+      end
+
+      it 'rejects an empty-String entry in values:' do
+        assert_raises(ArgumentError) do
+          described_class.build { |p| p.required_enum :n, 'd', values: ['ok', ''] }
+        end
+      end
+
+      it 'rejects an Array containing duplicates only if any individual entry is invalid' do
+        # duplicates are not specifically forbidden — JSON Schema allows them
+        schema = described_class.build { |p| p.required_enum :n, 'd', values: %w[a a] }.to_h
+        assert_equal %w[a a], schema[:properties][:n][:enum]
+      end
+    end
+
+    describe '#to_h' do
+      it 'emits {type: string, enum: [...], description: ...}' do
+        assert_equal(
+          {
+            type: 'object',
+            properties: {
+              name: { type: 'string', enum: %w[researcher scout], description: 'Agent persona name.' }
+            },
+            required: ['name']
+          },
+          enum_required.to_h
+        )
+      end
+
+      it 'has an optional_enum variant that does not appear in required' do
+        schema = described_class.build { |p| p.optional_enum :n, 'd', values: ['a'] }.to_h
+        assert_equal [], schema[:required]
+        assert_equal ['a'], schema[:properties][:n][:enum]
+      end
+
+      it 'freezes the enum array so callers cannot mutate it post-build' do
+        schema = enum_required.to_h
+        assert_raises(FrozenError) { schema[:properties][:name][:enum] << 'planner' }
+      end
+
+      it 'duplicates the caller-supplied values: array so external mutation does not leak in' do
+        external = ['researcher']
+        schema = described_class.build { |p| p.required_enum :n, 'd', values: external }.to_h
+        external << 'mutated'
+        assert_equal ['researcher'], schema[:properties][:n][:enum]
+      end
+    end
+
+    describe 'freeze after build' do
+      it 'raises FrozenError on post-build required_enum' do
+        assert_raises(FrozenError) { enum_required.required_enum(:foo, 'bar', values: ['a']) }
+      end
+
+      it 'raises FrozenError on post-build optional_enum' do
+        assert_raises(FrozenError) { enum_required.optional_enum(:foo, 'bar', values: ['a']) }
+      end
+    end
+
+    describe '#validate (happy)' do
+      it 'accepts a value in the enum' do
+        assert_equal({ name: 'researcher' }, enum_required.validate('name' => 'researcher'))
+      end
+
+      it 'accepts string-keyed and symbol-keyed input identically' do
+        assert_equal({ name: 'scout' }, enum_required.validate(name: 'scout'))
+      end
+
+      it 'allows omitting an optional enum field' do
+        schema = described_class.build { |p| p.optional_enum :name, 'd', values: %w[a b] }
+        assert_equal({}, schema.validate({}))
+      end
+    end
+
+    describe '#validate (sad)' do
+      it 'rejects a value not in the enum with a message listing the allowed values' do
+        err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          enum_required.validate('name' => 'planner')
+        end
+        assert_includes err.message, 'Parameter `name` must be one of `researcher`, `scout`'
+        assert_includes err.message, 'got String: "planner"'
+      end
+
+      it 'rejects exact-match misses (case-sensitive, no trimming)' do
+        assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          enum_required.validate('name' => 'Researcher')
+        end
+        assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          enum_required.validate('name' => 'researcher ')
+        end
+      end
+
+      it 'rejects non-string values with the string type error (enum check only runs after coerce)' do
+        err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          enum_required.validate('name' => 42)
+        end
+        assert_includes err.message, 'Parameter `name` must be a string'
+        refute_includes err.message, 'must be one of'
+      end
+
+      it 'rejects nil with the string type error' do
+        assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          enum_required.validate('name' => nil)
+        end
+      end
+
+      it 'mentions the allowed values in the missing-required diff line' do
+        err = assert_raises(Pikuri::Tool::Parameters::ValidationError) { enum_required.validate({}) }
+        assert_includes err.message,
+                        'Missing required parameter `name` (string, one of: `researcher`, `scout`): Agent persona name.'
+      end
+
+      it 'reprints the schema with the enum constraint visible' do
+        err = assert_raises(Pikuri::Tool::Parameters::ValidationError) { enum_required.validate({}) }
+        assert_includes err.message,
+                        '`name` (string, required, one of: `researcher`, `scout`): Agent persona name.'
+      end
+
+      it 'marks an optional enum field as optional in the reprinted schema' do
+        schema = described_class.build { |p| p.optional_enum :name, 'd', values: %w[a] }
+        err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+          schema.validate('name' => 'b')
+        end
+        assert_includes err.message, '`name` (string, optional, one of: `a`): d'
+      end
+    end
+  end
+
   describe 'mixed types in one schema' do
     let(:mixed_types) do
       described_class.build do |p|
