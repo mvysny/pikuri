@@ -46,7 +46,7 @@ deliberate set of bundled tools.
 
 | | Loop shape | Streaming | Termination | Step budget |
 | --- | --- | --- | --- | --- |
-| pikuri | three callbacks (`after_message`, `before_tool_call`, `after_tool_result`) wired on a `RubyLLM::Chat`; controls (`StepLimit`, `Cancellable`, `Interloper`) poked at well-defined boundaries; `run_loop` is `chat.ask(message)` (`lib/pikuri/agent.rb`) | opt-in via `Agent.new(streaming: true)` — per-chunk `Event::{Thinking,Assistant}Delta`; propagates to sub-agents + synthesizer | inherits ruby_llm's: no tool calls (or `Tool::Halt`); also `StepLimit::Exceeded` → `Synthesizer.run` rescue, or `Cancellable::Cancelled` re-raise | yes (`Control::StepLimit`, with step-exhaustion rescue via `Synthesizer`) |
+| pikuri | three callbacks (`after_message`, `before_tool_call`, `after_tool_result`) wired on a `RubyLLM::Chat`; controls (`StepLimit`, `Cancellable`, `Interloper`) poked at well-defined boundaries; `run_loop` is `chat.ask(message)` (`pikuri-core/lib/pikuri/agent.rb`) | opt-in via `Agent.new(streaming: true)` — per-chunk `Event::{Thinking,Assistant}Delta`; propagates to sub-agents + synthesizer | inherits ruby_llm's: no tool calls (or `Tool::Halt`); also `StepLimit::Exceeded` → `Synthesizer.run` rescue, or `Cancellable::Cancelled` re-raise | yes (`Control::StepLimit`, with step-exhaustion rescue via `Synthesizer`) |
 | ruby_llm | recursive: `Chat#complete` calls itself after running tool calls (`lib/ruby_llm/chat.rb:156–293`) | yes, optional via block | LLM returns no tool calls, OR `Tool::Halt` short-circuits | no — bounded only by `Halt` |
 | langchainrb | state machine over `messages.last.standard_role`: `process_latest_message` dispatches `:system / :llm / :user / :tool` to handlers; on tool-call response sets `:requires_action`; `execute_tools` sets `:in_progress`; loops until terminal state | per-LLM block at `Assistant.new(...) { \|chunk\| ... }`; provider-dependent | LLM returns no tool calls → `:completed`; or `auto_tool_execution: false` returns at `:requires_action` so host can inspect | no |
 | pi | nested loops: outer for follow-up queue, inner for steering+tools (`packages/agent/src/agent-loop.ts:155–269`) | yes — `EventStream<AgentEvent>` | `shouldStopAfterTurn()` hook, `stopReason`, abort | implicit via context-window compaction |
@@ -127,7 +127,7 @@ contract — they're synthesised as raw `RubyLLM::Tool` subclasses inside
 `Mcp::Servers` from each server's `input_schema`, fed in via
 `Agent#internal_add_tool`. The strict-validation guarantee covers
 native tools only; MCP-side validation catches bad input on the server
-end. See `lib/pikuri/mcp/servers.rb` for the rationale.
+end. See `pikuri-mcp/lib/pikuri/mcp/servers.rb` for the rationale.
 
 ---
 
@@ -328,7 +328,7 @@ a JSON log) would take.
 | opencode | tool catches Effect Schema decode failure and returns "rewrite the input..." text | text observation | caught and converted to `MessageV2.ErrorPart`; loop continues |
 
 Pikuri's split — _recoverable failures become observations, bugs raise_ — is
-explicit and documented in `lib/pikuri/tool.rb`. ruby_llm shares the
+explicit and documented in `pikuri-core/lib/pikuri/tool.rb`. ruby_llm shares the
 philosophy; pikuri's String convention is what flows through to the model
 (ruby_llm's `Chat#handle_tool_calls` calls `.to_s` on whatever the tool
 returns and writes it as the tool message's content). Langchainrb is closer
@@ -646,7 +646,7 @@ more than wiring through ruby_llm's existing primitive.
    model call. Pikuri's synthetic-tool factory already passes any
    return value through verbatim, so the only thing missing is a
    `Tool::Halt` helper or convention in pikuri's API and a doc note in
-   `lib/pikuri/tool.rb`. Cheap.
+   `pikuri-core/lib/pikuri/tool.rb`. Cheap.
 
 ### B-tier — worth it but more invasive
 
