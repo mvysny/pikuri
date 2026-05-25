@@ -37,11 +37,12 @@ instructions.
 
 ## Further reading
 
-- **Narrative walkthrough:** a guide chapter on
-  `pikuri-assistant` is planned once the binary has more
-  substance — see [the guide's index](../docs/guide/) for the
-  current state. The vocabulary you build up in chapters 1–3
-  covers the entire wiring of this binary.
+- **Narrative walkthrough:**
+  [Chapter 4 of the guide](../docs/guide/04-mcp.md) walks the
+  MCP-side wiring of this binary end-to-end. A fuller chapter
+  on `pikuri-assistant` as a whole lands when the binary has
+  more substance — see [the guide's index](../docs/guide/) for
+  the current state.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-assistant> (once published),
   or run `bundle exec yard` in this directory for a local copy.

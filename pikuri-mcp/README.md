@@ -55,11 +55,10 @@ activation set.
 
 ## Further reading
 
-- **Narrative walkthrough:** a guide chapter on MCP and
-  `pikuri-assistant` is planned once that surface stabilises. In
-  the meantime, [chapter 2](../docs/guide/02-subagents.md) and
-  [chapter 3](../docs/guide/03-code.md) establish the
-  `add_extension` pattern this gem follows.
+- **Narrative walkthrough:**
+  [Chapter 4 of the guide](../docs/guide/04-mcp.md) walks the
+  wiring end-to-end with the official GitHub MCP server in
+  Docker, and covers the synthesizer and verifier in depth.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-mcp> (once published), or run
   `bundle exec yard` in this directory for a local copy.

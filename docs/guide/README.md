@@ -24,15 +24,22 @@ local site, or — once gems are published — see
    parallel, get one synthesised answer back. This is where you
    first see pikuri's Extension protocol in action.
 3. **[The in-repo coding agent](03-code.md).** The dense chapter.
-   Re-applies the Extension protocol across three new seams
-   (`Workspace`, `Confirmer`, `Sandbox`), adds file + shell tools,
-   wires in Agent Skills discovery, and uses sub-agents for
-   read-only code recon via the `SCOUT` persona. Includes the
-   threat-model discussion you should read before pointing
-   `pikuri-code` at anything sensitive.
+   Three new seams at once (`Workspace`, `Confirmer`, `Sandbox`),
+   file + shell tools, and read-only code recon via the `SCOUT`
+   persona. Includes the threat-model discussion you should read
+   before pointing `pikuri-code` at anything sensitive.
+4. **[MCP and `pikuri-assistant`](04-mcp.md).** Plugging in tool
+   servers somebody else wrote — the official GitHub MCP server
+   in Docker as the worked example. Where `pikuri-mcp`'s
+   distinctive contributions live: the pre-flight
+   prompt-injection verifier and the description synthesizer.
+   Closes with its own threat-model section.
+5. **[Agent Skills (stub)](05-skills.md).** A placeholder
+   chapter — what skills are in one paragraph, a minimal `lol`
+   demo, and a TBD list. Currently shaped to be skippable;
+   coming back to flesh out once the guide has workflows that
+   motivate it.
 
-A fourth chapter on MCP and the `pikuri-assistant` binary will land
-once that surface stabilises. In the meantime, see
-[`pikuri-mcp`](../../pikuri-mcp/README.md) and
-[`pikuri-assistant`](../../pikuri-assistant/README.md) for what's
-already there.
+Further chapters (a deeper `pikuri-assistant` walkthrough, more
+advanced coding-agent recipes) will land as those surfaces
+stabilise.
