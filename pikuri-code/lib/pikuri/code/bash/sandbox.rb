@@ -124,9 +124,10 @@ module Pikuri
         #   per-path +overlay-<slug>/+ subdirs from that umbrella.
         # * {Bash} runs +bash -c+ synchronously
         #   ({Pikuri::Subprocess#wait}), and sub-agents block their
-        #   parent's loop while running ({Tool::SubAgent#execute}),
-        #   so two +bwrap+ invocations spawned by the same pikuri
-        #   process never overlap in time.
+        #   parent's loop while running (the +agent+ tool from
+        #   +pikuri-subagents+ runs its child's loop synchronously
+        #   in its +execute+ closure), so two +bwrap+ invocations
+        #   spawned by the same pikuri process never overlap in time.
         #
         # Two concurrent pikuri-code processes are independent — each
         # mints its own umbrella, each gets its own
