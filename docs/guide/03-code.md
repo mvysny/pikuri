@@ -6,10 +6,8 @@ wiring it up reapplies the Extension pattern from chapter 2 across
 **three new seams at once** — `Workspace` (what the LLM sees on
 the filesystem), `Confirmer` (how user-state mutations get
 approved), and `Sandbox` (what filesystem the `bash` subprocess
-actually runs against). On top of that, it brings in
-[Agent Skills](https://agentskills.io/specification) discovery and
-uses `SCOUT` (the read-only counterpart to `RESEARCHER` from
-chapter 2) for code recon.
+actually runs against). It also uses `SCOUT` (the read-only
+counterpart to `RESEARCHER` from chapter 2) for code recon.
 
 The chapter ends with an honest threat-model section. **Read it
 before you point `pikuri-code` at anything sensitive.**
@@ -38,8 +36,8 @@ mkdir /tmp/pikuri-playground && cd /tmp/pikuri-playground
 You'll land in a REPL with a `>` prompt — same shape as
 `pikuri-chat`, except the agent now has `read`, `grep`, `glob`,
 `edit`, `write`, `bash`, the four web/calculator tools from
-chapter 1, the `skill` tool, and the `agent` tool (with both
-`SCOUT` and `RESEARCHER` personas wired in). Try:
+chapter 1, and the `agent` tool (with both `SCOUT` and
+`RESEARCHER` personas wired in). Try:
 
 ```
 > Write a small Ruby script hello.rb that prints "hi, $USER" and run it.
@@ -80,8 +78,7 @@ rejected with an LLM-readable `Error:` string.
 workspace = Pikuri::Workspace::Filesystem.new(
   project_root: project_root,                  # writable; the anchor
   readable:     Pikuri::Code::ToolchainPaths.readable +
-                toolchain_overlay +
-                skill_catalog.roots,
+                toolchain_overlay,
   temp:         true                           # ephemeral playground
 )
 ```
@@ -97,10 +94,10 @@ The four kwargs:
   discovered project root at startup so the process cwd and the
   workspace agree on one anchor.
 - **`readable`** — extra read-only roots. `pikuri-code` includes
-  system toolchains (`/usr`, `/opt`), per-user dependency caches
-  (`~/.gradle`, `~/.m2/repository`, `~/.cargo/registry`, …), and
-  the skill catalog roots, so the LLM can `grep` the Ruby stdlib
-  or read JDK sources without those paths becoming writable.
+  system toolchains (`/usr`, `/opt`) and per-user dependency caches
+  (`~/.gradle`, `~/.m2/repository`, `~/.cargo/registry`, …), so the
+  LLM can `grep` the Ruby stdlib or read JDK sources without those
+  paths becoming writable.
 - **`writable`** — extra writable roots. Empty by default for
   `pikuri-code`; the project root is already writable.
 - **`temp: true`** — mints an ephemeral playground subdir under
@@ -240,28 +237,26 @@ end
 
 Three observations on this block:
 
-1. **The Extension pattern is now familiar.** You met
-   `SubAgent::Extension` in chapter 2 with its `configure(c)` +
-   `bind(agent)` pair. `Skill::Extension` and `Mcp::Extension`
-   are exactly the same shape — each one's `configure` appends a
-   `<available_skills>` / `<available_mcps>` snippet to the system
-   prompt and registers a tool (`skill` and `mcp_connect`
-   respectively); each one's `bind` is where the per-agent state
-   gets wired. New seams, same dance.
+1. **The Extension pattern is the one from chapter 2.**
+   `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
+   pair you met there. (`Skill::Extension` and `Mcp::Extension` are
+   the other two extensions `pikuri-code` wires — chapters
+   [5](05-skills.md) and [4](04-mcp.md) cover what those do; for
+   now treat them as lines that bring in features you haven't met
+   yet.)
 2. **The same `workspace` / `confirmer` instances thread through
-   four tools.** `Write` and `Bash` both take `confirmer`; all six
+   six tools.** `Write` and `Bash` both take `confirmer`; all six
    file/shell tools take `workspace`. One construction, shared
    wiring — which is also why sub-agents inheriting parent tool
    *instances* (chapter 2) preserves all that wiring: a `SCOUT`
    spawned here uses the parent's `Read` tool, which already has
    the parent's `workspace` wired in.
-3. **Order matters for the SubAgent extension specifically.** The
-   `SubAgent::Extension`'s `configure` validates `SCOUT`'s
-   `tool_names: %w[read grep glob]` against `c.tools` — those
-   three tools were `add_tool`'d above, so the validation passes.
-   If you moved `add_extension` above them, you'd get an
-   `ArgumentError` at boot. This is by design (fail fast on the
-   host-side bug).
+3. **Order matters for the SubAgent extension specifically.** Its
+   `configure` validates `SCOUT`'s `tool_names: %w[read grep glob]`
+   against `c.tools` — those three tools were `add_tool`'d above,
+   so the validation passes. If you moved `add_extension` above
+   them, you'd get an `ArgumentError` at boot. This is by design
+   (fail fast on the host-side bug).
 
 ## SCOUT — code recon as a sub-agent
 
@@ -308,39 +303,6 @@ spawning a `SCOUT` from a coding agent with `bash` in scope would
 hand `bash` to the child, and the privilege separation would be a
 lie. Personas opt in explicitly, and `SCOUT` opts in to three
 read-only tools and nothing else.
-
-## Agent Skills
-
-`pikuri-code` discovers
-[Agent Skills](https://agentskills.io/specification) at startup,
-under `.pikuri/skills`, `.claude/skills`, or `.agents/skills`
-beneath the project root and the user's home directory. Each skill
-is a directory with a `SKILL.md` (frontmatter + body) plus any
-sidecar files; the skill's description gets advertised to the LLM
-via the `<available_skills>` snippet in the system prompt, and
-the `skill` tool loads the body into the conversation on demand.
-
-If you have no skills installed, the section is silent at boot. To
-try one, drop a directory under `~/.claude/skills/` with a
-minimal `SKILL.md`:
-
-```markdown
----
-name: lol
-description: Reply with "lol" to anything.
----
-
-When the user asks anything, just reply "lol". Nothing else.
-```
-
-Restart `pikuri-code`. The boot banner now reports the skill, and
-asking anything should trigger the model to call `skill` with
-`name: "lol"`, load the body, and answer accordingly.
-
-The shape comes from the [Agent Skills standard](https://agentskills.io/specification),
-which Claude Code and `pi` also implement — so a skill folder you
-write once is portable across all three. Same idea as MCP for
-servers: a single content format that multiple harnesses pick up.
 
 ## Threat model — what `pikuri-code` actually protects against
 
@@ -407,17 +369,22 @@ work.
 
 ## What's next
 
-The natural next chapter is MCP and the `pikuri-assistant` binary
-— the demonstration that the same `add_extension` pattern you saw
-three times in `pikuri-code` also wires in connections to external
-services like Gmail, GitHub, Linear, or Notion. That chapter lands
-when `pikuri-assistant` has enough substance to be worth a
-walkthrough.
+Two follow-ons land in the next two chapters:
 
-In the meantime, the [`pikuri-mcp`](../../pikuri-mcp/README.md) and
-[`pikuri-assistant`](../../pikuri-assistant/README.md) READMEs
-cover the API surface and how to hand-edit the registry in the
-binary. The vocabulary you built up in chapters 1–3
-(`Pikuri::Agent`, `Tool`, listeners, the Extension protocol,
-configure/bind, sub-agent privilege separation) is the entire
-vocabulary needed to read either of them.
+- **[Chapter 4 — MCP](04-mcp.md)** wires `pikuri-assistant` to an
+  external Model Context Protocol server (the official GitHub
+  MCP, in Docker) — the same `add_extension` shape, applied to
+  tools you didn't write. It's also where pikuri-mcp's
+  distinctive bits (the prompt-injection verifier and the
+  description synthesizer) get explained.
+- **[Chapter 5 — Skills (stub)](05-skills.md)** is a holding
+  place for [Agent Skills](https://agentskills.io/specification),
+  the standard for packaging "when you see *X*, do *Y*"
+  instructions as portable folders. `pikuri-code` already
+  discovers them; the chapter is a stub until the guide has
+  workflows worth bottling as real examples.
+
+The vocabulary you built up in chapters 1–3 (`Pikuri::Agent`,
+`Tool`, listeners, the Extension protocol, configure/bind,
+sub-agent privilege separation) is the entire vocabulary needed to
+read either of those.
