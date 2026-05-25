@@ -88,6 +88,14 @@ Same author, written precisely so the source is the lesson.
 Pikuri is the production-shaped sibling: same loop, plus tools,
 listeners, sub-agents, and ergonomics.
 
+## Security
+
+The threat model in one page — three circles of trust, four
+worked prompt-injection attacks broken by the model, explicit
+non-goals — lives in [`SECURITY.md`](SECURITY.md). Read it once
+before pointing `pikuri-code` (or any future write-capable
+variant) at anything sensitive.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to run the test
