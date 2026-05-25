@@ -96,13 +96,6 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     end
   end
 
-  describe '#for_sub_agent' do
-    it 'returns nil so the Agent does not wire an Interloper on a sub-agent' do
-      assert_nil described_class.new.for_sub_agent
-      assert_nil described_class.new.for_sub_agent(max_steps: 5, id: 'sub_agent 0')
-    end
-  end
-
   describe '#to_s' do
     it 'renders the bare class name when idle' do
       assert_equal 'Interloper', described_class.new.to_s

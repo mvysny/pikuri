@@ -51,36 +51,6 @@ RSpec.describe Pikuri::Agent::Control::StepLimit do
     end
   end
 
-  describe '#for_sub_agent' do
-    it 'returns a fresh StepLimit at the caller-supplied max_steps' do
-      original = described_class.new(max: 99)
-      derived  = original.for_sub_agent(max_steps: 5)
-
-      refute_same original, derived
-      assert_equal 5, derived.max
-    end
-
-    it "defaults max_steps to the receiver's own cap when the key is absent" do
-      derived = described_class.new(max: 99).for_sub_agent
-      assert_equal 99, derived.max
-    end
-
-    it 'rejects non-positive max_steps via StepLimit#initialize' do
-      assert_raises(ArgumentError) { described_class.new(max: 99).for_sub_agent(max_steps: 0) }
-    end
-
-    it 'does not share its mutable counter with the parent' do
-      parent = described_class.new(max: 4)
-      derived = parent.for_sub_agent(max_steps: 4)
-
-      3.times { parent.tick! }
-
-      # The derived control hasn't seen any tool calls yet, so 3 must land
-      # without raising — they would already trip if the counter were shared.
-      3.times { derived.tick! }
-    end
-  end
-
   describe '#to_s' do
     it 'renders the configured cap' do
       assert_equal 'StepLimit(max=20)', described_class.new(max: 20).to_s

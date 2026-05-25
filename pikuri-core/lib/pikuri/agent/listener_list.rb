@@ -35,8 +35,9 @@ module Pikuri
 
       # Iterate over the wrapped listeners in registration order. The
       # method exists so a ListenerList can be passed directly to
-      # {Configurator#add_listeners} (used by {Tool::SubAgent} when
-      # seeding a sub-agent's Configurator from the parent's list).
+      # {Configurator#add_listeners} (used by the +agent+ tool from
+      # +pikuri-subagents+ when seeding a sub-agent's Configurator
+      # from the parent's list).
       #
       # @yield [listener]
       # @yieldparam listener [Listener::Base]

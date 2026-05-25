@@ -19,7 +19,6 @@ module Pikuri
     #     c.add_tool     Pikuri::Tool::WEB_SEARCH
     #     c.add_tool     Pikuri::Tool::WEB_SCRAPE
     #     c.add_tool     Pikuri::Tool::FETCH
-    #     c.allow_agent  Pikuri::Tool::SubAgent::RESEARCHER
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
@@ -97,14 +96,6 @@ module Pikuri
       #   wiring is complete.
       attr_reader :extensions
 
-      # @return [Hash{String=>Tool::SubAgent::Persona}] personas
-      #   registered via {#allow_agent}, keyed by +persona.name+ in
-      #   insertion order. Empty when no persona was registered, in
-      #   which case the Agent ctor skips creating a
-      #   {Tool::SubAgent} and never appends the +<available_agents>+
-      #   snippet to the system prompt.
-      attr_reader :personas
-
       # @param transport [Agent::ChatTransport]
       # @param system_prompt_base [String]
       # @param id [String]
@@ -127,7 +118,6 @@ module Pikuri
         @system_prompt_additions = []
         @on_close_handlers = []
         @extensions = []
-        @personas = {}
       end
 
       # Append a tool to the agent's static tool list.
@@ -211,55 +201,6 @@ module Pikuri
         raise ArgumentError, 'on_close requires a block' unless block_given?
 
         @on_close_handlers << blk
-        nil
-      end
-
-      # Register a persona that the agent may spawn via the +agent+
-      # tool. Each persona declares its own tool subset, system
-      # prompt, and step budget — see {Tool::SubAgent::Persona}.
-      #
-      # The Agent ctor reads {#personas} after the block returns
-      # and, when non-empty, constructs one {Tool::SubAgent}
-      # instance keyed to the whole map and appends a single
-      # +<available_agents>+ snippet to the system prompt
-      # describing every registered persona.
-      #
-      # == Validation
-      #
-      # +persona.tool_names+ must be a subset of the tools already
-      # registered (via {#add_tool} / {#add_tools} / an extension's
-      # +configure+). Registering a persona whose +tool_names+
-      # reference an unregistered tool raises here — surfaces as a
-      # host-side bug (forgot to wire a tool) rather than an
-      # LLM-facing validation error at runtime. Practical
-      # implication: call +c.allow_agent+ *after* the tools the
-      # persona depends on.
-      #
-      # Registering the same +persona.name+ twice raises (likely a
-      # copy-paste bug; one slot per name).
-      #
-      # @param persona [Tool::SubAgent::Persona]
-      # @raise [ArgumentError] if +persona+ is not a
-      #   {Tool::SubAgent::Persona}, the name is already
-      #   registered, or +tool_names+ references a tool not in
-      #   {#tools}
-      # @return [void]
-      def allow_agent(persona)
-        raise ArgumentError, "expected Tool::SubAgent::Persona, got #{persona.class}" \
-          unless persona.is_a?(Tool::SubAgent::Persona)
-        raise ArgumentError, "persona #{persona.name.inspect} is already registered" \
-          if @personas.key?(persona.name)
-
-        have = @tools.map(&:name)
-        missing = persona.tool_names - have
-        unless missing.empty?
-          raise ArgumentError,
-                "persona #{persona.name.inspect} references unregistered tool(s) " \
-                "#{missing.inspect}. Register them via c.add_tool before calling " \
-                "c.allow_agent. Currently registered: #{have.inspect}."
-        end
-
-        @personas[persona.name] = persona
         nil
       end
     end

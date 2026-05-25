@@ -224,7 +224,8 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
 
       # The sub-agent isn't identified by inheritance — it gets a fresh, empty
       # id unless the caller threads one through. Matches the contract
-      # in Pikuri::Tool::SubAgent, which always passes a generated id.
+      # the +agent+ tool from pikuri-subagents implements: it always
+      # passes a generated id.
       assert_equal '', derived.id
     end
   end

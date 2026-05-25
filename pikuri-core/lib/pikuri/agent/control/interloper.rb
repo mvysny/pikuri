@@ -70,16 +70,16 @@ module Pikuri
       #
       # == Sub-agent semantics
       #
-      # {#for_sub_agent} returns +nil+. Sub-agents are private to
-      # the parent agent; the host has no handle to them, so a
-      # child +Interloper+ would be unreachable. The sub-agent's
-      # {Agent#initialize} simply receives +interloper: nil+ from
-      # {Tool::SubAgent}, which is its default. The behavior
-      # contrasts with {Control::Cancellable}, which shares its
-      # instance by reference so the parent's signal propagates
-      # to children — cancellation is a global "stop the whole
-      # tree" event, whereas injection is a directed "talk to the
-      # main agent" event.
+      # Sub-agents are private to the parent agent; the host has
+      # no handle to them, so a child +Interloper+ would be
+      # unreachable. The +agent+ tool from +pikuri-subagents+
+      # therefore omits the kwarg when spawning a child, leaving
+      # the sub-agent's +interloper+ at its default +nil+. The
+      # behavior contrasts with {Control::Cancellable}, which is
+      # shared by reference so the parent's signal propagates to
+      # children — cancellation is a global "stop the whole tree"
+      # event, whereas injection is a directed "talk to the main
+      # agent" event.
       class Interloper
         def initialize
           @mutex = Mutex.new
@@ -141,17 +141,6 @@ module Pikuri
             @items.clear
             items
           end
-        end
-
-        # Sub-agent variant: +nil+, signalling to {Agent} (and
-        # transitively to {Tool::SubAgent}) that no +Interloper+
-        # should be wired on a spawned sub-agent. See the class
-        # header for the "host has no handle to sub-agents"
-        # rationale.
-        #
-        # @return [nil]
-        def for_sub_agent(**)
-          nil
         end
 
         # @return [String] short label for {Agent#to_s}; reflects

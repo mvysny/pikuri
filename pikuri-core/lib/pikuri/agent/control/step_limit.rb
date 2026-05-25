@@ -69,20 +69,6 @@ module Pikuri
         #   can introspect it (and so tests can assert it)
         attr_reader :step
 
-        # Sub-agent variant: a fresh +StepLimit+ at the
-        # caller-supplied +max_steps:+, or — when the key is
-        # absent — at the receiver's own cap. The mutable counter
-        # is per-chat, so the parent's instance cannot govern a
-        # sub-agent's chat; every sub-agent needs its own.
-        #
-        # @param max_steps [Integer] positive step cap for the
-        #   sub-agent; defaults to the receiver's current cap
-        # @return [StepLimit]
-        # @raise [ArgumentError] if +max_steps+ is non-positive
-        def for_sub_agent(max_steps: @max)
-          self.class.new(max: max_steps)
-        end
-
         # @return [String] short config dump for {Agent#to_s}
         def to_s
           "StepLimit(max=#{@max})"

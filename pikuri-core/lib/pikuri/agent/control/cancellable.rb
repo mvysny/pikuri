@@ -40,13 +40,13 @@ module Pikuri
       #
       # == Sub-agent semantics
       #
-      # {#for_sub_agent} returns +self+ — the same instance is
-      # shared by reference across the parent, every sub-agent,
-      # and the synthesizer rescue. One {#cancel!} call stops the
-      # whole tree. This contrasts with {StepLimit}, which gives
-      # each agent its own counter (because step budgets are
-      # per-agent concerns) — cancellation is a global signal
-      # from the user, so it must propagate down.
+      # Cancellation is a global "stop the whole tree" signal —
+      # the +agent+ tool from +pikuri-subagents+ shares the
+      # parent's +Cancellable+ by reference when spawning a child,
+      # so one {#cancel!} call stops the parent, every running
+      # sub-agent, and the synthesizer rescue. The sharing rule
+      # lives at the spawn site (sub-agent code), not on this
+      # class.
       class Cancellable
         # Raised by {#check!} once {#cancel!} has been called.
         # Carries no fields; the cancellation reason ("the user
@@ -103,16 +103,6 @@ module Pikuri
         # @return [void]
         def reset!
           @cancelled = false
-        end
-
-        # Sub-agent variant: the same instance, shared by
-        # reference, so a single {#cancel!} stops the parent,
-        # every running sub-agent, and the synthesizer rescue.
-        # See the class header for the rationale.
-        #
-        # @return [Cancellable] the receiver
-        def for_sub_agent(**)
-          self
         end
 
         # @return [String] short label for {Agent#to_s}; reflects

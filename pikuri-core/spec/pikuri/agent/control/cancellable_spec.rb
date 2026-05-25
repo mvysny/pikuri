@@ -66,23 +66,6 @@ RSpec.describe Pikuri::Agent::Control::Cancellable do
     end
   end
 
-  describe '#for_sub_agent' do
-    it 'returns the receiver itself — shared by reference across the tree' do
-      flag = described_class.new
-      assert_same flag, flag.for_sub_agent
-      assert_same flag, flag.for_sub_agent(max_steps: 5, anything_else: :nope)
-    end
-
-    it 'cancelling the parent cancels the sub-agent instance' do
-      parent = described_class.new
-      derived = parent.for_sub_agent
-
-      parent.cancel!
-
-      assert derived.cancelled?
-    end
-  end
-
   describe '#to_s' do
     it 'renders the armed state when no cancel has happened' do
       assert_equal 'Cancellable(armed)', described_class.new.to_s

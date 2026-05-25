@@ -8,11 +8,12 @@ module Pikuri
     #
     # Bundling them is structural protection against a recurring bug
     # class — every forwarding site (the synthesizer rescue in
-    # {Agent#run_loop}, {Tool::SubAgent} spawning a sub-agent) used to
-    # pass the three individually, and dropping one routed the spawned
-    # chat to a different server or raised +RubyLLM::ModelNotFoundError+
-    # on the unknown model id. With a single value object the call site
-    # can't silently miss a field.
+    # {Agent#run_loop}, the +agent+ tool from +pikuri-subagents+
+    # spawning a sub-agent) used to pass the three individually, and
+    # dropping one routed the spawned chat to a different server or
+    # raised +RubyLLM::ModelNotFoundError+ on the unknown model id.
+    # With a single value object the call site can't silently miss a
+    # field.
     #
     # Pure data carrier: no +RubyLLM+ references here, so the seam stays
     # in {Agent}, +bin/pikuri-chat+, and {Tool}.
