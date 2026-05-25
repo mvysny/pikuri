@@ -96,3 +96,14 @@ having a shell. The sandboxing story is a known gap and tracked
 as future work (see [`IDEAS.md`](../IDEAS.md)); until it lands,
 **assume the agent can do anything your user can do**, and
 approve prompts on that basis.
+
+## Further reading
+
+- **Narrative walkthrough:** [chapter 3 of the pikuri
+  guide](../docs/guide/03-code.md) — the three new seams
+  (`Workspace` / `Confirmer` / `Sandbox`), the full wiring block
+  with all three extensions, the `SCOUT` persona in action, and
+  an expanded threat-model discussion.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-code> (once published), or run
+  `bundle exec yard` in this directory for a local copy.

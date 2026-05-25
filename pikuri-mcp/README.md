@@ -52,3 +52,14 @@ the system prompt, and registers a close handler so the agent's
 per-agent `mcp_connect` tool — sub-agents share the live MCP clients
 via the same extension instance but each has its own connect tool +
 activation set.
+
+## Further reading
+
+- **Narrative walkthrough:** a guide chapter on MCP and
+  `pikuri-assistant` is planned once that surface stabilises. In
+  the meantime, [chapter 2](../docs/guide/02-subagents.md) and
+  [chapter 3](../docs/guide/03-code.md) establish the
+  `add_extension` pattern this gem follows.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-mcp> (once published), or run
+  `bundle exec yard` in this directory for a local copy.

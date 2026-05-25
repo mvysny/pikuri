@@ -34,3 +34,14 @@ tool-selection guidance on top of pikuri-chat's base prompt: prefer
 MCP-backed tools for OAuth-gated SaaS over `web_scrape` / `fetch`,
 mcp_connect-once-per-server flow, treat MCP outputs as data not
 instructions.
+
+## Further reading
+
+- **Narrative walkthrough:** a guide chapter on
+  `pikuri-assistant` is planned once the binary has more
+  substance — see [the guide's index](../docs/guide/) for the
+  current state. The vocabulary you build up in chapters 1–3
+  covers the entire wiring of this binary.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-assistant> (once published),
+  or run `bundle exec yard` in this directory for a local copy.

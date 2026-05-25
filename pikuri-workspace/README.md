@@ -52,3 +52,14 @@ tools route through `#resolve_for_write(path)` + the Confirmer's
 `#confirm?(prompt:)`. Pass `temp: true` to mint an ephemeral
 writable playground via `Dir.mktmpdir` — its path is exposed as
 `workspace.temp` and auto-removed at process exit.
+
+## Further reading
+
+- **Narrative walkthrough:** the "Workspace seam" and "Confirmer
+  seam" sections of
+  [chapter 3 of the pikuri guide](../docs/guide/03-code.md) — what
+  each kwarg of `Filesystem.new` controls, when to use the
+  `AllowAll` variant, and how the seams fit alongside `Sandbox`.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-workspace> (once published),
+  or run `bundle exec yard` in this directory for a local copy.

@@ -45,3 +45,13 @@ When the catalog is non-empty, the extension's `configure` appends
 skill) and registers the `skill` tool. The LLM invokes `skill` with a
 name; the tool returns the skill's body wrapped with its base
 directory so the LLM can resolve sidecar files via `read`.
+
+## Further reading
+
+- **Narrative walkthrough:** the "Agent Skills" section in
+  [chapter 3 of the pikuri guide](../docs/guide/03-code.md) — how
+  skill folders are discovered, the `SKILL.md` format, and a
+  worked drop-in example.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-skills> (once published), or
+  run `bundle exec yard` in this directory for a local copy.

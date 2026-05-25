@@ -61,6 +61,15 @@ a per-agent `agent` tool. Sub-agents do **not** inherit extensions
 e.g. a `RESEARCHER` cannot recursively spawn another `agent` tool.
 
 See `bin/pikuri-minions` for a worked example with REPL +
-fan-out-biased system prompt, and the
-[guide chapter on sub-agents](../docs/guide/02-subagents.md) for
-the narrative walkthrough.
+fan-out-biased system prompt.
+
+## Further reading
+
+- **Narrative walkthrough:** [chapter 2 of the pikuri
+  guide](../docs/guide/02-subagents.md) — the `Persona` record,
+  the `configure` + `bind` Extension protocol, what gets inherited
+  vs. owned when a parent spawns a child, and the
+  privilege-separation story.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-subagents> (once published),
+  or run `bundle exec yard` in this directory for a local copy.

@@ -65,3 +65,13 @@ agent.run_loop(user_message: 'What is 17 * 23?')
 
 See `bin/pikuri-chat` for a worked example with REPL, signal
 handling, and cancellation.
+
+## Further reading
+
+- **Narrative walkthrough:** [chapter 1 of the pikuri guide](../docs/guide/01-chat.md)
+  — install llama.cpp, start the server, run `pikuri-chat`, the
+  agentic loop, the four bundled tools, and search-provider
+  privacy postures.
+- **API reference:** browse the YARD docs at
+  <https://rubydoc.info/gems/pikuri-core> (once published), or run
+  `bundle exec yard` in this directory for a local copy.
