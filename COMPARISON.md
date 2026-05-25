@@ -444,6 +444,66 @@ factory" in `Agent` to update. Persistence is a fair amount of
 machinery for one feature; not worth porting until pikuri has another
 reason to introduce a session store.
 
+### Bundled persona inventory
+
+The mechanism comparison above is about *how* sub-agents work; this is
+about *what ships by default*. Each project picks a different mid-line
+between "ship nothing, host wires up everything" and "ship the whole
+zoo."
+
+| Project | Personas shipped | Source |
+| --- | --- | --- |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 10 steps); `SCOUT` (read/grep/glob, 15 steps) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; IDEAS.md §"Personas" |
+| ruby_llm / langchainrb | none — no sub-agent surface | — |
+| pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
+| opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
+| Claude Code | `general-purpose`, `Explore`, `Plan`, `statusline-setup`, `claude-code-guide` | <https://code.claude.com/docs/en/sub-agents> |
+
+Cross-cutting by role:
+
+| Role | pikuri | pi | opencode | Claude Code |
+| --- | --- | --- | --- | --- |
+| read-only recon (cheap model) | `RESEARCHER` (web) + `SCOUT` (fs) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
+| planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
+| reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
+| general-purpose catch-all | — (escape hatch documented in IDEAS) | `worker` | `general` | `general-purpose` |
+| infra housekeeping | — (synthesizer is hard-coded) | — | `compaction`, `title`, `summary` (tools: none) | — |
+| UX helpers (slash-command-driven) | — (no slash commands) | — | — | `statusline-setup`, `claude-code-guide` |
+
+**Takeaway.** Pikuri ships the leanest persona set — two
+(`RESEARCHER` + `SCOUT`) vs. pi's four, opencode's eight, Claude
+Code's five — which matches the read-it-in-an-evening ceiling: ship
+the personas that demonstrate the mechanism along each axis (web
+recon + fs recon), document the rest as queued in IDEAS.md, let
+downstream gems publish more if the ecosystem needs them. The
+strongest cross-project signal is the universal "read-only recon
+agent on a cheap model" role; pikuri's `RESEARCHER` covers the *web*
+variant and `SCOUT` is the direct analog of pi's `scout` / opencode's
+`explore` / Claude Code's `Explore` for the *fs* variant. The
+next-strongest signal is "planner = read-only + intent-shaping,"
+which pikuri has not committed to either way.
+
+Notable shape differences:
+
+- **opencode mixes primary modes and subagents in one registry** —
+  `build` and `plan` are not delegated children but modes of the main
+  agent itself. pi and Claude Code (and pikuri) keep "modes" separate
+  from "subagents."
+- **opencode's hidden housekeeping agents** (`compaction` / `title` /
+  `summary`) dress LLM-driven internal workflows up as personas with
+  `tools: none`. Pikuri's equivalent — step-exhaustion synthesis —
+  is hard-coded as `Pikuri::Agent::Synthesizer`, an internal recovery
+  path the LLM never picks. Different style choice, same underlying
+  trick (LLM-drive an internal task without exposing it as a tool).
+- **pi ships personas under `examples/`**, leaving the persona
+  inventory to be a per-host decision rather than a harness-core fact.
+  Same shape as pikuri keeping bundled personas in pikuri-subagents
+  rather than pikuri-core.
+- **Per-persona model pinning** — only pi does this (haiku for
+  `scout`, sonnet for the rest). Pikuri's IDEAS.md §"Personas"
+  records this as a deferred feature ("requires `ChatTransport`
+  variations per sub-agent").
+
 ---
 
 ## Skills and MCP (pikuri additions since the last writeup)
