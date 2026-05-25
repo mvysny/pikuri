@@ -6,10 +6,11 @@ require 'pikuri-core'
 # +require 'pikuri-subagents'+, the +Pikuri::SubAgent+ namespace is
 # populated with {Pikuri::SubAgent::SubAgentTool},
 # {Pikuri::SubAgent::Persona}, {Pikuri::SubAgent::Extension}, and the
-# bundled {Pikuri::SubAgent::RESEARCHER} constant. The gem's
-# +prompts/+ directory is also appended to +Pikuri::PROMPT_DIRS+ so
-# +Pikuri.prompt(:'persona-researcher')+ resolves regardless of which
-# gem actually shipped the file.
+# bundled {Pikuri::SubAgent::RESEARCHER} + {Pikuri::SubAgent::SCOUT}
+# constants. The gem's +prompts/+ directory is also appended to
+# +Pikuri::PROMPT_DIRS+ so +Pikuri.prompt(:'persona-researcher')+
+# (and +:'persona-scout'+) resolves regardless of which gem actually
+# shipped the file.
 #
 # Per-gem Zeitwerk loader (not shared with pikuri-core's loader) so
 # each gem owns its own +lib/+ tree and cooperation between gems is
@@ -64,16 +65,19 @@ module Pikuri
     LOADER.tag = 'pikuri-subagents'
     LOADER.push_dir(File.expand_path('.', __dir__))
     LOADER.ignore(File.expand_path('pikuri-subagents.rb', __dir__))
-    # +RESEARCHER+ is an +ALL_CAPS+ value constant (a +Persona+
-    # record), not a +Researcher+ module/class — Zeitwerk's
-    # filename↔CamelCase rule would not accept the file. Tell the
-    # loader to ignore it; we require_relative it after eager_load
-    # so {Persona} is already defined when the constant is built.
-    # Same pattern pikuri-core uses for +version.rb+.
+    # +RESEARCHER+ / +SCOUT+ are +ALL_CAPS+ value constants (each a
+    # +Persona+ record), not +Researcher+ / +Scout+ module/class
+    # files — Zeitwerk's filename↔CamelCase rule would not accept
+    # them. Tell the loader to ignore each one; we require_relative
+    # them after eager_load so {Persona} is already defined when the
+    # constants are built. Same pattern pikuri-core uses for
+    # +version.rb+.
     LOADER.ignore(File.expand_path('pikuri/sub_agent/researcher.rb', __dir__))
+    LOADER.ignore(File.expand_path('pikuri/sub_agent/scout.rb', __dir__))
     LOADER.setup
     LOADER.eager_load
   end
 end
 
 require_relative 'pikuri/sub_agent/researcher'
+require_relative 'pikuri/sub_agent/scout'

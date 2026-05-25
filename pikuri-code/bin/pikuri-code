@@ -21,6 +21,7 @@ require 'pikuri-core'
 require 'pikuri-skills'
 require 'pikuri-workspace'
 require 'pikuri-mcp'
+require 'pikuri-subagents'
 require 'pikuri-code'
 
 sandbox_enabled = true
@@ -264,6 +265,15 @@ begin
       registry: mcp_registry,
       synthesize_descriptions: true,
       verify_mcp_servers: true
+    )
+    # SCOUT delegates read-only code lookups to a privilege-separated
+    # child agent: read/grep/glob only, no egress, no mutation, no
+    # recursion. Keeps the parent's context clean during exploration
+    # and gives prompt-injected file contents nothing actionable to
+    # reach for. See IDEAS.md §"The lethal trifecta" + §"Personas for
+    # Tool::SubAgent" for the framing.
+    c.add_extension Pikuri::SubAgent::Extension.new(
+      personas: [Pikuri::SubAgent::SCOUT]
     )
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled

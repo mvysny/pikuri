@@ -416,7 +416,10 @@ in `pikuri-code` on top.
 ### `pikuri-code/` — gem name `pikuri-code`
 
 Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
-`pikuri-workspace`. No new runtime deps.
+`pikuri-workspace` + `pikuri-subagents` (`bin/pikuri-code` wires
+`Pikuri::SubAgent::SCOUT` via `Pikuri::SubAgent::Extension` so the
+parent agent can delegate read-only code recon to a
+privilege-separated child).
 
 - `lib/pikuri-code.rb` — gem entry. Per-gem Zeitwerk loader
   rooted plainly at this gem's `lib/`, plus appends `prompts/` to
@@ -437,8 +440,10 @@ Bash + the in-repo coding-agent binary. Depends on `pikuri-core` +
   `Confirmer::TERMINAL` — `--yolo` swaps in `AUTO_APPROVE`),
   adds `Pikuri::Skill::Extension` (catalog
   discovered from `.pikuri/skills` / `.claude/skills` /
-  `.agents/skills`) and `Pikuri::Mcp::Extension` (empty registry
-  by default — hand-edit to add servers) via the `Agent.new`
+  `.agents/skills`), `Pikuri::Mcp::Extension` (empty registry
+  by default — hand-edit to add servers), and
+  `Pikuri::SubAgent::Extension` with the read-only fs-recon
+  `Pikuri::SubAgent::SCOUT` persona via the `Agent.new`
   block, prepends any `AGENTS.md` / `CLAUDE.md` in the workspace
   as project context, and runs an interactive REPL.
 - `prompts/coding-system-prompt.txt` — system prompt used by
@@ -512,18 +517,23 @@ in via `Agent#internal_add_tool`. See IDEAS.md for the rationale.
 
 The sub-agent (delegation) feature top to bottom: the `agent`
 tool, the `Persona` record, the `Extension` that wires both onto
-an agent, the bundled `RESEARCHER` persona, and the
+an agent, the bundled `RESEARCHER` + `SCOUT` personas, and the
 `bin/pikuri-minions` fan-out demo. Depends on `pikuri-core`. No
-new runtime deps.
+new runtime deps. The bundled personas reference their tools by
+string name only (no `require` of `pikuri-workspace`), so the gem
+stays decoupled from the gems whose tools they happen to use —
+hosts that don't wire the matching tools just never register the
+persona.
 
 - `lib/pikuri-subagents.rb` — gem entry. Appends `prompts/` to
   `Pikuri::PROMPT_DIRS`, sets up a per-gem Zeitwerk loader tagged
   `pikuri-subagents` rooted at this gem's `lib/`, and
-  `require_relative`s `pikuri/sub_agent/researcher.rb` after
-  eager-load (the file defines an `ALL_CAPS` value constant
-  `RESEARCHER`, not the `Researcher` module Zeitwerk's
-  filename↔CamelCase rule would expect — same `ignore +
-  require_relative` pattern pikuri-core uses for `version.rb`).
+  `require_relative`s `pikuri/sub_agent/researcher.rb` +
+  `pikuri/sub_agent/scout.rb` after eager-load (each file defines
+  an `ALL_CAPS` value constant — `RESEARCHER`, `SCOUT` — not a
+  `Researcher` / `Scout` module Zeitwerk's filename↔CamelCase rule
+  would expect — same `ignore + require_relative` pattern
+  pikuri-core uses for `version.rb`).
 - `lib/pikuri/sub_agent/sub_agent_tool.rb` —
   `Pikuri::SubAgent::SubAgentTool < Pikuri::Tool`. The LLM-facing
   `agent` tool. Class name is `SubAgentTool` (peer to `Persona` /
@@ -565,6 +575,17 @@ new runtime deps.
 - `prompts/persona-researcher.txt` — researcher's system prompt
   (replaces, doesn't append; the parent's prompt is not inherited
   by sub-agents).
+- `lib/pikuri/sub_agent/scout.rb` — defines
+  `Pikuri::SubAgent::SCOUT`, a `Persona` with
+  `tool_names: %w[read grep glob]`, `max_steps: 15`, and the system
+  prompt loaded from `prompts/persona-scout.txt`. The read-only
+  filesystem-recon counterpart to `RESEARCHER`: no egress, no
+  mutation, no `agent` recursion — gives prompt-injected file
+  contents nothing actionable to reach for. Wired into
+  `bin/pikuri-code` so the coding agent can delegate code-lookup
+  tasks without polluting its own context.
+- `prompts/persona-scout.txt` — scout's system prompt (same
+  replacing-not-appending policy as researcher's).
 - `bin/pikuri-minions` — CLI entry point for a "boss + minions" demo.
   Wires `Pikuri::Tool::WEB_SEARCH` / `WEB_SCRAPE` / `FETCH` /
   `CALCULATOR` plus

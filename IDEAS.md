@@ -81,9 +81,10 @@ read, and the model often complies. Mitigations to consider:
   *Partially shipped* via the persona-driven `Tool::SubAgent` —
   each child takes only the persona's declared `tool_names`
   subset of the parent, never the full surface. `RESEARCHER`
-  (network read only) is the first such child; `scout` /
-  `reviewer` (read-only fs) are queued. Same shape as the Chrome
-  renderer process or the macOS app sandbox. See §"Personas for
+  (network read only) and `SCOUT` (read-only fs only) are the
+  two bundled personas; `reviewer` (read-only fs + diff
+  context) is queued. Same shape as the Chrome renderer
+  process or the macOS app sandbox. See §"Personas for
   `Tool::SubAgent`" below for the implementation status and
   what's still queued (workspace modes, catalog/discovery).
 - **Provenance tags around tool output** in the context render
@@ -369,24 +370,26 @@ stays in pikuri-core; bundled `Persona` instances live in
 pikuri-subagents so studying pikuri-core doesn't drag in the
 persona concept on day one.
 
+**Also shipped: `Pikuri::SubAgent::SCOUT`** — read-only fs recon
+counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 15
+steps, prompt at `pikuri-subagents/prompts/persona-scout.txt`,
+wired into `bin/pikuri-code` via
+`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::SCOUT])`.
+The persona constant references its tools by string name only — no
+`require` of `pikuri-workspace` — so the gem stays decoupled (hosts
+without `read`/`grep`/`glob` simply don't register it). Privilege-
+separation argument is the load-bearing one: a coding agent reading
+an untrusted file (vendored README, scraped doc, template repo)
+through SCOUT can't act on a prompt injection inside it — no
+`bash`, no `fetch`, no `write`, no `agent` recursion. Context-economy
+is the secondary win.
+
 Reference shape converges with Claude Code's `subagent_type`,
 opencode's `agents` map (`packages/opencode/src/agent/agent.ts:129-281`),
 and PI's `subagent` agents
 (`packages/coding-agent/examples/extensions/subagent/agents/`).
 
 ### Not yet shipped — follow-up work
-
-**Scout persona (next session).** Needs `pikuri-workspace`'s `read`/
-`grep`/`glob`. The hard plumbing is done: just a new `Persona`
-constant + prompt file in `pikuri-subagents` (the canonical home for
-bundled personas, established when RESEARCHER moved out of
-pikuri-core) plus a `c.allow_agent(Pikuri::Tool::SubAgent::SCOUT)`
-line in `bin/pikuri-code`. The persona constant is inert at load
-time — it doesn't reference workspace tools at construction, only
-validates `tool_names` against the parent's tools at
-`c.allow_agent`-time — so pikuri-subagents stays decoupled from
-pikuri-workspace. Hosts that don't have those tools just never
-register the persona.
 
 **Workspace modes.** The persona record today doesn't include a
 `workspace_mode:` field. Scout (and later `reviewer`) work fine on
