@@ -213,25 +213,25 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       assert_equal 10_240, original.context_window_size
     end
 
-    it 'carries the forwarded name: kwarg onto the derived instance' do
-      derived = described_class.new.for_sub_agent(name: '0_1')
+    it 'carries the forwarded id: kwarg onto the derived instance' do
+      derived = described_class.new.for_sub_agent(id: '0_1')
 
-      assert_equal '0_1', derived.name
+      assert_equal '0_1', derived.id
     end
 
-    it "defaults the derived instance's name to '' when no name is forwarded" do
-      derived = described_class.new(name: 'parent').for_sub_agent
+    it "defaults the derived instance's id to '' when no id is forwarded" do
+      derived = described_class.new(id: 'parent').for_sub_agent
 
-      # The sub-agent isn't named by inheritance — it gets a fresh, empty
-      # name unless the caller threads one through. Matches the contract
-      # in Pikuri::Tool::SubAgent, which always passes a generated name.
-      assert_equal '', derived.name
+      # The sub-agent isn't identified by inheritance — it gets a fresh, empty
+      # id unless the caller threads one through. Matches the contract
+      # in Pikuri::Tool::SubAgent, which always passes a generated id.
+      assert_equal '', derived.id
     end
   end
 
-  describe 'name prefix' do
-    it 'prefixes log lines with [name] when name is non-empty' do
-      listener = described_class.new(name: '0')
+  describe 'id prefix' do
+    it 'prefixes log lines with [id] when id is non-empty' do
+      listener = described_class.new(id: '0')
 
       listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
 
@@ -239,7 +239,7 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       assert_includes line, '[0] msg #1: ctx=11.0k'
     end
 
-    it 'omits the prefix when name is empty (main agent)' do
+    it 'omits the prefix when id is empty (main agent)' do
       listener = described_class.new
 
       listener.on_event(tokens(input: 1024))
@@ -255,8 +255,8 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       assert_equal '', described_class.new.status_line
     end
 
-    it 'mirrors the most recent log line, including the [name] prefix when a sub-agent' do
-      listener = described_class.new(name: '0_1')
+    it 'mirrors the most recent log line, including the [id] prefix when a sub-agent' do
+      listener = described_class.new(id: '0_1')
       listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
 
       assert_equal '[0_1] msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k', listener.status_line

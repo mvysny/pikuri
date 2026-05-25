@@ -45,7 +45,7 @@ module Pikuri
       # reasoning and answer flow through the same listener
       # surface the parent agent uses — terminal renders them
       # inline (padded under sub-agent), an in-memory recorder
-      # picks them up, a TokenLog tags them with the synth name.
+      # picks them up, a TokenLog tags them with the synth id.
       #
       # @param chat [RubyLLM::Chat] a *fresh* chat with no tools.
       #   The caller is responsible for constructing it with the
@@ -58,7 +58,7 @@ module Pikuri
       # @param listeners [Agent::ListenerList] listeners to wire
       #   the synth chat into. Typically the parent agent's list
       #   run through {ListenerList#for_sub_agent} with the
-      #   synth's +name:+ so any +TokenLog+ tags its lines with
+      #   synth's +id:+ so any +TokenLog+ tags its lines with
       #   the synth bracket and any +Terminal+ pads its output.
       # @param step_limit [Control::StepLimit, nil] defensive
       #   step budget. The synth has no tools so it should never

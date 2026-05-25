@@ -27,7 +27,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
       token_log = Pikuri::Agent::Listener::TokenLog.new
       list = described_class.new([terminal, recorder, token_log])
 
-      derived = list.for_sub_agent(name: 'sub_agent 0')
+      derived = list.for_sub_agent(id: 'sub_agent 0')
 
       derived_listeners = derived.instance_variable_get(:@listeners)
       derived_terminal  = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::Terminal) }
@@ -43,20 +43,20 @@ RSpec.describe Pikuri::Agent::ListenerList do
       assert_same recorder, derived_recorder
     end
 
-    it "applies each listener's own sub-agent semantics (Terminal padding, TokenLog name+zero)" do
+    it "applies each listener's own sub-agent semantics (Terminal padding, TokenLog id+zero)" do
       list = described_class.new([
                                    Pikuri::Agent::Listener::Terminal.new,
                                    Pikuri::Agent::Listener::TokenLog.new
                                  ])
 
-      derived = list.for_sub_agent(name: 'sub_agent 0')
+      derived = list.for_sub_agent(id: 'sub_agent 0')
 
       derived_listeners = derived.instance_variable_get(:@listeners)
       derived_terminal  = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::Terminal) }
       derived_token_log = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
 
       assert_equal Pikuri::Agent::Listener::Terminal::SUB_AGENT_PADDING, derived_terminal.padding
-      assert_equal 'sub_agent 0', derived_token_log.name
+      assert_equal 'sub_agent 0', derived_token_log.id
       assert_equal 0, derived_token_log.context_window_size
     end
 
@@ -65,7 +65,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
       original_terminal  = Pikuri::Agent::Listener::Terminal.new
       list = described_class.new([original_terminal, original_token_log])
 
-      list.for_sub_agent(name: 'sub_agent 0')
+      list.for_sub_agent(id: 'sub_agent 0')
 
       still_there = list.instance_variable_get(:@listeners)
       assert_same original_terminal,  still_there.first
@@ -78,10 +78,10 @@ RSpec.describe Pikuri::Agent::ListenerList do
 
       derived = list.for_sub_agent
 
-      # TokenLog defaults its name to ''; recorder (no hook) shared by reference.
+      # TokenLog defaults its id to ''; recorder (no hook) shared by reference.
       derived_listeners = derived.instance_variable_get(:@listeners)
       derived_token_log = derived_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
-      assert_equal '', derived_token_log.name
+      assert_equal '', derived_token_log.id
       assert_same recorder, derived_listeners.last
     end
 
@@ -105,7 +105,7 @@ RSpec.describe Pikuri::Agent::ListenerList do
 
       list = described_class.new([recorder, optout_class.new])
 
-      derived = list.for_sub_agent(name: 'sub_agent 0')
+      derived = list.for_sub_agent(id: 'sub_agent 0')
 
       assert_equal [recorder], derived.instance_variable_get(:@listeners)
     end

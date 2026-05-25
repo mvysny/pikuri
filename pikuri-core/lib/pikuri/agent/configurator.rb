@@ -48,9 +48,9 @@ module Pikuri
       #   available for diagnostics.
       attr_reader :system_prompt_base
 
-      # @return [String] this agent's identifier; empty for the main
-      #   agent, persona-rooted (e.g. +"researcher 0"+) for sub-agents.
-      attr_reader :name
+      # @return [String] this agent's unique identifier; empty for the
+      #   main agent, persona-rooted (e.g. +"researcher 0"+) for sub-agents.
+      attr_reader :id
 
       # @return [Boolean] +true+ when the agent opted into chunk-level
       #   streaming.
@@ -107,16 +107,16 @@ module Pikuri
 
       # @param transport [Agent::ChatTransport]
       # @param system_prompt_base [String]
-      # @param name [String]
+      # @param id [String]
       # @param streaming [Boolean]
       # @param step_limit [Control::StepLimit, nil]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper, nil]
-      def initialize(transport:, system_prompt_base:, name:, streaming:,
+      def initialize(transport:, system_prompt_base:, id:, streaming:,
                      step_limit:, cancellable:, interloper:)
         @transport = transport
         @system_prompt_base = system_prompt_base
-        @name = name
+        @id = id
         @streaming = streaming
         @step_limit = step_limit
         @cancellable = cancellable

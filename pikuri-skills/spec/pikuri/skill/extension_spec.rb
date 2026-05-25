@@ -37,7 +37,7 @@ RSpec.describe Pikuri::Skill::Extension do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base',
-      name: '',
+      id: '',
       streaming: false,
       step_limit: nil,
       cancellable: nil,

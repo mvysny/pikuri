@@ -7,7 +7,7 @@ RSpec.describe Pikuri::Agent::Configurator do
     Pikuri::Agent::Configurator.new(
       transport: transport,
       system_prompt_base: 'base',
-      name: '',
+      id: '',
       streaming: false,
       step_limit: nil,
       cancellable: nil,
@@ -20,12 +20,12 @@ RSpec.describe Pikuri::Agent::Configurator do
     it 'exposes the constructor inputs verbatim via attr_readers' do
       step_limit = Pikuri::Agent::Control::StepLimit.new(max: 5)
       cancellable = Pikuri::Agent::Control::Cancellable.new
-      c = new_configurator(name: 'sub_agent 0', streaming: true,
+      c = new_configurator(id: 'researcher 0', streaming: true,
                            step_limit: step_limit, cancellable: cancellable)
 
       assert_equal transport, c.transport
       assert_equal 'base', c.system_prompt_base
-      assert_equal 'sub_agent 0', c.name
+      assert_equal 'researcher 0', c.id
       assert_equal true, c.streaming
       assert_same step_limit, c.step_limit
       assert_same cancellable, c.cancellable

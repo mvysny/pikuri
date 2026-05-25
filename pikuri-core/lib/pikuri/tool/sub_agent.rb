@@ -51,12 +51,12 @@ module Pikuri
     # a child if a persona explicitly opts in, which no bundled
     # persona does.
     #
-    # == Listener naming
+    # == Listener id
     #
-    # Each spawned child gets a name like +"researcher 0"+,
+    # Each spawned child gets an id like +"researcher 0"+,
     # +"researcher 1"+, +"scout 0"+, ... — persona-name root + a
-    # per-persona monotonic counter. The name is threaded to
-    # {Pikuri::Agent::ListenerList#for_sub_agent} so renderers
+    # per-persona monotonic counter. The id is threaded to
+    # {Pikuri::Agent::ListenerList#for_sub_agent(id:)} so renderers
     # (notably {Pikuri::Agent::Listener::Terminal}) can label
     # output and {Pikuri::Agent::Listener::TokenLog} can tag its
     # per-agent token snapshot. Nested children are not
@@ -80,7 +80,7 @@ module Pikuri
       #   Read for its {Pikuri::Agent#transport},
       #   {Pikuri::Agent#tools}, {Pikuri::Agent#listeners},
       #   {Pikuri::Agent#step_limit}, {Pikuri::Agent#cancellable},
-      #   {Pikuri::Agent#context_window_cap}, {Pikuri::Agent#name},
+      #   {Pikuri::Agent#context_window_cap}, {Pikuri::Agent#id},
       #   and {Pikuri::Agent#streaming}.
       # @param personas [Hash{String=>Persona}] map of persona name
       #   to {Persona} record, as collected by
@@ -95,7 +95,6 @@ module Pikuri
         parent_step_limit = parent_agent.step_limit
         parent_cancel     = parent_agent.cancellable
         context_window    = parent_agent.context_window_cap
-        parent_name       = parent_agent.name
         streaming         = parent_agent.streaming
         # Per-persona monotonic counter — "researcher 0",
         # "researcher 1", "scout 0", ... Independent counters per
@@ -123,8 +122,8 @@ module Pikuri
             persona = personas.fetch(name)
             idx = counters[name]
             counters[name] += 1
-            sub_name = "#{persona.name} #{idx}"
-            sub_listeners = listeners.for_sub_agent(name: sub_name)
+            sub_id = "#{persona.name} #{idx}"
+            sub_listeners = listeners.for_sub_agent(id: sub_id)
             sub_tools = parent_tools.select { |t| persona.tool_names.include?(t.name) }
 
             sub = Pikuri::Agent.new(
@@ -133,7 +132,7 @@ module Pikuri
               step_limit: parent_step_limit&.for_sub_agent(max_steps: persona.max_steps),
               cancellable: parent_cancel&.for_sub_agent,
               context_window: context_window,
-              name: sub_name,
+              id: sub_id,
               streaming: streaming
             ) do |c|
               c.add_tools(sub_tools)

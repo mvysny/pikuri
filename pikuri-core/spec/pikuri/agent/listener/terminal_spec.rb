@@ -164,7 +164,7 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     end
 
     it 'ignores unrelated params forwarded by ListenerList#for_sub_agent' do
-      derived = described_class.new.for_sub_agent(name: 'sub_agent 0', anything_else: :nope)
+      derived = described_class.new.for_sub_agent(id: 'sub_agent 0', anything_else: :nope)
       assert_equal described_class::SUB_AGENT_PADDING, derived.padding
     end
 

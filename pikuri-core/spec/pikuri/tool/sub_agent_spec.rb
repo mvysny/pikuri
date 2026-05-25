@@ -124,13 +124,13 @@ RSpec.describe Pikuri::Tool::SubAgent do
   # stubbed in the outer +before+. Tools and listeners go through the
   # Configurator block.
   def build_parent(system_prompt: 'sp', tools: [web_search_tool], listeners: nil,
-                   step_limit: nil, cancellable: nil, name: '')
+                   step_limit: nil, cancellable: nil, id: '')
     Pikuri::Agent.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt: system_prompt,
       step_limit: step_limit,
       cancellable: cancellable,
-      name: name
+      id: id
     ) do |c|
       c.add_tools(tools)
       c.add_listeners(listeners || parent_listeners)
@@ -275,11 +275,11 @@ RSpec.describe Pikuri::Tool::SubAgent do
         tool.run('name' => 'scout',      'task' => 'd')
 
         assert_equal ['researcher 0', 'scout 0', 'researcher 1', 'scout 1'],
-                     kwargs.map { |kw| kw[:name] }
+                     kwargs.map { |kw| kw[:id] }
       end
     end
 
-    it 'threads the generated name to each listener.for_sub_agent via ListenerList#for_sub_agent' do
+    it 'threads the generated id to each listener.for_sub_agent via ListenerList#for_sub_agent' do
       recorded = []
       spy_listener = Class.new do
         define_method(:initialize) { |out| @out = out }
@@ -298,7 +298,7 @@ RSpec.describe Pikuri::Tool::SubAgent do
 
       with_captured_agent_new { |_| tool.run('name' => 'researcher', 'task' => 'go') }
 
-      assert_equal [{ name: 'researcher 0' }], recorded
+      assert_equal [{ id: 'researcher 0' }], recorded
     end
 
     it "derives a fresh StepLimit at the persona's max_steps for the sub-agent" do

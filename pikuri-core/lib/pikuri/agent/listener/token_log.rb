@@ -41,10 +41,10 @@ module Pikuri
       #
       #   msg #1: ctx=6.8k/32.0k  Δ+6.8k  ↑6.8k  ↓0.0k
       #
-      # When the owning {Agent} has a non-empty {Agent#name} (i.e.
-      # a sub-agent), the line is prefixed with +[name] +:
+      # When the owning {Agent} has a non-empty {Agent#id} (i.e. a
+      # sub-agent), the line is prefixed with +[id] +:
       #
-      #   [sub_agent 0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
+      #   [researcher 0] msg #1: ctx=4.2k  Δ+4.2k  ↑4.2k  ↓0.0k
       #
       # +ctx+ is the snapshot
       # (+input + cached + cache_creation + output+; see
@@ -89,16 +89,15 @@ module Pikuri
         # @return [Integer, nil]
         attr_accessor :context_window_cap
 
-        # @return [String] owning agent's identifier. Empty by
+        # @return [String] owning agent's id ({Agent#id}). Empty by
         #   default (main agent); set by {#for_sub_agent} from the
-        #   sub-agent's generated name so the log lines can be
-        #   prefixed with +[<name>] +. Read-only — for a
-        #   sub-agent's listener you get a fresh instance via
-        #   {#for_sub_agent}.
-        attr_reader :name
+        #   sub-agent's generated id so the log lines can be
+        #   prefixed with +[<id>] +. Read-only — for a sub-agent's
+        #   listener you get a fresh instance via {#for_sub_agent}.
+        attr_reader :id
 
         # The most recent log line, in the exact format written to
-        # {LOGGER} (including any +[<name>] + prefix). Empty until
+        # {LOGGER} (including any +[<id>] + prefix). Empty until
         # the first {Event::Tokens} has been processed. Hosts that
         # want to surface the current context-window snapshot in
         # their own UI (e.g. a TUI status footer) read this
@@ -113,12 +112,12 @@ module Pikuri
         # @return [String]
         attr_reader :status_line
 
-        # @param name [String] agent identifier prepended to each
-        #   log line as +[<name>] + when non-empty. Defaults to
-        #   +""+ for the main agent.
-        def initialize(name: '')
+        # @param id [String] owning agent's id, prepended to each
+        #   log line as +[<id>] + when non-empty. Defaults to +""+
+        #   for the main agent.
+        def initialize(id: '')
           super()
-          @name = name
+          @id = id
           @msg = 0
           @context_window_size = 0
           @context_window_cap = nil
@@ -128,17 +127,17 @@ module Pikuri
         # Sub-agent variant: a fresh +TokenLog+ with a zeroed
         # snapshot so the sub-agent's context-window readings
         # track its own +RubyLLM::Chat+ rather than continuing the
-        # parent's. Picks the sub-agent's +name:+ out of the
-        # forwarded params so its log lines carry the +[<name>] +
+        # parent's. Picks the sub-agent's +id:+ out of the
+        # forwarded params so its log lines carry the +[<id>] +
         # prefix; defaults to +""+ when absent. The cap is left
         # +nil+ here; the sub-agent's {Agent#initialize} emits a
         # fresh {Event::ContextCap} immediately after construction
         # and this listener picks it up off the stream.
         #
-        # @param name [String] sub-agent's identifier
+        # @param id [String] sub-agent's id
         # @return [TokenLog]
-        def for_sub_agent(name: '', **)
-          self.class.new(name: name)
+        def for_sub_agent(id: '', **)
+          self.class.new(id: id)
         end
 
         # @param event [Agent::Event]
@@ -184,7 +183,7 @@ module Pikuri
 
         def format_line(input, output, delta)
           sign = delta.negative? ? '-' : '+'
-          prefix = @name.empty? ? '' : "[#{@name}] "
+          prefix = @id.empty? ? '' : "[#{@id}] "
           "#{prefix}msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
         end
 

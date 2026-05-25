@@ -59,13 +59,14 @@ module Pikuri
       # change this class — see {Listener::Terminal#for_sub_agent}
       # (fresh padded instance) and
       # {Listener::TokenLog#for_sub_agent} (fresh, zeroed snapshot
-      # with the forwarded +name:+).
+      # with the forwarded +id:+).
       #
       # +params+ is a flat hash forwarded as kwargs to every
       # listener's hook; each listener picks the keys it cares about
       # and ignores the rest. The only key currently consumed by
-      # bundled listeners is +name:+ (used by {Listener::TokenLog}).
-      # Calling with no params is always valid.
+      # bundled listeners is +id:+ (used by {Listener::TokenLog} to
+      # prefix its log lines with the sub-agent's id). Calling with
+      # no params is always valid.
       #
       # @param params [Hash{Symbol => Object}]
       # @return [ListenerList]

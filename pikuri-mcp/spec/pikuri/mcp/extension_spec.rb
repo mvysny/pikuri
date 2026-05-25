@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Mcp::Extension do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base',
-      name: '',
+      id: '',
       streaming: false,
       step_limit: nil,
       cancellable: nil,
@@ -235,7 +235,7 @@ RSpec.describe Pikuri::Mcp::Extension do
         c = Pikuri::Agent::Configurator.new(
           transport: Pikuri::Agent::ChatTransport.new(model: 'qwen-x'),
           system_prompt_base: 'base',
-          name: '',
+          id: '',
           streaming: false,
           step_limit: nil,
           cancellable: cancellable,

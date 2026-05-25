@@ -142,11 +142,11 @@ RSpec.describe Pikuri::Agent do
       assert_equal '[]', agent.listeners.to_s
     end
 
-    it 'defaults name to empty (main agent)' do
+    it 'defaults id to empty (main agent)' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') { |c| c.add_listener recorder }
 
-      assert_equal '', agent.name
+      assert_equal '', agent.id
     end
   end
 
@@ -166,13 +166,13 @@ RSpec.describe Pikuri::Agent do
   end
 
   describe 'agent state surface' do
-    it 'exposes an explicitly passed name' do
+    it 'exposes an explicitly passed id' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', name: '0_1') do |c|
+                                system_prompt: 's', id: 'researcher 0') do |c|
         c.add_listener recorder
       end
 
-      assert_equal '0_1', agent.name
+      assert_equal 'researcher 0', agent.id
     end
 
     it 'emits a one-shot Event::ContextCap at construction so TokenLog can pick the cap up' do
@@ -734,7 +734,7 @@ RSpec.describe Pikuri::Agent do
         c.add_listener recorder
       end
 
-      assert_equal 'Agent(model=m, tools=1, listeners=[InMemoryEventList])',
+      assert_equal 'Agent(id=, model=m, tools=1, listeners=[InMemoryEventList])',
                    agent.to_s
     end
   end
@@ -870,7 +870,7 @@ RSpec.describe Pikuri::Agent do
       assert_same cancel, call[:cancellable]
     end
 
-    it "tags the synth's listener name as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do
+    it "tags the synth's listener id as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do
       parent_log = Pikuri::Agent::Listener::TokenLog.new
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's',
@@ -884,18 +884,18 @@ RSpec.describe Pikuri::Agent do
       synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
       synth_log = synth_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
       refute_nil synth_log
-      assert_equal 'synthesizer', synth_log.name
+      assert_equal 'synthesizer', synth_log.id
 
       # And the parent's TokenLog is untouched.
-      assert_equal '', parent_log.name
+      assert_equal '', parent_log.id
     end
 
-    it "uses '<parent_name>_synthesizer' when the agent itself has a name" do
+    it "uses '<parent_id>_synthesizer' when the agent itself has an id" do
       parent_log = Pikuri::Agent::Listener::TokenLog.new
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's',
                                 step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
-                                name: 'researcher 0') do |c|
+                                id: 'researcher 0') do |c|
         c.add_listener parent_log
       end
       arrange_step_exhaustion(2)
@@ -904,7 +904,7 @@ RSpec.describe Pikuri::Agent do
 
       synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
       synth_log = synth_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
-      assert_equal 'researcher 0_synthesizer', synth_log.name
+      assert_equal 'researcher 0_synthesizer', synth_log.id
     end
 
     it "prefers the synth's answer for last_assistant_content after a rescue" do
