@@ -373,8 +373,11 @@ persona concept on day one.
 **Also shipped: `Pikuri::SubAgent::SCOUT`** — read-only fs recon
 counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 15
 steps, prompt at `pikuri-subagents/prompts/persona-scout.txt`,
-wired into `bin/pikuri-code` via
-`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::SCOUT])`.
+wired into `bin/pikuri-code` alongside `RESEARCHER` via
+`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::SCOUT, Pikuri::SubAgent::RESEARCHER])`
+— the same privilege-separation argument extends to web content
+(scraped pages / fetched URLs land in `RESEARCHER`'s context, which
+has no `bash` / `write` / `edit` to hijack).
 The persona constant references its tools by string name only — no
 `require` of `pikuri-workspace` — so the gem stays decoupled (hosts
 without `read`/`grep`/`glob` simply don't register it). Privilege-
