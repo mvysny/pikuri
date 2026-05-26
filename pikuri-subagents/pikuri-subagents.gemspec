@@ -47,4 +47,11 @@ Gem::Specification.new do |spec|
   # +tool_names+ list (+web_search+, +web_scrape+, +fetch+) also
   # resolves to constants in pikuri-core.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
+  # pikuri-workspace ships +Pikuri::Workspace::Filesystem+, which
+  # +SubAgentTool+ constructs directly when a +Persona+ sets
+  # +needs_temp_workspace: true+. The persona only carries the
+  # boolean signal; the workspace's shape (project_root + the
+  # OS-toolchain readable list) is fixed in {SubAgentTool} so
+  # personas stay declarative.
+  spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

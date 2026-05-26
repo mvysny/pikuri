@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'pathname'
-
 module Pikuri
   module Code
     # Bundled "clone-and-dig" persona. Where {Pikuri::SubAgent::RESEARCHER}
@@ -24,14 +22,14 @@ module Pikuri
     #
     # == Per-invocation workspace
     #
-    # The persona ships with a +workspace_builder:+ recipe: given a
-    # fresh empty dir from {SubAgentTool}'s +Dir.mktmpdir+, return
-    # a {Pikuri::Workspace::Filesystem} bound to it. SubAgentTool
-    # owns the temp dir lifecycle (mktmpdir + rm_rf on close) so the
-    # persona only describes the *shape* of its workspace — namely,
-    # +project_root+ at the temp dir plus
-    # {Pikuri::Code::ToolchainPaths.readable} folded into +readable:+
-    # so the sub-agent can find +git+ under +/usr+.
+    # The persona signals +needs_temp_workspace: true+ — that's all.
+    # {Pikuri::SubAgent::SubAgentTool} owns the lifecycle: mktmpdir +
+    # construct a {Pikuri::Workspace::Filesystem} with the temp dir
+    # as +project_root+ + {Pikuri::SubAgent::SubAgentTool::TEMP_WORKSPACE_READABLE}
+    # folded into +readable:+ (so the Bubblewrap-wrapped +git+
+    # subprocess can find its binary under +/usr+) +
+    # +FileUtils.remove_entry+ on the temp dir at sub-agent close.
+    # The persona has no say in shape or cleanup.
     #
     # The persona's filesystem view is *disjoint* from the parent's:
     # a cloned repo cannot leave files where the parent's +read+
@@ -62,13 +60,7 @@ module Pikuri
       tool_names: %w[git_clone read grep glob web_search web_scrape fetch].freeze,
       system_prompt: Pikuri.prompt('persona-git-repo-researcher'),
       max_steps: 20,
-      workspace_builder: lambda { |temp_root|
-        Pikuri::Workspace::Filesystem.new(
-          project_root: Pathname.new(temp_root),
-          readable: Pikuri::Code::ToolchainPaths.readable,
-          temp: false
-        )
-      }
+      needs_temp_workspace: true
     )
   end
 end

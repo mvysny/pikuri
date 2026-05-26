@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'pikuri-core'
+require 'pikuri-workspace'
 
 # Entry file for the pikuri-subagents gem. After
 # +require 'pikuri-subagents'+, the +Pikuri::SubAgent+ namespace is

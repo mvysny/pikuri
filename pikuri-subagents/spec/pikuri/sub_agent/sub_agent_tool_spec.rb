@@ -342,10 +342,10 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     end
   end
 
-  describe 'per-invocation temp workspace (Persona#workspace_builder)' do
+  describe 'per-invocation temp workspace (Persona#needs_temp_workspace)' do
     # A minimal "with_workspace-able" tool. Records each workspace value
     # it was rebuilt against; that's enough to assert SubAgentTool
-    # plumbed the builder's output to the sub-agent's tools.
+    # plumbed the temp workspace to the sub-agent's tools.
     let(:workspace_aware_tool) do
       Class.new(Pikuri::Tool) do
         attr_reader :workspace
@@ -377,85 +377,87 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         tool_names: %w[workspace_aware web_search],
         system_prompt: 's',
         max_steps: 5,
-        workspace_builder: lambda { |temp_root|
-          # Stand-in for Pikuri::Workspace::Filesystem — the test only
-          # cares that *some* object reaches with_workspace, and that
-          # the temp_root path exists when builder is invoked.
-          Struct.new(:project_root).new(temp_root)
-        }
+        needs_temp_workspace: true
       )
     end
 
-    it 'mkdirs a fresh temp dir per invocation and passes it to workspace_builder' do
-      received_paths = []
-      persona = investigator_persona.with(
-        workspace_builder: lambda { |path|
-          received_paths << path
-          assert File.directory?(path), "expected fresh temp dir, got #{path.inspect}"
-          Struct.new(:project_root).new(path)
-        }
-      )
-      parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
-      tool = described_class.new(parent, personas: { 'investigator' => persona })
-
-      tool.run('name' => 'investigator', 'task' => 'go')
-      tool.run('name' => 'investigator', 'task' => 'again')
-
-      assert_equal 2, received_paths.size, 'builder should fire once per invocation'
-      refute_equal received_paths[0], received_paths[1], 'each invocation gets its own dir'
-    end
-
-    it 'rebuilds workspace-aware tools onto the new workspace and passes others through unchanged' do
-      received_tools = nil
+    # Capture the workspace SubAgentTool constructs by stashing it on
+    # the workspace_aware_tool after with_workspace fires. Helper to
+    # run one delegation and yield (received_tools, received_workspace).
+    def run_with_captured_tools(tool, name:)
+      captured_tools = nil
       original_new = Pikuri::Agent.method(:new)
       Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
         original_new.call(**kwargs) do |c|
           block&.call(c)
-          received_tools = c.tools.dup
+          captured_tools = c.tools.dup
         end.tap do |a|
           a.define_singleton_method(:run_loop) { |**_| nil }
           a.define_singleton_method(:last_assistant_content) { 'sub reply' }
         end
       end
-
       begin
-        parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
-        tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
-
-        tool.run('name' => 'investigator', 'task' => 'go')
-
-        ws_aware = received_tools.find { |t| t.name == 'workspace_aware' }
-        ws_search = received_tools.find { |t| t.name == 'web_search' }
-        refute_nil ws_aware
-        refute_nil ws_search
-        # workspace_aware was rebuilt — different instance from parent's
-        refute_same workspace_aware_tool, ws_aware
-        refute_nil ws_aware.workspace
-        # web_search is stateless — passed through by reference
-        assert_same web_search_tool, ws_search
+        tool.run('name' => name, 'task' => 'go')
+        captured_tools
       ensure
         Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
       end
     end
 
-    it 'removes the temp dir when the sub-agent closes' do
-      captured_path = nil
-      persona = investigator_persona.with(
-        workspace_builder: lambda { |path|
-          captured_path = path
-          Struct.new(:project_root).new(path)
-        }
-      )
+    it 'mkdirs a fresh temp dir per invocation and uses it as project_root' do
       parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
-      tool = described_class.new(parent, personas: { 'investigator' => persona })
+      tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
 
-      tool.run('name' => 'investigator', 'task' => 'go')
+      tools_a = run_with_captured_tools(tool, name: 'investigator')
+      tools_b = run_with_captured_tools(tool, name: 'investigator')
 
-      refute_nil captured_path
-      refute File.exist?(captured_path), "expected temp dir to be removed after sub-agent close"
+      ws_a = tools_a.find { |t| t.name == 'workspace_aware' }.workspace
+      ws_b = tools_b.find { |t| t.name == 'workspace_aware' }.workspace
+
+      assert_kind_of Pikuri::Workspace::Filesystem, ws_a
+      refute_equal ws_a.project_root, ws_b.project_root, 'each invocation gets its own temp dir'
+      assert_match(%r{/pikuri-investigator-}, ws_a.project_root.to_s)
     end
 
-    it 'does NOT mint a temp dir when persona.needs_temp_workspace? is false' do
+    it "uses the SubAgentTool::TEMP_WORKSPACE_READABLE list (so /usr is reachable for subprocesses)" do
+      parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
+      tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
+
+      tools = run_with_captured_tools(tool, name: 'investigator')
+      ws = tools.find { |t| t.name == 'workspace_aware' }.workspace
+
+      # /usr exists on any Linux host this gem targets — assert it's in readable.
+      assert_includes ws.readable, Pathname.new('/usr').realpath
+    end
+
+    it 'rebuilds workspace-aware tools onto the new workspace and passes others through unchanged' do
+      parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
+      tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
+
+      received_tools = run_with_captured_tools(tool, name: 'investigator')
+
+      ws_aware = received_tools.find { |t| t.name == 'workspace_aware' }
+      ws_search = received_tools.find { |t| t.name == 'web_search' }
+      refute_nil ws_aware
+      refute_nil ws_search
+      # workspace_aware was rebuilt — different instance from parent's
+      refute_same workspace_aware_tool, ws_aware
+      refute_nil ws_aware.workspace
+      # web_search is stateless — passed through by reference
+      assert_same web_search_tool, ws_search
+    end
+
+    it 'removes the temp dir when the sub-agent closes' do
+      parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
+      tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
+
+      received_tools = run_with_captured_tools(tool, name: 'investigator')
+      temp_root = received_tools.find { |t| t.name == 'workspace_aware' }.workspace.project_root
+
+      refute File.exist?(temp_root), "expected temp dir to be removed after sub-agent close"
+    end
+
+    it 'does NOT mint a temp dir when persona.needs_temp_workspace is false' do
       called = false
       original_mktmpdir = Dir.method(:mktmpdir)
       Dir.define_singleton_method(:mktmpdir) do |*args, &blk|
@@ -465,7 +467,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       begin
         tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
         tool.run('name' => 'researcher', 'task' => 'go')
-        refute called, 'simple_persona has no workspace_builder; mktmpdir should not fire'
+        refute called, 'simple_persona has needs_temp_workspace=false; mktmpdir should not fire'
       ensure
         Dir.define_singleton_method(:mktmpdir, original_mktmpdir)
       end

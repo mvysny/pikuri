@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'fileutils'
+require 'pathname'
 require 'tmpdir'
 
 module Pikuri
@@ -69,6 +70,24 @@ module Pikuri
     # representable here (no persona embeds +agent+ in its
     # tool list).
     class SubAgentTool < Pikuri::Tool
+      # OS-toolchain prefixes folded into the +readable:+ list of
+      # a per-invocation temp workspace (when
+      # +persona.needs_temp_workspace?+). Filtered to existing dirs
+      # at mint time. The persona's file tools and any Bubblewrap-
+      # sandboxed subprocess (e.g. +git+ from {Pikuri::Code::GitClone})
+      # need at least +/usr+ to find the language binaries and their
+      # support files; +/opt+ catches third-party installs on systems
+      # that put them there (Homebrew-on-Linux, vendor toolchains, …).
+      # Per-user toolchain managers (+~/.rbenv+, +~/.pyenv+, mise, …)
+      # are deliberately NOT in this list — temp-workspace personas
+      # operate on fresh empty workspaces; they have no project to
+      # build with the user's local toolchain selections, and pulling
+      # in dotfiles would leak version metadata into the persona's
+      # context. The +bin/pikuri-code+ parent agent still includes
+      # the wider {Pikuri::Code::ToolchainPaths.readable} via the
+      # workspace it constructs at boot.
+      TEMP_WORKSPACE_READABLE = %w[/usr /opt].freeze
+
       # Description shown to the LLM. Generic over personas; the
       # persona-specific picker info lives in the
       # +<available_agents>+ snippet appended to the system prompt
@@ -132,20 +151,26 @@ module Pikuri
             sub_listeners = listeners.for_sub_agent(id: sub_id)
             sub_tools = parent_tools.select { |t| persona.tool_names.include?(t.name) }
 
-            # Per-invocation workspace mint, when the persona wired
-            # a +workspace_builder:+. We own the lifecycle uniformly
-            # — Dir.mktmpdir for the path, persona.workspace_builder
-            # for the Workspace wrapped around it, FileUtils.remove_entry
-            # via the sub-agent's +on_close+. The persona has no
-            # control over cleanup — it's always a temp folder,
-            # always deleted. Tools that respond to +#with_workspace+
-            # are rebuilt onto the fresh workspace so paths resolve
-            # against the right root; stateless tools (web_search,
-            # calculator, ...) pass through unchanged.
+            # Per-invocation workspace mint, when the persona set
+            # +needs_temp_workspace: true+. We own everything uniformly
+            # — Dir.mktmpdir for the path, Pikuri::Workspace::Filesystem
+            # for the workspace wrapped around it, FileUtils.remove_entry
+            # via the sub-agent's +on_close+. The persona has no control
+            # over shape or cleanup — it's always a fresh temp dir as
+            # +project_root+ plus {TEMP_WORKSPACE_READABLE} for the
+            # OS toolchain (so subprocess tools like +git+ under +/usr+
+            # are reachable), always deleted at close. Tools that respond
+            # to +#with_workspace+ are rebuilt onto the fresh workspace
+            # so paths resolve against the right root; stateless tools
+            # (web_search, calculator, ...) pass through unchanged.
             session_temp_root = nil
             if persona.needs_temp_workspace?
               session_temp_root = Dir.mktmpdir("pikuri-#{persona.name}-")
-              session_workspace = persona.workspace_builder.call(session_temp_root)
+              session_workspace = Pikuri::Workspace::Filesystem.new(
+                project_root: Pathname.new(session_temp_root),
+                readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) },
+                temp: false
+              )
               sub_tools = sub_tools.map do |t|
                 t.respond_to?(:with_workspace) ? t.with_workspace(session_workspace) : t
               end

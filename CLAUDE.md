@@ -180,8 +180,12 @@ per-gem one-liners:
   `SubAgent::SubAgentTool` (the `agent` tool),
   `SubAgent::Persona`, `SubAgent::Extension`, bundled
   `RESEARCHER` / `SCOUT`, `bin/pikuri-minions`. Depends on
-  `pikuri-core`. Personas reference tools by string name only so
-  the gem stays decoupled from gems whose tools they happen to use.
+  `pikuri-core` + `pikuri-workspace` (the latter so `SubAgentTool`
+  can construct a per-invocation `Workspace::Filesystem` when a
+  persona sets `needs_temp_workspace: true` — the persona stays
+  declarative, with no Proc to pass). Personas reference tools by
+  string name only so the gem stays decoupled from gems whose
+  tools they happen to use.
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.
