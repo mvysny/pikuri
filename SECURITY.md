@@ -83,6 +83,20 @@ content, and (c) an egress channel becomes a
 one-prompt-injection-away exfiltration tool. Break at least one leg
 of the trifecta in any agent that touches untrusted content.
 
+Two of pikuri's existing seams already act as partial trifecta
+breaks at the machine layer, regardless of which agent in the tree
+is calling. {Pikuri::Workspace::Filesystem}'s readable/writable
+allowlist governs the file tools; {Pikuri::Code::Bash::Sandbox::Bubblewrap}'s
+bind set governs the bash subprocess. Together they ensure
+`~/.ssh`, `~/.aws`, `~/.gnupg`, other projects' source,
+`~/.gradle/gradle.properties` / `~/.m2/settings.xml` /
+`~/.cargo/credentials.toml`, and `/etc/shadow` simply don't resolve
+— a prompt-injected model can ask, the path fails. What remains
+under leg (a) after that narrowing is the project itself (source,
+`.env`, `config/secrets.yml`) and dependency-cache content
+(downloaded jars, distributions, package versions). The sub-agent
+defense below targets that residual surface.
+
 ### Defense: capability boundaries via sub-agents
 
 Pikuri ships two bundled sub-agent personas that do exactly that:
@@ -205,10 +219,17 @@ as a guarantee:
   only inside an outer sandbox you trust.
 - **An agent wired with both fs-read and egress as a parent.** The
   persona model protects sub-agents that touch untrusted content.
-  If you configure a parent agent with `read` + `fetch` + a tool
-  that scrapes the web — and skip delegating to `RESEARCHER` — the
-  trifecta reassembles. The bundled binaries avoid this shape, but
-  a custom Agent built from `pikuri-core` can recreate it.
+  A parent with `read` + `fetch` + a tool that scrapes the web
+  reassembles the trifecta if the model skips delegating to
+  `RESEARCHER`. `bin/pikuri-chat` structurally avoids this shape
+  (no `read` / `bash` / `write`); `bin/pikuri-code` and
+  `bin/pikuri-assistant` currently have the shape and rely on the
+  system prompt to nudge delegation rather than enforcing it by
+  capability — a prompt-injected model that chooses not to delegate
+  can reach the residual leg-(a) surface (project source, `.env`,
+  dependency caches) through the parent's own `fetch` /
+  `web_scrape`. A custom Agent built from `pikuri-core` can
+  recreate the shape either way.
 
 ## See also
 
