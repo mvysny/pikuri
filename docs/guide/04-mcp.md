@@ -324,40 +324,267 @@ wanted to.)
 
 ## Why Docker?
 
-The chapter ran the GitHub server inside `docker run -i --rm`,
-not as a bare binary on your laptop. That's a posture the chapter
-adopts; it isn't enforced by the gem (the `mcp` gem will happily
-spawn any argv). The reasoning is worth being explicit about.
+[`SECURITY.md`](../../SECURITY.md) §"Code trust" settles the
+general posture in one bullet: MCP server processes are untrusted
+code you didn't write, so run them in a container. The chapter
+adopts that across the board. Three MCP-specific consequences are
+worth being explicit about:
 
-Three concerns stack:
+- **Image distribution shape varies.** The GitHub server above
+  ships as a vendor image — easy. Most community MCPs are
+  `npx -y …` (Node) or `pip install …` / `uvx …` (Python)
+  packages with no official image, which means *you* build the
+  container. The next three sections work through one example
+  of each shape.
+- **Pin the image.** `ghcr.io/.../foo:latest` is a registry tag
+  an attacker who compromised the upstream can repoint. For
+  anything load-bearing, pin to a known version (`foo:1.4.2`)
+  and ideally a digest (`foo@sha256:…`). Pinning trades
+  automatic security updates for reproducibility; for an MCP
+  holding your GitHub PAT, reproducibility is the right side
+  of that trade.
+- **The token is the real blast radius.** Container isolation
+  protects your laptop from the server's *code*. It doesn't
+  protect your GitHub account from the server's *actions* —
+  the token's permissions are the agent's permissions. Use a
+  fine-grained PAT scoped to specific repos and operations
+  (issues:read, contents:read), never a classic full-access
+  token. Restated in the threat-model section below.
 
-- **The MCP server is untrusted code you didn't write.** Even
-  the official GitHub server is a third-party Go binary running
-  with your user's permissions if you run it bare. Docker gives
-  you filesystem isolation, capability stripping, and a clear
-  kill boundary — `docker rm` and the process is gone, no
-  half-cleaned state.
-- **Supply-chain risk on the image itself.** `ghcr.io/...` is a
-  registry; an attacker who compromised an image could ship a
-  poisoned update. Pin the image to a known tag rather than
-  `:latest`, and consider an image-digest pin (`@sha256:...`)
-  for anything load-bearing.
-- **PAT blast radius.** The token's permissions are the
-  agent's permissions. Use a fine-grained PAT scoped to
-  specific repositories and specific operations
-  (issues:read, contents:read, …) rather than a classic
-  full-access PAT. The verifier protects you from a malicious
-  server's *text*; the PAT scope protects you from a malicious
-  server's *actions*.
+Bubblewrap (chapter 3) is `pikuri-code`'s inner-process isolation
+for `bash`; Docker is the outer-process isolation this chapter
+uses for MCP. Different tools, different problems — bubblewrap
+is lightweight and bind-mount-based, Docker is heavier and
+image-based. MCPs ship as images-with-deps, so image-based fits.
 
-Bubblewrap (from chapter 3) is the inner-process isolation
-mechanism `pikuri-code` uses for `bash`; Docker is the
-outer-process isolation mechanism this chapter uses for MCP. They
-solve overlapping problems with different tools — bubblewrap is
-lightweight and bind-mount-based, Docker is heavier and image-based.
-For MCP, image-based is the better fit: an MCP server is shipped
-as an image with its dependencies, and Docker matches that
-distribution shape.
+## Running an npx-based MCP
+
+Most community MCPs ship as npm packages and assume you'll invoke
+them with `npx`. [`maven-mcp-server`](https://github.com/Bigsy/maven-mcp-server)
+is a good worked example — small, useful (it queries Maven
+Central for current versions of Java artifacts), and entirely
+unofficial. Exactly the case where "untrusted, containerise it"
+applies.
+
+The naive recipe — wrap `npx` in a bare `node` container per
+spawn:
+
+```ruby
+Pikuri::Mcp::Registry::StdioEntry.new(
+  id:      'maven',
+  command: [
+    'docker', 'run', '-i', '--rm',
+    '-v', "#{ENV['HOME']}/.npm:/root/.npm",
+    'node:20-slim',
+    'npx', '-y', 'maven-mcp-server@<pin-version>'
+  ]
+)
+```
+
+This works, but the first boot pays a full `npm install`
+(~15 seconds for a small server, longer for big ones). The bind
+mount on `~/.npm` persists the cache so subsequent boots are
+fast — at the cost of sharing your host npm cache with a
+container running untrusted code. Not the worst thing (npm
+caches are inert artifacts), not airtight either.
+
+The cleaner recipe is to bake an image once:
+
+```dockerfile
+# Dockerfile-maven-mcp
+FROM node:20-slim
+RUN npm install -g maven-mcp-server@<pin-version>
+ENTRYPOINT ["maven-mcp-server"]
+```
+
+```sh
+docker build -f Dockerfile-maven-mcp -t maven-mcp:<pin-version> .
+```
+
+```ruby
+Pikuri::Mcp::Registry::StdioEntry.new(
+  id:      'maven',
+  command: ['docker', 'run', '-i', '--rm', "maven-mcp:<pin-version>"]
+)
+```
+
+Every spawn is now fast, the npm cache stays on the host, and
+the package version is pinned in the Dockerfile — an upstream
+compromise can't ship you a new version without you rebuilding.
+The same pattern generalises to any npx-published MCP: replace
+the package name and pin, rebuild to upgrade.
+
+## Running a Python-based MCP
+
+Python MCPs follow the same shape — `pip install <package>` or
+`uvx <package>` plays the role of `npx -y <package>`.
+[`mcp-server-fetch`](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch)
+is the canonical worked example: it's one of Anthropic's
+reference servers, published on PyPI, and does roughly what
+pikuri's built-in `fetch` tool does — only inside a container.
+
+(Why containerise `fetch` when pikuri ships one? Defence in
+depth: the bundled `fetch` parses HTML inside `pikuri-code`'s
+own process, so a Nokogiri / Faraday parsing bug could in
+principle land in the agent itself. The MCP version moves the
+parser somewhere it can't reach your filesystem. Not strictly
+necessary; an extra notch of isolation if you want it.)
+
+Bake an image once:
+
+```dockerfile
+# Dockerfile-fetch-mcp
+FROM python:3.12-slim
+RUN pip install --no-cache-dir mcp-server-fetch==<pin-version>
+ENTRYPOINT ["python", "-m", "mcp_server_fetch"]
+```
+
+```sh
+docker build -f Dockerfile-fetch-mcp -t fetch-mcp:<pin-version> .
+```
+
+```ruby
+Pikuri::Mcp::Registry::StdioEntry.new(
+  id:      'fetch',
+  command: ['docker', 'run', '-i', '--rm', "fetch-mcp:<pin-version>"]
+)
+```
+
+Same trade-off as the npx case: pinned versions, fast spawns,
+no host install state shared with the container.
+
+For Python servers that need filesystem access (a SQLite DB,
+a project directory), bind-mount a single host path into the
+container with `-v`. Keep the mount narrow — `-v ~/projects/foo:/work:ro`
+gives the server a read-only window onto one project, not your
+home directory. The "narrow bind mount per concern" pattern is
+the Python-MCP analogue of the fine-grained-PAT pattern for the
+GitHub server: minimise the surface the server can act on.
+
+## Browser MCPs are a special case
+
+[Playwright MCP](https://github.com/microsoft/playwright-mcp) is
+where the chapter's threat model bites hardest. It hands the
+agent a real browser pointed at URLs the agent picks — every
+page loaded is an opportunity for attacker-chosen JavaScript to
+land in the browser process. Every other MCP in this chapter
+sees only text the model fed it; Playwright sees the open web.
+It's the MCP with the largest untrusted-content surface in
+common use, which is exactly why you most want it containerised.
+
+The good news: Microsoft publishes `mcr.microsoft.com/playwright`
+with the browsers pre-installed, so the "bake an image" step is
+already done. The complication: Playwright is useful precisely
+when the agent needs to *do something* visible — visit your local
+dev server, take screenshots you review, drive a UI on
+`localhost:3000`. Three usability questions stack on top of the
+isolation question. (Everything below is Linux-specific; macOS
+needs XQuartz for headed mode and Docker Desktop handles
+`host.docker.internal` automatically; Windows is unsupported.)
+
+### Headed vs. headless
+
+Playwright supports both. Headless is the safer default — no UI,
+no X11 socket exposure, the browser renders to memory and
+exposes snapshots through the MCP protocol. The chapter
+recommends headless for routine work.
+
+Headed mode is genuinely useful when you want to *watch* what
+the agent is doing: clicks land on visible buttons; you can
+intervene. To do that from a container, bind-mount the host X11
+socket:
+
+```ruby
+Pikuri::Mcp::Registry::StdioEntry.new(
+  id:      'playwright',
+  command: [
+    'docker', 'run', '-i', '--rm',
+    '-e', "DISPLAY=#{ENV.fetch('DISPLAY')}",
+    '-v', '/tmp/.X11-unix:/tmp/.X11-unix',
+    'mcr.microsoft.com/playwright:<pin-version>',
+    'npx', '-y', '@playwright/mcp@<pin-version>', '--no-headless'
+  ]
+)
+```
+
+Bind-mounting `/tmp/.X11-unix` is a meaningful loosening of
+isolation — anything that can talk to that socket can drive your
+desktop. That's the price of headed mode; only turn it on when
+you actively want to watch the browser, not as a default.
+
+### Reaching your local dev server
+
+If you want the browser to visit `localhost:3000`, the
+container's `localhost` isn't your host's `localhost`. Two
+options:
+
+- **`--network host`.** The container joins the host network
+  namespace; the browser sees `localhost:3000` directly.
+  Simplest, but it removes the network-isolation layer Docker
+  normally gives you.
+- **`--add-host host.docker.internal:host-gateway`.** The
+  container gets a special hostname routing to the host's
+  bridge IP. The browser navigates to
+  `http://host.docker.internal:3000`. Preserves network
+  isolation; requires your dev server to bind to `0.0.0.0`
+  (or at least the bridge interface), not just `127.0.0.1`.
+
+Bubblewrap doesn't enter into this — it sandboxes filesystem
+access for `bash`, not network. A dev server `bash` started
+listens on a port reachable from any process on the host,
+including the Playwright container. The two sandboxes are
+independent; they don't fight.
+
+### Seeing the screenshots
+
+Playwright's MCP returns screenshots inline as image content in
+the tool response, which the *agent* can see but `pikuri-code`'s
+terminal renderer can't display. To view them yourself, configure
+the server to write artifacts to a host-mounted directory:
+
+```
+'-v', "#{ENV['HOME']}/.cache/pikuri/playwright:/artifacts",
+```
+
+…then pass the server's output-directory flag pointing at
+`/artifacts`. Screenshots land on your host at
+`~/.cache/pikuri/playwright/`, viewable in any image viewer.
+
+Putting all three pieces together gives a reasonable headed,
+host-network, screenshot-readable Playwright invocation — but
+each `-v` and `--network` flag is a notch of isolation traded
+away. Default headless with no host network; turn knobs on only
+when you need them, and turn them off again when you're done.
+
+## A note on apt-shipped MCPs
+
+The whole chapter assumes MCP servers are untrusted because
+that's what `npx -y <package>` and `pip install <pkg>` *are* —
+unreviewed code from a public registry. A different distribution
+shape would change the calculus: a server packaged in Debian's
+or Ubuntu's archives has been through maintainer review, is
+built reproducibly from a pinned upstream, and signed by the
+distribution. That's a real code-trust signal, the same one
+that justifies `apt install ripgrep` without further
+sandboxing.
+
+As of 2026, no popular MCP server ships this way. The ecosystem
+is ~18 months old; Debian's release cadence is slower than that.
+So this section is forward-looking: *if* an MCP you want lands
+in `apt`, the Docker wrapper becomes optional — `apt install` is
+the code-trust story, and you can spawn the server directly.
+
+Two caveats even then. First, apt-trust only addresses the
+code-trust axis. The server can still ship prompt injection in
+its tool descriptions or be tricked by attacker-controlled
+inputs at runtime; the verifier still runs and is still useful.
+Second, you still want to scope any tokens the server uses the
+same way you would for the GitHub container — the action blast
+radius is independent of code trust.
+
+Until then, the realistic shapes are vendor-image (the GitHub
+example), npx-Dockerised, Python-Dockerised, and Playwright.
+The chapter covers all four.
 
 ## Threat model — what `pikuri-mcp` actually protects against
 
