@@ -72,10 +72,17 @@ module Pikuri
     #   interpretation is wanted; +argv+ is passed to +exec+
     #   directly, so no implicit shell expansion happens here.
     # @param chdir [String, Pathname] working directory
+    # @param env [Hash{String=>String}] extra environment variables to
+    #   set in the child process. The child otherwise inherits the
+    #   parent's full environment; entries in +env+ override or add to
+    #   it. Default +{}+ (pure inheritance). Used by {Code::Bash} to
+    #   thread {Pikuri::Workspace::Filesystem#env} (host git identity,
+    #   etc.) into a bash subprocess whose sandbox would otherwise
+    #   strip the host's config files.
     # @return [Subprocess] handle — call {#wait} to block for the
     #   direct child to exit and read the captured output
-    def self.spawn(*argv, chdir:)
-      stdin, io, wait_thr = Open3.popen2e(*argv, chdir: chdir.to_s, pgroup: true)
+    def self.spawn(*argv, chdir:, env: {})
+      stdin, io, wait_thr = Open3.popen2e(env, *argv, chdir: chdir.to_s, pgroup: true)
       stdin.close
       register(wait_thr.pid)
       new(io: io, wait_thr: wait_thr)

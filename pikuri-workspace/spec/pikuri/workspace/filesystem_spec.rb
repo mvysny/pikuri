@@ -378,6 +378,70 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       assert_equal root, workspace.resolve_for_read('')
     end
   end
+
+  describe '#env' do
+    # Each test uses a fresh project_root + isolated HOME so the host's
+    # ~/.gitconfig doesn't leak in via git's global-config resolution.
+    let(:fake_home) { Pathname.new(Dir.mktmpdir('pikuri-ws-home-')).realpath }
+
+    around do |ex|
+      original_home = ENV['HOME']
+      original_xdg = ENV['XDG_CONFIG_HOME']
+      ENV['HOME'] = fake_home.to_s
+      ENV['XDG_CONFIG_HOME'] = (fake_home + '.config').to_s
+      ex.run
+    ensure
+      ENV['HOME'] = original_home
+      ENV['XDG_CONFIG_HOME'] = original_xdg
+      FileUtils.rm_rf(fake_home)
+    end
+
+    it 'returns {} when project_root has no git identity (and no global config)' do
+      ws = described_class.new(project_root: root)
+      assert_equal({}, ws.env)
+    end
+
+    it 'returns frozen GIT_AUTHOR_*/GIT_COMMITTER_* derived from git config user.name + user.email' do
+      Pikuri::Subprocess.spawn('git', 'init', '-q', '-b', 'main', root.to_s, chdir: root.to_s).wait
+      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.name', 'Pikuri Tester', chdir: root.to_s).wait
+      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.email', 'tester@example.com', chdir: root.to_s).wait
+
+      ws = described_class.new(project_root: root)
+      assert_equal 'Pikuri Tester',       ws.env['GIT_AUTHOR_NAME']
+      assert_equal 'tester@example.com',  ws.env['GIT_AUTHOR_EMAIL']
+      assert_equal 'Pikuri Tester',       ws.env['GIT_COMMITTER_NAME']
+      assert_equal 'tester@example.com',  ws.env['GIT_COMMITTER_EMAIL']
+      assert ws.env.frozen?, 'env hash must be frozen'
+    end
+
+    it 'is memoized — repeated reads return the same object without re-shelling out' do
+      ws = described_class.new(project_root: root)
+      assert ws.env.equal?(ws.env)
+    end
+
+    it 'is NOT computed at construction time (lazy)' do
+      # Drop a git binary on PATH that would crash if invoked. If construction
+      # runs the lookup, this test fails immediately at `described_class.new`.
+      ws = described_class.new(project_root: root)
+      assert_nil ws.instance_variable_get(:@env), 'env should not be set until first #env call'
+    end
+
+    it 'uses the explicit env: hash verbatim and skips git lookup' do
+      custom = { 'FOO' => 'bar', 'BAZ' => 'qux' }
+      ws = described_class.new(project_root: root, env: custom)
+      assert_equal custom, ws.env
+      assert ws.env.frozen?
+    end
+
+    it 'explicit env: {} stays empty (no fallback to git lookup)' do
+      Pikuri::Subprocess.spawn('git', 'init', '-q', '-b', 'main', root.to_s, chdir: root.to_s).wait
+      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.name', 'Pikuri Tester', chdir: root.to_s).wait
+      Pikuri::Subprocess.spawn('git', '-C', root.to_s, 'config', 'user.email', 'tester@example.com', chdir: root.to_s).wait
+
+      ws = described_class.new(project_root: root, env: {})
+      assert_equal({}, ws.env)
+    end
+  end
 end
 
 RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do

@@ -202,7 +202,7 @@ module Pikuri
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
           'bash', '-c', command
         ])
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s, env: workspace.env).wait
 
         output = truncate(result.output)
         exit_code = result.status.exitstatus

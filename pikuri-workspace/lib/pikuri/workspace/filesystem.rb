@@ -107,6 +107,34 @@ module Pikuri
     # keeps the workspace narrowly responsible for *containment*, not for
     # filesystem-state checks.
     #
+    # == Subprocess environment ({#env})
+    #
+    # Workspaces own a {#env} +Hash<String,String>+ that subprocess-
+    # spawning tools (currently {Pikuri::Code::Bash}) thread into
+    # {Pikuri::Subprocess.spawn}. The motivating case: the bubblewrap
+    # sandbox doesn't bind-mount +~/.gitconfig+, so +git commit+ inside
+    # fails (modern git refuses rather than synthesizing a default
+    # from +/etc/passwd+ — which isn't bind-mounted either). The
+    # workspace resolves the host's effective git identity at
+    # {#project_root} (so +includeIf+ rules apply: a repo under
+    # +~/work/my/+ that's covered by a +gitdir:~/work/my/+ include
+    # gets that identity, not the global default) and exposes it as
+    # +GIT_AUTHOR_*+ / +GIT_COMMITTER_*+ env vars that override config
+    # entirely and need no file in the sandbox.
+    #
+    # The lookup is *lazy* and *memoized*: the constructor doesn't
+    # shell out, so building a workspace stays cheap (specs that
+    # never read +#env+ pay nothing). First access runs +git -C
+    # project_root config user.{name,email}+ once. Falls back to +{}+
+    # if +git+ isn't on +PATH+ or no identity is configured — the
+    # subprocess then runs unmediated and git's own "please tell me
+    # who you are" surfaces inside the sandbox.
+    #
+    # Hosts that want a different env (extra vars, no git resolution,
+    # explicit identity) pass +env:+ to the constructor; that value
+    # is used verbatim and the git lookup is skipped. Always frozen
+    # by the time it leaves the workspace.
+    #
     # == Containment algorithm
     #
     # {#resolve} walks up the input path to its deepest existing ancestor,
@@ -207,17 +235,24 @@ module Pikuri
       #   set, +/tmp/*+ paths supplied to {#resolve_for_read} /
       #   {#resolve_for_write} are rewritten to point at {#temp}.
       #   Pairs with the bubblewrap sandbox's +--bind <temp> /tmp+.
+      # @param env [Hash{String=>String}, nil] subprocess environment
+      #   exposed via {#env}. +nil+ (default) → lazy-derive the host
+      #   git identity from {#project_root} on first access; explicit
+      #   hash → use verbatim (and skip the git lookup entirely). See
+      #   the class header §"Subprocess environment" for the
+      #   rationale.
       # @raise [Errno::ENOENT] if +project_root+ or any
       #   +readable+/+writable+ entry does not exist.
       # @raise [Error] if +project_root+ is denied (system root or
       #   +/home/*+).
-      def initialize(project_root:, readable: [], writable: [], temp: false, alias_tmp_to_temp: false)
+      def initialize(project_root:, readable: [], writable: [], temp: false, alias_tmp_to_temp: false, env: nil)
         @project_root = Pathname.new(project_root).realpath
         validate_project_root!(@project_root)
 
         @internal_temp = nil
         @temp = temp ? mint_playground : nil
         @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
+        @env_override = env
 
         @writable = ([@project_root] + writable.map { |p| Pathname.new(p).realpath } + [@temp].compact).uniq
         @readable = (@writable + readable.map { |p| Pathname.new(p).realpath }).uniq
@@ -226,6 +261,22 @@ module Pikuri
       # @return [Boolean] whether {#resolve_for_read} / {#resolve_for_write}
       #   rewrite +/tmp/*+ inputs to {#temp}.
       attr_reader :alias_tmp_to_temp
+
+      # Environment variables for subprocesses spawned in this
+      # workspace. Lazy, memoized, frozen.
+      #
+      # When the constructor received +env: nil+ (the default), the
+      # first call here runs +git -C project_root config user.name+ +
+      # +user.email+ once and returns +GIT_AUTHOR_*+ / +GIT_COMMITTER_*+
+      # accordingly. When the constructor received an explicit hash,
+      # this returns that hash (frozen) and never shells out. Returns
+      # +{}+ if git resolution finds no identity for {#project_root}
+      # or +git+ isn't on +PATH+.
+      #
+      # @return [Hash{String=>String}]
+      def env
+        @env ||= (@env_override || compute_git_identity_env).freeze
+      end
 
       # Per-workspace ephemeral umbrella. Minted lazily on first call
       # under {CACHE_BASE}. Registered for +at_exit+ removal the
@@ -335,6 +386,37 @@ module Pikuri
         base + cleaned.relative_path_from(existing)
       end
 
+      # Resolve the host's effective git identity for {#project_root}
+      # via +git -C project_root config+ — runs git's full chain
+      # (system → global → includeIf → per-repo), so what comes back
+      # is what +git commit+ would attribute to on the host outside
+      # the sandbox. +Errno::ENOENT+ (no +git+ on +PATH+) and a
+      # non-zero exit (no value configured) both fall back to a nil
+      # entry; an empty identity field is treated the same. Result:
+      # either the full four-entry hash or +{}+.
+      def compute_git_identity_env
+        name  = git_config('user.name')
+        email = git_config('user.email')
+        return {} if name.nil? || name.empty? || email.nil? || email.empty?
+
+        {
+          'GIT_AUTHOR_NAME'     => name,
+          'GIT_AUTHOR_EMAIL'    => email,
+          'GIT_COMMITTER_NAME'  => name,
+          'GIT_COMMITTER_EMAIL' => email
+        }
+      end
+
+      def git_config(key)
+        result = Pikuri::Subprocess.spawn(
+          'git', '-C', @project_root.to_s, 'config', key,
+          chdir: @project_root.to_s
+        ).wait
+        result.status.success? ? result.output.strip : nil
+      rescue Errno::ENOENT
+        nil
+      end
+
       # Rewrite +/tmp+ / +/tmp/foo+ inputs to land under {#temp} when
       # {#alias_tmp_to_temp} is set. Other inputs pass through. Lives
       # in the base class so {AllowAll} inherits identical behavior.
@@ -395,12 +477,15 @@ module Pikuri
         # @param alias_tmp_to_temp [Boolean] same semantics as
         #   {Filesystem} — when +true+ AND +temp:+ is set, +/tmp/*+
         #   inputs rewrite to land under {#temp}.
-        def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false)
+        # @param env [Hash{String=>String}, nil] same semantics as
+        #   {Filesystem}; see {Filesystem#env}.
+        def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false, env: nil)
           @project_root = Pathname.new(project_root).realpath
 
           @internal_temp = nil
           @temp = temp ? mint_playground : nil
           @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
+          @env_override = env
 
           # Advertise "everything is in scope" via the accessor surface so
           # callers that inspect +readable+/+writable+ (system-prompt
