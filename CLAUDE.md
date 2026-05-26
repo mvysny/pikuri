@@ -267,6 +267,13 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
   measurably better with one.
+- **User-facing docs: prefer concrete over abstract.** Readers
+  abstract easily; the reverse takes effort. *"Delete your home
+  folder"* beats *"filesystem mutation outside the workspace"*;
+  *"the CPU's NX flag"* beats *"a structural data/instructions
+  distinction."* Applies to `README.md`, `SECURITY.md`,
+  `IDEAS.md`, `COMPARISON.md`, and the `docs/guide/` chapters —
+  any prose meant for a human reader.
 
 ## Working on this codebase
 

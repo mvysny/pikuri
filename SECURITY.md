@@ -66,9 +66,10 @@ trust.**
 
 Once code trust is settled, the remaining attack surface is content
 the model reads: a tool returns text, that text enters the context,
-and the model has no way to distinguish "data" from "instructions."
-That's the prompt-injection problem, and it's unsolved
-industry-wide. Untrusted content arrives from many places — a
+and the model has no way to distinguish "data" from "instructions"
+— there is no equivalent of the CPU's NX flag for tokens in a
+context window. That's the prompt-injection problem, and it's
+unsolved industry-wide. Untrusted content arrives from many places — a
 scraped web page, a file in `node_modules/`, an MCP result, a Slack
 message via a future integration, even another sub-agent's reply.
 
