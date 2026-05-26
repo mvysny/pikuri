@@ -168,9 +168,13 @@ per-gem one-liners:
   `Write`, `Edit`, `Grep`, `Glob`). Depends on `pikuri-core`.
   Stdlib-only; no subprocess execution.
 - **`pikuri-code/`** — `Code::Bash`, `Code::Bash::Sandbox`,
-  `Code::ToolchainPaths`, `bin/pikuri-code`. Depends on
-  `pikuri-core` + `pikuri-workspace` + `pikuri-subagents` (wires
-  `SCOUT`).
+  `Code::ToolchainPaths`, `Code::GitClone`, bundled
+  `GIT_REPO_RESEARCHER` persona, `bin/pikuri-code`. Depends on
+  `pikuri-core` + `pikuri-workspace` + `pikuri-subagents`. The
+  binary wires three personas: `SCOUT` + `RESEARCHER` from
+  pikuri-subagents and `GIT_REPO_RESEARCHER` from this gem (the
+  one persona that needs a tool — `GitClone` — outside the
+  pikuri-subagents/pikuri-workspace surface).
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
   summarization), `Mcp::Verifier` (injection check), `Mcp::Cache`,

@@ -102,8 +102,9 @@ approve prompts on that basis.
 - **Narrative walkthrough:** [chapter 3 of the pikuri
   guide](../docs/guide/03-code.md) — the three new seams
   (`Workspace` / `Confirmer` / `Sandbox`), the full wiring block
-  with all three extensions, the `SCOUT` persona in action, and
-  an expanded threat-model discussion.
+  with all three extensions, the privilege-separated `SCOUT` and
+  `GIT_REPO_RESEARCHER` personas in action, and an expanded
+  threat-model discussion.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-code> (once published), or run
   `bundle exec yard` in this directory for a local copy.

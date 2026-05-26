@@ -99,7 +99,7 @@ defense below targets that residual surface.
 
 ### Defense: capability boundaries via sub-agents
 
-Pikuri ships two bundled sub-agent personas that do exactly that:
+Pikuri ships three bundled sub-agent personas that do exactly that:
 
 - **`RESEARCHER`** — `tool_names: %w[web_search web_scrape fetch]`.
   Network read only. No `read`, no `bash`, no `write`, no `agent`
@@ -109,8 +109,21 @@ Pikuri ships two bundled sub-agent personas that do exactly that:
   filesystem. No `fetch`, no `bash`, no `write`, no recursion. Sees
   untrusted file content (vendored READMEs, scraped docs, template
   repos); cannot egress; cannot recurse.
+- **`GIT_REPO_RESEARCHER`** — `tool_names:
+  %w[git_clone read grep glob web_search web_scrape fetch]`. The
+  "clone-and-dig" persona: clones a public repo (HTTPS-only,
+  shallow, no submodules) into its own fresh temp workspace and
+  explores it with `read` / `grep` / `glob`, with the same web
+  reads as `RESEARCHER` as a fallback. The temp workspace is
+  *disjoint* from the parent's project root (containment rejects
+  paths outside it), so cloned content cannot land where the
+  parent's `read` would later find it. No `bash`, no `edit`, no
+  `write`, no `agent` recursion. Same trifecta shape as
+  `RESEARCHER`: private-data leg structurally near-zero
+  (workspace + just-downloaded content only); the network-egress
+  and untrusted-content legs are present but harmless without (a).
 
-`bin/pikuri-code` wires both by default, and its system prompt
+`bin/pikuri-code` wires all three by default, and its system prompt
 nudges the model toward delegating any "look at this URL / read
 this third-party file" task to the appropriate persona. The parent
 agent receives only the sub-agent's one-paragraph reply — the raw

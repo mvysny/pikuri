@@ -371,6 +371,29 @@ through SCOUT can't act on a prompt injection inside it — no
 `bash`, no `fetch`, no `write`, no `agent` recursion. Context-economy
 is the secondary win.
 
+**Also shipped: `Pikuri::Code::GIT_REPO_RESEARCHER`** — the
+"clone-and-dig" persona, third in the lineup. Lives in
+`pikuri-code` (not `pikuri-subagents`) because it's the first
+persona that ships a tool other than the bundled
+`pikuri-subagents` / `pikuri-workspace` surface: a new
+`Pikuri::Code::GitClone` (HTTPS-only, shallow, no submodules,
+wrapped in the same Bubblewrap sandbox `Bash` uses).
+`tool_names: %w[git_clone read grep glob web_search web_scrape fetch]`,
+30 steps, prompt at
+`pikuri-code/prompts/persona-git-repo-researcher.txt`, wired into
+`bin/pikuri-code` as the third entry of the persona list. The
+distinguishing structural piece is `needs_temp_workspace: true` —
+the persona is declarative-only; `SubAgentTool` owns the lifecycle
+(mktmpdir + mint a `Workspace::Filesystem` rooted at the temp dir
++ tear it down at sub-agent close). Trifecta-wise the persona is
+same shape as `RESEARCHER`: leg (a) is structurally near-zero
+because the temp workspace is disjoint from the parent's
+project_root (containment rejects out-of-bounds paths), so cloned
+content cannot leave files for the parent's `read` to pick up.
+This also partially delivers the "workspace modes" follow-up
+below — the `readonly_with_temp` mode generalizes
+`needs_temp_workspace` from one persona to a `Persona` field.
+
 Reference shape converges with Claude Code's `subagent_type`,
 opencode's `agents` map (`packages/opencode/src/agent/agent.ts:129-281`),
 and PI's `subagent` agents
@@ -378,8 +401,10 @@ and PI's `subagent` agents
 
 ### Not yet shipped — follow-up work
 
-**Workspace modes.** The persona record today doesn't include a
-`workspace_mode:` field. Scout (and later `reviewer`) work fine on
+**Workspace modes.** The persona record today has a narrow
+`needs_temp_workspace:` boolean (used by
+`GIT_REPO_RESEARCHER` — see above) but no broader
+`workspace_mode:` field. Scout and Researcher work fine on
 `inherit` semantics — child reuses parent's `Filesystem`-bound tool
 instances by reference, no reconstruction. The interesting modes
 from the original proposal stay queued:
@@ -390,9 +415,14 @@ from the original proposal stay queued:
   readable, none writable. No clones, no extracts.
 - `readonly_with_temp` — same plus a fresh `temp:` scratchpad as the
   only writable spot (git-clone / unzip / `mvn dependency:sources`).
+  Generalizes `needs_temp_workspace: true` from a single-purpose
+  boolean to a composable mode — `GIT_REPO_RESEARCHER` becomes the
+  first user once this lands and stops being a special case.
 
-Adding these means adding `workspace_mode:` to the `Persona` record
-(default `:inherit`) and a `Pikuri::Workspace::Filesystem.scoped_readonly_from(parent, with_temp:)`
+Adding these means promoting `needs_temp_workspace:` to a
+`workspace_mode:` enum on the `Persona` record (default
+`:inherit`) and a
+`Pikuri::Workspace::Filesystem.scoped_readonly_from(parent, with_temp:)`
 primitive in `pikuri-workspace`. The fs-touching tools all take
 `Filesystem` via constructor today, so the reconstruction is
 mechanical — but `bash` would also need `Confirmer::AUTO_APPROVE`

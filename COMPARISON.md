@@ -511,7 +511,7 @@ zoo."
 
 | Project | Personas shipped | Source |
 | --- | --- | --- |
-| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 10 steps); `SCOUT` (read/grep/glob, 15 steps) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; IDEAS.md §"Personas" |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 10 steps); `SCOUT` (read/grep/glob, 15 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb`; IDEAS.md §"Personas" |
 | ruby_llm / langchainrb | none — no sub-agent surface | — |
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
@@ -521,23 +521,29 @@ Cross-cutting by role:
 
 | Role | pikuri | pi | opencode | Claude Code |
 | --- | --- | --- | --- | --- |
-| read-only recon (cheap model) | `RESEARCHER` (web) + `SCOUT` (fs) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
+| read-only recon (cheap model) | `RESEARCHER` (web) + `SCOUT` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
 | planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
 | reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
 | general-purpose catch-all | — (escape hatch documented in IDEAS) | `worker` | `general` | `general-purpose` |
 | infra housekeeping | — (synthesizer is hard-coded) | — | `compaction`, `title`, `summary` (tools: none) | — |
 | UX helpers (slash-command-driven) | — (no slash commands) | — | — | `statusline-setup`, `claude-code-guide` |
 
-**Takeaway.** Pikuri ships the leanest persona set — two
-(`RESEARCHER` + `SCOUT`) vs. pi's four, opencode's eight, Claude
-Code's five — which matches the read-it-in-an-evening ceiling: ship
-the personas that demonstrate the mechanism along each axis (web
-recon + fs recon), document the rest as queued in IDEAS.md, let
-downstream gems publish more if the ecosystem needs them. The
-strongest cross-project signal is the universal "read-only recon
-agent on a cheap model" role; pikuri's `RESEARCHER` covers the *web*
-variant and `SCOUT` is the direct analog of pi's `scout` / opencode's
-`explore` / Claude Code's `Explore` for the *fs* variant. The
+**Takeaway.** Pikuri ships a lean persona set — three
+(`RESEARCHER` + `SCOUT` + `GIT_REPO_RESEARCHER`) vs. pi's four,
+opencode's eight, Claude Code's five — which matches the
+read-it-in-an-evening ceiling: ship the personas that demonstrate
+the mechanism along each axis, document the rest as queued in
+IDEAS.md, let downstream gems publish more if the ecosystem needs
+them. The three break down as: `RESEARCHER` (web recon) and `SCOUT`
+(fs recon) are the direct analogs of pi's `scout` / opencode's
+`explore` / Claude Code's `Explore` — the universal "read-only
+recon agent on a cheap model" role, split by *what* gets read.
+`GIT_REPO_RESEARCHER` is the third axis: clone-and-dig over a
+public repo, in its own per-invocation throwaway workspace. None
+of the comparison set ships a direct analog — the closest move is
+opencode/pi letting `bash` (with `git`) reach inside a sandbox,
+but the persona shape collapses that into one privilege-separated
+delegation with no `bash` in scope. The
 next-strongest signal is "planner = read-only + intent-shaping,"
 which pikuri has not committed to either way.
 
