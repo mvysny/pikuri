@@ -139,6 +139,18 @@ module Pikuri
         )
       end
 
+      # Produce a new {Glob} bound to +workspace+. Used by
+      # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
+      # +workspace_factory:+ — the parent's instance is rebuilt for
+      # the sub-agent's fresh workspace so paths resolve against the
+      # right root.
+      #
+      # @param workspace [Filesystem]
+      # @return [Glob]
+      def with_workspace(workspace)
+        self.class.new(workspace: workspace)
+      end
+
       # Validate inputs, resolve the path against the workspace, spawn
       # rg, mtime-sort, head-truncate, render. Returns either the
       # formatted listing, a "no files match" message, or

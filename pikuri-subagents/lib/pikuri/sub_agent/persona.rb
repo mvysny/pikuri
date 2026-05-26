@@ -45,11 +45,35 @@ module Pikuri
     # * +max_steps+ — step budget for one delegated task,
     #   threaded into a fresh {Pikuri::Agent::Control::StepLimit}
     #   per invocation.
+    # * +workspace_builder+ — optional +Proc+ taking a fresh empty
+    #   temp directory path (String) and returning a
+    #   {Pikuri::Workspace::Filesystem} (or compatible) bound to it.
+    #   When set, {SubAgentTool} +Dir.mktmpdir+s a per-invocation
+    #   temp dir, calls this builder to wrap it into a Workspace,
+    #   threads the result through tools that respond to
+    #   +#with_workspace+, and +FileUtils.remove_entry+s the temp
+    #   dir at sub-agent +#close+. The persona has *no* control
+    #   over the dir lifecycle — it's always a temp folder, always
+    #   deleted, full stop. The builder's only job is "given this
+    #   path, build me a Workspace". Default +nil+ — child shares
+    #   the parent's workspace through tool instance reuse. See
+    #   {Pikuri::Code::GIT_REPO_RESEARCHER} for the bundled use
+    #   case (fresh empty workspace per clone-and-explore task).
     #
     # @example bundled researcher
     #   Pikuri::SubAgent::RESEARCHER
     #   # => #<data Pikuri::SubAgent::Persona name="researcher", ...>
-    class Persona < Data.define(:name, :description, :tool_names, :system_prompt, :max_steps)
+    class Persona < Data.define(:name, :description, :tool_names, :system_prompt, :max_steps, :workspace_builder)
+      # @param workspace_builder [Proc, nil] optional builder, see
+      #   class header. Default +nil+.
+      def initialize(workspace_builder: nil, **rest)
+        super(workspace_builder: workspace_builder, **rest)
+      end
+
+      # @return [Boolean] +true+ iff a +workspace_builder+ was wired.
+      def needs_temp_workspace?
+        !workspace_builder.nil?
+      end
     end
   end
 end

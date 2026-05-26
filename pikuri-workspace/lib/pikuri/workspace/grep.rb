@@ -152,6 +152,18 @@ module Pikuri
         )
       end
 
+      # Produce a new {Grep} bound to +workspace+. Used by
+      # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
+      # +workspace_factory:+ — the parent's instance is rebuilt for
+      # the sub-agent's fresh workspace so paths resolve against the
+      # right root.
+      #
+      # @param workspace [Filesystem]
+      # @return [Grep]
+      def with_workspace(workspace)
+        self.class.new(workspace: workspace)
+      end
+
       # Validate inputs, resolve the path against the workspace, spawn
       # rg, and render the observation. Returns either the formatted
       # results, a "no matches" string, or +"Error: ..."+.

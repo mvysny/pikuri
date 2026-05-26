@@ -177,6 +177,18 @@ module Pikuri
         )
       end
 
+      # Produce a new {Read} bound to +workspace+. Used by
+      # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
+      # +workspace_factory:+ — the parent's instance is rebuilt for
+      # the sub-agent's fresh workspace so paths resolve against the
+      # right root.
+      #
+      # @param workspace [Filesystem]
+      # @return [Read]
+      def with_workspace(workspace)
+        self.class.new(workspace: workspace)
+      end
+
       # Resolve +path+ against +workspace+, refuse directories / binaries /
       # missing files, and return either the cat-n-formatted slice or an
       # +"Error: ..."+ observation.

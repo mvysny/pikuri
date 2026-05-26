@@ -2,6 +2,7 @@
 
 require 'pikuri-core'
 require 'pikuri-workspace'
+require 'pikuri-subagents'
 
 # Entry file for the pikuri-code gem. After +require 'pikuri-code'+,
 # +Pikuri::Code::Bash+ and +Pikuri::Code::ToolchainPaths+ are defined,
@@ -23,7 +24,14 @@ module Pikuri
     LOADER.tag = 'pikuri-code'
     LOADER.push_dir(__dir__)
     LOADER.ignore(File.expand_path('pikuri-code.rb', __dir__))
+    # +GIT_REPO_RESEARCHER+ is an +ALL_CAPS+ value constant in a file
+    # whose name Zeitwerk would map to +GitRepoResearcher+; same trick
+    # +pikuri-subagents+ uses for +RESEARCHER+ / +SCOUT+. Ignore here,
+    # require_relative below once {Pikuri::SubAgent::Persona} is loaded.
+    LOADER.ignore(File.expand_path('pikuri/code/git_repo_researcher.rb', __dir__))
     LOADER.setup
     LOADER.eager_load
   end
 end
+
+require_relative 'pikuri/code/git_repo_researcher'

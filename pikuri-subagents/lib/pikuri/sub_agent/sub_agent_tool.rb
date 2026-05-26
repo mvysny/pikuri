@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+require 'tmpdir'
+
 module Pikuri
   module SubAgent
     # The +agent+ tool, expressed as a {Pikuri::Tool} subclass:
@@ -129,6 +132,25 @@ module Pikuri
             sub_listeners = listeners.for_sub_agent(id: sub_id)
             sub_tools = parent_tools.select { |t| persona.tool_names.include?(t.name) }
 
+            # Per-invocation workspace mint, when the persona wired
+            # a +workspace_builder:+. We own the lifecycle uniformly
+            # — Dir.mktmpdir for the path, persona.workspace_builder
+            # for the Workspace wrapped around it, FileUtils.remove_entry
+            # via the sub-agent's +on_close+. The persona has no
+            # control over cleanup — it's always a temp folder,
+            # always deleted. Tools that respond to +#with_workspace+
+            # are rebuilt onto the fresh workspace so paths resolve
+            # against the right root; stateless tools (web_search,
+            # calculator, ...) pass through unchanged.
+            session_temp_root = nil
+            if persona.needs_temp_workspace?
+              session_temp_root = Dir.mktmpdir("pikuri-#{persona.name}-")
+              session_workspace = persona.workspace_builder.call(session_temp_root)
+              sub_tools = sub_tools.map do |t|
+                t.respond_to?(:with_workspace) ? t.with_workspace(session_workspace) : t
+              end
+            end
+
             # Inline propagation policy — listeners get the
             # for_sub_agent dispatch above, but controls do not:
             # the three controls are a fixed set and a fresh
@@ -146,6 +168,7 @@ module Pikuri
             ) do |c|
               c.add_tools(sub_tools)
               c.add_listeners(sub_listeners)
+              c.on_close { FileUtils.remove_entry(session_temp_root) if File.directory?(session_temp_root) } if session_temp_root
             end
             begin
               sub.run_loop(user_message: task)

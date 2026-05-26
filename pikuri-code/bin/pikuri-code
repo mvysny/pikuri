@@ -267,6 +267,15 @@ begin
     c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
     c.add_sub_agent_tool Pikuri::Tool::FETCH
+    # git_clone lives on the sub-agent-only pool too: the parent's
+    # bash already covers git for the project itself; this tool exists
+    # for the git_repo_researcher persona, which clones into its own
+    # throwaway temp workspace (minted by the persona's
+    # +workspace_factory+ at spawn time, then handed to GitClone via
+    # +#with_workspace+). The boot-time instance below holds the
+    # parent's workspace just to satisfy the constructor; it's
+    # never executed against that workspace.
+    c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
     c.add_extension Pikuri::Mcp::Extension.new(
       registry: mcp_registry,
@@ -282,7 +291,11 @@ begin
     # to hijack. See IDEAS.md §"The lethal trifecta" + §"Personas for
     # Tool::SubAgent" for the framing.
     c.add_extension Pikuri::SubAgent::Extension.new(
-      personas: [Pikuri::SubAgent::SCOUT, Pikuri::SubAgent::RESEARCHER]
+      personas: [
+        Pikuri::SubAgent::SCOUT,
+        Pikuri::SubAgent::RESEARCHER,
+        Pikuri::Code::GIT_REPO_RESEARCHER
+      ]
     )
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
