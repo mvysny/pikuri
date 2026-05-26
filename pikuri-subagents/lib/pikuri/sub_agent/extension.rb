@@ -10,13 +10,21 @@ module Pikuri
     # == Usage
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_tool Pikuri::Tool::WEB_SEARCH
-    #     c.add_tool Pikuri::Tool::WEB_SCRAPE
-    #     c.add_tool Pikuri::Tool::FETCH
+    #     c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
+    #     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
+    #     c.add_sub_agent_tool Pikuri::Tool::FETCH
     #     c.add_extension Pikuri::SubAgent::Extension.new(
     #       personas: [Pikuri::SubAgent::RESEARCHER]
     #     )
     #   end
+    #
+    # Either {Pikuri::Agent::Configurator#add_tool} or
+    # {Pikuri::Agent::Configurator#add_sub_agent_tool} satisfies a
+    # persona's +tool_names+ entry — the difference is whether the
+    # parent LLM also gets the tool. Use +add_sub_agent_tool+ for
+    # tools you want only the sub-agent to be able to call (this is
+    # the lethal-trifecta defense for network tools — see SECURITY.md
+    # §"Defense: capability boundaries via sub-agents").
     #
     # == Configure / bind split
     #
@@ -73,30 +81,34 @@ module Pikuri
       #   read the resolved map.
       attr_reader :personas
 
-      # Validate every persona's +tool_names+ against the tools
-      # already registered on the Configurator, then append the
-      # +<available_agents>+ snippet to the system prompt. The
-      # +SubAgentTool+ itself is installed in {#bind} — it needs the
-      # live parent agent's +tools+ / +listeners+ to close over.
+      # Validate every persona's +tool_names+ against the union of
+      # the Configurator's regular and sub-agent-only tool pools,
+      # then append the +<available_agents>+ snippet to the system
+      # prompt. The +SubAgentTool+ itself is installed in {#bind} —
+      # it needs the live parent agent's +tools+ / +listeners+ to
+      # close over.
       #
       # Practical implication: call +c.add_extension+ *after* the
-      # +c.add_tool+ calls the personas depend on; otherwise the
-      # tool_names validation will not find them.
+      # +c.add_tool+ / +c.add_sub_agent_tool+ calls the personas
+      # depend on; otherwise the tool_names validation will not find
+      # them.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @raise [ArgumentError] if any persona references a
-      #   +tool_names+ entry not yet registered on +c.tools+
+      #   +tool_names+ entry not registered on either +c.tools+ or
+      #   +c.sub_agent_tools+
       # @return [void]
       def configure(c)
-        have = c.tools.map(&:name)
+        have = (c.tools + c.sub_agent_tools).map(&:name)
         @personas.each_value do |persona|
           missing = persona.tool_names - have
           next if missing.empty?
 
           raise ArgumentError,
                 "persona #{persona.name.inspect} references unregistered tool(s) " \
-                "#{missing.inspect}. Register them via c.add_tool before adding " \
-                "Pikuri::SubAgent::Extension. Currently registered: #{have.inspect}."
+                "#{missing.inspect}. Register them via c.add_tool or " \
+                "c.add_sub_agent_tool before adding Pikuri::SubAgent::Extension. " \
+                "Currently registered: #{have.inspect}."
         end
 
         c.append_system_prompt(SubAgentTool.available_agents_snippet(@personas))

@@ -133,6 +133,40 @@ RSpec.describe Pikuri::SubAgent::Extension do
       end
     end
 
+    it 'satisfies a persona tool_names entry from the sub-agent-only pool' do
+      # Verifies the trifecta-defense use case: WEB_SEARCH is wired only
+      # via add_sub_agent_tool, the persona that references it still
+      # passes validation, and the tool never reaches the parent's chat.
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
+        c.add_extension described_class.new(personas: [tiny_persona])
+      end
+
+      assert_equal [Pikuri::Tool::WEB_SEARCH], agent.sub_agent_tools
+      assert_empty agent.tools
+      # The chat got only the `agent` delegation tool — no web_search.
+      chat = @fake_chats.first
+      tool_names = chat.tools.map { |t| t.respond_to?(:name) ? t.name : nil }.compact
+      refute_includes tool_names, 'web_search'
+    end
+
+    it 'errors when a persona tool name is missing from both pools' do
+      err = assert_raises(ArgumentError) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's') do |c|
+          c.add_listener recorder
+          c.add_tool Pikuri::Tool::CALCULATOR    # parent pool, irrelevant name
+          c.add_sub_agent_tool Pikuri::Tool::FETCH # sub-agent pool, irrelevant name
+          c.add_extension described_class.new(personas: [tiny_persona])
+        end
+      end
+      assert_match(/references unregistered tool/, err.message)
+      assert_match(/"web_search"/, err.message)
+      assert_match(/c\.add_tool or c\.add_sub_agent_tool/, err.message)
+    end
+
     it 'appends a single <available_agents> snippet describing every persona' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|

@@ -399,6 +399,7 @@ module Pikuri
       block&.call(configurator)
 
       @tools = configurator.tools.dup
+      @sub_agent_tools = configurator.sub_agent_tools.dup
       @listeners = ListenerList.new(configurator.listeners)
       configurator.system_prompt_additions.each do |snippet|
         @system_prompt = "#{@system_prompt}\n\n#{snippet}"
@@ -465,7 +466,18 @@ module Pikuri
     #   the +agent+ tool from +pikuri-subagents+, which picks the
     #   sub-agent's toolset from the parent's instances so any
     #   already-bound workspace/confirmer wiring travels along).
+    #   Tools listed here are also the ones registered with
+    #   ruby_llm — the parent LLM can call any of them. Compare
+    #   with {#sub_agent_tools}.
     attr_reader :tools
+
+    # @return [Array<Tool>] tools registered via
+    #   {Configurator#add_sub_agent_tool}, in declaration order.
+    #   Invisible to the parent LLM (never sent to ruby_llm);
+    #   available only to sub-agents whose persona +tool_names+
+    #   match. See {Configurator}'s "Two tool pools" header for
+    #   the trifecta-defense rationale.
+    attr_reader :sub_agent_tools
 
     # @return [String] resolved model id from {#transport}.
     #   Convenience delegator for callers that don't need the

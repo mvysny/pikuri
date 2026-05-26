@@ -30,8 +30,9 @@ module Pikuri
     # the parent's listener list (run through
     # {Pikuri::Agent::ListenerList#for_sub_agent} so renderers can
     # adjust per-child). Everything else is owned by the persona:
-    # system prompt, tool subset (filtered out of +parent.tools+
-    # by +persona.tool_names+), and step budget (a fresh
+    # system prompt, tool subset (filtered out of
+    # +parent.tools + parent.sub_agent_tools+ by +persona.tool_names+),
+    # and step budget (a fresh
     # {Pikuri::Agent::Control::StepLimit} at +persona.max_steps+).
     # The propagation policy is inlined here rather than delegated
     # to a +for_sub_agent+ hook on each control because the three
@@ -80,7 +81,8 @@ module Pikuri
 
       # @param parent_agent [Pikuri::Agent] the calling agent.
       #   Read for its {Pikuri::Agent#transport},
-      #   {Pikuri::Agent#tools}, {Pikuri::Agent#listeners},
+      #   {Pikuri::Agent#tools}, {Pikuri::Agent#sub_agent_tools},
+      #   {Pikuri::Agent#listeners},
       #   {Pikuri::Agent#cancellable},
       #   {Pikuri::Agent#context_window_cap}, {Pikuri::Agent#id},
       #   and {Pikuri::Agent#streaming}.
@@ -92,7 +94,7 @@ module Pikuri
       # @return [SubAgentTool]
       def initialize(parent_agent, personas:)
         transport         = parent_agent.transport
-        parent_tools      = parent_agent.tools
+        parent_tools      = parent_agent.tools + parent_agent.sub_agent_tools
         listeners         = parent_agent.listeners
         parent_cancel     = parent_agent.cancellable
         context_window    = parent_agent.context_window_cap

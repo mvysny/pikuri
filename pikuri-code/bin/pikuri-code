@@ -247,19 +247,26 @@ begin
     c.add_listener Pikuri::Agent::Listener::Terminal.new
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
     # File/shell tools first (declaration order biases some models toward
-    # earlier tools, and this is the coding-relevant set); web + calculator
-    # last as auxiliary. The `skill` tool, when the catalog is non-empty,
-    # is appended by the Skill::Extension below.
+    # earlier tools, and this is the coding-relevant set); calculator
+    # last as auxiliary. Network tools (web_search / web_scrape / fetch)
+    # go on the sub-agent-only pool via +add_sub_agent_tool+ — the
+    # parent LLM never sees them, but the RESEARCHER persona (wired
+    # below) lists them in its +tool_names+ and receives them through
+    # the +agent+ delegation tool. So untrusted web content can only
+    # land in a child context with no file read/write/bash to hijack
+    # a prompt injection. See SECURITY.md §"Defense: capability
+    # boundaries via sub-agents". The `skill` tool, when the catalog
+    # is non-empty, is appended by the Skill::Extension below.
     c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
     c.add_tool Pikuri::Code::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
-    c.add_tool Pikuri::Tool::WEB_SEARCH
-    c.add_tool Pikuri::Tool::WEB_SCRAPE
-    c.add_tool Pikuri::Tool::FETCH
     c.add_tool Pikuri::Tool::CALCULATOR
+    c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
+    c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
+    c.add_sub_agent_tool Pikuri::Tool::FETCH
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
     c.add_extension Pikuri::Mcp::Extension.new(
       registry: mcp_registry,

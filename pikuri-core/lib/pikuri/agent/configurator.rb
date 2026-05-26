@@ -22,6 +22,21 @@ module Pikuri
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
+    # == Two tool pools: regular vs. sub-agent-only
+    #
+    # {#add_tool} registers a tool the parent agent can call: it lands
+    # in {#tools} and gets handed to ruby_llm via +chat.with_tool+.
+    # {#add_sub_agent_tool} registers a tool the parent *cannot* call
+    # — it lands in {#sub_agent_tools} and is never sent to ruby_llm
+    # for the parent, but is visible to {Pikuri::SubAgent::Extension}'s
+    # persona-tool-name resolution. The use case is the lethal-trifecta
+    # defense in {Pikuri::Code::Bash::Sandbox} terms: keep network tools
+    # (+web_search+ / +web_scrape+ / +fetch+) off the parent so a prompt-
+    # injected file read cannot egress through the parent's own tools,
+    # while still letting the +researcher+ persona reach them via the
+    # +agent+ delegation tool. See SECURITY.md §"Defense: capability
+    # boundaries via sub-agents".
+    #
     # Extensions implement their +configure(c)+ hook against the same
     # type, so the call sites for "block users add stuff" and
     # "extensions add stuff" share one API.
@@ -71,8 +86,17 @@ module Pikuri
       attr_reader :interloper
 
       # @return [Array<Tool>] tools added via {#add_tool}, in
-      #   declaration order. Drained by {Agent#initialize}.
+      #   declaration order. Drained by {Agent#initialize} and
+      #   registered with ruby_llm so the parent LLM can call them.
       attr_reader :tools
+
+      # @return [Array<Tool>] tools added via {#add_sub_agent_tool},
+      #   in declaration order. Drained by {Agent#initialize} but
+      #   *not* registered with ruby_llm — invisible to the parent
+      #   LLM, available only to sub-agents through
+      #   {Pikuri::SubAgent::Extension}'s persona-tool-name
+      #   resolution. See the class header.
+      attr_reader :sub_agent_tools
 
       # @return [Array<Listener::Base>] listeners added via
       #   {#add_listener}, in declaration order. Drained by
@@ -114,6 +138,7 @@ module Pikuri
         @interloper = interloper
 
         @tools = []
+        @sub_agent_tools = []
         @listeners = []
         @system_prompt_additions = []
         @on_close_handlers = []
@@ -136,6 +161,18 @@ module Pikuri
       # @return [void]
       def add_tools(tools)
         tools.each { |t| @tools << t }
+        nil
+      end
+
+      # Append a tool to the sub-agent-only pool. The parent LLM
+      # never sees it; only sub-agents whose persona +tool_names+
+      # include the tool's +name+ get it in their toolset. See the
+      # class header for the trifecta-defense rationale.
+      #
+      # @param tool [Tool]
+      # @return [void]
+      def add_sub_agent_tool(tool)
+        @sub_agent_tools << tool
         nil
       end
 

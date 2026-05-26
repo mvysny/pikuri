@@ -34,6 +34,7 @@ RSpec.describe Pikuri::Agent::Configurator do
     it 'starts with empty collections' do
       c = new_configurator
       assert_equal [], c.tools
+      assert_equal [], c.sub_agent_tools
       assert_equal [], c.listeners
       assert_equal [], c.system_prompt_additions
       assert_equal [], c.on_close_handlers
@@ -47,6 +48,27 @@ RSpec.describe Pikuri::Agent::Configurator do
       c.add_tool(:t1)
       c.add_tool(:t2)
       assert_equal %i[t1 t2], c.tools
+    end
+
+    it 'does not bleed into sub_agent_tools' do
+      c = new_configurator
+      c.add_tool(:t1)
+      assert_equal [], c.sub_agent_tools
+    end
+  end
+
+  describe '#add_sub_agent_tool' do
+    it 'appends to the sub-agent pool in declaration order' do
+      c = new_configurator
+      c.add_sub_agent_tool(:s1)
+      c.add_sub_agent_tool(:s2)
+      assert_equal %i[s1 s2], c.sub_agent_tools
+    end
+
+    it 'does not bleed into the parent tool list' do
+      c = new_configurator
+      c.add_sub_agent_tool(:s1)
+      assert_equal [], c.tools
     end
   end
 
