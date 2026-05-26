@@ -48,7 +48,12 @@ Plus two new pieces:
   Anything broader hands the agent permissions the chapter's
   isolation can't claw back. Export it as
   `GITHUB_PERSONAL_ACCESS_TOKEN` in the shell that will run
-  `pikuri-code`.
+  `pikuri-code`. A PAT is required even for read-only access to
+  public repos: the server refuses to start without one (no
+  anonymous code path, same as the `gh` CLI), and GitHub's
+  unauthenticated REST limit of 60 requests/hour per IP would be
+  exhausted in a couple of turns anyway — an authenticated PAT
+  gets 5000/hour.
 
 (If you don't have a PAT and just want to read the chapter
 through, that's fine — the conceptual material doesn't depend on
