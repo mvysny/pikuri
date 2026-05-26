@@ -16,7 +16,7 @@ deferred mitigations, and prior-art notes live in
 You trust the code you run and the model that decides what tools
 to call. Both deserve a moment of thought:
 
-- **Pikuri's code** is a few thousand lines of plain Ruby across
+- **Pikuri's code** (especially `core`) is designed to be small. Plain Ruby across
   eight gems, deliberately small enough to read in an evening.
   Every public class has a YARD header explaining *why* it
   exists. Audit it; you're meant to. See [`CLAUDE.md`](CLAUDE.md)
@@ -52,7 +52,7 @@ You also trust the skills and MCP servers you wire in, because
   flagged server raises `Mcp::InjectionDetected` and never enters
   the live registry. Best-effort, not airtight — pick reputable
   MCPs (well-known npm packages, GitHub-vetted maintainers), and
-  for anything else, run the MCP in a Docker container yourself.
+  run the MCP in a Docker container.
   Most MCPs are Node / Python and containerize trivially.
 
 Non-goal: pikuri does not run MCP server processes inside a
