@@ -379,7 +379,6 @@ Pikuri::Mcp::Registry::StdioEntry.new(
   id:      'maven',
   command: [
     'docker', 'run', '-i', '--rm',
-    '-v', "#{ENV['HOME']}/.npm:/root/.npm",
     'node:20-slim',
     'npx', '-y', 'maven-mcp-server@<pin-version>'
   ]
