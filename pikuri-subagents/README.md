@@ -17,10 +17,10 @@ Provides:
   `<available_agents>` snippet into a `Pikuri::Agent` via the
   `c.add_extension(...)` block API.
 - `Pikuri::SubAgent::RESEARCHER` — bundled persona: web tools
-  (`web_search` / `web_scrape` / `fetch`), 10 steps, focused
+  (`web_search` / `web_scrape` / `fetch`), 20 steps, focused
   research system prompt.
 - `Pikuri::SubAgent::SCOUT` — bundled persona: read-only
-  filesystem recon (`read` / `grep` / `glob`), 15 steps. No
+  filesystem recon (`read` / `grep` / `glob`), 30 steps. No
   egress, no mutation, no `agent` recursion — gives
   prompt-injected file contents nothing actionable to reach for.
 

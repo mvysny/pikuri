@@ -347,7 +347,7 @@ coding assistant" leaked into a child whose actual job was a focused
 lookup); extensions no longer auto-propagate to sub-agents either.
 The first bundled persona is `Pikuri::Tool::SubAgent::RESEARCHER`,
 shipped in the separate `pikuri-subagents` gem alongside the
-`bin/pikuri-minions` fan-out demo (web tools only, 10 steps, prompt
+`bin/pikuri-minions` fan-out demo (web tools only, 20 steps, prompt
 at `pikuri-subagents/prompts/persona-researcher.txt`). The
 machinery (`Tool::SubAgent`, `Persona`, `Configurator#allow_agent`)
 stays in pikuri-core; bundled `Persona` instances live in
@@ -355,7 +355,7 @@ pikuri-subagents so studying pikuri-core doesn't drag in the
 persona concept on day one.
 
 **Also shipped: `Pikuri::SubAgent::SCOUT`** — read-only fs recon
-counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 15
+counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 30
 steps, prompt at `pikuri-subagents/prompts/persona-scout.txt`,
 wired into `bin/pikuri-code` alongside `RESEARCHER` via
 `c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::SCOUT, Pikuri::SubAgent::RESEARCHER])`

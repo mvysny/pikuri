@@ -292,7 +292,7 @@ Pikuri::SubAgent::SCOUT
 # => Persona.new(
 #      name:          'scout',
 #      tool_names:    %w[read grep glob],
-#      max_steps:     15,
+#      max_steps:     30,
 #      system_prompt: Pikuri.prompt('persona-scout'),
 #      ...)
 ```

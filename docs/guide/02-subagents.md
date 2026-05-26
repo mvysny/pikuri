@@ -68,7 +68,7 @@ What pikuri actually does when the boss calls
    `system_prompt` replaces the boss's; its tools are the subset
    of the boss's tools the persona named
    (`web_search` / `web_scrape` / `fetch`); its step budget is a
-   fresh `StepLimit` at the persona's `max_steps` (10).
+   fresh `StepLimit` at the persona's `max_steps` (20).
 3. Run the new agent's Thought → Tool-call → Observation loop on
    a clean message history — the `task` string is the entire user
    message the child sees.
@@ -91,7 +91,7 @@ Persona.new(
   description:   'Focused web research with web_search, web_scrape, fetch. ...',
   tool_names:    %w[web_search web_scrape fetch],
   system_prompt: Pikuri.prompt('persona-researcher'),
-  max_steps:     10
+  max_steps:     20
 )
 ```
 

@@ -6,8 +6,10 @@ module Pikuri
     # {RESEARCHER}: same shape, different surface — narrow toolset
     # (read-only fs reads only, no network, no shell, no writes, no
     # sub-agent recursion), short system prompt that replaces the
-    # parent's verbatim, and a modest step budget suited to
-    # "glob + grep + read."
+    # parent's verbatim, and a step budget sized as a
+    # runaway-prevention cap rather than a tight target (a
+    # glob → grep → read chain over a large tree can fan out
+    # legitimately before the scout has the answer).
     #
     # == Use case
     #
@@ -50,7 +52,7 @@ module Pikuri
                    'Returns one paragraph + file:line references.',
       tool_names: %w[read grep glob].freeze,
       system_prompt: Pikuri.prompt('persona-scout'),
-      max_steps: 15
+      max_steps: 30
     )
   end
 end

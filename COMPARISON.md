@@ -511,7 +511,7 @@ zoo."
 
 | Project | Personas shipped | Source |
 | --- | --- | --- |
-| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 10 steps); `SCOUT` (read/grep/glob, 15 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb`; IDEAS.md §"Personas" |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 20 steps); `SCOUT` (read/grep/glob, 30 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb`; IDEAS.md §"Personas" |
 | ruby_llm / langchainrb | none — no sub-agent surface | — |
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |

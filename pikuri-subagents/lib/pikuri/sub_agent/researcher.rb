@@ -5,8 +5,10 @@ module Pikuri
     # Bundled "focused web research" persona. The first persona
     # pikuri ships — narrow toolset (network reads only, no fs,
     # no shell, no sub-agent recursion), short system prompt that
-    # replaces the parent's verbatim, and a small step budget
-    # suited to "look it up + summarize."
+    # replaces the parent's verbatim, and a step budget sized as
+    # a runaway-prevention cap rather than a tight target (web
+    # scrapes hit 404/403/CAPTCHA often enough that a tight cap
+    # would burn through on noise).
     #
     # == Use case
     #
@@ -33,7 +35,7 @@ module Pikuri
                    'Returns one paragraph + sources.',
       tool_names: %w[web_search web_scrape fetch].freeze,
       system_prompt: Pikuri.prompt('persona-researcher'),
-      max_steps: 10
+      max_steps: 20
     )
   end
 end
