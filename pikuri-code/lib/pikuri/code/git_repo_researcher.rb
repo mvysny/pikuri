@@ -59,7 +59,7 @@ module Pikuri
                    'Returns one paragraph + citations.',
       tool_names: %w[git_clone read grep glob web_search web_scrape fetch].freeze,
       system_prompt: Pikuri.prompt('persona-git-repo-researcher'),
-      max_steps: 20,
+      max_steps: 30,
       needs_temp_workspace: true
     )
   end
