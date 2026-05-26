@@ -48,12 +48,15 @@ in scope of the design exercise, considered, and left out on purpose.
 
 ## Security perspective
 
-The committed model lives in [`SECURITY.md`](SECURITY.md): three
-circles of trust (pikuri + LLM / installed extensions / untrusted
-content), four worked examples of prompt-injection attacks broken
-by the model, and explicit non-goals. This section is the
-open-questions log — mitigations under consideration, open
-observations, and prior-art notes that haven't graduated yet.
+The committed model lives in [`SECURITY.md`](SECURITY.md): a
+short code-trust baseline (pikuri + LLM trusted; project bash
+sandboxed via Bubblewrap; MCP processes left to Docker), then the
+load-bearing prompt-injection section (lethal trifecta broken by
+privilege-separated sub-agents, MCP description injection caught
+by `Mcp::Verifier`), three worked attacks, and explicit non-goals.
+This section is the open-questions log — mitigations under
+consideration, open observations, and prior-art notes that haven't
+graduated yet.
 
 Threat model scales with capability. `bin/pikuri-chat` today is
 small surface (calculator + three stateless network-out tools, no
@@ -67,8 +70,8 @@ axis.
 
 The structural defense (privilege-separated `RESEARCHER` and
 `SCOUT` sub-agents) shipped and is documented in
-[`SECURITY.md`](SECURITY.md) Circle 3. Adjacent ideas still on
-the table:
+[`SECURITY.md`](SECURITY.md) §"Prompt injection". Adjacent ideas
+still on the table:
 
 - **Provenance tags around tool output** in the context render
   (untrusted-content markers). Cheap, partial — empirical
@@ -80,8 +83,9 @@ the table:
   below) is the heavyweight structural version.
 - Prompt injection inside skill descriptions? Skills are
   user-installed text; current stance ([`SECURITY.md`](SECURITY.md)
-  Circle 2) is "user-vetted by definition." A `Mcp::Verifier`-
-  shaped pass for skills would belt-and-braces it.
+  §"Code trust" — skills bullet) is "user-vetted by definition."
+  A `Mcp::Verifier`-shaped pass for skills would belt-and-braces
+  it.
 - Content-level defenses against `web_scrape` injection beyond
   persona separation (provenance tags are the obvious shape).
 
@@ -132,19 +136,20 @@ most egress firewalls don't filter port 53.
 ### Provider-cliff startup banner
 
 The privacy cliff at the LLM provider boundary is documented in
-[`SECURITY.md`](SECURITY.md) Circle 1 (local llama.cpp default
-vs. opting into a third-party provider). The boundary currently
-moves *silently* when the user reconfigures `ruby_llm` — worth a
-loud startup banner ("Outbound LLM provider: api.openai.com —
-your prompts and tool results will be sent there") so the cliff
-is visible at the moment it matters.
+[`SECURITY.md`](SECURITY.md) §"Code trust" — LLM provider bullet
+(local llama.cpp default vs. opting into a third-party provider).
+The boundary currently moves *silently* when the user reconfigures
+`ruby_llm` — worth a loud startup banner ("Outbound LLM provider:
+api.openai.com — your prompts and tool results will be sent
+there") so the cliff is visible at the moment it matters.
 
 ### MCP — open ergonomic / supply-chain questions
 
-The committed MCP story is in [`SECURITY.md`](SECURITY.md) Circle
-2: `Mcp::Verifier` pre-flight scan, user-curation as the first
-line of defense, Docker for untrusted servers (suggested, not
-automatic). Open:
+The committed MCP story is split across [`SECURITY.md`](SECURITY.md):
+the §"Code trust" bullet covers the Docker-for-untrusted-process
+recommendation (suggested, not automatic); §"Defense: MCP
+description verification" covers the `Mcp::Verifier` pre-flight
+scan, with user-curation as the first line of defense. Open:
 
 - **Per-tool first-use consent** (opencode-style sticky approval)
   is probably the right ergonomics shape — first invocation of
@@ -322,7 +327,8 @@ it in Docker yourself."
 The two angles previously flagged as load-bearing: prompt
 injection from tool output (now defended structurally via
 privilege-separated sub-agents — see
-[`SECURITY.md`](SECURITY.md) Circle 3 and Examples 1–2), and
+[`SECURITY.md`](SECURITY.md) §"Prompt injection", attacks 1–2),
+and
 `Bash` bypassing the workspace seam (still an open observation:
 `--no-sandbox` is documented as "use inside an outer sandbox only"
 but nothing enforces it — see §"Unsandboxed Bash modes" above).

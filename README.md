@@ -90,11 +90,12 @@ listeners, sub-agents, and ergonomics.
 
 ## Security
 
-The threat model in one page — three circles of trust, four
-worked prompt-injection attacks broken by the model, explicit
-non-goals — lives in [`SECURITY.md`](SECURITY.md). Read it once
-before pointing `pikuri-code` (or any future write-capable
-variant) at anything sensitive.
+The threat model in one page — code-trust baseline (what runs
+where, and in which sandbox), then three worked prompt-injection
+attacks broken by capability boundaries, plus explicit non-goals
+— lives in [`SECURITY.md`](SECURITY.md). Read it once before
+pointing `pikuri-code` (or any future write-capable variant) at
+anything sensitive.
 
 ## Contributing
 
