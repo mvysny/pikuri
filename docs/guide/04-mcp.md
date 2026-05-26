@@ -365,11 +365,27 @@ image-based. MCPs ship as images-with-deps, so image-based fits.
 ## Running an npx-based MCP
 
 Most community MCPs ship as npm packages and assume you'll invoke
-them with `npx`. [`maven-mcp-server`](https://github.com/Bigsy/maven-mcp-server)
+them with `npx`. [`mcp-maven-deps`](https://github.com/Bigsy/maven-mcp-server)
 is a good worked example — small, useful (it queries Maven
 Central for current versions of Java artifacts), and entirely
 unofficial. Exactly the case where "untrusted, containerise it"
-applies.
+applies. The GitHub repo slug (`maven-mcp-server`) and the
+published npm package name (`mcp-maven-deps`) differ — a common
+trap. Always check what `package.json` actually declares as
+`"name"` before typing it into a command.
+
+A side benefit of the container-per-MCP posture is that you don't
+need `node` installed on the host *for anything* — including the
+"what version should I pin?" lookup. The same image you'll run
+the server in answers that question:
+
+```sh
+docker run --rm node:20-slim npm view mcp-maven-deps version
+# → 0.2.0
+```
+
+(Or `npm view mcp-maven-deps versions --json` for the full list.)
+Substitute the result for `<pin-version>` below.
 
 The naive recipe — wrap `npx` in a bare `node` container per
 spawn:
@@ -380,7 +396,7 @@ Pikuri::Mcp::Registry::StdioEntry.new(
   command: [
     'docker', 'run', '-i', '--rm',
     'node:20-slim',
-    'npx', '-y', 'maven-mcp-server@<pin-version>'
+    'npx', '-y', 'mcp-maven-deps@<pin-version>'
   ]
 )
 ```
@@ -397,8 +413,8 @@ The cleaner recipe is to bake an image once:
 ```dockerfile
 # Dockerfile-maven-mcp
 FROM node:20-slim
-RUN npm install -g maven-mcp-server@<pin-version>
-ENTRYPOINT ["maven-mcp-server"]
+RUN npm install -g mcp-maven-deps@<pin-version>
+ENTRYPOINT ["mcp-maven-deps"]
 ```
 
 ```sh
