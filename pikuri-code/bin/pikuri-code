@@ -283,7 +283,7 @@ begin
       verify_mcp_servers: true
     )
     # Privilege-separated read-only sub-agents along both recon axes:
-    # SCOUT (read/grep/glob) for code/fs lookups, RESEARCHER
+    # FILE_MINER (read/grep/glob) for code/fs lookups, RESEARCHER
     # (web_search/web_scrape/fetch) for external docs / error-message
     # lookup / library research. Both keep the parent's context clean
     # during exploration and put potentially-injected content (file
@@ -292,7 +292,7 @@ begin
     # Tool::SubAgent" for the framing.
     c.add_extension Pikuri::SubAgent::Extension.new(
       personas: [
-        Pikuri::SubAgent::SCOUT,
+        Pikuri::SubAgent::FILE_MINER,
         Pikuri::SubAgent::RESEARCHER,
         Pikuri::Code::GIT_REPO_RESEARCHER
       ]

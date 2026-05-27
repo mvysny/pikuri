@@ -27,7 +27,7 @@ The gem inventory:
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
 - `pikuri-mcp` — Model Context Protocol support.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
-  bundled `RESEARCHER` / `SCOUT` + `bin/pikuri-minions` fan-out demo.
+  bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
 - `pikuri` — convenience metagem depending on all seven.
 
@@ -171,7 +171,7 @@ per-gem one-liners:
   `Code::ToolchainPaths`, `Code::GitClone`, bundled
   `GIT_REPO_RESEARCHER` persona, `bin/pikuri-code`. Depends on
   `pikuri-core` + `pikuri-workspace` + `pikuri-subagents`. The
-  binary wires three personas: `SCOUT` + `RESEARCHER` from
+  binary wires three personas: `FILE_MINER` + `RESEARCHER` from
   pikuri-subagents and `GIT_REPO_RESEARCHER` from this gem (the
   one persona that needs a tool — `GitClone` — outside the
   pikuri-subagents/pikuri-workspace surface).
@@ -183,7 +183,7 @@ per-gem one-liners:
 - **`pikuri-subagents/`** — the delegation feature top to bottom:
   `SubAgent::SubAgentTool` (the `agent` tool),
   `SubAgent::Persona`, `SubAgent::Extension`, bundled
-  `RESEARCHER` / `SCOUT`, `bin/pikuri-minions`. Depends on
+  `RESEARCHER` / `FILE_MINER`, `bin/pikuri-minions`. Depends on
   `pikuri-core` + `pikuri-workspace` (the latter so `SubAgentTool`
   can construct a per-invocation `Workspace::Filesystem` when a
   persona sets `needs_temp_workspace: true` — the persona stays

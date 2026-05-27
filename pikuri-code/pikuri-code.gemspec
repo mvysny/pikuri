@@ -49,7 +49,7 @@ Gem::Specification.new do |spec|
   # in pikuri-workspace; +Pikuri::Code::Bash+ takes both via constructor.
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 
-  # +Pikuri::SubAgent::SCOUT+ — the read-only fs recon persona —
+  # +Pikuri::SubAgent::FILE_MINER+ — the read-only fs recon persona —
   # is wired into +bin/pikuri-code+ via
   # +Pikuri::SubAgent::Extension+. Lockstep-pinned for the same
   # reason as the other peers.

@@ -38,9 +38,9 @@ RSpec.describe Pikuri::SubAgent::Extension do
     )
   end
 
-  let(:scout_persona) do
+  let(:file_miner_persona) do
     Pikuri::SubAgent::Persona.new(
-      name: 'scout',
+      name: 'file_miner',
       description: 'fs recon',
       tool_names: %w[web_search],
       system_prompt: 's',
@@ -92,10 +92,10 @@ RSpec.describe Pikuri::SubAgent::Extension do
     end
 
     it 'exposes the resolved hash keyed by persona name in declaration order' do
-      ext = described_class.new(personas: [tiny_persona, scout_persona])
-      assert_equal %w[researcher scout], ext.personas.keys
+      ext = described_class.new(personas: [tiny_persona, file_miner_persona])
+      assert_equal %w[researcher file_miner], ext.personas.keys
       assert_same tiny_persona, ext.personas['researcher']
-      assert_same scout_persona, ext.personas['scout']
+      assert_same file_miner_persona, ext.personas['file_miner']
     end
   end
 
@@ -172,12 +172,12 @@ RSpec.describe Pikuri::SubAgent::Extension do
                                 system_prompt: 's') do |c|
         c.add_listener recorder
         c.add_tool Pikuri::Tool::WEB_SEARCH
-        c.add_extension described_class.new(personas: [tiny_persona, scout_persona])
+        c.add_extension described_class.new(personas: [tiny_persona, file_miner_persona])
       end
 
       assert_match(/<available_agents>/, agent.system_prompt)
       assert_match(/`researcher` — d/, agent.system_prompt)
-      assert_match(/`scout` — fs recon/, agent.system_prompt)
+      assert_match(/`file_miner` — fs recon/, agent.system_prompt)
     end
   end
 

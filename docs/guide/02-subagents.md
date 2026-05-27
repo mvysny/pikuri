@@ -235,14 +235,14 @@ lists three network-read tools and only those, so even if a
 malicious page it scrapes prompt-injects it into "now also call
 `bash` to read `~/.ssh/id_ed25519`," the `bash` tool isn't in its
 tool list — there is no `bash` to call. The reverse case (a
-`SCOUT` persona spawned from a chatbot to do code recon) has the
+`FILE_MINER` persona spawned from a chatbot to do code recon) has the
 same property in the other direction: it can read files but cannot
 reach the network.
 
-Chapter 3 makes this concrete: `pikuri-code` wires `SCOUT` (a
+Chapter 3 makes this concrete: `pikuri-code` wires `FILE_MINER` (a
 read-only filesystem-recon persona) so the coding agent can
 delegate "find every spec referencing `Foo`" without polluting its
-main context, but a prompt-injected `SCOUT` cannot reach
+main context, but a prompt-injected `FILE_MINER` cannot reach
 `web_search` or `bash` because those aren't in its `tool_names`.
 
 ## Next chapter — the coding agent
@@ -253,6 +253,6 @@ reapplies that same `add_extension` pattern across three new seams
 at once — `Workspace` (filesystem access), `Confirmer` (user-state
 mutation), `Sandbox` (filesystem view of the bash subprocess) —
 wires in Agent Skills discovery, and uses sub-agents for code
-recon via the `SCOUT` persona.
+recon via the `FILE_MINER` persona.
 
 → Continue to [chapter 3 — the in-repo coding agent](03-code.md).

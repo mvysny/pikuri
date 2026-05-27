@@ -458,7 +458,7 @@ MCP — and it holds all three legs of the lethal trifecta at once
 pikuri's trifecta-break. That's not an oversight; it's the opposite bet.
 
 - **Pikuri defends structurally.** Remove a leg *per agent*: sub-agent
-  capability boundaries (`RESEARCHER` has no `read`, `SCOUT` has no
+  capability boundaries (`RESEARCHER` has no `read`, `FILE_MINER` has no
   egress), so the agent that touches untrusted content literally can't
   act on an injection. The defense is a property of the capability
   graph, so it holds even against a fully injected model.
@@ -549,7 +549,7 @@ opencode's `task` than to a simple "filter the parent's tools"
 model: each delegation is identified by a *persona* the host
 registers explicitly, so the child's toolset and system prompt
 are both declared up front rather than inherited and trimmed.
-That's where privilege separation comes from — a `SCOUT` persona
+That's where privilege separation comes from — a `FILE_MINER` persona
 spawned from a coding agent with `bash` in scope still doesn't
 get `bash`, because `bash` isn't in the persona's `tool_names`.
 Opencode's `task` adds session persistence and resumability on
@@ -566,7 +566,7 @@ zoo."
 
 | Project | Personas shipped | Source |
 | --- | --- | --- |
-| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 20 steps); `SCOUT` (read/grep/glob, 30 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,scout}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb`; IDEAS.md §"Personas" |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 20 steps); `FILE_MINER` (read/grep/glob, 30 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,file_miner}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb`; IDEAS.md §"Personas" |
 | ruby_llm / langchainrb | none — no sub-agent surface | — |
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
@@ -576,7 +576,7 @@ Cross-cutting by role:
 
 | Role | pikuri | pi | opencode | Claude Code |
 | --- | --- | --- | --- | --- |
-| read-only recon (cheap model) | `RESEARCHER` (web) + `SCOUT` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
+| read-only recon (cheap model) | `RESEARCHER` (web) + `FILE_MINER` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
 | planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
 | reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
 | general-purpose catch-all | — (escape hatch documented in IDEAS) | `worker` | `general` | `general-purpose` |
@@ -584,12 +584,12 @@ Cross-cutting by role:
 | UX helpers (slash-command-driven) | — (no slash commands) | — | — | `statusline-setup`, `claude-code-guide` |
 
 **Takeaway.** Pikuri ships a lean persona set — three
-(`RESEARCHER` + `SCOUT` + `GIT_REPO_RESEARCHER`) vs. pi's four,
+(`RESEARCHER` + `FILE_MINER` + `GIT_REPO_RESEARCHER`) vs. pi's four,
 opencode's eight, Claude Code's five — which matches the
 read-it-in-an-evening ceiling: ship the personas that demonstrate
 the mechanism along each axis, document the rest as queued in
 IDEAS.md, let downstream gems publish more if the ecosystem needs
-them. The three break down as: `RESEARCHER` (web recon) and `SCOUT`
+them. The three break down as: `RESEARCHER` (web recon) and `FILE_MINER`
 (fs recon) are the direct analogs of pi's `scout` / opencode's
 `explore` / Claude Code's `Explore` — the universal "read-only
 recon agent on a cheap model" role, split by *what* gets read.

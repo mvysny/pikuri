@@ -30,7 +30,7 @@ can't cover.
 
 | Model | Mechanism | Fits | Where it fails |
 |---|---|---|---|
-| **Trifecta-break** | sub-agent capability boundaries — `RESEARCHER` / `SCOUT` hold at most two of the three legs | chat, `minions`, web / file recon | the *relay* leg: a sub-agent's reply carrying the injection up to a parent that *does* hold the third leg |
+| **Trifecta-break** | sub-agent capability boundaries — `RESEARCHER` / `FILE_MINER` hold at most two of the three legs | chat, `minions`, web / file recon | the *relay* leg: a sub-agent's reply carrying the injection up to a parent that *does* hold the third leg |
 | **Blast-radius containment** | Workspace seam + Bubblewrap — `~/.ssh`, `~/.aws`, other projects don't resolve; bash sees only the workspace | coding, attended or not | the workspace is itself inside the radius — "leak *this* project's `.env`" still works |
 | **Human gate** | `Confirmer` prompts before an irreversible or egress-bearing action runs | coding **with a human present** | confirmation fatigue; worth zero when nobody's watching |
 | **Egress allowlist** *(planned — see [`IDEAS.md`](IDEAS.md))* | allow your package registries + git remote, deny the rest — cuts exfil at the network without removing `bash` | **unattended** coding | coarse: an allowlisted host is still open, and DNS exfil rides port 53 |
@@ -129,9 +129,9 @@ fully-fooled model:
 
 - `RESEARCHER` — `web_search` / `web_scrape` / `fetch`. Web in/out;
   no `read` / `bash` / `write` / `agent` recursion.
-- `SCOUT` — `read` / `grep` / `glob`. Reads files; no egress, no
+- `FILE_MINER` — `read` / `grep` / `glob`. Reads files; no egress, no
   `bash` / `write` / recursion.
-- `GIT_REPO_RESEARCHER` — `git_clone` plus a `SCOUT`+web set,
+- `GIT_REPO_RESEARCHER` — `git_clone` plus a `FILE_MINER`+web set,
   cloning (HTTPS-only, shallow) into a temp workspace *disjoint*
   from the parent's project root, so cloned bytes never land where
   the parent's `read` would find them. Same trifecta shape as

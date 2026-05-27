@@ -206,7 +206,7 @@ this guide (after `SubAgent::Extension` in chapter 2 and the
 
 Sub-agents do **not** inherit the extension or the `mcp_connect`
 tool — the chapter 2 lesson about extension non-inheritance
-applies. A `SCOUT` or `RESEARCHER` spawned from `pikuri-code` has
+applies. A `FILE_MINER` or `RESEARCHER` spawned from `pikuri-code` has
 no way to reach the GitHub MCP server. If you want a persona to
 reach MCP tools, you'd have to write one whose `tool_names`
 includes the MCP-synthesised tools by name — out of scope for
@@ -626,7 +626,7 @@ What the default configuration *does* protect:
   context unless the model explicitly activates them.
 - **Per-agent activation.** Sub-agents can't reach the MCP surface
   at all: the privilege separation from chapter 3 carries through,
-  so a `SCOUT` reading a malicious file can't `mcp_connect` to
+  so a `FILE_MINER` reading a malicious file can't `mcp_connect` to
   anything.
 - **Container isolation (when you wrap in Docker).** A malicious
   server can't read your `~/.ssh` or write to your home directory.

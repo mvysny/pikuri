@@ -7,10 +7,10 @@ require 'pikuri-workspace'
 # +require 'pikuri-subagents'+, the +Pikuri::SubAgent+ namespace is
 # populated with {Pikuri::SubAgent::SubAgentTool},
 # {Pikuri::SubAgent::Persona}, {Pikuri::SubAgent::Extension}, and the
-# bundled {Pikuri::SubAgent::RESEARCHER} + {Pikuri::SubAgent::SCOUT}
+# bundled {Pikuri::SubAgent::RESEARCHER} + {Pikuri::SubAgent::FILE_MINER}
 # constants. The gem's +prompts/+ directory is also appended to
 # +Pikuri::PROMPT_DIRS+ so +Pikuri.prompt(:'persona-researcher')+
-# (and +:'persona-scout'+) resolves regardless of which gem actually
+# (and +:'persona-file-miner'+) resolves regardless of which gem actually
 # shipped the file.
 #
 # Per-gem Zeitwerk loader (not shared with pikuri-core's loader) so
@@ -66,19 +66,19 @@ module Pikuri
     LOADER.tag = 'pikuri-subagents'
     LOADER.push_dir(File.expand_path('.', __dir__))
     LOADER.ignore(File.expand_path('pikuri-subagents.rb', __dir__))
-    # +RESEARCHER+ / +SCOUT+ are +ALL_CAPS+ value constants (each a
-    # +Persona+ record), not +Researcher+ / +Scout+ module/class
+    # +RESEARCHER+ / +FILE_MINER+ are +ALL_CAPS+ value constants (each a
+    # +Persona+ record), not +Researcher+ / +FileMiner+ module/class
     # files — Zeitwerk's filename↔CamelCase rule would not accept
     # them. Tell the loader to ignore each one; we require_relative
     # them after eager_load so {Persona} is already defined when the
     # constants are built. Same pattern pikuri-core uses for
     # +version.rb+.
     LOADER.ignore(File.expand_path('pikuri/sub_agent/researcher.rb', __dir__))
-    LOADER.ignore(File.expand_path('pikuri/sub_agent/scout.rb', __dir__))
+    LOADER.ignore(File.expand_path('pikuri/sub_agent/file_miner.rb', __dir__))
     LOADER.setup
     LOADER.eager_load
   end
 end
 
 require_relative 'pikuri/sub_agent/researcher'
-require_relative 'pikuri/sub_agent/scout'
+require_relative 'pikuri/sub_agent/file_miner'

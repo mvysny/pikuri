@@ -151,7 +151,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
     it "exposes every registered persona's name in the `name:` parameter enum" do
       other = Pikuri::SubAgent::Persona.new(
-        name: 'scout',
+        name: 'file_miner',
         description: 'd',
         tool_names: %w[web_search],
         system_prompt: 's',
@@ -159,10 +159,10 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       )
       tool = described_class.new(
         build_parent,
-        personas: { 'researcher' => simple_persona, 'scout' => other }
+        personas: { 'researcher' => simple_persona, 'file_miner' => other }
       )
 
-      assert_equal %w[researcher scout], tool.parameters.to_h[:properties][:name][:enum]
+      assert_equal %w[researcher file_miner], tool.parameters.to_h[:properties][:name][:enum]
     end
   end
 
@@ -252,7 +252,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
     it 'generates persona-rooted monotonic ids per persona' do
       other = Pikuri::SubAgent::Persona.new(
-        name: 'scout',
+        name: 'file_miner',
         description: 'd',
         tool_names: %w[web_search],
         system_prompt: 's',
@@ -260,16 +260,16 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       )
       tool = described_class.new(
         build_parent,
-        personas: { 'researcher' => simple_persona, 'scout' => other }
+        personas: { 'researcher' => simple_persona, 'file_miner' => other }
       )
 
       with_captured_agent_new do |kwargs|
         tool.run('name' => 'researcher', 'task' => 'a')
-        tool.run('name' => 'scout',      'task' => 'b')
+        tool.run('name' => 'file_miner', 'task' => 'b')
         tool.run('name' => 'researcher', 'task' => 'c')
-        tool.run('name' => 'scout',      'task' => 'd')
+        tool.run('name' => 'file_miner', 'task' => 'd')
 
-        assert_equal ['researcher 0', 'scout 0', 'researcher 1', 'scout 1'],
+        assert_equal ['researcher 0', 'file_miner 0', 'researcher 1', 'file_miner 1'],
                      kwargs.map { |kw| kw[:id] }
       end
     end
@@ -477,7 +477,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   describe '.available_agents_snippet' do
     it 'lists each persona name and description as a markdown bullet inside <available_agents>' do
       other = Pikuri::SubAgent::Persona.new(
-        name: 'scout',
+        name: 'file_miner',
         description: 'fs recon',
         tool_names: %w[web_search],
         system_prompt: 's',
@@ -485,13 +485,13 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       )
       snippet = described_class.available_agents_snippet(
         'researcher' => simple_persona,
-        'scout'      => other
+        'file_miner' => other
       )
 
       assert_match(/<available_agents>/, snippet)
       assert_match(/<\/available_agents>/, snippet)
       assert_match(/- `researcher` — simple researcher/, snippet)
-      assert_match(/- `scout` — fs recon/, snippet)
+      assert_match(/- `file_miner` — fs recon/, snippet)
     end
   end
 end

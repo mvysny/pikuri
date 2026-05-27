@@ -69,7 +69,7 @@ axis.
 ### Trifecta — open mitigations beyond sub-agent separation
 
 The structural defense (privilege-separated `RESEARCHER` and
-`SCOUT` sub-agents) shipped and is documented in
+`FILE_MINER` sub-agents) shipped and is documented in
 [`SECURITY.md`](SECURITY.md) §"Prompt injection". Adjacent ideas
 still on the table:
 
@@ -398,11 +398,11 @@ stays in pikuri-core; bundled `Persona` instances live in
 pikuri-subagents so studying pikuri-core doesn't drag in the
 persona concept on day one.
 
-**Also shipped: `Pikuri::SubAgent::SCOUT`** — read-only fs recon
+**Also shipped: `Pikuri::SubAgent::FILE_MINER`** — read-only fs recon
 counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 30
-steps, prompt at `pikuri-subagents/prompts/persona-scout.txt`,
+steps, prompt at `pikuri-subagents/prompts/persona-file-miner.txt`,
 wired into `bin/pikuri-code` alongside `RESEARCHER` via
-`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::SCOUT, Pikuri::SubAgent::RESEARCHER])`
+`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::FILE_MINER, Pikuri::SubAgent::RESEARCHER])`
 — the same privilege-separation argument extends to web content
 (scraped pages / fetched URLs land in `RESEARCHER`'s context, which
 has no `bash` / `write` / `edit` to hijack).
@@ -411,7 +411,7 @@ The persona constant references its tools by string name only — no
 without `read`/`grep`/`glob` simply don't register it). Privilege-
 separation argument is the load-bearing one: a coding agent reading
 an untrusted file (vendored README, scraped doc, template repo)
-through SCOUT can't act on a prompt injection inside it — no
+through FILE_MINER can't act on a prompt injection inside it — no
 `bash`, no `fetch`, no `write`, no `agent` recursion. Context-economy
 is the secondary win.
 
@@ -448,7 +448,7 @@ and PI's `subagent` agents
 **Workspace modes.** The persona record today has a narrow
 `needs_temp_workspace:` boolean (used by
 `GIT_REPO_RESEARCHER` — see above) but no broader
-`workspace_mode:` field. Scout and Researcher work fine on
+`workspace_mode:` field. File-miner and Researcher work fine on
 `inherit` semantics — child reuses parent's `Filesystem`-bound tool
 instances by reference, no reconstruction. The interesting modes
 from the original proposal stay queued:

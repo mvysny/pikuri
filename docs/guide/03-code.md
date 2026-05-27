@@ -7,7 +7,7 @@ wiring it up reapplies the Extension pattern from chapter 2 across
 the filesystem), `Confirmer` (how user-state mutations get
 approved), and `Sandbox` (what filesystem the `bash` subprocess
 actually runs against). It also wires three sub-agent personas:
-`SCOUT` (the read-only counterpart to `RESEARCHER` from chapter 2)
+`FILE_MINER` (the read-only counterpart to `RESEARCHER` from chapter 2)
 for code recon, `RESEARCHER` itself for web lookups, and
 `GIT_REPO_RESEARCHER` for the "clone a public repo and dig
 through it" case.
@@ -39,7 +39,7 @@ mkdir /tmp/pikuri-playground && cd /tmp/pikuri-playground
 You'll land in a REPL with a `>` prompt — same shape as
 `pikuri-chat`, except the agent now has `read`, `grep`, `glob`,
 `edit`, `write`, `bash`, the four web/calculator tools from
-chapter 1, and the `agent` tool (with `SCOUT`, `RESEARCHER`, and
+chapter 1, and the `agent` tool (with `FILE_MINER`, `RESEARCHER`, and
 `GIT_REPO_RESEARCHER` personas wired in). Try:
 
 ```
@@ -240,7 +240,7 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
                                               verify_mcp_servers: true)
   c.add_extension Pikuri::SubAgent::Extension.new(
     personas: [
-      Pikuri::SubAgent::SCOUT,
+      Pikuri::SubAgent::FILE_MINER,
       Pikuri::SubAgent::RESEARCHER,
       Pikuri::Code::GIT_REPO_RESEARCHER
     ]
@@ -261,7 +261,7 @@ Four observations on this block:
    six tools.** `Write` and `Bash` both take `confirmer`; all six
    file/shell tools take `workspace`. One construction, shared
    wiring — which is also why sub-agents inheriting parent tool
-   *instances* (chapter 2) preserves all that wiring: a `SCOUT`
+   *instances* (chapter 2) preserves all that wiring: a `FILE_MINER`
    spawned here uses the parent's `Read` tool, which already has
    the parent's `workspace` wired in.
 3. **`add_sub_agent_tool` vs. `add_tool`.** The parent's toolset
@@ -273,27 +273,27 @@ Four observations on this block:
    so untrusted content (scraped pages, cloned repos) can only
    land in a child context.
 4. **Order matters for the SubAgent extension specifically.** Its
-   `configure` validates `SCOUT`'s `tool_names: %w[read grep glob]`
+   `configure` validates `FILE_MINER`'s `tool_names: %w[read grep glob]`
    against `c.tools`, and `GIT_REPO_RESEARCHER`'s `git_clone` /
    web tools against `c.sub_agent_tools` — both were registered
    above, so the validation passes. Move `add_extension` above
    them and you'd get an `ArgumentError` at boot. This is by
    design (fail fast on the host-side bug).
 
-## SCOUT — code recon as a sub-agent
+## FILE_MINER — code recon as a sub-agent
 
-`SCOUT` is to filesystem reconnaissance what `RESEARCHER` is to
+`FILE_MINER` is to filesystem reconnaissance what `RESEARCHER` is to
 web research: a privilege-separated minion the parent can delegate
 to so the noisy intermediate `read`s and `grep`s don't pollute
 the parent's context.
 
 ```ruby
-Pikuri::SubAgent::SCOUT
+Pikuri::SubAgent::FILE_MINER
 # => Persona.new(
-#      name:          'scout',
+#      name:          'file_miner',
 #      tool_names:    %w[read grep glob],
 #      max_steps:     30,
-#      system_prompt: Pikuri.prompt('persona-scout'),
+#      system_prompt: Pikuri.prompt('persona-file-miner'),
 #      ...)
 ```
 
@@ -305,30 +305,30 @@ something that exercises code recon:
 ```
 
 You should see the parent agent reason about the question and emit
-an `agent(name: "scout", task: "...")` tool call rather than
-running `grep` itself. A `scout 0` minion spins up with only
+an `agent(name: "file_miner", task: "...")` tool call rather than
+running `grep` itself. A `file_miner 0` minion spins up with only
 `read` / `grep` / `glob`, does the lookup on a clean conversation,
 and returns one paragraph with `path:line` references. The parent
 absorbs that summary as a single observation.
 
 **Why this matters:** the parent's context stays clean — no
 twenty individual file contents accumulated from `read` calls.
-And the privilege-separation story: a malicious file the scout
+And the privilege-separation story: a malicious file the file-miner
 reads can't talk it into running `bash`, `write`, `fetch`,
 `web_search`, or recursively spawning another `agent`, because
-none of those tools are in `SCOUT`'s `tool_names`. The reply that
+none of those tools are in `FILE_MINER`'s `tool_names`. The reply that
 comes back to the parent is just text — data, not instructions.
 
 Chapter 2's lesson about extension non-inheritance is what makes
 this work. If the parent's tools were inherited automatically,
-spawning a `SCOUT` from a coding agent with `bash` in scope would
+spawning a `FILE_MINER` from a coding agent with `bash` in scope would
 hand `bash` to the child, and the privilege separation would be a
-lie. Personas opt in explicitly, and `SCOUT` opts in to three
+lie. Personas opt in explicitly, and `FILE_MINER` opts in to three
 read-only tools and nothing else.
 
 ## GIT_REPO_RESEARCHER — clone-and-dig as a sub-agent
 
-The third persona answers a different question than `SCOUT`. When
+The third persona answers a different question than `FILE_MINER`. When
 the parent needs to know "how does library X actually implement Y
 under the hood?", scraping page after page is slow and lossy. A
 single shallow clone + `grep` over the source is faster and gives
@@ -345,7 +345,7 @@ Pikuri::Code::GIT_REPO_RESEARCHER
 #      ...)
 ```
 
-Two distinguishing pieces vs. `SCOUT`:
+Two distinguishing pieces vs. `FILE_MINER`:
 
 1. **The persona has its own tool the parent doesn't.**
    `Pikuri::Code::GitClone` is on the sub-agent-only pool (the
@@ -418,11 +418,11 @@ What the default configuration *does* protect:
   writes vanish at process exit.
 - **Confirmer prompts** for every `write` and every `bash` — you
   see the proposed content / command before it runs.
-- **Privilege-separated sub-agents.** `SCOUT`, `RESEARCHER`, and
+- **Privilege-separated sub-agents.** `FILE_MINER`, `RESEARCHER`, and
   `GIT_REPO_RESEARCHER` run in a child whose `tool_names` rule out
   `bash` / `write` / `edit` / `agent` recursion, so a child that
   reads a prompt-injected file has no tool to act on it — only its
-  one-paragraph reply reaches the parent. (`SCOUT` reads whatever
+  one-paragraph reply reaches the parent. (`FILE_MINER` reads whatever
   it's told to: an extracted zip from the web one moment, your
   private notes and passwords the next — chapter 5 explains why
   that mix is safe without egress.)

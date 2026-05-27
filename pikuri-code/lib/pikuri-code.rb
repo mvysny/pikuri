@@ -26,7 +26,7 @@ module Pikuri
     LOADER.ignore(File.expand_path('pikuri-code.rb', __dir__))
     # +GIT_REPO_RESEARCHER+ is an +ALL_CAPS+ value constant in a file
     # whose name Zeitwerk would map to +GitRepoResearcher+; same trick
-    # +pikuri-subagents+ uses for +RESEARCHER+ / +SCOUT+. Ignore here,
+    # +pikuri-subagents+ uses for +RESEARCHER+ / +FILE_MINER+. Ignore here,
     # require_relative below once {Pikuri::SubAgent::Persona} is loaded.
     LOADER.ignore(File.expand_path('pikuri/code/git_repo_researcher.rb', __dir__))
     LOADER.setup

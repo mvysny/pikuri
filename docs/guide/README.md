@@ -25,7 +25,7 @@ local site, or — once gems are published — see
    first see pikuri's Extension protocol in action.
 3. **[The in-repo coding agent](03-code.md).** The dense chapter.
    Three new seams at once (`Workspace`, `Confirmer`, `Sandbox`),
-   file + shell tools, and read-only code recon via the `SCOUT`
+   file + shell tools, and read-only code recon via the `FILE_MINER`
    persona. Includes the threat-model discussion you should read
    before pointing `pikuri-code` at anything sensitive.
 4. **[MCP and `pikuri-assistant`](04-mcp.md).** Plugging in tool

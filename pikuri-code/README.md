@@ -102,7 +102,7 @@ approve prompts on that basis.
 - **Narrative walkthrough:** [chapter 3 of the pikuri
   guide](../docs/guide/03-code.md) — the three new seams
   (`Workspace` / `Confirmer` / `Sandbox`), the full wiring block
-  with all three extensions, the privilege-separated `SCOUT` and
+  with all three extensions, the privilege-separated `FILE_MINER` and
   `GIT_REPO_RESEARCHER` personas in action, and an expanded
   threat-model discussion.
 - **API reference:** browse the YARD docs at

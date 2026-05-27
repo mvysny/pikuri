@@ -61,7 +61,7 @@ module Pikuri
     # == Listener id
     #
     # Each spawned child gets an id like +"researcher 0"+,
-    # +"researcher 1"+, +"scout 0"+, ... — persona-name root + a
+    # +"researcher 1"+, +"file_miner 0"+, ... — persona-name root + a
     # per-persona monotonic counter. The id is threaded to
     # {Pikuri::Agent::ListenerList#for_sub_agent(id:)} so renderers
     # (notably {Pikuri::Agent::Listener::Terminal}) can label
@@ -122,7 +122,7 @@ module Pikuri
         context_window    = parent_agent.context_window_cap
         streaming         = parent_agent.streaming
         # Per-persona monotonic counter — "researcher 0",
-        # "researcher 1", "scout 0", ... Independent counters per
+        # "researcher 1", "file_miner 0", ... Independent counters per
         # persona keep listener-name reads obvious ("which
         # researcher was the third one?") and survive interleaved
         # spawns without collision. Hash with a default of 0 so
