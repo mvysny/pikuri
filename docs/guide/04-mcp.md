@@ -608,62 +608,60 @@ The chapter covers all four.
 
 ## Threat model — what `pikuri-mcp` actually protects against
 
-In the same spirit as chapter 3, an honest accounting:
+This page's view, in the same spirit as chapter 3 — what wiring an
+MCP server in does and doesn't cover. Chapter 5 has the synthesis:
+the trifecta, the full defense kit, and the worked attack where a
+benign server relays a poisoned response.
 
 What the default configuration *does* protect:
 
-- **Pre-flight injection detection.** The verifier runs before
-  any tool from the server is callable. Hidden Unicode payloads
-  are rejected mechanically; LLM-judged injection attempts are
-  rejected with reasoning, and the server never enters
-  `live_ids`. A flagged server is one you see and can
-  investigate, not one you find out about after the fact.
-- **No tools in context until you ask.** `mcp_connect` gates
-  the schema surface; an MCP server whose description didn't
-  trip the verifier but whose tools later show injection
-  patterns still won't have those tools in context unless the
-  model explicitly activates them.
-- **Per-agent activation.** Sub-agents can't reach the MCP
-  surface at all. Privilege separation from chapter 3 carries
-  through: a `SCOUT` reading a malicious file can't
-  `mcp_connect` to anything.
+- **Pre-flight injection detection.** The verifier runs before any
+  tool from the server is callable: hidden Unicode payloads are
+  rejected mechanically, LLM-judged injection attempts are rejected
+  with reasoning, and the server never enters `live_ids`. A flagged
+  server is one you see and investigate, not one you discover after
+  the fact.
+- **No tools in context until you ask.** `mcp_connect` gates the
+  schema surface — tools that slipped the verifier still aren't in
+  context unless the model explicitly activates them.
+- **Per-agent activation.** Sub-agents can't reach the MCP surface
+  at all: the privilege separation from chapter 3 carries through,
+  so a `SCOUT` reading a malicious file can't `mcp_connect` to
+  anything.
 - **Container isolation (when you wrap in Docker).** A malicious
-  server can't read your `~/.ssh` or write to your home
-  directory.
+  server can't read your `~/.ssh` or write to your home directory.
 
 What it *doesn't* protect:
 
-- **Execution of the server itself.** The verifier reads text;
-  it does not analyse executable code. A malicious server that
-  emits *clean* descriptions but does something hostile when its
-  tools run still gets activated if the LLM calls `mcp_connect`
-  for it. The container is your real defence here, not the
-  verifier.
-- **The LLM judge is an LLM.** The verifier's second pass uses
-  the same model class your agent is talking to. A
-  sufficiently-crafted injection might trick the verifier the
-  same way it would trick the agent. The Unicode pre-pass is
-  deterministic and catches one whole class outright; the LLM
-  pass is best-effort and catches *most of the rest*, not all.
-- **Token blast radius.** A connected GitHub MCP server, given a
-  classic full-access PAT, can do anything that token can do —
-  open issues, comment, push to repos with `contents:write`.
-  Scope your PAT tightly; treat it as the actual security
-  boundary for what actions the agent can take on GitHub.
-- **HTTP MCP servers and TLS.** `HttpEntry` accepts any URL the
-  user passes. If you wire in an `http://` endpoint instead of
-  `https://`, you're trusting the network path. The gem doesn't
-  refuse plain HTTP — that's the user's call.
+- **Execution of the server itself.** The verifier reads text, not
+  executable code. A server that emits *clean* descriptions but
+  does something hostile when its tools run still activates if the
+  LLM calls `mcp_connect`. The container is your real defence here,
+  not the verifier.
+- **The LLM judge is an LLM.** The verifier's second pass uses the
+  same model class your agent talks to; a crafted injection might
+  fool it the same way it fools the agent. The Unicode pre-pass is
+  deterministic and catches one whole class outright; the LLM pass
+  is best-effort and catches *most* of the rest, not all.
+- **Token blast radius.** A GitHub MCP given a classic full-access
+  PAT can do anything that token can — open issues, comment, push
+  to repos with `contents:write`. Scope the PAT tightly; treat it
+  as the real boundary on what the agent can do on GitHub.
+- **HTTP MCP servers and TLS.** `HttpEntry` accepts any URL. Wire
+  in an `http://` endpoint instead of `https://` and you're
+  trusting the network path; the gem doesn't refuse plain HTTP —
+  that's your call.
 - **Cached "OK" results.** A server whose surface hasn't changed
-  doesn't re-run the verifier. The cache key is the full
-  surface fingerprint, so any change re-triggers verification;
-  but if you're worried about a long-running cache, delete
-  `~/.cache/pikuri/mcp_verifications/` and reboot.
+  doesn't re-run the verifier. The cache key is the full surface
+  fingerprint, so any change re-triggers verification; to clear a
+  long-running cache, delete `~/.cache/pikuri/mcp_verifications/`.
 
 In short: **assume MCP servers can take any action their token
 allows, scope the token accordingly, and wrap the server in a
-container.** The verifier is a useful belt; it is not the only
-piece of the belt-and-suspenders story.
+container.** The verifier is a useful belt, not the whole
+belt-and-suspenders story — and note that a server clean at
+handshake can still ship a poisoned response on a later call
+(chapter 5, attack 4).
 
 ## What's next
 

