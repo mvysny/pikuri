@@ -34,7 +34,14 @@ local site, or — once gems are published — see
    distinctive contributions live: the pre-flight
    prompt-injection verifier and the description synthesizer.
    Closes with its own threat-model section.
-5. **[Agent Skills (stub)](05-skills.md).** A placeholder
+5. **[Security: picking a defense for your harness](05-security.md).**
+   The synthesis chapter. Why there's no NX flag for tokens, the
+   lethal trifecta, the defense kit mapped to harness shapes, a
+   decision procedure for your own design, the five worked attacks,
+   and how pikuri's structural bet compares to Claude Code's
+   operational one. No new binary — read it before pointing any
+   write- or network-capable agent at something sensitive.
+6. **[Agent Skills (stub)](06-skills.md).** A placeholder
    chapter — what skills are in one paragraph, a minimal `lol`
    demo, and a TBD list. Currently shaped to be skippable;
    coming back to flesh out once the guide has workflows that

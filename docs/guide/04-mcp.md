@@ -667,10 +667,17 @@ piece of the belt-and-suspenders story.
 
 ## What's next
 
-[Chapter 5](05-skills.md) is the (stub) chapter on Agent Skills
-— the other extension `pikuri-code` wires, currently treated as
-a forward-pointer until the guide has enough concrete workflows
-to motivate a real example.
+[Chapter 5 — Security](05-security.md) is where the threat-model
+section above and chapter 3's stop being two scoped lists and
+become one picture: the lethal trifecta, the defense kit by
+harness shape, and how to choose a model for an agent you build
+yourself. MCP is the biggest external-risk surface in the guide,
+so it's the right moment to step back and look at the whole board.
+
+[Chapter 6 — Skills (stub)](06-skills.md) then covers the last
+extension `pikuri-code` wires — Agent Skills — currently a
+forward-pointer until the guide has enough concrete workflows to
+motivate a real example.
 
 Beyond that, there's a `pikuri-assistant` binary in the repo —
 a Q&A-shaped sibling to `pikuri-code` that pairs MCP with the

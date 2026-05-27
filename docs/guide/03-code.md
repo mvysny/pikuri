@@ -254,7 +254,7 @@ Four observations on this block:
    `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
    pair you met there. (`Skill::Extension` and `Mcp::Extension` are
    the other two extensions `pikuri-code` wires — chapters
-   [5](05-skills.md) and [4](04-mcp.md) cover what those do; for
+   [6](06-skills.md) and [4](04-mcp.md) cover what those do; for
    now treat them as lines that bring in features you haven't met
    yet.)
 2. **The same `workspace` / `confirmer` instances thread through
@@ -466,7 +466,7 @@ work.
 
 ## What's next
 
-Two follow-ons land in the next two chapters:
+Three follow-ons:
 
 - **[Chapter 4 — MCP](04-mcp.md)** wires `pikuri-assistant` to an
   external Model Context Protocol server (the official GitHub
@@ -474,7 +474,12 @@ Two follow-ons land in the next two chapters:
   tools you didn't write. It's also where pikuri-mcp's
   distinctive bits (the prompt-injection verifier and the
   description synthesizer) get explained.
-- **[Chapter 5 — Skills (stub)](05-skills.md)** is a holding
+- **[Chapter 5 — Security](05-security.md)** pulls the threat-model
+  section above together with chapter 4's into one picture: the
+  lethal trifecta, the defense kit mapped to harness shapes, and
+  how to pick a model when you build your own agent on
+  `pikuri-core`.
+- **[Chapter 6 — Skills (stub)](06-skills.md)** is a holding
   place for [Agent Skills](https://agentskills.io/specification),
   the standard for packaging "when you see *X*, do *Y*"
   instructions as portable folders. `pikuri-code` already
@@ -484,4 +489,4 @@ Two follow-ons land in the next two chapters:
 The vocabulary you built up in chapters 1–3 (`Pikuri::Agent`,
 `Tool`, listeners, the Extension protocol, configure/bind,
 sub-agent privilege separation) is the entire vocabulary needed to
-read either of those.
+read any of those.
