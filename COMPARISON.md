@@ -447,6 +447,61 @@ the inner layer. Langchainrb is the cautionary tale here —
 `FileSystem.read_file` / `write_to_file` take arbitrary paths
 from the LLM with no validation.
 
+### Pikuri vs. Claude Code: structural vs. operational defense
+
+Claude Code isn't in the project table (it's closed-source), but it's
+the reference coding agent the others are shaped after, and its security
+model is the instructive contrast. Inspect the toolset on its *main*
+agent — `Read` / `Write` / `Edit`, `Bash`, `WebFetch` / `WebSearch`,
+MCP — and it holds all three legs of the lethal trifecta at once
+(private data + untrusted content + egress). It does **not** attempt
+pikuri's trifecta-break. That's not an oversight; it's the opposite bet.
+
+- **Pikuri defends structurally.** Remove a leg *per agent*: sub-agent
+  capability boundaries (`RESEARCHER` has no `read`, `SCOUT` has no
+  egress), so the agent that touches untrusted content literally can't
+  act on an injection. The defense is a property of the capability
+  graph, so it holds even against a fully injected model.
+- **Claude Code defends operationally.** Keep all three legs; insert a
+  trusted human + an OS sandbox + an injection-hardened model at the
+  moment of the dangerous action. Its top three, in order:
+  (1) human-in-the-loop permission gating (`allow` / `deny` / `ask`
+  rules, permission modes); (2) OS sandbox (`sandbox-exec` / bubblewrap)
+  + working-directory confinement + a trust-this-folder gate;
+  (3) model-level injection resistance plus platform-side monitoring.
+
+**The asymmetry worth recording.** Claude Code's first two defenses
+were never *primarily* injection defenses — the human gate is a
+*mistake* control (it catches the hallucinated `rm -rf` whether or not
+an attacker is involved); the sandbox is a *code-execution* control
+(it bounds blast radius regardless of cause). They blunt injection as a
+side effect, so they survive the threat model shifting. Pikuri's
+trifecta-break is *specifically* an anti-injection bet — which makes it
+the one defense that goes obsolete if a data-vs-instruction separation
+("an NX flag for tokens") is ever solved, because the lethal trifecta
+is lethal *only* because injection exists: solve injection and the
+trifecta stops being a category. The flip side, in pikuri's favor: a
+model's own injection resistance (Claude Code's #3) is the one leg that
+lives *inside* the component an injection compromises, so it can't be
+leaned on alone — and neither project does (pikuri via capability
+boundaries, Claude Code via the human + sandbox beneath it).
+
+**Where they converge.** Pikuri can't break the trifecta for its own
+coding agent either: `bin/pikuri-code` / `bin/pikuri-assistant` hold
+`read` + `bash` + `fetch` on the parent and fall back to system-prompt
+nudging plus the `Confirmer` (SECURITY.md "Non-goals", last bullet). So
+coding is the harness where pikuri's structural model runs out and the
+operational one takes over — exactly Claude Code's territory. And
+Claude Code's visible investment in reducing confirmation fatigue
+(smarter triage so the human is interrupted less, and better when they
+are) is the same conclusion driving pikuri's "Confirmer as a
+first-class, last-line-of-defense control" (IDEAS.md): for an *attended*
+coding agent the human gate is the load-bearing control, and its whole
+value rides on not inducing fatigue. The shared nuance is deployment
+shape — the human gate is worth zero *unattended* (cron / CI / a
+`minions` fan-out), where only structural defense or an egress
+allowlist survives.
+
 ---
 
 ## Sub-agents
