@@ -370,7 +370,8 @@ it in Docker yourself."
 The two angles previously flagged as load-bearing: prompt
 injection from tool output (now defended structurally via
 privilege-separated sub-agents — see
-[`SECURITY.md`](SECURITY.md) §"Prompt injection", attacks 1–2),
+[`SECURITY.md`](SECURITY.md) §"Prompt injection"; the worked
+attacks are in [chapter 5 of the guide](docs/guide/05-security.md)),
 and
 `Bash` bypassing the workspace seam (still an open observation:
 `--no-sandbox` is documented as "use inside an outer sandbox only"

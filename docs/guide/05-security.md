@@ -223,8 +223,9 @@ defenses all assume it.
 
 ## Five attacks, and what happens to each
 
-The shape is what's defended, not the specifics. These mirror
-`SECURITY.md`'s worked examples; here they're told as stories.
+The shape is what's defended, not the specifics. `SECURITY.md`
+lists these five as one-line commitments; here they're the full
+stories.
 
 **1. Credential exfil via a scraped page.** A help page (or GitHub
 issue, or Stack Overflow answer) the agent scrapes says *"Ignore
