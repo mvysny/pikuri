@@ -17,6 +17,47 @@ correctly-functioning code from being tricked by untrusted *content*
 it reads? That's the rest of the document, because it's the unsolved
 one.
 
+## The kit, by harness shape
+
+The two axes above are the *threats*. This is the *defense* side, and
+the one thing to internalize first: pikuri is not one security model,
+it's a small kit, and the right pick depends on what the harness has to
+do. The trifecta-break is the headline — but it's one tool in the box,
+and the harness everyone actually wants, a coding agent, is the one it
+can't cover.
+
+| Model | Mechanism | Fits | Where it fails |
+|---|---|---|---|
+| **Trifecta-break** | sub-agent capability boundaries — `RESEARCHER` / `SCOUT` hold at most two of the three legs | chat, `minions`, web / file recon | the *relay* leg: a sub-agent's reply carrying the injection up to a parent that *does* hold the third leg |
+| **Blast-radius containment** | Workspace seam + Bubblewrap — `~/.ssh`, `~/.aws`, other projects don't resolve; bash sees only the workspace | coding, attended or not | the workspace is itself inside the radius — "leak *this* project's `.env`" still works |
+| **Human gate** | `Confirmer` prompts before an irreversible or egress-bearing action runs | coding **with a human present** | confirmation fatigue; worth zero when nobody's watching |
+| **Egress allowlist** *(planned — see [`IDEAS.md`](IDEAS.md))* | allow your package registries + git remote, deny the rest — cuts exfil at the network without removing `bash` | **unattended** coding | coarse: an allowlisted host is still open, and DNS exfil rides port 53 |
+| **Outer isolation** | a VM / container wrapping the whole pikuri process | `--yolo`, "I don't trust any of this" | delegated to the OS; DinD footguns (see IDEAS) |
+
+**Why coding needs the kit, not the headline.** A coding agent's job
+*is* the trifecta: read your source (a), pull docs and dependencies (b),
+run builds and push (c). You can't decompose that into "at most two
+legs" without crippling it — so coding composes the *rest* of the kit
+instead, and the composition splits on whether a human is in the room:
+
+- **Attended** (you're driving `pikuri-code`): blast-radius containment
+  as the floor, the human gate as the active control. The gate catches
+  the rare irreversible / egress action; containment bounds the damage
+  to *this project* when a tired user clicks through (Example 5's "what
+  survives").
+- **Unattended** (cron, CI, a `minions` fan-out): no human to prompt, so
+  the human gate is off the table. Blast-radius containment plus an
+  egress allowlist is the structural substitute — exfil blocked at the
+  network, no human required. The allowlist isn't shipped yet; until it
+  is, unattended coding on a box with real secrets is the open gap, and
+  "run it in a VM" (outer isolation) is the stopgap.
+
+These *compose*; they aren't alternatives. The honest line from
+"Non-goals" still holds — the human gate is *attention, not isolation* —
+which is exactly why it only works stacked on the structural mechanisms
+beneath it: they keep it from firing on every edit (fatigue) and bound
+the blast radius when it's bypassed.
+
 ## Code trust (the short axis)
 
 Before anything else: which processes do you trust to execute? Once

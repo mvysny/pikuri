@@ -161,6 +161,49 @@ scan, with user-curation as the first line of defense. Open:
   re-opens the trifecta inside the container, so the egress
   policy of the inner Docker becomes the new question.
 
+### Confirmer as a first-class, last-line-of-defense control
+
+Recorded from the design discussion that produced the security-models
+menu in [`SECURITY.md`](SECURITY.md) §"The kit, by harness shape". The
+conclusion: a coding agent can't break the trifecta (its job *is*
+read-source + pull-deps + run-builds), so for that harness the
+trifecta-break stops being pikuri's security model and the `Confirmer`
+has to graduate from "UX backstop" (today's "Non-goals" framing) to a
+*named* control — the thing that stops a poisoned context from leaking
+once every structural defense upstream has been spent.
+
+Promoting it that way imposes two requirements that pull against each
+other, and both have to hold:
+
+- **Bother the human only in specific cases.** A confirmer that prompts
+  on every in-workspace edit trains the user to mash "y" — and a
+  fatigued user clicking through is exactly how Example 5 lands. So the
+  *other* mechanisms (workspace containment, Bubblewrap, a future egress
+  allowlist) have to carry the routine load, leaving the Confirmer to
+  fire only on the genuinely consequential: irreversible, or
+  out-of-workspace, or egress-bearing. Rare, not chatty — the existing
+  `Confirmer` yardoc already bets "make them rare rather than smart."
+- **Be excellent when it does fire.** The one prompt that matters —
+  "this command will POST `.env` to attacker.com" — is caught only if
+  the human can actually *see* the consequence. That argues the
+  Confirmer should receive structured action context (kind, target,
+  egress destination, in / out of workspace), not the pre-baked prompt
+  String it can only echo today, so the load-bearing presentation
+  (headline the destination, not the 80-char `curl` pipe) can live at
+  the seam.
+
+So the role is the *last* line of defense, not a typo-catcher: the
+structural mechanisms shrink the set of moments a human is asked about,
+and the Confirmer makes each surviving moment decidable. It stays
+"attention, not isolation" — worth zero unattended, collapsible by
+fatigue — which is *why* it only works backstopped by the rest of the
+kit, never alone.
+
+Deliberately not sketching the API here. The mechanical wishlist —
+per-pattern stickiness, risk tiers, dry-run preview, time-bound
+approvals — is the next section; this entry records *why* the Confirmer
+earns that investment and what role it plays. Pick it up later.
+
 ### Permission model needs granularity
 
 `Confirmer::TERMINAL` is binary today (approve / deny per call).
