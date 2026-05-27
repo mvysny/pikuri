@@ -1,5 +1,10 @@
 # pikuri
 
+> *"Once men turned their thinking over to machines in the hope that
+> this would set them free. But that only permitted other men with
+> machines to enslave them."*
+> — Frank Herbert, *Dune* (1965)
+
 A small Ruby AI assistant you run on your own machine, shipped as
 a family of eight gems in a monorepo. Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
@@ -8,6 +13,9 @@ decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
 of the family adds skills, MCP, filesystem tools, and a full
 in-repo coding agent à la carte.
+
+**Use the machine. Own it, and understand it — so no one with a
+machine owns you.**
 
 ## Install
 
