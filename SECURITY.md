@@ -36,9 +36,9 @@ running their intended code.
   to that third party. A malicious LLM is downstream of every other
   defense in this document — there is no structural recovery if the
   model itself is the adversary. Pick a reputable provider.
-- **The LLM's drafted bash — half-trust → Bubblewrap.** `Bash`
-  doesn't run scripts you vetted; the LLM composes the command
-  string itself, fresh each call, under instructions it may have
+- **The LLM's drafted bash — half-trust → Bubblewrap.** `Bash` tool
+  is used to run commands composed by the LLM,
+  under instructions it may have
   read from anywhere. Even when it's invoking your own build
   tooling (`./gradlew test`, `npm run build`), **it** chose to run
   that, with those args — and it could just as easily hallucinate
