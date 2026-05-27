@@ -79,23 +79,9 @@ Pikuri does not try to detect injection in content — filters lose to
 adversarial text. The defense is **structural**, via the *lethal
 trifecta* principle (Simon Willison's framing): any single agent
 combining (a) access to private data, (b) exposure to untrusted
-content, and (c) an egress channel becomes a
-one-prompt-injection-away exfiltration tool. Break at least one leg
-of the trifecta in any agent that touches untrusted content.
-
-Two of pikuri's existing seams already act as partial trifecta
-breaks at the machine layer, regardless of which agent in the tree
-is calling. {Pikuri::Workspace::Filesystem}'s readable/writable
-allowlist governs the file tools; {Pikuri::Code::Bash::Sandbox::Bubblewrap}'s
-bind set governs the bash subprocess. Together they ensure
-`~/.ssh`, `~/.aws`, `~/.gnupg`, other projects' source,
-`~/.gradle/gradle.properties` / `~/.m2/settings.xml` /
-`~/.cargo/credentials.toml`, and `/etc/shadow` simply don't resolve
-— a prompt-injected model can ask, the path fails. What remains
-under leg (a) after that narrowing is the project itself (source,
-`.env`, `config/secrets.yml`) and dependency-cache content
-(downloaded jars, distributions, package versions). The sub-agent
-defense below targets that residual surface.
+content, and (c) an access to the internet becomes a
+one-prompt-injection-away exfiltration tool. Make sure agent has access
+to tools offering at most two of the above.
 
 ### Defense: capability boundaries via sub-agents
 
@@ -129,8 +115,12 @@ this third-party file" task to the appropriate persona. The parent
 agent receives only the sub-agent's one-paragraph reply — the raw
 untrusted bytes never enter the parent's context.
 
+The sub-agents are instructed in their system prompt to not to
+follow suspicious instructions and not pass them through to the main agent;
+instead should stop immediately and report the attack attempt to the main agent.
+
 Non-goal: pikuri does not filter or sanitize tool output. The
-defense is the capability boundary, not content inspection.
+defense is the trifecta (at most two capabilities available to any agent), not content inspection.
 
 ### Defense: MCP description verification
 
