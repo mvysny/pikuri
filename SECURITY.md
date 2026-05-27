@@ -36,15 +36,18 @@ running their intended code.
   to that third party. A malicious LLM is downstream of every other
   defense in this document — there is no structural recovery if the
   model itself is the adversary. Pick a reputable provider.
-- **Your own project's bash — half-trust → Bubblewrap.** Even when
-  *you* wrote the script, the LLM is the one choosing to run it, and
-  it chooses under instructions it may have read from anywhere.
-  `pikuri-code`'s `Bash` wraps every spawned argv through
-  `Bash::Sandbox::Bubblewrap` by default — protects you against
-  LLM-hallucinated attempts to delete your home folder or read
-  files it shouldn't; attempts to upload your project sources to
-  the internet are addressed (incompletely) below. See
-  {Pikuri::Code::Bash::Sandbox} for the threat model.
+- **The LLM's drafted bash — half-trust → Bubblewrap.** `Bash`
+  doesn't run scripts you vetted; the LLM composes the command
+  string itself, fresh each call, under instructions it may have
+  read from anywhere. Even when it's invoking your own build
+  tooling (`./gradlew test`, `npm run build`), **it** chose to run
+  that, with those args — and it could just as easily hallucinate
+  `rm -rf ~/*`. `pikuri-code`'s `Bash` wraps every spawned argv
+  through `Bash::Sandbox::Bubblewrap` by default, which blocks
+  exactly that, plus reads of files it shouldn't touch; attempts
+  to upload your project sources to the internet are addressed
+  (incompletely) below. See {Pikuri::Code::Bash::Sandbox} for the
+  threat model.
 - **MCP server processes — don't trust → Docker.** The `mcp` gem
   spawns stdio MCPs as raw subprocesses; pikuri does not sandbox
   them. An MCP whose code calls `os.system('rm -rf')` is unstoppable
