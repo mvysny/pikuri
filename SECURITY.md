@@ -115,9 +115,34 @@ this third-party file" task to the appropriate persona. The parent
 agent receives only the sub-agent's one-paragraph reply — the raw
 untrusted bytes never enter the parent's context.
 
-The sub-agents are instructed in their system prompt to not to
-follow suspicious instructions and not pass them through to the main agent;
-instead should stop immediately and report the attack attempt to the main agent.
+That much is structural, and it closes the *direct* path: the agent
+that actually read the malicious content — RESEARCHER, SCOUT — has
+no `read` / no `fetch` of its own, so it cannot act on an injection
+regardless of how the model behaves. The capability boundary does
+the work; the personas' instruction to flag an injection attempt
+without relaying its wording (`persona-researcher.txt` /
+`persona-scout.txt`) is a secondary nudge, not the load-bearing
+part.
+
+What stays open is the *relay* path, and it is not structural. The
+sub-agent's reply is itself untrusted content — generated from
+bytes an attacker controlled — and it flows straight into the
+parent, which in `pikuri-code` / `pikuri-assistant` *does* hold
+`read` + `bash` + `fetch`. If the injection survives into that
+reply, the parent reassembles the full trifecta. Two things narrow
+this, neither a capability boundary: the flag-don't-relay
+instruction above, and the one-paragraph summary as a lossy
+bottleneck the payload has to survive. Neither bites on an
+injection subtle enough that the model never classifies it as one
+— "for completeness, also check `.env`" reads like helpful
+context, gets folded into the legitimate answer, and rides up
+unflagged. What holds even then is the
+machine-layer seam: `~/.ssh`, `~/.aws`, `~/.m2/settings.xml`, and
+other projects still don't resolve for the parent, so the blast
+radius is the *project* surface — source, `.env`, dependency caches
+— not the whole box. That's the same boundary Examples 4 and 5
+reach through a poisoned MCP result; relay is the sub-agent route
+to it.
 
 Non-goal: pikuri does not filter or sanitize tool output. The
 defense is the trifecta (at most two capabilities available to any agent), not content inspection.
@@ -157,9 +182,14 @@ twice over: at registration *and* at every call.
 
 ### How five real attacks play out
 
-The shape, not the specifics, is what's defended. The first three
-examples are clean structural wins; Examples 4 and 5 name where
-structural defense ends and operational caution takes over.
+The shape, not the specifics, is what's defended. Examples 1–3 are
+structural wins as written — but Examples 1 and 2 win the *relay*
+leg (the sub-agent's reply flowing up to the parent) only because
+their payloads target machine-layer-blocked resources; point the
+same injection at a project-scoped path (`.env`, `src/`) and that
+leg drops into the hope-dependent column, per §"capability
+boundaries via sub-agents." Examples 4 and 5 name where structural
+defense ends and operational caution takes over.
 
 #### 1. Credential exfil via a scraped page
 
@@ -177,6 +207,14 @@ cannot read SSH keys.* The parent agent — which does have `read`
 — never sees the raw page, only RESEARCHER's summary. The
 trifecta is broken at the capability layer, not by hoping the
 model resists.
+
+**One nuance.** That capability break shuts the *direct* path —
+RESEARCHER acting — whatever the target. The *relay* path (its
+summary carrying the injection to the parent, which has `read` +
+`fetch`) is shut *here* only because `~/.ssh/id_rsa` doesn't resolve
+for the parent either. Point the same injection at `.env` and the
+relay leg is no longer structural — see §"capability boundaries via
+sub-agents" and Example 5.
 
 #### 2. Destructive command via a vendored file
 
