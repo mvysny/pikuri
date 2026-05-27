@@ -158,8 +158,8 @@ harness each piece fits and where it stops working:
 | **Break the trifecta** | give an agent ≤2 legs (sub-agent personas) | chat, `minions`, recon | the relay leg — a reply carrying the injection to a parent that has the third leg |
 | **Blast-radius containment** | workspace allowlist + Bubblewrap; `~/.ssh`, `~/.aws`, other projects don't resolve | coding, attended or not | the workspace itself is reachable — "leak *this* project's `.env`" still works |
 | **Human gate** | the Confirmer prompts before an irreversible or outbound action runs | coding **with a human watching** | confirmation fatigue; worth nothing when nobody's there |
-| **Egress allowlist** *(planned — see [`IDEAS.md`](../../IDEAS.md); not shipped yet)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
-| **Outer isolation** | a container or VM around the whole pikuri process | `--yolo`, "I trust none of this" | delegated to the OS; nesting Docker re-opens it (see chapter 4 / `IDEAS.md`) |
+| **Egress allowlist** *(in-process form planned — see [`IDEAS.md`](../../IDEAS.md); enforceable at the network layer today)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
+| **Outer isolation** | a container or VM around the whole pikuri process | `--yolo`, "I trust none of this" | adds no *inner* gate — yolo drops the sandbox + confirmer, so anything mounted in (the project's `.env`) exfiltrates trivially; isolation is the OS's to enforce, and a bind-mounted home or the docker socket re-opens the host (see chapter 4 / `IDEAS.md`) |
 
 These **compose** — they aren't a menu where you pick one. The two
 classes are worth naming, because the choice between them is the
@@ -198,11 +198,15 @@ heart of this chapter:
    - **Unattended** (a cron job, CI, a `minions` fan-out): there's
      no human to prompt, so the human gate is worth nothing. Use
      containment plus an egress allowlist so exfiltration is
-     blocked at the network with no human in the loop. *(The
-     egress allowlist isn't shipped yet — TODO, tracked in
-     `IDEAS.md`. Until it lands, the honest answer for unattended
-     coding on a box with real secrets is "run it in a VM" — outer
-     isolation — and treat that as the boundary.)*
+     blocked with no human in the loop. Pikuri's *in-process*
+     allowlist isn't shipped yet (TODO, `IDEAS.md`), but you can
+     cut the same leg a layer down *today*: run the VM with its
+     network whitelisted to your registries + git remote — or off
+     entirely, if the job needs no network, accepting that a coding
+     agent which can't reach its registry is barely one. The trap
+     to avoid: a plain *networked* VM bounds host secrets but not
+     project exfil — the `.env` still `curl`s out. It's cutting the
+     VM's egress, not wrapping it in a VM, that breaks leg (c).
 4. **If you trust none of it, wrap the whole process** in a
    container or VM. That's the outer boundary `--yolo` assumes.
 
@@ -408,6 +412,15 @@ Stated plainly so the model above isn't mistaken for a guarantee
   container.
 - **`--yolo` outside a VM** hands the model a shell with your
   permissions. Use it only inside an outer sandbox.
+- **Inside the VM, `--yolo` is the *weakest* posture in this
+  chapter, not the strongest.** It auto-approves and drops the
+  sandbox, so the parent holds all three legs against everything
+  mounted in: an injection reads the project's `.env` and `curl`s
+  it out with no gate left to even fatigue — easier than attack 5,
+  which at least needed a tired human. The outer wall saves your
+  *user* secrets only because they sit outside the mount, not
+  because yolo defends them; bind-mount your home dir or the
+  docker socket and they're exposed too.
 - **A parent agent with file-read + egress** reassembles the
   trifecta if the model skips delegating to a persona. `pikuri-code`
   and `pikuri-assistant` have this shape and rely on the system
