@@ -90,12 +90,27 @@ toolsets may have looked oddly hobbled:
 - **`SCOUT`** — `read`, `grep`, `glob`. Reads files, but no
   `fetch`, no `bash`, no `write`.
 
-Now the shapes make sense. `RESEARCHER` is the agent that touches
-untrusted *web* content (b) and can egress (c) — but it has no
-access to your private files (a). `SCOUT` is the agent that
-touches untrusted *file* content (b) — but it can't egress (c) and
-can't run commands. Each persona is deliberately built with **at
-most two of the three legs.**
+Now the shapes make sense — and they're *not* the same shape.
+`RESEARCHER` scrapes the web, so it needs egress (c) and
+unavoidably takes in untrusted web content (b); what it lacks is
+`read`, so it can't reach your private files (a).
+
+`SCOUT` is subtler, and easy to mislabel. It reads whatever it's
+*pointed at* — `read` / `grep` / `glob` have no notion of trusted
+versus untrusted. That target might be the contents of a zip just
+downloaded from the internet (untrusted content, b), or it might be
+your private notes and the file full of passwords two directories
+over (private data, a). Usually it's the latter — the bulk of any
+workspace is your own source — which is why calling `SCOUT` "the
+untrusted-content agent" gets it backwards. Either way `SCOUT`
+holds two legs, (a) and (b); what keeps it safe is the one it
+*lacks* — no `fetch`, no `bash`, so no egress (c). An injection in
+that downloaded zip can have `SCOUT` read every password in the
+project, then strand it with nowhere to send it.
+
+So each persona keeps the two legs its job requires and drops the
+third: `RESEARCHER` drops private-data access (a), `SCOUT` drops
+egress (c). Either way the agent is one leg short of the trifecta.
 
 So when `pikuri-code` needs to read a vendored `node_modules`
 README or scrape a doc page, it *delegates* to the persona instead

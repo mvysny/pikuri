@@ -419,11 +419,13 @@ What the default configuration *does* protect:
 - **Confirmer prompts** for every `write` and every `bash` — you
   see the proposed content / command before it runs.
 - **Privilege-separated sub-agents.** `SCOUT`, `RESEARCHER`, and
-  `GIT_REPO_RESEARCHER` each read untrusted content in a child
-  whose `tool_names` rule out `bash` / `write` / `edit` / `agent`
-  recursion, so only the child's one-paragraph reply reaches the
-  parent. (Why this shape works — and where it doesn't — is
-  chapter 5.)
+  `GIT_REPO_RESEARCHER` run in a child whose `tool_names` rule out
+  `bash` / `write` / `edit` / `agent` recursion, so a child that
+  reads a prompt-injected file has no tool to act on it — only its
+  one-paragraph reply reaches the parent. (`SCOUT` reads whatever
+  it's told to: an extracted zip from the web one moment, your
+  private notes and passwords the next — chapter 5 explains why
+  that mix is safe without egress.)
 
 What it *doesn't* protect:
 
