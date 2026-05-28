@@ -30,6 +30,10 @@ Will provide:
   `Tokenizer::CharHeuristic` (default, ~4 chars/token rule) and
   `Tokenizer::LlamaServer` (POST `/tokenize` against the
   embedder's endpoint).
+- Text extraction reuses `Pikuri::FileType.read_as_text` from
+  pikuri-core — plain text / Markdown / PDF. HTML extraction
+  is a deferred follow-up; v1 corpora skew toward Markdown
+  notes and PDF docs in practice.
 - `Pikuri::VectorDb::LIBRARIAN` — bundled
   `Pikuri::SubAgent::Persona` constant. Hosts wire it via
   `SubAgent::Extension.new(personas: [..., LIBRARIAN])` — same

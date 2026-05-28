@@ -14,11 +14,13 @@ Gem::Specification.new do |spec|
     tool over a local document corpus — agentic search, the agent
     decides when to retrieve. Ships a swappable backend (a
     pure-Ruby +Backend::InMemory+ for teaching and a thin
-    +Backend::Chroma+ HTTP client for persistence), a chunker, a
-    text extractor for plain text / Markdown / PDF / HTML, an
+    +Backend::Chroma+ HTTP client for persistence), a chunker, an
     embedder wrapper over +RubyLLM.embed+, and an optional
     +Reranker::LlamaServer+ that speaks +/v1/rerank+ against a
-    cross-encoder model. Hosts wire the feature via
+    cross-encoder model. Text extraction goes through
+    +Pikuri::FileType.read_as_text+ in pikuri-core, which handles
+    plain text / Markdown / PDF; HTML extraction is a deferred
+    follow-up. Hosts wire the feature via
     +c.add_extension Pikuri::VectorDb::Extension.new(...)+ inside
     the +Agent.new+ block — same opt-in shape as +pikuri-tasks+ /
     +pikuri-skills+. The bundled +Pikuri::VectorDb::LIBRARIAN+

@@ -146,4 +146,149 @@ RSpec.describe Pikuri::FileType do
       assert_raises(ArgumentError) { described_class.binary?(42) }
     end
   end
+
+  describe '.read_as_text' do
+    let(:root) { Pathname.new(Dir.mktmpdir('pikuri-file-type-rat-')).realpath }
+
+    after { FileUtils.rm_rf(root) }
+
+    def write(rel, bytes)
+      path = root + rel
+      File.binwrite(path, bytes)
+      path
+    end
+
+    # Builds the smallest valid PDF +pdf-reader+ accepts: one Tj
+    # string-show op per page. Mirrors the in-memory builder in
+    # Workspace::Read's spec; copied verbatim so this spec stays
+    # self-contained.
+    def build_pdf(*page_texts)
+      out = +"%PDF-1.4\n"
+      offsets = []
+      add_obj = lambda do |body|
+        offsets << out.bytesize
+        out << "#{offsets.size} 0 obj\n#{body}\nendobj\n"
+      end
+
+      page_count = page_texts.length
+      font_obj_num = 2 + page_count * 2 + 1
+
+      add_obj.call('<< /Type /Catalog /Pages 2 0 R >>')
+      page_refs = (0...page_count).map { |i| "#{3 + i * 2} 0 R" }
+      add_obj.call("<< /Type /Pages /Kids [#{page_refs.join(' ')}] /Count #{page_count} >>")
+
+      page_texts.each_with_index do |text, i|
+        content_obj_num = 3 + i * 2 + 1
+        add_obj.call("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " \
+                     "/Contents #{content_obj_num} 0 R /Resources << /Font << /F1 #{font_obj_num} 0 R >> >> >>")
+        stream = "BT /F1 12 Tf 100 700 Td (#{text}) Tj ET"
+        add_obj.call("<< /Length #{stream.bytesize} >>\nstream\n#{stream}\nendstream")
+      end
+
+      add_obj.call('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+
+      xref_pos = out.bytesize
+      out << "xref\n0 #{offsets.size + 1}\n"
+      out << "0000000000 65535 f \n"
+      offsets.each { |o| out << format("%010d 00000 n \n", o) }
+      out << "trailer\n<< /Size #{offsets.size + 1} /Root 1 0 R >>\n"
+      out << "startxref\n#{xref_pos}\n%%EOF\n"
+      out
+    end
+
+    describe 'plain text' do
+      it 'reads a UTF-8 text file as-is' do
+        path = write('hello.txt', "Hello, world.\n".b)
+        assert_equal "Hello, world.\n", described_class.read_as_text(path)
+      end
+
+      it 'reads a Markdown file as-is (no transformation)' do
+        path = write('doc.md', "# Heading\n\nParagraph with **bold**.\n".b)
+        assert_equal "# Heading\n\nParagraph with **bold**.\n", described_class.read_as_text(path)
+      end
+
+      it 'reads an empty file as the empty String' do
+        path = write('empty.txt', ''.b)
+        assert_equal '', described_class.read_as_text(path)
+      end
+
+      it 'reads UTF-8 multi-byte content correctly' do
+        path = write('utf8.txt', "héllo wörld\n".b)
+        text = described_class.read_as_text(path)
+        assert_equal 'UTF-8', text.encoding.name
+        assert_includes text, 'héllo wörld'
+      end
+    end
+
+    describe 'PDF extraction' do
+      it 'extracts text from a single-page PDF' do
+        path = write('doc.pdf', build_pdf('Hello PDF'))
+        text = described_class.read_as_text(path)
+        assert_includes text, 'Hello PDF'
+      end
+
+      it 'joins multi-page PDF text with a blank line between pages' do
+        path = write('multi.pdf', build_pdf('Alpha', 'Beta'))
+        text = described_class.read_as_text(path)
+        assert_includes text, 'Alpha'
+        assert_includes text, 'Beta'
+        # Pages joined by "\n\n" (one blank line)
+        assert_match(/Alpha[^A-Za-z]+Beta/m, text)
+      end
+
+      it 'returns the empty String for a PDF with no extractable text' do
+        # Zero pages → no text. Workspace::Read returns a hint string
+        # for the LLM; read_as_text returns '' and lets the caller
+        # decide (the Indexer simply gets no chunks).
+        path = write('empty.pdf', build_pdf)
+        assert_equal '', described_class.read_as_text(path)
+      end
+
+      it 'raises a RuntimeError with the path for a malformed PDF' do
+        # PDF magic but garbage afterward; pdf-reader rejects this.
+        path = write('broken.pdf', "%PDF-1.4\nnot really a pdf\n".b)
+        err = assert_raises(RuntimeError) { described_class.read_as_text(path) }
+        assert_match(/broken\.pdf/, err.message)
+      end
+    end
+
+    describe 'refusals' do
+      it 'raises Errno::ENOENT for a missing file' do
+        assert_raises(Errno::ENOENT) do
+          described_class.read_as_text(root + 'nope.txt')
+        end
+      end
+
+      it 'raises ArgumentError on a directory' do
+        err = assert_raises(ArgumentError) { described_class.read_as_text(root) }
+        assert_match(/directory/, err.message)
+      end
+
+      it 'raises ArgumentError on a PNG image' do
+        path = write('shot.png', PNG_MAGIC + ('x' * 16).b)
+        err = assert_raises(ArgumentError) { described_class.read_as_text(path) }
+        assert_match(/image/, err.message)
+      end
+
+      it 'raises ArgumentError on a JPEG image' do
+        path = write('photo.jpg', JPEG_MAGIC + ('x' * 16).b)
+        err = assert_raises(ArgumentError) { described_class.read_as_text(path) }
+        assert_match(/image/, err.message)
+      end
+
+      it 'raises ArgumentError on opaque binary content' do
+        # PK\x03\x04 + null bytes → binary by both magic-byte
+        # check (no recognised MIME) and binary? heuristic (NUL byte).
+        path = write('archive.zip', "PK\x03\x04".b + "\x00" * 32)
+        err = assert_raises(ArgumentError) { described_class.read_as_text(path) }
+        assert_match(/binary/, err.message)
+      end
+
+      it 'raises ArgumentError on a non-Pathname argument' do
+        path = write('hello.txt', 'hi'.b)
+        err = assert_raises(ArgumentError) { described_class.read_as_text(path.to_s) }
+        assert_match(/expected Pathname/, err.message)
+      end
+    end
+  end
 end
