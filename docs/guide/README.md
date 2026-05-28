@@ -35,10 +35,13 @@ chapters that apply across both tracks.
    `pikuri-minions` — fan out three research questions in
    parallel, get one synthesised answer back. This is also
    where pikuri's main privilege-separation story starts.
-3. **[Agentic search and the vector DB (stub)](03-vectordb.md).**
-   Placeholder. What `pikuri-vectordb` will be — chunker,
-   tokenizer, backend — and how it gives the agent semantic
-   recall over a local corpus. Skippable for now.
+3. **[Agentic search and the vector DB](03-vectordb.md).** One
+   new feature on top of chapter 2: semantic recall over a local
+   corpus. The chunker / tokenizer / embedder / backend /
+   reranker pipeline, in-memory vs Chroma backends, and the
+   bundled `LIBRARIAN` persona as the privilege-separated
+   delegation mode. Demo via `pikuri-librarian` against the
+   pikuri guide itself.
 4. **[Memories (stub)](04-memories.md).** Placeholder. Persistent
    notes the agent keeps across conversations, paired with
    chapter 3's vector DB for recall. Where the privacy posture

@@ -264,8 +264,10 @@ three chapters — [vectordb](03-vectordb.md), [memories](04-memories.md),
 and [MCP](05-mcp.md) — are the buildup toward
 `pikuri-assistant`: capabilities that an assistant binary wants
 (semantic search over your notes, persistent memories across
-conversations, external tool servers). Chapters 3 and 4 are
-stubs until the gems they describe stabilise; chapter 5 is the
-gentle MCP intro using a calendar example.
+conversations, external tool servers). Chapter 3 introduces a
+second persona — `LIBRARIAN` — and demonstrates the same
+privilege-separation argument with the corpus's chunks as the
+threat surface. Chapter 4 is a stub until that gem lands;
+chapter 5 is the gentle MCP intro using a calendar example.
 
-→ Continue to [chapter 3 — Agentic search and the vector DB (stub)](03-vectordb.md).
+→ Continue to [chapter 3 — Agentic search and the vector DB](03-vectordb.md).

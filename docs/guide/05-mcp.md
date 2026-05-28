@@ -7,13 +7,12 @@ then, point this chapter's setup at a throwaway `.ics` file
 rather than your real calendar.
 
 Up to chapter 4 every tool pikuri's binaries reached for was
-either bundled in a gem (`web_search`, `calculator`, …) or a
-stub promising the relevant gem is coming
-([vectordb](03-vectordb.md), [memories](04-memories.md)). That
-covers a lot, but it doesn't cover the case where someone *else*
-has already written the integration you want — your calendar, a
-database, an issue tracker — and you'd rather plug their server
-in than rebuild it.
+either bundled in a gem (`web_search`, `calculator`,
+`vectordb_search`, …) or a stub promising the relevant gem is
+coming ([memories](04-memories.md)). That covers a lot, but it
+doesn't cover the case where someone *else* has already written
+the integration you want — your calendar, a database, an issue
+tracker — and you'd rather plug their server in than rebuild it.
 
 That case is what the
 [Model Context Protocol](https://modelcontextprotocol.io) (MCP)
