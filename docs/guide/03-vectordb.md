@@ -52,33 +52,11 @@ same topic?"; the reranker is "does this actually answer the
 question?". Optional in `pikuri-vectordb` — turn it off and you
 lose some precision, not correctness.
 
-## Why agentic, not classic-RAG
-
-Two shapes of retrieval-augmented generation are common:
-
-- **Classic RAG.** Every user message is silently routed through
-  a retrieve step *before* the LLM sees it. Top-k chunks get
-  prepended to the prompt. The model never "decides" to search —
-  it always searches.
-- **Agentic search.** The model has a `vectordb_search` tool and
-  decides when to call it, with what query, and whether to call it
-  again with a different angle. The retrieve step is a tool call,
-  like `web_search` or `calculator`.
-
-`pikuri-vectordb` ships the second. Two reasons. First, it fits
-the loop-agnostic ethos: the Thought → Tool-call → Observation
-loop you met in chapter 1 doesn't need a special case for "this
-turn started with a hidden retrieve." Second, the model can refine
-queries based on what came back — a flexibility classic RAG
-doesn't have. The cost: the model sometimes forgets to search.
-The honest mitigation is the boss prompt nudging it to prefer the
-corpus for corpus-shaped questions; see
-`pikuri-vectordb/prompts/pikuri-librarian.txt`.
-
-A classic-RAG-as-listener variant (auto-inject relevant chunks at
-turn start, no tool call) is sketched in `IDEAS.md §"Vector DB /
-RAG" → "Deferred"` for the case where a concrete "the model
-forgot to search" pattern shows up.
+`pikuri-vectordb` exposes this stack as a single `vectordb_search`
+tool that the model decides when to call — same Thought →
+Tool-call → Observation loop from chapter 1, with the corpus
+joining `web_search` and `calculator` as one more capability the
+model reaches for when the question warrants it.
 
 ## Prerequisites: three model endpoints
 
