@@ -200,8 +200,8 @@ scan, with user-curation as the first line of defense. Open:
 The *role* — last-line-of-defense for the parent agent in
 `bin/pikuri-code`, where structural defense has run out and the
 human gate is what stops a poisoned context from leaking — is now
-documented in [chapter 5 §"The human gate, and why fatigue is the
-enemy"](docs/guide/05-security.md). The two requirements (bother the
+documented in [chapter 6 §"The human gate, and why fatigue is the
+enemy"](docs/guide/06-security.md). The two requirements (bother the
 human only on the genuinely consequential; be excellent when it does
 fire) and the dependency on the rest of the kit carrying the routine
 load are stated there.

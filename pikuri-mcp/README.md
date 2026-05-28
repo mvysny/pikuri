@@ -55,10 +55,13 @@ activation set.
 
 ## Further reading
 
-- **Narrative walkthrough:**
-  [Chapter 4 of the guide](../docs/guide/04-mcp.md) walks the
-  wiring end-to-end with the official GitHub MCP server in
-  Docker, and covers the synthesizer and verifier in depth.
+- **Narrative walkthrough:** [chapter 5 of the
+  guide](../docs/guide/05-mcp.md) is the gentle MCP intro — one
+  low-stakes server, no Docker, the verifier and synthesizer in
+  depth. [Chapter 10](../docs/guide/10-mcp-revisited.md) picks
+  the thread back up at the harder end: the official GitHub MCP
+  in Docker, npx- and pip-based community servers, Playwright,
+  and the full threat model.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-mcp> (once published), or run
   `bundle exec yard` in this directory for a local copy.

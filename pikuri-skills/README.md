@@ -48,10 +48,11 @@ directory so the LLM can resolve sidecar files via `read`.
 
 ## Further reading
 
-- **Narrative walkthrough:** the "Agent Skills" section in
-  [chapter 3 of the pikuri guide](../docs/guide/03-code.md) — how
-  skill folders are discovered, the `SKILL.md` format, and a
-  worked drop-in example.
+- **Narrative walkthrough:**
+  [chapter 12 of the pikuri guide](../docs/guide/12-skills.md) —
+  how skill folders are discovered, the `SKILL.md` format, and a
+  worked drop-in example. (Currently a stub chapter; the API
+  surface lives in the YARD docs below.)
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-skills> (once published), or
   run `bundle exec yard` in this directory for a local copy.

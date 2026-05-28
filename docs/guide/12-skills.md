@@ -1,12 +1,11 @@
-# Chapter 7 — Agent Skills (stub)
+# Chapter 12 — Agent Skills (stub)
 
 > **Stub chapter.** This is a holding place. The guide doesn't yet
 > have a workflow concrete enough to motivate Agent Skills the way
 > they deserve — coming back to flesh this out once the assistant
 > walkthrough and a few more advanced coding-agent recipes land in
 > the guide. For now: a one-paragraph "what they are," a minimal
-> `lol` demo extracted from chapter 3, and a TBD list of what a
-> fuller chapter will cover.
+> `lol` demo, and a TBD list of what a fuller chapter will cover.
 
 ## What they are, in one paragraph
 
@@ -71,7 +70,9 @@ workflows to anchor it:
 - Discovery order, naming collisions, scoping skills to a
   specific project vs the user's home directory.
 - When a skill is the right tool versus when a fresh persona
-  (chapter 2) or an MCP server (chapter 4) would fit better.
+  ([chapter 2](02-subagents.md)) or an MCP server
+  ([chapter 5](05-mcp.md) / [chapter 10](10-mcp-revisited.md))
+  would fit better.
 
 Until then: <https://agentskills.io/specification> is the
 authoritative reference, and the `pikuri-skills`
@@ -79,9 +80,12 @@ authoritative reference, and the `pikuri-skills`
 
 ## What's next
 
-The natural follow-on is a chapter on `pikuri-assistant` in
-depth, beyond the MCP wiring covered in chapter 4 — the
-conversational shape, the listener output, what `--api-key-env`
-buys you when you want to point it at a hosted provider. That
-chapter lands when the binary has stabilised enough to be worth a
-walkthrough.
+This is the last chapter. The natural follow-on is a fleshed-out
+version of [chapter 7 — pikuri-assistant](07-assistant.md),
+which itself waits on the vectordb and memories gems
+stabilising. Until then, the vocabulary you have now
+(`Pikuri::Agent`, `Tool`, listeners, the Extension protocol,
+configure/bind, sub-agent privilege separation, the kit from
+chapter 6, MCP's verifier + synthesizer + per-agent
+`mcp_connect`) is enough to read any pikuri-* gem's sources
+directly.

@@ -1,6 +1,6 @@
-# Chapter 6 — Task tracking (the agent's working memory)
+# Chapter 11 — Task tracking (the agent's working memory)
 
-A light chapter between two heavyweights. By the end you'll know
+A short chapter near the end of the guide. By the end you'll know
 why pikuri ships a task list, why it has exactly the shape it
 does, and how to wire it onto any agent. Along the way, the gem
 turns out to be a small but honest window into *how* LLMs actually
@@ -190,14 +190,15 @@ That's the entire feedback loop.
 
 `pikuri-code` wires this extension by default — coding agents do
 multi-step work, and the externalized-plan property pays off there
-more than anywhere else in the guide. Chapter 3's walkthrough
-shows the four-extension block (skills, tasks, MCP, sub-agents)
-all wired together; this chapter focused on tasks alone so the
-single-purpose API doesn't get lost in that wider picture.
+more than anywhere else in the guide. [Chapter 8](08-code.md)'s
+walkthrough shows the four-extension block (skills, tasks, MCP,
+sub-agents) all wired together; this chapter focused on tasks
+alone so the single-purpose API doesn't get lost in that wider
+picture.
 
 ## What's next
 
-[Chapter 7 — Skills (stub)](07-skills.md) covers the last
+[Chapter 12 — Skills (stub)](12-skills.md) covers the last
 extension `pikuri-code` discovers: [Agent
 Skills](https://agentskills.io/specification), portable folders of
 "when you see *X*, do *Y*" instructions. Skills are text the model

@@ -10,8 +10,17 @@ makes the fan-out shape concrete.
 
 By the end of this chapter you'll know what a *persona* is, what a
 *pikuri extension* looks like (the `configure` + `bind` dance
-you'll see again in chapter 3 with the file/shell stack), and what
-gets inherited vs. owned when a parent spawns a child.
+you'll see again in chapter 5 with MCP and chapter 8 with the
+file/shell stack), and what gets inherited vs. owned when a
+parent spawns a child.
+
+The defaults — local llama, no tools that could send your data
+out, verified MCPs — are designed to be safe even with real data;
+[chapter 6](06-security.md) explains why. Sub-agents are actually
+where the privacy story starts to *do work*: the persona system
+in this chapter is also pikuri's main privilege-separation
+mechanism, and chapter 6 will name it as the cheapest line in
+the defense kit.
 
 ## Prerequisites
 
@@ -160,8 +169,9 @@ the ones it needs:
   `add_tool` has run.
 
 Same shape used by `Pikuri::Skill::Extension` and
-`Pikuri::Mcp::Extension`. You'll see it again in chapter 3 when
-the coding agent wires in three extensions at once.
+`Pikuri::Mcp::Extension`. You'll see it again in chapter 5 (MCP)
+and chapter 8, where the coding agent wires four extensions at
+once.
 
 **Practical implication of the configure/bind split:** call
 `c.add_extension` *after* the `c.add_tool` calls the personas
@@ -239,20 +249,23 @@ tool list — there is no `bash` to call. The reverse case (a
 same property in the other direction: it can read files but cannot
 reach the network.
 
-Chapter 3 makes this concrete: `pikuri-code` wires `FILE_MINER` (a
-read-only filesystem-recon persona) so the coding agent can
-delegate "find every spec referencing `Foo`" without polluting its
-main context, but a prompt-injected `FILE_MINER` cannot reach
-`web_search` or `bash` because those aren't in its `tool_names`.
+[Chapter 8](08-code.md) makes this concrete: `pikuri-code` wires
+`FILE_MINER` (a read-only filesystem-recon persona) so the coding
+agent can delegate "find every spec referencing `Foo`" without
+polluting its main context, but a prompt-injected `FILE_MINER`
+cannot reach `web_search` or `bash` because those aren't in its
+`tool_names`.
 
-## Next chapter — the coding agent
+## What's next
 
 You now know the smallest extension shape (the `configure` +
-`bind` pair), and you've seen one persona in action. Chapter 3
-reapplies that same `add_extension` pattern across three new seams
-at once — `Workspace` (filesystem access), `Confirmer` (user-state
-mutation), `Sandbox` (filesystem view of the bash subprocess) —
-wires in Agent Skills discovery, and uses sub-agents for code
-recon via the `FILE_MINER` persona.
+`bind` pair), and you've seen one persona in action. The next
+three chapters — [vectordb](03-vectordb.md), [memories](04-memories.md),
+and [MCP](05-mcp.md) — are the buildup toward
+`pikuri-assistant`: capabilities that an assistant binary wants
+(semantic search over your notes, persistent memories across
+conversations, external tool servers). Chapters 3 and 4 are
+stubs until the gems they describe stabilise; chapter 5 is the
+gentle MCP intro using a calendar example.
 
-→ Continue to [chapter 3 — the in-repo coding agent](03-code.md).
+→ Continue to [chapter 3 — Agentic search and the vector DB (stub)](03-vectordb.md).
