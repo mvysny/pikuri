@@ -791,8 +791,8 @@ bundled `LIBRARIAN` persona referencing `vectordb_search` only.
 
 `bin/pikuri-assistant` ends up wanting three LLM endpoints: chat
 (multi-GB), embedder (200 MB – 1 GB), reranker (300 MB – 1 GB).
-Three options the user faces, none of which are pikuri's problem
-to *solve* but all need to be in the docs:
+Two `llama.cpp`-shaped options the user faces, neither of which
+is pikuri's problem to *solve* but both need to be in the docs:
 
 - **Three llama-servers on different ports.** Simplest, runs in
   parallel, needs the RAM/VRAM headroom. Documented default in
@@ -800,9 +800,14 @@ to *solve* but all need to be in the docs:
 - **[llama-swap](https://github.com/mostlygeek/llama-swap).**
   Single port, lazy-loads on request. Sequential — first query
   after a chat turn pays the load latency — but fits on a small
-  box. Mentioned as the resource-constrained option.
-- **Ollama / LM Studio.** Native multi-model with OpenAI-compatible
-  endpoints. Some users already run these; works out of the box.
+  box. Single Go binary, small enough to inspect. The recommended
+  path under the "small enough to audit" ethos.
+
+Larger multi-model runtimes (Ollama, LM Studio, ...) expose
+OpenAI-compatible endpoints and would also work, but their size
+puts them outside the auditable-by-the-user shape the rest of the
+guide commits to — left to the user's own initiative if they
+prefer one, not recommended in the docs.
 
 Pikuri stays agnostic: just needs three URLs (or one URL with
 three model names if multiplexed). No llama-swap configs shipped.

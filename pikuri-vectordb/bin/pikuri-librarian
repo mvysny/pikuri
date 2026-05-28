@@ -63,10 +63,12 @@ openai_api_base = "#{server}/v1"
 
 # RubyLLM's OpenAI provider shares one +openai_api_base+ between
 # +RubyLLM.chat+ and +RubyLLM.embed+, so chat and embedder must live
-# behind the same URL. With a single llama-server you get one model;
-# llama-swap or Ollama let one URL host both models and switch by name.
-# The reranker is *not* an OpenAI-shape call — it goes through
-# +Reranker::LlamaServer+ directly and can live on its own URL.
+# behind the same URL. The recommended setup is +llama-swap+ in
+# front of +llama-server+ — one port, multiple models, switched by
+# name on the request. The reranker is *not* an OpenAI-shape call;
+# it goes through +Reranker::LlamaServer+ directly and can live on
+# its own URL (its own +llama-server+ port, or another +llama-swap+
+# slot).
 RubyLLM.configure do |c|
   c.openai_api_base           = openai_api_base
   c.openai_api_key            = ENV.fetch(api_key_env, 'not-needed')

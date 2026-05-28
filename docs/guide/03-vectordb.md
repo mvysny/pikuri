@@ -80,21 +80,28 @@ Three serving options, none of which are pikuri's problem to
   thin reverse proxy in front of `llama-server` that lazy-loads
   the requested model on each request. One port, multiple models;
   sequential — the first query after a chat turn pays the
-  load-from-disk latency. Fits on a small box.
-- **[Ollama](https://ollama.com)** or **LM Studio.** Native
-  multi-model with OpenAI-compatible endpoints. Works out of the
-  box if you already use one of them.
+  load-from-disk latency. Fits on a small box. Single Go binary,
+  small enough to inspect.
+
+Larger multi-model runtimes (Ollama, LM Studio, friends) also
+expose OpenAI-compatible endpoints and would technically work,
+but they're substantial pieces of software in their own right —
+big enough that "I trust the thing serving my embeddings" stops
+being a one-evening read. The guide sticks to `llama.cpp` plus
+`llama-swap` for the same reason chapter 1 walks you through
+`llama-server` instead of a hosted assistant: small, auditable,
+nothing on the box you didn't put there yourself.
 
 A wrinkle on layout: `ruby_llm`'s OpenAI provider has a single
 `openai_api_base` config that both `RubyLLM.chat` and
 `RubyLLM.embed` go through. The chat model and the embedder
 **must therefore live behind the same URL** — three
-`llama-server` ports on the same machine won't work directly. The
-reranker is unaffected (it goes through `Reranker::LlamaServer`,
-which takes its own endpoint), so it can live on its own port. So
-in practice: pick `llama-swap` or Ollama for chat + embedder on
-one URL, and run the reranker on a second port if you want it
-separated, or in the same `llama-swap` config if you don't.
+`llama-server` ports on the same machine won't work directly.
+The reranker is unaffected (it goes through `Reranker::LlamaServer`,
+which takes its own endpoint), so it can live on its own port.
+In practice: put chat + embedder behind one `llama-swap` config,
+and run the reranker either through the same `llama-swap` or as
+its own `llama-server` process on a separate port.
 
 If you don't want to deal with the reranker yet, the demo accepts
 `--no-reranker` and falls back to vector-only top-k. You lose some

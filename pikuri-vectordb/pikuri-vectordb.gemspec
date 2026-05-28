@@ -31,8 +31,8 @@ Gem::Specification.new do |spec|
     Three model endpoints in the full setup — chat (via ruby_llm),
     an embedder (via +RubyLLM.embed+), and an optional reranker
     (HTTP +/v1/rerank+). Local llama.cpp serves all three by
-    default; see the gem's README for the three-server vs
-    llama-swap vs Ollama tradeoffs.
+    default; see the gem's README for the three-llama-server vs
+    llama-swap tradeoff.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'

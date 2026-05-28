@@ -90,16 +90,20 @@ c.add_extension(
 
 A full assistant setup wants three LLM endpoints: chat (via
 `ruby_llm`), an embedder (via `RubyLLM.embed`), and an optional
-reranker (HTTP `/v1/rerank`). Three serving options the user can
-pick (pikuri stays agnostic — it just needs the URLs):
+reranker (HTTP `/v1/rerank`). Two `llama.cpp`-shaped serving
+options (pikuri stays agnostic — it just needs the URLs):
 
 - **Three llama-server processes** on different ports. Simplest,
   parallel, needs the RAM/VRAM headroom.
 - **[llama-swap](https://github.com/mostlygeek/llama-swap).** One
   port, lazy-loads on request. Sequential — first query after a
   chat turn pays the load latency — but fits on a small box.
-- **Ollama / LM Studio.** Native multi-model with
-  OpenAI-compatible endpoints. Works out of the box.
+  Single Go binary, small enough to inspect.
+
+Larger multi-model runtimes (Ollama, LM Studio, ...) expose
+OpenAI-compatible endpoints and would also work, but pikuri's
+"small enough to audit" ethos keeps the recommended path on
+`llama.cpp` + `llama-swap`.
 
 ## Further reading
 

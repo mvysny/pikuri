@@ -17,9 +17,10 @@ module Pikuri
       #
       # * **Bring your own.** +Backend::Chroma.new(host:, port:,
       #   collection:)+ against an existing chroma deployment
-      #   (production cluster, docker-compose stack, an Ollama
-      #   stack that bundles chroma, ...). The host owns the
-      #   process; this class is purely the HTTP client.
+      #   (production cluster, docker-compose stack, a chroma
+      #   already running on the host for an unrelated project).
+      #   The host owns the process; this class is purely the
+      #   HTTP client.
       # * **Let pikuri manage it.** {ChromaServer.ensure_running}
       #   spawns and supervises a chroma container under the
       #   +pikuri-internal-chroma+ name, against a pinned image,
