@@ -207,6 +207,16 @@ heart of this chapter:
      to avoid: a plain *networked* VM bounds host secrets but not
      project exfil — the `.env` still `curl`s out. It's cutting the
      VM's egress, not wrapping it in a VM, that breaks leg (c).
+
+     The sharper trap below that: an *allowlisted* endpoint becomes
+     an exfil channel when it's one your agent already authenticates
+     to. Anthropic's recent containment writeup ([How we contain
+     Claude](https://www.anthropic.com/engineering/how-we-contain-claude))
+     reports this attack against Claude Cowork — a malicious file
+     in the mounted workspace gets the agent to leak data through
+     the legitimate, allow-listed `api.anthropic.com` connection —
+     and the fix they shipped: a MITM proxy inside the VM that
+     validates session tokens, not just hostnames.
 4. **If you trust none of it, wrap the whole process** in a
    container or VM. That's the outer boundary `--yolo` assumes.
 
@@ -469,6 +479,15 @@ safe-by-default; a sandbox makes them reversible), leaving the
 human to be asked **rarely, and only about the genuinely
 consequential** — the irreversible, the out-of-workspace, the
 outbound.
+
+The same Anthropic writeup gives concrete numbers for both halves
+of that load-shedding. Users approved roughly **93%** of Claude
+Code permission prompts — the fatigue effect, measured. Adding
+OS-level sandboxes (Seatbelt on macOS, **bubblewrap on Linux** —
+the same tool pikuri uses) cut prompt volume by **84%**, leaving
+the remaining checks rare enough to land. That's the empirical
+case for combining the two: a sandbox bounds the routine, so the
+human has attention to spend on what *does* still reach them.
 
 > **TODO — not yet shipped.** Today's `Confirmer` is binary
 > (approve/deny) and prompts on every `write` and `bash`. The plan
