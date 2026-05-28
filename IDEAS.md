@@ -30,18 +30,13 @@ in scope of the design exercise, considered, and left out on purpose.
 - **LSP tool.** opencode wires an LSP client for hover / definition /
   diagnostics. Big-ticket feature; deferred until there's a concrete
   use case beyond "opencode has one."
-- **TODO / plan tools.** opencode and Claude Code both maintain a
-  per-session todo list the model can edit. Useful, but it's
-  session-state machinery pikuri doesn't have today — same blocker as
-  resumable sub-agents below.
 - **Streaming output from bash.** `Code::Bash` returns a single
   observation `String`. Live process output is meant to stay on the
   listener stream once we add a TUI; meanwhile callers bound wall time
   with coreutils' `timeout`.
 - **Session persistence / resumable sub-agents.** opencode's `task`
   tool persists sub-sessions; `Tool::SubAgent` doesn't. Worth doing
-  the day we have any other reason to introduce a session store
-  (todo/plan tools being the obvious second customer).
+  the day we have any other reason to introduce a session store.
 
 ## Security perspective
 
