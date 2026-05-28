@@ -42,53 +42,98 @@ no answer.** We'll start one next.
 
 ## 1. Install llama.cpp
 
-`llama.cpp` is the project that actually runs the model. Ubuntu
-24.04 and newer have it packaged:
+`llama.cpp` is the project that actually runs the model. **Use
+Ubuntu 26.04 LTS or newer** — that's the first Ubuntu release
+packaging `llama-server` build `b8681`, which is recent enough to
+include built-in multi-model routing. We rely on that in step 3
+below (and in [chapter 3](03-vectordb.md), where we run a chat
+model and an embedding model from the same server). Older Ubuntu
+releases ship a `llama.cpp` from before the
+[model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp)
+landed in late 2025; on those, you'd have to build from source or
+run a separate proxy like `llama-swap` to juggle models.
+
+On Ubuntu 26.04+:
 
 ```sh
 sudo apt install llama.cpp
 ```
 
 This gives you `llama-server` on your `$PATH`. If your distro
-doesn't package it, follow the build instructions at
-<https://github.com/ggml-org/llama.cpp> — pikuri only needs the
-`llama-server` binary.
+doesn't package a recent enough version, follow the build
+instructions at <https://github.com/ggml-org/llama.cpp> — pikuri
+only needs the `llama-server` binary.
 
-## 2. Start the model
+## 2. Pull the model
 
 The model `pikuri-chat` is wired for is
 `unsloth/Qwen3.6-35B-A3B-GGUF` — a mixture-of-experts model from
 the Qwen series, quantized by the folks at Unsloth so it fits on
-regular hardware. `llama-server` can download it from Hugging Face
-for you on first run:
+regular hardware. `llama-server` itself is the download tool: run
+it once pointing at the Hugging Face repo, and the GGUF lands in
+`~/.cache/llama.cpp/`:
 
 ```sh
-llama-server \
-  -hf unsloth/Qwen3.6-35B-A3B-GGUF \
-  --hf-file Qwen3.6-35B-A3B-UD-Q4_K_M.gguf \
-  -c 65536 \
-  --jinja
+llama-server -hf unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
 ```
 
-What each flag does:
+The `:Q4_K_M` suffix picks the Q4_K_M quantization (good
+size/quality tradeoff) out of the several the repo offers. Once
+the progress bar finishes and you see *"server is listening on
+port 8080"*, the model is cached — hit `Ctrl+C` to stop. (If you
+only ever want one model and don't care about multi-model
+serving, you can leave this running and skip step 3.)
 
-- `-hf unsloth/Qwen3.6-35B-A3B-GGUF` — Hugging Face repo to pull
-  from.
-- `--hf-file Qwen3.6-35B-A3B-UD-Q4_K_M.gguf` — pick the Q4_K_M
-  quantization (good size/quality tradeoff).
+## 3. Start llama-server in multi-model mode
+
+Now start `llama-server` with no model specified. It boots into
+router mode, scans `~/.cache/llama.cpp/` for GGUFs you've pulled,
+and loads each one on demand when an API request names it:
+
+```sh
+llama-server -c 65536 --jinja
+```
+
+What the flags do — these are now defaults inherited by every
+model the router loads, not flags for a single model:
+
 - `-c 65536` — 64K context window. Pikuri's agent loop accumulates
   tool observations into the context, so headroom matters.
 - `--jinja` — enable Jinja chat templates. The Qwen3 series needs
   this for correct tool-call formatting.
 
-**Expect this to be slow on CPU.** A 35B-parameter
-mixture-of-experts model running on CPU can manage a few tokens
-per second. If you have an NVIDIA or AMD GPU with enough VRAM,
-add `-ngl 99` to offload all layers onto the GPU — this is the
-single biggest speedup you can get. See `llama-server --help` and
-the [llama.cpp docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
+Only one model is resident at a time, so switching has an
+unload/reload cost (a few seconds off an SSD). The win is that no
+separate `llama-swap` proxy is needed: chapter 3 will pull an
+embedding model with another `llama-server -hf …:…` invocation,
+and this same router process will pick it up on next request.
+
+**Memory.** Q4_K_M of this 35B-A3B model needs **~32 GB of
+memory** for the weights plus KV cache.
+
+**Best path on a typical workstation: integrated GPU with 32 GB
+allocated as VRAM.** Modern AMD APUs let you carve a chunk of
+system RAM out for the iGPU via a BIOS setting (commonly named
+*UMA Frame Buffer Size* or *Variable Graphics Memory*) — set it
+to 32 GB. Apple Silicon does this automatically. Then pass
+`-ngl 99` to push every layer onto the iGPU. Even though it's
+the same physical RAM, the iGPU pathway is dramatically faster
+than CPU-only inference. A discrete NVIDIA or AMD card with
+≥32 GB VRAM works the same way.
+
+**If you don't have 32 GB to spare**, use a smaller model — a
+7B-parameter Q4 GGUF fits in 4–6 GB, a 13B in 8–10 GB. **Ask
+your favourite AI assistant to suggest a GGUF that fits your CPU,
+GPU, and RAM** — they're good at this, and pikuri serves whatever
+`llama-server` loads, so swapping is just a different `-hf …:…`
+line in step 2.
+
+Without GPU offload you can still run on CPU, but expect a few
+tokens per second on a 35B-class model. See `llama-server --help`
+and the [llama.cpp docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
 for tuning options (`-t` thread count, `-ngl N` partial GPU
-offload, `--mlock`, and friends).
+offload, `--mlock`, and friends). In router mode, every flag you
+pass here becomes a default for the models the router loads.
 
 The server binds to `127.0.0.1:8080` by default, and `pikuri-chat`
 is wired to `http://localhost:8080/v1` — so if you're running both
@@ -96,7 +141,7 @@ on the same machine, no further configuration is needed. To talk
 to a server elsewhere, pass `--server http://host:port` on the
 `pikuri-chat` command line.
 
-## 3. Talk to it
+## 4. Talk to it
 
 In a second terminal, leaving `llama-server` running:
 
@@ -225,7 +270,7 @@ privacy posture.
 
 ### Recommended setup for best privacy
 
-1. Run `llama-server` locally (Step 2 above).
+1. Run `llama-server` locally (Steps 2–3 above).
 2. Register a free Brave Search API key and `export
    BRAVE_SEARCH_API_KEY=…`.
 3. Leave Exa unset.
