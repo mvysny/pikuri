@@ -847,6 +847,19 @@ Documented in the gem's yardoc.
   from?) aren't worth solving when "one focused corpus per use
   case" — private notes, company handbook, project docs — is the
   realistic shape. Revisit if a concrete need arrives.
+- **Multi-source roots in one corpus.** A `source: '...'` (singular)
+  surface ships in v1 — single file or single directory tree.
+  An earlier `sources: ['~/notes', '~/docs']` form was scoped
+  initially and pulled back because same-named files across roots
+  produce identical `(source, offset)` keys, hence identical
+  `"source:offset"` IDs, and `Backend#upsert`'s replace-by-id
+  semantics would silently let the second root's chunks overwrite
+  the first's (same shape on Chroma — server-side). The
+  disambiguation strategies (root-index prefix in `source`,
+  content-hash IDs, per-root collection) all have ergonomic costs
+  that aren't worth paying without a concrete user. Hosts that
+  need multiple roots today can symlink them under one parent
+  directory.
 - **Auto-watch / incremental reindex.** Listen-gem dep is cheap;
   the diff logic (which chunks survived, which got replaced, which
   got deleted) is the hard part. v1 ships `vectordb_reindex` (nuke

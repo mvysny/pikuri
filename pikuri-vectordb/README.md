@@ -61,7 +61,7 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_extension(
     Pikuri::VectorDb::Extension.new(
       backend: backend,
-      sources: ['~/notes', '~/docs'],
+      source: '~/notes',
     )
   )
 end

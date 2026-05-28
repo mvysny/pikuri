@@ -91,17 +91,30 @@ module Pikuri
 
       # @param backend [#upsert, #query, #delete_all, #count]
       #   any {Backend} implementation.
-      # @param sources [Array<String, Pathname>] paths to index.
-      #   Files index directly; directories are walked
-      #   recursively. Tilde-expanded.
+      # @param source [String, Pathname] path to index. A file
+      #   indexes directly; a directory is walked recursively.
+      #   Tilde-expanded.
       # @param embedder [#embed] an {Embedder} or anything else
       #   responding to +embed(Array<String>) -> Array<Array<Float>>+.
       # @param chunker [#chunk] a {Chunker::FixedWindow} or
       #   anything else responding to +chunk(String) -> Array<String>+.
       # @return [Indexer]
-      def initialize(backend:, sources:, embedder:, chunker:)
+      #
+      # == Why a single source (not an array)
+      #
+      # v0 of this API took +sources: ['~/notes', '~/docs']+
+      # and used +path.relative_path_from(root)+ to derive
+      # {Chunk.source}. Two files named +cooking.md+ across
+      # different roots would produce identical +source+
+      # values, hence identical +"#{source}:#{offset}"+ IDs;
+      # {Backend#upsert}'s replace-by-id semantics would
+      # silently let the second file's chunks overwrite the
+      # first's. Single source eliminates the clash entirely.
+      # Multiple-roots support is deferred — see IDEAS.md
+      # §"Vector DB / RAG" → "Deferred".
+      def initialize(backend:, source:, embedder:, chunker:)
         @backend  = backend
-        @sources  = sources.map { |s| Pathname.new(s).expand_path }
+        @source   = Pathname.new(source).expand_path
         @embedder = embedder
         @chunker  = chunker
       end
@@ -114,11 +127,11 @@ module Pikuri
       def index_all!
         files = enumerate_files
         if files.empty?
-          LOGGER.warn("no indexable files found across #{@sources.length} source(s)")
+          LOGGER.warn("no indexable files found under source: #{@source}")
           return 0
         end
 
-        LOGGER.info("indexing #{files.length} file(s) from #{@sources.length} source(s)")
+        LOGGER.info("indexing #{files.length} file(s) from #{@source}")
         started = Time.now
         total_chunks = 0
         files.each_with_index do |(root, path), i|
@@ -159,23 +172,21 @@ module Pikuri
 
       private
 
-      # Walk every configured source, return a flat list of
-      # +[root, file_path]+ pairs. +root+ is the source root the
-      # file lives under, used later to compute the relative
-      # +Chunk.source+. Sources that point at a single file land
-      # as +[file.parent, file]+ — citation is just the basename.
-      # Sources that don't exist on disk produce a WARN and are
-      # skipped.
+      # Walk the configured source, return an array of
+      # +[root, file_path]+ pairs. +root+ is the source root
+      # used later to compute the relative +Chunk.source+. A
+      # source that points at a single file lands as
+      # +[file.parent, file]+ — citation is just the basename.
+      # A source that doesn't exist on disk produces a WARN and
+      # an empty array.
       def enumerate_files
-        @sources.flat_map do |root|
-          if root.file?
-            [[root.parent, root]]
-          elsif root.directory?
-            list_files(root).map { |f| [root, f] }
-          else
-            LOGGER.warn("source path does not exist or is not a regular file/dir: #{root}")
-            []
-          end
+        if @source.file?
+          [[@source.parent, @source]]
+        elsif @source.directory?
+          list_files(@source).map { |f| [@source, f] }
+        else
+          LOGGER.warn("source path does not exist or is not a regular file/dir: #{@source}")
+          []
         end
       end
 

@@ -37,9 +37,9 @@ describe Pikuri::VectorDb::Indexer do
     path
   end
 
-  def build_indexer(sources: [root.to_s])
+  def build_indexer(source: root.to_s)
     Pikuri::VectorDb::Indexer.new(
-      backend: backend, sources: sources,
+      backend: backend, source: source,
       embedder: fake_embedder, chunker: fake_chunker
     )
   end
@@ -129,27 +129,25 @@ describe Pikuri::VectorDb::Indexer do
       assert_equal 2, total # "real" + "content"
     end
 
-    it 'handles multiple sources, sources may be files or directories' do
-      write('notes/a.md', 'one')
+    it 'accepts a source that points at a single file' do
       write('docs/b.md', 'two three')
-      indexer = build_indexer(sources: [(root + 'notes').to_s, (root + 'docs/b.md').to_s])
+      indexer = build_indexer(source: (root + 'docs/b.md').to_s)
 
       total = indexer.index_all!
 
-      assert_equal 3, total
+      assert_equal 2, total # "two" + "three"
       # Single-file source uses the parent dir as the root, so
-      # +Chunk.source+ for it is the file basename.
-      sources = backend.query(vector: [3.0, 0.5, 0.5], top_k: 10).map { |r| r.chunk.source }.uniq.sort
-      assert_equal ['a.md', 'b.md'], sources
+      # +Chunk.source+ is the file basename.
+      sources = backend.query(vector: [3.0, 0.5, 0.5], top_k: 10).map { |r| r.chunk.source }.uniq
+      assert_equal ['b.md'], sources
     end
 
-    it 'WARNs and continues when a source path does not exist' do
-      write('notes/real.md', 'content here')
-      indexer = build_indexer(sources: [(root + 'notes').to_s, (root + 'phantom').to_s])
+    it 'WARNs when the source path does not exist' do
+      indexer = build_indexer(source: (root + 'phantom').to_s)
 
       total = indexer.index_all!
 
-      assert_equal 2, total # "content", "here"
+      assert_equal 0, total
     end
 
     it 'returns 0 when no indexable files are found' do
