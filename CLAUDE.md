@@ -67,8 +67,11 @@ When designing new features, the closest prior art to mine:
 - **PI** — <https://github.com/earendil-works/pi>. TypeScript / Bun.
   Agent Skills standard implementation, `.agents/` cross-harness
   skill directory convention.
+- **hermes-agent** — <https://github.com/nousresearch/hermes-agent>.
+  Python. Memories are a primary concept — useful prior art for any
+  memory / "what the user is working on" feature.
 
-Both implement the [Agent Skills standard](https://agentskills.io/specification),
+Both opencode and PI implement the [Agent Skills standard](https://agentskills.io/specification),
 which is also what Claude Code follows.
 
 ## Seams (invariants)
