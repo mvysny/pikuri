@@ -343,8 +343,46 @@ process does with what's mounted in:
   becomes the reasonable default when an outer container is doing
   the work.
 
+### What it costs you
+
+The wall comes with a maintenance bill: every dev tool the agent
+reaches for has to exist inside the container, not just on your
+host. That's a longer list than it looks.
+
+- **A language runtime per MCP shape.** Node for npx-based MCPs,
+  Python for pip-based ones, plus per-MCP system deps. The
+  Playwright MCP is the costliest single case in chapter 4 even
+  when it lives in its own container — chromium, X11 socket
+  discipline, screenshot paths — and an outer-container shape
+  drags all of that into the *same* container as pikuri.
+- **Your project's toolchain.** Whatever `bash` invokes to build
+  your project — gcc, cargo, gradle, maven, the JDK, npm, ruby —
+  needs to be installed and version-aligned with your host. A
+  coding agent that can't run your build is barely one.
+- **LSPs, if you rely on them.** Language servers run inside,
+  not on your host.
+- **Caches and UID/GID.** Bind-mount `~/.gradle`, `~/.m2`,
+  `~/.cargo`, `~/.npm` and you share host caches with the agent's
+  runtime (mild trust delegation, inert content); leave them out
+  and every fresh container repays the download. Bind-mounted
+  files arrive with host ownership, so the container's user must
+  match or every `Edit` produces files the host can't modify.
+- **Image maintenance.** Each pinned version is a thing that
+  drifts. Upgrades happen inside the Dockerfile, by you, not via
+  `apt upgrade` on your host.
+
+None of these are individually hard. Stacked, they're a parallel
+dev environment to maintain — which is the operational reason
+chapter 1's recommended path stays container-free. The cost folds
+into a normal workflow only when you *already* live inside the
+container: your editor opens projects there, your shell is the
+container's shell. If your hands-on development happens on the
+host, the container is a duplicate to keep in sync, and version
+skew between the two is a steady tax.
+
 For the recommended-path use case from chapter 1, outer Docker is
-overkill — the in-process defenses are designed for that path.
+overkill — the in-process defenses are designed for that path, and
+pikuri primarily optimizes for *not* running fully inside Docker.
 This section is for the cases where you've deliberately stepped
 out of it.
 
