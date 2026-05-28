@@ -58,61 +58,70 @@ Tool-call → Observation loop from chapter 1, with the corpus
 joining `web_search` and `calculator` as one more capability the
 model reaches for when the question warrants it.
 
-## Prerequisites: three model endpoints
+## Prerequisites: three models, one server
 
-Chapter 1 needed one llama-server (chat). This chapter needs three
-models served somewhere:
+Chapter 1 already set up the piece this chapter leans on: a
+`llama-server` running in [router mode](01-chat.md#3-start-llama-server-in-multi-model-mode),
+serving every GGUF in `~/.cache/llama.cpp/` from one port. All
+this chapter does is drop two more GGUFs into that cache. The
+same router process then serves all three models — chat,
+embedder, reranker — and loads whichever one each request asks
+for.
 
-1. **Chat** — same Qwen3.6-35B you started in chapter 1.
-2. **Embedder** — a sentence-embedding model. The demo defaults
+The two extras the chapter relies on:
+
+1. **Embedder** — a sentence-embedding model. The demo defaults
    to `nomic-embed-text-v1.5` (768 dimensions, 8K context, ~150 MB
    quantized).
-3. **Reranker** — a cross-encoder. The demo defaults to
+2. **Reranker** — a cross-encoder. The demo defaults to
    `bge-reranker-v2-m3` (~300 MB quantized).
 
-Three serving options, none of which are pikuri's problem to
-*solve* — `pikuri-vectordb` just needs URLs:
+(The third — chat — is the Qwen3.6-35B you pulled in chapter 1.)
 
-- **Three `llama-server` processes** on different ports.
-  Simplest, parallel, needs the RAM/VRAM headroom for all three
-  models loaded at once.
-- **[`llama-swap`](https://github.com/mostlygeek/llama-swap).** A
-  thin reverse proxy in front of `llama-server` that lazy-loads
-  the requested model on each request. One port, multiple models;
-  sequential — the first query after a chat turn pays the
-  load-from-disk latency. Fits on a small box. Single Go binary,
-  small enough to inspect.
+Pull both into the cache the same way you pulled the chat model
+— but at `:Q8_0` instead of `:Q4_K_M`:
 
-Larger multi-model runtimes (Ollama, LM Studio, friends) also
-expose OpenAI-compatible endpoints and would technically work,
-but they're substantial pieces of software in their own right —
-big enough that "I trust the thing serving my embeddings" stops
-being a one-evening read. The guide sticks to `llama.cpp` plus
-`llama-swap` for the same reason chapter 1 walks you through
-`llama-server` instead of a hosted assistant: small, auditable,
-nothing on the box you didn't put there yourself.
+```sh
+# Embedder
+llama-server -hf nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
+# Ctrl+C once you see "server is listening on port 8080".
 
-A wrinkle on layout: `ruby_llm`'s OpenAI provider has a single
-`openai_api_base` config that both `RubyLLM.chat` and
-`RubyLLM.embed` go through. The chat model and the embedder
-**must therefore live behind the same URL** — three
-`llama-server` ports on the same machine won't work directly.
-The reranker is unaffected (it goes through `Reranker::LlamaServer`,
-which takes its own endpoint), so it can live on its own port.
-In practice: put chat + embedder behind one `llama-swap` config,
-and run the reranker either through the same `llama-swap` or as
-its own `llama-server` process on a separate port.
+# Reranker
+llama-server -hf gpustack/bge-reranker-v2-m3-GGUF:Q8_0
+# Ctrl+C once you see "server is listening on port 8080".
+```
+
+**Why a higher quant than chapter 1's chat model.** `Q4_K_M` was
+designed for the *"I have a 35B model and need to fit it in 24 GB
+of VRAM"* case — large LLMs have enough parameter redundancy to
+absorb the precision loss. Embedders and rerankers are tiny by
+comparison (~140M and ~570M parameters), so every weight is
+carrying more load. They also output things that are *directly*
+consumed downstream — a 768-dim vector that goes straight into a
+cosine-similarity calculation, or a single scalar relevance score
+— with no "recovery path" the way a chat LLM has when emitting
+the next token. Quantization noise rotates the vector or shifts
+the score, and you feel it as worse retrieval. The size cost of
+the upgrade is negligible: ~150 MB and ~600 MB at Q8_0
+respectively, against the 20 GB of the chat model.
+
+Once both are cached (the downloads finish in seconds on a decent
+connection), restart the router-mode `llama-server` from chapter
+1; it rescans on boot and the new GGUFs join the rotation. Only
+one model is resident at a time, so switching between them costs
+an unload/reload (a few seconds off an SSD), which is fine
+because each chat turn touches each model at most once.
 
 If you don't want to deal with the reranker yet, the demo accepts
 `--no-reranker` and falls back to vector-only top-k. You lose some
 precision, the rest still works.
 
-The remainder of the chapter assumes you have an endpoint serving
-both `unsloth/Qwen3.6-35B-A3B-GGUF` (chat) and
-`nomic-embed-text-v1.5` (embedder) on `http://localhost:8080`,
-and a separate endpoint serving `bge-reranker-v2-m3` on
-`http://localhost:8082`. Adjust the flags below to match your
-setup.
+The remainder of the chapter assumes a single router-mode
+`llama-server` on `http://localhost:8080` serving all three
+models. The demo binary's `--reranker-server` flag defaults to a
+separate port (a legacy from the pre-router-mode setup); pass
+`--reranker-server http://localhost:8080` to point it at the same
+router as chat and embedder.
 
 ## Run the demo
 
