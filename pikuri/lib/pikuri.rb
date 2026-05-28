@@ -10,6 +10,7 @@
 require 'pikuri-core'
 require 'pikuri-skills'
 require 'pikuri-tasks'
+require 'pikuri-memory'
 require 'pikuri-workspace'
 require 'pikuri-mcp'
 require 'pikuri-code'

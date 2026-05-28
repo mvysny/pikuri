@@ -40,6 +40,11 @@ PATH
       pikuri-core (= 0.0.3)
 
 PATH
+  remote: pikuri-memory
+  specs:
+    pikuri-memory (0.0.3)
+
+PATH
   remote: pikuri-skills
   specs:
     pikuri-skills (0.0.3)
@@ -79,6 +84,7 @@ PATH
       pikuri-code (= 0.0.3)
       pikuri-core (= 0.0.3)
       pikuri-mcp (= 0.0.3)
+      pikuri-memory (= 0.0.3)
       pikuri-skills (= 0.0.3)
       pikuri-subagents (= 0.0.3)
       pikuri-tasks (= 0.0.3)
@@ -220,6 +226,7 @@ DEPENDENCIES
   pikuri-code!
   pikuri-core!
   pikuri-mcp!
+  pikuri-memory!
   pikuri-skills!
   pikuri-subagents!
   pikuri-tasks!
@@ -267,6 +274,7 @@ CHECKSUMS
   pikuri-code (0.0.3)
   pikuri-core (0.0.3)
   pikuri-mcp (0.0.3)
+  pikuri-memory (0.0.3)
   pikuri-skills (0.0.3)
   pikuri-subagents (0.0.3)
   pikuri-tasks (0.0.3)
