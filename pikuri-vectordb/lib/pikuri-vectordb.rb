@@ -77,7 +77,15 @@ module Pikuri
     LOADER.tag = 'pikuri-vectordb'
     LOADER.push_dir(File.expand_path('.', __dir__))
     LOADER.ignore(File.expand_path('pikuri-vectordb.rb', __dir__))
+    # +LIBRARIAN+ is an +ALL_CAPS+ value constant, not a
+    # +Librarian+ module/class file — Zeitwerk's
+    # filename↔CamelCase rule would not accept it. Same
+    # pattern pikuri-subagents uses for +RESEARCHER+ /
+    # +FILE_MINER+ and pikuri-core uses for +VERSION+.
+    LOADER.ignore(File.expand_path('pikuri/vector_db/librarian.rb', __dir__))
     LOADER.setup
     LOADER.eager_load
   end
 end
+
+require_relative 'pikuri/vector_db/librarian'
