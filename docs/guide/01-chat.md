@@ -11,6 +11,15 @@ establishes the base vocabulary — `Pikuri::Agent`, `Pikuri::Tool`,
 listeners, the Thought → Tool-call → Observation loop — that
 chapters 02 and 03 build on.
 
+The defaults you're about to install are tuned for the recommended
+path: pikuri running on your own machine, on a project you'd
+already trust to live there. Within that path the built-in
+safeguards are designed to hold without you thinking about them.
+[Chapter 5](05-security.md) is the heavyweight reading for when
+you want to step outside that path — pulling in third-party
+plugins, pointing pikuri at code you don't already trust, or
+running it unattended. Until then, just follow along.
+
 ## Prerequisites
 
 You should already have a checkout and `bundle install` finished,
