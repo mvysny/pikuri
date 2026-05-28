@@ -53,16 +53,23 @@ require 'pikuri-core'
 require 'pikuri-vectordb'
 
 backend = Pikuri::VectorDb::Backend::InMemory.new
+# Or for persistent storage:
+#   backend = Pikuri::VectorDb::Backend::Chroma.new(
+#     host: 'localhost', port: 8000, collection: 'my-docs',
+#   )
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_extension(
     Pikuri::VectorDb::Extension.new(
-      backend:    backend,
-      sources:    ['~/notes', '~/docs'],
-      collection: 'my-docs',
+      backend: backend,
+      sources: ['~/notes', '~/docs'],
     )
   )
 end
 ```
+
+Collection naming is Chroma-specific so it lives on
+`Backend::Chroma.new(collection:)`, not on the Extension —
+`Backend::InMemory` has no collection concept.
 
 For hosts that want recall behind a privilege-separated sub-agent
 (the trifecta-defense pattern — see `SECURITY.md` and `IDEAS.md`
