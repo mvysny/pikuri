@@ -42,9 +42,6 @@ in scope of the design exercise, considered, and left out on purpose.
   tool persists sub-sessions; `Tool::SubAgent` doesn't. Worth doing
   the day we have any other reason to introduce a session store
   (todo/plan tools being the obvious second customer).
-- **Multi-file / multi-hunk Edit.** `Workspace::Edit` takes one
-  `old_string` → `new_string` per call. opencode bundles batch edits.
-  Wait until the cost of separate calls becomes obvious in practice.
 
 ## Security perspective
 
