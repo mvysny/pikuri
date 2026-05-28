@@ -10,6 +10,7 @@ source 'https://rubygems.org'
 # over.
 gemspec path: 'pikuri-core'
 gemspec path: 'pikuri-skills'
+gemspec path: 'pikuri-todo'
 gemspec path: 'pikuri-mcp'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-code'

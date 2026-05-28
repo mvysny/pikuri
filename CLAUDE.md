@@ -22,6 +22,9 @@ The gem inventory:
   protocol + listener stream + four stateless bundled tools
   (calculator, web search, web scrape, fetch) + `bin/pikuri-chat`.
 - `pikuri-skills` — Agent Skills standard implementation.
+- `pikuri-todo` — in-memory todo list + four content-as-identifier
+  tools (`todo_create` / `todo_in_progress` / `todo_completed` /
+  `todo_delete`).
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams +
   Read/Write/Edit/Grep/Glob.
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
@@ -29,7 +32,7 @@ The gem inventory:
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
   bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
-- `pikuri` — convenience metagem depending on all seven.
+- `pikuri` — convenience metagem depending on all eight.
 
 ## Why this exists
 
@@ -163,6 +166,12 @@ per-gem one-liners:
 - **`pikuri-skills/`** — Agent Skills implementation:
   `Skill::Catalog`, `Skill::SkillTool`, `Skill::Extension`.
   Depends on `pikuri-core`. No new runtime deps.
+- **`pikuri-todo/`** — `Todo::List` (in-memory, per-Agent) and
+  the four todo tool classes (`Todo::Create`, `Todo::InProgress`,
+  `Todo::Completed`, `Todo::Delete`) plus `Todo::Extension`.
+  Content doubles as identifier across the four tools (no item
+  IDs); state is dropped on agent close. Depends on `pikuri-core`.
+  Stdlib-only; no new runtime deps.
 - **`pikuri-workspace/`** — `Workspace::Filesystem`,
   `Workspace::Confirmer`, and the five file tools (`Read`,
   `Write`, `Edit`, `Grep`, `Glob`). Depends on `pikuri-core`.
@@ -193,7 +202,7 @@ per-gem one-liners:
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.
-- **`pikuri/`** (metagem) — `lib/pikuri.rb` is seven `require`s
+- **`pikuri/`** (metagem) — `lib/pikuri.rb` is eight `require`s
   in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 
