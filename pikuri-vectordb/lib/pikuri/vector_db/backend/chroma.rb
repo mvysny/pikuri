@@ -13,6 +13,22 @@ module Pikuri
       # on empty input + non-positive +top_k+. Where the two
       # diverge is the vector-dim contract — see below.
       #
+      # == Two ways to get one
+      #
+      # * **Bring your own.** +Backend::Chroma.new(host:, port:,
+      #   collection:)+ against an existing chroma deployment
+      #   (production cluster, docker-compose stack, an Ollama
+      #   stack that bundles chroma, ...). The host owns the
+      #   process; this class is purely the HTTP client.
+      # * **Let pikuri manage it.** {ChromaServer.ensure_running}
+      #   spawns and supervises a chroma container under the
+      #   +pikuri-internal-chroma+ name, against a pinned image,
+      #   with a bind-mounted volume in the user's cache dir.
+      #   Its +#client(collection:)+ returns a +Backend::Chroma+
+      #   pre-pointed at the supervised container. The split is
+      #   deliberate: docker lifecycle and HTTP wire protocol
+      #   have nothing in common, so each lives in its own class.
+      #
       # == Chroma v2 API
       #
       # Endpoints used:

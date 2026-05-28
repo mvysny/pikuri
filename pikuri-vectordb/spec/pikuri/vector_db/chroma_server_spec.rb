@@ -1,0 +1,215 @@
+# frozen_string_literal: true
+
+require 'spec_helper'
+require 'faraday'
+require 'fileutils'
+require 'tmpdir'
+
+describe Pikuri::VectorDb::ChromaServer do
+  JSON_HEADERS = { 'Content-Type' => 'application/json' }.freeze
+
+  let(:data_dir) { Dir.mktmpdir('pikuri-chroma-server-spec-') }
+  after { FileUtils.remove_entry(data_dir) }
+
+  # Stub the subprocess seam: capture every docker invocation,
+  # return planned results in FIFO order. Each planned result is
+  # +[exit_status, stdout]+ for the next +.wait+; +:enoent+
+  # raises +Errno::ENOENT+ to simulate `docker` missing.
+  let(:docker_calls) { [] }
+  let(:planned_results) { [] }
+
+  # Faraday stub for the heartbeat poll.
+  let(:heartbeat_stubs) { Faraday::Adapter::Test::Stubs.new }
+  let(:heartbeat_conn) do
+    Faraday.new do |f|
+      f.request :json
+      f.response :json
+      f.adapter :test, heartbeat_stubs
+    end
+  end
+
+  before do
+    calls_ref = docker_calls
+    plans_ref = planned_results
+
+    fake_proc_class = Class.new do
+      def initialize(exit_status, output)
+        @exit_status = exit_status
+        @output = output
+      end
+
+      def wait
+        status = Struct.new(:exitstatus) do
+          def success?
+            exitstatus.zero?
+          end
+        end.new(@exit_status)
+        Struct.new(:output, :status).new(@output, status)
+      end
+    end
+
+    Pikuri::Subprocess.singleton_class.send(:alias_method, :__orig_spawn, :spawn)
+    Pikuri::Subprocess.define_singleton_method(:spawn) do |*argv, **_kw|
+      calls_ref << argv
+      plan = plans_ref.shift
+      raise Errno::ENOENT, 'docker' if plan == :enoent
+
+      exit_status, output = plan
+      fake_proc_class.new(exit_status, output)
+    end
+  end
+
+  after do
+    Pikuri::Subprocess.singleton_class.send(:alias_method, :spawn, :__orig_spawn)
+    Pikuri::Subprocess.singleton_class.send(:remove_method, :__orig_spawn)
+  end
+
+  def build_server(**overrides)
+    Pikuri::VectorDb::ChromaServer.new(
+      data_dir: data_dir,
+      port: 8000,
+      healthcheck_timeout: 1,
+      connection: heartbeat_conn,
+      **overrides
+    )
+  end
+
+  describe '#initialize' do
+    it 'expands data_dir' do
+      server = Pikuri::VectorDb::ChromaServer.new(data_dir: '~/x', port: 8000)
+      assert_equal File.expand_path('~/x'), server.data_dir.to_s
+    end
+
+    it 'derives default data_dir under XDG_CACHE_HOME / pikuri / chroma' do
+      server = Pikuri::VectorDb::ChromaServer.new
+      assert_match(%r{/pikuri/chroma\z}, server.default_data_dir)
+    end
+
+    it 'exposes endpoint built from port' do
+      server = Pikuri::VectorDb::ChromaServer.new(port: 9999)
+      assert_equal 'http://localhost:9999', server.endpoint
+    end
+  end
+
+  describe '#client' do
+    it 'returns a Backend::Chroma pointed at this server' do
+      server = Pikuri::VectorDb::ChromaServer.new(port: 9876)
+      client = server.client(collection: 'guide')
+      assert_kind_of Pikuri::VectorDb::Backend::Chroma, client
+    end
+  end
+
+  describe '#ensure_running!' do
+    it 'creates the container when missing, then heartbeats' do
+      planned_results.replace([
+                                [1, ''],                 # docker inspect → missing
+                                [0, 'container-id-abc']  # docker run → ok
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{"nanosecond heartbeat":1}'] }
+
+      build_server.ensure_running!
+
+      inspect_argv, run_argv = docker_calls
+      assert_equal %w[docker inspect --format], inspect_argv[0..2]
+      assert_equal Pikuri::VectorDb::ChromaServer::CONTAINER_NAME, inspect_argv.last
+      assert_equal 'docker', run_argv[0]
+      assert_equal 'run',    run_argv[1]
+      assert_includes run_argv, '-d'
+      assert_includes run_argv, Pikuri::VectorDb::ChromaServer::IMAGE
+      assert_includes run_argv, '--label'
+      assert_includes run_argv, Pikuri::VectorDb::ChromaServer::LABEL
+      # 127.0.0.1 binding, not the docker default 0.0.0.0
+      port_publish = run_argv[run_argv.index('-p') + 1]
+      assert_equal '127.0.0.1:8000:8000', port_publish
+      # Bind-mount → /chroma/chroma
+      volume_arg = run_argv[run_argv.index('-v') + 1]
+      assert_equal "#{data_dir}:#{Pikuri::VectorDb::ChromaServer::CONTAINER_PERSIST_DIR}",
+                   volume_arg
+    end
+
+    it 'starts an existing stopped container on the pinned image' do
+      planned_results.replace([
+                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|false\n"], # stopped
+                                [0, '']                                                   # docker start
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+
+      build_server.ensure_running!
+
+      assert_equal 2, docker_calls.length
+      assert_equal 'start', docker_calls[1][1]
+    end
+
+    it 'is a no-op subprocess-wise when already running on the pinned image' do
+      planned_results.replace([
+                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+
+      build_server.ensure_running!
+
+      # Only the inspect call; no start/run.
+      assert_equal 1, docker_calls.length
+    end
+
+    it 'nukes and recreates when the running container is on a different image' do
+      planned_results.replace([
+                                [0, "chromadb/chroma:0.4.0|true\n"], # wrong image, running
+                                [0, ''],                              # docker rm -f
+                                [0, 'container-id-xyz']               # docker run
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+
+      build_server.ensure_running!
+
+      assert_equal %w[inspect rm run], docker_calls.map { |c| c[1] }
+    end
+
+    it 'raises a clear error when docker is not on PATH' do
+      planned_results.replace([:enoent])
+
+      err = assert_raises(RuntimeError) { build_server.ensure_running! }
+      assert_match(/`docker` not found on PATH/, err.message)
+    end
+
+    it 'raises with the docker output when `docker run` fails' do
+      planned_results.replace([
+                                [1, ''],
+                                [125, "docker: Error response from daemon: port already allocated\n"]
+                              ])
+
+      err = assert_raises(RuntimeError) { build_server.ensure_running! }
+      assert_match(/docker run failed/, err.message)
+      assert_match(/port already allocated/, err.message)
+    end
+
+    it 'raises when heartbeat never returns 200 within the timeout' do
+      planned_results.replace([
+                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [503, JSON_HEADERS, '{}'] }
+
+      err = assert_raises(RuntimeError) { build_server.ensure_running! }
+      assert_match(/did not become healthy/, err.message)
+      assert_match(/HTTP 503/, err.message)
+    end
+
+    it 'tolerates Faraday connection errors during the warmup window' do
+      planned_results.replace([
+                                [1, ''],          # missing
+                                [0, 'cid']        # docker run ok
+                              ])
+      # First call: connection refused; second call: 200. The
+      # supervisor must keep polling on a Faraday::Error rather
+      # than aborting.
+      call_n = 0
+      heartbeat_stubs.get('/api/v2/heartbeat') do
+        call_n += 1
+        call_n == 1 ? raise(Faraday::ConnectionFailed, 'refused') : [200, JSON_HEADERS, '{}']
+      end
+
+      build_server.ensure_running!
+      assert call_n >= 2, 'heartbeat must be polled past the first connection refusal'
+    end
+  end
+end

@@ -297,13 +297,16 @@ It has two practical limits:
   Linear in corpus size. Fine for thousands of chunks, not for
   millions.
 
-For both, the swap is `Backend::Chroma`:
+For both, the swap is `Backend::Chroma`. The recommended path is
+to let pikuri supervise the container — `Pikuri::VectorDb::ChromaServer`
+finds-or-starts a chroma container under a name pikuri owns
+(`pikuri-internal-chroma`), bind-mounts a volume under
+`~/.cache/pikuri/chroma/` for persistence, and returns a backend
+pointed at it:
 
 ```ruby
 c.add_extension Pikuri::VectorDb::Extension.new(
-  backend:  Pikuri::VectorDb::Backend::Chroma.new(
-    host:       'localhost',
-    port:       8000,
+  backend:  Pikuri::VectorDb::ChromaServer.ensure_running.client(
     collection: 'guide'
   ),
   source:   '~/path/to/corpus'
@@ -311,14 +314,25 @@ c.add_extension Pikuri::VectorDb::Extension.new(
 ```
 
 [ChromaDB](https://www.trychroma.com) is a self-hosted open-source
-vector store; persistence is on disk, query is approximate-nearest-
-neighbour, and indexing in the millions of chunks is its design
-target. Same `Pikuri::VectorDb::Backend` interface, same
+vector store; persistence is on disk, query is approximate-
+nearest-neighbour, and indexing in the millions of chunks is its
+design target. Same `Pikuri::VectorDb::Backend` interface, same
 `vectordb_search` tool, same `LIBRARIAN` persona — only the
-constructor changes. `index_on_boot: :if_empty` then becomes
-useful: Chroma persists the embeddings across pikuri runs, so the
-boot index only fires on first launch or after a manual
-`vectordb_reindex`.
+backend constructor changes. `index_on_boot: :if_empty` then
+becomes useful: Chroma persists the embeddings across pikuri
+runs, so the boot index only fires on first launch or after a
+manual `vectordb_reindex`.
+
+`ChromaServer.ensure_running` requires `docker` on `PATH`; the
+container image tag is pinned in `ChromaServer::IMAGE`. The
+container is named under a `pikuri-internal-` prefix that pikuri
+considers fully owned, and is recreated transparently if the
+pinned image is bumped between pikuri versions — your data lives
+in the bind-mounted volume, which is yours and is never touched.
+If `docker` is unavailable, or you'd rather manage chroma
+yourself (a production cluster, a shared docker-compose stack),
+point `Backend::Chroma.new(host:, port:, collection:)` at it
+directly and skip the supervisor.
 
 `pgvector` / `Qdrant` / others are reasonable backends and would
 be similarly thin Faraday clients; they're deferred until a
