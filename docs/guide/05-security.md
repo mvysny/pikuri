@@ -343,10 +343,9 @@ process does with what's mounted in:
   `-e` does its full job from inside any container; chapter 4's
   "scope the token tightly" applies unchanged.
 - **Bubblewrap inside is mostly redundant.** The outer container
-  already isolates `bash`; running Bubblewrap inside it adds
-  little for a measurable performance cost. `Sandbox::NONE`
-  becomes the reasonable default when an outer container is doing
-  the work.
+  already isolates `bash`; running Bubblewrap inside adds little.
+  `Sandbox::NONE` becomes the reasonable default when an outer
+  container is doing the work.
 
 ### What it costs you
 
