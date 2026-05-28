@@ -118,10 +118,11 @@ precision, the rest still works.
 
 The remainder of the chapter assumes a single router-mode
 `llama-server` on `http://localhost:8080` serving all three
-models. The demo binary's `--reranker-server` flag defaults to a
-separate port (a legacy from the pre-router-mode setup); pass
-`--reranker-server http://localhost:8080` to point it at the same
-router as chat and embedder.
+models. The demo binary's `--reranker-server` defaults to the
+same URL as `--server`, so no extra flag is needed for that
+case; pass `--reranker-server` only if you'd rather keep the
+reranker pinned in its own `llama-server` instance on a separate
+port.
 
 ## Run the demo
 

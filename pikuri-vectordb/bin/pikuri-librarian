@@ -24,7 +24,7 @@ require 'pikuri-vectordb'
 server          = 'http://localhost:8080'
 model           = 'unsloth/Qwen3.6-35B-A3B-GGUF'
 embed_model     = 'nomic-embed-text-v1.5'
-reranker_server = 'http://localhost:8082'
+reranker_server = nil # defaults to +server+; override for a separate reranker host
 reranker_model  = 'bge-reranker-v2-m3'
 use_reranker    = true
 source          = File.expand_path('../../docs/guide', __dir__)
@@ -35,10 +35,10 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-librarian [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--server URL', "Chat + embedder base URL (default: #{server})") { |v| server = v }
+  opts.on('--server URL', "llama-server base URL — chat, embedder, and reranker by default (default: #{server})") { |v| server = v }
   opts.on('--model NAME', "Chat model identifier (default: #{model})") { |v| model = v }
   opts.on('--embed-model NAME', "Embedding model identifier (default: #{embed_model})") { |v| embed_model = v }
-  opts.on('--reranker-server URL', "Reranker base URL (default: #{reranker_server})") { |v| reranker_server = v }
+  opts.on('--reranker-server URL', 'Reranker base URL (default: same as --server)') { |v| reranker_server = v }
   opts.on('--reranker-model NAME', "Reranker model identifier (default: #{reranker_model})") { |v| reranker_model = v }
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
@@ -58,17 +58,20 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
 end
 
 server          = server.chomp('/')
-reranker_server = reranker_server.chomp('/')
+reranker_server = (reranker_server || server).chomp('/')
 openai_api_base = "#{server}/v1"
 
-# RubyLLM's OpenAI provider shares one +openai_api_base+ between
-# +RubyLLM.chat+ and +RubyLLM.embed+, so chat and embedder must live
-# behind the same URL. The recommended setup is +llama-swap+ in
-# front of +llama-server+ — one port, multiple models, switched by
-# name on the request. The reranker is *not* an OpenAI-shape call;
-# it goes through +Reranker::LlamaServer+ directly and can live on
-# its own URL (its own +llama-server+ port, or another +llama-swap+
-# slot).
+# A single +llama-server+ running in router mode serves all three
+# models — chat, embedder, and reranker — and dispatches each
+# request to the matching cached GGUF. RubyLLM's OpenAI provider
+# shares one +openai_api_base+ between +RubyLLM.chat+ and
+# +RubyLLM.embed+, which is fine here because both naturally live
+# at +server+. The reranker is *not* an OpenAI-shape call (it goes
+# through +Reranker::LlamaServer+ against +POST /v1/rerank+) so it
+# takes its own endpoint argument — defaulted to +server+ above,
+# overridable via +--reranker-server+ if you'd rather keep the
+# reranker pinned in its own llama-server instance instead of
+# sharing the router's swap budget.
 RubyLLM.configure do |c|
   c.openai_api_base           = openai_api_base
   c.openai_api_key            = ENV.fetch(api_key_env, 'not-needed')
