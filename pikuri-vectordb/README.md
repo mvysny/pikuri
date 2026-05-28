@@ -90,20 +90,27 @@ c.add_extension(
 
 A full assistant setup wants three LLM endpoints: chat (via
 `ruby_llm`), an embedder (via `RubyLLM.embed`), and an optional
-reranker (HTTP `/v1/rerank`). Two `llama.cpp`-shaped serving
-options (pikuri stays agnostic — it just needs the URLs):
+reranker (HTTP `/v1/rerank`). Recommended setup: **one
+`llama-server` running in router mode** — started with no
+`--model` flag, it serves every GGUF in `~/.cache/llama.cpp/`
+from a single port and loads whichever model each request asks
+for. Requires a recent enough `llama.cpp` build to include the
+[model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp);
+Ubuntu 26.04+ packages one. The guide's
+[chapter 1](../docs/guide/01-chat.md) walks through the setup;
+[chapter 3](../docs/guide/03-vectordb.md) adds the embedder and
+reranker on top.
 
-- **Three llama-server processes** on different ports. Simplest,
-  parallel, needs the RAM/VRAM headroom.
-- **[llama-swap](https://github.com/mostlygeek/llama-swap).** One
-  port, lazy-loads on request. Sequential — first query after a
-  chat turn pays the load latency — but fits on a small box.
-  Single Go binary, small enough to inspect.
+If you'd rather pin the reranker in its own process — to avoid
+paying the router's unload/reload cost on rerank requests —
+`Reranker::LlamaServer` takes its own `endpoint:` argument and
+can point at a separate `llama-server`. Otherwise pikuri stays
+agnostic: it just needs URLs.
 
 Larger multi-model runtimes (Ollama, LM Studio, ...) expose
 OpenAI-compatible endpoints and would also work, but pikuri's
 "small enough to audit" ethos keeps the recommended path on
-`llama.cpp` + `llama-swap`.
+`llama.cpp` alone.
 
 ## Further reading
 

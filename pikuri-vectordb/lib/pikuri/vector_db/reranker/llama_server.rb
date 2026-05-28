@@ -40,11 +40,12 @@ module Pikuri
       # == Configuration
       #
       # +endpoint:+ is the base URL (e.g.
-      # +'http://localhost:8082'+). +/v1/rerank+ is appended
-      # internally — pass the same URL the user would for
-      # embedder or chat, even though it's most likely a
-      # different llama-server process or a different
-      # llama-swap slot.
+      # +'http://localhost:8080'+). +/v1/rerank+ is appended
+      # internally. Most setups point this at the same
+      # router-mode +llama-server+ as chat and embedder — one
+      # process, one port. Pass a separate URL only if you want
+      # the reranker resident in its own +llama-server+ while
+      # the router swaps chat and embedder.
       #
       # +model:+ is optional. llama.cpp typically infers the
       # loaded model and doesn't require it in the request;

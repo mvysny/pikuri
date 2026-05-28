@@ -791,17 +791,18 @@ bundled `LIBRARIAN` persona referencing `vectordb_search` only.
 
 `bin/pikuri-assistant` ends up wanting three LLM endpoints: chat
 (multi-GB), embedder (200 MB – 1 GB), reranker (300 MB – 1 GB).
-Two `llama.cpp`-shaped options the user faces, neither of which
-is pikuri's problem to *solve* but both need to be in the docs:
+The recommended path on a `llama.cpp` recent enough to include
+[model management](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp)
+(Ubuntu 26.04+ packages such a build):
 
-- **Three llama-servers on different ports.** Simplest, runs in
-  parallel, needs the RAM/VRAM headroom. Documented default in
-  the demo.
-- **[llama-swap](https://github.com/mostlygeek/llama-swap).**
-  Single port, lazy-loads on request. Sequential — first query
-  after a chat turn pays the load latency — but fits on a small
-  box. Single Go binary, small enough to inspect. The recommended
-  path under the "small enough to audit" ethos.
+- **One `llama-server` in router mode.** Started with no
+  `--model` flag, it scans `~/.cache/llama.cpp/` and serves every
+  cached GGUF from the same port, loading whichever model each
+  request names. Single process, single port, no separate proxy
+  — supersedes the older `llama-swap` recommendation. Switching
+  between models costs an unload/reload (a few seconds off an
+  SSD), which is fine because each chat turn touches each model
+  at most once.
 
 Larger multi-model runtimes (Ollama, LM Studio, ...) expose
 OpenAI-compatible endpoints and would also work, but their size
@@ -809,8 +810,10 @@ puts them outside the auditable-by-the-user shape the rest of the
 guide commits to — left to the user's own initiative if they
 prefer one, not recommended in the docs.
 
-Pikuri stays agnostic: just needs three URLs (or one URL with
-three model names if multiplexed). No llama-swap configs shipped.
+Pikuri stays agnostic: just needs URLs. Hosts that want the
+reranker resident while the router swaps chat/embed can point
+`Reranker::LlamaServer.new(endpoint: …)` at a second
+`llama-server` and the rest of the agent stays unchanged.
 
 ### Trifecta
 
