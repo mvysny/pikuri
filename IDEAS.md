@@ -81,27 +81,6 @@ still on the table:
 - Content-level defenses against `web_scrape` injection beyond
   persona separation (provenance tags are the obvious shape).
 
-### DinD — why both flavors are broken
-
-The "yolo-in-docker" trajectory from the permission-system deferral
-runs into this the moment any tool inside the container needs Docker
-itself (spawning test containers, browser sandboxes, …):
-
-- **Mounted `/var/run/docker.sock`** lets the inner container talk to
-  the host's root-owned Docker daemon, which accepts requests to mount
-  any host path into any new container. From inside:
-  `docker run -v /:/host alpine` gives you the whole host filesystem.
-  Root-equivalent escape in one API call.
-- **Privileged DinD** (`--privileged` with a nested `dockerd`)
-  disables most kernel isolation — seccomp, AppArmor, capability set,
-  device cgroup whitelist. Barely a boundary at that point.
-
-If a future pikuri-code-in-docker ever needs Docker-the-capability,
-**don't nest**: run pikuri outside the container, isolate the *risky
-tool* per-invocation with bubblewrap / nsjail / Landlock / a
-Firecracker microVM. Sysbox or rootless Podman-in-Podman are escape
-hatches if true nesting is unavoidable.
-
 ### Unsandboxed Bash modes
 
 `Code::Bash::Sandbox::Bubblewrap` constrains `Bash` to the workspace's
@@ -155,46 +134,25 @@ scan, with user-curation as the first line of defense. Open:
 
 ### Confirmer as a first-class, last-line-of-defense control
 
-Recorded from the design discussion that produced the security-models
-menu in [`SECURITY.md`](SECURITY.md) §"The kit, by harness shape". The
-conclusion: a coding agent can't break the trifecta (its job *is*
-read-source + pull-deps + run-builds), so for that harness the
-trifecta-break stops being pikuri's security model and the `Confirmer`
-has to graduate from "UX backstop" (today's "Non-goals" framing) to a
-*named* control — the thing that stops a poisoned context from leaking
-once every structural defense upstream has been spent.
+The *role* — last-line-of-defense for the parent agent in
+`bin/pikuri-code`, where structural defense has run out and the
+human gate is what stops a poisoned context from leaking — is now
+documented in [chapter 5 §"The human gate, and why fatigue is the
+enemy"](docs/guide/05-security.md). The two requirements (bother the
+human only on the genuinely consequential; be excellent when it does
+fire) and the dependency on the rest of the kit carrying the routine
+load are stated there.
 
-Promoting it that way imposes two requirements that pull against each
-other, and both have to hold:
-
-- **Bother the human only in specific cases.** A confirmer that prompts
-  on every in-workspace edit trains the user to mash "y" — and a
-  fatigued user clicking through is exactly how Example 5 lands. So the
-  *other* mechanisms (workspace containment, Bubblewrap, a future egress
-  allowlist) have to carry the routine load, leaving the Confirmer to
-  fire only on the genuinely consequential: irreversible, or
-  out-of-workspace, or egress-bearing. Rare, not chatty — the existing
-  `Confirmer` yardoc already bets "make them rare rather than smart."
-- **Be excellent when it does fire.** The one prompt that matters —
-  "this command will POST `.env` to attacker.com" — is caught only if
-  the human can actually *see* the consequence. That argues the
-  Confirmer should receive structured action context (kind, target,
-  egress destination, in / out of workspace), not the pre-baked prompt
-  String it can only echo today, so the load-bearing presentation
-  (headline the destination, not the 80-char `curl` pipe) can live at
-  the seam.
-
-So the role is the *last* line of defense, not a typo-catcher: the
-structural mechanisms shrink the set of moments a human is asked about,
-and the Confirmer makes each surviving moment decidable. It stays
-"attention, not isolation" — worth zero unattended, collapsible by
-fatigue — which is *why* it only works backstopped by the rest of the
-kit, never alone.
-
-Deliberately not sketching the API here. The mechanical wishlist —
-per-pattern stickiness, risk tiers, dry-run preview, time-bound
-approvals — is the next section; this entry records *why* the Confirmer
-earns that investment and what role it plays. Pick it up later.
+The not-yet-shipped technical piece: `Confirmer#confirm?` today takes
+a pre-baked prompt String it can only echo. To live up to the chapter
+5 framing — "headline the consequence, not the 80-char `curl` pipe"
+— the call needs **structured action context** (kind: write / bash /
+fetch; target path or URL; egress destination; in/out of workspace),
+so the seam can render the load-bearing presentation rather than
+echoing whatever the caller built. Composes with the per-pattern
+stickiness wishlist in §"Permission model needs granularity" below —
+sticky rules key naturally on structured fields, badly on raw
+strings.
 
 ### Permission model needs granularity
 
@@ -356,18 +314,6 @@ default. PI is thus prior art for **"ship the sandbox primitive
 separately, let the user opt in at the weight they need"** —
 different shape from opencode's explicit "we're not a sandbox, run
 it in Docker yourself."
-
----
-
-The two angles previously flagged as load-bearing: prompt
-injection from tool output (now defended structurally via
-privilege-separated sub-agents — see
-[`SECURITY.md`](SECURITY.md) §"Prompt injection"; the worked
-attacks are in [chapter 5 of the guide](docs/guide/05-security.md)),
-and
-`Bash` bypassing the workspace seam (still an open observation:
-`--no-sandbox` is documented as "use inside an outer sandbox only"
-but nothing enforces it — see §"Unsandboxed Bash modes" above).
 
 ## Personas for `Tool::SubAgent`
 
