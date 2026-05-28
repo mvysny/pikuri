@@ -15,6 +15,7 @@ gemspec path: 'pikuri-mcp'
 gemspec path: 'pikuri-workspace'
 gemspec path: 'pikuri-code'
 gemspec path: 'pikuri-subagents'
+gemspec path: 'pikuri-vectordb'
 gemspec path: 'pikuri-assistant'
 gemspec path: 'pikuri'
 

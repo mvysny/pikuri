@@ -15,8 +15,8 @@ Gem::Specification.new do |spec|
     file that +require+'s each sibling gem; +gem install pikuri+
     pulls in pikuri-core, pikuri-skills, pikuri-tasks,
     pikuri-workspace, pikuri-code, pikuri-mcp, pikuri-subagents,
-    and pikuri-assistant in one shot, and +require 'pikuri'+ boots
-    all of them.
+    pikuri-vectordb, and pikuri-assistant in one shot, and
+    +require 'pikuri'+ boots all of them.
 
     Privacy-conscious users who want a minimal dependency tree to
     audit should install +pikuri-core+ directly and opt into the
@@ -55,5 +55,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-vectordb',  "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

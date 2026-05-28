@@ -18,6 +18,7 @@ GEMS = %w[
   pikuri-workspace
   pikuri-code
   pikuri-subagents
+  pikuri-vectordb
   pikuri-assistant
   pikuri
 ].freeze
