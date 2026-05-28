@@ -23,7 +23,10 @@ system prompt and a different toolset: `read`, `write`, `edit`,
 Sub-agents are enabled, and any
 [Agent Skills](https://agentskills.io/specification) discovered
 under `.pikuri/skills`, `.claude/skills`, or `.agents/skills`
-(project or home) get exposed to the model on demand.
+(project or home) get exposed to the model on demand. An
+in-memory task list (`task_create` / `task_in_progress` /
+`task_completed` / `task_delete`) is also wired in — see
+[`pikuri-tasks`](../pikuri-tasks/README.md) for the rationale.
 
 ## Install
 

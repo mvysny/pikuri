@@ -19,6 +19,7 @@ require 'optparse'
 
 require 'pikuri-core'
 require 'pikuri-skills'
+require 'pikuri-tasks'
 require 'pikuri-workspace'
 require 'pikuri-mcp'
 require 'pikuri-subagents'
@@ -277,6 +278,14 @@ begin
     # never executed against that workspace.
     c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+    # In-memory task list + four +task_*+ tools (task_create /
+    # task_in_progress / task_completed / task_delete). The LLM
+    # uses these to externalize a multi-step plan into a
+    # structured slot it sees on every turn — combats the "by
+    # step 25 the original plan is buried" failure mode on long
+    # tasks. List is per-Agent, in-memory, dropped on close;
+    # sub-agents don't inherit it. See docs/guide/06-tasks.md.
+    c.add_extension Pikuri::Tasks::Extension.new
     c.add_extension Pikuri::Mcp::Extension.new(
       registry: mcp_registry,
       synthesize_descriptions: true,

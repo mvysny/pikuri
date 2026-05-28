@@ -13,6 +13,7 @@ PATH
     pikuri-code (0.0.3)
       pikuri-core (= 0.0.3)
       pikuri-subagents (= 0.0.3)
+      pikuri-tasks (= 0.0.3)
       pikuri-workspace (= 0.0.3)
 
 PATH

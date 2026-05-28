@@ -188,11 +188,12 @@ something multi-step to do, drop the extension into the block,
 and watch the model decompose its work in the first tool call.
 That's the entire feedback loop.
 
-`pikuri-code` is a likely future home for the extension by
-default — coding agents do multi-step work and benefit from the
-self-correction property — but at the time of writing it wires
-the extension manually if at all, so the chapter-3 walkthrough
-doesn't assume it.
+`pikuri-code` wires this extension by default — coding agents do
+multi-step work, and the externalized-plan property pays off there
+more than anywhere else in the guide. Chapter 3's walkthrough
+shows the four-extension block (skills, tasks, MCP, sub-agents)
+all wired together; this chapter focused on tasks alone so the
+single-purpose API doesn't get lost in that wider picture.
 
 ## What's next
 

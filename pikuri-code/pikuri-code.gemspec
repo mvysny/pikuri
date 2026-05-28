@@ -54,4 +54,10 @@ Gem::Specification.new do |spec|
   # +Pikuri::SubAgent::Extension+. Lockstep-pinned for the same
   # reason as the other peers.
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
+
+  # +Pikuri::Tasks::Extension+ — in-memory task list + four
+  # +task_*+ tools the LLM uses to externalize its plan on
+  # multi-step work — is wired into +bin/pikuri-code+ by default.
+  # See docs/guide/06-tasks.md for the rationale.
+  spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
 end

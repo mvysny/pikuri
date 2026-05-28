@@ -233,8 +233,9 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_sub_agent_tool Pikuri::Tool::FETCH
   c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
 
-  # Three extensions — same configure/bind shape as ch.2
+  # Four extensions — same configure/bind shape as ch.2
   c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+  c.add_extension Pikuri::Tasks::Extension.new
   c.add_extension Pikuri::Mcp::Extension.new(registry: mcp_registry,
                                               synthesize_descriptions: true,
                                               verify_mcp_servers: true)
@@ -252,11 +253,12 @@ Four observations on this block:
 
 1. **The Extension pattern is the one from chapter 2.**
    `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
-   pair you met there. (`Skill::Extension` and `Mcp::Extension` are
-   the other two extensions `pikuri-code` wires — chapters
-   [7](07-skills.md) and [4](04-mcp.md) cover what those do; for
-   now treat them as lines that bring in features you haven't met
-   yet.)
+   pair you met there. (`Skill::Extension`, `Tasks::Extension`,
+   and `Mcp::Extension` are the other three extensions
+   `pikuri-code` wires — chapters [7](07-skills.md),
+   [6](06-tasks.md), and [4](04-mcp.md) cover what those do;
+   for now treat them as lines that bring in features you
+   haven't met yet.)
 2. **The same `workspace` / `confirmer` instances thread through
    six tools.** `Write` and `Bash` both take `confirmer`; all six
    file/shell tools take `workspace`. One construction, shared
