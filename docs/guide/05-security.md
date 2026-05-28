@@ -240,6 +240,114 @@ defenses all assume it.
   Treat them like any other source you'd `git clone` — read before
   you trust.
 
+## Wrapping pikuri in Docker
+
+Bubblewrap (chapter 3) and Docker (chapter 4) are both isolation
+mechanisms, but each protects only one thing. Bubblewrap wraps a
+single `bash` invocation; Docker wraps a single MCP server. The
+rest of pikuri's process — the file tools, the LLM transport, the
+MCP client side, the agent loop itself — runs with your usual
+shell's permissions. That's the right default for the recommended
+path (chapter 1: your machine, your project), and it's why pikuri
+ships with no outer container.
+
+If you want to step outside that path — unattended runs, or
+pointing pikuri at code you don't trust — the next move up is
+wrapping the **whole pikuri process** in a container. This is the
+outer-isolation row of the kit table, made concrete.
+
+### What it adds on top of Bubblewrap
+
+Bubblewrap stops `bash` from reading `~/.ssh`. It does not stop a
+parser bug in Nokogiri or Faraday from doing something unexpected
+in pikuri's own process, or a hostile MCP server from reading your
+home directory. The Workspace seam blocks the *named* file-tool
+path (chapter 3), but it lives in the same process; a
+path-traversal bug, or an MCP that does raw filesystem access,
+routes around it.
+
+A Docker wrapper around the whole pikuri process closes those
+gaps:
+
+- **Host secrets aren't reachable to anything inside, not just to
+  `bash`.** `~/.ssh`, `~/.aws`, `~/.gnupg`, other projects — none
+  of it exists in the container's filesystem view unless you
+  explicitly bind-mount it.
+- **A bug in pikuri itself is bounded.** A hypothetical
+  path-escape in the Workspace seam, a parser hitting a malformed
+  input — the outer container still holds.
+- **Egress becomes shapeable a layer down.** The kit table noted
+  that an in-process egress allowlist isn't shipped yet; Docker
+  gives you one today. Drop the container's network, or attach it
+  to a bridge that allows only your registries and the LLM
+  endpoint, and the "data out" leg closes for everything inside.
+- **Recovery is throwing the container away.** A coding agent that
+  goes catastrophically off the rails inside `--rm` costs you the
+  workspace mount and nothing else. Tighten further with mount
+  discipline — a read-only mount, or a snapshot/copy of the
+  project — and even routine edits become reviewable: the agent
+  edits its view, you decide whether the diff propagates.
+
+### Why Docker-in-Docker is the wrong inner step
+
+Chapter 4's "every MCP in a container" stance was written for the
+native-pikuri shape: pikuri trusted, MCPs not, container as the
+boundary between them. Once pikuri itself is in a container, the
+boundary moves up — and reaching for *another* container layer
+inside means Docker-in-Docker. There are two ways to do that, and
+both collapse the outer wall:
+
+- **Bind-mount `/var/run/docker.sock`** from the host into the
+  outer container. The host's docker daemon runs as root, and
+  anything that can talk to its socket can ask it to start a
+  *sibling* container with `-v /:/host` mounted in. Drop a key
+  into `/host/root/.ssh/authorized_keys` from that sibling and
+  the agent has root on your host — not a sandbox escape, the
+  daemon was a root-equivalent API the whole time.
+- **Run the daemon inside the outer container** with
+  `--privileged`. That flag grants all Linux capabilities,
+  disables seccomp/AppArmor, and exposes host `/dev`. The agent
+  can `mount /dev/sda1 /h` and rewrite host files directly. Same
+  outcome: root on your host.
+
+Both are well-rehearsed escape paths. Treat either of them as
+"the agent now runs as root on your machine."
+
+So: **when pikuri itself is in a container, MCPs run alongside it
+in the same container, not in nested ones.** The outer Docker is
+the MCP sandbox. Drop the `docker run -i --rm …` wrappers from
+chapter 4's registry recipes and invoke the MCP binaries directly
+inside the container — `npx -y mcp-maven-deps@<pin>`, `python -m
+mcp_server_fetch`, and so on — with packages pinned in the outer
+image's Dockerfile the same way chapter 4 pinned them one layer
+in. Vendor-only images (the GitHub MCP example from chapter 4)
+don't compose cleanly with this shape; you'd need to extract the
+binary into your outer image or pass on that MCP.
+
+### What still bites inside the outer container
+
+The container is a wall around the process, not around what the
+process does with what's mounted in:
+
+- **The project itself is reachable.** You mounted it in so the
+  agent could edit it; an injection in the project's own files
+  can still "leak *this* project's `.env`" through whatever egress
+  remains. Outer isolation bounds your *machine's* exposure, not
+  this project's.
+- **Tokens keep their blast radius.** A GitHub PAT passed in via
+  `-e` does its full job from inside any container; chapter 4's
+  "scope the token tightly" applies unchanged.
+- **Bubblewrap inside is mostly redundant.** The outer container
+  already isolates `bash`; running Bubblewrap inside it adds
+  little for a measurable performance cost. `Sandbox::NONE`
+  becomes the reasonable default when an outer container is doing
+  the work.
+
+For the recommended-path use case from chapter 1, outer Docker is
+overkill — the in-process defenses are designed for that path.
+This section is for the cases where you've deliberately stepped
+out of it.
+
 ## Five attacks, and what happens to each
 
 The shape is what's defended, not the specifics. `SECURITY.md`
