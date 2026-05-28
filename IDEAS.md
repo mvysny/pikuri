@@ -756,12 +756,13 @@ bundled `LIBRARIAN` persona referencing `vectordb_search` only.
   §"Typed transport classes (private vs public)" enforces structurally
   once that lands.
 - **Reranker.** Not in ruby_llm. Lives in pikuri-core as
-  `Pikuri::Transport::Reranker::LlamaServer` and `::Cohere` (both
-  speak `/v1/rerank`; cross-encoder model on the llama-server side
-  or hosted Cohere). Optional — `reranker: nil` skips rerank, top-k
-  retrieval only. When configured: retrieve top-50, rerank → top-5.
-  Reranker outages fall back to vector-only top-k and log loudly —
-  it's a quality knob, not a correctness one.
+  `Pikuri::Transport::Reranker::LlamaServer` (speaks `/v1/rerank`
+  against a cross-encoder model served by llama.cpp; same path
+  Cohere's API speaks, so adding hosted providers later is a thin
+  adapter — see §"Deferred"). Optional — `reranker: nil` skips
+  rerank, top-k retrieval only. When configured: retrieve top-50,
+  rerank → top-5. Reranker outages fall back to vector-only top-k
+  and log loudly — it's a quality knob, not a correctness one.
 - **Chunker.** Configurable via the extension; v1 default is
   fixed-window (512 tokens, 50 overlap) over text extracted from
   Markdown / PDF / HTML / plain text — same format set
@@ -860,6 +861,15 @@ Documented in the gem's yardoc.
 - **Per-doc-type chunkers.** Markdown-heading-aware splitter,
   AST-aware code chunker, contextual chunking, parent-document
   retrieval. All real quality wins, all separately scoped features.
+- **Hosted reranker providers (Cohere).** v1 ships
+  `Reranker::LlamaServer` only — the privacy-aligned default.
+  Cohere is the dominant hosted reranker (best-in-class on BEIR /
+  MIRACL benchmarks) and a real fallback for the user who can't
+  fit a third model on their GPU, at the cost of a `:public`
+  egress path for queries + top-50 chunks per search. Reasonable
+  follow-up once typed transports (§"Typed transport classes
+  (private vs public)") land — the strict-mode enforcement
+  naturally catches the cross-class wiring.
 - **Onyx as a separate gem.** Onyx is a product (UI + connector
   framework + scheduler), not a vector DB. If pikuri wants Google
   Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —
