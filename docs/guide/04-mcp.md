@@ -362,6 +362,16 @@ uses for MCP. Different tools, different problems — bubblewrap
 is lightweight and bind-mount-based, Docker is heavier and
 image-based. MCPs ship as images-with-deps, so image-based fits.
 
+One caveat for a harness shape this chapter doesn't otherwise
+assume: if you're running `pikuri-code` *itself* inside a
+container, don't also wrap MCPs in nested containers —
+Docker-in-Docker needs either the host docker socket bind-mounted
+in or a `--privileged` outer container, and either gives the
+agent root access to your host OS. In that shape, MCPs run
+alongside pikuri inside the same container, not in nested ones.
+[Chapter 5's "Wrapping pikuri in Docker"](05-security.md#wrapping-pikuri-in-docker)
+covers this end-to-end.
+
 ## Running an npx-based MCP
 
 Most community MCPs ship as npm packages and assume you'll invoke
