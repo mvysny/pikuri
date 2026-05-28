@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Todo::Delete do
-  let(:list) { Pikuri::Todo::List.new }
+RSpec.describe Pikuri::Tasks::Delete do
+  let(:list) { Pikuri::Tasks::List.new }
   let(:tool) { described_class.new(list: list) }
 
   describe 'tool shape' do
-    it 'is named todo_delete with a required content string' do
+    it 'is named task_delete with a required content string' do
       assert_kind_of Pikuri::Tool, tool
-      assert_equal 'todo_delete', tool.name
+      assert_equal 'task_delete', tool.name
       schema = tool.parameters.to_h
       assert_equal ['content'], schema[:required]
     end
@@ -26,12 +26,12 @@ RSpec.describe Pikuri::Todo::Delete do
     it 'returns the empty marker after the last item is removed' do
       list.add('only')
       out = tool.run('content' => 'only')
-      assert_equal '<todos>(empty)</todos>', out
+      assert_equal '<tasks>(empty)</tasks>', out
     end
 
     it 'returns an LLM-actionable Error: string when no match' do
       out = tool.run('content' => 'nope')
-      assert out.start_with?('Error: no such todo:'), out
+      assert out.start_with?('Error: no such task:'), out
       assert out.include?("'nope'"), out
     end
   end

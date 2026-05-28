@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Todo::List do
+RSpec.describe Pikuri::Tasks::List do
   let(:list) { described_class.new }
 
   describe '#add' do
@@ -20,7 +20,7 @@ RSpec.describe Pikuri::Todo::List do
 
     it 'raises DuplicateItem on identical content' do
       list.add('dup')
-      err = assert_raises(Pikuri::Todo::DuplicateItem) { list.add('dup') }
+      err = assert_raises(Pikuri::Tasks::DuplicateItem) { list.add('dup') }
       assert_equal 'dup', err.message
     end
   end
@@ -42,7 +42,7 @@ RSpec.describe Pikuri::Todo::List do
 
     it 'raises ItemNotFound for unknown content' do
       list.add('exists')
-      err = assert_raises(Pikuri::Todo::ItemNotFound) do
+      err = assert_raises(Pikuri::Tasks::ItemNotFound) do
         list.set_status(content: 'missing', status: 'completed')
       end
       assert_equal 'missing', err.message
@@ -67,7 +67,7 @@ RSpec.describe Pikuri::Todo::List do
     end
 
     it 'raises ItemNotFound for unknown content' do
-      assert_raises(Pikuri::Todo::ItemNotFound) { list.delete('nope') }
+      assert_raises(Pikuri::Tasks::ItemNotFound) { list.delete('nope') }
     end
   end
 
@@ -84,7 +84,7 @@ RSpec.describe Pikuri::Todo::List do
 
   describe '#render' do
     it 'returns the empty marker when the list has no items' do
-      assert_equal '<todos>(empty)</todos>', list.render
+      assert_equal '<tasks>(empty)</tasks>', list.render
     end
 
     it 'renders each item on its own line with status in brackets' do
@@ -92,8 +92,8 @@ RSpec.describe Pikuri::Todo::List do
       list.add('second')
       list.set_status(content: 'second', status: 'in_progress')
       out = list.render
-      assert out.start_with?("<todos>\n"), out
-      assert out.end_with?("\n</todos>"), out
+      assert out.start_with?("<tasks>\n"), out
+      assert out.end_with?("\n</tasks>"), out
       assert_match(/^- \[pending\] first$/, out)
       assert_match(/^- \[in_progress\] second$/, out)
     end
@@ -113,8 +113,8 @@ RSpec.describe Pikuri::Todo::List do
 
   describe 'STATUSES' do
     it 'is the canonical three-value set in workflow order' do
-      assert_equal %w[pending in_progress completed], Pikuri::Todo::STATUSES
-      assert Pikuri::Todo::STATUSES.frozen?
+      assert_equal %w[pending in_progress completed], Pikuri::Tasks::STATUSES
+      assert Pikuri::Tasks::STATUSES.frozen?
     end
   end
 end

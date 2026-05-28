@@ -13,7 +13,7 @@
 GEMS = %w[
   pikuri-core
   pikuri-skills
-  pikuri-todo
+  pikuri-tasks
   pikuri-mcp
   pikuri-workspace
   pikuri-code

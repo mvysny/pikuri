@@ -22,9 +22,9 @@ The gem inventory:
   protocol + listener stream + four stateless bundled tools
   (calculator, web search, web scrape, fetch) + `bin/pikuri-chat`.
 - `pikuri-skills` — Agent Skills standard implementation.
-- `pikuri-todo` — in-memory todo list + four content-as-identifier
-  tools (`todo_create` / `todo_in_progress` / `todo_completed` /
-  `todo_delete`).
+- `pikuri-tasks` — in-memory task list + four content-as-identifier
+  tools (`task_create` / `task_in_progress` / `task_completed` /
+  `task_delete`).
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams +
   Read/Write/Edit/Grep/Glob.
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
@@ -166,9 +166,9 @@ per-gem one-liners:
 - **`pikuri-skills/`** — Agent Skills implementation:
   `Skill::Catalog`, `Skill::SkillTool`, `Skill::Extension`.
   Depends on `pikuri-core`. No new runtime deps.
-- **`pikuri-todo/`** — `Todo::List` (in-memory, per-Agent) and
-  the four todo tool classes (`Todo::Create`, `Todo::InProgress`,
-  `Todo::Completed`, `Todo::Delete`) plus `Todo::Extension`.
+- **`pikuri-tasks/`** — `Tasks::List` (in-memory, per-Agent) and
+  the four task tool classes (`Tasks::Create`, `Tasks::InProgress`,
+  `Tasks::Completed`, `Tasks::Delete`) plus `Tasks::Extension`.
   Content doubles as identifier across the four tools (no item
   IDs); state is dropped on agent close. Depends on `pikuri-core`.
   Stdlib-only; no new runtime deps.

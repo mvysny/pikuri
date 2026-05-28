@@ -1,36 +1,36 @@
 # frozen_string_literal: true
 
 module Pikuri
-  module Todo
+  module Tasks
     # Raised by {List#add} when a new item's +content+ already appears
-    # in the list. Content doubles as identifier in the todo tools, so
-    # duplicates would make +todo_in_progress+ / +todo_completed+ /
-    # +todo_delete+ ambiguous. The exception carries the offending
+    # in the list. Content doubles as identifier in the task tools, so
+    # duplicates would make +task_in_progress+ / +task_completed+ /
+    # +task_delete+ ambiguous. The exception carries the offending
     # content string so the tool layer can surface it verbatim in the
     # +"Error: ..."+ observation.
     class DuplicateItem < StandardError; end
 
     # Raised by {List#set_status} and {List#delete} when no item with
-    # the given +content+ exists. The four todo tools rescue this and
-    # report +"Error: no such todo: <content>"+ so the LLM can correct
+    # the given +content+ exists. The four task tools rescue this and
+    # report +"Error: no such task: <content>"+ so the LLM can correct
     # the name on the next turn.
     class ItemNotFound < StandardError; end
 
     # Allowed values for {Item#status}. Kept deliberately small — three
     # states match the workflow the prompt advertises (pending → in_progress
     # → completed) without inviting a +cancelled+ vs +deleted+ debate.
-    # +todo_delete+ removes items outright rather than introducing a
+    # +task_delete+ removes items outright rather than introducing a
     # fourth status.
     STATUSES = %w[pending in_progress completed].freeze
 
     # One row in a {List}. +content+ is the LLM-visible string that
-    # also acts as identifier across the four todo tools; +status+ is
+    # also acts as identifier across the four task tools; +status+ is
     # one of {STATUSES}.
     Item = Data.define(:content, :status)
 
     # An in-memory ordered list of {Item}s, scoped to a single
     # {Pikuri::Agent}. Held inside {Extension} and captured by closure
-    # into the +execute+ block of each of the four todo tool classes,
+    # into the +execute+ block of each of the four task tool classes,
     # so every mutation hits the same instance.
     #
     # == Concurrency
@@ -117,25 +117,25 @@ module Pikuri
       end
 
       # The canonical rendering returned as the observation by every
-      # todo tool, so the LLM sees the latest full state on each call
+      # task tool, so the LLM sees the latest full state on each call
       # without needing a separate read tool. Format:
       #
-      #   <todos>
+      #   <tasks>
       #   - [pending] Add dark mode toggle
       #   - [in_progress] Write unit tests
       #   - [completed] Update README
-      #   </todos>
+      #   </tasks>
       #
-      # Empty list renders as +<todos>(empty)</todos>+ so the LLM gets
+      # Empty list renders as +<tasks>(empty)</tasks>+ so the LLM gets
       # an unambiguous "yes, the call worked and the list is now empty"
       # signal rather than an ambiguous blank block.
       #
       # @return [String]
       def render
-        return '<todos>(empty)</todos>' if @items.empty?
+        return '<tasks>(empty)</tasks>' if @items.empty?
 
         lines = @items.map { |i| "- [#{i.status}] #{i.content}" }
-        "<todos>\n#{lines.join("\n")}\n</todos>"
+        "<tasks>\n#{lines.join("\n")}\n</tasks>"
       end
 
       private

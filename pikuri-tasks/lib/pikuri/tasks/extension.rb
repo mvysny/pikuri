@@ -1,20 +1,20 @@
 # frozen_string_literal: true
 
 module Pikuri
-  # Namespace for the in-memory todo-list feature. Holds the
-  # {List} value type, the four todo tool classes ({Create},
+  # Namespace for the in-memory task-list feature. Holds the
+  # {List} value type, the four task tool classes ({Create},
   # {InProgress}, {Completed}, {Delete}), and the {Extension} that
   # wires them into an {Pikuri::Agent}.
-  module Todo
+  module Tasks
     # An {Pikuri::Agent::Extension} that auto-wires an in-memory
-    # todo list onto an agent: constructs a fresh {List}, registers
-    # the four todo tool classes against it, and appends a brief
+    # task list onto an agent: constructs a fresh {List}, registers
+    # the four task tool classes against it, and appends a brief
     # workflow snippet to the system prompt.
     #
     # == Usage
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_extension Pikuri::Todo::Extension.new
+    #     c.add_extension Pikuri::Tasks::Extension.new
     #   end
     #
     # The list is per-Agent and in-memory. It is dropped when the
@@ -24,10 +24,10 @@ module Pikuri
     #
     # Sub-agents do not inherit extensions (see CLAUDE.md's "Seams").
     # Concretely: a sub-agent spawned by the +agent+ tool gets a
-    # fresh persona, fresh toolset, no todo list. That keeps the
+    # fresh persona, fresh toolset, no task list. That keeps the
     # parent's plan private to the parent and avoids the
-    # who-owns-which-todo confusion a shared list would produce.
-    # If a host wants the sub-agent to also have a todo list, it
+    # who-owns-which-task confusion a shared list would produce.
+    # If a host wants the sub-agent to also have a task list, it
     # adds the extension to the sub-agent's own configurator —
     # cleanly opt-in, no implicit sharing.
     #
@@ -35,7 +35,7 @@ module Pikuri
     #
     # No +catalog+-style empty state: registering the extension
     # always installs the four tools and the snippet. A host that
-    # doesn't want todos simply omits the extension.
+    # doesn't want tasks simply omits the extension.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -47,19 +47,19 @@ module Pikuri
       #
       # @return [String]
       PROMPT_SNIPPET = <<~PROMPT
-        <todo_usage>
-        You have an in-memory todo list. Use it to plan and track multi-step work.
+        <tasks_usage>
+        You have an in-memory task list. Use it to plan and track multi-step work.
 
         Workflow:
-        - When a task has 3+ steps, call `todo_create` once with the full plan (newline-separated items, all start as `pending`).
-        - Before starting an item, call `todo_in_progress` with its exact content. Keep exactly one item `in_progress` at a time.
-        - When an item is fully done (including any required verification), call `todo_completed` with its exact content.
-        - Use `todo_delete` to remove items that turn out not to be needed.
+        - When a task has 3+ steps, call `task_create` once with the full plan (newline-separated items, all start as `pending`).
+        - Before starting an item, call `task_in_progress` with its exact content. Keep exactly one item `in_progress` at a time.
+        - When an item is fully done (including any required verification), call `task_completed` with its exact content.
+        - Use `task_delete` to remove items that turn out not to be needed.
 
-        Skip todos entirely for single-step or purely informational requests — they add noise, not value.
+        Skip task tracking entirely for single-step or purely informational requests — it adds noise, not value.
 
         Every mutation returns the full current list, so you do not need a separate read tool. Content doubles as identifier across the four tools: spelling and capitalization must match exactly.
-        </todo_usage>
+        </tasks_usage>
       PROMPT
 
       # Tool classes the extension auto-registers. Used both for
@@ -89,7 +89,7 @@ module Pikuri
         TOOL_CLASSES.each do |cls|
           if c.tools.any?(cls)
             raise "#{cls} cannot be pre-registered (in tools: or via c.add_tool) " \
-                  'when adding Pikuri::Todo::Extension — the extension auto-registers all four todo tools ' \
+                  'when adding Pikuri::Tasks::Extension — the extension auto-registers all four task tools ' \
                   'so they share the same in-memory list.'
           end
         end

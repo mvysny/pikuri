@@ -4,7 +4,7 @@ require 'rspec/core'
 require 'minitest'
 require 'minitest/assertions'
 
-require 'pikuri-todo'
+require 'pikuri-tasks'
 
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output.

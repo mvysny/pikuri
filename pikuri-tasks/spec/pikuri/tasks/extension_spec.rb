@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Todo::Extension do
+RSpec.describe Pikuri::Tasks::Extension do
   let(:configurator) do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
@@ -18,20 +18,20 @@ RSpec.describe Pikuri::Todo::Extension do
   end
 
   describe '#configure' do
-    it 'registers all four todo tools, all sharing the same List instance' do
+    it 'registers all four task tools, all sharing the same List instance' do
       ext = described_class.new
       ext.configure(configurator)
 
       tools = configurator.tools
       assert_equal 4, tools.size
-      assert_equal %w[todo_create todo_in_progress todo_completed todo_delete].sort,
+      assert_equal %w[task_create task_in_progress task_completed task_delete].sort,
                    tools.map(&:name).sort
 
       # All four tools must mutate the same list — drive one and observe via the others.
-      todo_create = tools.find { |t| t.name == 'todo_create' }
-      todo_completed = tools.find { |t| t.name == 'todo_completed' }
-      todo_create.run('items' => 'one item')
-      out = todo_completed.run('content' => 'one item')
+      task_create = tools.find { |t| t.name == 'task_create' }
+      task_completed = tools.find { |t| t.name == 'task_completed' }
+      task_create.run('items' => 'one item')
+      out = task_completed.run('content' => 'one item')
       assert out.include?('- [completed] one item'), out
       assert_equal 'completed', ext.list.items.first.status
     end
@@ -42,15 +42,15 @@ RSpec.describe Pikuri::Todo::Extension do
 
       assert_equal 1, configurator.system_prompt_additions.size
       snippet = configurator.system_prompt_additions.first
-      assert snippet.include?('<todo_usage>'), snippet
-      assert snippet.include?('todo_create'), snippet
-      assert snippet.include?('todo_in_progress'), snippet
-      assert snippet.include?('todo_completed'), snippet
-      assert snippet.include?('todo_delete'), snippet
+      assert snippet.include?('<tasks_usage>'), snippet
+      assert snippet.include?('task_create'), snippet
+      assert snippet.include?('task_in_progress'), snippet
+      assert snippet.include?('task_completed'), snippet
+      assert snippet.include?('task_delete'), snippet
     end
 
-    it 'raises if any of the four todo tools was already registered' do
-      pre = Pikuri::Todo::Create.new(list: Pikuri::Todo::List.new)
+    it 'raises if any of the four task tools was already registered' do
+      pre = Pikuri::Tasks::Create.new(list: Pikuri::Tasks::List.new)
       configurator.add_tool(pre)
       err = assert_raises(RuntimeError) { described_class.new.configure(configurator) }
       assert_match(/Create.*cannot be pre-registered/, err.message)
@@ -62,7 +62,7 @@ RSpec.describe Pikuri::Todo::Extension do
       a = described_class.new
       b = described_class.new
       refute_same a.list, b.list
-      assert_kind_of Pikuri::Todo::List, a.list
+      assert_kind_of Pikuri::Tasks::List, a.list
       assert a.list.empty?
     end
   end

@@ -9,7 +9,7 @@
 # install +pikuri-core+ directly and skip this metagem.
 require 'pikuri-core'
 require 'pikuri-skills'
-require 'pikuri-todo'
+require 'pikuri-tasks'
 require 'pikuri-workspace'
 require 'pikuri-mcp'
 require 'pikuri-code'

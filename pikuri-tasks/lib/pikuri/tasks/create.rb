@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 module Pikuri
-  module Todo
-    # The +todo_create+ tool: mass-create pending items in a single
+  module Tasks
+    # The +task_create+ tool: mass-create pending items in a single
     # call from a newline-separated +items+ string. Why
     # newline-separated rather than a JSON array: it stays within
     # pikuri's scalar-only +Tool::Parameters+ DSL (no array support
     # to extend), and a smaller model never has to balance brackets
     # or escape quotes — fewer formatting failure modes on the burst
-    # of items that opens most multi-step tasks.
+    # of items that opens most multi-step work.
     #
     # Each line is right- and left-stripped; blank lines are skipped.
     # If any input is a duplicate (within the batch, or already in
@@ -23,11 +23,11 @@ module Pikuri
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).
       DESCRIPTION = <<~DESC
-        Create one or more new todo items in a single call. All items start as `pending`.
+        Create one or more new task items in a single call. All items start as `pending`.
 
         Usage:
         - Use at the start of a multi-step task to capture the plan.
-        - `items` is a single newline-separated string — one todo per line. Blank lines are ignored.
+        - `items` is a single newline-separated string — one task per line. Blank lines are ignored.
         - Duplicate content (within the batch or already on the list) aborts the whole call with `Error: ...` and adds nothing — resend a corrected batch.
         - Empty input is rejected the same way.
         - On success the full current list is returned for you to read back.
@@ -39,11 +39,11 @@ module Pikuri
       # @return [Create]
       def initialize(list:)
         super(
-          name: 'todo_create',
+          name: 'task_create',
           description: DESCRIPTION,
           parameters: Pikuri::Tool::Parameters.build { |p|
             p.required_string :items,
-                              'Newline-separated list of todo contents, e.g. ' \
+                              'Newline-separated list of task contents, e.g. ' \
                               '"Add dark mode toggle\nWrite unit tests\nUpdate README". ' \
                               'Blank lines are ignored.'
           },
@@ -62,7 +62,7 @@ module Pikuri
       #   +"Error: ..."+ string the LLM can react to.
       def self.execute(list:, items:)
         cleaned = items.lines.map(&:strip).reject(&:empty?)
-        return 'Error: todo_create requires at least one non-blank item' if cleaned.empty?
+        return 'Error: task_create requires at least one non-blank item' if cleaned.empty?
 
         seen_in_batch = {}
         cleaned.each do |c|
@@ -73,7 +73,7 @@ module Pikuri
 
         existing = list.items.map(&:content)
         clash = cleaned.find { |c| existing.include?(c) }
-        return "Error: todo already exists: '#{clash}'" if clash
+        return "Error: task already exists: '#{clash}'" if clash
 
         cleaned.each { |c| list.add(c) }
         list.render

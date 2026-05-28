@@ -3,20 +3,21 @@
 require_relative '../pikuri-core/lib/pikuri/version'
 
 Gem::Specification.new do |spec|
-  spec.name        = 'pikuri-todo'
+  spec.name        = 'pikuri-tasks'
   spec.version     = Pikuri::VERSION
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'Per-session in-memory todo list + tools for pikuri.'
+  spec.summary     = 'Per-session in-memory task list + tools for pikuri.'
   spec.description = <<~DESC
-    pikuri-todo gives a pikuri-core agent an in-memory todo list it can
-    use to plan and track multi-step work. A +Pikuri::Todo::List+ holds
-    the per-Agent state; four tools (+todo_create+, +todo_in_progress+,
-    +todo_completed+, +todo_delete+) mutate it via content-as-identifier
-    (no item IDs to hallucinate). +Pikuri::Todo::Extension+ wires the
-    list and tools onto an +Pikuri::Agent+ via +c.add_extension(...)+
-    inside the +Agent.new+ block.
+    pikuri-tasks gives a pikuri-core agent an in-memory task list it
+    can use to plan and track multi-step work. A +Pikuri::Tasks::List+
+    holds the per-Agent state; four tools (+task_create+,
+    +task_in_progress+, +task_completed+, +task_delete+) mutate it via
+    content-as-identifier (no item IDs to hallucinate).
+    +Pikuri::Tasks::Extension+ wires the list and tools onto an
+    +Pikuri::Agent+ via +c.add_extension(...)+ inside the +Agent.new+
+    block.
 
     The list lives in process memory only — nothing is written to disk.
     Sub-agents do not inherit the parent's list (consistent with the
