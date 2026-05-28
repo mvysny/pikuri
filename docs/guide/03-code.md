@@ -254,7 +254,7 @@ Four observations on this block:
    `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
    pair you met there. (`Skill::Extension` and `Mcp::Extension` are
    the other two extensions `pikuri-code` wires — chapters
-   [6](06-skills.md) and [4](04-mcp.md) cover what those do; for
+   [7](07-skills.md) and [4](04-mcp.md) cover what those do; for
    now treat them as lines that bring in features you haven't met
    yet.)
 2. **The same `workspace` / `confirmer` instances thread through
@@ -472,7 +472,13 @@ Three follow-ons:
   lethal trifecta, the defense kit mapped to harness shapes, and
   how to pick a model when you build your own agent on
   `pikuri-core`.
-- **[Chapter 6 — Skills (stub)](06-skills.md)** is a holding
+- **[Chapter 6 — Task tracking](06-tasks.md)** introduces
+  `pikuri-tasks` — an in-memory task list and four tools the
+  model uses to externalize its plan when work has more than a
+  few steps. A light chapter, but also the place the guide
+  takes a moment to explain why an LLM benefits from a
+  structured slot in its own context at all.
+- **[Chapter 7 — Skills (stub)](07-skills.md)** is a holding
   place for [Agent Skills](https://agentskills.io/specification),
   the standard for packaging "when you see *X*, do *Y*"
   instructions as portable folders. `pikuri-code` already

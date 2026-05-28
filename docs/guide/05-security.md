@@ -235,7 +235,7 @@ defenses all assume it.
   the pikuri layer (the verifier reads *text*, not executable
   code). Chapter 4's "every MCP in a container" stance is the
   answer.
-- **Skills — text, not code.** Skills (chapter 6) are Markdown the
+- **Skills — text, not code.** Skills (chapter 7) are Markdown the
   user dropped in a folder. They don't execute; they're prompts.
   Treat them like any other source you'd `git clone` — read before
   you trust.
@@ -428,12 +428,20 @@ Stated plainly so the model above isn't mistaken for a guarantee
 
 ## What's next
 
-[Chapter 6 — Skills (stub)](06-skills.md) covers the last extension
-`pikuri-code` wires: [Agent Skills](https://agentskills.io/specification),
+A change of pace. [Chapter 6 — Task tracking](06-tasks.md) is the
+light chapter between this one and the next: `pikuri-tasks`,
+how externalizing the model's plan into a structured slot
+combats the "by step 25 the original plan is buried" failure
+mode, and the small LLM-ergonomics tradeoffs that shape its
+four-tool API.
+
+After that, [Chapter 7 — Skills (stub)](07-skills.md) covers
+the last extension `pikuri-code`
+wires: [Agent Skills](https://agentskills.io/specification),
 portable "when you see *X*, do *Y*" folders. As the code-trust
-section noted, they're text, not code — so they inherit the
-"read before you trust" rule rather than needing isolation of
-their own.
+section above noted, they're text, not code — so they inherit
+the "read before you trust" rule rather than needing isolation
+of their own.
 
 For the committed one-page posture — what pikuri guarantees and
 what it explicitly doesn't — see [`SECURITY.md`](../../SECURITY.md)

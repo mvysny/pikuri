@@ -41,7 +41,14 @@ local site, or — once gems are published — see
    and how pikuri's structural bet compares to Claude Code's
    operational one. No new binary — read it before pointing any
    write- or network-capable agent at something sensitive.
-6. **[Agent Skills (stub)](06-skills.md).** A placeholder
+6. **[Task tracking](06-tasks.md).** A light chapter between two
+   heavyweights. What `pikuri-tasks` is, why an agent benefits
+   from externalized working memory at all, and the three design
+   choices that shape its four tools — status-in-verb-name,
+   content-as-identifier, newline-separated mass-create. Doubles
+   as a small window into how LLMs maintain (and lose) state
+   across a long conversation.
+7. **[Agent Skills (stub)](07-skills.md).** A placeholder
    chapter — what skills are in one paragraph, a minimal `lol`
    demo, and a TBD list. Currently shaped to be skippable;
    coming back to flesh out once the guide has workflows that

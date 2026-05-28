@@ -672,10 +672,13 @@ harness shape, and how to choose a model for an agent you build
 yourself. MCP is the biggest external-risk surface in the guide,
 so it's the right moment to step back and look at the whole board.
 
-[Chapter 6 — Skills (stub)](06-skills.md) then covers the last
-extension `pikuri-code` wires — Agent Skills — currently a
-forward-pointer until the guide has enough concrete workflows to
-motivate a real example.
+[Chapter 6 — Task tracking](06-tasks.md) then covers
+`pikuri-tasks` — the in-memory task list that lets the model
+externalize a multi-step plan into a structured slot it sees
+on every turn. [Chapter 7 — Skills (stub)](07-skills.md)
+follows with Agent Skills, currently a forward-pointer until
+the guide has enough concrete workflows to motivate a real
+example.
 
 Beyond that, there's a `pikuri-assistant` binary in the repo —
 a Q&A-shaped sibling to `pikuri-code` that pairs MCP with the

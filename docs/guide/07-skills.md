@@ -1,4 +1,4 @@
-# Chapter 6 — Agent Skills (stub)
+# Chapter 7 — Agent Skills (stub)
 
 > **Stub chapter.** This is a holding place. The guide doesn't yet
 > have a workflow concrete enough to motivate Agent Skills the way
