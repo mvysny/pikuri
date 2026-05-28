@@ -269,10 +269,6 @@ routes around it.
 A Docker wrapper around the whole pikuri process closes those
 gaps:
 
-- **Host secrets aren't reachable to anything inside, not just to
-  `bash`.** `~/.ssh`, `~/.aws`, `~/.gnupg`, other projects — none
-  of it exists in the container's filesystem view unless you
-  explicitly bind-mount it.
 - **A bug in pikuri itself is bounded.** A hypothetical
   path-escape in the Workspace seam, a parser hitting a malformed
   input — the outer container still holds.
@@ -287,6 +283,15 @@ gaps:
   discipline — a read-only mount, or a snapshot/copy of the
   project — and even routine edits become reviewable: the agent
   edits its view, you decide whether the diff propagates.
+- **A defense-in-depth backstop for host secrets (secondary).**
+  The Workspace seam already keeps file tools out of `~/.ssh`,
+  `~/.aws`, `~/.gnupg`, and other projects; Bubblewrap keeps
+  `bash` out; chapter 4 recommends containerising MCPs to keep
+  them out too. The outer container makes "not in scope" a
+  property of the filesystem view rather than of well-behaved
+  code — useful if any of those has a bug, a misconfiguration
+  (you forgot to containerise an MCP), or a library exploit.
+  Rare paths, not the headline reason to reach for outer Docker.
 
 ### Why Docker-in-Docker is the wrong inner step
 
