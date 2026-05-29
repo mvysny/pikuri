@@ -15,7 +15,7 @@ require 'pikuri-core'
 # surface +Agent#initialize+ touches (with_instructions, with_tool,
 # after_message / before_tool_call / after_tool_result hooks, ask).
 RSpec.describe 'Pikuri::Skill::Extension agent integration' do
-  let(:fake_model) { Struct.new(:context_window).new(nil) }
+  let(:fake_model) { Struct.new(:context_window, :id).new(nil, 'm') }
 
   let(:fake_chat_class) do
     captured_model = fake_model

@@ -13,7 +13,7 @@ require 'pikuri-core'
 # stand-in + a tracker_mcp_servers stub. Integration tests exercise
 # only the surface +Agent#initialize+ + +Agent#close+ touch.
 RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
-  let(:fake_model) { Struct.new(:context_window).new(nil) }
+  let(:fake_model) { Struct.new(:context_window, :id).new(nil, 'm') }
 
   let(:fake_chat_class) do
     captured_model = fake_model

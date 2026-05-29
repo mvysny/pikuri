@@ -130,4 +130,78 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
   end
+
+  describe 'llama.cpp router mode' do
+    let(:url) { 'http://example.com/props' }
+
+    # The router answers a bare /props with role=router and n_ctx 0; the
+    # real per-model cap lives at /props?model=<id>. One stub block serves
+    # both, branching on the presence of the +model+ query param.
+    def router_stub(model_n_ctx:)
+      stubs.get(url) do |env|
+        if env.params['model']
+          [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => model_n_ctx })]
+        else
+          [200, {}, JSON.generate('role' => 'router',
+                                  'default_generation_settings' => { 'n_ctx' => 0 })]
+        end
+      end
+    end
+
+    it 'follows the router to /props?model= and returns the per-model n_ctx' do
+      router_stub(model_n_ctx: 262_144)
+      detector = described_class.new(
+        override: nil, ruby_llm_reported: nil, llama_probe_url: url,
+        model_id: 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+      )
+      assert_equal 262_144, detector.detect
+      assert_equal '', buf.string
+    end
+
+    it 'url-encodes the model id when following the router' do
+      seen = []
+      stubs.get(url) do |env|
+        seen << env.params['model']
+        if env.params['model']
+          [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 4096 })]
+        else
+          [200, {}, JSON.generate('role' => 'router',
+                                  'default_generation_settings' => { 'n_ctx' => 0 })]
+        end
+      end
+      detector = described_class.new(
+        override: nil, ruby_llm_reported: nil, llama_probe_url: url,
+        model_id: 'org/Model:Q4_K_M'
+      )
+      assert_equal 4096, detector.detect
+      # Faraday decodes the param back, proving the id round-tripped intact
+      # through CGI.escape rather than being sent raw.
+      assert_equal ['org/Model:Q4_K_M'], seen.compact
+    end
+
+    it 'does not follow the router when no model_id is given' do
+      router_stub(model_n_ctx: 262_144)
+      detector = described_class.new(
+        override: nil, ruby_llm_reported: nil, llama_probe_url: url, model_id: nil
+      )
+      assert_nil detector.detect
+      assert_includes buf.string, "in #{url} response"
+    end
+
+    it 'warns against the router probe url when the second hop also lacks n_ctx' do
+      stubs.get(url) do |env|
+        if env.params['model']
+          [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 0 })]
+        else
+          [200, {}, JSON.generate('role' => 'router',
+                                  'default_generation_settings' => { 'n_ctx' => 0 })]
+        end
+      end
+      detector = described_class.new(
+        override: nil, ruby_llm_reported: nil, llama_probe_url: url, model_id: 'm'
+      )
+      assert_nil detector.detect
+      assert_includes buf.string, 'router probe'
+    end
+  end
 end

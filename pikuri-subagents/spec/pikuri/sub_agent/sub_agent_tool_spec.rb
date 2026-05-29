@@ -7,8 +7,9 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   # network-free.
   #
   # +RubyLLM::Model::Info+ stand-in just so +Pikuri::Agent#initialize+
-  # can read +@chat.model.context_window+ for +ContextWindowDetector+.
-  fake_model = Struct.new(:context_window).new(nil)
+  # can read +@chat.model.context_window+ and +@chat.model.id+ for
+  # +ContextWindowDetector+.
+  fake_model = Struct.new(:context_window, :id).new(nil, 'm')
 
   let(:fake_chat_class) do
     captured_model = fake_model

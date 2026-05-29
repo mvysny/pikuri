@@ -4,7 +4,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
   # Minimal fake chat + RubyLLM.chat stub — same shape as agent_spec.rb
   # in pikuri-core, scoped down to what the integration tests below
   # need.
-  fake_model = Struct.new(:context_window).new(nil)
+  fake_model = Struct.new(:context_window, :id).new(nil, 'm')
 
   let(:fake_chat_class) do
     captured_model = fake_model

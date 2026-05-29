@@ -726,7 +726,8 @@ module Pikuri
       @context_window_cap = ContextWindowDetector.new(
         override: @context_window,
         ruby_llm_reported: @chat.model.context_window,
-        llama_probe_url: @llama_probe_url
+        llama_probe_url: @llama_probe_url,
+        model_id: @chat.model.id
       ).detect
 
       self.class.wire_chat(

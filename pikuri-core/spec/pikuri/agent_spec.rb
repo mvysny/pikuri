@@ -9,9 +9,9 @@ RSpec.describe Pikuri::Agent do
   # without going anywhere near a real provider.
   #
   # +RubyLLM::Model::Info+ stand-in just so
-  # +Pikuri::Agent#initialize+ can read
-  # +@chat.model.context_window+ for {Pikuri::Agent::ContextWindowDetector}.
-  fake_model = Struct.new(:context_window).new(nil)
+  # +Pikuri::Agent#initialize+ can read +@chat.model.context_window+ and
+  # +@chat.model.id+ for {Pikuri::Agent::ContextWindowDetector}.
+  fake_model = Struct.new(:context_window, :id).new(nil, 'm')
 
   let(:fake_chat_class) do
     captured_model = fake_model
@@ -245,7 +245,7 @@ RSpec.describe Pikuri::Agent do
 
       it 'falls back to ruby_llm reported value when no override is given' do
         # Rebind the fake_chat's model to one that reports a window.
-        fake_chat.instance_variable_set(:@model_info, Struct.new(:context_window).new(200_000))
+        fake_chat.instance_variable_set(:@model_info, Struct.new(:context_window, :id).new(200_000, 'm'))
 
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's') { |c| wire_token_log(c) }
