@@ -315,10 +315,17 @@ You saw both in the demo:
 
 - **Boss calls `vectordb_search` directly.** The retrieved chunks
   enter the *boss*'s context as the next observation, formatted
-  as a numbered list of `source (score=0.83)\n<snippet…>`. Useful
+  as a numbered list of `source (score=2.08)\n<snippet…>`. Useful
   when the boss needs the verbatim text — quoting a passage,
   chaining a snippet into another tool call, citing a specific
-  paragraph.
+  paragraph. The `score` always tracks whatever produced the
+  ordering: with the reranker on (the default), it's the
+  cross-encoder's relevance score — a model-dependent scale that
+  can run above 1 or go negative, so read it as a relative
+  confidence gradient down the list, not a 0–1 value. Pass
+  `--no-reranker` and the score is plain cosine similarity in
+  `[0, 1]` instead. Either way the number never disagrees with
+  the rank, because it *is* the number the rank was built from.
 - **Boss delegates to `librarian`.** The librarian runs in a
   fresh agent with `vectordb_search` as its *only* tool. It does
   2-3 queries, distills what the corpus had into one paragraph,

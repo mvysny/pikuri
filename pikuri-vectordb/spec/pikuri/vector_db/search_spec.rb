@@ -138,6 +138,19 @@ describe Pikuri::VectorDb::Search do
       assert_includes first_block, 'paella.md'
     end
 
+    it 'displays the reranker relevance score, not the cosine score' do
+      # The reversing reranker assigns descending scores 3.0, 2.0, 1.0
+      # to the reordered results — so the top hit (paella, cosine 0.00)
+      # shows the rerank score, never its cosine. This is the whole
+      # point: the displayed number matches the rank the reranker built.
+      observation = execute(reranker: reversing_reranker)
+
+      assert_includes observation, '[1] paella.md (score=3.00)'
+      assert_includes observation, '[3] risotto.md (score=1.00)'
+      # The cosine scores from vector-only mode must NOT leak through.
+      refute_includes observation, 'paella.md (score=0.00)'
+    end
+
     it 'returns at most FINAL_K results even from a wider candidate set' do
       # Populate with 10 chunks, all matching the query.
       backend.delete_all

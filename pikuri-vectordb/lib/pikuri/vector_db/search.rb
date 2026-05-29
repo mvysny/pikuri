@@ -13,11 +13,32 @@ module Pikuri
     #    {FINAL_K}), or {FINAL_K} directly when not (no point
     #    over-fetching candidates we'll just throw away).
     # 3. Optionally rerank: pass the candidate texts to the
-    #    {Reranker}, reorder by {Reranker::Hit.index}, then take
-    #    the top {FINAL_K}.
+    #    {Reranker}, reorder by {Reranker::Hit.index}, replace
+    #    each result's score with the reranker's relevance score,
+    #    then take the top {FINAL_K}.
     # 4. Format as a numbered list with +source+ + +score+ +
     #    text snippet, capped at {SNIPPET_LENGTH} chars per
     #    chunk.
+    #
+    # == Which score is shown
+    #
+    # The +score+ in the observation tracks whatever actually
+    # determined the ordering, so the number never disagrees with
+    # the rank:
+    #
+    # * *Vector-only* (no reranker, or reranker outage fallback) —
+    #   the {Backend::Result} cosine similarity, range +[0, 1]+,
+    #   directly comparable across results.
+    # * *Reranked* — the {Reranker::Hit} relevance score that
+    #   produced the order. This is a cross-encoder score on a
+    #   model-dependent scale (can be negative / unbounded for raw
+    #   logits — see {Reranker::Hit}'s +score+ yardoc), so it's a
+    #   relative confidence gradient, *not* a 0–1 value to
+    #   threshold on. The two modes therefore put different scales
+    #   behind one +score=+ label by design: cosine and a rerank
+    #   score are not comparable, and pikuri shows the one the
+    #   ordering was actually built from rather than a misleading
+    #   cosine next to a rerank-determined list.
     #
     # == Reranker outage falls back, not fails
     #
@@ -132,11 +153,19 @@ module Pikuri
       # failure), log a WARN and return the vector-only ordering
       # as the fallback.
       #
-      # @return [Array<Backend::Result>] reranked or fallback.
+      # On success, each returned {Backend::Result} carries the
+      # reranker's relevance score in its +score+ field (via
+      # +Data#with+), replacing the backend's cosine score — so
+      # the number {format_observation} prints matches the rerank
+      # order. The fallback path leaves the cosine scores intact.
+      # See the class-level "Which score is shown" section.
+      #
+      # @return [Array<Backend::Result>] reranked (score = rerank
+      #   relevance) or fallback (score = cosine).
       def self.reranked_or_fallback(reranker:, query:, candidates:)
         documents = candidates.map { |c| c.chunk.text }
         hits = reranker.rerank(query: query, documents: documents)
-        hits.map { |h| candidates[h.index] }.compact
+        hits.map { |h| candidates[h.index]&.with(score: h.score) }.compact
       rescue RuntimeError => e
         LOGGER.warn("reranker outage; falling back to vector-only top-k: #{e.message}")
         candidates
@@ -147,7 +176,12 @@ module Pikuri
       # blocks. Each block is +source (score=X.XX)+ on one line
       # followed by the snippet on the next; blocks separated
       # by a blank line. Snippets over {SNIPPET_LENGTH} chars
-      # are truncated with a +...+ suffix.
+      # are truncated with a +...+ suffix. The +score+ printed is
+      # whatever the caller stored in +result.score+ — cosine in
+      # vector-only mode, the reranker's relevance score in
+      # reranked mode (see the class-level "Which score is shown"
+      # section); +%.2f+ handles both, including negative rerank
+      # logits.
       #
       # @param results [Array<Backend::Result>]
       # @return [String]

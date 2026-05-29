@@ -27,6 +27,13 @@ module Pikuri
       # carries optional extras like offset / page / anchor for
       # callers that want to deep-link.
       #
+      # The +score+ is cosine *as returned by a backend's
+      # +#query+*. {Search} substitutes the reranker's relevance
+      # score here (via +Data#with+) before formatting when a
+      # reranker reorders the candidates, so a surfaced score is
+      # cosine only in vector-only mode — see {Search}'s
+      # "Which score is shown" section.
+      #
       # == Why a Data.define
       #
       # Same convention as {Chunk}. A tuple +[chunk, score]+ or
