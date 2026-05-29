@@ -47,10 +47,11 @@ module Pikuri
   #
   # == State is process-global
   #
-  # One +@active+ Set and one +at_exit+ for the whole process. A
-  # +Mutex+ guards register/prune/cleanup; v1 is single-threaded, so
-  # this is more for the +at_exit+/register race than for current
-  # callers.
+  # One +@active+ Set for the whole process, swept once at exit via
+  # {Pikuri::Finalizers} (see the registration at the bottom of this
+  # file). A +Mutex+ guards register/prune/cleanup; v1 is
+  # single-threaded, so this is more for the exit-sweep/register race
+  # than for current callers.
   #
   # == Why +Pikuri::Subprocess+, not top-level
   #
@@ -135,9 +136,9 @@ module Pikuri
         end
       end
 
-      # SIGTERM every tracked process group. Used by +at_exit+
-      # (production) and +after+ blocks (specs). Best-effort —
-      # ignores errors from already-dead groups.
+      # SIGTERM every tracked process group. Run at process exit via
+      # {Pikuri::Finalizers} (production) and from +after+ blocks
+      # (specs). Best-effort — ignores errors from already-dead groups.
       #
       # @return [void]
       def cleanup!
@@ -170,4 +171,10 @@ module Pikuri
   end
 end
 
-at_exit { Pikuri::Subprocess.cleanup! }
+# Registered at load (boot) — before any agent or server registers at
+# construction time — so in {Pikuri::Finalizers}' LIFO sweep this runs
+# LAST: graceful +#close+ on agents and servers first, then SIGTERM
+# whatever child groups are still alive. The reaper, not a peer. (Was a
+# standalone +at_exit+; routed through Finalizers so the order relative
+# to every other teardown is controlled, not left to file load order.)
+Pikuri::Finalizers.register { Pikuri::Subprocess.cleanup! }

@@ -438,14 +438,14 @@ module Pikuri
       @extensions.each { |ext| ext.bind(self) }
 
       # Fallback cleanup: if the host forgets to call #close, the
-      # at_exit hook fires it on process exit. Idempotent, so an
-      # explicit close earlier makes this a no-op. The closure
-      # captures self, which keeps the agent reachable until
-      # process exit — fine for the handful of agents a typical
-      # host creates; if pikuri grows a long-running host that
-      # constructs many short-lived agents, switch to a single
-      # process-global registry that close-then-removes.
-      at_exit { close }
+      # process-global {Pikuri::Finalizers} registry closes this
+      # agent on exit. #close is idempotent, so an explicit close
+      # earlier makes the sweep a no-op — and it also calls
+      # Finalizers.unregister(self), so an explicitly-closed agent
+      # drops out of the registry and can be garbage-collected rather
+      # than being pinned alive until process exit (the
+      # "close-then-removes" the old per-agent at_exit couldn't do).
+      Pikuri::Finalizers.register(self)
     end
 
     # @return [RubyLLM::Chat] underlying chat; the extension seam
@@ -661,6 +661,10 @@ module Pikuri
       return if @closed
 
       @closed = true
+      # Drop out of the process-global registry first: a deliberate
+      # close means this agent no longer needs the at-exit fallback,
+      # and removing the reference lets it be garbage-collected.
+      Pikuri::Finalizers.unregister(self)
       @on_close_handlers.reverse_each do |handler|
         handler.call
       rescue StandardError => e

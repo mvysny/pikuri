@@ -44,6 +44,27 @@ module Pikuri
     # (rerankers, alternative vector stores) — anything starting
     # with +"pikuri-internal-"+ is fair game for pikuri to manage.
     #
+    # == Per-process container ownership
+    #
+    # The container is owned by the pikuri process that runs it.
+    # {#ensure_running!} registers {#close} with {Pikuri::Finalizers},
+    # so the container is +docker stop+ped when the process exits —
+    # nothing is left running. The flip side, on the way up: a
+    # container found *already running* that this process did not start
+    # is reclaimed (removed and recreated), not adopted, because it's
+    # either a previous run that exited uncleanly, a crash mid-write,
+    # or a concurrent pikuri. A *stopped* container is adopted (just
+    # +docker start+ed) — it's safely persisted, not mid-flight.
+    #
+    # The data is decoupled from the container: the volume is
+    # bind-mounted from the user's cache dir (next section) and is
+    # never nuked here, so reclaim/stop/restart all preserve the
+    # indexed corpus. +docker stop+ rather than +docker rm+ on exit
+    # also keeps the next run a warm +docker start+ instead of a cold
+    # create. The single-named-container convention means this assumes
+    # one active pikuri at a time; a second concurrent pikuri would
+    # reclaim the first's container out from under it.
+    #
     # == Subprocess seam
     #
     # Docker invocations (+docker inspect+, +docker run+,
@@ -137,6 +158,9 @@ module Pikuri
         @port = port
         @healthcheck_timeout = healthcheck_timeout
         @connection = connection
+        @owns_container = false
+        @closed = false
+        @finalizer_handle = nil
       end
 
       # @return [Pathname] host-side data directory.
@@ -162,10 +186,14 @@ module Pikuri
         Backend::Chroma.new(host: 'localhost', port: @port, collection: collection)
       end
 
-      # Idempotent: find / start / recreate the container, then
-      # heartbeat-poll until ready. Safe to call repeatedly; a
-      # second call against an already-running healthy container
-      # is a couple of +docker inspect+ + heartbeat round trips.
+      # Idempotent: find / start / recreate the container, heartbeat-poll
+      # until ready, then register {#close} with {Pikuri::Finalizers} so
+      # the container is stopped at process exit. Safe to call
+      # repeatedly; a second call against the container *this* server
+      # already started is a couple of +docker inspect+ + heartbeat round
+      # trips. The first call against a pre-existing *running* container
+      # (one this process did not start) reclaims it — see "Per-process
+      # container ownership" in the class header.
       #
       # @return [void]
       # @raise [RuntimeError] on missing docker, any docker
@@ -184,10 +212,55 @@ module Pikuri
           LOGGER.info("starting existing #{CONTAINER_NAME}")
           start_container!
         when :running
-          LOGGER.info("#{CONTAINER_NAME} already running")
+          # A running container we started earlier this process is
+          # ours — reuse it. A running container we did *not* start
+          # (a previous run that exited without stopping it, or a
+          # crash mid-write, or a concurrent pikuri) is not adopted:
+          # pikuri owns its container per-process, so reclaim it by
+          # recreating against the persistent volume. See the class
+          # header, "Per-process container ownership".
+          if @owns_container
+            LOGGER.info("#{CONTAINER_NAME} already running")
+          else
+            LOGGER.info("reclaiming a pre-existing #{CONTAINER_NAME} (not adopting it)")
+            remove_container!
+            run_container!
+          end
         end
 
+        @owns_container = true
         wait_for_healthy!
+        register_for_cleanup
+      end
+
+      # Stop the supervised container. Registered with
+      # {Pikuri::Finalizers} by {#ensure_running!} so it runs at
+      # process exit; safe to call directly too.
+      #
+      # Best-effort and idempotent: a no-op if this server never
+      # started a container or has already closed, and a non-zero
+      # +docker stop+ is logged rather than raised (teardown shouldn't
+      # abort on a container that's already gone). Contrast
+      # {#ensure_running!}, where docker failures are loud — that's
+      # boot, this is teardown.
+      #
+      # Uses +docker stop+, not +docker rm+: the next run's
+      # {#ensure_running!} finds the container +:stopped+ and
+      # fast-+docker start+s it against the same persistent volume, so
+      # the corpus survives and a warm restart skips the cold create.
+      #
+      # @return [void]
+      def close
+        return if @closed || !@owns_container
+
+        @closed = true
+        result = docker('stop', CONTAINER_NAME)
+        return if result.status.success?
+
+        LOGGER.warn(
+          "docker stop #{CONTAINER_NAME} failed " \
+          "(exit #{result.status.exitstatus}): #{result.output.strip}"
+        )
       end
 
       # Default host-side data directory:
@@ -204,6 +277,14 @@ module Pikuri
       end
 
       private
+
+      # Register this server's {#close} with the process-global
+      # teardown registry, once. Idempotent across repeated
+      # {#ensure_running!} calls — {Pikuri::Finalizers} would
+      # otherwise hold duplicate handles for the same server.
+      def register_for_cleanup
+        @finalizer_handle ||= Pikuri::Finalizers.register(self)
+      end
 
       # Inspect the container by name. Returns one of
       # +:missing+ / +:wrong_image+ / +:stopped+ / +:running+.

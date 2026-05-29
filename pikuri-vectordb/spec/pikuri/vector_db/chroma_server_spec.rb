@@ -64,14 +64,24 @@ describe Pikuri::VectorDb::ChromaServer do
     Pikuri::Subprocess.singleton_class.send(:remove_method, :__orig_spawn)
   end
 
+  # ensure_running! registers the server with the process-global
+  # Pikuri::Finalizers so it's stopped at exit. Track every server we
+  # build and unregister it after the example, so the suite doesn't
+  # leave real servers registered (which would fire a real `docker
+  # stop` at process exit, against the unstubbed subprocess seam).
+  let(:built_servers) { [] }
+  after { built_servers.each { |s| Pikuri::Finalizers.unregister(s) } }
+
   def build_server(**overrides)
-    Pikuri::VectorDb::ChromaServer.new(
+    server = Pikuri::VectorDb::ChromaServer.new(
       data_dir: data_dir,
       port: 8000,
       healthcheck_timeout: 1,
       connection: heartbeat_conn,
       **overrides
     )
+    built_servers << server
+    server
   end
 
   describe '#initialize' do
@@ -140,16 +150,36 @@ describe Pikuri::VectorDb::ChromaServer do
       assert_equal 'start', docker_calls[1][1]
     end
 
-    it 'is a no-op subprocess-wise when already running on the pinned image' do
+    it 'reclaims a pre-existing running container instead of adopting it' do
+      # A container found running that this process did not start is
+      # not trusted: remove and recreate against the persistent volume.
       planned_results.replace([
-                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]
+                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"], # running, pinned image
+                                [0, ''],                                                  # docker rm -f
+                                [0, 'container-id-new']                                   # docker run
                               ])
       heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
       build_server.ensure_running!
 
-      # Only the inspect call; no start/run.
-      assert_equal 1, docker_calls.length
+      assert_equal %w[inspect rm run], docker_calls.map { |c| c[1] }
+    end
+
+    it 'does not recreate a container it started earlier in the same process' do
+      # First call creates it; the second sees it running and, because
+      # this server now owns it, reuses it (no rm/run).
+      planned_results.replace([
+                                [1, ''],                                                  # inspect → missing
+                                [0, 'container-id-abc'],                                  # docker run
+                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]     # inspect → running (ours)
+                              ])
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+
+      server = build_server
+      server.ensure_running!
+      server.ensure_running!
+
+      assert_equal %w[inspect run inspect], docker_calls.map { |c| c[1] }
     end
 
     it 'nukes and recreates when the running container is on a different image' do
@@ -185,7 +215,8 @@ describe Pikuri::VectorDb::ChromaServer do
 
     it 'raises when heartbeat never returns 200 within the timeout' do
       planned_results.replace([
-                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]
+                                [1, ''],   # inspect → missing
+                                [0, 'cid'] # docker run ok
                               ])
       heartbeat_stubs.get('/api/v2/heartbeat') { [503, JSON_HEADERS, '{}'] }
 
@@ -210,6 +241,64 @@ describe Pikuri::VectorDb::ChromaServer do
 
       build_server.ensure_running!
       assert call_n >= 2, 'heartbeat must be polled past the first connection refusal'
+    end
+  end
+
+  describe '#close' do
+    def start_then(*plans)
+      planned_results.replace([[1, ''], [0, 'container-id-abc'], *plans]) # missing → run, then ...
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+      server = build_server
+      server.ensure_running!
+      server
+    end
+
+    it 'docker-stops the container it started' do
+      server = start_then([0, ''])
+      server.close
+      assert_equal %w[inspect run stop], docker_calls.map { |c| c[1] }
+      assert_equal Pikuri::VectorDb::ChromaServer::CONTAINER_NAME, docker_calls.last.last
+    end
+
+    it 'is idempotent — a second close issues no further docker stop' do
+      server = start_then([0, ''])
+      server.close
+      server.close
+      assert_equal 1, docker_calls.count { |c| c[1] == 'stop' }
+    end
+
+    it 'is a no-op when this server never started a container' do
+      build_server.close
+      assert_empty docker_calls
+    end
+
+    it 'logs rather than raises when docker stop fails' do
+      server = start_then([137, 'No such container: pikuri-internal-chroma'])
+      server.close # must not raise even though stop exits non-zero
+      assert_equal 'stop', docker_calls.last[1]
+    end
+
+    it 'registers itself once with Pikuri::Finalizers across repeated ensure_running!' do
+      # Isolate the global registry for this example so we can assert
+      # on its contents without seeing other specs' registrants.
+      saved = Pikuri::Finalizers.instance_variable_get(:@registered)
+      Pikuri::Finalizers.instance_variable_set(:@registered, [])
+      begin
+        planned_results.replace([
+                                  [1, ''], [0, 'cid'],                                    # 1st ensure: missing → run
+                                  [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]   # 2nd ensure: running (ours)
+                                ])
+        heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
+
+        server = build_server
+        server.ensure_running!
+        server.ensure_running!
+
+        registered = Pikuri::Finalizers.instance_variable_get(:@registered)
+        assert_equal [server], registered
+      ensure
+        Pikuri::Finalizers.instance_variable_set(:@registered, saved)
+      end
     end
   end
 end
