@@ -110,8 +110,12 @@ up on next request without displacing the chat model. The win
 over a separate `llama-swap` proxy is that there are no extra
 moving parts to configure.
 
-**Memory.** Q4_K_M of this 35B-A3B model needs **~32 GB of
-memory** for the weights plus KV cache.
+**Memory.** Q4_K_M of this 35B-A3B model needs **a bit under
+32 GB of memory** for the weights plus KV cache — deliberately,
+so it fits a 32 GB VRAM budget with a little room left for the
+OS and for the embedder + reranker chapter 3 adds (another
+~1 GB between them). All three models stay resident at once and
+still fit in 32 GB — barely, but they fit.
 
 **Best path on a typical workstation: integrated GPU with 32 GB
 allocated as VRAM.** Modern AMD APUs let you carve a chunk of

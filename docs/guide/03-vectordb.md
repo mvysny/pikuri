@@ -185,8 +185,11 @@ status: .status.value}'` and watch each `status` flip from
 Memory cost over chapter 1's chat-only setup is small: ~150 MB
 for the embedder weights and ~600 MB for the reranker weights at
 Q8_0, plus a few hundred MB of KV cache between them at 8K
-context. The chat model's ~32 GB footprint dominates the budget;
-budget another ~1 GB on top for the two helpers.
+context — ~1 GB for the two helpers together. The chat model's
+just-under-32-GB footprint dominates the budget, and it was sized
+([chapter 1](01-chat.md#3-start-llama-server-in-multi-model-mode))
+to leave exactly this much headroom: chat + embedder + reranker
+all stay resident and still fit inside 32 GB of VRAM, barely.
 
 Sanity-check the presets stuck by curling `/v1/models` — each
 model's `preset` field should include the `embeddings = 1` or
