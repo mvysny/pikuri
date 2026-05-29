@@ -7,8 +7,8 @@ require 'pathname'
 module Pikuri
   module VectorDb
     # Supervisor for a self-managed Chroma docker container. Pairs
-    # with {Backend::Chroma}: this class owns the *process* (find /
-    # start / nuke-and-recreate the container, mount the volume,
+    # with {Backend::Chroma}: this class owns the *process* (create /
+    # recreate / remove the container, mount the volume,
     # heartbeat-poll until ready); {Backend::Chroma} owns the HTTP
     # client that talks to it. {#client} returns a {Backend::Chroma}
     # pre-pointed at the running container.
@@ -44,31 +44,34 @@ module Pikuri
     # (rerankers, alternative vector stores) — anything starting
     # with +"pikuri-internal-"+ is fair game for pikuri to manage.
     #
-    # == Per-process container ownership
+    # == Ephemeral container, persistent data
     #
-    # The container is owned by the pikuri process that runs it.
-    # {#ensure_running!} registers {#close} with {Pikuri::Finalizers},
-    # so the container is +docker stop+ped when the process exits —
-    # nothing is left running. The flip side, on the way up: a
-    # container found *already running* that this process did not start
-    # is reclaimed (removed and recreated), not adopted, because it's
-    # either a previous run that exited uncleanly, a crash mid-write,
-    # or a concurrent pikuri. A *stopped* container is adopted (just
-    # +docker start+ed) — it's safely persisted, not mid-flight.
+    # The container is disposable; the corpus is not. Every byte of
+    # chroma state lives on the host volume bind-mounted at
+    # {CONTAINER_PERSIST_DIR}, so the container itself carries
+    # nothing worth keeping. {#ensure_running!} therefore *recreates*
+    # it from scratch on every boot — the lone exception is a
+    # container this same process already started and left running,
+    # which it reuses (so repeated {#ensure_running!} calls within
+    # one process stay cheap). A stopped container, or one left
+    # running by a previous run / a crash / a concurrent pikuri, is
+    # removed and recreated rather than adopted: a fresh container on
+    # the pinned {IMAGE} against the persistent volume is always a
+    # clean, known-good start, and the image tag never has to be
+    # reconciled.
     #
-    # The data is decoupled from the container: the volume is
-    # bind-mounted from the user's cache dir (next section) and is
-    # never nuked here, so reclaim/stop/restart all preserve the
-    # indexed corpus. +docker stop+ rather than +docker rm+ on exit
-    # also keeps the next run a warm +docker start+ instead of a cold
-    # create. The single-named-container convention means this assumes
-    # one active pikuri at a time; a second concurrent pikuri would
-    # reclaim the first's container out from under it.
+    # {#close} (fired at process exit via {Pikuri::Finalizers})
+    # +docker rm -f+s the container — nothing is left behind, not
+    # even a stopped shell. The next run creates a new one and
+    # bind-mounts the same volume, so the indexed corpus survives
+    # untouched. The single-named-container convention means this
+    # assumes one active pikuri at a time; a second concurrent pikuri
+    # would remove the first's container out from under it.
     #
     # == Subprocess seam
     #
     # Docker invocations (+docker inspect+, +docker run+,
-    # +docker start+, +docker rm -f+) are short-lived shell-outs
+    # +docker rm -f+) are short-lived shell-outs
     # — capture output, check exit, act. They route through
     # {Pikuri::Subprocess.spawn} like the rest of pikuri-* +lib/+;
     # this class is *not* an exception to the subprocess seam,
@@ -96,9 +99,9 @@ module Pikuri
 
       # @return [String] pinned chroma docker image. Bumping this
       #   constant is how the codebase upgrades the chroma
-      #   version. An existing container running an older image
-      #   under our {CONTAINER_NAME} is removed and recreated
-      #   when {#ensure_running!} runs against a bumped pin.
+      #   version: {#ensure_running!} recreates the container from
+      #   scratch on the next boot, so it comes up on the new pin
+      #   automatically (the bind-mounted corpus is untouched).
       IMAGE = 'chromadb/chroma:1.5.9'
 
       # @return [String] the container name pikuri claims for its
@@ -113,10 +116,15 @@ module Pikuri
       LABEL = 'pikuri.internal=true'
 
       # @return [String] path inside the container where chroma
-      #   persists its data (chroma's +PERSIST_DIRECTORY+ default
-      #   when +WORKDIR+ is +/chroma+). The host's
-      #   {#default_data_dir} bind-mounts here.
-      CONTAINER_PERSIST_DIR = '/chroma/chroma'
+      #   persists its data. Chroma 1.x (the pinned {IMAGE} line)
+      #   stores its SQLite + segment files at +/data+ — this is
+      #   the +-v+ target the host's {#default_data_dir}
+      #   bind-mounts onto. (Chroma 0.x used +/chroma/chroma+;
+      #   mounting that path against a 1.x image silently leaves
+      #   the host dir empty while the data accumulates in the
+      #   container's writable layer, where +remove_container!+
+      #   would destroy it.)
+      CONTAINER_PERSIST_DIR = '/data'
 
       # @return [Integer] default seconds to wait for the
       #   container's HTTP heartbeat to start returning 200 after
@@ -186,14 +194,15 @@ module Pikuri
         Backend::Chroma.new(host: 'localhost', port: @port, collection: collection)
       end
 
-      # Idempotent: find / start / recreate the container, heartbeat-poll
+      # Idempotent: ensure a fresh container is running, heartbeat-poll
       # until ready, then register {#close} with {Pikuri::Finalizers} so
-      # the container is stopped at process exit. Safe to call
-      # repeatedly; a second call against the container *this* server
-      # already started is a couple of +docker inspect+ + heartbeat round
-      # trips. The first call against a pre-existing *running* container
-      # (one this process did not start) reclaims it — see "Per-process
-      # container ownership" in the class header.
+      # the container is removed at process exit. A container this
+      # process already started and left running is reused (a second
+      # call is one +docker inspect+ plus a heartbeat round trip);
+      # anything else — a stopped container, a running one this process
+      # did not start, or no container at all — is removed (if present)
+      # and recreated on the pinned {IMAGE}. See "Ephemeral container,
+      # persistent data" in the class header.
       #
       # @return [void]
       # @raise [RuntimeError] on missing docker, any docker
@@ -201,31 +210,18 @@ module Pikuri
       def ensure_running!
         FileUtils.mkdir_p(@data_dir)
 
-        case container_state
-        when :missing
+        state = container_state
+        if @owns_container && state == :running
+          LOGGER.info("#{CONTAINER_NAME} already running")
+        else
+          # A stopped container, a running one this process did not
+          # start, or nothing at all: replace it with a fresh
+          # container on the pinned image. The corpus lives on the
+          # bind-mounted host volume, so the discarded container holds
+          # no state worth keeping. See the class header, "Ephemeral
+          # container, persistent data".
+          remove_container! unless state == :missing
           run_container!
-        when :wrong_image
-          LOGGER.info("removing #{CONTAINER_NAME} (image mismatch with pin #{IMAGE})")
-          remove_container!
-          run_container!
-        when :stopped
-          LOGGER.info("starting existing #{CONTAINER_NAME}")
-          start_container!
-        when :running
-          # A running container we started earlier this process is
-          # ours — reuse it. A running container we did *not* start
-          # (a previous run that exited without stopping it, or a
-          # crash mid-write, or a concurrent pikuri) is not adopted:
-          # pikuri owns its container per-process, so reclaim it by
-          # recreating against the persistent volume. See the class
-          # header, "Per-process container ownership".
-          if @owns_container
-            LOGGER.info("#{CONTAINER_NAME} already running")
-          else
-            LOGGER.info("reclaiming a pre-existing #{CONTAINER_NAME} (not adopting it)")
-            remove_container!
-            run_container!
-          end
         end
 
         @owns_container = true
@@ -233,32 +229,34 @@ module Pikuri
         register_for_cleanup
       end
 
-      # Stop the supervised container. Registered with
+      # Remove the supervised container. Registered with
       # {Pikuri::Finalizers} by {#ensure_running!} so it runs at
       # process exit; safe to call directly too.
       #
       # Best-effort and idempotent: a no-op if this server never
       # started a container or has already closed, and a non-zero
-      # +docker stop+ is logged rather than raised (teardown shouldn't
+      # +docker rm -f+ is logged rather than raised (teardown shouldn't
       # abort on a container that's already gone). Contrast
       # {#ensure_running!}, where docker failures are loud — that's
       # boot, this is teardown.
       #
-      # Uses +docker stop+, not +docker rm+: the next run's
-      # {#ensure_running!} finds the container +:stopped+ and
-      # fast-+docker start+s it against the same persistent volume, so
-      # the corpus survives and a warm restart skips the cold create.
+      # Uses +docker rm -f+, not +docker stop+: the container is
+      # disposable (the corpus lives on the bind-mounted host volume),
+      # so it is discarded outright rather than left stopped. The next
+      # run's {#ensure_running!} creates a fresh container against the
+      # same volume. See "Ephemeral container, persistent data" in the
+      # class header.
       #
       # @return [void]
       def close
         return if @closed || !@owns_container
 
         @closed = true
-        result = docker('stop', CONTAINER_NAME)
+        result = docker('rm', '-f', CONTAINER_NAME)
         return if result.status.success?
 
         LOGGER.warn(
-          "docker stop #{CONTAINER_NAME} failed " \
+          "docker rm -f #{CONTAINER_NAME} failed " \
           "(exit #{result.status.exitstatus}): #{result.output.strip}"
         )
       end
@@ -286,23 +284,17 @@ module Pikuri
         @finalizer_handle ||= Pikuri::Finalizers.register(self)
       end
 
-      # Inspect the container by name. Returns one of
-      # +:missing+ / +:wrong_image+ / +:stopped+ / +:running+.
-      # +docker inspect+ exits non-zero when the container
-      # doesn't exist; the +--format+ string keeps parsing trivial
-      # (image and running-state on one line, pipe-separated).
+      # Inspect the container by name. Returns one of +:missing+ /
+      # +:stopped+ / +:running+. +docker inspect+ exits non-zero
+      # when the container doesn't exist. The image tag is *not*
+      # consulted: a wrong-image container falls into the same
+      # remove-and-recreate path as any other non-owned container
+      # (see {#ensure_running!}), so there is nothing to branch on.
       def container_state
-        result = docker(
-          'inspect', '--format', '{{.Config.Image}}|{{.State.Running}}',
-          CONTAINER_NAME
-        )
+        result = docker('inspect', '--format', '{{.State.Running}}', CONTAINER_NAME)
         return :missing unless result.status.success?
 
-        image, running = result.output.strip.split('|', 2)
-        return :wrong_image unless image == IMAGE
-        return :running if running == 'true'
-
-        :stopped
+        result.output.strip == 'true' ? :running : :stopped
       end
 
       def run_container!
@@ -329,14 +321,6 @@ module Pikuri
         return if result.status.success?
 
         raise "ChromaServer: docker rm -f #{CONTAINER_NAME} failed " \
-              "(exit #{result.status.exitstatus}): #{result.output.strip}"
-      end
-
-      def start_container!
-        result = docker('start', CONTAINER_NAME)
-        return if result.status.success?
-
-        raise "ChromaServer: docker start #{CONTAINER_NAME} failed " \
               "(exit #{result.status.exitstatus}): #{result.output.strip}"
       end
 

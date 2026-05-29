@@ -60,11 +60,11 @@ module Pikuri
     #
     # The Watcher registers with {Pikuri::Finalizers} *last* (after
     # the host's {ChromaServer}), so LIFO closes it *first* — before
-    # +docker stop+. {#close} stops the listener (no new events),
-    # then joins the worker, which finishes the job it is mid-flight
-    # on and exits. That ordering is load-bearing: it guarantees no
-    # {Backend#replace_source} is still writing when the Chroma
-    # container goes down. Remaining queued (not-yet-started) jobs
+    # the container is +docker rm -f+'d. {#close} stops the listener
+    # (no new events), then joins the worker, which finishes the job
+    # it is mid-flight on and exits. That ordering is load-bearing: it
+    # guarantees no {Backend#replace_source} is still writing when the
+    # Chroma container goes down. Remaining queued (not-yet-started) jobs
     # are abandoned — the next boot's reconcile sweep catches them
     # (the downtime-gap guarantee).
     #

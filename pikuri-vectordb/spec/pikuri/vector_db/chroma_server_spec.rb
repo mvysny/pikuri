@@ -131,32 +131,34 @@ describe Pikuri::VectorDb::ChromaServer do
       # 127.0.0.1 binding, not the docker default 0.0.0.0
       port_publish = run_argv[run_argv.index('-p') + 1]
       assert_equal '127.0.0.1:8000:8000', port_publish
-      # Bind-mount → /chroma/chroma
+      # Bind-mount → /data (chroma 1.x persist dir)
       volume_arg = run_argv[run_argv.index('-v') + 1]
       assert_equal "#{data_dir}:#{Pikuri::VectorDb::ChromaServer::CONTAINER_PERSIST_DIR}",
                    volume_arg
     end
 
-    it 'starts an existing stopped container on the pinned image' do
+    it 'removes and recreates a pre-existing stopped container' do
+      # The container is disposable; the corpus lives on the volume.
+      # A stopped container is nuked and recreated, not adopted.
       planned_results.replace([
-                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|false\n"], # stopped
-                                [0, '']                                                   # docker start
+                                [0, "false\n"],          # inspect → stopped
+                                [0, ''],                 # docker rm -f
+                                [0, 'container-id-new']  # docker run
                               ])
       heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
       build_server.ensure_running!
 
-      assert_equal 2, docker_calls.length
-      assert_equal 'start', docker_calls[1][1]
+      assert_equal %w[inspect rm run], docker_calls.map { |c| c[1] }
     end
 
     it 'reclaims a pre-existing running container instead of adopting it' do
       # A container found running that this process did not start is
       # not trusted: remove and recreate against the persistent volume.
       planned_results.replace([
-                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"], # running, pinned image
-                                [0, ''],                                                  # docker rm -f
-                                [0, 'container-id-new']                                   # docker run
+                                [0, "true\n"],          # inspect → running (not ours)
+                                [0, ''],                # docker rm -f
+                                [0, 'container-id-new'] # docker run
                               ])
       heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
@@ -169,9 +171,9 @@ describe Pikuri::VectorDb::ChromaServer do
       # First call creates it; the second sees it running and, because
       # this server now owns it, reuses it (no rm/run).
       planned_results.replace([
-                                [1, ''],                                                  # inspect → missing
-                                [0, 'container-id-abc'],                                  # docker run
-                                [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]     # inspect → running (ours)
+                                [1, ''],                 # inspect → missing
+                                [0, 'container-id-abc'], # docker run
+                                [0, "true\n"]            # inspect → running (ours)
                               ])
       heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
@@ -180,19 +182,6 @@ describe Pikuri::VectorDb::ChromaServer do
       server.ensure_running!
 
       assert_equal %w[inspect run inspect], docker_calls.map { |c| c[1] }
-    end
-
-    it 'nukes and recreates when the running container is on a different image' do
-      planned_results.replace([
-                                [0, "chromadb/chroma:0.4.0|true\n"], # wrong image, running
-                                [0, ''],                              # docker rm -f
-                                [0, 'container-id-xyz']               # docker run
-                              ])
-      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
-
-      build_server.ensure_running!
-
-      assert_equal %w[inspect rm run], docker_calls.map { |c| c[1] }
     end
 
     it 'raises a clear error when docker is not on PATH' do
@@ -253,18 +242,19 @@ describe Pikuri::VectorDb::ChromaServer do
       server
     end
 
-    it 'docker-stops the container it started' do
+    it 'docker-removes the container it started' do
       server = start_then([0, ''])
       server.close
-      assert_equal %w[inspect run stop], docker_calls.map { |c| c[1] }
+      assert_equal %w[inspect run rm], docker_calls.map { |c| c[1] }
+      assert_includes docker_calls.last, '-f'
       assert_equal Pikuri::VectorDb::ChromaServer::CONTAINER_NAME, docker_calls.last.last
     end
 
-    it 'is idempotent — a second close issues no further docker stop' do
+    it 'is idempotent — a second close issues no further docker rm' do
       server = start_then([0, ''])
       server.close
       server.close
-      assert_equal 1, docker_calls.count { |c| c[1] == 'stop' }
+      assert_equal 1, docker_calls.count { |c| c[1] == 'rm' }
     end
 
     it 'is a no-op when this server never started a container' do
@@ -272,10 +262,10 @@ describe Pikuri::VectorDb::ChromaServer do
       assert_empty docker_calls
     end
 
-    it 'logs rather than raises when docker stop fails' do
+    it 'logs rather than raises when docker rm fails' do
       server = start_then([137, 'No such container: pikuri-internal-chroma'])
-      server.close # must not raise even though stop exits non-zero
-      assert_equal 'stop', docker_calls.last[1]
+      server.close # must not raise even though rm exits non-zero
+      assert_equal 'rm', docker_calls.last[1]
     end
 
     it 'registers itself once with Pikuri::Finalizers across repeated ensure_running!' do
@@ -285,8 +275,8 @@ describe Pikuri::VectorDb::ChromaServer do
       Pikuri::Finalizers.instance_variable_set(:@registered, [])
       begin
         planned_results.replace([
-                                  [1, ''], [0, 'cid'],                                    # 1st ensure: missing → run
-                                  [0, "#{Pikuri::VectorDb::ChromaServer::IMAGE}|true\n"]   # 2nd ensure: running (ours)
+                                  [1, ''], [0, 'cid'], # 1st ensure: missing → run
+                                  [0, "true\n"]        # 2nd ensure: running (ours)
                                 ])
         heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
