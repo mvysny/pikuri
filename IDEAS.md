@@ -74,6 +74,12 @@ Designed, not built. Shorter adjacent ideas still on the table:
   (untrusted-content markers). Cheap, partial — empirical
   question whether the model pays attention to
   `<untrusted>…</untrusted>` framing.
+- **Private-context taint + egress levels** — the long-form
+  runtime-enforcement design (coarse context taint on first private
+  read; Sealed / Bounded / Off levels; `web_search` whitelisted by
+  nature vs `fetch` exfil by nature):
+  [`ideas/private-context-taint.md`](ideas/private-context-taint.md).
+  Designed, not built.
 - **Egress allowlist** for `fetch` / `bash` when in interactive
   mode (auto-deny non-allowlisted hosts, prompt for first-use
   additions). Gondolin's egress-proxy pattern (see "Prior art"

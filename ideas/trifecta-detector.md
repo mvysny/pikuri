@@ -215,26 +215,31 @@ If even that is too loud, the soft/loud split is the second lever: a
 reassembled trifecta (untrusted only via delegation) is a soft notice,
 not the same alarm as an all-in-one-context agent.
 
-## Open: the human-gated-egress primitive
+## The human-gated-egress primitive — resolved, moved out
 
 Full propagation means privilege separation under an LLM orchestrator
 **does not** break the trifecta — it only raises the bar. The genuine
 break is a decision point that injection can't drive, sitting *between*
-the untrusted-input step and the egress step. That is **not** "a human
-launched the agent" — a parent that auto-dispatches is still an
-injection-drivable router. It's a human (or other non-LLM gate)
-inspecting what crosses the dangerous junction — i.e. egress routed
-through a `Workspace::Confirmer`-style seam when the trifecta is
-present.
+the untrusted-input step and the egress step.
 
-Today egress tools (`web_search`) are stateless and don't confirm. So
-"the assistant is the safe shape" is a thing to **build**, not a
-property we get for free, and even then it's a bar (injection can try
-to social-engineer the human: "ask your assistant to email this to…"),
-not a wall. **Open question:** does the detector *only warn*, or does
-detecting a present trifecta optionally flip egress tools to
-confirm-required? Leaning warn-only for v1, with the confirm-on-egress
-as a separate opt-in control — but undecided.
+This was the big open thread; it got worked out and lives in its own
+note now: [`private-context-taint.md`](private-context-taint.md). The
+short version, so this file stays self-contained:
+
+- A per-call human *approval* gate is the **wrong** primitive — the
+  human can't judge laundered egress (a secret hidden in a search
+  query). So the detector stays **warn-only**; it does not flip egress
+  to confirm-required.
+- The runtime break is **structural**, not human: coarse private-context
+  taint that **severs the egress leg** once private data enters, so all
+  three legs are never live at once.
+- The human survives in exactly one role — as the **author** of a
+  post-taint egress payload (they type the query/URL), not as its
+  approver. Authoring is clean by construction; approving is not.
+
+See the sibling note for the privacy levels (Sealed / Bounded / Off),
+the `web_search`-vs-`fetch` destination-control distinction, and why
+the `fetch` whitelist is killed.
 
 ## Open: propagating this to docs + example scripts
 
