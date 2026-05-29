@@ -32,8 +32,8 @@ The gem inventory:
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
   bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
 - `pikuri-vectordb` — local-corpus vector search + agentic RAG:
-  `vectordb_search` / `vectordb_reindex` tools, swappable
-  `Backend` (`InMemory` / `Chroma`), embedder + reranker +
+  `vectordb_search` / `vectordb_read` / `vectordb_reindex` tools,
+  swappable `Backend` (`InMemory` / `Chroma`), embedder + reranker +
   chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-corpus`.
 - `pikuri-memory` — name-reservation placeholder for an upcoming
   "memories" extension (durable cross-conversation facts about the
@@ -235,9 +235,12 @@ per-gem one-liners:
   tools they happen to use.
 - **`pikuri-vectordb/`** — local-corpus vector search + agentic
   RAG. `VectorDb::Extension` auto-registers the `vectordb_search`
-  + `vectordb_reindex` tools (`Search` / `Reindex`) onto an
-  `Agent` via `c.add_extension(...)` in the `Agent.new` block —
-  same opt-in shape as pikuri-tasks / pikuri-skills. Pieces:
+  + `vectordb_read` + `vectordb_reindex` tools
+  (`Search` / `Read` / `Reindex`) onto an `Agent` via
+  `c.add_extension(...)` in the `Agent.new` block — same opt-in
+  shape as pikuri-tasks / pikuri-skills. `vectordb_read` is
+  parent-document retrieval (read a hit in full by `source`),
+  inbound-only so it adds no egress leg. Pieces:
   swappable `Backend` (pure-Ruby `Backend::InMemory` cosine, the
   educational default; thin Faraday `Backend::Chroma` for
   persistence) + `Backend::Result`, `ChromaServer` (self-managed
@@ -250,9 +253,9 @@ per-gem one-liners:
   Text extraction reuses `Pikuri::FileType.read_as_text` from
   pikuri-core (plain text / Markdown / PDF; HTML deferred).
   Ships `bin/pikuri-corpus` — a single egress-free recall agent
-  (`vectordb_search` + `calculator`, no web tools): treats the
-  corpus as private and breaks the trifecta by having no outbound
-  leg. The bundled `VectorDb::LIBRARIAN` persona is the
+  (`vectordb_search` + `vectordb_read` + `calculator`, no web
+  tools): treats the corpus as private and breaks the trifecta by
+  having no outbound leg (search and read are both inbound-only). The bundled `VectorDb::LIBRARIAN` persona is the
   privilege-separated counterpart for an agent that *does* have
   egress; it is NOT wired in `bin/pikuri-corpus` (a correct wiring
   needs persona-owned tools — see `ideas/trifecta-detector.md` —

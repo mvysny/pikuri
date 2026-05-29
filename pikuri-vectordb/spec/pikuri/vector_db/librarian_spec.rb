@@ -11,11 +11,14 @@ describe Pikuri::VectorDb::LIBRARIAN do
     assert_equal 'librarian', described_class.name
   end
 
-  it 'has vectordb_search as its only tool — the privilege-separation argument' do
+  it 'admits only the two inbound corpus tools — the privilege-separation argument' do
     # The load-bearing reason this persona exists: a poisoned
-    # chunk reaches a librarian with no path to act on it (no
-    # bash, no fetch, no write, no recursion).
-    assert_equal %w[vectordb_search], described_class.tool_names
+    # document reaches a librarian with no path to act on it. Both
+    # tools are inbound-only (search + read); there is deliberately
+    # no bash, no fetch, no write, no recursion — so the trifecta's
+    # egress leg stays absent. See Read's "Why this does not widen
+    # the trifecta".
+    assert_equal %w[vectordb_search vectordb_read], described_class.tool_names
   end
 
   it 'caps step budget at 15 (generous-but-bounded for a few refined queries)' do

@@ -15,11 +15,11 @@ module Pikuri
     #     )
     #   end
     #
-    # On +configure+ the extension registers two tools onto the
-    # parent agent — {Search} as +vectordb_search+ and {Reindex}
-    # as +vectordb_reindex+ — and nothing else. It does *not* index
-    # anything: when and whether to populate the corpus is host
-    # policy, not the extension's job.
+    # On +configure+ the extension registers three tools onto the
+    # parent agent — {Search} as +vectordb_search+, {Read} as
+    # +vectordb_read+, and {Reindex} as +vectordb_reindex+ — and
+    # nothing else. It does *not* index anything: when and whether to
+    # populate the corpus is host policy, not the extension's job.
     #
     # == The host owns population
     #
@@ -124,24 +124,26 @@ module Pikuri
         )
       end
 
-      # Register {Search} + {Reindex} onto +c+. Does not index —
-      # population is the host's call (see the class header). Raises
-      # if either tool name has been pre-registered: the extension is
-      # the single owner of both, and a duplicate registration would
-      # point to a different Indexer / Embedder / backend.
+      # Register {Search} + {Read} + {Reindex} onto +c+. Does not
+      # index — population is the host's call (see the class header).
+      # Raises if any of the three tool names has been pre-registered:
+      # the extension is the single owner of all three, and a duplicate
+      # registration would point to a different Indexer / Embedder /
+      # backend.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
       def configure(c)
-        %w[vectordb_search vectordb_reindex].each do |name|
+        %w[vectordb_search vectordb_read vectordb_reindex].each do |name|
           next unless c.tools.any? { |t| t.name == name }
 
           raise "#{name} cannot be pre-registered (in tools: or via c.add_tool) " \
                 'when adding Pikuri::VectorDb::Extension — the extension auto-registers ' \
-                'both tools so they share the same Indexer / Embedder / backend.'
+                'all three tools so they share the same Indexer / Embedder / backend.'
         end
 
         c.add_tool Search.new(embedder: @embedder, backend: @backend, reranker: @reranker)
+        c.add_tool Read.new(backend: @backend, root: @indexer.root)
         c.add_tool Reindex.new(indexer: @indexer)
         nil
       end

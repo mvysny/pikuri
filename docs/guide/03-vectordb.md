@@ -226,14 +226,19 @@ port.
 
 This boots a single chat agent with:
 
-- The `vectordb_search` and `vectordb_reindex` tools,
+- The `vectordb_search`, `vectordb_read`, and `vectordb_reindex`
+  tools,
 - The `calculator` from chapter 1 (so non-corpus arithmetic still
   works),
 - A `Pikuri::VectorDb::Backend::InMemory` pointed at the
   `docs/guide/` directory of this checkout (i.e., the chapters
   you're reading).
 
-No web tools, no sub-agents — just retrieval and a calculator. Why
+No web tools, no sub-agents — just retrieval, full-document read,
+and a calculator. `vectordb_read` is the companion to search: when a
+search surfaces a clean hit, the agent reads that whole document by
+its `source` path instead of re-querying for more fragments of it.
+Why
 the web tools are absent is the ["Why this agent can't leak your
 corpus"](#why-this-agent-cant-leak-your-corpus) section below.
 
@@ -349,9 +354,18 @@ rank, because it *is* the number the rank was built from.
 Treat the corpus as private — your notes, your contracts, your
 medical records — and one rule shapes the whole binary: **the agent
 that reads it has no way to send anything out.** Its tools are
-`vectordb_search`, `vectordb_reindex`, and `calculator`; there is no
-`web_search`, no `fetch`, no `bash`. That single absence does two
-jobs at once.
+`vectordb_search`, `vectordb_read`, `vectordb_reindex`, and
+`calculator`; there is no `web_search`, no `fetch`, no `bash`. That
+single absence does two jobs at once.
+
+Note that `vectordb_read` — added so the agent can pull a clean hit
+into context in full rather than reconstruct it from fragments —
+does *not* weaken this. Reading is inbound-only: it widens what the
+agent can *see*, never what it can *do*. The trifecta's dangerous
+leg is the outbound one, and search and read are both ways of
+pulling corpus content *in*; neither adds a way to send anything
+*out*. So the rule holds with three retrieval tools exactly as it
+did with one.
 
 **It defeats data exfiltration.** An agent that can read private
 data *and* reach the internet can be talked into mailing that data

@@ -10,8 +10,10 @@ Local-corpus vector search + agentic RAG for the
 
 Will provide:
 
-- `Pikuri::VectorDb::Extension` — wires a `vectordb_search` tool +
-  a `vectordb_reindex` tool onto a `Pikuri::Agent` via
+- `Pikuri::VectorDb::Extension` — wires a `vectordb_search` tool,
+  a `vectordb_read` tool (read one indexed document in full by its
+  `source` path — parent-document retrieval), and a
+  `vectordb_reindex` tool onto a `Pikuri::Agent` via
   `c.add_extension(...)` inside the `Agent.new` block.
 - `Pikuri::VectorDb::Backend::InMemory` — pure-Ruby cosine over
   `Array<Float>`. The educational default; reads in ~40 lines.

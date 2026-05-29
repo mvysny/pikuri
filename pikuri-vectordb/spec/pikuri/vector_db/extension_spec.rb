@@ -79,11 +79,12 @@ describe Pikuri::VectorDb::Extension do
   end
 
   describe '#configure' do
-    it 'registers vectordb_search and vectordb_reindex tools' do
+    it 'registers vectordb_search, vectordb_read and vectordb_reindex tools' do
       build_extension.configure(configurator)
 
       tool_names = configurator.tools.map(&:name)
       assert_includes tool_names, 'vectordb_search'
+      assert_includes tool_names, 'vectordb_read'
       assert_includes tool_names, 'vectordb_reindex'
     end
 
@@ -121,6 +122,16 @@ describe Pikuri::VectorDb::Extension do
         build_extension.configure(configurator)
       end
       assert_match(/vectordb_search cannot be pre-registered/, err.message)
+    end
+
+    it 'raises if vectordb_read has been pre-registered' do
+      pre = Pikuri::VectorDb::Read.new(backend: backend, root: root)
+      configurator.add_tool(pre)
+
+      err = assert_raises(RuntimeError) do
+        build_extension.configure(configurator)
+      end
+      assert_match(/vectordb_read cannot be pre-registered/, err.message)
     end
 
     it 'raises if vectordb_reindex has been pre-registered' do

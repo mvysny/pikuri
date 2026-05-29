@@ -8,6 +8,18 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Added
 
+- **`vectordb_read` tool (`Pikuri::VectorDb::Read`).** Parent-document
+  retrieval: read one indexed document in full by the `source` path
+  `vectordb_search` cited, instead of re-querying for more fragments
+  of the same document. The `source` must be a path the `Indexer`
+  actually produced (verified against `Backend#sources_with_hashes`),
+  so the read domain is exactly the search domain — not an
+  arbitrary-file reader. Line-windowed with the same caps / paging
+  trailer as `Workspace::Read`. Reading is inbound-only, so it adds no
+  egress leg: the `bin/pikuri-corpus` agent stays leak-proof and the
+  `LIBRARIAN` sub-agent's privilege separation is intact. Auto-
+  registered by `VectorDb::Extension` alongside `vectordb_search` /
+  `vectordb_reindex`, and added to `LIBRARIAN`'s toolset.
 - **`Pikuri::Workspace::Filesystem::AllowAll`.** Unrestricted variant
   of `Filesystem` for dev-container / Docker mode where the container
   is the security boundary. Same accessor surface as the base class,

@@ -729,9 +729,13 @@ rationale lives in the gem's YARD headers and the inventory in
 
 What landed against the original sketch:
 
-- **Extension** registers `vectordb_search` (`Search`) and
-  `vectordb_reindex` (`Reindex`) on the parent and nothing more — it
-  does not index. Population is host policy: an explicit
+- **Extension** registers `vectordb_search` (`Search`),
+  `vectordb_read` (`Read`), and `vectordb_reindex` (`Reindex`) on the
+  parent and nothing more — it does not index. `vectordb_read` pulls
+  one indexed document into context in full by its `source` path
+  (parent-document retrieval, below); it is inbound-only, so it does
+  not add an egress leg in either the `pikuri-corpus` or
+  `LIBRARIAN`-mediated wiring. Population is host policy: an explicit
   `indexer.index_if_empty!`, a `Watcher`, or leaving the corpus empty
   until the agent calls `vectordb_reindex` (what `pikuri-corpus`
   does). No system-prompt snippet — direct-call and `LIBRARIAN`-mediated
@@ -813,8 +817,11 @@ router-mode `llama-server`) graduated out of this log into the
   the listener variant if a concrete "the model forgot to search"
   pattern shows up.
 - **Per-doc-type chunkers.** Markdown-heading-aware splitter,
-  AST-aware code chunker, contextual chunking, parent-document
-  retrieval. All real quality wins, all separately scoped features.
+  AST-aware code chunker, contextual chunking. All real quality
+  wins, all separately scoped features. (Parent-document
+  retrieval shipped instead as the `vectordb_read` tool — the
+  agent reads the whole source document on a clean hit, rather
+  than the chunker stitching parent context onto every chunk.)
 - **Hosted reranker providers (Cohere).** v1 ships
   `Reranker::LlamaServer` only — the privacy-aligned default.
   Cohere is the dominant hosted reranker (best-in-class on BEIR /
