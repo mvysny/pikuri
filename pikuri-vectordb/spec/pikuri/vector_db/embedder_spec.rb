@@ -38,6 +38,29 @@ describe Pikuri::VectorDb::Embedder do
       embedder = Pikuri::VectorDb::Embedder.new(model: 'nomic-embed-text-v1.5')
       assert_equal 'nomic-embed-text-v1.5', embedder.model
     end
+
+    it 'defaults provider to nil and assume_model_exists to false' do
+      embedder = Pikuri::VectorDb::Embedder.new
+      assert_nil embedder.provider
+      refute embedder.assume_model_exists
+    end
+
+    it 'accepts provider: and assume_model_exists: for local llama-server use' do
+      embedder = Pikuri::VectorDb::Embedder.new(
+        model: 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0',
+        provider: :openai,
+        assume_model_exists: true
+      )
+      assert_equal :openai, embedder.provider
+      assert embedder.assume_model_exists
+    end
+
+    it 'rejects assume_model_exists: true without an explicit provider (RubyLLM requirement)' do
+      err = assert_raises(ArgumentError) do
+        Pikuri::VectorDb::Embedder.new(model: 'foo', assume_model_exists: true)
+      end
+      assert_match(/provider: must be specified/, err.message)
+    end
   end
 
   describe '#embed' do
@@ -62,6 +85,28 @@ describe Pikuri::VectorDb::Embedder do
       embedder.embed(['hi'])
 
       refute captured_calls.first[:kw].key?(:model)
+    end
+
+    it 'forwards provider: and assume_model_exists: kwargs to RubyLLM.embed' do
+      embedder = Pikuri::VectorDb::Embedder.new(
+        model: 'router/model',
+        provider: :openai,
+        assume_model_exists: true
+      )
+      embedder.embed(['hi'])
+
+      kw = captured_calls.first[:kw]
+      assert_equal :openai, kw[:provider]
+      assert_equal true, kw[:assume_model_exists]
+    end
+
+    it 'omits provider: and assume_model_exists: when at defaults' do
+      embedder = Pikuri::VectorDb::Embedder.new(model: 'some-model')
+      embedder.embed(['hi'])
+
+      kw = captured_calls.first[:kw]
+      refute kw.key?(:provider)
+      refute kw.key?(:assume_model_exists)
     end
 
     it 'short-circuits empty input without an HTTP call' do

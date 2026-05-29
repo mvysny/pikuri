@@ -106,14 +106,59 @@ the upgrade is negligible: ~150 MB and ~600 MB at Q8_0
 respectively, against the 20 GB of the chat model.
 
 Once both are cached (the downloads finish in seconds on a decent
-connection), restart the router-mode `llama-server` from chapter
-1; it rescans on boot and the new GGUFs join the rotation. Only
-one model is resident at a time, so switching between them costs
-an unload/reload (a few seconds off an SSD), which is fine
+connection), the router will pick them up — but not in a usable
+state yet. When the router auto-loads a model, it inherits the
+flags you passed on the `llama-server` command line, which are
+defaults written for *generative* models. Embedders need
+`--embeddings` to switch the server into pooled-output mode, and
+rerankers need `--reranking` to enable the `/v1/rerank` endpoint.
+Neither of these is something you want to pass on the router
+command line, because it would apply to Qwen3.6 as well and
+either disable chat completion or make it return embedding
+vectors instead of text. The fix is a per-model preset file:
+
+```ini
+# ~/.config/llama.cpp/presets.ini
+
+[nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0]
+hf-repo = nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
+embeddings = 1
+
+[gpustack/bge-reranker-v2-m3-GGUF:Q8_0]
+hf-repo = gpustack/bge-reranker-v2-m3-GGUF:Q8_0
+reranking = 1
+```
+
+The file path is your choice — the router only knows about it
+via the `--models-preset` flag, so put it wherever you keep
+config. The section header is the alias the client will use
+(matching the `--model` argument `pikuri-librarian` sends);
+parameter names inside each section mirror `llama-server`'s
+long-form CLI flags (`embeddings`, `reranking`, `n-gpu-layers`,
+…). Anything not set in a section falls back to the router
+defaults, so `--jinja` and `-ngl 99` from chapter 1 still apply.
+
+Restart the router pointing at the presets:
+
+```sh
+llama-server --jinja --models-preset ~/.config/llama.cpp/presets.ini
+```
+
+Only one model is resident at a time, so switching between them
+costs an unload/reload (a few seconds off an SSD), which is fine
 because each chat turn touches each model at most once.
 
+Sanity-check the presets stuck by curling `/v1/models` — each
+model's `preset` field should include the `embeddings = 1` or
+`reranking = 1` line you wrote. If those lines are missing, the
+demo aborts during the boot indexing pass with *"This server
+does not support embeddings. Start it with `--embeddings`"* —
+that's `llama-server`'s way of saying the model loaded as a
+plain generative server.
+
 If you don't want to deal with the reranker yet, the demo accepts
-`--no-reranker` and falls back to vector-only top-k. You lose some
+`--no-reranker` and falls back to vector-only top-k — and the
+reranker preset section becomes unnecessary. You lose some
 precision, the rest still works.
 
 The remainder of the chapter assumes a single router-mode

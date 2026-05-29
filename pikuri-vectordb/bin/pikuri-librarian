@@ -22,10 +22,10 @@ require 'pikuri-subagents'
 require 'pikuri-vectordb'
 
 server          = 'http://localhost:8080'
-model           = 'unsloth/Qwen3.6-35B-A3B-GGUF'
-embed_model     = 'nomic-embed-text-v1.5'
+model           = 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+embed_model     = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 reranker_server = nil # defaults to +server+; override for a separate reranker host
-reranker_model  = 'bge-reranker-v2-m3'
+reranker_model  = 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
 use_reranker    = true
 source          = File.expand_path('../../docs/guide', __dir__)
 api_key_env     = 'OPENAI_API_KEY'
@@ -91,6 +91,17 @@ reranker = use_reranker ? Pikuri::VectorDb::Reranker::LlamaServer.new(
   model:    reranker_model
 ) : nil
 
+# Mirror the chat-side +assume_model_exists: true+ so RubyLLM's
+# local model registry doesn't reject the router's HF-repo-style
+# embed model id (+RubyLLM.embed+ otherwise raises
+# +ModelNotFoundError+ before any HTTP call). Provider is
+# required by RubyLLM whenever +assume_model_exists+ is set.
+embedder = Pikuri::VectorDb::Embedder.new(
+  model:               embed_model,
+  provider:            :openai,
+  assume_model_exists: true
+)
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: model,
@@ -118,6 +129,7 @@ agent = Pikuri::Agent.new(
   c.add_extension Pikuri::VectorDb::Extension.new(
     backend:  Pikuri::VectorDb::Backend::InMemory.new,
     source:   source,
+    embedder: embedder,
     reranker: reranker
   )
   # SubAgent::Extension wires the +agent+ tool with the LIBRARIAN
