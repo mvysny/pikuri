@@ -132,4 +132,60 @@ describe Pikuri::VectorDb::Backend::InMemory do
       assert_equal 1, backend.count
     end
   end
+
+  # Chunks sharing a source, for the incremental methods.
+  let(:s1_0) { Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'one', metadata: { offset: 0, hash: 'h1' }) }
+  let(:s1_1) { Pikuri::VectorDb::Chunk.new(id: 'doc:1', source: 'doc.md', text: 'two', metadata: { offset: 1, hash: 'h1' }) }
+  let(:s2_0) { Pikuri::VectorDb::Chunk.new(id: 'oth:0', source: 'other.md', text: 'three', metadata: { offset: 0, hash: 'h2' }) }
+
+  describe '#delete_by_source' do
+    it 'removes only the chunks of the given source' do
+      backend.upsert(chunks: [s1_0, s1_1, s2_0], vectors: [v_a, v_b, v_c])
+
+      backend.delete_by_source('doc.md')
+
+      assert_equal 1, backend.count
+      sources = backend.query(vector: v_c, top_k: 10).map { |r| r.chunk.source }.uniq
+      assert_equal ['other.md'], sources
+    end
+
+    it 'is a no-op for an unknown source' do
+      backend.upsert(chunks: [s2_0], vectors: [v_c])
+      backend.delete_by_source('nope.md')
+      assert_equal 1, backend.count
+    end
+  end
+
+  describe '#replace_source' do
+    it 'replaces a source\'s chunks, leaving no orphans when it shrinks' do
+      backend.upsert(chunks: [s1_0, s1_1, s2_0], vectors: [v_a, v_b, v_c])
+      assert_equal 3, backend.count
+
+      shrunk = Pikuri::VectorDb::Chunk.new(id: 'doc:0', source: 'doc.md', text: 'merged', metadata: { offset: 0, hash: 'h1b' })
+      backend.replace_source(source: 'doc.md', chunks: [shrunk], vectors: [v_a])
+
+      assert_equal 2, backend.count # doc:1 gone, other.md untouched
+      docs = backend.query(vector: v_a, top_k: 10).select { |r| r.chunk.source == 'doc.md' }
+      assert_equal ['doc:0'], docs.map { |r| r.chunk.id }
+    end
+
+    it 'leaves other sources untouched' do
+      backend.upsert(chunks: [s2_0], vectors: [v_c])
+      backend.replace_source(source: 'doc.md', chunks: [s1_0], vectors: [v_a])
+
+      assert_equal 2, backend.count
+    end
+  end
+
+  describe '#sources_with_hashes' do
+    it 'returns {} for an empty store' do
+      assert_equal({}, backend.sources_with_hashes)
+    end
+
+    it 'maps each source to the content hash on its chunks' do
+      backend.upsert(chunks: [s1_0, s1_1, s2_0], vectors: [v_a, v_b, v_c])
+
+      assert_equal({ 'doc.md' => 'h1', 'other.md' => 'h2' }, backend.sources_with_hashes)
+    end
+  end
 end

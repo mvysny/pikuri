@@ -10,12 +10,13 @@ module Pikuri
     # == Fields
     #
     # * +id+ — opaque internal identifier, unique within a
-    #   backend. The {Indexer} composes it from
-    #   +(source, offset, content_hash)+ so an eventual
-    #   incremental reindex can replace specific chunks by id
-    #   without scanning by text content. v1's nuke-and-reload
-    #   doesn't depend on this, but the key scheme is
-    #   forward-compatible. **Not for citation** — that's
+    #   backend. The {Indexer} composes it as +"source:offset"+
+    #   (the relative source path plus the chunk's ordinal within
+    #   that file) — readable in logs, deterministic, and stable
+    #   across reindexes of the same file. Incremental reindex
+    #   replaces a whole document by +source+ (not by id), so the
+    #   file's content hash rides in +metadata+ rather than in the
+    #   id — see +metadata+ below. **Not for citation** — that's
     #   +source+'s job; the LLM never sees +id+.
     # * +source+ — user-facing reference for what was indexed.
     #   Relative file path for filesystem sources
@@ -32,9 +33,13 @@ module Pikuri
     #   embedder for vectorization, and surfaced verbatim to the
     #   LLM as the snippet alongside its +source+ citation.
     # * +metadata+ — free-form Hash for the optional extras that
-    #   some source types carry: +{ offset:, page:, anchor:, ... }+.
+    #   some source types carry: +{ offset:, hash:, page:, ... }+.
     #   Not every source type needs every field, so the open Hash
-    #   beats a fixed shape. Surfaced to the LLM in the search
+    #   beats a fixed shape. The {Indexer} always sets +offset:+
+    #   (ordinal within the file) and +hash:+ (SHA-256 of the source
+    #   file's bytes — the same for every chunk of one file, so the
+    #   incremental sweep can read one chunk per source and know
+    #   whether the file changed). Surfaced to the LLM in the search
     #   observation when present.
     #
     # == Why no vector field

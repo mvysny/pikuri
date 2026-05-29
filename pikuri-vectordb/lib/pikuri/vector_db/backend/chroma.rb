@@ -46,6 +46,11 @@ module Pikuri
       #   count.
       # * +DELETE /api/v2/.../collections/{id}+ — drop the
       #   collection (used by +#delete_all+).
+      # * +POST /api/v2/.../collections/{id}/delete+ — metadata-
+      #   filtered delete (+{where:}+); used by +#delete_by_source+.
+      # * +POST /api/v2/.../collections/{id}/get+ — fetch rows by
+      #   +{where:}+ filter with an +include:+ projection; used by
+      #   +#sources_with_hashes+.
       #
       # == BYO embeddings (not Chroma's embedder)
       #
@@ -269,6 +274,82 @@ module Pikuri
           return body['count'] if body.is_a?(Hash) && body['count'].is_a?(Integer)
 
           raise "Backend::Chroma: count response was not an Integer (got #{body.inspect})"
+        end
+
+        # Remove every chunk whose +source+ matches, via a
+        # metadata-filtered +POST .../delete+ (+source+ is the
+        # reserved metadata key {#upsert} writes). The scoped
+        # counterpart to {#delete_all}. No-op when the collection
+        # doesn't exist yet.
+        #
+        # @param source [String] the {Chunk#source} to purge.
+        # @return [void]
+        # @raise [RuntimeError] on HTTP failure.
+        def delete_by_source(source)
+          return nil if @collection_id.nil? && !collection_exists?
+
+          post_json("#{collection_path}/delete", { where: { 'source' => source } })
+          nil
+        end
+
+        # Replace all chunks for one +source+: delete the old set,
+        # then upsert the new one. The incremental-reindex unit
+        # (see {Indexer#reindex_file!}).
+        #
+        # == Not transactional (the InMemory divergence)
+        #
+        # These are two HTTP calls, so a +#query+ landing between
+        # them can see the source with zero chunks — a window
+        # {InMemory#replace_source} closes with its monitor but
+        # Chroma cannot, short of server-side transactions it
+        # doesn't expose. The window is small and the
+        # {Indexer} mitigates the *common* failure: it embeds
+        # before calling here, so an embedder outage never reaches
+        # this method and the old chunks stay put. Delete-then-upsert
+        # (not the reverse): upserting first then deleting by source
+        # would delete the just-written chunks.
+        #
+        # @param source [String] the {Chunk#source} being replaced.
+        # @param chunks [Array<Chunk>] the new chunk set.
+        # @param vectors [Array<Array<Float>>] parallel to +chunks+.
+        # @return [void]
+        # @raise [ArgumentError] on empty input or length mismatch.
+        # @raise [RuntimeError] on HTTP failure.
+        def replace_source(source:, chunks:, vectors:)
+          delete_by_source(source)
+          upsert(chunks: chunks, vectors: vectors)
+          nil
+        end
+
+        # The boot-sweep reference: +source+ → stored content hash
+        # for every indexed document. Reads one metadata row per
+        # *file*, not per chunk, via two Chroma +/get+ knobs:
+        #
+        # * +where: { offset: 0 }+ — every file has exactly one
+        #   chunk at offset 0, so this returns one row per source.
+        # * +include: ['metadatas']+ — drops the heavy +embeddings+
+        #   and +documents+ from the response; we pull only the
+        #   metadata projection, never the vectors.
+        #
+        # @return [Hash{String => String, nil}] +source+ → content
+        #   hash. Empty when the collection doesn't exist yet.
+        # @raise [RuntimeError] on HTTP failure.
+        def sources_with_hashes
+          return {} if @collection_id.nil? && !collection_exists?
+
+          body = post_json("#{collection_path}/get", {
+                             where: { 'offset' => 0 },
+                             include: ['metadatas']
+                           })
+
+          metas = body.is_a?(Hash) ? (body['metadatas'] || []) : []
+          result = {}
+          metas.each do |meta|
+            next unless meta.is_a?(Hash) && meta['source']
+
+            result[meta['source']] = meta['hash']
+          end
+          result
         end
 
         private

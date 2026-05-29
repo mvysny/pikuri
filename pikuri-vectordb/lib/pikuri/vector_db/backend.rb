@@ -31,6 +31,22 @@ module Pikuri
     # * +#delete_all+ — empty the store. Used by the v1
     #   nuke-and-reload reindex flow. Returns +nil+.
     # * +#count+ — current number of stored chunks, as +Integer+.
+    # * +#delete_by_source(source)+ — remove every chunk whose
+    #   +source+ matches; the scoped counterpart to +#delete_all+.
+    #   No-op when the source isn't present. Returns +nil+.
+    # * +#replace_source(source:, chunks:, vectors:)+ —
+    #   delete-by-source then upsert, as one operation; the
+    #   incremental-reindex unit. +InMemory+ makes it atomic under a
+    #   monitor, +Chroma+ does not (two HTTP calls — see its yardoc).
+    #   Returns +nil+.
+    # * +#sources_with_hashes+ — +Hash{String => String, nil}+ from
+    #   each indexed +source+ to the content hash on its chunks; the
+    #   boot-sweep reference {Indexer#reconcile_plan} diffs against
+    #   disk. Empty when nothing is indexed.
+    #
+    # The last three exist for incremental reindex + auto-watch
+    # (see +ideas/vectordb-incremental-reindex.md+); the
+    # nuke-and-reload path uses only the first four.
     #
     # == Vector-dim contract
     #

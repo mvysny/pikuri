@@ -320,4 +320,109 @@ describe Pikuri::VectorDb::Backend::Chroma do
       assert_match(/HTTP 500/, err.message)
     end
   end
+
+  # A connection with the collection already resolvable via GET,
+  # plus whatever extra stubs the block registers.
+  def with_existing_collection(&block)
+    build_connection do |stub|
+      stub.get(collection_path) do |_|
+        [200, JSON_HEADERS, [{ id: collection_id, name: 'test-coll' }].to_json]
+      end
+      block.call(stub)
+    end
+  end
+
+  describe '#delete_by_source' do
+    it 'is a no-op when the collection was never created' do
+      conn = build_connection do |stub|
+        stub.get(collection_path) { |_| [200, JSON_HEADERS, '[]'] }
+      end
+      # No /delete stub: issuing one would error.
+      build_backend(conn: conn).delete_by_source('docs/a.md')
+    end
+
+    it 'POSTs a where-filtered delete on the source' do
+      captured = nil
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/delete") do |env|
+          captured = JSON.parse(env.body)
+          [200, JSON_HEADERS, '{}']
+        end
+      end
+
+      build_backend(conn: conn).delete_by_source('docs/a.md')
+
+      assert_equal({ 'where' => { 'source' => 'docs/a.md' } }, captured)
+    end
+  end
+
+  describe '#sources_with_hashes' do
+    it 'returns {} when the collection does not exist yet' do
+      conn = build_connection do |stub|
+        stub.get(collection_path) { |_| [200, JSON_HEADERS, '[]'] }
+      end
+
+      assert_equal({}, build_backend(conn: conn).sources_with_hashes)
+    end
+
+    it 'requests one row per file (offset 0) with a metadata-only projection' do
+      captured = nil
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/get") do |env|
+          captured = JSON.parse(env.body)
+          [200, JSON_HEADERS, { metadatas: [] }.to_json]
+        end
+      end
+
+      build_backend(conn: conn).sources_with_hashes
+
+      assert_equal({ 'offset' => 0 }, captured['where'])
+      assert_equal ['metadatas'], captured['include']
+    end
+
+    it 'maps each source to its stored content hash' do
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/get") do |_|
+          payload = { metadatas: [
+            { 'source' => 'docs/a.md', 'offset' => 0, 'hash' => 'aaa' },
+            { 'source' => 'docs/b.md', 'offset' => 0, 'hash' => 'bbb' }
+          ] }
+          [200, JSON_HEADERS, payload.to_json]
+        end
+      end
+
+      result = build_backend(conn: conn).sources_with_hashes
+
+      assert_equal({ 'docs/a.md' => 'aaa', 'docs/b.md' => 'bbb' }, result)
+    end
+  end
+
+  describe '#replace_source' do
+    let(:chunk) do
+      Pikuri::VectorDb::Chunk.new(id: 'docs/a.md:0', source: 'docs/a.md', text: 'apple',
+                                  metadata: { offset: 0, hash: 'aaa' })
+    end
+
+    it 'deletes the source then upserts the new chunks' do
+      calls = []
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/delete") do |env|
+          calls << [:delete, JSON.parse(env.body)]
+          [200, JSON_HEADERS, '{}']
+        end
+        stub.post("#{collection_path}/#{collection_id}/upsert") do |env|
+          calls << [:upsert, JSON.parse(env.body)]
+          [200, JSON_HEADERS, '{}']
+        end
+      end
+
+      build_backend(conn: conn).replace_source(
+        source: 'docs/a.md', chunks: [chunk], vectors: [[1.0, 0.0, 0.0]]
+      )
+
+      assert_equal %i[delete upsert], calls.map(&:first) # delete precedes upsert
+      assert_equal({ 'source' => 'docs/a.md' }, calls[0][1]['where'])
+      assert_equal ['docs/a.md:0'], calls[1][1]['ids']
+    end
+  end
 end

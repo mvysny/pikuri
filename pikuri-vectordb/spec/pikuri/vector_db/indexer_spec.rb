@@ -205,4 +205,181 @@ describe Pikuri::VectorDb::Indexer do
       assert_equal 1, backend.count # unchanged
     end
   end
+
+  # Sources currently stored, for orphan/replacement assertions.
+  def stored_sources
+    backend.query(vector: [1.0, 0.5, 0.5], top_k: 100).map { |r| r.chunk.source }.uniq.sort
+  end
+
+  describe '#index_file (hash metadata)' do
+    it 'stores the SHA-256 of the file bytes on every chunk' do
+      path = write('doc.md', 'alpha beta gamma')
+      expected = Digest::SHA256.hexdigest(File.binread(path))
+
+      build_indexer.index_all!
+
+      hashes = backend.query(vector: [5.0, 0.5, 0.5], top_k: 5).map { |r| r.chunk.metadata[:hash] }.uniq
+      assert_equal [expected], hashes
+    end
+  end
+
+  describe '#reindex_file!' do
+    it 'indexes a single file and returns its chunk count' do
+      path = write('a.md', 'one two three')
+
+      total = build_indexer.reindex_file!(path)
+
+      assert_equal 3, total
+      assert_equal 3, backend.count
+    end
+
+    it 'replaces a shrunk file without leaving orphan chunks' do
+      path = write('a.md', 'one two three four')
+      indexer = build_indexer
+      indexer.index_all!
+      assert_equal 4, backend.count
+
+      File.write(path, 'one two') # 4 chunks -> 2
+      indexer.reindex_file!(path)
+
+      assert_equal 2, backend.count # :2 and :3 are gone, not orphaned
+      assert_equal ['a.md'], stored_sources
+    end
+
+    it 'treats a file emptied of text as a removal' do
+      path = write('a.md', 'content here')
+      indexer = build_indexer
+      indexer.index_all!
+      assert_equal 2, backend.count
+
+      File.write(path, '')
+      total = indexer.reindex_file!(path)
+
+      assert_equal 0, total
+      assert_equal 0, backend.count
+    end
+
+    it 'treats a file that became unreadable (binary) as a removal' do
+      path = write('a.md', 'readable text')
+      indexer = build_indexer
+      indexer.index_all!
+      assert_equal 2, backend.count
+
+      File.binwrite(path, "\x89PNG\r\n\x1a\n".b + ('x' * 32).b)
+      total = indexer.reindex_file!(path)
+
+      assert_equal 0, total
+      assert_equal 0, backend.count
+    end
+
+    it 'leaves prior chunks intact when the embedder fails (embed-before-delete)' do
+      path = write('a.md', 'one two three')
+      indexer = build_indexer
+      indexer.index_all!
+      assert_equal 3, backend.count
+
+      # Swap in an embedder that raises, then change the file and reindex.
+      boom = Object.new
+      def boom.embed(_texts) = raise(RuntimeError, 'embedder 503')
+      indexer.instance_variable_set(:@embedder, boom)
+      File.write(path, 'changed content here now')
+
+      assert_raises(RuntimeError) { indexer.reindex_file!(path) }
+      assert_equal 3, backend.count # untouched — old chunks survive
+    end
+  end
+
+  describe '#remove_file!' do
+    it 'drops a file\'s chunks from the index' do
+      a = write('a.md', 'one two')
+      write('b.md', 'three')
+      indexer = build_indexer
+      indexer.index_all!
+      assert_equal 3, backend.count
+
+      indexer.remove_file!(a)
+
+      assert_equal 1, backend.count
+      assert_equal ['b.md'], stored_sources
+    end
+
+    it 'is a no-op for a source that is not indexed' do
+      write('a.md', 'one')
+      indexer = build_indexer
+      indexer.index_all!
+
+      indexer.remove_file!(root + 'never-indexed.md')
+
+      assert_equal 1, backend.count
+    end
+  end
+
+  describe '#reconcile_plan' do
+    def plan_sources(plan)
+      {
+        reindex: plan[:reindex].map { |p| p.relative_path_from(root).to_s }.sort,
+        remove:  plan[:remove].map  { |p| p.relative_path_from(root).to_s }.sort
+      }
+    end
+
+    it 'reports every file as reindex against an empty backend' do
+      write('a.md', 'one')
+      write('b.md', 'two')
+
+      plan = plan_sources(build_indexer.reconcile_plan)
+
+      assert_equal %w[a.md b.md], plan[:reindex]
+      assert_equal [], plan[:remove]
+    end
+
+    it 'reports nothing for an unchanged, already-indexed corpus' do
+      write('a.md', 'one two')
+      write('b.md', 'three')
+      indexer = build_indexer
+      indexer.index_all!
+
+      plan = plan_sources(indexer.reconcile_plan)
+
+      assert_equal [], plan[:reindex]
+      assert_equal [], plan[:remove]
+    end
+
+    it 'reports a changed file for reindex (content hash differs)' do
+      a = write('a.md', 'original')
+      write('b.md', 'stable')
+      indexer = build_indexer
+      indexer.index_all!
+
+      File.write(a, 'edited content')
+      plan = plan_sources(indexer.reconcile_plan)
+
+      assert_equal ['a.md'], plan[:reindex]
+      assert_equal [], plan[:remove]
+    end
+
+    it 'reports a file gone from disk for removal' do
+      a = write('a.md', 'one')
+      write('b.md', 'two')
+      indexer = build_indexer
+      indexer.index_all!
+
+      FileUtils.rm(a)
+      plan = plan_sources(indexer.reconcile_plan)
+
+      assert_equal [], plan[:reindex]
+      assert_equal ['a.md'], plan[:remove]
+    end
+  end
+
+  describe '#root' do
+    it 'is the directory itself for a directory source' do
+      assert_equal root, build_indexer.root
+    end
+
+    it 'is the parent for a single-file source' do
+      path = write('docs/b.md', 'x')
+      indexer = build_indexer(source: path.to_s)
+      assert_equal (root + 'docs'), indexer.root
+    end
+  end
 end
