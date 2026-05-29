@@ -17,47 +17,41 @@ module Pikuri
     #
     # On +configure+ the extension registers two tools onto the
     # parent agent — {Search} as +vectordb_search+ and {Reindex}
-    # as +vectordb_reindex+ — and then triggers a boot-time
-    # index per the +index_on_boot:+ knob:
+    # as +vectordb_reindex+ — and nothing else. It does *not* index
+    # anything: when and whether to populate the corpus is host
+    # policy, not the extension's job.
     #
-    # * +:if_empty+ (default) — only index if +backend.count+
-    #   is zero. {Backend::InMemory} always re-indexes (RAM
-    #   resets on every boot); {Backend::Chroma} indexes once
-    #   on first boot and skips thereafter.
-    # * +:always+ — nuke and re-index on every boot.
-    # * +:never+ — the host drives indexing themselves via
-    #   +extension.indexer+.
+    # == The host owns population
     #
-    # == Pairing with the auto-watch {Watcher}
+    # The extension exposes the constructed {Indexer} via {#indexer};
+    # the host decides how the corpus gets filled:
     #
-    # A host that runs a {Watcher} (keeping the index live as files
-    # change on disk) should construct this extension with
-    # +index_on_boot: :never+ and let the Watcher own indexing. The
-    # Watcher's boot reconcile sweep ({Indexer#reconcile_plan}) *is*
-    # the boot index — uniform across backends — so the extension's
-    # own boot index would be redundant double work. The Watcher is
-    # host-owned (its lifetime is the process, not any one agent), so
-    # it is *not* wired here; the host builds it around
-    # +extension.indexer+ separately. See {Watcher} and
-    # +ideas/vectordb-incremental-reindex.md+.
+    # * Call +extension.indexer.index_all!+ / +#index_if_empty!+ from
+    #   the host (e.g. a CLI flag, a boot step) for an explicit,
+    #   synchronous index.
+    # * Run a {Watcher} around +extension.indexer+ to keep the index
+    #   live as files change — its boot reconcile sweep
+    #   ({Indexer#reconcile_plan}) populates an empty backend and then
+    #   tracks edits.
+    # * Index nothing at boot and let the user drive it: the agent
+    #   calls +vectordb_reindex+ when asked. The corpus is simply
+    #   empty until then — {Search} returns no hits and says so.
+    #
+    # All three are equally valid; the extension stays agnostic. This
+    # is the same host-owned shape as the {Watcher} (whose lifetime is
+    # the process, not any one agent), and it keeps the wiring — and
+    # the timing — visible in the host rather than hidden in a
+    # constructor knob. See +ideas/vectordb-incremental-reindex.md+.
     #
     # == Changed your embedder or chunker? Reindex fully.
     #
-    # Neither the boot index nor the {Watcher} reacts to a config
-    # change: the Watcher's change signal is the file's byte hash, so
-    # swapping the embedder model or the chunker window leaves every
+    # Neither a {Watcher} nor +index_if_empty!+ reacts to a config
+    # change: the change signal is the file's byte hash, so swapping
+    # the embedder model or the chunker window leaves every
     # already-indexed chunk in place — silently stale (new queries
     # embed with the new model but score against old-model vectors).
     # After changing any indexing setting, run a full
-    # +vectordb_reindex+ (or boot once with +index_on_boot: :always+)
-    # to rebuild from scratch.
-    #
-    # The boot index runs synchronously inside +configure+; the
-    # host's +Agent.new+ doesn't return until indexing is done.
-    # That's intentional — the agent isn't useful until the
-    # index exists, and the {Indexer}'s INFO logging gives the
-    # user progress visibility. Hosts that want async startup
-    # can wrap +Agent.new+ in a thread.
+    # +vectordb_reindex+ to rebuild from scratch.
     #
     # == No system-prompt snippet
     #
@@ -88,14 +82,12 @@ module Pikuri
     class Extension
       include Pikuri::Agent::Extension
 
-      # Boot-time index trigger options accepted by +index_on_boot:+.
-      INDEX_ON_BOOT_MODES = %i[if_empty always never].freeze
-
       # @return [Indexer] the constructed {Indexer} instance.
-      #   Exposed so hosts can drive +#index_all!+ /
-      #   +#reindex!+ manually from a CLI flag or a future
-      #   slash command (e.g. +index_on_boot: :never+ + a host
-      #   thread that calls +ext.indexer.reindex!+ on schedule).
+      #   Exposed so the host can drive population however it
+      #   chooses — +ext.indexer.index_if_empty!+ at boot, a
+      #   {Watcher} around it, or leaving it empty until the LLM
+      #   calls +vectordb_reindex+. See the class "host owns
+      #   population" header.
       attr_reader :indexer
 
       # @param backend [#upsert, #query, #delete_all, #count]
@@ -117,23 +109,13 @@ module Pikuri
       #   +chunk(String) -> Array<String>+; +nil+ constructs
       #   {Chunker::FixedWindow} with +size: 512, overlap: 50+
       #   and the default {Tokenizer::CharHeuristic}.
-      # @param index_on_boot [Symbol] one of {INDEX_ON_BOOT_MODES}.
       # @return [Extension]
-      # @raise [ArgumentError] on an unknown +index_on_boot:+.
       def initialize(backend:, source:,
-                     embedder: nil, reranker: nil, chunker: nil,
-                     index_on_boot: :if_empty)
-        unless INDEX_ON_BOOT_MODES.include?(index_on_boot)
-          raise ArgumentError,
-                "index_on_boot must be one of #{INDEX_ON_BOOT_MODES.inspect}, " \
-                "got #{index_on_boot.inspect}"
-        end
-
-        @backend       = backend
-        @embedder      = embedder || Embedder.new
-        @reranker      = reranker
-        @chunker       = chunker  || Chunker::FixedWindow.new(size: 512, overlap: 50)
-        @index_on_boot = index_on_boot
+                     embedder: nil, reranker: nil, chunker: nil)
+        @backend  = backend
+        @embedder = embedder || Embedder.new
+        @reranker = reranker
+        @chunker  = chunker  || Chunker::FixedWindow.new(size: 512, overlap: 50)
         @indexer = Indexer.new(
           backend:  @backend,
           source:   source,
@@ -142,12 +124,11 @@ module Pikuri
         )
       end
 
-      # Register {Search} + {Reindex} onto +c+, then run the
-      # configured boot-time index. Raises if either tool name
-      # has been pre-registered — the extension is meant to be
-      # the single owner of both, and a duplicate registration
-      # would point to a different Indexer / Embedder /
-      # backend.
+      # Register {Search} + {Reindex} onto +c+. Does not index —
+      # population is the host's call (see the class header). Raises
+      # if either tool name has been pre-registered: the extension is
+      # the single owner of both, and a duplicate registration would
+      # point to a different Indexer / Embedder / backend.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
@@ -162,12 +143,6 @@ module Pikuri
 
         c.add_tool Search.new(embedder: @embedder, backend: @backend, reranker: @reranker)
         c.add_tool Reindex.new(indexer: @indexer)
-
-        case @index_on_boot
-        when :if_empty then @indexer.index_if_empty!
-        when :always   then @indexer.reindex!
-        when :never    then nil
-        end
         nil
       end
     end

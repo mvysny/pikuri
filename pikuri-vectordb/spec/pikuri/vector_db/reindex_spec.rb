@@ -35,9 +35,10 @@ describe Pikuri::VectorDb::Reindex do
       assert_equal [], schema[:required]
     end
 
-    it 'description warns user-asked-only and slowness' do
+    it 'description states not-auto-indexed, asks-only, and slowness' do
       tool = Pikuri::VectorDb::Reindex.new(indexer: stub_indexer)
-      assert_match(/Only call this when the user explicitly asks/i, tool.description)
+      assert_match(/NOT indexed automatically/i, tool.description)
+      assert_match(/asks to index, reindex, or refresh/i, tool.description)
       assert_match(/SLOW/, tool.description)
     end
   end

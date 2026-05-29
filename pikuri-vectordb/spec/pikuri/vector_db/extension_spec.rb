@@ -41,8 +41,7 @@ describe Pikuri::VectorDb::Extension do
       source: root.to_s,
       embedder: overrides.fetch(:embedder, fake_embedder),
       reranker: overrides.fetch(:reranker, nil),
-      chunker: overrides.fetch(:chunker, nil),
-      index_on_boot: overrides.fetch(:index_on_boot, :if_empty)
+      chunker: overrides.fetch(:chunker, nil)
     )
   end
 
@@ -59,10 +58,11 @@ describe Pikuri::VectorDb::Extension do
 
     it 'defaults the chunker to FixedWindow when not provided' do
       ext = build_extension(chunker: nil)
-      # Indirect: the Indexer should produce chunks for a
-      # short file (the default chunker handles a short text).
+      # Indirect: the Indexer should produce chunks for a short file
+      # (the default chunker handles a short text). configure no longer
+      # indexes, so drive the indexer directly.
       File.write(root + 'hi.md', 'hello world')
-      ext.configure(configurator)
+      ext.indexer.index_all!
       assert_operator backend.count, :>, 0
     end
 
@@ -76,36 +76,37 @@ describe Pikuri::VectorDb::Extension do
       )
       assert_kind_of Pikuri::VectorDb::Indexer, ext.indexer
     end
-
-    it 'rejects an unknown index_on_boot value' do
-      err = assert_raises(ArgumentError) do
-        build_extension(index_on_boot: :nope)
-      end
-      assert_match(/index_on_boot must be one of/, err.message)
-    end
   end
 
   describe '#configure' do
     it 'registers vectordb_search and vectordb_reindex tools' do
-      build_extension(index_on_boot: :never).configure(configurator)
+      build_extension.configure(configurator)
 
       tool_names = configurator.tools.map(&:name)
       assert_includes tool_names, 'vectordb_search'
       assert_includes tool_names, 'vectordb_reindex'
     end
 
+    it 'does NOT index — population is the host\'s call' do
+      File.write(root + 'note.md', 'first second third')
+
+      build_extension.configure(configurator)
+
+      assert_equal 0, backend.count
+    end
+
     it 'does NOT append a system-prompt snippet' do
       # Two use modes (direct + LIBRARIAN-mediated) live behind
       # the same Extension; appending a one-or-the-other usage
       # block would conflict in the LIBRARIAN-mediated case.
-      build_extension(index_on_boot: :never).configure(configurator)
+      build_extension.configure(configurator)
       assert_empty configurator.system_prompt_additions
     end
 
     it 'does NOT auto-register the LIBRARIAN persona' do
       # LIBRARIAN is opt-in via SubAgent::Extension — same
       # precedent as Pikuri::Code::GIT_REPO_RESEARCHER.
-      build_extension(index_on_boot: :never).configure(configurator)
+      build_extension.configure(configurator)
       # The agent tool would only be present if a SubAgent
       # extension had been registered; VectorDb::Extension
       # alone doesn't pull that in.
@@ -117,7 +118,7 @@ describe Pikuri::VectorDb::Extension do
       configurator.add_tool(pre)
 
       err = assert_raises(RuntimeError) do
-        build_extension(index_on_boot: :never).configure(configurator)
+        build_extension.configure(configurator)
       end
       assert_match(/vectordb_search cannot be pre-registered/, err.message)
     end
@@ -127,53 +128,9 @@ describe Pikuri::VectorDb::Extension do
       configurator.add_tool(pre)
 
       err = assert_raises(RuntimeError) do
-        build_extension(index_on_boot: :never).configure(configurator)
+        build_extension.configure(configurator)
       end
       assert_match(/vectordb_reindex cannot be pre-registered/, err.message)
-    end
-  end
-
-  describe 'boot indexing' do
-    before { File.write(root + 'note.md', 'first second third') }
-
-    it ':if_empty (default) indexes when the backend is empty' do
-      ext = build_extension
-      ext.configure(configurator)
-
-      assert_operator backend.count, :>, 0
-    end
-
-    it ':if_empty skips when the backend already has entries' do
-      preexisting = Pikuri::VectorDb::Chunk.new(
-        id: 'pre:0', source: 'pre', text: 't', metadata: {}
-      )
-      backend.upsert(chunks: [preexisting], vectors: [[1.0, 0.0, 0.0]])
-      before_count = backend.count
-
-      build_extension.configure(configurator)
-
-      # No new chunks added (the index was already non-empty).
-      assert_equal before_count, backend.count
-    end
-
-    it ':always nukes and re-indexes even when the backend is populated' do
-      preexisting = Pikuri::VectorDb::Chunk.new(
-        id: 'pre:0', source: 'pre', text: 't', metadata: {}
-      )
-      backend.upsert(chunks: [preexisting], vectors: [[1.0, 0.0, 0.0]])
-
-      build_extension(index_on_boot: :always).configure(configurator)
-
-      # The pre-existing chunk is gone (delete_all was called).
-      query = backend.query(vector: [1.0, 0.0, 0.0], top_k: 10)
-      ids = query.map { |r| r.chunk.id }
-      refute_includes ids, 'pre:0'
-      refute query.empty? # the source file's chunks did get indexed
-    end
-
-    it ':never skips indexing entirely' do
-      build_extension(index_on_boot: :never).configure(configurator)
-      assert_equal 0, backend.count
     end
   end
 end

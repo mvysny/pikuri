@@ -4,9 +4,19 @@ module Pikuri
   module VectorDb
     # The administrative LLM-facing tool: +vectordb_reindex+.
     # Nukes the backend and re-indexes every source file from
-    # scratch — the v1 nuke-and-reload pattern wired to a tool
-    # the agent can call when (and only when) the user asks for
-    # a refresh.
+    # scratch — the nuke-and-reload pattern wired to a tool the
+    # agent can call when (and only when) the user asks to index
+    # or refresh.
+    #
+    # == The corpus is not indexed automatically
+    #
+    # The {Extension} registers this tool but indexes nothing at
+    # boot (population is host policy — see {Extension}). So this is
+    # both the *initial* population path and the refresh path: until
+    # a host indexes the corpus some other way (an explicit
+    # +indexer.index_if_empty!+, a {Watcher}), the index is empty and
+    # {Search} returns no hits, and the agent calls +vectordb_reindex+
+    # when the user asks it to build the index.
     #
     # == Why the "user-asked-only" framing
     #
@@ -18,14 +28,10 @@ module Pikuri
     # blocked for the duration. Without the warning, a model
     # inclined toward "make sure the index is fresh just in
     # case" before each search would burn through the user's
-    # patience on the first turn.
-    #
-    # The description is firm on this — "only when the user
-    # explicitly asks" + "not a general refresh" — and the v1
-    # nuke-and-reload reindex is deliberately not incremental so
-    # there's no temptation to use it for "what if I added one
-    # file" cases either. Incremental reindex stays a deferred
-    # follow-up (IDEAS.md §"Vector DB / RAG" → "Deferred").
+    # patience on the first turn — hence "build/refresh when asked,
+    # not a reflexive refresh." For keeping a long-running index
+    # fresh *without* a full reload, a host runs a {Watcher}
+    # (incremental, per-file) rather than leaning on this tool.
     #
     # == Error path
     #
@@ -40,12 +46,12 @@ module Pikuri
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).
       DESCRIPTION = <<~DESC
-        Re-index the document corpus from scratch.
+        Build or rebuild the document index from the corpus on disk, from scratch.
 
         Usage:
-        - Only call this when the user explicitly asks you to reindex — do not call as a "refresh just in case."
+        - The corpus is NOT indexed automatically. If `vectordb_search` returns nothing, the index may be empty — call this to build it.
+        - Call it when the user asks to index, reindex, or refresh the corpus (e.g. after they've added or changed files). Do not call it as a reflexive "refresh just in case" before every search.
         - This is SLOW: walks every source file, embeds every chunk, replaces the entire index. Minutes against local embedders.
-        - The corpus is already indexed at boot. Calling reindex mid-conversation only helps if the user has added or changed files on disk since the last index.
         - Takes no arguments. Returns a one-line summary when indexing completes; the agent is blocked for the duration.
       DESC
 

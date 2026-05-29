@@ -114,12 +114,11 @@ embedder = Pikuri::VectorDb::Embedder.new(
 
 # Hoisted to a local so the optional --watch daemon can be built around
 # the *same* Indexer (and therefore the same backend) the agent uses.
-# index_on_boot stays :if_empty even under --watch: on InMemory the boot
-# index runs synchronously here so the first query has data, and the
-# Watcher's boot sweep then finds every file's hash already present and
-# reindexes nothing — no double embedding. (With a persistent Chroma
-# backend you'd typically pass index_on_boot: :never and let the sweep
-# own indexing.)
+# The extension indexes nothing on its own — population is the host's
+# call. This demo deliberately starts with an EMPTY corpus: the exercise
+# is to ask the agent to index it (it calls vectordb_reindex). Pass
+# --watch instead to have the Watcher build the index in the background
+# and then keep it live as files change.
 vectordb_ext = Pikuri::VectorDb::Extension.new(
   backend:  Pikuri::VectorDb::Backend::InMemory.new,
   source:   source,
@@ -149,10 +148,10 @@ agent = Pikuri::Agent.new(
   # tool on this same agent would complete the lethal trifecta.
   c.add_tool Pikuri::Tool::CALCULATOR
   # VectorDb::Extension registers +vectordb_search+ and
-  # +vectordb_reindex+, then triggers a boot-time index of +source+
-  # via +index_on_boot: :if_empty+. Backend::InMemory always starts
-  # empty, so the first run re-indexes; the LOGGER emits one INFO
-  # line per file so the reader sees progress.
+  # +vectordb_reindex+ and nothing more — it does not index. The
+  # corpus starts empty; the agent fills it by calling
+  # +vectordb_reindex+ when the user asks (or the --watch daemon
+  # below fills it in the background).
   c.add_extension vectordb_ext
 end
 
@@ -188,7 +187,12 @@ end
 
 puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
 puts "Corpus: #{source}"
-puts "Watching #{source} for changes — edits, additions, and deletions reindex automatically." if watch
+if watch
+  puts "Watching #{source} — building the index in the background, then tracking edits/additions/deletions live."
+  puts '(Give it a moment to index before the first search returns hits.)'
+else
+  puts 'The corpus is NOT indexed yet. Ask me to "index the corpus" first (I will run vectordb_reindex), then ask away.'
+end
 puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
 puts 'Press Ctrl+C or Ctrl+D to quit.'
 

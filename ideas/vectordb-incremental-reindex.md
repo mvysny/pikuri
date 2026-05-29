@@ -30,16 +30,16 @@ library-installed signal trap) are recorded in the relevant yardocs
 
 ## Still open
 
-- **No host constructs the Watcher.** It is library + tests only.
-  The eventual owners are a long-running process — the planned
-  `pikuri-tui` and a web app — which build it around
-  `extension.indexer` with `index_on_boot: :never`. Until one
-  exists, the daemon has no end-to-end run against a real `listen`
-  watch + live Chroma container.
-- **Guide chapter.** The `docs/guide/` vectordb chapters don't yet
-  cover auto-watch (the host-owned lifecycle, the
-  `index_on_boot: :never` pairing, the reindex-on-config-change
-  rule). Write it when the host above lands, so the docs show a real
+- **No production host constructs the Watcher.** The demo binary
+  `pikuri-corpus --watch` wires it (good for exercising it by hand),
+  but the real long-running owners — the planned `pikuri-tui` and a
+  web app — don't exist yet, so the daemon has no end-to-end run
+  against a real `listen` watch + live Chroma container under load.
+- **Guide chapter.** `docs/guide/03-vectordb.md` now mentions the
+  empty-corpus exercise and `--watch`, but there's no dedicated
+  auto-watch walkthrough (host-owned lifecycle, the Finalizers
+  teardown order, the reindex-on-config-change rule). Flesh it out
+  when the host above lands, so the docs show a real
   wiring rather than a sketch.
 - **Symlink policy parity.** `Indexer#list_files` (the walk) and the
   `listen` watch both treat symlinked directories as the OS does and

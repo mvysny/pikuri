@@ -309,11 +309,13 @@ summaries below tell you what each owns.
 `Pikuri::VectorDb::Indexer` is what composes the first four:
 walks the configured source, extracts text via
 `Pikuri::FileType.read_as_text` (Markdown / PDF / plain text;
-HTML is a deferred follow-up), chunks, embeds, upserts. It runs
-synchronously inside `Agent.new` when the extension's
-`index_on_boot:` mode fires — `:if_empty` by default
-(`InMemory` always starts empty and so always re-indexes;
-`Chroma` only re-indexes on first boot).
+HTML is a deferred follow-up), chunks, embeds, upserts. The
+extension does *not* run it automatically — when and whether to
+populate the corpus is the host's call. The `pikuri-corpus`
+binary starts with an empty index on purpose: you ask the agent
+to index the corpus and it calls `vectordb_reindex` (the
+exercise below), or you pass `--watch` to have a `Watcher` build
+the index in the background and keep it live as files change.
 
 ## How retrieval reaches the agent
 
@@ -384,10 +386,10 @@ slow for millions (a full corporate knowledge base).
 
 It has two practical limits:
 
-- **No persistence.** Reloads from sources on every boot. The
-  default `index_on_boot: :if_empty` mode therefore re-indexes
-  every time you start the binary — fine for a small corpus,
-  painful for a large one.
+- **No persistence.** The store is gone when the process exits,
+  so you index from sources again on every run — fine for a small
+  corpus, painful for a large one (where you'd reach for `Chroma`
+  below to pay that cost once).
 - **No approximate search.** Every query scans every vector.
   Linear in corpus size. Fine for thousands of chunks, not for
   millions.
@@ -412,10 +414,13 @@ c.add_extension Pikuri::VectorDb::Extension.new(
 vector store; persistence is on disk, query is approximate-
 nearest-neighbour, and indexing in the millions of chunks is its
 design target. Same `Pikuri::VectorDb::Backend` interface, same
-`vectordb_search` tool — only the backend constructor changes. `index_on_boot: :if_empty` then
-becomes useful: Chroma persists the embeddings across pikuri
-runs, so the boot index only fires on first launch or after a
-manual `vectordb_reindex`.
+`vectordb_search` tool — only the backend constructor changes.
+Persistence is what pays off here: index once (one
+`vectordb_reindex`, or one `--watch` boot sweep) and Chroma keeps
+the embeddings across pikuri runs, so later launches start with a
+populated index instead of rebuilding it. From then on a `Watcher`
+keeps it in sync incrementally, and a full `vectordb_reindex` is
+only needed after changing the embedder or chunker settings.
 
 `ChromaServer.ensure_running` requires `docker` on `PATH`; the
 container image tag is pinned in `ChromaServer::IMAGE`. The

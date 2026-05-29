@@ -730,9 +730,11 @@ rationale lives in the gem's YARD headers and the inventory in
 What landed against the original sketch:
 
 - **Extension** registers `vectordb_search` (`Search`) and
-  `vectordb_reindex` (`Reindex`) on the parent, with an
-  `index_on_boot:` knob (`:if_empty` default / `:always` / `:never`).
-  No system-prompt snippet — direct-call and `LIBRARIAN`-mediated
+  `vectordb_reindex` (`Reindex`) on the parent and nothing more — it
+  does not index. Population is host policy: an explicit
+  `indexer.index_if_empty!`, a `Watcher`, or leaving the corpus empty
+  until the agent calls `vectordb_reindex` (what `pikuri-corpus`
+  does). No system-prompt snippet — direct-call and `LIBRARIAN`-mediated
   modes coexist, so the host picks the framing in its own prompt.
 - **Backend** — pure-Ruby `Backend::InMemory` cosine default (strict
   RAM, re-indexes every boot), thin Faraday `Backend::Chroma` for

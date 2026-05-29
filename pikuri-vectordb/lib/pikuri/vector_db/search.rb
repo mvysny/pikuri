@@ -92,7 +92,7 @@ module Pikuri
         - Use when the user asks about facts, definitions, or topics that would live in their indexed documents (notes, docs, knowledge base).
         - Phrase the query as a complete question or topic statement — the embedder reads natural language, not keyword bags.
         - Returns up to #{FINAL_K} results with `source` paths and text snippets; cite results back using the source path.
-        - If a query returns nothing useful, the relevant doc may not be in the indexed corpus — the corpus is what the user explicitly indexed at boot.
+        - If a query returns nothing useful, either the relevant doc isn't in the corpus, or the corpus hasn't been indexed yet — say which you suspect, and offer to run `vectordb_reindex` to build the index.
       DESC
 
       # @param embedder [#embed] anything implementing

@@ -25,16 +25,17 @@ module Pikuri
     #
     #   server = Pikuri::VectorDb::ChromaServer.ensure_running
     #   backend = server.client(collection: 'notes')
-    #   ext = Pikuri::VectorDb::Extension.new(
-    #     backend: backend, source: '~/notes', index_on_boot: :never
-    #   )
+    #   ext = Pikuri::VectorDb::Extension.new(backend: backend, source: '~/notes')
     #   # ... build agents with `ext` ...
     #   watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
     #
-    # +index_on_boot: :never+ is the pairing: the Watcher's boot
-    # sweep *is* the boot index (and is uniform across backends —
-    # {Indexer#reconcile_plan}), so the {Extension}'s own boot index
-    # would be redundant double work.
+    # The {Extension} indexes nothing on its own, so the Watcher is
+    # the population path here: its boot reconcile sweep
+    # ({Indexer#reconcile_plan}) fills an empty backend and is uniform
+    # across backends. A host that *also* indexes some other way (an
+    # explicit +ext.indexer.index_if_empty!+ before +start+) is fine
+    # too — the sweep then finds matching hashes and reindexes
+    # nothing.
     #
     # == Single work queue, last-intent-per-path
     #
