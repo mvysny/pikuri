@@ -172,9 +172,21 @@ Restart the router pointing at the presets:
 llama-server --jinja --models-preset ~/.config/llama.cpp/presets.ini
 ```
 
-Only one model is resident at a time, so switching between them
-costs an unload/reload (a few seconds off an SSD), which is fine
-because each chat turn touches each model at most once.
+The router keeps up to `--models-max` models resident
+simultaneously (default: 4), evicting the least-recently-used
+one when that limit is reached. With three models registered —
+chat + embedder + reranker — all three stay loaded at once;
+switching between them is just an internal handoff, no unload
+or reload involved. You can verify with
+`curl http://localhost:8080/v1/models | jq '.data[] | {id,
+status: .status.value}'` and watch each `status` flip from
+`unloaded` to `loaded` on first hit, then stay there.
+
+Memory cost over chapter 1's chat-only setup is small: ~150 MB
+for the embedder weights and ~600 MB for the reranker weights at
+Q8_0, plus a few hundred MB of KV cache between them at 8K
+context. The chat model's ~32 GB footprint dominates the budget;
+budget another ~1 GB on top for the two helpers.
 
 Sanity-check the presets stuck by curling `/v1/models` — each
 model's `preset` field should include the `embeddings = 1` or

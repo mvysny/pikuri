@@ -100,11 +100,15 @@ model the router loads, not flags for a single model:
 - `--jinja` — enable Jinja chat templates. The Qwen3 series needs
   this for correct tool-call formatting.
 
-Only one model is resident at a time, so switching has an
-unload/reload cost (a few seconds off an SSD). The win is that no
-separate `llama-swap` proxy is needed: chapter 3 will pull an
-embedding model with another `llama-server -hf …:…` invocation,
-and this same router process will pick it up on next request.
+The router keeps up to `--models-max` models resident
+simultaneously (default: 4) and only unloads the
+least-recently-used one when that limit is reached. With just
+the chat model so far that's one model in one process; chapter
+3 will add an embedder and a reranker by pulling more GGUFs
+into `~/.cache/llama.cpp/`, and this same router will pick them
+up on next request without displacing the chat model. The win
+over a separate `llama-swap` proxy is that there are no extra
+moving parts to configure.
 
 **Memory.** Q4_K_M of this 35B-A3B model needs **~32 GB of
 memory** for the weights plus KV cache.
