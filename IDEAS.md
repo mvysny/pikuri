@@ -710,141 +710,50 @@ about X and summarize"), but it's not the primary recall path.
 
 ## Vector DB / RAG
 
-Surfaced while scoping pikuri-assistant — RAG and agentic search
-over a local document corpus are mandatory for an assistant binary
-worth running. Designed but not yet built; sketched here so a
-future contributor knows the shape that was settled on and where
-the deferrals are.
+**v1 shipped** as `pikuri-vectordb` — local-corpus vector search +
+agentic RAG, wired onto an `Agent` via `c.add_extension
+Pikuri::VectorDb::Extension.new(backend:, source:)`. Per-piece
+rationale lives in the gem's YARD headers and the inventory in
+[`CLAUDE.md`](CLAUDE.md); only the deferrals stay here.
 
-The shape lands as `pikuri-vectordb`: an extension that wires a
-`vectordb_search` tool into the agent (agentic search — the agent
-decides when to retrieve), backed by a configurable embedder + an
-optional reranker + a swappable backend. A bundled `LIBRARIAN`
-persona provides the privilege-separated sub-agent variant.
+What landed against the original sketch:
 
-### Extension shape
+- **Extension** registers `vectordb_search` (`Search`) and
+  `vectordb_reindex` (`Reindex`) on the parent, with an
+  `index_on_boot:` knob (`:if_empty` default / `:always` / `:never`).
+  No system-prompt snippet — direct-call and `LIBRARIAN`-mediated
+  modes coexist, so the host picks the framing in its own prompt.
+- **Backend** — pure-Ruby `Backend::InMemory` cosine default (strict
+  RAM, re-indexes every boot), thin Faraday `Backend::Chroma` for
+  persistence (self-managed via `ChromaServer`), one `Backend`
+  interface + `Backend::Result`.
+- **Embedder** wraps `RubyLLM.embed`. **Reranker** is optional —
+  `Reranker::LlamaServer` over `/v1/rerank` (+ `Reranker::Hit`),
+  retrieve-then-rerank, falls back to vector-only top-k on outage.
+  It shipped under `Pikuri::VectorDb::Reranker`, *not* the
+  `Pikuri::Transport::Reranker` location the §"Typed transport
+  classes" sketch assumed — that section's reranker reference is now
+  stale.
+- **Chunker::FixedWindow** (512/50) over `FileType.read_as_text`
+  text (plain / Markdown / PDF), behind a `Tokenizer` seam
+  (`CharHeuristic` default / `LlamaServer`).
+- **Both trifecta defenses**: the privilege-separated `LIBRARIAN`
+  persona (opt-in via `SubAgent::Extension`, same precedent as
+  `GIT_REPO_RESEARCHER`; ships `bin/pikuri-librarian`) and the
+  local-default egress posture. The corpus-is-the-threat argument
+  and the Onyx-connector escalation now live in the gem's yardoc.
 
-    Pikuri::VectorDb::Extension.new(
-      backend:    Pikuri::VectorDb::Backend::Chroma.new(host:, port:),
-      sources:    ['~/notes', '~/docs'],
-      collection: 'my-docs',
-      embedder:   nil,    # nil = use RubyLLM.embed default
-      reranker:   nil,    # nil = top-k only, no rerank
-      chunker:    Pikuri::VectorDb::Chunker::FixedWindow.new(
-                    size: 512, overlap: 50,
-                  ),
-    )
+Sketch open-questions that v1 resolved: **Chroma client** → wrote
+our own thin Faraday client (no `chroma-db` dep); **`InMemory`
+persistence** → strict RAM (Chroma is right there for persistence);
+**disk-spillover** → `Search` caps each result snippet
+(`SNIPPET_LENGTH`), so the per-step cap landed from day one (uniform
+tempfile spillover across all tools is still the cross-cutting item
+in §"Output-size DoS and cost").
 
-Backend and sources are orthogonal — same folder can be indexed
-into either backend behind the same `Backend` interface. The
-extension registers `vectordb_search(query:)` on the parent agent,
-a `vectordb_reindex` administrative tool (nuke-and-reload), and a
-bundled `LIBRARIAN` persona referencing `vectordb_search` only.
-
-### Concerns kept separate
-
-- **Backend.** Pure-Ruby `Backend::InMemory` (cosine over
-  `Array<Float>`, ~40 lines) as the educational default — fits
-  "small enough to audit" and reads in one sitting. `Backend::Chroma`
-  as the persistent backend, behind the same interface. pgvector /
-  Qdrant later if a concrete need shows up. Demo + docs walk the
-  in-memory backend first (explain how the math works), then
-  promote to Chroma for persistence.
-- **Embedder.** Reuses ruby_llm's `RubyLLM.embed` (OpenAI / Voyage /
-  local llama.cpp's `/v1/embeddings`). Default is whatever the user's
-  chat provider chose; consistency with the chat transport is what
-  §"Typed transport classes (private vs public)" enforces structurally
-  once that lands.
-- **Reranker.** Not in ruby_llm. Lives in pikuri-core as
-  `Pikuri::Transport::Reranker::LlamaServer` (speaks `/v1/rerank`
-  against a cross-encoder model served by llama.cpp; same path
-  Cohere's API speaks, so adding hosted providers later is a thin
-  adapter — see §"Deferred"). Optional — `reranker: nil` skips
-  rerank, top-k retrieval only. When configured: retrieve top-50,
-  rerank → top-5. Reranker outages fall back to vector-only top-k
-  and log loudly — it's a quality knob, not a correctness one.
-- **Chunker.** Configurable via the extension; v1 default is
-  fixed-window (512 tokens, 50 overlap) over text extracted from
-  Markdown / PDF / HTML / plain text — same format set
-  `Workspace::Read` already handles. Markdown-heading-aware,
-  AST-aware, contextual chunking, parent-document retrieval are all
-  real quality wins, all defer to follow-ups.
-- **Identity.** Chunks keyed on `(path, content_hash, offset)` so
-  partial updates don't blow the whole index away once incremental
-  reindex lands. v1 nukes-and-reloads, but the key scheme is
-  forward-compatible.
-
-### Boot, reindex, file types
-
-- **Boot.** `Backend::InMemory` always re-indexes at boot (data only
-  lives in RAM anyway). `Backend::Chroma` indexes at boot if the
-  collection is empty, otherwise leaves it alone.
-- **Reindex.** `vectordb_reindex` nukes the collection and reloads
-  from sources. Acceptable for v1; incremental reindex is a
-  follow-up once auto-watch is on the table.
-- **File types.** Plain text, Markdown, PDF, HTML — same set
-  `Workspace::Read` already extracts. Other formats raise
-  "unsupported"; adding more is a one-line change in the format
-  table.
-
-### The three-model ops footnote
-
-`bin/pikuri-assistant` ends up wanting three LLM endpoints: chat
-(multi-GB), embedder (200 MB – 1 GB), reranker (300 MB – 1 GB).
-The recommended path on a `llama.cpp` recent enough to include
-[model management](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp)
-(Ubuntu 26.04+ packages such a build):
-
-- **One `llama-server` in router mode.** Started with no
-  `--model` flag, it scans `~/.cache/llama.cpp/` and serves every
-  cached GGUF from the same port, loading whichever model each
-  request names. Single process, single port, no separate proxy
-  — supersedes the older `llama-swap` recommendation. Switching
-  between models costs an unload/reload (a few seconds off an
-  SSD), which is fine because each chat turn touches each model
-  at most once.
-
-Larger multi-model runtimes (Ollama, LM Studio, ...) expose
-OpenAI-compatible endpoints and would also work, but their size
-puts them outside the auditable-by-the-user shape the rest of the
-guide commits to — left to the user's own initiative if they
-prefer one, not recommended in the docs.
-
-Pikuri stays agnostic: just needs URLs. Hosts that want the
-reranker resident while the router swaps chat/embed can point
-`Reranker::LlamaServer.new(endpoint: …)` at a second
-`llama-server` and the rest of the agent stays unchanged.
-
-### Trifecta
-
-The corpus *is* the threat. Anything indexed becomes a possible
-context entrant whenever it matches a query — same shape as `Read`
-of an untrusted file. Two structural defenses:
-
-1. **`LIBRARIAN` persona as the default flow.** Same shape as
-   `FILE_MINER` (§"Personas for `Tool::SubAgent`"): persona's only
-   tool is `vectordb_search`; the parent receives a summary back,
-   not raw chunks. A poisoned chunk reaches the persona — which
-   has no `bash` / `write` / `fetch` / `agent` to act on. Bundled
-   from `pikuri-vectordb` itself, same precedent as
-   `GIT_REPO_RESEARCHER` shipping from pikuri-code (a persona that
-   needs a tool outside the pikuri-subagents / pikuri-workspace
-   surface). The parent can still invoke `vectordb_search` directly
-   when explicitly wanted, but the default flow goes through the
-   persona.
-2. **Egress.** Three new outbound paths (embedder, reranker,
-   backend). Local default closes leg (c) of the trifecta; remote
-   embedders / rerankers re-open it. The typed transports in
-   §"Typed transport classes (private vs public)" are the
-   structural enforcement — once that lands, mixing a `:private`
-   chat with a `:public` embedder fails at construction unless the
-   agent opted into `:mixed`.
-
-The "user knows what docs they have" assumption holds for
-workspace folders. It stops holding once Onyx connectors pull in
-Google Drive / Slack / Jira — by then you're indexing the open web
-of your inbox, and the persona separation stops being optional.
-Documented in the gem's yardoc.
+The three-model ops guidance (chat + embedder + reranker on one
+router-mode `llama-server`) graduated out of this log into the
+`docs/guide/` chapters.
 
 ### Deferred
 
@@ -905,24 +814,6 @@ Documented in the gem's yardoc.
   memory can ride the same primitive (probably with a separate
   collection rooted at `~/.pikuri/memory/`, fed by a different
   source pipeline). Revisit explicitly after v1 lands.
-
-### Open questions
-
-- **Chroma client.** Write our own thin HTTP client (4–5 endpoints,
-  ~80 lines, no new dep, audit-friendly, but pikuri owns the
-  breakage when Chroma's REST API shifts) vs. pull in the
-  `chroma-db` gem (less maintained, version-skew risk). Default
-  to writing our own unless a strong case emerges.
-- **`Backend::InMemory` persistence.** Strict RAM only (honest as
-  a teaching backend; everything reloads from sources on every
-  boot) vs. simple `Marshal.dump` to disk (zero-ops persistence at
-  the cost of blurring the educational story). Leaning strict RAM
-  — the user who wants persistence has Chroma right there.
-- **Disk-spillover for over-cap retrieval results.** §"Output-size
-  DoS and cost" flags per-tool caps and tempfile spillover; the
-  vectordb tool needs to land on the same shape from day one
-  rather than retrofit it.
-- **Per-source pre-processing.** Some users will want to skip
-  `.git/`, `node_modules/`, build artifacts; same shape as
-  `.gitignore`. v1 ships a small fixed denylist; configurable
-  ignore rules defer until someone asks.
+- **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
+  set (`.git`, `node_modules`, dot-files); `.gitignore`-shaped
+  user-configurable skip rules defer until someone asks.
