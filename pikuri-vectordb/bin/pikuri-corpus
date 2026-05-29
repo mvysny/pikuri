@@ -38,6 +38,7 @@ use_reranker    = true
 source          = File.expand_path('../../docs/guide', __dir__)
 api_key_env     = 'OPENAI_API_KEY'
 streaming       = false
+watch           = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
@@ -50,6 +51,7 @@ parser = OptionParser.new do |opts|
   opts.on('--reranker-model NAME', "Reranker model identifier (default: #{reranker_model})") { |v| reranker_model = v }
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
+  opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
   opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -110,6 +112,21 @@ embedder = Pikuri::VectorDb::Embedder.new(
   assume_model_exists: true
 )
 
+# Hoisted to a local so the optional --watch daemon can be built around
+# the *same* Indexer (and therefore the same backend) the agent uses.
+# index_on_boot stays :if_empty even under --watch: on InMemory the boot
+# index runs synchronously here so the first query has data, and the
+# Watcher's boot sweep then finds every file's hash already present and
+# reindexes nothing — no double embedding. (With a persistent Chroma
+# backend you'd typically pass index_on_boot: :never and let the sweep
+# own indexing.)
+vectordb_ext = Pikuri::VectorDb::Extension.new(
+  backend:  Pikuri::VectorDb::Backend::InMemory.new,
+  source:   source,
+  embedder: embedder,
+  reranker: reranker
+)
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: model,
@@ -136,12 +153,19 @@ agent = Pikuri::Agent.new(
   # via +index_on_boot: :if_empty+. Backend::InMemory always starts
   # empty, so the first run re-indexes; the LOGGER emits one INFO
   # line per file so the reader sees progress.
-  c.add_extension Pikuri::VectorDb::Extension.new(
-    backend:  Pikuri::VectorDb::Backend::InMemory.new,
-    source:   source,
-    embedder: embedder,
-    reranker: reranker
-  )
+  c.add_extension vectordb_ext
+end
+
+# Optional auto-watch daemon (--watch). Host-owned: its lifetime is this
+# process, not the agent, so it's built here rather than inside the
+# Agent.new block. It registers with Pikuri::Finalizers, so even on an
+# unclean exit the listener is stopped at process teardown; we also close
+# it explicitly below. The daemon's worker thread calls backend.replace_source
+# while the agent's turn calls backend.query — InMemory's monitor makes
+# that concurrency safe.
+watcher = nil
+if watch
+  watcher = Pikuri::VectorDb::Watcher.new(indexer: vectordb_ext.indexer).start
 end
 
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during
@@ -164,6 +188,7 @@ end
 
 puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
 puts "Corpus: #{source}"
+puts "Watching #{source} for changes — edits, additions, and deletions reindex automatically." if watch
 puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
 puts 'Press Ctrl+C or Ctrl+D to quit.'
 
@@ -186,5 +211,9 @@ rescue Interrupt
 end
 
 puts
+# Stop the daemon before the agent: halt indexing first, then release
+# the agent's resources. (No ChromaServer here; with one, it would be
+# stopped after the watcher — the Finalizers LIFO order.)
+watcher&.close
 agent.close
 puts 'Goodbye'
