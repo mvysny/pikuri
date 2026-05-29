@@ -121,12 +121,18 @@ vectors instead of text. The fix is a per-model preset file:
 # ~/.config/llama.cpp/presets.ini
 
 [nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0]
-hf-repo = nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
-embeddings = 1
+hf-repo     = nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
+embeddings  = 1
+ctx-size    = 8192
+batch-size  = 4096
+ubatch-size = 4096
 
 [gpustack/bge-reranker-v2-m3-GGUF:Q8_0]
-hf-repo = gpustack/bge-reranker-v2-m3-GGUF:Q8_0
-reranking = 1
+hf-repo     = gpustack/bge-reranker-v2-m3-GGUF:Q8_0
+reranking   = 1
+ctx-size    = 8192
+batch-size  = 2048
+ubatch-size = 2048
 ```
 
 The file path is your choice — the router only knows about it
@@ -137,6 +143,28 @@ parameter names inside each section mirror `llama-server`'s
 long-form CLI flags (`embeddings`, `reranking`, `n-gpu-layers`,
 …). Anything not set in a section falls back to the router
 defaults, so `--jinja` and `-ngl 99` from chapter 1 still apply.
+
+**Why these `ctx-size` / `batch-size` / `ubatch-size` values.**
+`ctx-size` is the maximum sequence length the model accepts in a
+single request. Both `nomic-embed-text-v1.5` and `bge-reranker-v2-m3`
+are trained at 8192 tokens; pushing higher needs RoPE extension
+and hurts quality, so 8K is the safe ceiling. `batch-size` (`-b`)
+is the logical batch: how many tokens llama.cpp pipelines into
+one scheduling unit before evaluating. `ubatch-size` (`-ub`) is
+the *physical* batch: how many tokens fit through the model in a
+single forward pass. For generative models the two can differ
+(continuous batching across many concurrent chats), but for
+embedders and rerankers there's no generation — each input is
+one forward pass, so setting `batch-size == ubatch-size` is the
+right shape and the value just bounds how much you embed (or
+rerank) per pass. The hard constraint is `batch-size` ≥ the
+longest *single* input: with pikuri's default 512-token chunks
+(see [`Chunker::FixedWindow`](../../pikuri-vectordb/lib/pikuri/vector_db/chunker/fixed_window.rb)),
+4096 leaves 8× headroom for the embedder and 2048 leaves 4× for
+the reranker (whose pairs are query + one chunk, ~600 tokens
+typical). If you change the chunker to larger windows, bump both
+values up to match — llama.cpp will refuse, not truncate, when
+an input exceeds `batch-size`.
 
 Restart the router pointing at the presets:
 
