@@ -8,7 +8,7 @@ truth and this file just records the invariant.
 ## What this project is
 
 A Ruby implementation of an AI assistant on top of
-[ruby_llm](https://rubyllm.com), shipped as eight sibling gems in
+[ruby_llm](https://rubyllm.com), shipped as ten sibling gems in
 one monorepo. ruby_llm owns the chat transport and the Thought /
 Tool-call / Observation loop; pikuri owns the *extension surface*:
 the strict `Pikuri::Tool::Parameters` validator, the
@@ -31,8 +31,15 @@ The gem inventory:
 - `pikuri-mcp` — Model Context Protocol support.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
   bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
+- `pikuri-vectordb` — local-corpus vector search + agentic RAG:
+  `vectordb_search` / `vectordb_reindex` tools, swappable
+  `Backend` (`InMemory` / `Chroma`), embedder + reranker +
+  chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-librarian`.
+- `pikuri-memory` — name-reservation placeholder for an upcoming
+  "memories" extension (durable cross-conversation facts about the
+  user/project, after hermes-agent); no library code yet.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
-- `pikuri` — convenience metagem depending on all eight.
+- `pikuri` — convenience metagem depending on all ten.
 
 ## Why this exists
 
@@ -205,14 +212,44 @@ per-gem one-liners:
   declarative, with no Proc to pass). Personas reference tools by
   string name only so the gem stays decoupled from gems whose
   tools they happen to use.
+- **`pikuri-vectordb/`** — local-corpus vector search + agentic
+  RAG. `VectorDb::Extension` auto-registers the `vectordb_search`
+  + `vectordb_reindex` tools (`Search` / `Reindex`) onto an
+  `Agent` via `c.add_extension(...)` in the `Agent.new` block —
+  same opt-in shape as pikuri-tasks / pikuri-skills. Pieces:
+  swappable `Backend` (pure-Ruby `Backend::InMemory` cosine, the
+  educational default; thin Faraday `Backend::Chroma` for
+  persistence) + `Backend::Result`, `ChromaServer` (self-managed
+  docker container supervisor, routes through
+  `Pikuri::Subprocess.spawn`), `Indexer` (walks `source`, chunks,
+  embeds, upserts), `Embedder` (wrapper over `RubyLLM.embed`),
+  optional `Reranker::LlamaServer` (cross-encoder over
+  `/v1/rerank`) + `Reranker::Hit`, `Chunker::FixedWindow` +
+  `Tokenizer` (`CharHeuristic` default / `LlamaServer`) + `Chunk`.
+  Text extraction reuses `Pikuri::FileType.read_as_text` from
+  pikuri-core (plain text / Markdown / PDF; HTML deferred).
+  Bundled `VectorDb::LIBRARIAN` persona is the privilege-separated
+  sub-agent counterpart, wired via
+  `SubAgent::Extension.new(personas: [..., LIBRARIAN])` — same
+  shape pikuri-code uses for `GIT_REPO_RESEARCHER`. Ships
+  `bin/pikuri-librarian`. Depends on `pikuri-core` +
+  `pikuri-subagents`.
+- **`pikuri-memory/`** — name-reservation placeholder for an
+  upcoming "memories" extension: durable long-lived facts about
+  the user and the project that persist across conversations,
+  modeled after the memory concept in hermes-agent (see
+  **Reference projects**). No library code yet — `require
+  'pikuri-memory'` is a deliberate no-op; the gem exists only to
+  claim the name on RubyGems so the eventual extension can publish
+  under it. No runtime deps, no tools/extensions/constants.
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.
-- **`pikuri/`** (metagem) — `lib/pikuri.rb` is eight `require`s
+- **`pikuri/`** (metagem) — `lib/pikuri.rb` is ten `require`s
   in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 
-The four `bin/pikuri-*` scripts are dev / demo entry points only —
+The five `bin/pikuri-*` scripts are dev / demo entry points only —
 not advertised as gem executables. Production binaries built on
 pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 
