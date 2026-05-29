@@ -39,6 +39,7 @@ source          = File.expand_path('../../docs/guide', __dir__)
 api_key_env     = 'OPENAI_API_KEY'
 streaming       = false
 watch           = false
+use_chroma      = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
@@ -52,6 +53,7 @@ parser = OptionParser.new do |opts|
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
+  opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
   opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -112,15 +114,36 @@ embedder = Pikuri::VectorDb::Embedder.new(
   assume_model_exists: true
 )
 
+# Backend choice. InMemory (default) is RAM-only and re-indexes from
+# scratch every run. --chroma instead spins up a self-managed ChromaDB
+# container (via ChromaServer, which routes docker through
+# Pikuri::Subprocess and registers its `docker stop` with
+# Pikuri::Finalizers, so it's torn down at process exit) and persists
+# the embeddings to disk — so a corpus you index once stays indexed
+# across runs.
+backend =
+  if use_chroma
+    begin
+      Pikuri::VectorDb::ChromaServer.ensure_running.client(collection: 'pikuri-corpus')
+    rescue StandardError => e
+      warn "Could not start ChromaDB: #{e.message}"
+      warn 'Is docker installed and running? Drop --chroma to use the in-memory backend.'
+      exit 1
+    end
+  else
+    Pikuri::VectorDb::Backend::InMemory.new
+  end
+
 # Hoisted to a local so the optional --watch daemon can be built around
 # the *same* Indexer (and therefore the same backend) the agent uses.
 # The extension indexes nothing on its own — population is the host's
-# call. This demo deliberately starts with an EMPTY corpus: the exercise
-# is to ask the agent to index it (it calls vectordb_reindex). Pass
-# --watch instead to have the Watcher build the index in the background
-# and then keep it live as files change.
+# call. This demo deliberately starts WITHOUT auto-indexing: the exercise
+# is to ask the agent to index the corpus (it calls vectordb_reindex).
+# With InMemory that means an empty corpus every run; with --chroma the
+# index may already be populated from a previous run. Pass --watch to
+# have the Watcher build the index in the background and keep it live.
 vectordb_ext = Pikuri::VectorDb::Extension.new(
-  backend:  Pikuri::VectorDb::Backend::InMemory.new,
+  backend:  backend,
   source:   source,
   embedder: embedder,
   reranker: reranker
@@ -187,11 +210,18 @@ end
 
 puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
 puts "Corpus: #{source}"
-if watch
-  puts "Watching #{source} — building the index in the background, then tracking edits/additions/deletions live."
-  puts '(Give it a moment to index before the first search returns hits.)'
-else
+puts "Backend: #{use_chroma ? 'ChromaDB (persistent)' : 'InMemory (RAM-only)'}"
+# backend.count is 0 for a fresh InMemory and for a Chroma collection
+# that's never been indexed; positive for a Chroma corpus persisted by a
+# previous run.
+already_indexed = backend.count
+if already_indexed.positive?
+  puts "Index already populated (#{already_indexed} chunk(s) from a previous run). Ask away — or say \"reindex\" to refresh."
+elsif !watch
   puts 'The corpus is NOT indexed yet. Ask me to "index the corpus" first (I will run vectordb_reindex), then ask away.'
+end
+if watch
+  puts "Watching #{source} — reindexing files as they change. If the index is empty it's building in the background now (give it a moment)."
 end
 puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
 puts 'Press Ctrl+C or Ctrl+D to quit.'
