@@ -795,14 +795,15 @@ router-mode `llama-server`) graduated out of this log into the
   that aren't worth paying without a concrete user. Hosts that
   need multiple roots today can symlink them under one parent
   directory.
-- **Auto-watch / incremental reindex.** Listen-gem dep is cheap;
-  the diff logic (which chunks survived, which got replaced, which
-  got deleted) looked like the hard part — until the design picked
-  the coarsest unit (whole-file delete+reindex), which dissolves it.
-  v1 ships `vectordb_reindex` (nuke and reload) as the explicit path;
-  auto-watch becomes the second iteration once explicit reindex is
-  solid. Long-form design note (settled, not built):
-  [`ideas/vectordb-incremental-reindex.md`](ideas/vectordb-incremental-reindex.md).
+- **Auto-watch / incremental reindex.** *Shipped as a library
+  (`VectorDb::Watcher` + incremental {Backend}/{Indexer} methods);
+  no long-running host wires it yet.* The diff logic that looked
+  like the hard part dissolved once the design picked the coarsest
+  unit — whole-file delete+reindex — so a shrunk file leaves no
+  orphan chunks. What remains (a host to construct the daemon, the
+  guide chapter, symlink parity) lives in
+  [`ideas/vectordb-incremental-reindex.md`](ideas/vectordb-incremental-reindex.md);
+  per-piece rationale is in the gem's yardocs.
 - **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
   start of each turn (no tool call) — hermes' prefetch shape (see
   §"Memory" prior art). v1 ships agentic search only — fits the
