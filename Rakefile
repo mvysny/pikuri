@@ -7,18 +7,24 @@
 #
 # Directory names of every gem in the monorepo, in release order.
 # Each name doubles as the gem name — every gemspec inside <name>/
-# has +spec.name = '<name>'+. The metagem +pikuri+ lives last so
-# its dependency declarations pin the versions just published by
-# the prior six.
+# has +spec.name = '<name>'+.
+#
+# Order is a topological sort of the intra-monorepo dependency graph:
+# every gem is pushed only after the gems its gemspec pins
+# (+= Pikuri::VERSION+) are already on rubygems.org. Notably
+# +pikuri-subagents+ must precede +pikuri-code+ / +pikuri-vectordb+
+# / +pikuri-assistant+, which all depend on it. The metagem +pikuri+
+# lives last so its dependency declarations pin the versions just
+# published by the prior ten.
 GEMS = %w[
   pikuri-core
+  pikuri-memory
   pikuri-skills
   pikuri-tasks
-  pikuri-memory
   pikuri-mcp
   pikuri-workspace
-  pikuri-code
   pikuri-subagents
+  pikuri-code
   pikuri-vectordb
   pikuri-assistant
   pikuri
