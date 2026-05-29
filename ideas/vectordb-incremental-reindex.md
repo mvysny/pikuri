@@ -35,12 +35,13 @@ library-installed signal trap) are recorded in the relevant yardocs
   but the real long-running owners — the planned `pikuri-tui` and a
   web app — don't exist yet, so the daemon has no end-to-end run
   against a real `listen` watch + live Chroma container under load.
-- **Guide chapter.** `docs/guide/03-vectordb.md` now mentions the
-  empty-corpus exercise and `--watch`, but there's no dedicated
-  auto-watch walkthrough (host-owned lifecycle, the Finalizers
-  teardown order, the reindex-on-config-change rule). Flesh it out
-  when the host above lands, so the docs show a real
-  wiring rather than a sketch.
+- **Guide chapter.** `docs/guide/03-vectordb.md` now has a
+  "Putting it together: `--chroma --watch`" walkthrough (boot sweep,
+  first-vs-subsequent runs, live reindexing). What it still omits is
+  the host-owned-lifecycle detail — the Finalizers teardown order and
+  the reindex-on-config-change rule — because that only has a real
+  wiring to show once the long-running host above lands. Fold it in
+  then, against the host rather than the demo binary.
 - **Symlink policy parity.** `Indexer#list_files` (the walk) and the
   `listen` watch both treat symlinked directories as the OS does and
   neither special-cases them; they can diverge (index a symlinked
