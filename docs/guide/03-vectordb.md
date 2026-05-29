@@ -237,9 +237,20 @@ No web tools, no sub-agents — just retrieval and a calculator. Why
 the web tools are absent is the ["Why this agent can't leak your
 corpus"](#why-this-agent-cant-leak-your-corpus) section below.
 
-You'll see one INFO log line per indexed file as the boot index
-runs (twelve chapters + a README, takes about a minute against a
-local embedder). Then the familiar `>` prompt. Try:
+You drop straight to the familiar `>` prompt — and the index starts
+out **empty**. Populating it is the host's call, not something the
+extension does behind your back, so the binary tells you as much:
+*"The corpus is NOT indexed yet. Ask me to 'index the corpus' first
+(I will run `vectordb_reindex`), then ask away."* Do that:
+
+```
+> index the corpus
+```
+
+The agent calls `vectordb_reindex`, and you'll see one INFO log line
+per indexed file as it walks the source (twelve chapters + a README,
+takes about a minute against a local embedder). With the corpus now
+in memory, ask it something:
 
 ```
 > What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run `bash`?
@@ -436,6 +447,45 @@ directly and skip the supervisor.
 `pgvector` / `Qdrant` / others are reasonable backends and would
 be similarly thin Faraday clients; they're deferred until a
 concrete need shows up.
+
+## Putting it together: `--chroma --watch`
+
+The first demo kept everything in RAM and made you ask the agent to
+index the corpus by hand — deliberately, so you could watch each
+piece work in isolation. Once that's familiar, the setup you
+actually want day to day combines the two halves above: persist the
+index with Chroma, and keep it current automatically with the
+`Watcher`.
+
+```sh
+./pikuri-vectordb/bin/pikuri-corpus --chroma --watch
+```
+
+The flags are independent and stack cleanly:
+
+- **`--chroma`** swaps the in-RAM `Backend::InMemory` for the
+  self-managed ChromaDB container from the previous section, so the
+  embeddings persist on disk across runs. (Needs `docker` on
+  `PATH`.)
+- **`--watch`** starts the background `Watcher`: it walks the source
+  once on boot and then reindexes individual files as they change,
+  so you never run `vectordb_reindex` by hand again.
+
+On the **first** run the two combine like this: docker starts the
+`pikuri-internal-chroma` container, the `Watcher` kicks off a
+background sweep of `docs/guide/`, and you drop straight to the `>`
+prompt while the index fills in underneath you — a question asked in
+the first few seconds may retrieve less than the same one a minute
+later. On **subsequent** runs Chroma already holds the embeddings
+from last time, so the binary prints
+`Index already populated (… chunk(s) …)` at boot and the `Watcher`
+only has to fold in whatever changed since. Edit a chapter while the
+agent is running and the change is searchable moments later, no
+restart and no manual reindex.
+
+This is the shape `pikuri-assistant` ([chapter 7](07-assistant.md))
+builds on: a corpus that stays indexed between sessions and keeps
+itself current.
 
 ## What's next
 
