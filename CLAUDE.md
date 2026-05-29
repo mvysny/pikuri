@@ -104,6 +104,27 @@ yardoc. CLAUDE.md only records the invariant.
   (stdio MCP entries — the `mcp` gem owns its own subprocess
   lifecycle). HTTP MCP entries don't subprocess at all. See
   {Pikuri::Subprocess} and {Pikuri::Mcp::ClientWrapper}.
+- **Finalizers / teardown seam.** One process-global teardown
+  registry with a single `at_exit`; no other `at_exit { close }`
+  hooks in pikuri-* `lib/`. A resource registers at its *ownership
+  boundary*: process-level infra a `bin/` starts self-registers
+  (`Pikuri::VectorDb::ChromaServer` via `ensure_running!`);
+  agent-owned resources do NOT — they ride the agent's `on_close`,
+  which an extension arms via `c.on_close` (that writes to the
+  agent's live handler list, so cleanup fires even mid-construction).
+  `Agent` self-heals: it registers up front and, if the build phase
+  raises, closes (firing armed handlers) and unregisters before
+  re-raising — so a half-built agent leaks nothing. `#close`
+  unregisters so an explicitly-closed object isn't pinned until exit.
+  `Subprocess` registers at *load* time, so in the LIFO sweep it runs
+  LAST — the SIGTERM-the-strays reaper after every graceful close.
+  Even fire-and-forget disk cleanup routes here (the workspace's
+  ephemeral-umbrella removal, via the block form of `.register`).
+  Grep-enforceable: `grep -rn 'at_exit {' pikuri-*/lib/` should only
+  hit `pikuri-core/lib/pikuri/finalizers.rb` (the registry's own
+  hook). See {Pikuri::Finalizers}, {Pikuri::Agent},
+  {Pikuri::Agent::Configurator} (the `on_close_sink`), and
+  {Pikuri::Workspace::Filesystem.mint_internal_temp}.
 - **Workspace seam.** Tools touching files (`Read`, `Write`,
   `Edit`, `Grep`, `Glob`, `Bash`) take a
   `Pikuri::Workspace::Filesystem` via constructor and route every
