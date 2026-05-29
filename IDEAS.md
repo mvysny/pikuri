@@ -62,8 +62,13 @@ axis.
 
 The structural defense (privilege-separated `RESEARCHER` and
 `FILE_MINER` sub-agents) shipped and is documented in
-[`SECURITY.md`](SECURITY.md) §"Prompt injection". Adjacent ideas
-still on the table:
+[`SECURITY.md`](SECURITY.md) §"Prompt injection".
+
+The biggest adjacent idea — a **structural trifecta detector** that
+tags tools with their legs, unions them per agent (propagating across
+sub-agents), and warns when an agent holds all three — has its own
+long-form design note: [`ideas/trifecta-detector.md`](ideas/trifecta-detector.md).
+Designed, not built. Shorter adjacent ideas still on the table:
 
 - **Provenance tags around tool output** in the context render
   (untrusted-content markers). Cheap, partial — empirical
