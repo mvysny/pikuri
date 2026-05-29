@@ -75,9 +75,17 @@ module Pikuri
     #   embedder or chunker config does *not* trigger reindex — the
     #   recourse is a manual full +vectordb_reindex+. See
     #   {Extension} for the loud warning.
-    # * **No symlink following beyond the {Indexer}'s walk.** The
-    #   watch and the walk should agree; both treat symlinked
-    #   directories as the OS does and neither special-cases them.
+    # * **Symlinks are never indexed.** A live event whose path is
+    #   reached through a symlink below the watch root is dropped —
+    #   the leaf may be a symlinked file, or an ancestor a symlinked
+    #   directory. This matches {Indexer#list_files}, which skips the
+    #   same paths on the boot walk, so the watch and the walk index
+    #   exactly the same set. The rule is strict on purpose, not
+    #   OS-default: it is a privacy boundary (a link pointing out of
+    #   the corpus never gets embedded) and it closes the otherwise
+    #   off-tree divergence — a symlink target that changes outside
+    #   the watched tree fires no event, so following it would leave
+    #   stale chunks the walk would later remove.
     # * **No backpressure.** Re-embedding competes with the chat
     #   model on a shared llama-server; vectordb targets
     #   low-churn corpora (notes, docs), so a burst is tolerated
@@ -171,7 +179,11 @@ module Pikuri
       # batch of changed paths into queued work: modified/added →
       # +:reindex+, removed → +:remove+. Non-indexable paths
       # (denylisted dirs, dot-files, anything outside the watch root)
-      # are dropped.
+      # are dropped, as are paths reached through a symlink (see the
+      # class doc — strict, to agree with {Indexer#list_files}). The
+      # symlink check guards only +:reindex+: it +lstat+s the path,
+      # which a removed path no longer has, and a +:remove+ for a
+      # never-indexed symlink source is a harmless no-op anyway.
       #
       # @param modified [Array<String>] absolute paths.
       # @param added [Array<String>] absolute paths.
@@ -179,7 +191,10 @@ module Pikuri
       # @return [void]
       def process_event(modified, added, removed)
         (Array(modified) + Array(added)).each do |path|
-          enqueue(:reindex, path) if indexable?(path)
+          next unless indexable?(path)
+          next if symlinked_below_root?(path)
+
+          enqueue(:reindex, path)
         end
         Array(removed).each do |path|
           enqueue(:remove, path) if indexable?(path)
@@ -306,6 +321,30 @@ module Pikuri
       rescue ArgumentError
         # relative_path_from raises when path is on a different prefix
         # than root — i.e. not under the watched tree.
+        false
+      end
+
+      # Is +path+ reached through a symlink at or below the watch
+      # root? Walks the components from the watch root (+@watch_dir+)
+      # down to the leaf and +lstat+s each, so it catches both a
+      # symlinked leaf file and a symlinked ancestor directory —
+      # matching what {Indexer#list_files} skips. Components in the
+      # watch root's own prefix are not checked: that is the path the
+      # host pointed at, descended even when itself reached through a
+      # link (same as the walk, which always descends its given
+      # +root+).
+      #
+      # @param path [String] an absolute path under the watch root.
+      # @return [Boolean]
+      def symlinked_below_root?(path)
+        path = Pathname.new(path).expand_path
+        cur = @watch_dir # the file's parent in single-file mode, the tree root otherwise
+        path.relative_path_from(cur).each_filename do |part|
+          cur += part
+          return true if cur.symlink?
+        end
+        false
+      rescue ArgumentError
         false
       end
     end

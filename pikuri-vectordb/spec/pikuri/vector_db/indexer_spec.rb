@@ -108,6 +108,27 @@ describe Pikuri::VectorDb::Indexer do
       assert_equal 1, total
     end
 
+    it 'skips a symlinked file and never descends a symlinked directory' do
+      write('real.md', 'kept content')
+      # Targets live outside root so the walk can only reach them via
+      # the links — proving the links themselves are skipped.
+      outside = Pathname.new(Dir.mktmpdir('pikuri-vectordb-outside-'))
+      File.write(outside + 'target.md', 'off tree file')
+      File.write(outside + 'secret.md', 'off tree secret')
+      File.symlink((outside + 'target.md').to_s, (root + 'link.md').to_s)
+      File.symlink(outside.to_s, (root + 'linked_dir').to_s)
+
+      total = build_indexer.index_all!
+
+      # Only real.md ("kept content" → 2 chunks); the symlinked file
+      # and everything under the symlinked dir are skipped.
+      assert_equal 2, total
+      sources = backend.query(vector: [4.0, 0.5, 0.5], top_k: 10).map { |r| r.chunk.source }.uniq
+      assert_equal ['real.md'], sources
+    ensure
+      FileUtils.rm_rf(outside) if outside
+    end
+
     it 'WARNs and skips images / binary files via FileType refusal' do
       write('readable.md', 'kept content')
       # PNG magic — caught by FileType.read_as_text and surfaced as ArgumentError

@@ -25,8 +25,10 @@ shipped:
 
 The settled design decisions (whole-file unit, config-change does
 nothing + the loud reindex warning, `docker stop` not `rm`, no
-library-installed signal trap) are recorded in the relevant yardocs
-({Watcher}, {Indexer}, {Backend}, {VectorDb::Extension}).
+library-installed signal trap, strict no-symlink-following in both
+the walk and the watch — a privacy boundary that also keeps the two
+in exact agreement) are recorded in the relevant yardocs ({Watcher},
+{Indexer}, {Backend}, {VectorDb::Extension}).
 
 ## Still open
 
@@ -42,11 +44,6 @@ library-installed signal trap) are recorded in the relevant yardocs
   the reindex-on-config-change rule — because that only has a real
   wiring to show once the long-running host above lands. Fold it in
   then, against the host rather than the demo binary.
-- **Symlink policy parity.** `Indexer#list_files` (the walk) and the
-  `listen` watch both treat symlinked directories as the OS does and
-  neither special-cases them; they can diverge (index a symlinked
-  file whose target changes off-tree, never see the event). Pin a
-  policy if it bites.
 - **`sources_with_hashes` at scale.** One `/get` call, but one
   metadata row per file — chunky JSON on a 50k-file corpus. Fine for
   the scoped personal-notes / single-product-docs sizes; the known

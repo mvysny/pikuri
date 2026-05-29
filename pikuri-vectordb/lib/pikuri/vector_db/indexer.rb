@@ -317,6 +317,19 @@ module Pikuri
       # entries by basename so the indexing order is
       # deterministic across runs (useful for reading logs
       # against the same corpus).
+      #
+      # Symlinks are skipped outright — a symlinked file is not
+      # indexed and a symlinked directory is not descended into
+      # (the +#symlink?+ check uses +lstat+, so it fires before the
+      # +#directory?+/+#file?+ branch follows the link). This is a
+      # deliberate strict policy, not OS-default behaviour: it keeps
+      # the corpus to the regular files actually under +root+ (a
+      # privacy boundary — a link to +~/.ssh+ never gets embedded)
+      # and keeps this walk in exact agreement with
+      # {Watcher#process_event}, which applies the same rule to live
+      # events. +root+ itself is the path the caller pointed at, so
+      # it is descended even when reached through a symlink; only
+      # links *discovered during* the walk are skipped.
       def list_files(root)
         files = []
         walk = lambda do |dir|
@@ -325,6 +338,7 @@ module Pikuri
             name = entry.basename.to_s
             next if name.start_with?('.')
             next if DENYLIST.include?(name)
+            next if entry.symlink?
 
             if entry.directory?
               walk.call(entry)

@@ -110,6 +110,53 @@ describe Pikuri::VectorDb::Watcher do
       end
     end
 
+    it 'drops a symlinked file and paths under a symlinked directory' do
+      # Targets live outside root so a reachable path proves a link was
+      # traversed, not an independent in-tree file.
+      outside = Pathname.new(Dir.mktmpdir('pikuri-watcher-outside-')).realpath
+      File.write(outside + 'target.md', 'x')
+      FileUtils.mkdir_p(outside + 'sub')
+      File.write(outside + 'sub' + 'deep.md', 'y')
+
+      File.write(root + 'real.md', 'r')
+      File.symlink((outside + 'target.md').to_s, (root + 'link.md').to_s)
+      File.symlink(outside.to_s, (root + 'linked_dir').to_s)
+
+      idx = fake_indexer
+      w = described_class.new(indexer: idx)
+
+      w.process_event(
+        [under('real.md'), under('link.md'), under('linked_dir/sub/deep.md')],
+        [], []
+      )
+      w.drain!
+
+      # Only the real file; the symlinked leaf and the file reached
+      # through the symlinked dir are both dropped.
+      assert_equal [[:reindex, under('real.md')]], idx.calls
+    ensure
+      FileUtils.rm_rf(outside) if outside
+    end
+
+    context 'with a single-file source that is itself a symlink' do
+      it 'drops the reindex event' do
+        outside = Pathname.new(Dir.mktmpdir('pikuri-watcher-outside-')).realpath
+        File.write(outside + 'target.md', 'x')
+        link = root + 'notes.md'
+        File.symlink((outside + 'target.md').to_s, link.to_s)
+
+        idx = fake_indexer(source: link)
+        w = described_class.new(indexer: idx)
+
+        w.process_event([link.to_s], [], [])
+        w.drain!
+
+        assert_equal [], idx.calls
+      ensure
+        FileUtils.rm_rf(outside) if outside
+      end
+    end
+
     it 'swallows a per-file failure and keeps draining' do
       idx = fake_indexer(reindex_raises: RuntimeError.new('embedder 503'))
       w = described_class.new(indexer: idx)
