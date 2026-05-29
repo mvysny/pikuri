@@ -67,4 +67,9 @@ Gem::Specification.new do |spec|
   # +SubAgent::Extension.new(personas: [..., LIBRARIAN])+ — same
   # shape +pikuri-code+ uses for +GIT_REPO_RESEARCHER+.
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
+  # listen backs the optional +VectorDb::Watcher+ auto-watch daemon
+  # (inotify on Linux, with a polling fallback). Only loaded when a
+  # host actually starts a Watcher — +require 'listen'+ is deferred to
+  # +Watcher#start+, so the rest of the gem loads without it present.
+  spec.add_dependency 'listen', '~> 3.9'
 end

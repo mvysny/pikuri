@@ -28,6 +28,30 @@ module Pikuri
     # * +:never+ — the host drives indexing themselves via
     #   +extension.indexer+.
     #
+    # == Pairing with the auto-watch {Watcher}
+    #
+    # A host that runs a {Watcher} (keeping the index live as files
+    # change on disk) should construct this extension with
+    # +index_on_boot: :never+ and let the Watcher own indexing. The
+    # Watcher's boot reconcile sweep ({Indexer#reconcile_plan}) *is*
+    # the boot index — uniform across backends — so the extension's
+    # own boot index would be redundant double work. The Watcher is
+    # host-owned (its lifetime is the process, not any one agent), so
+    # it is *not* wired here; the host builds it around
+    # +extension.indexer+ separately. See {Watcher} and
+    # +ideas/vectordb-incremental-reindex.md+.
+    #
+    # == Changed your embedder or chunker? Reindex fully.
+    #
+    # Neither the boot index nor the {Watcher} reacts to a config
+    # change: the Watcher's change signal is the file's byte hash, so
+    # swapping the embedder model or the chunker window leaves every
+    # already-indexed chunk in place — silently stale (new queries
+    # embed with the new model but score against old-model vectors).
+    # After changing any indexing setting, run a full
+    # +vectordb_reindex+ (or boot once with +index_on_boot: :always+)
+    # to rebuild from scratch.
+    #
     # The boot index runs synchronously inside +configure+; the
     # host's +Agent.new+ doesn't return until indexing is done.
     # That's intentional — the agent isn't useful until the
