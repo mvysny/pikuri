@@ -86,9 +86,19 @@ module Pikuri
         synthesizer = build_synthesizer(thinker, c.transport.model) if @synthesize_descriptions
         verifier    = build_verifier(thinker, c.transport.model)    if @verify_mcp_servers
 
+        # Two-phase on purpose: construct (pure), arm cleanup, then
+        # start. Arming +on_close+ *before* the failure-prone
+        # +start_all+ is what makes a start failure (Cancelled,
+        # injection) non-leaking: +c.on_close+ writes straight to the
+        # agent's live handler list, so if +start_all+ raises, the
+        # agent's constructor rescue closes these half-started servers.
+        # See {Mcp::Servers}' "Lifecycle: two-phase, and the cleanup
+        # gap" and {Agent#run_configure}.
         @servers = Mcp::Servers.new(@registry, synthesizer: synthesizer, verifier: verifier)
-        c.append_system_prompt(@servers.system_prompt_snippet.lstrip) unless @servers.empty?
         c.on_close { @servers.close }
+        @servers.start_all
+
+        c.append_system_prompt(@servers.system_prompt_snippet.lstrip) unless @servers.empty?
         nil
       end
 

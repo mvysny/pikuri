@@ -9,8 +9,10 @@ module Pikuri
   # {Verifier} / {Synthesizer} passes that turn a raw MCP surface into
   # the +<available_mcps>+ snippet. The +mcp+ gem dependency now lives
   # one level down in {ClientWrapper}. Constructed from a {Registry}
-  # (config), eager-starts every entry at +#initialize+, registers an
-  # +at_exit+ hook to close cleanly on process exit.
+  # (config) without side effects; the owner calls {#start_all} to
+  # spawn every entry and registers {#close} with {Pikuri::Finalizers}
+  # in between (or uses the {.start} convenience when it doesn't need
+  # that gap).
   #
   # == Transports
   #
@@ -22,7 +24,25 @@ module Pikuri
   # subprocess-death retry internally (see {ClientWrapper} for the
   # retry contract).
   #
-  # == Lifecycle and the +Subprocess.spawn+ carve-out
+  # == Lifecycle: two-phase, and the cleanup gap
+  #
+  # {#initialize} is pure; {#start_all} does the spawning. The split
+  # exists so the owner can arm {#close} *between* them — before the
+  # failure-prone startup runs. {Mcp::Extension} does exactly that:
+  #
+  #   servers = Mcp::Servers.new(registry, ...)   # pure
+  #   c.on_close { servers.close }                 # cleanup armed
+  #   servers.start_all                            # may raise (Cancelled, injection)
+  #
+  # +c.on_close+ writes straight to the agent's live handler list (see
+  # {Pikuri::Agent::Configurator}'s +on_close_sink+), so if
+  # {#start_all} raises, the agent's constructor rescue still fires
+  # this and closes any half-spawned servers — and on the happy path
+  # the same handler closes them on +agent.close+ / at process exit.
+  # That central handling is why {Servers} itself needs no
+  # {Pikuri::Finalizers} coupling.
+  #
+  # == The +Subprocess.spawn+ carve-out
   #
   # The +Subprocess.spawn+ chokepoint carve-out applies *only* to stdio
   # entries. The +mcp+ gem owns the subprocess lifecycle:
@@ -32,21 +52,21 @@ module Pikuri
   # API — duplicating work the gem exists to do. So stdio MCP is the
   # documented exception to the chokepoint convention in CLAUDE.md
   # "Scope decisions": the gem spawns, we own +#close+ (via
-  # {ClientWrapper#close}), and +at_exit { close }+ runs from inside
-  # {#initialize} to make sure cleanup happens on every exit path.
-  # Graceful close on a stdio transport closes stdin → server's read
-  # loop hits EOF → server self-terminates, per the MCP spec.
+  # {ClientWrapper#close}). Graceful close on a stdio transport closes
+  # stdin → server's read loop hits EOF → server self-terminates, per
+  # the MCP spec.
   #
   # HTTP entries don't spawn anything — they're plain Faraday — so the
-  # carve-out doesn't apply. +at_exit { close }+ still runs to send the
-  # session-termination +DELETE+ per spec.
+  # carve-out doesn't apply; +#close+ still sends the session-
+  # termination +DELETE+ per spec.
   #
   # == What lives where
   #
   # * {ClientWrapper}: the per-server client/transport lifecycle plus
   #   restart-and-retry on stdio subprocess death. {Servers} holds one
   #   wrapper per live server in +@wrappers+.
-  # * {Servers}: eager startup, audit logging, the wrappers hash,
+  # * {Servers}: two-phase startup ({.new} + {#start_all}), audit
+  #   logging, the wrappers hash,
   #   +#close+, the +<available_mcps>+ snippet renderer, and the
   #   shared +register_tools_with_agent+ that actually wires MCP tools
   #   into a given agent's underlying +RubyLLM::Chat+.
@@ -92,7 +112,46 @@ module Pikuri
     #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
     #   Pass +nil+ (the default) to skip injection-checking and
     #   trust whatever the server emits.
-    # @return [Servers]
+    # Construct + start in one step. Convenience for callers that
+    # don't need to slot work between construction and startup — most
+    # of them. The one caller that *does* is {Mcp::Extension}, which
+    # uses the two-phase {.new} + {#start_all} directly so it can
+    # register {#close} with {Pikuri::Finalizers} in the gap (see the
+    # "Lifecycle" section in the class header).
+    #
+    # @param registry [Registry]
+    # @param synthesizer [Synthesizer, nil] see {#initialize}
+    # @param verifier [Verifier, nil] see {#initialize}
+    # @return [Servers] already started
+    def self.start(registry, synthesizer: nil, verifier: nil)
+      new(registry, synthesizer: synthesizer, verifier: verifier).tap(&:start_all)
+    end
+
+    # Construct *without side effects* — no subprocess spawns, no
+    # synthesizer/verifier LLM calls. Those happen in {#start_all},
+    # which the caller invokes once it has registered {#close} for
+    # cleanup. Splitting the two means a {#start_all} that raises
+    # (notably +Cancelled+ from synthesis) can't strand half-spawned
+    # servers: the owner has already registered cleanup.
+    #
+    # @param registry [Registry] configured servers to start.
+    # @param synthesizer [Synthesizer, nil] when set, invoked from
+    #   {#resolve_description} for servers whose +initialize+
+    #   handshake doesn't carry an +instructions+ or
+    #   +serverInfo.title+ field useful enough to show the LLM.
+    #   {Agent#initialize} builds and threads a {Synthesizer} (with
+    #   thinker + cache) when its +synthesize_descriptions:+ kwarg
+    #   is true. Pass +nil+ (the default) to skip synthesis and rely
+    #   on the static fallback chain.
+    # @param verifier [Verifier, nil] when set, invoked from
+    #   {#start_one} after +wrapper.tools+ but before
+    #   {#resolve_description}. A {Verifier::InjectionDetected} raise
+    #   aborts startup for that server (wrapper closed, exception
+    #   propagated). {Agent#initialize} builds + threads a real
+    #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
+    #   Pass +nil+ (the default) to skip injection-checking and
+    #   trust whatever the server emits.
+    # @return [Servers] not yet started — call {#start_all}
     def initialize(registry, synthesizer: nil, verifier: nil)
       @registry     = registry
       @synthesizer  = synthesizer
@@ -102,14 +161,17 @@ module Pikuri
       @descriptions = {} # id => short description shown in <available_mcps>
       @live_ids     = []
       @closed       = false
+    end
 
-      # Register cleanup *before* starting any server. If a later
-      # +start_one+ raises (notably Cancelled from synthesis), the
-      # exception propagates out of {#initialize} and the at_exit
-      # handler still fires at process exit to close any
-      # wrappers that did get opened.
-      register_at_exit
-      start_all
+    # Spawn and handshake every configured server, running the
+    # verifier / synthesizer passes. The failure-prone phase, split
+    # out of {#initialize} so the caller can register {#close} first.
+    # A +start_one+ raise (notably +Cancelled+) propagates; any
+    # wrappers already opened are reachable via {#close}.
+    #
+    # @return [void]
+    def start_all
+      @registry.entries.each { |entry| start_one(entry) }
     end
 
     # @return [Array<String>] ids of servers that successfully started.
@@ -187,25 +249,23 @@ module Pikuri
     end
 
     # Close every live transport, terminating the spawned MCP server
-    # subprocesses. Idempotent. Registered via +at_exit+ from
-    # {#initialize} so process exit always cleans up, but callers may
-    # invoke it explicitly (e.g. tests that swap in a fresh
-    # {Servers}). {ClientWrapper#close} catches and logs its own
-    # transport-close errors, so the loop here doesn't need a rescue.
+    # subprocesses. Idempotent. The owner ({Mcp::Extension}) arms this
+    # via the agent's +on_close+ before calling {#start_all}, so the
+    # agent closes it — on an explicit +agent.close+, at exit via
+    # {Pikuri::Finalizers}, or from the constructor's rescue if
+    # +start_all+ raised mid-build. Tests call it explicitly.
+    # {ClientWrapper#close} catches and logs its own transport-close
+    # errors, so the loop here needs no rescue.
     #
     # @return [void]
     def close
       return if @closed
 
-      @wrappers.each_value(&:close)
       @closed = true
+      @wrappers.each_value(&:close)
     end
 
     private
-
-    def start_all
-      @registry.entries.each { |entry| start_one(entry) }
-    end
 
     def start_one(entry)
       wrapper = ClientWrapper.new(entry)
@@ -406,11 +466,6 @@ module Pikuri
          .gsub('>', '&gt;')
          .gsub('"', '&quot;')
          .gsub("'", '&apos;')
-    end
-
-    def register_at_exit
-      me = self
-      at_exit { me.close }
     end
 
     # The +mcp_connect+ tool exposed to the LLM. Private inner class —

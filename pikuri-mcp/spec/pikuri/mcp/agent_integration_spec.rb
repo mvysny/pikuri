@@ -63,6 +63,8 @@ RSpec.describe 'Pikuri::Mcp::Extension agent integration' do
         @close_calls = 0
       end
 
+      def start_all; end
+
       def empty?
         true # skip auto-McpConnect-tool registration in Mcp::Extension#bind
       end

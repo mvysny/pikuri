@@ -381,71 +381,31 @@ module Pikuri
       @streaming = streaming
       @synth_answer = nil
       @on_close_handlers = []
+      # Stashed for {#run_configure}, which runs the failure-prone
+      # build phase below out of a separate method.
+      @block = block
+      @context_window = context_window
+      @llama_probe_url = llama_probe_url
 
-      # Single Configurator funnel for everything the block adds —
-      # tools, listeners, system-prompt snippets, extensions, and
-      # on_close handlers. See {Configurator} for the per-method
-      # contract.
-      configurator = Configurator.new(
-        transport: @transport,
-        system_prompt_base: system_prompt,
-        id: @id,
-        streaming: @streaming,
-        step_limit: @step_limit,
-        cancellable: @cancellable,
-        interloper: @interloper
-      )
-
-      block&.call(configurator)
-
-      @tools = configurator.tools.dup
-      @sub_agent_tools = configurator.sub_agent_tools.dup
-      @listeners = ListenerList.new(configurator.listeners)
-      configurator.system_prompt_additions.each do |snippet|
-        @system_prompt = "#{@system_prompt}\n\n#{snippet}"
-      end
-      @on_close_handlers.concat(configurator.on_close_handlers)
-      @extensions = configurator.extensions.dup
-
-      @chat = RubyLLM.chat(**@transport.to_h)
-      @chat.with_instructions(@system_prompt)
-      @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
-
-      @context_window_cap = ContextWindowDetector.new(
-        override: context_window,
-        ruby_llm_reported: @chat.model.context_window,
-        llama_probe_url: llama_probe_url
-      ).detect
-
-      self.class.wire_chat(
-        @chat,
-        listeners: @listeners,
-        step_limit: @step_limit,
-        cancellable: @cancellable,
-        interloper: @interloper
-      )
-
-      # One-shot context-window cap: lets every listener that
-      # cares (notably TokenLog) pick the value off the stream
-      # before any Tokens event arrives.
-      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
-
-      # Bind sweep — each extension gets its chance to install
-      # per-agent state (dynamic tools via #internal_add_tool,
-      # per-agent close hooks via #on_close, etc.) now that the
-      # chat is fully wired. See IDEAS.md §"Extension protocol
-      # design" for what #configure vs #bind are each for.
-      @extensions.each { |ext| ext.bind(self) }
-
-      # Fallback cleanup: if the host forgets to call #close, the
-      # process-global {Pikuri::Finalizers} registry closes this
-      # agent on exit. #close is idempotent, so an explicit close
-      # earlier makes the sweep a no-op — and it also calls
-      # Finalizers.unregister(self), so an explicitly-closed agent
-      # drops out of the registry and can be garbage-collected rather
-      # than being pinned alive until process exit (the
-      # "close-then-removes" the old per-agent at_exit couldn't do).
+      # Register *before* the build phase so a mid-construction raise
+      # is still recoverable: extensions arm their cleanup via
+      # +c.on_close+ (which writes straight to +@on_close_handlers+,
+      # see {Configurator}), and the rescue below fires whatever was
+      # armed before the failure. On the happy path this registration
+      # is the at-exit backstop if the host forgets {#close}; an
+      # explicit {#close} unregisters, so the agent isn't pinned alive
+      # until process exit.
       Pikuri::Finalizers.register(self)
+
+      begin
+        run_configure
+      rescue StandardError
+        # Half-built agent (e.g. an extension's +configure+ raised
+        # Cancelled mid-spawn). Fire the handlers armed so far, drop
+        # out of the registry, and re-raise — no partial state leaks.
+        close
+        raise
+      end
     end
 
     # @return [RubyLLM::Chat] underlying chat; the extension seam
@@ -722,6 +682,72 @@ module Pikuri
     # @return [String]
     def to_s
       "Agent(id=#{@id}, model=#{model}, tools=#{@tools.size}, listeners=#{@listeners})"
+    end
+
+    private
+
+    # The failure-prone build phase, split out of {#initialize} so the
+    # constructor can wrap it in a rescue and self-heal. Funnels the
+    # +Agent.new+ block through a single {Configurator} — tools,
+    # listeners, system-prompt snippets, extensions, and +on_close+
+    # handlers — then wires the chat and runs the extension +bind+
+    # sweep. The Configurator's +on_close_sink:+ is +@on_close_handlers+
+    # itself, so a handler an extension arms via +c.on_close+ is live on
+    # the agent the instant it's registered — that's what lets the
+    # constructor's rescue close a half-built agent.
+    #
+    # @return [void]
+    def run_configure
+      configurator = Configurator.new(
+        transport: @transport,
+        system_prompt_base: @system_prompt,
+        id: @id,
+        streaming: @streaming,
+        step_limit: @step_limit,
+        cancellable: @cancellable,
+        interloper: @interloper,
+        on_close_sink: @on_close_handlers
+      )
+
+      @block&.call(configurator)
+
+      @tools = configurator.tools.dup
+      @sub_agent_tools = configurator.sub_agent_tools.dup
+      @listeners = ListenerList.new(configurator.listeners)
+      configurator.system_prompt_additions.each do |snippet|
+        @system_prompt = "#{@system_prompt}\n\n#{snippet}"
+      end
+      @extensions = configurator.extensions.dup
+
+      @chat = RubyLLM.chat(**@transport.to_h)
+      @chat.with_instructions(@system_prompt)
+      @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
+
+      @context_window_cap = ContextWindowDetector.new(
+        override: @context_window,
+        ruby_llm_reported: @chat.model.context_window,
+        llama_probe_url: @llama_probe_url
+      ).detect
+
+      self.class.wire_chat(
+        @chat,
+        listeners: @listeners,
+        step_limit: @step_limit,
+        cancellable: @cancellable,
+        interloper: @interloper
+      )
+
+      # One-shot context-window cap: lets every listener that
+      # cares (notably TokenLog) pick the value off the stream
+      # before any Tokens event arrives.
+      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+
+      # Bind sweep — each extension gets its chance to install
+      # per-agent state (dynamic tools via #internal_add_tool,
+      # per-agent close hooks via #on_close, etc.) now that the
+      # chat is fully wired. See IDEAS.md §"Extension protocol
+      # design" for what #configure vs #bind are each for.
+      @extensions.each { |ext| ext.bind(self) }
     end
   end
 end

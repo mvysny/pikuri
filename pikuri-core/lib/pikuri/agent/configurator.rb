@@ -127,8 +127,15 @@ module Pikuri
       # @param step_limit [Control::StepLimit, nil]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper, nil]
+      # @param on_close_sink [Array<Proc>, nil] array that {#on_close}
+      #   appends to. {Agent#initialize} passes its own live
+      #   +@on_close_handlers+ so a handler an extension arms via
+      #   +c.on_close+ is reachable the instant it's registered — which
+      #   is what lets the constructor close a half-built agent if a
+      #   later extension's +configure+ raises. Defaults to a fresh
+      #   array for standalone use (e.g. specs).
       def initialize(transport:, system_prompt_base:, id:, streaming:,
-                     step_limit:, cancellable:, interloper:)
+                     step_limit:, cancellable:, interloper:, on_close_sink: nil)
         @transport = transport
         @system_prompt_base = system_prompt_base
         @id = id
@@ -141,7 +148,7 @@ module Pikuri
         @sub_agent_tools = []
         @listeners = []
         @system_prompt_additions = []
-        @on_close_handlers = []
+        @on_close_handlers = on_close_sink || []
         @extensions = []
       end
 

@@ -6,14 +6,19 @@ RSpec.describe Pikuri::Mcp::Extension do
   # extension touches.
   let(:tracker_servers_class) do
     Class.new do
-      attr_reader :close_calls, :build_calls
+      attr_reader :close_calls, :build_calls, :start_calls
       attr_accessor :empty_value, :snippet
 
       def initialize(empty: true, snippet: '')
         @empty_value = empty
         @snippet = snippet
         @close_calls = 0
+        @start_calls = 0
         @build_calls = []
+      end
+
+      def start_all
+        @start_calls += 1
       end
 
       def empty?
@@ -95,6 +100,39 @@ RSpec.describe Pikuri::Mcp::Extension do
       assert_equal 1, configurator.on_close_handlers.size
 
       # on_close handler calls servers.close
+      configurator.on_close_handlers.first.call
+      assert_equal 1, tracker.close_calls
+    end
+
+    it 'starts the servers via start_all' do
+      tracker = tracker_servers_class.new(empty: false, snippet: 'x')
+      ext = described_class.new(registry: non_empty_registry,
+                                synthesize_descriptions: false,
+                                verify_mcp_servers: false)
+
+      with_stubbed_servers(tracker) { ext.configure(configurator) }
+
+      assert_equal 1, tracker.start_calls
+    end
+
+    it 'arms on_close before start_all, so a start failure still leaves cleanup wired' do
+      # The leak guard: on_close is registered *before* the failure-prone
+      # start_all. So even when start_all raises, the close handler is
+      # already on the configurator's list — which on a real agent is its
+      # live @on_close_handlers, letting the constructor rescue close the
+      # half-started servers. If on_close were armed after start_all, the
+      # handler would be missing here.
+      tracker = tracker_servers_class.new(empty: false)
+      tracker.define_singleton_method(:start_all) { raise 'boom during start' }
+      ext = described_class.new(registry: non_empty_registry,
+                                synthesize_descriptions: false,
+                                verify_mcp_servers: false)
+
+      assert_raises(RuntimeError) do
+        with_stubbed_servers(tracker) { ext.configure(configurator) }
+      end
+
+      assert_equal 1, configurator.on_close_handlers.size
       configurator.on_close_handlers.first.call
       assert_equal 1, tracker.close_calls
     end
@@ -192,6 +230,7 @@ RSpec.describe Pikuri::Mcp::Extension do
           self.class.last_verifier = verifier
         end
 
+        def start_all; end
         def empty?; true; end
         def system_prompt_snippet; ''; end
         def close; end

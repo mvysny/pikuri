@@ -148,6 +148,46 @@ RSpec.describe Pikuri::Agent do
 
       assert_equal '', agent.id
     end
+
+    describe 'self-healing construction + Pikuri::Finalizers' do
+      # Isolate the process-global registry so these assertions see only
+      # what this example registers.
+      around do |example|
+        saved = Pikuri::Finalizers.instance_variable_get(:@registered)
+        Pikuri::Finalizers.instance_variable_set(:@registered, [])
+        example.run
+      ensure
+        Pikuri::Finalizers.instance_variable_set(:@registered, saved)
+      end
+
+      it 'registers itself with Finalizers, and #close unregisters' do
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's') { |c| c.add_listener recorder }
+
+        assert_includes Pikuri::Finalizers.instance_variable_get(:@registered), agent
+        agent.close
+        refute_includes Pikuri::Finalizers.instance_variable_get(:@registered), agent
+      end
+
+      it 'closes a half-built agent: a block that raises after arming on_close still fires it' do
+        # The generalized leak guard. The block arms cleanup (as an
+        # extension's #configure would) and then raises. The constructor
+        # rescue must fire the armed handler, drop out of the registry,
+        # and re-raise — no partial state survives.
+        cleaned = false
+
+        assert_raises(RuntimeError) do
+          Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                            system_prompt: 's') do |c|
+            c.on_close { cleaned = true }
+            raise 'boom mid-config'
+          end
+        end
+
+        assert cleaned, 'on_close handler armed before the failure must still fire'
+        assert_empty Pikuri::Finalizers.instance_variable_get(:@registered)
+      end
+    end
   end
 
   describe '#close' do
