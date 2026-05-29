@@ -97,8 +97,8 @@ module Pikuri
         #   absorb writes. Result: gradle/maven/cargo see a fully
         #   read-write view of their cache, the host's real cache is
         #   untouched, and on process exit the umbrella (and with it
-        #   every upper layer) is removed by the workspace's single
-        #   +at_exit+. Within one pikuri-code session writes survive
+        #   every upper layer) is removed by the workspace's
+        #   {Pikuri::Finalizers} registration. Within one pikuri-code session writes survive
         #   across bash calls (warm cache after the first build);
         #   across sessions they don't (so a session that gets
         #   prompt-injected into poisoning the in-sandbox view of
@@ -522,7 +522,7 @@ module Pikuri
           # Lazily mint +<workspace.internal_temp>/overlay-<slug>/{upper,work}+
           # for +path+ and return the +bwrap+ argv fragment that
           # mounts an overlayfs at +path+ with the host's real +path+
-          # as the read-only lower. The umbrella + at_exit cleanup are
+          # as the read-only lower. The umbrella + its Finalizers-driven cleanup are
           # owned by the workspace; touching {Workspace::Filesystem#internal_temp}
           # here is what triggers the lazy mint the first time any
           # overlay path needs storage.

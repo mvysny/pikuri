@@ -37,9 +37,9 @@ module Pikuri
     # +~/.cache/pikuri/workspace-XXX/+ ({#internal_temp}). It is minted
     # lazily on first access — workspaces that never touch it (most
     # specs, hosts that don't want a playground and don't use the
-    # bubblewrap overlay) pay nothing — and removed by a single
-    # +at_exit+ handler when the process exits. Everything ephemeral
-    # this workspace produces lives inside the umbrella, so one
+    # bubblewrap overlay) pay nothing — and removed at process exit via
+    # a {Pikuri::Finalizers} registration. Everything ephemeral this
+    # workspace produces lives inside the umbrella, so one
     # +remove_entry+ at process exit cleans the lot:
     #
     # * {#temp} — the LLM-visible playground subdir, present only when
@@ -60,9 +60,9 @@ module Pikuri
     #
     # At gem load, {.sweep_stale_internal_temps!} prunes umbrella dirs
     # older than seven days — a safety net for sessions that died
-    # before +at_exit+ could run (SIGKILL, OOM). Recent umbrellas are
-    # left alone so a concurrent pikuri-code in another shell isn't
-    # disturbed.
+    # before the {Pikuri::Finalizers} sweep could run (SIGKILL, OOM).
+    # Recent umbrellas are left alone so a concurrent pikuri-code in
+    # another shell isn't disturbed.
     #
     # == Optional temp playground
     #
@@ -279,8 +279,8 @@ module Pikuri
       end
 
       # Per-workspace ephemeral umbrella. Minted lazily on first call
-      # under {CACHE_BASE}. Registered for +at_exit+ removal the
-      # moment it's minted, so anything subsequently placed inside
+      # under {CACHE_BASE}. Registered with {Pikuri::Finalizers} for
+      # removal the moment it's minted, so anything subsequently placed inside
       # (the playground, {Pikuri::Code::Bash::Sandbox::Bubblewrap}'s
       # overlay state) gets wiped together. Callers that want
       # ephemeral state owned by the workspace should put it under
@@ -291,13 +291,16 @@ module Pikuri
         @internal_temp ||= Filesystem.mint_internal_temp
       end
 
-      # @api private — minting helper shared with {AllowAll}. The
-      # +FileUtils.remove_entry+ +at_exit+ guards against the dir
-      # being already gone (test cleanup, manual rm).
+      # @api private — minting helper shared with {AllowAll}.
+      # Registers umbrella removal with {Pikuri::Finalizers} (block
+      # form — the umbrella is a dir to wipe, not a closeable object)
+      # rather than its own +at_exit+, so process teardown stays on the
+      # one registry. The +path.exist?+ guard makes the removal a no-op
+      # when the dir is already gone (test cleanup, manual rm).
       def self.mint_internal_temp
         FileUtils.mkdir_p(CACHE_BASE)
         path = Pathname.new(Dir.mktmpdir('workspace-', CACHE_BASE)).realpath
-        at_exit { FileUtils.remove_entry(path.to_s) if path.exist? }
+        Pikuri::Finalizers.register { FileUtils.remove_entry(path.to_s) if path.exist? }
         path
       end
 
@@ -305,8 +308,8 @@ module Pikuri
       # {INTERNAL_TEMP_STALE_SECONDS}. Called once at gem load via
       # {Pikuri::Workspace} so each process boot inherits a tidy
       # {CACHE_BASE}. Failures (permission denied, racing concurrent
-      # sweeper) are swallowed — best-effort cleanup, the real
-      # +at_exit+ path is the load-bearing one.
+      # sweeper) are swallowed — best-effort cleanup; the
+      # {Pikuri::Finalizers} removal is the load-bearing path.
       #
       # @return [void]
       def self.sweep_stale_internal_temps!

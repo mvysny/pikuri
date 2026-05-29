@@ -23,8 +23,9 @@ module Pikuri
     LOADER.eager_load
 
     # Reap +~/.cache/pikuri/workspace-*+ leftovers from sessions
-    # killed before their +at_exit+ could fire. Best-effort; runs once
-    # at gem load. See {Filesystem.sweep_stale_internal_temps!}.
+    # killed before the {Pikuri::Finalizers} removal could fire.
+    # Best-effort; runs once at gem load. See
+    # {Filesystem.sweep_stale_internal_temps!}.
     Filesystem.sweep_stale_internal_temps!
   end
 end
