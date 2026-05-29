@@ -91,14 +91,12 @@ router mode, scans `~/.cache/llama.cpp/` for GGUFs you've pulled,
 and loads each one on demand when an API request names it:
 
 ```sh
-llama-server -c 65536 --jinja
+llama-server --jinja
 ```
 
 What the flags do — these are now defaults inherited by every
 model the router loads, not flags for a single model:
 
-- `-c 65536` — 64K context window. Pikuri's agent loop accumulates
-  tool observations into the context, so headroom matters.
 - `--jinja` — enable Jinja chat templates. The Qwen3 series needs
   this for correct tool-call formatting.
 
