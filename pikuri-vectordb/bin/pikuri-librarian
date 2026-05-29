@@ -163,7 +163,7 @@ end
 
 puts 'Pikuri Librarian: chat agent with semantic recall over an indexed corpus.'
 puts "Corpus: #{source}"
-puts 'Try: "What does the FILE_MINER persona have access to, and why?"'
+puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
 puts 'Press Ctrl+C or Ctrl+D to quit.'
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?

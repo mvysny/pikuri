@@ -230,14 +230,15 @@ runs (twelve chapters + a README, takes about a minute against a
 local embedder). Then the familiar `>` prompt. Try:
 
 ```
-> What does the FILE_MINER persona have access to, and why?
+> What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run `bash`?
 ```
 
 What you should see: the boss reasons about the question, calls
 `agent(name: "librarian", task: "...")`, the librarian fires off
 two or three `vectordb_search` calls, and replies with a paragraph
-plus a citation to `08-code.md` (and probably `02-subagents.md`).
-The boss weaves that paragraph into its final answer to you.
+plus a citation to `02-subagents.md` (and possibly `06-security.md`
+for the lethal-trifecta tie-in). The boss weaves that paragraph
+into its final answer to you.
 
 The terminal listener prefixes the librarian's output with its id
 (`librarian 0`) — same shape as the `researcher 0` you saw in
