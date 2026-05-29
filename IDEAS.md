@@ -781,35 +781,6 @@ router-mode `llama-server`) graduated out of this log into the
 
 ### Deferred
 
-- **Multi-corpus.** Single corpus per `Extension.new` in v1. Merge
-  semantics across two corpora (which one wins on overlapping
-  top-k? how does the reranker normalize scores from different
-  embedders? how do you tell the LLM which corpus a chunk came
-  from?) aren't worth solving when "one focused corpus per use
-  case" — private notes, company handbook, project docs — is the
-  realistic shape. Revisit if a concrete need arrives.
-- **Multi-source roots in one corpus.** A `source: '...'` (singular)
-  surface ships in v1 — single file or single directory tree.
-  An earlier `sources: ['~/notes', '~/docs']` form was scoped
-  initially and pulled back because same-named files across roots
-  produce identical `(source, offset)` keys, hence identical
-  `"source:offset"` IDs, and `Backend#upsert`'s replace-by-id
-  semantics would silently let the second root's chunks overwrite
-  the first's (same shape on Chroma — server-side). The
-  disambiguation strategies (root-index prefix in `source`,
-  content-hash IDs, per-root collection) all have ergonomic costs
-  that aren't worth paying without a concrete user. Hosts that
-  need multiple roots today can symlink them under one parent
-  directory.
-- **Auto-watch / incremental reindex.** *Shipped as a library
-  (`VectorDb::Watcher` + incremental {Backend}/{Indexer} methods);
-  no long-running host wires it yet.* The diff logic that looked
-  like the hard part dissolved once the design picked the coarsest
-  unit — whole-file delete+reindex — so a shrunk file leaves no
-  orphan chunks. What remains (a host to construct the daemon, the
-  guide chapter, symlink parity) lives in
-  [`ideas/vectordb-incremental-reindex.md`](ideas/vectordb-incremental-reindex.md);
-  per-piece rationale is in the gem's yardocs.
 - **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
   start of each turn (no tool call) — hermes' prefetch shape (see
   §"Memory" prior art). v1 ships agentic search only — fits the
@@ -822,15 +793,6 @@ router-mode `llama-server`) graduated out of this log into the
   retrieval shipped instead as the `vectordb_read` tool — the
   agent reads the whole source document on a clean hit, rather
   than the chunker stitching parent context onto every chunk.)
-- **Hosted reranker providers (Cohere).** v1 ships
-  `Reranker::LlamaServer` only — the privacy-aligned default.
-  Cohere is the dominant hosted reranker (best-in-class on BEIR /
-  MIRACL benchmarks) and a real fallback for the user who can't
-  fit a third model on their GPU, at the cost of a `:public`
-  egress path for queries + top-50 chunks per search. Reasonable
-  follow-up once typed transports (§"Typed transport classes
-  (private vs public)") land — the strict-mode enforcement
-  naturally catches the cross-class wiring.
 - **Onyx as a separate gem.** Onyx is a product (UI + connector
   framework + scheduler), not a vector DB. If pikuri wants Google
   Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —
