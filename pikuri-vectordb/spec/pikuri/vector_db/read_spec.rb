@@ -93,7 +93,7 @@ describe Pikuri::VectorDb::Read do
     end
 
     it 'truncates an over-long line with a marker' do
-      index_file('wide.md', 'x' * (Pikuri::VectorDb::Read::MAX_LINE_LENGTH + 500))
+      index_file('wide.md', 'x' * (Pikuri::FileType::PAGE_MAX_LINE_LENGTH + 500))
       result = read(source: 'wide.md')
       assert_includes result, 'line truncated'
     end

@@ -301,14 +301,18 @@ RSpec.describe Pikuri::Workspace::Read do
     end
 
     it 'surfaces malformed PDF bytes as an Error string the model can react to' do
-      # Magic-prefix routes to format_pdf, but pdf-reader rejects the body.
+      # Magic-prefix routes to the PDF extractor, but pdf-reader rejects the body.
       path = root + 'broken.pdf'
       File.binwrite(path, "%PDF-1.4\nthis is not a valid pdf body")
 
       result = described_class.read(workspace: workspace, path: 'broken.pdf', offset: 1, limit: 2000)
 
-      assert result.start_with?('Error: cannot extract PDF text from broken.pdf:'),
+      # Message now comes from the shared FileType.read_as_text_paged
+      # (capital "Cannot", resolved path — same as read_as_text's own
+      # contract), surfaced verbatim behind the "Error: " prefix.
+      assert result.start_with?('Error: Cannot extract PDF text from'),
              "expected PDF error, got #{result.inspect}"
+      assert_includes result, 'broken.pdf'
       assert_includes result, 'MalformedPDFError'
     end
 

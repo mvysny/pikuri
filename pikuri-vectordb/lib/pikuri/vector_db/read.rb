@@ -42,44 +42,35 @@ module Pikuri
     #
     # A full document can be far larger than the {Search} snippet — the
     # {Chunker} exists precisely because documents are big. So reads are
-    # line-windowed with the same caps and continuation-trailer
-    # convention as {Pikuri::Workspace::Read}: {DEFAULT_LIMIT} lines or
-    # {MAX_BYTES} bytes per call, whichever fires first, and a
-    # +Use offset=N to continue+ hint when more remains. Unlike
-    # +Workspace::Read+ there is no +cat -n+ line-number prefix: nothing
-    # downstream edits these documents (the citation unit is the
-    # +source+ path, not a line), and dropping the prefix saves tokens
-    # on exactly the operation whose point is to spend context wisely.
+    # line-windowed by {Pikuri::FileType.read_as_text_paged} — the same
+    # windower (and the same {DEFAULT_LIMIT}-line / 50 KB caps) that
+    # backs {Pikuri::Workspace::Read}, returning a
+    # {Pikuri::FileType::Page} this tool formats. Unlike +Workspace::Read+
+    # there is no +cat -n+ line-number prefix: nothing downstream edits
+    # these documents (the citation unit is the +source+ path, not a
+    # line), and dropping the prefix saves tokens on exactly the
+    # operation whose point is to spend context wisely.
     #
     # == Errors the LLM can react to
     #
-    # Extraction reuses {Pikuri::FileType.read_as_text} — the same
-    # extractor the {Indexer} chunked from, so what you read matches
-    # what was indexed (modulo edits to the file since). PDFs extract to
-    # text automatically; images / binaries / a vanished file / a
-    # malformed PDF all come back as +"Error: ..."+ observations rather
-    # than raising, per CLAUDE.md "Errors are loud" (these are failures
-    # the agent reacts to, not pikuri bugs).
+    # Extraction goes through {Pikuri::FileType.read_as_text_paged},
+    # which routes the same way the {Indexer}'s
+    # {Pikuri::FileType.read_as_text} does — so what you read matches
+    # what was indexed (modulo edits to the file since), plus
+    # +"--- Page N ---"+ markers on PDFs. Images / binaries / a vanished
+    # file / a malformed PDF all come back as +"Error: ..."+ observations
+    # rather than raising, per CLAUDE.md "Errors are loud" (these are
+    # failures the agent reacts to, not pikuri bugs).
     class Read < Pikuri::Tool
       # @return [Integer] default value of the +limit+ parameter
-      #   (number of lines returned per call). Matches
-      #   {Pikuri::Workspace::Read::DEFAULT_LIMIT}.
-      DEFAULT_LIMIT = 2000
+      #   (number of lines returned per call). Aliases the shared
+      #   {Pikuri::FileType::PAGE_DEFAULT_LIMIT}.
+      DEFAULT_LIMIT = Pikuri::FileType::PAGE_DEFAULT_LIMIT
 
-      # @return [Integer] per-line character cap; longer lines are
-      #   truncated with {LINE_TRUNCATION_MARKER}.
-      MAX_LINE_LENGTH = 2000
-
-      # @return [String] suffix appended to lines truncated by
-      #   {MAX_LINE_LENGTH}.
-      LINE_TRUNCATION_MARKER = "... (line truncated to #{MAX_LINE_LENGTH} chars)"
-
-      # @return [Integer] hard byte cap on content collected per call;
-      #   bypassable by paging via +offset+.
-      MAX_BYTES = 50 * 1024
-
-      # @return [String] human-readable form of {MAX_BYTES}.
-      MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
+      # @return [String] human-readable form of the shared byte cap
+      #   ({Pikuri::FileType::PAGE_MAX_BYTES}) for the continuation
+      #   marker.
+      MAX_BYTES_LABEL = "#{Pikuri::FileType::PAGE_MAX_BYTES / 1024} KB"
 
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).
@@ -145,7 +136,7 @@ module Pikuri
           return "Error: \"#{source}\" resolves outside the corpus root."
         end
 
-        window(Pikuri::FileType.read_as_text(resolved), source: source, offset: offset, limit: limit)
+        render(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit), source: source)
       rescue Errno::ENOENT
         "Error: indexed document \"#{source}\" is no longer on disk; the index may be stale " \
           '(run vectordb_reindex to refresh).'
@@ -174,56 +165,40 @@ module Pikuri
       end
       private_class_method :contained?
 
-      # Slice +text+ to at most +limit+ lines from +offset+, stopping
-      # early at {MAX_BYTES}. Over-long lines are truncated with
-      # {LINE_TRUNCATION_MARKER}. The trailer reports the window and a
-      # next-offset hint when more remains, mirroring
-      # {Pikuri::Workspace::Read}.
+      # Format a {Pikuri::FileType::Page} as the observation: the lines
+      # joined plain (no +cat -n+ prefix), followed by a trailer keyed
+      # on the citation +source+ that tells the model whether to page
+      # on. PDF pages already carry their +"--- Page N ---"+ markers
+      # from the extractor.
       #
-      # @param text [String] full extracted document text
-      # @param source [String] for the empty / end-of-document messages
-      # @param offset [Integer] 1-indexed start line
-      # @param limit [Integer] maximum lines
+      # @param page [Pikuri::FileType::Page]
+      # @param source [String] the citation, used in the empty /
+      #   end-of-document messages.
       # @return [String]
-      def self.window(text, source:, offset:, limit:)
-        return "(#{source} is empty)" if text.empty?
+      def self.render(page, source:)
+        if page.lines.empty?
+          return "(#{source} is empty)" if page.total_lines.zero?
 
-        lines = text.lines(chomp: true)
-        total = lines.length
-        start_index = offset - 1
-        if start_index >= total
-          return "Error: offset #{offset} is beyond end of document (#{total} lines total)."
+          return "Error: offset #{page.start_line} is beyond end of document " \
+                 "(#{page.total_lines} lines total)."
         end
 
-        collected    = []
-        bytes        = 0
-        byte_cap_hit = false
-        lines[start_index, limit].each do |raw|
-          line = raw.length > MAX_LINE_LENGTH ? raw[0, MAX_LINE_LENGTH] + LINE_TRUNCATION_MARKER : raw
-          size = line.bytesize + 1 # +1 for the joining newline
-          if bytes + size > MAX_BYTES
-            byte_cap_hit = true
-            break
-          end
-          collected << line
-          bytes += size
-        end
-
-        last = offset + collected.length - 1
-        body = collected.join("\n")
+        last = page.start_line + page.lines.length - 1
+        body = page.lines.join("\n")
         trailer =
-          if byte_cap_hit
-            "(Output capped at #{MAX_BYTES_LABEL}. Showing lines #{offset}-#{last} of #{total}. " \
+          if page.byte_capped
+            "(Output capped at #{MAX_BYTES_LABEL}. Showing lines #{page.start_line}-#{last}. " \
               "Use offset=#{last + 1} to continue.)"
-          elsif last < total
-            "(Showing lines #{offset}-#{last} of #{total}. Use offset=#{last + 1} to continue.)"
+          elsif page.more
+            total = page.total_lines ? " of #{page.total_lines}" : ''
+            "(Showing lines #{page.start_line}-#{last}#{total}. Use offset=#{last + 1} to continue.)"
           else
-            "(End of #{source} — #{total} lines.)"
+            "(End of #{source} — #{page.total_lines} lines.)"
           end
 
         "#{body}\n\n#{trailer}"
       end
-      private_class_method :window
+      private_class_method :render
     end
   end
 end

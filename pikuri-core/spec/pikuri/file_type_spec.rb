@@ -290,5 +290,128 @@ RSpec.describe Pikuri::FileType do
         assert_match(/expected Pathname/, err.message)
       end
     end
+
+    # Shares the write / build_pdf helpers defined above. The paged
+    # variant returns a FileType::Page; the LLM-tool callers
+    # (Workspace::Read, VectorDb::Read) own the rendering, so these
+    # assert the struct, not formatted strings.
+    describe '.read_as_text_paged' do
+      describe 'plain text' do
+        it 'returns the whole file as a text Page with a known total' do
+          path = write('doc.txt', "alpha\nbeta\ngamma\n".b)
+          page = described_class.read_as_text_paged(path)
+
+          assert_equal %w[alpha beta gamma], page.lines
+          assert_equal 1, page.start_line
+          assert_equal 3, page.total_lines
+          refute page.more
+          refute page.byte_capped
+          assert_equal :text, page.kind
+        end
+
+        it 'windows by offset and limit, reporting more + total' do
+          path = write('long.txt', (1..5).map { |n| "line#{n}" }.join("\n").b)
+          page = described_class.read_as_text_paged(path, offset: 2, limit: 2)
+
+          assert_equal %w[line2 line3], page.lines
+          assert_equal 2, page.start_line
+          assert_equal 5, page.total_lines
+          assert page.more
+        end
+
+        it 'reports an empty file as zero lines, total 0' do
+          path = write('empty.txt', ''.b)
+          page = described_class.read_as_text_paged(path)
+
+          assert_empty page.lines
+          assert_equal 0, page.total_lines
+          refute page.more
+        end
+
+        it 'reports an offset past EOF as empty lines with the real total' do
+          path = write('short.txt', "one\ntwo\n".b)
+          page = described_class.read_as_text_paged(path, offset: 99)
+
+          assert_empty page.lines
+          assert_equal 2, page.total_lines
+        end
+
+        it 'truncates an over-long line with the marker' do
+          path = write('wide.txt', ('x' * (described_class::PAGE_MAX_LINE_LENGTH + 50)).b)
+          page = described_class.read_as_text_paged(path)
+
+          assert page.lines.first.end_with?(described_class::PAGE_LINE_TRUNCATION_MARKER)
+        end
+
+        it 'stops at the byte cap, leaving total_lines nil' do
+          line = 'a' * 1023
+          path = write('bulky.txt', ((1..80).map { line }.join("\n")).b)
+          page = described_class.read_as_text_paged(path)
+
+          assert page.byte_capped
+          assert page.more
+          assert_nil page.total_lines
+        end
+      end
+
+      describe 'PDF' do
+        it 'emits --- Page N --- markers and a known total at EOF' do
+          path = write('multi.pdf', build_pdf('Alpha content', 'Beta content'))
+          page = described_class.read_as_text_paged(path)
+
+          assert_equal :pdf, page.kind
+          assert_includes page.lines, '--- Page 1 ---'
+          assert_includes page.lines, '--- Page 2 ---'
+          assert_equal 4, page.total_lines
+          refute page.more
+        end
+
+        it 'stops parsing when the window fills, leaving total_lines nil' do
+          path = write('cap.pdf', build_pdf('Alpha content', 'Beta content'))
+          page = described_class.read_as_text_paged(path, offset: 1, limit: 2)
+
+          assert_equal ['--- Page 1 ---', 'Alpha content'], page.lines
+          assert page.more
+          assert_nil page.total_lines
+        end
+
+        it 'reports a text-free PDF as zero lines, total 0' do
+          path = write('blank.pdf', build_pdf(''))
+          page = described_class.read_as_text_paged(path)
+
+          assert_empty page.lines
+          assert_equal 0, page.total_lines
+        end
+
+        it 'raises a RuntimeError with the path on a malformed PDF' do
+          path = write('broken.pdf', "%PDF-1.4\nnot really a pdf\n".b)
+          err = assert_raises(RuntimeError) { described_class.read_as_text_paged(path) }
+          assert_match(/broken\.pdf/, err.message)
+        end
+      end
+
+      describe 'refusals (same contract as read_as_text)' do
+        it 'raises Errno::ENOENT for a missing file' do
+          assert_raises(Errno::ENOENT) { described_class.read_as_text_paged(root + 'nope.txt') }
+        end
+
+        it 'raises ArgumentError on a directory' do
+          err = assert_raises(ArgumentError) { described_class.read_as_text_paged(root) }
+          assert_match(/directory/, err.message)
+        end
+
+        it 'raises ArgumentError on an image' do
+          path = write('shot.png', PNG_MAGIC + ('x' * 16).b)
+          err = assert_raises(ArgumentError) { described_class.read_as_text_paged(path) }
+          assert_match(/image/, err.message)
+        end
+
+        it 'raises ArgumentError on opaque binary content' do
+          path = write('archive.zip', "PK\x03\x04".b + "\x00" * 32)
+          err = assert_raises(ArgumentError) { described_class.read_as_text_paged(path) }
+          assert_match(/binary/, err.message)
+        end
+      end
+    end
   end
 end

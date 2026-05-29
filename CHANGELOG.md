@@ -14,12 +14,31 @@ uses semver as documented in `lib/pikuri/version.rb`.
   of the same document. The `source` must be a path the `Indexer`
   actually produced (verified against `Backend#sources_with_hashes`),
   so the read domain is exactly the search domain — not an
-  arbitrary-file reader. Line-windowed with the same caps / paging
-  trailer as `Workspace::Read`. Reading is inbound-only, so it adds no
-  egress leg: the `bin/pikuri-corpus` agent stays leak-proof and the
-  `LIBRARIAN` sub-agent's privilege separation is intact. Auto-
-  registered by `VectorDb::Extension` alongside `vectordb_search` /
-  `vectordb_reindex`, and added to `LIBRARIAN`'s toolset.
+  arbitrary-file reader. Line-windowed via the new shared
+  `FileType.read_as_text_paged` (below). Reading is inbound-only, so it
+  adds no egress leg: the `bin/pikuri-corpus` agent stays leak-proof
+  and the `LIBRARIAN` sub-agent's privilege separation is intact.
+  Auto-registered by `VectorDb::Extension` alongside `vectordb_search`
+  / `vectordb_reindex`, and added to `LIBRARIAN`'s toolset.
+- **`Pikuri::FileType.read_as_text_paged`.** Lazy, line-windowed
+  text/PDF extraction returning a `FileType::Page` value
+  (offset/limit/byte-cap, per-line truncation, `--- Page N ---` markers
+  on PDFs). Extracted from `Workspace::Read`'s windowing loops so it is
+  shared with `VectorDb::Read`; each tool keeps its own presentation
+  (cat-n numbering and trailer wording vs. plain + source citation).
+  Same refusal contract as `read_as_text` (raises on
+  image/binary/missing/malformed-PDF).
+
+### Changed
+
+- **`Workspace::Read` delegates windowing to
+  `FileType.read_as_text_paged`** instead of its own
+  `format_slice`/`format_pdf`. Behavior is unchanged except that a
+  malformed-PDF error now quotes the resolved path (matching
+  `read_as_text`'s existing contract) rather than the relative path.
+  The `DEFAULT_LIMIT` / `MAX_LINE_LENGTH` / `MAX_BYTES` /
+  `LINE_TRUNCATION_MARKER` constants now alias the `FileType::PAGE_*`
+  ones (single source of truth).
 - **`Pikuri::Workspace::Filesystem::AllowAll`.** Unrestricted variant
   of `Filesystem` for dev-container / Docker mode where the container
   is the security boundary. Same accessor surface as the base class,
