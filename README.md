@@ -6,13 +6,15 @@
 > — Frank Herbert, *Dune* (1965)
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of eight gems in a monorepo. Defaults wire a local
+a family of eleven gems in a monorepo (ten functional gems plus a
+convenience metagem). Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
 decides to call a network tool. The smallest demo binary is
 `pikuri-chat` from [`pikuri-core`](pikuri-core/README.md); the rest
-of the family adds skills, MCP, filesystem tools, and a full
-in-repo coding agent à la carte.
+of the family adds skills, task tracking, MCP, filesystem tools, a
+full in-repo coding agent, and local-corpus vector search à la
+carte.
 
 **Use the machine. Own it, and understand it — so no one with a
 machine owns you.**
@@ -54,6 +56,9 @@ in:
   - [`pikuri-skills`](pikuri-skills/README.md) —
     [Agent Skills](https://agentskills.io/specification)
     discovery.
+  - [`pikuri-tasks`](pikuri-tasks/README.md) — in-memory task list
+    + the four `task_*` tools (create / in-progress / completed /
+    delete).
   - [`pikuri-workspace`](pikuri-workspace/README.md) — filesystem
     tools + `Workspace` / `Confirmer` seams.
   - [`pikuri-code`](pikuri-code/README.md) — `Bash` + the in-repo
@@ -63,10 +68,17 @@ in:
     Protocol](https://modelcontextprotocol.io) support.
   - [`pikuri-subagents`](pikuri-subagents/README.md) — the `agent`
     tool + `Persona` record + the `pikuri-minions` fan-out demo.
+  - [`pikuri-vectordb`](pikuri-vectordb/README.md) — local-corpus
+    vector search + agentic RAG: `vectordb_search` /
+    `vectordb_reindex`, the `LIBRARIAN` persona, and the
+    `pikuri-librarian` demo.
+  - [`pikuri-memory`](pikuri-memory/README.md) — name-reservation
+    placeholder for an upcoming durable "memories" extension; no
+    library code yet.
   - [`pikuri-assistant`](pikuri-assistant/README.md) — MCP-aware
     demo binary.
   - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all seven.
+    `gem install pikuri` pulls in all ten.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,
