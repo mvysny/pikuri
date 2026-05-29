@@ -33,15 +33,60 @@ useful for a non-developer audience — somebody who wants an AI
 assistant that knows their notes and stays on their machine, not
 somebody who wants help refactoring code.
 
+## Design note: the corpus, egress, and the librarian
+
+This is the binary that re-opens the problem
+[chapter 3](03-vectordb.md) dodged. There, the recall agent
+(`pikuri-corpus`) had no internet tools at all, so reading your
+private corpus was safe by construction — no outbound leg, no
+trifecta. The assistant can't take that shortcut: browsing the web
+and running MCP servers *is* the point, so it holds egress. Put
+`vectordb_search` over your medical notes on that same agent and
+you've assembled all three legs — private data, untrusted web
+content, and a way to send bytes out — in one context.
+
+The intended shape, therefore:
+
+- **The boss does not hold `vectordb_search` directly.** Corpus
+  recall is reachable only by delegating to the bundled
+  `LIBRARIAN` sub-agent (chapter 3), which has `vectordb_search`
+  as its *only* tool and no egress of its own. A poisoned chunk it
+  retrieves has no hand to act with, and the boss sees a distilled
+  paragraph rather than raw chunks.
+- **Honest caveat, to be made in full here:** this *raises the
+  bar*, it does not by itself *break* the trifecta. The librarian
+  faithfully pipes corpus content up to a boss that still has
+  egress, so a boss compromised by a poisoned web page could still
+  be steered to exfiltrate what the librarian returned. The
+  genuine break is a non-LLM decision point between the
+  untrusted-input step and the egress step — human-gated egress —
+  which is itself unbuilt. See `ideas/trifecta-detector.md` and
+  [chapter 6](06-security.md).
+
+**Prerequisite, not yet built.** Wiring the boss *without*
+`vectordb_search` while still handing it to the `LIBRARIAN`
+sub-agent is impossible under today's persona mechanism: a
+sub-agent's tools are a strict subset of the parent's
+(`SubAgent::SubAgentTool` filters `parent.tools` by
+`persona.tool_names`), so a persona can only narrow, never add. The
+fix is **persona-owned tools** — letting a `Persona` carry its own
+tool instances — tracked in `ideas/trifecta-detector.md`. Until it
+lands, `pikuri-assistant` declares its `pikuri-vectordb` dependency
+(the intent) but does not register the corpus tools; the chapter
+stays a stub partly for this reason.
+
 ## Why this chapter is a stub
 
-The honest reason: two of the four pieces (`pikuri-vectordb`,
-memories) aren't shipped yet, and writing the assistant chapter
-without them would either ship inventions or skip the parts that
-make `pikuri-assistant` worth a chapter at all. The
-[MCP](05-mcp.md) and [security](06-security.md) chapters before
-it are real; the assistant chapter waits until the buildup is
-real too.
+The honest reason: memories (chapter 4) aren't shipped yet, and
+the corpus-recall integration is blocked on the persona-owned-tools
+prerequisite above — so writing the assistant chapter now would
+either ship inventions or skip the parts that make
+`pikuri-assistant` worth a chapter at all. (`pikuri-vectordb`
+itself *is* shipped — chapter 3 demos it as `pikuri-corpus` — it's
+the *quarantined* wiring the assistant needs that waits.) The
+[MCP](05-mcp.md) and [security](06-security.md) chapters before it
+are real; the assistant chapter waits until the buildup is real
+too.
 
 What the full chapter will cover, once the gems land:
 

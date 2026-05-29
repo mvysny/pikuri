@@ -71,7 +71,7 @@ in:
   - [`pikuri-vectordb`](pikuri-vectordb/README.md) — local-corpus
     vector search + agentic RAG: `vectordb_search` /
     `vectordb_reindex`, the `LIBRARIAN` persona, and the
-    `pikuri-librarian` demo.
+    `pikuri-corpus` demo (a no-egress recall agent).
   - [`pikuri-memory`](pikuri-memory/README.md) — name-reservation
     placeholder for an upcoming durable "memories" extension; no
     library code yet.

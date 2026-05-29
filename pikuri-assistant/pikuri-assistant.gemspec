@@ -40,10 +40,18 @@ Gem::Specification.new do |spec|
 
   # The assistant binary wires Agent (pikuri-core) + Skill::Extension
   # (pikuri-skills) + Mcp::Extension (pikuri-mcp) +
-  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together. All four
-  # are runtime deps, lockstep-pinned to the matching versions.
+  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together, plus
+  # VectorDb::Extension + the LIBRARIAN persona (pikuri-vectordb). All
+  # five are runtime deps, lockstep-pinned to the matching versions.
+  #
+  # NOTE: the vectordb dep is forward-prep for the ch7 assistant shape
+  # (egress + private-corpus recall with the corpus quarantined in the
+  # LIBRARIAN sub-agent). The correct wiring is gated on the
+  # persona-owned-tools change — see ideas/trifecta-detector.md — so
+  # the binary does not register it yet; the dependency declares intent.
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-mcp',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-vectordb',  "= #{Pikuri::VERSION}"
 end

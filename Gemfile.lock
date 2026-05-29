@@ -6,6 +6,7 @@ PATH
       pikuri-mcp (= 0.0.4)
       pikuri-skills (= 0.0.4)
       pikuri-subagents (= 0.0.4)
+      pikuri-vectordb (= 0.0.4)
 
 PATH
   remote: pikuri-code

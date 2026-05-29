@@ -38,10 +38,12 @@ chapters that apply across both tracks.
 3. **[Agentic search and the vector DB](03-vectordb.md).** One
    new feature on top of chapter 2: semantic recall over a local
    corpus. The chunker / tokenizer / embedder / backend /
-   reranker pipeline, in-memory vs Chroma backends, and the
-   bundled `LIBRARIAN` persona as the privilege-separated
-   delegation mode. Demo via `pikuri-librarian` against the
-   pikuri guide itself.
+   reranker pipeline, in-memory vs Chroma backends, and why the
+   demo agent has no internet access — treat the corpus as
+   private, give the reader an agent that can't leak it. Demo via
+   `pikuri-corpus` against the pikuri guide itself. (The
+   privilege-separated `LIBRARIAN` persona, for an agent that
+   *does* have egress, is deferred to chapters 6–7.)
 4. **[Memories (stub)](04-memories.md).** Placeholder. Persistent
    notes the agent keeps across conversations, paired with
    chapter 3's vector DB for recall. Where the privacy posture

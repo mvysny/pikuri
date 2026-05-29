@@ -748,11 +748,18 @@ What landed against the original sketch:
 - **Chunker::FixedWindow** (512/50) over `FileType.read_as_text`
   text (plain / Markdown / PDF), behind a `Tokenizer` seam
   (`CharHeuristic` default / `LlamaServer`).
-- **Both trifecta defenses**: the privilege-separated `LIBRARIAN`
-  persona (opt-in via `SubAgent::Extension`, same precedent as
-  `GIT_REPO_RESEARCHER`; ships `bin/pikuri-librarian`) and the
-  local-default egress posture. The corpus-is-the-threat argument
-  and the Onyx-connector escalation now live in the gem's yardoc.
+- **Both trifecta defenses**: the no-egress posture — shipped as
+  `bin/pikuri-corpus`, a single recall agent with no web tools, so
+  it holds at most two trifecta legs (chapter 3's worked example) —
+  and the privilege-separated `LIBRARIAN` persona for an agent that
+  *does* have egress (opt-in via `SubAgent::Extension`, same
+  precedent as `GIT_REPO_RESEARCHER`). The `LIBRARIAN` is bundled
+  but not yet wired into a binary: a correct wiring (corpus reachable
+  only via the sub-agent) needs persona-owned tools, since today
+  sub-agent tools are a subset of the parent's — see
+  `trifecta-detector.md`. Its worked home is `pikuri-assistant`
+  (ch7). The corpus-is-the-threat argument and the Onyx-connector
+  escalation now live in the gem's yardoc.
 
 Sketch open-questions that v1 resolved: **Chroma client** → wrote
 our own thin Faraday client (no `chroma-db` dep); **`InMemory`

@@ -34,7 +34,7 @@ The gem inventory:
 - `pikuri-vectordb` — local-corpus vector search + agentic RAG:
   `vectordb_search` / `vectordb_reindex` tools, swappable
   `Backend` (`InMemory` / `Chroma`), embedder + reranker +
-  chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-librarian`.
+  chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-corpus`.
 - `pikuri-memory` — name-reservation placeholder for an upcoming
   "memories" extension (durable cross-conversation facts about the
   user/project, after hermes-agent); no library code yet.
@@ -228,11 +228,16 @@ per-gem one-liners:
   `Tokenizer` (`CharHeuristic` default / `LlamaServer`) + `Chunk`.
   Text extraction reuses `Pikuri::FileType.read_as_text` from
   pikuri-core (plain text / Markdown / PDF; HTML deferred).
-  Bundled `VectorDb::LIBRARIAN` persona is the privilege-separated
-  sub-agent counterpart, wired via
-  `SubAgent::Extension.new(personas: [..., LIBRARIAN])` — same
-  shape pikuri-code uses for `GIT_REPO_RESEARCHER`. Ships
-  `bin/pikuri-librarian`. Depends on `pikuri-core` +
+  Ships `bin/pikuri-corpus` — a single egress-free recall agent
+  (`vectordb_search` + `calculator`, no web tools): treats the
+  corpus as private and breaks the trifecta by having no outbound
+  leg. The bundled `VectorDb::LIBRARIAN` persona is the
+  privilege-separated counterpart for an agent that *does* have
+  egress; it is NOT wired in `bin/pikuri-corpus` (a correct wiring
+  needs persona-owned tools — see `ideas/trifecta-detector.md` —
+  since sub-agent tools are a subset of the parent's). Its worked
+  home is `pikuri-assistant` (ch7); same precedent as
+  `GIT_REPO_RESEARCHER`. Depends on `pikuri-core` +
   `pikuri-subagents`.
 - **`pikuri-memory/`** — name-reservation placeholder for an
   upcoming "memories" extension: durable long-lived facts about
