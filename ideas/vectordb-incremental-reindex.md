@@ -1,34 +1,9 @@
 # Vectordb auto-watch + incremental reindex
 
 Status: **shipped as a library; no long-running host wires it yet.**
-Per-file rationale now lives in the YARD headers (the source of
-truth); this file keeps only what is still open.
-
-## What landed
-
-Two layers, behind the four-method {Backend} protocol that already
-shipped:
-
-- **Incremental reindex** (no threads): {Backend} grew
-  `delete_by_source` / `replace_source` / `sources_with_hashes` on
-  both `InMemory` (atomic under a reentrant `Monitor`) and `Chroma`
-  (the `where: {offset: 0}` + `include: ['metadatas']` manifest read).
-  {Indexer} grew `reindex_file!` / `remove_file!` / `reconcile_plan`,
-  and every chunk now carries `metadata[:hash]` (SHA-256 of the file
-  bytes). Embed-before-write ordering is enforced in `reindex_file!`.
-- **Auto-watch** (`VectorDb::Watcher`): a `listen`-backed daemon —
-  single last-intent-per-path work queue, boot reconcile sweep
-  enqueued after the listener subscribes, {Pikuri::Finalizers}
-  registration (LIFO closes it before the host's `ChromaServer`),
-  drain-the-in-flight-job teardown. `listen` is a gemspec dep,
-  required lazily in `#start`.
-
-The settled design decisions (whole-file unit, config-change does
-nothing + the loud reindex warning, `docker stop` not `rm`, no
-library-installed signal trap, strict no-symlink-following in both
-the walk and the watch — a privacy boundary that also keeps the two
-in exact agreement) are recorded in the relevant yardocs ({Watcher},
-{Indexer}, {Backend}, {VectorDb::Extension}).
+Rationale and per-file design decisions live in the YARD headers
+({Watcher}, {Indexer}, {Backend}, {VectorDb::Extension}); this file
+keeps only what is still open.
 
 ## Still open
 
