@@ -1,5 +1,7 @@
 # pikuri
 
+[![status](https://ci.codeberg.org/api/badges/17229/status.svg)](https://ci.codeberg.org/repos/17229)
+
 > *"Once men turned their thinking over to machines in the hope that
 > this would set them free. But that only permitted other men with
 > machines to enslave them."*
