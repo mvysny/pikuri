@@ -50,11 +50,13 @@ chapters that apply across both tracks.
    starts to *matter* — and the chapter remains a stub until
    the gem lands.
 5. **[Your first MCP server](05-mcp.md).** The gentle MCP intro:
-   one low-stakes server (a local iCalendar reader, no
-   credentials, no Docker), the registry/servers split, the
+   one low-stakes server (a public book-catalogue reader, no
+   credentials, nothing private wired in), your first taste of
+   Docker as the boundary, the registry/servers split, the
    verifier and synthesizer that are `pikuri-mcp`'s distinctive
    contributions. The sharper MCP shapes — credentials,
-   containers, untrusted code — wait for chapter 10.
+   untrusted code, the full container threat model — wait for
+   chapter 10.
 6. **[Security: picking a defense for your harness](06-security.md).**
    The synthesis chapter. Why there's no NX flag for tokens,
    the lethal trifecta, the defense kit, a decision procedure

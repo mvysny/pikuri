@@ -69,7 +69,8 @@ What the full chapter will cover, once the gem lands:
 [Chapter 5 — Your first MCP server](05-mcp.md) is the third
 buildup piece toward `pikuri-assistant`: an external tool server
 that gives the agent capabilities pikuri itself doesn't ship —
-the calendar example introduces the mechanics gently. After that,
+a public book-catalogue example introduces the mechanics gently.
+After that,
 [chapter 6 — Security](06-security.md) is the chapter the prefix
 reassurances above have been pointing at: read it before pointing
 a memory-equipped agent at anything you care about.

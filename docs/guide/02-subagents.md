@@ -268,6 +268,7 @@ conversations, external tool servers). Chapter 3 introduces a
 second persona — `LIBRARIAN` — and demonstrates the same
 privilege-separation argument with the corpus's chunks as the
 threat surface. Chapter 4 is a stub until that gem lands;
-chapter 5 is the gentle MCP intro using a calendar example.
+chapter 5 is the gentle MCP intro using a public book-catalogue
+example.
 
 → Continue to [chapter 3 — Agentic search and the vector DB](03-vectordb.md).

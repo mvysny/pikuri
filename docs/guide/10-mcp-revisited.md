@@ -5,8 +5,8 @@ forward; [chapter 6](06-security.md) gave the framing; chapters
 [8](08-code.md) and [9](09-security-revisited.md) applied the kit
 to the coding-agent shape. This chapter picks the MCP thread
 back up at the harder end of the spectrum — the cases where the
-verifier alone isn't enough, where you don't trust the server's
-*code* the way you trusted the calendar reader in chapter 5,
+verifier alone isn't enough, where you can't read the server's
+*code* the way you skimmed the book-catalogue reader in chapter 5,
 where the server holds a credential whose blast radius bites,
 and where the cleanest answer is *a container as the boundary
 between pikuri and the server*.
@@ -22,16 +22,21 @@ doesn't protect, mapped against the kit from chapter 6.
 
 Chapters [1](01-chat.md), [2](02-subagents.md), [5](05-mcp.md),
 [6](06-security.md), and [8](08-code.md). `llama-server` running;
-`bundle install` done. Plus two new pieces:
+`bundle install` done. Plus:
 
-- **Docker.** The official GitHub MCP server is distributed as a
-  container image (`ghcr.io/github/github-mcp-server`). On
-  Debian / Ubuntu: `sudo apt install docker.io` and add your user
-  to the `docker` group, or use a rootless Docker install. The
-  chapter's stance is that **every MCP server you don't write
+- **Docker** — which you installed back in [chapter 5](05-mcp.md)
+  to run the book-catalogue server. Same tool, different image:
+  the official GitHub MCP server is distributed as
+  `ghcr.io/github/github-mcp-server` (a ready-made image you
+  *pull* rather than build from source — itself part of this
+  chapter's point). If you skipped chapter 5, the one-time setup
+  is there. The stance chapter 5 introduced gently and this
+  chapter makes the rule: **every MCP server you don't write
   yourself runs in a container** — see the threat-model section
   for why.
-- **A GitHub Personal Access Token (PAT).** Create one at
+- **A GitHub Personal Access Token (PAT)** — the genuinely new
+  piece here, and the first credential you've handed an MCP
+  server in this guide. Create one at
   <https://github.com/settings/tokens>. Use a **fine-grained**
   token scoped to the repositories you want the agent to see,
   with read-only access to issues, pull requests, and contents.
