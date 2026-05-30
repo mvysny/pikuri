@@ -50,12 +50,11 @@ module Pikuri
     #   +#sources_with_hashes+ for the question "is this one source in
     #   the corpus?" ({VectorDb::Read}'s membership gate). Distinct so
     #   that a hot path never fetches the full manifest just to test
-    #   one key — see +ideas/vectordb-incremental-reindex.md+.
+    #   one key.
     #
     # The +sources_with_hashes+ / +source_indexed?+ pair plus the two
-    # before them exist for incremental reindex + auto-watch (see
-    # +ideas/vectordb-incremental-reindex.md+); the nuke-and-reload
-    # path uses only the first four.
+    # before them exist for incremental reindex + auto-watch; the
+    # nuke-and-reload path uses only the first four.
     #
     # == Vector-dim contract
     #

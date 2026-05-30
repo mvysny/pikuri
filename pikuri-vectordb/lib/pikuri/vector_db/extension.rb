@@ -41,7 +41,7 @@ module Pikuri
     # is the same host-owned shape as the {Watcher} (whose lifetime is
     # the process, not any one agent), and it keeps the wiring — and
     # the timing — visible in the host rather than hidden in a
-    # constructor knob. See +ideas/vectordb-incremental-reindex.md+.
+    # constructor knob.
     #
     # == Changed your embedder or chunker? Reindex fully.
     #

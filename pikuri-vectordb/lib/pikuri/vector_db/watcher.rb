@@ -11,8 +11,9 @@ module Pikuri
     # drives the {Indexer}'s per-file entry points
     # ({Indexer#reindex_file!} / {Indexer#remove_file!}) from
     # filesystem events plus a boot reconciliation sweep
-    # ({Indexer#reconcile_plan}). Layer 2 of the design in
-    # +ideas/vectordb-incremental-reindex.md+.
+    # ({Indexer#reconcile_plan}). The auto-watch half of the
+    # incremental-reindex + auto-watch feature; the per-file
+    # methods it drives live on {Indexer} and {Backend}.
     #
     # == Host-owned, not agent-owned
     #

@@ -30,8 +30,7 @@ module Pikuri
     # == Incremental entry points (auto-watch)
     #
     # The {Watcher} daemon drives three further methods that touch
-    # one file at a time instead of the whole corpus — see
-    # +ideas/vectordb-incremental-reindex.md+:
+    # one file at a time instead of the whole corpus:
     #
     # * +#reindex_file!(path)+ — extract → chunk → embed → atomic
     #   {Backend#replace_source}. The unit of incremental work.
@@ -268,8 +267,7 @@ module Pikuri
       # {Backend#sources_with_hashes}, and return the work list. The
       # {Watcher} feeds this through its single work queue so the
       # sweep and live events share one last-intent-wins path (and so
-      # teardown can interrupt between files) — see
-      # +ideas/vectordb-incremental-reindex.md+.
+      # teardown can interrupt between files).
       #
       # Uniform across backends with no +is_a?+ branch: +InMemory+
       # reports an empty manifest at boot (RAM reset) so every file

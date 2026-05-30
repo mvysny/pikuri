@@ -121,7 +121,7 @@ module Pikuri
         # not arbitrary — one round trip per this-many *files*, and the
         # manifest is one row per file (the +offset 0+ chunk), so a
         # 50k-file corpus is ~50 localhost round trips instead of one
-        # multi-MB response. See +ideas/vectordb-incremental-reindex.md+.
+        # multi-MB response.
         MANIFEST_PAGE_SIZE = 1_000
 
         # @param host [String]
