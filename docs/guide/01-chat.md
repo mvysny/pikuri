@@ -134,8 +134,9 @@ GPU, and RAM** — they're good at this, and pikuri serves whatever
 `llama-server` loads, so swapping is just a different `-hf …:…`
 line in step 2.
 
-Without GPU offload you can still run on CPU, but expect a few
-tokens per second on a 35B-class model. See `llama-server --help`
+Without GPU offload you can still run on CPU: the model will run
+a bit slower but still reasonably fast - plenty enough for our experiments.
+See `llama-server --help`
 and the [llama.cpp docs](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
 for tuning options (`-t` thread count, `-ngl N` partial GPU
 offload, `--mlock`, and friends). In router mode, every flag you
