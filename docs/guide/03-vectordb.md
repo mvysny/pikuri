@@ -497,6 +497,20 @@ only has to fold in whatever changed since. Edit a chapter while the
 agent is running and the change is searchable moments later, no
 restart and no manual reindex.
 
+One caveat worth burning in: the `Watcher` keys off each file's
+*content* — a byte hash — not your indexing config. Swap the
+embedding model or the chunk size and nothing reindexes: the old
+vectors stay in place, every new query embeds with the new model but
+scores against the old ones, and search silently returns worse hits
+with no error to tell you why. After changing any indexing setting,
+run `vectordb_reindex` once by hand to rebuild from scratch.
+
+Quitting mid-sweep is safe. `Ctrl-C` lets the file currently being
+indexed finish, abandons whatever was still queued, and only then
+takes the Chroma container down — so no write is ever cut off
+half-done. The next boot's reconcile sweep folds in anything the
+interrupted run didn't reach.
+
 This is the shape `pikuri-assistant` ([chapter 7](07-assistant.md))
 builds on: a corpus that stays indexed between sessions and keeps
 itself current.

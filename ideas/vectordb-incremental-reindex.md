@@ -8,11 +8,6 @@ keeps only what is still open.
 
 ## Still open
 
-- **Guide chapter.** `docs/guide/03-vectordb.md` now has a
-  "Putting it together: `--chroma --watch`" walkthrough (boot sweep,
-  first-vs-subsequent runs, live reindexing). What it still omits is
-  the host-owned-lifecycle detail — the Finalizers teardown order and
-  the reindex-on-config-change rule. Fold those in.
 - **`sources_with_hashes` at scale.** One `/get` call, but one
   metadata row per file — chunky JSON on a 50k-file corpus. Fine for
   the scoped personal-notes / single-product-docs sizes; the known
