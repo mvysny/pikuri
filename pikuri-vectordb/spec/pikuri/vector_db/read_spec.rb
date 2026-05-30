@@ -60,10 +60,10 @@ describe Pikuri::VectorDb::Read do
 
   describe 'containment (defense-in-depth)' do
     it 'refuses a traversal source even if the backend claims it is indexed' do
-      # Fake backend whose manifest contains a traversal key, to drive
-      # the containment branch past the membership gate.
+      # Fake backend that claims any source is indexed, to drive the
+      # containment branch past the membership gate.
       evil = Object.new
-      def evil.sources_with_hashes = { '../escape.txt' => 'h' }
+      def evil.source_indexed?(_source) = true
 
       result = Pikuri::VectorDb::Read.read(
         backend: evil, root: root, source: '../escape.txt', offset: 1, limit: 10

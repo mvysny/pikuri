@@ -188,4 +188,23 @@ describe Pikuri::VectorDb::Backend::InMemory do
       assert_equal({ 'doc.md' => 'h1', 'other.md' => 'h2' }, backend.sources_with_hashes)
     end
   end
+
+  describe '#source_indexed?' do
+    it 'is false for an empty store' do
+      refute backend.source_indexed?('doc.md')
+    end
+
+    it 'is true for a source with at least one chunk' do
+      backend.upsert(chunks: [s1_0, s1_1, s2_0], vectors: [v_a, v_b, v_c])
+
+      assert backend.source_indexed?('doc.md')
+      assert backend.source_indexed?('other.md')
+    end
+
+    it 'is false for a source that was never indexed' do
+      backend.upsert(chunks: [s2_0], vectors: [v_c])
+
+      refute backend.source_indexed?('doc.md')
+    end
+  end
 end

@@ -42,11 +42,20 @@ module Pikuri
     # * +#sources_with_hashes+ — +Hash{String => String, nil}+ from
     #   each indexed +source+ to the content hash on its chunks; the
     #   boot-sweep reference {Indexer#reconcile_plan} diffs against
-    #   disk. Empty when nothing is indexed.
+    #   disk. Empty when nothing is indexed. Inherently O(sources) —
+    #   removal detection needs the *whole* indexed set — so it's a
+    #   once-per-boot call, never a per-request one.
+    # * +#source_indexed?(source)+ — +Boolean+: is there at least one
+    #   chunk for +source+? The scoped counterpart to
+    #   +#sources_with_hashes+ for the question "is this one source in
+    #   the corpus?" ({VectorDb::Read}'s membership gate). Distinct so
+    #   that a hot path never fetches the full manifest just to test
+    #   one key — see +ideas/vectordb-incremental-reindex.md+.
     #
-    # The last three exist for incremental reindex + auto-watch
-    # (see +ideas/vectordb-incremental-reindex.md+); the
-    # nuke-and-reload path uses only the first four.
+    # The +sources_with_hashes+ / +source_indexed?+ pair plus the two
+    # before them exist for incremental reindex + auto-watch (see
+    # +ideas/vectordb-incremental-reindex.md+); the nuke-and-reload
+    # path uses only the first four.
     #
     # == Vector-dim contract
     #

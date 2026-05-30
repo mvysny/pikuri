@@ -365,7 +365,7 @@ describe Pikuri::VectorDb::Backend::Chroma do
       assert_equal({}, build_backend(conn: conn).sources_with_hashes)
     end
 
-    it 'requests one row per file (offset 0) with a metadata-only projection' do
+    it 'requests one row per file (offset 0), metadata-only, paged' do
       captured = nil
       conn = with_existing_collection do |stub|
         stub.post("#{collection_path}/#{collection_id}/get") do |env|
@@ -378,6 +378,8 @@ describe Pikuri::VectorDb::Backend::Chroma do
 
       assert_equal({ 'offset' => 0 }, captured['where'])
       assert_equal ['metadatas'], captured['include']
+      assert_equal Pikuri::VectorDb::Backend::Chroma::MANIFEST_PAGE_SIZE, captured['limit']
+      assert_equal 0, captured['offset']
     end
 
     it 'maps each source to its stored content hash' do
@@ -394,6 +396,66 @@ describe Pikuri::VectorDb::Backend::Chroma do
       result = build_backend(conn: conn).sources_with_hashes
 
       assert_equal({ 'docs/a.md' => 'aaa', 'docs/b.md' => 'bbb' }, result)
+    end
+
+    it 'pages until a short page, advancing the offset cursor' do
+      # Stub a full first page then a partial second page, so the loop
+      # makes exactly two calls and stops on the short one.
+      page_size = Pikuri::VectorDb::Backend::Chroma::MANIFEST_PAGE_SIZE
+      full_page = (0...page_size).map do |i|
+        { 'source' => "f#{i}.md", 'offset' => 0, 'hash' => "h#{i}" }
+      end
+      offsets = []
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/get") do |env|
+          cursor = JSON.parse(env.body)['offset']
+          offsets << cursor
+          metas = cursor.zero? ? full_page : [{ 'source' => 'tail.md', 'offset' => 0, 'hash' => 'z' }]
+          [200, JSON_HEADERS, { metadatas: metas }.to_json]
+        end
+      end
+
+      result = build_backend(conn: conn).sources_with_hashes
+
+      assert_equal [0, page_size], offsets
+      assert_equal page_size + 1, result.size
+      assert_equal 'z', result['tail.md']
+    end
+  end
+
+  describe '#source_indexed?' do
+    it 'is false when the collection does not exist yet' do
+      conn = build_connection do |stub|
+        stub.get(collection_path) { |_| [200, JSON_HEADERS, '[]'] }
+      end
+
+      refute build_backend(conn: conn).source_indexed?('docs/a.md')
+    end
+
+    it 'filters by source, caps at one row, and drops the projection' do
+      captured = nil
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/get") do |env|
+          captured = JSON.parse(env.body)
+          [200, JSON_HEADERS, { ids: ['docs/a.md:0'] }.to_json]
+        end
+      end
+
+      assert build_backend(conn: conn).source_indexed?('docs/a.md')
+
+      assert_equal({ 'source' => 'docs/a.md' }, captured['where'])
+      assert_equal 1, captured['limit']
+      assert_equal [], captured['include']
+    end
+
+    it 'is false when no row matches' do
+      conn = with_existing_collection do |stub|
+        stub.post("#{collection_path}/#{collection_id}/get") do |_|
+          [200, JSON_HEADERS, { ids: [] }.to_json]
+        end
+      end
+
+      refute build_backend(conn: conn).source_indexed?('missing.md')
     end
   end
 

@@ -115,6 +115,15 @@ module Pikuri
       # drift. Real-Chroma smoke testing is wired into the demo
       # binary in a later phase. Targets Chroma 0.5.x+ (v2 API).
       class Chroma
+        # Rows per +/get+ page in {#sources_with_hashes}. Caps the
+        # JSON burst + parse working set of the boot manifest read on
+        # a large corpus; small corpora finish in one page. Chunky but
+        # not arbitrary — one round trip per this-many *files*, and the
+        # manifest is one row per file (the +offset 0+ chunk), so a
+        # 50k-file corpus is ~50 localhost round trips instead of one
+        # multi-MB response. See +ideas/vectordb-incremental-reindex.md+.
+        MANIFEST_PAGE_SIZE = 1_000
+
         # @param host [String]
         # @param port [Integer]
         # @param collection [String] collection name in Chroma.
@@ -323,13 +332,23 @@ module Pikuri
 
         # The boot-sweep reference: +source+ → stored content hash
         # for every indexed document. Reads one metadata row per
-        # *file*, not per chunk, via two Chroma +/get+ knobs:
+        # *file*, not per chunk, via three Chroma +/get+ knobs:
         #
         # * +where: { offset: 0 }+ — every file has exactly one
         #   chunk at offset 0, so this returns one row per source.
         # * +include: ['metadatas']+ — drops the heavy +embeddings+
         #   and +documents+ from the response; we pull only the
         #   metadata projection, never the vectors.
+        # * +limit+ / +offset+ — page the read in
+        #   {MANIFEST_PAGE_SIZE} chunks so a large corpus never
+        #   materializes one multi-MB response. (Two unrelated
+        #   +offset+s collide in the wording: the +where+ +offset+ is
+        #   a *chunk* metadata field; the top-level +offset+ is the
+        #   *pagination* cursor — different namespaces in the API.)
+        #
+        # Pagination assumes the manifest isn't mutating mid-read; the
+        # {Watcher} drives this from its single worker thread, so no
+        # reindex runs concurrently with the boot sweep that calls it.
         #
         # @return [Hash{String => String, nil}] +source+ → content
         #   hash. Empty when the collection doesn't exist yet.
@@ -337,19 +356,48 @@ module Pikuri
         def sources_with_hashes
           return {} if @collection_id.nil? && !collection_exists?
 
-          body = post_json("#{collection_path}/get", {
-                             where: { 'offset' => 0 },
-                             include: ['metadatas']
-                           })
-
-          metas = body.is_a?(Hash) ? (body['metadatas'] || []) : []
           result = {}
-          metas.each do |meta|
-            next unless meta.is_a?(Hash) && meta['source']
+          cursor = 0
+          loop do
+            body = post_json("#{collection_path}/get", {
+                               where: { 'offset' => 0 },
+                               include: ['metadatas'],
+                               limit: MANIFEST_PAGE_SIZE,
+                               offset: cursor
+                             })
+            metas = body.is_a?(Hash) ? (body['metadatas'] || []) : []
+            metas.each do |meta|
+              next unless meta.is_a?(Hash) && meta['source']
 
-            result[meta['source']] = meta['hash']
+              result[meta['source']] = meta['hash']
+            end
+            break if metas.size < MANIFEST_PAGE_SIZE
+
+            cursor += metas.size
           end
           result
+        end
+
+        # Is +source+ in the corpus? Scoped existence check for
+        # {VectorDb::Read}'s membership gate: a +where+-filtered
+        # +/get+ capped at one row, +include: []+ so the response
+        # carries only ids — O(1) transport regardless of corpus
+        # size, never the full {#sources_with_hashes} manifest. See
+        # the Backend protocol yardoc.
+        #
+        # @param source [String] the {Chunk#source} to test.
+        # @return [Boolean] true if at least one chunk has this source.
+        # @raise [RuntimeError] on HTTP failure.
+        def source_indexed?(source)
+          return false if @collection_id.nil? && !collection_exists?
+
+          body = post_json("#{collection_path}/get", {
+                             where: { 'source' => source },
+                             include: [],
+                             limit: 1
+                           })
+          ids = body.is_a?(Hash) ? (body['ids'] || []) : []
+          !ids.empty?
         end
 
         private

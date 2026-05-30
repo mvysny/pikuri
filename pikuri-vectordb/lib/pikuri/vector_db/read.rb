@@ -28,7 +28,7 @@ module Pikuri
     # == The read domain is exactly the search domain
     #
     # The +source+ argument must be a key the {Indexer} actually
-    # produced — verified against {Backend#sources_with_hashes} before
+    # produced — verified against {Backend#source_indexed?} before
     # any disk access. So the only legal inputs are the citations
     # +vectordb_search+ handed the model; a poisoned chunk that says
     # "read ../../.ssh/id_rsa" fails the membership gate (that string
@@ -84,7 +84,7 @@ module Pikuri
         - Reading a whole document spends context — read the one or two best hits in full, not every result.
       DESC
 
-      # @param backend [#sources_with_hashes] any {Backend}
+      # @param backend [#source_indexed?] any {Backend}
       #   implementation; consulted for the membership gate.
       # @param root [Pathname] the corpus root — {Indexer#root}.
       #   Relative +source+ paths resolve against it.
@@ -115,7 +115,7 @@ module Pikuri
       # Public so specs can exercise the read path without a Tool
       # wrapper.
       #
-      # @param backend [#sources_with_hashes]
+      # @param backend [#source_indexed?]
       # @param root [Pathname]
       # @param source [String] the source path as supplied by the LLM
       # @param offset [Integer] 1-indexed line to start at
@@ -126,7 +126,7 @@ module Pikuri
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
 
-        unless backend.sources_with_hashes.key?(source)
+        unless backend.source_indexed?(source)
           return "Error: \"#{source}\" is not in the indexed corpus. " \
                  'Use vectordb_search to find a source path, then read that.'
         end
