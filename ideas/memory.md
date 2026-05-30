@@ -387,7 +387,9 @@ thread:
   ([`CLAUDE.md`](../CLAUDE.md) `pikuri-vectordb`) applied to the
   *write* side instead of the read side: corpus breaks the trifecta by
   having no outbound leg; a memory-writer breaks it by having no
-  untrusted *inbound* leg.
+  untrusted *inbound* leg. [`assistant.md`](assistant.md) gives this
+  agent a home: the `@private` member of the federation, whose input
+  stream is all-trusted by construction.
 - **Manual-trigger writes.** If untrusted content *can* enter, the
   write goes through a human gate — a `memory_write` that surfaces the
   proposed entry for confirmation (the `Confirmer` seam), or an
