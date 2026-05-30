@@ -3,7 +3,10 @@
 Status: **brainstorm — nothing designed, nothing built.** The most
 speculative note in `ideas/`. It records a topology idea and stress-tests
 it against the trifecta work; the federation *shape* is deliberately left
-open (the user proposed the idea without one).
+open (the user proposed the idea without one). **The open question is not
+"is it secure?" — it's "is it still usable once it's secure?"** See
+§"The existential risk: over-securing into uselessness" — that's the one
+that decides whether this idea lives.
 
 Related, already worked out:
 
@@ -149,6 +152,62 @@ failure mode is the same slope by hand: nothing stops a user pasting
 thick as the human's attention — which is the irreducible residual the
 whole trifecta line of notes already accepts.
 
+## The existential risk: over-securing into uselessness
+
+This is the risk that decides whether the whole idea ships, so it gets its
+own section rather than a line in §"My honest take." It is the user's
+stated worry, and it is correct: **the federation can be secured to the
+point of being useless.**
+
+The failure isn't subtle. Each invariant in §"Load-bearing invariants"
+moves work off the machine and onto the human — and that work compounds:
+
+- Context isolation means `@comms` doesn't know the customer's address;
+  the human fetches it from `@private` and re-types it.
+- No agent-to-agent channel means *every* cross-agent fact is a manual
+  copy. A three-agent task is a three-way switchboard the human operates
+  by hand.
+- No LLM concierge means the human also does the *routing* — deciding
+  which agent each sentence belongs to, every sentence.
+
+Sum it up and the "assistant" has handed the orchestration back to the
+person it was supposed to help. An assistant that makes you do the
+secretary's job *and* the switchboard operator's job is not a better
+assistant — it's a worse one with a security story. **A perfectly secure
+tool that nobody uses has zero security value**, because the actual
+behaviour it secures is the monolith the user falls back to.
+
+And the fallback is the sharp edge. When the federation gets annoying
+enough, the user doesn't keep suffering it — they **funnel everything into
+one agent** that has private data *and* comms *and* web, because that one
+is convenient. That agent is the full trifecta. So an over-secured
+federation doesn't merely fail to help; it actively *trains the user into
+the most dangerous configuration*, and feels safe while doing it. The
+secure design that gets abandoned is worse than a moderately-secure design
+that gets used, because abandonment defaults to maximum exposure.
+
+The design rule that follows is non-negotiable and harder than the
+security work: **the safe path must also be the low-friction path.** Every
+invariant that adds friction has to be paid back with ergonomics that keep
+the safe path easier than the monolith fallback — the forced-authorship
+handoff (§"The central tension"), `@`-autocomplete that makes routing a
+keystroke, sticky addressing so the user isn't re-targeting every line,
+agents that pre-draft what to carry so the human edits rather than
+retypes. If those ergonomics can't be made *genuinely* frictionless — if
+the irreducible hand-orchestration is still tedious enough that a real
+user funnels around it — then the federation is the wrong shape and should
+be abandoned in favour of a single agent with the per-agent taint defenses
+([`private-context-taint.md`](private-context-taint.md)) doing the best
+they can. **Better an honest single agent the user actually drives than a
+beautiful federation they route around.**
+
+This also reframes the whole note: the security argument above is the
+*easy* half and it's essentially done. The hard, unsolved, idea-deciding
+half is the UX — proving the safe path can be made frictionless enough
+that the user never wants the monolith. Until that's demonstrated (a
+prototype someone uses for a week without resenting it), the federation
+stays a brainstorm, not a plan.
+
 ## Candidate federation shapes (none chosen)
 
 - **Switchboard TUI.** One prompt; `@name` prefix routes; each agent is a
@@ -198,8 +257,11 @@ The machine-level trifecta break is real and clean.
 What's shaky: the security collapses entirely if context isolation or
 the no-concierge rule is relaxed for convenience, and there will be
 pressure to relax both (a smart router, a shared scratchpad, a one-click
-handoff all "just make it nicer"). And the convenience tax is real — a
-federation that's annoying enough gets worked around by the user
-funnelling everything to one over-privileged agent, which is the monolith
-again. The design has to make the *safe* path the *low-friction* path, or
-it loses to the very habit it's trying to prevent.
+handoff all "just make it nicer"). But the *existential* risk isn't a
+relaxed invariant — it's the opposite, an over-strict one: the
+hand-orchestration tax can make the federation so tedious that the user
+abandons it for the monolith it was meant to prevent. That's the
+idea-deciding question, and it's a UX problem, not a security one — see
+§"The existential risk: over-securing into uselessness." The security
+half is the easy half; the safe-path-must-be-the-easy-path half is what's
+unsolved.
