@@ -213,8 +213,122 @@ about X and summarize"), but it's not the primary recall path.
   exactly the lethal-trifecta footgun. Probably belongs in
   `Confirmer`'s sticky-rules store, not in the LLM-readable memory
   layer.
-- **Relationship to `pikuri-skills`.** Skills are procedural
-  user-authored memory; `pikuri-memory` would be declarative
-  agent-curated memory. Distinct but adjacent — worth documenting
-  in the gem's yardoc and probably in `COMPARISON.md` so the
-  boundary is explicit.
+- **Relationship to `pikuri-skills`.** Skills and memory are
+  adjacent but distinct — worth documenting in the gem's yardoc and
+  probably in `COMPARISON.md` so the boundary is explicit. The crude
+  framing "skills = procedural, memory = declarative" turns out to be
+  the *wrong* cut; the right one is resident-vs-triggered. See
+  §"Where this lands" below.
+
+## Where this lands: shared vs private, and resident-vs-triggered
+
+A later brainstorm (kept here as the journey continues) sharpened the
+scope, the build order, and the skills/memory boundary. Three moves.
+
+### The axis is shared-vs-private, not coding-vs-assistant
+
+The tempting binary — "coding harness needs ~no memory, assistant
+needs a real one" — is *almost* right but fuses the wrong things. The
+real axis is **who can see the fact**. Sort by that and there are
+three buckets, not two:
+
+| Fact | Scope | Home |
+|---|---|---|
+| tabs-vs-spaces, framework, architecture decision | team-shared, project | `AGENTS.md` / `decisions.md`, **committed to git** |
+| "in *this* repo the tests hang unless `FOO=1`, found last week" | private, project, episodic | per-dev store, **not** committed |
+| "this dev likes terse output / run tests before commit" | private, cross-project | personal memory |
+| "my name is X, my manager is Y, I hate layovers" | private, personal | personal memory |
+
+Two consequences:
+
+- **Shared ⇒ human-gated writes.** The top row needs *no memory
+  system* — not because coding has no durable facts, but because the
+  moment a fact is shared you want the write to go through a PR diff a
+  human approves. You don't want the agent silently committing "use
+  tabs" off one inference. That is *exactly* why opencode/PI chose
+  "nudge the model to suggest an edit to `AGENTS.md`" over an
+  agent-curated store: nudge-and-suggest **is** the correct write
+  model for a git-committed file. So "coding harness → just nudge
+  `AGENTS.md`" is right, but the reason is shared-⇒-human-in-the-loop,
+  not coding-⇒-no-facts.
+- **There is a private *episodic* layer even in pure coding.** The
+  second row is why Claude Code — a coding harness — *does* ship
+  memory, and where it puts it is the tell:
+  `~/.claude/projects/<dir>/memory/` — per-project but in the user's
+  home, **deliberately not in the repo**. It's your notebook about the
+  project (what you tried, what failed, local quirks), not team
+  documentation, and it can't be committed without polluting a shared
+  repo. The two-bucket model has no slot for this; the three-bucket
+  one does.
+
+### Sequencing: assistant first, full *layered* shape — not every bell
+
+Decision: build the private memory system for **`pikuri-assistant`
+first** (private-personal + private-episodic, where there's no
+shared-artifact alternative), *then* ask what subset is worth porting
+to the coding path. This matches the note's existing instinct that the
+worked home is `pikuri-assistant` (same precedent as `LIBRARIAN`).
+"Full" means the **layered** shape (always-in-prompt + semantic
+on-demand), not Hermes' full feature set — the §"Likely to skip"
+list still holds. "Bells and whistles" is in tension with pikuri's
+small-enough-to-audit ethos; resolve it toward the layering, not the
+hook count.
+
+### memory vs skills vs RAG: one resident-vs-triggered principle
+
+The skills/memory boundary is *not* declarative-vs-procedural. By that
+cut a Gradle skill and the heuristic "clone a repo, don't fetch it
+file-by-file" are *both* procedural, so it fails to separate them. The
+cut that works is **activation**:
+
+- **Resident** — small, broadly-always-true, paid for on every turn,
+  earns its slot by breadth. System prompt / `CLAUDE.md`. ("Clone,
+  don't fetch," standing alone.)
+- **Triggered** — specific, possibly large, costs nothing until woken,
+  earns its size by staying dormant. A skill, semantic memory recall,
+  or RAG lookup.
+
+This is the *same* rule as the three retrieval modes in §"Prior art":
+context is the scarce resource, and every durable thing — a fact, a
+heuristic, a procedure, a document — is allocated to *resident* or
+*retrieved* by `(size × breadth) vs cost-per-turn`. Skills, memory,
+and RAG are all just "retrieved-on-trigger" with **different
+triggers**: task-shape match (skills), semantic relevance to the
+current message (memory prefetch), corpus lookup (RAG). One mental
+model for the whole pikuri surface.
+
+The trigger itself splits two ways, and both are real:
+
+- **User-triggered.** "I want to export this to PDF — here's how" — the
+  user names the task, the matching skill activates.
+- **Auto-activated.** The LLM realises mid-task it needs a project's
+  sources and *recalls* that cloning beat fetching last time — no user
+  cue, the relevance is inferred. This auto-recall path is the one
+  that blurs into memory: an auto-activated procedural recall and a
+  semantic memory prefetch are the same machinery pointed at different
+  stores.
+
+Resolution of the thin line ("couldn't 'clone don't fetch' live in a
+`sources` skill?"): **the same sentence lives in different places
+depending on the size of the cluster it belongs to.** A lone universal
+one-liner → resident (too broad to risk gating behind a trigger, too
+cheap to bother). The tip of a 2 KB body of source-acquisition lore
+(shallow vs full clone, sparse checkout, `mvn dependency:sources`,
+finding JVM sources, API rate limits) → that cluster is only relevant
+when obtaining sources and is too big to keep resident, so it becomes
+a `sources` skill and the heuristic rides its trigger. The deciding
+question for any lesson is *"lone universal one-liner, or tip of a
+triggerable cluster?"* — not "fact or skill?"
+
+### Hermes is both — verified
+
+Checked against the repo (2026-05-30): Hermes positions itself as
+*"the self-improving AI agent"* — a **general** agent doing both
+conversational assistance and software development (40+ tools, six
+terminal backends, file ops + bash). Its headline *"closed learning
+loop / autonomous skill creation, self-improving procedures"* is the
+"grow from junior to senior" story — but note it's mostly the **skill
+half** (procedural self-improvement), kept *separate* from its
+declarative MEMORY.md / USER.md store. So Hermes is prior art for both
+layers at once, and it already draws the same memory-vs-skill line this
+section argues for.
