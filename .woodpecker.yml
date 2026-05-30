@@ -15,6 +15,10 @@ steps:
     commands:
       - ruby -v
 
+      # ripgrep (rg) is required by the Grep tool's specs; the ruby image
+      # doesn't ship it, so install it from Debian.
+      - apt-get update && apt-get install -y ripgrep
+
       # --- restore the gem cache from Hetzner Object Storage ---
       # Keyed on Gemfile.lock so it auto-busts when deps change. Skipped when
       # no credentials are present (e.g. a fork PR), so such builds still pass.

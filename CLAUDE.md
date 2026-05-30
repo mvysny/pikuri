@@ -383,3 +383,12 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   each with their own specs. Neither `Pikuri::Tool`, the
   `Pikuri::Agent`, nor ruby_llm's loop should need to know about
   them.
+
+## CI
+
+Woodpecker CI runs `rake test` on push / pull-request / manual,
+configured in `.woodpecker.yml`. Dashboard:
+<https://ci.codeberg.org/repos/17229>. The `ruby:4.0` image doesn't
+ship `ripgrep`, so the config installs it (the Grep tool's specs
+need `rg`). Gem deps are cached in Hetzner Object Storage, keyed on
+`Gemfile.lock`.
