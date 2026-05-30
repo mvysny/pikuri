@@ -33,9 +33,14 @@ steps:
           echo "no cache credentials - skipping cache"
         fi
 
-      # --- install + test ---
-      - bundle install --jobs 4 --retry 3
-      - bundle exec rake test
+      # --- install + test as an unprivileged user ---
+      # The container runs as root, but root bypasses Unix permission bits, so
+      # the pikuri-workspace specs that assert EACCES (chmod 000 files, 0o500
+      # dirs) would silently not exercise the deny path. Create a normal user,
+      # hand it the checkout + gem cache, and run the build as that user. HOME
+      # is exported so bundler/rubygems write their config under /home/ci.
+      - useradd -m ci && chown -R ci:ci .
+      - su ci -c 'export HOME=/home/ci BUNDLE_PATH=vendor/bundle && bundle install --jobs 4 --retry 3 && bundle exec rake test'
 
       # --- repopulate the cache on a miss (bundle.tgz only exists on a hit) ---
       - |
