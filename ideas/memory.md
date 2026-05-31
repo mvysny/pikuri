@@ -473,8 +473,10 @@ Decided so far:
 - **Decay is supersession-by-time — the same engine.** This collapses
   the lifecycle question into the operations above. "Scratch that" is
   supersession-by-*statement*; "working on project A" going stale is
-  supersession-by-*recency* (no new observation needed — synthesis lets
-  unreaffirmed episodic facts age out). Both are "newer wins over older
+  supersession-by-*recency* (no new observation needed — recall
+  down-weights unreaffirmed episodic facts at *read* time; the survey
+  moved this from write-time decay to reversible read-time ranking, see
+  §"Survey outcome"). Both are "newer wins over older
   about the same entity." So **the log accumulates and supersedes by
   appending; the persona resolves conflicts (by statement or by
   recency) into the current view; only privacy-erasure deletes.** One
@@ -561,3 +563,133 @@ plus the file backend, scored against §"Property checklist".
   mature solution omits is a signal we may be running in the wrong
   direction (or that it's genuinely hard and not worth it). The absence
   is the lesson.
+
+### Survey outcome (2026-05-31)
+
+A one-shot survey ran the rubric against all nine candidates. Full
+matrix + per-store profiles archived in
+[`memory-store-survey.md`](memory-store-survey.md); the design-relevant
+conclusions:
+
+- **The negative-space test earned its keep — split verdict.** Three
+  properties the field broadly omits, for *two different reasons*:
+  - **#6 time-decay — a genuine course-correction.** *Nobody* ships
+    write-time decay; the field keeps everything and ranks by recency
+    **at read time**, because mis-decaying a real preference is
+    asymmetrically worse than keeping a stale fact. This refines the
+    decay decision above: **reversible read-time recency weighting, never
+    destroy at write.** The test caught us about to over-engineer a
+    write-time decay curve.
+  - **#3 physical right-to-forget & #5 correction-pinning — *not* a
+    wrong-direction signal.** Omitted only because no one else builds a
+    no-egress private persona (the market optimizes for *never losing
+    signal* — the opposite of a privacy right-to-forget). These are
+    pikuri's differentiators, built in-house. **Deferred to v2** — get
+    the memory API shape right first. v1 right-to-forget is coarse: the
+    storage is files the user can delete wholesale (which is itself a
+    vote for file-shaped, inspectable storage — it lines up with #9/#10).
+- **Convergence validation.** mem0 — the most-adopted store (37k★) —
+  moved to **ADD-only / history-preserving** in April 2026:
+  independently the same supersede-by-append shape reasoned to here. The
+  field leader converging on it means the shape is load-bearing.
+- **Tech narrowed to one axis.** Two finalists survive the privacy gate:
+  **holographic/nuggets** (local-only, no integrator-managed LLM, real
+  deletion, fully inspectable — but weak on semantic
+  contradiction/extraction) vs **hindsight** (MIT, embedded-local
+  Postgres, runs against local Ollama/llama.cpp, beliefs/supersede +
+  entity resolution — but costs a managed local extraction model). The
+  axis is **no-LLM-simple vs local-LLM-capable**, decided by the
+  observation-granularity fork (free-text ⇒ need an LLM ⇒ hindsight;
+  structured entity/attr/value ⇒ resolution goes algorithmic ⇒ nuggets
+  viable). Not chosen — that's the next design fork.
+
+### The v1 write API collapses to one verb (`append`)
+
+Pushing on "do we even need supersede?" shrank the API. **There is no
+supersede write verb.** The only write is
+`append(observation, timestamp, provenance)`; "supersede" is not a
+concept the *writer* knows — a correction is just a newer append. This
+is also what the survey says the whole field does (read-time recency
+ranking), and what mem0 v3's ADD-only move confirms.
+
+The sharp distinction: **recency at read does the *ordering*, not the
+*resolution*.** Resolution — contradiction-vs-coexistence (#4) plus
+negation ("I was joking about horror") — still lives at read/synthesis,
+with recency as its *tiebreaker*, not its replacement. Two traps show
+why recency alone is insufficient:
+
+- **Coexistence trap.** "Loves steak" (Jan) and "likes sushi" (Mar) are
+  both in the store; a naive "most-recent-wins" reader would drop steak
+  when sushi is newer. Recency says which is newer; it does *not* say
+  whether the newer *replaces* the older (mutually exclusive) or *adds
+  to* it (independent). That replace-vs-add call is resolution.
+- **Negation trap.** "Loves horror" → "was joking about horror." Recency
+  surfaces the newer; understanding that it *negates* the older is
+  semantic, not ordinal.
+
+Whether resolution can be algorithmic or needs an LLM is exactly the
+granularity fork below.
+
+So the **v1 surface is strikingly minimal**: `append` (write) +
+recency-weighted recall (read) + coarse erase, with *granular* per-fact
+erase deferred to v2 (#3). One write verb. (Custody landed on mem0, not
+files — see §"Decision" below; coarse erase becomes "drop the mem0
+store," granular erase is its delete API.)
+
+### Decision (2026-05-31): mem0, accept the weight, no second store
+
+After the survey and the custody/lightness debate, **chosen: mem0** —
+and the custody-vs-resolution split (a separate raw store) is
+**dropped**.
+
+- **Trust = adoption × age, and mem0 wins both.** The agent-memory
+  category is young (born ~2023); *none* of the candidates is a
+  decade-old battle-tested store. Within that young field mem0 is the
+  oldest and by far the most-used (Apache-2.0, ~2–3yr lineage, 37k★) —
+  the most-vetted code to hand the user's most private data to. This
+  deliberately **reverses the survey's footprint-driven lean** toward
+  nuggets/hindsight: for a private-memory store, trust-by-adoption
+  outranks lightness, and the lighter options are too young to clear
+  that bar (§"Survey outcome" — the trust filter empties the field down
+  to mem0).
+- **Accept the heaviness.** Neo4j + docker / docker-compose is
+  acceptable. pikuri talks to mem0 as a **self-managed sidecar over a
+  thin Faraday HTTP client** — the exact pattern `pikuri-vectordb`'s
+  `ChromaServer` already establishes (Docker supervisor routed through
+  `Subprocess.spawn` + HTTP client). Local LLM + local embeddings (reuse
+  `pikuri-vectordb`'s `Embedder` over `RubyLLM.embed`). A second backend
+  can be added later *if* ever wanted — not now.
+- **No SQLite, no separate raw store.** The split existed only to avoid
+  trusting a young framework with sole custody; choosing the *trusted*
+  framework removes that premise. **All memories go into mem0.** Its
+  `add`/`search` is our `append`/recall; mem0 owns resolution
+  (dedup/supersede/attribute-drift) — the work we explicitly don't want
+  to hand-roll. In-loop vs off-loop extraction stops mattering much: if
+  mem0 owns extraction we can offload the whole job to it.
+- **Audit & forget go through mem0's surface, not `rm`.** Matches the
+  original stance (§ top: "doesn't need to be user-auditable, or pick a
+  DB with a good auditable dump") — mem0 provides export/dump + a delete
+  API. Coarse erase = drop the store volume; granular per-fact erase =
+  its delete API (v2, #3). File-shaped storage is no longer needed for
+  audit or forget.
+
+Narrow deployment-reality check still outstanding before any build:
+
+1. Is **Neo4j** genuinely required, or optional (vector-store-only)?
+   Full docker-compose component list.
+2. **Local LLM + local embeddings** wiring — can mem0 point at
+   llama.cpp / our `Embedder` with no cloud leg?
+3. **REST surface** for a thin Faraday client
+   (`add`/`search`/`delete`/`get_all` endpoints + shapes).
+4. Does `add()` **preserve raw history** (v3 ADD-only) or mutate? —
+   determines whether mem0 is both raw + resolved, or whether the
+   conversation transcripts are the only raw source.
+
+**Neo4j is an empirical question, not a footprint one.** Q1 settles
+only whether we *can* run without the graph — *should* we is a separate,
+quality question that only a test answers. Even if Neo4j turns out
+optional, run a recall-quality comparison **with vs. without the graph**
+on representative tasks (relational queries like "who is my manager's
+manager", multi-hop persona recall); if mem0 is materially worse without
+it, **bring Neo4j back**. Footprint-aversion does not get to decide
+recall quality — measure it before dropping the graph.
