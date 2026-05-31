@@ -850,4 +850,54 @@ the source already settles:
 name on search), that a 768-dim pgvector collection is accepted
 end-to-end, and that llama.cpp's `/v1` serves mem0's embed + chat calls
 without shape surprises. The runtime to do it (trimmed compose + `.env`,
-build-from-source) is designed and ready to write.
+build-from-source) is designed and ready to write. *(Done — see
+§"Live smoke outcome" below; all of these are now resolved.)*
+
+### Live smoke outcome (2026-05-31): passes end-to-end against llama.cpp
+
+Booted the stack (trimmed build-from-source compose: pgvector + the mem0
+FastAPI server, dashboard dropped) and ran a real `add` → `search`
+round-trip against the local llama.cpp. **It passes** — this is the
+"designed → seen to work" line crossed.
+
+- **One build fix was needed.** The prod `Dockerfile`
+  (`python:3.12-slim`) plus `requirements.txt`'s plain `psycopg>=3.2.8`
+  crashes at boot with *"no pq wrapper available"* — slim ships no
+  `libpq`, and the pin omits the C/binary impl. The dev Dockerfile dodges
+  this via the full `python:3.12` base. Fix for a slim build: add
+  `psycopg[binary]` (bundles libpq). Whatever `pikuri-memory`'s
+  `ChromaServer`-style supervisor builds/pulls must account for this.
+- **Local wiring works as corrected.** `provider:"openai"` +
+  `openai_base_url` → `http://…:8080/v1` routes both the extraction LLM
+  and the embedder to llama.cpp; `/configure` accepts it (provider stays
+  "openai", so bundled-provider validation passes), no cloud leg. The
+  mem0 container reached the llama.cpp host IP with no `extra_hosts`
+  needed.
+- **768-dim handling confirmed.** `/configure` (sent *before* the first
+  `add`) with `embedding_model_dims: 768` + a fresh `collection_name`
+  deep-merges over `DEFAULT_CONFIG` and creates the 768 pgvector
+  collection; the 1536 boot-default collection is left unused. End-to-end
+  add+search on 768 works.
+- **Response shapes — now runtime-locked** (`user_id` smoke run):
+  - `POST /memories` → `{"results":[{"id":"<uuid>","memory":"<fact>","event":"ADD"}]}`
+  - `POST /search` (body `{query, filters:{user_id}, top_k}`) →
+    `{"results":[{id, memory, hash, metadata, "score":0.30…, created_at, updated_at, user_id}]}`
+    — the score field is **`score`**.
+  - `GET /memories?user_id=` → same row shape as search, minus `score`
+    and `event`.
+- **v3 extraction consolidates.** The three input facts ("name is Martin",
+  "vegetarian", "loves hiking") came back as a *single* memory string with
+  `event:"ADD"` — v3's token-efficient behavior, ADD-only as the design
+  assumed. (Supersede/coexistence resolution across *multiple* turns was
+  not exercised here — a follow-up smoke, not blocking.)
+- **Open follow-up — `score` semantics.** A clearly-relevant query scored
+  `0.30`. Whether that's cosine-similarity (higher=better) or a distance
+  (lower=better) decides how `threshold` must be set; nail it down before
+  `pikuri-memory` relies on `threshold`.
+
+**Net: the chosen config is no longer just achievable on paper — it runs.**
+mem0 v3 server, no Neo4j, pgvector at 768, fully-local LLM+embeddings via
+llama.cpp, HTTP-driven, history-preserving. The remaining unknowns are
+quality/semantics (score meaning, multi-turn supersede), not feasibility.
+`pikuri-memory` can be built against this surface; the throwaway smoke
+stack was torn down (`docker compose down -v`).
