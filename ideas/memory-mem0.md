@@ -12,10 +12,13 @@ References to `#N` and to "§Survey outcome" point back to
 [`memory.md`](memory.md).
 
 **Status (2026-05-31):** mem0 chosen; its wanted local config verified and
-smoke-tested working; the recall-quality pass found the *models* perform
-well but surfaced a likely **pgvector top-k inversion** (recall returns
-the *farthest* matches) — under investigation before any `pikuri-memory`
-code.
+smoke-tested working. The recall-quality pass found the *models* perform
+well but surfaced a **pgvector top-k inversion** (cosine *distance* sorted
+as if it were a *similarity*) — root-caused to mem0's pgvector provider
+and **confirmed fixed by switching to Qdrant** (nearest-k correct, 3/3).
+**Qdrant is the chosen v1 backend.** Remaining open items are quality, not
+feasibility: write latency (environmental) and read-side supersede
+resolution.
 
 ### Decision (2026-05-31): mem0, accept the weight, no second store
 
@@ -384,6 +387,33 @@ Consequences:
 - Worth an upstream report/PR (convert `<=>` distance to `1 - distance` in
   the pgvector provider, or normalize per-store inside `score_and_rank`).
 
-**Next: confirm on Qdrant** — swap the backend, re-run A2 ranking + the
-diagnostic (fast: `infer:false`, embeddings only). Expect nearest-k to
-return correctly; if so, Qdrant becomes the v1 backend.
+### Qdrant confirmation (2026-05-31): nearest-k correct, 3/3 — decision locked
+
+Drove the mem0 **library** directly (same `score_and_rank` + provider code
+as the server, so it exercises the exact buggy path) against a fresh
+Qdrant container — same 8 facts, `infer:false`, `top_k=3`:
+
+- **rank-1 correct 3/3.** "Where does the user live?" → Brno #0;
+  "programming language" → Ruby #0; "boss" → Alice #0. Results sorted
+  nearest-first.
+- **`score` is a similarity here** (Brno 0.7832, higher = better) and the
+  values *match the standalone llama cosine* (Brno 0.7832, Ruby 0.7636 —
+  identical to the Part-2 diagnostic), proving Qdrant returns raw cosine
+  similarity and `score_and_rank`'s descending sort is correct against it.
+
+Same models, same wiring, same ranker — only the backend changed. That
+nails it: **pgvector path broken, Qdrant path correct. Qdrant is the v1
+backend** — and the better fit on its own merits (popular, OSS,
+maintained, purpose-built, clean Docker sidecar).
+
+Caveat seen in passing: the server image ships **without spaCy/fastembed**,
+so BM25 keyword search is disabled and search is semantic-only (true for
+both backends here — the bug is purely in the semantic→`score_and_rank`
+path). Fine for v1; revisit hybrid keyword recall later
+(`pip install mem0ai[nlp]` + fastembed) if wanted.
+
+Still open (quality, not feasibility): **write latency** (15–66s/add,
+mostly llama-swap reloads — environmental) and **read-side supersede
+resolution** — now that recall returns nearest-first, re-run the C-trio on
+Qdrant to see whether the correcting memory actually outranks the stale
+one at recall time.
