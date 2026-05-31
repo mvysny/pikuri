@@ -685,11 +685,66 @@ Narrow deployment-reality check still outstanding before any build:
    determines whether mem0 is both raw + resolved, or whether the
    conversation transcripts are the only raw source.
 
-**Neo4j is an empirical question, not a footprint one.** Q1 settles
-only whether we *can* run without the graph — *should* we is a separate,
-quality question that only a test answers. Even if Neo4j turns out
-optional, run a recall-quality comparison **with vs. without the graph**
-on representative tasks (relational queries like "who is my manager's
-manager", multi-hop persona recall); if mem0 is materially worse without
-it, **bring Neo4j back**. Footprint-aversion does not get to decide
-recall quality — measure it before dropping the graph.
+**Neo4j is an empirical question, not a footprint one.** *(Superseded
+by the verification below — mem0 v3 removed Neo4j from the OSS SDK
+entirely, so there is no graph to toggle. Kept for the journey.)* Q1
+settles only whether we *can* run without the graph — *should* we is a
+separate, quality question that only a test answers. Even if Neo4j turns
+out optional, run a recall-quality comparison **with vs. without the
+graph** on representative tasks (relational queries like "who is my
+manager's manager", multi-hop persona recall); if mem0 is materially
+worse without it, **bring Neo4j back**. Footprint-aversion does not get
+to decide recall quality — measure it before dropping the graph.
+
+### Verification outcome (2026-05-31): mem0 v3 removed Neo4j; config achievable
+
+The deployment check came back; the headline reshapes the Neo4j thread.
+Verified against mem0 `main` source (v3 "token-efficient" algorithm,
+~April 2026 — several docs still describe stale v2; pin to **v3**):
+
+- **Neo4j is gone, not just optional.** v3 removed graph/Neo4j from the
+  OSS SDK (~4k lines; `enable_graph`/`graph_store` deleted). Relations
+  are now **built-in entity linking** into a parallel
+  `{collection}_entities` collection in the *same vector store* — no
+  external graph DB. **This obsoletes the "with vs. without Neo4j" test
+  above: there is no graph to toggle in OSS v3.** The relational
+  *capability* survives in lighter form (entity linking / same-entity
+  resolution — the part we need for dedup/supersede); what's lost is
+  external-graph multi-hop reasoning. Acceptable v1 trade for a
+  single-user persona; revisit only if multi-hop recall proves needed.
+- **Lighter than feared.** Shipped docker-compose = **3 containers, no
+  Neo4j**: mem0 FastAPI server (`:8000`), Postgres/pgvector (vector
+  store + history), optional dashboard. The "docker-compose sprawl"
+  worry largely dissolves — one app + one Postgres.
+- **Fully local: yes.** LLM + embeddings via a local OpenAI-compatible
+  endpoint (`openai_base_url`, clean fit for our llama.cpp) or
+  `ollama`/`lmstudio` providers. Cloud is the *default*; local is
+  explicit opt-in config.
+- **REST: yes.** FastAPI `server/main.py`: `POST /memories` (add),
+  `POST /search`, `GET`/`DELETE /memories[/{id}]`,
+  `GET /memories/{id}/history`, `POST /reset`. Thin Faraday client
+  works, no Python in our loop — same shape as `ChromaServer`'s client.
+  (Exact `add`/`search` JSON field names are med-confidence →
+  smoke-test against a live v3 container.)
+- **`add()` is ADD-only / non-destructive in v3 — validates our model.**
+  New facts coexist with old; recency resolved at read via `created_at`;
+  per-memory history API exists. This *is* the append-only +
+  read-time-recency design, confirmed in the chosen tool. Lever:
+  `infer=true` (default) stores LLM-*extracted facts*; `infer=false`
+  stores *verbatim turns* — so the dropped two-store split (raw log +
+  resolved view) is available *inside* mem0 (two collections) at no
+  extra infra, if ever wanted.
+
+Net: the wanted config — **mem0 sidecar, no Neo4j, fully-local
+LLM+embeddings, HTTP-driven from Ruby, history-preserving** — is
+achievable as-is, no design rethink.
+
+**Status (2026-05-31).** Graph trade-off **accepted**: v1 runs on v3's
+built-in entity linking; external multi-hop graph reasoning is out of
+scope, revisit only if it proves necessary. **TODO (deferred — not yet
+done): smoke test** a running mem0 v3 container against local llama.cpp —
+`POST /memories` + `POST /search` from a throwaway Faraday call — to lock
+the exact `add`/`search` JSON shapes (the one med-confidence item) and
+pick the vector store (compose ships pgvector; library default is local
+Qdrant). This is the boundary between "designed" and "seen to work," and
+the natural first step before any `pikuri-memory` code.
