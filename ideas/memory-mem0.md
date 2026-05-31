@@ -343,3 +343,47 @@ the blocker is the pgvector top-k inversion. Next: root-cause it —
 returns correctly. That decides "mem0 is broken" vs "pgvector-in-this-
 stack is misconfigured." (The throwaway smoke stack is currently still up
 for the hunt.)
+
+### Root cause (2026-05-31): pgvector distance treated as similarity — Qdrant is the fix
+
+The top-k inversion is a genuine mem0 2.0.4 bug — a distance-vs-similarity
+convention mismatch between the ranker and the pgvector provider:
+
+- mem0's hybrid ranker `score_and_rank` (`mem0/utils/scoring.py:60`)
+  assumes the vector store's `score` is a **similarity** (higher = more
+  relevant): it gates `if semantic_score < threshold: continue`, combines
+  additively (`semantic + bm25 + entity`), then sorts `reverse=True`
+  (descending) and takes the top (`scoring.py:120`).
+- But mem0's **pgvector provider** (`mem0/vector_stores/pgvector.py:327,
+  337`) returns a raw **cosine distance** (`vector <=> query AS distance`)
+  and never converts it — lower = more relevant, the opposite convention.
+- Net: sorting a *distance* descending surfaces the **farthest** memory
+  first. `top_k=3` returns the three *least* relevant and omits the
+  obvious answer; `top_k=8` returns all, ordered worst→best. (Latent
+  second bug: the `< threshold` gate wrongly drops any memory *closer*
+  than distance 0.1.)
+
+**It's backend-specific, and that's the fix.** Qdrant's provider
+(`mem0/vector_stores/qdrant.py`) passes through Qdrant's native
+`ScoredPoint.score`, which *is* a similarity (higher = better) — so
+`score_and_rank`'s descending sort is correct there. The fault is the
+pgvector provider failing to convert distance→similarity, not the ranker.
+Any pgvector user of this version's v1.1 hybrid search is affected.
+
+Consequences:
+
+- **Resolves the open "pick the vector store" item → Qdrant, not
+  pgvector.** pgvector was the lean only because the *server's shipped
+  compose* defaults to it; the *library* default is Qdrant, whose path is
+  correct by construction. Qdrant is independently the better fit anyway —
+  popular, actively maintained, OSS, purpose-built vector DB (vs. a
+  Postgres extension), and a clean Docker sidecar like the rest of our
+  infra.
+- The models and our wiring are vindicated — the blocker was entirely
+  mem0's pgvector provider.
+- Worth an upstream report/PR (convert `<=>` distance to `1 - distance` in
+  the pgvector provider, or normalize per-store inside `score_and_rank`).
+
+**Next: confirm on Qdrant** — swap the backend, re-run A2 ranking + the
+diagnostic (fast: `infer:false`, embeddings only). Expect nearest-k to
+return correctly; if so, Qdrant becomes the v1 backend.
