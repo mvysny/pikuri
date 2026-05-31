@@ -486,6 +486,22 @@ Decided so far:
   out something still true) the persona drifts — an argument for keeping
   the resolved persona cheap to regenerate and inspectable, so a bad
   resolution is fixable rather than permanent.
+- **Observations are weighted, not equal; inference is silent but
+  correctable.** Inferred supersession is unavoidable — the user won't
+  announce every contradiction ("gone vegetarian" must silently beat an
+  old "loves a good steak"), so the engine's real job is telling
+  *contradiction* (mutually exclusive → newer wins) from *coexistence*
+  (steak AND sushi → keep both); that distinction is where the persona
+  drifts if synthesis is sloppy. Recency alone is too crude — a passing
+  mention must not override a deliberate statement — so each observation
+  carries a **strength/provenance** weight and supersession resolves on
+  `(recency × explicitness × repetition)`. **Explicit user corrections
+  are pinned**: high-confidence, decay-resistant, never silently
+  overridden by a weak inferred signal. Inferred supersessions fire
+  *silently* — no confirmation prompt, because `@private` has no egress,
+  so a wrong inference costs a slightly-off answer, not a leak;
+  confirmation is reserved for *erase*, the irreversible op. The rail is
+  inspect-and-correct, not confirm-on-write.
 
 Open threads (under active discussion, no verdict):
 
@@ -496,8 +512,52 @@ Open threads (under active discussion, no verdict):
   Whether that's a cheaper-than-full-pass extraction, idle-time
   flushing, or a non-LLM memory store (a "mem-palace") is
   implementation, deferred.
-- **Explicit vs. inferred supersede.** Does the user always *state* a
-  correction, or does the agent also infer "this contradicts what I knew"
-  on its own? (Next fork.)
+- **Granularity of an observation.** Free-text sentence vs. structured
+  (entity / attribute / value). The engine can only tell that "steak"
+  and "vegetarian" are *about the same thing* if there's enough
+  structure to compare — but structure is cost. (Next design fork.)
 - **Two-store** (raw append-only log + derived persona) — *proposed,
   not adopted*; deferred until the operations above are pinned down.
+
+### Property checklist — the rubric for a store survey
+
+The axis we converged on, as a checklist to test candidate stores
+against. An `@private` memory store should support:
+
+1. **Automatic append** of observations from trusted input.
+2. **Supersede-by-append** — record a correction without mutating or
+   rescanning prior entries; current-truth resolved downstream.
+3. **Erase** — true *physical* deletion of selected entries (the
+   privacy right-to-forget), user-gated.
+4. **Contradiction vs. coexistence resolution** — tell "vegetarian
+   supersedes steak" apart from "steak and sushi coexist."
+5. **Weighted observations** — recency + explicitness + repetition +
+   provenance, not timestamp alone; explicit corrections *pinned*.
+6. **Time-decay** of unreaffirmed episodic facts (supersession-by-recency).
+7. **Entity/attribute structure** — enough to know two observations are
+   about the same thing (granularity TBD).
+8. **Layering** — a resident always-in-prompt persona view distinct from
+   the retrieved long tail.
+9. **Cheap regeneration / inspectability** of the resolved view, so a
+   bad resolution is fixable.
+10. **Auditable dump** (privacy-dignity, not security) and **local-only**
+    storage.
+11. **Bounded write latency** — capture off the interaction path; no
+    multi-minute hang on quit.
+
+### Two questions for the survey (and the negative-space test)
+
+Candidate stores = the set Hermes already integrates (honcho, mem0,
+supermemory, byterover, hindsight, holographic, retaindb, openviking)
+plus the file backend, scored against §"Property checklist".
+
+- **Can the DB own the extraction?** Feed it the raw conversation and
+  let *it* do append/supersede/decay/resolve, with no memory-LLM in
+  *our* loop. (The store may run its own LLM internally — the question
+  is whether *we* manage one.) And separately: does any purely
+  algorithmic, no-LLM-at-all store get acceptably close?
+- **Negative space.** For each property above, which stores support it —
+  and which properties does *no* store support? A property that every
+  mature solution omits is a signal we may be running in the wrong
+  direction (or that it's genuinely hard and not worth it). The absence
+  is the lesson.
