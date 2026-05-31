@@ -719,7 +719,12 @@ Verified against mem0 `main` source (v3 "token-efficient" algorithm,
 - **Fully local: yes.** LLM + embeddings via a local OpenAI-compatible
   endpoint (`openai_base_url`, clean fit for our llama.cpp) or
   `ollama`/`lmstudio` providers. Cloud is the *default*; local is
-  explicit opt-in config.
+  explicit opt-in config. *(Corrected below — see §"Source dive before
+  the smoke test": `ollama`/`lmstudio` are a **library** capability; the
+  **server image** bundles only `openai`/`anthropic`/`gemini` and rejects
+  anything else with HTTP 400, so the actual local path is
+  `provider: "openai"` + `openai_base_url` → llama.cpp, not an ollama
+  provider.)*
 - **REST: yes.** FastAPI `server/main.py`: `POST /memories` (add),
   `POST /search`, `GET`/`DELETE /memories[/{id}]`,
   `GET /memories/{id}/history`, `POST /reset`. Thin Faraday client
@@ -747,4 +752,102 @@ done): smoke test** a running mem0 v3 container against local llama.cpp —
 the exact `add`/`search` JSON shapes (the one med-confidence item) and
 pick the vector store (compose ships pgvector; library default is local
 Qdrant). This is the boundary between "designed" and "seen to work," and
-the natural first step before any `pikuri-memory` code.
+the natural first step before any `pikuri-memory` code. *(The source-level
+half of that step is now done — see §"Source dive before the smoke test"
+below; only the live container round-trip remains.)*
+
+### Source dive before the smoke test (2026-05-31): shapes locked, provider list corrected, deployment reality
+
+Ahead of booting anything, cloned `mem0ai` `main` (library **2.0.4**;
+server code current) and read the self-hosted server end-to-end
+(`server/main.py`, `server_state.py`, both Dockerfiles, the compose,
+`db.py`), plus checked Docker Hub. These findings are **source-confirmed,
+not yet runtime-confirmed** — the live smoke (boot a container, real
+`add`/`search` round-trip against llama.cpp) is still the open step. What
+the source already settles:
+
+- **Three version axes — stop conflating them.** Package `mem0ai 2.0.4`
+  (PyPI); config-schema `"version": "v1.1"` (set in `DEFAULT_CONFIG`);
+  "v3" = the internal token-efficient *algorithm* generation this note
+  tracks. All independent — "v3" is not a release tag you can pin.
+
+- **The REST surface is locked from source** (`server/main.py`) — this
+  answers the med-confidence item *structurally*; only live response
+  *values* remain. The shapes the Faraday client will target:
+  - `POST /memories` — `{ messages: [{role, content}], user_id?,
+    agent_id?, run_id?, metadata?, infer?, memory_type?, prompt? }`. At
+    least one of `user_id`/`agent_id`/`run_id` is required (else HTTP 400).
+  - `POST /search` — `{ query, filters?: {user_id: …}, top_k?,
+    threshold? }`. Top-level `user_id`/`agent_id`/`run_id` are
+    **deprecated** — pass them inside `filters`.
+  - Also `GET /memories[?user_id=]`, `GET|PUT|DELETE /memories/{id}`,
+    `GET /memories/{id}/history`, `POST /reset`, `GET|POST /configure`.
+  - The `infer` lever is present (`infer=true` stores LLM-extracted
+    facts, `infer=false` stores verbatim turns) — the raw-vs-resolved
+    two-store option, available inside one server, as the verification
+    section predicted.
+
+- **Provider correction — supersedes the "ollama/lmstudio" line above.**
+  `_validate_bundled_providers` rejects any non-bundled provider on
+  `/configure` with HTTP 400. The bundled sets are cloud-only:
+  `BUNDLED_LLM_PROVIDERS = (openai, anthropic, gemini)`,
+  `BUNDLED_EMBEDDER_PROVIDERS = (openai, gemini)`. So `ollama`/`lmstudio`
+  are reachable from the *library* but **not** through this server. The
+  local-llama.cpp path is therefore: keep `provider: "openai"`, set
+  `openai_base_url` → `http://192.168.122.1:8080/v1` with a dummy key;
+  provider stays "openai" so validation passes while traffic goes local.
+  (A genuine ollama provider would mean editing `requirements.txt` +
+  the `BUNDLED_*` tuples + a rebuild — not worth it.)
+
+- **The 768-dim gotcha is real.** `DEFAULT_CONFIG` sets no
+  `embedding_model_dims`, so pgvector defaults to OpenAI's 1536. Our
+  embedder `nomic-embed-text-v1.5` is **768**. `/configure` must pass
+  `embedding_model_dims: 768` **and** a *fresh* `collection_name` (the
+  boot-time default may already have created a 1536 table; changing dims
+  on the same collection mismatches). `/configure` is live-reconfigurable
+  — `server_state.update_config` deep-merges over `DEFAULT_CONFIG`,
+  rebuilds `Memory.from_config`, and persists the override to `mem0_app`
+  — so reconfiguring *before the first `add`* is the clean path.
+
+- **Deployment reality.**
+  - *Published image is stale; build-from-source is blessed.*
+    `mem0/mem0-api-server:latest` is a single Hub tag last pushed
+    2025-09-10 — pre-v3, pre-auth, pre-bundled-providers; its API would
+    differ. Upstream's own run path (`make up` → `docker compose up -d
+    --build`) rebuilds from the checkout every time and never pulls that
+    image (`make build` is a local convenience, not a release). The live
+    artifact is the source tree + PyPI `mem0ai>=0.1.48`. The library is
+    the maintained headline; the server image is a stale courtesy.
+  - *Service shape.* Dev compose = 3 services (mem0 `8888→8000`, pgvector
+    `8432→5432`, a Next.js dashboard — droppable for a REST smoke). The
+    prod `Dockerfile` is lighter (`python:3.12-slim`, `requirements.txt`
+    only, **no `[graph]`/Neo4j extra**) but its CMD skips migrations, so a
+    compose built on it must run `alembic upgrade head` before `uvicorn`.
+  - *Two databases, one server.* The `postgres` DB holds the pgvector
+    memories; the `mem0_app` DB (created by `init-db.sh`, migrated by
+    alembic) holds auth/settings/request-logs. Memory *history* is a
+    separate **SQLite** file (`/app/history/history.db`), not Postgres —
+    a refinement to the earlier "Postgres … + history" shorthand.
+  - *Auth.* On by default; `AUTH_DISABLED=true` (local-dev only) bypasses
+    the JWT/admin requirement for the smoke test.
+
+- **Vector store leaning: pgvector.** The open "pick the vector store"
+  item tilts toward pgvector — it's what the server's `DEFAULT_CONFIG`
+  and shipped compose use, keeping the footprint at one Postgres. (Qdrant
+  is the *library* default, and what the now-sunset OpenMemory used.)
+  Final pick still waits on the live smoke.
+
+- **OpenMemory vs mem0 — and why we're not using it.** OpenMemory
+  (`openmemory/`) is a separate, MCP-first, Qdrant-backed *end-user* app
+  built on the mem0 library, with its own UI. It is **being sunset** (its
+  README redirects to `cd server && make bootstrap`). Tempting, since
+  `pikuri-mcp` could consume an MCP memory server with no bespoke client —
+  but a dead end. The REST-over-Faraday path (this note's choice) is the
+  surviving one; the mem0 *engine* is shared either way.
+
+**Still genuinely pending the live smoke:** exact JSON *values* of
+`add`/`search` responses (ids, the `event` field on add, the score field
+name on search), that a 768-dim pgvector collection is accepted
+end-to-end, and that llama.cpp's `/v1` serves mem0's embed + chat calls
+without shape surprises. The runtime to do it (trimmed compose + `.env`,
+build-from-source) is designed and ready to write.
