@@ -21,6 +21,11 @@ Related, already in the repo:
   *LLM endpoint* private?"; the detector answers "does this *agent*
   hold all three trifecta legs?". Egress-is-broad is why the
   `:egress` tag has to be tagged generously.
+- [`quarantined-handles.md`](quarantined-handles.md) — the structural
+  mechanism behind the `:untrusted → :untrusted_weakened` attenuation
+  below: keep the untrusted *bytes* out of the parent entirely, so the
+  leg is severed rather than softly weakened. Draft, shelved (narrow
+  payoff).
 
 ## What it is
 
@@ -129,7 +134,9 @@ human in between), every leg a sub-agent holds is within the parent's
   whole attenuation. It's *weakened, not removed*: the parent is itself
   an LLM and a gullible parent can still act on reported data, and a
   *captured* summarizer can author a re-injection payload. Hence soft,
-  not gone.
+  not gone. ([`quarantined-handles.md`](quarantined-handles.md) is the
+  structural version that *removes* this for the parent — the bytes
+  never reach its context — at the cost of a much narrower payoff.)
 
 > **Content fidelity ≠ instruction fidelity.** Letting the gems flow
 > through (you can't water down x86 assembly) does not let the

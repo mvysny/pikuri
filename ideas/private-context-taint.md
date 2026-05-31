@@ -13,6 +13,12 @@ the egress leg"). Same tag model (`:private` / `:untrusted` /
 `:egress`); the detector *audits*, the taint *enforces*. Both evaluate
 per-node (each agent context tracks its own taint).
 
+Integrity counterpart: [`quarantined-handles.md`](quarantined-handles.md).
+This note is the **confidentiality** enforcement (private in → sever
+egress); that one is the **integrity** enforcement (untrusted in → keep
+the bytes out of the parent). Same per-context, structural spirit;
+opposite trifecta leg. Draft, shelved (narrow payoff).
+
 Also related: [`../IDEAS.md`](../IDEAS.md) §"Egress allowlist" (this
 is the long-form version) and §"Typed transport classes" / §"Egress
 is broader than `web_search`" (the provider-privacy cousin — see
