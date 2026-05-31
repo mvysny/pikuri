@@ -406,3 +406,98 @@ v1 miner / file store *up* against the v2 external store on the
 auditability axis — a poisoned entry you can't `cat` is strictly worse
 than one you can, even though neither prevents the silent-until-exfil
 problem.
+
+## Designing `@private`'s memory: when the threat model collapses
+
+A continuation (2026-05-31). The whole note above wrestles with the
+*egress-capable / untrusted-ingest* case. This section scopes down to
+the one agent where those legs are absent by construction — the
+`@private` member of the federation
+([`assistant.md`](assistant.md)): access to the user's most private
+data, allowed to build a *complete persona* of the user, but **no
+egress, no internet, and only the human can interact with it.**
+
+**The premise (agreed): most of this note's anxiety evaporates here.**
+Everything in §"Write-time poisoning" and §"Open questions" §"Threat
+model under semantic recall" is downstream of *one* assumption —
+untrusted content can reach context, or the agent has an outbound leg.
+`@private` has neither. So the security-driven constraints
+(auditability-to-detect-poisoning, human-gated writes, frame-recall-as-
+untrusted) fall away, and what remains is a privacy-first
+*personal-data* design, not a *security* one. A much smaller space.
+
+Decided so far:
+
+- **Automatic appends.** The note already concluded auto-extraction is
+  safe exactly when the destination is private AND the input is trusted;
+  `@private` is precisely that configuration. And the stated goal — a
+  *complete* persona — *requires* passive accumulation: manual-only
+  yields a sparse, deliberate memory, not a model of a person.
+  Automatic-by-default, with an explicit user override channel
+  ("remember this" / a correction / "never record X").
+- **On-disk encryption: deferred to v2; rely on full-disk encryption
+  for v1.** Same sensitivity class as browser history — local plaintext
+  is the accepted baseline, and the first line of defense is the user's
+  own encrypted disk. App-level at-rest encryption is deferred until the
+  memory *shape* is right. When it does land, the rule is **a
+  PIN/passphrase-derived key (argon2/scrypt), never written to disk** —
+  the realistic threat is *offline* theft (a stolen laptop, a backup, a
+  cloud-synced home folder), which a co-located key walks straight past;
+  an unprotected key sitting in `~/.cache/pikuri/` is theater, *worse*
+  than honest plaintext because it merely looks protected. Live malware
+  running as the user defeats any local scheme, so it's out of scope —
+  if other software is reading `$HOME`, the user has far bigger problems
+  than pikuri. The PIN-unlock naturally lives in the front-end
+  (`pikuri-tui` / web) and unlocks the file as a side effect.
+- **Three write operations — append / supersede / erase — and only the
+  last is a true delete.** "Forget" is usually the wrong primitive. The
+  worked example: "I was joking, scratch that." If the agent *forgets*,
+  it loses that the topic ever came up and re-learns the wrong thing the
+  next time the user mentions it; what the user wants is the
+  *interpretation* corrected — the X–Y connection becomes "user joked
+  about this, not a genuine preference." The correction is itself
+  persona signal ("tends to riff on X then walk it back"), thrown away
+  by erasure. So:
+  1. **Append** — a new observation. Automatic.
+  2. **Supersede** — correct/update an earlier observation ("scratch
+     that," "I prefer X now," "that project's finished"). Current truth
+     changes; the topic stays known. **Crucially, supersede is *still an
+     append*** — you append a correcting observation and resolve to
+     current-truth later (at synthesis); you never mutate or rescan the
+     old entry. So the everyday correction case fits the append-only
+     discipline perfectly.
+  3. **Erase** — genuine privacy-driven removal ("never keep anything
+     about my health"); the bytes must leave the disk. The *only*
+     operation that breaks append-only — and exactly the rare,
+     user-gated case where the human gate belongs.
+- **Decay is supersession-by-time — the same engine.** This collapses
+  the lifecycle question into the operations above. "Scratch that" is
+  supersession-by-*statement*; "working on project A" going stale is
+  supersession-by-*recency* (no new observation needed — synthesis lets
+  unreaffirmed episodic facts age out). Both are "newer wins over older
+  about the same entity." So **the log accumulates and supersedes by
+  appending; the persona resolves conflicts (by statement or by
+  recency) into the current view; only privacy-erasure deletes.** One
+  contradiction-resolution engine, three triggers. The intelligence cost
+  lands in one place — synthesis deciding "does B supersede A, or are
+  they independent facts about the same entity?" — which is the *same*
+  judgment decay needs, so it isn't paid twice. The residual risk: if
+  synthesis mis-resolves (treats a correction as independent, or ages
+  out something still true) the persona drifts — an argument for keeping
+  the resolved persona cheap to regenerate and inspectable, so a bad
+  resolution is fixable rather than permanent.
+
+Open threads (under active discussion, no verdict):
+
+- **Capture mechanism & exit latency.** A session-end extraction LLM is
+  fine for a long-lived server but bad for a TUI — "quit" must not
+  visibly hang for minutes while the conversation is digested. Property
+  wanted: *capture is off the interaction path and bounded on exit*.
+  Whether that's a cheaper-than-full-pass extraction, idle-time
+  flushing, or a non-LLM memory store (a "mem-palace") is
+  implementation, deferred.
+- **Explicit vs. inferred supersede.** Does the user always *state* a
+  correction, or does the agent also infer "this contradicts what I knew"
+  on its own? (Next fork.)
+- **Two-store** (raw append-only log + derived persona) — *proposed,
+  not adopted*; deferred until the operations above are pinned down.
