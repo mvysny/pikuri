@@ -5,10 +5,9 @@ require 'monitor'
 module Pikuri
   module VectorDb
     module Backend
-      # Pure-Ruby vector store. The educational default backend;
-      # IDEAS.md §"Vector DB / RAG" frames it as the "small enough
-      # to audit" first stop the demo + guide walk through before
-      # promoting users to +Chroma+ for persistence.
+      # Pure-Ruby vector store. The educational default backend —
+      # the "small enough to audit" first stop the demo + guide walk
+      # through before promoting users to +Chroma+ for persistence.
       #
       # == What it does
       #

@@ -13,6 +13,14 @@ module Pikuri
       # on empty input + non-positive +top_k+. Where the two
       # diverge is the vector-dim contract — see below.
       #
+      # The client is hand-rolled rather than a dependency on a
+      # +chroma-db+ gem: only a handful of v2 endpoints are needed
+      # (listed below), Faraday is already in the dependency closure,
+      # and a thin first-party client keeps the wire protocol
+      # auditable in one readable file — consistent with the
+      # read-it-in-an-evening ceiling. The cost is tracking Chroma's
+      # v2 API by hand if it changes.
+      #
       # == Two ways to get one
       #
       # * **Bring your own.** +Backend::Chroma.new(host:, port:,

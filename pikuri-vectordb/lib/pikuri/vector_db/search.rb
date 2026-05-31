@@ -56,9 +56,8 @@ module Pikuri
     # toggle. Retrieval-depth and rerank choice are host
     # policy decisions baked into the {Extension}'s
     # configuration; the LLM doesn't need (or want) to be
-    # tuning retrieval parameters mid-conversation. Same
-    # reasoning the IDEAS.md design called out for keeping the
-    # tool surface minimal.
+    # tuning retrieval parameters mid-conversation — keeping the
+    # tool surface minimal is a deliberate design choice.
     class Search < Pikuri::Tool
       LOGGER = Pikuri.logger_for('VectorDb::Search')
 
@@ -71,10 +70,10 @@ module Pikuri
 
       # @return [Integer] over-fetch size when a reranker is
       #   configured. Fifty matches the
-      #   "retrieve-broad-then-narrow" pattern IDEAS.md §"Vector
-      #   DB / RAG" calls out — the reranker's cross-encoder
-      #   sees more candidates than vector search alone would
-      #   surface and reorders by query-conditional relevance.
+      #   "retrieve-broad-then-narrow" pattern — the reranker's
+      #   cross-encoder sees more candidates than vector search
+      #   alone would surface and reorders by query-conditional
+      #   relevance.
       CANDIDATE_K = 50
 
       # @return [Integer] per-result text cap in the observation.

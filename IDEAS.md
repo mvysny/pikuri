@@ -35,8 +35,9 @@ in scope of the design exercise, considered, and left out on purpose.
   listener stream once we add a TUI; meanwhile callers bound wall time
   with coreutils' `timeout`.
 - **Session persistence / resumable sub-agents.** opencode's `task`
-  tool persists sub-sessions; `Tool::SubAgent` doesn't. Worth doing
-  the day we have any other reason to introduce a session store.
+  tool persists sub-sessions; pikuri's `agent` tool
+  (`SubAgent::SubAgentTool`) doesn't. Worth doing the day we have
+  any other reason to introduce a session store.
 
 ## Security perspective
 
@@ -219,77 +220,23 @@ reinforce pikuri's framing rather than contradict it: neither project
 ships prompt-injection defenses, both cap tool output to a tempfile,
 both validate sub-agent privilege separation as the right shape.
 
-## Personas for `Tool::SubAgent`
+## Personas for `SubAgent`
 
-**v1 shipped.** `Pikuri::Tool::SubAgent` is now persona-driven:
-`c.allow_agent(persona)` registers a `Pikuri::Tool::SubAgent::Persona`
-(name + description + `tool_names` + system prompt + `max_steps`),
-the LLM-facing tool is renamed `agent` with required `name:` (enum
-over registered persona names) + `task:` parameters, and an
-`<available_agents>` snippet is appended to the system prompt
-describing every registered persona. Sub-agent system prompts no
-longer inherit from the parent (was the visible bug: "you are a
-coding assistant" leaked into a child whose actual job was a focused
-lookup); extensions no longer auto-propagate to sub-agents either.
-The first bundled persona is `Pikuri::Tool::SubAgent::RESEARCHER`,
-shipped in the separate `pikuri-subagents` gem alongside the
-`bin/pikuri-minions` fan-out demo (web tools only, 20 steps, prompt
-at `pikuri-subagents/prompts/persona-researcher.txt`). The
-machinery (`Tool::SubAgent`, `Persona`, `Configurator#allow_agent`)
-stays in pikuri-core; bundled `Persona` instances live in
-pikuri-subagents so studying pikuri-core doesn't drag in the
-persona concept on day one.
-
-**Also shipped: `Pikuri::SubAgent::FILE_MINER`** — read-only fs recon
-counterpart to `RESEARCHER`. `tool_names: %w[read grep glob]`, 30
-steps, prompt at `pikuri-subagents/prompts/persona-file-miner.txt`,
-wired into `bin/pikuri-code` alongside `RESEARCHER` via
-`c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::FILE_MINER, Pikuri::SubAgent::RESEARCHER])`
-— the same privilege-separation argument extends to web content
-(scraped pages / fetched URLs land in `RESEARCHER`'s context, which
-has no `bash` / `write` / `edit` to hijack).
-The persona constant references its tools by string name only — no
-`require` of `pikuri-workspace` — so the gem stays decoupled (hosts
-without `read`/`grep`/`glob` simply don't register it). Privilege-
-separation argument is the load-bearing one: a coding agent reading
-an untrusted file (vendored README, scraped doc, template repo)
-through FILE_MINER can't act on a prompt injection inside it — no
-`bash`, no `fetch`, no `write`, no `agent` recursion. Context-economy
-is the secondary win.
-
-**Also shipped: `Pikuri::Code::GIT_REPO_RESEARCHER`** — the
-"clone-and-dig" persona, third in the lineup. Lives in
-`pikuri-code` (not `pikuri-subagents`) because it's the first
-persona that ships a tool other than the bundled
-`pikuri-subagents` / `pikuri-workspace` surface: a new
-`Pikuri::Code::GitClone` (HTTPS-only, shallow, no submodules,
-wrapped in the same Bubblewrap sandbox `Bash` uses).
-`tool_names: %w[git_clone read grep glob web_search web_scrape fetch]`,
-30 steps, prompt at
-`pikuri-code/prompts/persona-git-repo-researcher.txt`, wired into
-`bin/pikuri-code` as the third entry of the persona list. The
-distinguishing structural piece is `needs_temp_workspace: true` —
-the persona is declarative-only; `SubAgentTool` owns the lifecycle
-(mktmpdir + mint a `Workspace::Filesystem` rooted at the temp dir
-+ tear it down at sub-agent close). Trifecta-wise the persona is
-same shape as `RESEARCHER`: leg (a) is structurally near-zero
-because the temp workspace is disjoint from the parent's
-project_root (containment rejects out-of-bounds paths), so cloned
-content cannot leave files for the parent's `read` to pick up.
-This also partially delivers the "workspace modes" follow-up
-below — the `readonly_with_temp` mode generalizes
-`needs_temp_workspace` from one persona to a `Persona` field.
-
-Reference shape converges with Claude Code's `subagent_type`,
-opencode's `agents` map (`packages/opencode/src/agent/agent.ts:129-281`),
-and PI's `subagent` agents
-(`packages/coding-agent/examples/extensions/subagent/agents/`).
+**v1 shipped** — the persona-driven `agent` tool (`RESEARCHER` /
+`FILE_MINER` / `GIT_REPO_RESEARCHER`), wired via
+`c.add_extension Pikuri::SubAgent::Extension.new(personas: [...])`.
+Rationale and the privilege-separation argument live in the YARD on
+{Pikuri::SubAgent::SubAgentTool} / {Pikuri::SubAgent::Persona} /
+{Pikuri::SubAgent::RESEARCHER} / {Pikuri::SubAgent::FILE_MINER} /
+{Pikuri::Code::GIT_REPO_RESEARCHER}; the cross-harness comparison and
+bundled-persona inventory live in [`COMPARISON.md`](COMPARISON.md)
+§"Sub-agents". Only the deferrals stay here.
 
 ### Not yet shipped — follow-up work
 
 **Workspace modes.** The persona record today has a narrow
 `needs_temp_workspace:` boolean (used by
-`GIT_REPO_RESEARCHER` — see above) but no broader
+`Pikuri::Code::GIT_REPO_RESEARCHER`) but no broader
 `workspace_mode:` field. File-miner and Researcher work fine on
 `inherit` semantics — child reuses parent's `Filesystem`-bound tool
 instances by reference, no reconstruction. The interesting modes
@@ -319,7 +266,7 @@ fs-readonly doesn't stop network exfil or fork bombs, so a
 is the eventual follow-up.
 
 **Catalog / `.md` discovery.** The current shape ships personas as
-Ruby constants (`Pikuri::Tool::SubAgent::RESEARCHER`); good enough
+Ruby constants (`Pikuri::SubAgent::RESEARCHER`); good enough
 while we have one. Once we ship 3+ and users want to author their
 own, the original proposal (Markdown + YAML frontmatter, discovery
 under `.pikuri/personas/*.md` / `.claude/agents/*.md` / `.agents/personas/*.md`,
@@ -356,60 +303,17 @@ today only as a name-reservation placeholder (no library code).
 **v1 shipped** as `pikuri-vectordb` — local-corpus vector search +
 agentic RAG, wired onto an `Agent` via `c.add_extension
 Pikuri::VectorDb::Extension.new(backend:, source:)`. Per-piece
-rationale lives in the gem's YARD headers and the inventory in
-[`CLAUDE.md`](CLAUDE.md); only the deferrals stay here.
-
-What landed against the original sketch:
-
-- **Extension** registers `vectordb_search` (`Search`),
-  `vectordb_read` (`Read`), and `vectordb_reindex` (`Reindex`) on the
-  parent and nothing more — it does not index. `vectordb_read` pulls
-  one indexed document into context in full by its `source` path
-  (parent-document retrieval, below); it is inbound-only, so it does
-  not add an egress leg in either the `pikuri-corpus` or
-  `LIBRARIAN`-mediated wiring. Population is host policy: an explicit
-  `indexer.index_if_empty!`, a `Watcher`, or leaving the corpus empty
-  until the agent calls `vectordb_reindex` (what `pikuri-corpus`
-  does). No system-prompt snippet — direct-call and `LIBRARIAN`-mediated
-  modes coexist, so the host picks the framing in its own prompt.
-- **Backend** — pure-Ruby `Backend::InMemory` cosine default (strict
-  RAM, re-indexes every boot), thin Faraday `Backend::Chroma` for
-  persistence (self-managed via `ChromaServer`), one `Backend`
-  interface + `Backend::Result`.
-- **Embedder** wraps `RubyLLM.embed`. **Reranker** is optional —
-  `Reranker::LlamaServer` over `/v1/rerank` (+ `Reranker::Hit`),
-  retrieve-then-rerank, falls back to vector-only top-k on outage.
-  It shipped under `Pikuri::VectorDb::Reranker`, *not* the
-  `Pikuri::Transport::Reranker` location the §"Typed transport
-  classes" sketch assumed — that section's reranker reference is now
-  stale.
-- **Chunker::FixedWindow** (512/50) over `FileType.read_as_text`
-  text (plain / Markdown / PDF), behind a `Tokenizer` seam
-  (`CharHeuristic` default / `LlamaServer`).
-- **Both trifecta defenses**: the no-egress posture — shipped as
-  `bin/pikuri-corpus`, a single recall agent with no web tools, so
-  it holds at most two trifecta legs (chapter 3's worked example) —
-  and the privilege-separated `LIBRARIAN` persona for an agent that
-  *does* have egress (opt-in via `SubAgent::Extension`, same
-  precedent as `GIT_REPO_RESEARCHER`). The `LIBRARIAN` is bundled
-  but not yet wired into a binary: a correct wiring (corpus reachable
-  only via the sub-agent) needs persona-owned tools, since today
-  sub-agent tools are a subset of the parent's — see
-  `trifecta-detector.md`. Its worked home is `pikuri-assistant`
-  (ch7). The corpus-is-the-threat argument and the Onyx-connector
-  escalation now live in the gem's yardoc.
-
-Sketch open-questions that v1 resolved: **Chroma client** → wrote
-our own thin Faraday client (no `chroma-db` dep); **`InMemory`
-persistence** → strict RAM (Chroma is right there for persistence);
-**disk-spillover** → `Search` caps each result snippet
-(`SNIPPET_LENGTH`), so the per-step cap landed from day one (uniform
-tempfile spillover across all tools is still the cross-cutting item
-in §"Output-size DoS and cost").
-
-The three-model ops guidance (chat + embedder + reranker on one
-router-mode `llama-server`) graduated out of this log into the
-`docs/guide/` chapters.
+rationale (Extension / Backend `InMemory`+`Chroma` / Embedder /
+Reranker / Chunker / `bin/pikuri-corpus` + `LIBRARIAN`) lives in the
+gem's YARD headers and the inventory in [`CLAUDE.md`](CLAUDE.md); the
+three-model ops guidance graduated into the `docs/guide/` chapters.
+Both trifecta defenses (the no-egress `pikuri-corpus` posture and the
+privilege-separated `LIBRARIAN`) are documented in {Pikuri::VectorDb::LIBRARIAN}
+and `SECURITY.md`; the reason `LIBRARIAN` isn't wired into a binary
+yet (sub-agent tools are a subset of the parent's, so corpus-behind-
+the-sub-agent needs persona-owned tools) is in
+[`ideas/trifecta-detector.md`](ideas/trifecta-detector.md). Only the
+deferrals stay here.
 
 ### Deferred
 
@@ -444,3 +348,16 @@ router-mode `llama-server`) graduated out of this log into the
 - **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
   set (`.git`, `node_modules`, dot-files); `.gitignore`-shaped
   user-configurable skip rules defer until someone asks.
+- **Multi-source indexing.** `Extension.new(source:)` takes a single
+  file-or-directory root in v1; `Indexer` walks one root. Indexing
+  several disjoint roots into one collection (the user's notes dir +
+  a checked-out repo + a downloads folder) is deferred — it needs a
+  source-list API and a provenance story for which root a hit came
+  from. Referenced from `VectorDb::Extension` / `Indexer` yardoc.
+- **Additional reranker backends.** Only `Reranker::LlamaServer`
+  ships. Because it speaks the same `/v1/rerank` wire format as
+  Cohere's hosted reranker, a `Reranker::Cohere` (or any other
+  hosted cross-encoder) is a thin adapter behind the same duck-typed
+  `#rerank(query:, documents:)` protocol — deferred until someone
+  wants a non-local reranker. Referenced from `VectorDb::Reranker`
+  yardoc.

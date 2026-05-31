@@ -41,8 +41,9 @@ module Pikuri
     # "Why this does not widen the trifecta".
     #
     # The corpus content is the threat in this design.
-    # See IDEAS.md §"Vector DB / RAG" → "Trifecta" and
-    # SECURITY.md §"Prompt injection" for the full argument.
+    # See SECURITY.md §"Prompt injection" for the full argument
+    # (and +ideas/trifecta-detector.md+ for why a correct
+    # corpus-behind-the-sub-agent wiring needs persona-owned tools).
     #
     # == Wiring
     #

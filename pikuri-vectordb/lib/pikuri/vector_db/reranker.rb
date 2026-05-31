@@ -34,9 +34,8 @@ module Pikuri
     # re-shuttling the document text over HTTP just to receive
     # it back — Cohere's +return_documents+ flag exists exactly
     # for callers that don't already have the text, which isn't
-    # us. See IDEAS.md §"Vector DB / RAG" for the full
-    # rationale (index+score is enough; document+score can be
-    # reconstructed by the caller).
+    # us. Index+score is enough; document+score can be
+    # reconstructed by the caller.
     #
     # == Why nil-skip rather than a NOOP default
     #
