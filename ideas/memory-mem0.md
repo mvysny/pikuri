@@ -15,10 +15,12 @@ References to `#N` and to "§Survey outcome" point back to
 smoke-tested working. The recall-quality pass found the *models* perform
 well but surfaced a **pgvector top-k inversion** (cosine *distance* sorted
 as if it were a *similarity*) — root-caused to mem0's pgvector provider
-and **confirmed fixed by switching to Qdrant** (nearest-k correct, 3/3).
-**Qdrant is the chosen v1 backend.** Remaining open items are quality, not
-feasibility: write latency (environmental) and read-side supersede
-resolution.
+and **confirmed fixed by switching to Qdrant** (nearest-k correct, 5/5).
+**Qdrant is the chosen v1 backend.** Recall quality on Qdrant is good;
+contradiction-resolution is *not* in mem0's recall (it returns both facts
+near-tied, no recency ordering) — it belongs in the consumer's synthesis
+step, a `pikuri-memory` design input. Remaining open item is write latency
+(environmental, ~15–66s/add via the llama-swap server), not feasibility.
 
 ### Decision (2026-05-31): mem0, accept the weight, no second store
 
@@ -412,8 +414,46 @@ both backends here — the bug is purely in the semantic→`score_and_rank`
 path). Fine for v1; revisit hybrid keyword recall later
 (`pip install mem0ai[nlp]` + fastembed) if wanted.
 
+### Supersede recall on Qdrant (2026-05-31): recall works; resolution is the consumer's job
+
+Re-ran the **full** suite on Qdrant (library path = server path). A2
+ranking flipped **0/5 → 5/5** (recall correct); A1 paraphrase wins clearly
+(0.78 similarity). The C-trio (`infer:true`, 3 runs) now checks whether
+the *correcting* memory outranks the *stale* one at search time:
+
+- **C2 coexistence: 3/3.** Both "steak" (~0.73) and "sushi" (~0.67) kept
+  and recalled — no false supersession, no over-merging.
+- **C1 supersede 1/3, C3 negation 1/3 — but the verdict misleads; the
+  scores are the finding.** Every run kept *both* memories (ADD-only) and
+  *both* surfaced in the top-2, scored within **~0.001–0.05** of each
+  other (C3: "loves horror" **0.8049** vs "was joking… can't stand"
+  0.7589). Which lands at #0 is essentially noise — and the *stale*
+  positive often edges out the correction, because a short bare statement
+  ("loves horror movies") is a tighter semantic match to the query than
+  the wordy retraction.
+
+The load-bearing conclusion:
+
+- **mem0 recall does not resolve contradictions — it returns both,
+  near-tied, with no recency term in the ranking** (BM25 also off here, no
+  spaCy/fastembed). "Newest wins" is *not* applied at read time.
+- This **matches the design** (§"v1 write API": resolution lives at
+  read-time/synthesis, i.e. in the *consuming LLM*). mem0's job —
+  surfacing the relevant memories — works: the correction is always in the
+  recalled slice, and mem0 phrases corrections as **transitions**
+  ("switched from steak to vegetarian", "was joking about horror") that a
+  synthesis step can resolve.
+- **`pikuri-memory` design input:** do **not** treat recall rank-0 as
+  current truth. Recall hands the agent the conflicting pair; the
+  synthesis / system-prompt step resolves it — so the recalled context
+  must carry **timestamps** (+ the transition-phrased corrections mem0
+  emits). Confirms the rubric line "recency at read does the *ordering*,
+  not the *resolution*" — except mem0 does not even do the recency
+  *ordering*; the consumer must.
+
+**Net:** recall quality on Qdrant is good and coexistence is safe;
+contradiction-resolution is not in mem0's recall and never was — it's a
+`pikuri-memory` synthesis concern, not a mem0 defect.
+
 Still open (quality, not feasibility): **write latency** (15–66s/add,
-mostly llama-swap reloads — environmental) and **read-side supersede
-resolution** — now that recall returns nearest-first, re-run the C-trio on
-Qdrant to see whether the correcting memory actually outranks the stale
-one at recall time.
+mostly llama-swap model reloads — environmental, not mem0's architecture).
