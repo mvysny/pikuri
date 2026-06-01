@@ -457,3 +457,51 @@ contradiction-resolution is not in mem0's recall and never was — it's a
 
 Still open (quality, not feasibility): **write latency** (15–66s/add,
 mostly llama-swap model reloads — environmental, not mem0's architecture).
+*(Resolved below — the cause was not model reloads but Qwen3.6's reasoning
+mode; see §"Write-latency root cause".)*
+
+### Write-latency root cause (2026-06-01): reasoning tokens, not model swaps
+
+Tested the "llama-server unloads models between writes" hypothesis directly
+against the live router (`http://192.168.122.1:8080`, VRAM raised to 48GB).
+The server is llama.cpp's **router** (`role:"router"`, `max_instances:4`),
+not llama-swap; three models registered (Qwen3.6-35B-A3B chat, nomic embed,
+bge reranker). **Hypothesis refuted on both axes:**
+
+- **Active interleave.** Embed↔chat 4× (mem0's write shape): once loaded,
+  both the embedder and the 35B chat model stay `loaded` throughout — no
+  eviction, no reloads. Cold chat load is ~11s; warm calls drop to ~1s.
+- **Idle.** 5 min with zero traffic: both models stay `loaded` the whole
+  time. No idle-timeout eviction. At 48GB with 3 models under
+  `max_instances:4`, nothing ever needs to be swapped out.
+
+The real driver is **generation cost on a reasoning model**, not swapping.
+Qwen3.6-35B-A3B is a thinking model: a warm extraction-style call spent its
+*entire* token budget on `reasoning_content` and emitted empty `content`.
+The MoE runs ~21 tok/s, and mem0 makes up to 2 LLM calls per `add` — so
+hundreds of CoT tokens × 2 calls fully accounts for the 15–66s range with
+no model swap involved.
+
+**The lever is disabling thinking, not VRAM/keep-alive.** Same extraction
+prompt, `max_tokens:512`:
+
+| mode | latency | completion tokens | output |
+| --- | --- | --- | --- |
+| thinking ON (default) | **23.9s** | 512 (all reasoning) | `finish:length`, **empty** — never reached an answer |
+| `enable_thinking:false` | **4.2s** | 87 | `finish:stop`, clean correct JSON (all 9 facts) |
+
+`chat_template_kwargs:{enable_thinking:false}` is honored by llama.cpp and
+gives ~6× on a single call (and actually *produces* the answer; thinking-on
+didn't finish within 512 tokens). Recall quality was already "good" with
+this model — so this is a **mode** fix, not a model swap: keep Qwen3.6 for
+extraction, turn thinking off.
+
+**`pikuri-memory` design input.** The open item is now a mem0-config
+question, not an environmental one: can mem0 be made to pass
+`enable_thinking:false` (or a `/no_think` directive) through to llama.cpp on
+its extraction/update calls? If mem0 won't forward `chat_template_kwargs`,
+the fallback is a dedicated non-reasoning extraction model (e.g. a dense
+Qwen3-8B no-think / Llama-3.1-8B-Instruct as a 4th router instance — fits
+easily within `max_instances:4` and 48GB), decoupling the memory-extraction
+model from the chat model. Lever 1 (thinking off, same model) is preferred:
+it preserves the already-validated extraction quality and adds no infra.
