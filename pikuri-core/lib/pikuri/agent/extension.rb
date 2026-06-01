@@ -90,7 +90,6 @@ module Pikuri
       # rewrites or removes an earlier one. Mutating mid-log would bust the
       # provider prefix cache for every message after the edit. Stale blocks
       # ride the existing context-window machinery, not a per-turn rewrite.
-      # See ideas/memory.md §"Log discipline: append-only".
       #
       # == Not inherited by sub-agents
       #

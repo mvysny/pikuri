@@ -17,12 +17,12 @@ module Pikuri
     #   oddly (+record.memory+).
     # * +score+ ← +"score"+ — similarity on the Qdrant backend
     #   (higher = more relevant; the v1 backend, see
-    #   ideas/memory-mem0.md). +nil+ outside +search+ results.
+    #   DESIGN.md §"Why Qdrant, not pgvector"). +nil+ outside +search+ results.
     # * +created_at+ ← +"created_at"+ — ISO-8601 String as mem0
     #   emits it. Load-bearing for recall: contradiction resolution
     #   happens in the *consuming* LLM's synthesis, and recency is
     #   its tiebreaker, so the timestamp must travel with the recalled
-    #   text (ideas/memory-mem0.md §"Supersede recall on Qdrant").
+    #   text (DESIGN.md §"Supersede recall: resolution is the consumer's job").
     # * +metadata+ ← +"metadata"+ — arbitrary Hash; +{}+ when absent.
     # * +event+ ← +"event"+ — +"ADD"+ / +"UPDATE"+ / +"DELETE"+ /
     #   +"NONE"+ on an +add+ response; +nil+ on reads.

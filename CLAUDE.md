@@ -264,8 +264,8 @@ per-gem one-liners:
   `GIT_REPO_RESEARCHER`. Depends on `pikuri-core` +
   `pikuri-subagents`.
 - **`pikuri-memory/`** — durable cross-conversation memory backed
-  by mem0 (see `ideas/memory.md` + `ideas/memory-mem0.md` for the
-  full design journey). `Memory::Extension` wires the `recall` tool
+  by mem0 (see `pikuri-memory/DESIGN.md` for the design rationale
+  + threat model). `Memory::Extension` wires the `recall` tool
   + an automatic per-turn prefetch onto an agent via
   `c.add_extension(...)` — same opt-in shape as pikuri-tasks /
   pikuri-vectordb. Pieces: thin Faraday `Memory::Mem0Client`

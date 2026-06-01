@@ -25,7 +25,7 @@ module Pikuri
     # observation carries each memory's +created_at+ timestamp and the
     # tool description tells the model to treat newer-about-the-same-
     # thing as current — resolution lives in the model's reasoning, not
-    # in the store (ideas/memory-mem0.md §"Supersede recall on Qdrant").
+    # in the store (DESIGN.md §"Supersede recall: resolution is the consumer's job").
     class Recall < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Memory::Recall')
 

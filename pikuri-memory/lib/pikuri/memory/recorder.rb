@@ -5,7 +5,7 @@ module Pikuri
     # The off-the-interaction-path capture queue. A single background
     # worker thread drains enqueued user turns into {Mem0Client#add}, so a
     # turn never blocks on the ~3s extraction round-trip
-    # (ideas/memory-mem0.md §"Patch verified live"). Reads are cheap and
+    # (DESIGN.md §"Why a non-reasoning extraction model"). Reads are cheap and
     # synchronous; writes are deferred here — the read/write asymmetry
     # the design leans on.
     #
@@ -15,15 +15,15 @@ module Pikuri
     # takes it off the turn's critical path while keeping capture
     # *per-turn* (so a kill -9 / closed tab loses at most the in-flight
     # turn, not a whole session — the data-safety win that picked a
-    # separate extraction model in ideas/memory-mem0.md §"Extraction
-    # model decision"). No external queue, no persistence — durability is
+    # separate extraction model in DESIGN.md §"Extraction model
+    # decision"). No external queue, no persistence — durability is
     # "within seconds, in mem0," not "survives a crash mid-extraction."
     #
     # == Bounded flush on close
     #
     # {#close} signals the worker to stop and joins it with a timeout —
     # so "quit" never hangs for minutes while a backlog digests
-    # (ideas/memory.md §"Capture mechanism & exit latency"). Anything
+    # (DESIGN.md §"Capture: off-path and bounded"). Anything
     # still queued past the timeout is dropped: the worker is a plain
     # Ruby thread, so process exit reaps it. One enqueue per turn means
     # the queue rarely holds more than a single item, so the common case

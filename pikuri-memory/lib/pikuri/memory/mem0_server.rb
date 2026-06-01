@@ -34,8 +34,9 @@ module Pikuri
     #
     # The upstream server's +DEFAULT_CONFIG+ hardcodes the **pgvector**
     # vector store, whose mem0 provider has a top-k inversion bug (cosine
-    # *distance* ranked as a *similarity* — ideas/memory-mem0.md §"Root
-    # cause"), *and* whose provider connects to Postgres eagerly at boot.
+    # *distance* ranked as a *similarity* — DESIGN.md §"Root cause: the
+    # pgvector top-k inversion"), *and* whose provider connects to
+    # Postgres eagerly at boot.
     # {#prepare_checkout!} applies +docker/qdrant-default-config.patch+ to
     # the pinned checkout, swapping that default to **Qdrant** (env-driven
     # host/port/dims). Result: correct nearest-first ranking *and* no
@@ -51,7 +52,7 @@ module Pikuri
     # +OPENAI_BASE_URL+ at the llama.cpp router. The extraction model must
     # be **non-reasoning** (e.g. +Qwen2.5-7B-Instruct+): a thinking model
     # burns its budget on CoT and returns empty/truncated JSON
-    # (ideas/memory-mem0.md §"Extraction model decision"). The vector
+    # (DESIGN.md §"Extraction model decision"). The vector
     # store is not bundle-gated, so Qdrant is accepted.
     #
     # == Pinned + patched checkout
@@ -61,7 +62,7 @@ module Pikuri
     # +git apply+ and is **fail-loud**: if it neither applies cleanly nor
     # is already applied, {#prepare_checkout!} raises rather than building
     # a wrong image (same discipline as the no-think build patch in
-    # ideas/memory-mem0.md §"Patch verified live").
+    # DESIGN.md §"The no-think patch (fallback): verified live").
     #
     # == Bind 127.0.0.1
     #

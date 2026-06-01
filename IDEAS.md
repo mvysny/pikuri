@@ -291,12 +291,29 @@ matters.
 
 ## Memory
 
-Designed as a journey, not built. The full design conversation —
-work-aid-first framing, prior art (Claude Code / opencode / PI /
-hermes-agent), the v0 → v1-miner → v2-layered iteration, what to
-skip, and the open questions — has its own long-form note:
-[`ideas/memory.md`](ideas/memory.md). `pikuri-memory` ships
-today only as a name-reservation placeholder (no library code).
+**v1 shipped** as `pikuri-memory` — durable cross-conversation memory
+backed by mem0 (Qdrant vector backend, a non-reasoning local extraction
+model), wired onto an `Agent` via `c.add_extension
+Pikuri::Memory::Extension.new(client:, user_id:)`. Three retrieval tiers
+(resident persona + automatic per-turn prefetch + the explicit `recall`
+tool), reads-sync/writes-async, with two structural feedback-loop
+defenses (user-role-only capture + `:system`-role recall). The full
+design rationale — store selection, the Qdrant top-k fix, the
+non-reasoning-extractor decision, the threat model, and what's deferred
+to v2 — lives in [`pikuri-memory/DESIGN.md`](pikuri-memory/DESIGN.md);
+per-piece rationale is in the gem's YARD headers and the
+[`CLAUDE.md`](CLAUDE.md) inventory. Only the deferrals stay here.
+
+### Deferred
+
+- **`@private` wiring** — the egress-free assistant agent that composes
+  memory + vectordb onto one agent. Lives in the future
+  federation/assistant gem, not in `pikuri-memory` (same precedent as
+  `LIBRARIAN` / `GIT_REPO_RESEARCHER`). See
+  [`ideas/assistant.md`](ideas/assistant.md).
+- **v2 persona features** — granular per-fact erase, explicit-correction
+  pinning, read-time recency weighting, on-disk encryption (see
+  [`pikuri-memory/DESIGN.md`](pikuri-memory/DESIGN.md) §"Deferred to v2").
 
 ## Vector DB / RAG
 
@@ -319,7 +336,8 @@ deferrals stay here.
 
 - **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
   start of each turn (no tool call) — hermes' prefetch shape (see
-  [`ideas/memory.md`](ideas/memory.md) §"Prior art"). v1 ships
+  [`pikuri-memory/DESIGN.md`](pikuri-memory/DESIGN.md) §"The three
+  retrieval tiers"). v1 ships
   agentic search only — fits the
   loop-agnostic ethos and the agent gets to refine queries. Add
   the listener variant if a concrete "the model forgot to search"
@@ -337,14 +355,12 @@ deferrals stay here.
   HTTP. Same precedent as MCP: integrate with the protocol, don't
   reimplement it. Onyx's heavy operational footprint stays opt-in
   and out of pikuri-vectordb's scope.
-- **Memory v2 growth tier integration.**
-  [`ideas/memory.md`](ideas/memory.md)'s v2 needs an
-  external semantic store; pikuri-vectordb is potentially the
-  answer. Deliberately not optimized for that case in v1 — get
-  RAG + agentic search shipped first, then re-investigate whether
-  memory can ride the same primitive (probably with a separate
-  collection rooted at `~/.pikuri/memory/`, fed by a different
-  source pipeline). Revisit explicitly after v1 lands.
+- **Memory growth tier integration.** `pikuri-memory` v1 shipped on
+  its own external semantic store (mem0 + Qdrant; see
+  [`pikuri-memory/DESIGN.md`](pikuri-memory/DESIGN.md) §"Why mem0"),
+  *not* pikuri-vectordb — so the once-open "could memory ride the same
+  primitive?" question is moot for now. Revisit only if consolidating
+  the two stores onto one backend ever becomes worth it; not a v1 goal.
 - **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
   set (`.git`, `node_modules`, dot-files); `.gitignore`-shaped
   user-configurable skip rules defer until someone asks.

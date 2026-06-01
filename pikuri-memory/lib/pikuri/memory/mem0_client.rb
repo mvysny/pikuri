@@ -6,7 +6,7 @@ require 'json'
 module Pikuri
   module Memory
     # Thin Faraday HTTP client against a self-hosted mem0 server
-    # (the v3 "token-efficient" line — see ideas/memory-mem0.md). Only
+    # (the v3 "token-efficient" line — see DESIGN.md). Only
     # the handful of REST endpoints pikuri needs are wired; the client
     # is hand-rolled rather than a dependency on a mem0 Ruby SDK
     # (there isn't a maintained one), Faraday is already in
@@ -23,7 +23,7 @@ module Pikuri
     # the local stack pikuri assumes: a local OpenAI-compatible LLM +
     # embedder (llama.cpp via +openai_base_url+), the **Qdrant** vector
     # backend (the pgvector path has a top-k inversion bug — see
-    # ideas/memory-mem0.md §"Root cause"), and a non-reasoning
+    # DESIGN.md §"Root cause: the pgvector top-k inversion"), and a non-reasoning
     # extraction model. Endpoints used:
     #
     # * +POST /memories+ — append. Body
@@ -46,7 +46,7 @@ module Pikuri
     # extraction structurally removes the dominant junk sources a
     # production mem0 audit measured (assistant restating, recalled-
     # memory feedback loops, involuntary secret leakage) — see
-    # ideas/memory.md §"Extraction-input discipline". The rule lives
+    # DESIGN.md §"Extraction-input discipline". The rule lives
     # in the method signature so it can't be bypassed by accident.
     #
     # == Errors are loud
@@ -113,8 +113,7 @@ module Pikuri
       # Append a memory. Wraps +content+ as one +role: "user"+ message
       # (the user-only rule — see the class header) and posts it for
       # extraction. mem0 is append-only: a correction is a *newer*
-      # add, never a mutation of an earlier row (ideas/memory.md
-      # §"The v1 write API collapses to one verb").
+      # add, never a mutation of an earlier row (DESIGN.md §"Why mem0").
       #
       # @param content [String] the user's own words to extract from.
       # @param user_id [String] the mem0 namespace (one per user).
@@ -152,7 +151,7 @@ module Pikuri
       # returns the relevant memories (including a stale fact and its
       # correction) near-tied, and the consuming LLM resolves them at
       # synthesis. That's why {Record#created_at} rides along. See
-      # ideas/memory-mem0.md §"Supersede recall on Qdrant".
+      # DESIGN.md §"Supersede recall: resolution is the consumer's job".
       #
       # @param query [String] natural-language recall query (typically
       #   the latest user message, or a +recall+ topic).

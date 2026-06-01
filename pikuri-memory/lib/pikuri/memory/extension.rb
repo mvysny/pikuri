@@ -35,7 +35,7 @@ module Pikuri
     # extraction is a ~3s LLM call. Recalled context is +:system+-role
     # (provenance-tagged, excluded from the next extraction pass), and
     # only the user's own words are captured — the two halves of the
-    # feedback-loop defense (ideas/memory.md §"Retrieval").
+    # feedback-loop defense (DESIGN.md §"Retrieval").
     #
     # == Safety scope
     #
@@ -56,7 +56,7 @@ module Pikuri
       # @return [Integer] default prefetch slice size — small and
       #   high-precision, since junk recall degrades behavior and the
       #   +recall+ tool means a small slice is a pointer, not a loss
-      #   (ideas/memory.md §"Automatic ≠ always-inject").
+      #   (DESIGN.md §"Automatic ≠ always-inject").
       DEFAULT_PREFETCH_K = 5
 
       # @return [Integer] default cap on the resident-persona summary —
@@ -87,7 +87,7 @@ module Pikuri
       #   it tightens junk rejection per the #4573 audit, but on small
       #   extraction models it currently *under*-extracts (returns
       #   +{"facts": []}+ for clear facts), so it is opt-in until hardened
-      #   — see ideas/memory.md §"Open follow-ups". The user-only
+      #   — see DESIGN.md §"Open follow-ups". The user-only
       #   extraction discipline does not depend on it; that is enforced in
       #   {Mem0Client#add} (only user-role content is ever sent),
       #   regardless of which extraction prompt mem0 runs.

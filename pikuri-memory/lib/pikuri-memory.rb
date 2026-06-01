@@ -57,7 +57,7 @@ module Pikuri
   #
   # The same resident-vs-triggered split as +pikuri-vectordb+'s
   # +vectordb_search+ / +vectordb_read+ — one mental model across
-  # memory and RAG. See ideas/memory.md.
+  # memory and RAG. See DESIGN.md §"The three retrieval tiers".
   #
   # == Safety posture (v1)
   #

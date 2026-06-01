@@ -19,10 +19,11 @@ Related, already worked out:
   human as **author, not approver** of a post-taint egress payload: clean
   by construction. The federation generalizes that one primitive from
   "egress payloads" to "the entire bus between agents."
-- [`memory.md`](memory.md) §"Write-time poisoning" — the "private-only
-  agent" whose input stream is all-trusted, where auto-extraction is safe.
-  The federation gives that agent a home (`@private` below). Also
-  §"shared-vs-private" — the federation is one agent per bucket.
+- [`../pikuri-memory/DESIGN.md`](../pikuri-memory/DESIGN.md) §"Threat
+  model and the @private posture" — the "private-only agent" whose input
+  stream is all-trusted, where auto-extraction is safe (and the
+  shared-vs-private reasoning). The federation gives that agent a home
+  (`@private` below).
 - [`../IDEAS.md`](../IDEAS.md) §"Trifecta — open mitigations" and the
   bundled privilege-separated `RESEARCHER` / `FILE_MINER`.
 - Likely home: the `pikuri-assistant` gem — same precedent as `LIBRARIAN`
