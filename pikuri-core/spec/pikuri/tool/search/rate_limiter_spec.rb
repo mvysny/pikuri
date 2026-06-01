@@ -6,10 +6,16 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
   # override +sleep_for+ to record the requested duration AND advance
   # Timecop's clock by the same amount, so the limiter sees time pass
   # exactly as if it had slept.
+  #
+  # Uses +Timecop.freeze+ (not +travel+) so the clock stays *stopped* at
+  # the advanced instant: +travel+ keeps real wall-clock flowing from the
+  # new base, which lets microseconds leak into the limiter's +elapsed+
+  # computation and makes the slept-for duration drift off the expected
+  # value by ~1ms — enough to fail a tight +assert_in_delta+ on a slow box.
   def fake_sleep(limiter, slept)
     limiter.define_singleton_method(:sleep_for) do |seconds|
       slept << seconds
-      Timecop.travel(Time.now + seconds)
+      Timecop.freeze(Time.now + seconds)
     end
   end
 
@@ -37,7 +43,7 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
         fake_sleep(limiter, slept)
 
         limiter.call { :first }
-        Timecop.travel(Time.now + 0.5) # only 0.5s passed
+        Timecop.freeze(Time.now + 0.5) # only 0.5s passed
         limiter.call { :second }
 
         assert_equal 1, slept.size
@@ -52,7 +58,7 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
         fake_sleep(limiter, slept)
 
         limiter.call { :first }
-        Timecop.travel(Time.now + 5.0)
+        Timecop.freeze(Time.now + 5.0)
         limiter.call { :second }
 
         assert_equal [], slept
@@ -71,7 +77,7 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
 
         # second call within cooldown raises immediately, block not invoked
         called = false
-        Timecop.travel(Time.now + 10.0)
+        Timecop.freeze(Time.now + 10.0)
         err = assert_raises(Pikuri::Tool::Search::Engines::Unavailable) do
           limiter.call { called = true; :nope }
         end
@@ -90,7 +96,7 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
           limiter.call { raise Pikuri::Tool::Search::Engines::Unavailable, 'rate-limited' }
         end
 
-        Timecop.travel(Time.now + 10.0) # past cooldown
+        Timecop.freeze(Time.now + 10.0) # past cooldown
         assert_equal :ok, limiter.call { :ok }
       end
     end
@@ -104,7 +110,7 @@ RSpec.describe Pikuri::Tool::Search::RateLimiter do
         assert_raises(RuntimeError) { limiter.call { raise 'network blip' } }
 
         # interval throttle still applies, but no cooldown
-        Timecop.travel(Time.now + 5.0)
+        Timecop.freeze(Time.now + 5.0)
         assert_equal :ok, limiter.call { :ok }
       end
     end
