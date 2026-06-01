@@ -272,8 +272,11 @@ per-gem one-liners:
   (mem0 REST: `add`/`search`/`get_all`/`delete`/`reset`),
   `Memory::Recorder` (off-the-loop async capture queue, bounded
   flush on close), `Memory::Record` value type, `Memory::Recall`
-  (the `recall` tool), and the curated `memory-extraction` prompt
-  in `prompts/`. The three retrieval tiers — resident persona
+  (the `recall` tool), `Memory::Mem0Server` (the self-managed mem0 +
+  Qdrant sidecar supervisor — `ChromaServer`-shaped, drives
+  `docker compose` over `docker/` artifacts through
+  `Pikuri::Subprocess.spawn`), and the curated `memory-extraction`
+  prompt in `prompts/`. The three retrieval tiers — resident persona
   (always-in-prompt) + automatic prefetch + explicit `recall` —
   mirror pikuri-vectordb's `vectordb_search`/`vectordb_read` split.
   **Reads sync (vector search, ms), writes async** (the ~3s
@@ -283,14 +286,21 @@ per-gem one-liners:
   (never a user turn) — so recalled memories are never
   re-extracted. Safe only on a no-untrusted-ingest / no-egress
   agent (the `@private` config); porting onto an egress-capable
-  agent re-opens recall-poisoning. v1 is **bring-your-own mem0
-  endpoint** (the `Mem0Client`); a `ChromaServer`-style mem0 sidecar
-  supervisor (build-from-source image + Qdrant) is a deferred
-  follow-on. Rides the one new pikuri-core primitive,
-  `Extension#on_user_message` (the per-turn prefetch + capture
-  hook). No persona (a memory-only persona is meaningless without
-  the rest of `@private`'s toolset). Depends only on `pikuri-core`
-  (mem0 owns embedding + extraction).
+  agent re-opens recall-poisoning. Two ways to a server: let pikuri
+  manage it (`Mem0Server`, needs `docker` + `git`) or bring your own
+  (`Mem0Client.new(endpoint:)`). The supervisor builds mem0 **from a
+  pinned source checkout** (no usable published image) with a
+  fail-loud build-time patch swapping `DEFAULT_CONFIG` from pgvector
+  to Qdrant — pgvector both has a top-k inversion bug *and* connects
+  to Postgres eagerly at boot, so Qdrant-by-default is what lets the
+  stack run **Postgres-free** (2 containers, not 3). Verified
+  end-to-end against a local llama.cpp router (non-reasoning
+  `Qwen2.5-7B` extractor + `nomic` embedder): boots Postgres-free,
+  add/search rank correctly through the REST API. Rides the one new
+  pikuri-core primitive, `Extension#on_user_message` (the per-turn
+  prefetch + capture hook). No persona (a memory-only persona is
+  meaningless without the rest of `@private`'s toolset). Depends only
+  on `pikuri-core` (mem0 owns embedding + extraction).
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.

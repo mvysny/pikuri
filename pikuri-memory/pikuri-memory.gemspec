@@ -48,6 +48,11 @@ Gem::Specification.new do |spec|
   spec.files = Dir[
     'lib/**/*.rb',
     'prompts/*.txt',
+    # The mem0 sidecar supervisor (Mem0Server) loads these at runtime —
+    # they must ship in the gem.
+    'docker/docker-compose.yml',
+    'docker/*.patch',
+    'docker/README.md',
     'LICENSE',
     'README.md'
   ]

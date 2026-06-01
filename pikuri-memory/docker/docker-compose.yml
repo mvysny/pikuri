@@ -1,0 +1,73 @@
+# Self-managed mem0 + Qdrant sidecar for pikuri-memory.
+#
+# Driven by Pikuri::Memory::Mem0Server (the supervisor), which sets the
+# PIKURI_* environment variables below and invokes
+#   docker compose -p pikuri-internal-mem0 -f <this file> up -d --build
+# through Pikuri::Subprocess.spawn. Not meant to be run by hand, though
+# it can be (export the PIKURI_* vars first).
+#
+# Two services, no Postgres: the mem0 server image is built from a
+# git checkout of mem0 (pinned + patched so DEFAULT_CONFIG uses Qdrant
+# instead of pgvector — see qdrant-default-config.patch), and Qdrant is
+# the vector store. The pgvector default the upstream server ships has a
+# top-k inversion bug (ideas/memory-mem0.md §"Root cause"); Qdrant ranks
+# correctly. Verified end-to-end (server boots with no Postgres, add +
+# search through the REST API rank correctly against the local
+# llama.cpp router).
+#
+# Everything binds 127.0.0.1 only — the user's memory never listens on a
+# routable interface.
+name: pikuri-internal-mem0
+
+services:
+  qdrant:
+    image: ${PIKURI_QDRANT_IMAGE:-qdrant/qdrant:v1.12.4}
+    networks: [pikuri]
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      # Published for host-side inspection only; mem0 reaches Qdrant
+      # over the internal `pikuri` network, not this port.
+      - "127.0.0.1:${PIKURI_QDRANT_PORT:-6333}:6333"
+
+  mem0:
+    build:
+      # Set by the supervisor to the patched mem0 checkout. The upstream
+      # dev.Dockerfile copies server/ + the mem0 package from the repo
+      # root, so the context is the checkout root.
+      context: ${PIKURI_MEM0_SRC:?PIKURI_MEM0_SRC must point at the patched mem0 checkout}
+      dockerfile: server/dev.Dockerfile
+    depends_on:
+      - qdrant
+    environment:
+      # Dummy key: the OpenAI-compatible endpoint is local llama.cpp,
+      # which ignores auth. OPENAI_BASE_URL routes both the extraction
+      # LLM and the embedder to the router (mem0's openai provider reads
+      # this env var).
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-pikuri-local-no-auth}
+      OPENAI_BASE_URL: ${PIKURI_ROUTER_URL:?PIKURI_ROUTER_URL must be the llama.cpp /v1 base URL}
+      MEM0_DEFAULT_LLM_MODEL: ${PIKURI_LLM_MODEL:?PIKURI_LLM_MODEL must be the extraction model id}
+      MEM0_DEFAULT_EMBEDDER_MODEL: ${PIKURI_EMBEDDER_MODEL:?PIKURI_EMBEDDER_MODEL must be the embedder model id}
+      # Local-only: skip the JWT/admin auth layer (no Postgres settings
+      # DB to back it anyway).
+      AUTH_DISABLED: "true"
+      # Consumed by the patched DEFAULT_CONFIG (qdrant-default-config.patch).
+      QDRANT_HOST: "qdrant"
+      QDRANT_PORT: "6333"
+      MEM0_COLLECTION_NAME: ${PIKURI_COLLECTION:-pikuri_memory}
+      MEM0_EMBEDDING_DIMS: ${PIKURI_EMBEDDING_DIMS:-768}
+      # Memory-history SQLite on a named volume so it survives container
+      # recreation alongside the Qdrant corpus.
+      HISTORY_DB_PATH: "/data/history.db"
+    volumes:
+      - mem0_history:/data
+    ports:
+      - "127.0.0.1:${PIKURI_MEM0_PORT:-8888}:8000"
+    networks: [pikuri]
+
+networks:
+  pikuri:
+
+volumes:
+  qdrant_data:
+  mem0_history:

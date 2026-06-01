@@ -52,16 +52,44 @@ structural defenses keep the capture pipeline honest:
 Do not port memory onto an egress-capable agent without re-deriving
 the recall-poisoning mitigations.
 
-## Storage: bring your own mem0 (for now)
+## Storage: mem0 + Qdrant
 
-This release ships the Ruby surface — `Mem0Client`, `Extension`,
-`Recorder` (the async capture queue), and the `recall` tool —
-against a **bring-your-own** mem0 server you point `Mem0Client` at. The
-server must use the **Qdrant** vector backend (the pgvector path has
-a top-k inversion bug), a local OpenAI-compatible LLM + embedder
-(llama.cpp via `openai_base_url`), and a non-reasoning extraction
-model. A self-managed mem0 sidecar supervisor (the `ChromaServer`-style
-docker pattern) is a planned follow-on.
+Memory is stored in [mem0](https://github.com/mem0ai/mem0) with
+**Qdrant** as the vector backend (mem0's pgvector path has a top-k
+inversion bug — it returns the *farthest* matches), a local
+OpenAI-compatible LLM + embedder (llama.cpp via `OPENAI_BASE_URL`),
+and a **non-reasoning** extraction model (e.g. `Qwen2.5-7B-Instruct` —
+a thinking model burns its token budget on chain-of-thought and
+returns empty JSON).
+
+Two ways to get a server:
+
+- **Let pikuri manage it.** `Pikuri::Memory::Mem0Server` is a
+  self-managed sidecar supervisor (the same pattern as
+  `pikuri-vectordb`'s `ChromaServer`): it clones mem0 at a pinned
+  commit, patches `DEFAULT_CONFIG` to use Qdrant, and brings a
+  two-container `docker compose` stack (mem0 + Qdrant, **no Postgres**)
+  up through `Pikuri::Subprocess.spawn`. `#client` returns a
+  `Mem0Client` pointed at it.
+
+  ```ruby
+  server = Pikuri::Memory::Mem0Server.ensure_running(
+    router_url:     'http://192.168.122.1:8080/v1',
+    llm_model:      'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M',
+    embedder_model: 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
+  )
+  Pikuri::Memory::Extension.new(client: server.client, user_id: 'martin')
+  ```
+
+  Needs `docker` (with the compose plugin) and `git`. The first run
+  builds the mem0 image (a few minutes); the clone lives under
+  `~/.cache/pikuri/mem0` and the Qdrant corpus + memory history on
+  named docker volumes, so subsequent runs are fast and the data
+  persists across restarts.
+
+- **Bring your own.** Point `Mem0Client.new(endpoint:)` at a mem0
+  server you already run (configured as above). Skips the supervisor
+  entirely.
 
 ## Install
 
