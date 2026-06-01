@@ -5,7 +5,7 @@ require 'pikuri-core'
 # Entry file for the pikuri-memory gem. After
 # +require 'pikuri-memory'+, the +Pikuri::Memory+ namespace is
 # populated with the {Pikuri::Memory::Extension} host-facing API,
-# the thin {Pikuri::Memory::Client} (Faraday client against a mem0
+# the thin {Pikuri::Memory::Mem0Client} (Faraday client against a mem0
 # server), the {Pikuri::Memory::Recorder} (async extraction queue),
 # the {Pikuri::Memory::Record} value type, and the +recall+ tool
 # ({Pikuri::Memory::Recall}). The gem's +prompts/+ directory is
@@ -30,15 +30,15 @@ module Pikuri
   #   +recall+ tool, the automatic per-turn prefetch, and the
   #   asynchronous capture queue onto an agent. Pass an instance to
   #   +c.add_extension+ inside the +Agent.new+ block.
-  # * {Client} — a thin Faraday HTTP client against a mem0 server
+  # * {Mem0Client} — a thin Faraday HTTP client against a mem0 server
   #   (+POST /memories+, +POST /search+, +GET/DELETE /memories+,
   #   +POST /reset+). The append-only +add+ / read-time +search+
   #   surface; mem0 owns extraction, embedding, and resolution.
   # * {Recorder} — an off-the-interaction-path extraction queue: a
   #   background worker drains enqueued user turns into
-  #   {Client#add}, so a turn never blocks on the ~3s extraction
+  #   {Mem0Client#add}, so a turn never blocks on the ~3s extraction
   #   call. Flushed (bounded) on agent close.
-  # * {Record} — the value type a {Client} row deserializes to
+  # * {Record} — the value type a {Mem0Client} row deserializes to
   #   (+id+ / +text+ / +score+ / +created_at+ / +metadata+ /
   #   +event+).
   # * {Recall} — the +recall+ {Pikuri::Tool} subclass for explicit,

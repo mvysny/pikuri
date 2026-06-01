@@ -8,7 +8,7 @@ module Pikuri
     #
     # == Usage
     #
-    #   client = Pikuri::Memory::Client.new(endpoint: 'http://localhost:8888')
+    #   client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://localhost:8888')
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_extension Pikuri::Memory::Extension.new(
     #       client: client, user_id: 'martin'
@@ -61,10 +61,10 @@ module Pikuri
 
       # @return [Integer] default cap on the resident-persona summary —
       #   a few facts, not the whole store. Curated synthesis is a
-      #   follow-up; v1 takes the first {Client#get_all} rows.
+      #   follow-up; v1 takes the first {Mem0Client#get_all} rows.
       DEFAULT_RESIDENT_LIMIT = 20
 
-      # @param client [Client] the mem0 client recall + capture use.
+      # @param client [Mem0Client] the mem0 client recall + capture use.
       # @param user_id [String] the mem0 namespace (one per user). All
       #   reads and writes are scoped to it.
       # @param prefetch_k [Integer] max memories injected per turn by
@@ -74,7 +74,7 @@ module Pikuri
       #   +nil+ (default) injects the top +prefetch_k+ ungated — a host
       #   should set a calibrated floor once it knows its embedder's
       #   relevant-vs-irrelevant gap, so a bare "thanks!" recalls
-      #   nothing. Applied both server-side (passed to {Client#search})
+      #   nothing. Applied both server-side (passed to {Mem0Client#search})
       #   and client-side (so the contract holds regardless of server
       #   behavior).
       # @param infer [Boolean] forwarded to capture; +true+ stores

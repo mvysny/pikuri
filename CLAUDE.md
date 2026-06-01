@@ -268,7 +268,7 @@ per-gem one-liners:
   full design journey). `Memory::Extension` wires the `recall` tool
   + an automatic per-turn prefetch onto an agent via
   `c.add_extension(...)` — same opt-in shape as pikuri-tasks /
-  pikuri-vectordb. Pieces: thin Faraday `Memory::Client`
+  pikuri-vectordb. Pieces: thin Faraday `Memory::Mem0Client`
   (mem0 REST: `add`/`search`/`get_all`/`delete`/`reset`),
   `Memory::Recorder` (off-the-loop async capture queue, bounded
   flush on close), `Memory::Record` value type, `Memory::Recall`
@@ -284,7 +284,7 @@ per-gem one-liners:
   re-extracted. Safe only on a no-untrusted-ingest / no-egress
   agent (the `@private` config); porting onto an egress-capable
   agent re-opens recall-poisoning. v1 is **bring-your-own mem0
-  endpoint** (the `Client`); a `ChromaServer`-style mem0 sidecar
+  endpoint** (the `Mem0Client`); a `ChromaServer`-style mem0 sidecar
   supervisor (build-from-source image + Qdrant) is a deferred
   follow-on. Rides the one new pikuri-core primitive,
   `Extension#on_user_message` (the per-turn prefetch + capture

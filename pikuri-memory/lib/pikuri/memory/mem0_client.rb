@@ -16,7 +16,7 @@ module Pikuri
     #
     # == Bring your own server
     #
-    # +Client.new(endpoint:)+ points at an already-running mem0 server
+    # +Mem0Client.new(endpoint:)+ points at an already-running mem0 server
     # (a docker-compose stack, a shared deployment). This release does
     # *not* ship a supervisor that starts one — that's the
     # +ChromaServer+-style follow-on. The server must be configured for
@@ -58,8 +58,8 @@ module Pikuri
     # {Recorder} logs-and-drops so a transient mem0 blip never crashes
     # the capture worker, and {Extension}'s prefetch rescues to "inject
     # nothing this turn."
-    class Client
-      LOGGER = Pikuri.logger_for('Memory::Client')
+    class Mem0Client
+      LOGGER = Pikuri.logger_for('Memory::Mem0Client')
 
       # @return [String] default mem0 server base URL — the server's
       #   own +:8000+ on localhost. A host running the dev
@@ -74,7 +74,7 @@ module Pikuri
       #   injection hook for tests (wire +Faraday::Adapter::Test+ stubs
       #   here). Production callers leave it +nil+; a fresh JSON
       #   connection is built against +endpoint+.
-      # @return [Client]
+      # @return [Mem0Client]
       # @raise [ArgumentError] on a blank +endpoint+.
       def initialize(endpoint: DEFAULT_ENDPOINT, connection: nil)
         raise ArgumentError, 'endpoint must be non-empty' if endpoint.nil? || endpoint.to_s.empty?
@@ -168,12 +168,12 @@ module Pikuri
 
         response = @connection.get('/memories', { user_id: user_id })
         unless response.status == 200
-          raise "Memory::Client: GET /memories returned HTTP #{response.status}: #{response.body.inspect}"
+          raise "Memory::Mem0Client: GET /memories returned HTTP #{response.status}: #{response.body.inspect}"
         end
 
         results_of(response.body)
       rescue Faraday::Error => e
-        raise "Memory::Client: #{e.class.name.split('::').last} calling GET /memories: #{e.message}"
+        raise "Memory::Mem0Client: #{e.class.name.split('::').last} calling GET /memories: #{e.message}"
       end
 
       # Granular erase: physically remove one memory by id (the
@@ -190,9 +190,9 @@ module Pikuri
         response = @connection.delete("/memories/#{id}")
         return if [200, 204, 404].include?(response.status)
 
-        raise "Memory::Client: DELETE /memories/#{id} returned HTTP #{response.status}: #{response.body.inspect}"
+        raise "Memory::Mem0Client: DELETE /memories/#{id} returned HTTP #{response.status}: #{response.body.inspect}"
       rescue Faraday::Error => e
-        raise "Memory::Client: #{e.class.name.split('::').last} calling DELETE /memories/#{id}: #{e.message}"
+        raise "Memory::Mem0Client: #{e.class.name.split('::').last} calling DELETE /memories/#{id}: #{e.message}"
       end
 
       # Coarse erase: drop *all* memories on the server. The blunt
@@ -233,12 +233,12 @@ module Pikuri
         end
 
         unless [200, 201].include?(response.status)
-          raise "Memory::Client: POST #{path} returned HTTP #{response.status}: #{response.body.inspect}"
+          raise "Memory::Mem0Client: POST #{path} returned HTTP #{response.status}: #{response.body.inspect}"
         end
 
         response.body
       rescue Faraday::Error => e
-        raise "Memory::Client: #{e.class.name.split('::').last} calling POST #{path}: #{e.message}"
+        raise "Memory::Mem0Client: #{e.class.name.split('::').last} calling POST #{path}: #{e.message}"
       end
     end
   end

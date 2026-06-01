@@ -46,7 +46,7 @@ module Pikuri
         - Returns up to #{TOP_K} memories. If nothing relevant comes back, say you don't have a memory of it rather than guessing.
       DESC
 
-      # @param client [Client] the mem0 client recall queries go to.
+      # @param client [Mem0Client] the mem0 client recall queries go to.
       # @param user_id [String] the fixed mem0 namespace to search.
       # @return [Recall]
       def initialize(client:, user_id:)
@@ -65,12 +65,12 @@ module Pikuri
       end
 
       # Public so specs can exercise recall without constructing a Tool
-      # wrapper. Catches {Client} failures and renders them as an
+      # wrapper. Catches {Mem0Client} failures and renders them as an
       # +"Error: ..."+ observation the LLM can react to (a transient
       # mem0 blip shouldn't crash the loop) — bugs in pikuri's own code
       # still raise.
       #
-      # @param client [Client]
+      # @param client [Mem0Client]
       # @param user_id [String]
       # @param topic [String]
       # @return [String] formatted observation.

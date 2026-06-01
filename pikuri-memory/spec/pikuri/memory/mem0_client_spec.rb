@@ -4,7 +4,7 @@ require 'spec_helper'
 require 'faraday'
 require 'json'
 
-describe Pikuri::Memory::Client do
+describe Pikuri::Memory::Mem0Client do
   # Faraday::Adapter::Test stubs, same shape as pikuri-vectordb's
   # client specs: exercise request body + response parsing through the
   # exact middleware production uses.
@@ -21,8 +21,8 @@ describe Pikuri::Memory::Client do
 
   describe '#initialize' do
     it 'rejects a blank endpoint' do
-      assert_raises(ArgumentError) { Pikuri::Memory::Client.new(endpoint: '') }
-      assert_raises(ArgumentError) { Pikuri::Memory::Client.new(endpoint: nil) }
+      assert_raises(ArgumentError) { Pikuri::Memory::Mem0Client.new(endpoint: '') }
+      assert_raises(ArgumentError) { Pikuri::Memory::Mem0Client.new(endpoint: nil) }
     end
   end
 
@@ -35,7 +35,7 @@ describe Pikuri::Memory::Client do
           [200, JSON_HEADERS, { results: [{ id: 'm1', memory: 'The user is vegetarian', event: 'ADD' }] }.to_json]
         end
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       records = client.add(content: 'I am vegetarian', user_id: 'martin')
 
@@ -56,7 +56,7 @@ describe Pikuri::Memory::Client do
           [200, JSON_HEADERS, { results: [] }.to_json]
         end
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       client.add(content: 'x', user_id: 'u')
       client.add(content: 'x', user_id: 'u', prompt: 'CUSTOM')
@@ -67,7 +67,7 @@ describe Pikuri::Memory::Client do
 
     it 'rejects blank content or user_id without an HTTP call' do
       conn = build_connection { |_| } # any HTTP call would raise
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       assert_raises(ArgumentError) { client.add(content: '  ', user_id: 'u') }
       assert_raises(ArgumentError) { client.add(content: 'x', user_id: '') }
@@ -77,7 +77,7 @@ describe Pikuri::Memory::Client do
       conn = build_connection do |stub|
         stub.post('/memories') { [500, JSON_HEADERS, { error: 'boom' }.to_json] }
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       err = assert_raises(RuntimeError) { client.add(content: 'x', user_id: 'u') }
       assert_match(/HTTP 500/, err.message)
@@ -98,7 +98,7 @@ describe Pikuri::Memory::Client do
           }.to_json]
         end
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       records = client.search(query: 'where?', user_id: 'martin', top_k: 5)
 
@@ -119,7 +119,7 @@ describe Pikuri::Memory::Client do
           [200, JSON_HEADERS, { results: [] }.to_json]
         end
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       client.search(query: 'q', user_id: 'u', top_k: 3, threshold: 0.4)
 
@@ -128,7 +128,7 @@ describe Pikuri::Memory::Client do
 
     it 'rejects non-positive top_k' do
       conn = build_connection { |_| }
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       assert_raises(ArgumentError) { client.search(query: 'q', user_id: 'u', top_k: 0) }
     end
@@ -142,7 +142,7 @@ describe Pikuri::Memory::Client do
           [200, JSON_HEADERS, { results: [{ id: 'a', memory: 'fact one' }] }.to_json]
         end
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       records = client.get_all(user_id: 'martin')
 
@@ -155,7 +155,7 @@ describe Pikuri::Memory::Client do
       conn = build_connection do |stub|
         stub.get('/memories') { [200, JSON_HEADERS, [{ id: 'a', memory: 'fact' }].to_json] }
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       assert_equal ['fact'], client.get_all(user_id: 'u').map(&:text)
     end
@@ -167,7 +167,7 @@ describe Pikuri::Memory::Client do
         stub.delete('/memories/gone') { [404, JSON_HEADERS, ''] }
         stub.delete('/memories/ok')   { [200, JSON_HEADERS, ''] }
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       client.delete(id: 'gone') # must not raise
       client.delete(id: 'ok')   # must not raise
@@ -177,7 +177,7 @@ describe Pikuri::Memory::Client do
       conn = build_connection do |stub|
         stub.delete('/memories/x') { [500, JSON_HEADERS, ''] }
       end
-      client = Pikuri::Memory::Client.new(endpoint: 'http://stub', connection: conn)
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', connection: conn)
 
       assert_raises(RuntimeError) { client.delete(id: 'x') }
     end

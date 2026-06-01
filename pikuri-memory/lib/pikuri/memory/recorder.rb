@@ -3,7 +3,7 @@
 module Pikuri
   module Memory
     # The off-the-interaction-path capture queue. A single background
-    # worker thread drains enqueued user turns into {Client#add}, so a
+    # worker thread drains enqueued user turns into {Mem0Client#add}, so a
     # turn never blocks on the ~3s extraction round-trip
     # (ideas/memory-mem0.md §"Patch verified live"). Reads are cheap and
     # synchronous; writes are deferred here — the read/write asymmetry
@@ -31,7 +31,7 @@ module Pikuri
     #
     # == Failure is logged, not raised
     #
-    # A {Client#add} that raises (mem0 down, timeout, 5xx) is caught,
+    # A {Mem0Client#add} that raises (mem0 down, timeout, 5xx) is caught,
     # logged at WARN, and the item dropped — a transient capture failure
     # must never crash the worker (which would silently end all future
     # capture) nor surface to the user mid-conversation.
@@ -46,12 +46,12 @@ module Pikuri
       #   to drain before giving up and letting process exit reap it.
       DEFAULT_FLUSH_TIMEOUT = 10
 
-      # @param client [Client] the mem0 client +add+ is dispatched to.
+      # @param client [Mem0Client] the mem0 client +add+ is dispatched to.
       # @param user_id [String] the mem0 namespace captures land in.
-      # @param infer [Boolean] forwarded to {Client#add}; +true+ stores
+      # @param infer [Boolean] forwarded to {Mem0Client#add}; +true+ stores
       #   extracted facts.
       # @param prompt [String, nil] optional per-request extraction
-      #   prompt forwarded to {Client#add}.
+      #   prompt forwarded to {Mem0Client#add}.
       # @param flush_timeout [Integer] seconds {#close} blocks waiting
       #   for the backlog to drain.
       # @return [Recorder]
@@ -115,7 +115,7 @@ module Pikuri
       private
 
       # Worker loop: block on the queue, dispatch each item to
-      # {Client#add}, stop on {STOP}. Each +add+ is wrapped so a
+      # {Mem0Client#add}, stop on {STOP}. Each +add+ is wrapped so a
       # transient failure drops one item rather than killing the worker.
       def run_loop
         loop do

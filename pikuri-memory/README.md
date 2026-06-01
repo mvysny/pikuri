@@ -11,7 +11,7 @@ Wire it onto a `pikuri-core` agent the same way as `pikuri-tasks` /
 ```ruby
 require 'pikuri-memory'
 
-client = Pikuri::Memory::Client.new(endpoint: 'http://localhost:8888')
+client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://localhost:8888')
 
 Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_extension Pikuri::Memory::Extension.new(client: client, user_id: 'martin')
@@ -54,9 +54,9 @@ the recall-poisoning mitigations.
 
 ## Storage: bring your own mem0 (for now)
 
-This release ships the Ruby surface — `Client`, `Extension`,
+This release ships the Ruby surface — `Mem0Client`, `Extension`,
 `Recorder` (the async capture queue), and the `recall` tool —
-against a **bring-your-own** mem0 server you point `Client` at. The
+against a **bring-your-own** mem0 server you point `Mem0Client` at. The
 server must use the **Qdrant** vector backend (the pgvector path has
 a top-k inversion bug), a local OpenAI-compatible LLM + embedder
 (llama.cpp via `openai_base_url`), and a non-reasoning extraction
