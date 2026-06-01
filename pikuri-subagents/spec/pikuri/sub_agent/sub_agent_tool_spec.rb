@@ -42,10 +42,23 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       def before_tool_call(&); self; end
       def after_tool_result(&); self; end
 
-      def ask(message)
-        @asks << message
+      def add_message(attrs)
+        @messages << (attrs.is_a?(RubyLLM::Message) ? attrs : RubyLLM::Message.new(**attrs))
+        @messages.last
+      end
+
+      # +Agent#run_loop+ appends the user turn via +#add_message+ then
+      # drives completion via +#complete+ (the two halves of +#ask+), so
+      # the canned assistant reply lands here. +#ask+ is kept for any
+      # direct caller, mirroring the same behaviour.
+      def complete(&)
         @messages << RubyLLM::Message.new(role: :assistant, content: @reply)
         @messages.last
+      end
+
+      def ask(message)
+        @asks << message
+        complete
       end
     end
   end
@@ -187,7 +200,8 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       sub_chat = @fake_chats.last
       assert_equal 'be terse', sub_chat.instructions
       refute_match(/PARENT_PROMPT/, sub_chat.instructions)
-      assert_equal ['count to three'], sub_chat.asks
+      user_turns = sub_chat.messages.select { |m| m.role == :user }.map(&:content)
+      assert_equal ['count to three'], user_turns
     end
 
     it "advertises exactly the persona's tool_names subset to the sub-agent" do

@@ -5,17 +5,20 @@ module Pikuri
     # The Extension protocol — how hosts bolt extra capabilities
     # (system-prompt snippets, tools, lifecycle hooks) onto an
     # {Agent}. Extensions are added via {Configurator#add_extension}
-    # inside the +Agent.new+ block; the Agent then drives two hooks
-    # on each — {#configure} during the block, {#bind} once the
-    # agent is fully constructed.
+    # inside the +Agent.new+ block; the Agent then drives three hooks
+    # on each — {#configure} during the block, {#bind} once the agent
+    # is fully constructed, and {#on_user_message} on every user turn
+    # thereafter.
     #
     # Mix this module into an extension class to inherit empty
-    # default implementations of both hooks; override the ones you
-    # need. Extensions that don't +include+ this module still work
-    # if they define both methods themselves (the Agent and
-    # Configurator call them by name) — the module exists to make
-    # the protocol *explicit* and to give "I want to implement just
-    # +configure+" extensions a free no-op +bind+ (and vice versa).
+    # default implementations of all three hooks; override the ones
+    # you need. Extensions that don't +include+ this module still
+    # work *if they define all three methods themselves* — the Agent
+    # and Configurator call them by name with no +respond_to?+ guard,
+    # so a missing one raises. The module exists to make the protocol
+    # *explicit* and to give "I want to implement just +configure+"
+    # extensions free no-op +bind+ / +on_user_message+ defaults (and
+    # any other combination).
     #
     # == Example
     #
@@ -75,6 +78,32 @@ module Pikuri
       # @param agent [Agent] the live agent, fully wired
       # @return [void]
       def bind(agent); end
+
+      # Optional per-turn hook fired by the {Agent} after a user-message
+      # is added to the chat. The
+      # default is a no-op returning +nil+; override and return {String}
+      # to emit a `:system` message with that text.
+      #
+      # == Append-only, never mutate
+      #
+      # The Agent only ever *appends* the returned block at the tail; it never
+      # rewrites or removes an earlier one. Mutating mid-log would bust the
+      # provider prefix cache for every message after the edit. Stale blocks
+      # ride the existing context-window machinery, not a per-turn rewrite.
+      # See ideas/memory.md §"Log discipline: append-only".
+      #
+      # == Not inherited by sub-agents
+      #
+      # Like the rest of the extension surface, this fires on the parent agent
+      # only — sub-agents do not inherit extensions, so a persona's turns are
+      # never prefetched or recorded by the parent's memory.
+      #
+      # @param agent [Agent] the live agent whose turn this is
+      # @param content [String] the user message (initial or interloper) about
+      #   to be sent to the model
+      # @return [String, nil] an optional +<memory-context>+ block to inject as
+      #   a system-role message, or +nil+ to inject nothing
+      def on_user_message(agent, content); end
     end
   end
 end

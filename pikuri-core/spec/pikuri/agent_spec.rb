@@ -56,6 +56,19 @@ RSpec.describe Pikuri::Agent do
         nil
       end
 
+      # +#run_loop+ no longer calls +#ask+ — it appends the user message
+      # via +#add_message+ and then drives completion via +#complete+ (the
+      # two halves +RubyLLM::Chat#ask+ is sugar for), so the memory
+      # dispatch can inject a +:system+ block between them. +#ask+ stays
+      # for +Agent.think+ / the synthesizer, which have no such seam.
+      def complete(&block)
+        @completes = (@completes || 0) + 1
+        @stream_block = block
+        nil
+      end
+
+      attr_reader :completes
+
       def fire(name, *args)
         @hooks[name].each { |cb| cb.call(*args) }
       end
@@ -278,12 +291,13 @@ RSpec.describe Pikuri::Agent do
   describe '#run_loop' do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: {}) }
 
-    it 'forwards user_message to chat.ask' do
+    it 'appends user_message as a :user message and drives completion' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') { |c| c.add_listener recorder }
       agent.run_loop(user_message: 'hello?')
 
-      assert_equal ['hello?'], fake_chat.asks
+      assert_equal [{ role: :user, content: 'hello?' }], fake_chat.added_messages
+      assert_equal 1, fake_chat.completes
     end
 
     it 'emits an Event::UserTurn(mid_loop: false) to every listener before asking the chat' do
@@ -436,16 +450,16 @@ RSpec.describe Pikuri::Agent do
       agent.run_loop(user_message: 'hi')
 
       assert_nil fake_chat.stream_block,
-                 'expected non-streaming run_loop to call chat.ask without a block'
+                 'expected non-streaming run_loop to complete without a block'
     end
 
-    it 'passes a streaming block to chat.ask that emits ThinkingDelta + AssistantDelta per chunk when streaming: true' do
+    it 'passes a streaming block to chat.complete that emits ThinkingDelta + AssistantDelta per chunk when streaming: true' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's',
                                 streaming: true) { |c| c.add_listener recorder }
       agent.run_loop(user_message: 'hi')
 
-      refute_nil fake_chat.stream_block, 'expected run_loop to pass a streaming block to chat.ask'
+      refute_nil fake_chat.stream_block, 'expected run_loop to pass a streaming block to chat.complete'
 
       fake_chat.fire_chunk(thinking: 'pon')
       fake_chat.fire_chunk(content: 'hel')
@@ -600,6 +614,127 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
+  describe 'Extension#on_user_message dispatch' do
+    # An extension that records every on_user_message call and returns a
+    # configurable prefetch block. Includes Extension so configure/bind are
+    # no-ops and on_user_message is the only behaviour under test.
+    let(:recording_extension_class) do
+      Class.new do
+        include Pikuri::Agent::Extension
+
+        attr_reader :calls
+
+        def initialize(block:)
+          @block = block
+          @calls = []
+        end
+
+        def on_user_message(agent, content)
+          @calls << [agent, content]
+          @block
+        end
+      end
+    end
+
+    it 'fires on each initial turn and appends a non-blank return as a :system message after the user turn' do
+      ext = recording_extension_class.new(block: '<memory-context>recalled</memory-context>')
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') { |c| c.add_extension ext }
+
+      agent.run_loop(user_message: 'where do I live?')
+
+      assert_equal 1, ext.calls.size
+      assert_same agent, ext.calls[0][0]
+      assert_equal 'where do I live?', ext.calls[0][1]
+      # :user message first, then the recalled :system block at the tail.
+      assert_equal(
+        [
+          { role: :user, content: 'where do I live?' },
+          { role: :system, content: '<memory-context>recalled</memory-context>' }
+        ],
+        fake_chat.added_messages
+      )
+    end
+
+    it 'injects nothing when the hook returns nil or a blank String' do
+      [nil, '', "   \n"].each do |blank|
+        local_fake = fake_chat_class.new
+        RubyLLM.define_singleton_method(:chat) { |**_| local_fake }
+        ext = recording_extension_class.new(block: blank)
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                  system_prompt: 's') { |c| c.add_extension ext }
+
+        agent.run_loop(user_message: 'hi')
+
+        assert_equal 1, ext.calls.size, "hook should still fire for block=#{blank.inspect}"
+        # Only the user message — no :system block appended.
+        assert_equal(
+          [{ role: :user, content: 'hi' }], local_fake.added_messages,
+          "no injection expected for block=#{blank.inspect}"
+        )
+      end
+    end
+
+    it 'fires on mid-loop interlopers too, appending the :system block after the :user message' do
+      interloper = Pikuri::Agent::Control::Interloper.new
+      ext = recording_extension_class.new(block: '<memory-context>mid</memory-context>')
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's',
+                        interloper: interloper) { |c| c.add_extension ext }
+      interloper.inject_user_message('interloped question')
+
+      fake_chat.fire(:after_tool_result, 'observation')
+
+      assert_equal 'interloped question', ext.calls[0][1]
+      assert_equal(
+        [
+          { role: :user, content: 'interloped question' },
+          { role: :system, content: '<memory-context>mid</memory-context>' }
+        ],
+        fake_chat.added_messages
+      )
+    end
+
+    it 'injects nothing for an extension that inherits the no-op default (opted out)' do
+      # Includes Extension but does not override on_user_message, so it
+      # gets the module's no-op default (returns nil) — the way an
+      # extension opts out of the hook.
+      opted_out_class = Class.new do
+        include Pikuri::Agent::Extension
+
+        def configure(c); end
+      end
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') { |c| c.add_extension opted_out_class.new }
+
+      agent.run_loop(user_message: 'hi') # must not raise
+
+      # Only the user message — the opted-out extension contributes no block.
+      assert_equal [{ role: :user, content: 'hi' }], fake_chat.added_messages
+    end
+
+    it 'appends one :system block per extension, in registration order, after the user turn' do
+      first  = recording_extension_class.new(block: '<memory-context>one</memory-context>')
+      second = recording_extension_class.new(block: '<memory-context>two</memory-context>')
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_extension first
+        c.add_extension second
+      end
+
+      agent.run_loop(user_message: 'q')
+
+      assert_equal(
+        [
+          { role: :user, content: 'q' },
+          { role: :system, content: '<memory-context>one</memory-context>' },
+          { role: :system, content: '<memory-context>two</memory-context>' }
+        ],
+        fake_chat.added_messages
+      )
+    end
+  end
+
   describe '#last_assistant_content' do
     it 'returns the most recent assistant message content' do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
@@ -708,12 +843,13 @@ RSpec.describe Pikuri::Agent do
       Pikuri::Agent::Synthesizer.define_singleton_method(:run) { |**kw| original.call(**kw) }
     end
 
-    # Helper: arrange for the parent chat's +ask+ to raise once, as if
-    # a StepLimit deep inside its +before_tool_call+ tripped.
+    # Helper: arrange for the parent chat's +complete+ to raise once, as
+    # if a StepLimit deep inside its +before_tool_call+ tripped. (run_loop
+    # drives completion via +#complete+, not +#ask+.)
     def arrange_step_exhaustion(max_steps)
       err = Pikuri::Agent::Control::StepLimit::Exceeded.new(max_steps)
-      fake_chat.define_singleton_method(:ask) do |msg|
-        @asks << msg
+      fake_chat.define_singleton_method(:complete) do |&_block|
+        @completes = (@completes || 0) + 1
         raise err
       end
     end
@@ -827,9 +963,9 @@ RSpec.describe Pikuri::Agent do
       agent.run_loop(user_message: 'turn 1')
       assert_equal 'rescued answer', agent.last_assistant_content
 
-      # Make the next turn succeed: replace ask with one that just adds an assistant message.
-      fake_chat.define_singleton_method(:ask) do |msg|
-        @asks << msg
+      # Make the next turn succeed: replace complete with one that just adds an assistant message.
+      fake_chat.define_singleton_method(:complete) do |&_block|
+        @completes = (@completes || 0) + 1
         @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
       end
       agent.run_loop(user_message: 'turn 2')
@@ -839,12 +975,13 @@ RSpec.describe Pikuri::Agent do
   end
 
   describe 'cancellation rescue' do
-    # Arrange for the parent chat's +ask+ to raise +Cancelled+ once, as
-    # if a Cancellable inside its +before_tool_call+ tripped mid-loop.
+    # Arrange for the parent chat's +complete+ to raise +Cancelled+ once,
+    # as if a Cancellable inside its +before_tool_call+ tripped mid-loop.
+    # (run_loop drives completion via +#complete+, not +#ask+.)
     def arrange_cancellation
       err = Pikuri::Agent::Control::Cancellable::Cancelled.new
-      fake_chat.define_singleton_method(:ask) do |msg|
-        @asks << msg
+      fake_chat.define_singleton_method(:complete) do |&_block|
+        @completes = (@completes || 0) + 1
         raise err
       end
     end
@@ -907,8 +1044,8 @@ RSpec.describe Pikuri::Agent do
       end
 
       # Make the next turn succeed.
-      fake_chat.define_singleton_method(:ask) do |msg|
-        @asks << msg
+      fake_chat.define_singleton_method(:complete) do |&_block|
+        @completes = (@completes || 0) + 1
         @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
       end
 

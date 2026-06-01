@@ -94,8 +94,16 @@ module Pikuri
     #   queue is drained on every +after_tool_result+, each item
     #   appended as a +role: :user+ message and emitted as
     #   {Event::UserTurn} with +mid_loop: true+
+    # @param on_user_message [Proc, nil] when set, called with each
+    #   drained interloper +content+ String *after* it is appended
+    #   to the chat — the per-turn {Extension#on_user_message}
+    #   dispatch (prefetch + recording). Threaded through here rather
+    #   than fired inline so {Synthesizer.run}, which reuses this
+    #   wiring without an interloper or memory, simply passes +nil+.
+    #   Only consulted when +interloper+ is also set.
     # @return [void]
-    def self.wire_chat(chat, listeners:, step_limit: nil, cancellable: nil, interloper: nil)
+    def self.wire_chat(chat, listeners:, step_limit: nil, cancellable: nil, interloper: nil,
+                       on_user_message: nil)
       chat.after_message do |msg|
         emit_after_message(msg, listeners)
       end
@@ -106,7 +114,7 @@ module Pikuri
       end
       chat.after_tool_result do |result|
         listeners.emit(Event::ToolResult.new(content: result))
-        drain_interloper(interloper, chat, listeners) if interloper
+        drain_interloper(interloper, chat, listeners, on_user_message) if interloper
       end
     end
 
@@ -216,18 +224,29 @@ module Pikuri
 
     # Drain the interloper queue: for each pending item, append a
     # +role: :user+ message to the chat history so the next
-    # round-trip sees it, then emit an {Event::UserTurn} with
-    # +mid_loop: true+ to the listener stream so renderers see
-    # the injection.
+    # round-trip sees it, emit an {Event::UserTurn} with
+    # +mid_loop: true+ to the listener stream so renderers see the
+    # injection, then run the per-turn {Extension#on_user_message}
+    # dispatch (so mid-loop injections are prefetched + recorded
+    # exactly like initial turns).
+    #
+    # The dispatch runs *after* the +:user+ append so any
+    # +<memory-context>+ it injects lands as a +:system+ message
+    # right behind the user turn it annotates — the same
+    # append-at-the-tail ordering {#run_loop} produces for initial
+    # turns.
     #
     # @param interloper [Control::Interloper]
     # @param chat [RubyLLM::Chat]
     # @param listeners [ListenerList]
+    # @param on_user_message [Proc, nil] per-content dispatch; +nil+
+    #   skips it (e.g. an interloper with no memory extension wired)
     # @return [void]
-    def self.drain_interloper(interloper, chat, listeners)
+    def self.drain_interloper(interloper, chat, listeners, on_user_message = nil)
       interloper.drain!.each do |content|
         chat.add_message(role: :user, content: content)
         listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
+        on_user_message&.call(content)
       end
     end
     private_class_method :drain_interloper
@@ -561,13 +580,23 @@ module Pikuri
         if user_message.nil? || user_message.to_s.strip.empty?
 
       @synth_answer = nil
-      @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
       @step_limit&.reset!
       @cancellable&.reset!
+      # Append the user turn, emit it, then run the memory dispatch — so
+      # any <memory-context> the dispatch injects lands as a :system
+      # message *after* the user turn it annotates (append-only at the
+      # tail; see {#dispatch_ext_on_user_message}). `ask` would bundle the
+      # user-message append with completion atomically, leaving no seam to
+      # inject between them, so the two halves run explicitly here:
+      # add_message + complete (the exact pair `ask` is sugar for). A raw
+      # String content matches the interloper drain path.
+      @chat.add_message(role: :user, content: user_message)
+      @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
+      dispatch_ext_on_user_message(user_message)
       if @streaming
-        @chat.ask(user_message, &self.class.streaming_block(listeners: @listeners, cancellable: @cancellable))
+        @chat.complete(&self.class.streaming_block(listeners: @listeners, cancellable: @cancellable))
       else
-        @chat.ask(user_message)
+        @chat.complete
       end
       nil
     rescue Control::Cancellable::Cancelled
@@ -735,7 +764,8 @@ module Pikuri
         listeners: @listeners,
         step_limit: @step_limit,
         cancellable: @cancellable,
-        interloper: @interloper
+        interloper: @interloper,
+        on_user_message: method(:dispatch_ext_on_user_message)
       )
 
       # One-shot context-window cap: lets every listener that
@@ -749,6 +779,39 @@ module Pikuri
       # chat is fully wired. See IDEAS.md §"Extension protocol
       # design" for what #configure vs #bind are each for.
       @extensions.each { |ext| ext.bind(self) }
+    end
+
+    # Fire the per-turn {Extension#on_user_message} hook on every
+    # extension that defines it, appending any returned
+    # +<memory-context>+ block to the chat as a +role: :system+
+    # message right after the user turn it annotates (callers append
+    # the +:user+ message first; this runs last). The system role is
+    # load-bearing — it tags the block as recalled reference (not new
+    # input) and keeps it excludable from a later extraction pass.
+    # See {Extension#on_user_message}.
+    #
+    # Private and the single place the chat log grows by a memory
+    # block — keeps "what mutates the log, when" one grep in this
+    # file. Fired from {#run_loop} (initial turn) and, via the
+    # +on_user_message:+ proc threaded into {.wire_chat}, from
+    # {.drain_interloper} (mid-loop interlopers). Called on every
+    # extension unconditionally — same as {Extension#configure} /
+    # {Extension#bind}: the hook is part of the protocol and the
+    # {Extension} module supplies a no-op default, so any extension
+    # that includes the module responds. An extension is "opted out"
+    # by leaving the default in place (it returns +nil+, injecting
+    # nothing), not by omitting the method.
+    #
+    # @param content [String] the incoming user message
+    # @return [void]
+    def dispatch_ext_on_user_message(content)
+      @extensions.each do |ext|
+        message = ext.on_user_message(self, content)
+        next unless message.is_a?(String) && !message.strip.empty?
+
+        @chat.add_message(role: :system, content: message.strip)
+      end
+      nil
     end
   end
 end
