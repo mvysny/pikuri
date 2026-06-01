@@ -96,7 +96,7 @@ module Pikuri
         header = "Recalled #{records.length} " \
                  "memor#{records.length == 1 ? 'y' : 'ies'}:\n"
         body = records.map do |r|
-          when_ = r.created_at ? "(#{r.created_at}) " : ''
+          when_ = r.created_label ? "(#{r.created_label}) " : ''
           "- #{when_}#{r.text}"
         end.join("\n")
         header + body

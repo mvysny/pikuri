@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'time'
+
 module Pikuri
   module Memory
     # One memory row as returned by a mem0 server, normalized into a
@@ -44,6 +46,26 @@ module Pikuri
           metadata: hash['metadata'] || {},
           event: hash['event']
         )
+      end
+
+      # +created_at+ trimmed to whole-second wall-clock for the
+      # prompt: +"2026-06-01T17:04:11.884889+00:00"+ →
+      # +"2026-06-01 17:04:11"+. Recall uses the timestamp only as a
+      # recency tiebreaker (see +created_at+'s field note), so the
+      # sub-second precision and +T+/offset machinery are noise in
+      # the context window — a shorter date reads cleaner for the
+      # model and costs fewer tokens. Returns +nil+ when +created_at+
+      # is absent (+add+ / +search+ rows that omit it), and falls
+      # back to the raw String if mem0 ever emits an unparseable
+      # value (degraded display, not a pikuri bug).
+      #
+      # @return [String, nil]
+      def created_label
+        return nil unless created_at
+
+        Time.parse(created_at).strftime('%Y-%m-%d %H:%M:%S')
+      rescue ArgumentError
+        created_at
       end
     end
   end

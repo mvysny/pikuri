@@ -39,15 +39,16 @@ describe Pikuri::Memory::Recall do
 
   it 'searches the fixed namespace and formats results with timestamps' do
     client = fake_client_class.new(rows: [
-                                     record('lives in Brno', created_at: '2026-05-01'),
-                                     record('writes Ruby', created_at: '2026-05-02')
+                                     record('lives in Brno', created_at: '2026-05-01T17:04:11.884889+00:00'),
+                                     record('writes Ruby', created_at: '2026-05-02T09:30:00+00:00')
                                    ])
     out = described_class.execute(client: client, user_id: 'martin', topic: 'where?')
 
     assert_equal({ query: 'where?', user_id: 'martin', top_k: Pikuri::Memory::Recall::TOP_K }, client.searched)
     assert_match(/Recalled 2 memories/, out)
-    assert_match(/\(2026-05-01\) lives in Brno/, out)
-    assert_match(/\(2026-05-02\) writes Ruby/, out)
+    # created_at is trimmed to whole-second wall-clock — no sub-second / offset noise.
+    assert_match(/\(2026-05-01 17:04:11\) lives in Brno/, out)
+    assert_match(/\(2026-05-02 09:30:00\) writes Ruby/, out)
   end
 
   it 'reports no-match cleanly' do

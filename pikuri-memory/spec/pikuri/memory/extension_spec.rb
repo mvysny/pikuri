@@ -137,14 +137,15 @@ describe Pikuri::Memory::Extension do
   describe '#on_user_message prefetch' do
     it 'returns a system-framed <memory-context> with timestamps' do
       client = fake_client_class.new
-      client.search_rows = [record('lives in Brno', created_at: '2026-05-01', score: 0.8)]
+      client.search_rows = [record('lives in Brno', created_at: '2026-05-01T17:04:11.884889+00:00', score: 0.8)]
       ext = described_class.new(client: client, user_id: 'u', resident_persona: false)
 
       block = ext.on_user_message(nil, 'where do I live?')
 
       assert_match(/<memory-context>/, block)
       assert_match(/NOT new user input/, block)
-      assert_match(/\(2026-05-01\) lives in Brno/, block)
+      # created_at is trimmed to whole-second wall-clock — no sub-second / offset noise.
+      assert_match(/\(2026-05-01 17:04:11\) lives in Brno/, block)
       assert_match(/recall/, block) # affordance pointing at the tool
     end
 
