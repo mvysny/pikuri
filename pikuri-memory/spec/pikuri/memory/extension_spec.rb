@@ -79,7 +79,7 @@ describe Pikuri::Memory::Extension do
       assert_equal ['recall'], c.tools.map(&:name)
     end
 
-    it 'appends a resident-persona snippet built from the store' do
+    it 'appends a resident-persona snippet built from the store, framed as the complete set' do
       client = fake_client_class.new
       client.all_rows = [record('lives in Brno'), record('writes Ruby')]
       ext = described_class.new(client: client, user_id: 'u')
@@ -90,6 +90,37 @@ describe Pikuri::Memory::Extension do
       assert_match(/<memory_persona>/, snippet)
       assert_match(/lives in Brno/, snippet)
       assert_match(/writes Ruby/, snippet)
+      # Store fits under the cap, so the model is told it has everything —
+      # this is what stops redundant recall on an open "what do you know?".
+      assert_match(/complete set \(2 facts\)/, snippet)
+      assert_match(/nothing beyond this list/, snippet)
+    end
+
+    it "singularizes 'fact' and reports the count for a one-memory store" do
+      client = fake_client_class.new
+      client.all_rows = [record('lives in Brno')]
+      ext = described_class.new(client: client, user_id: 'u')
+      c = build_configurator
+      ext.configure(c)
+
+      assert_match(/complete set \(1 fact\)/, c.system_prompt_additions.join)
+    end
+
+    it 'frames the persona as partial when the store exceeds resident_limit' do
+      client = fake_client_class.new
+      client.all_rows = Array.new(5) { |i| record("fact #{i}") }
+      ext = described_class.new(client: client, user_id: 'u', resident_limit: 2)
+      c = build_configurator
+      ext.configure(c)
+
+      snippet = c.system_prompt_additions.join
+      assert_match(/Showing 2 of 5/, snippet)
+      assert_match(/look up anything more specific/, snippet)
+      refute_match(/complete set/, snippet)
+      # Only the first resident_limit facts are listed.
+      assert_match(/- fact 0/, snippet)
+      assert_match(/- fact 1/, snippet)
+      refute_match(/- fact 2/, snippet)
     end
 
     it 'appends no persona snippet for an empty store' do
