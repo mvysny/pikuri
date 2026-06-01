@@ -771,3 +771,83 @@ The invariants worth not losing:
   safe there. Porting memory to an egress-capable agent re-opens
   recall-poisoning (cap size, frame as untrusted) — flagged so it isn't
   ported blindly.
+
+## Implementation design (2026-06-01)
+
+The threads above converge into a buildable v1 shape — the implementation
+kickoff.
+
+### Gem boundary
+
+- **pikuri-memory**: an Extension (using the `on_user_message` hook below) + a
+  `recall` tool + a thin Faraday mem0 HTTP client + a mem0 sidecar supervisor
+  (ChromaServer-style, routed through `Subprocess.spawn`) + the curated
+  `custom_fact_extraction_prompt` in `prompts/` + `bin/pikuri-<demo>`. **No
+  persona** (unlike pikuri-vectordb's LIBRARIAN — a memory-only persona is
+  meaningless without the rest of @private's toolset). **No no-think patch** —
+  the extraction model is non-reasoning (see [`memory-mem0.md`](memory-mem0.md)
+  §"Extraction model decision"). Likely dep: just `pikuri-core` (mem0 owns
+  embedding; pikuri never calls the embedder itself).
+- **@private** — the federation member composing memory + vectordb + future
+  reminders onto one agent — lives in the **federation/assistant gem**, not in
+  any capability gem. Same precedent as LIBRARIAN / GIT_REPO_RESEARCHER: the
+  capability gem ships the pieces, the federation gem wires the agent.
+
+### The one pikuri-core change: an `on_user_message` hook
+
+- A new **optional Extension protocol hook** `on_user_message(agent, content)`
+  (no-op default, mixed into the `Extension` module alongside `configure` /
+  `bind`; an internal protocol method, not a host-facing API).
+- The Agent fires it at **both** user-message entry points — `run_loop`
+  (initial turn) *and* `drain_interloper` (mid-loop interloper injections) — so
+  interloper messages are covered too. The Agent-side dispatcher is `private`
+  (keeps "what mutates the log, when" a single grep in `agent.rb`).
+- It does two jobs: (1) **prefetch** — returns an optional `<memory-context>`
+  String that the Agent **appends at the tail as a *system*-role message** (the
+  role is load-bearing: provenance-tagged *and* excludable from the next
+  extraction pass); (2) **recording** — a fast **enqueue** of `content` for
+  **async per-turn extraction** on the separate extraction model (off the
+  interaction path → no KV contention, durable within seconds → no
+  session-loss).
+- The **resident persona summary** uses the existing `append_system_prompt`
+  (static, head, frozen per session); the **`recall` tool** uses the existing
+  `add_tool`. So `on_user_message` is the *only* new core primitive.
+
+### Log discipline: append-only
+
+Never mutate/remove mid-log ("keep-latest-only" rejected): deleting an earlier
+`<memory-context>` busts the prefix cache for everything after it → full
+prefill every turn. Append-only at the tail preserves the cache (and mirrors
+the store's own append-only design). Stale blocks are cached + system-tagged;
+bloat is deferred to the existing context-window machinery / occasional
+compaction (one amortized cache-miss), never a per-turn rewrite.
+
+### Rejected injection shapes (kept for the why)
+
+Routing injection through *listeners* was rejected to preserve two invariants:
+events stay pure `Data.define` values, and listeners stay pure consumers
+("never write back"). So **not** "listener returns an
+`InjectSystemMessageCommand`" (overloads the async event stream), **not** "pass
+`chat` to the event" (lets any listener mutate history), **not** "a closure on
+the event" (puts a closure on a value-event). The Agent stays the sole chat
+mutator.
+
+### Prefetch fires on mid-loop messages too
+
+For consistency: an LLM that sees memory-context on some user turns but not
+others may misread the bare ones as "no relevant memories exist." Search is
+cheap (embed + Qdrant, ms), so annotate every user message uniformly.
+
+### Open follow-ups (not blockers)
+
+- **Prompt-hardening for over-extraction.** The 4B→7B bake-off
+  ([`memory-mem0.md`](memory-mem0.md) §"Extraction model decision") showed
+  *both* models over-extract questions / hypotheticals / ephemeral state
+  identically — a prompt problem, not a model one (#4573's caveat). The curated
+  `custom_fact_extraction_prompt` needs a firmer "when in doubt, return
+  `{"facts":[]}`" + more negative few-shot before it's production-ready. Pairs
+  with the deferred **read-side dedup / quality gate** (§"Extraction-input
+  discipline", deferred item).
+- **Async capture mechanism & exit latency** (§"Designing @private's memory"
+  open thread) — per-turn enqueue + background drain; bound the flush so quit
+  doesn't hang.

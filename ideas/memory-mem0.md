@@ -34,6 +34,14 @@ the existing 35B at zero extra VRAM; a dedicated non-reasoning small model
 queued (pgvector top-k inversion; LLM `extra_body` passthrough). See
 §"Write-latency root cause" and §"How to disable thinking for mem0".
 
+**Update (2026-06-01, later):** Q2 is now **superseded** as the v1 plan by
+**option 2 (a separate non-reasoning extraction model)** — a KV-cache
+contention finding (mem0 evicts the chat model's prefix cache every turn on a
+shared single-slot instance) plus the data-safety win of per-turn capture
+flipped the decision. Chosen model: **`Qwen2.5-7B-Instruct` Q5_K_M**
+(non-thinking → no patch needed; the Q2 patch stays the verified fallback).
+See §"Extraction model decision".
+
 ### Decision (2026-05-31): mem0, accept the weight, no second store
 
 After the survey and the custody/lightness debate, **chosen: mem0** —
@@ -522,6 +530,12 @@ the decision section picks how to force no-think anyway.)*
 
 ### How to disable thinking for mem0: decision (2026-06-01) — build-time patch (Q2)
 
+> **Superseded (2026-06-01, later) by option 2** — see §"Extraction model
+> decision". Q2 (reuse the chat model + no-think patch) is verified working
+> and kept as the fallback, but a separate non-reasoning extraction model
+> won on KV-cache isolation, data-safe per-turn capture, and dropping the
+> patch entirely. The Q2 thread below stays as the journey + fallback.
+
 First, the blocking finding. **mem0 cannot forward `chat_template_kwargs`
 (or any `extra_body`) through its config — source-confirmed** against
 `mem0/llms/openai.py` + `mem0/llms/base.py` + the config classes on `main`:
@@ -649,3 +663,70 @@ Net: the locate-and-insert / fail-loud patcher is a good template for the
 real `pikuri-memory` supervisor — though production should `git apply` a
 `.patch` against the pinned source, not patch a pip install. Throwaway stack
 (proxy, Qdrant container, image) torn down.
+
+### Extraction model decision (2026-06-01): option 2 supersedes Q2 → Qwen2.5-7B-Instruct
+
+Two findings flipped the no-think approach from "reuse the chat model + patch"
+(Q2) to "give mem0 its own small non-reasoning model" (option 2 / the old Q1).
+
+**KV-cache contention — the deciding systems issue.** Chat and mem0 hammer the
+*same* model with different prefixes (different system prompts; chat thinks,
+mem0 doesn't → even the rendered templates differ). llama.cpp serves a model
+instance with N slots (`--parallel N`), each holding one prefix cache; the
+chat preset runs a **single slot** (no `--parallel`/`--ctx-size` set). So
+mem0's per-turn extraction call **evicts the chat prefix cache every turn** →
+the next chat turn reprocesses the whole growing history (~21 tok/s on the 35B
+= brutal). The Q2 verification never caught this — chat and mem0 were tested in
+isolation, never interleaved through one slot. Mitigations: (1) `--parallel ≥2`
+on the shared instance (separate slots, ~1.5–3 GB extra KV for 16–32K/slot —
+but the even split wastes a chat-sized slot on tiny extraction prompts);
+(2) a **separate extraction model** (own instance = own cache, by
+construction); (3) defer extraction off the per-turn path.
+
+**Option 2 dominates for v1.** A separate non-reasoning model:
+- isolates KV by construction (no fragile `--parallel` tuning to misconfigure);
+- enables **per-turn async capture** → kills option 3's data-loss-on-unclean-
+  exit risk (kill -9 / closed tab / crash would otherwise drop a whole session);
+- **eliminates the no-think patch entirely** — a genuinely non-reasoning model
+  has nothing to suppress, so Q2's `.patch` is moot.
+
+Cost: ~2–5 GB weights + small KV (fine at 48 GB); fills the **4th router
+instance slot** (chat + extraction + nomic + bge = 4 = `max_instances`; raise
+the cap if a 5th is ever needed). Q2 stays the documented fallback for anyone
+unwilling to run a 2nd model.
+
+**Model chosen: `bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M`** (Apache-2.0,
+non-thinking, single-file GGUF, ~5.4 GB), after a 4B→7B bake-off through mem0 +
+Qdrant + our curated user-only extraction prompt (no patch):
+
+- **4B (`Qwen3-4B-Instruct-2507` Q5_K_M)** — no *classic* fabrication (no
+  invented employer/title/city), flawless JSON (0 errors, 5/5 consistent), good
+  clean extraction — **but** one **inferential overreach** ("coffee isn't
+  working" → *"indicating a possible change in their morning routine"*),
+  fabricated dates ("June 1, 2026" stamped on ephemera), and ignored the
+  "preserve relative dates" rule. The inference hint trips the "→ 7B" gate.
+- **7B (`Qwen2.5-7B-Instruct` Q5_K_M)** — **fixes the fabrication class**: no
+  inference, no fabricated dates, honors the relative-date rule; and emits
+  **atomic facts** (4 separate) vs the 4B's merged blob — better for
+  supersede-by-append (independent per-fact supersession). Same JSON cleanliness.
+
+**Over-extraction is a prompt problem, not a model problem.** *Both* models
+over-extract questions ("user asked about X"), hypotheticals ("considering
+switching to Postgres"), and ephemeral state ("had a rough day") — *identically*,
+even with a near-verbatim `{"facts":[]}` few-shot for the ephemeral case.
+Exactly #4573's caveat (a bigger model follows a permissive prompt *more*
+faithfully). Fix = **prompt-hardening** (firmer "when in doubt return `[]`" +
+more negative few-shot) **+ the deferred read-side dedup/quality gate** —
+independent of model size. A follow-up, not a model-choice blocker.
+
+**llama-server config locked in (nailed down during the eval):**
+- Chat models keep `jinja = 1` (need the chat template); embedder/reranker can
+  use `jinja = 0` (tidier — those endpoints don't render chat templates), but
+  it's a no-op either way.
+- Set `ctx-size` **explicitly** on each chat instance (16384 used) — mem0
+  can't pass context size (it only sends `max_tokens`, the *output* length),
+  and the llama.cpp default may be too small for the update-decision step.
+- Set mem0's LLM `max_tokens` ~512 (extraction output is short; the 2000
+  default wastes context + time).
+- GGUF sourcing gotcha: unsloth's 7B GGUF is **gated (401)**; use
+  **bartowski** (single-file, public) — official Qwen GGUF is sharded.
