@@ -19,8 +19,20 @@ and **confirmed fixed by switching to Qdrant** (nearest-k correct, 5/5).
 **Qdrant is the chosen v1 backend.** Recall quality on Qdrant is good;
 contradiction-resolution is *not* in mem0's recall (it returns both facts
 near-tied, no recency ordering) — it belongs in the consumer's synthesis
-step, a `pikuri-memory` design input. Remaining open item is write latency
-(environmental, ~15–66s/add via the llama-swap server), not feasibility.
+step, a `pikuri-memory` design input.
+
+**Update (2026-06-01):** the last open item, **write latency**, is
+root-caused — *not* model-swap reloads (the llama.cpp router holds all
+models resident at 48GB under both interleave and idle) but **Qwen3.6's
+reasoning mode**: thinking-on burns the token budget on CoT and can return
+empty/truncated JSON (a non-deterministic correctness cliff, not just slow);
+`enable_thinking:false` is ~6× faster and reliable. mem0 **can't forward
+that flag via config** (source-confirmed), so the chosen fix is a **~3-line
+build-time patch** injecting `extra_body.chat_template_kwargs` (Q2), reusing
+the existing 35B at zero extra VRAM; a dedicated non-reasoning small model
+(Q1) and a pikuri proxy shim (Q3) are fallbacks. Two upstream mem0 tickets
+queued (pgvector top-k inversion; LLM `extra_body` passthrough). See
+§"Write-latency root cause" and §"How to disable thinking for mem0".
 
 ### Decision (2026-05-31): mem0, accept the weight, no second store
 
@@ -505,3 +517,104 @@ Qwen3-8B no-think / Llama-3.1-8B-Instruct as a 4th router instance — fits
 easily within `max_instances:4` and 48GB), decoupling the memory-extraction
 model from the chat model. Lever 1 (thinking off, same model) is preferred:
 it preserves the already-validated extraction quality and adds no infra.
+*(The "can mem0 forward the flag?" question is answered below — it can't;
+the decision section picks how to force no-think anyway.)*
+
+### How to disable thinking for mem0: decision (2026-06-01) — build-time patch (Q2)
+
+First, the blocking finding. **mem0 cannot forward `chat_template_kwargs`
+(or any `extra_body`) through its config — source-confirmed** against
+`mem0/llms/openai.py` + `mem0/llms/base.py` + the config classes on `main`:
+
+- The request body is built by `_get_common_params()` → exactly
+  `{temperature, max_tokens, top_p}` + `model` + `messages`
+  (+ `response_format`/`tools`/`store` when set). **No `extra_body`, no
+  arbitrary-field passthrough anywhere.**
+- `BaseLlmConfig`/`OpenAIConfig` are a **fixed field schema** — nowhere to
+  stash `chat_template_kwargs`. `generate_response(**kwargs)` looks like a
+  passthrough but isn't wired from config, and the OpenAI SDK's `create()`
+  rejects an unknown top-level `chat_template_kwargs` unless wrapped in
+  `extra_body` (which mem0 never does).
+- The one reasoning knob, `reasoning_effort`, is emitted *only* for
+  hardcoded OpenAI models (`o1/o3/gpt-5`); Qwen3.6 is treated as a "regular"
+  model so it's never sent — and it's the wrong knob anyway (effort level,
+  not on/off).
+
+So per-request no-think via mem0 config is impossible without intervention.
+Also note `/no_think` as a *prompt* soft-switch is **unreliable** on this
+Unsloth Qwen3.6 GGUF (tested: a `/no_think` system prompt still burned ~330
+reasoning tokens and a re-run came back empty; only the structured
+`chat_template_kwargs` flag suppresses thinking deterministically) — so
+patching mem0's prompts is not a trustworthy route either.
+
+That leaves a **trilemma — pick where the complexity lives:**
+
+| Option | Complexity home | Extra VRAM | Reuses 35B? | Touches mem0? | New service? |
+| --- | --- | --- | --- | --- | --- |
+| **Patch (Q2)** | mem0 code (pinned patch) | none | ✅ | yes (~3 lines) | no |
+| **Small model (Q1)** | a new model | ~+5GB | no | no | no |
+| **Proxy shim (Q3)** | a new network service | none | ✅ | no | yes (pikuri HTTP) |
+
+**Decision: Q2 — patch the one mem0 file at docker build time.** It ships
+fastest, reuses the existing Qwen3.6-35B-A3B instance at **zero extra VRAM**
+(thinking is per-request, so one loaded instance serves pikuri-chat/code
+*with* thinking and mem0's patched calls *without* it), and touches only the
+write path (embeddings go through a different provider; search is
+pure-vector). The patch is ~3 lines in `OpenAILLM.generate_response`,
+injecting before `client.chat.completions.create(**params)`:
+
+```python
+params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
+```
+
+Apply it as a **version-pinned `.patch` via `git apply`** in the
+pikuri-memory supervisor's Dockerfile (pin mem0 to the tracked ref;
+*not* `sed` — fail loud if upstream drifts). It's a fork-by-patch, but a
+minimal, auditable one visible in the build — consistent with "small enough
+to read in an evening."
+
+**Q1 and Q3 stay as solid fallbacks if Q2 bites** (none burns the others):
+
+- **Q1 — dedicated non-reasoning small model for mem0.** The task is
+  closed-context and knowledge-free (transcript + existing memories are all
+  in the prompt), so a small model is plausible; the deciding axis is
+  **non-reasoning + reliable JSON, not parameter count**. Default 7–8B
+  (Qwen2.5-7B-Instruct, Llama-3.1-8B-Instruct, Gemma-2-9B-it); a 3B
+  (Qwen2.5-3B-Instruct, Llama-3.2-3B-Instruct) is worth a bake-off since
+  3B→8B costs only ~2–3GB. **Must be genuinely non-reasoning** — a small
+  Qwen3/Qwen3.6 is a *hybrid* that thinks by default and reproduces the
+  cliff. Extraction is trivial for a 3B; the ADD/UPDATE *consolidation*
+  judgment is the risk, but it's largely inert here (this stack is
+  effectively ADD-only, resolution deferred to read-time). Benchmark
+  candidates on mem0's actual two prompts (latency + JSON validity +
+  extraction quality) before picking.
+- **Q3 — proxy shim that routes mem0's LLM traffic through pikuri.** Worth
+  it only if "pikuri owns mem0's model routing + egress/observability" is
+  wanted *for its own sake* (centralizes config to one endpoint; single
+  egress chokepoint, fits the privacy stance). The no-think injection then
+  comes free. Cost: makes pikuri an **HTTP server** (it's currently
+  library + CLI) and adds a failure point on the write path. Natural later
+  upgrade for pikuri-assistant's central-egress story, not a v1 no-think
+  fix.
+
+**TODO — open two upstream tickets against mem0:**
+
+1. **pgvector distance-vs-similarity bug (the top-k inversion).** The
+   pgvector provider (`mem0/vector_stores/pgvector.py`) returns a raw cosine
+   *distance* (`vector <=> query AS distance`) but the hybrid ranker
+   `score_and_rank` (`mem0/utils/scoring.py`) treats `score` as a
+   *similarity* — gates `< threshold`, sums additively, sorts `reverse=True`
+   — so `top_k` returns the **farthest** k. Fix: convert distance→similarity
+   (`1 - distance`) in the pgvector provider, or normalize per-store inside
+   `score_and_rank`. (Latent second bug: the `< threshold` gate wrongly
+   drops memories *closer* than the threshold.) Root-caused above in
+   §"Root cause … Qdrant is the fix".
+2. **LLM kwargs / `extra_body` passthrough.** `BaseLlmConfig`/`OpenAIConfig`
+   have a fixed schema and `_get_common_params` only forwards
+   `temperature/max_tokens/top_p`, so there is **no way to pass
+   provider-specific body params** (e.g. `chat_template_kwargs`) to an
+   OpenAI-compatible backend. This makes it impossible to tell a hybrid
+   *reasoning* model (Qwen3/Qwen3.6, etc.) `enable_thinking:false` via
+   config, forcing downstream forks/patches (this note's Q2). Ask: add an
+   `extra_body`/passthrough config field on the OpenAI provider so reasoning
+   models can be configured without patching.
