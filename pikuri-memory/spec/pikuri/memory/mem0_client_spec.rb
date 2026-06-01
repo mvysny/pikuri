@@ -24,6 +24,27 @@ describe Pikuri::Memory::Mem0Client do
       assert_raises(ArgumentError) { Pikuri::Memory::Mem0Client.new(endpoint: '') }
       assert_raises(ArgumentError) { Pikuri::Memory::Mem0Client.new(endpoint: nil) }
     end
+
+    it 'applies a generous default read timeout to the built connection' do
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub')
+      conn = client.instance_variable_get(:@connection)
+      assert_equal Pikuri::Memory::Mem0Client::DEFAULT_TIMEOUT, conn.options.timeout
+    end
+
+    it 'honours the timeout: kwarg' do
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', timeout: 42)
+      conn = client.instance_variable_get(:@connection)
+      assert_equal 42, conn.options.timeout
+    end
+
+    it 'lets PIKURI_MEMORY_TIMEOUT override the timeout: kwarg' do
+      ENV['PIKURI_MEMORY_TIMEOUT'] = '7'
+      client = Pikuri::Memory::Mem0Client.new(endpoint: 'http://stub', timeout: 42)
+      conn = client.instance_variable_get(:@connection)
+      assert_equal 7, conn.options.timeout
+    ensure
+      ENV.delete('PIKURI_MEMORY_TIMEOUT')
+    end
   end
 
   describe '#add' do

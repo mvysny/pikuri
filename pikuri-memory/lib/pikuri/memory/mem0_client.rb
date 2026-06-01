@@ -68,21 +68,41 @@ module Pikuri
       #   mapping.
       DEFAULT_ENDPOINT = 'http://localhost:8000'
 
+      # @return [Integer] default per-request read timeout, in seconds.
+      #   Deliberately generous: the first +POST /memories+ (and the
+      #   first +/search+) on a fresh stack blocks on the local
+      #   llama.cpp router cold-loading the extraction / embedder model
+      #   into memory — a one-off wait that can run well past
+      #   net_http's stock ~60s before any token comes back. A short
+      #   timeout there turns a normal cold start into a dropped turn
+      #   (+Recorder+ logs-and-drops). Steady-state extraction is ~3s,
+      #   so this ceiling only ever bites on the cold path or a genuine
+      #   hang. Override with +PIKURI_MEMORY_TIMEOUT+ or the +timeout:+
+      #   kwarg.
+      DEFAULT_TIMEOUT = 300
+
       # @param endpoint [String] mem0 server base URL. +/memories+,
       #   +/search+, etc. are appended internally.
+      # @param timeout [Integer] per-request read timeout in seconds
+      #   (see {DEFAULT_TIMEOUT} for why it's large). Resolves as
+      #   +PIKURI_MEMORY_TIMEOUT+ env → this kwarg → {DEFAULT_TIMEOUT}.
       # @param connection [Faraday::Connection, nil] dependency-
       #   injection hook for tests (wire +Faraday::Adapter::Test+ stubs
       #   here). Production callers leave it +nil+; a fresh JSON
-      #   connection is built against +endpoint+.
+      #   connection is built against +endpoint+. When supplied, the
+      #   +timeout+ kwarg is ignored — the injected connection owns its
+      #   own options.
       # @return [Mem0Client]
       # @raise [ArgumentError] on a blank +endpoint+.
-      def initialize(endpoint: DEFAULT_ENDPOINT, connection: nil)
+      def initialize(endpoint: DEFAULT_ENDPOINT, timeout: DEFAULT_TIMEOUT, connection: nil)
         raise ArgumentError, 'endpoint must be non-empty' if endpoint.nil? || endpoint.to_s.empty?
 
         @endpoint = endpoint
+        @timeout = (ENV['PIKURI_MEMORY_TIMEOUT'] || timeout).to_i
         @connection = connection || Faraday.new(url: endpoint) do |f|
           f.request :json
           f.response :json
+          f.options.timeout = @timeout
           f.adapter Faraday.default_adapter
         end
       end
