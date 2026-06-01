@@ -207,7 +207,9 @@ about X and summarize"), but it's not the primary recall path.
   my memories for everything about X and summarize"). Two
   retrieval modes from the LLM's perspective: prefetched
   (automatic, current-turn-relevant) and mined (explicit, deep
-  reasoning). Open whether to ship both or just one.
+  reasoning). Open whether to ship both or just one. *(Resolved
+  2026-06-01 — ship both, layered; see §"Retrieval: automatic
+  prefetch + explicit deepening".)*
 - **Confirmed-working as a memory side-effect.** "User approved
   this command" is natural shape for [`../IDEAS.md`](../IDEAS.md)
   §"Permission model needs granularity" sticky-approval rules, but
@@ -712,3 +714,60 @@ Cross-link: the feedback-loop and re-extraction concerns echo
 mitigation in the same family as the private-only-agent posture there (shrink
 what reaches the extractor), distinct from the trifecta/poisoning threat but
 solved at the same seam.
+
+## Retrieval: automatic prefetch + explicit deepening (2026-06-01)
+
+Resolves §"Open questions / Miner shape as complement" ("both or one?"):
+**ship both, layered.** Retrieval is **automatic** — but as the middle of a
+three-tier shape (the §"Prior art" hermes layering), not a single mode:
+
+1. **Resident persona summary (always-in-prompt).** A few always-true,
+   high-frequency facts (name, core preferences, current main project) that
+   are too universally relevant to gate behind a query match — present every
+   turn, paid once, frozen at session start (prefix-cache stable).
+2. **Automatic prefetch (per-turn, query-driven).** Embed the latest user
+   message, semantic-search the store, inject a *small high-precision slice*.
+   The persona's long tail, surfaced only when relevant.
+3. **Explicit deepening tool (LLM-triggered).** A `recall(topic:)` the model
+   calls when the prefetch slice hints there's more. The "mined, deep" mode.
+
+This is the **same two-step agentic-RAG shape `pikuri-vectordb` already
+ships** — `vectordb_search` (cheap ranked slice) + `vectordb_read` (pull the
+hit in full). Memory = `prefetch` (auto slice) + `recall`/`memory_read`
+(dig). One mental model across memory and RAG (the resident-vs-triggered
+principle, §"memory vs skills vs RAG").
+
+The invariants worth not losing:
+
+- **How it enters the message log: a *system*-role `<memory-context>` block —
+  not user, not assistant, not tool.** This is load-bearing, not cosmetic.
+  System-role is what (a) keeps recall provenance-tagged as
+  "recalled reference, not new input" (the §"Prior art" literal preface), and
+  (b) makes it **excludable from the next extraction pass** — which is the
+  exact hinge of the user-only / feedback-loop rule in §"Extraction-input
+  discipline". Automatic recall + user-only extraction are two halves of one
+  rule: recall is **visible to the model, invisible to the extractor**. If the
+  injected block ever lands as a user/assistant turn, the 808-copy feedback
+  loop comes back — now *every turn*. Positioned after the stable system
+  prompt / adjacent to the current user turn (so the cached prefix is
+  undisturbed); the per-turn variation lives at the tail.
+- **Reads are cheap — the asymmetry vs writes.** Embedding the query is
+  instant (~0.01s warm, measured) and a Qdrant search is milliseconds, so
+  per-turn prefetch sits safely *on* the interaction path. Writes (the ~2.8s+
+  extraction call, [`memory-mem0.md`](memory-mem0.md)) are deferred *off* the
+  path. Reads automatic-and-synchronous, writes automatic-but-async.
+- **Automatic ≠ always-inject.** Threshold-gate it: clear a similarity floor
+  or inject nothing ("thanks!" recalls zero). Keep the slice small and
+  high-precision (top ~3–5 above threshold) — #4573's lesson is that junk
+  recall *degrades* behavior, and the deepening tool means a small slice is a
+  *pointer*, not lossy. (Also why the Qdrant top-k fix mattered: a correct
+  nearest-first ranking is the precondition for trusting a small top-k.)
+- **Affordance for depth.** The prefetch block should signal how much more
+  exists ("3 of 12 related memories shown — use `recall` for the rest"), or
+  the model can't know there's anything to dig for.
+- **Safety rides on @private's no-egress posture**, same as auto-writes:
+  auto-recall of a *poisoned* memory + an egress leg = the trifecta. @private
+  has neither (§"when the threat model collapses"), so automatic recall is
+  safe there. Porting memory to an egress-capable agent re-opens
+  recall-poisoning (cap size, frame as untrusted) — flagged so it isn't
+  ported blindly.
