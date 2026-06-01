@@ -44,6 +44,7 @@ PATH
   remote: pikuri-memory
   specs:
     pikuri-memory (0.0.4)
+      pikuri-core (= 0.0.4)
 
 PATH
   remote: pikuri-skills

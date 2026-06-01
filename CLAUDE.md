@@ -263,14 +263,34 @@ per-gem one-liners:
   home is `pikuri-assistant` (ch7); same precedent as
   `GIT_REPO_RESEARCHER`. Depends on `pikuri-core` +
   `pikuri-subagents`.
-- **`pikuri-memory/`** — name-reservation placeholder for an
-  upcoming "memories" extension: durable long-lived facts about
-  the user and the project that persist across conversations,
-  modeled after the memory concept in hermes-agent (see
-  **Reference projects**). No library code yet — `require
-  'pikuri-memory'` is a deliberate no-op; the gem exists only to
-  claim the name on RubyGems so the eventual extension can publish
-  under it. No runtime deps, no tools/extensions/constants.
+- **`pikuri-memory/`** — durable cross-conversation memory backed
+  by mem0 (see `ideas/memory.md` + `ideas/memory-mem0.md` for the
+  full design journey). `Memory::Extension` wires the `recall` tool
+  + an automatic per-turn prefetch onto an agent via
+  `c.add_extension(...)` — same opt-in shape as pikuri-tasks /
+  pikuri-vectordb. Pieces: thin Faraday `Memory::Client`
+  (mem0 REST: `add`/`search`/`get_all`/`delete`/`reset`),
+  `Memory::Recorder` (off-the-loop async capture queue, bounded
+  flush on close), `Memory::Record` value type, `Memory::Recall`
+  (the `recall` tool), and the curated `memory-extraction` prompt
+  in `prompts/`. The three retrieval tiers — resident persona
+  (always-in-prompt) + automatic prefetch + explicit `recall` —
+  mirror pikuri-vectordb's `vectordb_search`/`vectordb_read` split.
+  **Reads sync (vector search, ms), writes async** (the ~3s
+  extraction call is deferred off the interaction path). Two
+  structural feedback-loop defenses: capture feeds **user-role
+  content only**, and recall lands as a **`:system` message**
+  (never a user turn) — so recalled memories are never
+  re-extracted. Safe only on a no-untrusted-ingest / no-egress
+  agent (the `@private` config); porting onto an egress-capable
+  agent re-opens recall-poisoning. v1 is **bring-your-own mem0
+  endpoint** (the `Client`); a `ChromaServer`-style mem0 sidecar
+  supervisor (build-from-source image + Qdrant) is a deferred
+  follow-on. Rides the one new pikuri-core primitive,
+  `Extension#on_user_message` (the per-turn prefetch + capture
+  hook). No persona (a memory-only persona is meaningless without
+  the rest of `@private`'s toolset). Depends only on `pikuri-core`
+  (mem0 owns embedding + extraction).
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.
