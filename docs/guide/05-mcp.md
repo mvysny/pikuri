@@ -11,10 +11,10 @@ That "nothing private is wired in" property is deliberate, and
 we come back to it below.
 
 Up to chapter 4 every tool pikuri's binaries reached for was
-either bundled in a gem (`web_search`, `calculator`,
-`vectordb_search`, …) or a stub promising the relevant gem is
-coming ([memories](04-memories.md)). That covers a lot, but it
-doesn't cover the case where someone *else* has already written
+bundled in a gem — `web_search`, `calculator`, `vectordb_search`,
+`recall` ([memories](04-memories.md)), and the rest. That covers
+a lot, but it doesn't cover the case where someone *else* has
+already written
 the integration you want — a books catalogue, a database, an
 issue tracker — and you'd rather plug their server in than
 rebuild it.

@@ -526,4 +526,4 @@ chapter 7 walks through, with vector search over your notes plus
 persistent memories about you across sessions — but each is
 introduced on its own first.
 
-→ Continue to [chapter 4 — Memories (stub)](04-memories.md).
+→ Continue to [chapter 4 — Memories](04-memories.md).

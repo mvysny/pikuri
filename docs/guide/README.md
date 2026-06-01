@@ -44,11 +44,14 @@ chapters that apply across both tracks.
    `pikuri-corpus` against the pikuri guide itself. (The
    privilege-separated `LIBRARIAN` persona, for an agent that
    *does* have egress, is deferred to chapters 6–7.)
-4. **[Memories (stub)](04-memories.md).** Placeholder. Persistent
-   notes the agent keeps across conversations, paired with
-   chapter 3's vector DB for recall. Where the privacy posture
-   starts to *matter* — and the chapter remains a stub until
-   the gem lands.
+4. **[Memories](04-memories.md).** Durable facts the agent keeps
+   across conversations, paired with chapter 3's vector DB for
+   recall. The three retrieval tiers (resident persona / automatic
+   prefetch / `recall` tool), the mem0 + Qdrant sidecar, why the
+   extraction model must be non-reasoning, and why automatic
+   capture is only safe on a no-egress agent. Demo via
+   `pikuri-memory`. This is where the privacy posture starts to
+   *matter*.
 5. **[Your first MCP server](05-mcp.md).** The gentle MCP intro:
    one low-stakes server (a public book-catalogue reader, no
    credentials, nothing private wired in), your first taste of
