@@ -1,0 +1,202 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / demo entry point — runs from a source checkout only. The pikuri
+# gem ships as a library; this script is not installed by `gem install
+# pikuri-memory`. It demonstrates durable cross-conversation memory: a
+# private chat agent that remembers what you tell it, across runs.
+#
+# Tell it facts about yourself ("I'm vegetarian", "my main project is
+# pikuri"), quit, start it again, and ask — it recalls them. Memory lives
+# in a self-managed mem0 + Qdrant sidecar (see Pikuri::Memory::Mem0Server)
+# whose data is bind-mounted to ~/.cache/pikuri/mem0, so it survives both
+# container recreation and process restarts.
+#
+# This agent is the `@private` shape on purpose: it has NO egress — no web
+# search, no fetch, only `calculator` plus memory. That is what makes
+# automatic capture and automatic recall *safe*: a poisoned memory plus an
+# outbound leg would be the lethal trifecta, and this agent has no
+# outbound leg. Capture also feeds only the user's own words, and recalled
+# context enters as a system message (never re-extracted). Do NOT bolt web
+# tools onto this agent without re-deriving the recall-poisoning
+# mitigations (see ideas/memory.md).
+#
+# Two model roles, both served by the local llama.cpp router:
+#   * the CHAT model (the conversation) — may be a thinking model;
+#   * the mem0 EXTRACTION model (what to remember) — must be NON-reasoning
+#     (a thinking model burns its budget on CoT and returns empty JSON),
+#     plus the embedder. These run inside the mem0 container, so a
+#     localhost router URL is translated to host.docker.internal for them.
+#
+# Same Bundler bootstrap as the other bundled bins so callers don't need
+# the `bundle exec` ceremony.
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+
+require 'bundler/setup'
+require 'optparse'
+
+require 'pikuri-core'
+require 'pikuri-memory'
+
+server           = 'http://localhost:8080'
+model            = 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'        # chat (may think)
+extraction_model = 'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M'  # mem0 (non-reasoning)
+embed_model      = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
+user_id          = ENV['USER'] || 'default'
+mem0_url         = nil # BYO mem0 endpoint; when set, the supervisor is skipped
+mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => derive from --server
+api_key_env      = 'OPENAI_API_KEY'
+streaming        = false
+
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-memory [options] [initial message...]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--server URL', "llama-server base URL — chat (default: #{server})") { |v| server = v }
+  opts.on('--model NAME', "Chat model identifier (default: #{model})") { |v| model = v }
+  opts.on('--extraction-model NAME', "mem0 extraction model — must be non-reasoning (default: #{extraction_model})") { |v| extraction_model = v }
+  opts.on('--embed-model NAME', "mem0 embedding model (default: #{embed_model})") { |v| embed_model = v }
+  opts.on('--user-id ID', "Memory namespace, one per user (default: #{user_id})") { |v| user_id = v }
+  opts.on('--mem0-url URL', 'Use an existing mem0 server at this URL instead of the self-managed sidecar') { |v| mem0_url = v }
+  opts.on('--mem0-router-url URL', 'Router base URL as seen from inside the mem0 container (default: --server, localhost→host.docker.internal)') { |v| mem0_router_url = v }
+  opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn e.message
+  warn parser
+  exit 2
+end
+
+server          = server.chomp('/')
+openai_api_base = "#{server}/v1"
+
+# The chat agent runs on the host, so it talks to the router directly.
+RubyLLM.configure do |c|
+  c.openai_api_base = openai_api_base
+  c.openai_api_key  = ENV.fetch(api_key_env, 'not-needed')
+end
+
+llama_probe_url = "#{server}/props"
+
+# Memory store: a self-managed mem0 + Qdrant sidecar by default, or a
+# bring-your-own server via --mem0-url. The sidecar needs docker (with the
+# compose plugin) and git; its first run clones + builds the mem0 image
+# (a few minutes), then reuses it.
+mem0_server = nil
+client =
+  if mem0_url
+    Pikuri::Memory::Mem0Client.new(endpoint: mem0_url.chomp('/'))
+  else
+    # The mem0 container can't reach the host's loopback as "localhost",
+    # so a localhost router URL is rewritten to host.docker.internal (the
+    # compose maps it to the host gateway). A routable --server (a LAN IP,
+    # say) is used as-is.
+    router = mem0_router_url ||
+             server.sub(%r{//(localhost|127\.0\.0\.1)(?=[:/]|\z)}, '//host.docker.internal')
+    begin
+      mem0_server = Pikuri::Memory::Mem0Server.ensure_running(
+        router_url:     "#{router.chomp('/')}/v1",
+        llm_model:      extraction_model,
+        embedder_model: embed_model
+      )
+    rescue StandardError => e
+      warn "Could not start the mem0 sidecar: #{e.message}"
+      warn 'Is docker (with the compose plugin) and git installed and running? ' \
+           'Or pass --mem0-url to point at an existing mem0 server.'
+      exit 1
+    end
+    mem0_server.client
+  end
+
+cancel_flag = Pikuri::Agent::Control::Cancellable.new
+
+system_prompt = Pikuri.prompt(:'pikuri-memory')
+system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
+
+memory_ext = Pikuri::Memory::Extension.new(client: client, user_id: user_id)
+
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.new(
+    model: model,
+    provider: :openai,
+    assume_model_exists: true
+  ),
+  system_prompt: system_prompt,
+  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
+  cancellable: cancel_flag,
+  llama_probe_url: llama_probe_url,
+  streaming: streaming
+) do |c|
+  c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)
+  c.add_listener Pikuri::Agent::Listener::TokenLog.new
+  # Calculator is the only non-memory tool. The web tools
+  # (web_search / web_scrape / fetch) are deliberately absent: this agent
+  # accumulates a private persona and auto-recalls it, so an egress leg
+  # would complete the lethal trifecta. No egress => auto-capture and
+  # auto-recall are safe here.
+  c.add_tool Pikuri::Tool::CALCULATOR
+  # Memory::Extension registers the `recall` tool, appends a resident
+  # persona summary read from the store, and installs the per-turn hook
+  # that auto-prefetches a <memory-context> slice and enqueues the turn
+  # for asynchronous capture.
+  c.add_extension memory_ext
+end
+
+# Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
+# turn flips the Cancellable flag — the next tool-call boundary raises
+# Cancelled, which we rescue below to return to the prompt. Outside a turn
+# (at the `> ` input) the default handler is restored so Ctrl+C still
+# exits the REPL the way it did before.
+run_turn = lambda do |message|
+  prev_trap = trap('INT') { cancel_flag.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener; nothing else to do.
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
+puts 'Pikuri Memory: a private assistant that remembers you across conversations (no internet access).'
+puts "Memory: #{mem0_url ? "mem0 @ #{mem0_url}" : 'self-managed mem0 + Qdrant sidecar'}  •  user: #{user_id}"
+puts 'Tell me things about yourself, then quit and come back — I will remember.'
+puts 'Try: "I\'m vegetarian and my main project is a Ruby agent toolkit called pikuri."'
+puts '  then, on a later run: "what do you know about me?"'
+puts 'Press Ctrl+C or Ctrl+D to quit.'
+
+run_turn.call(ARGV.join(' ')) unless ARGV.empty?
+
+begin
+  loop do
+    print '> '
+    $stdout.flush
+    line = $stdin.gets
+    break if line.nil? # Ctrl+D / EOF on empty line
+
+    message = line.chomp
+    next if message.strip.empty?
+
+    run_turn.call(message)
+  end
+rescue Interrupt
+  # Ctrl+C — fall through to clean exit
+end
+
+puts
+# Close the agent first: that fires the memory extension's on_close, which
+# flushes the asynchronous capture queue (bounded) so the last turns are
+# recorded before we stop the store. Then stop the sidecar — its data is
+# bind-mounted to the host, so the corpus survives for next run.
+agent.close
+mem0_server&.close
+puts 'Goodbye'

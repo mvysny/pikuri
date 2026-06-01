@@ -45,6 +45,12 @@ services:
       dockerfile: server/dev.Dockerfile
     depends_on:
       - qdrant
+    # So the container can reach a llama.cpp router bound to the host's
+    # loopback: the supervisor translates a localhost router URL to
+    # host.docker.internal, which this maps to the host gateway. Inert
+    # when the router URL is already a routable host/IP.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Dummy key: the OpenAI-compatible endpoint is local llama.cpp,
       # which ignores auth. OPENAI_BASE_URL routes both the extraction

@@ -80,9 +80,17 @@ module Pikuri
       # @param infer [Boolean] forwarded to capture; +true+ stores
       #   extracted facts.
       # @param extraction_prompt [String, nil] +custom_fact_extraction_prompt+
-      #   sent with each capture. +nil+ (default) loads the bundled
-      #   curated +memory-extraction+ prompt; pass your own String to
-      #   override it.
+      #   sent with each capture. +nil+ (default) sends none, so mem0 uses
+      #   its own built-in extraction prompt — which reliably extracts
+      #   plain statements. The bundled +memory-extraction+ prompt
+      #   (+Pikuri.prompt('memory-extraction')+) is a **work in progress**:
+      #   it tightens junk rejection per the #4573 audit, but on small
+      #   extraction models it currently *under*-extracts (returns
+      #   +{"facts": []}+ for clear facts), so it is opt-in until hardened
+      #   — see ideas/memory.md §"Open follow-ups". The user-only
+      #   extraction discipline does not depend on it; that is enforced in
+      #   {Mem0Client#add} (only user-role content is ever sent),
+      #   regardless of which extraction prompt mem0 runs.
       # @param resident_persona [Boolean] when +true+ (default), append
       #   a persona summary to the system prompt at construction.
       # @param flush_timeout [Integer] seconds the capture worker's
@@ -103,7 +111,10 @@ module Pikuri
         @threshold = threshold
         @resident_persona = resident_persona
         @resident_limit = resident_limit
-        @extraction_prompt = extraction_prompt || Pikuri.prompt('memory-extraction')
+        # nil => mem0's built-in extraction (reliable). The bundled curated
+        # prompt is opt-in (a WIP that under-extracts on small models) — see
+        # the +extraction_prompt+ param doc.
+        @extraction_prompt = extraction_prompt
         @recorder = Recorder.new(
           client: client, user_id: user_id, infer: infer,
           prompt: @extraction_prompt, flush_timeout: flush_timeout
