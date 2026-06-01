@@ -649,3 +649,66 @@ append-only + read-time-resolution model (§"The v1 write API collapses to
 one verb") confirmed live; **but** the recall-quality pass surfaced a
 likely pgvector **top-k inversion** (returns farthest matches), now under
 investigation.
+
+## Extraction-input discipline: lessons from a production mem0 audit (#4573)
+
+A continuation (2026-06-01). A production audit (mem0ai/mem0 **#4573**) of
+*our exact stack* (Qdrant + a local extraction model) ran 32 days and found
+**97.8% of 10,134 entries were junk**. The load-bearing lesson: *indiscriminate
+storage is worse than no memory* (they cite Harvard D3: filtering before
+storage gave +10%), and **the extraction prompt + pipeline provenance is the
+bottleneck, not the model** — swapping a 2B local model for Sonnet 4.6 barely
+moved the junk rate, because a better model just follows a permissive prompt
+more faithfully. Decisions this drives for `@private`'s extraction:
+
+- **Feed only *user-role* messages to extraction.** One portable rule that
+  structurally removes the three dominant junk sources the audit measured:
+  system-prompt leakage, assistant/boot-file restating (52.7% of *their*
+  junk), and the recall **feedback loop** (recalled memories re-extracted and
+  re-stored — one hallucinated "prefers Vim" became 808 copies). It's a
+  pikuri-side rule about *what we pass to `add()`*, not a mem0 change — so it's
+  portable to any future store (LangMem/Letta/custom) and keeps the no-think
+  patch ([`memory-mem0.md`](memory-mem0.md) Q2) the *only* mem0 patch.
+  - **Invariant it relies on:** recalled memories must be injected as
+    **system / non-user context, never as user-role messages** — otherwise the
+    feedback loop returns. This dovetails with the `<memory-context>` framing
+    in §"Prior art" (recall lands as a *system note*, not a user turn).
+  - **Tradeoff accepted:** the confirm-gate case (user asks → assistant looks
+    something up → user says "yes") won't be stored. That's assistant/tool-
+    *derived* data, not a durable fact the user *stated* — so dropping it is
+    arguably correct for a personal-persona store, not just simpler.
+- **No special credential-exclusion rule** (deliberately *not* added). The
+  audit's "security leaks" (IPs, file paths, config values, 2.1%) were all
+  *system/assistant/tool*-sourced — *involuntary*. User-only extraction
+  eliminates that category by construction. What remains is only a secret the
+  user *deliberately typed and asked to remember* — their prerogative on their
+  own data. (Residual edge: a user *pastes* a secret-laden blob as a user
+  message without meaning to memorize it; minor, and inside the "only what the
+  user typed" philosophy.) This composes with the bullet above: user-only
+  kills the involuntary leak, voluntary is the user's call.
+- **Curated extraction prompt with negative few-shot.** Override mem0's
+  permissive default (`custom_fact_extraction_prompt`) with one carrying
+  explicit exclusions *and* examples that return `{"facts": []}` (greeting,
+  general-knowledge question, "I'll think about it") — LLMs over-extract
+  without explicit "extract nothing" exemplars. Fits pikuri's plain-text
+  `prompts/` ethos. (Prior art: @farrrr's fork in the thread — 9 categories +
+  12 exclusion rules + negative few-shot — is a ready reference.)
+- **Exclude transient task state.** The audit's "transient tasks" (7.4%) have
+  a home already: `pikuri-tasks` owns tasks (in-memory, dropped on close), so
+  memory simply excludes task-shaped content. The architecture already splits
+  this correctly.
+- **Write-time exclusion *and* read-time synthesis — both.** Complements
+  §"The v1 write API collapses to one verb": junk *never stored* beats junk
+  *resolved at read*. The append-only write path still wants a front gate (the
+  user-only rule + curated prompt); read-time recency/resolution stays.
+- **Deferred:** a `REJECT` action as a 5th update-decision verb (mem0 has only
+  ADD/UPDATE/DELETE/NONE), and behavioral trip-wire monitoring (compare agent
+  output with vs. without memory; a high "noise score" flags degradation
+  cheaply, as an eval tool). Both later — the user-only rule + curated prompt
+  get most of the win for v1.
+
+Cross-link: the feedback-loop and re-extraction concerns echo
+§"Write-time poisoning" — user-only extraction is a *write-side* hygiene
+mitigation in the same family as the private-only-agent posture there (shrink
+what reaches the extractor), distinct from the trifecta/poisoning threat but
+solved at the same seam.

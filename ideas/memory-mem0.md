@@ -618,3 +618,34 @@ to read in an evening."
    config, forcing downstream forks/patches (this note's Q2). Ask: add an
    `extra_body`/passthrough config field on the OpenAI provider so reasoning
    models can be configured without patching.
+
+### Patch verified live (2026-06-01): Q2 works end-to-end
+
+Built a patched mem0 **2.0.4** image (pip install + build-time injection) and
+ran a real `add()` against the live llama-server (chat routed through a
+logging proxy) + a throwaway Qdrant. **Q2 is validated:**
+
+- **Patch applies fail-loud at build.** The patcher locates
+  `self.client.chat.completions.create(` and inserts
+  `params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}`
+  before it; prints `PATCH OK` or `exit 1` if the call moved. Applied cleanly
+  to 2.0.4 (confirms the tracked version; the exact call exists in the
+  release, not just `main`).
+- **The flag reaches llama.cpp on the wire.** The proxy captured top-level
+  `"chat_template_kwargs":{"enable_thinking":false}` — the OpenAI SDK flattens
+  `extra_body` into the JSON body, which is what llama.cpp reads.
+- **Covers *both* mem0 LLM paths.** The warm re-run (store already populated)
+  made 2 chat calls — fact-extraction *and* the update-decision — and **both**
+  carried `enable_thinking=false`. One patch point, both paths (both route
+  through `generate_response`).
+- **Latency confirms the thesis.** Cold first add: 32.6s (one-time model
+  load); warm add: **2.8s**; warm single chat call: 2.1s — vs 15–66s with
+  thinking on. At 48GB the model stays resident, so steady state ≈3s/add.
+- **Quality clean.** Extracted "name is Martin / lives in Brno", "writes Ruby
+  / manager Alice", "is vegetarian"; the warm re-run correctly NOOP'd
+  (`results: []`, no duplicate ADD).
+
+Net: the locate-and-insert / fail-loud patcher is a good template for the
+real `pikuri-memory` supervisor — though production should `git apply` a
+`.patch` against the pinned source, not patch a pip install. Throwaway stack
+(proxy, Qdrant container, image) torn down.
