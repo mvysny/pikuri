@@ -656,6 +656,38 @@ RSpec.describe Pikuri::Agent do
       )
     end
 
+    it 'emits an Event::SystemInjected per injected block so the listener stream mirrors the log growth' do
+      first  = recording_extension_class.new(block: '<memory-context>one</memory-context>')
+      second = recording_extension_class.new(block: '<memory-context>two</memory-context>')
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_extension first
+        c.add_extension second
+      end
+
+      agent.run_loop(user_message: 'q')
+
+      injected = recorder.events.grep(Pikuri::Agent::Event::SystemInjected).map(&:content)
+      assert_equal(
+        ['<memory-context>one</memory-context>', '<memory-context>two</memory-context>'],
+        injected
+      )
+    end
+
+    it 'emits no Event::SystemInjected when the hook injects nothing' do
+      ext = recording_extension_class.new(block: nil)
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_extension ext
+      end
+
+      agent.run_loop(user_message: 'hi')
+
+      assert_empty recorder.events.grep(Pikuri::Agent::Event::SystemInjected)
+    end
+
     it 'injects nothing when the hook returns nil or a blank String' do
       [nil, '', "   \n"].each do |blank|
         local_fake = fake_chat_class.new

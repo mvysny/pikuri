@@ -9,7 +9,9 @@ module Pikuri
       # Terminal renderer for the normalized event stream: dim grey
       # reasoning, Markdown-rendered assistant content, cyan tool-
       # call and tool-result lines, yellow fallback notice, red
-      # cancelled notice. {Event::UserTurn} is intentionally silent
+      # cancelled notice. An {Event::SystemInjected} block (recalled
+      # memory / context an extension injected) renders dim grey
+      # with a +⊕+ marker. {Event::UserTurn} is intentionally silent
       # (the terminal user just typed the message, so re-rendering
       # it adds nothing); {Event::Tokens} and {Event::ContextCap}
       # are silent too (their consumer is {TokenLog}).
@@ -123,6 +125,8 @@ module Pikuri
             stream_fragment(Rainbow(content).color(85, 85, 85)) if @streaming
           in Event::AssistantDelta(content:)
             stream_fragment(content) if @streaming
+          in Event::SystemInjected(content:)
+            println(indent(Rainbow("⊕ #{content}").color(85, 85, 85)))
           in Event::ToolCall(name:, arguments:)
             args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
             println(indent(Rainbow("→ #{name}(#{args})").cyan))

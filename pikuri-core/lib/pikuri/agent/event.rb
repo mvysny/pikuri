@@ -45,6 +45,21 @@ module Pikuri
         end
       end
 
+      # A system-role block an {Extension#on_user_message} hook
+      # injected into the chat log — recalled reference (memory
+      # context, retrieved snippets) tagged +role: :system+ so the
+      # model reads it as background, not new user input. Carries
+      # the injected text verbatim.
+      #
+      # Emitted by {Agent#dispatch_ext_on_user_message}, once per
+      # extension that returns a non-empty block, at the same site
+      # that grows the chat log — so the event stream stays a
+      # faithful mirror of what the model actually sees. Without it
+      # an injection is invisible: it never surfaces in the stream,
+      # only as a secondary echo in the assistant's later reasoning.
+      # {Listener::Terminal} renders it dim grey with a +⊕+ marker.
+      SystemInjected = Data.define(:content)
+
       # Assistant reasoning ("thinking") block, extracted from the
       # +thinking.text+ field on a +RubyLLM::Message+ with role
       # +:assistant+. Emitted by {Agent}'s +after_message+ wiring;

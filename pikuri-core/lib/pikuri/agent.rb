@@ -790,6 +790,11 @@ module Pikuri
     # input) and keeps it excludable from a later extraction pass.
     # See {Extension#on_user_message}.
     #
+    # Each injected block also emits an {Event::SystemInjected} at
+    # this site, so the listener stream mirrors the log growth (the
+    # Terminal renders it; otherwise an injection would be invisible
+    # except as a downstream echo in the assistant's reasoning).
+    #
     # Private and the single place the chat log grows by a memory
     # block — keeps "what mutates the log, when" one grep in this
     # file. Fired from {#run_loop} (initial turn) and, via the
@@ -809,7 +814,9 @@ module Pikuri
         message = ext.on_user_message(self, content)
         next unless message.is_a?(String) && !message.strip.empty?
 
-        @chat.add_message(role: :system, content: message.strip)
+        block = message.strip
+        @chat.add_message(role: :system, content: block)
+        @listeners.emit(Event::SystemInjected.new(content: block))
       end
       nil
     end

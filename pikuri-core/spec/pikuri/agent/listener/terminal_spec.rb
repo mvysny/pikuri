@@ -63,6 +63,14 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     refute_includes out, 'bytes total'
   end
 
+  it 'prints SystemInjected content with a marker so injected memory/context is visible' do
+    out = capture_stdout do
+      listener.on_event(Pikuri::Agent::Event::SystemInjected.new(content: 'recalled: lives in Brno'))
+    end
+    assert_includes out, '⊕'
+    assert_includes out, 'recalled: lives in Brno'
+  end
+
   it 'is silent for UserTurn events (terminal user already typed it)' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::UserTurn.new(content: 'hello?')) }
     assert_equal '', out

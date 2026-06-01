@@ -100,8 +100,8 @@ module Pikuri
       # @param agent [Agent] the live agent whose turn this is
       # @param content [String] the user message (initial or interloper) about
       #   to be sent to the model
-      # @return [String, nil] an optional +<memory-context>+ block to inject as
-      #   a system-role message, or +nil+ to inject nothing
+      # @return [String, nil] an optional block of text to be injected verbatim as
+      #   a system-role message (after the user message), or +nil+ to inject nothing
       def on_user_message(agent, content); end
     end
   end
