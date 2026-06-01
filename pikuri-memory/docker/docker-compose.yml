@@ -22,15 +22,21 @@ name: pikuri-internal-mem0
 services:
   qdrant:
     image: ${PIKURI_QDRANT_IMAGE:-qdrant/qdrant:v1.12.4}
+    container_name: pikuri-internal-mem0-qdrant
     networks: [pikuri]
     volumes:
-      - qdrant_data:/qdrant/storage
+      # Bind-mounted to the host cache (set by the supervisor) — the
+      # container is ephemeral, the corpus lives on the host. Same
+      # "ephemeral container, persistent host data" posture as
+      # ChromaServer.
+      - ${PIKURI_DATA_DIR:?PIKURI_DATA_DIR must be the host data dir}/qdrant:/qdrant/storage
     ports:
       # Published for host-side inspection only; mem0 reaches Qdrant
       # over the internal `pikuri` network, not this port.
       - "127.0.0.1:${PIKURI_QDRANT_PORT:-6333}:6333"
 
   mem0:
+    container_name: pikuri-internal-mem0-server
     build:
       # Set by the supervisor to the patched mem0 checkout. The upstream
       # dev.Dockerfile copies server/ + the mem0 package from the repo
@@ -56,18 +62,17 @@ services:
       QDRANT_PORT: "6333"
       MEM0_COLLECTION_NAME: ${PIKURI_COLLECTION:-pikuri_memory}
       MEM0_EMBEDDING_DIMS: ${PIKURI_EMBEDDING_DIMS:-768}
-      # Memory-history SQLite on a named volume so it survives container
-      # recreation alongside the Qdrant corpus.
+      # Memory-history SQLite, bind-mounted to the host cache so it
+      # survives container recreation alongside the Qdrant corpus.
       HISTORY_DB_PATH: "/data/history.db"
     volumes:
-      - mem0_history:/data
+      - ${PIKURI_DATA_DIR:?PIKURI_DATA_DIR must be the host data dir}/history:/data
     ports:
       - "127.0.0.1:${PIKURI_MEM0_PORT:-8888}:8000"
     networks: [pikuri]
 
 networks:
   pikuri:
-
-volumes:
-  qdrant_data:
-  mem0_history:
+    # Explicit name (no compose project prefix) so it can't collide with
+    # an unrelated `*_pikuri` network from another stack.
+    name: pikuri-mem0

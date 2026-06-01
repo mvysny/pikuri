@@ -6,10 +6,15 @@ supervisor clones mem0, applies the patch, and drives compose through
 `Pikuri::Subprocess.spawn`.
 
 - **`docker-compose.yml`** — two services, **no Postgres**: a mem0 REST
-  server built from a pinned mem0 checkout, and Qdrant as the vector
-  store. Parameterized by `PIKURI_*` environment variables the supervisor
-  sets (build-context path, router URL, model ids, ports, dims). Both
-  published ports bind `127.0.0.1` only.
+  server (`pikuri-internal-mem0-server`) built from a pinned mem0
+  checkout, and Qdrant (`pikuri-internal-mem0-qdrant`) as the vector
+  store, on an explicitly-named `pikuri-mem0` network. Parameterized by
+  `PIKURI_*` environment variables the supervisor sets (build-context
+  path, host data dir, router URL, model ids, ports, dims). Both
+  published ports bind `127.0.0.1` only. The containers are **ephemeral**
+  — all state is bind-mounted to the host under `PIKURI_DATA_DIR`
+  (`~/.cache/pikuri/mem0/data/{qdrant,history}`), so the corpus survives
+  container recreation, same posture as ChromaServer.
 
 - **`qdrant-default-config.patch`** — applied to the pinned mem0 checkout
   before the image build. It swaps the server's `DEFAULT_CONFIG` vector

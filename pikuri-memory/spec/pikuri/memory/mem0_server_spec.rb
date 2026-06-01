@@ -81,8 +81,10 @@ describe Pikuri::Memory::Mem0Server do
       assert_equal 'http://localhost:9000', build_server(port: 9000).endpoint
     end
 
-    it 'roots the checkout under the cache dir' do
-      assert_equal File.join(cache_dir, 'mem0-src'), build_server.checkout_dir.to_s
+    it 'roots the checkout under <cache>/temp/git and data under <cache>/data' do
+      server = build_server
+      assert_equal File.join(cache_dir, 'temp', 'git'), server.checkout_dir.to_s
+      assert_equal File.join(cache_dir, 'data'), server.data_dir.to_s
     end
 
     it 'derives a default cache dir under XDG_CACHE_HOME / pikuri / mem0' do
@@ -130,7 +132,8 @@ describe Pikuri::Memory::Mem0Server do
 
       up = calls.find { |c| c[:argv].include?('up') }
       env = up[:env]
-      assert_equal File.join(cache_dir, 'mem0-src'), env['PIKURI_MEM0_SRC']
+      assert_equal File.join(cache_dir, 'temp', 'git'), env['PIKURI_MEM0_SRC']
+      assert_equal File.join(cache_dir, 'data'), env['PIKURI_DATA_DIR']
       assert_equal 'http://router:8080/v1', env['PIKURI_ROUTER_URL']
       assert_equal 'qwen2.5-7b', env['PIKURI_LLM_MODEL']
       assert_equal 'nomic', env['PIKURI_EMBEDDER_MODEL']
@@ -138,7 +141,7 @@ describe Pikuri::Memory::Mem0Server do
     end
 
     it 'skips cloning when the checkout is already at the pinned ref' do
-      FileUtils.mkdir_p(File.join(cache_dir, 'mem0-src', '.git'))
+      FileUtils.mkdir_p(File.join(cache_dir, 'temp', 'git', '.git'))
       planned.replace([
                         [0, Pikuri::Memory::Mem0Server::MEM0_REF], # git rev-parse HEAD
                         [0, ''],                                   # git apply --reverse --check -> already applied

@@ -269,9 +269,7 @@ module Pikuri
       #
       # @return [String]
       def default_data_dir
-        cache_home = ENV['XDG_CACHE_HOME']
-        cache_home = File.expand_path('~/.cache') if cache_home.nil? || cache_home.empty?
-        File.join(cache_home, 'pikuri', 'chroma')
+        Pikuri::Paths.cache.join('chroma').to_s
       end
 
       private

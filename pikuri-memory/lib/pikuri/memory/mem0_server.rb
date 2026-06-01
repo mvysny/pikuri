@@ -172,9 +172,19 @@ module Pikuri
       # @return [Integer] host port the REST API binds.
       attr_reader :port
 
-      # @return [Pathname] the mem0 source checkout directory.
+      # @return [Pathname] the mem0 source checkout (the image build
+      #   context). Under +temp/+ — it is a regenerable clone, not data.
       def checkout_dir
-        @cache_dir.join('mem0-src')
+        @cache_dir.join('temp', 'git')
+      end
+
+      # @return [Pathname] host directory bind-mounted into the
+      #   containers for persistent state — +data/qdrant+ holds the
+      #   Qdrant corpus, +data/history+ the memory-history SQLite. The
+      #   containers are ephemeral; this survives them (same posture as
+      #   {Pikuri::VectorDb::ChromaServer}).
+      def data_dir
+        @cache_dir.join('data')
       end
 
       # @return [String] +"http://localhost:<port>"+.
@@ -199,6 +209,10 @@ module Pikuri
       #   +compose up+ failure, or healthcheck timeout.
       def ensure_running!
         prepare_checkout!
+        # Pre-create the bind-mount sources so docker doesn't create them
+        # root-owned (and so a missing dir isn't silently a fresh volume).
+        FileUtils.mkdir_p(data_dir.join('qdrant'))
+        FileUtils.mkdir_p(data_dir.join('history'))
         LOGGER.info("starting #{COMPOSE_PROJECT} (mem0 + Qdrant) on 127.0.0.1:#{@port}; " \
                     'first run builds the mem0 image and may take a few minutes')
         compose!('up', '-d', '--build')
@@ -223,15 +237,16 @@ module Pikuri
         LOGGER.warn("docker compose down failed (exit #{result.status.exitstatus}): #{result.output.strip}")
       end
 
-      # Default checkout cache dir: +$XDG_CACHE_HOME/pikuri/mem0+ if set,
-      # else +~/.cache/pikuri/mem0+. Public so tests and docs reference the
-      # same path the supervisor resolves.
+      # Default cache root for this supervisor: +<Pikuri::Paths.cache>/mem0+
+      # (i.e. +$XDG_CACHE_HOME/pikuri/mem0+ or +~/.cache/pikuri/mem0+).
+      # Holds +temp/git+ (the checkout) and +data/+ (the bind-mounted
+      # corpus + history). Shares the cache root with
+      # {Pikuri::VectorDb::ChromaServer} via {Pikuri::Paths}. Public so
+      # tests and docs reference the same path the supervisor resolves.
       #
       # @return [String]
       def default_cache_dir
-        cache_home = ENV['XDG_CACHE_HOME']
-        cache_home = File.expand_path('~/.cache') if cache_home.nil? || cache_home.empty?
-        File.join(cache_home, 'pikuri', 'mem0')
+        Pikuri::Paths.cache.join('mem0').to_s
       end
 
       private
@@ -295,6 +310,7 @@ module Pikuri
       def compose_env
         {
           'PIKURI_MEM0_SRC' => checkout_dir.to_s,
+          'PIKURI_DATA_DIR' => data_dir.to_s,
           'PIKURI_ROUTER_URL' => @router_url,
           'PIKURI_LLM_MODEL' => @llm_model,
           'PIKURI_EMBEDDER_MODEL' => @embedder_model,
