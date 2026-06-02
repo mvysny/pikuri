@@ -35,9 +35,10 @@ The gem inventory:
   `vectordb_search` / `vectordb_read` / `vectordb_reindex` tools,
   swappable `Backend` (`InMemory` / `Chroma`), embedder + reranker +
   chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-corpus`.
-- `pikuri-memory` — name-reservation placeholder for an upcoming
-  "memories" extension (durable cross-conversation facts about the
-  user/project, after hermes-agent); no library code yet.
+- `pikuri-memory` — durable cross-conversation memory backed by
+  mem0: `recall` tool + automatic per-turn prefetch and capture
+  (`Memory::Extension`), self-managed mem0 + Qdrant sidecar
+  (`Mem0Server`), `bin/pikuri-memory` no-egress demo.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
 - `pikuri` — convenience metagem depending on all ten.
 
@@ -88,7 +89,7 @@ yardoc. CLAUDE.md only records the invariant.
 
 - **Loop seam.** ruby_llm owns `Chat#complete`; pikuri-side
   loop-wiring is confined to `bin/pikuri-*` (boot/`RubyLLM.configure`),
-  `pikuri-core/lib/pikuri/agent.rb` (callbacks + `ask`), and
+  `pikuri-core/lib/pikuri/agent.rb` (callbacks + `run_loop`), and
   `pikuri-core/lib/pikuri/tool.rb` (the `Pikuri::Tool` →
   `RubyLLM::Tool` adapter). Don't construct a `Chat` or attach
   callbacks from anywhere else. See {Pikuri::Agent}.
@@ -98,8 +99,10 @@ yardoc. CLAUDE.md only records the invariant.
   {Pikuri::Agent} ("Roles in this file") for the rule of preference.
 - **Subprocess seam.** All subprocess spawning in pikuri-* `lib/`
   routes through `Pikuri::Subprocess.spawn`. Grep-enforceable:
-  `grep -rn 'Process\.spawn\|Open3\|system' pikuri-*/lib/` should
-  only hit `pikuri-core/lib/pikuri/subprocess.rb`. The documented
+  `grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' pikuri-*/lib/`
+  should only hit `pikuri-core/lib/pikuri/subprocess.rb` (plus the
+  comment in `pikuri-mcp/lib/pikuri/mcp/servers.rb` explaining the
+  exception). The documented
   exception is `pikuri-mcp/lib/pikuri/mcp/client_wrapper.rb`
   (stdio MCP entries — the `mcp` gem owns its own subprocess
   lifecycle). HTTP MCP entries don't subprocess at all. See
@@ -221,8 +224,7 @@ per-gem one-liners:
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
   summarization), `Mcp::Verifier` (injection check), `Mcp::Cache`,
-  `Mcp::ClientWrapper`. Depends on `pikuri-core` + the `mcp` gem
-  (only extension gem adding a non-stdlib runtime dep).
+  `Mcp::ClientWrapper`. Depends on `pikuri-core` + the `mcp` gem.
 - **`pikuri-subagents/`** — the delegation feature top to bottom:
   `SubAgent::SubAgentTool` (the `agent` tool),
   `SubAgent::Persona`, `SubAgent::Extension`, bundled
@@ -246,7 +248,9 @@ per-gem one-liners:
   persistence) + `Backend::Result`, `ChromaServer` (self-managed
   docker container supervisor, routes through
   `Pikuri::Subprocess.spawn`), `Indexer` (walks `source`, chunks,
-  embeds, upserts), `Embedder` (wrapper over `RubyLLM.embed`),
+  embeds, upserts), `Watcher` (filesystem-event daemon over the
+  `listen` gem that keeps a live index fresh; wired in
+  `bin/pikuri-corpus`), `Embedder` (wrapper over `RubyLLM.embed`),
   optional `Reranker::LlamaServer` (cross-encoder over
   `/v1/rerank`) + `Reranker::Hit`, `Chunker::FixedWindow` +
   `Tokenizer` (`CharHeuristic` default / `LlamaServer`) + `Chunk`.
@@ -262,7 +266,8 @@ per-gem one-liners:
   since sub-agent tools are a subset of the parent's). Its worked
   home is `pikuri-assistant` (ch7); same precedent as
   `GIT_REPO_RESEARCHER`. Depends on `pikuri-core` +
-  `pikuri-subagents`.
+  `pikuri-subagents` + the `listen` gem (filesystem events for
+  `Watcher`).
 - **`pikuri-memory/`** — durable cross-conversation memory backed
   by mem0 (see `pikuri-memory/DESIGN.md` for the design rationale
   + threat model). `Memory::Extension` wires the `recall` tool
@@ -299,16 +304,22 @@ per-gem one-liners:
   add/search rank correctly through the REST API. Rides the one new
   pikuri-core primitive, `Extension#on_user_message` (the per-turn
   prefetch + capture hook). No persona (a memory-only persona is
-  meaningless without the rest of `@private`'s toolset). Depends only
+  meaningless without the rest of `@private`'s toolset). Ships
+  `bin/pikuri-memory` — the no-egress `@private` demo agent
+  (`calculator` + memory only). Depends only
   on `pikuri-core` (mem0 owns embedding + extraction).
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
-  `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`.
+  `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`
+  + `pikuri-vectordb` + `pikuri-memory` — the last two are
+  forward-prep for the ch7 assistant shape: declared but not yet
+  wired in the binary (vectordb's correct wiring is gated on
+  persona-owned tools, see `ideas/trifecta-detector.md`).
 - **`pikuri/`** (metagem) — `lib/pikuri.rb` is ten `require`s
   in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 
-The five `bin/pikuri-*` scripts are dev / demo entry points only —
+The six `bin/pikuri-*` scripts are dev / demo entry points only —
 not advertised as gem executables. Production binaries built on
 pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 

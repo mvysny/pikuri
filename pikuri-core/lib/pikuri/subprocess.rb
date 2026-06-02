@@ -15,8 +15,10 @@ module Pikuri
   # All subprocess spawning in +lib/+ goes through {.spawn}. Direct
   # +Process.spawn+ / +Open3.*+ / +system+ / backticks anywhere in
   # +lib/+ are bugs. The convention is grep-enforceable:
-  # +grep -rn 'Process\.spawn\|Open3\|system\|backtick' lib/+ should
-  # only hit this file.
+  # +grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' lib/+ should
+  # only hit this file (plus the comment in
+  # +pikuri-mcp/lib/pikuri/mcp/servers.rb+ explaining the MCP
+  # exception).
   #
   # == Timeouts are the caller's job
   #

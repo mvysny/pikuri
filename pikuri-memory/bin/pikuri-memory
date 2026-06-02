@@ -19,7 +19,7 @@
 # outbound leg. Capture also feeds only the user's own words, and recalled
 # context enters as a system message (never re-extracted). Do NOT bolt web
 # tools onto this agent without re-deriving the recall-poisoning
-# mitigations (see ideas/memory.md).
+# mitigations (see pikuri-memory/DESIGN.md).
 #
 # Two model roles, both served by the local llama.cpp router:
 #   * the CHAT model (the conversation) — may be a thinking model;
