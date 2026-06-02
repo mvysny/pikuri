@@ -221,8 +221,9 @@ module Pikuri
         register_for_cleanup
       end
 
-      # Stop the stack (+docker compose down+), leaving the named volumes —
-      # the Qdrant corpus and memory history survive. Registered with
+      # Stop the stack (+docker compose down+), leaving {#data_dir}'s
+      # bind-mounted host directories — the Qdrant corpus and memory
+      # history survive. Registered with
       # {Pikuri::Finalizers} by {#ensure_running!}; safe to call directly.
       # Best-effort and idempotent: a non-zero +down+ is logged, not
       # raised (teardown shouldn't abort on an already-gone stack).

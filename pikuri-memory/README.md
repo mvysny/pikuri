@@ -83,9 +83,10 @@ Two ways to get a server:
 
   Needs `docker` (with the compose plugin) and `git`. The first run
   builds the mem0 image (a few minutes); the clone lives under
-  `~/.cache/pikuri/mem0` and the Qdrant corpus + memory history on
-  named docker volumes, so subsequent runs are fast and the data
-  persists across restarts.
+  `~/.cache/pikuri/mem0/temp/git` and the Qdrant corpus + memory
+  history under `~/.cache/pikuri/mem0/data/` (bind-mounted into the
+  containers), so subsequent runs are fast and the data persists
+  across restarts.
 
 - **Bring your own.** Point `Mem0Client.new(endpoint:)` at a mem0
   server you already run (configured as above). Skips the supervisor

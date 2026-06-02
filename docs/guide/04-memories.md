@@ -169,9 +169,10 @@ interface.
 
 That needs **`docker` (with the compose plugin) and `git`** on
 `PATH`. The first run builds the mem0 image and takes a few minutes;
-the clone lives under `~/.cache/pikuri/mem0` and the data on named
-Docker volumes, so subsequent runs are fast and your memories persist
-across restarts. If you'd rather run mem0 yourself, pass `--mem0-url`
+the clone lives under `~/.cache/pikuri/mem0/temp/git` and the data
+under `~/.cache/pikuri/mem0/data/` (bind-mounted into the containers),
+so subsequent runs are fast and your memories persist across
+restarts. If you'd rather run mem0 yourself, pass `--mem0-url`
 and the supervisor is skipped entirely.
 
 ## Run the demo
@@ -240,8 +241,8 @@ bookkeeping.
 
 Use Ctrl+D or Ctrl+C to quit. On exit the binary closes the agent
 first — which flushes the async capture queue so your last turns are
-recorded — then stops the sidecar. The data is on Docker volumes, so
-it's there next time.
+recorded — then stops the sidecar. The data lives on your disk under
+`~/.cache/pikuri/mem0/data/`, so it's there next time.
 
 ## What the demo actually wired
 
@@ -420,7 +421,8 @@ explicit-correction pinning (a stated correction should be
 decay-resistant, never silently overridden by a weak inferred signal)
 and read-time recency weighting — are tracked for v2 in
 `pikuri-memory/DESIGN.md`. The honest line pikuri holds today: your
-memories live in a Docker volume on your own disk, the supervisor
+memories live in a plain directory on your own disk
+(`~/.cache/pikuri/mem0/data/`), the supervisor
 binds the store to loopback only, and v1 leans on full-disk
 encryption (the same sensitivity class as your browser history)
 rather than at-rest encryption of its own, which is a named v2 item.
