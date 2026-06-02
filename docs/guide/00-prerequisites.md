@@ -42,7 +42,26 @@ directly (`./pikuri-core/bin/pikuri-chat "Hello"`) — no
 
 ## Docker — rootless, not the docker group
 
-Several chapters run infrastructure in containers: chapter 3 keeps
+### Meet Docker (the sixty-second version)
+
+A **container** runs a program in its own little world: its own
+filesystem, its own process table, its own view of the network,
+all walled off from your real machine unless you explicitly punch
+a hole. The program inside thinks it has a whole Linux box; in
+reality it can't see your files, your other processes, or your
+keys. It's the same idea as the bubblewrap sandbox the coding
+agent uses ([chapter 8](08-code.md)), packaged as a widely-used,
+batteries-included tool. Docker is everywhere — most server
+software ships as a Docker image now — so it's worth having
+installed regardless.
+
+That's the whole mental model you need for now. The deeper
+material — what isolation Docker does and doesn't give you,
+ephemeral overlays, the container-socket footgun — is
+[chapter 10](10-mcp-revisited.md). For now: it's a box, the
+program runs in the box, the box can't see your stuff.
+
+The guide leans on that box from chapter 3 on: chapter 3 keeps
 your vector index in a Qdrant container, chapter 4 runs the mem0
 memory store as a small compose stack, and chapters 5
 and 10 use a container as the wall between pikuri and MCP-server

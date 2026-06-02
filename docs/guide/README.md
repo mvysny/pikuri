@@ -25,10 +25,10 @@ chapters that apply across both tracks.
 ## Chapters
 
 0. **[Prerequisites](00-prerequisites.md).** One-time machine
-   setup: Ruby + the checkout, and Docker — **rootless**, because
-   the usual `docker` group shortcut is passwordless root. Safe to
-   skim past until chapter 3, which is where Docker first earns
-   its keep.
+   setup: Ruby + the checkout, and Docker — what a container is
+   in sixty seconds, and why **rootless**: the usual `docker`
+   group shortcut is passwordless root. Safe to skim past until
+   chapter 3, which is where Docker first earns its keep.
 1. **[Your first conversation](01-chat.md).** Install
    `llama.cpp`, start the server, run `pikuri-chat`. Establishes
    the base vocabulary: `Pikuri::Agent`, `Pikuri::Tool`,

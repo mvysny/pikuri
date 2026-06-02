@@ -82,31 +82,13 @@ infrastructure since chapter 3; this chapter is its first use as a
 *trust boundary*. The full "why every server you didn't write runs
 in a container" argument is [chapter 10](10-mcp-revisited.md).
 
-## Meet Docker (the sixty-second version)
+## Rootless, or the boundary inverts
 
-A **container** runs a program in its own little world: its own
-filesystem, its own process table, its own view of the network,
-all walled off from your real machine unless you explicitly punch
-a hole. The program inside thinks it has a whole Linux box; in
-reality it can't see your files, your other processes, or your
-keys. It's the same idea as the bubblewrap sandbox the coding
-agent uses ([chapter 8](08-code.md)), packaged as a widely-used,
-batteries-included tool. Docker is everywhere — most server
-software ships as a Docker image now — so it's worth having
-installed regardless.
-
-That's the whole mental model you need here. The deeper material
-— what isolation Docker does and doesn't give you, ephemeral
-overlays, the container-socket footgun — is
-[chapter 10](10-mcp-revisited.md). For now: it's a box, the
-server runs in the box, the box can't see your stuff.
-
-### Rootless, or the boundary inverts
-
-You installed Docker — **rootless** — back in
-[chapter 0](00-prerequisites.md); if you skipped that section,
-now's the moment, because this chapter is exactly why it says
-"rootless" and not `usermod -aG docker`. Membership in the
+You met and installed Docker — **rootless** — back in
+[chapter 0](00-prerequisites.md) ("it's a box, the program runs
+in the box, the box can't see your stuff"); if you skipped that
+section, now's the moment, because this chapter is exactly why it
+says "rootless" and not `usermod -aG docker`. Membership in the
 `docker` group is passwordless root in a trenchcoat: the default
 daemon runs as root, and anyone who can talk to its socket can ask
 it for a container with your whole disk mounted inside —

@@ -326,25 +326,57 @@ you actively want to watch the browser, not as a default.
 ### Reaching your local dev server
 
 If you want the browser to visit `localhost:3000`, the
-container's `localhost` isn't your host's `localhost`. Two
-options:
+container's `localhost` isn't your host's `localhost` — and with
+[chapter 0](00-prerequisites.md)'s rootless Docker, your host's
+`127.0.0.1` is flatly unreachable from containers. That's the
+same deliberate seal [chapter 4](04-memories.md) met, and here
+it's working *for* you: this is the chapter's
+largest-untrusted-content surface, and attacker-chosen JavaScript
+probing `127.0.0.1` for your loopback services is a classic move.
+The advice you'll find online — `--network host`, or
+`--add-host host.docker.internal:host-gateway` — quietly assumes
+a root daemon; under rootless both dead-end inside the daemon's
+own network namespace, nowhere near your host. (And don't reach
+for `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false` —
+chapter 4 explains how that daemon-wide knob un-builds this
+chapter's whole boundary.)
 
-- **`--network host`.** The container joins the host network
-  namespace; the browser sees `localhost:3000` directly.
-  Simplest, but it removes the network-isolation layer Docker
-  normally gives you.
-- **`--add-host host.docker.internal:host-gateway`.** The
-  container gets a special hostname routing to the host's
-  bridge IP. The browser navigates to
-  `http://host.docker.internal:3000`. Preserves network
-  isolation; requires your dev server to bind to `0.0.0.0`
-  (or at least the bridge interface), not just `127.0.0.1`.
+What works — on rootless and rootful alike — is giving the dev
+server an address the container can route to, scoped as tightly
+as you like:
+
+- **A host-only dummy interface** (tightest): an address that
+  exists only on your host — containers can reach it, your LAN
+  never sees it.
+
+  ```sh
+  sudo ip link add devsrv0 type dummy
+  sudo ip addr add 192.168.255.1/32 dev devsrv0
+  sudo ip link set devsrv0 up
+  ```
+
+  Bind the dev server to it (`--host 192.168.255.1`, or your
+  framework's equivalent) and have the browser navigate to
+  `http://192.168.255.1:3000`. The interface vanishes on reboot;
+  persist it with a small systemd-networkd or netplan snippet
+  once the setup sticks. Pick another subnet if your LAN already
+  uses `192.168.255.x`.
+- **Your LAN IP** (simplest): bind the dev server to it and
+  navigate there. The cost is that the dev server is now on your
+  network — fine on a trusted home LAN behind a router, worth a
+  thought anywhere else.
+
+(Chapter 4 solved the same container-to-host problem with a
+supervised socat relay over a unix socket — the engineered
+version of this. Here the container is a hand-wired registry
+entry and the Playwright image carries no relay half, so the
+interface trick is the lighter lift.)
 
 Bubblewrap doesn't enter into this — it sandboxes filesystem
 access for `bash`, not network. A dev server `bash` started
-listens on a port reachable from any process on the host,
-including the Playwright container. The two sandboxes are
-independent; they don't fight.
+listens on whatever address it binds; whether the Playwright
+container can reach it is decided by the routing above. The two
+sandboxes are independent; they don't fight.
 
 ### Seeing the screenshots
 
