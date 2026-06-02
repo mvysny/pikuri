@@ -44,7 +44,7 @@ directly (`./pikuri-core/bin/pikuri-chat "Hello"`) — no
 
 Several chapters run infrastructure in containers: chapter 3 keeps
 your vector index in a Qdrant container, chapter 4 runs the mem0
-memory store as a two-container compose stack, and chapters 5
+memory store as a small compose stack, and chapters 5
 and 10 use a container as the wall between pikuri and MCP-server
 code you didn't write. All of it just needs a working `docker` on
 `PATH` — pikuri doesn't care how the daemon behind it runs. But
@@ -83,7 +83,7 @@ files; every container in this guide runs identically on it.
 On Ubuntu 26.04 with the distro package:
 
 ```sh
-sudo apt install docker.io docker-compose-v2 rootlesskit slirp4netns uidmap
+sudo apt install docker.io docker-compose-v2 rootlesskit slirp4netns uidmap socat
 # don't run the system-wide root daemon at all — we won't use it
 sudo systemctl disable --now docker.service docker.socket
 
@@ -117,11 +117,15 @@ Two rootless quirks worth knowing about up front:
 - **Containers can't dial the host's loopback.** Rootless
   networking deliberately blocks containers from reaching services
   bound to the host's `127.0.0.1` (the network stack runs with
-  `--disable-host-loopback`). Chapter 1's `llama-server` binds
-  `127.0.0.1:8080`, and chapter 4 runs a container that must call
-  it — the fix (have the router listen on an address the container
-  can route to) is spelled out [there](04-memories.md). The other
-  direction is unaffected: ports a container publishes, like
+  `--disable-host-loopback`) — services that assume "local caller
+  = trusted caller" stay out of containers' reach. Chapter 1's
+  `llama-server` binds `127.0.0.1:8080`, and chapter 4 runs a
+  container that must call it. That's what the `socat` in the apt
+  line above is for: pikuri uses it to relay *one specific host
+  service* to *the specific trusted containers that need it* over
+  a unix socket file, leaving the loopback sealed for every other
+  container — [chapter 4](04-memories.md) shows the mechanism. The
+  other direction is unaffected: ports a container publishes, like
   Qdrant's `127.0.0.1:6333`, are reachable from the host as usual.
 - **Logging out stops your user's systemd services**, the rootless
   daemon included. Irrelevant for pikuri's interactive demos — the

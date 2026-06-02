@@ -3,17 +3,32 @@
 require 'spec_helper'
 require 'faraday'
 require 'fileutils'
+require 'socket'
+require 'stringio'
 require 'tmpdir'
 
 describe Pikuri::Memory::Mem0Server do
   let(:cache_dir) { Dir.mktmpdir('pikuri-mem0-server-spec-') }
-  after { FileUtils.remove_entry(cache_dir) }
+  after do
+    @relay_sock&.close
+    FileUtils.remove_entry(cache_dir)
+  end
 
-  # Stub the subprocess seam: capture every git/docker invocation (argv +
-  # env), return planned [exit, stdout] results in FIFO order. Mirrors
-  # pikuri-vectordb's chroma_server_spec.
+  # Stub the subprocess seam: capture every git/docker/socat invocation
+  # (argv + env), return planned [exit, stdout] results in FIFO order.
+  # Mirrors pikuri-vectordb's chroma_server_spec. `terminated` records
+  # handles whose #terminate was called (the relay teardown path).
   let(:calls) { [] }
   let(:planned) { [] }
+  let(:terminated) { [] }
+
+  # The relay path polls File.socket? for the socket the (stubbed-out)
+  # socat would have bound — bind a real one so ensure_running! proceeds.
+  def fake_relay_socket!
+    dir = File.join(cache_dir, 'sock')
+    FileUtils.mkdir_p(dir)
+    @relay_sock = UNIXServer.new(File.join(dir, 'router.sock'))
+  end
 
   # Faraday stub for the /docs heartbeat poll.
   let(:health_stubs) { Faraday::Adapter::Test::Stubs.new }
@@ -24,11 +39,18 @@ describe Pikuri::Memory::Mem0Server do
   before do
     calls_ref = calls
     plans_ref = planned
+    term_ref = terminated
 
     fake_proc = Class.new do
-      def initialize(exit_status, output)
+      attr_reader :io
+
+      def initialize(exit_status, output, term_ref)
         @exit_status = exit_status
         @output = output
+        @term_ref = term_ref
+        # Daemon children (the relay) hand io to a drain thread instead
+        # of calling #wait; an empty StringIO EOFs the drain immediately.
+        @io = StringIO.new('')
       end
 
       def wait
@@ -36,6 +58,10 @@ describe Pikuri::Memory::Mem0Server do
           def success? = exitstatus.zero?
         end.new(@exit_status)
         Struct.new(:output, :status).new(@output, status)
+      end
+
+      def terminate
+        @term_ref << self
       end
     end
 
@@ -46,7 +72,7 @@ describe Pikuri::Memory::Mem0Server do
       raise Errno::ENOENT, argv.first if plan == :enoent
 
       exit_status, output = plan
-      fake_proc.new(exit_status, output)
+      fake_proc.new(exit_status, output, term_ref)
     end
   end
 
@@ -101,17 +127,24 @@ describe Pikuri::Memory::Mem0Server do
   end
 
   describe '#ensure_running!' do
-    it 'clones+patches a fresh checkout, brings the stack up, then heartbeats' do
-      planned.replace([
-                        [0, ''],   # git init
-                        [0, ''],   # git remote add origin
-                        [0, ''],   # git fetch --depth 1 origin <ref>
-                        [0, ''],   # git checkout --detach FETCH_HEAD
-                        [1, ''],   # git apply --reverse --check -> not yet applied
-                        [0, ''],   # git apply <patch>
-                        [0, '']    # docker compose up -d --build
-                      ])
+    # Planned subprocess results for a fresh-checkout boot, in FIFO order.
+    let(:fresh_boot_plan) do
+      [
+        [0, ''],   # git init
+        [0, ''],   # git remote add origin
+        [0, ''],   # git fetch --depth 1 origin <ref>
+        [0, ''],   # git checkout --detach FETCH_HEAD
+        [1, ''],   # git apply --reverse --check -> not yet applied
+        [0, ''],   # git apply <patch>
+        [0, ''],   # socat relay (daemon — result unused)
+        [0, '']    # docker compose up -d --build
+      ]
+    end
+
+    it 'clones+patches a fresh checkout, starts the relay, brings the stack up, then heartbeats' do
+      planned.replace(fresh_boot_plan)
       health_stubs.get('/docs') { [200, {}, 'ok'] }
+      fake_relay_socket!
 
       build_server.ensure_running!
 
@@ -124,9 +157,23 @@ describe Pikuri::Memory::Mem0Server do
       assert_equal %w[up -d --build], up.last(3)
     end
 
-    it 'passes the checkout path + router/model wiring as compose env' do
-      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], [0, '']])
+    it 'spawns the host-side socat relay against router_url host:port' do
+      planned.replace(fresh_boot_plan)
       health_stubs.get('/docs') { [200, {}, 'ok'] }
+      fake_relay_socket!
+
+      build_server.ensure_running!
+
+      socat = calls.map { |c| c[:argv] }.find { |a| a[0] == 'socat' }
+      refute_nil socat
+      assert_match(%r{\AUNIX-LISTEN:#{Regexp.escape(File.join(cache_dir, 'sock', 'router.sock'))},fork,unlink-early}, socat[1])
+      assert_equal 'TCP:router:8080', socat[2]
+    end
+
+    it 'passes the checkout path + relay + model wiring as compose env' do
+      planned.replace(fresh_boot_plan)
+      health_stubs.get('/docs') { [200, {}, 'ok'] }
+      fake_relay_socket!
 
       build_server.ensure_running!
 
@@ -134,10 +181,32 @@ describe Pikuri::Memory::Mem0Server do
       env = up[:env]
       assert_equal File.join(cache_dir, 'temp', 'git'), env['PIKURI_MEM0_SRC']
       assert_equal File.join(cache_dir, 'data'), env['PIKURI_DATA_DIR']
-      assert_equal 'http://router:8080/v1', env['PIKURI_ROUTER_URL']
+      assert_equal File.join(cache_dir, 'sock'), env['PIKURI_SOCK_DIR']
+      assert_equal Pikuri::Memory::Mem0Server::SOCAT_IMAGE, env['PIKURI_SOCAT_IMAGE']
+      # The container-visible URL: the relay sidecar, with /v1 carried over.
+      assert_equal 'http://router-proxy:8080/v1', env['PIKURI_ROUTER_URL']
       assert_equal 'qwen2.5-7b', env['PIKURI_LLM_MODEL']
       assert_equal 'nomic', env['PIKURI_EMBEDDER_MODEL']
       assert_equal '768', env['PIKURI_EMBEDDING_DIMS']
+    end
+
+    it 'skips the relay and uses container_router_url verbatim when given' do
+      # No socat plan entry: the relay must not be spawned.
+      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], [0, '']])
+      health_stubs.get('/docs') { [200, {}, 'ok'] }
+
+      build_server(container_router_url: 'http://host.docker.internal:8080/v1').ensure_running!
+
+      refute(calls.map { |c| c[:argv] }.any? { |a| a[0] == 'socat' }, 'relay must not spawn')
+      up = calls.find { |c| c[:argv].include?('up') }
+      assert_equal 'http://host.docker.internal:8080/v1', up[:env]['PIKURI_ROUTER_URL']
+    end
+
+    it 'raises a socat install hint when socat is missing' do
+      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], :enoent])
+
+      err = assert_raises(RuntimeError) { build_server.ensure_running! }
+      assert_match(/socat.*not found/, err.message)
     end
 
     it 'skips cloning when the checkout is already at the pinned ref' do
@@ -145,9 +214,11 @@ describe Pikuri::Memory::Mem0Server do
       planned.replace([
                         [0, Pikuri::Memory::Mem0Server::MEM0_REF], # git rev-parse HEAD
                         [0, ''],                                   # git apply --reverse --check -> already applied
+                        [0, ''],                                   # socat relay
                         [0, '']                                    # docker compose up
                       ])
       health_stubs.get('/docs') { [200, {}, 'ok'] }
+      fake_relay_socket!
 
       build_server.ensure_running!
 
@@ -167,19 +238,34 @@ describe Pikuri::Memory::Mem0Server do
       assert_match(/failed to apply/, err.message)
     end
 
-    it 'raises on healthcheck timeout' do
-      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], [0, '']])
+    it 'raises on healthcheck timeout and self-heals the relay' do
+      planned.replace(fresh_boot_plan)
       health_stubs.get('/docs') { [503, {}, 'starting'] }
+      fake_relay_socket!
 
       err = assert_raises(RuntimeError) { build_server.ensure_running! }
       assert_match(/did not become healthy/, err.message)
+      assert_equal 1, terminated.size, 'the relay must not be left as a stray'
+    end
+  end
+
+  describe '#initialize relay guard' do
+    it 'rejects a non-http router_url without container_router_url' do
+      err = assert_raises(ArgumentError) { build_server(router_url: 'https://router:8443/v1') }
+      assert_match(/must be http/, err.message)
+    end
+
+    it 'accepts a non-http router_url when container_router_url is given' do
+      build_server(router_url: 'https://router:8443/v1',
+                   container_router_url: 'https://router:8443/v1')
     end
   end
 
   describe '#close' do
-    it 'runs docker compose down and is idempotent' do
-      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], [0, '']])
+    it 'runs docker compose down, stops the relay, and is idempotent' do
+      planned.replace([[0, ''], [0, ''], [0, ''], [0, ''], [1, ''], [0, ''], [0, ''], [0, '']])
       health_stubs.get('/docs') { [200, {}, 'ok'] }
+      fake_relay_socket!
       server = build_server
       server.ensure_running!
 
@@ -190,6 +276,7 @@ describe Pikuri::Memory::Mem0Server do
       downs = calls.select { |c| c[:argv].include?('down') }
       assert_equal 1, downs.size
       assert_equal %w[docker compose], downs.first[:argv][0, 2]
+      assert_equal 1, terminated.size, 'close must terminate the relay exactly once'
     end
   end
 end

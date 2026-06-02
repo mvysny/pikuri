@@ -125,6 +125,23 @@ module Pikuri
       self.class.send(:prune, @pgid)
     end
 
+    # SIGTERM the whole process group without blocking for output —
+    # the stop button for a *daemon* child (one the caller never
+    # {#wait}s on, e.g. {Pikuri::Memory::Mem0Server}'s socat relay).
+    # Best-effort and idempotent: an already-dead group is a no-op.
+    # The group stays in the exit-sweep set until it actually dies,
+    # so a child that ignores SIGTERM is still re-signalled by
+    # {.cleanup!} at process exit.
+    #
+    # @return [void]
+    def terminate
+      Process.kill('-TERM', @pgid)
+    rescue Errno::ESRCH
+      # already gone
+    ensure
+      self.class.send(:prune, @pgid)
+    end
+
     class << self
       # Currently-tracked process groups, with dead ones pruned as a
       # side effect. Useful for a future +/bg+ REPL command or a

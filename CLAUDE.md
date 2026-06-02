@@ -305,16 +305,24 @@ per-gem one-liners:
   re-extracted. Safe only on a no-untrusted-ingest / no-egress
   agent (the `@private` config); porting onto an egress-capable
   agent re-opens recall-poisoning. Two ways to a server: let pikuri
-  manage it (`Mem0Server`, needs `docker` + `git`) or bring your own
-  (`Mem0Client.new(endpoint:)`). The supervisor builds mem0 **from a
-  pinned source checkout** (no usable published image) with a
-  fail-loud build-time patch swapping `DEFAULT_CONFIG` from pgvector
-  to Qdrant — pgvector both has a top-k inversion bug *and* connects
-  to Postgres eagerly at boot, so Qdrant-by-default is what lets the
-  stack run **Postgres-free** (2 containers, not 3). Verified
+  manage it (`Mem0Server`, needs `docker` + `git` + `socat`) or
+  bring your own (`Mem0Client.new(endpoint:)`). The supervisor
+  builds mem0 **from a pinned source checkout** (no usable published
+  image) with a fail-loud build-time patch swapping `DEFAULT_CONFIG`
+  from pgvector to Qdrant — pgvector both has a top-k inversion bug
+  *and* connects to Postgres eagerly at boot, so Qdrant-by-default
+  is what lets the stack run **Postgres-free**. The container
+  reaches the (loopback-bound) host router through a **socket
+  relay** — host-side `socat` on a unix socket + a pinned
+  `alpine/socat` `router-proxy` sidecar — so a `localhost` router
+  works identically on rootful and rootless daemons, and the
+  host's loopback stays sealed for every other container; the
+  socket file is the capability (see `Mem0Server`'s "router relay"
+  yardoc). Verified
   end-to-end against a local llama.cpp router (non-reasoning
   `Qwen2.5-7B` extractor + `nomic` embedder): boots Postgres-free,
-  add/search rank correctly through the REST API. Rides the one new
+  add/search rank correctly through the REST API — that run predates
+  the socket relay, which still needs one live end-to-end pass. Rides the one new
   pikuri-core primitive, `Extension#on_user_message` (the per-turn
   prefetch + capture hook). No persona (a memory-only persona is
   meaningless without the rest of `@private`'s toolset). Ships

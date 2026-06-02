@@ -69,21 +69,25 @@ Two ways to get a server:
   Qdrant engine — as `pikuri-vectordb`'s `Server::Qdrant`): it
   clones mem0 at a pinned
   commit, patches `DEFAULT_CONFIG` to use Qdrant, and brings a
-  two-container `docker compose` stack (mem0 + Qdrant, **no Postgres**)
-  up through `Pikuri::Subprocess.spawn`. `#client` returns a
-  `Mem0Client` pointed at it.
+  `docker compose` stack (mem0 + Qdrant + a ~5 MB socat relay,
+  **no Postgres**) up through `Pikuri::Subprocess.spawn`. `#client`
+  returns a `Mem0Client` pointed at it. A `localhost` router works
+  as-is: the relay carries the container's LLM/embedder calls to
+  the host's loopback over a unix socket, so no
+  rootless-vs-rootful daemon configuration is needed (see
+  `Mem0Server`'s "router relay" yardoc section).
 
   ```ruby
   server = Pikuri::Memory::Mem0Server.ensure_running(
-    router_url:     'http://192.168.122.1:8080/v1',
+    router_url:     'http://localhost:8080/v1',
     llm_model:      'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M',
     embedder_model: 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
   )
   Pikuri::Memory::Extension.new(client: server.client, user_id: 'martin')
   ```
 
-  Needs `docker` (with the compose plugin) and `git`. The first run
-  builds the mem0 image (a few minutes); the clone lives under
+  Needs `docker` (with the compose plugin), `git`, and `socat`. The
+  first run builds the mem0 image (a few minutes); the clone lives under
   `~/.cache/pikuri/mem0/temp/git` and the Qdrant corpus + memory
   history under `~/.cache/pikuri/mem0/data/` (bind-mounted into the
   containers), so subsequent runs are fast and the data persists

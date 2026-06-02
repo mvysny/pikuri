@@ -89,6 +89,28 @@ RSpec.describe Pikuri::Subprocess do
     end
   end
 
+  describe '#terminate' do
+    it 'SIGTERMs the group of a daemon child without blocking' do
+      sp = described_class.spawn('sleep', '5', chdir: '/tmp')
+      sp.terminate
+      # SIGTERM delivery is async; poll briefly for the child to die.
+      deadline = Time.now + 2
+      sleep 0.02 while Time.now < deadline && (Process.kill(0, sp.pid) rescue false)
+      refute(begin
+        Process.kill(0, sp.pid)
+      rescue Errno::ESRCH
+        false
+      end, 'child should be dead after terminate')
+    end
+
+    it 'is idempotent on an already-dead child' do
+      sp = described_class.spawn('true', chdir: '/tmp')
+      sp.wait
+      sp.terminate # must not raise
+      sp.terminate
+    end
+  end
+
   describe '.cleanup!' do
     it 'SIGTERMs all tracked process groups and clears the set' do
       described_class.spawn('sleep', '5', chdir: '/tmp')

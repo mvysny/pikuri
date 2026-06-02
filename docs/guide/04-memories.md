@@ -162,53 +162,71 @@ install either by hand; pikuri runs them as a self-managed Docker
 sidecar, the same "let pikuri supervise the container" pattern —
 and the same Qdrant engine, pinned to the same image tag —
 chapter 3 used. `Pikuri::Memory::Mem0Server` clones mem0 at
-a pinned commit, builds the image, and brings up a two-container
-`docker compose` stack (mem0 + Qdrant — **no Postgres**, see
-["Storage"](#storage-mem0--qdrant-no-postgres) below) bound to
+a pinned commit, builds the image, and brings up a `docker compose`
+stack of mem0 + Qdrant (**no Postgres**, see
+["Storage"](#storage-mem0--qdrant-no-postgres) below) plus a ~5 MB
+relay container explained in the next section, all bound to
 `127.0.0.1` only, so your memory never listens on a routable
 interface.
 
-That needs **`docker` (with the compose plugin) and `git`** on
-`PATH` — all three are part of [chapter 0](00-prerequisites.md)'s
-rootless setup. The first run builds the mem0 image and takes a few minutes;
+That needs **`docker` (with the compose plugin), `git`, and
+`socat`** on `PATH` — all four are part of
+[chapter 0](00-prerequisites.md)'s rootless setup. The first run
+builds the mem0 image and takes a few minutes;
 the clone lives under `~/.cache/pikuri/mem0/temp/git` and the data
 under `~/.cache/pikuri/mem0/data/` (bind-mounted into the containers),
 so subsequent runs are fast and your memories persist across
 restarts. If you'd rather run mem0 yourself, pass `--mem0-url`
 and the supervisor is skipped entirely.
 
+### How the container reaches your router: the socket relay
+
+There's a wrinkle worth thirty seconds, because it's a small
+security lesson in its own right. The extractor and embedder run
+*inside* the mem0 container, but chapter 1's `llama-server` binds
+the host's `127.0.0.1:8080` — and with
+[chapter 0](00-prerequisites.md)'s rootless Docker, a container
+**cannot reach services bound to your host's `127.0.0.1` at all**.
+That's not a bug to work around; it's rootless networking shipping
+`--disable-host-loopback` on purpose. Loopback-only services tend
+to assume "local caller = trusted caller": CUPS's admin pages, a
+dev Postgres with `trust` auth, a Redis with no password — none of
+them expect a container on the other end of the line.
+
+The first fix a search engine will offer is
+`DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false`.
+**Don't.** It's daemon-wide: *every* container — including the
+deliberately untrusted MCP servers chapters 5 and 10 put in
+containers precisely so they can't touch your machine — would gain
+a network path to *every* loopback service on the host. You'd be
+drilling through the exact wall those chapters build.
+
+pikuri instead builds a hole exactly one service wide. The
+supervisor runs `socat` on the host, listening on a **unix socket
+file** under `~/.cache/pikuri/mem0/sock/` and forwarding to the
+router; the stack's third container (`router-proxy`, a ~5 MB socat
+image) bind-mounts that socket and relays it onto the stack's
+internal network, where mem0 calls it as `http://router-proxy:8080`.
+The socket file *is* the capability: only a container that mounts
+it can reach the router, your loopback stays sealed for everything
+else, and an MCP container three chapters from now gets nothing.
+And because no part of this depends on how the daemon routes to the
+host, the same wiring works on rootful and rootless Docker alike —
+there is no special case to configure.
+
 ## Run the demo
 
 ```sh
-./pikuri-memory/bin/pikuri-memory --server http://192.168.122.1:8080
+./pikuri-memory/bin/pikuri-memory
 ```
 
-Note the `--server` is a **LAN IP**, not `localhost`. The chat agent
-runs on your host and would happily talk to `localhost:8080`, but the
-extractor and embedder run *inside* the mem0 container — and with
-[chapter 0](00-prerequisites.md)'s rootless Docker, a container
-**cannot reach services bound to your host's `127.0.0.1` at all**
-(rootless networking ships `--disable-host-loopback` on purpose: a
-container shouldn't get to probe every local-only service on your
-machine). So run `llama-server` listening on an address the
-container can route to — a LAN IP, or a host-only bridge like the
-`192.168.122.1` above (libvirt's NAT bridge: reachable from
-containers and VMs on the host, invisible to your actual network) —
-and pass that same address as `--server`; it's used as-is for both
-sides.
-
-(On a *rootful* daemon there's a fallback: pikuri rewrites a
-`localhost` router URL to `host.docker.internal` automatically, and
-the root daemon routes that back to the host's loopback. Under
-rootless the rewrite still happens but the connection fails — if
-extraction silently stores nothing and the mem0 logs show connection
-errors to `host.docker.internal`, a loopback-bound router is the
-first thing to check.)
-
+That's it — `--server` defaults to `http://localhost:8080`, and
+thanks to the relay, "localhost" means the same thing on both sides.
 On first run you'll see the supervisor come up, then the banner:
 
 ```
-I, [..] INFO -- Memory::Mem0Server: starting pikuri-internal-mem0 (mem0 + Qdrant) on 127.0.0.1:8888; first run builds the mem0 image and may take a few minutes
+I, [..] INFO -- Memory::Mem0Server: relay: socat ~/.cache/pikuri/mem0/sock/router.sock → localhost:8080
+I, [..] INFO -- Memory::Mem0Server: starting pikuri-internal-mem0 (mem0 + Qdrant + relay) on 127.0.0.1:8888; first run builds the mem0 image and may take a few minutes
 Pikuri Memory: a private assistant that remembers you across conversations (no internet access).
 Memory: self-managed mem0 + Qdrant sidecar  •  user: mavi
 Tell me things about yourself, then quit and come back — I will remember.
@@ -307,9 +325,10 @@ A correct nearest-first ranking is the precondition for trusting a
 small prefetch slice, so this bug was disqualifying.
 
 **No Postgres — for footprint.** The pgvector provider also connects
-to Postgres eagerly at boot, which would force a third container into
-the stack. Defaulting to Qdrant lets the whole thing run Postgres-free
-— two containers, not three. The patch is applied with `git apply`
+to Postgres eagerly at boot, which would force a whole Postgres
+container into the stack. Defaulting to Qdrant lets the whole thing
+run Postgres-free — the only third container is the 5 MB socat relay,
+not a database. The patch is applied with `git apply`
 and is *fail-loud*: if it neither applies cleanly nor is already
 applied, the supervisor raises rather than building a wrong image.
 

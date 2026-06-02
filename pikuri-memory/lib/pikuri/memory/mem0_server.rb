@@ -3,6 +3,7 @@
 require 'faraday'
 require 'fileutils'
 require 'pathname'
+require 'uri'
 
 module Pikuri
   module Memory
@@ -54,6 +55,36 @@ module Pikuri
     # burns its budget on CoT and returns empty/truncated JSON
     # (DESIGN.md §"Extraction model decision"). The vector
     # store is not bundle-gated, so Qdrant is accepted.
+    #
+    # == The router relay (container → host loopback)
+    #
+    # The extraction LLM + embedder calls originate *inside* the mem0
+    # container, but the llama.cpp router conventionally binds the host's
+    # +127.0.0.1:8080+ — an address rootless docker deliberately refuses
+    # to route containers to (+--disable-host-loopback+; re-enabling it
+    # daemon-wide would hand *every* container, including deliberately
+    # untrusted MCP containers, a path to *every* loopback-bound service
+    # on the host: CUPS, trust-auth Postgres, an unauthenticated Redis…).
+    # Instead of punching that hole, the supervisor builds a scoped one:
+    #
+    # 1. The host side runs +socat UNIX-LISTEN:<sock_dir>/router.sock,…
+    #    TCP:<router host:port>+ — spawned via {Pikuri::Subprocess.spawn}
+    #    as a daemon child (never +#wait+ed; stopped with
+    #    +Subprocess#terminate+, and swept by the exit reaper as a
+    #    backstop).
+    # 2. The compose stack's +router-proxy+ sidecar (a pinned
+    #    {SOCAT_IMAGE}, ~5 MB) bind-mounts the socket *directory* and
+    #    relays it back onto the stack-internal network as
+    #    +http://router-proxy:8080+.
+    # 3. mem0's +OPENAI_BASE_URL+ points at that sidecar.
+    #
+    # The socket *file* is the capability: only a container that mounts
+    # it can reach the router, the host's loopback stays sealed for
+    # everything else, and the same wiring works identically on rootful
+    # and rootless daemons — so there is no daemon-flavour special case.
+    # The relay speaks plain TCP, so +router_url+ must be +http://+; an
+    # +https+ router needs +container_router_url:+ (which bypasses the
+    # relay and is then the caller's routing problem).
     #
     # == Pinned + patched checkout
     #
@@ -131,6 +162,23 @@ module Pikuri
       #   container-start readiness.
       DEFAULT_HEALTHCHECK_TIMEOUT = 60
 
+      # @return [String] pinned socat image for the +router-proxy+
+      #   sidecar (see the class header's "router relay" section). A
+      #   ~5 MB single-binary image; bumped manually like
+      #   {DEFAULT_QDRANT_IMAGE}.
+      SOCAT_IMAGE = 'alpine/socat:1.8.0.3'
+
+      # @return [String] socket filename inside {#sock_dir}; the sidecar
+      #   sees it as +/sock/router.sock+.
+      RELAY_SOCKET = 'router.sock'
+
+      # @return [Integer] seconds to wait for the host-side socat to bind
+      #   the relay socket after spawn. Binding is immediate in practice;
+      #   the timeout exists to fail loud when socat dies on startup
+      #   (bad address, port typo) instead of surfacing minutes later as
+      #   silent extraction failures.
+      RELAY_BIND_TIMEOUT = 5
+
       # Construct and immediately ensure the stack is running.
       # Convenience factory — +new(...).tap(&:ensure_running!)+.
       #
@@ -140,11 +188,20 @@ module Pikuri
       end
 
       # @param router_url [String] llama.cpp OpenAI-compatible base URL
-      #   (e.g. +"http://192.168.122.1:8080/v1"+) the mem0 server routes
-      #   its LLM + embedder calls to.
+      #   *as seen from the host* (e.g. +"http://localhost:8080/v1"+) the
+      #   mem0 server routes its LLM + embedder calls to. Must be
+      #   +http://+ — the relay (class header) carries it into the
+      #   container, so a loopback-bound router is fine.
       # @param llm_model [String] extraction model id on the router. Must
       #   be **non-reasoning** (see the class header).
       # @param embedder_model [String] embedder model id on the router.
+      # @param container_router_url [String, nil] escape hatch: router
+      #   base URL *as seen from inside the mem0 container*. When set,
+      #   the relay is not spawned and routing the container to this URL
+      #   is the caller's problem (e.g.
+      #   +"http://host.docker.internal:8080/v1"+ on a rootful daemon, or
+      #   an +https+ router on a routable address). Default +nil+ — use
+      #   the relay.
       # @param port [Integer] host port for the REST API (127.0.0.1).
       # @param qdrant_port [Integer] host port for Qdrant (127.0.0.1).
       # @param embedding_dims [Integer] embedder output dimension.
@@ -155,12 +212,21 @@ module Pikuri
       # @param healthcheck_timeout [Integer] seconds to poll readiness.
       # @param connection [Faraday::Connection, nil] DI hook for tests.
       # @return [Mem0Server]
-      def initialize(router_url:, llm_model:, embedder_model:,
+      # @raise [ArgumentError] when +router_url+ is not +http://+ and no
+      #   +container_router_url+ is given (the TCP relay can't originate
+      #   TLS).
+      def initialize(router_url:, llm_model:, embedder_model:, container_router_url: nil,
                      port: DEFAULT_PORT, qdrant_port: DEFAULT_QDRANT_PORT,
                      embedding_dims: DEFAULT_EMBEDDING_DIMS, collection: DEFAULT_COLLECTION,
                      qdrant_image: DEFAULT_QDRANT_IMAGE, cache_dir: nil,
                      healthcheck_timeout: DEFAULT_HEALTHCHECK_TIMEOUT, connection: nil)
         @router_url = router_url
+        @container_router_url = container_router_url
+        if container_router_url.nil? && URI(router_url).scheme != 'http'
+          raise ArgumentError, "Mem0Server: the socat relay carries plain TCP, so router_url must be " \
+                               "http:// (got #{router_url.inspect}). For an https router, pass " \
+                               'container_router_url: with an address the container can route to.'
+        end
         @llm_model = llm_model
         @embedder_model = embedder_model
         @port = port
@@ -173,6 +239,7 @@ module Pikuri
         @connection = connection
         @closed = false
         @finalizer_handle = nil
+        @relay = nil
       end
 
       # @return [Integer] host port the REST API binds.
@@ -191,6 +258,14 @@ module Pikuri
       #   {Pikuri::VectorDb::Server::Chroma}).
       def data_dir
         @cache_dir.join('data')
+      end
+
+      # @return [Pathname] host directory holding the relay's unix socket,
+      #   bind-mounted into the +router-proxy+ sidecar. The *directory* is
+      #   what's mounted — a restarted host-side socat re-creates the
+      #   socket file, and a file bind-mount would pin the stale inode.
+      def sock_dir
+        @cache_dir.join('sock')
       end
 
       # @return [String] +"http://localhost:<port>"+.
@@ -219,10 +294,19 @@ module Pikuri
         # root-owned (and so a missing dir isn't silently a fresh volume).
         FileUtils.mkdir_p(data_dir.join('qdrant'))
         FileUtils.mkdir_p(data_dir.join('history'))
-        LOGGER.info("starting #{COMPOSE_PROJECT} (mem0 + Qdrant) on 127.0.0.1:#{@port}; " \
-                    'first run builds the mem0 image and may take a few minutes')
-        compose!('up', '-d', '--build')
-        wait_for_healthy!
+        FileUtils.mkdir_p(sock_dir, mode: 0o700)
+        start_relay! unless @container_router_url
+        begin
+          LOGGER.info("starting #{COMPOSE_PROJECT} (mem0 + Qdrant + relay) on 127.0.0.1:#{@port}; " \
+                      'first run builds the mem0 image and may take a few minutes')
+          compose!('up', '-d', '--build')
+          wait_for_healthy!
+        rescue StandardError
+          # Self-heal: don't leave the relay as a stray when the stack
+          # never came up (same discipline as Agent's build-phase rescue).
+          stop_relay!
+          raise
+        end
         register_for_cleanup
       end
 
@@ -239,6 +323,7 @@ module Pikuri
 
         @closed = true
         result = compose('down')
+        stop_relay!
         return if result.status.success?
 
         LOGGER.warn("docker compose down failed (exit #{result.status.exitstatus}): #{result.output.strip}")
@@ -314,11 +399,16 @@ module Pikuri
 
       # Environment the compose file interpolates (+${PIKURI_*}+) — the
       # checkout path as the build context plus the router + model wiring.
+      # +PIKURI_ROUTER_URL+ is the router URL *as the container sees it*:
+      # the relay sidecar's address, unless +container_router_url:+
+      # overrode the routing.
       def compose_env
         {
           'PIKURI_MEM0_SRC' => checkout_dir.to_s,
           'PIKURI_DATA_DIR' => data_dir.to_s,
-          'PIKURI_ROUTER_URL' => @router_url,
+          'PIKURI_SOCK_DIR' => sock_dir.to_s,
+          'PIKURI_SOCAT_IMAGE' => SOCAT_IMAGE,
+          'PIKURI_ROUTER_URL' => container_router_url,
           'PIKURI_LLM_MODEL' => @llm_model,
           'PIKURI_EMBEDDER_MODEL' => @embedder_model,
           'PIKURI_MEM0_PORT' => @port.to_s,
@@ -327,6 +417,71 @@ module Pikuri
           'PIKURI_COLLECTION' => @collection,
           'PIKURI_EMBEDDING_DIMS' => @embedding_dims.to_s
         }
+      end
+
+      # Router base URL as seen from inside the mem0 container: the
+      # explicit override, or the relay sidecar with +router_url+'s path
+      # (normally +/v1+) carried over.
+      def container_router_url
+        @container_router_url || "http://router-proxy:8080#{URI(@router_url).path}"
+      end
+
+      # Spawn the host-side half of the router relay (class header):
+      # +socat+ listening on the unix socket, forwarding each connection
+      # to the router's TCP address. A daemon child — never +#wait+ed; a
+      # drain thread keeps its (normally silent) combined-output pipe from
+      # filling, logging anything socat does say. Fails loud if the socket
+      # doesn't appear within {RELAY_BIND_TIMEOUT}.
+      def start_relay!
+        uri = URI(@router_url)
+        sock = sock_dir.join(RELAY_SOCKET)
+        LOGGER.info("relay: socat #{sock} → #{uri.host}:#{uri.port}")
+        @relay = Pikuri::Subprocess.spawn(
+          'socat',
+          "UNIX-LISTEN:#{sock},fork,unlink-early,mode=600",
+          "TCP:#{uri.host}:#{uri.port}",
+          chdir: '/'
+        )
+        drain_relay_output!
+        wait_for_relay_socket!(sock)
+      rescue Errno::ENOENT
+        raise 'Mem0Server: `socat` not found on PATH — the relay that lets the mem0 ' \
+              'container reach the host router needs it. Install it (sudo apt install ' \
+              'socat), or pass container_router_url: to route the container yourself.'
+      end
+
+      # Log whatever socat prints (errors only, in practice) and keep the
+      # pipe from blocking the child. Ends at EOF when the relay exits.
+      def drain_relay_output!
+        relay = @relay
+        Thread.new do
+          relay.io.each_line { |line| LOGGER.warn("relay: #{line.chomp}") }
+        rescue IOError
+          # pipe closed mid-read during teardown — fine
+        ensure
+          relay.io.close unless relay.io.closed?
+        end
+      end
+
+      # Poll until socat has bound the socket. Near-instant in practice;
+      # a timeout means socat died on startup — fail loud now rather than
+      # as silent extraction failures later.
+      def wait_for_relay_socket!(sock)
+        deadline = Time.now + RELAY_BIND_TIMEOUT
+        until File.socket?(sock)
+          if Time.now > deadline
+            raise "Mem0Server: relay socket #{sock} did not appear within " \
+                  "#{RELAY_BIND_TIMEOUT}s — socat failed to start (see 'relay:' log lines)"
+          end
+          sleep 0.05
+        end
+      end
+
+      # SIGTERM the relay's process group. Idempotent; nil-safe for the
+      # +container_router_url:+ path where no relay was spawned.
+      def stop_relay!
+        @relay&.terminate
+        @relay = nil
       end
 
       # Poll the REST API's +/docs+ (FastAPI serves it once startup —

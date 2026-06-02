@@ -25,8 +25,10 @@
 #   * the CHAT model (the conversation) — may be a thinking model;
 #   * the mem0 EXTRACTION model (what to remember) — must be NON-reasoning
 #     (a thinking model burns its budget on CoT and returns empty JSON),
-#     plus the embedder. These run inside the mem0 container, so a
-#     localhost router URL is translated to host.docker.internal for them.
+#     plus the embedder. These run inside the mem0 container, which
+#     reaches the (loopback-bound) host router through the supervisor's
+#     socat unix-socket relay — see Mem0Server's "router relay" yardoc.
+#     Needs `socat` on the host.
 #
 # Same Bundler bootstrap as the other bundled bins so callers don't need
 # the `bundle exec` ceremony.
@@ -44,7 +46,7 @@ extraction_model = 'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M'  # mem0 (non-reas
 embed_model      = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 user_id          = ENV['USER'] || 'default'
 mem0_url         = nil # BYO mem0 endpoint; when set, the supervisor is skipped
-mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => derive from --server
+mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => the socat relay to --server
 api_key_env      = 'OPENAI_API_KEY'
 streaming        = false
 
@@ -58,7 +60,7 @@ parser = OptionParser.new do |opts|
   opts.on('--embed-model NAME', "mem0 embedding model (default: #{embed_model})") { |v| embed_model = v }
   opts.on('--user-id ID', "Memory namespace, one per user (default: #{user_id})") { |v| user_id = v }
   opts.on('--mem0-url URL', 'Use an existing mem0 server at this URL instead of the self-managed sidecar') { |v| mem0_url = v }
-  opts.on('--mem0-router-url URL', 'Router base URL as seen from inside the mem0 container (default: --server, localhost→host.docker.internal)') { |v| mem0_router_url = v }
+  opts.on('--mem0-router-url URL', 'Advanced: router base URL as seen from inside the mem0 container, bypassing the socat relay (default: relay to --server)') { |v| mem0_router_url = v }
   opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
@@ -94,22 +96,21 @@ client =
   if mem0_url
     Pikuri::Memory::Mem0Client.new(endpoint: mem0_url.chomp('/'))
   else
-    # The mem0 container can't reach the host's loopback as "localhost",
-    # so a localhost router URL is rewritten to host.docker.internal (the
-    # compose maps it to the host gateway). A routable --server (a LAN IP,
-    # say) is used as-is.
-    router = mem0_router_url ||
-             server.sub(%r{//(localhost|127\.0\.0\.1)(?=[:/]|\z)}, '//host.docker.internal')
+    # The mem0 container can't dial the host's loopback (rootless docker
+    # blocks it by design), so the supervisor relays the router over a
+    # unix socket — --server is used as-is, localhost and all. See
+    # Mem0Server's "router relay" yardoc section.
     begin
       mem0_server = Pikuri::Memory::Mem0Server.ensure_running(
-        router_url:     "#{router.chomp('/')}/v1",
-        llm_model:      extraction_model,
-        embedder_model: embed_model
+        router_url:           "#{server}/v1",
+        container_router_url: mem0_router_url&.then { |u| "#{u.chomp('/')}/v1" },
+        llm_model:            extraction_model,
+        embedder_model:       embed_model
       )
     rescue StandardError => e
       warn "Could not start the mem0 sidecar: #{e.message}"
-      warn 'Is docker (with the compose plugin) and git installed and running? ' \
-           'Or pass --mem0-url to point at an existing mem0 server.'
+      warn 'Are docker (with the compose plugin), git, and socat installed, and the ' \
+           'docker daemon running? Or pass --mem0-url to point at an existing mem0 server.'
       exit 1
     end
     mem0_server.client
