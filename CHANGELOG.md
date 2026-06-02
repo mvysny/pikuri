@@ -8,6 +8,21 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Added
 
+- **`Pikuri::VectorDb::Server::InMemory` — the null supervisor.**
+  In-process implementation of the Server protocol
+  (`.ensure_running` / `#client(collection:)` / `#close`) the docker
+  supervisors implement over containers: `client` memoizes one
+  `Backend::InMemory` per collection name, `close` empties every
+  store (outstanding clients go empty, mirroring a removed
+  container), `ensure_running!` is a no-op. Every engine now has a
+  `Backend::X` ↔ `Server::X` pair, so hosts wire all three the same
+  way — `bin/pikuri-corpus` does exactly that: pick a Server class,
+  `ensure_running.client(...)`, explicit `server.close` at teardown
+  (with `Pikuri::Finalizers` backstopping the docker case).
+- **`bin/pikuri-corpus --qdrant`.** Persist the index in a
+  self-managed Qdrant container — the recommended persistent
+  backend, alongside the existing `--chroma`. Passing both flags is
+  rejected loudly.
 - **Qdrant backend (`Pikuri::VectorDb::Backend::Qdrant` +
   `Pikuri::VectorDb::Server::Qdrant`).** The recommended persistent
   backend — `pikuri-vectordb/DESIGN.md` records the Chroma-vs-Qdrant

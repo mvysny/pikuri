@@ -41,6 +41,7 @@ source          = File.expand_path('../../docs/guide', __dir__)
 api_key_env     = 'OPENAI_API_KEY'
 streaming       = false
 watch           = false
+use_qdrant      = false
 use_chroma      = false
 
 parser = OptionParser.new do |opts|
@@ -55,6 +56,7 @@ parser = OptionParser.new do |opts|
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
+  opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
   opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
   opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
@@ -68,6 +70,11 @@ begin
 rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   warn e.message
   warn parser
+  exit 2
+end
+
+if use_qdrant && use_chroma
+  warn 'Pick one persistent backend: --qdrant or --chroma, not both.'
   exit 2
 end
 
@@ -116,33 +123,37 @@ embedder = Pikuri::VectorDb::Embedder.new(
   assume_model_exists: true
 )
 
-# Backend choice. InMemory (default) is RAM-only and re-indexes from
-# scratch every run. --chroma instead spins up a self-managed ChromaDB
-# container (via Server::Chroma, which routes docker through
-# Pikuri::Subprocess and registers its `docker stop` with
-# Pikuri::Finalizers, so it's torn down at process exit) and persists
-# the embeddings to disk — so a corpus you index once stays indexed
-# across runs.
-backend =
-  if use_chroma
-    begin
-      Pikuri::VectorDb::Server::Chroma.ensure_running.client(collection: 'pikuri-corpus')
-    rescue StandardError => e
-      warn "Could not start ChromaDB: #{e.message}"
-      warn 'Is docker installed and running? Drop --chroma to use the in-memory backend.'
-      exit 1
-    end
-  else
-    Pikuri::VectorDb::Backend::InMemory.new
+# Backend choice, via the uniform Server protocol: pick a supervisor,
+# ensure it's running, open a client on it. InMemory (default) is the
+# null supervisor — RAM-only stores, re-indexed from scratch every run.
+# --qdrant / --chroma instead spin up a self-managed docker container
+# (routed through Pikuri::Subprocess, teardown registered with
+# Pikuri::Finalizers) and persist the embeddings to disk — so a corpus
+# you index once stays indexed across runs. Qdrant is the recommended
+# engine (DESIGN.md has the survey); Chroma remains for hosts that
+# already run it.
+server_class, engine_flag =
+  if use_qdrant then [Pikuri::VectorDb::Server::Qdrant, '--qdrant']
+  elsif use_chroma then [Pikuri::VectorDb::Server::Chroma, '--chroma']
+  else [Pikuri::VectorDb::Server::InMemory, nil]
   end
+
+begin
+  server  = server_class.ensure_running
+  backend = server.client(collection: 'pikuri-corpus')
+rescue StandardError => e
+  warn "Could not start #{server_class.name.split('::').last}: #{e.message}"
+  warn "Is docker installed and running? Drop #{engine_flag} to use the in-memory backend." if engine_flag
+  exit 1
+end
 
 # Hoisted to a local so the optional --watch daemon can be built around
 # the *same* Indexer (and therefore the same backend) the agent uses.
 # The extension indexes nothing on its own — population is the host's
 # call. This demo deliberately starts WITHOUT auto-indexing: the exercise
 # is to ask the agent to index the corpus (it calls vectordb_reindex).
-# With InMemory that means an empty corpus every run; with --chroma the
-# index may already be populated from a previous run. Pass --watch to
+# With InMemory that means an empty corpus every run; with --qdrant /
+# --chroma the index may already be populated from a previous run. Pass --watch to
 # have the Watcher build the index in the background and keep it live.
 vectordb_ext = Pikuri::VectorDb::Extension.new(
   backend:  backend,
@@ -212,10 +223,15 @@ end
 
 puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
 puts "Corpus: #{source}"
-puts "Backend: #{use_chroma ? 'ChromaDB (persistent)' : 'InMemory (RAM-only)'}"
-# backend.count is 0 for a fresh InMemory and for a Chroma collection
-# that's never been indexed; positive for a Chroma corpus persisted by a
-# previous run.
+backend_label =
+  if use_qdrant then 'Qdrant (persistent)'
+  elsif use_chroma then 'ChromaDB (persistent)'
+  else 'InMemory (RAM-only)'
+  end
+puts "Backend: #{backend_label}"
+# backend.count is 0 for a fresh InMemory and for a persistent
+# collection that's never been indexed; positive for a corpus persisted
+# by a previous run.
 already_indexed = backend.count
 if already_indexed.positive?
   puts "Index already populated (#{already_indexed} chunk(s) from a previous run). Ask away — or say \"reindex\" to refresh."
@@ -247,9 +263,12 @@ rescue Interrupt
 end
 
 puts
-# Stop the daemon before the agent: halt indexing first, then release
-# the agent's resources. (No Server::Chroma here; with one, it would be
-# stopped after the watcher — the Finalizers LIFO order.)
+# Teardown in reverse of open order: stop the indexing daemon first
+# (halt writes), release the agent's resources, then close the server
+# (a docker supervisor removes its container; the InMemory null
+# supervisor drops the stores). Pikuri::Finalizers backstops the
+# docker case on an unclean exit — same LIFO order.
 watcher&.close
 agent.close
+server.close
 puts 'Goodbye'

@@ -2,15 +2,24 @@
 
 module Pikuri
   module VectorDb
-    # Namespace for the self-managed vector-database supervisors —
-    # one per persistent {Backend} engine, named to pair:
-    # {Backend::Qdrant} ↔ {Server::Qdrant}, {Backend::Chroma} ↔
-    # {Server::Chroma}. The backend owns the HTTP wire protocol;
-    # the server owns the docker process (create / recreate /
-    # remove the container, bind-mount the data dir,
-    # heartbeat-poll until ready). Hosts that already run an
-    # engine elsewhere construct the backend directly and never
-    # touch this namespace.
+    # Namespace for the vector-database supervisors — one per
+    # {Backend} engine, named to pair: {Backend::InMemory} ↔
+    # {Server::InMemory}, {Backend::Qdrant} ↔ {Server::Qdrant},
+    # {Backend::Chroma} ↔ {Server::Chroma}. The backend owns the
+    # store protocol (upsert/query/...); the server owns the
+    # store's *lifetime*. All three implement the same duck-typed
+    # Server protocol — +.ensure_running+ / +#ensure_running!+ /
+    # +#client(collection:)+ / +#close+ — so a host picks a Server
+    # class, chains +ensure_running.client(...)+, and closes it at
+    # teardown without branching per engine.
+    #
+    # For {Qdrant} and {Chroma} the lifetime is a docker container
+    # (create / recreate / remove, bind-mount the data dir,
+    # heartbeat-poll until ready). {InMemory} is the null
+    # supervisor: no process at all, just the registry of
+    # in-process stores. Hosts that already run an engine
+    # elsewhere construct the backend directly and never touch
+    # this namespace.
     #
     # Only *supervisors* live here. Classes with "server" in the
     # name that are actually HTTP *clients* against a process the

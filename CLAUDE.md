@@ -252,7 +252,10 @@ per-gem one-liners:
   `Server::Qdrant` / `Server::Chroma` (self-managed docker container
   supervisors, route through `Pikuri::Subprocess.spawn`;
   `Server::Qdrant::IMAGE` pins the same tag as `Mem0Server`'s
-  Qdrant, in lockstep by convention), `Indexer` (walks `source`, chunks,
+  Qdrant, in lockstep by convention) + `Server::InMemory` (the null
+  supervisor — every engine is a `Backend::X` ↔ `Server::X` pair
+  behind one duck-typed Server protocol, so hosts wire all three
+  identically), `Indexer` (walks `source`, chunks,
   embeds, upserts), `Watcher` (filesystem-event daemon over the
   `listen` gem that keeps a live index fresh; wired in
   `bin/pikuri-corpus`), `Embedder` (wrapper over `RubyLLM.embed`),

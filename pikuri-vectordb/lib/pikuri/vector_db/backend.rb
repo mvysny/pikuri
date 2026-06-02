@@ -7,7 +7,8 @@ module Pikuri
     # * {InMemory} — pure-Ruby cosine over +Array<Float>+,
     #   RAM-only. The educational default; everything reloads
     #   from sources on every boot. Audit-friendly (~50 lines
-    #   end to end) and zero-dep.
+    #   end to end) and zero-dep. Pairs with {Server::InMemory}
+    #   (the null supervisor).
     # * {Qdrant} — thin Faraday HTTP client against a self-hosted
     #   Qdrant server. The *recommended* persistent option —
     #   survives restarts so the user pays the indexing cost once;
