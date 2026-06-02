@@ -244,10 +244,13 @@ per-gem one-liners:
   parent-document retrieval (read a hit in full by `source`),
   inbound-only so it adds no egress leg. Pieces:
   swappable `Backend` (pure-Ruby `Backend::InMemory` cosine, the
-  educational default; thin Faraday `Backend::Chroma` for
-  persistence) + `Backend::Result`, `ChromaServer` (self-managed
-  docker container supervisor, routes through
-  `Pikuri::Subprocess.spawn`), `Indexer` (walks `source`, chunks,
+  educational default; thin Faraday `Backend::Qdrant` /
+  `Backend::Chroma` for persistence — Qdrant recommended, see
+  `pikuri-vectordb/DESIGN.md`) + `Backend::Result`,
+  `QdrantServer` / `ChromaServer` (self-managed docker container
+  supervisors, route through `Pikuri::Subprocess.spawn`;
+  `QdrantServer::IMAGE` pins the same tag as `Mem0Server`'s
+  Qdrant, in lockstep by convention), `Indexer` (walks `source`, chunks,
   embeds, upserts), `Watcher` (filesystem-event daemon over the
   `listen` gem that keeps a live index fresh; wired in
   `bin/pikuri-corpus`), `Embedder` (wrapper over `RubyLLM.embed`),

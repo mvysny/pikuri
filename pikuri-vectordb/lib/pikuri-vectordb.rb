@@ -6,8 +6,8 @@ require 'pikuri-subagents'
 # Entry file for the pikuri-vectordb gem. After
 # +require 'pikuri-vectordb'+, the +Pikuri::VectorDb+ namespace is
 # populated with the {Pikuri::VectorDb::Extension} host-facing API,
-# the {Pikuri::VectorDb::Indexer}, the two +Backend+ classes
-# (+InMemory+ + +Chroma+), {Pikuri::VectorDb::Embedder},
+# the {Pikuri::VectorDb::Indexer}, the three +Backend+ classes
+# (+InMemory+ + +Qdrant+ + +Chroma+), {Pikuri::VectorDb::Embedder},
 # {Pikuri::VectorDb::Reranker::LlamaServer}, the chunker, the
 # tokenizer, the +vectordb_search+ tool, and the bundled
 # +Pikuri::VectorDb::LIBRARIAN+ persona. The gem's +prompts/+
@@ -45,11 +45,13 @@ module Pikuri
   # * {Indexer} — composes sources → text extractor → chunker →
   #   embedder → backend.upsert. The one class that orchestrates
   #   the indexing pipeline.
-  # * +Backend::InMemory+ / +Backend::Chroma+ — two swappable
-  #   stores behind the same duck-typed interface (+#upsert+,
-  #   +#query+, +#delete_all+, +#count+). InMemory is the
-  #   educational default (pure-Ruby cosine over +Array<Float>+);
-  #   Chroma is a thin Faraday HTTP client for persistence.
+  # * +Backend::InMemory+ / +Backend::Qdrant+ / +Backend::Chroma+
+  #   — three swappable stores behind the same duck-typed
+  #   interface (+#upsert+, +#query+, +#delete_all+, +#count+).
+  #   InMemory is the educational default (pure-Ruby cosine over
+  #   +Array<Float>+); Qdrant and Chroma are thin Faraday HTTP
+  #   clients for persistence, Qdrant the recommended one (see
+  #   +DESIGN.md+).
   # * {Embedder} — thin wrapper over +RubyLLM.embed+ so tests can
   #   inject a fake without monkey-patching ruby_llm.
   # * +Reranker::LlamaServer+ — optional quality knob; speaks

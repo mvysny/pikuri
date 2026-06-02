@@ -116,7 +116,12 @@ module Pikuri
       # @return [String] default Qdrant collection name.
       DEFAULT_COLLECTION = 'pikuri_memory'
 
-      # @return [String] pinned Qdrant image.
+      # @return [String] pinned Qdrant image. **Kept in lockstep
+      #   with +Pikuri::VectorDb::QdrantServer::IMAGE+** — same tag,
+      #   so a host running both stacks holds one image on disk. The
+      #   gems don't depend on each other, so the pin is a
+      #   convention, not a shared constant; bump both together. See
+      #   +pikuri-vectordb/DESIGN.md+ §"Verdict".
       DEFAULT_QDRANT_IMAGE = 'qdrant/qdrant:v1.12.4'
 
       # @return [Integer] seconds to wait for the REST API to answer after

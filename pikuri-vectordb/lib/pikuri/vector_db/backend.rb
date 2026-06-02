@@ -2,16 +2,21 @@
 
 module Pikuri
   module VectorDb
-    # Namespace for vector-store backends. Two ship in v1:
+    # Namespace for vector-store backends. Three ship:
     #
     # * {InMemory} — pure-Ruby cosine over +Array<Float>+,
     #   RAM-only. The educational default; everything reloads
     #   from sources on every boot. Audit-friendly (~50 lines
     #   end to end) and zero-dep.
-    # * +Chroma+ — thin Faraday HTTP client against a self-hosted
-    #   ChromaDB server. The persistent option; survives restarts
-    #   so the user pays the indexing cost once. (Not yet
-    #   landed — currently being scaffolded.)
+    # * {Qdrant} — thin Faraday HTTP client against a self-hosted
+    #   Qdrant server. The *recommended* persistent option —
+    #   survives restarts so the user pays the indexing cost once;
+    #   see +pikuri-vectordb/DESIGN.md+ for the engine survey
+    #   behind the recommendation. Pairs with {QdrantServer}.
+    # * {Chroma} — thin Faraday HTTP client against a self-hosted
+    #   ChromaDB server. The alternative persistent option, for
+    #   hosts that already run Chroma or prefer it. Pairs with
+    #   {ChromaServer}.
     #
     # == Backend protocol
     #
