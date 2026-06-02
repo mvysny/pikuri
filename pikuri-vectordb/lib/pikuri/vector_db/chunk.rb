@@ -4,7 +4,7 @@ module Pikuri
   module VectorDb
     # A unit of text after chunking, before storage. The
     # {Indexer} composes a Chunk + its vector and hands the pair
-    # to a {Backend} for storage; {Search} surfaces query hits
+    # to a {Backend} for storage; {Tools::Search} surfaces query hits
     # back to the LLM as +Chunk+s wrapped in +Backend::Result+s.
     #
     # == Fields
@@ -22,7 +22,7 @@ module Pikuri
     #   Relative file path for filesystem sources
     #   (+"notes/cooking.md"+), URL for fetched docs, doc ID for
     #   future connector sources (Google Drive, Notion). Surfaced
-    #   verbatim by {Search} as the citation alongside each hit;
+    #   verbatim by {Tools::Search} as the citation alongside each hit;
     #   the LLM uses it to say "see notes/cooking.md" rather than
     #   answering from a chunk of unknown origin. One source
     #   typically produces many chunks (a 512-token sliding

@@ -19,7 +19,7 @@ module Pikuri
     # +Mem0Client.new(endpoint:)+ points at an already-running mem0 server
     # (a docker-compose stack, a shared deployment). This release does
     # *not* ship a supervisor that starts one — that's the
-    # +ChromaServer+-style follow-on. The server must be configured for
+    # +Server::Chroma+-style follow-on. The server must be configured for
     # the local stack pikuri assumes: a local OpenAI-compatible LLM +
     # embedder (llama.cpp via +openai_base_url+), the **Qdrant** vector
     # backend (the pgvector path has a top-k inversion bug — see

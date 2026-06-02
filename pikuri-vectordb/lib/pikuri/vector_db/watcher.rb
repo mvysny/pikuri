@@ -24,7 +24,7 @@ module Pikuri
     # {Extension} shares, and +#start+s / +#close+s it on process
     # lifecycle:
     #
-    #   server = Pikuri::VectorDb::ChromaServer.ensure_running
+    #   server = Pikuri::VectorDb::Server::Chroma.ensure_running
     #   backend = server.client(collection: 'notes')
     #   ext = Pikuri::VectorDb::Extension.new(backend: backend, source: '~/notes')
     #   # ... build agents with `ext` ...
@@ -60,7 +60,7 @@ module Pikuri
     # == Teardown drains the in-flight job
     #
     # The Watcher registers with {Pikuri::Finalizers} *last* (after
-    # the host's {ChromaServer}), so LIFO closes it *first* — before
+    # the host's {Server::Chroma}), so LIFO closes it *first* — before
     # the container is +docker rm -f+'d. {#close} stops the listener
     # (no new events), then joins the worker, which finishes the job
     # it is mid-flight on and exits. That ordering is load-bearing: it
@@ -150,7 +150,7 @@ module Pikuri
         subscribe
         @worker = Thread.new { work_loop }
         # Register LAST so LIFO teardown closes the Watcher before the
-        # ChromaServer the host registered earlier — see the class yardoc.
+        # Server::Chroma the host registered earlier — see the class yardoc.
         @finalizer_handle = Pikuri::Finalizers.register(self)
         self
       end

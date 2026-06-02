@@ -27,11 +27,11 @@ module Pikuri
       #
       # * **Bring your own.** +Backend::Qdrant.new(host:, port:,
       #   collection:)+ against an existing Qdrant deployment.
-      # * **Let pikuri manage it.** {QdrantServer.ensure_running}
+      # * **Let pikuri manage it.** {Server::Qdrant.ensure_running}
       #   supervises a container under the +pikuri-internal-qdrant+
       #   name; its +#client(collection:)+ returns a
       #   +Backend::Qdrant+ pre-pointed at it. Same
-      #   server-vs-client split as {ChromaServer} / {Chroma}.
+      #   server-vs-client split as {Server::Chroma} / {Chroma}.
       #
       # == Qdrant REST API
       #
@@ -43,7 +43,7 @@ module Pikuri
       #   "already exists" and is treated as success.
       # * +PUT .../points?wait=true+ — insert-or-replace by point
       #   id. +wait=true+ so the write is visible to the next
-      #   read (the {Indexer} upserts, then {Search} queries).
+      #   read (the {Indexer} upserts, then {Tools::Search} queries).
       # * +POST .../points/search+ — k-NN search.
       # * +POST .../points/count+ — exact count, optionally
       #   payload-filtered (used by {#count} and

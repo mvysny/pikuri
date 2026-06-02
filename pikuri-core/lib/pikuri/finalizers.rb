@@ -3,7 +3,7 @@
 module Pikuri
   # Process-global teardown registry: one +at_exit+ for the whole
   # process, with everything that owns a resource needing orderly
-  # shutdown (agents, {VectorDb::ChromaServer}, future background
+  # shutdown (agents, {VectorDb::Server::Chroma}, future background
   # workers) registering here instead of growing its own +at_exit+.
   # It is {Agent#on_close} promoted from per-agent to per-process —
   # the same LIFO + per-handler-rescue + idempotent shape, one level
@@ -18,7 +18,7 @@ module Pikuri
   # at *load* time, so it sits at the bottom of the LIFO stack and runs
   # *last* — after agents and servers (which register at *construction*
   # time) have closed gracefully, while the subprocess machinery they
-  # shell out to during close (e.g. {VectorDb::ChromaServer#close}'s
+  # shell out to during close (e.g. {VectorDb::Server::Chroma#close}'s
   # +docker stop+) is still live.
   #
   # == Contract
@@ -33,7 +33,7 @@ module Pikuri
   #
   # Last registered, first closed — Ruby +ensure+ semantics. A
   # registrant that depends on an earlier one (a background indexer
-  # writing into {VectorDb::ChromaServer}) is registered later and so
+  # writing into {VectorDb::Server::Chroma}) is registered later and so
   # tears down first. Registration order is therefore dependency order;
   # register the dependency before its dependents.
   #

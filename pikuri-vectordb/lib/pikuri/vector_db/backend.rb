@@ -12,18 +12,18 @@ module Pikuri
     #   Qdrant server. The *recommended* persistent option —
     #   survives restarts so the user pays the indexing cost once;
     #   see +pikuri-vectordb/DESIGN.md+ for the engine survey
-    #   behind the recommendation. Pairs with {QdrantServer}.
+    #   behind the recommendation. Pairs with {Server::Qdrant}.
     # * {Chroma} — thin Faraday HTTP client against a self-hosted
     #   ChromaDB server. The alternative persistent option, for
     #   hosts that already run Chroma or prefer it. Pairs with
-    #   {ChromaServer}.
+    #   {Server::Chroma}.
     #
     # == Backend protocol
     #
     # Duck-typed, like pikuri's other seams (+Confirmer+,
     # +Filesystem+, +Sandbox+) — no abstract base class. Every
     # backend implements these four methods so the {Indexer} and
-    # {Search} tool consume them interchangeably:
+    # {Tools::Search} tool consume them interchangeably:
     #
     # * +#upsert(chunks:, vectors:)+ — insert-or-replace by
     #   +chunk.id+. +chunks+ and +vectors+ are parallel arrays of
@@ -53,7 +53,7 @@ module Pikuri
     # * +#source_indexed?(source)+ — +Boolean+: is there at least one
     #   chunk for +source+? The scoped counterpart to
     #   +#sources_with_hashes+ for the question "is this one source in
-    #   the corpus?" ({VectorDb::Read}'s membership gate). Distinct so
+    #   the corpus?" ({VectorDb::Tools::Read}'s membership gate). Distinct so
     #   that a hot path never fetches the full manifest just to test
     #   one key.
     #

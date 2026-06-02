@@ -25,7 +25,7 @@ module Pikuri
   #   extraction as {.read_as_text}, but lazily windowed to a
   #   line range with a byte cap, returning a {Page} value the
   #   caller renders. Shared by +Workspace::Read+ and
-  #   +VectorDb::Read+ so the offset/limit/byte-cap windowing lives
+  #   +VectorDb::Tools::Read+ so the offset/limit/byte-cap windowing lives
   #   in one tested place; each tool keeps its own presentation
   #   (cat-n numbering, trailer wording, citation vs. path). Same
   #   refusal contract as {.read_as_text} (raises on image / binary

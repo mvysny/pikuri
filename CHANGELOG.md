@@ -8,7 +8,19 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Added
 
-- **`vectordb_read` tool (`Pikuri::VectorDb::Read`).** Parent-document
+- **Qdrant backend (`Pikuri::VectorDb::Backend::Qdrant` +
+  `Pikuri::VectorDb::Server::Qdrant`).** The recommended persistent
+  backend — `pikuri-vectordb/DESIGN.md` records the Chroma-vs-Qdrant
+  survey behind the call. Same duck-typed `Backend` protocol and the
+  same supervisor shape as the Chroma pair; chunk ids map to
+  deterministic SHA1-derived point UUIDs (Qdrant rejects string ids),
+  scores pass through unconverted (Qdrant's cosine score is already a
+  similarity), and the boot manifest pages by the server-side scroll
+  cursor. `Server::Qdrant::IMAGE` is pinned to the same tag as
+  `Mem0Server::DEFAULT_QDRANT_IMAGE` (spec-enforced lockstep, one
+  image on disk for hosts running both stacks). Chroma stays
+  supported; `Backend::InMemory` stays the educational default.
+- **`vectordb_read` tool (`Pikuri::VectorDb::Tools::Read`).** Parent-document
   retrieval: read one indexed document in full by the `source` path
   `vectordb_search` cited, instead of re-querying for more fragments
   of the same document. The `source` must be a path the `Indexer`
@@ -24,7 +36,7 @@ uses semver as documented in `lib/pikuri/version.rb`.
   text/PDF extraction returning a `FileType::Page` value
   (offset/limit/byte-cap, per-line truncation, `--- Page N ---` markers
   on PDFs). Extracted from `Workspace::Read`'s windowing loops so it is
-  shared with `VectorDb::Read`; each tool keeps its own presentation
+  shared with `VectorDb::Tools::Read`; each tool keeps its own presentation
   (cat-n numbering and trailer wording vs. plain + source citation).
   Same refusal contract as `read_as_text` (raises on
   image/binary/missing/malformed-PDF).
@@ -65,6 +77,17 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Changed
 
+- **pikuri-vectordb's tools and supervisors moved into `Tools::` /
+  `Server::` namespaces.** `Pikuri::VectorDb::{Search,Read,Reindex}` →
+  `Pikuri::VectorDb::Tools::{Search,Read,Reindex}` — the gem's
+  `tools/` directory is now its whole LLM-facing surface, visibly
+  separate from the indexing plumbing. `Pikuri::VectorDb::ChromaServer`
+  → `Pikuri::VectorDb::Server::Chroma` and `…::QdrantServer` →
+  `…::Server::Qdrant` — supervisors now pair with their backends by
+  name (`Backend::Qdrant` ↔ `Server::Qdrant`). Tool string names
+  (`vectordb_search` / `vectordb_read` / `vectordb_reindex`) are
+  unchanged. `Reranker::LlamaServer` / `Tokenizer::LlamaServer` stay
+  put — they are HTTP clients, not supervisors.
 - **pikuri-workspace classes moved to the `Pikuri::Workspace::*`
   namespace.** `Pikuri::Tool::Workspace` → `Pikuri::Workspace::Filesystem`
   (renamed too — `Workspace::Workspace` stutter avoided);

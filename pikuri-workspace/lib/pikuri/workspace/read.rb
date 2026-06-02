@@ -28,7 +28,7 @@ module Pikuri
     # The line/byte windowing is delegated to
     # {Pikuri::FileType.read_as_text_paged}, which returns a
     # {Pikuri::FileType::Page} this tool renders; the same windower
-    # backs +VectorDb::Read+. Two independent limits, whichever fires
+    # backs +VectorDb::Tools::Read+. Two independent limits, whichever fires
     # first wins:
     #
     # * *Line limit* — {DEFAULT_LIMIT} lines (overridable via +limit+).
@@ -39,7 +39,7 @@ module Pikuri
     # are truncated with {LINE_TRUNCATION_MARKER} appended; the model is
     # told to reach for +grep+ to find content inside such files. (These
     # constants alias the +PAGE_*+ ones on {Pikuri::FileType} — one
-    # source of truth, shared with +VectorDb::Read+.)
+    # source of truth, shared with +VectorDb::Tools::Read+.)
     #
     # == PDF extraction
     #
@@ -106,7 +106,7 @@ module Pikuri
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
     class Read < Pikuri::Tool
       # The windowing constants live on {Pikuri::FileType} now (shared
-      # with +VectorDb::Read+); these aliases keep the names this tool's
+      # with +VectorDb::Tools::Read+); these aliases keep the names this tool's
       # description and specs reference pointing at the single source.
 
       # @return [Integer] default value of the +limit+ parameter (number

@@ -28,7 +28,7 @@ module Pikuri
     #
     # == Why index, not document text
     #
-    # The {Search} tool already holds the candidate
+    # The {Tools::Search} tool already holds the candidate
     # +Backend::Result+s with their text + metadata. Returning
     # bare indices keeps the rerank API minimal and avoids
     # re-shuttling the document text over HTTP just to receive

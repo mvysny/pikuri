@@ -60,7 +60,10 @@ module Pikuri
   # * +Chunker::FixedWindow+ + +Tokenizer::*+ — the chunking
   #   pipeline. Tokenizer is owned by the Chunker (not the
   #   Extension) because tokenization is a chunking detail.
-  # * +Search+ — the +vectordb_search+ {Pikuri::Tool} subclass.
+  # * +Tools::Search+ / +Tools::Read+ / +Tools::Reindex+ — the
+  #   {Pikuri::Tool} subclasses (+vectordb_search+ /
+  #   +vectordb_read+ / +vectordb_reindex+). The +Tools+
+  #   directory *is* the gem's LLM-facing surface.
   # * {LIBRARIAN} — the bundled {Pikuri::SubAgent::Persona}
   #   constant. Hosts wire it via
   #   +SubAgent::Extension.new(personas: [..., LIBRARIAN])+ —

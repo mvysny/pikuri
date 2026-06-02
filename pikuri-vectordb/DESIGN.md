@@ -10,7 +10,7 @@ alongside Chroma, and to recommend Qdrant as the persistent default.
 
 Point-in-time comparison — star counts, versions, and image sizes move;
 verify before depending. Context: `pikuri-vectordb` shipped
-`Backend::Chroma` + `ChromaServer` first; `pikuri-memory`'s mem0 stack
+`Backend::Chroma` + `Server::Chroma` first; `pikuri-memory`'s mem0 stack
 independently runs **Qdrant** (chosen there for correctness — see
 [`pikuri-memory/DESIGN.md`](../pikuri-memory/DESIGN.md) §"Why Qdrant,
 not pgvector"). Two gems, two self-managed vector databases, two
@@ -112,8 +112,8 @@ when the corpus grows 100×" is a fair question for a default.
 
 From pikuri's seat: identical. Both are exactly one pinned container,
 one `127.0.0.1`-published port, one bind-mounted data dir, one HTTP
-heartbeat — `ChromaServer` already proves the supervisor shape, and a
-`QdrantServer` is a near-mechanical clone of it. Chroma's famous
+heartbeat — `Server::Chroma` already proves the supervisor shape, and a
+`Server::Qdrant` is a near-mechanical clone of it. Chroma's famous
 `pip install chromadb` embedded mode is Python-only and unreachable
 from Ruby; pikuri's equivalent of that zero-setup tier is
 `Backend::InMemory`, which stays the default regardless of this survey.
@@ -130,8 +130,8 @@ backends use) has less to get wrong against Qdrant.
 ## Verdict: prefer Qdrant, keep Chroma
 
 **Qdrant becomes the recommended persistent backend** (`Backend::Qdrant`
-+ `QdrantServer`); **Chroma stays supported** (`Backend::Chroma` +
-`ChromaServer`, already written and verified); **`Backend::InMemory`
++ `Server::Qdrant`); **Chroma stays supported** (`Backend::Chroma` +
+`Server::Chroma`, already written and verified); **`Backend::InMemory`
 stays the educational default.** The user picks — the `Backend`
 protocol is duck-typed for exactly this.
 
@@ -155,7 +155,7 @@ name in the space — a reader arriving from any RAG tutorial knows it,
 which has real value in a project that doubles as a tour. Keeping it
 costs nothing but its (already written) line count.
 
-**Cross-gem pin invariant:** `QdrantServer::IMAGE` (this gem) and
+**Cross-gem pin invariant:** `Server::Qdrant::IMAGE` (this gem) and
 `Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE` should reference the
 **same tag** (currently `qdrant/qdrant:v1.12.4`), so the two stacks
 share one image on disk. The gems don't depend on each other, so this

@@ -5,19 +5,16 @@ require 'faraday'
 require 'fileutils'
 require 'tmpdir'
 
-describe Pikuri::VectorDb::QdrantServer do
+describe Pikuri::VectorDb::Server::Chroma do
   JSON_HEADERS = { 'Content-Type' => 'application/json' }.freeze
-  # Qdrant's /healthz answers text/plain, not JSON — the heartbeat
-  # stubs mirror that so the json response middleware is exercised
-  # against the real content type.
-  TEXT_HEADERS = { 'Content-Type' => 'text/plain; charset=utf-8' }.freeze
 
-  let(:data_dir) { Dir.mktmpdir('pikuri-qdrant-server-spec-') }
+  let(:data_dir) { Dir.mktmpdir('pikuri-chroma-server-spec-') }
   after { FileUtils.remove_entry(data_dir) }
 
-  # Stub the subprocess seam — same pattern as the ChromaServer
-  # spec: capture every docker invocation, return planned results
-  # in FIFO order. +:enoent+ simulates `docker` missing.
+  # Stub the subprocess seam: capture every docker invocation,
+  # return planned results in FIFO order. Each planned result is
+  # +[exit_status, stdout]+ for the next +.wait+; +:enoent+
+  # raises +Errno::ENOENT+ to simulate `docker` missing.
   let(:docker_calls) { [] }
   let(:planned_results) { [] }
 
@@ -67,15 +64,18 @@ describe Pikuri::VectorDb::QdrantServer do
     Pikuri::Subprocess.singleton_class.send(:remove_method, :__orig_spawn)
   end
 
-  # Unregister built servers from the process-global Finalizers
-  # after each example — same hygiene as the ChromaServer spec.
+  # ensure_running! registers the server with the process-global
+  # Pikuri::Finalizers so it's stopped at exit. Track every server we
+  # build and unregister it after the example, so the suite doesn't
+  # leave real servers registered (which would fire a real `docker
+  # stop` at process exit, against the unstubbed subprocess seam).
   let(:built_servers) { [] }
   after { built_servers.each { |s| Pikuri::Finalizers.unregister(s) } }
 
   def build_server(**overrides)
-    server = Pikuri::VectorDb::QdrantServer.new(
+    server = Pikuri::VectorDb::Server::Chroma.new(
       data_dir: data_dir,
-      port: 6333,
+      port: 8000,
       healthcheck_timeout: 1,
       connection: heartbeat_conn,
       **overrides
@@ -86,44 +86,26 @@ describe Pikuri::VectorDb::QdrantServer do
 
   describe '#initialize' do
     it 'expands data_dir' do
-      server = Pikuri::VectorDb::QdrantServer.new(data_dir: '~/x', port: 6333)
+      server = Pikuri::VectorDb::Server::Chroma.new(data_dir: '~/x', port: 8000)
       assert_equal File.expand_path('~/x'), server.data_dir.to_s
     end
 
-    it 'derives default data_dir under XDG_CACHE_HOME / pikuri / qdrant' do
-      server = Pikuri::VectorDb::QdrantServer.new
-      assert_match(%r{/pikuri/qdrant\z}, server.default_data_dir)
+    it 'derives default data_dir under XDG_CACHE_HOME / pikuri / chroma' do
+      server = Pikuri::VectorDb::Server::Chroma.new
+      assert_match(%r{/pikuri/chroma\z}, server.default_data_dir)
     end
 
     it 'exposes endpoint built from port' do
-      server = Pikuri::VectorDb::QdrantServer.new(port: 9999)
+      server = Pikuri::VectorDb::Server::Chroma.new(port: 9999)
       assert_equal 'http://localhost:9999', server.endpoint
     end
   end
 
   describe '#client' do
-    it 'returns a Backend::Qdrant pointed at this server' do
-      server = Pikuri::VectorDb::QdrantServer.new(port: 9876)
+    it 'returns a Backend::Chroma pointed at this server' do
+      server = Pikuri::VectorDb::Server::Chroma.new(port: 9876)
       client = server.client(collection: 'guide')
-      assert_kind_of Pikuri::VectorDb::Backend::Qdrant, client
-    end
-  end
-
-  describe 'IMAGE pin' do
-    it 'matches Mem0Server::DEFAULT_QDRANT_IMAGE when pikuri-memory is loadable (lockstep convention)' do
-      # The cross-gem invariant from DESIGN.md §"Verdict": same tag,
-      # one image on disk. The gems don't depend on each other, so
-      # this guard only fires where the sibling gem is present (the
-      # monorepo dev closure — which is where a drifting bump would
-      # land first).
-      begin
-        require 'pikuri-memory'
-      rescue LoadError
-        skip 'pikuri-memory not in this closure'
-      end
-
-      assert_equal Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE,
-                   Pikuri::VectorDb::QdrantServer::IMAGE
+      assert_kind_of Pikuri::VectorDb::Backend::Chroma, client
     end
   end
 
@@ -133,35 +115,37 @@ describe Pikuri::VectorDb::QdrantServer do
                                 [1, ''],                 # docker inspect → missing
                                 [0, 'container-id-abc']  # docker run → ok
                               ])
-      heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{"nanosecond heartbeat":1}'] }
 
       build_server.ensure_running!
 
       inspect_argv, run_argv = docker_calls
       assert_equal %w[docker inspect --format], inspect_argv[0..2]
-      assert_equal Pikuri::VectorDb::QdrantServer::CONTAINER_NAME, inspect_argv.last
+      assert_equal Pikuri::VectorDb::Server::Chroma::CONTAINER_NAME, inspect_argv.last
       assert_equal 'docker', run_argv[0]
       assert_equal 'run',    run_argv[1]
       assert_includes run_argv, '-d'
-      assert_includes run_argv, Pikuri::VectorDb::QdrantServer::IMAGE
+      assert_includes run_argv, Pikuri::VectorDb::Server::Chroma::IMAGE
       assert_includes run_argv, '--label'
-      assert_includes run_argv, Pikuri::VectorDb::QdrantServer::LABEL
+      assert_includes run_argv, Pikuri::VectorDb::Server::Chroma::LABEL
       # 127.0.0.1 binding, not the docker default 0.0.0.0
       port_publish = run_argv[run_argv.index('-p') + 1]
-      assert_equal '127.0.0.1:6333:6333', port_publish
-      # Bind-mount → /qdrant/storage (the image's storage root)
+      assert_equal '127.0.0.1:8000:8000', port_publish
+      # Bind-mount → /data (chroma 1.x persist dir)
       volume_arg = run_argv[run_argv.index('-v') + 1]
-      assert_equal "#{data_dir}:#{Pikuri::VectorDb::QdrantServer::CONTAINER_PERSIST_DIR}",
+      assert_equal "#{data_dir}:#{Pikuri::VectorDb::Server::Chroma::CONTAINER_PERSIST_DIR}",
                    volume_arg
     end
 
     it 'removes and recreates a pre-existing stopped container' do
+      # The container is disposable; the corpus lives on the volume.
+      # A stopped container is nuked and recreated, not adopted.
       planned_results.replace([
                                 [0, "false\n"],          # inspect → stopped
                                 [0, ''],                 # docker rm -f
                                 [0, 'container-id-new']  # docker run
                               ])
-      heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
       build_server.ensure_running!
 
@@ -169,12 +153,14 @@ describe Pikuri::VectorDb::QdrantServer do
     end
 
     it 'reclaims a pre-existing running container instead of adopting it' do
+      # A container found running that this process did not start is
+      # not trusted: remove and recreate against the persistent volume.
       planned_results.replace([
                                 [0, "true\n"],          # inspect → running (not ours)
                                 [0, ''],                # docker rm -f
                                 [0, 'container-id-new'] # docker run
                               ])
-      heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
       build_server.ensure_running!
 
@@ -182,12 +168,14 @@ describe Pikuri::VectorDb::QdrantServer do
     end
 
     it 'does not recreate a container it started earlier in the same process' do
+      # First call creates it; the second sees it running and, because
+      # this server now owns it, reuses it (no rm/run).
       planned_results.replace([
                                 [1, ''],                 # inspect → missing
                                 [0, 'container-id-abc'], # docker run
                                 [0, "true\n"]            # inspect → running (ours)
                               ])
-      heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
       server = build_server
       server.ensure_running!
@@ -219,7 +207,7 @@ describe Pikuri::VectorDb::QdrantServer do
                                 [1, ''],   # inspect → missing
                                 [0, 'cid'] # docker run ok
                               ])
-      heartbeat_stubs.get('/healthz') { [503, JSON_HEADERS, ''] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [503, JSON_HEADERS, '{}'] }
 
       err = assert_raises(RuntimeError) { build_server.ensure_running! }
       assert_match(/did not become healthy/, err.message)
@@ -231,10 +219,13 @@ describe Pikuri::VectorDb::QdrantServer do
                                 [1, ''],          # missing
                                 [0, 'cid']        # docker run ok
                               ])
+      # First call: connection refused; second call: 200. The
+      # supervisor must keep polling on a Faraday::Error rather
+      # than aborting.
       call_n = 0
-      heartbeat_stubs.get('/healthz') do
+      heartbeat_stubs.get('/api/v2/heartbeat') do
         call_n += 1
-        call_n == 1 ? raise(Faraday::ConnectionFailed, 'refused') : [200, TEXT_HEADERS, 'healthz check passed']
+        call_n == 1 ? raise(Faraday::ConnectionFailed, 'refused') : [200, JSON_HEADERS, '{}']
       end
 
       build_server.ensure_running!
@@ -245,7 +236,7 @@ describe Pikuri::VectorDb::QdrantServer do
   describe '#close' do
     def start_then(*plans)
       planned_results.replace([[1, ''], [0, 'container-id-abc'], *plans]) # missing → run, then ...
-      heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+      heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
       server = build_server
       server.ensure_running!
       server
@@ -256,7 +247,7 @@ describe Pikuri::VectorDb::QdrantServer do
       server.close
       assert_equal %w[inspect run rm], docker_calls.map { |c| c[1] }
       assert_includes docker_calls.last, '-f'
-      assert_equal Pikuri::VectorDb::QdrantServer::CONTAINER_NAME, docker_calls.last.last
+      assert_equal Pikuri::VectorDb::Server::Chroma::CONTAINER_NAME, docker_calls.last.last
     end
 
     it 'is idempotent — a second close issues no further docker rm' do
@@ -272,12 +263,14 @@ describe Pikuri::VectorDb::QdrantServer do
     end
 
     it 'logs rather than raises when docker rm fails' do
-      server = start_then([137, 'No such container: pikuri-internal-qdrant'])
+      server = start_then([137, 'No such container: pikuri-internal-chroma'])
       server.close # must not raise even though rm exits non-zero
       assert_equal 'rm', docker_calls.last[1]
     end
 
     it 'registers itself once with Pikuri::Finalizers across repeated ensure_running!' do
+      # Isolate the global registry for this example so we can assert
+      # on its contents without seeing other specs' registrants.
       saved = Pikuri::Finalizers.instance_variable_get(:@registered)
       Pikuri::Finalizers.instance_variable_set(:@registered, [])
       begin
@@ -285,7 +278,7 @@ describe Pikuri::VectorDb::QdrantServer do
                                   [1, ''], [0, 'cid'], # 1st ensure: missing → run
                                   [0, "true\n"]        # 2nd ensure: running (ours)
                                 ])
-        heartbeat_stubs.get('/healthz') { [200, TEXT_HEADERS, 'healthz check passed'] }
+        heartbeat_stubs.get('/api/v2/heartbeat') { [200, JSON_HEADERS, '{}'] }
 
         server = build_server
         server.ensure_running!

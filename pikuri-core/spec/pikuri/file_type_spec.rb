@@ -293,7 +293,7 @@ RSpec.describe Pikuri::FileType do
 
     # Shares the write / build_pdf helpers defined above. The paged
     # variant returns a FileType::Page; the LLM-tool callers
-    # (Workspace::Read, VectorDb::Read) own the rendering, so these
+    # (Workspace::Read, VectorDb::Tools::Read) own the rendering, so these
     # assert the struct, not formatted strings.
     describe '.read_as_text_paged' do
       describe 'plain text' do

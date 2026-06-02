@@ -16,8 +16,8 @@ module Pikuri
     #   end
     #
     # On +configure+ the extension registers three tools onto the
-    # parent agent — {Search} as +vectordb_search+, {Read} as
-    # +vectordb_read+, and {Reindex} as +vectordb_reindex+ — and
+    # parent agent — {Tools::Search} as +vectordb_search+, {Tools::Read} as
+    # +vectordb_read+, and {Tools::Reindex} as +vectordb_reindex+ — and
     # nothing else. It does *not* index anything: when and whether to
     # populate the corpus is host policy, not the extension's job.
     #
@@ -35,7 +35,7 @@ module Pikuri
     #   tracks edits.
     # * Index nothing at boot and let the user drive it: the agent
     #   calls +vectordb_reindex+ when asked. The corpus is simply
-    #   empty until then — {Search} returns no hits and says so.
+    #   empty until then — {Tools::Search} returns no hits and says so.
     #
     # All three are equally valid; the extension stays agnostic. This
     # is the same host-owned shape as the {Watcher} (whose lifetime is
@@ -103,7 +103,7 @@ module Pikuri
       #   +embed(Array<String>) -> Array<Array<Float>>+; +nil+
       #   constructs {Embedder} with the default model.
       # @param reranker [#rerank, nil] optional cross-encoder
-      #   reranker. +nil+ skips reranking — {Search} retrieves
+      #   reranker. +nil+ skips reranking — {Tools::Search} retrieves
       #   the final top-k from the backend directly.
       # @param chunker [#chunk, nil] anything implementing
       #   +chunk(String) -> Array<String>+; +nil+ constructs
@@ -124,7 +124,7 @@ module Pikuri
         )
       end
 
-      # Register {Search} + {Read} + {Reindex} onto +c+. Does not
+      # Register {Tools::Search} + {Tools::Read} + {Tools::Reindex} onto +c+. Does not
       # index — population is the host's call (see the class header).
       # Raises if any of the three tool names has been pre-registered:
       # the extension is the single owner of all three, and a duplicate
@@ -142,9 +142,9 @@ module Pikuri
                 'all three tools so they share the same Indexer / Embedder / backend.'
         end
 
-        c.add_tool Search.new(embedder: @embedder, backend: @backend, reranker: @reranker)
-        c.add_tool Read.new(backend: @backend, root: @indexer.root)
-        c.add_tool Reindex.new(indexer: @indexer)
+        c.add_tool Tools::Search.new(embedder: @embedder, backend: @backend, reranker: @reranker)
+        c.add_tool Tools::Read.new(backend: @backend, root: @indexer.root)
+        c.add_tool Tools::Reindex.new(indexer: @indexer)
         nil
       end
     end

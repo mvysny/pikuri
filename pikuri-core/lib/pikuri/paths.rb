@@ -6,7 +6,7 @@ module Pikuri
   # Standardized on-disk locations for pikuri's local state. Centralizes
   # the XDG resolution so every component that caches to disk roots under
   # one place instead of each re-deriving it — currently
-  # {Pikuri::VectorDb::ChromaServer} (its corpus volume) and
+  # {Pikuri::VectorDb::Server::Chroma} (its corpus volume) and
   # {Pikuri::Memory::Mem0Server} (its mem0 checkout + data volume).
   module Paths
     # Pikuri's cache root: +$XDG_CACHE_HOME/pikuri+ when +XDG_CACHE_HOME+

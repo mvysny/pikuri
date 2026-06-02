@@ -5,7 +5,7 @@ require 'tmpdir'
 require 'fileutils'
 require 'pathname'
 
-describe Pikuri::VectorDb::Read do
+describe Pikuri::VectorDb::Tools::Read do
   # Real Backend::InMemory + real files on disk under a tmp root —
   # the membership gate derives from upserted chunks' sources, and
   # extraction reads the matching file, so a real backend + real
@@ -26,18 +26,18 @@ describe Pikuri::VectorDb::Read do
     backend.upsert(chunks: [chunk], vectors: [[1.0, 0.0, 0.0]])
   end
 
-  def read(source:, offset: 1, limit: Pikuri::VectorDb::Read::DEFAULT_LIMIT)
-    Pikuri::VectorDb::Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
+  def read(source:, offset: 1, limit: Pikuri::VectorDb::Tools::Read::DEFAULT_LIMIT)
+    Pikuri::VectorDb::Tools::Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
   end
 
   describe 'as a Pikuri::Tool' do
     it 'is named vectordb_read' do
-      tool = Pikuri::VectorDb::Read.new(backend: backend, root: root)
+      tool = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root)
       assert_equal 'vectordb_read', tool.name
     end
 
     it 'advertises source as required and offset/limit as optional integers' do
-      schema = Pikuri::VectorDb::Read.new(backend: backend, root: root).parameters.to_h
+      schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root).parameters.to_h
       assert_equal %w[source], schema[:required]
       assert_equal 'string', schema[:properties][:source][:type]
       assert_equal 'integer', schema[:properties][:offset][:type]
@@ -65,7 +65,7 @@ describe Pikuri::VectorDb::Read do
       evil = Object.new
       def evil.source_indexed?(_source) = true
 
-      result = Pikuri::VectorDb::Read.read(
+      result = Pikuri::VectorDb::Tools::Read.read(
         backend: evil, root: root, source: '../escape.txt', offset: 1, limit: 10
       )
       assert_match(/resolves outside the corpus root/, result)

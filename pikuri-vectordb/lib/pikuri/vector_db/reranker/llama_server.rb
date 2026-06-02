@@ -64,7 +64,7 @@ module Pikuri
       # Same posture as {Tokenizer::LlamaServer}: HTTP non-2xx,
       # missing +results+ key, malformed body, +Faraday::Error+
       # all raise rather than swallow + return a fudge value.
-      # Caller is the {Search} tool, which catches and falls
+      # Caller is the {Tools::Search} tool, which catches and falls
       # back to vector-only top-k while logging the failure
       # loudly — reranker outages degrade gracefully at the
       # *tool* level, not by the client lying about scores.

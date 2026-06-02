@@ -118,7 +118,7 @@ embedder = Pikuri::VectorDb::Embedder.new(
 
 # Backend choice. InMemory (default) is RAM-only and re-indexes from
 # scratch every run. --chroma instead spins up a self-managed ChromaDB
-# container (via ChromaServer, which routes docker through
+# container (via Server::Chroma, which routes docker through
 # Pikuri::Subprocess and registers its `docker stop` with
 # Pikuri::Finalizers, so it's torn down at process exit) and persists
 # the embeddings to disk — so a corpus you index once stays indexed
@@ -126,7 +126,7 @@ embedder = Pikuri::VectorDb::Embedder.new(
 backend =
   if use_chroma
     begin
-      Pikuri::VectorDb::ChromaServer.ensure_running.client(collection: 'pikuri-corpus')
+      Pikuri::VectorDb::Server::Chroma.ensure_running.client(collection: 'pikuri-corpus')
     rescue StandardError => e
       warn "Could not start ChromaDB: #{e.message}"
       warn 'Is docker installed and running? Drop --chroma to use the in-memory backend.'
@@ -248,7 +248,7 @@ end
 
 puts
 # Stop the daemon before the agent: halt indexing first, then release
-# the agent's resources. (No ChromaServer here; with one, it would be
+# the agent's resources. (No Server::Chroma here; with one, it would be
 # stopped after the watcher — the Finalizers LIFO order.)
 watcher&.close
 agent.close

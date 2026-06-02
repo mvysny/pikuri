@@ -2,7 +2,7 @@
 
 require 'spec_helper'
 
-describe Pikuri::VectorDb::Search do
+describe Pikuri::VectorDb::Tools::Search do
   # Real Backend::InMemory — lightweight, no stubs needed.
   # Tested in its own spec, trusted here.
   let(:backend) { Pikuri::VectorDb::Backend::InMemory.new }
@@ -47,7 +47,7 @@ describe Pikuri::VectorDb::Search do
   end
 
   def execute(query: 'how to cook risotto?', reranker: nil)
-    Pikuri::VectorDb::Search.execute(
+    Pikuri::VectorDb::Tools::Search.execute(
       embedder: fake_embedder, backend: backend,
       reranker: reranker, query: query
     )
@@ -55,12 +55,12 @@ describe Pikuri::VectorDb::Search do
 
   describe 'as a Pikuri::Tool' do
     it 'is named vectordb_search' do
-      tool = Pikuri::VectorDb::Search.new(embedder: fake_embedder, backend: backend)
+      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
       assert_equal 'vectordb_search', tool.name
     end
 
     it 'declares a single required-string query parameter' do
-      tool = Pikuri::VectorDb::Search.new(embedder: fake_embedder, backend: backend)
+      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
       schema = tool.parameters.to_h
       assert_equal ['query'], schema[:required]
       props = schema[:properties]
@@ -93,7 +93,7 @@ describe Pikuri::VectorDb::Search do
 
       execute
 
-      assert_equal Pikuri::VectorDb::Search::FINAL_K, executed_top_k
+      assert_equal Pikuri::VectorDb::Tools::Search::FINAL_K, executed_top_k
     end
   end
 
@@ -126,7 +126,7 @@ describe Pikuri::VectorDb::Search do
 
       execute(reranker: reversing_reranker)
 
-      assert_equal Pikuri::VectorDb::Search::CANDIDATE_K, executed_top_k
+      assert_equal Pikuri::VectorDb::Tools::Search::CANDIDATE_K, executed_top_k
     end
 
     it 'reorders candidates by the reranker output' do
@@ -165,7 +165,7 @@ describe Pikuri::VectorDb::Search do
       observation = execute(reranker: reversing_reranker)
 
       # Count "[i]" markers
-      assert_equal Pikuri::VectorDb::Search::FINAL_K, observation.scan(/^\[\d+\]/).length
+      assert_equal Pikuri::VectorDb::Tools::Search::FINAL_K, observation.scan(/^\[\d+\]/).length
     end
   end
 
@@ -184,7 +184,7 @@ describe Pikuri::VectorDb::Search do
       log_buf = StringIO.new
       original_io = Pikuri.log_io
       Pikuri.log_io = log_buf
-      Pikuri::VectorDb::Search::LOGGER.instance_variable_get(:@logdev).instance_variable_set(:@dev, log_buf)
+      Pikuri::VectorDb::Tools::Search::LOGGER.instance_variable_get(:@logdev).instance_variable_set(:@dev, log_buf)
 
       begin
         observation = execute(reranker: broken_reranker)
@@ -223,7 +223,7 @@ describe Pikuri::VectorDb::Search do
 
   describe '#execute snippet truncation' do
     it 'truncates snippets longer than SNIPPET_LENGTH chars with "..."' do
-      long_text = 'x' * (Pikuri::VectorDb::Search::SNIPPET_LENGTH + 100)
+      long_text = 'x' * (Pikuri::VectorDb::Tools::Search::SNIPPET_LENGTH + 100)
       chunk = Pikuri::VectorDb::Chunk.new(
         id: 'big:0', source: 'big.md', text: long_text, metadata: {}
       )
@@ -234,7 +234,7 @@ describe Pikuri::VectorDb::Search do
       # snippet portion (after the header line) ends in "..."
       assert_includes observation, '...'
       # Snippet length is capped; total observation is bounded.
-      snippet_len = Pikuri::VectorDb::Search::SNIPPET_LENGTH
+      snippet_len = Pikuri::VectorDb::Tools::Search::SNIPPET_LENGTH
       assert_operator observation.length, :<, snippet_len + 200 # snippet + header overhead
     end
 

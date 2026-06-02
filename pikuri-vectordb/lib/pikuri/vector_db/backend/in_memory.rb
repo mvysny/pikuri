@@ -211,7 +211,7 @@ module Pikuri
         end
 
         # Is +source+ in the corpus? The scoped membership test
-        # behind {VectorDb::Read}'s gate — a short-circuiting scan
+        # behind {VectorDb::Tools::Read}'s gate — a short-circuiting scan
         # rather than building the whole {#sources_with_hashes} map
         # just to read one key. See the Backend protocol yardoc.
         #

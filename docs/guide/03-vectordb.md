@@ -420,7 +420,7 @@ It has two practical limits:
   millions.
 
 For both, the swap is `Backend::Chroma`. The recommended path is
-to let pikuri supervise the container — `Pikuri::VectorDb::ChromaServer`
+to let pikuri supervise the container — `Pikuri::VectorDb::Server::Chroma`
 finds-or-starts a chroma container under a name pikuri owns
 (`pikuri-internal-chroma`), bind-mounts a volume under
 `~/.cache/pikuri/chroma/` for persistence, and returns a backend
@@ -428,7 +428,7 @@ pointed at it:
 
 ```ruby
 c.add_extension Pikuri::VectorDb::Extension.new(
-  backend:  Pikuri::VectorDb::ChromaServer.ensure_running.client(
+  backend:  Pikuri::VectorDb::Server::Chroma.ensure_running.client(
     collection: 'guide'
   ),
   source:   '~/path/to/corpus'
@@ -447,8 +447,8 @@ populated index instead of rebuilding it. From then on a `Watcher`
 keeps it in sync incrementally, and a full `vectordb_reindex` is
 only needed after changing the embedder or chunker settings.
 
-`ChromaServer.ensure_running` requires `docker` on `PATH`; the
-container image tag is pinned in `ChromaServer::IMAGE`. The
+`Server::Chroma.ensure_running` requires `docker` on `PATH`; the
+container image tag is pinned in `Server::Chroma::IMAGE`. The
 container is named under a `pikuri-internal-` prefix that pikuri
 considers fully owned, and is recreated transparently if the
 pinned image is bumped between pikuri versions — your data lives

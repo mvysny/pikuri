@@ -13,7 +13,7 @@ module Pikuri
     # returns a {Mem0Client} pre-pointed at the running server.
     #
     # Same split, and the same "let pikuri manage it" vs "bring your own"
-    # choice, as +pikuri-vectordb+'s {Pikuri::VectorDb::ChromaServer} /
+    # choice, as +pikuri-vectordb+'s {Pikuri::VectorDb::Server::Chroma} /
     # {Pikuri::VectorDb::Backend::Chroma}. A host already running mem0
     # elsewhere skips this class and wires {Mem0Client.new(endpoint:)}
     # directly.
@@ -68,7 +68,7 @@ module Pikuri
     #
     # The shipped compose publishes both ports on +127.0.0.1+ only — the
     # user's memory never listens on a routable interface, same posture as
-    # {Pikuri::VectorDb::ChromaServer}.
+    # {Pikuri::VectorDb::Server::Chroma}.
     #
     # == Subprocess seam
     #
@@ -91,7 +91,7 @@ module Pikuri
 
       # @return [String] compose project name. Prefix +pikuri-internal-+
       #   is the namespace pikuri squats for self-managed infra (same
-      #   convention as {Pikuri::VectorDb::ChromaServer}).
+      #   convention as {Pikuri::VectorDb::Server::Chroma}).
       COMPOSE_PROJECT = 'pikuri-internal-mem0'
 
       # @return [String] absolute path to the shipped compose file.
@@ -117,7 +117,7 @@ module Pikuri
       DEFAULT_COLLECTION = 'pikuri_memory'
 
       # @return [String] pinned Qdrant image. **Kept in lockstep
-      #   with +Pikuri::VectorDb::QdrantServer::IMAGE+** — same tag,
+      #   with +Pikuri::VectorDb::Server::Qdrant::IMAGE+** — same tag,
       #   so a host running both stacks holds one image on disk. The
       #   gems don't depend on each other, so the pin is a
       #   convention, not a shared constant; bump both together. See
@@ -188,7 +188,7 @@ module Pikuri
       #   containers for persistent state — +data/qdrant+ holds the
       #   Qdrant corpus, +data/history+ the memory-history SQLite. The
       #   containers are ephemeral; this survives them (same posture as
-      #   {Pikuri::VectorDb::ChromaServer}).
+      #   {Pikuri::VectorDb::Server::Chroma}).
       def data_dir
         @cache_dir.join('data')
       end
@@ -248,7 +248,7 @@ module Pikuri
       # (i.e. +$XDG_CACHE_HOME/pikuri/mem0+ or +~/.cache/pikuri/mem0+).
       # Holds +temp/git+ (the checkout) and +data/+ (the bind-mounted
       # corpus + history). Shares the cache root with
-      # {Pikuri::VectorDb::ChromaServer} via {Pikuri::Paths}. Public so
+      # {Pikuri::VectorDb::Server::Chroma} via {Pikuri::Paths}. Public so
       # tests and docs reference the same path the supervisor resolves.
       #
       # @return [String]

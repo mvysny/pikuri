@@ -2,7 +2,7 @@
 
 require 'spec_helper'
 
-describe Pikuri::VectorDb::Reindex do
+describe Pikuri::VectorDb::Tools::Reindex do
   # Stub indexer: configurable return value, optional raise.
   # The Reindex tool is a thin wrapper, so the unit boundary
   # is "what we send to indexer.reindex! and what we do with
@@ -24,19 +24,19 @@ describe Pikuri::VectorDb::Reindex do
 
   describe 'as a Pikuri::Tool' do
     it 'is named vectordb_reindex' do
-      tool = Pikuri::VectorDb::Reindex.new(indexer: stub_indexer)
+      tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer)
       assert_equal 'vectordb_reindex', tool.name
     end
 
     it 'declares no parameters' do
-      tool = Pikuri::VectorDb::Reindex.new(indexer: stub_indexer)
+      tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer)
       schema = tool.parameters.to_h
       assert_equal({}, schema[:properties])
       assert_equal [], schema[:required]
     end
 
     it 'description states not-auto-indexed, asks-only, and slowness' do
-      tool = Pikuri::VectorDb::Reindex.new(indexer: stub_indexer)
+      tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer)
       assert_match(/NOT indexed automatically/i, tool.description)
       assert_match(/asks to index, reindex, or refresh/i, tool.description)
       assert_match(/SLOW/, tool.description)
@@ -46,20 +46,20 @@ describe Pikuri::VectorDb::Reindex do
   describe '#execute happy paths' do
     it 'returns a one-line summary including the chunk count' do
       indexer = stub_indexer(return_value: 247)
-      observation = Pikuri::VectorDb::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
 
       assert_equal 'Reindexed: 247 chunk(s) now in the index.', observation
     end
 
     it 'calls indexer.reindex! exactly once per invocation' do
       indexer = stub_indexer(return_value: 5)
-      Pikuri::VectorDb::Reindex.execute(indexer: indexer)
+      Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
       assert_equal 1, indexer.call_count
     end
 
     it 'returns a helpful empty-corpus message when reindex returns 0' do
       indexer = stub_indexer(return_value: 0)
-      observation = Pikuri::VectorDb::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
 
       assert_includes observation, 'Reindexed: 0 chunks'
       assert_includes observation, 'No indexable files'
@@ -69,7 +69,7 @@ describe Pikuri::VectorDb::Reindex do
   describe '#execute error path' do
     it 'returns "Error: ..." when the indexer raises a RuntimeError' do
       indexer = stub_indexer(raise_with: 'Backend::Chroma: HTTP 503 ...')
-      observation = Pikuri::VectorDb::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
 
       assert_match(/^Error: reindex failed:/, observation)
       assert_match(/HTTP 503/, observation)
@@ -78,7 +78,7 @@ describe Pikuri::VectorDb::Reindex do
     it 'does not catch non-RuntimeError exceptions (those are bugs, not LLM-recoverable)' do
       indexer = stub_indexer(raise_with: ArgumentError.new('logic bug'))
       assert_raises(ArgumentError) do
-        Pikuri::VectorDb::Reindex.execute(indexer: indexer)
+        Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
       end
     end
   end

@@ -33,8 +33,9 @@ The gem inventory:
   bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
 - `pikuri-vectordb` — local-corpus vector search + agentic RAG:
   `vectordb_search` / `vectordb_read` / `vectordb_reindex` tools,
-  swappable `Backend` (`InMemory` / `Chroma`), embedder + reranker +
-  chunker pipeline, bundled `LIBRARIAN` persona, `bin/pikuri-corpus`.
+  swappable `Backend` (`InMemory` / `Qdrant` / `Chroma`), embedder +
+  reranker + chunker pipeline, bundled `LIBRARIAN` persona,
+  `bin/pikuri-corpus`.
 - `pikuri-memory` — durable cross-conversation memory backed by
   mem0: `recall` tool + automatic per-turn prefetch and capture
   (`Memory::Extension`), self-managed mem0 + Qdrant sidecar
@@ -111,7 +112,7 @@ yardoc. CLAUDE.md only records the invariant.
   registry with a single `at_exit`; no other `at_exit { close }`
   hooks in pikuri-* `lib/`. A resource registers at its *ownership
   boundary*: process-level infra a `bin/` starts self-registers
-  (`Pikuri::VectorDb::ChromaServer` via `ensure_running!`);
+  (`Pikuri::VectorDb::Server::Chroma` via `ensure_running!`);
   agent-owned resources do NOT — they ride the agent's `on_close`,
   which an extension arms via `c.on_close` (that writes to the
   agent's live handler list, so cleanup fires even mid-construction).
@@ -238,7 +239,8 @@ per-gem one-liners:
 - **`pikuri-vectordb/`** — local-corpus vector search + agentic
   RAG. `VectorDb::Extension` auto-registers the `vectordb_search`
   + `vectordb_read` + `vectordb_reindex` tools
-  (`Search` / `Read` / `Reindex`) onto an `Agent` via
+  (`Tools::Search` / `Tools::Read` / `Tools::Reindex` — the gem's
+  `tools/` directory is its whole LLM-facing surface) onto an `Agent` via
   `c.add_extension(...)` in the `Agent.new` block — same opt-in
   shape as pikuri-tasks / pikuri-skills. `vectordb_read` is
   parent-document retrieval (read a hit in full by `source`),
@@ -247,9 +249,9 @@ per-gem one-liners:
   educational default; thin Faraday `Backend::Qdrant` /
   `Backend::Chroma` for persistence — Qdrant recommended, see
   `pikuri-vectordb/DESIGN.md`) + `Backend::Result`,
-  `QdrantServer` / `ChromaServer` (self-managed docker container
+  `Server::Qdrant` / `Server::Chroma` (self-managed docker container
   supervisors, route through `Pikuri::Subprocess.spawn`;
-  `QdrantServer::IMAGE` pins the same tag as `Mem0Server`'s
+  `Server::Qdrant::IMAGE` pins the same tag as `Mem0Server`'s
   Qdrant, in lockstep by convention), `Indexer` (walks `source`, chunks,
   embeds, upserts), `Watcher` (filesystem-event daemon over the
   `listen` gem that keeps a live index fresh; wired in
@@ -281,7 +283,7 @@ per-gem one-liners:
   `Memory::Recorder` (off-the-loop async capture queue, bounded
   flush on close), `Memory::Record` value type, `Memory::Recall`
   (the `recall` tool), `Memory::Mem0Server` (the self-managed mem0 +
-  Qdrant sidecar supervisor — `ChromaServer`-shaped, drives
+  Qdrant sidecar supervisor — `Server::Chroma`-shaped, drives
   `docker compose` over `docker/` artifacts through
   `Pikuri::Subprocess.spawn`), and the curated `memory-extraction`
   prompt in `prompts/`. The three retrieval tiers — resident persona

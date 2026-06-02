@@ -29,7 +29,7 @@ module Pikuri
       #   already running on the host for an unrelated project).
       #   The host owns the process; this class is purely the
       #   HTTP client.
-      # * **Let pikuri manage it.** {ChromaServer.ensure_running}
+      # * **Let pikuri manage it.** {Server::Chroma.ensure_running}
       #   spawns and supervises a chroma container under the
       #   +pikuri-internal-chroma+ name, against a pinned image,
       #   with a bind-mounted volume in the user's cache dir.
@@ -387,7 +387,7 @@ module Pikuri
         end
 
         # Is +source+ in the corpus? Scoped existence check for
-        # {VectorDb::Read}'s membership gate: a +where+-filtered
+        # {VectorDb::Tools::Read}'s membership gate: a +where+-filtered
         # +/get+ capped at one row, +include: []+ so the response
         # carries only ids — O(1) transport regardless of corpus
         # size, never the full {#sources_with_hashes} manifest. See

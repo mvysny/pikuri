@@ -37,7 +37,7 @@ module Pikuri
     # one-paragraph summary — which the parent can react to as
     # data, not as instructions. +vectordb_read+ is safe to add
     # here for exactly this reason — reading widens what the
-    # librarian *sees*, never what it can *do*. See {Read}'s
+    # librarian *sees*, never what it can *do*. See {Tools::Read}'s
     # "Why this does not widen the trifecta".
     #
     # The corpus content is the threat in this design.
@@ -56,7 +56,7 @@ module Pikuri
     #
     # Same precedent as +Pikuri::Code::GIT_REPO_RESEARCHER+:
     # the persona constant lives with the gem that ships its
-    # required tool ({Search}), not in pikuri-subagents (which
+    # required tool ({Tools::Search}), not in pikuri-subagents (which
     # only ships personas whose toolset is reachable from
     # pikuri-subagents + pikuri-workspace).
     #
