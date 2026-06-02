@@ -1,82 +1,138 @@
 # pikuri-vectordb
 
 Local-corpus vector search + agentic RAG for the
-[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
+[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
+semantic recall over a pile of files you point it at — your notes,
+your docs, your contracts — where the *agent* decides when to
+retrieve, same Thought → Tool-call → Observation loop as every other
+tool.
 
-> **Status:** skeleton — gem scaffolding only. The
-> `Pikuri::VectorDb::Extension` and `vectordb_search` tool are
-> being built in subsequent commits. See `IDEAS.md` §"Vector DB /
-> RAG" for the design.
-
-Will provide:
-
-- `Pikuri::VectorDb::Extension` — wires a `vectordb_search` tool,
-  a `vectordb_read` tool (read one indexed document in full by its
-  `source` path — parent-document retrieval), and a
-  `vectordb_reindex` tool onto a `Pikuri::Agent` via
-  `c.add_extension(...)` inside the `Agent.new` block.
-- `Pikuri::VectorDb::Backend::InMemory` — pure-Ruby cosine over
-  `Array<Float>`. The educational default; reads in ~40 lines.
-  RAM-only; everything reloads from sources on every boot.
-- `Pikuri::VectorDb::Backend::Chroma` — thin Faraday HTTP client
-  against a self-hosted ChromaDB. The persistent option.
-- `Pikuri::VectorDb::Embedder` — thin wrapper over `RubyLLM.embed`
-  so tests can inject a fake without monkey-patching ruby_llm.
-- `Pikuri::VectorDb::Reranker::LlamaServer` — optional quality
-  knob. Speaks `/v1/rerank` against a cross-encoder model on a
-  llama.cpp server. Passing `reranker: nil` to the extension
-  skips reranking; retrieval falls back to vector-only top-k.
-- `Pikuri::VectorDb::Chunker::FixedWindow` + `Tokenizer::*` —
-  the chunking pipeline. Tokenizer is a duck-typed protocol
-  (`count(text) -> Integer`) with two impls in v1:
-  `Tokenizer::CharHeuristic` (default, ~4 chars/token rule) and
-  `Tokenizer::LlamaServer` (POST `/tokenize` against the
-  embedder's endpoint).
-- Text extraction reuses `Pikuri::FileType.read_as_text` from
-  pikuri-core — plain text / Markdown / PDF. HTML extraction
-  is a deferred follow-up; v1 corpora skew toward Markdown
-  notes and PDF docs in practice.
-- `Pikuri::VectorDb::LIBRARIAN` — bundled
-  `Pikuri::SubAgent::Persona` constant. Hosts wire it via
-  `SubAgent::Extension.new(personas: [..., LIBRARIAN])` — same
-  shape `pikuri-code` uses for `GIT_REPO_RESEARCHER`.
-
-## Install
+Wire it onto a `pikuri-core` agent the same way as `pikuri-tasks` /
+`pikuri-memory` — `c.add_extension` inside the `Agent.new` block:
 
 ```ruby
-# Gemfile
-gem 'pikuri-vectordb'
-```
-
-## Usage (preview — not yet wired)
-
-```ruby
-require 'pikuri-core'
 require 'pikuri-vectordb'
 
-backend = Pikuri::VectorDb::Backend::InMemory.new
-# Or for persistent storage:
-#   backend = Pikuri::VectorDb::Backend::Chroma.new(
-#     host: 'localhost', port: 8000, collection: 'my-docs',
-#   )
-agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension(
-    Pikuri::VectorDb::Extension.new(
-      backend: backend,
-      source: '~/notes',
-    )
+Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
+  c.add_extension Pikuri::VectorDb::Extension.new(
+    backend: Pikuri::VectorDb::Backend::InMemory.new,
+    source:  '~/notes'
   )
 end
 ```
 
-Collection naming is Chroma-specific so it lives on
-`Backend::Chroma.new(collection:)`, not on the Extension —
-`Backend::InMemory` has no collection concept.
+## What you get
 
-For hosts that want recall behind a privilege-separated sub-agent
-(the trifecta-defense pattern — see `SECURITY.md` and `IDEAS.md`
-§"Vector DB / RAG"), additionally wire the `LIBRARIAN` persona
-via `pikuri-subagents`:
+Three tools, registered by the extension:
+
+1. **`vectordb_search`** — embeds the query, pulls the top-k nearest
+   chunks from the backend, optionally reranks them with a
+   cross-encoder, and hands the agent a numbered list of
+   `source (score=…)` snippets as its next observation.
+2. **`vectordb_read`** — parent-document retrieval: when a search
+   surfaces a clean hit, the agent reads that whole document by its
+   `source` path instead of re-querying for more fragments of it.
+3. **`vectordb_reindex`** — rebuilds the index from the source, on
+   request.
+
+The extension registers the tools and nothing else — *populating*
+the index is the host's call, never something done behind your
+back. Three equally valid shapes:
+
+- Index at boot: `extension.indexer.index_if_empty!`.
+- Keep it live: run a `Pikuri::VectorDb::Watcher` around
+  `extension.indexer` — a filesystem-event daemon (the `listen`
+  gem) that sweeps once on boot and reindexes files as they change.
+- Leave it empty and let the user drive: the agent calls
+  `vectordb_reindex` when asked.
+
+## Backends
+
+Three implementations of one duck-typed interface
+(`#upsert` / `#query` / `#delete_all` / `#count`) — swapping is a
+one-line change:
+
+- `Backend::InMemory` — the educational default. Pure-Ruby cosine
+  over `Array<Float>`, ~40 lines, reads in one sitting. RAM-only:
+  everything reloads from sources on every boot.
+- `Backend::Qdrant` — thin Faraday HTTP client against a
+  self-hosted [Qdrant](https://qdrant.tech). **The recommended
+  persistent backend** — [`DESIGN.md`](DESIGN.md) has the engine
+  survey behind the pick.
+- `Backend::Chroma` — the supported
+  [ChromaDB](https://www.trychroma.com) alternative, identical
+  wiring.
+
+Each persistent engine pairs with a `Server::*` supervisor that
+runs it as a self-managed docker container: pinned image, a
+container name pikuri owns (`pikuri-internal-qdrant` /
+`pikuri-internal-chroma`), data bind-mounted under
+`~/.cache/pikuri/` so the corpus survives container recreation.
+
+```ruby
+# Supervised container (needs docker on PATH):
+backend = Pikuri::VectorDb::Server::Qdrant.ensure_running.client(
+  collection: 'my-docs'
+)
+
+# Or point at a Qdrant you already run:
+backend = Pikuri::VectorDb::Backend::Qdrant.new(
+  host: 'localhost', port: 6333, collection: 'my-docs'
+)
+```
+
+Collection naming is engine-specific so it lives on the backend
+constructor, not on the Extension — `Backend::InMemory` has no
+collection concept.
+
+## The indexing pipeline
+
+What `vectordb_reindex` (and the `Watcher`) actually runs, piece by
+piece — each swappable via the Extension's keyword arguments:
+
+- **Chunker** (`Chunker::FixedWindow`) — overlapping windows,
+  default 512 tokens with 50 of overlap, so an answer straddling a
+  boundary survives in at least one chunk.
+- **Tokenizer** (`Tokenizer::CharHeuristic` default /
+  `Tokenizer::LlamaServer`) — counts tokens for the chunker; the
+  heuristic is the offline ~4-chars-per-token rule, the
+  `LlamaServer` variant asks the embedder's `/tokenize` endpoint
+  for an exact count.
+- **Embedder** — thin wrapper over `RubyLLM.embed`; tests inject a
+  fake `#embed` without monkey-patching ruby_llm.
+- **Reranker** (`Reranker::LlamaServer`, optional) — cross-encoder
+  over `POST /v1/rerank`. Pass `reranker: nil` to skip it;
+  retrieval falls back to vector-only top-k — less precision, same
+  correctness.
+
+Text extraction reuses `Pikuri::FileType.read_as_text` from
+pikuri-core — plain text / Markdown / PDF. HTML extraction is a
+deferred follow-up.
+
+## Demo: `pikuri-corpus`
+
+From a source checkout (not installed by `gem install`):
+
+```sh
+./pikuri-vectordb/bin/pikuri-corpus --qdrant --watch
+```
+
+A single recall agent over `docs/guide/` (the pikuri guide itself)
+with **no egress** — its tools are the three above plus
+`calculator`; no web search, no fetch, no bash. The corpus stands
+in for private data, and an agent that can read it must not also be
+able to send it out. `--qdrant` / `--chroma` persist the index
+across runs, `--watch` keeps it live, `--no-reranker` drops the
+reranker requirement. The guide's
+[chapter 3](../docs/guide/03-vectordb.md) is the full walkthrough.
+
+## The LIBRARIAN persona
+
+For hosts that want recall behind a privilege-separated sub-agent —
+the right shape once the *parent* agent has egress (see
+`SECURITY.md` at the repo root) — the bundled
+`Pikuri::VectorDb::LIBRARIAN` persona is opt-in via
+`pikuri-subagents`:
 
 ```ruby
 require 'pikuri-subagents'
@@ -90,13 +146,13 @@ c.add_extension(
 
 ## Three model endpoints
 
-A full assistant setup wants three LLM endpoints: chat (via
-`ruby_llm`), an embedder (via `RubyLLM.embed`), and an optional
-reranker (HTTP `/v1/rerank`). Recommended setup: **one
-`llama-server` running in router mode** — started with no
-`--model` flag, it serves every GGUF in `~/.cache/llama.cpp/`
-from a single port and loads whichever model each request asks
-for. Requires a recent enough `llama.cpp` build to include the
+A full setup wants three LLM endpoints: chat (via `ruby_llm`), an
+embedder (via `RubyLLM.embed`), and an optional reranker (HTTP
+`/v1/rerank`). Recommended setup: **one `llama-server` running in
+router mode** — started with no `--model` flag, it serves every
+GGUF in `~/.cache/llama.cpp/` from a single port and loads
+whichever model each request asks for. Requires a recent enough
+`llama.cpp` build to include the
 [model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp);
 Ubuntu 26.04+ packages one. The guide's
 [chapter 1](../docs/guide/01-chat.md) walks through the setup;
@@ -114,10 +170,24 @@ OpenAI-compatible endpoints and would also work, but pikuri's
 "small enough to audit" ethos keeps the recommended path on
 `llama.cpp` alone.
 
+## Install
+
+```ruby
+# Gemfile
+gem 'pikuri-vectordb'
+```
+
+Depends on `pikuri-core`, `pikuri-subagents` (the `Persona` value
+type `LIBRARIAN` is an instance of), and `listen` (filesystem
+events for the `Watcher`; loaded only when a `Watcher` starts).
+
 ## Further reading
 
-- **Design notes:** `IDEAS.md` §"Vector DB / RAG" at the repo
-  root.
+- **Guide chapter:** [Agentic search and the vector
+  DB](../docs/guide/03-vectordb.md) — concepts, model setup, the
+  no-egress argument, `--qdrant --watch` day-to-day shape.
+- **Design notes:** [`DESIGN.md`](DESIGN.md) — the Chroma-vs-Qdrant
+  engine survey.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-vectordb> (once published),
   or run `bundle exec yard` in this directory for a local copy.

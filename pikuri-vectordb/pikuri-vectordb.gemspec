@@ -13,8 +13,9 @@ Gem::Specification.new do |spec|
     pikuri-vectordb gives a pikuri-core agent a +vectordb_search+
     tool over a local document corpus — agentic search, the agent
     decides when to retrieve. Ships a swappable backend (a
-    pure-Ruby +Backend::InMemory+ for teaching and a thin
-    +Backend::Chroma+ HTTP client for persistence), a chunker, an
+    pure-Ruby +Backend::InMemory+ for teaching, plus thin
+    +Backend::Qdrant+ / +Backend::Chroma+ HTTP clients for
+    persistence — Qdrant recommended), a chunker, an
     embedder wrapper over +RubyLLM.embed+, and an optional
     +Reranker::LlamaServer+ that speaks +/v1/rerank+ against a
     cross-encoder model. Text extraction goes through

@@ -92,8 +92,9 @@ module Pikuri
 
       # @param backend [#upsert, #query, #delete_all, #count]
       #   any {Backend} implementation. {InMemory} is the
-      #   educational default; {Backend::Chroma} the persistent
-      #   option.
+      #   educational default; {Backend::Qdrant} the recommended
+      #   persistent backend ({Backend::Chroma} the supported
+      #   alternative — see +DESIGN.md+).
       # @param source [String, Pathname] path to index. A file
       #   indexes directly; a directory is walked recursively
       #   (see {Indexer::DENYLIST}). Single source only in v1
