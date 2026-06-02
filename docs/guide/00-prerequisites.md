@@ -54,7 +54,7 @@ The setup you'll find in most tutorials is:
 
 ```sh
 sudo apt install docker.io
-sudo usermod -aG docker "$USER"      # ← don't do this
+sudo usermod -aG docker "$USER"      # ← DON'T DO THIS!!!
 ```
 
 That second line is **passwordless root**. The default Docker
