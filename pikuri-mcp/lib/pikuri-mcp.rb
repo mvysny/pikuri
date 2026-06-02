@@ -15,6 +15,13 @@ require 'pikuri-core'
 # owns its own +lib/+ tree and the cooperation between gems is via
 # the +Pikuri+ namespace alone. See pikuri-core/lib/pikuri-core.rb
 # for the core loader.
+#
+# The gem's +prompts/+ directory is appended to +Pikuri::PROMPT_DIRS+
+# so +Pikuri.prompt(:'pikuri-openlibrary')+ (the bin/pikuri-openlibrary
+# demo's system prompt) resolves regardless of which gem shipped the
+# file.
+Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
+
 module Pikuri
   module Mcp
     LOADER = Zeitwerk::Loader.new

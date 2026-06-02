@@ -142,13 +142,17 @@ boundary moves up — and reaching for *another* container layer
 inside means Docker-in-Docker. There are two ways to do that, and
 both collapse the outer wall:
 
-- **Bind-mount `/var/run/docker.sock`** from the host into the
-  outer container. The host's docker daemon runs as root, and
+- **Bind-mount the docker socket** from the host into the
+  outer container. A rootful docker daemon runs as root, and
   anything that can talk to its socket can ask it to start a
   *sibling* container with `-v /:/host` mounted in. Drop a key
   into `/host/root/.ssh/authorized_keys` from that sibling and
   the agent has root on your host — not a sandbox escape, the
-  daemon was a root-equivalent API the whole time.
+  daemon was a root-equivalent API the whole time. (Chapter 0's
+  rootless daemon softens "root" to "your user" — the sibling
+  can't touch `/root`, but `~/.ssh/authorized_keys` and every
+  file you own are still in reach, which is the whole exposure
+  the outer container existed to prevent. The verdict stands.)
 - **Run the daemon inside the outer container** with
   `--privileged`. That flag grants all Linux capabilities,
   disables seccomp/AppArmor, and exposes host `/dev`. The agent

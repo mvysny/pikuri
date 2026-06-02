@@ -169,7 +169,8 @@ a pinned commit, builds the image, and brings up a two-container
 interface.
 
 That needs **`docker` (with the compose plugin) and `git`** on
-`PATH`. The first run builds the mem0 image and takes a few minutes;
+`PATH` — all three are part of [chapter 0](00-prerequisites.md)'s
+rootless setup. The first run builds the mem0 image and takes a few minutes;
 the clone lives under `~/.cache/pikuri/mem0/temp/git` and the data
 under `~/.cache/pikuri/mem0/data/` (bind-mounted into the containers),
 so subsequent runs are fast and your memories persist across
@@ -184,12 +185,25 @@ and the supervisor is skipped entirely.
 
 Note the `--server` is a **LAN IP**, not `localhost`. The chat agent
 runs on your host and would happily talk to `localhost:8080`, but the
-extractor and embedder run *inside* the mem0 container, which can't
-reach your host's loopback as "localhost". pikuri rewrites a
-`localhost` router URL to `host.docker.internal` automatically — but
-if your router is already on a routable address (a LAN IP, a VM
-gateway like the `192.168.122.1` above), pass that and it's used
-as-is for both sides.
+extractor and embedder run *inside* the mem0 container — and with
+[chapter 0](00-prerequisites.md)'s rootless Docker, a container
+**cannot reach services bound to your host's `127.0.0.1` at all**
+(rootless networking ships `--disable-host-loopback` on purpose: a
+container shouldn't get to probe every local-only service on your
+machine). So run `llama-server` listening on an address the
+container can route to — a LAN IP, or a host-only bridge like the
+`192.168.122.1` above (libvirt's NAT bridge: reachable from
+containers and VMs on the host, invisible to your actual network) —
+and pass that same address as `--server`; it's used as-is for both
+sides.
+
+(On a *rootful* daemon there's a fallback: pikuri rewrites a
+`localhost` router URL to `host.docker.internal` automatically, and
+the root daemon routes that back to the host's loopback. Under
+rootless the rewrite still happens but the connection fails — if
+extraction silently stores nothing and the mem0 logs show connection
+errors to `host.docker.internal`, a loopback-bound router is the
+first thing to check.)
 
 On first run you'll see the supervisor come up, then the banner:
 

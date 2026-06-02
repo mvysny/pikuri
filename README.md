@@ -32,6 +32,12 @@ sudo apt install ruby ruby-bundler
 bundle install
 ```
 
+Chapters 3+ of the guide also run local infrastructure (vector
+store, memory store, MCP servers) in Docker — set up **rootless**,
+not via the `docker` group, which is passwordless root. The
+one-time setup lives in
+[docs/guide/00-prerequisites.md](docs/guide/00-prerequisites.md).
+
 Pikuri itself is now installed in dev mode. To actually have a
 conversation you also need a model running. The shortest route —
 install `llama.cpp` and start `llama-server` with the default Qwen

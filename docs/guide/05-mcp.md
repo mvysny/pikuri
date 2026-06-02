@@ -76,9 +76,11 @@ you'll never inspect — is the everyday reason to put a boundary
 around an MCP server. A Docker container is that boundary: it
 runs the server's code with its own filesystem and no access to
 your home directory, so a rogue dependency burrowing for
-`~/.ssh` finds an empty box. This chapter installs Docker and
-uses it; the full "why every server you didn't write runs in a
-container" argument is [chapter 10](10-mcp-revisited.md).
+`~/.ssh` finds an empty box. Docker itself arrived in
+[chapter 0](00-prerequisites.md) and has been quietly running
+infrastructure since chapter 3; this chapter is its first use as a
+*trust boundary*. The full "why every server you didn't write runs
+in a container" argument is [chapter 10](10-mcp-revisited.md).
 
 ## Meet Docker (the sixty-second version)
 
@@ -99,13 +101,27 @@ overlays, the container-socket footgun — is
 [chapter 10](10-mcp-revisited.md). For now: it's a box, the
 server runs in the box, the box can't see your stuff.
 
-### Install it (Debian / Ubuntu)
+### Rootless, or the boundary inverts
 
-```sh
-sudo apt install docker.io
-sudo usermod -aG docker "$USER"      # so you don't need sudo for every docker command
-# log out and back in (or run `newgrp docker`) so the group change takes effect
-```
+You installed Docker — **rootless** — back in
+[chapter 0](00-prerequisites.md); if you skipped that section,
+now's the moment, because this chapter is exactly why it says
+"rootless" and not `usermod -aG docker`. Membership in the
+`docker` group is passwordless root in a trenchcoat: the default
+daemon runs as root, and anyone who can talk to its socket can ask
+it for a container with your whole disk mounted inside —
+`docker run -v /:/host ...` and the "boundary" now *contains* your
+machine. And it's not just you at the keyboard: *any process
+running as your user* can open that socket. Remember why this
+chapter reaches for Docker at all — we don't trust a 401-package
+npm tree running with your privileges. Handing every process in
+your account a root-equivalent socket would invert the exact
+boundary we're building.
+
+With the rootless daemon, "root" inside a container maps to plain
+old you outside it. A rogue dependency that somehow broke out of a
+rootless container would land in your account — bad, but not root,
+and no worse than running the server bare.
 
 Verify the daemon is up and your user can reach it:
 
@@ -120,8 +136,9 @@ every `docker run` in this chapter.)
 ## Prerequisites
 
 Chapters [1](01-chat.md) and [2](02-subagents.md). `llama-server`
-running; `bundle install` done. Plus Docker (just installed,
-above) and one build step: the Open Library server isn't
+running; `bundle install` done. Plus Docker (rootless, from
+[chapter 0](00-prerequisites.md) — just verified above) and one
+build step: the Open Library server isn't
 published as a ready-made image, so you build one from its
 source — which conveniently means you read the source first.
 
@@ -176,16 +193,13 @@ conceptual material doesn't depend on having run it.)
 
 ## 1. Run it
 
-`pikuri-assistant` already wires `Mcp::Extension` into its
-`Agent.new` block. It also has an empty hand-edit slot for the
-registry near the top of `bin/pikuri-assistant`. Configuring an
-MCP server is just filling that slot in; everything else is
-already plumbed.
-
-Open `pikuri-assistant/bin/pikuri-assistant` and find the
-`mcp_registry = Pikuri::Mcp::Registry.new(entries: [...])` block.
-By default it's empty. Add the Open Library entry — note it's the
-exact `docker run` argv you just smoke-tested:
+The worked binary for this chapter is
+`pikuri-mcp/bin/pikuri-openlibrary` — a deliberately tiny agent
+wired to exactly one MCP server (the image you just built) plus
+`calculator`, and nothing else. Nothing to configure: open the
+script and read it top to bottom — it's short, and the part that
+matters is the registry block, which hardcodes the exact
+`docker run` argv you just smoke-tested:
 
 ```ruby
 mcp_registry = Pikuri::Mcp::Registry.new(entries: [
@@ -203,10 +217,19 @@ container is the whole isolation story — pikuri doesn't have to
 know or care that there's a container in the argv; from its side
 it's just a subprocess that speaks MCP.
 
+The toolset is the other half of the design. No web tools, no
+files, no memory — the missing trifecta leg from the top of this
+chapter is missing *structurally*, baked into the binary, not held
+open by your restraint. (That's also why this demo gets its own
+binary instead of riding `pikuri-assistant`: the assistant will
+grow memory and file access in [chapter 7](07-assistant.md), and
+this chapter's "nothing private is wired in" guarantee has to
+survive that.)
+
 Run it:
 
 ```sh
-/path/to/pikuri/pikuri-assistant/bin/pikuri-assistant
+/path/to/pikuri/pikuri-mcp/bin/pikuri-openlibrary
 ```
 
 On a cold cache, two passes fire before the prompt appears
@@ -222,9 +245,8 @@ On a cold cache, two passes fire before the prompt appears
    it from its tool list.
 
 When both pass, the audit log emits a couple of lines naming the
-server and its protocol version, and the standard
-`pikuri-assistant` banner appears. Try a question that exercises
-the new surface:
+server and its protocol version, and the binary's banner appears.
+Try a question that exercises the new surface:
 
 ```
 > What editions of The Hobbit are there?
@@ -276,14 +298,18 @@ shows up one more time here:
 - **`Pikuri::Mcp::Registry`** is pure configuration. A frozen
   list of `StdioEntry` / `HttpEntry` value objects, each with an
   `id`. No I/O. No subprocess. Constructing a registry doesn't
-  touch the network or spawn anything. This is the layer
-  `bin/pikuri-assistant` hand-edits.
+  touch the network or spawn anything.
 - **`Pikuri::Mcp::Servers`** is the runtime. Built from a
   registry by the extension's `configure`, it eager-starts every
   configured server (spawning subprocesses for `StdioEntry`,
   opening HTTP sessions for `HttpEntry`), runs the verifier +
   synthesizer passes, holds one live client per server, and owns
   `#close`.
+
+The registry is the layer `bin/pikuri-openlibrary` hardcodes —
+and the layer `bin/pikuri-assistant` ([chapter 7](07-assistant.md))
+instead leaves as an empty slot for you to hand-edit your own
+servers into.
 
 The split is why the same gem can be unit-tested without ever
 opening a real MCP transport (`Registry` has no dependencies on
@@ -339,11 +365,14 @@ is the same `configure(c)` + `bind(agent)` pair:
 
 Sub-agents do **not** inherit the extension or the `mcp_connect`
 tool — the chapter 2 lesson about extension non-inheritance
-applies. A `RESEARCHER` spawned by `pikuri-assistant` has no way
-to reach the Open Library MCP. If you want a persona to reach MCP
-tools, you'd have to write one whose `tool_names` includes the
-MCP-synthesised tools by name — out of scope for this chapter,
-and a thing the codebase deliberately doesn't make easy.
+applies. `pikuri-openlibrary` spawns no sub-agents, but the rule
+matters the moment you wire MCP into an agent that does, as
+[chapter 7](07-assistant.md)'s assistant will: a `RESEARCHER` it
+spawns has no way to reach the Open Library MCP. If you want a
+persona to reach MCP tools, you'd have to write one whose
+`tool_names` includes the MCP-synthesised tools by name — out of
+scope for this chapter, and a thing the codebase deliberately
+doesn't make easy.
 
 ## The synthesizer — filling in what servers neglect to say
 

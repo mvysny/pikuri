@@ -24,13 +24,15 @@ Chapters [1](01-chat.md), [2](02-subagents.md), [5](05-mcp.md),
 [6](06-security.md), and [8](08-code.md). `llama-server` running;
 `bundle install` done. Plus:
 
-- **Docker** — which you installed back in [chapter 5](05-mcp.md)
-  to run the book-catalogue server. Same tool, different image:
-  the official GitHub MCP server is distributed as
-  `ghcr.io/github/github-mcp-server` (a ready-made image you
-  *pull* rather than build from source — itself part of this
-  chapter's point). If you skipped chapter 5, the one-time setup
-  is there. The stance chapter 5 introduced gently and this
+- **Docker** — set up (rootless) back in
+  [chapter 0](00-prerequisites.md) and first used as an MCP
+  boundary in [chapter 5](05-mcp.md) with the book-catalogue
+  server. Same tool, different image: the official GitHub MCP
+  server is distributed as `ghcr.io/github/github-mcp-server` (a
+  ready-made image you *pull* rather than build from source —
+  itself part of this chapter's point). If you skipped those, the
+  one-time setup is in chapter 0. The stance chapter 5 introduced
+  gently and this
   chapter makes the rule: **every MCP server you don't write
   yourself runs in a container** — see the threat-model section
   for why.

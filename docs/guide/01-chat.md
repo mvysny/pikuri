@@ -27,7 +27,9 @@ trust, or running it unattended.
 ## Prerequisites
 
 You should already have a checkout and `bundle install` finished,
-per the [root README](../../README.md). Quick verification:
+per [chapter 0](00-prerequisites.md) (chapter 0's Docker section
+can wait until chapter 3 — nothing here needs it). Quick
+verification:
 
 ```sh
 cd /path/to/pikuri

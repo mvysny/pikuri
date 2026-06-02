@@ -12,7 +12,8 @@ local site, or — once gems are published — see
 
 ## How the guide is shaped
 
-Twelve chapters in three movements. The first two are the base
+A chapter zero of one-time machine setup, then twelve chapters in
+three movements. The first two are the base
 vocabulary; the middle six are the **assistant track** (broader
 audience, privacy-conscious user), capped by the security
 chapter that earns the reassurance prefixes above each earlier
@@ -23,6 +24,11 @@ chapters that apply across both tracks.
 
 ## Chapters
 
+0. **[Prerequisites](00-prerequisites.md).** One-time machine
+   setup: Ruby + the checkout, and Docker — **rootless**, because
+   the usual `docker` group shortcut is passwordless root. Safe to
+   skim past until chapter 3, which is where Docker first earns
+   its keep.
 1. **[Your first conversation](01-chat.md).** Install
    `llama.cpp`, start the server, run `pikuri-chat`. Establishes
    the base vocabulary: `Pikuri::Agent`, `Pikuri::Tool`,
@@ -55,11 +61,11 @@ chapters that apply across both tracks.
 5. **[Your first MCP server](05-mcp.md).** The gentle MCP intro:
    one low-stakes server (a public book-catalogue reader, no
    credentials, nothing private wired in), your first taste of
-   Docker as the boundary, the registry/servers split, the
-   verifier and synthesizer that are `pikuri-mcp`'s distinctive
-   contributions. The sharper MCP shapes — credentials,
-   untrusted code, the full container threat model — wait for
-   chapter 10.
+   (rootless) Docker as the boundary, the registry/servers split,
+   the verifier and synthesizer that are `pikuri-mcp`'s distinctive
+   contributions. Demo via `pikuri-openlibrary`. The sharper MCP
+   shapes — credentials, untrusted code, the full container threat
+   model — wait for chapter 10.
 6. **[Security: picking a defense for your harness](06-security.md).**
    The synthesis chapter. Why there's no NX flag for tokens,
    the lethal trifecta, the defense kit, a decision procedure

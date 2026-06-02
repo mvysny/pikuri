@@ -28,7 +28,8 @@ The gem inventory:
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams +
   Read/Write/Edit/Grep/Glob.
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
-- `pikuri-mcp` — Model Context Protocol support.
+- `pikuri-mcp` — Model Context Protocol support +
+  `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
   bundled `RESEARCHER` / `FILE_MINER` + `bin/pikuri-minions` fan-out demo.
 - `pikuri-vectordb` — local-corpus vector search + agentic RAG:
@@ -225,7 +226,11 @@ per-gem one-liners:
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
   summarization), `Mcp::Verifier` (injection check), `Mcp::Cache`,
-  `Mcp::ClientWrapper`. Depends on `pikuri-core` + the `mcp` gem.
+  `Mcp::ClientWrapper`, `bin/pikuri-openlibrary` (the guide-ch5
+  demo: one hardcoded Open Library MCP in a locally-built Docker
+  container + `calculator`, no private data wired in — the
+  hand-edit-your-own-registry slot stays in `pikuri-assistant`).
+  Depends on `pikuri-core` + the `mcp` gem.
 - **`pikuri-subagents/`** — the delegation feature top to bottom:
   `SubAgent::SubAgentTool` (the `agent` tool),
   `SubAgent::Persona`, `SubAgent::Extension`, bundled
@@ -327,7 +332,7 @@ per-gem one-liners:
   in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 
-The six `bin/pikuri-*` scripts are dev / demo entry points only —
+The seven `bin/pikuri-*` scripts are dev / demo entry points only —
 not advertised as gem executables. Production binaries built on
 pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 

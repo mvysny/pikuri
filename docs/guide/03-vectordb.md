@@ -449,7 +449,9 @@ populated index instead of rebuilding it. From then on a `Watcher`
 keeps it in sync incrementally, and a full `vectordb_reindex` is
 only needed after changing the embedder or chunker settings.
 
-`Server::Qdrant.ensure_running` requires `docker` on `PATH`; the
+`Server::Qdrant.ensure_running` requires `docker` on `PATH` — the
+rootless setup from [chapter 0](00-prerequisites.md), which until
+now you could put off, becomes load-bearing here; the
 container image tag is pinned in `Server::Qdrant::IMAGE` — the
 same tag as the Qdrant inside [chapter 4](04-memories.md)'s
 memory stack, by convention, so a host running both holds one
