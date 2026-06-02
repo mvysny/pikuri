@@ -159,8 +159,9 @@ The store itself is [mem0](https://github.com/mem0ai/mem0) — the
 oldest and most-adopted open-source agent-memory library — with
 [Qdrant](https://qdrant.tech) as its vector backend. You don't
 install either by hand; pikuri runs them as a self-managed Docker
-sidecar, the same "let pikuri supervise the container" pattern
-chapter 3 used for Chroma. `Pikuri::Memory::Mem0Server` clones mem0 at
+sidecar, the same "let pikuri supervise the container" pattern —
+and the same Qdrant engine, pinned to the same image tag —
+chapter 3 used. `Pikuri::Memory::Mem0Server` clones mem0 at
 a pinned commit, builds the image, and brings up a two-container
 `docker compose` stack (mem0 + Qdrant — **no Postgres**, see
 ["Storage"](#storage-mem0--qdrant-no-postgres) below) bound to
@@ -273,7 +274,7 @@ mem0 owns the parts pikuri deliberately doesn't reimplement:
 embedding your text, running the extraction LLM, and storing the
 resulting facts. pikuri talks to it over a thin Faraday HTTP client
 (`Mem0Client`) and supervises its containers (`Mem0Server`) — the
-exact split chapter 3 used for Chroma.
+exact split chapter 3 used for Qdrant.
 
 Two non-obvious choices are baked into the sidecar:
 

@@ -279,7 +279,7 @@ there when the question needs it, not silently injected into every
 turn.
 
 Use Ctrl+D or Ctrl+C to exit. The in-memory backend goes away
-with the process — see "InMemory vs Chroma" below for when you
+with the process — see "InMemory vs Qdrant" below for when you
 want persistence.
 
 ## The five pipeline pieces
@@ -306,12 +306,14 @@ summaries below tell you what each owns.
   Pins the return shape to `Array<Array<Float>>` (the indexer
   always wants the batched form) and lets tests inject a fake
   `#embed` without monkey-patching ruby_llm.
-- **Backend** (`Backend::InMemory` / `Backend::Chroma`) — stores
-  chunks alongside vectors and answers nearest-neighbour queries.
-  `InMemory` is pure-Ruby cosine over `Array<Float>`, ~40 lines,
-  reads in one sitting; `Chroma` is a thin Faraday HTTP client
-  against a self-hosted [ChromaDB](https://www.trychroma.com)
-  server. Same duck-typed interface
+- **Backend** (`Backend::InMemory` / `Backend::Qdrant` /
+  `Backend::Chroma`) — stores chunks alongside vectors and answers
+  nearest-neighbour queries. `InMemory` is pure-Ruby cosine over
+  `Array<Float>`, ~40 lines, reads in one sitting; the other two
+  are thin Faraday HTTP clients against a self-hosted server —
+  [Qdrant](https://qdrant.tech) (the recommended persistent
+  engine) or [ChromaDB](https://www.trychroma.com) (a supported
+  alternative). Same duck-typed interface
   (`#upsert` / `#query` / `#delete_all` / `#count`), so swapping
   between them is a one-line change.
 - **Reranker** (`Reranker::LlamaServer`) — optional. Speaks `POST
@@ -400,7 +402,7 @@ the `LIBRARIAN` cut goes; [chapter 7](07-assistant.md) wires it into
 the assistant. Here, with retrieval as the agent's only job, we
 don't need it.
 
-## InMemory vs Chroma
+## InMemory vs Qdrant
 
 `Backend::InMemory` is the educational default — RAM-only, ~40
 lines of pure-Ruby cosine. Reads in one sitting; the same code
@@ -413,84 +415,100 @@ It has two practical limits:
 
 - **No persistence.** The store is gone when the process exits,
   so you index from sources again on every run — fine for a small
-  corpus, painful for a large one (where you'd reach for `Chroma`
+  corpus, painful for a large one (where you'd reach for `Qdrant`
   below to pay that cost once).
 - **No approximate search.** Every query scans every vector.
   Linear in corpus size. Fine for thousands of chunks, not for
   millions.
 
-For both, the swap is `Backend::Chroma`. The recommended path is
-to let pikuri supervise the container — `Pikuri::VectorDb::Server::Chroma`
-finds-or-starts a chroma container under a name pikuri owns
-(`pikuri-internal-chroma`), bind-mounts a volume under
-`~/.cache/pikuri/chroma/` for persistence, and returns a backend
+For both, the swap is `Backend::Qdrant`. The recommended path is
+to let pikuri supervise the container — `Pikuri::VectorDb::Server::Qdrant`
+finds-or-starts a qdrant container under a name pikuri owns
+(`pikuri-internal-qdrant`), bind-mounts a volume under
+`~/.cache/pikuri/qdrant/` for persistence, and returns a backend
 pointed at it:
 
 ```ruby
 c.add_extension Pikuri::VectorDb::Extension.new(
-  backend:  Pikuri::VectorDb::Server::Chroma.ensure_running.client(
+  backend:  Pikuri::VectorDb::Server::Qdrant.ensure_running.client(
     collection: 'guide'
   ),
   source:   '~/path/to/corpus'
 )
 ```
 
-[ChromaDB](https://www.trychroma.com) is a self-hosted open-source
-vector store; persistence is on disk, query is approximate-
+[Qdrant](https://qdrant.tech) is a self-hosted open-source vector
+store; persistence is on disk, query is approximate-
 nearest-neighbour, and indexing in the millions of chunks is its
 design target. Same `Pikuri::VectorDb::Backend` interface, same
 `vectordb_search` tool — only the backend constructor changes.
 Persistence is what pays off here: index once (one
-`vectordb_reindex`, or one `--watch` boot sweep) and Chroma keeps
+`vectordb_reindex`, or one `--watch` boot sweep) and Qdrant keeps
 the embeddings across pikuri runs, so later launches start with a
 populated index instead of rebuilding it. From then on a `Watcher`
 keeps it in sync incrementally, and a full `vectordb_reindex` is
 only needed after changing the embedder or chunker settings.
 
-`Server::Chroma.ensure_running` requires `docker` on `PATH`; the
-container image tag is pinned in `Server::Chroma::IMAGE`. The
-container is named under a `pikuri-internal-` prefix that pikuri
-considers fully owned, and is recreated transparently if the
-pinned image is bumped between pikuri versions — your data lives
-in the bind-mounted volume, which is yours and is never touched.
-If `docker` is unavailable, or you'd rather manage chroma
-yourself (a production cluster, a shared docker-compose stack),
-point `Backend::Chroma.new(host:, port:, collection:)` at it
-directly and skip the supervisor.
+`Server::Qdrant.ensure_running` requires `docker` on `PATH`; the
+container image tag is pinned in `Server::Qdrant::IMAGE` — the
+same tag as the Qdrant inside [chapter 4](04-memories.md)'s
+memory stack, by convention, so a host running both holds one
+image on disk. The container is named under a `pikuri-internal-`
+prefix that pikuri considers fully owned, and is recreated
+transparently if the pinned image is bumped between pikuri
+versions — your data lives in the bind-mounted volume, which is
+yours and is never touched. If `docker` is unavailable, or you'd
+rather manage qdrant yourself (a production cluster, a shared
+docker-compose stack), point
+`Backend::Qdrant.new(host:, port:, collection:)` at it directly
+and skip the supervisor. (One caveat for later: chapter 4's
+memory stack publishes *its own* Qdrant on the same default host
+port, 6333 — the two are separate instances by design, so if you
+run both at once, give this supervisor a different `port:`.)
 
-`pgvector` / `Qdrant` / others are reasonable backends and would
-be similarly thin Faraday clients; they're deferred until a
-concrete need shows up.
+**Why Qdrant?** [ChromaDB](https://www.trychroma.com) — the
+vector store most RAG tutorials reach for — is equally supported
+(`Backend::Chroma` + `Server::Chroma`, identical wiring), and
+either engine answers top-k over a personal-sized corpus in
+single-digit milliseconds. Qdrant gets the recommendation because
+its REST surface has held stable since 2023 (Chroma has one
+breaking API revision on record), its server image is less than
+half the size, and chapter 4's memory stack already runs it — one
+engine to learn, audit, and trust instead of two. The full
+side-by-side survey lives in
+[`pikuri-vectordb/DESIGN.md`](../../pikuri-vectordb/DESIGN.md).
+`pgvector` and others would be similarly thin Faraday clients;
+they're deferred until a concrete need shows up.
 
-## Putting it together: `--chroma --watch`
+## Putting it together: `--qdrant --watch`
 
 The first demo kept everything in RAM and made you ask the agent to
 index the corpus by hand — deliberately, so you could watch each
 piece work in isolation. Once that's familiar, the setup you
 actually want day to day combines the two halves above: persist the
-index with Chroma, and keep it current automatically with the
+index with Qdrant, and keep it current automatically with the
 `Watcher`.
 
 ```sh
-./pikuri-vectordb/bin/pikuri-corpus --chroma --watch
+./pikuri-vectordb/bin/pikuri-corpus --qdrant --watch
 ```
 
 The flags are independent and stack cleanly:
 
-- **`--chroma`** swaps the in-RAM `Backend::InMemory` for the
-  self-managed ChromaDB container from the previous section, so the
+- **`--qdrant`** swaps the in-RAM `Backend::InMemory` for the
+  self-managed Qdrant container from the previous section, so the
   embeddings persist on disk across runs. (Needs `docker` on
-  `PATH`.)
+  `PATH`. `--chroma` does the same with the ChromaDB alternative.)
 - **`--watch`** starts the background `Watcher`: it walks the source
   once on boot and then reindexes individual files as they change,
   so you never run `vectordb_reindex` by hand again.
 
 On the **first** run the two combine like this: docker starts the
-`pikuri-internal-chroma` container, the `Watcher` kicks off a
+`pikuri-internal-qdrant` container, the `Watcher` kicks off a
 background sweep of `docs/guide/`, and you drop straight to the `>`
 prompt while the index fills in underneath you — a question asked in
 the first few seconds may retrieve less than the same one a minute
-later. On **subsequent** runs Chroma already holds the embeddings
+later. On **subsequent** runs Qdrant already holds the embeddings
 from last time, so the binary prints
 `Index already populated (… chunk(s) …)` at boot and the `Watcher`
 only has to fold in whatever changed since. Edit a chapter while the
@@ -507,7 +525,7 @@ run `vectordb_reindex` once by hand to rebuild from scratch.
 
 Quitting mid-sweep is safe. `Ctrl-C` lets the file currently being
 indexed finish, abandons whatever was still queued, and only then
-takes the Chroma container down — so no write is ever cut off
+takes the Qdrant container down — so no write is ever cut off
 half-done. The next boot's reconcile sweep folds in anything the
 interrupted run didn't reach.
 

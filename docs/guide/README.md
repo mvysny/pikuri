@@ -38,7 +38,7 @@ chapters that apply across both tracks.
 3. **[Agentic search and the vector DB](03-vectordb.md).** One
    new feature on top of chapter 2: semantic recall over a local
    corpus. The chunker / tokenizer / embedder / backend /
-   reranker pipeline, in-memory vs Chroma backends, and why the
+   reranker pipeline, in-memory vs Qdrant backends, and why the
    demo agent has no internet access — treat the corpus as
    private, give the reader an agent that can't leak it. Demo via
    `pikuri-corpus` against the pikuri guide itself. (The
