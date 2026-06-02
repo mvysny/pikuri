@@ -65,8 +65,9 @@ returns empty JSON).
 Two ways to get a server:
 
 - **Let pikuri manage it.** `Pikuri::Memory::Mem0Server` is a
-  self-managed sidecar supervisor (the same pattern as
-  `pikuri-vectordb`'s `Server::Chroma`): it clones mem0 at a pinned
+  self-managed sidecar supervisor (the same pattern — and the same
+  Qdrant engine — as `pikuri-vectordb`'s `Server::Qdrant`): it
+  clones mem0 at a pinned
   commit, patches `DEFAULT_CONFIG` to use Qdrant, and brings a
   two-container `docker compose` stack (mem0 + Qdrant, **no Postgres**)
   up through `Pikuri::Subprocess.spawn`. `#client` returns a
