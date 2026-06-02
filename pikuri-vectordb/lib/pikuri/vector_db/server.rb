@@ -15,13 +15,17 @@ module Pikuri
     #
     # For {Qdrant} and {Chroma} the lifetime is a docker container
     # (create / recreate / remove, bind-mount the data dir,
-    # heartbeat-poll until ready). {InMemory} is the null
+    # heartbeat-poll until ready) — both compose the shared
+    # {DockerContainer} lifecycle helper, keeping each supervisor
+    # down to the engine's identity (image pin, container name,
+    # persist path, heartbeat path). {InMemory} is the null
     # supervisor: no process at all, just the registry of
     # in-process stores. Hosts that already run an engine
     # elsewhere construct the backend directly and never touch
     # this namespace.
     #
-    # Only *supervisors* live here. Classes with "server" in the
+    # Only *supervisors* (and {DockerContainer}, their shared
+    # lifecycle engine) live here. Classes with "server" in the
     # name that are actually HTTP *clients* against a process the
     # user runs — {Reranker::LlamaServer}, {Tokenizer::LlamaServer}
     # — stay in their feature namespaces.

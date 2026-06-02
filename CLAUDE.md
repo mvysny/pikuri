@@ -336,6 +336,13 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 - **Ruby, no Rails.** Plain classes, `Data.define` for value
   objects, Faraday for HTTP, Rainbow for terminal color. ruby_llm
   is the LLM transport — don't add provider-specific SDKs.
+- **Composition over inheritance.** When two classes share
+  mechanics, extract a concrete helper they construct with
+  explicit keyword parameters — not a base class with template
+  methods. The construction site should answer "what does this
+  actually run?" without paging through a hierarchy. (Worked
+  example: the docker-container lifecycle shared by the vectordb
+  server supervisors.)
 - **`# frozen_string_literal: true`** at the top of every Ruby
   file (`lib/`, `spec/`, `bin/*`). Add it to any new file.
 - **YARD docs on every public module, class, and method.** Use

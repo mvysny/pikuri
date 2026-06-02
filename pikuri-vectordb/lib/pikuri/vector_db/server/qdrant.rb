@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'faraday'
 require 'fileutils'
 require 'pathname'
 
@@ -9,29 +8,18 @@ module Pikuri
     module Server
       # Supervisor for a self-managed Qdrant docker container. Pairs
       # with {Backend::Qdrant} exactly as {Server::Chroma} pairs with
-      # {Backend::Chroma}: this class owns the *process* (create /
-      # recreate / remove the container, bind-mount the data dir,
-      # heartbeat-poll until ready); the backend owns the HTTP
-      # client. {#client} returns a {Backend::Qdrant} pre-pointed at
-      # the running container.
+      # {Backend::Chroma}: this class owns the *process*; the backend
+      # owns the HTTP client. {#client} returns a {Backend::Qdrant}
+      # pre-pointed at the running container.
       #
-      # == A deliberate clone, not a shared base class
+      # Like {Server::Chroma}, this class carries only the engine's
+      # *identity* — image pin, container name, persist path,
+      # heartbeat path — and composes a {DockerContainer} for the
+      # docker work and the shared rationale (namespace squat,
+      # ephemeral-container-persistent-data, subprocess seam,
+      # 127.0.0.1 binding, loud boot / quiet teardown).
       #
-      # This is {Server::Chroma} with the engine-specific constants
-      # swapped — image, container name, persist path, heartbeat
-      # path, default port. The duplication is intentional: a
-      # +ContainerServer+ base class would save ~150 lines at the
-      # cost of an abstraction layer a reader must page through to
-      # answer "what does this actually run?", and the two
-      # supervisors drift independently with their engines (a third
-      # sibling, +pikuri-memory+'s +Mem0Server+, is already
-      # compose-shaped rather than single-container). All the
-      # shared rationale — the +pikuri-internal-*+ namespace squat,
-      # ephemeral-container-persistent-data, the subprocess seam,
-      # loud boot errors vs quiet teardown — lives in
-      # {Server::Chroma}'s class header and is not repeated here.
-      #
-      # == Bind 127.0.0.1 — and the port 6333 caveat
+      # == The port 6333 caveat
       #
       # Published on +127.0.0.1:#{port}+ only, same privacy posture
       # as {Server::Chroma}. Note that +pikuri-memory+'s +Mem0Server+
@@ -42,8 +30,6 @@ module Pikuri
       # pass a different +port:+ to this supervisor when the mem0
       # stack is up.
       class Qdrant
-        LOGGER = Pikuri.logger_for('VectorDb::Server::Qdrant')
-
         # @return [String] pinned qdrant docker image. Bumping this
         #   constant is how the codebase upgrades the qdrant version
         #   ({#ensure_running!} recreates the container from scratch
@@ -58,7 +44,7 @@ module Pikuri
 
         # @return [String] the container name pikuri claims for its
         #   qdrant supervisor — the +"pikuri-internal-"+ namespace
-        #   squat (see {Server::Chroma}'s class header).
+        #   squat (see {DockerContainer}).
         CONTAINER_NAME = 'pikuri-internal-qdrant'
 
         # @return [String] docker label set on every container this
@@ -114,10 +100,14 @@ module Pikuri
                        connection: nil)
           @data_dir = Pathname.new(data_dir || default_data_dir).expand_path
           @port = port
-          @healthcheck_timeout = healthcheck_timeout
-          @connection = connection
-          @owns_container = false
-          @closed = false
+          @container = DockerContainer.new(
+            name: CONTAINER_NAME, image: IMAGE, label: LABEL,
+            host_port: port, container_port: 6333,
+            volume: "#{@data_dir}:#{CONTAINER_PERSIST_DIR}",
+            health_path: '/healthz',
+            healthcheck_timeout: healthcheck_timeout,
+            connection: connection
+          )
           @finalizer_handle = nil
         end
 
@@ -130,7 +120,7 @@ module Pikuri
         # @return [String] +"http://localhost:<port>"+. Useful for
         #   wiring custom +Backend::Qdrant+ constructions.
         def endpoint
-          "http://localhost:#{@port}"
+          @container.endpoint
         end
 
         # Build a {Backend::Qdrant} pointing at the supervised
@@ -144,52 +134,31 @@ module Pikuri
           Backend::Qdrant.new(host: 'localhost', port: @port, collection: collection)
         end
 
-        # Idempotent: ensure a fresh container is running, heartbeat-poll
-        # until ready, then register {#close} with {Pikuri::Finalizers} so
-        # the container is removed at process exit. Same algorithm as
-        # {Server::Chroma#ensure_running!}: a container this process already
-        # started and left running is reused; anything else — stopped,
-        # not ours, or absent — is removed (if present) and recreated on
-        # the pinned {IMAGE}.
+        # Idempotent: ensure a fresh container is running and healthy
+        # (see {DockerContainer#ensure_running!} for the
+        # reuse-or-recreate algorithm), then register {#close} with
+        # {Pikuri::Finalizers} — once — so the container is removed
+        # at process exit.
         #
         # @return [void]
         # @raise [RuntimeError] on missing docker, any docker
         #   command failure, or healthcheck timeout.
         def ensure_running!
           FileUtils.mkdir_p(@data_dir)
-
-          state = container_state
-          if @owns_container && state == :running
-            LOGGER.info("#{CONTAINER_NAME} already running")
-          else
-            remove_container! unless state == :missing
-            run_container!
-          end
-
-          @owns_container = true
-          wait_for_healthy!
-          register_for_cleanup
+          @container.ensure_running!
+          @finalizer_handle ||= Pikuri::Finalizers.register(self)
+          nil
         end
 
-        # Remove the supervised container (+docker rm -f+), leaving the
-        # bind-mounted {#data_dir} — the corpus survives. Registered with
-        # {Pikuri::Finalizers} by {#ensure_running!}; safe to call
-        # directly too. Best-effort and idempotent: a no-op if this
-        # server never started a container, and a non-zero +rm+ is
-        # logged rather than raised — that's teardown, boot is loud.
+        # Remove the supervised container (+docker rm -f+), leaving
+        # the bind-mounted {#data_dir} — the corpus survives.
+        # Registered with {Pikuri::Finalizers} by {#ensure_running!};
+        # safe to call directly too. Best-effort and idempotent — see
+        # {DockerContainer#close}.
         #
         # @return [void]
         def close
-          return if @closed || !@owns_container
-
-          @closed = true
-          result = docker('rm', '-f', CONTAINER_NAME)
-          return if result.status.success?
-
-          LOGGER.warn(
-            "docker rm -f #{CONTAINER_NAME} failed " \
-            "(exit #{result.status.exitstatus}): #{result.output.strip}"
-          )
+          @container.close
         end
 
         # Default host-side data directory:
@@ -201,92 +170,6 @@ module Pikuri
         # @return [String]
         def default_data_dir
           Pikuri::Paths.cache.join('qdrant').to_s
-        end
-
-        private
-
-        # Register this server's {#close} with the process-global
-        # teardown registry, once.
-        def register_for_cleanup
-          @finalizer_handle ||= Pikuri::Finalizers.register(self)
-        end
-
-        # Inspect the container by name. Returns one of +:missing+ /
-        # +:stopped+ / +:running+.
-        def container_state
-          result = docker('inspect', '--format', '{{.State.Running}}', CONTAINER_NAME)
-          return :missing unless result.status.success?
-
-          result.output.strip == 'true' ? :running : :stopped
-        end
-
-        def run_container!
-          LOGGER.info(
-            "starting #{CONTAINER_NAME} (#{IMAGE}) on 127.0.0.1:#{@port}, " \
-            "data: #{@data_dir}"
-          )
-          result = docker(
-            'run', '-d',
-            '--name', CONTAINER_NAME,
-            '--label', LABEL,
-            '-p', "127.0.0.1:#{@port}:6333",
-            '-v', "#{@data_dir}:#{CONTAINER_PERSIST_DIR}",
-            IMAGE
-          )
-          return if result.status.success?
-
-          raise "Server::Qdrant: docker run failed " \
-                "(exit #{result.status.exitstatus}): #{result.output.strip}"
-        end
-
-        def remove_container!
-          result = docker('rm', '-f', CONTAINER_NAME)
-          return if result.status.success?
-
-          raise "Server::Qdrant: docker rm -f #{CONTAINER_NAME} failed " \
-                "(exit #{result.status.exitstatus}): #{result.output.strip}"
-        end
-
-        # Poll +GET /healthz+ until 200 or +@healthcheck_timeout+
-        # elapses. 500ms between attempts. Faraday connection errors
-        # during the wait are normal (cold-start bind delay); only
-        # the final timeout raises.
-        def wait_for_healthy!
-          deadline = Time.now + @healthcheck_timeout
-          last_error = 'no attempts'
-
-          until Time.now > deadline
-            begin
-              response = http.get('/healthz')
-              return if response.status == 200
-
-              last_error = "HTTP #{response.status}"
-            rescue Faraday::Error => e
-              last_error = "#{e.class.name.split('::').last}: #{e.message}"
-            end
-            sleep 0.5
-          end
-
-          raise "Server::Qdrant: #{CONTAINER_NAME} did not become healthy within " \
-                "#{@healthcheck_timeout}s at #{endpoint} (last: #{last_error})"
-        end
-
-        def http
-          @connection ||= Faraday.new(url: endpoint) do |f|
-            f.request :json
-            f.response :json
-            f.adapter Faraday.default_adapter
-          end
-        end
-
-        # Single chokepoint for every +docker+ invocation — routes
-        # through {Pikuri::Subprocess.spawn} per the subprocess seam.
-        def docker(*argv)
-          Pikuri::Subprocess.spawn('docker', *argv, chdir: '/').wait
-        rescue Errno::ENOENT
-          raise 'Server::Qdrant: `docker` not found on PATH. ' \
-                'Install docker, or point Backend::Qdrant at an existing ' \
-                'qdrant endpoint via Backend::Qdrant.new(host:, port:, collection:).'
         end
       end
     end
