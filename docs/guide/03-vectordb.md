@@ -84,18 +84,10 @@ The two extras the chapter relies on:
 
 (The third — chat — is the Qwen3.6-35B you pulled in chapter 1.)
 
-Pull both into the cache the same way you pulled the chat model
-— but at `:Q8_0` instead of `:Q4_K_M`:
-
-```sh
-# Embedder
-llama-server -hf nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
-# Ctrl+C once you see "server is listening on port 8080".
-
-# Reranker
-llama-server -hf gpustack/bge-reranker-v2-m3-GGUF:Q8_0
-# Ctrl+C once you see "server is listening on port 8080".
-```
+We'll create a config file for llama-server with all the models;
+llama-server will pull them automatically in the background.
+Please be patient - it will take a couple of seconds and llama-server
+won't show a progress bar. We'll pull at a higher quantization: `:Q8_0` instead of `:Q4_K_M`.
 
 **Why a higher quant than chapter 1's chat model.** `Q4_K_M` was
 designed for the *"I have a 35B model and need to fit it in 24 GB
@@ -111,11 +103,7 @@ the score, and you feel it as worse retrieval. The size cost of
 the upgrade is negligible: ~150 MB and ~600 MB at Q8_0
 respectively, against the 20 GB of the chat model.
 
-Once both are cached (the downloads finish in seconds on a decent
-connection), the router will pick them up — but not in a usable
-state yet. When the router auto-loads a model, it inherits the
-flags you passed on the `llama-server` command line, which are
-defaults written for *generative* models. Embedders need
+Now let's configure the models. Embedders need
 `--embeddings` to switch the server into pooled-output mode, and
 rerankers need `--reranking` to enable the `/v1/rerank` endpoint.
 Neither of these is something you want to pass on the router
@@ -129,6 +117,7 @@ vectors instead of text. The fix is a per-model preset file:
 [nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0]
 hf-repo     = nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0
 embeddings  = 1
+jinja       = 0
 ctx-size    = 8192
 batch-size  = 4096
 ubatch-size = 4096
@@ -136,9 +125,15 @@ ubatch-size = 4096
 [gpustack/bge-reranker-v2-m3-GGUF:Q8_0]
 hf-repo     = gpustack/bge-reranker-v2-m3-GGUF:Q8_0
 reranking   = 1
+jinja       = 0
 ctx-size    = 8192
 batch-size  = 2048
 ubatch-size = 2048
+
+[unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M]
+jinja = 1
+hf-repo = unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+ctx-size = 65536
 ```
 
 The file path is your choice — the router only knows about it
@@ -175,7 +170,7 @@ an input exceeds `batch-size`.
 Restart the router pointing at the presets:
 
 ```sh
-llama-server --jinja --models-preset ~/.config/llama.cpp/presets.ini
+llama-server --models-preset ~/.config/llama.cpp/presets.ini
 ```
 
 The router keeps up to `--models-max` models resident
