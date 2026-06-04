@@ -3,13 +3,13 @@
 require 'faraday'
 require 'faraday/adapter/test'
 
-# Drive +Simple.fetch+ against an in-memory Faraday test adapter so we
+# Drive +Scraper.fetch+ against an in-memory Faraday test adapter so we
 # can exercise the HTTP→FetchError mapping (status code, redirect-loop,
 # missing +Location+, +Faraday::Error+) without hitting the network.
-# +Simple.fetch+ calls +Faraday.new+ itself, so the +around+ hook stubs
+# +Scraper.fetch+ calls +Faraday.new+ itself, so the +around+ hook stubs
 # +Faraday.new+ to hand back a connection wired to the test stubs;
 # +after+ restores the original method.
-RSpec.describe Pikuri::Tool::Scraper::Simple, '.fetch' do
+RSpec.describe Pikuri::Tool::Scraper, '.fetch' do
   let(:stubs) { Faraday::Adapter::Test::Stubs.new }
 
   around do |example|
@@ -28,7 +28,7 @@ RSpec.describe Pikuri::Tool::Scraper::Simple, '.fetch' do
   it 'returns a Fetched with the body, normalized content-type, and URL on a 2xx' do
     stubs.get('https://example.com/page') { [200, { 'content-type' => 'text/html; charset=UTF-8' }, '<html>ok</html>'] }
     result = described_class.fetch('https://example.com/page')
-    assert_kind_of Pikuri::Tool::Scraper::Simple::Fetched, result
+    assert_kind_of Pikuri::Tool::Scraper::Fetched, result
     assert_equal '<html>ok</html>', result.body
     assert_equal 'text/html', result.content_type
     assert_equal 'https://example.com/page', result.url
@@ -105,7 +105,7 @@ end
 # +Pikuri::Extractor+ → +FetchError+ mapping. Which extractor renders
 # what is the registry's business (see extractor_spec.rb); here we
 # only verify the wiring and the error conversion.
-RSpec.describe Pikuri::Tool::Scraper::Simple, '.visit' do
+RSpec.describe Pikuri::Tool::Scraper, '.visit' do
   let(:stubs) { Faraday::Adapter::Test::Stubs.new }
 
   around do |example|

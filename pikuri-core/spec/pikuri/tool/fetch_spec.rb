@@ -3,31 +3,31 @@
 require 'tmpdir'
 
 RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
-  # +Scraper::Simple.fetch+ is the unit boundary here: stub it per-test
+  # +Scraper.fetch+ is the unit boundary here: stub it per-test
   # so we can drive Fetch's content-type/truncation/error/cache behavior
   # without any HTTP. The +around+ hook restores the original method
   # afterwards so the stub cannot leak across examples.
   around do |example|
-    original = Pikuri::Tool::Scraper::Simple.method(:fetch)
+    original = Pikuri::Tool::Scraper.method(:fetch)
     begin
       example.run
     ensure
-      Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:fetch, original)
+      Pikuri::Tool::Scraper.singleton_class.define_method(:fetch, original)
     end
   end
 
-  # Replace +Simple.fetch+ with +block+. The block runs as a singleton-
-  # class method on +Simple+, so it cannot call other example-group
+  # Replace +Scraper.fetch+ with +block+. The block runs as a singleton-
+  # class method on +Scraper+, so it cannot call other example-group
   # helpers (different +self+) — but it does close over local variables,
   # which is enough to drive every test case below.
   def stub_fetch(&block)
-    Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:fetch, &block)
+    Pikuri::Tool::Scraper.singleton_class.define_method(:fetch, &block)
   end
 
   # Convenience wrapper for the common "respond with this Fetched" case
-  # — keeps +Pikuri::Tool::Scraper::Simple::Fetched.new(...)+ out of every test.
+  # — keeps +Pikuri::Tool::Scraper::Fetched.new(...)+ out of every test.
   def stub_fetched(body:, content_type:)
-    fetched_class = Pikuri::Tool::Scraper::Simple::Fetched
+    fetched_class = Pikuri::Tool::Scraper::Fetched
     stub_fetch do |url, **|
       fetched_class.new(body: body, content_type: content_type, url: url)
     end
@@ -101,7 +101,7 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
     assert_includes result, "truncated at #{Pikuri::Tool::Fetch::MAX_MAX_CHARS} of 200000"
   end
 
-  it 'returns an "Error: ..." string when Simple.fetch raises FetchError' do
+  it 'returns an "Error: ..." string when Scraper.fetch raises FetchError' do
     stub_fetch { |url, **| raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found" }
     result = described_class.fetch('https://example.com/missing')
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
@@ -118,7 +118,7 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
   it 'does not cache a refused content-type, so a retry hits the network again' do
     with_real_cache do
       calls = 0
-      fetched_class = Pikuri::Tool::Scraper::Simple::Fetched
+      fetched_class = Pikuri::Tool::Scraper::Fetched
       stub_fetch do |url, **|
         calls += 1
         fetched_class.new(body: '%PDF', content_type: 'application/pdf', url: url)
@@ -126,7 +126,7 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
       described_class.fetch('https://example.com/doc.pdf')
       described_class.fetch('https://example.com/doc.pdf')
       assert_equal 2, calls,
-                   'second call must re-invoke Simple.fetch — refusals must not be cached'
+                   'second call must re-invoke Scraper.fetch — refusals must not be cached'
     end
   end
 
@@ -140,14 +140,14 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
       described_class.fetch('https://example.com')
       described_class.fetch('https://example.com')
       assert_equal 2, calls,
-                   'second call must re-invoke Simple.fetch — failures must not be cached for the TTL'
+                   'second call must re-invoke Scraper.fetch — failures must not be cached for the TTL'
     end
   end
 
   it 'caches a successful fetch so a subsequent call skips the network' do
     with_real_cache do
       calls = 0
-      fetched_class = Pikuri::Tool::Scraper::Simple::Fetched
+      fetched_class = Pikuri::Tool::Scraper::Fetched
       stub_fetch do |url, **|
         calls += 1
         fetched_class.new(body: 'cached body', content_type: 'text/plain', url: url)
@@ -184,9 +184,9 @@ RSpec.describe 'Pikuri::Tool::FETCH' do
     assert_equal 'fetch', Pikuri::Tool::FETCH.name
   end
 
-  it 'returns an "Error: ..." string when Simple.fetch raises FetchError, instead of crashing the agent loop' do
-    original = Pikuri::Tool::Scraper::Simple.method(:fetch)
-    Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:fetch) do |url, **|
+  it 'returns an "Error: ..." string when Scraper.fetch raises FetchError, instead of crashing the agent loop' do
+    original = Pikuri::Tool::Scraper.method(:fetch)
+    Pikuri::Tool::Scraper.singleton_class.define_method(:fetch) do |url, **|
       raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found"
     end
     begin
@@ -194,7 +194,7 @@ RSpec.describe 'Pikuri::Tool::FETCH' do
       assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
       assert_includes result, 'HTTP 404'
     ensure
-      Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:fetch, original)
+      Pikuri::Tool::Scraper.singleton_class.define_method(:fetch, original)
     end
   end
 end

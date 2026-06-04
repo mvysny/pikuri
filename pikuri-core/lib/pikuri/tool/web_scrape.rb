@@ -3,7 +3,7 @@
 module Pikuri
   class Tool
     # Truncation policy and Tool spec for the +web_scrape+ tool. The actual
-    # scraping lives in {Tool::Scraper::Simple}; this module is a thin
+    # scraping lives in {Tool::Scraper}; this module is a thin
     # wrapper that picks the scraper, applies a character cap so the LLM
     # doesn't drown in long-form content, and exposes the result to the
     # agent loop in OpenAI tool-call shape.
@@ -37,7 +37,7 @@ module Pikuri
         CACHE
       end
 
-      # Fetch +url+ via {Tool::Scraper::Simple} and truncate the rendered
+      # Fetch +url+ via {Tool::Scraper} and truncate the rendered
       # Markdown to +max_chars+ characters.
       #
       # The full extracted Markdown is cached on disk via {.cache}, keyed
@@ -65,7 +65,7 @@ module Pikuri
       #   truncated, or +"Error: ..."+ on a recoverable fetch failure
       def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
         max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
-        markdown = cache.fetch(url) { Scraper::Simple.visit(url) }
+        markdown = cache.fetch(url) { Scraper.visit(url) }
         truncate(markdown, max_chars)
       rescue Scraper::FetchError => e
         "Error: #{e.message}"

@@ -3,7 +3,7 @@
 module Pikuri
   class Tool
     # Truncation policy and Tool spec for the +fetch+ tool. The HTTP work
-    # lives in {Tool::Scraper::Simple.fetch}; this module is a thin
+    # lives in {Tool::Scraper.fetch}; this module is a thin
     # wrapper that accepts only textual content-types, applies a character
     # cap so the LLM doesn't drown in long-form bodies, and exposes the
     # result to the agent loop in OpenAI tool-call shape.
@@ -57,7 +57,7 @@ module Pikuri
         CACHE
       end
 
-      # Download +url+ via {Tool::Scraper::Simple.fetch} and return the
+      # Download +url+ via {Tool::Scraper.fetch} and return the
       # response body verbatim, provided the content-type is one we deem
       # textual (any +text/*+, plus the formats listed in
       # {TEXTUAL_APPLICATION_TYPES}). Anything else — PDFs, images, other
@@ -101,7 +101,7 @@ module Pikuri
       #   redirect-loop exhaustion, missing +Location+ on a 3xx, or a
       #   non-textual content-type
       def self.download(url)
-        fetched = Scraper::Simple.fetch(url)
+        fetched = Scraper.fetch(url)
         return fetched.body if textual?(fetched.content_type)
 
         raise Scraper::FetchError,
@@ -110,7 +110,7 @@ module Pikuri
       end
 
       # @param content_type [String] normalized content-type (no +charset+
-      #   parameter, lowercased) as produced by {Scraper::Simple.fetch}
+      #   parameter, lowercased) as produced by {Scraper.fetch}
       # @return [Boolean] true when the content-type is +text/*+ or one
       #   of {TEXTUAL_APPLICATION_TYPES}
       def self.textual?(content_type)

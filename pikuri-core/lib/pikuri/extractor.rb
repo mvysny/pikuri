@@ -16,14 +16,13 @@ module Pikuri
   #   +VectorDb::Tools::Read+ (via the {FileType} path wrappers) so
   #   the offset/limit/byte-cap logic lives in one tested place.
   #
-  # Before this module existed the same functionality lived twice —
-  # +Tool::Scraper::HTML+/+PDF+ dispatched on the HTTP +Content-Type+
-  # header for the web tools, and {FileType} carried its own
-  # +pdf-reader+ walk for local files. Collecting extraction here
-  # gives both paths one set of format truths and makes "support a
-  # new format" a registry entry (pikuri-pdf and pikuri-extractors
-  # plug PDF and office formats in without pikuri-core knowing), not
-  # a new special case in two dispatchers.
+  # Both front doors — +Tool::Scraper+ dispatching on the HTTP
+  # +Content-Type+ header for the web tools, and {FileType} resolving
+  # local paths — route through this one registry, so both share one
+  # set of format truths and "support a new format" is a registry
+  # entry (pikuri-pdf and pikuri-extractors plug PDF and office
+  # formats in without pikuri-core knowing), not a new special case
+  # in two dispatchers.
   #
   # == The extractor duck type
   #
@@ -75,7 +74,7 @@ module Pikuri
   #   parse failed (malformed PDF, ...).
   #
   # Callers map them to their own conventions:
-  # +Tool::Scraper::Simple+ re-raises both as +FetchError+;
+  # +Tool::Scraper+ re-raises both as +FetchError+;
   # {FileType.read_as_text} maps {Unsupported} to the +ArgumentError+
   # binary refusal and {Error} to a +RuntimeError+ carrying the path.
   module Extractor

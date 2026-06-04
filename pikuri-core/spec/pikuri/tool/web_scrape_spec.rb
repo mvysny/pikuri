@@ -3,21 +3,21 @@
 require 'tmpdir'
 
 RSpec.describe Pikuri::Tool::WebScrape, '.visit' do
-  # +Scraper::Simple.visit+ is the unit boundary here: stub it per-test
+  # +Scraper.visit+ is the unit boundary here: stub it per-test
   # so we can drive WebScrape's truncation/error/cache behavior without
   # any HTTP. The +around+ hook restores the original method afterwards
   # so the stub cannot leak across examples.
   around do |example|
-    original = Pikuri::Tool::Scraper::Simple.method(:visit)
+    original = Pikuri::Tool::Scraper.method(:visit)
     begin
       example.run
     ensure
-      Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:visit, original)
+      Pikuri::Tool::Scraper.singleton_class.define_method(:visit, original)
     end
   end
 
   def stub_visit(&block)
-    Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:visit, &block)
+    Pikuri::Tool::Scraper.singleton_class.define_method(:visit, &block)
   end
 
   def with_real_cache
@@ -93,8 +93,8 @@ RSpec.describe 'Pikuri::Tool::WEB_SCRAPE' do
   end
 
   it 'returns an "Error: ..." string when Scraper raises FetchError, instead of crashing the agent loop' do
-    original = Pikuri::Tool::Scraper::Simple.method(:visit)
-    Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:visit) do |url|
+    original = Pikuri::Tool::Scraper.method(:visit)
+    Pikuri::Tool::Scraper.singleton_class.define_method(:visit) do |url|
       raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found"
     end
     begin
@@ -102,7 +102,7 @@ RSpec.describe 'Pikuri::Tool::WEB_SCRAPE' do
       assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
       assert_includes result, 'HTTP 404'
     ensure
-      Pikuri::Tool::Scraper::Simple.singleton_class.define_method(:visit, original)
+      Pikuri::Tool::Scraper.singleton_class.define_method(:visit, original)
     end
   end
 end

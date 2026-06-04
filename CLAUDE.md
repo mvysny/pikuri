@@ -109,7 +109,7 @@ yardoc. CLAUDE.md only records the invariant.
 - **Extraction seam.** Every format→text conversion routes through
   the `Pikuri::Extractor` registry (`.extract` for whole documents,
   `.extract_paged` for the line-windowed LLM-tool shape).
-  `Tool::Scraper::Simple` (web bytes + Content-Type header) and
+  `Tool::Scraper` (web bytes + Content-Type header) and
   `FileType.read_as_text` / `read_as_text_paged` (local paths) are
   thin fronts over it; supporting a new format means inserting a
   registry entry, not a new dispatcher arm (worked examples:
