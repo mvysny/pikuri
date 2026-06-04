@@ -129,12 +129,21 @@ defeat both layers.
 `Pikuri::Workspace::Confirmer` is the *only* path through which
 the `write` and `bash` tools reach the user for approval. Tools
 never call `gets` / `puts` / `$stdin` directly; they call
-`confirmer.confirm?(prompt: "...")`. Two bundled implementations:
+`confirmer.confirm?(request: ...)` with a small
+`Confirmer::Request` value — a one-line *question* ("OK to run
+bash: List files") plus an optional preformatted *detail* (the
+raw command). The tool says *what* is being asked; the confirmer
+owns *how it looks* — bold/dim colors in a terminal, buttons in a
+web UI — and, security-relevant, escapes hostile bytes for its
+medium (a terminal neutralizes `\r`/ESC so a command can't
+visually overwrite itself after you've read it; a web client
+HTML-escapes instead). Two bundled implementations:
 
 - **`Pikuri::Workspace::Confirmer::TERMINAL`** — prompts on
-  stdin/stdout, returns `true` on `y`/`Y`/empty (accepted as
-  enter-to-confirm). The default for `pikuri-code` and what you
-  saw at the `(y/n)?` prompt.
+  stdin/stdout, returns `true` on `y` / `yes` (case-insensitive)
+  and `false` on `n` / `no` or Ctrl+D, re-asking on anything
+  else. The default for `pikuri-code` and what you saw at the
+  `(y/n)?` prompt.
 - **`Pikuri::Workspace::Confirmer::AUTO_APPROVE`** —
   yes-to-everything. Used by `--no-confirm` and `--yolo`, and by
   specs.

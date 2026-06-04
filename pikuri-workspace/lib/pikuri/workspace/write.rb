@@ -111,8 +111,10 @@ module Pikuri
                    'file and try again.'
           end
 
-          prompt = "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes? (y/n)"
-          return "Error: user declined the write to #{path}." unless confirmer.confirm?(prompt: prompt)
+          request = Confirmer::Request.new(
+            question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?"
+          )
+          return "Error: user declined the write to #{path}." unless confirmer.confirm?(request: request)
 
           write_bytes(resolved, content)
           "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)"

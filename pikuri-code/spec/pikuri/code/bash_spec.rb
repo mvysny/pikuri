@@ -16,21 +16,21 @@ RSpec.describe Pikuri::Code::Bash do
     Pikuri::Subprocess.cleanup!
   end
 
-  # Inline confirmer double: records every prompt it sees, returns
+  # Inline confirmer double: records every request it sees, returns
   # successive elements of +answers+. Calling +confirm?+ when no answer
   # is queued raises — surfaces "test silently consumed a confirmation"
   # bugs rather than letting nil flow through as a false answer.
   def build_confirmer(*answers)
-    queue   = answers.dup
-    prompts = []
+    queue    = answers.dup
+    requests = []
     cf = Object.new
-    cf.define_singleton_method(:confirm?) do |prompt:|
-      prompts << prompt
-      raise "build_confirmer received an unexpected #confirm? call (prompt: #{prompt.inspect})" if queue.empty?
+    cf.define_singleton_method(:confirm?) do |request:|
+      requests << request
+      raise "build_confirmer received an unexpected #confirm? call (request: #{request.inspect})" if queue.empty?
 
       queue.shift
     end
-    cf.define_singleton_method(:prompts) { prompts }
+    cf.define_singleton_method(:requests) { requests }
     cf
   end
 
@@ -69,18 +69,16 @@ RSpec.describe Pikuri::Code::Bash do
   end
 
   describe '.run confirmation' do
-    it 'composes the three-line prompt with description and a non-default timeout' do
+    it 'composes the request with description and a non-default timeout' do
       cf = build_confirmer(true)
 
       described_class.run(workspace: workspace, confirmer: cf,
                           command: 'ls -la', description: 'List files',
                           timeout: 300)
 
-      lines = cf.prompts.first.split("\n")
-      assert_equal 3, lines.size
-      assert_includes lines[0], 'OK to run bash: List files [Timeout: 300s]'
-      assert_includes lines[1], '$ ls -la'
-      assert_equal '(y/n)?', lines[2]
+      request = cf.requests.first
+      assert_equal 'OK to run bash: List files [Timeout: 300s]', request.question
+      assert_equal '$ ls -la', request.detail
     end
 
     it 'drops the trailing colon when no description is given' do
@@ -89,10 +87,7 @@ RSpec.describe Pikuri::Code::Bash do
       described_class.run(workspace: workspace, confirmer: cf,
                           command: 'pwd', description: nil, timeout: 120)
 
-      lines = cf.prompts.first.split("\n")
-      assert_includes lines[0], 'OK to run bash'
-      refute_includes lines[0], 'OK to run bash:'
-      refute_includes lines[0], 'Timeout'
+      assert_equal 'OK to run bash', cf.requests.first.question
     end
 
     it 'omits the timeout suffix at the default 120s' do
@@ -102,7 +97,7 @@ RSpec.describe Pikuri::Code::Bash do
                           command: 'pwd', description: 'Print working dir',
                           timeout: 120)
 
-      refute_includes cf.prompts.first, 'Timeout'
+      assert_equal 'OK to run bash: Print working dir', cf.requests.first.question
     end
 
     it 'includes the timeout suffix when non-default with no description' do
@@ -111,9 +106,7 @@ RSpec.describe Pikuri::Code::Bash do
       described_class.run(workspace: workspace, confirmer: cf,
                           command: 'pwd', description: nil, timeout: 300)
 
-      lines = cf.prompts.first.split("\n")
-      assert_includes lines[0], '[Timeout: 300s]'
-      refute_includes lines[0], 'bash:'
+      assert_equal 'OK to run bash [Timeout: 300s]', cf.requests.first.question
     end
 
     it 'treats whitespace-only description as no description' do
@@ -122,7 +115,7 @@ RSpec.describe Pikuri::Code::Bash do
       described_class.run(workspace: workspace, confirmer: cf,
                           command: 'pwd', description: '   ', timeout: 120)
 
-      refute_includes cf.prompts.first, 'OK to run bash:'
+      assert_equal 'OK to run bash', cf.requests.first.question
     end
 
     it 'returns a decline-Error when the user rejects' do
@@ -132,7 +125,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    command: 'rm -rf /', description: nil, timeout: 120)
 
       assert_equal 'Error: user declined the bash command.', result
-      assert_equal 1, cf.prompts.size
+      assert_equal 1, cf.requests.size
     end
   end
 
@@ -144,7 +137,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    command: '', description: nil, timeout: 120)
 
       assert_equal 'Error: empty bash command.', result
-      assert_equal [], cf.prompts
+      assert_equal [], cf.requests
     end
 
     it 'rejects whitespace-only command' do
@@ -153,7 +146,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    command: "  \t\n  ", description: nil, timeout: 120)
 
       assert_equal 'Error: empty bash command.', result
-      assert_equal [], cf.prompts
+      assert_equal [], cf.requests
     end
 
     it 'rejects timeout < 1 before consulting the confirmer' do
@@ -162,7 +155,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    command: 'echo hi', description: nil, timeout: 0)
 
       assert_equal 'Error: timeout must be >= 1, got 0', result
-      assert_equal [], cf.prompts
+      assert_equal [], cf.requests
     end
 
     it 'rejects timeout > MAX_TIMEOUT before consulting the confirmer' do
@@ -171,7 +164,7 @@ RSpec.describe Pikuri::Code::Bash do
                                    command: 'echo hi', description: nil, timeout: 601)
 
       assert_equal 'Error: timeout must be <= 600, got 601', result
-      assert_equal [], cf.prompts
+      assert_equal [], cf.requests
     end
   end
 
@@ -228,14 +221,13 @@ RSpec.describe Pikuri::Code::Bash do
                    described_class.send(:visible, 'echo "héllo ✓"')
     end
 
-    it 'the confirmation echo shows the visible form, not the raw bytes' do
+    it 'the confirmation request carries the raw command — display escaping is the renderer\'s job' do
       cf = build_confirmer(false)
 
       described_class.run(workspace: workspace, confirmer: cf,
                           command: "echo hi\rrm -rf /", description: nil, timeout: 120)
 
-      assert_includes cf.prompts.first, '\\x0d'
-      refute_includes cf.prompts.first, "\r"
+      assert_equal "$ echo hi\rrm -rf /", cf.requests.first.detail
     end
   end
 
@@ -316,7 +308,7 @@ RSpec.describe Pikuri::Code::Bash do
 
       t.run('command' => 'echo desc', 'description' => 'Echo a token')
 
-      assert_includes cf.prompts.first, 'Echo a token'
+      assert_includes cf.requests.first.question, 'Echo a token'
     end
 
     it 'reports a missing required command via the Parameters validator' do

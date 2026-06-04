@@ -366,10 +366,13 @@ development. Pikuri's choice is the latter — fine for its scope.
     `~/.kube`, `~/.docker`, `~/.netrc`, `/etc/shadow`, …).
   - **`Workspace::Confirmer`** abstract base + `TERMINAL` /
     `AUTO_APPROVE` bundled implementations: `Write`/`Bash` route
-    every prompt through `#confirm?(prompt:)` rather than touching
-    `$stdin`/`$stdout` — `--yolo` swaps in `AUTO_APPROVE`. The seam
-    exists so a future TUI / IDE host plugs in by writing a new
-    `Confirmer` subclass, not by editing tool internals.
+    every prompt through `#confirm?(request:)` — a semantic
+    question + optional detail, with all presentation (color,
+    escaping, the y/n cue) owned by the confirmer — rather than
+    touching `$stdin`/`$stdout` — `--yolo` swaps in
+    `AUTO_APPROVE`. The seam exists so a future TUI / IDE host
+    plugs in by writing a new `Confirmer` subclass, not by
+    editing tool internals.
   - **`Code::Bash::Sandbox`** is a third seam, distinct from
     Workspace: Workspace governs what the LLM observes via the
     file tools; Sandbox governs the filesystem view of the bash

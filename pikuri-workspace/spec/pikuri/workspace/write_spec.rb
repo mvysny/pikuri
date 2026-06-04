@@ -11,21 +11,21 @@ RSpec.describe Pikuri::Workspace::Write do
 
   after { FileUtils.rm_rf(root) }
 
-  # Inline confirmer double: records every prompt it sees, returns
+  # Inline confirmer double: records every request it sees, returns
   # successive elements of +answers+. Calling +confirm?+ when no answer
   # is queued raises — surfaces "test silently consumed a confirmation"
   # bugs rather than letting nil flow through as a false answer.
   def build_confirmer(*answers)
-    queue   = answers.dup
-    prompts = []
+    queue    = answers.dup
+    requests = []
     confirmer = Object.new
-    confirmer.define_singleton_method(:confirm?) do |prompt:|
-      prompts << prompt
-      raise "build_confirmer received an unexpected #confirm? call (prompt: #{prompt.inspect})" if queue.empty?
+    confirmer.define_singleton_method(:confirm?) do |request:|
+      requests << request
+      raise "build_confirmer received an unexpected #confirm? call (request: #{request.inspect})" if queue.empty?
 
       queue.shift
     end
-    confirmer.define_singleton_method(:prompts) { prompts }
+    confirmer.define_singleton_method(:requests) { requests }
     confirmer
   end
 
@@ -66,7 +66,7 @@ RSpec.describe Pikuri::Workspace::Write do
       described_class.write(workspace: workspace, confirmer: confirmer,
                             path: 'fresh.txt', content: 'hi')
 
-      assert_equal [], confirmer.prompts
+      assert_equal [], confirmer.requests
     end
   end
 
@@ -82,7 +82,7 @@ RSpec.describe Pikuri::Workspace::Write do
         'If you intended a change, re-read the file and try again.',
         result
       )
-      assert_equal [], confirmer.prompts
+      assert_equal [], confirmer.requests
       assert_equal "exact bytes\n", (root + 'same.txt').read
     end
   end
@@ -97,17 +97,18 @@ RSpec.describe Pikuri::Workspace::Write do
 
       assert_equal 'Updated target.txt (4 → 12 bytes)', result
       assert_equal "new content\n", (root + 'target.txt').read
-      assert_equal 1, cf.prompts.size
+      assert_equal 1, cf.requests.size
     end
 
-    it 'asks with the byte-delta prompt format' do
+    it 'asks with the byte-delta question and no detail' do
       write_file('target.txt', 'abcd')
       cf = build_confirmer(true)
 
       described_class.write(workspace: workspace, confirmer: cf,
                             path: 'target.txt', content: 'abcdef')
 
-      assert_equal 'OK to overwrite target.txt: 4 → 6 bytes? (y/n)', cf.prompts.first
+      assert_equal 'OK to overwrite target.txt: 4 → 6 bytes?', cf.requests.first.question
+      assert_nil cf.requests.first.detail
     end
 
     it 'returns a decline error and leaves the file untouched on reject' do
@@ -130,7 +131,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       assert_equal 'Updated trail.txt (5 → 4 bytes)', result
       assert_equal 'line', (root + 'trail.txt').read
-      assert_equal 1, cf.prompts.size
+      assert_equal 1, cf.requests.size
     end
 
     it 'reports identical content for byte-for-byte UTF-8 matches regardless of encoding tags' do
@@ -143,7 +144,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       assert result.start_with?('Error: utf.txt already contains'),
              "expected identical-content error, got #{result.inspect}"
-      assert_equal [], confirmer.prompts
+      assert_equal [], confirmer.requests
     end
   end
 
@@ -154,7 +155,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       assert result.start_with?('Error: path'), "expected workspace error, got #{result.inspect}"
       assert_includes result, 'is outside the workspace'
-      assert_equal [], confirmer.prompts
+      assert_equal [], confirmer.requests
     end
 
     it 'refuses directories' do
@@ -164,7 +165,7 @@ RSpec.describe Pikuri::Workspace::Write do
                                      path: 'subdir', content: 'x')
 
       assert_equal 'Error: subdir is a directory', result
-      assert_equal [], confirmer.prompts
+      assert_equal [], confirmer.requests
     end
 
     it 'reports a read-side error specifically when the existing file is unreadable' do
@@ -177,7 +178,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
         assert result.start_with?('Error: cannot read locked.txt for overwrite check:'),
                "expected read-side error, got #{result.inspect}"
-        assert_equal [], confirmer.prompts
+        assert_equal [], confirmer.requests
       ensure
         File.chmod(0o644, path)
       end

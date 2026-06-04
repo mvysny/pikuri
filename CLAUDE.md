@@ -163,9 +163,13 @@ yardoc. CLAUDE.md only records the invariant.
   variant, project-root denylist).
 - **Confirmer seam.** Tools that mutate user state (`Write`,
   `Bash`) take a `Pikuri::Workspace::Confirmer` via constructor
-  and route every prompt through `#confirm?(prompt:)` — never
-  `gets` / `puts` / `$stdin` / `$stdout` directly. See
-  {Pikuri::Workspace::Confirmer}.
+  and route every prompt through `#confirm?(request:)` with a
+  semantic `Confirmer::Request` (question + optional detail, raw
+  bytes). Presentation belongs to the confirmer — color, the
+  answer cue, and medium-specific escaping of hostile bytes (ANSI
+  control bytes in a terminal, HTML in web) — never to tool code,
+  which also never touches `gets` / `puts` / `$stdin` / `$stdout`
+  directly. See {Pikuri::Workspace::Confirmer}.
 - **Sandbox seam.** `Pikuri::Code::Bash` takes a
   `Pikuri::Code::Bash::Sandbox` (default `Sandbox::NONE`) and
   wraps every spawned argv through `#wrap(argv)`. Distinct from
@@ -271,7 +275,8 @@ per-gem one-liners:
 - **`pikuri-workspace/`** — `Workspace::Filesystem`,
   `Workspace::Confirmer`, and the five file tools (`Read`,
   `Write`, `Edit`, `Grep`, `Glob`). Depends on `pikuri-core`.
-  Stdlib-only; no subprocess execution.
+  No new runtime deps (Rainbow rides in via pikuri-core for
+  `Confirmer::Terminal`); no subprocess execution.
 - **`pikuri-code/`** — `Code::Bash`, `Code::Bash::Sandbox`,
   `Code::ToolchainPaths`, `Code::GitClone`, bundled
   `GIT_REPO_RESEARCHER` persona, `bin/pikuri-code`. Depends on

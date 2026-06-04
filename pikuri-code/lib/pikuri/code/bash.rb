@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'rainbow'
-
 module Pikuri
   module Code
     # The +bash+ tool — run an arbitrary shell command in the workspace.
@@ -13,13 +11,18 @@ module Pikuri
     #
     # == Confirmation
     #
-    # Every command requires confirmation. Bash composes the full prompt
-    # (header line, +$ <command>+ echo, +(y/n)?+ cue) and hands it to the
-    # confirmer; the confirmer renders + parses the answer. The command
-    # echo passes through {.visible} which escapes control bytes so the
-    # model can't smuggle a +\r\033[2K rm -rf ~/+ behind the displayed
-    # text. Execution uses the raw command; only the *display* is
-    # sanitized.
+    # Every command requires confirmation. Bash composes a semantic
+    # {Pikuri::Workspace::Confirmer::Request} — question (header line)
+    # plus detail (+$ <command>+ echo) — and hands it to the confirmer,
+    # which owns ALL presentation: color, the answer cue, answer
+    # parsing, and medium-appropriate escaping of the raw bytes (a
+    # terminal neutralizes control bytes, a web client HTML-escapes).
+    # The request deliberately carries the command verbatim so each
+    # renderer can escape for its own medium. The *observation* echo
+    # (+$ ...+ in the tool result) stays on this side of the seam and
+    # passes through {.visible}, so the model can't smuggle a
+    # +\r\033[2K rm -rf ~/+ behind the displayed text there either.
+    # Execution uses the raw command; only displays are sanitized.
     #
     # == Subprocess wiring
     #
@@ -195,8 +198,8 @@ module Pikuri
         return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
 
-        prompt = compose_prompt(command: command, description: description, timeout: timeout)
-        return 'Error: user declined the bash command.' unless confirmer.confirm?(prompt: prompt)
+        request = compose_request(command: command, description: description, timeout: timeout)
+        return 'Error: user declined the bash command.' unless confirmer.confirm?(request: request)
 
         argv = sandbox.wrap([
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
@@ -217,36 +220,36 @@ module Pikuri
         end
       end
 
-      # Compose the multi-line confirmation prompt. Three lines:
+      # Compose the semantic confirmation request:
       #
-      # 1. +OK to run bash[: <desc>][ \[Timeout: Ns\]]+ (bold)
-      # 2. +$ <visible(command)>+ (dim)
-      # 3. +(y/n)?+
+      # * question — +OK to run bash[: <desc>][ \[Timeout: Ns\]]+
+      # * detail — +$ <command>+, the command VERBATIM (the confirmer
+      #   escapes for its medium; see the class header's Confirmation
+      #   section)
       #
       # Colon after +bash+ is dropped when there's no description, since a
       # trailing colon with nothing after it reads as broken. Timeout
       # suffix appears only when non-default.
       #
-      # @return [String]
-      def self.compose_prompt(command:, description:, timeout:)
-        header = +'OK to run bash'
+      # @return [Pikuri::Workspace::Confirmer::Request]
+      def self.compose_request(command:, description:, timeout:)
+        question = +'OK to run bash'
         desc_clean = description&.strip
-        header << ": #{desc_clean}" if desc_clean && !desc_clean.empty?
-        header << " [Timeout: #{timeout}s]" if timeout != DEFAULT_TIMEOUT
+        question << ": #{desc_clean}" if desc_clean && !desc_clean.empty?
+        question << " [Timeout: #{timeout}s]" if timeout != DEFAULT_TIMEOUT
 
-        [
-          Rainbow(header).bold,
-          Rainbow("$ #{visible(command)}").dimgray,
-          '(y/n)?'
-        ].join("\n")
+        Pikuri::Workspace::Confirmer::Request.new(question: question, detail: "$ #{command}")
       end
-      private_class_method :compose_prompt
+      private_class_method :compose_request
 
-      # Escape control bytes for safe display while preserving +\n+
-      # (multi-line shell commands are normal). Catches +\r+, +\x1b+
-      # (ESC, the ANSI introducer), +\b+, NUL, DEL, etc. — without this,
-      # a model could craft +command: "\rrm -rf ~/"+ that visually
-      # overwrites the echo line after the user has already read it.
+      # Escape control bytes for safe display in the *observation* echo
+      # (+"$ ..."+ in the tool result) while preserving +\n+ (multi-line
+      # shell commands are normal). Catches +\r+, +\x1b+ (ESC, the ANSI
+      # introducer), +\b+, NUL, DEL, etc. — without this, a model could
+      # craft +command: "\rrm -rf ~/"+ that visually overwrites the echo
+      # line after the user has already read it. The confirmation-prompt
+      # counterpart lives in +Confirmer::Terminal#visible+ — keep the
+      # two in sync.
       #
       # @param command [String]
       # @return [String]
