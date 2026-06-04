@@ -1,28 +1,28 @@
 PATH
   remote: pikuri-assistant
   specs:
-    pikuri-assistant (0.0.5)
-      pikuri-core (= 0.0.5)
-      pikuri-extractors (= 0.0.5)
-      pikuri-mcp (= 0.0.5)
-      pikuri-memory (= 0.0.5)
-      pikuri-skills (= 0.0.5)
-      pikuri-subagents (= 0.0.5)
-      pikuri-vectordb (= 0.0.5)
+    pikuri-assistant (0.0.6)
+      pikuri-core (= 0.0.6)
+      pikuri-extractors (= 0.0.6)
+      pikuri-mcp (= 0.0.6)
+      pikuri-memory (= 0.0.6)
+      pikuri-skills (= 0.0.6)
+      pikuri-subagents (= 0.0.6)
+      pikuri-vectordb (= 0.0.6)
 
 PATH
   remote: pikuri-code
   specs:
-    pikuri-code (0.0.5)
-      pikuri-core (= 0.0.5)
-      pikuri-subagents (= 0.0.5)
-      pikuri-tasks (= 0.0.5)
-      pikuri-workspace (= 0.0.5)
+    pikuri-code (0.0.6)
+      pikuri-core (= 0.0.6)
+      pikuri-subagents (= 0.0.6)
+      pikuri-tasks (= 0.0.6)
+      pikuri-workspace (= 0.0.6)
 
 PATH
   remote: pikuri-core
   specs:
-    pikuri-core (0.0.5)
+    pikuri-core (0.0.6)
       faraday (~> 2.9)
       nokogiri (~> 1.19)
       rainbow (~> 3.1)
@@ -34,78 +34,78 @@ PATH
 PATH
   remote: pikuri-extractors
   specs:
-    pikuri-extractors (0.0.5)
-      pikuri-core (= 0.0.5)
+    pikuri-extractors (0.0.6)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-mcp
   specs:
-    pikuri-mcp (0.0.5)
+    pikuri-mcp (0.0.6)
       mcp (~> 0.17)
-      pikuri-core (= 0.0.5)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-memory
   specs:
-    pikuri-memory (0.0.5)
-      pikuri-core (= 0.0.5)
+    pikuri-memory (0.0.6)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-pdf
   specs:
-    pikuri-pdf (0.0.5)
+    pikuri-pdf (0.0.6)
       pdf-reader (~> 2.15)
-      pikuri-core (= 0.0.5)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-skills
   specs:
-    pikuri-skills (0.0.5)
-      pikuri-core (= 0.0.5)
+    pikuri-skills (0.0.6)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-subagents
   specs:
-    pikuri-subagents (0.0.5)
-      pikuri-core (= 0.0.5)
-      pikuri-workspace (= 0.0.5)
+    pikuri-subagents (0.0.6)
+      pikuri-core (= 0.0.6)
+      pikuri-workspace (= 0.0.6)
 
 PATH
   remote: pikuri-tasks
   specs:
-    pikuri-tasks (0.0.5)
-      pikuri-core (= 0.0.5)
+    pikuri-tasks (0.0.6)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri-vectordb
   specs:
-    pikuri-vectordb (0.0.5)
+    pikuri-vectordb (0.0.6)
       listen (~> 3.9)
-      pikuri-core (= 0.0.5)
-      pikuri-subagents (= 0.0.5)
+      pikuri-core (= 0.0.6)
+      pikuri-subagents (= 0.0.6)
 
 PATH
   remote: pikuri-workspace
   specs:
-    pikuri-workspace (0.0.5)
-      pikuri-core (= 0.0.5)
+    pikuri-workspace (0.0.6)
+      pikuri-core (= 0.0.6)
 
 PATH
   remote: pikuri
   specs:
-    pikuri (0.0.5)
-      pikuri-assistant (= 0.0.5)
-      pikuri-code (= 0.0.5)
-      pikuri-core (= 0.0.5)
-      pikuri-extractors (= 0.0.5)
-      pikuri-mcp (= 0.0.5)
-      pikuri-memory (= 0.0.5)
-      pikuri-pdf (= 0.0.5)
-      pikuri-skills (= 0.0.5)
-      pikuri-subagents (= 0.0.5)
-      pikuri-tasks (= 0.0.5)
-      pikuri-vectordb (= 0.0.5)
-      pikuri-workspace (= 0.0.5)
+    pikuri (0.0.6)
+      pikuri-assistant (= 0.0.6)
+      pikuri-code (= 0.0.6)
+      pikuri-core (= 0.0.6)
+      pikuri-extractors (= 0.0.6)
+      pikuri-mcp (= 0.0.6)
+      pikuri-memory (= 0.0.6)
+      pikuri-pdf (= 0.0.6)
+      pikuri-skills (= 0.0.6)
+      pikuri-subagents (= 0.0.6)
+      pikuri-tasks (= 0.0.6)
+      pikuri-vectordb (= 0.0.6)
+      pikuri-workspace (= 0.0.6)
 
 GEM
   remote: https://rubygems.org/
@@ -267,19 +267,19 @@ CHECKSUMS
   net-http (0.9.1) sha256=25ba0b67c63e89df626ed8fac771d0ad24ad151a858af2cc8e6a716ca4336996
   nokogiri (1.19.3-x86_64-linux-gnu) sha256=2f5078620fe12e83669b5b17311b32532a8153d02eee7ad06948b926d6080976
   pdf-reader (2.15.1) sha256=18c6a986a84a3117fa49f4279fc2de51f5d2399b71833df5d2bccd595c7068ce
-  pikuri (0.0.5)
-  pikuri-assistant (0.0.5)
-  pikuri-code (0.0.5)
-  pikuri-core (0.0.5)
-  pikuri-extractors (0.0.5)
-  pikuri-mcp (0.0.5)
-  pikuri-memory (0.0.5)
-  pikuri-pdf (0.0.5)
-  pikuri-skills (0.0.5)
-  pikuri-subagents (0.0.5)
-  pikuri-tasks (0.0.5)
-  pikuri-vectordb (0.0.5)
-  pikuri-workspace (0.0.5)
+  pikuri (0.0.6)
+  pikuri-assistant (0.0.6)
+  pikuri-code (0.0.6)
+  pikuri-core (0.0.6)
+  pikuri-extractors (0.0.6)
+  pikuri-mcp (0.0.6)
+  pikuri-memory (0.0.6)
+  pikuri-pdf (0.0.6)
+  pikuri-skills (0.0.6)
+  pikuri-subagents (0.0.6)
+  pikuri-tasks (0.0.6)
+  pikuri-vectordb (0.0.6)
+  pikuri-workspace (0.0.6)
   pp (0.6.3) sha256=2951d514450b93ccfeb1df7d021cae0da16e0a7f95ee1e2273719669d0ab9df6
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
