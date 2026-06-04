@@ -9,6 +9,7 @@ source 'https://rubygems.org'
 # for the metagem) and the gemspec's +add_dependency+ entries take
 # over.
 gemspec path: 'pikuri-core'
+gemspec path: 'pikuri-extractors'
 gemspec path: 'pikuri-skills'
 gemspec path: 'pikuri-tasks'
 gemspec path: 'pikuri-memory'

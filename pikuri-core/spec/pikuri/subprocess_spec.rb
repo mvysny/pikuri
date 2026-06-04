@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'pathname'
+require 'tempfile'
 require 'tmpdir'
 
 RSpec.describe Pikuri::Subprocess do
@@ -40,6 +41,64 @@ RSpec.describe Pikuri::Subprocess do
       Dir.mktmpdir do |dir|
         result = described_class.spawn('echo', 'x', chdir: Pathname.new(dir)).wait
         assert_equal "x\n", result.output
+      end
+    end
+  end
+
+  describe '.run' do
+    # The filter shape: stdin fed, stdout redirected to a file, stderr
+    # captured as Result#output. Read the payload back by rewinding the
+    # file — the child shares its offset.
+    it 'feeds stdin_data and redirects stdout to the given file' do
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('cat', stdin_data: "hello\nworld\n",
+                                            stdout: out, chdir: '/tmp')
+        assert_equal 0, result.status.exitstatus
+        out.rewind
+        assert_equal "hello\nworld\n", out.read
+      end
+    end
+
+    it 'captures stderr separately as Result#output' do
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('bash', '-c', 'cat; echo warn >&2',
+                                     stdin_data: 'payload', stdout: out, chdir: '/tmp')
+        assert_equal "warn\n", result.output
+        out.rewind
+        assert_equal 'payload', out.read
+      end
+    end
+
+    it 'passes binary stdin_data through unmangled' do
+      bytes = (0..255).to_a.pack('C*')
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('cat', stdin_data: bytes, stdout: out, chdir: '/tmp')
+        assert result.status.success?
+        out.rewind
+        out.binmode
+        assert_equal bytes, out.read
+      end
+    end
+
+    it 'returns non-zero exit status without raising' do
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('false', stdin_data: '', stdout: out, chdir: '/tmp')
+        assert_equal 1, result.status.exitstatus
+      end
+    end
+
+    it 'survives a child that exits without draining stdin' do
+      big = 'x' * (1 << 20) # > pipe buffer, so the writer hits EPIPE
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('true', stdin_data: big, stdout: out, chdir: '/tmp')
+        assert result.status.success?
+      end
+    end
+
+    it 'prunes its pgid after completion' do
+      Tempfile.create('pikuri-run') do |out|
+        described_class.run('cat', stdin_data: '', stdout: out, chdir: '/tmp')
+        assert_empty described_class.active
       end
     end
   end

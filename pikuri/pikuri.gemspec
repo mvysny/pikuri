@@ -13,10 +13,11 @@ Gem::Specification.new do |spec|
     +pikuri+ is the convenience bundle for the pikuri AI-assistant
     toolkit. It ships no Ruby code of its own beyond a tiny entry
     file that +require+'s each sibling gem; +gem install pikuri+
-    pulls in pikuri-core, pikuri-skills, pikuri-tasks,
-    pikuri-memory, pikuri-workspace, pikuri-code, pikuri-mcp,
-    pikuri-subagents, pikuri-vectordb, and pikuri-assistant in
-    one shot, and +require 'pikuri'+ boots all of them.
+    pulls in pikuri-core, pikuri-extractors, pikuri-skills,
+    pikuri-tasks, pikuri-memory, pikuri-workspace, pikuri-code,
+    pikuri-mcp, pikuri-subagents, pikuri-vectordb, and
+    pikuri-assistant in one shot, and +require 'pikuri'+ boots all
+    of them.
 
     Privacy-conscious users who want a minimal dependency tree to
     audit should install +pikuri-core+ directly and opt into the
@@ -44,18 +45,19 @@ Gem::Specification.new do |spec|
   ]
   spec.require_paths = ['lib']
 
-  # All eight sibling gems, lockstep-versioned. Bumping +pikuri+ to
+  # All sibling gems, lockstep-versioned. Bumping +pikuri+ to
   # +X.Y.Z+ requires every sibling already at +X.Y.Z+ — the top-level
   # Rakefile's +rake release+ task handles the lockstep bump so this
   # constraint is satisfied automatically on every release.
-  spec.add_dependency 'pikuri-assistant', "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-code',      "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-mcp',       "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-memory',    "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-vectordb',  "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-assistant',  "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-code',       "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-mcp',        "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-memory',     "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-tasks',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-workspace',  "= #{Pikuri::VERSION}"
 end

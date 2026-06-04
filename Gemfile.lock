@@ -32,6 +32,12 @@ PATH
       zeitwerk (~> 2.7)
 
 PATH
+  remote: pikuri-extractors
+  specs:
+    pikuri-extractors (0.0.5)
+      pikuri-core (= 0.0.5)
+
+PATH
   remote: pikuri-mcp
   specs:
     pikuri-mcp (0.0.5)
@@ -84,6 +90,7 @@ PATH
       pikuri-assistant (= 0.0.5)
       pikuri-code (= 0.0.5)
       pikuri-core (= 0.0.5)
+      pikuri-extractors (= 0.0.5)
       pikuri-mcp (= 0.0.5)
       pikuri-memory (= 0.0.5)
       pikuri-skills (= 0.0.5)
@@ -208,6 +215,7 @@ DEPENDENCIES
   pikuri-assistant!
   pikuri-code!
   pikuri-core!
+  pikuri-extractors!
   pikuri-mcp!
   pikuri-memory!
   pikuri-skills!
@@ -254,6 +262,7 @@ CHECKSUMS
   pikuri-assistant (0.0.5)
   pikuri-code (0.0.5)
   pikuri-core (0.0.5)
+  pikuri-extractors (0.0.5)
   pikuri-mcp (0.0.5)
   pikuri-memory (0.0.5)
   pikuri-skills (0.0.5)

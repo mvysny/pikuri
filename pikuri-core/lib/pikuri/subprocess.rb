@@ -7,8 +7,10 @@ module Pikuri
   # Chokepoint for *all* subprocess spawning in pikuri. Forces a new
   # process group for each invocation, tracks pgids so descendants of
   # the direct child (commands backgrounded with +&+) can be cleaned
-  # up at process exit, and captures combined stdout+stderr through a
-  # single pipe.
+  # up at process exit. Two front doors: {.spawn} (combined
+  # stdout+stderr through a single pipe — the shell-command shape) and
+  # {.run} (stdin fed, stdout redirected to a file, stderr captured —
+  # the filter shape).
   #
   # == Seam discipline
   #
@@ -89,6 +91,62 @@ module Pikuri
       stdin.close
       register(wait_thr.pid)
       new(io: io, wait_thr: wait_thr)
+    end
+
+    # Run +argv+ as a one-shot *filter*: feed it +stdin_data+, redirect
+    # its stdout straight to +stdout+ (an open +File+), capture stderr
+    # through a pipe, and block until it exits. Built for the
+    # stdin→markdown document converters (pikuri-extractors), where
+    # {.spawn}'s shape is wrong twice over: it closes the child's stdin
+    # immediately, and it merges stderr onto stdout — fatal when stdout
+    # *is* the payload and a converter's warnings would corrupt it.
+    #
+    # Redirecting stdout to a file (not a pipe) is also what makes the
+    # I/O deadlock-free with one writer thread: the child never blocks
+    # writing output, so it keeps draining stdin, while the parent
+    # drains the (low-volume) stderr pipe. The returned
+    # {Result#output} is the captured *stderr* — the diagnostics — not
+    # the payload; the payload is in +stdout+, whose file offset is
+    # shared with the child, so rewind before reading it back.
+    #
+    # Same discipline as {.spawn}: new process group, registered for
+    # the exit sweep, no built-in timeout (wrap +argv+ with coreutils'
+    # +timeout+ — see the class docs).
+    #
+    # @param argv [Array<String>] command and arguments, passed to
+    #   +exec+ directly — no implicit shell.
+    # @param stdin_data [String] bytes written to the child's stdin,
+    #   which is then closed (EOF). May be empty.
+    # @param stdout [File] open writable file the child's stdout is
+    #   redirected to.
+    # @param chdir [String, Pathname] working directory.
+    # @param env [Hash{String=>String}] extra environment variables,
+    #   as for {.spawn}.
+    # @return [Result] +output+ is the captured stderr; +status+ the
+    #   child's exit status.
+    def self.run(*argv, stdin_data:, stdout:, chdir:, env: {})
+      in_r, in_w = IO.pipe
+      err_r, err_w = IO.pipe
+      pid = Process.spawn(env, *argv, chdir: chdir.to_s, pgroup: true,
+                          in: in_r, out: stdout, err: err_w)
+      in_r.close
+      err_w.close
+      register(pid)
+      writer = Thread.new do
+        in_w.binmode
+        in_w.write(stdin_data)
+      rescue Errno::EPIPE
+        nil # child exited without draining stdin; its status tells the story
+      ensure
+        in_w.close
+      end
+      stderr = err_r.read
+      err_r.close
+      writer.join
+      _, status = Process.waitpid2(pid)
+      Result.new(output: stderr, status: status)
+    ensure
+      prune(pid) if pid
     end
 
     # @return [Integer] direct child's pid

@@ -8,6 +8,7 @@
 # Privacy-conscious users who want a minimal dependency tree should
 # install +pikuri-core+ directly and skip this metagem.
 require 'pikuri-core'
+require 'pikuri-extractors'
 require 'pikuri-skills'
 require 'pikuri-tasks'
 require 'pikuri-memory'

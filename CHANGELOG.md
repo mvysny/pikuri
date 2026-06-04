@@ -8,6 +8,30 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Added
 
+- **New gem: `pikuri-extractors` — sandboxed office-document
+  extraction.** `Pikuri::Extractors::DOCUMENTS` plugs DOCX / ODT /
+  XLSX / legacy XLS / PPTX / EPUB / RTF → Markdown into the
+  `Pikuri::Extractor` registry, so `read`, `web_scrape` / `fetch`,
+  and the vectordb indexer pick the formats up for free. Conversion
+  is pandoc (ODF / RTF / EPUB / DOCX) or markitdown (the OOXML
+  spreadsheet / presentation arms), run preferably as a one-shot
+  **networkless, locally-built docker container** (`--network=none
+  --read-only --cap-drop=ALL`, bytes via stdin, Markdown via stdout,
+  no volume mounts — untrusted parser input never touches the host
+  filesystem or network; versions pinned in the shipped Dockerfile),
+  with host pandoc / markitdown CLIs as the docker-less fallback.
+  Registration is an explicit `DOCUMENTS.register` call — requiring
+  the gem changes nothing by itself. No result cache in v1: each
+  paged read re-runs the conversion (accepted trade). ODS / ODP,
+  image OCR, audio, and LibreOffice-headless are deliberately out of
+  scope; PDF stays on pikuri-core's lazy in-process extractor.
+- **`Pikuri::Subprocess.run` — the filter shape.** Second front door
+  on the subprocess chokepoint for stdin→stdout children (the
+  document converters): feeds `stdin_data`, redirects the child's
+  stdout straight to a caller-supplied file (which is also what
+  makes the pumping deadlock-free with a single writer thread),
+  captures stderr separately as `Result#output`. Same process-group
+  discipline and exit-sweep registration as `.spawn`.
 - **`Pikuri::VectorDb::Server::InMemory` — the null supervisor.**
   In-process implementation of the Server protocol
   (`.ensure_running` / `#client(collection:)` / `#close`) the docker
