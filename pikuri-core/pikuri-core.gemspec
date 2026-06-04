@@ -48,9 +48,6 @@ Gem::Specification.new do |spec|
   # Runtime deps — alphabetical. The Gemfile pulls these in via `gemspec`
   # so this list is the single source of truth.
 
-  # Arithmetic backend for Pikuri::Tool::CALCULATOR.
-  spec.add_dependency 'dentaku',          '~> 3.5'
-
   # HTTP client. Used by the web-fetch scraper, the Brave / DuckDuckGo
   # search providers, and (transitively) by ruby_llm.
   spec.add_dependency 'faraday',          '~> 2.9'
@@ -81,11 +78,6 @@ Gem::Specification.new do |spec|
   # seam"). The tight pin reflects the bus-factor and Chat-API-churn risk
   # of leaning on a single upstream for the loop itself.
   spec.add_dependency 'ruby_llm',         '~> 1.15'
-
-  # tsort is transitively required by Dentaku. It was a default gem in
-  # Ruby <= 4.0 and is removed from defaults in 4.1; declaring it here
-  # silences the load-time deprecation warning on 4.1+.
-  spec.add_dependency 'tsort',            '~> 0.2'
 
   # Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets
   # every file declare exactly the constant matching its path without the

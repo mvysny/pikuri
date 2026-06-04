@@ -22,7 +22,6 @@ PATH
   remote: pikuri-core
   specs:
     pikuri-core (0.0.5)
-      dentaku (~> 3.5)
       faraday (~> 2.9)
       nokogiri (~> 1.19)
       pdf-reader (~> 2.15)
@@ -30,7 +29,6 @@ PATH
       reverse_markdown (~> 3.0)
       ruby-readability (~> 0.7)
       ruby_llm (~> 1.15)
-      tsort (~> 0.2)
       zeitwerk (~> 2.7)
 
 PATH
@@ -103,11 +101,7 @@ GEM
     afm (1.0.0)
     base64 (0.3.0)
     bigdecimal (4.1.2)
-    concurrent-ruby (1.3.6)
     date (3.5.1)
-    dentaku (3.5.7)
-      bigdecimal
-      concurrent-ruby
     drb (2.2.3)
     erb (6.0.4)
     event_stream_parser (1.0.0)
@@ -232,9 +226,7 @@ CHECKSUMS
   afm (1.0.0) sha256=5bd4d6f6241e7014ef090985ec6f4c3e9745f6de0828ddd58bc1efdd138f4545
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   bigdecimal (4.1.2) sha256=53d217666027eab4280346fba98e7d5b66baaae1b9c3c1c0ffe89d48188a3fbd
-  concurrent-ruby (1.3.6) sha256=6b56837e1e7e5292f9864f34b69c5a2cbc75c0cf5338f1ce9903d10fa762d5ab
   date (3.5.1) sha256=750d06384d7b9c15d562c76291407d89e368dda4d4fff957eb94962d325a0dc0
-  dentaku (3.5.7) sha256=8d15a4a801ac8e1491dd2842bb76e38dd2794e9c8aa0f6e06f59d7ec62727db0
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   erb (6.0.4) sha256=38e3803694be357fe2bfe312487c74beaf9fb4e5beb3e22498952fe1645b95d9
   event_stream_parser (1.0.0) sha256=a2683bab70126286f8184dc88f7968ffc4028f813161fb073ec90d171f7de3c8

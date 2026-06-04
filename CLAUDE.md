@@ -198,7 +198,7 @@ per-gem one-liners:
   `web_scrape`, `fetch`), `Subprocess` chokepoint, `UrlCache`,
   `FileType` magic-byte sniffer, `bin/pikuri-chat`. Runtime deps:
   ruby_llm, Faraday, Rainbow, Zeitwerk, Nokogiri,
-  pdf-reader, reverse_markdown, ruby-readability, dentaku, tsort.
+  pdf-reader, reverse_markdown, ruby-readability.
 - **`pikuri-skills/`** — Agent Skills implementation:
   `Skill::Catalog`, `Skill::SkillTool`, `Skill::Extension`.
   Depends on `pikuri-core`. No new runtime deps.

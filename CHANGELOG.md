@@ -58,6 +58,18 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Changed
 
+- **`calculator` evaluates Python expression syntax natively** via a
+  hand-rolled recursive-descent parser in `Pikuri::Tool::Calculator`,
+  replacing dentaku. Drops four gems from pikuri-core's dependency
+  closure — dentaku, concurrent-ruby (~16k lines, the heaviest audit
+  item in the whole tree), bigdecimal, and the `tsort` workaround
+  pin — and retires the `**` → `^` preprocessing step. The grammar
+  follows Python 3 exactly: `/` is true division, `//` (new) floors,
+  `**` is right-associative and binds tighter than unary minus
+  (`-2**2` is -4), `2**-1` is 0.5. Output formatting tightens
+  slightly: whole-valued decimal results render as `2` rather than
+  `2.0`; complex results (`(-4)**0.5`) and float overflow come back
+  as `Error: ...` observations.
 - **`Workspace::Read` delegates windowing to
   `FileType.read_as_text_paged`** instead of its own
   `format_slice`/`format_pdf`. Behavior is unchanged except that a

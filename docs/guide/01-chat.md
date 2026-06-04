@@ -207,8 +207,8 @@ wrapped in tools, listeners, and sub-agents.
 All defined in `pikuri-core/lib/pikuri/tool/` and wired into
 `pikuri-chat`:
 
-- **`calculator`** — evaluates an arithmetic expression with
-  Dentaku. Local, no network.
+- **`calculator`** — evaluates a Python-syntax arithmetic
+  expression with a small built-in parser. Local, no network.
 - **`web_search`** — runs a search query through one of the
   configured search providers and returns a Markdown list of
   titles, URLs, and snippets. See below for each provider's
