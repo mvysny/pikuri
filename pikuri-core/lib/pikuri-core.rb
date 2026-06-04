@@ -169,7 +169,6 @@ module Pikuri
   Loader.ignore(File.expand_path('pikuri/version.rb', __dir__))
   Loader.inflector.inflect(
     'html'       => 'HTML',
-    'pdf'        => 'PDF',
     'duckduckgo' => 'DuckDuckGo'
   )
   Loader.setup

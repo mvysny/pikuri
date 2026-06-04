@@ -30,6 +30,11 @@ require 'optparse'
 
 require 'pikuri-core'
 require 'pikuri-vectordb'
+# Checkout-mode-only require (this gem's gemspec doesn't declare it —
+# bins run from the monorepo Gemfile): plugs PDF extraction into the
+# Extractor registry below so a PDF corpus indexes alongside the
+# Markdown / plain-text formats core handles natively.
+require 'pikuri-pdf'
 
 server          = 'http://localhost:8080'
 model           = 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
@@ -100,6 +105,11 @@ RubyLLM.configure do |c|
 end
 
 llama_probe_url = "#{server}/props"
+
+# Explicit opt-in (requiring pikuri-pdf alone changes nothing): from
+# here on the Extractor registry — and so the Indexer, the Watcher,
+# and vectordb_read — handles PDFs in the corpus.
+Pikuri::Extractors::PDF.register
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 

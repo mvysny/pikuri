@@ -10,6 +10,7 @@ source 'https://rubygems.org'
 # over.
 gemspec path: 'pikuri-core'
 gemspec path: 'pikuri-extractors'
+gemspec path: 'pikuri-pdf'
 gemspec path: 'pikuri-skills'
 gemspec path: 'pikuri-tasks'
 gemspec path: 'pikuri-memory'

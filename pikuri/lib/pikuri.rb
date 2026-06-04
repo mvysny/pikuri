@@ -9,6 +9,7 @@
 # install +pikuri-core+ directly and skip this metagem.
 require 'pikuri-core'
 require 'pikuri-extractors'
+require 'pikuri-pdf'
 require 'pikuri-skills'
 require 'pikuri-tasks'
 require 'pikuri-memory'

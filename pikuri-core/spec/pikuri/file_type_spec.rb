@@ -158,44 +158,6 @@ RSpec.describe Pikuri::FileType do
       path
     end
 
-    # Builds the smallest valid PDF +pdf-reader+ accepts: one Tj
-    # string-show op per page. Mirrors the in-memory builder in
-    # Workspace::Read's spec; copied verbatim so this spec stays
-    # self-contained.
-    def build_pdf(*page_texts)
-      out = +"%PDF-1.4\n"
-      offsets = []
-      add_obj = lambda do |body|
-        offsets << out.bytesize
-        out << "#{offsets.size} 0 obj\n#{body}\nendobj\n"
-      end
-
-      page_count = page_texts.length
-      font_obj_num = 2 + page_count * 2 + 1
-
-      add_obj.call('<< /Type /Catalog /Pages 2 0 R >>')
-      page_refs = (0...page_count).map { |i| "#{3 + i * 2} 0 R" }
-      add_obj.call("<< /Type /Pages /Kids [#{page_refs.join(' ')}] /Count #{page_count} >>")
-
-      page_texts.each_with_index do |text, i|
-        content_obj_num = 3 + i * 2 + 1
-        add_obj.call("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " \
-                     "/Contents #{content_obj_num} 0 R /Resources << /Font << /F1 #{font_obj_num} 0 R >> >> >>")
-        stream = "BT /F1 12 Tf 100 700 Td (#{text}) Tj ET"
-        add_obj.call("<< /Length #{stream.bytesize} >>\nstream\n#{stream}\nendstream")
-      end
-
-      add_obj.call('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
-
-      xref_pos = out.bytesize
-      out << "xref\n0 #{offsets.size + 1}\n"
-      out << "0000000000 65535 f \n"
-      offsets.each { |o| out << format("%010d 00000 n \n", o) }
-      out << "trailer\n<< /Size #{offsets.size + 1} /Root 1 0 R >>\n"
-      out << "startxref\n#{xref_pos}\n%%EOF\n"
-      out
-    end
-
     describe 'plain text' do
       it 'reads a UTF-8 text file as-is' do
         path = write('hello.txt', "Hello, world.\n".b)
@@ -217,35 +179,6 @@ RSpec.describe Pikuri::FileType do
         text = described_class.read_as_text(path)
         assert_equal 'UTF-8', text.encoding.name
         assert_includes text, 'héllo wörld'
-      end
-    end
-
-    describe 'PDF extraction' do
-      it 'extracts text from a single-page PDF, headed by its page marker' do
-        path = write('doc.pdf', build_pdf('Hello PDF'))
-        text = described_class.read_as_text(path)
-        assert_equal "--- Page 1 ---\nHello PDF", text
-      end
-
-      it 'emits one marker-headed block per page — same shape the Read tools window' do
-        path = write('multi.pdf', build_pdf('Alpha', 'Beta'))
-        text = described_class.read_as_text(path)
-        assert_equal "--- Page 1 ---\nAlpha\n--- Page 2 ---\nBeta", text
-      end
-
-      it 'returns the empty String for a PDF with no extractable text' do
-        # Zero pages → no text. Workspace::Read returns a hint string
-        # for the LLM; read_as_text returns '' and lets the caller
-        # decide (the Indexer simply gets no chunks).
-        path = write('empty.pdf', build_pdf)
-        assert_equal '', described_class.read_as_text(path)
-      end
-
-      it 'raises a RuntimeError with the path for a malformed PDF' do
-        # PDF magic but garbage afterward; pdf-reader rejects this.
-        path = write('broken.pdf', "%PDF-1.4\nnot really a pdf\n".b)
-        err = assert_raises(RuntimeError) { described_class.read_as_text(path) }
-        assert_match(/broken\.pdf/, err.message)
       end
     end
 
@@ -288,8 +221,8 @@ RSpec.describe Pikuri::FileType do
       end
     end
 
-    # Shares the write / build_pdf helpers defined above. The paged
-    # variant returns an Extractor::Page; the LLM-tool callers
+    # Shares the write helper defined above. The paged variant
+    # returns an Extractor::Page; the LLM-tool callers
     # (Workspace::Read, VectorDb::Tools::Read) own the rendering, so these
     # assert the struct, not formatted strings.
     describe '.read_as_text_paged' do
@@ -348,45 +281,6 @@ RSpec.describe Pikuri::FileType do
           assert page.byte_capped
           assert page.more
           assert_nil page.total_lines
-        end
-      end
-
-      describe 'PDF' do
-        it 'emits --- Page N --- markers and a known total at EOF' do
-          path = write('multi.pdf', build_pdf('Alpha content', 'Beta content'))
-          page = described_class.read_as_text_paged(path)
-
-          assert_equal :pdf, page.kind
-          assert_includes page.lines, '--- Page 1 ---'
-          assert_includes page.lines, '--- Page 2 ---'
-          assert_equal 4, page.total_lines
-          refute page.more
-        end
-
-        it 'stops parsing when the window fills, leaving total_lines nil' do
-          # PDF's extract_lines stream is consumed lazily; counting
-          # the tail would mean parsing every remaining page, so the
-          # total stays unknown when the window stops the read early.
-          path = write('cap.pdf', build_pdf('Alpha content', 'Beta content'))
-          page = described_class.read_as_text_paged(path, offset: 1, limit: 2)
-
-          assert_equal ['--- Page 1 ---', 'Alpha content'], page.lines
-          assert page.more
-          assert_nil page.total_lines
-        end
-
-        it 'reports a text-free PDF as zero lines, total 0' do
-          path = write('blank.pdf', build_pdf(''))
-          page = described_class.read_as_text_paged(path)
-
-          assert_empty page.lines
-          assert_equal 0, page.total_lines
-        end
-
-        it 'raises a RuntimeError with the path on a malformed PDF' do
-          path = write('broken.pdf', "%PDF-1.4\nnot really a pdf\n".b)
-          err = assert_raises(RuntimeError) { described_class.read_as_text_paged(path) }
-          assert_match(/broken\.pdf/, err.message)
         end
       end
 

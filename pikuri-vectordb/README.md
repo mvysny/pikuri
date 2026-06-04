@@ -106,8 +106,10 @@ piece — each swappable via the Extension's keyword arguments:
   correctness.
 
 Text extraction reuses `Pikuri::FileType.read_as_text` from
-pikuri-core — plain text / Markdown / PDF. HTML extraction is a
-deferred follow-up.
+pikuri-core — plain text / Markdown out of the box; for a PDF
+corpus, register the [pikuri-pdf](../pikuri-pdf) extractor in your
+host script (`Pikuri::Extractors::PDF.register` — `pikuri-corpus`
+does exactly that). HTML extraction is a deferred follow-up.
 
 ## Demo: `pikuri-corpus`
 

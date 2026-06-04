@@ -8,7 +8,7 @@ truth and this file just records the invariant.
 ## What this project is
 
 A Ruby implementation of an AI assistant on top of
-[ruby_llm](https://rubyllm.com), shipped as eleven sibling gems in
+[ruby_llm](https://rubyllm.com), shipped as twelve sibling gems in
 one monorepo. ruby_llm owns the chat transport and the Thought /
 Tool-call / Observation loop; pikuri owns the *extension surface*:
 the strict `Pikuri::Tool::Parameters` validator, the
@@ -21,10 +21,13 @@ The gem inventory:
 - `pikuri-core` — `Agent` runtime + `Tool` framework + Extension
   protocol + listener stream + four stateless bundled tools
   (calculator, web search, web scrape, fetch) + `bin/pikuri-chat`.
-- `pikuri-extractors` — office-document extractors
-  (DOCX/ODT/XLSX/PPTX/EPUB/RTF → Markdown) for the `Extractor`
+- `pikuri-extractors` — document extractors
+  (DOCX/ODT/XLSX/PPTX/EPUB/RTF/PDF → Markdown) for the `Extractor`
   registry, converted in a one-shot networkless docker container
-  (host pandoc/markitdown CLI fallback).
+  (host pandoc/markitdown/pdftotext CLI fallback).
+- `pikuri-pdf` — PDF → text for the `Extractor` registry:
+  in-process pure-Ruby pdf-reader, lazily paged. Superseded by
+  pikuri-extractors' PDF arm in full wirings — pick one per host.
 - `pikuri-skills` — Agent Skills standard implementation.
 - `pikuri-tasks` — in-memory task list + four content-as-identifier
   tools (`task_create` / `task_in_progress` / `task_completed` /
@@ -46,7 +49,7 @@ The gem inventory:
   (`Memory::Extension`), self-managed mem0 + Qdrant sidecar
   (`Mem0Server`), `bin/pikuri-memory` no-egress demo.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
-- `pikuri` — convenience metagem depending on all eleven.
+- `pikuri` — convenience metagem depending on all twelve.
 
 ## Why this exists
 
@@ -109,12 +112,15 @@ yardoc. CLAUDE.md only records the invariant.
   `Tool::Scraper::Simple` (web bytes + Content-Type header) and
   `FileType.read_as_text` / `read_as_text_paged` (local paths) are
   thin fronts over it; supporting a new format means inserting a
-  registry entry, not a new dispatcher arm (worked example:
-  pikuri-extractors' `DOCUMENTS`, plugged in via an explicit
-  `register` call from the host script — never by require alone).
+  registry entry, not a new dispatcher arm (worked examples:
+  pikuri-extractors' `DOCUMENTS` and pikuri-pdf's `Extractors::PDF`,
+  each plugged in via an explicit `register` call from the host
+  script — never by require alone; `PDF` front-inserts because its
+  magic sniff must beat `HTML`'s content-type match).
   Grep-enforceable:
   `grep -rnE "require '(pdf-reader|readability|reverse_markdown)'" pikuri-*/lib/`
-  should only hit `pikuri-core/lib/pikuri/extractor/`. See
+  should only hit `pikuri-core/lib/pikuri/extractor/` and
+  `pikuri-pdf/lib/`. See
   {Pikuri::Extractor} (duck type, error taxonomy, why windowing is
   not part of the extractor interface).
 - **Subprocess seam.** All subprocess spawning in pikuri-* `lib/`
@@ -214,15 +220,17 @@ per-gem one-liners:
   `lib/pikuri/agent/`), `Tool` + strict `Parameters`, the four
   bundled stateless tools (`calculator`, `web_search`,
   `web_scrape`, `fetch`), `Subprocess` chokepoint, `UrlCache`,
-  `FileType` magic-byte sniffer, `Extractor` registry (HTML / PDF /
-  Passthrough → Markdown text, the extraction seam),
-  `bin/pikuri-chat`. Runtime deps:
+  `FileType` magic-byte sniffer, `Extractor` registry (HTML /
+  Passthrough → Markdown text, the extraction seam; PDF and office
+  formats are plug-in gems), `bin/pikuri-chat`. Runtime deps:
   ruby_llm, Faraday, Rainbow, Zeitwerk, Nokogiri,
-  pdf-reader, reverse_markdown, ruby-readability.
+  reverse_markdown, ruby-readability.
 - **`pikuri-extractors/`** — `Extractors::Documents` +
   the shared `Extractors::DOCUMENTS` instance: DOCX / ODT / XLSX /
-  legacy XLS / PPTX / EPUB / RTF → Markdown for the `Extractor`
-  registry, by piping bytes through pandoc / markitdown — preferably
+  legacy XLS / PPTX / EPUB / RTF / PDF → Markdown for the `Extractor`
+  registry, by piping bytes through pandoc / markitdown / pdftotext
+  (the PDF arm rebuilds pikuri-pdf's `--- Page N ---` markers from
+  pdftotext's `\f` separators) — preferably
   in a one-shot networkless locally-built docker container
   (`docker/Dockerfile`, pinned versions, no volume mounts; untrusted
   parser input never touches host fs or network), falling back to
@@ -232,9 +240,25 @@ per-gem one-liners:
   the `Subprocess.run` filter shape (stdin fed, stdout → Tempfile,
   stderr captured). No result cache: paged reads re-convert
   (accepted). ODS/ODP, OCR, audio, LibreOffice: out of scope (see
-  the class yardoc). PDF stays on core's lazy in-process extractor
-  until pdf-reader's planned extraction into its own opt-in gem.
+  the class yardoc). PDF here vs pikuri-pdf is a pick-one-per-wiring
+  choice: sandboxed-but-rerun-per-page here, in-process-and-lazy
+  there (trade-off table in the class yardoc).
   Depends on `pikuri-core`. No new runtime deps.
+- **`pikuri-pdf/`** — `Extractors::PDF`: PDF → text for the
+  `Extractor` registry via the pure-Ruby pdf-reader gem, in-process
+  and lazily paged (`extract_lines` parses pages on demand, so a
+  windowed `read` of a 500-page PDF parses only its window).
+  **Registration is explicit** — `Extractors::PDF.register` in the
+  host script (same opt-in shape as `DOCUMENTS`); it *front*-inserts
+  because the `%PDF-` magic sniff must beat `HTML`'s content-type
+  match under lying headers. Split out of pikuri-core so pdf-reader's
+  five transitive deps stay out of the core audit tree. Wired by
+  `bin/pikuri-corpus` (guide ch3 — the no-docker registry intro);
+  deliberately NOT by `bin/pikuri-chat` (ch1 stays pure-core) nor by
+  `bin/pikuri-assistant` (ch7 supersedes it with pikuri-extractors'
+  sandboxed PDF arm — one extractor per format per wiring; the
+  trade-off table lives in {Pikuri::Extractors::Documents}'s
+  yardoc). Depends on `pikuri-core` + pdf-reader.
 - **`pikuri-skills/`** — Agent Skills implementation:
   `Skill::Catalog`, `Skill::SkillTool`, `Skill::Extension`.
   Depends on `pikuri-core`. No new runtime deps.
@@ -304,7 +328,10 @@ per-gem one-liners:
   `/v1/rerank`) + `Reranker::Hit`, `Chunker::FixedWindow` +
   `Tokenizer` (`CharHeuristic` default / `LlamaServer`) + `Chunk`.
   Text extraction reuses `Pikuri::FileType.read_as_text` from
-  pikuri-core (plain text / Markdown / PDF; HTML deferred).
+  pikuri-core (plain text / Markdown out of the box; HTML deferred;
+  PDF via pikuri-pdf, which `bin/pikuri-corpus` requires + registers
+  checkout-mode — deliberately not a gemspec dep, so the lean
+  install stays lean).
   Ships `bin/pikuri-corpus` — a single egress-free recall agent
   (`vectordb_search` + `vectordb_read` + `calculator`, no web
   tools): treats the corpus as private and breaks the trifecta by
@@ -368,11 +395,14 @@ per-gem one-liners:
 - **`pikuri-assistant/`** — `bin/pikuri-assistant` (MCP-aware
   binary) + prompt. No Ruby library code of its own. Depends on
   `pikuri-core` + `pikuri-skills` + `pikuri-mcp` + `pikuri-subagents`
-  + `pikuri-vectordb` + `pikuri-memory` — the last two are
+  + `pikuri-extractors` (the binary registers `DOCUMENTS`, whose PDF
+  arm supersedes ch3's pikuri-pdf — untrusted documents on an
+  egress-capable agent parse in the sandbox) +
+  `pikuri-vectordb` + `pikuri-memory` — the last two are
   forward-prep for the ch7 assistant shape: declared but not yet
   wired in the binary (vectordb's correct wiring is gated on
   persona-owned tools, see `ideas/trifecta-detector.md`).
-- **`pikuri/`** (metagem) — `lib/pikuri.rb` is eleven `require`s
+- **`pikuri/`** (metagem) — `lib/pikuri.rb` is twelve `require`s
   in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 

@@ -277,6 +277,50 @@ Use Ctrl+D or Ctrl+C to exit. The in-memory backend goes away
 with the process — see "InMemory vs Qdrant" below for when you
 want persistence.
 
+## Plugging in PDF support — your first extractor
+
+Remember the end of chapter 1, where the agent scraped a PDF and
+could only report *"Error: unsupported content-type"*? A real
+corpus is full of PDFs — papers, manuals, scanned contracts — so
+this is the chapter that fixes it. `bin/pikuri-corpus` does it with
+two lines you'll find near the top of the script:
+
+```ruby
+require 'pikuri-pdf'
+
+Pikuri::Extractors::PDF.register
+```
+
+That's the whole wiring. pikuri-core routes every format→text
+conversion through one registry (`Pikuri::Extractor`), and
+*everything* that reads documents — the vectordb indexer, the
+`read` tool, even chapter 1's `web_scrape` — asks that registry.
+One `register` call and all of them speak PDF at once: no
+per-tool dispatch to extend, no configuration file. Drop a PDF
+into your `--source` directory, reindex, and search hits will cite
+it with `--- Page N ---` markers.
+
+Two deliberate design choices worth noticing:
+
+- **Requiring the gem changes nothing.** Registration is an
+  explicit call your script makes — the same opt-in shape as every
+  pikuri extension. No gem rewires your agent as a side effect of
+  being installed.
+- **PDF support is a separate gem at all** because pdf-reader pulls
+  in five more gems. pikuri-core's promise is a dependency tree you
+  can audit in an evening; formats you don't use shouldn't cost you
+  audit surface. Install `pikuri-pdf` when your corpus needs it,
+  skip it when it doesn't.
+
+One forward note: pikuri-pdf is the *training-wheels* PDF extractor
+— in-process, pure Ruby, nothing to install — and it's the right
+wiring for this chapter's no-egress corpus agent. Chapter 7's
+assistant, which fetches untrusted documents from the open web,
+will swap it out for `pikuri-extractors`: the same registry slot,
+but the parsing happens inside a networkless docker container, and
+DOCX / EPUB / spreadsheets come along for the ride. By then you'll
+already know the pattern — it's this same `register` call.
+
 ## The five pipeline pieces
 
 All defined under `pikuri-vectordb/lib/pikuri/vector_db/` and
@@ -321,8 +365,9 @@ summaries below tell you what each owns.
 
 `Pikuri::VectorDb::Indexer` is what composes the first four:
 walks the configured source, extracts text via
-`Pikuri::FileType.read_as_text` (Markdown / PDF / plain text;
-HTML is a deferred follow-up), chunks, embeds, upserts. The
+`Pikuri::FileType.read_as_text` (Markdown / plain text out of the
+box, PDF via the registered `pikuri-pdf` extractor above; HTML is
+a deferred follow-up), chunks, embeds, upserts. The
 extension does *not* run it automatically — when and whether to
 populate the corpus is the host's call. The `pikuri-corpus`
 binary starts with an empty index on purpose: you ask the agent

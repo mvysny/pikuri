@@ -4,11 +4,11 @@ require 'tempfile'
 
 module Pikuri
   module Extractors
-    # Office-document extractor for the {Pikuri::Extractor} registry:
-    # DOCX / ODT / XLSX / legacy XLS / PPTX / EPUB / RTF → Markdown,
-    # by piping the document bytes through pandoc (ODF, RTF, EPUB,
-    # DOCX) or markitdown (the OOXML spreadsheet/presentation arms),
-    # selected per format.
+    # Document extractor for the {Pikuri::Extractor} registry:
+    # DOCX / ODT / XLSX / legacy XLS / PPTX / EPUB / RTF / PDF →
+    # Markdown, by piping the document bytes through pandoc (ODF,
+    # RTF, EPUB, DOCX), markitdown (the OOXML spreadsheet /
+    # presentation arms), or pdftotext (PDF), selected per format.
     #
     # == Container first, host CLI second
     #
@@ -30,8 +30,8 @@ module Pikuri
     #
     # When docker is unavailable (binary absent or daemon down), the
     # extractor falls back to host-installed +pandoc+ / +markitdown+
-    # CLIs — same stdin→stdout contract, one code path with two argv
-    # builders. Which arm was picked is logged once via
+    # / +pdftotext+ CLIs — same stdin→stdout contract, one code path
+    # with two argv builders. Which arm was picked is logged once via
     # +Pikuri.logger_for('Extractors')+.
     #
     # == Registration is explicit
@@ -40,14 +40,16 @@ module Pikuri
     # {DOCUMENTS} instance but registers nothing. A host script opts
     # in with +Pikuri::Extractors::DOCUMENTS.register+, which inserts
     # the instance before the registry's terminal +Passthrough+ entry
-    # (and after core's +PDF+ / +HTML+, which keep winning their
-    # formats). Same opt-in philosophy as +c.add_extension+ — no
-    # behavior changes by require alone.
+    # (and after core's +HTML+ — and pikuri-pdf's front-inserted
+    # +PDF+, when the host registers that too — which keep winning
+    # their formats). Same opt-in philosophy as +c.add_extension+ —
+    # no behavior changes by require alone.
     #
     # == Format detection
     #
     # {#matches?} claims content by normalized content-type
-    # ({CONTENT_TYPES}) or by byte sniff: RTF's +{\\rtf+ prefix; for
+    # ({CONTENT_TYPES}) or by byte sniff: PDF's +%PDF-+ prefix, RTF's
+    # +{\\rtf+ prefix; for
     # zip-based formats, ODF and EPUB mandate an uncompressed
     # +mimetype+ first entry (so the literal mime string sits inside
     # the leading sample), and OOXML is recognised by the
@@ -60,6 +62,39 @@ module Pikuri
     # format hint and its own magic-byte detection takes over. The
     # consequence: a *local* +.xls+ (no transport content-type, sniff
     # blind) is not claimed at all and keeps today's binary refusal.
+    # One ordering edge vs pikuri-pdf: this instance sits *after*
+    # core's +HTML+ in the registry, so a PDF served under a lying
+    # +text/html+ header goes to the HTML extractor (pikuri-pdf
+    # front-inserts and wins that case). Accepted — lying-header PDFs
+    # under specifically +text/html+ are rare.
+    #
+    # == PDF: this gem or pikuri-pdf — pick one per wiring
+    #
+    # The PDF arm (pdftotext, with {#pdf_page_lines} restoring the
+    # +"--- Page N ---"+ markers from pdftotext's +\f+ separators)
+    # makes this extractor a complete superset of pikuri-pdf's
+    # formats, so a host that registers {DOCUMENTS} does NOT also
+    # register +Extractors::PDF+ — one extractor per format keeps the
+    # registry's first-match-wins semantics legible. The trade per
+    # wiring:
+    #
+    # * *This gem* — PDF parsing happens inside the sandbox (poppler
+    #   is native code parsing attacker-controlled bytes; the
+    #   container is exactly the right place for it), one gem covers
+    #   every document format. Costs: docker (or host CLIs), no lazy
+    #   paging (each paged read re-converts the whole PDF), and the
+    #   generic +:document+ kind (the Read tools say "End of file",
+    #   not "End of PDF", and a scanned PDF reads as "(Empty file)"
+    #   rather than the scanned-image hint).
+    # * *pikuri-pdf* — in-process pure Ruby (no infrastructure), lazy
+    #   +extract_lines+ paging (a windowed read of a 500-page PDF
+    #   parses only its window), PDF-specific Read-tool wording.
+    #   Costs: pdf-reader's dependency subtree, parsing untrusted
+    #   bytes in-process (pure Ruby, so DoS at worst).
+    #
+    # The guide walks this as a progression: chapter 3 wires
+    # pikuri-pdf (no docker yet), chapter 7's assistant supersedes it
+    # with this extractor.
     #
     # == Deliberately out of scope
     #
@@ -70,11 +105,6 @@ module Pikuri
     #   arms need model downloads; the converter image stays
     #   networkless and small. A multi-modal main LLM is the pikuri
     #   answer to images.
-    # * *PDF* — stays on pikuri-core's in-process +Extractor::PDF+
-    #   (lazy +extract_lines+ paging; markitdown's pdfminer arm would
-    #   be no better). When pdf-reader eventually moves out of core
-    #   into its own opt-in gem, the container grows a PDF arm and
-    #   the host script chooses per wiring.
     #
     # == Paging economics
     #
@@ -112,6 +142,16 @@ module Pikuri
       #   claimed by content-type but the byte sniff is blind.
       AUTO = 'auto'
 
+      # @return [String] the PDF format tag. Singled out as a constant
+      #   because PDF is the one format whose converter output gets a
+      #   post-processing pass: pdftotext emits +\f+ between pages, and
+      #   {#extract} / {#extract_lines} turn those into the same
+      #   +"--- Page N ---"+ marker lines pikuri-pdf's extractor emits,
+      #   so page provenance (vectordb chunk citations, the Read tools'
+      #   page references) survives whichever PDF extractor a host
+      #   wires.
+      PDF = 'pdf'
+
       # @return [Hash{String => String}] normalized content-type →
       #   format tag (the tag doubles as the container entrypoint's
       #   dispatch argument and pandoc's +-f+ / markitdown's +-x+
@@ -121,6 +161,7 @@ module Pikuri
         'application/rtf' => 'rtf',
         'text/rtf' => 'rtf',
         'application/epub+zip' => 'epub',
+        'application/pdf' => PDF,
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
         'application/vnd.ms-excel' => 'xls',
@@ -140,12 +181,20 @@ module Pikuri
         'xlsx' => %i[markitdown],
         'xls'  => %i[markitdown],
         'pptx' => %i[markitdown],
+        PDF    => %i[pdftotext],
         AUTO   => %i[markitdown]
       }.freeze
 
       # @return [String] zip local-file-header magic, shared by every
       #   OOXML / ODF / EPUB document.
       ZIP_MAGIC = "PK\x03\x04".b
+
+      # @return [Hash{String => String}] host-CLI name → the flag that
+      #   makes it print a version and exit 0, where +--version+ (the
+      #   default probe, see {#cli?}) doesn't work: poppler's
+      #   +pdftotext+ parses +--version+ as a *filename* and exits 1,
+      #   but accepts +-v+.
+      VERSION_PROBE_FLAGS = { 'pdftotext' => '-v' }.freeze
 
       # @return [Symbol] kind tag carried on +Extractor::Page#kind+.
       def kind
@@ -165,13 +214,18 @@ module Pikuri
       end
 
       # Convert the whole document behind +io+ to one Markdown String.
+      # PDFs come back as one +"--- Page N ---"+-headed block per
+      # text-carrying page (see {PDF}); a fully scanned PDF extracts
+      # to the empty String — same contract as pikuri-pdf's extractor.
       #
       # @param io [IO, StringIO] seekable IO positioned at the start.
       # @return [String] Markdown-flavoured UTF-8 text.
       # @raise [Pikuri::Extractor::Error] when no converter is
       #   available, the conversion exits non-zero, or it times out.
       def extract(io)
-        with_converted(io.read) { |file| file.read }
+        with_converted(io.read) do |file, format|
+          format == PDF ? pdf_page_lines(file).to_a.join("\n") : file.read
+        end
       end
 
       # Same content as {#extract}, as a stream of +chomp+ed lines
@@ -188,8 +242,12 @@ module Pikuri
       def extract_lines(io)
         bytes = io.read
         Enumerator.new do |yielder|
-          with_converted(bytes) do |file|
-            file.each_line { |line| yielder << line.chomp }
+          with_converted(bytes) do |file, format|
+            if format == PDF
+              pdf_page_lines(file).each { |line| yielder << line }
+            else
+              file.each_line { |line| yielder << line.chomp }
+            end
           end
         end
       end
@@ -233,6 +291,7 @@ module Pikuri
       # @return [String, nil]
       def sniff(sample)
         s = sample.b
+        return PDF   if s.start_with?(FileType::PDF_MAGIC)
         return 'rtf' if s.start_with?('{\rtf')
         return nil unless s.start_with?(ZIP_MAGIC)
         return 'odt'  if s.include?('mimetypeapplication/vnd.oasis.opendocument.text')
@@ -245,29 +304,33 @@ module Pikuri
         nil
       end
 
-      # Convert +bytes+, yield the rewound stdout Tempfile, delete it.
+      # Convert +bytes+, yield the rewound stdout Tempfile along with
+      # the resolved format tag (so callers know whether the PDF
+      # post-processing pass applies), delete the Tempfile.
       #
       # @param bytes [String] the whole document.
       # @yieldparam file [Tempfile] converter stdout, rewound.
+      # @yieldparam format [String] resolved format tag (or {AUTO}).
       # @return [Object] the block's value.
       def with_converted(bytes)
-        file = convert(bytes.b)
+        format = sniff(bytes[0, FileType::SAMPLE_BYTES] || +'') || AUTO
+        file = convert(bytes.b, format)
         begin
-          yield file
+          yield file, format
         ensure
           file.close!
         end
       end
 
-      # Run one conversion: sniff the format (falling back to {AUTO}),
-      # build the argv for the resolved arm, pipe +bytes+ through it
-      # with stdout landing in a Tempfile.
+      # Run one conversion of +format+: build the argv for the
+      # resolved arm, pipe +bytes+ through it with stdout landing in
+      # a Tempfile.
       #
       # @param bytes [String] the whole document (binary encoding).
+      # @param format [String] format tag (or {AUTO}).
       # @return [Tempfile] rewound, holding the Markdown.
       # @raise [Pikuri::Extractor::Error] on conversion failure.
-      def convert(bytes)
-        format = sniff(bytes[0, FileType::SAMPLE_BYTES] || +'') || AUTO
+      def convert(bytes, format)
         argv = converter_argv(format)
         out = Tempfile.new(['pikuri-extractors', '.md'])
         begin
@@ -285,6 +348,41 @@ module Pikuri
         rescue StandardError
           out.close!
           raise
+        end
+      end
+
+      # Turn pdftotext's +\f+-separated page stream into the
+      # +"--- Page N ---"+ marker shape pikuri-pdf's extractor emits:
+      # one marker line per page that carries text, then that page's
+      # stripped lines, textless pages silently skipped (keeping their
+      # number, so citations stay correct). Buffers one page at a
+      # time — bounded memory even for huge documents.
+      #
+      # @param file [Tempfile] pdftotext stdout, rewound.
+      # @return [Enumerator<String>] chomped lines, marker-headed per
+      #   page.
+      def pdf_page_lines(file)
+        Enumerator.new do |lines|
+          page_no = 1
+          buffer = +''
+          flush = lambda do
+            text = buffer.strip
+            unless text.empty?
+              lines << "--- Page #{page_no} ---"
+              text.split("\n").each { |line| lines << line }
+            end
+            page_no += 1
+            buffer = +''
+          end
+          file.each_line do |raw|
+            segments = raw.split("\f", -1)
+            segments[0...-1].each do |segment|
+              buffer << segment
+              flush.call
+            end
+            buffer << segments.last
+          end
+          flush.call
         end
       end
 
@@ -319,6 +417,7 @@ module Pikuri
         case backend
         when :pandoc then ['pandoc', '-f', format, '-t', 'gfm', '--wrap=none']
         when :markitdown then format == AUTO ? ['markitdown'] : ['markitdown', '-x', format]
+        when :pdftotext then ['pdftotext', '-q', '-enc', 'UTF-8', '-', '-']
         else raise "unknown converter backend #{backend.inspect}" # pikuri bug
         end
       end
@@ -366,8 +465,9 @@ module Pikuri
         Pikuri::Subprocess.spawn('docker', *argv, chdir: '/').wait
       end
 
-      # Is +name --version+ runnable on the host? Probed once per
-      # name, memoized.
+      # Is +name+'s version probe (+--version+, or the CLI's
+      # {VERSION_PROBE_FLAGS} override) runnable on the host? Probed
+      # once per name, memoized.
       #
       # @param name [String] CLI binary name.
       # @return [Boolean]
@@ -376,7 +476,8 @@ module Pikuri
         return @clis[name] if @clis.key?(name)
 
         @clis[name] = begin
-          Pikuri::Subprocess.spawn(name, '--version', chdir: '/').wait.status.success?
+          flag = VERSION_PROBE_FLAGS.fetch(name, '--version')
+          Pikuri::Subprocess.spawn(name, flag, chdir: '/').wait.status.success?
         rescue Errno::ENOENT
           false
         end

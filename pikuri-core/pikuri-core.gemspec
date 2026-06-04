@@ -56,10 +56,6 @@ Gem::Specification.new do |spec|
   # providers (Brave, DuckDuckGo) to extract results from HTML responses.
   spec.add_dependency 'nokogiri',         '~> 1.19'
 
-  # PDF text extraction. Used by Pikuri::Tool::Scraper::PDF to render
-  # application/pdf responses as plain text for the agent loop.
-  spec.add_dependency 'pdf-reader',       '~> 2.15'
-
   # ANSI color for terminal output (reasoning dim, tool calls cyan, …)
   # in the agent loop.
   spec.add_dependency 'rainbow',          '~> 3.1'

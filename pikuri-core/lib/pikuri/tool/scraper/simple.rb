@@ -17,12 +17,13 @@ module Pikuri
       # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
       # follow redirects, and hand the response body to
       # {Pikuri::Extractor.extract} with the response's +Content-Type+
-      # as the hint. HTML/XHTML render via {Extractor::HTML},
-      # +application/pdf+ (by header or by +%PDF-+ magic, so a PDF
-      # served under a lying header still extracts) via
-      # {Extractor::PDF}, any other +text/*+ type passes through
-      # verbatim; the remaining types raise {FetchError} so the LLM
-      # observes the failure instead of receiving an empty rendering.
+      # as the hint. HTML/XHTML render via {Extractor::HTML}, any
+      # other +text/*+ type passes through verbatim, and plug-in
+      # extractors extend the set (with pikuri-pdf registered,
+      # +application/pdf+ extracts — by header or by +%PDF-+ magic,
+      # so a PDF served under a lying header still works); the
+      # remaining types raise {FetchError} so the LLM observes the
+      # failure instead of receiving an empty rendering.
       #
       # Split into a thin HTTP fetch ({.fetch}) and the extraction
       # wrapper ({.visit}) so tests can drive each piece in isolation.
@@ -33,12 +34,16 @@ module Pikuri
         #   reject requests with no UA or an obvious bot UA
         USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
                      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        # @return [String] +Accept+ header sent with each request. Lists
-        #   every content-type the {Pikuri::Extractor} registry renders
-        #   out of the box, so servers that content-negotiate hand back
-        #   something we can use. The trailing +text/*;q=0.8+ covers the
-        #   verbatim pass-through arm (plain text, Markdown, source
-        #   files, …) at a lower preference than rendered HTML/PDF.
+        # @return [String] +Accept+ header sent with each request, so
+        #   servers that content-negotiate hand back something we can
+        #   use. +application/pdf+ is advertised for hosts that
+        #   register pikuri-pdf; a PDF-only resource serves PDF bytes
+        #   regardless of this header, so listing it costs an
+        #   unregistered host nothing it wouldn't hit anyway (the
+        #   response then surfaces as a {FetchError} observation). The
+        #   trailing +text/*;q=0.8+ covers the verbatim pass-through
+        #   arm (plain text, Markdown, source files, …) at a lower
+        #   preference than rendered HTML.
         ACCEPT = 'text/html,application/xhtml+xml,application/pdf,text/*;q=0.8'
         # @return [Integer] maximum number of HTTP redirects to follow
         #   before giving up
@@ -72,9 +77,10 @@ module Pikuri
         # {Tool::WebScrape.visit}, which does exactly that).
         #
         # The extracted output is +String#strip+'d so the LLM never
-        # sees a body that opens or closes with blank lines — common with
-        # +pdf-reader+'s page-feed whitespace and with text bodies that
-        # carry a trailing newline. Interior whitespace is preserved
+        # sees a body that opens or closes with blank lines — common
+        # with extracted PDFs' page-feed whitespace and with text
+        # bodies that carry a trailing newline. Interior whitespace is
+        # preserved
         # because Markdown paragraph breaks and source-code indentation
         # are load-bearing.
         #
@@ -97,8 +103,9 @@ module Pikuri
         # web tools rescue. The content-type is passed verbatim
         # (including the +""+ of a missing header, which matches no
         # text arm — a body without transport metadata is refused, not
-        # sniffed; only the +%PDF-+ magic overrides a wrong or missing
-        # header, because that sniff never misfires on text).
+        # sniffed; only a strong magic sniff like pikuri-pdf's +%PDF-+
+        # overrides a wrong or missing header, because such a sniff
+        # never misfires on text).
         #
         # @param fetched [Fetched]
         # @return [String] Markdown representation produced by the

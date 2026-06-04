@@ -40,10 +40,13 @@ Gem::Specification.new do |spec|
 
   # The assistant binary wires Agent (pikuri-core) + Skill::Extension
   # (pikuri-skills) + Mcp::Extension (pikuri-mcp) +
-  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together, plus
-  # VectorDb::Extension + the LIBRARIAN persona (pikuri-vectordb) and
-  # Memory::Extension (pikuri-memory). All six are runtime deps,
-  # lockstep-pinned to the matching versions.
+  # Tool::SubAgent::RESEARCHER (pikuri-subagents) together, plus the
+  # sandboxed document extractor (pikuri-extractors — its PDF arm
+  # supersedes chapter 3's pikuri-pdf here, so that gem is
+  # deliberately NOT a dependency), VectorDb::Extension + the
+  # LIBRARIAN persona (pikuri-vectordb) and Memory::Extension
+  # (pikuri-memory). All runtime deps, lockstep-pinned to the
+  # matching versions.
   #
   # NOTE: the vectordb and memory deps are forward-prep for the ch7
   # assistant shape (egress + private-corpus recall with the corpus
@@ -51,10 +54,11 @@ Gem::Specification.new do |spec|
   # The correct vectordb wiring is gated on the persona-owned-tools
   # change — see ideas/trifecta-detector.md — so the binary does not
   # register either yet; the dependencies declare intent.
-  spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-mcp',       "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-memory',    "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-skills',    "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
-  spec.add_dependency 'pikuri-vectordb',  "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-mcp',        "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-memory',     "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
 end

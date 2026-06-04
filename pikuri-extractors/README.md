@@ -2,24 +2,27 @@
 
 Additional document extractors for the
 [pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
-office documents → Markdown, converted preferably inside a one-shot
-**networkless docker container**, so a malicious document downloaded
-from the web is parsed somewhere it can't phone home or read your
-files.
+office documents and PDFs → Markdown, converted preferably inside a
+one-shot **networkless docker container**, so a malicious document
+downloaded from the web is parsed somewhere it can't phone home or
+read your files.
 
 Provides:
 - `Pikuri::Extractors::DOCUMENTS` — an extractor for the
   `Pikuri::Extractor` registry covering **DOCX, ODT, XLSX, legacy
-  XLS, PPTX, EPUB, and RTF**. Once registered, every pikuri surface
-  that routes through the registry picks the formats up for free:
-  the `read` tool pages through a local `.docx`, `web_scrape` /
-  `fetch` convert a downloaded `.odt`, the pikuri-vectordb indexer
-  ingests an `.epub`.
+  XLS, PPTX, EPUB, RTF, and PDF**. Once registered, every pikuri
+  surface that routes through the registry picks the formats up for
+  free: the `read` tool pages through a local `.docx`, `web_scrape`
+  / `fetch` convert a downloaded `.odt`, the pikuri-vectordb indexer
+  ingests an `.epub` or a paper PDF (with `--- Page N ---` page
+  markers preserved for citations).
 
 The actual conversion is done by [pandoc](https://pandoc.org) (ODF,
-RTF, EPUB, DOCX — its readers preserve the most structure) and
+RTF, EPUB, DOCX — its readers preserve the most structure),
 [markitdown](https://github.com/microsoft/markitdown) (the XLSX /
-XLS / PPTX arms), dispatched per format. One stdin→stdout contract,
+XLS / PPTX arms), and poppler's `pdftotext` (the PDF arm — its `\f`
+page separators are rebuilt into `--- Page N ---` markers on the
+Ruby side), dispatched per format. One stdin→stdout contract,
 two ways to run it:
 
 1. **Container (preferred).** A small, locally-built docker image
@@ -34,14 +37,21 @@ two ways to run it:
    is one throwaway process that can see neither your network nor
    your filesystem.
 2. **Host CLI (fallback).** When docker is absent or the daemon is
-   down, a host-installed `pandoc` / `markitdown` is used directly —
-   convenient, but unpinned and unsandboxed.
+   down, a host-installed `pandoc` / `markitdown` / `pdftotext` is
+   used directly — convenient, but unpinned and unsandboxed.
 
 Deliberately **not** covered: ODS / ODP (neither converter reads
-them; the only one that does is LibreOffice, a 2 GB+ image), image
-OCR and audio transcription (need model downloads — point a
-multi-modal main LLM at images instead), and PDF (pikuri-core's
-in-process extractor already does lazy page-windowed reads).
+them; the only one that does is LibreOffice, a 2 GB+ image), and
+image OCR / audio transcription (need model downloads — point a
+multi-modal main LLM at images instead).
+
+**PDF: this gem or [pikuri-pdf](../pikuri-pdf) — pick one per
+wiring.** This gem parses PDFs inside the sandbox (poppler is native
+code chewing attacker-controlled bytes — exactly what the container
+is for) but re-converts the whole document on every paged read;
+pikuri-pdf is in-process pure Ruby with lazy page-windowed reads and
+no infrastructure to set up. The guide wires pikuri-pdf in chapter 3
+and supersedes it with this gem in chapter 7's assistant.
 
 ## Install
 

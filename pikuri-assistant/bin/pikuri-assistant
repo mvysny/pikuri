@@ -29,6 +29,7 @@ require 'optparse'
 
 require 'pikuri-assistant'
 require 'pikuri-subagents'
+require 'pikuri-extractors'
 
 server = 'http://localhost:8080'
 model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
@@ -69,6 +70,16 @@ end
 # so the +ctx=<used>/<cap>+ headline lights up against this local server,
 # which is unknown to ruby_llm's bundled model registry.
 llama_probe_url = "#{server}/props"
+
+# Explicit extractor opt-in (requiring the gem alone changes
+# nothing): pikuri-extractors' sandboxed converter covers PDF and
+# the office formats (DOCX / ODT / XLSX / PPTX / EPUB / RTF) in one
+# registration, superseding chapter 3's in-process pikuri-pdf — on
+# an egress-capable agent, parsing untrusted documents belongs in
+# the networkless container. From here on web_scrape / fetch and
+# any file-reading tool pick the formats up through the Extractor
+# registry.
+Pikuri::Extractors::DOCUMENTS.register
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 

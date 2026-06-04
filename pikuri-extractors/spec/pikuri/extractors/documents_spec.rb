@@ -78,6 +78,7 @@ RSpec.describe Pikuri::Extractors::Documents do
   let(:pptx_sample) { "PK\x03\x04#{"\x00" * 26}[Content_Types].xml#{'x' * 40}ppt/presentation.xml".b }
   let(:xlsx_sample) { "PK\x03\x04#{"\x00" * 26}[Content_Types].xml#{'x' * 40}xl/workbook.xml".b }
   let(:rtf_sample)  { '{\rtf1\ansi Hello.}'.b }
+  let(:pdf_sample)  { "%PDF-1.4\nfake pdf body".b }
   let(:ole2_sample) { "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1#{"\x00" * 64}".b }
 
   # Spawn plans for the happy container arm: `docker info` answers,
@@ -98,8 +99,8 @@ RSpec.describe Pikuri::Extractors::Documents do
       end
     end
 
-    it 'claims ODT / EPUB / OOXML / RTF by byte sniff with no content-type' do
-      [odt_sample, epub_sample, docx_sample, pptx_sample, xlsx_sample, rtf_sample].each do |sample|
+    it 'claims ODT / EPUB / OOXML / RTF / PDF by byte sniff with no content-type' do
+      [odt_sample, epub_sample, docx_sample, pptx_sample, xlsx_sample, rtf_sample, pdf_sample].each do |sample|
         assert documents.matches?(sample: sample, content_type: nil)
       end
     end
@@ -115,12 +116,11 @@ RSpec.describe Pikuri::Extractors::Documents do
   end
 
   describe '#register' do
-    it 'inserts before the terminal Passthrough entry, after PDF and HTML' do
+    it 'inserts before the terminal Passthrough entry, after HTML' do
       documents.register
       registry = Pikuri::Extractor.registry
       assert_equal Pikuri::Extractor::Passthrough, registry.last
       assert_equal documents, registry[-2]
-      assert registry.index(Pikuri::Extractor::PDF) < registry.index(documents)
       assert registry.index(Pikuri::Extractor::HTML) < registry.index(documents)
     end
 
@@ -229,6 +229,48 @@ RSpec.describe Pikuri::Extractors::Documents do
       error = assert_raises(Pikuri::Extractor::Error) { documents.extract(StringIO.new(odt_sample)) }
       assert_includes error.message, 'install docker'
       assert_includes error.message, 'pandoc'
+    end
+  end
+
+  describe '#extract — the PDF arm' do
+    it 'dispatches the pdf format tag and rebuilds --- Page N --- markers from \f separators' do
+      plan_container!
+      # pdftotext-shaped stdout: page 1 (two lines), page 2 blank,
+      # page 3 — a \f terminating each page.
+      run_plans << [0, '', "Alpha one\nAlpha two\n\f\fGamma text\n\f"]
+
+      markdown = documents.extract(StringIO.new(pdf_sample))
+
+      assert_equal "--- Page 1 ---\nAlpha one\nAlpha two\n--- Page 3 ---\nGamma text", markdown
+      call = run_calls.fetch(0)
+      assert_equal 'pdf', call[:argv].last
+      assert_equal pdf_sample, call[:stdin]
+    end
+
+    it 'extracts a text-free (scanned) PDF to the empty String' do
+      plan_container!
+      run_plans << [0, '', "\f\f"]
+
+      assert_equal '', documents.extract(StringIO.new(pdf_sample))
+    end
+
+    it 'streams marker-headed lines through extract_lines' do
+      plan_container!
+      run_plans << [0, '', "one\ntwo\n\fthree\n\f"]
+
+      lines = documents.extract_lines(StringIO.new(pdf_sample)).to_a
+
+      assert_equal ['--- Page 1 ---', 'one', 'two', '--- Page 2 ---', 'three'], lines
+    end
+
+    it 'uses host pdftotext when docker is absent, probing with -v (poppler rejects --version)' do
+      plan_no_docker!
+      spawn_plans << [0, 'pdftotext version 26.01.0'] # pdftotext -v
+      run_plans << [0, '', "text\n\f"]
+
+      assert_equal "--- Page 1 ---\ntext", documents.extract(StringIO.new(pdf_sample))
+      assert_includes spawn_calls, %w[pdftotext -v]
+      assert_equal %w[pdftotext -q -enc UTF-8 - -], run_calls.fetch(0)[:argv] - ['timeout', '--signal=TERM', '--kill-after=5s', described_class::CONVERT_TIMEOUT]
     end
   end
 

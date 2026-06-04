@@ -8,6 +8,24 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Added
 
+- **New gem: `pikuri-pdf` — PDF text extraction, split out of
+  pikuri-core.** `Pikuri::Extractors::PDF` is the same in-process,
+  lazily-paged pdf-reader extractor core used to bundle, now an
+  opt-in sibling: pdf-reader and its five transitive deps (Ascii85,
+  afm, hashery, ruby-rc4, ttfunk) leave the core audit tree, and
+  pikuri-core's registry ships only HTML + Passthrough. Registration
+  is an explicit `Extractors::PDF.register` — requiring the gem
+  changes nothing by itself — and *front*-inserts so the `%PDF-`
+  magic sniff keeps beating HTML's content-type match under lying
+  headers. Wired by `bin/pikuri-corpus` (PDF corpora, no docker
+  needed); deliberately NOT by `bin/pikuri-chat`, which stays pure
+  pikuri-core (guide ch1) — scraping a PDF there now surfaces
+  `Error: ...` until ch3 plugs the extractor in. Pick-one-per-wiring
+  with pikuri-extractors' new PDF arm: `bin/pikuri-assistant`
+  registers `DOCUMENTS` instead, superseding this gem in the ch7
+  shape (untrusted documents on an egress-capable agent parse in the
+  sandbox); this gem is the no-infrastructure wiring with lazy
+  paging and PDF-specific Read-tool wording.
 - **New gem: `pikuri-extractors` — sandboxed office-document
   extraction.** `Pikuri::Extractors::DOCUMENTS` plugs DOCX / ODT /
   XLSX / legacy XLS / PPTX / EPUB / RTF → Markdown into the
@@ -24,7 +42,20 @@ uses semver as documented in `lib/pikuri/version.rb`.
   the gem changes nothing by itself. No result cache in v1: each
   paged read re-runs the conversion (accepted trade). ODS / ODP,
   image OCR, audio, and LibreOffice-headless are deliberately out of
-  scope; PDF stays on pikuri-core's lazy in-process extractor.
+  scope.
+- **pikuri-extractors grows a PDF arm** — poppler's `pdftotext` in
+  the converter image (and as a `pdftotext` host-CLI fallback;
+  probed with `-v`, since poppler parses `--version` as a filename),
+  with a Ruby post-processing pass that rebuilds pikuri-pdf's
+  `--- Page N ---` markers from pdftotext's `\f` page separators —
+  textless pages skipped, numbering preserved, so vectordb page
+  provenance and Read-tool citations are wiring-independent. Makes
+  `DOCUMENTS` a one-registration superset of pikuri-pdf's formats:
+  pick one PDF extractor per host (trade-off table in the
+  `Extractors::Documents` yardoc). One ordering edge vs pikuri-pdf:
+  a PDF served under a lying `text/html` header goes to the HTML
+  extractor (DOCUMENTS sits after HTML; pikuri-pdf front-inserts and
+  wins that case).
 - **`Pikuri::Subprocess.run` — the filter shape.** Second front door
   on the subprocess chokepoint for stdin→stdout children (the
   document converters): feeds `stdin_data`, redirects the child's

@@ -213,13 +213,24 @@ All defined in `pikuri-core/lib/pikuri/tool/` and wired into
   configured search providers and returns a Markdown list of
   titles, URLs, and snippets. See below for each provider's
   privacy posture.
-- **`web_scrape`** — fetches an HTML page or PDF, strips the
-  chrome with readability extraction, and returns the main content
-  as Markdown. The model typically chains `web_search` → pick a
-  URL → `web_scrape` to read the full article.
+- **`web_scrape`** — fetches an HTML page, strips the chrome with
+  readability extraction, and returns the main content as Markdown.
+  The model typically chains `web_search` → pick a URL →
+  `web_scrape` to read the full article.
 - **`fetch`** — downloads a URL verbatim (JSON, CSV, robots.txt,
   source files) without any rendering pass that would corrupt the
   bytes.
+
+Try one more thing before moving on: ask the agent to summarize a
+PDF — an arXiv paper, an RFC rendered as PDF, anything. Watch it
+scrape the URL and report back something like *"Error: unsupported
+content-type \"application/pdf\""*, then tell you it can't read the
+document. That error string is the whole failure mode: tools hand
+the model observations, including failed ones, and the model reacts
+instead of crashing. pikuri-core deliberately ships no PDF parser —
+it's the kind of dependency you should opt into, not inherit — and
+chapter 3 opens by plugging one in with two lines. Remember this
+moment when you get there.
 
 ## Search providers and their privacy trade-offs
 

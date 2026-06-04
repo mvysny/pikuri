@@ -15,10 +15,11 @@
 # +pikuri-subagents+ must precede +pikuri-code+ / +pikuri-vectordb+
 # / +pikuri-assistant+, which all depend on it. The metagem +pikuri+
 # lives last so its dependency declarations pin the versions just
-# published by the prior eleven.
+# published by the prior twelve.
 GEMS = %w[
   pikuri-core
   pikuri-extractors
+  pikuri-pdf
   pikuri-memory
   pikuri-skills
   pikuri-tasks

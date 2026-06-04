@@ -35,13 +35,11 @@ RSpec.describe Pikuri::Extractor do
       assert_includes out, 'xhtml content'
     end
 
-    it 'routes a %PDF- magic body to the PDF extractor even under a lying text content-type' do
-      # Garbage after the magic prefix: reaching the PDF parse error
-      # proves the PDF extractor (not the text passthrough) claimed it.
-      err = assert_raises(Pikuri::Extractor::Error) do
-        extract("%PDF-1.4\nnot really a pdf", content_type: 'text/plain')
+    it 'raises Unsupported for application/pdf out of the box (PDF support lives in pikuri-pdf)' do
+      err = assert_raises(Pikuri::Extractor::Unsupported) do
+        extract("%PDF-1.4\nwhatever", content_type: 'application/pdf')
       end
-      assert_includes err.message, 'PDF rendering failed'
+      assert_includes err.message, 'application/pdf'
     end
 
     it 'raises Unsupported for a non-text content-type nothing claims, without sniffing' do
@@ -150,8 +148,8 @@ RSpec.describe Pikuri::Extractor do
   end
 
   describe '.registry' do
-    it 'orders PDF (strongest sniff) before HTML before the terminal Passthrough' do
-      assert_equal [Pikuri::Extractor::PDF, Pikuri::Extractor::HTML, Pikuri::Extractor::Passthrough],
+    it 'ships HTML before the terminal Passthrough; further formats are plug-in gems' do
+      assert_equal [Pikuri::Extractor::HTML, Pikuri::Extractor::Passthrough],
                    described_class.registry
     end
   end

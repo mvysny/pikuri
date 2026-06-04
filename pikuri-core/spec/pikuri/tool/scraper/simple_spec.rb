@@ -171,10 +171,30 @@ RSpec.describe Pikuri::Tool::Scraper::Simple, '.visit' do
   end
 
   it 'maps extraction failures to FetchError so the web tools rescue one type' do
-    stubs.get('https://example.com/doc.pdf') do
-      [200, { 'content-type' => 'application/pdf' }, "%PDF-1.4\nnot really a pdf"]
+    # A plugged-in extractor that claims the content but cannot parse
+    # it — the registry path a malformed PDF takes with pikuri-pdf
+    # registered (whose own specs cover the real thing).
+    broken = Module.new do
+      def self.kind = :broken
+
+      def self.matches?(sample:, content_type:)
+        content_type == 'application/x-broken'
+      end
+
+      def self.extract(_io)
+        raise Pikuri::Extractor::Error, 'rendering failed: bad content'
+      end
     end
-    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.visit('https://example.com/doc.pdf') }
-    assert_includes err.message, 'PDF rendering failed'
+
+    Pikuri::Extractor.registry.unshift(broken)
+    begin
+      stubs.get('https://example.com/doc.bin') do
+        [200, { 'content-type' => 'application/x-broken' }, 'not parseable']
+      end
+      err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.visit('https://example.com/doc.bin') }
+      assert_includes err.message, 'rendering failed'
+    ensure
+      Pikuri::Extractor.registry.delete(broken)
+    end
   end
 end

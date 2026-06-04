@@ -2,9 +2,10 @@
 
 module Pikuri
   # The format→text extraction seam: one registry of extractors that
-  # turn an +IO+ of some recognised format (HTML, PDF, plain text)
-  # into Markdown-flavoured UTF-8 text, consumed through two front
-  # doors:
+  # turn an +IO+ of some recognised format (HTML and plain text out
+  # of the box; PDF / office formats via the pikuri-pdf /
+  # pikuri-extractors plug-in gems) into Markdown-flavoured UTF-8
+  # text, consumed through two front doors:
   #
   # * {.extract} — the whole document as one String. The shape the
   #   indexing / caching callers want ({Pikuri::VectorDb}'s indexer,
@@ -20,9 +21,9 @@ module Pikuri
   # header for the web tools, and {FileType} carried its own
   # +pdf-reader+ walk for local files. Collecting extraction here
   # gives both paths one set of format truths and makes "support a
-  # new format" a registry entry (a future gem can plug in an ODF /
-  # DOCX extractor without pikuri-core knowing), not a new special
-  # case in two dispatchers.
+  # new format" a registry entry (pikuri-pdf and pikuri-extractors
+  # plug PDF and office formats in without pikuri-core knowing), not
+  # a new special case in two dispatchers.
   #
   # == The extractor duck type
   #
@@ -49,8 +50,9 @@ module Pikuri
   #   as +extract+, as a lazy stream of already-+chomp+ed lines.
   #   {.extract_paged} prefers this when present and stops consuming
   #   the moment the window fills, so the rest of the document is
-  #   never parsed ({PDF}: pdf-reader's page list parses on access;
-  #   {Passthrough}: the IO is read line-by-line). The enumerator
+  #   never parsed (pikuri-pdf's extractor: pdf-reader's page list
+  #   parses on access; {Passthrough}: the IO is read line-by-line).
+  #   The enumerator
   #   must be consumed while +io+ is still open, and may raise
   #   {Error} mid-iteration. Extractors that need the whole document
   #   to produce anything ({HTML}: Readability walks the full DOM —
@@ -118,8 +120,8 @@ module Pikuri
     #   per-line truncated (with {PAGE_LINE_TRUNCATION_MARKER}); *not*
     #   line-numbered — numbering is presentation the caller adds. For
     #   a PDF the array includes the +"--- Page N ---"+ marker lines
-    #   {PDF} emits, which count toward +limit+ / the byte cap like
-    #   any other line.
+    #   pikuri-pdf's extractor emits, which count toward +limit+ / the
+    #   byte cap like any other line.
     # * +start_line+ — the 1-indexed line number of +lines.first+
     #   (i.e. the +offset+ the caller asked for). +lines.last+ is at
     #   +start_line + lines.length - 1+.
@@ -145,16 +147,20 @@ module Pikuri
     Page = Data.define(:lines, :start_line, :total_lines, :more, :byte_capped, :kind)
 
     # The extractor registry, consulted in order — first match wins.
-    # {PDF} leads (its magic-byte sniff is the strongest signal, so a
-    # PDF served under a lying content-type is still extracted),
-    # {HTML} matches on content-type, and {Passthrough} is the
-    # terminal plain-text arm. A gem adding a format inserts before
-    # the terminal entry: +Pikuri::Extractor.registry.insert(-2, X)+.
+    # Core ships two entries: {HTML} matches on content-type, and
+    # {Passthrough} is the terminal plain-text arm. A gem adding a
+    # format picks its insertion point by the strength of its claim:
+    # a magic-byte sniff that never misfires on text goes at the
+    # *front* so it beats {HTML}'s content-type match even under a
+    # lying header (+registry.unshift(X)+ — pikuri-pdf does this);
+    # a content-type / weaker-sniff claimer inserts before the
+    # terminal entry (+registry.insert(-2, X)+ — pikuri-extractors
+    # does this).
     #
     # @return [Array<#matches?>] mutable, deliberately — this is the
     #   plug-in seam.
     def registry
-      @registry ||= [PDF, HTML, Passthrough]
+      @registry ||= [HTML, Passthrough]
     end
 
     # Extract the whole document behind +io+ as one Markdown-flavoured
@@ -181,10 +187,10 @@ module Pikuri
     # +max_line_length+.
     #
     # Lazy where the format allows: extractors that implement
-    # +extract_lines+ (PDF, plain text) are consumed only until the
-    # window fills — reading the first window of a 500-page PDF
-    # parses a handful of pages, and the first page of a gigabyte
-    # log never loads it. Extractors without it (HTML) are extracted
+    # +extract_lines+ (plain text; pikuri-pdf's PDF) are consumed
+    # only until the window fills — reading the first window of a
+    # 500-page PDF parses a handful of pages, and the first page of
+    # a gigabyte log never loads it. Extractors without it (HTML) are extracted
     # in full and then windowed, which is also what makes their
     # +total_lines+ always exact.
     #
@@ -208,7 +214,8 @@ module Pikuri
         # sequential read (so the trailer can say "of N"), while for
         # a PDF it would mean parsing every remaining page — exactly
         # what extract_lines exists to avoid. Plugged-in extractors
-        # get the conservative default (stop early, total unknown).
+        # (pikuri-pdf's included) get the conservative default (stop
+        # early, total unknown).
         window(extractor.extract_lines(io),
                offset: offset, limit: limit, max_bytes: max_bytes,
                max_line_length: max_line_length, kind: extractor.kind,

@@ -33,6 +33,38 @@ useful for a non-developer audience — somebody who wants an AI
 assistant that knows their notes and stays on their machine, not
 somebody who wants help refactoring code.
 
+## Documents: the sandbox takes over from chapter 3
+
+One piece of the assistant is already real and worth reading now.
+[Chapter 3](03-vectordb.md) plugged PDF support into the extractor
+registry with `pikuri-pdf` — in-process, pure Ruby, nothing to
+install: training wheels, and the right call for an agent with no
+egress reading a corpus *you* chose. The assistant flips both
+assumptions: it browses the open web, so the documents it parses
+are exactly the bytes an attacker controls. Its wiring therefore
+drops `pikuri-pdf` entirely and registers
+`Pikuri::Extractors::DOCUMENTS` instead:
+
+```ruby
+require 'pikuri-extractors'
+
+Pikuri::Extractors::DOCUMENTS.register
+```
+
+Same registry, same one-call pattern you learned in chapter 3 —
+but now every conversion runs inside a one-shot **networkless
+docker container** (`--network=none --read-only --cap-drop=ALL`,
+bytes in via stdin, Markdown out via stdout, no volume mounts), so
+a malicious PDF exploiting poppler's parser detonates somewhere
+with no network and no filesystem. And the office formats — DOCX,
+ODT, XLSX, PPTX, EPUB, RTF — come along in the same registration.
+The `--- Page N ---` markers chapter 3 taught you to expect in PDF
+output survive the swap; what you give up is lazy paging (the
+container re-converts the whole document per `read` window) — the
+trade-off table lives in the `Extractors::Documents` yardoc. One
+extractor per format per wiring: registering both gems buys
+nothing.
+
 ## Design note: the corpus, egress, and the librarian
 
 This is the binary that re-opens the problem

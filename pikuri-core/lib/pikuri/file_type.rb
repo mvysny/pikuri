@@ -137,12 +137,12 @@ module Pikuri
     end
 
     # Read +path+ and return its content as plain UTF-8 text, routed
-    # through the {Extractor} registry: PDFs are extracted (with
-    # +"--- Page N ---"+ markers — see {Extractor::PDF}; a
-    # scanned-image PDF with no extractable text comes back as the
-    # empty String, a deliberate silent skip callers detect by length
-    # if they care), anything unrecognised-but-textual passes through
-    # verbatim ({Extractor::Passthrough}).
+    # through the {Extractor} registry: anything
+    # unrecognised-but-textual passes through verbatim
+    # ({Extractor::Passthrough}); with pikuri-pdf registered, PDFs
+    # are extracted with +"--- Page N ---"+ markers (a scanned-image
+    # PDF with no extractable text comes back as the empty String, a
+    # deliberate silent skip callers detect by length if they care).
     #
     # Refusal cases — all raise rather than returning a sentinel
     # because the callers are internal pikuri code, not an LLM

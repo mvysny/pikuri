@@ -10,13 +10,16 @@
 # Markdown leaves on stdout, diagnostics on stderr. Network exists
 # only at *build* time (apt + pip below).
 #
-# Both converters are version-pinned: pandoc via the pinned Debian
-# release of the base image, markitdown via the exact pip version.
-# Bump deliberately, with a conversion smoke-test.
+# All converters are version-pinned: pandoc and poppler (pdftotext)
+# via the pinned Debian release of the base image, markitdown via the
+# exact pip version. Bump deliberately, with a conversion smoke-test.
 FROM python:3.13-slim-trixie
 
+# poppler-utils ships pdftotext — the PDF arm. Its C++ parser is
+# exactly the kind of attack surface this networkless container
+# exists to contain.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pandoc \
+    && apt-get install -y --no-install-recommends pandoc poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Extras pull the per-format converter deps (mammoth, openpyxl,

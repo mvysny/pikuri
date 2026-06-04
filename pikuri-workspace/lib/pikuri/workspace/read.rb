@@ -44,11 +44,12 @@ module Pikuri
     # == PDF (and other extracted formats)
     #
     # Which formats read as text is the {Pikuri::Extractor} registry's
-    # business, not this tool's: PDFs are claimed by their +%PDF-+ magic
-    # prefix ahead of the binary refusal and extracted with one
-    # synthetic +"--- Page N ---"+ header line per page (see
-    # {Pikuri::Extractor::PDF}); a gem plugging another extractor into
-    # the registry extends this tool for free. Extraction is lazy
+    # business, not this tool's: with pikuri-pdf's extractor
+    # registered, PDFs are claimed by their +%PDF-+ magic prefix ahead
+    # of the binary refusal and extracted with one synthetic
+    # +"--- Page N ---"+ header line per page (see
+    # +Pikuri::Extractors::PDF+); a gem plugging another extractor
+    # into the registry extends this tool for free. Extraction is lazy
     # where the format allows (+extract_lines+): reading the first
     # window of a 500-page PDF parses only the pages the window needs.
     # Formats without a lazy line shape (HTML) are extracted in full
@@ -102,7 +103,8 @@ module Pikuri
     #   {Pikuri::FileType.binary?} heuristic: any +NUL+ byte or a
     #   sample dense in control characters). Catches archives and
     #   compiled artifacts without an extension list to maintain.
-    #   PDFs are claimed by their magic bytes ahead of that refusal;
+    #   Registered extractors (pikuri-pdf's PDF, pikuri-extractors'
+    #   office formats) claim their bytes ahead of that refusal;
     #   images are intercepted here via {Pikuri::FileType.detect_mime}
     #   before extraction is attempted — see above.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.

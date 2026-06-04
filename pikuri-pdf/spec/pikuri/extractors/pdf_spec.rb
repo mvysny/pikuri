@@ -2,50 +2,11 @@
 
 require 'stringio'
 
-# Drive +Extractor::PDF.extract+ against in-memory PDFs built by the
-# helper below rather than checking a binary fixture into the repo.
-# The helper emits the smallest valid PDF +pdf-reader+ will accept —
-# one page per text, Helvetica, a single +Tj+ string-show op — so the
-# assertions exercise the real extraction path end-to-end.
-RSpec.describe Pikuri::Extractor::PDF, '.extract' do
-  # Build a PDF that prints each of +page_texts+ on its own page.
-  # Returns the raw bytes ready to wrap in a StringIO. Object byte
-  # offsets are computed as we append, so the xref table is always
-  # correct.
-  def build_pdf(*page_texts)
-    out = +"%PDF-1.4\n"
-    offsets = []
-    add_obj = lambda do |body|
-      offsets << out.bytesize
-      out << "#{offsets.size} 0 obj\n#{body}\nendobj\n"
-    end
-
-    page_count = page_texts.length
-    font_obj_num = 2 + page_count * 2 + 1
-
-    add_obj.call('<< /Type /Catalog /Pages 2 0 R >>')
-    page_refs = (0...page_count).map { |i| "#{3 + i * 2} 0 R" }
-    add_obj.call("<< /Type /Pages /Kids [#{page_refs.join(' ')}] /Count #{page_count} >>")
-
-    page_texts.each_with_index do |text, i|
-      content_obj_num = 3 + i * 2 + 1
-      add_obj.call("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " \
-                   "/Contents #{content_obj_num} 0 R /Resources << /Font << /F1 #{font_obj_num} 0 R >> >> >>")
-      stream = "BT /F1 12 Tf 100 700 Td (#{text}) Tj ET"
-      add_obj.call("<< /Length #{stream.bytesize} >>\nstream\n#{stream}\nendstream")
-    end
-
-    add_obj.call('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
-
-    xref_pos = out.bytesize
-    out << "xref\n0 #{offsets.size + 1}\n"
-    out << "0000000000 65535 f \n"
-    offsets.each { |o| out << format("%010d 00000 n \n", o) }
-    out << "trailer\n<< /Size #{offsets.size + 1} /Root 1 0 R >>\n"
-    out << "startxref\n#{xref_pos}\n%%EOF\n"
-    out
-  end
-
+# Drive +Extractors::PDF.extract+ against in-memory PDFs built by the
+# shared +build_pdf+ helper rather than checking a binary fixture into
+# the repo, so the assertions exercise the real extraction path
+# end-to-end.
+RSpec.describe Pikuri::Extractors::PDF, '.extract' do
   def extract(bytes)
     described_class.extract(StringIO.new(bytes))
   end
@@ -94,9 +55,9 @@ RSpec.describe Pikuri::Extractor::PDF, '.extract' do
     it 'can be consumed partially' do
       # The laziness that matters — pdf-reader parsing pages only on
       # Page#text access — is pdf-reader's documented behavior;
-      # extract_paged's early stop is proven in extractor_spec with
-      # an infinite stream. Here we just pin that a partial consumer
-      # gets the head without error.
+      # extract_paged's early stop is proven in pikuri-core's
+      # extractor_spec with an infinite stream. Here we just pin that
+      # a partial consumer gets the head without error.
       enum = described_class.extract_lines(StringIO.new(build_pdf('Alpha', 'Beta')))
       assert_equal ['--- Page 1 ---', 'Alpha'], enum.first(2)
     end
@@ -121,6 +82,22 @@ RSpec.describe Pikuri::Extractor::PDF, '.extract' do
     it 'declines everything else' do
       refute described_class.matches?(sample: 'plain text'.b, content_type: nil)
       refute described_class.matches?(sample: 'plain text'.b, content_type: 'text/html')
+    end
+  end
+
+  describe '.register' do
+    after { Pikuri::Extractor.registry.delete(described_class) }
+
+    it 'inserts at the front of the registry, ahead of HTML' do
+      described_class.register
+      assert_equal described_class, Pikuri::Extractor.registry.first
+    end
+
+    it 'is idempotent and returns self' do
+      assert_equal described_class, described_class.register
+      before_count = Pikuri::Extractor.registry.length
+      described_class.register
+      assert_equal before_count, Pikuri::Extractor.registry.length
     end
   end
 end

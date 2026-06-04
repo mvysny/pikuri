@@ -58,9 +58,11 @@ Gem::Specification.new do |spec|
 
   # pikuri-core ships the +Agent+ runtime + +Pikuri::Tool+ base
   # class that the search tool subclasses, +RubyLLM.embed+ wired
-  # through ruby_llm, Faraday for HTTP, and +pdf-reader+ /
-  # +reverse_markdown+ for the PDF / HTML text extraction the
-  # indexer reuses.
+  # through ruby_llm, Faraday for HTTP, and the +Extractor+ registry
+  # the indexer's text extraction routes through (plain text /
+  # Markdown out of the box; a host indexing a PDF corpus registers
+  # the pikuri-pdf extractor — deliberately not a dependency here, so
+  # the lean no-PDF install stays lean).
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
   # pikuri-subagents ships +Pikuri::SubAgent::Persona+, the value
   # type the bundled +LIBRARIAN+ persona constant is an instance

@@ -8,7 +8,7 @@
 > — Frank Herbert, *Dune* (1965)
 
 A small Ruby AI assistant you run on your own machine, shipped as
-a family of twelve gems in a monorepo (eleven functional gems plus
+a family of thirteen gems in a monorepo (twelve functional gems plus
 a convenience metagem). Defaults wire a local
 [llama.cpp](https://github.com/ggml-org/llama.cpp) server, so a
 conversation never leaves your computer unless the model itself
@@ -61,9 +61,12 @@ in:
   per-gem README is a reference card with a wired-up snippet:
   - [`pikuri-core`](pikuri-core/README.md) — `Pikuri::Agent`, the
     `Tool` framework, four bundled tools, the `pikuri-chat` demo.
-  - [`pikuri-extractors`](pikuri-extractors/README.md) — office
-    documents (DOCX / ODT / XLSX / PPTX / EPUB / RTF) → Markdown,
+  - [`pikuri-extractors`](pikuri-extractors/README.md) — documents
+    (DOCX / ODT / XLSX / PPTX / EPUB / RTF / PDF) → Markdown,
     converted inside a one-shot networkless docker container.
+  - [`pikuri-pdf`](pikuri-pdf/README.md) — PDF → text extraction,
+    in-process and lazily paged (pure-Ruby pdf-reader); the
+    docker-free alternative to pikuri-extractors' PDF arm.
   - [`pikuri-skills`](pikuri-skills/README.md) —
     [Agent Skills](https://agentskills.io/specification)
     discovery.
@@ -89,7 +92,7 @@ in:
   - [`pikuri-assistant`](pikuri-assistant/README.md) — MCP-aware
     demo binary.
   - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all eleven.
+    `gem install pikuri` pulls in all twelve.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,

@@ -3,6 +3,7 @@ PATH
   specs:
     pikuri-assistant (0.0.5)
       pikuri-core (= 0.0.5)
+      pikuri-extractors (= 0.0.5)
       pikuri-mcp (= 0.0.5)
       pikuri-memory (= 0.0.5)
       pikuri-skills (= 0.0.5)
@@ -24,7 +25,6 @@ PATH
     pikuri-core (0.0.5)
       faraday (~> 2.9)
       nokogiri (~> 1.19)
-      pdf-reader (~> 2.15)
       rainbow (~> 3.1)
       reverse_markdown (~> 3.0)
       ruby-readability (~> 0.7)
@@ -48,6 +48,13 @@ PATH
   remote: pikuri-memory
   specs:
     pikuri-memory (0.0.5)
+      pikuri-core (= 0.0.5)
+
+PATH
+  remote: pikuri-pdf
+  specs:
+    pikuri-pdf (0.0.5)
+      pdf-reader (~> 2.15)
       pikuri-core (= 0.0.5)
 
 PATH
@@ -93,6 +100,7 @@ PATH
       pikuri-extractors (= 0.0.5)
       pikuri-mcp (= 0.0.5)
       pikuri-memory (= 0.0.5)
+      pikuri-pdf (= 0.0.5)
       pikuri-skills (= 0.0.5)
       pikuri-subagents (= 0.0.5)
       pikuri-tasks (= 0.0.5)
@@ -218,6 +226,7 @@ DEPENDENCIES
   pikuri-extractors!
   pikuri-mcp!
   pikuri-memory!
+  pikuri-pdf!
   pikuri-skills!
   pikuri-subagents!
   pikuri-tasks!
@@ -265,6 +274,7 @@ CHECKSUMS
   pikuri-extractors (0.0.5)
   pikuri-mcp (0.0.5)
   pikuri-memory (0.0.5)
+  pikuri-pdf (0.0.5)
   pikuri-skills (0.0.5)
   pikuri-subagents (0.0.5)
   pikuri-tasks (0.0.5)

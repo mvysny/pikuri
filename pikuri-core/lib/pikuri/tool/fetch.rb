@@ -8,8 +8,9 @@ module Pikuri
     # cap so the LLM doesn't drown in long-form bodies, and exposes the
     # result to the agent loop in OpenAI tool-call shape.
     #
-    # Sister of {Tool::WebScrape}, but without HTML→Markdown or PDF→text
-    # extraction: bodies are returned verbatim. Useful for raw textual
+    # Sister of {Tool::WebScrape}, but with no extraction pass
+    # (HTML→Markdown, or whatever plug-in extractors are registered):
+    # bodies are returned verbatim. Useful for raw textual
     # data — JSON APIs, CSV files, +robots.txt+, sitemaps, source files —
     # where any rendering pass would corrupt the payload.
     module Fetch
@@ -105,7 +106,7 @@ module Pikuri
 
         raise Scraper::FetchError,
               "refused to fetch #{url}: content-type #{fetched.content_type.inspect} " \
-              'is not textual (use web_scrape for PDFs or rendered pages)'
+              'is not textual (use web_scrape for rendered pages)'
       end
 
       # @param content_type [String] normalized content-type (no +charset+
@@ -138,7 +139,7 @@ module Pikuri
     # Verbatim URL download tool. Thin wrapper over {Tool::Fetch.fetch}
     # that exposes it to the agent loop in OpenAI tool-call shape. Use for
     # raw textual payloads (JSON APIs, CSV files, +robots.txt+, source
-    # files); use {Tool::WEB_SCRAPE} for rendered web pages or PDFs where
+    # files); use {Tool::WEB_SCRAPE} for rendered web pages where
     # readability extraction makes the result usable.
     #
     # @return [Tool]
@@ -149,7 +150,7 @@ module Pikuri
 
         Usage:
         - Use for raw textual payloads: JSON APIs, CSV files, robots.txt, sitemaps, source files — anywhere a rendering pass would corrupt the data.
-        - For rendered HTML pages or PDFs, use web_scrape — it extracts readable content; fetch returns the raw HTML/PDF bytes unchanged.
+        - For rendered HTML pages, use web_scrape — it extracts readable content; fetch returns the raw HTML bytes unchanged.
         - Accepts text/* and common textual application/* types (JSON, XML, JS, XHTML, RSS, Atom). Refuses PDFs, images, and other binaries.
       DESC
       parameters: Parameters.build { |p|

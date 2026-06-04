@@ -95,10 +95,10 @@ module Pikuri
     WEB_SCRAPE = new(
       name: 'web_scrape',
       description: <<~DESC,
-        Scrapes the rendered webpage, PDF, or text file at the given URL and returns its main content as Markdown.
+        Scrapes the rendered webpage or text file at the given URL and returns its main content as Markdown.
 
         Usage:
-        - Use for HTML pages or PDFs where you want readable content — readability extraction strips nav, sidebars, and boilerplate.
+        - Use for HTML pages where you want readable content — readability extraction strips nav, sidebars, and boilerplate.
         - For raw textual payloads (JSON, CSV, robots.txt, source files), use fetch instead — it returns bytes verbatim, while web_scrape would corrupt them with a Markdown pass.
         - A Single Page App may return very little or no content. Do NOT retry with a larger max_chars; try a different URL instead.
       DESC
