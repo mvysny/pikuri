@@ -101,7 +101,10 @@ RSpec.describe Pikuri::Tool::Scraper::Simple, '.fetch' do
 end
 
 # End-to-end +.visit+ tests covering behavior layered on top of
-# +fetch+ + +dispatch+ — currently just the trailing-whitespace strip.
+# +fetch+ — the trailing-whitespace strip and the
+# +Pikuri::Extractor+ → +FetchError+ mapping. Which extractor renders
+# what is the registry's business (see extractor_spec.rb); here we
+# only verify the wiring and the error conversion.
 RSpec.describe Pikuri::Tool::Scraper::Simple, '.visit' do
   let(:stubs) { Faraday::Adapter::Test::Stubs.new }
 
@@ -118,80 +121,60 @@ RSpec.describe Pikuri::Tool::Scraper::Simple, '.visit' do
     end
   end
 
-  it 'strips leading and trailing whitespace from the dispatched body but preserves interior structure' do
+  it 'strips leading and trailing whitespace from the extracted body but preserves interior structure' do
     body = "\n\n  # Title\n\nparagraph one\n\n    indented line\n\n\n"
     stubs.get('https://example.com/doc.md') { [200, { 'content-type' => 'text/markdown' }, body] }
     out = described_class.visit('https://example.com/doc.md')
     assert_equal "# Title\n\nparagraph one\n\n    indented line", out
   end
-end
 
-# Exercise the content-type dispatch in +.dispatch+ directly, against
-# hand-built {Fetched} values — no network. The HTML and (future) PDF
-# extractors are tested separately; here we only verify that the right
-# parser is picked and that unknown types surface as FetchError.
-RSpec.describe Pikuri::Tool::Scraper::Simple, '.dispatch' do
-  let(:fetched_class) { Pikuri::Tool::Scraper::Simple::Fetched }
-
-  it 'routes text/html through Scraper::HTML.extract' do
-    fetched = fetched_class.new(
-      body: '<html><body><h1>Hi</h1><p>hello world</p></body></html>',
-      content_type: 'text/html',
-      url: 'https://example.com/'
-    )
-    out = described_class.dispatch(fetched)
+  it 'renders a text/html response through the HTML extractor' do
+    stubs.get('https://example.com/page') do
+      [200, { 'content-type' => 'text/html' },
+       '<html><body><h1>Hi</h1><p>hello world</p></body></html>']
+    end
+    out = described_class.visit('https://example.com/page')
     assert_includes out, 'hello world'
+    refute_includes out, '<p>'
   end
 
-  it 'routes application/xhtml+xml through Scraper::HTML.extract' do
-    fetched = fetched_class.new(
-      body: '<html><body><p>xhtml content</p></body></html>',
-      content_type: 'application/xhtml+xml',
-      url: 'https://example.com/'
-    )
-    assert_includes described_class.dispatch(fetched), 'xhtml content'
-  end
-
-  it 'routes application/pdf through Scraper::PDF.extract' do
-    # Don't reach into PDF.extract for real PDF bytes — that path is
-    # tested in pdf_spec. Here we just verify the dispatch arm exists by
-    # stubbing PDF.extract.
-    original = Pikuri::Tool::Scraper::PDF.method(:extract)
-    Pikuri::Tool::Scraper::PDF.singleton_class.define_method(:extract) { |bytes| "PDF[#{bytes}]" }
+  it 'hands the response content-type to the extractor registry' do
+    # Stub the registry front door to observe the hint; the routing
+    # itself is extractor_spec.rb's business.
+    original = Pikuri::Extractor.method(:extract)
+    seen = nil
+    Pikuri::Extractor.define_singleton_method(:extract) do |io, content_type:|
+      seen = [io.read, content_type]
+      'rendered'
+    end
     begin
-      fetched = fetched_class.new(body: 'pdf-bytes', content_type: 'application/pdf', url: 'https://example.com/doc.pdf')
-      assert_equal 'PDF[pdf-bytes]', described_class.dispatch(fetched)
+      stubs.get('https://example.com/doc.pdf') { [200, { 'content-type' => 'application/pdf' }, 'pdf-bytes'] }
+      assert_equal 'rendered', described_class.visit('https://example.com/doc.pdf')
+      assert_equal ['pdf-bytes', 'application/pdf'], seen
     ensure
-      Pikuri::Tool::Scraper::PDF.singleton_class.define_method(:extract, original)
+      Pikuri::Extractor.define_singleton_method(:extract, original)
     end
   end
 
-  it 'passes text/plain bodies through verbatim' do
-    fetched = fetched_class.new(body: "User-agent: *\nDisallow: /private", content_type: 'text/plain', url: 'https://example.com/robots.txt')
-    assert_equal "User-agent: *\nDisallow: /private", described_class.dispatch(fetched)
-  end
-
-  it 'passes text/markdown bodies through verbatim' do
-    fetched = fetched_class.new(body: "# Title\n\nbody text", content_type: 'text/markdown', url: 'https://example.com/README.md')
-    assert_equal "# Title\n\nbody text", described_class.dispatch(fetched)
-  end
-
-  it 'passes other text/* bodies (e.g. text/x-markdown) through verbatim' do
-    fetched = fetched_class.new(body: '## heading', content_type: 'text/x-markdown', url: 'https://example.com/notes')
-    assert_equal '## heading', described_class.dispatch(fetched)
-  end
-
   it 'raises FetchError for an unsupported content-type' do
-    fetched = fetched_class.new(body: '{}', content_type: 'application/json', url: 'https://example.com/')
-    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.dispatch(fetched) }
+    stubs.get('https://example.com/blob') { [200, { 'content-type' => 'application/json' }, '{}'] }
+    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.visit('https://example.com/blob') }
     assert_includes err.message, 'unsupported content-type'
     assert_includes err.message, 'application/json'
-    assert_includes err.message, 'https://example.com/'
+    assert_includes err.message, 'https://example.com/blob'
   end
 
   it 'raises FetchError when the content-type is missing' do
-    fetched = fetched_class.new(body: 'whatever', content_type: '', url: 'https://example.com/')
-    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.dispatch(fetched) }
+    stubs.get('https://example.com/blob') { [200, {}, 'whatever'] }
+    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.visit('https://example.com/blob') }
     assert_includes err.message, 'unsupported content-type'
+  end
+
+  it 'maps extraction failures to FetchError so the web tools rescue one type' do
+    stubs.get('https://example.com/doc.pdf') do
+      [200, { 'content-type' => 'application/pdf' }, "%PDF-1.4\nnot really a pdf"]
+    end
+    err = assert_raises(Pikuri::Tool::Scraper::FetchError) { described_class.visit('https://example.com/doc.pdf') }
+    assert_includes err.message, 'PDF rendering failed'
   end
 end

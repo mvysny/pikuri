@@ -1,28 +1,31 @@
 # frozen_string_literal: true
 
 require 'faraday'
+require 'stringio'
 require 'uri'
 
 module Pikuri
   class Tool
-    # Namespace for the URL-to-Markdown scraping stack used by
-    # {Tool::WEB_SCRAPE} and {Tool::FETCH}: a content-type-dispatching
-    # fetcher ({Simple}), pure content extractors ({HTML}, {PDF}), and a
-    # shared error type ({FetchError}). Nothing here knows about the LLM
-    # — the tools that wrap these layers turn rendered Markdown (or
-    # +FetchError+) into the next observation.
+    # Namespace for the HTTP side of the web tools ({Tool::WEB_SCRAPE}
+    # and {Tool::FETCH}): the fetcher ({Simple}) and the shared error
+    # type ({FetchError}). The format→Markdown rendering itself lives
+    # in the {Pikuri::Extractor} registry — this namespace only fetches
+    # bytes and maps extraction failures onto {FetchError}. Nothing
+    # here knows about the LLM; the tools that wrap these layers turn
+    # rendered Markdown (or +FetchError+) into the next observation.
     module Scraper
       # Plain HTTP scraper: GET the URL with a real-browser User-Agent,
-      # follow redirects, and dispatch the response body to the parser
-      # matching its +Content-Type+. HTML and XHTML route to
-      # {HTML.extract}; +application/pdf+ routes to {PDF.extract}; any
-      # other +text/*+ type (plain text, Markdown, source files, …) is
-      # passed through verbatim since the LLM can already read it; the
-      # remaining types raise {FetchError} so the LLM observes the
-      # failure instead of receiving an empty rendering.
+      # follow redirects, and hand the response body to
+      # {Pikuri::Extractor.extract} with the response's +Content-Type+
+      # as the hint. HTML/XHTML render via {Extractor::HTML},
+      # +application/pdf+ (by header or by +%PDF-+ magic, so a PDF
+      # served under a lying header still extracts) via
+      # {Extractor::PDF}, any other +text/*+ type passes through
+      # verbatim; the remaining types raise {FetchError} so the LLM
+      # observes the failure instead of receiving an empty rendering.
       #
-      # Split into a thin HTTP fetch ({.fetch}) and a content-type
-      # dispatcher ({.visit}) so tests can drive each piece in isolation.
+      # Split into a thin HTTP fetch ({.fetch}) and the extraction
+      # wrapper ({.visit}) so tests can drive each piece in isolation.
       # "Simple" because everything happens in one Faraday GET — no
       # headless browser, no JS execution.
       module Simple
@@ -31,11 +34,11 @@ module Pikuri
         USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
                      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         # @return [String] +Accept+ header sent with each request. Lists
-        #   every content-type the dispatcher in {.visit} knows how to
-        #   render, so servers that content-negotiate hand back something
-        #   we can use. The trailing +text/*;q=0.8+ covers the verbatim
-        #   pass-through arm (plain text, Markdown, source files, …) at a
-        #   lower preference than rendered HTML/PDF.
+        #   every content-type the {Pikuri::Extractor} registry renders
+        #   out of the box, so servers that content-negotiate hand back
+        #   something we can use. The trailing +text/*;q=0.8+ covers the
+        #   verbatim pass-through arm (plain text, Markdown, source
+        #   files, …) at a lower preference than rendered HTML/PDF.
         ACCEPT = 'text/html,application/xhtml+xml,application/pdf,text/*;q=0.8'
         # @return [Integer] maximum number of HTTP redirects to follow
         #   before giving up
@@ -68,7 +71,7 @@ module Pikuri
         # to memoize results should wrap this method themselves (see
         # {Tool::WebScrape.visit}, which does exactly that).
         #
-        # The dispatcher's output is +String#strip+'d so the LLM never
+        # The extracted output is +String#strip+'d so the LLM never
         # sees a body that opens or closes with blank lines — common with
         # +pdf-reader+'s page-feed whitespace and with text bodies that
         # carry a trailing newline. Interior whitespace is preserved
@@ -81,10 +84,33 @@ module Pikuri
         #   caller is responsible for any size limiting before feeding
         #   the result back to the LLM
         # @raise [FetchError] on HTTP non-2xx, network failure, redirect
-        #   loop, a 3xx without a +Location+ header, or a response whose
-        #   content-type the dispatcher does not recognize
+        #   loop, a 3xx without a +Location+ header, a response no
+        #   extractor recognizes, or an extraction failure (malformed
+        #   PDF, ...)
         def self.visit(url)
-          dispatch(fetch(url)).strip
+          extract(fetch(url)).strip
+        end
+
+        # Render a {Fetched} response as Markdown via
+        # {Pikuri::Extractor.extract}, re-raising both extraction
+        # failure modes as {FetchError} — the single exception type the
+        # web tools rescue. The content-type is passed verbatim
+        # (including the +""+ of a missing header, which matches no
+        # text arm — a body without transport metadata is refused, not
+        # sniffed; only the +%PDF-+ magic overrides a wrong or missing
+        # header, because that sniff never misfires on text).
+        #
+        # @param fetched [Fetched]
+        # @return [String] Markdown representation produced by the
+        #   matched extractor
+        # @raise [FetchError] when no extractor matches the response's
+        #   content-type, or when extraction fails
+        def self.extract(fetched)
+          Pikuri::Extractor.extract(StringIO.new(fetched.body), content_type: fetched.content_type)
+        rescue Pikuri::Extractor::Unsupported
+          raise FetchError, "unsupported content-type #{fetched.content_type.inspect} for #{fetched.url}"
+        rescue Pikuri::Extractor::Error => e
+          raise FetchError, e.message
         end
 
         # Download the body of +url+, manually following up to
@@ -132,30 +158,8 @@ module Pikuri
           end
         end
 
-        # Route a {Fetched} response to the parser that matches its
-        # content-type. Unknown types raise {FetchError} so the LLM gets a
-        # legible observation instead of an empty string.
-        #
-        # @param fetched [Fetched]
-        # @return [String] Markdown representation produced by the matched
-        #   parser
-        # @raise [FetchError] when no parser matches the response's
-        #   content-type
-        def self.dispatch(fetched)
-          case fetched.content_type
-          when 'text/html', 'application/xhtml+xml'
-            HTML.extract(fetched.body)
-          when 'application/pdf'
-            PDF.extract(fetched.body)
-          when %r{\Atext/}
-            fetched.body
-          else
-            raise FetchError, "unsupported content-type #{fetched.content_type.inspect} for #{fetched.url}"
-          end
-        end
-
         # Lower-case +raw+ and strip any +; charset=...+ parameters so the
-        # dispatcher can match on a canonical token.
+        # extractors can match on a canonical token.
         #
         # @param raw [String, nil] raw +Content-Type+ header value
         # @return [String] normalized content-type, or +""+ when the

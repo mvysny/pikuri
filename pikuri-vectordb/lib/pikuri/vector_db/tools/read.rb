@@ -46,7 +46,7 @@ module Pikuri
       # line-windowed by {Pikuri::FileType.read_as_text_paged} — the same
       # windower (and the same {DEFAULT_LIMIT}-line / 50 KB caps) that
       # backs {Pikuri::Workspace::Read}, returning a
-      # {Pikuri::FileType::Page} this tool formats. Unlike +Workspace::Read+
+      # {Pikuri::Extractor::Page} this tool formats. Unlike +Workspace::Read+
       # there is no +cat -n+ line-number prefix: nothing downstream edits
       # these documents (the citation unit is the +source+ path, not a
       # line), and dropping the prefix saves tokens on exactly the
@@ -55,23 +55,24 @@ module Pikuri
       # == Errors the LLM can react to
       #
       # Extraction goes through {Pikuri::FileType.read_as_text_paged},
-      # which routes the same way the {Indexer}'s
-      # {Pikuri::FileType.read_as_text} does — so what you read matches
-      # what was indexed (modulo edits to the file since), plus
-      # +"--- Page N ---"+ markers on PDFs. Images / binaries / a vanished
-      # file / a malformed PDF all come back as +"Error: ..."+ observations
-      # rather than raising, per CLAUDE.md "Errors are loud" (these are
-      # failures the agent reacts to, not pikuri bugs).
+      # which routes through the same {Pikuri::Extractor} registry the
+      # {Indexer}'s {Pikuri::FileType.read_as_text} does — so what you
+      # read matches what was indexed exactly (modulo edits to the file
+      # since), +"--- Page N ---"+ PDF markers included. Images /
+      # binaries / a vanished file / a malformed PDF all come back as
+      # +"Error: ..."+ observations rather than raising, per CLAUDE.md
+      # "Errors are loud" (these are failures the agent reacts to, not
+      # pikuri bugs).
       class Read < Pikuri::Tool
         # @return [Integer] default value of the +limit+ parameter
         #   (number of lines returned per call). Aliases the shared
-        #   {Pikuri::FileType::PAGE_DEFAULT_LIMIT}.
-        DEFAULT_LIMIT = Pikuri::FileType::PAGE_DEFAULT_LIMIT
+        #   {Pikuri::Extractor::PAGE_DEFAULT_LIMIT}.
+        DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT
 
         # @return [String] human-readable form of the shared byte cap
-        #   ({Pikuri::FileType::PAGE_MAX_BYTES}) for the continuation
+        #   ({Pikuri::Extractor::PAGE_MAX_BYTES}) for the continuation
         #   marker.
-        MAX_BYTES_LABEL = "#{Pikuri::FileType::PAGE_MAX_BYTES / 1024} KB"
+        MAX_BYTES_LABEL = "#{Pikuri::Extractor::PAGE_MAX_BYTES / 1024} KB"
 
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).
@@ -166,13 +167,13 @@ module Pikuri
         end
         private_class_method :contained?
 
-        # Format a {Pikuri::FileType::Page} as the observation: the lines
+        # Format a {Pikuri::Extractor::Page} as the observation: the lines
         # joined plain (no +cat -n+ prefix), followed by a trailer keyed
         # on the citation +source+ that tells the model whether to page
         # on. PDF pages already carry their +"--- Page N ---"+ markers
         # from the extractor.
         #
-        # @param page [Pikuri::FileType::Page]
+        # @param page [Pikuri::Extractor::Page]
         # @param source [String] the citation, used in the empty /
         #   end-of-document messages.
         # @return [String]

@@ -99,6 +99,17 @@ yardoc. CLAUDE.md only records the invariant.
   reference `RubyLLM::Content` / `Attachment` / `Message` directly
   when wrapping would be a transparent passthrough. See
   {Pikuri::Agent} ("Roles in this file") for the rule of preference.
+- **Extraction seam.** Every format→text conversion routes through
+  the `Pikuri::Extractor` registry (`.extract` for whole documents,
+  `.extract_paged` for the line-windowed LLM-tool shape).
+  `Tool::Scraper::Simple` (web bytes + Content-Type header) and
+  `FileType.read_as_text` / `read_as_text_paged` (local paths) are
+  thin fronts over it; supporting a new format means inserting a
+  registry entry, not a new dispatcher arm. Grep-enforceable:
+  `grep -rnE "require '(pdf-reader|readability|reverse_markdown)'" pikuri-*/lib/`
+  should only hit `pikuri-core/lib/pikuri/extractor/`. See
+  {Pikuri::Extractor} (duck type, error taxonomy, why windowing is
+  not part of the extractor interface).
 - **Subprocess seam.** All subprocess spawning in pikuri-* `lib/`
   routes through `Pikuri::Subprocess.spawn`. Grep-enforceable:
   `grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' pikuri-*/lib/`
@@ -196,7 +207,9 @@ per-gem one-liners:
   `lib/pikuri/agent/`), `Tool` + strict `Parameters`, the four
   bundled stateless tools (`calculator`, `web_search`,
   `web_scrape`, `fetch`), `Subprocess` chokepoint, `UrlCache`,
-  `FileType` magic-byte sniffer, `bin/pikuri-chat`. Runtime deps:
+  `FileType` magic-byte sniffer, `Extractor` registry (HTML / PDF /
+  Passthrough → Markdown text, the extraction seam),
+  `bin/pikuri-chat`. Runtime deps:
   ruby_llm, Faraday, Rainbow, Zeitwerk, Nokogiri,
   pdf-reader, reverse_markdown, ruby-readability.
 - **`pikuri-skills/`** — Agent Skills implementation:

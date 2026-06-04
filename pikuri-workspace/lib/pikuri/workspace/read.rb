@@ -27,7 +27,7 @@ module Pikuri
     #
     # The line/byte windowing is delegated to
     # {Pikuri::FileType.read_as_text_paged}, which returns a
-    # {Pikuri::FileType::Page} this tool renders; the same windower
+    # {Pikuri::Extractor::Page} this tool renders; the same windower
     # backs +VectorDb::Tools::Read+. Two independent limits, whichever fires
     # first wins:
     #
@@ -38,27 +38,27 @@ module Pikuri
     # Additionally, individual lines longer than {MAX_LINE_LENGTH} chars
     # are truncated with {LINE_TRUNCATION_MARKER} appended; the model is
     # told to reach for +grep+ to find content inside such files. (These
-    # constants alias the +PAGE_*+ ones on {Pikuri::FileType} — one
+    # constants alias the +PAGE_*+ ones on {Pikuri::Extractor} — one
     # source of truth, shared with +VectorDb::Tools::Read+.)
     #
-    # == PDF extraction
+    # == PDF (and other extracted formats)
     #
-    # PDFs are detected by their +%PDF-+ magic prefix in the sample bytes
-    # and routed through {Pikuri::FileType.read_as_text_paged} instead of
-    # the binary-refusal path. The extractor walks pages lazily via
-    # +pdf-reader+, emitting one synthetic +"--- Page N ---"+ header line
-    # per page followed by that page's text. The offset / limit /
-    # MAX_BYTES contract is identical to the text path — extraction stops
-    # as soon as the line or byte cap is hit, so reading the first window
-    # of a 500-page PDF only parses the few pages needed. Line numbers in
-    # PDF output are for citation back to the user only; PDFs are not
-    # editable through {Edit}.
+    # Which formats read as text is the {Pikuri::Extractor} registry's
+    # business, not this tool's: PDFs are claimed by their +%PDF-+ magic
+    # prefix ahead of the binary refusal and extracted with one
+    # synthetic +"--- Page N ---"+ header line per page (see
+    # {Pikuri::Extractor::PDF}); a gem plugging another extractor into
+    # the registry extends this tool for free. Extracted formats are
+    # parsed in full and then windowed — paging deep into a large PDF
+    # re-extracts it, the price of keeping the extractor duck type to
+    # one +extract+ method. Line numbers in PDF output are for citation
+    # back to the user only; PDFs are not editable through {Edit}.
     #
     # PDFs with no extractable text (scanned images, empty documents) come
     # back with an LLM-actionable hint string rather than an empty
     # observation. Encrypted / malformed / XFA-form PDFs surface as
-    # +"Error: cannot extract PDF text: ..."+ — same convention as other
-    # tool errors the model can react to. No OCR.
+    # +"Error: ..."+ — same convention as other tool errors the model
+    # can react to. No OCR.
     #
     # == Image attachments
     #
@@ -96,36 +96,37 @@ module Pikuri
     # * Image larger than {MAX_IMAGE_BYTES} → +"Error: image too large…"+,
     #   leaving the model to pick a different file or ask the user to
     #   resize.
-    # * Binary content → {Pikuri::FileType.binary?} on the sample; any
-    #   +NUL+ byte or a sample dense in control characters triggers
-    #   refusal. Catches archives and compiled artifacts without an
-    #   extension list to maintain. PDFs and supported images are
-    #   intercepted by their respective magic-byte checks via
-    #   {Pikuri::FileType.detect_mime} before the binary sniff — see
-    #   above.
+    # * Binary content → nothing in the {Pikuri::Extractor} registry
+    #   claims it ({Pikuri::Extractor::Passthrough} declines on the
+    #   {Pikuri::FileType.binary?} heuristic: any +NUL+ byte or a
+    #   sample dense in control characters). Catches archives and
+    #   compiled artifacts without an extension list to maintain.
+    #   PDFs are claimed by their magic bytes ahead of that refusal;
+    #   images are intercepted here via {Pikuri::FileType.detect_mime}
+    #   before extraction is attempted — see above.
     # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
     class Read < Pikuri::Tool
-      # The windowing constants live on {Pikuri::FileType} now (shared
+      # The windowing constants live on {Pikuri::Extractor} (shared
       # with +VectorDb::Tools::Read+); these aliases keep the names this tool's
       # description and specs reference pointing at the single source.
 
       # @return [Integer] default value of the +limit+ parameter (number
       #   of lines to read per call).
-      DEFAULT_LIMIT = Pikuri::FileType::PAGE_DEFAULT_LIMIT
+      DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT
 
       # @return [Integer] per-line character cap; longer lines are
       #   truncated with {LINE_TRUNCATION_MARKER}.
-      MAX_LINE_LENGTH = Pikuri::FileType::PAGE_MAX_LINE_LENGTH
+      MAX_LINE_LENGTH = Pikuri::Extractor::PAGE_MAX_LINE_LENGTH
 
       # @return [String] suffix appended to lines truncated by
       #   {MAX_LINE_LENGTH}.
-      LINE_TRUNCATION_MARKER = Pikuri::FileType::PAGE_LINE_TRUNCATION_MARKER
+      LINE_TRUNCATION_MARKER = Pikuri::Extractor::PAGE_LINE_TRUNCATION_MARKER
 
       # @return [Integer] hard byte cap on input content collected per
       #   call. Counted on the line bytes (plus one for the joining
       #   newline); the rendered output is slightly larger due to the
       #   per-line +"%6d\t"+ prefix.
-      MAX_BYTES = Pikuri::FileType::PAGE_MAX_BYTES
+      MAX_BYTES = Pikuri::Extractor::PAGE_MAX_BYTES
 
       # @return [String] human-readable form of {MAX_BYTES} for the
       #   continuation marker.
@@ -221,11 +222,6 @@ module Pikuri
 
         mime = Pikuri::FileType.detect_mime(resolved)
         return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
-        # PDFs are binary by the heuristic, so the PDF route (handled
-        # inside read_as_text_paged) must win over the binary refusal.
-        if mime != 'application/pdf' && Pikuri::FileType.binary?(resolved)
-          return "Error: cannot read binary file: #{path}"
-        end
 
         page = Pikuri::FileType.read_as_text_paged(
           resolved, offset: offset, limit: limit,
@@ -236,18 +232,24 @@ module Pikuri
         "Error: #{e.message}"
       rescue Errno::EACCES => e
         "Error: cannot read #{path}: #{e.message}"
+      rescue ArgumentError
+        # Nothing in the Extractor registry claimed the content —
+        # read_as_text_paged's binary refusal (directories and images
+        # were already handled above).
+        "Error: cannot read binary file: #{path}"
       rescue RuntimeError => e
-        # Malformed / unsupported PDF surfaced by read_as_text_paged.
+        # Extraction failure (malformed / unsupported PDF, ...)
+        # surfaced by read_as_text_paged.
         "Error: #{e.message}"
       end
 
-      # Render a {Pikuri::FileType::Page} as the cat-n observation: a
+      # Render a {Pikuri::Extractor::Page} as the cat-n observation: a
       # six-column line number, a tab, then the (already-truncated)
       # content, followed by a trailer that tells the model whether to
       # page on. PDF pages carry +"--- Page N ---"+ marker lines from
       # the extractor; the +kind+ only changes trailer wording here.
       #
-      # @param page [Pikuri::FileType::Page]
+      # @param page [Pikuri::Extractor::Page]
       # @return [String]
       def self.render_page(page)
         if page.lines.empty?
@@ -281,7 +283,7 @@ module Pikuri
       # text-free PDF gets an LLM-actionable hint rather than the
       # plain-file "(Empty file)".
       #
-      # @param page [Pikuri::FileType::Page]
+      # @param page [Pikuri::Extractor::Page]
       # @return [String]
       def self.empty_message(page)
         if page.kind == :pdf

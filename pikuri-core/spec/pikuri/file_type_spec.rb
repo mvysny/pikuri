@@ -221,19 +221,16 @@ RSpec.describe Pikuri::FileType do
     end
 
     describe 'PDF extraction' do
-      it 'extracts text from a single-page PDF' do
+      it 'extracts text from a single-page PDF, headed by its page marker' do
         path = write('doc.pdf', build_pdf('Hello PDF'))
         text = described_class.read_as_text(path)
-        assert_includes text, 'Hello PDF'
+        assert_equal "--- Page 1 ---\nHello PDF", text
       end
 
-      it 'joins multi-page PDF text with a blank line between pages' do
+      it 'emits one marker-headed block per page — same shape the Read tools window' do
         path = write('multi.pdf', build_pdf('Alpha', 'Beta'))
         text = described_class.read_as_text(path)
-        assert_includes text, 'Alpha'
-        assert_includes text, 'Beta'
-        # Pages joined by "\n\n" (one blank line)
-        assert_match(/Alpha[^A-Za-z]+Beta/m, text)
+        assert_equal "--- Page 1 ---\nAlpha\n--- Page 2 ---\nBeta", text
       end
 
       it 'returns the empty String for a PDF with no extractable text' do
@@ -292,7 +289,7 @@ RSpec.describe Pikuri::FileType do
     end
 
     # Shares the write / build_pdf helpers defined above. The paged
-    # variant returns a FileType::Page; the LLM-tool callers
+    # variant returns an Extractor::Page; the LLM-tool callers
     # (Workspace::Read, VectorDb::Tools::Read) own the rendering, so these
     # assert the struct, not formatted strings.
     describe '.read_as_text_paged' do
@@ -337,10 +334,10 @@ RSpec.describe Pikuri::FileType do
         end
 
         it 'truncates an over-long line with the marker' do
-          path = write('wide.txt', ('x' * (described_class::PAGE_MAX_LINE_LENGTH + 50)).b)
+          path = write('wide.txt', ('x' * (Pikuri::Extractor::PAGE_MAX_LINE_LENGTH + 50)).b)
           page = described_class.read_as_text_paged(path)
 
-          assert page.lines.first.end_with?(described_class::PAGE_LINE_TRUNCATION_MARKER)
+          assert page.lines.first.end_with?(Pikuri::Extractor::PAGE_LINE_TRUNCATION_MARKER)
         end
 
         it 'stops at the byte cap, leaving total_lines nil' do
@@ -366,13 +363,16 @@ RSpec.describe Pikuri::FileType do
           refute page.more
         end
 
-        it 'stops parsing when the window fills, leaving total_lines nil' do
+        it 'windows the extracted document, reporting the exact total even mid-document' do
+          # Extracted formats are parsed in full before windowing (the
+          # extractor duck type has no partial-parse shape), so unlike
+          # the streamed text path the total is always known.
           path = write('cap.pdf', build_pdf('Alpha content', 'Beta content'))
           page = described_class.read_as_text_paged(path, offset: 1, limit: 2)
 
           assert_equal ['--- Page 1 ---', 'Alpha content'], page.lines
           assert page.more
-          assert_nil page.total_lines
+          assert_equal 4, page.total_lines
         end
 
         it 'reports a text-free PDF as zero lines, total 0' do

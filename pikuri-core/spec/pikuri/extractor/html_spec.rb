@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'stringio'
+
 # Exercise +HTML.extract+'s dump-both behavior — when an interesting
 # JSON-LD node is present, the rendered output should contain *both*
 # the JSON-LD section (title + metadata bullets + body copy when
@@ -7,7 +9,13 @@
 # horizontal rule. The earlier "is the JSON-LD authoritative for this
 # page?" heuristic is gone; we hand the LLM both views and let it
 # pick.
-RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
+RSpec.describe Pikuri::Extractor::HTML, '.extract' do
+  # The duck-type entry point takes an IO; every fixture here is an
+  # in-memory String, so wrap it once.
+  def extract(html)
+    described_class.extract(StringIO.new(html))
+  end
+
   it 'emits the JSON-LD metadata header AND the readability body for a Wikipedia-shape page' do
     # Wikipedia ships an Article JSON-LD block with only metadata —
     # name, author, datePublished, dateModified — and the actual page
@@ -41,7 +49,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     # Readability body — the article copy.
     assert_includes out, 'x86 is a family of complex instruction set computer'
     assert_includes out, '8086 was introduced in 1978'
@@ -88,7 +96,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     # Readability body — sections that lived only in the HTML.
     assert_includes out, "leopard's range stretches across sub-Saharan Africa"
     assert_includes out, 'IUCN classifies Panthera pardus'
@@ -119,7 +127,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     assert_includes out, '# Hello'
     assert_includes out, '**Author:** Jane Doe'
     assert_includes out, 'Full article text the publisher embedded in the JSON-LD payload.'
@@ -138,9 +146,9 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
     # markdown), missing the About us / Our values / Serving
     # customers sections. The <main> fallback should kick in and
     # surface the full page.
-    html = File.read(File.expand_path('../../../fixtures/vaadin_company.html', __dir__))
+    html = File.read(File.expand_path('../../fixtures/vaadin_company.html', __dir__))
 
-    out = described_class.extract(html)
+    out = extract(html)
 
     assert_includes out, '# Vaadin – The Company Behind the Full-Stack Java Platform'
     assert_includes out, '## About us'
@@ -177,7 +185,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     assert_includes out, '# Comparable'
     assert_includes out, paragraph
     # The <article> wrapper itself should not appear — that would
@@ -204,7 +212,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     assert_includes out, '# Widget'
     assert_includes out, '**Price:** 9.99 USD'
     assert_includes out, '**SKU:** W-1'
@@ -221,7 +229,7 @@ RSpec.describe Pikuri::Tool::Scraper::HTML, '.extract' do
       </html>
     HTML
 
-    out = described_class.extract(html)
+    out = extract(html)
     assert_includes out, '# Plain'
     refute_includes out, "\n---\n", 'no JSON-LD section, so no separator should appear'
   end

@@ -279,7 +279,9 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_includes result, "     4\tBeta content"
     end
 
-    it 'caps at limit and emits a continuation hint without claiming a total' do
+    it 'caps at limit and emits a continuation hint with the exact total' do
+      # Extracted formats are parsed in full before windowing, so
+      # unlike a byte-capped text stream the total is always known.
       write_pdf('cap.pdf', 'Alpha content', 'Beta content')
 
       result = described_class.read(workspace: workspace, path: 'cap.pdf', offset: 1, limit: 2)
@@ -287,7 +289,7 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_includes result, "     1\t--- Page 1 ---"
       assert_includes result, "     2\tAlpha content"
       refute_includes result, 'Page 2'
-      assert_includes result, '(Showing PDF lines 1-2. Use offset=3 to continue.)'
+      assert_includes result, '(Showing PDF lines 1-2 of 4. Use offset=3 to continue.)'
     end
 
     it 'reports an empty PDF with an LLM-actionable hint' do
@@ -307,10 +309,10 @@ RSpec.describe Pikuri::Workspace::Read do
 
       result = described_class.read(workspace: workspace, path: 'broken.pdf', offset: 1, limit: 2000)
 
-      # Message now comes from the shared FileType.read_as_text_paged
+      # Message comes from the shared FileType.read_as_text_paged
       # (capital "Cannot", resolved path — same as read_as_text's own
       # contract), surfaced verbatim behind the "Error: " prefix.
-      assert result.start_with?('Error: Cannot extract PDF text from'),
+      assert result.start_with?('Error: Cannot extract text from'),
              "expected PDF error, got #{result.inspect}"
       assert_includes result, 'broken.pdf'
       assert_includes result, 'MalformedPDFError'
