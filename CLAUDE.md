@@ -197,7 +197,7 @@ per-gem one-liners:
   bundled stateless tools (`calculator`, `web_search`,
   `web_scrape`, `fetch`), `Subprocess` chokepoint, `UrlCache`,
   `FileType` magic-byte sniffer, `bin/pikuri-chat`. Runtime deps:
-  ruby_llm, Faraday, Rainbow, tty-markdown, Zeitwerk, Nokogiri,
+  ruby_llm, Faraday, Rainbow, Zeitwerk, Nokogiri,
   pdf-reader, reverse_markdown, ruby-readability, dentaku, tsort.
 - **`pikuri-skills/`** — Agent Skills implementation:
   `Skill::Catalog`, `Skill::SkillTool`, `Skill::Extension`.
@@ -387,9 +387,9 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   `"Error: <message>"` Strings and become the next observation;
   bugs in pikuri's own code (parser regressions, schema misuse,
   misconfigured clients) keep raising. The narrow carve-out:
-  third-party rendering bugs *secondary to the loop* (e.g.
-  `tty-markdown` choking on an edge case) get rescued narrowly,
-  logged, and fall back to degraded rendering — but NOT errors
+  best-effort cosmetic paths *secondary to the loop* (e.g. the
+  `ContextWindowDetector` `/props` probe hitting a wedged server)
+  get rescued narrowly, logged, and degrade — but NOT errors
   from libraries on the actual chat path (ruby_llm, Faraday
   inside a tool).
 - **Per-gem Zeitwerk loaders.** Each gem ships its own loader

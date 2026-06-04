@@ -60,17 +60,11 @@ RSpec.describe 'Pikuri::Agent end-to-end tool dispatch' do
       c.openai_api_base = 'https://example.test/v1'
       c.openai_api_key  = 'test-key'
     end
-
-    @original_md_parse = TTY::Markdown.method(:parse)
-    TTY::Markdown.define_singleton_method(:parse) { |text, **| text }
   end
 
   after do
     original = @original_faraday_new
     Faraday.define_singleton_method(:new) { |*args, **kwargs, &block| original.call(*args, **kwargs, &block) }
-
-    md_original = @original_md_parse
-    TTY::Markdown.define_singleton_method(:parse) { |*args, **kwargs| md_original.call(*args, **kwargs) }
   end
 
   # Plain text turn-2 response: assistant content, no tool calls.

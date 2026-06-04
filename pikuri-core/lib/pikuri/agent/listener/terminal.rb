@@ -1,20 +1,31 @@
 # frozen_string_literal: true
 
 require 'rainbow'
-require 'tty-markdown'
 
 module Pikuri
   class Agent
     module Listener
       # Terminal renderer for the normalized event stream: dim grey
-      # reasoning, Markdown-rendered assistant content, cyan tool-
-      # call and tool-result lines, yellow fallback notice, red
-      # cancelled notice. An {Event::SystemInjected} block (recalled
+      # reasoning, assistant content printed raw (Markdown as-is),
+      # cyan tool-call and tool-result lines, yellow fallback
+      # notice, red cancelled notice. An {Event::SystemInjected} block (recalled
       # memory / context an extension injected) renders dim grey
       # with a +⊕+ marker. {Event::UserTurn} is intentionally silent
       # (the terminal user just typed the message, so re-rendering
       # it adds nothing); {Event::Tokens} and {Event::ContextCap}
       # are silent too (their consumer is {TokenLog}).
+      #
+      # Assistant Markdown deliberately prints raw, with no
+      # Markdown-to-ANSI rendering. A renderer (+tty-markdown+)
+      # used to sit on the non-streaming path; it was dropped:
+      # rendering can never apply to the streaming path anyway
+      # (half-finished Markdown — broken code fences, half-built
+      # tables — doesn't render), the gem hadn't shipped a release
+      # since 2023 (its known ANSI-in-table crashes forced a
+      # rescue-and-degrade carve-out here), and it pulled seven
+      # transitive gems into the audit surface. Raw Markdown is
+      # perfectly readable in a terminal; proper rendering belongs
+      # to a richer host (the planned pikuri-tui).
       #
       # Optionally prepends a fixed number of leading spaces to
       # every rendered line via the +padding:+ kwarg. Sub-agents
@@ -30,11 +41,8 @@ module Pikuri
       # - {Event::ThinkingDelta} fragments print live in the same
       #   dim grey as the non-streaming {Event::Thinking}, with no
       #   trailing newline so the next fragment continues the line.
-      # - {Event::AssistantDelta} fragments print live, *raw* — no
-      #   Markdown render. tty-markdown can't render half-finished
-      #   Markdown (broken code blocks, half-rendered tables), so
-      #   the live stream gives up formatting in exchange for
-      #   liveness.
+      # - {Event::AssistantDelta} fragments print live the same
+      #   way, uncolored.
       # - {Event::Thinking} and {Event::Assistant} bookends print
       #   a single blank line as a stream terminator, not their
       #   content (the content already landed via the deltas). The
@@ -45,15 +53,6 @@ module Pikuri
       # the deltas are silently ignored and the bookend events
       # render the full text the way they always have.
       class Terminal < Base
-        # Subsystem logger; set its level with +PIKURI_LOG_TERMINAL+
-        # or the global +PIKURI_LOG+. Used for the narrow rescue
-        # around third-party rendering (+tty-markdown+ choking on
-        # assistant output) — see the CLAUDE.md "secondary to the
-        # loop" carve-out.
-        #
-        # @return [Logger]
-        LOGGER = Pikuri.logger_for('Terminal')
-
         # Cap, in characters, applied to tool-result content
         # rendered to the terminal. Anything longer is truncated
         # with a marker that reports the original byte size so the
@@ -119,7 +118,7 @@ module Pikuri
             if @streaming
               terminate_stream
             else
-              println(indent(render_markdown(content)))
+              println(indent(content))
             end
           in Event::ThinkingDelta(content:)
             stream_fragment(Rainbow(content).color(85, 85, 85)) if @streaming
@@ -226,23 +225,6 @@ module Pikuri
 
           prefix = ' ' * @padding
           text.to_s.each_line.map { |line| prefix + line }.join
-        end
-
-        # Render assistant Markdown for the terminal, degrading to
-        # the raw string when the renderer raises. tty-markdown /
-        # strings have known bugs around ANSI inside tables (e.g.
-        # +Strings::Wrap.insert_ansi+ raising +IndexError+); we'd
-        # rather show ugly Markdown than abort an in-flight
-        # conversation.
-        #
-        # @param content [String] assistant Markdown
-        # @return [String] rendered ANSI text, or +content+
-        #   unchanged on render failure
-        def render_markdown(content)
-          TTY::Markdown.parse(content)
-        rescue StandardError => e
-          LOGGER.warn("TTY::Markdown render failed (#{e.class}: #{e.message}); falling back to raw text")
-          content
         end
 
         # Flatten whitespace and cap to {MAX_TOOL_RESULT_CHARS}. The

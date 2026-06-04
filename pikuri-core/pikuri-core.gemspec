@@ -87,10 +87,6 @@ Gem::Specification.new do |spec|
   # silences the load-time deprecation warning on 4.1+.
   spec.add_dependency 'tsort',            '~> 0.2'
 
-  # Renders the assistant's Markdown replies to a terminal-friendly form
-  # in the agent loop.
-  spec.add_dependency 'tty-markdown',     '~> 0.7'
-
   # Convention-based autoloader for lib/. Set up in lib/pikuri.rb; lets
   # every file declare exactly the constant matching its path without the
   # require_relative ceremony that creeps in once a project grows.

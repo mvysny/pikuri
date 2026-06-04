@@ -335,8 +335,9 @@ returns and writes it as the tool message's content). Langchainrb is closer
 to pi/opencode: trap everything at the `execute_tools` boundary, transition
 to `:failed`, surface to the host. The trade-off is well-documented in
 pikuri's CLAUDE.md (`Errors are loud`) — bugs should be loud during
-development; the carve-out for rendering-path third-party bugs (e.g.
-`tty-markdown` choking) keeps the loop alive when the failure is cosmetic.
+development; the carve-out for loop-secondary best-effort paths (e.g.
+the context-window probe hitting a wedged server) keeps the agent alive
+when the failure is cosmetic.
 
 **Takeaway.** Pikuri's choice survives unchanged. The opencode/pi/langchainrb
 "trap-everything" posture is what you want when the agent is long-running

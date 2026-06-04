@@ -5,27 +5,14 @@ require 'stringio'
 RSpec.describe Pikuri::Agent::Listener::Terminal do
   let(:listener) { described_class.new }
 
-  before do
-    # TTY::Markdown.parse calls ioctl on $stdout to detect terminal
-    # width, which StringIO does not support — swap it for a
-    # passthrough while the spec runs.
-    @original_md_parse = TTY::Markdown.method(:parse)
-    TTY::Markdown.define_singleton_method(:parse) { |text, **| text }
-  end
-
-  after do
-    original = @original_md_parse
-    TTY::Markdown.define_singleton_method(:parse) { |*a, **k| original.call(*a, **k) }
-  end
-
   it 'prints Thinking content as dim text' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Thinking.new(content: 'pondered')) }
     assert_includes out, 'pondered'
   end
 
-  it 'prints Assistant content as Markdown' do
+  it 'prints Assistant content raw (Markdown as-is)' do
     out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**')) }
-    assert_includes out, 'hi'
+    assert_includes out, '**hi**'
   end
 
   it 'prints ToolCall with name and arguments' do
@@ -206,10 +193,7 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
       refute_match(/hel.*\n.*lo/m, out)
     end
 
-    it 'prints AssistantDelta fragments raw (no Markdown render) with no trailing newline' do
-      # If Markdown were being applied, "**hi**" would lose its asterisks
-      # under the passthrough stub (or pick up ANSI bold under the real
-      # renderer). The streaming path must emit it untouched.
+    it 'prints AssistantDelta fragments raw with no trailing newline' do
       out = capture_stdout do
         streaming_listener.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: '**hi**'))
       end
@@ -251,37 +235,6 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
         padded_stream.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: 'baz'))
       end
       assert_equal "  foo\n  barbaz", out
-    end
-  end
-
-  describe 'Markdown render failure' do
-    let(:log_io) { StringIO.new }
-
-    around do |example|
-      original_io = Pikuri.log_io
-      Pikuri.log_io = log_io
-      begin
-        example.run
-      ensure
-        Pikuri.log_io = original_io
-      end
-    end
-
-    # Outer +before+ stubs parse to a passthrough; this nested +before+
-    # runs after it and replaces the stub with one that raises the same
-    # kind of error tty-markdown / strings surface on ANSI-in-table
-    # edge cases. The outer +after+ restores the original method either
-    # way.
-    before do
-      TTY::Markdown.define_singleton_method(:parse) { |_text, **| raise IndexError, 'boom' }
-    end
-
-    it 'falls back to the raw content and warns through the Terminal logger' do
-      out = capture_stdout { listener.on_event(Pikuri::Agent::Event::Assistant.new(content: '**hi**')) }
-      assert_includes out, '**hi**'
-      assert_includes log_io.string, 'WARN -- Terminal'
-      assert_includes log_io.string, 'IndexError'
-      assert_includes log_io.string, 'boom'
     end
   end
 
