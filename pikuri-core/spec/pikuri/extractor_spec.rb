@@ -93,7 +93,7 @@ RSpec.describe Pikuri::Extractor do
       assert_equal :text, page.kind
     end
 
-    it 'extracts non-text formats in full, so total_lines is known even when the window fills' do
+    it 'extracts formats without extract_lines in full, so their total is known even when the window fills' do
       html = '<html><head><title>T</title></head><body><article>' \
              "<p>#{'x' * 600}</p></article></body></html>"
       page = extract_paged(html, content_type: 'text/html', limit: 1)
@@ -102,6 +102,50 @@ RSpec.describe Pikuri::Extractor do
       assert page.more
       refute_nil page.total_lines
       assert_equal :html, page.kind
+    end
+
+    it 'consumes extract_lines lazily, stopping the moment the window fills' do
+      # An extractor whose line stream is INFINITE: if extract_paged
+      # consumed it eagerly (or counted the tail for a total), this
+      # spec would hang. Stopping with the window proves both the
+      # lazy consumption and the no-tail-count default for
+      # extract_lines extractors — the contract PDF relies on so
+      # pages past the window are never parsed.
+      endless = Module.new do
+        def self.kind = :endless
+
+        def self.matches?(sample:, content_type:)
+          sample.start_with?('ENDLESS')
+        end
+
+        def self.extract(io)
+          raise 'extract_paged must prefer extract_lines'
+        end
+
+        def self.extract_lines(_io)
+          Enumerator.new { |lines| 1.step { |i| lines << "line#{i}" } }
+        end
+      end
+
+      described_class.registry.unshift(endless)
+      begin
+        page = extract_paged('ENDLESS stream', limit: 3)
+
+        assert_equal %w[line1 line2 line3], page.lines
+        assert page.more
+        assert_nil page.total_lines, 'counting an extract_lines tail would defeat the laziness'
+        assert_equal :endless, page.kind
+      ensure
+        described_class.registry.delete(endless)
+      end
+    end
+
+    it 'keeps the exact total for plain text by counting the cheap stream tail' do
+      page = extract_paged("a\nb\nc\nd\ne", limit: 2)
+
+      assert_equal %w[a b], page.lines
+      assert page.more
+      assert_equal 5, page.total_lines
     end
   end
 

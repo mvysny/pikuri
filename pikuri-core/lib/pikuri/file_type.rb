@@ -180,8 +180,9 @@ module Pikuri
     # lines from +offset+ (1-indexed) up to +limit+ of them, stopping
     # early if +max_bytes+ is reached, with over-long lines truncated
     # at +max_line_length+. Same routing and refusal contract as
-    # {.read_as_text}; the windowing semantics (including the
-    # plain-text streaming fast path) are {Extractor.extract_paged}'s.
+    # {.read_as_text}; the windowing semantics (including the lazy
+    # +extract_lines+ consumption that stops parsing once the window
+    # fills) are {Extractor.extract_paged}'s.
     # The LLM-facing callers map the exceptions into +"Error: ..."+
     # observations themselves.
     #

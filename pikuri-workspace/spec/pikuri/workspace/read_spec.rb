@@ -279,9 +279,9 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_includes result, "     4\tBeta content"
     end
 
-    it 'caps at limit and emits a continuation hint with the exact total' do
-      # Extracted formats are parsed in full before windowing, so
-      # unlike a byte-capped text stream the total is always known.
+    it 'caps at limit and emits a continuation hint without claiming a total' do
+      # PDF extraction is consumed lazily (extract_lines): page 2 is
+      # never parsed, so the trailer cannot claim an exact total.
       write_pdf('cap.pdf', 'Alpha content', 'Beta content')
 
       result = described_class.read(workspace: workspace, path: 'cap.pdf', offset: 1, limit: 2)
@@ -289,7 +289,7 @@ RSpec.describe Pikuri::Workspace::Read do
       assert_includes result, "     1\t--- Page 1 ---"
       assert_includes result, "     2\tAlpha content"
       refute_includes result, 'Page 2'
-      assert_includes result, '(Showing PDF lines 1-2 of 4. Use offset=3 to continue.)'
+      assert_includes result, '(Showing PDF lines 1-2. Use offset=3 to continue.)'
     end
 
     it 'reports an empty PDF with an LLM-actionable hint' do

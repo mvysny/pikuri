@@ -48,10 +48,11 @@ module Pikuri
     # prefix ahead of the binary refusal and extracted with one
     # synthetic +"--- Page N ---"+ header line per page (see
     # {Pikuri::Extractor::PDF}); a gem plugging another extractor into
-    # the registry extends this tool for free. Extracted formats are
-    # parsed in full and then windowed — paging deep into a large PDF
-    # re-extracts it, the price of keeping the extractor duck type to
-    # one +extract+ method. Line numbers in PDF output are for citation
+    # the registry extends this tool for free. Extraction is lazy
+    # where the format allows (+extract_lines+): reading the first
+    # window of a 500-page PDF parses only the pages the window needs.
+    # Formats without a lazy line shape (HTML) are extracted in full
+    # and then windowed. Line numbers in PDF output are for citation
     # back to the user only; PDFs are not editable through {Edit}.
     #
     # PDFs with no extractable text (scanned images, empty documents) come

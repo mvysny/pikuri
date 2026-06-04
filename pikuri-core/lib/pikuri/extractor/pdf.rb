@@ -39,16 +39,8 @@ module Pikuri
 
       # Render the PDF behind +io+ as plain text, one
       # +"--- Page N ---"+-headed block per page that carries text.
-      #
-      # +pdf-reader+ raises a handful of typed exceptions for
-      # documents it cannot parse — broken xrefs
-      # ({::PDF::Reader::MalformedPDFError}), invalid page references
-      # ({::PDF::Reader::InvalidPageError}), encrypted/XFA files
-      # ({::PDF::Reader::UnsupportedFeatureError}). All three describe
-      # a property of the document the LLM can react to ("try a
-      # different URL / file"), so they re-raise as {Extractor::Error}.
-      # Genuine bugs in +pdf-reader+ itself surface as their own
-      # classes and crash loud.
+      # Defined as +extract_lines.to_a.join+ so the two duck-type
+      # shapes cannot drift apart.
       #
       # @param io [IO, StringIO] seekable IO positioned at the start
       #   of the PDF bytes.
@@ -58,14 +50,50 @@ module Pikuri
       # @raise [Extractor::Error] when +pdf-reader+ refuses the
       #   document.
       def self.extract(io)
-        pages = ::PDF::Reader.new(io).pages.map { |p| p.text.strip }
-        pages.each_with_index
-             .filter_map { |text, idx| "--- Page #{idx + 1} ---\n#{text}" unless text.empty? }
-             .join("\n")
-      rescue ::PDF::Reader::MalformedPDFError,
-             ::PDF::Reader::InvalidPageError,
-             ::PDF::Reader::UnsupportedFeatureError => e
-        raise Error, "PDF rendering failed: #{e.class.name.split('::').last}: #{e.message}"
+        extract_lines(io).to_a.join("\n")
+      end
+
+      # The lazy line stream behind {.extract}: a marker line per
+      # text-carrying page, then that page's lines. +pdf-reader+
+      # parses a page's content stream only when +Page#text+ is
+      # called, so a consumer that stops early (the
+      # {Extractor.extract_paged} window) never pays for the pages
+      # past its window — same property the pre-registry
+      # +FileType.paged_pdf+ had.
+      #
+      # +pdf-reader+ raises a handful of typed exceptions for
+      # documents it cannot parse — broken xrefs
+      # ({::PDF::Reader::MalformedPDFError}), invalid page references
+      # ({::PDF::Reader::InvalidPageError}), encrypted/XFA files
+      # ({::PDF::Reader::UnsupportedFeatureError}). All three describe
+      # a property of the document the LLM can react to ("try a
+      # different URL / file"), so they re-raise as {Extractor::Error}
+      # — from inside the enumerator, i.e. at consumption time, which
+      # for a broken xref means the first +next+. Genuine bugs in
+      # +pdf-reader+ itself surface as their own classes and crash
+      # loud.
+      #
+      # @param io [IO, StringIO] seekable IO positioned at the start
+      #   of the PDF bytes; must remain open while the enumerator is
+      #   consumed.
+      # @return [Enumerator<String>] chomped lines, produced
+      #   page-by-page.
+      # @raise [Extractor::Error] when +pdf-reader+ refuses the
+      #   document (raised on consumption).
+      def self.extract_lines(io)
+        Enumerator.new do |lines|
+          ::PDF::Reader.new(io).pages.each_with_index do |page, idx|
+            text = page.text.strip
+            next if text.empty?
+
+            lines << "--- Page #{idx + 1} ---"
+            text.split("\n").each { |line| lines << line }
+          end
+        rescue ::PDF::Reader::MalformedPDFError,
+               ::PDF::Reader::InvalidPageError,
+               ::PDF::Reader::UnsupportedFeatureError => e
+          raise Error, "PDF rendering failed: #{e.class.name.split('::').last}: #{e.message}"
+        end
       end
     end
   end

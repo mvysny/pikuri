@@ -363,16 +363,16 @@ RSpec.describe Pikuri::FileType do
           refute page.more
         end
 
-        it 'windows the extracted document, reporting the exact total even mid-document' do
-          # Extracted formats are parsed in full before windowing (the
-          # extractor duck type has no partial-parse shape), so unlike
-          # the streamed text path the total is always known.
+        it 'stops parsing when the window fills, leaving total_lines nil' do
+          # PDF's extract_lines stream is consumed lazily; counting
+          # the tail would mean parsing every remaining page, so the
+          # total stays unknown when the window stops the read early.
           path = write('cap.pdf', build_pdf('Alpha content', 'Beta content'))
           page = described_class.read_as_text_paged(path, offset: 1, limit: 2)
 
           assert_equal ['--- Page 1 ---', 'Alpha content'], page.lines
           assert page.more
-          assert_equal 4, page.total_lines
+          assert_nil page.total_lines
         end
 
         it 'reports a text-free PDF as zero lines, total 0' do

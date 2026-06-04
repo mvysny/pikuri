@@ -79,6 +79,35 @@ RSpec.describe Pikuri::Extractor::PDF, '.extract' do
     assert_includes err.message, 'MalformedPDFError'
   end
 
+  describe '.extract_lines' do
+    it 'yields the marker and page lines in extract order' do
+      lines = described_class.extract_lines(StringIO.new(build_pdf('Alpha', 'Beta'))).to_a
+      assert_equal ['--- Page 1 ---', 'Alpha', '--- Page 2 ---', 'Beta'], lines
+    end
+
+    it 'is the single source extract joins, so the two shapes cannot drift' do
+      bytes = build_pdf('Alpha', 'Beta')
+      assert_equal described_class.extract_lines(StringIO.new(bytes)).to_a.join("\n"),
+                   extract(bytes)
+    end
+
+    it 'can be consumed partially' do
+      # The laziness that matters — pdf-reader parsing pages only on
+      # Page#text access — is pdf-reader's documented behavior;
+      # extract_paged's early stop is proven in extractor_spec with
+      # an infinite stream. Here we just pin that a partial consumer
+      # gets the head without error.
+      enum = described_class.extract_lines(StringIO.new(build_pdf('Alpha', 'Beta')))
+      assert_equal ['--- Page 1 ---', 'Alpha'], enum.first(2)
+    end
+
+    it 'raises Extractor::Error at consumption time on malformed bytes' do
+      enum = described_class.extract_lines(StringIO.new('not a pdf at all'))
+      err = assert_raises(Pikuri::Extractor::Error) { enum.first }
+      assert_includes err.message, 'MalformedPDFError'
+    end
+  end
+
   describe '.matches?' do
     it 'claims the %PDF- magic prefix regardless of content-type' do
       assert described_class.matches?(sample: '%PDF-1.4 etc'.b, content_type: nil)

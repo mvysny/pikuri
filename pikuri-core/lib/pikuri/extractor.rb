@@ -42,14 +42,25 @@ module Pikuri
   #   format-specific trailers ("End of PDF", the scanned-image
   #   hint) without re-sniffing.
   #
-  # One method per concern, deliberately *not* one windowed and one
-  # unwindowed extraction per extractor: windowing is presentation
-  # and lives once in {.extract_paged}; most extractors couldn't
-  # honour a limit natively anyway (Readability needs the whole DOM,
-  # a subprocess-based extractor prints the whole document). The one
-  # format where lazy streaming genuinely pays — plain text, where
-  # +Workspace::Read+ may page through a huge log file — is kept as
-  # an internal fast path of {.extract_paged}, not as API surface.
+  # plus one *optional* method for formats whose lines can be
+  # produced incrementally:
+  #
+  # * +extract_lines(io)+ → +Enumerator<String>+ — the same content
+  #   as +extract+, as a lazy stream of already-+chomp+ed lines.
+  #   {.extract_paged} prefers this when present and stops consuming
+  #   the moment the window fills, so the rest of the document is
+  #   never parsed ({PDF}: pdf-reader's page list parses on access;
+  #   {Passthrough}: the IO is read line-by-line). The enumerator
+  #   must be consumed while +io+ is still open, and may raise
+  #   {Error} mid-iteration. Extractors that need the whole document
+  #   to produce anything ({HTML}: Readability walks the full DOM —
+  #   true of any subprocess-based extractor too) simply omit it;
+  #   {.extract_paged} then extracts in full and windows the result.
+  #
+  # Windowing itself (offset / limit / byte cap / line truncation) is
+  # presentation and deliberately lives once in {.extract_paged}, not
+  # per extractor — +extract_lines+ is line *production*, the only
+  # genuinely format-specific half of paging.
   #
   # == Errors
   #
@@ -113,10 +124,13 @@ module Pikuri
     #   (i.e. the +offset+ the caller asked for). +lines.last+ is at
     #   +start_line + lines.length - 1+.
     # * +total_lines+ — total line count of the document when known,
-    #   else +nil+. Always known for extracted formats (the whole
-    #   document is extracted before windowing); for the streamed
-    #   plain-text path it is +nil+ when the byte cap stopped the
-    #   read early (counting the rest would defeat the laziness).
+    #   else +nil+. Known when the read reached EOF, when the format
+    #   was extracted in full (no +extract_lines+ — e.g. HTML), or
+    #   when the lazy stream is cheap enough to count to the end
+    #   (plain text). +nil+ when a lazy stream stopped early — the
+    #   byte cap fired, or a PDF filled the window before its last
+    #   page (counting the rest would mean parsing every page,
+    #   defeating the laziness).
     # * +more+ — +true+ if content remains past this window (the
     #   caller should offer +offset = start_line + lines.length+).
     # * +byte_capped+ — +true+ if the byte cap (not the line limit)
@@ -166,12 +180,13 @@ module Pikuri
     # +max_bytes+ is reached, with over-long lines truncated at
     # +max_line_length+.
     #
-    # Extracted formats (PDF, HTML) are extracted in full and then
-    # windowed — the registry's extractors have no partial-parse
-    # shape (see the duck-type rationale above), so paging deep into
-    # a large PDF re-extracts it. Plain text takes a streamed fast
-    # path: the IO is read line-by-line only until the window fills,
-    # so reading the first page of a gigabyte log never loads it.
+    # Lazy where the format allows: extractors that implement
+    # +extract_lines+ (PDF, plain text) are consumed only until the
+    # window fills — reading the first window of a 500-page PDF
+    # parses a handful of pages, and the first page of a gigabyte
+    # log never loads it. Extractors without it (HTML) are extracted
+    # in full and then windowed, which is also what makes their
+    # +total_lines+ always exact.
     #
     # @param io [IO, StringIO] seekable IO positioned at the start.
     # @param content_type [String, nil] as for {.extract}.
@@ -187,18 +202,22 @@ module Pikuri
     def extract_paged(io, content_type: nil, offset: 1, limit: PAGE_DEFAULT_LIMIT,
                       max_bytes: PAGE_MAX_BYTES, max_line_length: PAGE_MAX_LINE_LENGTH)
       extractor = extractor_for(io, content_type)
-      if extractor.equal?(Passthrough)
-        # Streamed fast path: plain text needs no parse, so don't
-        # read past the window. total_lines stays exact because the
-        # loop keeps counting (without collecting) after the line
-        # limit; only the byte cap aborts the count.
-        lines = io.each_line.lazy.map { |raw| raw.chomp.force_encoding(Encoding::UTF_8) }
-        window(lines, offset: offset, limit: limit, max_bytes: max_bytes,
-                      max_line_length: max_line_length, kind: extractor.kind, known_total: nil)
+      if extractor.respond_to?(:extract_lines)
+        # count_tail is a per-format economics call: once the window
+        # fills, counting the rest of a plain-text stream is a cheap
+        # sequential read (so the trailer can say "of N"), while for
+        # a PDF it would mean parsing every remaining page — exactly
+        # what extract_lines exists to avoid. Plugged-in extractors
+        # get the conservative default (stop early, total unknown).
+        window(extractor.extract_lines(io),
+               offset: offset, limit: limit, max_bytes: max_bytes,
+               max_line_length: max_line_length, kind: extractor.kind,
+               known_total: nil, count_tail: extractor.equal?(Passthrough))
       else
         lines = extractor.extract(io).split("\n")
         window(lines, offset: offset, limit: limit, max_bytes: max_bytes,
-                      max_line_length: max_line_length, kind: extractor.kind, known_total: lines.length)
+                      max_line_length: max_line_length, kind: extractor.kind,
+                      known_total: lines.length)
       end
     end
 
@@ -222,20 +241,26 @@ module Pikuri
     # Collect a {Page} window out of +lines+ (an Array or a lazy
     # Enumerator of already-+chomp+ed lines). +known_total+ is the
     # full line count when the caller extracted everything up front
-    # (Array case), or +nil+ for the streamed case — then the loop
-    # counts past the window so +total_lines+ stays exact unless the
-    # byte cap aborts the read.
+    # (Array case), +nil+ for a lazy stream — then +total_lines+ is
+    # exact only if the iteration reached EOF: +count_tail+ keeps
+    # the loop counting (without collecting) past the line limit
+    # when consuming the rest of the stream is cheap; without it the
+    # loop breaks and leaves the total unknown. The byte cap always
+    # aborts the count.
     #
     # @param lines [Enumerable<String>]
     # @param known_total [Integer, nil]
+    # @param count_tail [Boolean]
     # @return [Page]
-    def window(lines, offset:, limit:, max_bytes:, max_line_length:, kind:, known_total:)
-      start_index = offset - 1
-      collected   = []
-      seen        = 0
-      bytes       = 0
-      byte_capped = false
-      more        = false
+    def window(lines, offset:, limit:, max_bytes:, max_line_length:, kind:,
+               known_total:, count_tail: false)
+      start_index   = offset - 1
+      collected     = []
+      seen          = 0
+      bytes         = 0
+      byte_capped   = false
+      more          = false
+      stopped_early = false
 
       lines.each do |raw|
         seen += 1
@@ -243,9 +268,10 @@ module Pikuri
 
         if collected.length >= limit
           more = true
-          break unless known_total.nil?
+          next if count_tail # keep counting so total_lines stays exact
 
-          next # streamed: keep counting so total_lines is exact
+          stopped_early = true
+          break
         end
 
         line = truncate_line(raw, max_line_length)
@@ -253,6 +279,7 @@ module Pikuri
         if bytes + size > max_bytes
           byte_capped = true
           more = true
+          stopped_early = true
           break
         end
         collected << line
@@ -260,7 +287,7 @@ module Pikuri
       end
 
       Page.new(lines: collected, start_line: offset,
-               total_lines: known_total || (byte_capped ? nil : seen),
+               total_lines: known_total || (stopped_early ? nil : seen),
                more: more, byte_capped: byte_capped, kind: kind)
     end
     private_class_method :window

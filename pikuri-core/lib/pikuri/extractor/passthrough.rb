@@ -37,9 +37,27 @@ module Pikuri
       end
 
       # @param io [IO, StringIO] IO over the text content.
-      # @return [String] the content, tagged UTF-8.
+      # @return [String] the content, tagged UTF-8. Deliberately NOT
+      #   derived from {.extract_lines} — a passthrough must stay
+      #   verbatim (trailing newline, CRLF line endings), which a
+      #   join of chomped lines would silently normalize away.
       def self.extract(io)
         io.read.force_encoding(Encoding::UTF_8)
+      end
+
+      # The lazy line stream for {Extractor.extract_paged}: the IO is
+      # read line-by-line, so a window over the head of a gigabyte
+      # log never loads the rest. Consuming the whole stream is a
+      # cheap sequential read — which is why the paging window counts
+      # this stream's tail for an exact +total_lines+ (see
+      # {Extractor.extract_paged}).
+      #
+      # @param io [IO, StringIO] IO over the text content; must
+      #   remain open while the enumerator is consumed.
+      # @return [Enumerator::Lazy<String>] chomped lines, tagged
+      #   UTF-8.
+      def self.extract_lines(io)
+        io.each_line.lazy.map { |raw| raw.chomp.force_encoding(Encoding::UTF_8) }
       end
     end
   end
