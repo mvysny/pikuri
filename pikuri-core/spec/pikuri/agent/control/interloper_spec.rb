@@ -2,10 +2,11 @@
 
 RSpec.describe Pikuri::Agent::Control::Interloper do
   describe '#initialize' do
-    it 'starts empty — peek is empty, pending? is false, drain! returns []' do
+    it 'starts empty — peek is empty, pending? is false, size is 0, drain! returns []' do
       interloper = described_class.new
       assert_equal [], interloper.peek
       refute interloper.pending?
+      assert_equal 0, interloper.size
       assert_equal [], interloper.drain!
     end
   end
@@ -54,6 +55,19 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       snapshot << 'b'
 
       assert_equal ['a'], interloper.peek
+    end
+  end
+
+  describe '#size' do
+    it 'tracks injections and resets to 0 after a drain' do
+      interloper = described_class.new
+      interloper.inject_user_message('one')
+      interloper.inject_user_message('two')
+
+      assert_equal 2, interloper.size
+
+      interloper.drain!
+      assert_equal 0, interloper.size
     end
   end
 

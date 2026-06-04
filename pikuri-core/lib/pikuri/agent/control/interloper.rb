@@ -123,6 +123,14 @@ module Pikuri
           @mutex.synchronize { !@items.empty? }
         end
 
+        # @return [Integer] number of pending injections; like
+        #   {#pending?} and {#peek}, a snapshot observable from
+        #   any thread — by the time the caller reads it the
+        #   queue may already have drained
+        def size
+          @mutex.synchronize { @items.size }
+        end
+
         # Atomically take and remove all pending items. Called by
         # {Agent}'s +after_tool_result+ wiring; the +Agent+ then
         # appends each item to the chat history and emits an
@@ -147,8 +155,8 @@ module Pikuri
         #   the pending-count so a debug print or banner can tell
         #   an idle interloper apart from one with queued items
         def to_s
-          size = @mutex.synchronize { @items.size }
-          size.zero? ? 'Interloper' : "Interloper(#{size} pending)"
+          pending = size
+          pending.zero? ? 'Interloper' : "Interloper(#{pending} pending)"
         end
       end
     end
