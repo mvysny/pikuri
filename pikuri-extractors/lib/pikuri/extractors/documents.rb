@@ -112,11 +112,14 @@ module Pikuri
     # emit anything, so there is no lazy parse: every
     # +Extractor.extract_paged+ call (each +Read+ page of a long DOCX)
     # re-runs the full conversion. Accepted — no result cache in v1.
-    # {#extract_lines} still streams: the converter's stdout lands in
-    # a Tempfile (also what makes the stdin/stdout pumping
-    # deadlock-free — see {Pikuri::Subprocess.run}) and lines are
-    # yielded from disk, so the full Markdown String is never resident
-    # during paging.
+    # Both legs of one conversion still stream, though: the source +io+
+    # is handed to {Pikuri::Subprocess.run} and copied straight into
+    # the converter's stdin (+IO.copy_stream+ — a big local file never
+    # loads into the Ruby heap), and the converter's stdout lands in a
+    # Tempfile (also what makes the stdin/stdout pumping deadlock-free
+    # — see {Pikuri::Subprocess.run}) whose lines {#extract_lines}
+    # yields from disk — so neither the document nor the full Markdown
+    # String is ever resident during paging.
     class Documents
       # @return [Logger] gem-wide diagnostics logger.
       LOGGER = Pikuri.logger_for('Extractors')
@@ -223,7 +226,7 @@ module Pikuri
       # @raise [Pikuri::Extractor::Error] when no converter is
       #   available, the conversion exits non-zero, or it times out.
       def extract(io)
-        with_converted(io.read) do |file, format|
+        with_converted(io) do |file, format|
           format == PDF ? pdf_page_lines(file).to_a.join("\n") : file.read
         end
       end
@@ -231,18 +234,20 @@ module Pikuri
       # Same content as {#extract}, as a stream of +chomp+ed lines
       # read off the converter's stdout Tempfile — the whole-document
       # conversion still runs up front (subprocess converters can't
-      # parse lazily), but the Markdown never materialises as one
-      # String. The enumerator owns the Tempfile and deletes it when
-      # iteration ends.
+      # parse lazily), but neither the document nor the Markdown ever
+      # materialises as one String: the conversion fires on first
+      # consumption, streaming +io+ into the converter. The enumerator
+      # owns the Tempfile and deletes it when iteration ends.
       #
-      # @param io [IO, StringIO] seekable IO positioned at the start.
+      # @param io [IO, StringIO] seekable IO positioned at the start;
+      #   must remain open until the enumerator is consumed (same
+      #   contract as pikuri-pdf's lazy +extract_lines+).
       # @return [Enumerator<String>]
       # @raise [Pikuri::Extractor::Error] as for {#extract}, raised on
       #   first consumption.
       def extract_lines(io)
-        bytes = io.read
         Enumerator.new do |yielder|
-          with_converted(bytes) do |file, format|
+          with_converted(io) do |file, format|
             if format == PDF
               pdf_page_lines(file).each { |line| yielder << line }
             else
@@ -304,17 +309,22 @@ module Pikuri
         nil
       end
 
-      # Convert +bytes+, yield the rewound stdout Tempfile along with
-      # the resolved format tag (so callers know whether the PDF
-      # post-processing pass applies), delete the Tempfile.
+      # Convert the document behind +io+, yield the rewound stdout
+      # Tempfile along with the resolved format tag (so callers know
+      # whether the PDF post-processing pass applies), delete the
+      # Tempfile. Sniffs the leading sample and rewinds before
+      # streaming — the same read-then-rewind pattern as
+      # +Extractor.extractor_for+.
       #
-      # @param bytes [String] the whole document.
+      # @param io [IO, StringIO] seekable IO positioned at the start.
       # @yieldparam file [Tempfile] converter stdout, rewound.
       # @yieldparam format [String] resolved format tag (or {AUTO}).
       # @return [Object] the block's value.
-      def with_converted(bytes)
-        format = sniff(bytes[0, FileType::SAMPLE_BYTES] || +'') || AUTO
-        file = convert(bytes.b, format)
+      def with_converted(io)
+        sample = io.read(FileType::SAMPLE_BYTES) || +''
+        io.rewind
+        format = sniff(sample) || AUTO
+        file = convert(io, format)
         begin
           yield file, format
         ensure
@@ -323,20 +333,21 @@ module Pikuri
       end
 
       # Run one conversion of +format+: build the argv for the
-      # resolved arm, pipe +bytes+ through it with stdout landing in
+      # resolved arm, stream +io+ through it with stdout landing in
       # a Tempfile.
       #
-      # @param bytes [String] the whole document (binary encoding).
+      # @param io [IO, StringIO] the whole document, positioned at the
+      #   start.
       # @param format [String] format tag (or {AUTO}).
       # @return [Tempfile] rewound, holding the Markdown.
       # @raise [Pikuri::Extractor::Error] on conversion failure.
-      def convert(bytes, format)
+      def convert(io, format)
         argv = converter_argv(format)
         out = Tempfile.new(['pikuri-extractors', '.md'])
         begin
           result = Pikuri::Subprocess.run(
             'timeout', '--signal=TERM', '--kill-after=5s', CONVERT_TIMEOUT, *argv,
-            stdin_data: bytes, stdout: out, chdir: '/'
+            stdin_data: io, stdout: out, chdir: '/'
           )
           unless result.status.success?
             raise Pikuri::Extractor::Error,

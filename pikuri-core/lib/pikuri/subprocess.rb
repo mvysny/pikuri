@@ -9,8 +9,8 @@ module Pikuri
   # the direct child (commands backgrounded with +&+) can be cleaned
   # up at process exit. Two front doors: {.spawn} (combined
   # stdout+stderr through a single pipe — the shell-command shape) and
-  # {.run} (stdin fed, stdout redirected to a file, stderr captured —
-  # the filter shape).
+  # {.run} (stdin fed from a String or streamed from an IO, stdout
+  # redirected to a file, stderr captured — the filter shape).
   #
   # == Seam discipline
   #
@@ -115,8 +115,11 @@ module Pikuri
     #
     # @param argv [Array<String>] command and arguments, passed to
     #   +exec+ directly — no implicit shell.
-    # @param stdin_data [String] bytes written to the child's stdin,
-    #   which is then closed (EOF). May be empty.
+    # @param stdin_data [String, IO, StringIO] the child's stdin: a
+    #   String is written as-is, an IO is streamed through
+    #   +IO.copy_stream+ (so a large source file never materialises in
+    #   the Ruby heap) and read from its current position. Either way
+    #   stdin is closed (EOF) afterwards. May be empty.
     # @param stdout [File] open writable file the child's stdout is
     #   redirected to.
     # @param chdir [String, Pathname] working directory.
@@ -124,6 +127,9 @@ module Pikuri
     #   as for {.spawn}.
     # @return [Result] +output+ is the captured stderr; +status+ the
     #   child's exit status.
+    # @raise [SystemCallError] whatever an IO +stdin_data+ raises
+    #   mid-stream (disk error, closed handle) — re-raised here after
+    #   the child has been reaped.
     def self.run(*argv, stdin_data:, stdout:, chdir:, env: {})
       in_r, in_w = IO.pipe
       err_r, err_w = IO.pipe
@@ -134,7 +140,11 @@ module Pikuri
       register(pid)
       writer = Thread.new do
         in_w.binmode
-        in_w.write(stdin_data)
+        if stdin_data.respond_to?(:read)
+          IO.copy_stream(stdin_data, in_w)
+        else
+          in_w.write(stdin_data)
+        end
       rescue Errno::EPIPE
         nil # child exited without draining stdin; its status tells the story
       ensure
@@ -142,8 +152,11 @@ module Pikuri
       end
       stderr = err_r.read
       err_r.close
-      writer.join
+      # Reap before joining the writer: if an IO source raised
+      # mid-stream, #join re-raises it, and the child (already exited —
+      # err_r hit EOF) must not be left a zombie.
       _, status = Process.waitpid2(pid)
+      writer.join
       Result.new(output: stderr, status: status)
     ensure
       prune(pid) if pid

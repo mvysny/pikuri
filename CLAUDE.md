@@ -237,8 +237,8 @@ per-gem one-liners:
   host CLIs. **Registration is explicit** —
   `DOCUMENTS.register` in the host script; requiring the gem changes
   nothing (same opt-in shape as `c.add_extension`). Conversions ride
-  the `Subprocess.run` filter shape (stdin fed, stdout → Tempfile,
-  stderr captured). No result cache: paged reads re-convert
+  the `Subprocess.run` filter shape (stdin streamed from the source
+  IO, stdout → Tempfile, stderr captured). No result cache: paged reads re-convert
   (accepted). ODS/ODP, OCR, audio, LibreOffice: out of scope (see
   the class yardoc). PDF here vs pikuri-pdf is a pick-one-per-wiring
   choice: sandboxed-but-rerun-per-page here, in-process-and-lazy

@@ -50,7 +50,11 @@ RSpec.describe Pikuri::Extractors::Documents do
 
     Pikuri::Subprocess.singleton_class.send(:alias_method, :__orig_run, :run)
     Pikuri::Subprocess.define_singleton_method(:run) do |*argv, stdin_data:, stdout:, chdir:, env: {}| # rubocop:disable Lint/UnusedBlockArgument
-      run_calls_ref << { argv: argv, stdin: stdin_data }
+      # Mirror production: an IO source is streamed (here: read), a
+      # String written as-is. Record both the raw source (for the
+      # no-buffering identity assertion) and the bytes.
+      run_calls_ref << { argv: argv, stdin_source: stdin_data,
+                         stdin: stdin_data.respond_to?(:read) ? stdin_data.read : stdin_data }
       plan = run_plans_ref.shift
       raise "unplanned Subprocess.run: #{argv.inspect}" if plan.nil?
 
@@ -147,6 +151,18 @@ RSpec.describe Pikuri::Extractors::Documents do
       assert_includes call[:argv], '--read-only'
       assert_includes call[:argv], described_class::IMAGE
       assert_equal 'docx', call[:argv].last
+      assert_equal docx_sample, call[:stdin]
+    end
+
+    it 'streams the source io into the converter rather than buffering it as a String' do
+      plan_container!
+      run_plans << [0, '', 'md']
+      io = StringIO.new(docx_sample)
+
+      documents.extract(io)
+
+      call = run_calls.fetch(0)
+      assert_same io, call[:stdin_source] # the io itself, rewound after the sniff
       assert_equal docx_sample, call[:stdin]
     end
 

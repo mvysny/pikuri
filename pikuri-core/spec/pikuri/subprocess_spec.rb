@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'pathname'
+require 'stringio'
 require 'tempfile'
 require 'tmpdir'
 
@@ -80,6 +81,32 @@ RSpec.describe Pikuri::Subprocess do
       end
     end
 
+    it 'streams an IO stdin_data (File source) without buffering it as a String' do
+      bytes = (0..255).to_a.pack('C*') * 1024
+      Tempfile.create('pikuri-run-in') do |source|
+        source.binmode
+        source.write(bytes)
+        source.rewind
+        Tempfile.create('pikuri-run') do |out|
+          result = described_class.run('cat', stdin_data: source, stdout: out, chdir: '/tmp')
+          assert result.status.success?
+          out.rewind
+          out.binmode
+          assert_equal bytes, out.read
+        end
+      end
+    end
+
+    it 'streams a StringIO stdin_data' do
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('cat', stdin_data: StringIO.new('from stringio'),
+                                            stdout: out, chdir: '/tmp')
+        assert result.status.success?
+        out.rewind
+        assert_equal 'from stringio', out.read
+      end
+    end
+
     it 'returns non-zero exit status without raising' do
       Tempfile.create('pikuri-run') do |out|
         result = described_class.run('false', stdin_data: '', stdout: out, chdir: '/tmp')
@@ -89,6 +116,14 @@ RSpec.describe Pikuri::Subprocess do
 
     it 'survives a child that exits without draining stdin' do
       big = 'x' * (1 << 20) # > pipe buffer, so the writer hits EPIPE
+      Tempfile.create('pikuri-run') do |out|
+        result = described_class.run('true', stdin_data: big, stdout: out, chdir: '/tmp')
+        assert result.status.success?
+      end
+    end
+
+    it 'survives a child that exits without draining an IO stdin_data' do
+      big = StringIO.new('x' * (1 << 20)) # > pipe buffer, so copy_stream hits EPIPE
       Tempfile.create('pikuri-run') do |out|
         result = described_class.run('true', stdin_data: big, stdout: out, chdir: '/tmp')
         assert result.status.success?
