@@ -5,19 +5,19 @@ In-memory task list + four LLM-facing tools for the
 
 Provides:
 - `Pikuri::Tasks::List` — per-Agent in-memory list of
-  `(content, status)` items. Status is one of `pending`,
+  `(id, content, status)` items. Status is one of `pending`,
   `in_progress`, `completed`. Nothing is written to disk.
 - Four tool classes, all sharing one `List` instance:
   - `Pikuri::Tasks::Create` (`task_create`) — mass-create pending
-    items from a newline-separated `items` string. Atomic: if any
-    line is a duplicate (within the batch or already on the list),
-    nothing is added.
+    items from a JSON array of strings. Atomic: if any element is
+    blank or a duplicate (within the batch or already on the
+    list), nothing is added.
   - `Pikuri::Tasks::InProgress` (`task_in_progress`) — mark an item
-    as `in_progress` by content.
+    as `in_progress` by numeric id.
   - `Pikuri::Tasks::Completed` (`task_completed`) — mark an item as
-    `completed` by content.
+    `completed` by numeric id.
   - `Pikuri::Tasks::Delete` (`task_delete`) — remove an item by
-    content.
+    numeric id.
 - `Pikuri::Tasks::Extension` — wires the four tools + a brief
   `<tasks_usage>` workflow snippet into a `Pikuri::Agent` via the
   `c.add_extension(...)` block API.
@@ -25,10 +25,12 @@ Provides:
 Two shape choices worth flagging:
 - **Status is baked into the tool name** (no `status:` parameter
   with an enum). Removes the `"in-progress"` vs `"in_progress"`
-  vs `"inprogress"` typo failure mode on smaller models.
-- **Content doubles as identifier** across the three update tools
-  (no item IDs to bookkeep). Duplicates are rejected on
-  `task_create` so the identifier stays unique.
+  vs `"inprogress"` typo failure mode.
+- **Items are addressed by numeric id** — assigned on create,
+  shown in every rendered list, never reused after a delete. A
+  near-miss when re-typing the task's content cannot lock the
+  model out of its own list; duplicates are still rejected on
+  `task_create` because they are almost always a mistake.
 
 ## Install
 
@@ -59,9 +61,9 @@ so the LLM always sees fresh state without a separate read tool:
 
 ```
 <tasks>
-- [pending] Add dark mode toggle
-- [in_progress] Write unit tests
-- [completed] Update README
+- #1 [pending] Add dark mode toggle
+- #2 [in_progress] Write unit tests
+- #3 [completed] Update README
 </tasks>
 ```
 

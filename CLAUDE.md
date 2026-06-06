@@ -29,9 +29,10 @@ The gem inventory:
   in-process pure-Ruby pdf-reader, lazily paged. Superseded by
   pikuri-extractors' PDF arm in full wirings — pick one per host.
 - `pikuri-skills` — Agent Skills standard implementation.
-- `pikuri-tasks` — in-memory task list + four content-as-identifier
-  tools (`task_create` / `task_in_progress` / `task_completed` /
-  `task_delete`).
+- `pikuri-tasks` — in-memory task list + four tools
+  (`task_create` / `task_in_progress` / `task_completed` /
+  `task_delete`); JSON-array mass-create, mutations address
+  items by numeric id.
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams +
   Read/Write/Edit/Grep/Glob.
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
@@ -269,9 +270,11 @@ per-gem one-liners:
 - **`pikuri-tasks/`** — `Tasks::List` (in-memory, per-Agent) and
   the four task tool classes (`Tasks::Create`, `Tasks::InProgress`,
   `Tasks::Completed`, `Tasks::Delete`) plus `Tasks::Extension`.
-  Content doubles as identifier across the four tools (no item
-  IDs); state is dropped on agent close. Depends on `pikuri-core`.
-  Stdlib-only; no new runtime deps.
+  `task_create` takes a JSON array of strings; the three mutation
+  tools address items by numeric id (never reused after delete;
+  rationale for both reversals in {Pikuri::Tasks::Create} and the
+  guide ch11); state is dropped on agent close. Depends on
+  `pikuri-core`. Stdlib-only; no new runtime deps.
 - **`pikuri-workspace/`** — `Workspace::Filesystem`,
   `Workspace::Confirmer`, and the five file tools (`Read`,
   `Write`, `Edit`, `Grep`, `Glob`). Depends on `pikuri-core`.

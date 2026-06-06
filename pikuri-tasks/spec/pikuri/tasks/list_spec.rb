@@ -4,18 +4,28 @@ RSpec.describe Pikuri::Tasks::List do
   let(:list) { described_class.new }
 
   describe '#add' do
-    it 'appends a pending item and returns it' do
+    it 'appends a pending item with the next id and returns it' do
       item = list.add('first task')
+      assert_equal 1, item.id
       assert_equal 'first task', item.content
       assert_equal 'pending', item.status
       assert_equal 1, list.size
     end
 
-    it 'preserves insertion order' do
+    it 'preserves insertion order and assigns sequential ids' do
       list.add('a')
       list.add('b')
       list.add('c')
       assert_equal %w[a b c], list.items.map(&:content)
+      assert_equal [1, 2, 3], list.items.map(&:id)
+    end
+
+    it 'never reuses the id of a deleted item' do
+      list.add('a')
+      b = list.add('b')
+      list.delete(b.id)
+      fresh = list.add('c')
+      assert_equal 3, fresh.id
     end
 
     it 'raises DuplicateItem on identical content' do
@@ -27,31 +37,31 @@ RSpec.describe Pikuri::Tasks::List do
 
   describe '#set_status' do
     it 'updates status to a valid value' do
-      list.add('task')
-      updated = list.set_status(content: 'task', status: 'in_progress')
+      item = list.add('task')
+      updated = list.set_status(id: item.id, status: 'in_progress')
       assert_equal 'in_progress', updated.status
       assert_equal 'in_progress', list.items.first.status
     end
 
     it 'is idempotent: setting the same status again is a no-op result' do
-      list.add('task')
-      list.set_status(content: 'task', status: 'completed')
-      again = list.set_status(content: 'task', status: 'completed')
+      item = list.add('task')
+      list.set_status(id: item.id, status: 'completed')
+      again = list.set_status(id: item.id, status: 'completed')
       assert_equal 'completed', again.status
     end
 
-    it 'raises ItemNotFound for unknown content' do
+    it 'raises ItemNotFound for an unknown id' do
       list.add('exists')
       err = assert_raises(Pikuri::Tasks::ItemNotFound) do
-        list.set_status(content: 'missing', status: 'completed')
+        list.set_status(id: 99, status: 'completed')
       end
-      assert_equal 'missing', err.message
+      assert_equal '99', err.message
     end
 
     it 'raises ArgumentError for an invalid status' do
-      list.add('task')
+      item = list.add('task')
       err = assert_raises(ArgumentError) do
-        list.set_status(content: 'task', status: 'cancelled')
+        list.set_status(id: item.id, status: 'cancelled')
       end
       assert_match(/invalid status/, err.message)
     end
@@ -59,15 +69,15 @@ RSpec.describe Pikuri::Tasks::List do
 
   describe '#delete' do
     it 'removes the matching item and returns it' do
-      list.add('a')
+      a = list.add('a')
       list.add('b')
-      removed = list.delete('a')
+      removed = list.delete(a.id)
       assert_equal 'a', removed.content
       assert_equal %w[b], list.items.map(&:content)
     end
 
-    it 'raises ItemNotFound for unknown content' do
-      assert_raises(Pikuri::Tasks::ItemNotFound) { list.delete('nope') }
+    it 'raises ItemNotFound for an unknown id' do
+      assert_raises(Pikuri::Tasks::ItemNotFound) { list.delete(42) }
     end
   end
 
@@ -87,15 +97,15 @@ RSpec.describe Pikuri::Tasks::List do
       assert_equal '<tasks>(empty)</tasks>', list.render
     end
 
-    it 'renders each item on its own line with status in brackets' do
+    it 'renders each item on its own line with id and status' do
       list.add('first')
-      list.add('second')
-      list.set_status(content: 'second', status: 'in_progress')
+      second = list.add('second')
+      list.set_status(id: second.id, status: 'in_progress')
       out = list.render
       assert out.start_with?("<tasks>\n"), out
       assert out.end_with?("\n</tasks>"), out
-      assert_match(/^- \[pending\] first$/, out)
-      assert_match(/^- \[in_progress\] second$/, out)
+      assert_match(/^- #1 \[pending\] first$/, out)
+      assert_match(/^- #2 \[in_progress\] second$/, out)
     end
   end
 
@@ -103,10 +113,10 @@ RSpec.describe Pikuri::Tasks::List do
     it 'tracks size and empty? as items are added and removed' do
       assert list.empty?
       assert_equal 0, list.size
-      list.add('a')
+      a = list.add('a')
       refute list.empty?
       assert_equal 1, list.size
-      list.delete('a')
+      list.delete(a.id)
       assert list.empty?
     end
   end

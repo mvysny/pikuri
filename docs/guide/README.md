@@ -96,7 +96,8 @@ chapters that apply across both tracks.
     end. What `pikuri-tasks` is, why an agent benefits from
     externalized working memory, and the three design choices
     that shape its four tools — status-in-verb-name,
-    content-as-identifier, newline-separated mass-create.
+    id-addressed mutations, JSON-array mass-create (two of the
+    three reversed by watching real transcripts).
 12. **[Agent Skills (stub)](12-skills.md).** Placeholder
     chapter — what skills are in one paragraph, a minimal `lol`
     demo, and a TBD list. Coming back to flesh out once the

@@ -5,38 +5,58 @@ RSpec.describe Pikuri::Tasks::Create do
   let(:tool) { described_class.new(list: list) }
 
   describe 'tool shape' do
-    it 'is a Pikuri::Tool named task_create with a required items string parameter' do
+    it 'is a Pikuri::Tool named task_create with a required items array-of-strings parameter' do
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'task_create', tool.name
       schema = tool.parameters.to_h
       assert_equal ['items'], schema[:required]
-      assert_equal 'string', schema[:properties][:items][:type]
+      assert_equal 'array', schema[:properties][:items][:type]
+      assert_equal({ type: 'string' }, schema[:properties][:items][:items])
     end
   end
 
   describe 'execution' do
-    it 'adds each non-blank line as a pending item and returns the rendered list' do
-      out = tool.run('items' => "first\nsecond\nthird")
+    it 'adds each element as a pending item and returns the rendered list with ids' do
+      out = tool.run('items' => %w[first second third])
       assert_equal 3, list.size
       assert_equal %w[first second third], list.items.map(&:content)
       assert list.items.all? { |i| i.status == 'pending' }
-      assert out.include?('- [pending] first'), out
-      assert out.include?('- [pending] second'), out
+      assert out.include?('- #1 [pending] first'), out
+      assert out.include?('- #2 [pending] second'), out
     end
 
-    it 'strips whitespace on each line and skips blank lines' do
-      tool.run('items' => "  first  \n\n   \nsecond")
+    it 'accepts numeric elements, auto-converted to strings by the validation layer' do
+      out = tool.run('items' => ['Fix issue', 42])
+      assert_equal ['Fix issue', '42'], list.items.map(&:content)
+      assert out.include?('- #2 [pending] 42'), out
+    end
+
+    it 'strips whitespace on each element' do
+      tool.run('items' => ['  first  ', "second\n"])
       assert_equal %w[first second], list.items.map(&:content)
     end
 
-    it 'rejects an empty / whitespace-only items string and adds nothing' do
-      out = tool.run('items' => "   \n  \n")
-      assert out.start_with?('Error: task_create requires at least one'), out
+    it 'rejects an empty array and adds nothing' do
+      out = tool.run('items' => [])
+      assert out.start_with?('Error: task_create requires at least one item'), out
+      assert list.empty?
+    end
+
+    it 'rejects a blank element, naming its index, and adds nothing (atomic)' do
+      out = tool.run('items' => ['first', '   ', 'third'])
+      assert out.start_with?('Error: blank item at index 1'), out
+      assert list.empty?
+    end
+
+    it 'rejects a JSON-encoded array String at the validation layer' do
+      out = tool.run('items' => '["first", "second"]')
+      assert out.start_with?('Error:'), out
+      assert_match(/must be an array of strings/, out)
       assert list.empty?
     end
 
     it 'rejects a duplicate within the batch and adds nothing (atomic)' do
-      out = tool.run('items' => "a\nb\na")
+      out = tool.run('items' => %w[a b a])
       assert out.start_with?('Error: duplicate item in batch:'), out
       assert out.include?("'a'"), out
       assert list.empty?
@@ -44,7 +64,7 @@ RSpec.describe Pikuri::Tasks::Create do
 
     it 'rejects when an item already exists in the list and adds nothing (atomic)' do
       list.add('existing')
-      out = tool.run('items' => "fresh\nexisting\nalso-fresh")
+      out = tool.run('items' => %w[fresh existing also-fresh])
       assert out.start_with?("Error: task already exists: 'existing'"), out
       assert_equal %w[existing], list.items.map(&:content)
     end

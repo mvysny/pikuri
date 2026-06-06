@@ -51,14 +51,14 @@ module Pikuri
         You have an in-memory task list. Use it to plan and track multi-step work.
 
         Workflow:
-        - When a task has 3+ steps, call `task_create` once with the full plan (newline-separated items, all start as `pending`).
-        - Before starting an item, call `task_in_progress` with its exact content. Keep exactly one item `in_progress` at a time.
-        - When an item is fully done (including any required verification), call `task_completed` with its exact content.
+        - When a task has 3+ steps, call `task_create` once with the full plan (a JSON array of strings, all start as `pending`).
+        - Before starting an item, call `task_in_progress` with its numeric id. Keep exactly one item `in_progress` at a time.
+        - When an item is fully done (including any required verification), call `task_completed` with its numeric id.
         - Use `task_delete` to remove items that turn out not to be needed.
 
         Skip task tracking entirely for single-step or purely informational requests — it adds noise, not value.
 
-        Every mutation returns the full current list, so you do not need a separate read tool. Content doubles as identifier across the four tools: spelling and capitalization must match exactly.
+        Every mutation returns the full current list, with each task's id (`- #3 [pending] ...` → id 3), so you do not need a separate read tool. Ids never change and are never reused.
         </tasks_usage>
       PROMPT
 

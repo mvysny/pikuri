@@ -49,27 +49,28 @@ is large.
 
 `pikuri-tasks` ships exactly four LLM-facing tools, one per verb:
 
-- **`task_create`** — pass a newline-separated string of one or
-  more items. All start as `pending`. Use this once at the start
+- **`task_create`** — pass a JSON array of strings, one task per
+  element. All start as `pending`. Use this once at the start
   of a multi-step task to capture the plan in one call.
-- **`task_in_progress`** — pass the `content` of an existing item.
-  Marks it as in-progress. Use immediately before starting work
-  on the item.
-- **`task_completed`** — pass `content`. Marks the item as done.
+- **`task_in_progress`** — pass the numeric `id` of an existing
+  item. Marks it as in-progress. Use immediately before starting
+  work on the item.
+- **`task_completed`** — pass `id`. Marks the item as done.
   Use only after the work (and any verification) is actually
   finished.
-- **`task_delete`** — pass `content`. Removes the item entirely.
+- **`task_delete`** — pass `id`. Removes the item entirely.
   Use for items that turn out not to be needed; reserve
   `task_completed` for work actually done.
 
 Every mutation returns the full current list as its observation,
-so the model always sees fresh state without a separate read tool:
+so the model always sees fresh state — including each item's id —
+without a separate read tool:
 
 ```
 <tasks>
-- [pending] Add dark mode toggle
-- [in_progress] Write unit tests
-- [completed] Update README
+- #1 [pending] Add dark mode toggle
+- #2 [in_progress] Write unit tests
+- #3 [completed] Update README
 </tasks>
 ```
 
@@ -79,66 +80,83 @@ call worked and the list is now empty" signal.
 ## Three design choices worth a moment
 
 The shape above looks obvious once you see it, but each piece was
-a decision with an alternative — and each alternative is worth
-understanding because it surfaces a real LLM-ergonomics tradeoff.
+a decision with an alternative — and two of the three were
+*reversed* after watching real transcripts. Both reversals teach
+the same lesson, so they're worth walking through honestly.
 
 ### Status is in the verb name, not a parameter
 
-The obvious shape is one `task_set_status(content:, status:)` tool
+The obvious shape is one `task_set_status(id:, status:)` tool
 with `status` being an enum: `pending` / `in_progress` /
 `completed`. Pikuri instead has three separate verbs.
 
-The reason is small-model failure modes. Enum values are
-*strings* the model emits — and a smaller local model will
-cheerfully produce `"in-progress"` or `"inprogress"` or
-`"InProgress"`. The validator catches it and replies with an
-`Error: ...` string, the model retries, sometimes lands the same
-wrong value again. Tool names, by contrast, are picked from a
-finite list the API enforces structurally — the model literally
-cannot misspell `task_in_progress`. Trading one parameter for
-three tool classes eliminates a whole category of failure.
+The reason is typo failure modes. Enum values are *strings* the
+model emits — and a model will occasionally produce
+`"in-progress"` or `"inprogress"` or `"InProgress"`. The
+validator catches it and replies with an `Error: ...` string, the
+model retries, sometimes lands the same wrong value again. Tool
+names, by contrast, are picked from a finite list the API
+enforces structurally — the model literally cannot misspell
+`task_in_progress`. Trading one parameter for three tool classes
+eliminates a whole category of failure.
 
-(This is a recurring small-model design move: convert "string
-the model emits" into "tool the model selects" wherever you can,
-because the second is API-enforced and the first isn't.)
+(This is a recurring design move: convert "string the model
+emits" into "tool the model selects" wherever you can, because
+the second is API-enforced and the first isn't.)
 
-### Content doubles as identifier — no IDs
+### Mass-create takes a JSON array — the training prior always wins
 
-Claude Code's task tools assign each task an integer ID and
-update tasks by ID: `TaskUpdate(taskId: "3", status:
-"completed")`. Cleaner database-wise, but it forces the model to
-maintain an ID-to-content mapping across turns. Models hallucinate
-IDs — they confidently produce `taskId: "7"` when the highest ID
-is 4.
+`task_create` originally took a newline-separated string:
+`"first\nsecond\nthird"`. The theory was failure surface — a JSON
+array is brackets, quotes, and escapes a small model has to
+balance, while a flat string is just text.
 
-Pikuri uses the content string itself as the identifier:
-`task_completed(content: "Add dark mode toggle")`. The model is
-*very* good at echoing back strings it just emitted — they're
-sitting in its own context as the rendered task list. No mapping
-to track, no IDs to hallucinate.
+Real transcripts killed the theory. Every mainstream harness's
+task tool (Claude Code, opencode) takes a JSON array, so that's
+the shape the model's training data overwhelmingly contains — and
+the model *sent a JSON array anyway*, stuffed into the string
+parameter. The newline splitter then dutifully created garbage
+tasks: `[`, `"Update lib/foo.rb...",` (quotes and trailing comma
+included), `]`. The model saw the wreckage, tried to clean it up,
+failed to reproduce the mangled contents exactly, and abandoned
+the list.
 
-The price: duplicate contents are rejected on creation
-(`Error: task already exists: 'foo'`), and editing an item's text
-means deleting and re-creating it. For short task descriptions in
-a session-scoped list, that's a fine trade.
+The lesson: **a parameter description does not beat the training
+prior.** When every tool the model has ever seen takes shape X,
+asking for shape Y in prose doesn't make Y arrive — it makes X
+arrive disguised as Y. So `task_create` now declares `items` as a
+real `{type: 'array', items: {type: 'string'}}` parameter: the
+model sends the array natively in the tool-call JSON (the shape
+it wanted to send all along), and the strict validator rejects
+anything else with an actionable error.
 
-### Mass-create takes a newline-separated string — not a JSON array
+### Items are addressed by numeric id — same lesson, second verse
 
-opencode's equivalent tool takes a JSON array of objects:
-`{ todos: [{content: ..., status: ...}, ...] }`. Pikuri's
-`task_create` takes a single string: `"first\nsecond\nthird"`.
+The same original design used the content string itself as the
+identifier: `task_completed(content: "Add dark mode toggle")`.
+The argument was that models are very good at echoing back
+strings sitting in their own context, while IDs are a mapping to
+hallucinate.
 
-The difference is failure surface. A nested-array tool argument is
-JSON the model has to balance: brackets, quotes, escapes. A small
-model fails on this more often than you'd hope, and when it fails
-the whole call dies — the JSON parser doesn't recover anything.
-A newline-separated string has no brackets, no quotes to escape,
-no balancing — just text the model already knows how to produce.
+The argument half-survives: models *are* good at echoing strings.
+But "good" isn't "perfect", and the failure mode is brutal — one
+near-miss in reproducing the exact bytes (a stray quote, a
+trailing comma, an em-dash typed as a hyphen) and the call errors.
+The model retries from semantic memory rather than byte-exact
+memory, misses again, and is effectively locked out of its own
+list. An id is two digits the model just read back in the
+previous observation; there is nothing to mis-transcribe. It's
+also — again — the shape every other harness uses, so the prior
+helps instead of fighting.
 
-(Worth flagging: with grammar-constrained sampling enabled
-server-side — which `llama.cpp` supports — JSON failures
-practically disappear. But constrained sampling isn't on
-everywhere by default, and the string form needs no opt-in.)
+Ids are assigned on create, shown in every render
+(`- #3 [pending] ...`), and never reused after a delete — a stale
+id errors loudly (`Error: no such task id: 7`, with the current
+list attached so the model recovers in one turn) instead of
+silently hitting a newer task. Duplicate contents are still
+rejected on creation, not because they'd be ambiguous now, but
+because a duplicate is almost always the model re-sending a plan
+it already captured.
 
 ## What state lives where
 

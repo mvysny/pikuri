@@ -30,9 +30,9 @@ RSpec.describe Pikuri::Tasks::Extension do
       # All four tools must mutate the same list — drive one and observe via the others.
       task_create = tools.find { |t| t.name == 'task_create' }
       task_completed = tools.find { |t| t.name == 'task_completed' }
-      task_create.run('items' => 'one item')
-      out = task_completed.run('content' => 'one item')
-      assert out.include?('- [completed] one item'), out
+      task_create.run('items' => ['one item'])
+      out = task_completed.run('id' => 1)
+      assert out.include?('- #1 [completed] one item'), out
       assert_equal 'completed', ext.list.items.first.status
     end
 

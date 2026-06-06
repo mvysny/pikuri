@@ -3,22 +3,27 @@
 module Pikuri
   module Tasks
     # The +task_create+ tool: mass-create pending items in a single
-    # call from a newline-separated +items+ string. Why
-    # newline-separated rather than a JSON array: it stays within
-    # pikuri's scalar-only +Tool::Parameters+ DSL (no array support
-    # to extend), and a smaller model never has to balance brackets
-    # or escape quotes — fewer formatting failure modes on the burst
-    # of items that opens most multi-step work.
+    # call from a JSON array of strings — a native +items+ array
+    # parameter, the shape every mainstream harness's task tool uses
+    # and therefore the shape the model's training prior produces
+    # unprompted. (An earlier newline-separated-string design tried to
+    # spare small models the bracket-balancing; in practice models
+    # sent JSON arrays anyway — the prior beats the parameter
+    # description — and the splitter turned `[`, `"foo",`, `]` into
+    # garbage tasks. Match the prior instead of fighting it.)
     #
-    # Each line is right- and left-stripped; blank lines are skipped.
-    # If any input is a duplicate (within the batch, or already in
-    # the list), the whole call aborts with an +"Error: ..."+ string
-    # and nothing is added — the LLM resends a corrected batch on the
+    # Each element is whitespace-stripped; a blank element aborts the
+    # call (it is always an LLM mistake, never intent). If any input
+    # is a duplicate (within the batch, or already in the list), the
+    # whole call likewise aborts with an +"Error: ..."+ string and
+    # nothing is added — the LLM resends a corrected batch on the
     # next turn. Atomic semantics keep the list in a coherent state
     # the LLM doesn't have to reconcile.
     #
-    # On success returns the rendered current list via {List#render},
-    # so the LLM always sees fresh state without a separate read tool.
+    # On success returns the rendered current list via {List#render} —
+    # including each new item's +#id+, which the three mutation tools
+    # address items by — so the LLM always sees fresh state without a
+    # separate read tool.
     class Create < Pikuri::Tool
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).
@@ -27,10 +32,9 @@ module Pikuri
 
         Usage:
         - Use at the start of a multi-step task to capture the plan.
-        - `items` is a single newline-separated string — one task per line. Blank lines are ignored.
-        - Duplicate content (within the batch or already on the list) aborts the whole call with `Error: ...` and adds nothing — resend a corrected batch.
-        - Empty input is rejected the same way.
-        - On success the full current list is returned for you to read back.
+        - `items` is a JSON array of strings — one task per element.
+        - A blank element, a duplicate (within the batch or already on the list), or an empty array aborts the whole call with `Error: ...` and adds nothing — resend a corrected batch.
+        - On success the full current list is returned, with each task's `#id` — use that id with `task_in_progress` / `task_completed` / `task_delete`.
       DESC
 
       # @param list [List] the shared per-Agent list, captured by
@@ -42,10 +46,9 @@ module Pikuri
           name: 'task_create',
           description: DESCRIPTION,
           parameters: Pikuri::Tool::Parameters.build { |p|
-            p.required_string :items,
-                              'Newline-separated list of task contents, e.g. ' \
-                              '"Add dark mode toggle\nWrite unit tests\nUpdate README". ' \
-                              'Blank lines are ignored.'
+            p.required_string_array :items,
+                                    'Task contents, one task per array element, e.g. ' \
+                                    '["Add dark mode toggle", "Write unit tests", "Update README"].'
           },
           execute: lambda { |items:|
             Create.execute(list: list, items: items)
@@ -57,12 +60,16 @@ module Pikuri
       # without constructing a tool instance.
       #
       # @param list [List]
-      # @param items [String] raw +items+ argument from the LLM.
+      # @param items [Array<String>] raw +items+ argument from the LLM
+      #   (already type-validated by {Pikuri::Tool::Parameters}).
       # @return [String] either {List#render} on success or an
       #   +"Error: ..."+ string the LLM can react to.
       def self.execute(list:, items:)
-        cleaned = items.lines.map(&:strip).reject(&:empty?)
-        return 'Error: task_create requires at least one non-blank item' if cleaned.empty?
+        return 'Error: task_create requires at least one item' if items.empty?
+
+        cleaned = items.map(&:strip)
+        blank = cleaned.index('')
+        return "Error: blank item at index #{blank} — every element must be non-blank task text" if blank
 
         seen_in_batch = {}
         cleaned.each do |c|
