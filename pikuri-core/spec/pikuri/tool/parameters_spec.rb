@@ -349,6 +349,65 @@ RSpec.describe Pikuri::Tool::Parameters do
     end
   end
 
+  describe 'string array fields' do
+    let(:array_required) do
+      described_class.build { |p| p.required_string_array :items, 'Task contents.' }
+    end
+
+    it 'serializes as array-of-strings JSON Schema in to_h' do
+      schema = array_required.to_h
+      assert_equal 'array', schema[:properties][:items][:type]
+      assert_equal({ type: 'string' }, schema[:properties][:items][:items])
+      assert_equal ['items'], schema[:required]
+    end
+
+    it 'accepts an array of strings as-is' do
+      assert_equal({ items: %w[a b] }, array_required.validate('items' => %w[a b]))
+    end
+
+    it 'accepts an empty array (non-emptiness is the tool layer\'s rule)' do
+      assert_equal({ items: [] }, array_required.validate('items' => []))
+    end
+
+    it 'rejects a JSON-encoded array String — no in-band parsing' do
+      err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+        array_required.validate('items' => '["a", "b"]')
+      end
+      assert_match(/must be an array of strings/, err.message)
+    end
+
+    it 'auto-converts Integer and Float elements to strings' do
+      assert_equal({ items: ['a', '2', '1.5'] }, array_required.validate('items' => ['a', 2, 1.5]))
+    end
+
+    it 'rejects boolean, nil, and nested-structure elements, naming the offending index' do
+      err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+        array_required.validate('items' => ['a', true, 'c'])
+      end
+      assert_match(/element 1 is TrueClass: true/, err.message)
+      assert_raises(Pikuri::Tool::Parameters::ValidationError) { array_required.validate('items' => ['a', nil]) }
+      assert_raises(Pikuri::Tool::Parameters::ValidationError) { array_required.validate('items' => [%w[nested]]) }
+    end
+
+    it 'rejects non-finite Float elements' do
+      err = assert_raises(Pikuri::Tool::Parameters::ValidationError) do
+        array_required.validate('items' => [Float::INFINITY])
+      end
+      assert_match(/element 0 is Float: Infinity/, err.message)
+    end
+
+    it 'rejects nil and bare scalars' do
+      assert_raises(Pikuri::Tool::Parameters::ValidationError) { array_required.validate('items' => nil) }
+      assert_raises(Pikuri::Tool::Parameters::ValidationError) { array_required.validate('items' => 'a') }
+    end
+
+    it 'reports the type as "array of strings" in the missing-parameter message' do
+      err = assert_raises(Pikuri::Tool::Parameters::ValidationError) { array_required.validate({}) }
+      assert_match(/`items` \(array of strings, required\)/, err.message)
+      assert_match(/Missing required parameter `items` \(array of strings\)/, err.message)
+    end
+  end
+
   describe 'enum fields' do
     let(:enum_required) do
       described_class.build do |p|

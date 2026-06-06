@@ -68,6 +68,36 @@ module Pikuri
         add(name, 'string', description, required: false)
       end
 
+      # Add a required +array+-of-+string+ property — JSON-Schema
+      # +{type: 'array', items: {type: 'string'}}+. The LLM sends a
+      # native JSON array in the tool-call arguments (the shape its
+      # training data overwhelmingly uses for list-valued parameters),
+      # so there is no in-band encoding for it to get wrong.
+      # The value must arrive as an Array — no
+      # JSON-encoded-array-in-a-string fallback. Element coercion
+      # mirrors the scalar fields' one documented leniency, in
+      # reverse: Integers and finite Floats are converted to their
+      # +to_s+ form (a model emitting +["Fix issue 12", 42]+ meant a
+      # string list — the conversion is unambiguous), while booleans,
+      # +nil+, and nested structures are rejected — those signal a
+      # genuinely wrong call shape, not a representational quirk.
+      # An empty array is type-valid; rejecting it (if the tool needs
+      # at least one element) is the tool's job, with a tool-specific
+      # error message.
+      #
+      # @param name [Symbol] property name
+      # @param description [String] human-readable description shown to the LLM
+      # @return [self]
+      def required_string_array(name, description)
+        @properties[name] = {
+          type: 'array',
+          items: { type: 'string' },
+          description: description
+        }
+        @required << name.to_s
+        self
+      end
+
       # Add a required +integer+ property. Accepts Integers, Floats with a
       # zero fractional part (e.g. +1.0+), and base-10 numeric Strings (after
       # trimming) that resolve to whole numbers; rejects everything else.
@@ -260,7 +290,33 @@ module Pikuri
           coerce_number(value)
         when 'boolean'
           coerce_boolean(value)
+        when 'array'
+          coerce_string_array(value)
         end
+      end
+
+      def coerce_string_array(value)
+        raise CoercionError, "must be an array of strings (got #{value.class}: #{value.inspect})" unless value.is_a?(Array)
+
+        value.each_with_index.map do |element, i|
+          case element
+          when String
+            element
+          when Integer
+            element.to_s
+          when Float
+            raise CoercionError, array_element_message(i, element) unless element.finite?
+
+            element.to_s
+          else
+            raise CoercionError, array_element_message(i, element)
+          end
+        end
+      end
+
+      def array_element_message(index, element)
+        "must be an array of strings (element #{index} is #{element.class}: #{element.inspect}; " \
+          'numbers are auto-converted, other types are not)'
       end
 
       def coerce_boolean(value)
@@ -341,7 +397,14 @@ module Pikuri
 
       def missing_required_message(name, schema)
         enum_part = schema[:enum] ? ", one of: #{schema[:enum].map { |v| "`#{v}`" }.join(', ')}" : ''
-        "Missing required parameter `#{name}` (#{schema[:type]}#{enum_part}): #{schema[:description]}"
+        "Missing required parameter `#{name}` (#{type_label(schema)}#{enum_part}): #{schema[:description]}"
+      end
+
+      # Human/LLM-facing label for a property's type in error messages:
+      # +"array of strings"+ for array properties, the bare JSON-Schema
+      # type name otherwise.
+      def type_label(schema)
+        schema[:items] ? "array of #{schema[:items][:type]}s" : schema[:type]
       end
 
       def unknown_key_error(unknown)
@@ -366,7 +429,7 @@ module Pikuri
           *@properties.map { |name, prop|
             req = @required.include?(name.to_s) ? 'required' : 'optional'
             enum_part = prop[:enum] ? ", one of: #{prop[:enum].map { |v| "`#{v}`" }.join(', ')}" : ''
-            "  - `#{name}` (#{prop[:type]}, #{req}#{enum_part}): #{prop[:description]}"
+            "  - `#{name}` (#{type_label(prop)}, #{req}#{enum_part}): #{prop[:description]}"
           }
         ].join("\n")
       end
