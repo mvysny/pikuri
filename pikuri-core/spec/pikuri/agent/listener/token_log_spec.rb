@@ -256,11 +256,12 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       assert_equal '', described_class.new.status_line
     end
 
-    it 'mirrors the most recent log line, including the [id] prefix when a sub-agent' do
+    it 'holds the unprefixed line even on a sub-agent — the [id] prefix belongs to LOGGER' do
       listener = described_class.new(id: '0_1')
       listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
 
-      assert_equal '[0_1] msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k', listener.status_line
+      assert_equal 'msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k', listener.status_line
+      assert_includes buf.string, '[0_1] msg #1: ctx=11.0k'
     end
 
     it 'updates to the latest snapshot after each Tokens emission' do
@@ -273,11 +274,70 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       assert_equal 'msg #2: ctx=14.0k  Δ+3.0k  ↑2.0k  ↓2.0k', listener.status_line
     end
 
-    it 'is exactly what LOGGER.info was handed (no formatting drift between log and status)' do
+    it 'is what LOGGER.info was handed, minus the prefix (no formatting drift between log and status)' do
       listener = described_class.new
       listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
 
       assert_includes buf.string, listener.status_line
+    end
+  end
+
+  describe '#on_status_line' do
+    it 'is nil by default' do
+      assert_nil described_class.new.on_status_line
+    end
+
+    it 'pushes (id, status_line) after each Tokens event — id is "" for the main agent' do
+      pushed = []
+      listener = described_class.new
+      listener.on_status_line = ->(id, line) { pushed << [id, line] }
+
+      listener.on_event(tokens(input: 1024, cached: 9216, output: 1024))
+      listener.on_event(tokens(input: 2048, cached: 10_240, output: 2048))
+
+      assert_equal [['', 'msg #1: ctx=11.0k  Δ+11.0k  ↑1.0k  ↓1.0k'],
+                    ['', 'msg #2: ctx=14.0k  Δ+3.0k  ↑2.0k  ↓2.0k']], pushed
+    end
+
+    it 'does not fire on non-Tokens variants (ContextCap only updates the cap)' do
+      pushed = []
+      listener = described_class.new
+      listener.on_status_line = ->(id, line) { pushed << [id, line] }
+
+      listener.on_event(Pikuri::Agent::Event::ContextCap.new(cap: 32_768))
+      listener.on_event(Pikuri::Agent::Event::Assistant.new(content: 'reply'))
+
+      assert_equal [], pushed
+    end
+
+    it "passes the agent's id alongside the unprefixed line — routing is the UI's job" do
+      pushed = []
+      listener = described_class.new(id: '0_1')
+      listener.on_status_line = ->(id, line) { pushed << [id, line] }
+
+      listener.on_event(tokens(input: 1024))
+
+      assert_equal [['0_1', 'msg #1: ctx=1.0k  Δ+1.0k  ↑1.0k  ↓0.0k']], pushed
+    end
+
+    it 'carries over to for_sub_agent instances, each calling with its own id' do
+      pushed = []
+      parent = described_class.new
+      parent.on_status_line = ->(id, line) { pushed << [id, line] }
+      child = parent.for_sub_agent(id: '0')
+
+      parent.on_event(tokens(input: 10_240))
+      child.on_event(tokens(input: 5120))
+
+      assert_equal [['', 'msg #1: ctx=10.0k  Δ+10.0k  ↑10.0k  ↓0.0k'],
+                    ['0', 'msg #1: ctx=5.0k  Δ+5.0k  ↑5.0k  ↓0.0k']], pushed
+    end
+
+    it 'is optional — left nil, no push, log line still written' do
+      listener = described_class.new
+      listener.on_event(tokens(input: 1024))
+
+      assert_includes buf.string, 'msg #1: ctx=1.0k'
     end
   end
 

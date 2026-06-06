@@ -96,12 +96,19 @@ module Pikuri
         #   listener you get a fresh instance via {#for_sub_agent}.
         attr_reader :id
 
-        # The most recent log line, in the exact format written to
-        # {LOGGER} (including any +[<id>] + prefix). Empty until
-        # the first {Event::Tokens} has been processed. Hosts that
+        # The most recent status line, *without* the +[<id>] +
+        # prefix — the prefix is {LOGGER}'s concern (the log
+        # stream interleaves agents, so its lines must carry the
+        # id inline); consumers of this reader get the id
+        # separately ({#id} here, the first callable parameter on
+        # {#on_status_line}) and decide the presentation
+        # themselves. Empty until the first {Event::Tokens} has
+        # been processed. Hosts that
         # want to surface the current context-window snapshot in
         # their own UI (e.g. a TUI status footer) read this
-        # instead of re-implementing the formatting.
+        # instead of re-implementing the formatting. Hosts that
+        # want to be *pushed* each new line instead of polling
+        # set {#on_status_line}.
         #
         # Thread safety: a single instance-variable read of a
         # +String+ — safe to read from any thread; readers may
@@ -111,6 +118,34 @@ module Pikuri
         #
         # @return [String]
         attr_reader :status_line
+
+        # Optional status-line observer, +nil+ by default. When
+        # set to a callable, it is invoked with the owning
+        # agent's {#id} and the freshly formatted {#status_line}
+        # after every {Event::Tokens} — the push counterpart to
+        # polling {#status_line}, for hosts that stream the line
+        # onward (a Sinatra SSE endpoint pushing it to the
+        # browser, a websocket, a TUI redraw trigger). Fires on
+        # whatever thread runs the owning agent's loop, so the
+        # callable must hand off to its sink thread-safely; and
+        # like any listener it sits on the loop's path — an
+        # exception it raises propagates into the conversation,
+        # so handle dead connections inside the callable.
+        #
+        # Instances derived via {#for_sub_agent} copy the
+        # observer set at derivation time, so one callable
+        # receives parent and sub-agent lines alike; the +id+
+        # parameter (+""+ for the main agent, the generated id
+        # for a sub-agent) is what lets the UI route each line to
+        # the right status row — the line itself is unprefixed
+        # (see {#status_line}). An observer assigned *after*
+        # a sub-agent spawned doesn't reach that sub-agent's
+        # instance.
+        #
+        # @return [Proc, nil] called with +(id, status_line)+ —
+        #   the owning agent's id +String+ and the unprefixed
+        #   {#status_line} +String+
+        attr_accessor :on_status_line
 
         # @param id [String] owning agent's id, prepended to each
         #   log line as +[<id>] + when non-empty. Defaults to +""+
@@ -122,6 +157,7 @@ module Pikuri
           @context_window_size = 0
           @context_window_cap = nil
           @status_line = ''
+          @on_status_line = nil
         end
 
         # Sub-agent variant: a fresh +TokenLog+ with a zeroed
@@ -132,12 +168,17 @@ module Pikuri
         # prefix; defaults to +""+ when absent. The cap is left
         # +nil+ here; the sub-agent's {Agent#initialize} emits a
         # fresh {Event::ContextCap} immediately after construction
-        # and this listener picks it up off the stream.
+        # and this listener picks it up off the stream. The
+        # {#on_status_line} observer carries over by reference, so
+        # a host streaming the parent's lines sees the sub-agent's
+        # too — distinguished by the +id+ the callable receives.
         #
         # @param id [String] sub-agent's id
         # @return [TokenLog]
         def for_sub_agent(id: '', **)
-          self.class.new(id: id)
+          derived = self.class.new(id: id)
+          derived.on_status_line = @on_status_line
+          derived
         end
 
         # @param event [Agent::Event]
@@ -162,8 +203,9 @@ module Pikuri
 
         private
 
-        # Update the snapshot and write one +INFO+ line to the
-        # subsystem logger.
+        # Update the snapshot, write one +INFO+ line to the
+        # subsystem logger, and push the line to the status-line
+        # observer (when one was given at construction).
         #
         # @param tokens [Event::Tokens]
         # @return [void]
@@ -178,13 +220,14 @@ module Pikuri
           delta = @context_window_size - prev_ctx
 
           @status_line = format_line(input_now, tokens.output.to_i, delta)
-          LOGGER.info(@status_line)
+          prefix = @id.empty? ? '' : "[#{@id}] "
+          LOGGER.info("#{prefix}#{@status_line}")
+          @on_status_line&.call(@id, @status_line)
         end
 
         def format_line(input, output, delta)
           sign = delta.negative? ? '-' : '+'
-          prefix = @id.empty? ? '' : "[#{@id}] "
-          "#{prefix}msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
+          "msg ##{@msg}: ctx=#{format_ctx}  Δ#{sign}#{format_k(delta.abs)}  ↑#{format_k(input)}  ↓#{format_k(output)}"
         end
 
         # +<used>+ when no cap is set, +<used>/<cap>+ when one is.
