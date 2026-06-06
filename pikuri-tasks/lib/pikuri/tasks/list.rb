@@ -37,8 +37,13 @@ module Pikuri
     #
     # == Concurrency
     #
-    # The agent loop is single-threaded with respect to tool calls
-    # (ruby_llm dispatches them sequentially), so no locking. A future
+    # The list is confined to the agent's thread: the agent loop is
+    # single-threaded with respect to tool calls (ruby_llm dispatches
+    # them sequentially), so no locking. Other threads (e.g. a web UI
+    # rendering the list) must not touch a +List+ directly — they
+    # consume the {ListChanged} events {Extension#bind} wires onto
+    # the listener stream, whose +items+ payload is an immutable
+    # snapshot safe to hand across threads. A future
     # parallel-tool-execution feature would need a +Mutex+ here.
     #
     # == Persistence
@@ -51,7 +56,19 @@ module Pikuri
       def initialize
         @items = []
         @next_id = 1
+        @on_change = nil
       end
+
+      # Optional zero-argument hook invoked after every successful
+      # mutation ({#add} / {#set_status} / {#delete}) — not on failed
+      # ones (a raise means nothing changed). Set by {Extension#bind}
+      # to emit a {ListChanged} onto the agent's listener stream;
+      # +nil+ (the default) disables notification. Runs on the
+      # mutating (agent) thread, synchronously inside the mutation
+      # call.
+      #
+      # @return [Proc, nil]
+      attr_accessor :on_change
 
       # @return [Array<Item>] a frozen snapshot of the current items,
       #   in insertion order. Callers cannot mutate the internal
@@ -86,6 +103,7 @@ module Pikuri
         item = Item.new(id: @next_id, content: content, status: 'pending')
         @next_id += 1
         @items << item
+        @on_change&.call
         item
       end
 
@@ -106,6 +124,7 @@ module Pikuri
         raise ItemNotFound, id.to_s if idx.nil?
 
         @items[idx] = @items[idx].with(status: status)
+        @on_change&.call
         @items[idx]
       end
 
@@ -119,7 +138,9 @@ module Pikuri
         idx = @items.index { |i| i.id == id }
         raise ItemNotFound, id.to_s if idx.nil?
 
-        @items.delete_at(idx)
+        removed = @items.delete_at(idx)
+        @on_change&.call
+        removed
       end
 
       # The canonical rendering returned as the observation by every

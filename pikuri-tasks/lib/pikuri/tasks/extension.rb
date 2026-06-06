@@ -3,13 +3,16 @@
 module Pikuri
   # Namespace for the in-memory task-list feature. Holds the
   # {List} value type, the four task tool classes ({Create},
-  # {InProgress}, {Completed}, {Delete}), and the {Extension} that
-  # wires them into an {Pikuri::Agent}.
+  # {InProgress}, {Completed}, {Delete}), the {ListChanged} domain
+  # event, and the {Extension} that wires them into an
+  # {Pikuri::Agent}.
   module Tasks
     # An {Pikuri::Agent::Extension} that auto-wires an in-memory
     # task list onto an agent: constructs a fresh {List}, registers
-    # the four task tool classes against it, and appends a brief
-    # workflow snippet to the system prompt.
+    # the four task tool classes against it, appends a brief
+    # workflow snippet to the system prompt, and (in {#bind}) arms
+    # {ListChanged} emission so listeners can observe every list
+    # mutation.
     #
     # == Usage
     #
@@ -71,9 +74,11 @@ module Pikuri
         @list = List.new
       end
 
-      # @return [List] the per-agent list, exposed for tests and for
-      #   hosts that want to render it in a UI (a future TUI could
-      #   surface +list.items+ in a sidebar).
+      # @return [List] the per-agent list, exposed for tests. UI
+      #   hosts should NOT read it from another thread — the list is
+      #   agent-thread-confined; consume the {ListChanged} events
+      #   wired by {#bind} instead (each carries an immutable
+      #   snapshot safe to render from anywhere).
       attr_reader :list
 
       # Construct the four tools (each sharing +@list+) and register
@@ -96,6 +101,20 @@ module Pikuri
 
         TOOL_CLASSES.each { |cls| c.add_tool(cls.new(list: @list)) }
         c.append_system_prompt(PROMPT_SNIPPET)
+        nil
+      end
+
+      # Arm {List#on_change} to emit a {ListChanged} (carrying a
+      # fresh {List#items} snapshot) onto the agent's listener
+      # stream after every mutation. This is what lets a UI listener
+      # observe the task list without ever touching the
+      # agent-thread-confined {List} — see the Concurrency note on
+      # {List}.
+      #
+      # @param ctx [Pikuri::Agent::ExtensionContext]
+      # @return [void]
+      def bind(ctx)
+        @list.on_change = -> { ctx.emit_event(ListChanged.new(items: @list.items)) }
         nil
       end
     end

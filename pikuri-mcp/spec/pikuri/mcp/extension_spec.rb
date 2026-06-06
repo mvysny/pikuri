@@ -33,8 +33,8 @@ RSpec.describe Pikuri::Mcp::Extension do
         @close_calls += 1
       end
 
-      def build_mcp_connect_tool(agent)
-        @build_calls << agent
+      def build_mcp_connect_tool(ctx)
+        @build_calls << ctx
         # The real Connect class — we don't need to fake it here,
         # the test verifies the call shape, not the returned tool.
         Struct.new(:to_ruby_llm_tool).new(:fake_rl_tool)
@@ -155,32 +155,32 @@ RSpec.describe Pikuri::Mcp::Extension do
   end
 
   describe '#bind' do
-    let(:dummy_agent_class) do
+    # ExtensionContext stand-in: records tools registered via
+    # +add_raw_tool+ and exposes a minimal +agent+ whose +tools+ never
+    # contain Mcp::Servers::Connect for these specs.
+    let(:dummy_ctx_class) do
       Class.new do
-        attr_reader :added_tools
+        attr_reader :added_tools, :agent
 
         def initialize
           @added_tools = []
+          @agent = Struct.new(:tools).new([])
         end
 
-        def tools
-          [] # never has Mcp::Servers::Connect for these specs
-        end
-
-        def internal_add_tool(rl_tool)
+        def add_raw_tool(rl_tool)
           @added_tools << rl_tool
         end
       end
     end
 
     it 'is a no-op when the registry was empty at configure time' do
-      agent = dummy_agent_class.new
+      ctx = dummy_ctx_class.new
       ext = described_class.new(registry: Pikuri::Mcp::Registry::EMPTY)
       ext.configure(configurator)
 
-      ext.bind(agent)
+      ext.bind(ctx)
 
-      assert_equal [], agent.added_tools
+      assert_equal [], ctx.added_tools
     end
 
     it 'skips connect tool when servers are empty (no live ids)' do
@@ -190,10 +190,10 @@ RSpec.describe Pikuri::Mcp::Extension do
                                 verify_mcp_servers: false)
       with_stubbed_servers(tracker) { ext.configure(configurator) }
 
-      agent = dummy_agent_class.new
-      ext.bind(agent)
+      ctx = dummy_ctx_class.new
+      ext.bind(ctx)
 
-      assert_equal [], agent.added_tools, 'no connect tool when servers are empty'
+      assert_equal [], ctx.added_tools, 'no connect tool when servers are empty'
       assert_equal [], tracker.build_calls
     end
 
@@ -204,11 +204,11 @@ RSpec.describe Pikuri::Mcp::Extension do
                                 verify_mcp_servers: false)
       with_stubbed_servers(tracker) { ext.configure(configurator) }
 
-      agent = dummy_agent_class.new
-      ext.bind(agent)
+      ctx = dummy_ctx_class.new
+      ext.bind(ctx)
 
-      assert_equal [agent], tracker.build_calls, 'connect tool was built keyed to this agent'
-      assert_equal [:fake_rl_tool], agent.added_tools, 'connect tool registered via internal_add_tool'
+      assert_equal [ctx], tracker.build_calls, 'connect tool was built keyed to this context'
+      assert_equal [:fake_rl_tool], ctx.added_tools, 'connect tool registered via ctx.add_raw_tool'
     end
   end
 

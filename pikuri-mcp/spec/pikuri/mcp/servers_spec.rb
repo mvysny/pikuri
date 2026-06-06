@@ -19,15 +19,15 @@ RSpec.describe Pikuri::Mcp::Servers do
     ])
   end
 
-  def fake_agent
-    # Stand-in agent that records tools added via +internal_add_tool+
-    # without instantiating a real +Pikuri::Agent+ (which would require
-    # a RubyLLM transport).
-    agent = Object.new
+  def fake_ctx
+    # Stand-in Agent::ExtensionContext that records tools registered
+    # via +add_raw_tool+ without instantiating a real +Pikuri::Agent+
+    # (which would require a RubyLLM transport).
+    ctx = Object.new
     added = []
-    agent.define_singleton_method(:internal_add_tool) { |t| added << t }
-    agent.define_singleton_method(:added_tools) { added }
-    agent
+    ctx.define_singleton_method(:add_raw_tool) { |t| added << t }
+    ctx.define_singleton_method(:added_tools) { added }
+    ctx
   end
 
   describe '#initialize against the test fixture' do
@@ -124,20 +124,20 @@ RSpec.describe Pikuri::Mcp::Servers do
   describe '#register_tools_with_agent' do
     it 'adds one RubyLLM::Tool subclass per MCP-exposed tool to the agent' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      count = servers.register_tools_with_agent('test', agent)
+      ctx = fake_ctx
+      count = servers.register_tools_with_agent('test', ctx)
       assert_equal 5, count
-      assert_equal 5, agent.added_tools.size
-      assert(agent.added_tools.all? { |t| t < RubyLLM::Tool })
+      assert_equal 5, ctx.added_tools.size
+      assert(ctx.added_tools.all? { |t| t < RubyLLM::Tool })
     ensure
       servers&.close
     end
 
     it 'namespaces tool names as <server_id>__<tool_name>' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      names = agent.added_tools.map(&:name)
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      names = ctx.added_tools.map(&:name)
       assert_includes names, 'test__echo'
       assert_includes names, 'test__divide'
       assert_includes names, 'test__crash'
@@ -147,9 +147,9 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'prefixes every tool description with the provenance marker' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      agent.added_tools.each do |t|
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      ctx.added_tools.each do |t|
         # RubyLLM::Tool stashes the description on the class.
         desc = t.respond_to?(:description) ? t.description : t.instance_variable_get(:@description)
         assert_match(/\A\[From MCP server "test"\]/, desc.to_s)
@@ -160,9 +160,9 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'preserves the MCP tool description verbatim after the provenance prefix' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
       assert_equal(
         %([From MCP server "test"]\n\nEchoes the given message back to the caller.),
         echo.description
@@ -178,10 +178,10 @@ RSpec.describe Pikuri::Mcp::Servers do
       # input_schema make it all the way through deep_dup +
       # stringify_keys without being dropped.
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
 
-      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
       schema = echo.new.params_schema
       assert_equal 'object', schema['type']
       assert_includes schema['required'], 'message'
@@ -190,7 +190,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       assert_equal 'string',
                    schema.dig('properties', 'message', 'type')
 
-      divide = agent.added_tools.find { |t| t.name == 'test__divide' }
+      divide = ctx.added_tools.find { |t| t.name == 'test__divide' }
       div_schema = divide.new.params_schema
       assert_equal 'The numerator.',
                    div_schema.dig('properties', 'a', 'description')
@@ -202,9 +202,9 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'strips the $schema URI to avoid provider-side rejection of extra top-level keys' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
       schema = echo.new.params_schema
       refute schema.key?('$schema'), "expected $schema URI to be stripped, got: #{schema.inspect}"
     ensure
@@ -230,7 +230,7 @@ RSpec.describe Pikuri::Mcp::Servers do
     it 'raises ArgumentError for an unknown id (loud-on-bugs, not Error: ...)' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
       assert_raises(ArgumentError) do
-        servers.register_tools_with_agent('nope', fake_agent)
+        servers.register_tools_with_agent('nope', fake_ctx)
       end
     ensure
       servers&.close
@@ -240,9 +240,9 @@ RSpec.describe Pikuri::Mcp::Servers do
   describe 'synthesized RubyLLM::Tool execute paths' do
     it 'returns the raw text content on success' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      echo = agent.added_tools.find { |t| t.name == 'test__echo' }
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      echo = ctx.added_tools.find { |t| t.name == 'test__echo' }
       assert_equal 'hello pikuri', echo.new.execute(message: 'hello pikuri')
     ensure
       servers&.close
@@ -250,9 +250,9 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'converts MCP-side tool errors into Error: ... observations' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      divide = agent.added_tools.find { |t| t.name == 'test__divide' }
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      divide = ctx.added_tools.find { |t| t.name == 'test__divide' }
       result = divide.new.execute(a: 10, b: 0)
       assert_match(/\AError:/, result)
       assert_match(/division by zero/, result)
@@ -262,9 +262,9 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'surfaces mid-call server death as an Error: ... observation' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      servers.register_tools_with_agent('test', agent)
-      crash = agent.added_tools.find { |t| t.name == 'test__crash' }
+      ctx = fake_ctx
+      servers.register_tools_with_agent('test', ctx)
+      crash = ctx.added_tools.find { |t| t.name == 'test__crash' }
       result = crash.new.execute
       assert_match(/\AError: MCP server "test" call failed/, result)
     ensure
@@ -275,8 +275,8 @@ RSpec.describe Pikuri::Mcp::Servers do
   describe Pikuri::Mcp::Servers::Connect do
     it 'returns an Error: ... for an unknown id' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      tool = servers.build_mcp_connect_tool(agent)
+      ctx = fake_ctx
+      tool = servers.build_mcp_connect_tool(ctx)
       result = tool.run('id' => 'unknown')
       assert_match(/\AError: unknown MCP server id/, result)
       assert_match(/Available: test/, result)
@@ -286,39 +286,39 @@ RSpec.describe Pikuri::Mcp::Servers do
 
     it 'connects an unknown-to-this-instance server and reports the tool count' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      tool = servers.build_mcp_connect_tool(agent)
+      ctx = fake_ctx
+      tool = servers.build_mcp_connect_tool(ctx)
       result = tool.run('id' => 'test')
       assert_match(/Connected to MCP server 'test'/, result)
       assert_match(/Added 5 tools/, result)
-      assert_equal 5, agent.added_tools.size
+      assert_equal 5, ctx.added_tools.size
     ensure
       servers&.close
     end
 
     it 'rejects re-activation with an Error: ... (and does not re-register tools)' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent = fake_agent
-      tool = servers.build_mcp_connect_tool(agent)
+      ctx = fake_ctx
+      tool = servers.build_mcp_connect_tool(ctx)
       tool.run('id' => 'test')
       result = tool.run('id' => 'test')
       assert_match(/\AError: server 'test' is already connected/, result)
-      assert_equal 5, agent.added_tools.size # not 10
+      assert_equal 5, ctx.added_tools.size # not 10
     ensure
       servers&.close
     end
 
     it 'tracks activation per-instance — a fresh McpConnect can reactivate' do
       servers = Pikuri::Mcp::Servers.start(fresh_registry)
-      agent1 = fake_agent
-      agent2 = fake_agent
-      tool1 = servers.build_mcp_connect_tool(agent1)
-      tool2 = servers.build_mcp_connect_tool(agent2)
+      ctx1 = fake_ctx
+      ctx2 = fake_ctx
+      tool1 = servers.build_mcp_connect_tool(ctx1)
+      tool2 = servers.build_mcp_connect_tool(ctx2)
       tool1.run('id' => 'test')
       result2 = tool2.run('id' => 'test') # fresh activation set
       assert_match(/Connected to MCP server 'test'/, result2)
-      assert_equal 5, agent1.added_tools.size
-      assert_equal 5, agent2.added_tools.size
+      assert_equal 5, ctx1.added_tools.size
+      assert_equal 5, ctx2.added_tools.size
     ensure
       servers&.close
     end

@@ -24,10 +24,14 @@ module Pikuri
       end
 
       # Dispatch one event to every listener, in registration order.
-      # Called exclusively by {Agent} — listeners themselves never
-      # call this; the stream is one-way.
+      # Exactly two callers: {Agent} (loop-narration {Event}
+      # variants) and {ExtensionContext#emit_event} (extension
+      # domain events). Listeners themselves never call this; the
+      # stream is one-way.
       #
-      # @param event [Agent::Event]
+      # @param event [Object] an {Agent::Event} variant or a
+      #   gem-defined domain event (an immutable value, by
+      #   convention a +Data+ instance)
       # @return [void]
       def emit(event)
         @listeners.each { |l| l.on_event(event) }

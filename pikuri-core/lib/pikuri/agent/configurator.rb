@@ -116,8 +116,8 @@ module Pikuri
 
       # @return [Array<#configure>] extension instances added via
       #   {#add_extension}, in declaration order. The Agent ctor
-      #   walks this list and calls +bind(self)+ on each after
-      #   wiring is complete.
+      #   walks this list after wiring is complete and calls +bind+
+      #   on each with the agent's {ExtensionContext}.
       attr_reader :extensions
 
       # @param transport [Agent::ChatTransport]
@@ -219,7 +219,7 @@ module Pikuri
 
       # Register an extension. The extension's +configure(self)+ is
       # called immediately so source-order matches execution-order.
-      # The instance is also retained for the +bind(agent)+ sweep
+      # The instance is also retained for the +bind(ctx)+ sweep
       # that runs at the end of {Agent#initialize}.
       #
       # Extensions must implement both +configure+ and +bind+. The

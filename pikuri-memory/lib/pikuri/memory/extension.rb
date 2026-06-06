@@ -149,14 +149,15 @@ module Pikuri
       end
 
       # Start the capture worker and arm its bounded flush on agent
-      # close. Keyed to this specific agent via {Agent#on_close} (not
+      # close. Keyed to this specific agent via
+      # {Pikuri::Agent::ExtensionContext#on_close} (not
       # {Configurator#on_close}) so the lifetime tracks the live agent.
       #
-      # @param agent [Pikuri::Agent]
+      # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
-      def bind(agent)
+      def bind(ctx)
         @recorder.start
-        agent.on_close { @recorder.close }
+        ctx.on_close { @recorder.close }
         nil
       end
 
@@ -165,11 +166,12 @@ module Pikuri
       # inject nothing this turn). Capture happens regardless of whether
       # prefetch finds anything.
       #
-      # @param agent [Pikuri::Agent] unused (the namespace is fixed at
-      #   construction); part of the protocol signature.
+      # @param ctx [Pikuri::Agent::ExtensionContext] unused (the
+      #   namespace is fixed at construction); part of the protocol
+      #   signature.
       # @param content [String] the incoming user message.
       # @return [String, nil] a +<memory-context>+ block, or +nil+.
-      def on_user_message(_agent, content)
+      def on_user_message(_ctx, content)
         @recorder.enqueue(content)
         prefetch(content)
       end

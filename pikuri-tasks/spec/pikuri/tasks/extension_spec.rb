@@ -68,9 +68,60 @@ RSpec.describe Pikuri::Tasks::Extension do
   end
 
   describe '#bind' do
-    it 'is the inherited no-op default' do
+    # Minimal Agent::ExtensionContext stand-in recording emitted events.
+    let(:fake_ctx_class) do
+      Class.new do
+        attr_reader :emitted
+
+        def initialize
+          @emitted = []
+        end
+
+        def emit_event(event)
+          @emitted << event
+        end
+      end
+    end
+
+    it 'arms List#on_change to emit a ListChanged snapshot per mutation' do
       ext = described_class.new
-      assert_nil ext.bind(:any_agent)
+      ext.configure(configurator)
+      ctx = fake_ctx_class.new
+
+      ext.bind(ctx)
+      task_create = configurator.tools.find { |t| t.name == 'task_create' }
+      task_create.run('items' => %w[one two])
+
+      # One event per added item (batch create mutates item-by-item);
+      # the last snapshot is authoritative.
+      assert_equal 2, ctx.emitted.size
+      assert(ctx.emitted.all? { |e| e.is_a?(Pikuri::Tasks::ListChanged) })
+      assert_equal %w[one], ctx.emitted[0].items.map(&:content)
+      assert_equal %w[one two], ctx.emitted[1].items.map(&:content)
+    end
+
+    it 'emits on status change and delete too, carrying frozen snapshots' do
+      ext = described_class.new
+      ext.configure(configurator)
+      ctx = fake_ctx_class.new
+      ext.bind(ctx)
+
+      ext.list.add('one')
+      ext.list.set_status(id: 1, status: 'completed')
+      ext.list.delete(1)
+
+      assert_equal 3, ctx.emitted.size
+      assert_equal 'completed', ctx.emitted[1].items.first.status
+      assert_empty ctx.emitted[2].items
+      assert(ctx.emitted.all? { |e| e.items.frozen? })
+    end
+
+    it 'emits nothing before bind — on_change defaults to nil' do
+      ext = described_class.new
+      ext.configure(configurator)
+
+      ext.list.add('quiet') # must not raise
+      assert_equal 1, ext.list.size
     end
   end
 end

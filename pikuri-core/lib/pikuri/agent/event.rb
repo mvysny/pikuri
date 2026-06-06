@@ -19,6 +19,18 @@ module Pikuri
     # +case+-match on the variant they care about. The per-variant
     # docs below name the emission site for each (which {Agent}
     # callback wires it and what payload it carries).
+    #
+    # == Sealed for loop narration; gems add domain events
+    #
+    # "Sealed" applies to the *loop-narration* vocabulary: the
+    # variants below are the complete set, all emitted by {Agent},
+    # and new chat-loop observability belongs here, not in a gem.
+    # Gems may define their own *domain* events in their own
+    # namespace (e.g. +Pikuri::Tasks::ListChanged+) and emit them
+    # via {ExtensionContext#emit_event}; they ride the same stream.
+    # Listeners must no-op on variants they don't recognize —
+    # {Listener::Base#on_event}'s default plus +case+-fallthrough
+    # give that for free.
     module Event
       # User's input for a turn (+mid_loop: false+, the default) or a
       # host-supplied injection delivered while the loop is running

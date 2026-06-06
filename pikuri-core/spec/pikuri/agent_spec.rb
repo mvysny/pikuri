@@ -152,7 +152,9 @@ RSpec.describe Pikuri::Agent do
                                 system_prompt: 's')
 
       assert_equal [], agent.tools
-      assert_equal '[]', agent.listeners.to_s
+      # No public listeners reader (the API is sealed — see
+      # ExtensionContext); the banner is the observable surface.
+      assert_includes agent.to_s, 'listeners=[]'
     end
 
     it 'defaults id to empty (main agent)' do
@@ -629,8 +631,8 @@ RSpec.describe Pikuri::Agent do
           @calls = []
         end
 
-        def on_user_message(agent, content)
-          @calls << [agent, content]
+        def on_user_message(ctx, content)
+          @calls << [ctx, content]
           @block
         end
       end
@@ -644,7 +646,10 @@ RSpec.describe Pikuri::Agent do
       agent.run_loop(user_message: 'where do I live?')
 
       assert_equal 1, ext.calls.size
-      assert_same agent, ext.calls[0][0]
+      # The hook receives the agent's ExtensionContext (same one bind
+      # got), with the live agent readable off it.
+      assert_kind_of Pikuri::Agent::ExtensionContext, ext.calls[0][0]
+      assert_same agent, ext.calls[0][0].agent
       assert_equal 'where do I live?', ext.calls[0][1]
       # :user message first, then the recalled :system block at the tail.
       assert_equal(
@@ -922,8 +927,9 @@ RSpec.describe Pikuri::Agent do
 
       # The handed-off list is a derived one, not the parent's instance —
       # ListenerList#for_sub_agent returns a new object so the synth
-      # chat doesn't share the parent's mutation surface.
-      refute_same agent.listeners, call[:listeners]
+      # chat doesn't share the parent's mutation surface. (No public
+      # listeners reader — peek at the ivar.)
+      refute_same agent.instance_variable_get(:@listeners), call[:listeners]
       assert_kind_of Pikuri::Agent::ListenerList, call[:listeners]
 
       # Defensive step_limit on the synth (max=1, since synth has no tools).
@@ -1174,7 +1180,7 @@ RSpec.describe Pikuri::Agent do
       ext_class = Class.new do
         include Pikuri::Agent::Extension
         define_method(:configure) { |c| events << [:configure, c.is_a?(Pikuri::Agent::Configurator)] }
-        define_method(:bind) { |agent| events << [:bind, agent.is_a?(Pikuri::Agent)] }
+        define_method(:bind) { |ctx| events << [:bind, ctx.is_a?(Pikuri::Agent::ExtensionContext)] }
       end
 
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
@@ -1184,6 +1190,22 @@ RSpec.describe Pikuri::Agent do
       end
 
       assert_equal [[:configure, true], [:bind, true]], events
+    end
+
+    it 'hands #bind an ExtensionContext whose #agent is the live, fully wired agent' do
+      seen = nil
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:bind) { |ctx| seen = ctx }
+      end
+
+      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                                system_prompt: 's') do |c|
+        c.add_listener recorder
+        c.add_extension(ext_class.new)
+      end
+
+      assert_same agent, seen.agent
     end
 
     it "extensions that include Extension and override only #configure inherit a no-op #bind" do
@@ -1223,11 +1245,16 @@ RSpec.describe Pikuri::Agent do
       assert_equal %i[second_registered first_registered], order
     end
 
-    it 'fires Agent#on_close handlers (registered post-construction) in LIFO too' do
+    it 'fires ExtensionContext#on_close handlers (registered at bind time) in LIFO too' do
       order = []
-      agent = build_agent
-      agent.on_close { order << :a }
-      agent.on_close { order << :b }
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        define_method(:bind) do |ctx|
+          ctx.on_close { order << :a }
+          ctx.on_close { order << :b }
+        end
+      end
+      agent = build_agent { |c| c.add_extension(ext_class.new) }
 
       agent.close
 
@@ -1258,9 +1285,5 @@ RSpec.describe Pikuri::Agent do
       assert_equal [:outer], order
     end
 
-    it 'raises ArgumentError when on_close is called without a block' do
-      agent = build_agent
-      assert_raises(ArgumentError) { agent.on_close }
-    end
   end
 end

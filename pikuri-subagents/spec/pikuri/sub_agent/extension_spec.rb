@@ -197,7 +197,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
 
     it "does NOT add the SubAgentTool to the parent agent's @tools — it's a per-agent dynamic tool" do
       # Same convention MCP follows: dynamic per-agent tools go through
-      # internal_add_tool (i.e. directly onto @chat), not into @tools.
+      # ctx.add_raw_tool (i.e. directly onto @chat), not into @tools.
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
@@ -237,9 +237,12 @@ RSpec.describe Pikuri::SubAgent::Extension do
         # path: dig the SubAgentTool out of the extension instance.
         ext = agent.extensions.find { |e| e.is_a?(described_class) }
         refute_nil ext
-        # The SubAgentTool is closed over by bind; we re-create one and
-        # invoke its execute closure to assert the propagation policy.
-        sub_tool = Pikuri::SubAgent::SubAgentTool.new(agent, personas: ext.personas)
+        # The SubAgentTool is closed over by bind; we re-create one
+        # (against the agent's ExtensionContext, the shape bind
+        # received) and invoke its execute closure to assert the
+        # propagation policy.
+        ctx = agent.instance_variable_get(:@extension_context)
+        sub_tool = Pikuri::SubAgent::SubAgentTool.new(ctx, personas: ext.personas)
         sub_tool.run('name' => 'researcher', 'task' => 'do the thing')
         assert_equal 12_345, received_kwargs[:context_window]
       ensure

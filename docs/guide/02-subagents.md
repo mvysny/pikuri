@@ -158,15 +158,18 @@ the ones it needs:
   better to crash at boot than at first LLM call), and append the
   `<available_agents>` snippet to the system prompt via
   `c.append_system_prompt`.
-- **`bind(agent)`** — agent-keyed setup. Runs once the agent is
-  fully constructed, with the live `Pikuri::Agent` itself.
-  `SubAgent::Extension#bind` constructs the `SubAgentTool` closing
-  over the parent agent's `transport` / `tools` / `listeners` /
-  `cancellable` / `context_window_cap` / `streaming`, then
-  installs it via `Agent#internal_add_tool`. It has to happen
-  here, not in `configure`, because the closure needs the *final*
-  parent tool list — which is only stable after every other
-  `add_tool` has run.
+- **`bind(ctx)`** — agent-keyed setup. Runs once the agent is
+  fully constructed, with the agent's
+  `Pikuri::Agent::ExtensionContext` — the capability facade for
+  everything that acts on a live agent (the agent itself is
+  readable via `ctx.agent`). `SubAgent::Extension#bind` constructs
+  the `SubAgentTool` closing over the context (for the parent's
+  `transport` / `tools` / `cancellable` / `context_window_cap` /
+  `streaming`, plus per-spawn listener derivation), then installs
+  it via `ctx.add_raw_tool`. It has to happen here, not in
+  `configure`, because the closure needs the *final* parent tool
+  list — which is only stable after every other `add_tool` has
+  run.
 
 Same shape used by `Pikuri::Skill::Extension` and
 `Pikuri::Mcp::Extension`. You'll see it again in chapter 5 (MCP)

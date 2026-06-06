@@ -36,11 +36,12 @@ module Pikuri
     #   boot, not at first LLM call), then appends the
     #   +<available_agents>+ snippet via
     #   {Pikuri::Agent::Configurator#append_system_prompt}.
-    # * +bind(agent)+ — agent-keyed setup. Constructs the
-    #   {SubAgentTool} closing over the live parent agent (its
-    #   +tools+, +listeners+, +cancellable+, +context_window_cap+,
-    #   +streaming+ flag) and installs it via
-    #   {Pikuri::Agent#internal_add_tool}.
+    # * +bind(ctx)+ — agent-keyed setup. Constructs the
+    #   {SubAgentTool} closing over the parent agent's
+    #   {Pikuri::Agent::ExtensionContext} (for its +tools+,
+    #   +cancellable+, +context_window_cap+, +streaming+ flag, and
+    #   per-spawn listener derivation) and installs it via
+    #   {Pikuri::Agent::ExtensionContext#add_raw_tool}.
     #
     # Sub-agents do not inherit extensions, so +bind+ fires for the
     # parent only.
@@ -115,18 +116,19 @@ module Pikuri
         nil
       end
 
-      # Construct the {SubAgentTool} closing over the live parent
-      # agent and register it on the agent's chat. Goes through
-      # {Pikuri::Agent#internal_add_tool} rather than +@tools+
-      # because the tool's +execute+ closure captures
-      # +parent_agent.tools+ at construction — by the time +bind+
+      # Construct the {SubAgentTool} closing over the parent agent's
+      # {Pikuri::Agent::ExtensionContext} and register it on the
+      # agent's chat. Goes through
+      # {Pikuri::Agent::ExtensionContext#add_raw_tool} rather than
+      # +@tools+ because the tool's +execute+ closure captures the
+      # parent's tool list at construction — by the time +bind+
       # runs, that list is final.
       #
-      # @param agent [Pikuri::Agent]
+      # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
-      def bind(agent)
-        sub_tool = SubAgentTool.new(agent, personas: @personas)
-        agent.internal_add_tool(sub_tool.to_ruby_llm_tool)
+      def bind(ctx)
+        sub_tool = SubAgentTool.new(ctx, personas: @personas)
+        ctx.add_raw_tool(sub_tool.to_ruby_llm_tool)
         nil
       end
     end

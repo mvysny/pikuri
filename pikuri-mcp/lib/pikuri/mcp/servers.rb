@@ -85,8 +85,8 @@ module Pikuri
   # MCP tools arrive with JSON Schema in their +input_schema+;
   # +RubyLLM::Tool.params(schema)+ accepts that shape directly. We
   # therefore synthesize +RubyLLM::Tool+ subclasses inside this class
-  # and feed them through {Agent#internal_add_tool} — no
-  # +Pikuri::Tool::Parameters+ in the middle. The strict-validation
+  # and feed them through {Pikuri::Agent::ExtensionContext#add_raw_tool}
+  # — no +Pikuri::Tool::Parameters+ in the middle. The strict-validation
   # contract pikuri commits to for native tools is intentionally not
   # extended to MCP tools in v1; MCP-side validation catches bad input,
   # and the provenance prefix + audit log are the compensating
@@ -186,15 +186,16 @@ module Pikuri
       @live_ids.empty?
     end
 
-    # Build the +mcp_connect+ tool bound to the given agent. The agent
-    # passes itself so the tool can call +agent.internal_add_tool+
+    # Build the +mcp_connect+ tool bound to the given agent, via its
+    # {Pikuri::Agent::ExtensionContext}. {Extension#bind} passes the
+    # context it received so the tool can call +ctx.add_raw_tool+
     # without a circular constructor dance. Each call returns a fresh
     # {Connect} with an empty activation set.
     #
-    # @param agent [Agent]
+    # @param ctx [Pikuri::Agent::ExtensionContext]
     # @return [Connect]
-    def build_mcp_connect_tool(agent)
-      Connect.new(servers: self, agent: agent)
+    def build_mcp_connect_tool(ctx)
+      Connect.new(servers: self, ctx: ctx)
     end
 
     # System-prompt block advertising every live MCP server to the LLM.
@@ -226,24 +227,25 @@ module Pikuri
       lines.join("\n")
     end
 
-    # Register every tool exposed by server +id+ into +agent+'s
-    # underlying +RubyLLM::Chat+. Public so {View#register_tools_with_agent}
-    # can delegate; intended caller is {Connect} via
-    # {Agent#internal_add_tool}. Doesn't track activation — that's
-    # {Connect}'s job (each agent's tool instance owns its own set).
+    # Register every tool exposed by server +id+ into an agent's
+    # underlying +RubyLLM::Chat+, through the agent's
+    # {Pikuri::Agent::ExtensionContext}. Public so
+    # {View#register_tools_with_agent} can delegate; intended caller
+    # is {Connect}. Doesn't track activation — that's {Connect}'s
+    # job (each agent's tool instance owns its own set).
     #
     # @param id [String] server id; must be in {#live_ids}.
-    # @param agent [Agent]
+    # @param ctx [Pikuri::Agent::ExtensionContext]
     # @return [Integer] number of tools registered.
     # @raise [ArgumentError] if +id+ isn't live.
-    def register_tools_with_agent(id, agent)
+    def register_tools_with_agent(id, ctx)
       raise ArgumentError, "MCP server #{id.inspect} is not live" unless @live_ids.include?(id)
 
       wrapper = @wrappers.fetch(id)
       tools = @tools_cache.fetch(id)
       tools.each do |mcp_tool|
         rb_tool = synthesize_ruby_llm_tool(server_id: id, wrapper: wrapper, mcp_tool: mcp_tool)
-        agent.internal_add_tool(rb_tool)
+        ctx.add_raw_tool(rb_tool)
       end
       tools.size
     end
@@ -470,7 +472,8 @@ module Pikuri
 
     # The +mcp_connect+ tool exposed to the LLM. Private inner class —
     # instantiated only by {Servers#build_mcp_connect_tool} (called
-    # from {Agent#initialize}), never by application code.
+    # from {Extension#bind} with the agent's
+    # {Pikuri::Agent::ExtensionContext}), never by application code.
     #
     # Tracks its own activation +Set+ so re-connecting an already-active
     # server returns a recoverable +"Error: ..."+ String (the LLM has
@@ -491,9 +494,9 @@ module Pikuri
 
       # @param servers [Servers] shared runtime this tool resolves
       #   ids against and registers tools through.
-      # @param agent [Agent] agent into whose chat the activated tools
-      #   are registered.
-      def initialize(servers:, agent:)
+      # @param ctx [Pikuri::Agent::ExtensionContext] context of the
+      #   agent into whose chat the activated tools are registered.
+      def initialize(servers:, ctx:)
         activated = Set.new
 
         super(
@@ -515,7 +518,7 @@ module Pikuri
               next "Error: server '#{id}' is already connected; its tools are in your toolset, call them directly."
             end
 
-            count = servers.register_tools_with_agent(id, agent)
+            count = servers.register_tools_with_agent(id, ctx)
             activated << id
             "Connected to MCP server '#{id}'. Added #{count} tool#{'s' if count != 1} to your toolset."
           }

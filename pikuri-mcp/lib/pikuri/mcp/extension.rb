@@ -16,8 +16,9 @@ module Pikuri
     # the *shared* {Mcp::Servers} runtime — that's the resource the
     # extension owns. +bind+ fires once on the parent agent and
     # installs a +Connect+ tool keyed to it, registered via
-    # {Agent#internal_add_tool} so the tool's +execute+ closure can
-    # call back into the right chat when the LLM activates a server.
+    # {Pikuri::Agent::ExtensionContext#add_raw_tool} so the tool's
+    # +execute+ closure can call back into the right chat when the
+    # LLM activates a server.
     # Sub-agents do not inherit extensions, so they receive neither
     # the +Connect+ tool nor any MCP-backed tools — personas own
     # their toolset by construction.
@@ -103,23 +104,23 @@ module Pikuri
       end
 
       # Register a per-agent +mcp_connect+ tool on the agent's chat.
-      # The tool's +execute+ closure captures the agent reference so
-      # activations register their tools on the correct chat — see
+      # The tool's +execute+ closure captures the {ExtensionContext}
+      # so activations register their tools on the correct chat — see
       # IDEAS.md §"Two invariants worth recording" for the
       # static-vs-dynamic tool boundary.
       #
-      # @param agent [Pikuri::Agent]
+      # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
-      def bind(agent)
+      def bind(ctx)
         return if @servers.nil? || @servers.empty?
 
-        if agent.tools.any?(Mcp::Servers::Connect)
+        if ctx.agent.tools.any?(Mcp::Servers::Connect)
           raise 'Mcp::Servers::Connect cannot be passed in tools: when an MCP runtime is wired; ' \
                 'Agent auto-registers it.'
         end
 
-        connect = @servers.build_mcp_connect_tool(agent)
-        agent.internal_add_tool(connect.to_ruby_llm_tool)
+        connect = @servers.build_mcp_connect_tool(ctx)
+        ctx.add_raw_tool(connect.to_ruby_llm_tool)
         nil
       end
 

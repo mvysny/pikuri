@@ -140,8 +140,9 @@ yardoc. CLAUDE.md only records the invariant.
   boundary*: process-level infra a `bin/` starts self-registers
   (`Pikuri::VectorDb::Server::Chroma` via `ensure_running!`);
   agent-owned resources do NOT — they ride the agent's `on_close`,
-  which an extension arms via `c.on_close` (that writes to the
-  agent's live handler list, so cleanup fires even mid-construction).
+  which an extension arms via `c.on_close` at configure time or
+  `ctx.on_close` at bind time (both write to the agent's live
+  handler list, so cleanup fires even mid-construction).
   `Agent` self-heals: it registers up front and, if the build phase
   raises, closes (firing armed handlers) and unregisters before
   re-raising — so a half-built agent leaks nothing. `#close`
@@ -155,6 +156,23 @@ yardoc. CLAUDE.md only records the invariant.
   hook). See {Pikuri::Finalizers}, {Pikuri::Agent},
   {Pikuri::Agent::Configurator} (the `on_close_sink`), and
   {Pikuri::Workspace::Filesystem.mint_internal_temp}.
+- **Capability seam (ExtensionContext).** A live `Agent` reference
+  grants read access only — no `listeners` / `chat` readers, no
+  emit method, no post-construction `on_close`. Everything that
+  *acts on* a wired agent (`emit_event` for domain events,
+  `add_raw_tool`, `sub_agent_listeners`, `on_close`) lives on
+  `Pikuri::Agent::ExtensionContext`, constructed once per agent and
+  handed only to `Extension#bind` / `#on_user_message`; non-extension
+  consumers (`SubAgentTool`, `Mcp::Servers::Connect`) receive it by
+  explicit handoff from their extension's `bind`. Core `Event`
+  variants remain Agent-emitted loop narration; gems define domain
+  events in their own namespace (e.g. `Tasks::ListChanged`) and emit
+  via `ctx.emit_event` — listeners must no-op on unknown variants.
+  Grep-enforceable:
+  `grep -rn 'emit_event\|add_raw_tool\|sub_agent_listeners' pikuri-*/lib/`
+  is the capability-user roster, and `listeners.emit` outside
+  `agent.rb` / `extension_context.rb` should hit nothing. See
+  {Pikuri::Agent::ExtensionContext}.
 - **Workspace seam.** Tools touching files (`Read`, `Write`,
   `Edit`, `Grep`, `Glob`, `Bash`) take a
   `Pikuri::Workspace::Filesystem` via constructor and route every
@@ -273,7 +291,11 @@ per-gem one-liners:
   `task_create` takes a JSON array of strings; the three mutation
   tools address items by numeric id (never reused after delete;
   rationale for both reversals in {Pikuri::Tasks::Create} and the
-  guide ch11); state is dropped on agent close. Depends on
+  guide ch11); state is dropped on agent close. `Extension#bind`
+  arms a `Tasks::ListChanged` domain event per list mutation
+  (snapshot payload — the worked example of `ctx.emit_event`; UI
+  listeners observe the list without touching the
+  agent-thread-confined `List`). Depends on
   `pikuri-core`. Stdlib-only; no new runtime deps.
 - **`pikuri-workspace/`** — `Workspace::Filesystem`,
   `Workspace::Confirmer`, and the five file tools (`Read`,

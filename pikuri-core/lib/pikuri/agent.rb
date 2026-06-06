@@ -18,10 +18,16 @@ module Pikuri
   # Two seams are visible:
   #
   # 1. **Listeners** ({ListenerList} + {Listener::Base} subclasses)
-  #    — pure consumers of the event stream. The +Agent+ is the
-  #    sole emitter; listeners never write back. New rendering or
-  #    capture targets (a web sink, a structured log) are added
-  #    here without touching {Agent}.
+  #    — pure consumers of the event stream; they never write back.
+  #    The +Agent+ emits every loop-narration {Event} variant;
+  #    extensions emit their own domain events through the
+  #    {ExtensionContext} capability facade handed to
+  #    {Extension#bind}. There is no public path from an +Agent+
+  #    reference to emission — no +listeners+ reader, no +chat+
+  #    reader, no emit method — so holding an agent grants read
+  #    access to its configuration and nothing more. New rendering
+  #    or capture targets (a web sink, a structured log) are added
+  #    as listeners without touching {Agent}.
   # 2. **Controls** ({Control::StepLimit}, {Control::Cancellable},
   #    {Control::Interloper}) — host-facing signal holders. The
   #    +Agent+ reads from them at well-defined boundaries:
@@ -32,7 +38,8 @@ module Pikuri
   #    {Control::Interloper#drain!} on every +after_tool_result+.
   #
   # The two roles are named separately so "what fires when" is a
-  # single grep for +@listeners.emit+ in this file.
+  # single grep for +@listeners.emit+ in this file (loop narration)
+  # plus the capability calls in {ExtensionContext} (domain events).
   #
   # == Step-exhaustion rescue
   #
@@ -427,9 +434,6 @@ module Pikuri
       end
     end
 
-    # @return [RubyLLM::Chat] underlying chat; the extension seam
-    attr_reader :chat
-
     # @return [ChatTransport] the resolved transport bundle this
     #   agent was constructed with — same model id / provider /
     #   assume-model-exists flag passed to every +RubyLLM.chat+
@@ -472,10 +476,6 @@ module Pikuri
     #   +<available_agents>+, ...). Not inherited by sub-agents —
     #   each persona owns its own system prompt verbatim.
     attr_reader :system_prompt
-
-    # @return [ListenerList] the listener list attached to this
-    #   agent's chat
-    attr_reader :listeners
 
     # @return [Control::StepLimit, nil] the step-budget control
     #   this agent was constructed with, or +nil+ when none.
@@ -637,8 +637,8 @@ module Pikuri
 
     # Release agent-owned resources. Fires every handler registered
     # via {Configurator#on_close} (during the +Agent.new+ block) and
-    # {#on_close} (during {Extension#bind} or any post-construction
-    # call), in LIFO order — matches Ruby +ensure+-block semantics
+    # {ExtensionContext#on_close} (during {Extension#bind} or any
+    # later hook), in LIFO order — matches Ruby +ensure+-block semantics
     # so handlers registered later (which may depend on handlers
     # registered earlier) tear down first. Each handler runs inside
     # its own +rescue+; an exception is logged via
@@ -659,46 +659,6 @@ module Pikuri
       rescue StandardError => e
         LOGGER.warn("on_close handler raised #{e.class}: #{e.message}")
       end
-    end
-
-    # Register a handler called by {#close}. Symmetric to
-    # {Configurator#on_close} — same LIFO + per-handler-rescue +
-    # idempotent semantics — but available post-construction, so
-    # an {Extension}'s +bind(agent)+ can install per-agent cleanup
-    # that's keyed to this specific agent rather than the parent.
-    #
-    # @yield called with no arguments at close time
-    # @return [void]
-    def on_close(&blk)
-      raise ArgumentError, 'on_close requires a block' unless block_given?
-
-      @on_close_handlers << blk
-      nil
-    end
-
-    # Register a raw +RubyLLM::Tool+ subclass on this agent's
-    # underlying chat, bypassing the {Pikuri::Tool} strict-validation
-    # seam. Sole intended caller: {Mcp::Servers::Connect}, which uses
-    # this to lazy-add MCP-exposed tools after the LLM invokes
-    # +mcp_connect+ in a turn.
-    #
-    # The +internal_+ prefix is the warning: native pikuri tools
-    # should go through {Pikuri::Tool} so they get
-    # {Tool::Parameters} validation and the LLM-actionable
-    # +"Error: ..."+ contract. MCP tools deliberately don't — see
-    # IDEAS.md §"v1 implementation shape" / "MCP tools bypass
-    # +Pikuri::Tool+ entirely."
-    #
-    # The added tool does NOT enter +@tools+, only +@chat+'s tool
-    # list. Sub-agents (the +agent+ tool from +pikuri-subagents+)
-    # therefore cannot snapshot it — which is the whole point:
-    # activation is strictly per-agent, see IDEAS.md §"Per-agent
-    # activation, no propagation".
-    #
-    # @param ruby_llm_tool [Class] subclass of +RubyLLM::Tool+
-    # @return [void]
-    def internal_add_tool(ruby_llm_tool)
-      @chat.with_tool(ruby_llm_tool)
     end
 
     # Short, single-line config dump suitable for a startup
@@ -773,17 +733,30 @@ module Pikuri
       # before any Tokens event arrives.
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
 
+      # The runtime capability facade — constructed once, after the
+      # chat and listener list are final, and handed to every
+      # extension's #bind / #on_user_message. The ONLY object that
+      # grants emission / raw-tool-registration / close-handler
+      # capabilities; the Agent itself exposes no public path to
+      # them. See {ExtensionContext}.
+      @extension_context = ExtensionContext.new(
+        agent: self, chat: @chat, listeners: @listeners,
+        on_close_sink: @on_close_handlers
+      )
+
       # Bind sweep — each extension gets its chance to install
-      # per-agent state (dynamic tools via #internal_add_tool,
-      # per-agent close hooks via #on_close, etc.) now that the
-      # chat is fully wired. See IDEAS.md §"Extension protocol
-      # design" for what #configure vs #bind are each for.
-      @extensions.each { |ext| ext.bind(self) }
+      # per-agent state (dynamic tools via
+      # {ExtensionContext#add_raw_tool}, per-agent close hooks via
+      # {ExtensionContext#on_close}, domain-event wiring via
+      # {ExtensionContext#emit_event}, etc.) now that the chat is
+      # fully wired. See IDEAS.md §"Extension protocol design" for
+      # what #configure vs #bind are each for.
+      @extensions.each { |ext| ext.bind(@extension_context) }
     end
 
     # Fire the per-turn {Extension#on_user_message} hook on every
     # extension that defines it, appending any returned
-    # +<memory-context>+ block to the chat as a +role: :system+
+    # String text block to the chat as a +role: :system+
     # message right after the user turn it annotates (callers append
     # the +:user+ message first; this runs last). The system role is
     # load-bearing — it tags the block as recalled reference (not new
@@ -811,7 +784,7 @@ module Pikuri
     # @return [void]
     def dispatch_ext_on_user_message(content)
       @extensions.each do |ext|
-        message = ext.on_user_message(self, content)
+        message = ext.on_user_message(@extension_context, content)
         next unless message.is_a?(String) && !message.strip.empty?
 
         block = message.strip

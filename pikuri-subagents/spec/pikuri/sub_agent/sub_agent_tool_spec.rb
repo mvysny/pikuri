@@ -134,11 +134,13 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   end
 
   # Build a minimal parent Pikuri::Agent against the fake +RubyLLM.chat+
-  # stubbed in the outer +before+. Tools and listeners go through the
-  # Configurator block.
+  # stubbed in the outer +before+, and return its ExtensionContext —
+  # the shape SubAgentTool's ctor takes (in production it's the ctx
+  # the SubAgent::Extension's #bind received). Tools and listeners go
+  # through the Configurator block.
   def build_parent(system_prompt: 'sp', tools: [web_search_tool], listeners: nil,
                    step_limit: nil, cancellable: nil, id: '')
-    Pikuri::Agent.new(
+    agent = Pikuri::Agent.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt: system_prompt,
       step_limit: step_limit,
@@ -148,6 +150,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       c.add_tools(tools)
       c.add_listeners(listeners || parent_listeners)
     end
+    agent.instance_variable_get(:@extension_context)
   end
 
   describe 'tool shape' do

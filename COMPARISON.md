@@ -125,7 +125,7 @@ the schema, which is hard to give up entirely.
 MCP tools are the documented exception to pikuri's strict-validation
 contract — they're synthesised as raw `RubyLLM::Tool` subclasses inside
 `Mcp::Servers` from each server's `input_schema`, fed in via
-`Agent#internal_add_tool`. The strict-validation guarantee covers
+`Agent::ExtensionContext#add_raw_tool`. The strict-validation guarantee covers
 native tools only; MCP-side validation catches bad input on the server
 end. See `pikuri-mcp/lib/pikuri/mcp/servers.rb` for the rationale.
 

@@ -10,6 +10,14 @@ module Pikuri
     # is fully constructed, and {#on_user_message} on every user turn
     # thereafter.
     #
+    # Each phase receives that phase's context object: +configure+
+    # gets the build-time {Configurator}; +bind+ and
+    # +on_user_message+ get the runtime {ExtensionContext} — the
+    # capability facade for everything that acts on the live agent
+    # (domain-event emission, raw tool registration, sub-agent
+    # listener derivation), with the agent itself readable via
+    # {ExtensionContext#agent}.
+    #
     # Mix this module into an extension class to inherit empty
     # default implementations of all three hooks; override the ones
     # you need. Extensions that don't +include+ this module still
@@ -59,25 +67,30 @@ module Pikuri
       def configure(c); end
 
       # Called by {Agent#initialize} after the block returns and the
-      # chat is fully wired, with the live {Agent} as the argument.
-      # Fires once per agent the extension was registered to via
-      # {Configurator#add_extension} — in the typical setup that's
-      # the parent agent only, since sub-agents do not inherit
-      # extensions. The default is a no-op; override when you need
-      # to install state keyed to the live agent object. Things
-      # you typically do here:
+      # chat is fully wired, with the agent's {ExtensionContext} as
+      # the argument. Fires once per agent the extension was
+      # registered to via {Configurator#add_extension} — in the
+      # typical setup that's the parent agent only, since sub-agents
+      # do not inherit extensions. The default is a no-op; override
+      # when you need to install state keyed to the live agent.
+      # Things you typically do here:
       #
-      # * register dynamic tools via {Agent#internal_add_tool}
+      # * register dynamic tools via {ExtensionContext#add_raw_tool}
       #   (used by {Pikuri::Mcp::Extension} for +mcp_connect+,
-      #   whose +execute+ closure needs the live agent so
-      #   activations register on the right chat)
-      # * register +on_close+ handlers via {Agent#on_close}
-      # * stash an +@agent+ reference if the extension's tools need
-      #   to act on this specific agent later
+      #   whose +execute+ closure needs the context so activations
+      #   register on the right chat)
+      # * wire domain-event emission via
+      #   {ExtensionContext#emit_event} (e.g. +Pikuri::Tasks::Extension+
+      #   arms its list's +on_change+ here)
+      # * register per-agent +on_close+ handlers via
+      #   {ExtensionContext#on_close}
+      # * stash the +ctx+ if the extension's tools need to act on
+      #   this specific agent later
       #
-      # @param agent [Agent] the live agent, fully wired
+      # @param ctx [ExtensionContext] capability facade for the
+      #   live, fully wired agent
       # @return [void]
-      def bind(agent); end
+      def bind(ctx); end
 
       # Optional per-turn hook fired by the {Agent} after a user-message
       # is added to the chat. The
@@ -97,12 +110,13 @@ module Pikuri
       # only — sub-agents do not inherit extensions, so a persona's turns are
       # never prefetched or recorded by the parent's memory.
       #
-      # @param agent [Agent] the live agent whose turn this is
+      # @param ctx [ExtensionContext] capability facade for the live
+      #   agent whose turn this is — same instance +bind+ received
       # @param content [String] the user message (initial or interloper) about
       #   to be sent to the model
       # @return [String, nil] an optional block of text to be injected verbatim as
       #   a system-role message (after the user message), or +nil+ to inject nothing
-      def on_user_message(agent, content); end
+      def on_user_message(ctx, content); end
     end
   end
 end

@@ -11,10 +11,12 @@ module Pikuri
     # == What lives here, what doesn't
     #
     # The directory holds *pure consumers*: code whose only side
-    # effect is to react to events the +Agent+ has already emitted.
-    # No listener writes back into the stream — the +Agent+ is the
-    # only emitter — and no listener reaches into ruby_llm's chat
-    # callbacks. Both responsibilities live in {Agent}.
+    # effect is to react to events already emitted. No listener
+    # writes back into the stream — emission belongs to the +Agent+
+    # (loop narration) and to extensions via
+    # {Agent::ExtensionContext#emit_event} (domain events) — and no
+    # listener reaches into ruby_llm's chat callbacks (that wiring
+    # lives in {Agent}).
     #
     # Host-facing signal holders — step budget, cancellation flag,
     # mid-loop user input queue — are *controls*, not listeners.
@@ -45,7 +47,12 @@ module Pikuri
         #   Event::ThinkingDelta, Event::Assistant,
         #   Event::AssistantDelta, Event::ToolCall,
         #   Event::ToolResult, Event::Tokens, Event::ContextCap,
-        #   Event::FallbackNotice, Event::Cancelled]
+        #   Event::FallbackNotice, Event::Cancelled, Object] one of
+        #   the core loop-narration variants, or a gem-defined
+        #   domain event emitted via
+        #   {Agent::ExtensionContext#emit_event} (e.g.
+        #   +Pikuri::Tasks::ListChanged+) — match the variants you
+        #   know, let everything else fall through
         # @return [void]
         def on_event(event); end
       end

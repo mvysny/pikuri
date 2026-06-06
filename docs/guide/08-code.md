@@ -266,7 +266,7 @@ end
 Four observations on this block:
 
 1. **The Extension pattern is the one from chapter 2.**
-   `SubAgent::Extension` is the same `configure(c)` + `bind(agent)`
+   `SubAgent::Extension` is the same `configure(c)` + `bind(ctx)`
    pair you met there. (`Skill::Extension`, `Tasks::Extension`,
    and `Mcp::Extension` are the other three extensions
    `pikuri-code` wires — chapters [12](12-skills.md),

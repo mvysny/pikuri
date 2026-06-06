@@ -55,8 +55,8 @@ describe Pikuri::Memory::Extension do
     )
   end
 
-  # A minimal agent stand-in that records on_close blocks.
-  let(:fake_agent_class) do
+  # A minimal Agent::ExtensionContext stand-in that records on_close blocks.
+  let(:fake_ctx_class) do
     Class.new do
       attr_reader :close_blocks
 
@@ -218,13 +218,13 @@ describe Pikuri::Memory::Extension do
       require 'timeout'
       client = fake_client_class.new
       ext = described_class.new(client: client, user_id: 'martin', resident_persona: false)
-      agent = fake_agent_class.new
+      ctx = fake_ctx_class.new
 
-      ext.bind(agent)
+      ext.bind(ctx)
       ext.on_user_message(nil, 'I am vegetarian')
 
       assert_equal 'I am vegetarian', client.await_add
-      refute_empty agent.close_blocks
+      refute_empty ctx.close_blocks
     ensure
       ext.recorder.close
     end
@@ -232,10 +232,10 @@ describe Pikuri::Memory::Extension do
     it 'the on_close block closes the recorder' do
       client = fake_client_class.new
       ext = described_class.new(client: client, user_id: 'u', resident_persona: false)
-      agent = fake_agent_class.new
-      ext.bind(agent)
+      ctx = fake_ctx_class.new
+      ext.bind(ctx)
 
-      agent.close_blocks.each(&:call) # must not raise; recorder stops
+      ctx.close_blocks.each(&:call) # must not raise; recorder stops
     end
   end
 end

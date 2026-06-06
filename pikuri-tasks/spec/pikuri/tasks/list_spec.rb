@@ -127,4 +127,39 @@ RSpec.describe Pikuri::Tasks::List do
       assert Pikuri::Tasks::STATUSES.frozen?
     end
   end
+
+  describe '#on_change' do
+    it 'fires once after each successful mutation' do
+      fired = 0
+      list.on_change = -> { fired += 1 }
+
+      a = list.add('a')
+      list.set_status(id: a.id, status: 'in_progress')
+      list.delete(a.id)
+
+      assert_equal 3, fired
+    end
+
+    it 'fires after the mutation is applied — the hook observes the new state' do
+      seen = nil
+      list.on_change = -> { seen = list.items.map(&:content) }
+
+      list.add('a')
+
+      assert_equal ['a'], seen
+    end
+
+    it 'does not fire on failed mutations (nothing changed)' do
+      fired = 0
+      list.add('a')
+      list.on_change = -> { fired += 1 }
+
+      assert_raises(Pikuri::Tasks::DuplicateItem) { list.add('a') }
+      assert_raises(Pikuri::Tasks::ItemNotFound) { list.set_status(id: 99, status: 'completed') }
+      assert_raises(ArgumentError) { list.set_status(id: 1, status: 'bogus') }
+      assert_raises(Pikuri::Tasks::ItemNotFound) { list.delete(99) }
+
+      assert_equal 0, fired
+    end
+  end
 end

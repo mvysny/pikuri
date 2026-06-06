@@ -331,7 +331,7 @@ at all and so doesn't need a carve-out.
 
 `Pikuri::Mcp::Extension` is the second extension you've met in
 this guide, after `SubAgent::Extension` in chapter 2. The shape
-is the same `configure(c)` + `bind(agent)` pair:
+is the same `configure(c)` + `bind(ctx)` pair:
 
 - `configure(c)` runs once on the parent's Configurator. It
   builds the shared `Mcp::Servers` runtime, fires the verifier
@@ -339,7 +339,7 @@ is the same `configure(c)` + `bind(agent)` pair:
   `<available_mcps>` snippet to the system prompt, and registers
   an `on_close` handler that tears the subprocesses down on
   agent shutdown.
-- `bind(agent)` runs once on the parent agent. It installs the
+- `bind(ctx)` runs once on the parent agent. It installs the
   per-agent `mcp_connect` tool with its own activation set, so
   re-connecting an already-active server inside the same
   conversation comes back as an LLM-actionable
