@@ -12,6 +12,19 @@ RSpec.describe Pikuri::Agent::Control::StepLimit do
       assert_equal 0, limit.step
       assert_equal 5, limit.max
     end
+
+    it 'defaults on_exhausted to :raise' do
+      assert_equal :raise, described_class.new(max: 5).on_exhausted
+    end
+
+    it 'accepts on_exhausted: :synthesize' do
+      assert_equal :synthesize, described_class.new(max: 5, on_exhausted: :synthesize).on_exhausted
+    end
+
+    it 'rejects an unknown on_exhausted policy' do
+      err = assert_raises(ArgumentError) { described_class.new(max: 5, on_exhausted: :retry) }
+      assert_includes err.message, ':retry'
+    end
   end
 
   describe '#tick!' do
@@ -54,6 +67,11 @@ RSpec.describe Pikuri::Agent::Control::StepLimit do
   describe '#to_s' do
     it 'renders the configured cap' do
       assert_equal 'StepLimit(max=20)', described_class.new(max: 20).to_s
+    end
+
+    it 'renders the policy only when it is the non-default :synthesize' do
+      assert_equal 'StepLimit(max=20, on_exhausted=synthesize)',
+                   described_class.new(max: 20, on_exhausted: :synthesize).to_s
     end
   end
 end

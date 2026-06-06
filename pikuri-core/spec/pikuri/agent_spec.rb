@@ -56,11 +56,11 @@ RSpec.describe Pikuri::Agent do
         nil
       end
 
-      # +#run_loop+ no longer calls +#ask+ — it appends the user message
+      # +#run_loop+ never calls +#ask+ — it appends the user message
       # via +#add_message+ and then drives completion via +#complete+ (the
       # two halves +RubyLLM::Chat#ask+ is sugar for), so the memory
       # dispatch can inject a +:system+ block between them. +#ask+ stays
-      # for +Agent.think+ / the synthesizer, which have no such seam.
+      # as a tripwire: specs assert +asks+ remains empty.
       def complete(&block)
         @completes = (@completes || 0) + 1
         @stream_block = block
@@ -808,76 +808,27 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe '.think' do
-    let(:transport) { Pikuri::Agent::ChatTransport.new(model: 'm') }
+  # Agent.think is gone — the one-shot MCP boot passes that used it now
+  # construct a regular tools-free Agent inside Mcp::Extension's thinker
+  # closure; see pikuri-mcp/spec/pikuri/mcp/extension_spec.rb.
 
-    it 'sends the prompt as the user message and returns the assistant content' do
-      fake_chat.add_assistant('synthesized: a tool')
-      result = Pikuri::Agent.think(transport: transport, prompt: 'Summarize X')
-      assert_equal ['Summarize X'], fake_chat.asks
-      assert_equal 'synthesized: a tool', result
-    end
+  describe 'step-exhaustion policy' do
+    let(:synth_chat) { fake_chat_class.new }
 
-    it 'returns "" when no assistant message landed (e.g. provider returned nothing)' do
-      result = Pikuri::Agent.think(transport: transport, prompt: 'p')
-      assert_equal '', result
-    end
-
-    it 'rejects nil/empty/whitespace prompt with ArgumentError' do
-      [nil, '', '   '].each do |bad|
-        err = assert_raises(ArgumentError) do
-          Pikuri::Agent.think(transport: transport, prompt: bad)
-        end
-        assert_match(/prompt must not be blank/, err.message)
-      end
-    end
-
-    it 'fills in RubyLLM.config.default_model when transport.model is nil' do
-      captured_kwargs = nil
-      captured = fake_chat
-      RubyLLM.define_singleton_method(:chat) do |**kw|
-        captured_kwargs = kw
-        captured
-      end
-
-      original_default = RubyLLM.config.default_model
-      RubyLLM.config.default_model = 'default-model-id'
-      begin
-        Pikuri::Agent.think(transport: Pikuri::Agent::ChatTransport.new(model: nil), prompt: 'p')
-        assert_equal 'default-model-id', captured_kwargs[:model]
-      ensure
-        RubyLLM.config.default_model = original_default
-      end
-    end
-
-    it 'raises Cancelled when the cancellable is already tripped before the call' do
-      cancellable = Pikuri::Agent::Control::Cancellable.new
-      cancellable.cancel!
-      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
-        Pikuri::Agent.think(transport: transport, prompt: 'p', cancellable: cancellable)
-      end
-      # Pre-call check should fire before ask is invoked.
-      assert_empty fake_chat.asks
-    end
-  end
-
-  describe 'step-exhaustion rescue' do
-    # Stub +Pikuri::Agent::Synthesizer.run+ so the rescue branch can be
-    # tested without standing up a second fake chat. Captured kwargs let
-    # the spec assert on exactly what +Pikuri::Agent+ handed to the synth.
+    # Rebind the outer RubyLLM.chat stub: the first call (the parent
+    # agent's) keeps returning fake_chat; subsequent calls (the nested
+    # synth agent's, on the :synthesize path) return synth_chat. The
+    # kwargs of every construction are logged so tests can assert how
+    # many chats were stood up.
     before do
-      @synth_calls = []
-      captured = @synth_calls
-      @original_run = Pikuri::Agent::Synthesizer.method(:run)
-      Pikuri::Agent::Synthesizer.define_singleton_method(:run) do |**kwargs|
-        captured << kwargs
-        'rescued answer'
+      parent = fake_chat
+      synth = synth_chat
+      @chat_kwargs = []
+      kwargs_log = @chat_kwargs
+      RubyLLM.define_singleton_method(:chat) do |**kw|
+        kwargs_log << kw
+        kwargs_log.size == 1 ? parent : synth
       end
-    end
-
-    after do
-      original = @original_run
-      Pikuri::Agent::Synthesizer.define_singleton_method(:run) { |**kw| original.call(**kw) }
     end
 
     # Helper: arrange for the parent chat's +complete+ to raise once, as
@@ -891,124 +842,192 @@ RSpec.describe Pikuri::Agent do
       end
     end
 
-    it 'catches Exceeded, emits a FallbackNotice, and returns nil from run_loop' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2)) do |c|
-        c.add_listener recorder
+    # Helper: make the synth chat's +complete+ produce an assistant
+    # message, like a provider answering the synthesis prompt.
+    def arrange_synth_answer(content = 'rescued answer')
+      synth_chat.define_singleton_method(:complete) do |&block|
+        @stream_block = block
+        @messages << RubyLLM::Message.new(role: :assistant, content: content)
       end
-      arrange_step_exhaustion(2)
-
-      assert_nil agent.run_loop(user_message: 'compare two cities')
-
-      notice = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) }
-      refute_nil notice, 'expected a FallbackNotice in the listener stream'
-      assert_includes notice.reason, 'exhausted 2 steps'
     end
 
-    it 'invokes Synthesizer.run with the parent chat history, a sub-agent-derived listener list, a defensive step_limit, and the original cancellable' do
-      cancel = Pikuri::Agent::Control::Cancellable.new
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
-                                cancellable: cancel) do |c|
-        c.add_listener recorder
-      end
-      fake_chat.add_assistant('plan: do stuff')
-      arrange_step_exhaustion(2)
-
-      agent.run_loop(user_message: 'why?')
-
-      assert_equal 1, @synth_calls.size
-      call = @synth_calls.first
-      refute_nil call[:chat], 'expected a fresh synth chat to be passed'
-      assert_equal fake_chat.messages, call[:parent_messages]
-      assert_equal 'why?', call[:user_message]
-
-      # The handed-off list is a derived one, not the parent's instance —
-      # ListenerList#for_sub_agent returns a new object so the synth
-      # chat doesn't share the parent's mutation surface. (No public
-      # listeners reader — peek at the ivar.)
-      refute_same agent.instance_variable_get(:@listeners), call[:listeners]
-      assert_kind_of Pikuri::Agent::ListenerList, call[:listeners]
-
-      # Defensive step_limit on the synth (max=1, since synth has no tools).
-      assert_kind_of Pikuri::Agent::Control::StepLimit, call[:step_limit]
-      assert_equal 1, call[:step_limit].max
-
-      # Cancellable shared by reference so a user cancel during
-      # synthesis still works.
-      assert_same cancel, call[:cancellable]
+    def build_agent(step_limit:, id: '', streaming: false, cancellable: nil, &block)
+      block ||= ->(c) { c.add_listener recorder }
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's', step_limit: step_limit, id: id,
+                        streaming: streaming, cancellable: cancellable, &block)
     end
 
-    it "tags the synth's listener id as '<parent>_synthesizer' (or 'synthesizer' for the main agent)" do
-      parent_log = Pikuri::Agent::Listener::TokenLog.new
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2)) do |c|
-        c.add_listener parent_log
+    describe 'with the default :raise policy' do
+      it 're-raises Exceeded to the host and constructs no synth' do
+        agent = build_agent(step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
+        arrange_step_exhaustion(2)
+
+        err = assert_raises(Pikuri::Agent::Control::StepLimit::Exceeded) do
+          agent.run_loop(user_message: 'write the rest of the code')
+        end
+
+        assert_equal 2, err.max_steps
+        refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) },
+               'no FallbackNotice expected on the :raise path'
+        assert_equal 1, @chat_kwargs.size, 'only the parent chat should have been constructed'
       end
-      arrange_step_exhaustion(2)
 
-      agent.run_loop(user_message: 'q?')
+      it 'leaves the agent usable for a fresh turn afterwards ("continue" works)' do
+        agent = build_agent(step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2))
+        arrange_step_exhaustion(2)
 
-      synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
-      synth_log = synth_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
-      refute_nil synth_log
-      assert_equal 'synthesizer', synth_log.id
+        assert_raises(Pikuri::Agent::Control::StepLimit::Exceeded) do
+          agent.run_loop(user_message: 'turn 1')
+        end
 
-      # And the parent's TokenLog is untouched.
-      assert_equal '', parent_log.id
+        fake_chat.define_singleton_method(:complete) do |&_block|
+          @messages << RubyLLM::Message.new(role: :assistant, content: 'kept going')
+        end
+        assert_nil agent.run_loop(user_message: 'continue')
+        assert_equal 'kept going', agent.last_assistant_content
+      end
     end
 
-    it "uses '<parent_id>_synthesizer' when the agent itself has an id" do
-      parent_log = Pikuri::Agent::Listener::TokenLog.new
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2),
-                                id: 'researcher 0') do |c|
-        c.add_listener parent_log
+    describe 'with the :synthesize policy' do
+      let(:step_limit) { Pikuri::Agent::Control::StepLimit.new(max: 2, on_exhausted: :synthesize) }
+
+      it 'catches Exceeded, emits a FallbackNotice, and returns nil from run_loop' do
+        agent = build_agent(step_limit: step_limit)
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+
+        assert_nil agent.run_loop(user_message: 'compare two cities')
+
+        notice = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) }
+        refute_nil notice, 'expected a FallbackNotice in the listener stream'
+        assert_includes notice.reason, 'exhausted 2 steps'
       end
-      arrange_step_exhaustion(2)
 
-      agent.run_loop(user_message: 'q?')
+      it 'runs the synth as a nested tools-free agent: synth system prompt, build_prompt user turn, answer captured' do
+        agent = build_agent(step_limit: step_limit)
+        fake_chat.add_assistant('plan: do stuff')
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
 
-      synth_listeners = @synth_calls.first[:listeners].instance_variable_get(:@listeners)
-      synth_log = synth_listeners.find { |l| l.is_a?(Pikuri::Agent::Listener::TokenLog) }
-      assert_equal 'researcher 0_synthesizer', synth_log.id
-    end
+        agent.run_loop(user_message: 'why?')
 
-    it "prefers the synth's answer for last_assistant_content after a rescue" do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2)) do |c|
-        c.add_listener recorder
+        # A second chat was constructed for the synth, on the same
+        # transport as the parent.
+        assert_equal 2, @chat_kwargs.size
+        assert_equal @chat_kwargs.first, @chat_kwargs.last
+
+        # The nested agent set the Synthesizer system prompt and asked
+        # the evidence prompt as its single user turn.
+        assert_equal Pikuri::Agent::Synthesizer::SYSTEM_PROMPT.strip, synth_chat.instructions.strip
+        expected_prompt = Pikuri::Agent::Synthesizer.build_prompt(
+          parent_messages: fake_chat.messages, user_message: 'why?'
+        )
+        assert_equal [{ role: :user, content: expected_prompt }], synth_chat.added_messages
+
+        # No tools on the synth, and the synth's answer wins
+        # last_assistant_content.
+        assert_equal [], synth_chat.tools
+        assert_equal 'rescued answer', agent.last_assistant_content
       end
-      arrange_step_exhaustion(2)
 
-      agent.run_loop(user_message: 'q?')
+      # The derived-listener contract: each listener that defines
+      # for_sub_agent is asked for its synth variant with the derived id.
+      let(:forking_listener_class) do
+        Class.new(Pikuri::Agent::Listener::InMemoryEventList) do
+          attr_reader :fork_params
 
-      assert_equal 'rescued answer', agent.last_assistant_content
-    end
-
-    it 'clears the prior synth answer at the start of each new turn' do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's',
-                                step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2)) do |c|
-        c.add_listener recorder
+          def for_sub_agent(**params)
+            (@fork_params ||= []) << params
+            self.class.new
+          end
+        end
       end
-      arrange_step_exhaustion(2)
-      agent.run_loop(user_message: 'turn 1')
-      assert_equal 'rescued answer', agent.last_assistant_content
 
-      # Make the next turn succeed: replace complete with one that just adds an assistant message.
-      fake_chat.define_singleton_method(:complete) do |&_block|
-        @completes = (@completes || 0) + 1
-        @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
+      it "derives the synth's listener list with id 'synthesizer' for the main agent" do
+        listener = forking_listener_class.new
+        agent = build_agent(step_limit: step_limit) { |c| c.add_listener listener }
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+
+        agent.run_loop(user_message: 'q?')
+
+        assert_equal [{ id: 'synthesizer' }], listener.fork_params
       end
-      agent.run_loop(user_message: 'turn 2')
 
-      assert_equal 'normal answer', agent.last_assistant_content
+      it "derives '<parent_id>_synthesizer' when the agent itself has an id" do
+        listener = forking_listener_class.new
+        agent = build_agent(step_limit: step_limit, id: 'researcher 0') { |c| c.add_listener listener }
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+
+        agent.run_loop(user_message: 'q?')
+
+        assert_equal [{ id: 'researcher 0_synthesizer' }], listener.fork_params
+      end
+
+      it 'shares the parent cancellable with the synth by reference (a cancel during synthesis still works)' do
+        cancel = Pikuri::Agent::Control::Cancellable.new
+        agent = build_agent(step_limit: step_limit, cancellable: cancel)
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+
+        agent.run_loop(user_message: 'q?')
+
+        # The synth chat's before_tool_call wiring polls the shared flag.
+        cancel.cancel!
+        assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+          synth_chat.fire(:before_tool_call, RubyLLM::ToolCall.new(id: 'x', name: 'n', arguments: {}))
+        end
+      end
+
+      it 'lets a cancel that landed while the budget tripped win over salvage (no synth constructed)' do
+        cancel = Pikuri::Agent::Control::Cancellable.new
+        agent = build_agent(step_limit: step_limit, cancellable: cancel)
+        # Ctrl+C lands mid-turn, right as the budget trips: complete
+        # flips the flag and raises Exceeded.
+        err = Pikuri::Agent::Control::StepLimit::Exceeded.new(2)
+        fake_chat.define_singleton_method(:complete) do |&_block|
+          cancel.cancel!
+          raise err
+        end
+
+        assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+          agent.run_loop(user_message: 'q?')
+        end
+
+        refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) },
+               'cancellation must win before the FallbackNotice'
+        assert_equal 1, @chat_kwargs.size, 'no synth chat should have been constructed'
+      end
+
+      it "mirrors the parent's streaming flag onto the synth" do
+        agent = build_agent(step_limit: step_limit, streaming: true)
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+
+        agent.run_loop(user_message: 'q?')
+
+        refute_nil synth_chat.stream_block,
+                   'expected the synth completion to receive a streaming block'
+      end
+
+      it 'clears the prior synth answer at the start of each new turn' do
+        agent = build_agent(step_limit: step_limit)
+        arrange_step_exhaustion(2)
+        arrange_synth_answer
+        agent.run_loop(user_message: 'turn 1')
+        assert_equal 'rescued answer', agent.last_assistant_content
+
+        # Make the next turn succeed: replace complete with one that just adds an assistant message.
+        fake_chat.define_singleton_method(:complete) do |&_block|
+          @completes = (@completes || 0) + 1
+          @messages << RubyLLM::Message.new(role: :assistant, content: 'normal answer')
+        end
+        agent.run_loop(user_message: 'turn 2')
+
+        assert_equal 'normal answer', agent.last_assistant_content
+      end
     end
   end
 
@@ -1041,31 +1060,30 @@ RSpec.describe Pikuri::Agent do
              'expected Event::Cancelled in the listener stream'
     end
 
-    it 'does not invoke the synthesizer fallback' do
-      synth_calls = []
-      original_run = Pikuri::Agent::Synthesizer.method(:run)
-      Pikuri::Agent::Synthesizer.define_singleton_method(:run) do |**kwargs|
-        synth_calls << kwargs
-        'should not happen'
+    it 'does not invoke the synthesizer fallback, even with a :synthesize step limit' do
+      chat_constructions = 0
+      captured = fake_chat
+      RubyLLM.define_singleton_method(:chat) do |**_|
+        chat_constructions += 1
+        captured
       end
 
-      begin
-        cancel = Pikuri::Agent::Control::Cancellable.new
-        agent = Pikuri::Agent.new(
-          transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-          system_prompt: 's',
-          cancellable: cancel
-        ) { |c| c.add_listener recorder }
-        arrange_cancellation
+      cancel = Pikuri::Agent::Control::Cancellable.new
+      agent = Pikuri::Agent.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+        system_prompt: 's',
+        step_limit: Pikuri::Agent::Control::StepLimit.new(max: 2, on_exhausted: :synthesize),
+        cancellable: cancel
+      ) { |c| c.add_listener recorder }
+      arrange_cancellation
 
-        assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
-          agent.run_loop(user_message: 'stop')
-        end
-
-        assert_empty synth_calls
-      ensure
-        Pikuri::Agent::Synthesizer.define_singleton_method(:run) { |**kw| original_run.call(**kw) }
+      assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+        agent.run_loop(user_message: 'stop')
       end
+
+      refute recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::FallbackNotice) },
+             'no FallbackNotice expected on cancellation'
+      assert_equal 1, chat_constructions, 'no synth chat should have been constructed'
     end
 
     it 'lets the same agent take a fresh turn after a cancellation' do

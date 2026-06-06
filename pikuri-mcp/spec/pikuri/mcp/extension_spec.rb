@@ -216,8 +216,8 @@ RSpec.describe Pikuri::Mcp::Extension do
   # kwarg plumbing" describe — these kwargs are now properties of
   # Mcp::Extension, not Agent. Verifies the synthesizer / verifier are
   # wired (or skipped) based on the extension's own flags, and that
-  # the thinker closure invokes Agent.think with the Configurator's
-  # transport + cancellable.
+  # the thinker closure runs a one-shot tools-free Agent on the
+  # Configurator's transport, honoring its cancellable.
   describe 'synthesizer/verifier wiring' do
     let(:capturing_servers_class) do
       Class.new do
@@ -254,56 +254,118 @@ RSpec.describe Pikuri::Mcp::Extension do
       end
     end
 
-    it 'builds a Mcp::Synthesizer whose thinker calls Agent.think with the configurator transport + cancellable' do
+    # Fake one-shot agent the stubbed Pikuri::Agent.new returns: records
+    # the asked prompt, returns a canned answer, tracks #close.
+    let(:fake_thinker_agent_class) do
+      Class.new do
+        attr_reader :asked, :closed
+
+        def initialize
+          @asked = []
+          @closed = false
+        end
+
+        def run_loop(user_message:)
+          @asked << user_message
+          nil
+        end
+
+        def last_assistant_content
+          'synth result'
+        end
+
+        def close
+          @closed = true
+        end
+      end
+    end
+
+    def build_configurator(cancellable: nil)
+      Pikuri::Agent::Configurator.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'qwen-x'),
+        system_prompt_base: 'base',
+        id: '',
+        streaming: false,
+        step_limit: nil,
+        cancellable: cancellable,
+        interloper: nil
+      )
+    end
+
+    # Run +block+ with Servers swapped for the capturing stub, the
+    # on-disk cache nulled (so stored entries can't skip the thinker),
+    # and Pikuri::Agent.new stubbed to capture ctor kwargs and return
+    # +fake_agent+.
+    def with_thinker_harness(fake_agent)
       stub = capturing_servers_class
-      original_new = Pikuri::Mcp::Servers.method(:new)
+      original_servers_new = Pikuri::Mcp::Servers.method(:new)
       Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| stub.new(r, **kw) }
-      # Sidestep the real on-disk cache so this spec doesn't see
-      # stored entries (would skip the thinker invocation).
       original_cache_new = Pikuri::Mcp::Cache.method(:new)
       Pikuri::Mcp::Cache.define_singleton_method(:new) { |**_| Pikuri::Mcp::Cache::NULL }
-
-      cancellable = Pikuri::Agent::Control::Cancellable.new
-      captured_call = nil
-      original_think = Pikuri::Agent.method(:think)
-      Pikuri::Agent.define_singleton_method(:think) do |**kw|
-        captured_call = kw
-        'synth result'
+      agent_ctor_calls = []
+      original_agent_new = Pikuri::Agent.method(:new)
+      Pikuri::Agent.define_singleton_method(:new) do |**kw, &_blk|
+        agent_ctor_calls << kw
+        fake_agent
       end
-      begin
-        c = Pikuri::Agent::Configurator.new(
-          transport: Pikuri::Agent::ChatTransport.new(model: 'qwen-x'),
-          system_prompt_base: 'base',
-          id: '',
-          streaming: false,
-          step_limit: nil,
-          cancellable: cancellable,
-          interloper: nil
-        )
+      yield agent_ctor_calls
+    ensure
+      Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_servers_new.call(r, **kw) }
+      Pikuri::Mcp::Cache.define_singleton_method(:new) { |**kw| original_cache_new.call(**kw) }
+      Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_agent_new.call(**kw, &blk) }
+    end
+
+    # Minimal stand-ins to drive Mcp::Synthesizer#call so the captured
+    # thinker closure fires.
+    def drive_synthesizer(synthesizer)
+      entry = Pikuri::Mcp::Registry::StdioEntry.new(id: 'probe', command: ['noop'])
+      tool = Struct.new(:name, :description, :input_schema).new('t', 'd', {})
+      client = Struct.new(:server_info).new({ 'serverInfo' => {} })
+      synthesizer.call(entry: entry, client: client, tools: [tool])
+    end
+
+    it 'builds a Mcp::Synthesizer whose thinker runs a one-shot tools-free Agent on the configurator transport' do
+      fake_agent = fake_thinker_agent_class.new
+      with_thinker_harness(fake_agent) do |agent_ctor_calls|
         ext = described_class.new(registry: non_empty_registry,
                                   synthesize_descriptions: true,
                                   verify_mcp_servers: false)
-        ext.configure(c)
+        ext.configure(build_configurator)
 
-        synthesizer = stub.last_synthesizer
+        synthesizer = capturing_servers_class.last_synthesizer
         refute_nil synthesizer
         assert_kind_of Pikuri::Mcp::Synthesizer, synthesizer
 
-        # Drive the synthesizer with minimal stand-ins so the
-        # captured thinker fires Agent.think (stubbed above).
-        entry = Pikuri::Mcp::Registry::StdioEntry.new(id: 'probe', command: ['noop'])
-        tool = Struct.new(:name, :description, :input_schema).new('t', 'd', {})
-        client = Struct.new(:server_info).new({ 'serverInfo' => {} })
-        result = synthesizer.call(entry: entry, client: client, tools: [tool])
+        result = drive_synthesizer(synthesizer)
 
         assert_equal 'synth result', result
-        assert_match(/Server id: probe/, captured_call[:prompt])
-        assert_equal 'qwen-x', captured_call[:transport].model
-        assert_same cancellable, captured_call[:cancellable]
-      ensure
-        Pikuri::Mcp::Servers.define_singleton_method(:new) { |r, **kw| original_new.call(r, **kw) }
-        Pikuri::Mcp::Cache.define_singleton_method(:new) { |**kw| original_cache_new.call(**kw) }
-        Pikuri::Agent.define_singleton_method(:think) { |**kw| original_think.call(**kw) }
+        # One fresh agent per thinker call: tools-free, generic thinker
+        # system prompt, the configurator's transport.
+        assert_equal 1, agent_ctor_calls.size
+        ctor = agent_ctor_calls.first
+        assert_equal 'qwen-x', ctor[:transport].model
+        assert_equal Pikuri::Mcp::Thinker::SYSTEM_PROMPT, ctor[:system_prompt]
+        # The build prompt arrives as the single user turn, and the
+        # one-shot agent is closed afterwards.
+        assert_match(/Server id: probe/, fake_agent.asked.first)
+        assert fake_agent.closed, 'the one-shot thinker agent must be closed after the call'
+      end
+    end
+
+    it 'checks the cancellable before each thinker call, so a tripped flag aborts without constructing an agent' do
+      cancellable = Pikuri::Agent::Control::Cancellable.new
+      fake_agent = fake_thinker_agent_class.new
+      with_thinker_harness(fake_agent) do |agent_ctor_calls|
+        ext = described_class.new(registry: non_empty_registry,
+                                  synthesize_descriptions: true,
+                                  verify_mcp_servers: false)
+        ext.configure(build_configurator(cancellable: cancellable))
+
+        cancellable.cancel!
+        assert_raises(Pikuri::Agent::Control::Cancellable::Cancelled) do
+          drive_synthesizer(capturing_servers_class.last_synthesizer)
+        end
+        assert_empty agent_ctor_calls, 'pre-call check must fire before the agent is constructed'
       end
     end
   end

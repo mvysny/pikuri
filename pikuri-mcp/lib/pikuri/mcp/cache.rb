@@ -71,7 +71,7 @@ module Pikuri
 
       # Return the cached description for the given +(entry, client,
       # tools)+ triple if a fresh entry exists, otherwise yield to
-      # compute it (typically a {Pikuri::Agent.think} call inside
+      # compute it (typically a one-shot thinker-agent run inside
       # {Servers#try_synthesize_description}), persist the result, and
       # return it.
       #

@@ -19,6 +19,34 @@ RSpec.describe Pikuri::Mcp::Synthesizer do
     ]
   end
 
+  describe '#initialize' do
+    it 'requires exactly one of transport: or thinker:' do
+      assert_raises(ArgumentError) { described_class.new }
+      assert_raises(ArgumentError) do
+        described_class.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                            thinker: ->(_p) { 'x' })
+      end
+    end
+
+    it 'rejects cancellable: on the thinker: path (it only feeds the built-in Thinker)' do
+      assert_raises(ArgumentError) do
+        described_class.new(thinker: ->(_p) { 'x' },
+                            cancellable: Pikuri::Agent::Control::Cancellable.new)
+      end
+    end
+
+    it 'builds the production on-disk cache from the transport when no cache: is given' do
+      synth = described_class.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'))
+      cache = synth.instance_variable_get(:@cache)
+      assert_kind_of Pikuri::Mcp::Cache, cache
+    end
+
+    it 'defaults to Cache::NULL on the thinker: path (tests stay off the disk)' do
+      synth = described_class.new(thinker: ->(_p) { 'x' })
+      assert_same Pikuri::Mcp::Cache::NULL, synth.instance_variable_get(:@cache)
+    end
+  end
+
   describe '#call' do
     it 'invokes the thinker with a prompt that contains the server id and every tool name + description' do
       received = nil

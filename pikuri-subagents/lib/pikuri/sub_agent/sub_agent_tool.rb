@@ -184,11 +184,19 @@ module Pikuri
             # the three controls are a fixed set and a fresh
             # StepLimit at the persona's max + the parent's
             # shared Cancellable + no Interloper is the
-            # invariant for every sub-agent.
+            # invariant for every sub-agent. The budget always
+            # carries the :synthesize policy: a sub-agent's whole
+            # contract is "return usable text to the parent", so
+            # an exhausted run must salvage an answer from its
+            # evidence rather than raise into the parent's tool
+            # call — that holds even when the parent's own budget
+            # is :raise (e.g. pikuri-code, whose personas are
+            # researchers, not coders).
             sub = Pikuri::Agent.new(
               transport: transport,
               system_prompt: persona.system_prompt,
-              step_limit: Pikuri::Agent::Control::StepLimit.new(max: persona.max_steps),
+              step_limit: Pikuri::Agent::Control::StepLimit.new(max: persona.max_steps,
+                                                                on_exhausted: :synthesize),
               cancellable: parent_cancel,
               context_window: context_window,
               id: sub_id,

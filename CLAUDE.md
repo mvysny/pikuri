@@ -197,10 +197,22 @@ yardoc. CLAUDE.md only records the invariant.
   {Pikuri::Code::Bash::Sandbox} and `Sandbox::Bubblewrap`
   (threat model, ephemeral overlays, container-socket footgun).
 - **Streaming flag.** `Agent.new(..., streaming: true)` is opt-in
-  and propagates to `Synthesizer.run` and spawned sub-agents so
-  the whole agent tree streams or doesn't, consistently. Default
-  `false` because `Terminal` still renders on `Event::Assistant`.
-  See `Agent#initialize`'s `streaming:` yardoc.
+  and propagates to the step-exhaustion synthesizer and spawned
+  sub-agents so the whole agent tree streams or doesn't,
+  consistently. Default `false` because `Terminal` still renders
+  on `Event::Assistant`. See `Agent#initialize`'s `streaming:`
+  yardoc.
+- **Step-exhaustion policy.** What happens when a `StepLimit`
+  trips travels with the budget, not the agent:
+  `StepLimit.new(max:, on_exhausted: :raise | :synthesize)`,
+  default `:raise` (the invalid "synthesize without a budget"
+  state is unrepresentable). Q&A wirings opt into `:synthesize`;
+  coding agents keep `:raise` (a tools-free pass can't finish
+  code); sub-agents are always `:synthesize` (they must return
+  usable text to the parent's tool call). The synth itself is a
+  nested tools-free `Agent` — no chat is constructed outside
+  `Agent`. See {Pikuri::Agent::Control::StepLimit} and
+  {Pikuri::Agent::Synthesizer}.
 - **Sub-agent propagation.** Listeners define `for_sub_agent(**)`
   as a duck-typed protocol; controls do not (the policy is
   inlined in `SubAgentTool#execute`). Sub-agents do NOT inherit
@@ -315,7 +327,9 @@ per-gem one-liners:
   the task list (consistent with the no-inherit rule).
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
-  summarization), `Mcp::Verifier` (injection check), `Mcp::Cache`,
+  summarization), `Mcp::Verifier` (injection check), `Mcp::Thinker`
+  (the shared one-shot LLM pass both ride; constructed by them
+  internally from a `transport:`), `Mcp::Cache`,
   `Mcp::ClientWrapper`, `bin/pikuri-openlibrary` (the guide-ch5
   demo: one hardcoded Open Library MCP in a locally-built Docker
   container + `calculator`, no private data wired in — the

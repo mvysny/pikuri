@@ -26,6 +26,28 @@ RSpec.describe Pikuri::Mcp::Verifier do
     ]
   end
 
+  describe '#initialize' do
+    # Same constructor shape as Synthesizer (the exactly-one rule and
+    # cancellable validation are covered in synthesizer_spec); here
+    # only the Verifier-specific default-cache wiring.
+    it 'requires exactly one of transport: or thinker:' do
+      assert_raises(ArgumentError) { described_class.new }
+    end
+
+    it 'builds the production cache under CACHE_DIR from the transport when no cache: is given' do
+      verifier = described_class.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'))
+      cache = verifier.instance_variable_get(:@cache)
+      assert_kind_of Pikuri::Mcp::Cache, cache
+      url_cache = cache.instance_variable_get(:@url_cache)
+      assert_equal Pikuri::Mcp::Verifier::CACHE_DIR, url_cache.instance_variable_get(:@dir)
+    end
+
+    it 'defaults to Cache::NULL on the thinker: path' do
+      verifier = described_class.new(thinker: ->(_p) { 'OK' })
+      assert_same Pikuri::Mcp::Cache::NULL, verifier.instance_variable_get(:@cache)
+    end
+  end
+
   describe 'Unicode pre-pass' do
     # Build a tiny verifier whose thinker raises if it gets called —
     # the pre-pass MUST short-circuit before any LLM round-trip.

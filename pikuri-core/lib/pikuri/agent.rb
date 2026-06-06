@@ -41,22 +41,29 @@ module Pikuri
   # single grep for +@listeners.emit+ in this file (loop narration)
   # plus the capability calls in {ExtensionContext} (domain events).
   #
-  # == Step-exhaustion rescue
+  # == Step-exhaustion policy
   #
   # If the +step_limit:+ {Control::StepLimit} trips during
-  # +Chat#ask+, {#run_loop} catches the +Exceeded+ exception,
-  # emits an {Event::FallbackNotice} to the listener stream, and
-  # hands off to {Synthesizer.run} on a fresh +RubyLLM::Chat+.
-  # The synth reuses the parent's listener stream via
-  # {ListenerList#for_sub_agent} (Terminal padded, TokenLog
-  # zeroed, recorder shared by reference) with a +name:+ derived
-  # from the parent's. The synth shares the parent's
-  # +cancellable+ so a user cancel during synthesis still works,
-  # and gets a fresh +step_limit+ at +max: 1+ (defensive — the
-  # synth has no tools and shouldn't trip it). The synth's
-  # answer becomes the value reported by
-  # {#last_assistant_content}, so callers (notably the +agent+ tool
-  # from +pikuri-subagents+) still get a usable reply.
+  # completion, {#run_loop} catches the +Exceeded+ exception and
+  # applies the budget's {Control::StepLimit#on_exhausted} policy
+  # (see that class header for how hosts pick):
+  #
+  # - +:raise+ (the default) — re-raise to the host, same shape as
+  #   the cancellation rescue below. The chat history survives and
+  #   {Control::StepLimit#reset!} fires at the next turn boundary,
+  #   so a REPL user can simply say "continue".
+  # - +:synthesize+ — emit an {Event::FallbackNotice} and run the
+  #   {Synthesizer} prompt on a nested tools-free +Agent+ (the
+  #   same construction shape the +agent+ tool from
+  #   +pikuri-subagents+ uses for sub-agents): parent's listener
+  #   stream derived via {ListenerList#for_sub_agent} (Terminal
+  #   padded, TokenLog zeroed, recorder shared by reference),
+  #   parent's +cancellable+ shared so a user cancel during
+  #   synthesis still works, a defensive +step_limit+ at +max: 1+
+  #   (the synth has no tools and shouldn't tick it). The synth's
+  #   answer becomes the value reported by
+  #   {#last_assistant_content}, so callers (notably the +agent+
+  #   tool from +pikuri-subagents+) still get a usable reply.
   #
   # == Cancellation rescue
   #
@@ -75,247 +82,6 @@ module Pikuri
     LOGGER = Pikuri.logger_for('Agent')
     private_constant :LOGGER
 
-    # Wire one +RubyLLM::Chat+ for pikuri's event stream and
-    # controls. Used by both {#initialize} (on the main chat) and
-    # {Synthesizer.run} (on the synth chat) so the two share one
-    # source of truth for "which callback emits which event."
-    #
-    # Handles the three message-level registered callbacks
-    # (+after_message+, +before_tool_call+, +after_tool_result+);
-    # the per-chunk streaming callback is separate because
-    # ruby_llm takes it as a block to +Chat#ask+ rather than a
-    # registered hook — see {.streaming_block}.
-    #
-    # @param chat [RubyLLM::Chat] the chat instance to wire
-    # @param listeners [ListenerList] the listener stream events
-    #   flow into
-    # @param step_limit [Control::StepLimit, nil] when set,
-    #   {Control::StepLimit#tick!} is poked on every
-    #   +before_tool_call+ (and raises {Control::StepLimit::Exceeded}
-    #   when over budget)
-    # @param cancellable [Control::Cancellable, nil] when set,
-    #   {Control::Cancellable#check!} is poked on every
-    #   +before_tool_call+ (and raises
-    #   {Control::Cancellable::Cancelled} when the flag is up)
-    # @param interloper [Control::Interloper, nil] when set, the
-    #   queue is drained on every +after_tool_result+, each item
-    #   appended as a +role: :user+ message and emitted as
-    #   {Event::UserTurn} with +mid_loop: true+
-    # @param on_user_message [Proc, nil] when set, called with each
-    #   drained interloper +content+ String *after* it is appended
-    #   to the chat — the per-turn {Extension#on_user_message}
-    #   dispatch (prefetch + recording). Threaded through here rather
-    #   than fired inline so {Synthesizer.run}, which reuses this
-    #   wiring without an interloper or memory, simply passes +nil+.
-    #   Only consulted when +interloper+ is also set.
-    # @return [void]
-    def self.wire_chat(chat, listeners:, step_limit: nil, cancellable: nil, interloper: nil,
-                       on_user_message: nil)
-      chat.after_message do |msg|
-        emit_after_message(msg, listeners)
-      end
-      chat.before_tool_call do |tc|
-        listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
-        step_limit&.tick!
-        cancellable&.check!
-      end
-      chat.after_tool_result do |result|
-        listeners.emit(Event::ToolResult.new(content: result))
-        drain_interloper(interloper, chat, listeners, on_user_message) if interloper
-      end
-    end
-
-    # Build the per-chunk streaming block passed to +Chat#ask+.
-    # Each invocation of the returned proc converts one
-    # +RubyLLM::Chunk+ into zero, one, or two delta events
-    # ({Event::ThinkingDelta} / {Event::AssistantDelta}) on
-    # +listeners+. Tool-call chunks are intentionally ignored —
-    # partial JSON has no useful rendering; the assembled
-    # +tool_calls+ surface through {Event::ToolCall} once the
-    # message completes.
-    #
-    # Lives parallel to {.wire_chat} (instead of being folded into
-    # it) because +Chat#ask+ takes the streaming block as an
-    # argument rather than a registered callback, so both
-    # {#run_loop} and {Synthesizer.run} pass it inline at the call
-    # site with +&Agent.streaming_block(listeners: ..., cancellable: ...)+.
-    #
-    # == Cancellation polling
-    #
-    # When +cancellable+ is non-nil, {Control::Cancellable#check!}
-    # fires *before* each chunk's emit. The +before_tool_call+
-    # wiring in {.wire_chat} only fires when the model requests a
-    # tool, which leaves a no-tool turn (e.g. a plain greeting)
-    # with zero cancellation points — Ctrl+C trips the flag but
-    # nothing reads it. Polling on every streamed chunk closes
-    # that gap: an in-flight Cancellation+check! raises on the
-    # next chunk delivered after the flag flips, the exception
-    # propagates out through ruby_llm's streaming path
-    # (+Chat#ask+ doesn't rescue), and {#run_loop} catches it,
-    # emits {Event::Cancelled}, and re-raises. The pre-emit
-    # ordering is deliberate: a chunk that arrives after a cancel
-    # request shouldn't render — the user has said stop.
-    #
-    # @param listeners [ListenerList] the listener stream chunk
-    #   events flow into
-    # @param cancellable [Control::Cancellable, nil] when non-nil,
-    #   polled on every chunk so a flag flipped mid-stream raises
-    #   {Control::Cancellable::Cancelled} on the very next chunk
-    # @return [Proc] a +-> (chunk) { ... }+ proc suitable for
-    #   passing to +Chat#ask+ with +&+
-    def self.streaming_block(listeners:, cancellable: nil)
-      ->(chunk) {
-        cancellable&.check!
-        emit_chunk(chunk, listeners)
-      }
-    end
-
-    # Normalize a +RubyLLM::Chat+ +after_message+ payload into
-    # zero, one, or two {Event} variants (+Thinking+ and/or
-    # +Assistant+) plus one {Event::Tokens} for the usage block.
-    # Empty thinking / empty content are filtered here so
-    # listeners never see vacuous events. Non-assistant roles
-    # (e.g. tool-role messages echoed back through
-    # +after_message+) are skipped entirely.
-    #
-    # +msg+ is a +RubyLLM::Message+. Beyond +role+, +content+,
-    # +thinking+, and the +*_tokens+ accessors used here, it also
-    # carries +msg.tool_calls+ on assistant turns that requested
-    # one and +msg.raw+ for the unparsed provider payload.
-    #
-    # @param msg [RubyLLM::Message]
-    # @param listeners [ListenerList]
-    # @return [void]
-    def self.emit_after_message(msg, listeners)
-      return unless msg.role == :assistant
-
-      text = msg.thinking&.text
-      listeners.emit(Event::Thinking.new(content: text)) if text && !text.empty?
-
-      content = msg.content
-      listeners.emit(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
-
-      listeners.emit(Event::Tokens.new(
-                       input: msg.input_tokens,
-                       output: msg.output_tokens,
-                       cached: msg.cached_tokens,
-                       cache_creation: msg.cache_creation_tokens,
-                       thinking: msg.thinking_tokens,
-                       model_id: msg.model_id
-                     ))
-    end
-    private_class_method :emit_after_message
-
-    # Normalize a +RubyLLM::Chunk+ from a streaming +Chat#ask+
-    # into zero, one, or two delta events
-    # ({Event::ThinkingDelta} / {Event::AssistantDelta}). Empty
-    # +thinking.text+ and empty +content+ are filtered here so
-    # listeners never see vacuous fragments. Tool-call deltas are
-    # intentionally skipped — see {.streaming_block}.
-    #
-    # +chunk+ is a +RubyLLM::Chunk+ (subclass of +RubyLLM::Message+),
-    # so the same +.thinking+ / +.content+ accessors used in
-    # {.emit_after_message} apply.
-    #
-    # @param chunk [RubyLLM::Chunk]
-    # @param listeners [ListenerList]
-    # @return [void]
-    def self.emit_chunk(chunk, listeners)
-      thinking = chunk.thinking&.text
-      listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
-
-      content = chunk.content
-      listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
-    end
-    private_class_method :emit_chunk
-
-    # Drain the interloper queue: for each pending item, append a
-    # +role: :user+ message to the chat history so the next
-    # round-trip sees it, emit an {Event::UserTurn} with
-    # +mid_loop: true+ to the listener stream so renderers see the
-    # injection, then run the per-turn {Extension#on_user_message}
-    # dispatch (so mid-loop injections are prefetched + recorded
-    # exactly like initial turns).
-    #
-    # The dispatch runs *after* the +:user+ append so any
-    # +<memory-context>+ it injects lands as a +:system+ message
-    # right behind the user turn it annotates — the same
-    # append-at-the-tail ordering {#run_loop} produces for initial
-    # turns.
-    #
-    # @param interloper [Control::Interloper]
-    # @param chat [RubyLLM::Chat]
-    # @param listeners [ListenerList]
-    # @param on_user_message [Proc, nil] per-content dispatch; +nil+
-    #   skips it (e.g. an interloper with no memory extension wired)
-    # @return [void]
-    def self.drain_interloper(interloper, chat, listeners, on_user_message = nil)
-      interloper.drain!.each do |content|
-        chat.add_message(role: :user, content: content)
-        listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
-        on_user_message&.call(content)
-      end
-    end
-    private_class_method :drain_interloper
-
-    # One-shot inference. Builds a fresh +RubyLLM::Chat+ with no
-    # tools, no MCP, no listeners, no step budget, asks +prompt+ as
-    # the single user turn, and returns the assistant's reply as a
-    # plain String. Lives parallel to {#initialize} / {#run_loop}
-    # because the use case (e.g. summarizing an MCP server's tool
-    # set into a short description block before any agent turn
-    # runs) is genuinely one-shot — there is no loop, no tool
-    # iteration, no listener stream.
-    #
-    # +prompt+ is sent as the user message. For a one-shot call
-    # there is no behavioral difference between the system slot
-    # and the user slot, so we use one parameter; pack any
-    # "instructions + data" framing into +prompt+ directly.
-    #
-    # == Cancellation
-    #
-    # {Control::Cancellable#check!} fires once before the call and
-    # once after, so a flag flipped right around the request
-    # raises {Control::Cancellable::Cancelled} promptly. The
-    # in-flight HTTP call itself is *not* interrupted — same
-    # "gentle cancel" semantic the main loop offers (see
-    # {Control::Cancellable}'s class header). For 30s synthesis
-    # passes at boot this is still a useful escape hatch: the next
-    # check raises and the call returns.
-    #
-    # == Failure
-    #
-    # Errors from the provider (HTTP failure, malformed response,
-    # +RubyLLM+ raising) propagate to the caller verbatim — there
-    # is no recovery layer here. Callers that want "fail soft on
-    # synthesis errors" (e.g. {Mcp::Servers}) rescue at their level
-    # and fall back to a default; this method stays loud.
-    #
-    # @param transport [ChatTransport] same model-resolution
-    #   triple {#initialize} uses; if +model+ is +nil+, falls
-    #   back to +RubyLLM.config.default_model+
-    # @param prompt [String] the prompt sent as the single user
-    #   turn; must be non-blank
-    # @param cancellable [Control::Cancellable, nil] when set,
-    #   checked before the call so a flag flipped right
-    #   around the request raises {Control::Cancellable::Cancelled}
-    # @return [String] the assistant's reply content
-    # @raise [ArgumentError] when +prompt+ is +nil+, empty, or
-    #   whitespace-only
-    # @raise [Control::Cancellable::Cancelled] when the
-    #   +cancellable+ flag was tripped at the pre-call check
-    def self.think(transport:, prompt:, cancellable: nil)
-      raise ArgumentError, "prompt must not be blank, got #{prompt.inspect}" \
-        if prompt.nil? || prompt.to_s.strip.empty?
-
-      transport = transport.with(model: RubyLLM.config.default_model) unless transport.model
-      cancellable&.check!
-      chat = RubyLLM.chat(**transport.to_h)
-      chat.ask(prompt)
-      last = chat.messages.reverse.find { |m| m.role == :assistant }
-      last&.content.to_s
-    end
-
     # @param transport [ChatTransport] the model-resolution triple
     #   (+model+ / +provider+ / +assume_model_exists+) forwarded
     #   to +RubyLLM.chat+. Bundled into one value object so every
@@ -333,7 +99,10 @@ module Pikuri
     # @param step_limit [Control::StepLimit, nil] step budget
     #   control. When set, {Control::StepLimit#tick!} fires on
     #   every +before_tool_call+ and {Control::StepLimit#reset!}
-    #   at the start of each turn. +nil+ means "no step budget"
+    #   at the start of each turn; the budget's
+    #   {Control::StepLimit#on_exhausted} policy decides what
+    #   {#run_loop} does when it trips (see "Step-exhaustion
+    #   policy" in the class header). +nil+ means "no step budget"
     #   (the agent can loop indefinitely).
     # @param cancellable [Control::Cancellable, nil] cancellation
     #   control. When set, {Control::Cancellable#check!} fires on
@@ -369,8 +138,8 @@ module Pikuri
     #   the codebase for the persona-name load (the value the LLM
     #   picks in the +agent+ tool's +name:+ argument).
     # @param streaming [Boolean] opt into chunk-level streaming.
-    #   When +true+, {#run_loop} passes the block returned by
-    #   {.streaming_block} to +Chat#ask+, and ruby_llm requests
+    #   When +true+, {#run_loop} passes a per-chunk block to
+    #   +Chat#complete+, and ruby_llm requests
     #   SSE responses from the provider — chunks are normalized
     #   into {Event::ThinkingDelta} / {Event::AssistantDelta} on
     #   the listener stream as they arrive. When +false+ (the
@@ -552,11 +321,15 @@ module Pikuri
     # and any other observable output is the listeners'
     # responsibility.
     #
-    # If the +step_limit+ control trips during +ask+, the rescue
-    # branch emits an {Event::FallbackNotice} and runs
-    # {Synthesizer.run} on a fresh +RubyLLM::Chat+. The synth's
-    # answer is captured for {#last_assistant_content}; the
-    # exception does not bubble out.
+    # If the +step_limit+ control trips during completion, the
+    # rescue branch applies its {Control::StepLimit#on_exhausted}
+    # policy: +:raise+ re-raises the +Exceeded+ exception to the
+    # host (chat history intact — the next turn's +reset!+
+    # refreshes the budget, so "continue" just works);
+    # +:synthesize+ emits an {Event::FallbackNotice} and runs the
+    # {Synthesizer} prompt on a nested tools-free agent, capturing
+    # its answer for {#last_assistant_content}. See
+    # "Step-exhaustion policy" in the class header.
     #
     # If the +cancellable+ control trips during +ask+, the rescue
     # branch emits an {Event::Cancelled} and re-raises the
@@ -574,6 +347,8 @@ module Pikuri
     # @raise [Control::Cancellable::Cancelled] if the registered
     #   {Control::Cancellable} was triggered during the turn;
     #   the listener stream sees an {Event::Cancelled} first
+    # @raise [Control::StepLimit::Exceeded] if the step budget
+    #   tripped and its policy is +:raise+ (the default)
     # @return [nil]
     def run_loop(user_message:)
       raise ArgumentError, "user_message must not be blank, got #{user_message.inspect}" \
@@ -594,7 +369,7 @@ module Pikuri
       @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
       dispatch_ext_on_user_message(user_message)
       if @streaming
-        @chat.complete(&self.class.streaming_block(listeners: @listeners, cancellable: @cancellable))
+        @chat.complete(&streaming_block)
       else
         @chat.complete
       end
@@ -603,35 +378,9 @@ module Pikuri
       @listeners.emit(Event::Cancelled.new)
       raise
     rescue Control::StepLimit::Exceeded => e
-      @listeners.emit(Event::FallbackNotice.new(
-                        reason: "agent exhausted #{e.max_steps} steps; synthesizing answer from gathered evidence"
-                      ))
+      raise unless @step_limit&.on_exhausted == :synthesize
 
-      # Synth runs under this agent's identity but on a fresh
-      # chat with a different system prompt, so it gets a
-      # distinct +_synthesizer+ suffix on the id — same +_+
-      # separator the sub-agent generator uses, so main becomes
-      # +"synthesizer"+ and a sub-agent +"researcher 0"+ becomes
-      # +"researcher 0_synthesizer"+. Any +TokenLog+ in the list
-      # tags the synth's prompt under that bracket so it's
-      # obvious from the log which turns were the rescue rather
-      # than the original loop.
-      synth_id = @id.empty? ? 'synthesizer' : "#{@id}_synthesizer"
-      synth_chat = RubyLLM.chat(**@transport.to_h)
-      # Defensive step limit on the synth: the synth has no
-      # tools so it should never trip +before_tool_call+, but
-      # guarding the budget anyway means a buggy provider that
-      # somehow returns a tool call doesn't loop forever.
-      synth_step_limit = @step_limit && Control::StepLimit.new(max: 1)
-      @synth_answer = Synthesizer.run(
-        chat: synth_chat,
-        parent_messages: @chat.messages,
-        user_message: user_message,
-        listeners: @listeners.for_sub_agent(id: synth_id),
-        step_limit: synth_step_limit,
-        cancellable: @cancellable,
-        streaming: @streaming
-      )
+      run_synthesizer(e, user_message)
       nil
     end
 
@@ -719,14 +468,7 @@ module Pikuri
         model_id: @chat.model.id
       ).detect
 
-      self.class.wire_chat(
-        @chat,
-        listeners: @listeners,
-        step_limit: @step_limit,
-        cancellable: @cancellable,
-        interloper: @interloper,
-        on_user_message: method(:dispatch_ext_on_user_message)
-      )
+      wire_chat
 
       # One-shot context-window cap: lets every listener that
       # cares (notably TokenLog) pick the value off the stream
@@ -790,6 +532,218 @@ module Pikuri
         block = message.strip
         @chat.add_message(role: :system, content: block)
         @listeners.emit(Event::SystemInjected.new(content: block))
+      end
+      nil
+    end
+
+    # Wire +@chat+ for pikuri's event stream and controls — the
+    # three message-level registered callbacks (+after_message+,
+    # +before_tool_call+, +after_tool_result+). The per-chunk
+    # streaming callback is separate because ruby_llm takes it as
+    # a block to +Chat#complete+ rather than a registered hook —
+    # see {#streaming_block}. Called once from {#run_configure};
+    # together with the +@listeners.emit+ calls in {#run_loop} /
+    # {#dispatch_ext_on_user_message} this is the complete "which
+    # callback emits which event" map.
+    #
+    # @return [void]
+    def wire_chat
+      @chat.after_message do |msg|
+        emit_after_message(msg)
+      end
+      @chat.before_tool_call do |tc|
+        @listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
+        @step_limit&.tick!
+        @cancellable&.check!
+      end
+      @chat.after_tool_result do |result|
+        @listeners.emit(Event::ToolResult.new(content: result))
+        drain_interloper if @interloper
+      end
+      nil
+    end
+
+    # Build the per-chunk streaming block passed to +Chat#complete+.
+    # Each invocation of the returned proc converts one
+    # +RubyLLM::Chunk+ into zero, one, or two delta events
+    # ({Event::ThinkingDelta} / {Event::AssistantDelta}) on
+    # +@listeners+. Tool-call chunks are intentionally ignored —
+    # partial JSON has no useful rendering; the assembled
+    # +tool_calls+ surface through {Event::ToolCall} once the
+    # message completes.
+    #
+    # Lives parallel to {#wire_chat} (instead of being folded into
+    # it) because +Chat#complete+ takes the streaming block as an
+    # argument rather than a registered callback, so {#run_loop}
+    # passes it inline at the call site with +&streaming_block+.
+    #
+    # == Cancellation polling
+    #
+    # When +@cancellable+ is non-nil, {Control::Cancellable#check!}
+    # fires *before* each chunk's emit. The +before_tool_call+
+    # wiring in {#wire_chat} only fires when the model requests a
+    # tool, which leaves a no-tool turn (e.g. a plain greeting)
+    # with zero cancellation points — Ctrl+C trips the flag but
+    # nothing reads it. Polling on every streamed chunk closes
+    # that gap: an in-flight Cancellation+check! raises on the
+    # next chunk delivered after the flag flips, the exception
+    # propagates out through ruby_llm's streaming path
+    # (+Chat#complete+ doesn't rescue), and {#run_loop} catches it,
+    # emits {Event::Cancelled}, and re-raises. The pre-emit
+    # ordering is deliberate: a chunk that arrives after a cancel
+    # request shouldn't render — the user has said stop.
+    #
+    # @return [Proc] a +-> (chunk) { ... }+ proc suitable for
+    #   passing to +Chat#complete+ with +&+
+    def streaming_block
+      ->(chunk) {
+        @cancellable&.check!
+        emit_chunk(chunk)
+      }
+    end
+
+    # Normalize a +RubyLLM::Chat+ +after_message+ payload into
+    # zero, one, or two {Event} variants (+Thinking+ and/or
+    # +Assistant+) plus one {Event::Tokens} for the usage block.
+    # Empty thinking / empty content are filtered here so
+    # listeners never see vacuous events. Non-assistant roles
+    # (e.g. tool-role messages echoed back through
+    # +after_message+) are skipped entirely.
+    #
+    # +msg+ is a +RubyLLM::Message+. Beyond +role+, +content+,
+    # +thinking+, and the +*_tokens+ accessors used here, it also
+    # carries +msg.tool_calls+ on assistant turns that requested
+    # one and +msg.raw+ for the unparsed provider payload.
+    #
+    # @param msg [RubyLLM::Message]
+    # @return [void]
+    def emit_after_message(msg)
+      return unless msg.role == :assistant
+
+      text = msg.thinking&.text
+      @listeners.emit(Event::Thinking.new(content: text)) if text && !text.empty?
+
+      content = msg.content
+      @listeners.emit(Event::Assistant.new(content: content)) if content.is_a?(String) && !content.empty?
+
+      @listeners.emit(Event::Tokens.new(
+                        input: msg.input_tokens,
+                        output: msg.output_tokens,
+                        cached: msg.cached_tokens,
+                        cache_creation: msg.cache_creation_tokens,
+                        thinking: msg.thinking_tokens,
+                        model_id: msg.model_id
+                      ))
+    end
+
+    # Normalize a +RubyLLM::Chunk+ from a streaming completion
+    # into zero, one, or two delta events
+    # ({Event::ThinkingDelta} / {Event::AssistantDelta}). Empty
+    # +thinking.text+ and empty +content+ are filtered here so
+    # listeners never see vacuous fragments. Tool-call deltas are
+    # intentionally skipped — see {#streaming_block}.
+    #
+    # +chunk+ is a +RubyLLM::Chunk+ (subclass of +RubyLLM::Message+),
+    # so the same +.thinking+ / +.content+ accessors used in
+    # {#emit_after_message} apply.
+    #
+    # @param chunk [RubyLLM::Chunk]
+    # @return [void]
+    def emit_chunk(chunk)
+      thinking = chunk.thinking&.text
+      @listeners.emit(Event::ThinkingDelta.new(content: thinking)) if thinking && !thinking.empty?
+
+      content = chunk.content
+      @listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
+    end
+
+    # Drain the interloper queue: for each pending item, append a
+    # +role: :user+ message to the chat history so the next
+    # round-trip sees it, emit an {Event::UserTurn} with
+    # +mid_loop: true+ to the listener stream so renderers see the
+    # injection, then run the per-turn {Extension#on_user_message}
+    # dispatch (so mid-loop injections are prefetched + recorded
+    # exactly like initial turns).
+    #
+    # The dispatch runs *after* the +:user+ append so any
+    # +<memory-context>+ it injects lands as a +:system+ message
+    # right behind the user turn it annotates — the same
+    # append-at-the-tail ordering {#run_loop} produces for initial
+    # turns.
+    #
+    # @return [void]
+    def drain_interloper
+      @interloper.drain!.each do |content|
+        @chat.add_message(role: :user, content: content)
+        @listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
+        dispatch_ext_on_user_message(content)
+      end
+    end
+
+    # The +:synthesize+ arm of the step-exhaustion policy (see the
+    # class header). Runs the {Synthesizer} prompt over the
+    # exhausted chat's history on a nested tools-free +Agent+ —
+    # the same construction shape the +agent+ tool from
+    # +pikuri-subagents+ uses for sub-agents, so the synth gets
+    # listener propagation, transport / context-window-cap /
+    # streaming inheritance, and teardown via +close+ for free.
+    # The synth's answer lands in +@synth_answer+, the value
+    # {#last_assistant_content} prefers.
+    #
+    # @param exceeded [Control::StepLimit::Exceeded] the tripped
+    #   budget, for the {Event::FallbackNotice} reason line
+    # @param user_message [String] the user's original question
+    #   from the turn that exhausted
+    # @raise [Control::Cancellable::Cancelled] when a cancel
+    #   landed between the budget tripping and this rescue —
+    #   cancellation wins over salvage
+    # @return [void]
+    def run_synthesizer(exceeded, user_message)
+      # Check the cancel flag *before* constructing the synth: the
+      # nested run_loop resets the shared cancellable at its turn
+      # boundary, which would erase a cancel requested in this
+      # window. The raise propagates without a parent-side
+      # {Event::Cancelled} — a cancel *during* synthesis emits it
+      # from the synth's own rescue (on the derived listener list)
+      # instead, so either way the stream sees at most one.
+      @cancellable&.check!
+
+      @listeners.emit(Event::FallbackNotice.new(
+                        reason: "agent exhausted #{exceeded.max_steps} steps; " \
+                                'synthesizing answer from gathered evidence'
+                      ))
+
+      # Synth runs under this agent's identity but with a
+      # different system prompt, so it gets a distinct
+      # +_synthesizer+ suffix on the id — same +_+ separator the
+      # sub-agent generator uses, so main becomes +"synthesizer"+
+      # and a sub-agent +"researcher 0"+ becomes
+      # +"researcher 0_synthesizer"+. Any +TokenLog+ in the list
+      # tags the synth's prompt under that bracket so it's
+      # obvious from the log which turns were the rescue rather
+      # than the original loop.
+      synth_id = @id.empty? ? 'synthesizer' : "#{@id}_synthesizer"
+      synth = Agent.new(
+        transport: @transport,
+        system_prompt: Synthesizer::SYSTEM_PROMPT,
+        # Defensive budget with the default :raise policy: the
+        # synth has no tools so it should never tick, but a buggy
+        # provider that somehow returns a tool call must not loop
+        # forever — and a synth that needs its own synth is a bug,
+        # not a rescue.
+        step_limit: Control::StepLimit.new(max: 1),
+        cancellable: @cancellable,
+        context_window: @context_window_cap,
+        id: synth_id,
+        streaming: @streaming
+      ) { |c| c.add_listeners(@listeners.for_sub_agent(id: synth_id)) }
+      begin
+        synth.run_loop(user_message: Synthesizer.build_prompt(
+          parent_messages: @chat.messages, user_message: user_message
+        ))
+        @synth_answer = synth.last_assistant_content
+      ensure
+        synth.close
       end
       nil
     end

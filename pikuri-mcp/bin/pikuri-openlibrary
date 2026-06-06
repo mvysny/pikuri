@@ -101,10 +101,10 @@ mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
 # Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
-# each call Agent.think once on a cold cache (the Open Library server
+# each run a one-shot thinker agent once on a cold cache (the Open Library server
 # ships no useful `instructions`, so the synthesizer fires; the verifier
 # fires on every server). Both honor cancel_flag, so trap SIGINT around
-# Agent.new and a Ctrl+C unwinds startup on the next .think check.
+# Agent.new and a Ctrl+C unwinds startup on the next thinker pre-call check.
 # Cached entries skip both passes entirely.
 mcp_ext = Pikuri::Mcp::Extension.new(
   registry: mcp_registry,
@@ -120,7 +120,10 @@ begin
       assume_model_exists: true
     ),
     system_prompt: system_prompt,
-    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20),
+    # :synthesize — this is a Q&A agent: when the budget trips, salvage an
+    # answer from the evidence gathered so far instead of raising. (Coding
+    # agents take the default :raise — see bin/pikuri-code.)
+    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20, on_exhausted: :synthesize),
     cancellable: cancel_flag,
     llama_probe_url: llama_probe_url,
     streaming: streaming
@@ -141,7 +144,7 @@ ensure
 end
 # The cancel flag may have been left in a tripped state if the user
 # pressed Ctrl+C between MCP synthesis calls — the trap fired but
-# Agent.new finished before the next .think check could raise. Reset
+# Agent.new finished before the next thinker pre-call check could raise. Reset
 # so the first turn doesn't inherit a stale cancellation.
 cancel_flag.reset!
 

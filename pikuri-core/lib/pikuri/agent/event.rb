@@ -86,10 +86,11 @@ module Pikuri
       Assistant = Data.define(:content)
 
       # Streaming fragment of an assistant reasoning block, pulled
-      # off a +RubyLLM::Chunk+ during a +Chat#ask+ stream. Emitted
-      # by the per-chunk streaming block {Agent.streaming_block}
-      # builds and {Agent#run_loop} / {Synthesizer.run} pass to
-      # +ask+; empty fragments are filtered at the dispatch site.
+      # off a +RubyLLM::Chunk+ during a streaming completion.
+      # Emitted by the per-chunk streaming block {Agent#run_loop}
+      # passes to +Chat#complete+ when the agent's +streaming:+
+      # flag is on; empty fragments are filtered at the dispatch
+      # site.
       #
       # Preview-only, not authoritative: the {Thinking} event
       # emitted from +after_message+ at the end of the round-trip
@@ -112,10 +113,10 @@ module Pikuri
       ThinkingDelta = Data.define(:content)
 
       # Streaming fragment of an assistant Markdown content block,
-      # pulled off a +RubyLLM::Chunk+ during a +Chat#ask+ stream.
-      # Emitted by the per-chunk streaming block
-      # {Agent.streaming_block} builds and {Agent#run_loop} /
-      # {Synthesizer.run} pass to +ask+; empty fragments are
+      # pulled off a +RubyLLM::Chunk+ during a streaming
+      # completion. Emitted by the per-chunk streaming block
+      # {Agent#run_loop} passes to +Chat#complete+ when the
+      # agent's +streaming:+ flag is on; empty fragments are
       # filtered at the dispatch site.
       #
       # Preview-only, same semantics as {ThinkingDelta}: the

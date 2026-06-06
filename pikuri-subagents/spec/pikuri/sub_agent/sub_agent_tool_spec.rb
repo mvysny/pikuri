@@ -327,6 +327,9 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         assert_kind_of Pikuri::Agent::Control::StepLimit, sub_step
         # simple_persona declares max_steps: 7
         assert_equal 7, sub_step.max
+        # Sub-agents always salvage: an exhausted run must return usable
+        # text to the parent's tool call, never raise into it.
+        assert_equal :synthesize, sub_step.on_exhausted
       end
     end
 

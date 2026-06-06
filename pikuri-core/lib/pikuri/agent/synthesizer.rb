@@ -2,13 +2,13 @@
 
 module Pikuri
   class Agent
-    # Step-exhaustion rescue. When an +Agent+'s
-    # {Control::StepLimit} trips, +Agent#run_loop+ catches the
-    # +Exceeded+ exception and hands off to {Synthesizer.run} so
-    # the run still produces something useful — a tools-free
-    # assistant turn that answers the user's question from
-    # whatever evidence the failed agent collected before running
-    # out of budget.
+    # Prompt builder for the step-exhaustion rescue. When an
+    # +Agent+'s {Control::StepLimit} trips with the +:synthesize+
+    # policy, +Agent#run_loop+ runs this module's prompt on a
+    # nested tools-free agent so the run still produces something
+    # useful — an assistant turn that answers the user's question
+    # from whatever evidence the failed agent collected before
+    # running out of budget.
     #
     # == Why this exists
     #
@@ -22,74 +22,30 @@ module Pikuri
     # answer is largely in the messages — it just needs a
     # tools-free pass to synthesize.
     #
+    # Salvage is the wrong move for some agents, which is why the
+    # policy lives on {Control::StepLimit} and defaults to
+    # +:raise+ — a coding agent's half-finished work can't be
+    # completed by a tools-free pass, only described. See
+    # {Control::StepLimit}'s class header.
+    #
     # == Seam discipline
     #
-    # {Synthesizer.run} does not reference +RubyLLM::*+. +Agent+
-    # constructs the synth chat itself (the one +RubyLLM.chat+
-    # call lives in +lib/agent.rb+, same as the parent chat) and
-    # passes it in. +Synthesizer+ only calls instance methods on
-    # whatever +chat+ it receives — +#with_instructions+,
-    # +#ask+, +#messages+ — and uses {Agent.wire_chat} for the
-    # event-stream wiring so the synth chat emits events with
-    # the same shape as the main chat.
+    # This module is pure prompt construction — no chat handling,
+    # no +RubyLLM.chat+ call, no event wiring. The execution side
+    # (constructing the nested agent, sharing the parent's
+    # listener stream and cancellable, capturing the answer) is
+    # +Agent#run_synthesizer+'s job: the synth is a regular
+    # tools-free +Agent+, the same construction shape the +agent+
+    # tool from +pikuri-subagents+ uses for sub-agents. The only
+    # +RubyLLM::*+ surface read here is the value-type
+    # +RubyLLM::Message+ / +ToolCall+ passthrough (per the
+    # value-type rule in CLAUDE.md).
     module Synthesizer
       # The synthesizer's system prompt. Strict and short: use
       # the evidence, don't apologize, admit gaps when present.
       SYSTEM_PROMPT = <<~PROMPT
         You are given evidence another agent collected before running out of steps. Answer the user's question using only this evidence. You have no tools. If the evidence is insufficient, state plainly what's missing and what partial answer you can give. Do not apologize or comment on the previous agent.
       PROMPT
-
-      # Configure +chat+ for synthesis, run one turn against it,
-      # and return the final assistant content. The chat is wired
-      # for the event stream via {Agent.wire_chat} so the synth's
-      # reasoning and answer flow through the same listener
-      # surface the parent agent uses — terminal renders them
-      # inline (padded under sub-agent), an in-memory recorder
-      # picks them up, a TokenLog tags them with the synth id.
-      #
-      # @param chat [RubyLLM::Chat] a *fresh* chat with no tools.
-      #   The caller is responsible for constructing it with the
-      #   same model/provider configuration the parent used.
-      # @param parent_messages [Array<RubyLLM::Message>] the
-      #   parent chat's full message history at the moment of
-      #   step exhaustion. Used to build the evidence transcript.
-      # @param user_message [String] the user's original question
-      #   from the parent turn that exhausted.
-      # @param listeners [Agent::ListenerList] listeners to wire
-      #   the synth chat into. Typically the parent agent's list
-      #   run through {ListenerList#for_sub_agent} with the
-      #   synth's +id:+ so any +TokenLog+ tags its lines with
-      #   the synth bracket and any +Terminal+ pads its output.
-      # @param step_limit [Control::StepLimit, nil] defensive
-      #   step budget. The synth has no tools so it should never
-      #   trip +before_tool_call+, but a buggy provider that
-      #   somehow returned a tool call would loop without one.
-      #   Pass +nil+ to skip.
-      # @param cancellable [Control::Cancellable, nil]
-      #   cancellation control. Typically the parent's instance,
-      #   shared by reference so a user cancel during synthesis
-      #   still works. Pass +nil+ to skip.
-      # @param streaming [Boolean] mirror the parent agent's
-      #   +streaming+ flag. When +true+, {Agent.streaming_block}
-      #   is passed to +chat.ask+ so the synth's reasoning and
-      #   answer flow through the listener stream as deltas in
-      #   addition to the final {Event::Thinking} / {Event::Assistant}
-      #   bookends.
-      # @return [String, nil] the synth's final assistant
-      #   content, or +nil+ if the synth somehow produced no
-      #   assistant message
-      def self.run(chat:, parent_messages:, user_message:, listeners:,
-                   step_limit: nil, cancellable: nil, streaming: false)
-        chat.with_instructions(SYSTEM_PROMPT)
-        Agent.wire_chat(chat, listeners: listeners, step_limit: step_limit, cancellable: cancellable)
-        prompt = build_prompt(parent_messages: parent_messages, user_message: user_message)
-        if streaming
-          chat.ask(prompt, &Agent.streaming_block(listeners: listeners, cancellable: cancellable))
-        else
-          chat.ask(prompt)
-        end
-        chat.messages.reverse.find { |m| m.role == :assistant }&.content
-      end
 
       # Render the user's question plus an "Evidence gathered"
       # section built from +parent_messages+ as a single prompt

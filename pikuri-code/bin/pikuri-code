@@ -229,7 +229,7 @@ mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
 # Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
-# each call Agent.think once per configured MCP server on a cold
+# each run a one-shot thinker agent once per configured MCP server on a cold
 # cache. Trap SIGINT around Agent.new so a Ctrl+C unwinds startup.
 # See bin/pikuri-assistant for the same pattern.
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
@@ -241,6 +241,12 @@ begin
       assume_model_exists: true
     ),
     system_prompt: system_prompt,
+    # Default :raise policy, deliberately NOT :synthesize — a coding turn
+    # ends in a changed working tree, not an answer, and a tools-free
+    # synthesis pass can't write the remaining files, only describe
+    # half-done work with confidence. Stop instead: the rescue arm in
+    # run_turn below tells the user, the chat history survives, and the
+    # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
     cancellable: cancel_flag,
     llama_probe_url: llama_probe_url
@@ -314,8 +320,8 @@ ensure
   trap('INT', prev_boot_trap || 'DEFAULT')
 end
 # Reset in case the user pressed Ctrl+C between MCP synthesis calls — the
-# trap fired but Agent.new finished before the next .think check could
-# raise. Otherwise the first turn would inherit a stale cancellation.
+# trap fired but Agent.new finished before the next thinker pre-call check
+# could raise. Otherwise the first turn would inherit a stale cancellation.
 cancel_flag.reset!
 
 # Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
@@ -328,6 +334,12 @@ run_turn = lambda do |message|
   agent.run_loop(user_message: message)
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
   # Notice already rendered by the Terminal listener; nothing else to do.
+rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
+  # The :raise policy (see the StepLimit construction above): no
+  # synthesizer salvage for a coding agent. Work done so far is on disk
+  # and in the chat history; the budget resets at the next turn boundary.
+  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
+  warn "Type 'continue' to let the agent keep going, or redirect it."
 rescue RubyLLM::ContextLengthExceededError => e
   warn "\nContext window exhausted: #{e.message}"
   warn 'The conversation has grown too large for the model. Start a fresh question.'

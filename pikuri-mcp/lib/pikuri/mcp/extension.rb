@@ -71,21 +71,23 @@ module Pikuri
 
       # Build the shared {Servers} runtime, append the
       # +<available_mcps>+ block to the system prompt, and register
-      # the close handler. The +Synthesizer+ / +Verifier+ thinker
-      # closure captures the Configurator's transport + cancellable
-      # so the LLM-driven boot passes run against the same model
-      # the agent itself uses and honor the same cancel flag.
+      # the close handler. The {Synthesizer} / {Verifier} are
+      # handed the Configurator's transport + cancellable and build
+      # their own {Thinker} + production {Cache} from them, so the
+      # LLM-driven boot passes run against the same model the agent
+      # itself uses and honor the same cancel flag.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
       def configure(c)
         return if @registry.empty?
 
-        if @synthesize_descriptions || @verify_mcp_servers
-          thinker = build_thinker(c.transport, c.cancellable)
+        if @synthesize_descriptions
+          synthesizer = Mcp::Synthesizer.new(transport: c.transport, cancellable: c.cancellable)
         end
-        synthesizer = build_synthesizer(thinker, c.transport.model) if @synthesize_descriptions
-        verifier    = build_verifier(thinker, c.transport.model)    if @verify_mcp_servers
+        if @verify_mcp_servers
+          verifier = Mcp::Verifier.new(transport: c.transport, cancellable: c.cancellable)
+        end
 
         # Two-phase on purpose: construct (pure), arm cleanup, then
         # start. Arming +on_close+ *before* the failure-prone
@@ -124,32 +126,6 @@ module Pikuri
         nil
       end
 
-      private
-
-      def build_thinker(transport, cancellable)
-        ->(prompt) { Pikuri::Agent.think(transport: transport, prompt: prompt, cancellable: cancellable) }
-      end
-
-      def build_synthesizer(thinker, model_id)
-        Mcp::Synthesizer.new(
-          thinker: thinker,
-          cache: Mcp::Cache.new(
-            model_id: model_id,
-            prompt_version: Mcp::Synthesizer::PROMPT_VERSION
-          )
-        )
-      end
-
-      def build_verifier(thinker, model_id)
-        Mcp::Verifier.new(
-          thinker: thinker,
-          cache: Mcp::Cache.new(
-            model_id: model_id,
-            prompt_version: Mcp::Verifier::PROMPT_VERSION,
-            dir: File.join(File.dirname(Mcp::Cache::DIR), 'mcp_verifications')
-          )
-        )
-      end
     end
   end
 end

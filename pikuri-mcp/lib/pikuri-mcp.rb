@@ -7,9 +7,9 @@ require 'pikuri-core'
 # +Pikuri::+ namespace alongside pikuri-core. After
 # +require 'pikuri-mcp'+, +Pikuri::Mcp::Registry+,
 # +Pikuri::Mcp::Servers+, +Pikuri::Mcp::Synthesizer+,
-# +Pikuri::Mcp::Verifier+, +Pikuri::Mcp::Cache+,
-# +Pikuri::Mcp::ClientWrapper+ and +Pikuri::Mcp::Extension+ are all
-# defined.
+# +Pikuri::Mcp::Verifier+, +Pikuri::Mcp::Thinker+,
+# +Pikuri::Mcp::Cache+, +Pikuri::Mcp::ClientWrapper+ and
+# +Pikuri::Mcp::Extension+ are all defined.
 #
 # Per-gem loader (not shared with pikuri-core's loader) so each gem
 # owns its own +lib/+ tree and the cooperation between gems is via

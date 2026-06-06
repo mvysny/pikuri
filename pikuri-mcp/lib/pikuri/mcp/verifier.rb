@@ -62,7 +62,16 @@ module Pikuri
       # folds this into its key fingerprint so a prompt edit
       # invalidates every cached "OK" without anyone having to
       # +rm+ the cache directory.
-      PROMPT_VERSION = 1
+      # Version 2: the thinker gained a generic system prompt
+      # ({Thinker::SYSTEM_PROMPT}), changing the effective prompt
+      # for every entry.
+      PROMPT_VERSION = 2
+
+      # Where the production cache lives — a sibling of
+      # {Cache::DIR} so verification verdicts never collide with
+      # synthesized descriptions (same key fingerprint, different
+      # meaning).
+      CACHE_DIR = File.join(File.dirname(Cache::DIR), 'mcp_verifications')
 
       # Code points with no legitimate place in human-readable tool
       # documentation. Each range catches one category of "hide
@@ -86,16 +95,42 @@ module Pikuri
       # describes WHAT was found and WHERE.
       class InjectionDetected < StandardError; end
 
-      # @param thinker [Proc] one-arg callable invoked as
-      #   +thinker.call(prompt)+; same closure shape {Synthesizer}
-      #   uses.
-      # @param cache [Cache, Cache::NULL] cache for the LLM-pass
-      #   result. Defaults to {Cache::NULL} so tests can skip
-      #   disk persistence; production wiring in {Agent} uses a
-      #   real {Cache} pointing at a +mcp_verifications+ dir.
-      def initialize(thinker:, cache: Cache::NULL)
-        @thinker = thinker
-        @cache = cache
+      # The easy path is +Verifier.new(transport: ...)+ — the
+      # {Thinker} and the production on-disk {Cache} (under
+      # {CACHE_DIR}) are built right here. +thinker:+ exists as the
+      # explicit override (a custom callable, a test fake) and is
+      # mutually exclusive with the transport path. Same
+      # constructor shape as {Synthesizer}.
+      #
+      # @param transport [Pikuri::Agent::ChatTransport, nil] when
+      #   set, a {Thinker} is constructed from it (and
+      #   +cancellable:+); the verification passes run against this
+      #   model.
+      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil]
+      #   forwarded to the constructed {Thinker} so a boot-time
+      #   Ctrl+C aborts the pass. Only meaningful on the
+      #   +transport:+ path.
+      # @param thinker [#call, nil] one-arg callable invoked as
+      #   +thinker.call(prompt)+, replacing the built-in {Thinker}.
+      # @param cache [Cache, Cache::NULL, nil] cache for the
+      #   LLM-pass result. When +nil+ (the default): the
+      #   +transport:+ path builds the production on-disk {Cache}
+      #   under {CACHE_DIR}; the +thinker:+ path falls back to
+      #   {Cache::NULL} (no persistence — the test default).
+      # @raise [ArgumentError] when neither or both of +transport:+
+      #   and +thinker:+ are given, or when +cancellable:+ is
+      #   combined with +thinker:+
+      def initialize(transport: nil, cancellable: nil, thinker: nil, cache: nil)
+        raise ArgumentError, 'pass exactly one of transport: or thinker:' if transport.nil? == thinker.nil?
+        raise ArgumentError, 'cancellable: only applies to the transport: path' if thinker && cancellable
+
+        @thinker = thinker || Thinker.new(transport: transport, cancellable: cancellable)
+        @cache = cache ||
+                 if transport
+                   Cache.new(model_id: transport.model, prompt_version: PROMPT_VERSION, dir: CACHE_DIR)
+                 else
+                   Cache::NULL
+                 end
       end
 
       # Verify the server's surface. Returns nothing on success;
