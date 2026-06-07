@@ -174,12 +174,6 @@ module Pikuri
       # raised at construction time for a denied project root.
       class Error < StandardError; end
 
-      # Parent directory under which every workspace mints its
-      # umbrella ({#internal_temp}). Honors +XDG_CACHE_HOME+ when set,
-      # else +~/.cache+; the +pikuri+ subdir is owned by us.
-      # +mkdir_p+'d lazily on first umbrella access.
-      CACHE_BASE = File.join(ENV['XDG_CACHE_HOME'] || File.join(Dir.home, '.cache'), 'pikuri')
-
       # Umbrella dirs older than this are reaped by
       # {.sweep_stale_internal_temps!} at gem load. Generous enough
       # that a long-lived pikuri session in another shell isn't
@@ -279,7 +273,7 @@ module Pikuri
       end
 
       # Per-workspace ephemeral umbrella. Minted lazily on first call
-      # under {CACHE_BASE}. Registered with {Pikuri::Finalizers} for
+      # under {Paths::cache}. Registered with {Pikuri::Finalizers} for
       # removal the moment it's minted, so anything subsequently placed inside
       # (the playground, {Pikuri::Code::Bash::Sandbox::Bubblewrap}'s
       # overlay state) gets wiped together. Callers that want
@@ -298,8 +292,8 @@ module Pikuri
       # one registry. The +path.exist?+ guard makes the removal a no-op
       # when the dir is already gone (test cleanup, manual rm).
       def self.mint_internal_temp
-        FileUtils.mkdir_p(CACHE_BASE)
-        path = Pathname.new(Dir.mktmpdir('workspace-', CACHE_BASE)).realpath
+        FileUtils.mkdir_p(Paths.cache)
+        path = Pathname.new(Dir.mktmpdir('workspace-', Paths.cache)).realpath
         Pikuri::Finalizers.register { FileUtils.remove_entry(path.to_s) if path.exist? }
         path
       end
@@ -307,18 +301,18 @@ module Pikuri
       # Reap +workspace-*+ umbrella dirs that have outlived
       # {INTERNAL_TEMP_STALE_SECONDS}. Called once at gem load via
       # {Pikuri::Workspace} so each process boot inherits a tidy
-      # {CACHE_BASE}. Failures (permission denied, racing concurrent
+      # {Paths::cache}. Failures (permission denied, racing concurrent
       # sweeper) are swallowed — best-effort cleanup; the
       # {Pikuri::Finalizers} removal is the load-bearing path.
       #
       # @return [void]
       def self.sweep_stale_internal_temps!
-        return unless File.directory?(CACHE_BASE)
+        return unless File.directory?(Paths.cache)
 
         cutoff = Time.now - INTERNAL_TEMP_STALE_SECONDS
-        Dir.children(CACHE_BASE).each do |entry|
+        Dir.children(Paths.cache).each do |entry|
           next unless entry.start_with?('workspace-')
-          path = File.join(CACHE_BASE, entry)
+          path = File.join(Paths.cache, entry)
           next unless File.directory?(path)
           next if File.mtime(path) > cutoff
 
