@@ -65,9 +65,9 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       [a, b].each { |w| FileUtils.remove_entry(w.temp.to_s) if w&.temp&.exist? }
     end
 
-    it 'mints the temp dir under CACHE_BASE (~/.cache/pikuri), not /tmp' do
+    it 'mints the temp dir under Paths.cache (~/.cache/pikuri), not /tmp' do
       ws = described_class.new(project_root: root, temp: true)
-      cache_base = Pathname.new(described_class::CACHE_BASE).realpath
+      cache_base = Pikuri::Paths.cache.realpath
       assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
              "expected #{ws.temp} under #{cache_base}"
       refute ws.temp.to_s.start_with?('/tmp/'),
@@ -86,7 +86,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
 
   describe '#internal_temp' do
     it 'is lazily minted — not created on construction with temp: false' do
-      cache_base = Pathname.new(described_class::CACHE_BASE)
+      cache_base = Pikuri::Paths.cache
       before = cache_base.exist? ? cache_base.children.size : 0
       _ws = described_class.new(project_root: root)
       after = cache_base.exist? ? cache_base.children.size : 0
@@ -112,9 +112,9 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
     end
 
-    it 'sits under CACHE_BASE with the workspace- prefix' do
+    it 'sits under Paths.cache with the workspace- prefix' do
       ws = described_class.new(project_root: root)
-      cache_base = Pathname.new(described_class::CACHE_BASE).realpath
+      cache_base = Pikuri::Paths.cache.realpath
       assert ws.internal_temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
              "expected #{ws.internal_temp} under #{cache_base}"
       assert ws.internal_temp.basename.to_s.start_with?('workspace-'),
@@ -126,7 +126,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
 
   describe '.sweep_stale_internal_temps!' do
     it 'reaps a workspace-* dir whose mtime is older than the cutoff' do
-      cache_base = Pathname.new(described_class::CACHE_BASE)
+      cache_base = Pikuri::Paths.cache
       FileUtils.mkdir_p(cache_base)
       stale = cache_base + "workspace-stale-#{$$}-#{rand(1_000_000)}"
       FileUtils.mkdir_p(stale)
@@ -141,7 +141,7 @@ RSpec.describe Pikuri::Workspace::Filesystem do
     end
 
     it 'leaves a recent workspace-* dir alone' do
-      cache_base = Pathname.new(described_class::CACHE_BASE)
+      cache_base = Pikuri::Paths.cache
       FileUtils.mkdir_p(cache_base)
       fresh = cache_base + "workspace-fresh-#{$$}-#{rand(1_000_000)}"
       FileUtils.mkdir_p(fresh)
@@ -153,8 +153,8 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       FileUtils.remove_entry(fresh.to_s) if fresh&.exist?
     end
 
-    it 'ignores non-workspace-* entries (does not touch unrelated dirs in CACHE_BASE)' do
-      cache_base = Pathname.new(described_class::CACHE_BASE)
+    it 'ignores non-workspace-* entries (does not touch unrelated dirs in Paths.cache)' do
+      cache_base = Pikuri::Paths.cache
       FileUtils.mkdir_p(cache_base)
       foreign = cache_base + "other-#{$$}-#{rand(1_000_000)}"
       FileUtils.mkdir_p(foreign)
@@ -503,9 +503,9 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
       assert_includes workspace.writable, Pathname.new('/').realpath
     end
 
-    it 'mints the temp dir under CACHE_BASE, not /tmp (same as base Filesystem)' do
+    it 'mints the temp dir under Paths.cache, not /tmp (same as base Filesystem)' do
       ws = described_class.new(project_root: root, temp: true)
-      cache_base = Pathname.new(Pikuri::Workspace::Filesystem::CACHE_BASE).realpath
+      cache_base = Pikuri::Paths.cache.realpath
       assert ws.temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
              "expected #{ws.temp} under #{cache_base}"
     ensure
