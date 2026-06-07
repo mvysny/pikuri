@@ -380,7 +380,7 @@ module Pikuri
     rescue Control::StepLimit::Exceeded => e
       raise unless @step_limit&.on_exhausted == :synthesize
 
-      @synth_answer = run_synthesizer(e, user_message)
+      @synth_answer = Synthesizer.run_synthesizer(@extension_context, user_message)
       nil
     end
 
@@ -677,74 +677,6 @@ module Pikuri
         @chat.add_message(role: :user, content: content)
         @listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
         dispatch_ext_on_user_message(content)
-      end
-    end
-
-    # The +:synthesize+ arm of the step-exhaustion policy (see the
-    # class header). Runs the {Synthesizer} prompt over the
-    # exhausted chat's history on a nested tools-free +Agent+ —
-    # the same construction shape the +agent+ tool from
-    # +pikuri-subagents+ uses for sub-agents, so the synth gets
-    # listener propagation, transport / context-window-cap /
-    # streaming inheritance, and teardown via +close+ for free.
-    # The synth's answer lands in +@synth_answer+, the value
-    # {#last_assistant_content} prefers.
-    #
-    # @param exceeded [Control::StepLimit::Exceeded] the tripped
-    #   budget, for the {Event::FallbackNotice} reason line
-    # @param user_message [String] the user's original question
-    #   from the turn that exhausted
-    # @raise [Control::Cancellable::Cancelled] when a cancel
-    #   landed between the budget tripping and this rescue —
-    #   cancellation wins over salvage
-    # @return [String] the synth answer
-    def run_synthesizer(_exceeded, user_message)
-      # Check the cancel flag *before* constructing the synth: the
-      # nested run_loop resets the shared cancellable at its turn
-      # boundary, which would erase a cancel requested in this
-      # window. The raise propagates without a parent-side
-      # {Event::Cancelled} — a cancel *during* synthesis emits it
-      # from the synth's own rescue (on the derived listener list)
-      # instead, so either way the stream sees at most one.
-      ctx.agent.cancellable&.check!
-
-      ctx = @extension_context
-      ctx.emit_event(Event::FallbackNotice.new(
-        reason: "agent exhausted #{ctx.agent.step_limit.max} steps; " \
-                                'synthesizing answer from gathered evidence'
-                      ))
-
-      # Synth runs under this agent's identity but with a
-      # different system prompt, so it gets a distinct
-      # +_synthesizer+ suffix on the id — same +_+ separator the
-      # sub-agent generator uses, so main becomes +"synthesizer"+
-      # and a sub-agent +"researcher 0"+ becomes
-      # +"researcher 0_synthesizer"+. Any +TokenLog+ in the list
-      # tags the synth's prompt under that bracket so it's
-      # obvious from the log which turns were the rescue rather
-      # than the original loop.
-      synth_id = ctx.agent.id.empty? ? 'synthesizer' : "#{ctx.agent.id}_synthesizer"
-      synth = Agent.new(
-        transport: ctx.agent.transport,
-        system_prompt: Synthesizer::SYSTEM_PROMPT,
-        # Defensive budget with the default :raise policy: the
-        # synth has no tools so it should never tick, but a buggy
-        # provider that somehow returns a tool call must not loop
-        # forever — and a synth that needs its own synth is a bug,
-        # not a rescue.
-        step_limit: Control::StepLimit.new(max: 1),
-        cancellable: ctx.agent.cancellable,
-        context_window: ctx.agent.context_window_cap,
-        id: synth_id,
-        streaming: ctx.agent.streaming
-      ) { |c| c.add_listeners(ctx.sub_agent_listeners(id: synth_id)) }
-      begin
-        synth.run_loop(user_message: Synthesizer.build_prompt(
-          parent_messages: @chat.messages, user_message: user_message
-        ))
-        return synth.last_assistant_content
-      ensure
-        synth.close
       end
     end
   end
