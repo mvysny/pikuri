@@ -380,7 +380,7 @@ module Pikuri
     rescue Control::StepLimit::Exceeded => e
       raise unless @step_limit&.on_exhausted == :synthesize
 
-      run_synthesizer(e, user_message)
+      @synth_answer = run_synthesizer(e, user_message)
       nil
     end
 
@@ -697,8 +697,8 @@ module Pikuri
     # @raise [Control::Cancellable::Cancelled] when a cancel
     #   landed between the budget tripping and this rescue —
     #   cancellation wins over salvage
-    # @return [void]
-    def run_synthesizer(exceeded, user_message)
+    # @return [String] the synth answer
+    def run_synthesizer(_exceeded, user_message)
       # Check the cancel flag *before* constructing the synth: the
       # nested run_loop resets the shared cancellable at its turn
       # boundary, which would erase a cancel requested in this
@@ -706,10 +706,11 @@ module Pikuri
       # {Event::Cancelled} — a cancel *during* synthesis emits it
       # from the synth's own rescue (on the derived listener list)
       # instead, so either way the stream sees at most one.
-      @cancellable&.check!
+      ctx.agent.cancellable&.check!
 
-      @listeners.emit(Event::FallbackNotice.new(
-                        reason: "agent exhausted #{exceeded.max_steps} steps; " \
+      ctx = @extension_context
+      ctx.emit_event(Event::FallbackNotice.new(
+        reason: "agent exhausted #{ctx.agent.step_limit.max} steps; " \
                                 'synthesizing answer from gathered evidence'
                       ))
 
@@ -722,9 +723,9 @@ module Pikuri
       # tags the synth's prompt under that bracket so it's
       # obvious from the log which turns were the rescue rather
       # than the original loop.
-      synth_id = @id.empty? ? 'synthesizer' : "#{@id}_synthesizer"
+      synth_id = ctx.agent.id.empty? ? 'synthesizer' : "#{ctx.agent.id}_synthesizer"
       synth = Agent.new(
-        transport: @transport,
+        transport: ctx.agent.transport,
         system_prompt: Synthesizer::SYSTEM_PROMPT,
         # Defensive budget with the default :raise policy: the
         # synth has no tools so it should never tick, but a buggy
@@ -732,20 +733,19 @@ module Pikuri
         # forever — and a synth that needs its own synth is a bug,
         # not a rescue.
         step_limit: Control::StepLimit.new(max: 1),
-        cancellable: @cancellable,
-        context_window: @context_window_cap,
+        cancellable: ctx.agent.cancellable,
+        context_window: ctx.agent.context_window_cap,
         id: synth_id,
-        streaming: @streaming
-      ) { |c| c.add_listeners(@listeners.for_sub_agent(id: synth_id)) }
+        streaming: ctx.agent.streaming
+      ) { |c| c.add_listeners(ctx.sub_agent_listeners(id: synth_id)) }
       begin
         synth.run_loop(user_message: Synthesizer.build_prompt(
           parent_messages: @chat.messages, user_message: user_message
         ))
-        @synth_answer = synth.last_assistant_content
+        return synth.last_assistant_content
       ensure
         synth.close
       end
-      nil
     end
   end
 end
