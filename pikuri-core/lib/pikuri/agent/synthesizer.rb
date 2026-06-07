@@ -104,17 +104,19 @@ module Pikuri
       # +pikuri-subagents+ uses for sub-agents, so the synth gets
       # listener propagation, transport / context-window-cap /
       # streaming inheritance, and teardown via +close+ for free.
-      # The synth's answer lands in +@synth_answer+, the value
-      # {#last_assistant_content} prefers.
+      # The synth's answer is returned.
       #
       # @param ctx [ExtensionContext]
+      # @param chat_messages [Array<RubyLLM::Message>] the
+      #   exhausted chat's full message history, the evidence
+      #   {.build_prompt} renders
       # @param user_message [String] the user's original question
       #   from the turn that exhausted
       # @raise [Control::Cancellable::Cancelled] when a cancel
       #   landed between the budget tripping and this rescue —
       #   cancellation wins over salvage
       # @return [String] the synth answer
-      def self.run_synthesizer(ctx, user_message)
+      def self.run_synthesizer(ctx, chat_messages, user_message)
         # Check the cancel flag *before* constructing the synth: the
         # nested run_loop resets the shared cancellable at its turn
         # boundary, which would erase a cancel requested in this
@@ -124,7 +126,6 @@ module Pikuri
         # instead, so either way the stream sees at most one.
         ctx.agent.cancellable&.check!
 
-        ctx = @extension_context
         ctx.emit_event(Event::FallbackNotice.new(
                          reason: "agent exhausted #{ctx.agent.step_limit.max} steps; " \
                                                  'synthesizing answer from gathered evidence'
@@ -156,7 +157,7 @@ module Pikuri
         ) { |c| c.add_listeners(ctx.sub_agent_listeners(id: synth_id)) }
         begin
           synth.run_loop(user_message: Synthesizer.build_prompt(
-            parent_messages: @chat.messages, user_message: user_message
+            parent_messages: chat_messages, user_message: user_message
           ))
           synth.last_assistant_content
         ensure

@@ -380,7 +380,7 @@ module Pikuri
     rescue Control::StepLimit::Exceeded => e
       raise unless @step_limit&.on_exhausted == :synthesize
 
-      @synth_answer = Synthesizer.run_synthesizer(@extension_context, user_message)
+      @synth_answer = Synthesizer.run_synthesizer(@extension_context, @chat.messages, user_message)
       nil
     end
 
