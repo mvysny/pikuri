@@ -381,7 +381,7 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'event routing through wire_chat' do
+  describe 'event routing through the chat callbacks' do
     let(:tool_call) { RubyLLM::ToolCall.new(id: 'c1', name: 'echo', arguments: { 'text' => 'hi' }) }
 
     before do

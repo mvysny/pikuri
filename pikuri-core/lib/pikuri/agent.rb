@@ -468,7 +468,26 @@ module Pikuri
         model_id: @chat.model.id
       ).detect
 
-      wire_chat
+      # Wire @chat for pikuri's event stream and controls — the
+      # three message-level registered callbacks (+after_message+,
+      # +before_tool_call+, +after_tool_result+). The per-chunk
+      # streaming callback is separate because ruby_llm takes it as
+      # a block to +Chat#complete+ rather than a registered hook —
+      # see {#streaming_block}. Together with the +@listeners.emit+
+      # calls in {#run_loop} / {#dispatch_ext_on_user_message} this
+      # is the complete "which callback emits which event" map.
+      @chat.after_message do |msg|
+        emit_after_message(msg)
+      end
+      @chat.before_tool_call do |tc|
+        @listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
+        @step_limit&.tick!
+        @cancellable&.check!
+      end
+      @chat.after_tool_result do |result|
+        @listeners.emit(Event::ToolResult.new(content: result))
+        drain_interloper if @interloper
+      end
 
       # One-shot context-window cap: lets every listener that
       # cares (notably TokenLog) pick the value off the stream
@@ -512,9 +531,8 @@ module Pikuri
     #
     # Private and the single place the chat log grows by a memory
     # block — keeps "what mutates the log, when" one grep in this
-    # file. Fired from {#run_loop} (initial turn) and, via the
-    # +on_user_message:+ proc threaded into {.wire_chat}, from
-    # {.drain_interloper} (mid-loop interlopers). Called on every
+    # file. Fired from {#run_loop} (initial turn) and from
+    # {#drain_interloper} (mid-loop interlopers). Called on every
     # extension unconditionally — same as {Extension#configure} /
     # {Extension#bind}: the hook is part of the protocol and the
     # {Extension} module supplies a no-op default, so any extension
@@ -536,33 +554,6 @@ module Pikuri
       nil
     end
 
-    # Wire +@chat+ for pikuri's event stream and controls — the
-    # three message-level registered callbacks (+after_message+,
-    # +before_tool_call+, +after_tool_result+). The per-chunk
-    # streaming callback is separate because ruby_llm takes it as
-    # a block to +Chat#complete+ rather than a registered hook —
-    # see {#streaming_block}. Called once from {#run_configure};
-    # together with the +@listeners.emit+ calls in {#run_loop} /
-    # {#dispatch_ext_on_user_message} this is the complete "which
-    # callback emits which event" map.
-    #
-    # @return [void]
-    def wire_chat
-      @chat.after_message do |msg|
-        emit_after_message(msg)
-      end
-      @chat.before_tool_call do |tc|
-        @listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
-        @step_limit&.tick!
-        @cancellable&.check!
-      end
-      @chat.after_tool_result do |result|
-        @listeners.emit(Event::ToolResult.new(content: result))
-        drain_interloper if @interloper
-      end
-      nil
-    end
-
     # Build the per-chunk streaming block passed to +Chat#complete+.
     # Each invocation of the returned proc converts one
     # +RubyLLM::Chunk+ into zero, one, or two delta events
@@ -572,16 +563,11 @@ module Pikuri
     # +tool_calls+ surface through {Event::ToolCall} once the
     # message completes.
     #
-    # Lives parallel to {#wire_chat} (instead of being folded into
-    # it) because +Chat#complete+ takes the streaming block as an
-    # argument rather than a registered callback, so {#run_loop}
-    # passes it inline at the call site with +&streaming_block+.
-    #
     # == Cancellation polling
     #
     # When +@cancellable+ is non-nil, {Control::Cancellable#check!}
     # fires *before* each chunk's emit. The +before_tool_call+
-    # wiring in {#wire_chat} only fires when the model requests a
+    # wiring in {#run_configure} only fires when the model requests a
     # tool, which leaves a no-tool turn (e.g. a plain greeting)
     # with zero cancellation points — Ctrl+C trips the flag but
     # nothing reads it. Polling on every streamed chunk closes
