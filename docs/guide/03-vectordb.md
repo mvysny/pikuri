@@ -209,7 +209,7 @@ The remainder of the chapter assumes a single router-mode
 `llama-server` on `http://localhost:8080` serving all three
 models. The demo binary's `reranker_server` config key defaults
 to the same URL as `llm_server`, so you can leave it unset for
-that case; set `reranker_server` in `~/.pikuri-examples-config.json`
+that case; set `reranker_server` in `~/.pikuri-examples-config.yaml`
 only if you'd rather keep the reranker pinned in its own
 `llama-server` instance on a separate port.
 

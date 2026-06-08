@@ -133,7 +133,7 @@ What the full chapter will cover, once the gems land:
   graph hold which legs, where the kit (chapter 6) cuts, what
   the residual risks are.
 - The hosted-provider opt-in path: setting `llm_api_key` (and
-  `llm_server` / `llm_model`) in `~/.pikuri-examples-config.json`
+  `llm_server` / `llm_model`) in `~/.pikuri-examples-config.yaml`
   to point it at a cloud model, and what changes in the privacy
   posture when you do.
 - The split between assistant-shape and code-shape harnesses,

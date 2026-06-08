@@ -13,17 +13,17 @@ ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
 require 'optparse'
-require 'json'
+require 'yaml'
 
 require 'pikuri-core'
 require 'pikuri-subagents'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
-# in a JSON file the user owns — no CLI flags, never the environment (see
+# in a YAML file the user owns — no CLI flags, never the environment (see
 # CLAUDE.md "Environment is not a secret store"). Shared by convention across
 # the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
-examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
-examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
+examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
+examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'

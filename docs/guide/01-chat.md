@@ -236,8 +236,11 @@ moment when you get there.
 
 The bundled `bin/pikuri-*` scripts read their settings — which LLM
 server and model to use, the API key for a hosted provider, and the
-optional search-provider keys — from a single JSON file at
-`~/.pikuri-examples-config.json`. There are deliberately **no
+optional search-provider keys — from a single YAML file at
+`~/.pikuri-examples-config.yaml`. YAML (rather than JSON) so you can
+keep several LLM blocks in the file and `#`-comment out the ones
+you're not using — handy when testing against more than one model or
+server. There are deliberately **no
 `--server` / `--model` / API-key command-line flags**: pikuri the
 library never reads keys from the environment (a rogue tool or MCP
 server could otherwise harvest them out of `ENV` — see the project's
@@ -247,13 +250,17 @@ their configuration in a file you own and lock down.
 Create it, and restrict its permissions since it holds secrets:
 
 ```sh
-cat > ~/.pikuri-examples-config.json <<'JSON'
-{
-  "llm_server": "http://localhost:8080",
-  "llm_model": "unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M"
-}
-JSON
-chmod 600 ~/.pikuri-examples-config.json
+cat > ~/.pikuri-examples-config.yaml <<'YAML'
+llm_server: http://localhost:8080
+llm_model: unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M
+
+# A second model, parked. Uncomment these (and comment the two
+# lines above) to switch — no need to retype anything.
+# llm_server: https://api.openai.com
+# llm_model: gpt-4o
+# llm_api_key: sk-...
+YAML
+chmod 600 ~/.pikuri-examples-config.yaml
 ```
 
 Every key is optional — with no file at all, the scripts fall back to
@@ -310,8 +317,8 @@ To enable it, register for a free API key at
 tier gives you 1 query/sec and ~2k queries/month at no cost. Then
 add it to your config file under `brave_search_api_key`:
 
-```json
-{ "brave_search_api_key": "your-key-here" }
+```yaml
+brave_search_api_key: your-key-here
 ```
 
 Once the key is present, Brave joins the cascade and may be chosen
@@ -334,7 +341,7 @@ privacy posture.
 
 1. Run `llama-server` locally (Steps 2–3 above).
 2. Register a free Brave Search API key and put it in
-   `~/.pikuri-examples-config.json` under `brave_search_api_key`.
+   `~/.pikuri-examples-config.yaml` under `brave_search_api_key`.
 3. Leave Exa unset.
 
 With this configuration, your prompts never leave your machine,
