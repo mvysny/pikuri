@@ -42,7 +42,7 @@ require 'pikuri-core'
 require 'pikuri-subagents'
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_tool Pikuri::Tool::WebSearch.build
   c.add_tool Pikuri::Tool::WEB_SCRAPE
   c.add_tool Pikuri::Tool::FETCH
   c.add_extension(

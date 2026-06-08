@@ -220,7 +220,7 @@ there is no special case to configure.
 ./pikuri-memory/bin/pikuri-memory
 ```
 
-That's it — `--server` defaults to `http://localhost:8080`, and
+That's it — `llm_server` defaults to `http://localhost:8080`, and
 thanks to the relay, "localhost" means the same thing on both sides.
 On first run you'll see the supervisor come up, then the banner:
 

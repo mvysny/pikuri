@@ -147,8 +147,8 @@ pass here becomes a default for the models the router loads.
 The server binds to `127.0.0.1:8080` by default, and `pikuri-chat`
 is wired to `http://localhost:8080/v1` — so if you're running both
 on the same machine, no further configuration is needed. To talk
-to a server elsewhere, pass `--server http://host:port` on the
-`pikuri-chat` command line.
+to a server elsewhere — or use a hosted provider, or turn on the
+paid search engines — see *Configuring the example scripts* below.
 
 ## 4. Talk to it
 
@@ -232,6 +232,49 @@ it's the kind of dependency you should opt into, not inherit — and
 chapter 3 opens by plugging one in with two lines. Remember this
 moment when you get there.
 
+## Configuring the example scripts
+
+The bundled `bin/pikuri-*` scripts read their settings — which LLM
+server and model to use, the API key for a hosted provider, and the
+optional search-provider keys — from a single JSON file at
+`~/.pikuri-examples-config.json`. There are deliberately **no
+`--server` / `--model` / API-key command-line flags**: pikuri the
+library never reads keys from the environment (a rogue tool or MCP
+server could otherwise harvest them out of `ENV` — see the project's
+*Environment is not a secret store* rule), so the example scripts keep
+their configuration in a file you own and lock down.
+
+Create it, and restrict its permissions since it holds secrets:
+
+```sh
+cat > ~/.pikuri-examples-config.json <<'JSON'
+{
+  "llm_server": "http://localhost:8080",
+  "llm_model": "unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M"
+}
+JSON
+chmod 600 ~/.pikuri-examples-config.json
+```
+
+Every key is optional — with no file at all, the scripts fall back to
+a local `llama-server` at `http://localhost:8080` and need no API key.
+The recognized keys:
+
+| Key | Used by | Meaning |
+|-----|---------|---------|
+| `llm_server` | all scripts | LLM server base URL |
+| `llm_model` | all scripts | chat model identifier |
+| `llm_api_key` | all scripts | API key for a hosted provider; omit for a keyless local server |
+| `brave_search_api_key` | chat, code, assistant | enables Brave web search (below) |
+| `exa_api_key` | chat, code, assistant | enables Exa web search (below) |
+| `embed_model` | corpus (ch. 3), memory (ch. 4) | embedding model |
+| `extraction_model` | memory (ch. 4) | mem0 extraction model |
+| `reranker_model`, `reranker_server` | corpus (ch. 3) | reranker model / its server |
+
+What stays on the command line is what changes *per run*: the prompt
+itself, and operational toggles like `--no-sandbox` (chapter 8) — a
+security switch you'd never want silently persisted in a file.
+
 ## Search providers and their privacy trade-offs
 
 `web_search` is a cascade across whichever providers you have
@@ -265,21 +308,20 @@ is available on their Enterprise plan).
 To enable it, register for a free API key at
 <https://api-dashboard.search.brave.com> — the "Data for Search"
 tier gives you 1 query/sec and ~2k queries/month at no cost. Then
-export the key before starting pikuri:
+add it to your config file under `brave_search_api_key`:
 
-```sh
-export BRAVE_SEARCH_API_KEY=your-key-here
-./pikuri-core/bin/pikuri-chat
+```json
+{ "brave_search_api_key": "your-key-here" }
 ```
 
-Once the env var is set, Brave joins the cascade and may be chosen
+Once the key is present, Brave joins the cascade and may be chosen
 over DuckDuckGo for any given query. See
 `pikuri-core/lib/pikuri/tool/search/brave.rb`.
 
 ### Exa (paid, weakest privacy)
 
-Optional. Exa is a paid neural-search API; activate it by setting
-`EXA_API_KEY`. Be aware that Exa's Terms grant them a *perpetual,
+Optional. Exa is a paid neural-search API; activate it by adding an
+`exa_api_key` to your config file. Be aware that Exa's Terms grant them a *perpetual,
 irrevocable, sub-licensable* license over the queries you submit,
 and their privacy policy explicitly says queries are used for
 training. Don't enable Exa if your search history would be
@@ -291,8 +333,8 @@ privacy posture.
 ### Recommended setup for best privacy
 
 1. Run `llama-server` locally (Steps 2–3 above).
-2. Register a free Brave Search API key and `export
-   BRAVE_SEARCH_API_KEY=…`.
+2. Register a free Brave Search API key and put it in
+   `~/.pikuri-examples-config.json` under `brave_search_api_key`.
 3. Leave Exa unset.
 
 With this configuration, your prompts never leave your machine,

@@ -139,7 +139,7 @@ ctx-size = 65536
 The file path is your choice — the router only knows about it
 via the `--models-preset` flag, so put it wherever you keep
 config. The section header is the alias the client will use
-(matching the `--model` argument `pikuri-corpus` sends);
+(matching the `llm_model` configured for `pikuri-corpus`);
 parameter names inside each section mirror `llama-server`'s
 long-form CLI flags (`embeddings`, `reranking`, `n-gpu-layers`,
 …). Anything not set in a section falls back to the router
@@ -207,11 +207,11 @@ precision, the rest still works.
 
 The remainder of the chapter assumes a single router-mode
 `llama-server` on `http://localhost:8080` serving all three
-models. The demo binary's `--reranker-server` defaults to the
-same URL as `--server`, so no extra flag is needed for that
-case; pass `--reranker-server` only if you'd rather keep the
-reranker pinned in its own `llama-server` instance on a separate
-port.
+models. The demo binary's `reranker_server` config key defaults
+to the same URL as `llm_server`, so you can leave it unset for
+that case; set `reranker_server` in `~/.pikuri-examples-config.json`
+only if you'd rather keep the reranker pinned in its own
+`llama-server` instance on a separate port.
 
 ## Run the demo
 

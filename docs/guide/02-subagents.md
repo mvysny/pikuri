@@ -135,7 +135,7 @@ source of `bin/pikuri-minions`:
 
 ```ruby
 agent = Pikuri::Agent.new(...) do |c|
-  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_tool Pikuri::Tool::WebSearch.build
   c.add_tool Pikuri::Tool::WEB_SCRAPE
   c.add_tool Pikuri::Tool::FETCH
   c.add_tool Pikuri::Tool::CALCULATOR

@@ -12,8 +12,10 @@ AI-assistant toolkit:
   token accounting, and structured capture.
 - Controls (`StepLimit`, `Cancellable`, `Interloper`) for budget
   enforcement + cancellation.
-- Four stateless bundled tools: `CALCULATOR`, `WEB_SEARCH`,
-  `WEB_SCRAPE`, `FETCH`.
+- Three stateless bundled tools (`CALCULATOR`, `WEB_SCRAPE`,
+  `FETCH`) plus a host-configured web-search tool built via
+  `Pikuri::Tool::WebSearch.build` (provider keys passed in, never
+  read from the environment).
 - A demo binary, `bin/pikuri-chat`.
 
 Extensions (skills, MCP, workspace, coding stack, named-agent
@@ -57,7 +59,7 @@ agent = Pikuri::Agent.new(
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20)
 ) do |c|
   c.add_tool Pikuri::Tool::CALCULATOR
-  c.add_tool Pikuri::Tool::WEB_SEARCH
+  c.add_tool Pikuri::Tool::WebSearch.build
   c.add_listener Pikuri::Agent::Listener::Terminal.new
 end
 agent.run_loop(user_message: 'What is 17 * 23?')

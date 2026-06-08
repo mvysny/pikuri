@@ -132,9 +132,10 @@ What the full chapter will cover, once the gems land:
 - The trifecta calculus for this binary: which agents in the
   graph hold which legs, where the kit (chapter 6) cuts, what
   the residual risks are.
-- The hosted-provider opt-in path: what `--api-key-env` buys you
-  if you want to point it at a cloud model, and what changes in
-  the privacy posture when you do.
+- The hosted-provider opt-in path: setting `llm_api_key` (and
+  `llm_server` / `llm_model`) in `~/.pikuri-examples-config.json`
+  to point it at a cloud model, and what changes in the privacy
+  posture when you do.
 - The split between assistant-shape and code-shape harnesses,
   the choices that shape each, and when to reach for which.
 
