@@ -36,32 +36,36 @@ ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
 require 'optparse'
+require 'json'
 
 require 'pikuri-core'
 require 'pikuri-memory'
 
-server           = 'http://localhost:8080'
-model            = 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'        # chat (may think)
+# Example-only config: the LLM connection + provider API keys live verbatim
+# in a JSON file the user owns — no CLI flags, never the environment (see
+# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
+examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
+
+server           = examples_config['llm_server'] || 'http://localhost:8080'
+model            = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'  # chat (may think)
 extraction_model = 'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M'  # mem0 (non-reasoning)
 embed_model      = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 user_id          = ENV['USER'] || 'default'
 mem0_url         = nil # BYO mem0 endpoint; when set, the supervisor is skipped
-mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => the socat relay to --server
-api_key_env      = 'OPENAI_API_KEY'
+mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => the socat relay to llm_server
 streaming        = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-memory [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--server URL', "llama-server base URL — chat (default: #{server})") { |v| server = v }
-  opts.on('--model NAME', "Chat model identifier (default: #{model})") { |v| model = v }
   opts.on('--extraction-model NAME', "mem0 extraction model — must be non-reasoning (default: #{extraction_model})") { |v| extraction_model = v }
   opts.on('--embed-model NAME', "mem0 embedding model (default: #{embed_model})") { |v| embed_model = v }
   opts.on('--user-id ID', "Memory namespace, one per user (default: #{user_id})") { |v| user_id = v }
   opts.on('--mem0-url URL', 'Use an existing mem0 server at this URL instead of the self-managed sidecar') { |v| mem0_url = v }
-  opts.on('--mem0-router-url URL', 'Advanced: router base URL as seen from inside the mem0 container, bypassing the socat relay (default: relay to --server)') { |v| mem0_router_url = v }
-  opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
+  opts.on('--mem0-router-url URL', 'Advanced: router base URL as seen from inside the mem0 container, bypassing the socat relay (default: relay to the configured llm_server)') { |v| mem0_router_url = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -82,7 +86,7 @@ openai_api_base = "#{server}/v1"
 # The chat agent runs on the host, so it talks to the router directly.
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base
-  c.openai_api_key  = ENV.fetch(api_key_env, 'not-needed')
+  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
 end
 
 llama_probe_url = "#{server}/props"
@@ -98,7 +102,7 @@ client =
   else
     # The mem0 container can't dial the host's loopback (rootless docker
     # blocks it by design), so the supervisor relays the router over a
-    # unix socket — --server is used as-is, localhost and all. See
+    # unix socket — llm_server is used as-is, localhost and all. See
     # Mem0Server's "router relay" yardoc section.
     begin
       mem0_server = Pikuri::Memory::Mem0Server.ensure_running(

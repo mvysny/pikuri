@@ -27,6 +27,7 @@ ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
 require 'optparse'
+require 'json'
 
 require 'pikuri-core'
 require 'pikuri-vectordb'
@@ -36,14 +37,20 @@ require 'pikuri-vectordb'
 # Markdown / plain-text formats core handles natively.
 require 'pikuri-pdf'
 
-server          = 'http://localhost:8080'
-model           = 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+# Example-only config: the LLM connection + provider API keys live verbatim
+# in a JSON file the user owns — no CLI flags, never the environment (see
+# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
+examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
+
+server          = examples_config['llm_server'] || 'http://localhost:8080'
+model           = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
 embed_model     = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 reranker_server = nil # defaults to +server+; override for a separate reranker host
 reranker_model  = 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
 use_reranker    = true
 source          = File.expand_path('../../docs/guide', __dir__)
-api_key_env     = 'OPENAI_API_KEY'
 streaming       = false
 watch           = false
 use_qdrant      = false
@@ -53,17 +60,14 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--server URL', "llama-server base URL — chat, embedder, and reranker by default (default: #{server})") { |v| server = v }
-  opts.on('--model NAME', "Chat model identifier (default: #{model})") { |v| model = v }
   opts.on('--embed-model NAME', "Embedding model identifier (default: #{embed_model})") { |v| embed_model = v }
-  opts.on('--reranker-server URL', 'Reranker base URL (default: same as --server)') { |v| reranker_server = v }
+  opts.on('--reranker-server URL', 'Reranker base URL (default: same as llm_server)') { |v| reranker_server = v }
   opts.on('--reranker-model NAME', "Reranker model identifier (default: #{reranker_model})") { |v| reranker_model = v }
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
   opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
   opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
-  opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -100,7 +104,7 @@ openai_api_base = "#{server}/v1"
 # sharing the router's swap budget.
 RubyLLM.configure do |c|
   c.openai_api_base           = openai_api_base
-  c.openai_api_key            = ENV.fetch(api_key_env, 'not-needed')
+  c.openai_api_key            = examples_config.fetch('llm_api_key', 'not-needed')
   c.default_embedding_model   = embed_model
 end
 

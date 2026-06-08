@@ -32,18 +32,22 @@ require 'pikuri-assistant'
 require 'pikuri-subagents'
 require 'pikuri-extractors'
 
-server = 'http://localhost:8080'
-model = 'unsloth/Qwen3.6-35B-A3B-GGUF'
-api_key_env = 'OPENAI_API_KEY'
+# Example-only config: the LLM connection + provider API keys live verbatim
+# in a JSON file the user owns — no CLI flags, never the environment (see
+# CLAUDE.md "Environment is not a secret store"). Shared by convention across
+# the example scripts; chmod 600 it. Absent file ⇒ {} ⇒ built-in defaults.
+# (Per-run choices like the prompt stay on the command line, not here.)
+examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
+examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
+
+server = examples_config['llm_server'] || 'http://localhost:8080'
+model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF'
 streaming = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-assistant [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--server URL', "LLM server base URL (default: #{server})") { |v| server = v }
-  opts.on('--model NAME', "Model identifier (default: #{model})") { |v| model = v }
-  opts.on('--api-key-env VAR', "Env var holding the API key (default: #{api_key_env})") { |v| api_key_env = v }
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -63,16 +67,8 @@ openai_api_base = "#{server}/v1"
 
 RubyLLM.configure do |c|
   c.openai_api_base = openai_api_base
-  c.openai_api_key  = ENV.fetch(api_key_env, 'not-needed')
+  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
 end
-
-# Example-only config. pikuri the library reads no API keys from the
-# environment (see CLAUDE.md "Environment is not a secret store"); the
-# bundled bin/ examples instead load provider keys verbatim from a JSON
-# file the user owns. Convention shared by every example script;
-# chmod 600 it. Absent file ⇒ {} ⇒ DuckDuckGo-only web search.
-examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
-examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
 
 # llama.cpp exposes the server's launched +n_ctx+ at +/props+ on the base
 # host (NOT under +/v1+). Hand the derived URL to {Agent::ContextWindowDetector}
