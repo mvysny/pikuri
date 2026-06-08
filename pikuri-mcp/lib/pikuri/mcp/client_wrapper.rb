@@ -208,7 +208,8 @@ module Pikuri
         when Registry::StdioEntry
           MCP::Client::Stdio.new(
             command: @entry.command.first,
-            args: @entry.command.drop(1)
+            args: @entry.command.drop(1),
+            env: @entry.env
           )
         when Registry::HttpEntry
           MCP::Client::HTTP.new(url: @entry.url, headers: @entry.headers)

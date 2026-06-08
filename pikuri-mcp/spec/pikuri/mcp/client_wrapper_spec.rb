@@ -51,6 +51,32 @@ RSpec.describe Pikuri::Mcp::ClientWrapper do
     end
   end
 
+  describe 'StdioEntry env passthrough' do
+    # The fixture's +flaky_crash+ tool reads +PIKURI_TEST_FLAKY_MARKER+
+    # from its own ENV. Here it arrives via the entry's +env:+ (not the
+    # +env+ command prefix used elsewhere), so a successful
+    # restart-and-recover proves the env hash reached the subprocess.
+    it 'reaches the spawned subprocess' do
+      Tempfile.create('pikuri-env-marker') do |f|
+        marker = f.path
+        File.delete(marker) if File.exist?(marker)
+        entry = Pikuri::Mcp::Registry::StdioEntry.new(
+          id: 'test',
+          command: test_server_command,
+          env: { 'PIKURI_TEST_FLAKY_MARKER' => marker }
+        )
+        wrapper = described_class.new(entry)
+        begin
+          flaky = wrapper.tools.find { |t| t.name == 'flaky_crash' }
+          response = wrapper.call_tool(tool: flaky, arguments: {})
+          assert_equal 'recovered', response.dig('result', 'content', 0, 'text')
+        ensure
+          wrapper.close
+        end
+      end
+    end
+  end
+
   describe 'subprocess-death recovery' do
     it 'restarts the subprocess and the retry succeeds on the second attempt' do
       with_flaky_wrapper do |wrapper, _marker|

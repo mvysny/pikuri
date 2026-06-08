@@ -25,12 +25,33 @@ RSpec.describe Pikuri::Mcp::Registry do
       assert_equal ['npx', 'mcp-maven'], e.command
     end
 
+    it 'carries an env hash for auth and other variables' do
+      e = StdioEntry.new(id: 'gh', command: ['gh-mcp'], env: { 'GITHUB_TOKEN' => 'abc' })
+      assert_equal({ 'GITHUB_TOKEN' => 'abc' }, e.env)
+    end
+
+    it 'defaults env to an empty hash' do
+      e = StdioEntry.new(id: 'maven', command: ['npx', 'mcp-maven'])
+      assert_equal({}, e.env)
+    end
+
+    it 'freezes the env hash' do
+      e = StdioEntry.new(id: 'gh', command: ['gh-mcp'], env: { 'X' => 'y' })
+      assert e.env.frozen?
+    end
+
     it 'compares by value' do
       e1 = StdioEntry.new(id: 'a', command: ['x'])
       e2 = StdioEntry.new(id: 'a', command: ['x'])
       e3 = StdioEntry.new(id: 'b', command: ['x'])
       assert_equal e1, e2
       refute_equal e1, e3
+    end
+
+    it 'distinguishes by env' do
+      e1 = StdioEntry.new(id: 'a', command: ['x'], env: { 'K' => 'v' })
+      e2 = StdioEntry.new(id: 'a', command: ['x'], env: { 'K' => 'other' })
+      refute_equal e1, e2
     end
   end
 

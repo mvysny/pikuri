@@ -202,6 +202,28 @@ yardoc. CLAUDE.md only records the invariant.
   governs the filesystem view of the bash subprocess. See
   {Pikuri::Code::Bash::Sandbox} and `Sandbox::Bubblewrap`
   (threat model, ephemeral overlays, container-socket footgun).
+- **Environment is not a secret store.** `ENV` is ambient process
+  state, not a credential channel — pikuri never *filters* it before
+  spawning a subprocess (no env-scrubbing primitive; a prototype
+  `scrub_env!` was deliberately removed). Rationale: filtering env is
+  an unwinnable allowlist/denylist game, and outside a real sandbox it
+  closes nothing — a trusted MCP run bare still has full `$HOME` +
+  network, so a trimmed env is theatre; an untrusted MCP belongs in
+  docker (worked example: `bin/pikuri-openlibrary`'s `docker run`),
+  which clears env as a unit. So env is inherited *wholesale* by
+  trusted children (`Bash` after confirmation, build tools — trimming
+  only breaks `JAVA_HOME`/toolchain vars), and cleared *as a unit by
+  the isolation boundary* (Bubblewrap `--clearenv`, docker) for
+  untrusted ones — env-clearing is a property of the sandbox, never a
+  free-floating filter. Corollaries: pikuri config holds tokens
+  **verbatim**, not `ENV['X']` refs (long-term secrets live in
+  permissioned files, like `~/.aws/credentials` / `gh` / ssh); and
+  `Mcp::Registry::StdioEntry#env` is the *legitimate* per-child
+  credential channel (a specific secret to a specific server, via
+  `envp` not argv — not `ps`-visible). The thing we reject is ambient
+  *inheritance* of unrelated secrets, not passing a needed one
+  explicitly. See {Pikuri::Code::Bash::Sandbox} and
+  {Pikuri::Mcp::Registry::StdioEntry}.
 - **Streaming flag.** `Agent.new(..., streaming: true)` is opt-in
   and propagates to the step-exhaustion synthesizer and spawned
   sub-agents so the whole agent tree streams or doesn't,

@@ -43,13 +43,30 @@ module Pikuri
     # owns the actual spawn — see CLAUDE.md "Subprocess seam" carve-out.
     # First element is the executable; remaining elements are arguments.
     #
+    # +env+ carries extra environment variables for the spawned process —
+    # the stdio counterpart of {HttpEntry}'s +headers:+, and the right
+    # place for a server's auth token (e.g. +{"GITHUB_TOKEN" => "..."}+)
+    # rather than baking secrets into the argv. The +mcp+ gem merges it
+    # over the inherited environment; an empty hash (the default) changes
+    # nothing. Like {HttpEntry}'s +headers+, +env+ is excluded from the
+    # cache fingerprint ({Cache#transport_descriptor}) so secrets never
+    # land on disk.
+    #
     # @!attribute [r] id
     #   @return [String] short identifier the LLM uses to refer to this
     #     server, e.g. +"gmail"+ or +"maven-tools"+.
     # @!attribute [r] command
     #   @return [Array<String>] argv to spawn the server,
     #     e.g. +["npx", "mcp-maven-deps"]+.
-    StdioEntry = Data.define(:id, :command)
+    # @!attribute [r] env
+    #   @return [Hash{String => String}] extra environment variables for
+    #     the spawned process, merged over the inherited environment.
+    #     Frozen. Defaults to an empty hash.
+    StdioEntry = Data.define(:id, :command, :env) do
+      def initialize(id:, command:, env: {})
+        super(id: id, command: command, env: env.freeze)
+      end
+    end
 
     # One remote-HTTP MCP server's configuration: a unique id, the
     # endpoint URL, and optional headers (typically auth) sent on every
