@@ -8,14 +8,17 @@ module Pikuri
     module Search
       # Performs an Exa search via the official +/search+ endpoint and
       # returns the hits as a list of {Result} rows. Split into a thin HTTP
-      # fetch (#search) and a pure parser (#parse) so tests can exercise
+      # fetch (#search) and a pure parser (.parse) so tests can exercise
       # the parser against fixture JSON without hitting the network. The
-      # cascade in {Engines.search} owns the final Markdown rendering.
+      # cascade in {Engines#search} owns the final Markdown rendering.
       #
-      # Requires an Exa API key. Get one at https://exa.ai — the service is
-      # paid, so the cascade in {Engines.providers} only includes Exa when
-      # {ENV_KEY} is set in the environment; users who haven't registered
-      # never spend money on it.
+      # A class constructed with the API key it should use
+      # (+Exa.new(api_key:)+); {Engines} builds one only when an Exa key was
+      # configured, so users who haven't registered never spend money on it,
+      # and then drives it through the same +#search+ / +#label+ interface
+      # as every other provider. pikuri reads no key from the environment
+      # (see CLAUDE.md "Environment is not a secret store"). Get a key at
+      # https://exa.ai — the service is paid.
       #
       # Calls request +type: "auto"+ (Exa picks neural vs keyword per
       # query) and +contents: { highlights: true }+ so each result carries
@@ -37,17 +40,15 @@ module Pikuri
       # Bottom line: Exa does not sell queries to data brokers, but it
       # does mine them to train competing models, and the license it
       # claims is effectively "do what we want with this, forever". If a
-      # query would be embarrassing or sensitive in a training set, drop
-      # Exa out of the cascade by unsetting {ENV_KEY} — {Engines.providers}
-      # is recomputed every call.
-      module Exa
+      # query would be embarrassing or sensitive in a training set, simply
+      # don't configure an Exa key — {Engines#providers} leaves Exa out of
+      # the cascade unless its key was supplied to the constructor.
+      class Exa
         # @return [String] Search endpoint (POST, JSON body)
         ENDPOINT = 'https://api.exa.ai/search'
         # @return [Integer] default number of results returned, matching
         #   {DuckDuckGo::DEFAULT_MAX_RESULTS}
         DEFAULT_MAX_RESULTS = 10
-        # @return [String] env var holding the API key; sent as +x-api-key+
-        ENV_KEY = 'EXA_API_KEY'
         # @return [RateLimiter] Exa is paid and doesn't aggressively
         #   throttle, so no minimum interval is enforced. The 5-minute
         #   cooldown still applies on {Engines::Unavailable} so the user's
@@ -55,35 +56,46 @@ module Pikuri
         #   condition persists.
         LIMITER = RateLimiter.new(min_interval: 0.0, cooldown: 300.0)
 
+        # @param api_key [String] Exa API key. Required and non-blank:
+        #   pikuri reads no key from the environment — the host supplies it
+        #   ({Engines} only constructs an Exa when a key was configured).
+        # @raise [ArgumentError] if +api_key+ is blank
+        def initialize(api_key:)
+          raise ArgumentError, 'Exa Search API key is blank' if api_key.to_s.strip.empty?
+
+          @api_key = api_key
+        end
+
+        # @return [String] short provider label for {Engines} logging /
+        #   fallback messages.
+        def label
+          'Exa'
+        end
+
         # Fetch results for +query+ and return them as an +Array<Result>+.
         # Calls are circuit-broken for 5 minutes on rate-limit / unavailable
-        # responses; see {LIMITER}. The caller (typically {Engines.search})
+        # responses; see {LIMITER}. The caller (typically {Engines#search})
         # is expected to have already normalized the query and to wrap this
         # in a result cache.
         #
         # @param query [String] search query (already normalized)
         # @param max_results [Integer] maximum number of result entries;
         #   passed through as Exa's +numResults+
-        # @param api_key [String] Exa API key; defaults to the {ENV_KEY}
-        #   environment variable
         # @return [Array<Result>] hits, possibly empty when Exa ran the
         #   query and matched nothing
-        # @raise [ArgumentError] if no API key is available
         # @raise [Engines::Unavailable] when Exa returns HTTP 429
         #   (rate limit / quota exhausted) or 5xx — "try again later"
-        #   responses the cascade in {Engines.search} can fall back from.
+        #   responses the cascade in {Engines#search} can fall back from.
         #   Also raised immediately if {LIMITER} is in cooldown. Other
         #   non-2xx (e.g. 401/403 from a bad API key) bubble up as
         #   +RuntimeError+ so config problems stay visible.
         # @raise [RuntimeError] for non-rate-limit HTTP failures or when the
         #   response shape contains no results and isn't a recognized
         #   empty-results payload.
-        def self.search(query, max_results: DEFAULT_MAX_RESULTS, api_key: ENV.fetch(ENV_KEY, nil))
-          raise ArgumentError, "Exa Search API key not set (#{ENV_KEY})" if api_key.to_s.strip.empty?
-
+        def search(query, max_results: DEFAULT_MAX_RESULTS)
           LIMITER.call do
             response = Faraday.post(ENDPOINT) do |req|
-              req.headers['x-api-key'] = api_key
+              req.headers['x-api-key'] = @api_key
               req.headers['Content-Type'] = 'application/json'
               req.headers['Accept'] = 'application/json'
               req.body = JSON.dump(
@@ -101,7 +113,7 @@ module Pikuri
               raise "Exa Search request failed: #{response.status} #{response.body}"
             end
 
-            parse(response.body, max_results: max_results)
+            self.class.parse(response.body, max_results: max_results)
           end
         end
 

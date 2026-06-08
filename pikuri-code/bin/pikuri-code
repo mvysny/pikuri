@@ -16,6 +16,7 @@ ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
 require 'optparse'
+require 'json'
 
 require 'pikuri-core'
 require 'pikuri-skills'
@@ -238,6 +239,14 @@ RubyLLM.configure do |c|
   c.openai_api_key  = ENV.fetch(api_key_env, 'not-needed')
 end
 
+# Example-only config. pikuri the library reads no API keys from the
+# environment (see CLAUDE.md "Environment is not a secret store"); the
+# bundled bin/ examples instead load provider keys verbatim from a JSON
+# file the user owns. Convention shared by every example script;
+# chmod 600 it. Absent file ⇒ {} ⇒ DuckDuckGo-only web search.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.json')
+examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examples_config_path)) : {}
+
 # llama.cpp exposes the server's launched +n_ctx+ at +/props+ on the base
 # host (NOT under +/v1+). Hand the derived URL to {Agent::ContextWindowDetector}
 # so the +ctx=<used>/<cap>+ headline lights up against this local server,
@@ -314,7 +323,10 @@ begin
     c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
     c.add_tool Pikuri::Code::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::CALCULATOR
-    c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
+    c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
+      brave_key: examples_config['brave_search_api_key'],
+      exa_key: examples_config['exa_api_key']
+    )
     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
     c.add_sub_agent_tool Pikuri::Tool::FETCH
     # git_clone lives on the sub-agent-only pool too: the parent's

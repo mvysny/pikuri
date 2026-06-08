@@ -50,6 +50,10 @@ RSpec.describe Pikuri::SubAgent::Extension do
 
   let(:recorder) { Pikuri::Agent::Listener::InMemoryEventList.new }
 
+  # A concrete tool named `web_search` for the personas above to reference
+  # by name. Built once so identity comparisons (sub_agent_tools) hold.
+  let(:web_search_tool) { Pikuri::Tool::WebSearch.build }
+
   before do
     @fake_chats = []
     fake_class = fake_chat_class
@@ -134,17 +138,17 @@ RSpec.describe Pikuri::SubAgent::Extension do
     end
 
     it 'satisfies a persona tool_names entry from the sub-agent-only pool' do
-      # Verifies the trifecta-defense use case: WEB_SEARCH is wired only
+      # Verifies the trifecta-defense use case: web_search is wired only
       # via add_sub_agent_tool, the persona that references it still
       # passes validation, and the tool never reaches the parent's chat.
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
-        c.add_sub_agent_tool Pikuri::Tool::WEB_SEARCH
+        c.add_sub_agent_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
       end
 
-      assert_equal [Pikuri::Tool::WEB_SEARCH], agent.sub_agent_tools
+      assert_equal [web_search_tool], agent.sub_agent_tools
       assert_empty agent.tools
       # The chat got only the `agent` delegation tool — no web_search.
       chat = @fake_chats.first
@@ -171,7 +175,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
-        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona, file_miner_persona])
       end
 
@@ -186,7 +190,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's') do |c|
         c.add_listener recorder
-        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
       end
 
@@ -201,7 +205,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's') do |c|
         c.add_listener recorder
-        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
       end
 
@@ -213,7 +217,7 @@ RSpec.describe Pikuri::SubAgent::Extension do
       agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                 system_prompt: 's', context_window: 12_345) do |c|
         c.add_listener recorder
-        c.add_tool Pikuri::Tool::WEB_SEARCH
+        c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
       end
 

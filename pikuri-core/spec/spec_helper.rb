@@ -14,6 +14,9 @@ require 'pikuri-core'
 [Pikuri::Tool::WebScrape, Pikuri::Tool::Fetch, Pikuri::Tool::Search::Engines].each do |mod|
   mod.singleton_class.define_method(:cache) { Pikuri::UrlCache::NULL }
 end
+# +Engines.cache+ is the class-level default the +Engines.new(cache:)+
+# constructor falls back to, so the override above makes every engine built
+# in the suite (including via +Tool::WebSearch.build+) default to NULL.
 
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output. Specs that exercise logging

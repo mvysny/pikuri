@@ -9,9 +9,14 @@ module Pikuri
     module Search
       # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and
       # returns the hits as a list of {Result} rows. Split into a thin HTTP
-      # fetch (#search) and a pure parser (#parse) so tests can exercise
+      # fetch (#search) and a pure parser (.parse) so tests can exercise
       # the parser against fixture HTML without hitting the network. The
-      # cascade in {Engines.search} owns the final Markdown rendering.
+      # cascade in {Engines#search} owns the final Markdown rendering.
+      #
+      # A class (constructed with no arguments) so it shares the uniform
+      # provider shape with the keyed {Brave} / {Exa}: {Engines} holds a
+      # list of provider *instances* and calls +#search+ / +#label+ on each
+      # without caring which is which.
       #
       # == Privacy posture
       #
@@ -30,7 +35,7 @@ module Pikuri
       # Microsoft, who has no comparable no-training pledge. Better than
       # Exa for sensitive queries, worse than Brave; for anything
       # genuinely embarrassing, don't search the web at all.
-      module DuckDuckGo
+      class DuckDuckGo
         # @return [String] HTML search endpoint
         ENDPOINT = 'https://html.duckduckgo.com/html/'
         # @return [String] User-Agent sent with each request; DDG often rejects
@@ -44,10 +49,16 @@ module Pikuri
         #   soft-block response doesn't get retried for the next 5 minutes
         LIMITER = RateLimiter.new(min_interval: 2.0, cooldown: 300.0)
 
+        # @return [String] short provider label for {Engines} logging /
+        #   fallback messages. Uniform across providers (see {Brave#label}).
+        def label
+          'DuckDuckGo'
+        end
+
         # Fetch results for +query+ and return them as an +Array<Result>+.
         # Calls are throttled to one every 2s and circuit-broken for 5 minutes
         # after a soft-block; see {LIMITER}. The caller (typically
-        # {Engines.search}) is expected to have already normalized the
+        # {Engines#search}) is expected to have already normalized the
         # query and to wrap this in a result cache.
         #
         # @param query [String] search query (already normalized)
@@ -56,12 +67,12 @@ module Pikuri
         #   query and matched nothing
         # @raise [Engines::Unavailable] when DDG soft-blocks the IP
         #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
-        #   later" responses the cascade in {Engines.search} can fall
+        #   later" responses the cascade in {Engines#search} can fall
         #   back from. Also raised immediately if {LIMITER} is in cooldown.
         # @raise [RuntimeError] if the HTTP call fails for other reasons or
         #   the empty-results page is in an unrecognized layout. A genuine
         #   empty-results page is *not* an error; see {.parse}.
-        def self.search(query, max_results: DEFAULT_MAX_RESULTS)
+        def search(query, max_results: DEFAULT_MAX_RESULTS)
           LIMITER.call do
             response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
             unless response.success?
@@ -72,7 +83,7 @@ module Pikuri
               raise "DuckDuckGo request failed: #{response.status} #{response.body}"
             end
 
-            parse(response.body, max_results: max_results)
+            self.class.parse(response.body, max_results: max_results)
           end
         end
 

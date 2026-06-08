@@ -28,15 +28,17 @@ require_relative 'pikuri/version'
 #
 # == Why eager-load
 #
-# Tool implementations (+Pikuri::Tool::CALCULATOR+,
-# +Pikuri::Tool::WEB_SEARCH+, +Pikuri::Tool::WEB_SCRAPE+,
-# +Pikuri::Tool::FETCH+) are +ALL_CAPS+ value constants rather than
-# classes/modules, and Zeitwerk only auto-loads constants that match
-# its filename-↔-CamelCase convention. Eager-loading at boot guarantees
-# the files defining those values run, so the bin script can drop them
-# straight into the +Agent.new+ block via +c.add_tool+ without per-file
-# +require+ ceremony. The cost is a few milliseconds of startup —
-# negligible compared to a single LLM round-trip.
+# The stateless bundled tools (+Pikuri::Tool::CALCULATOR+,
+# +Pikuri::Tool::WEB_SCRAPE+, +Pikuri::Tool::FETCH+) are +ALL_CAPS+ value
+# constants rather than classes/modules, and Zeitwerk only auto-loads
+# constants that match its filename-↔-CamelCase convention. Eager-loading
+# at boot guarantees the files defining those values run, so the bin
+# script can drop them straight into the +Agent.new+ block via
+# +c.add_tool+ without per-file +require+ ceremony. (web_search is instead
+# host-configured — built per-wiring via {Pikuri::Tool::WebSearch.build}
+# with the host's provider keys — so it is not a value constant.) The cost
+# is a few milliseconds of startup — negligible compared to a single LLM
+# round-trip.
 module Pikuri
   # Search path for bundled system prompts. Mutable list: each pikuri
   # gem appends its own +prompts/+ directory when it boots, so a

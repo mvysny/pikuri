@@ -9,13 +9,17 @@ module Pikuri
     module Search
       # Performs a Brave Search via the official Web Search API and returns
       # the hits as a list of {Result} rows. Split into a thin HTTP fetch
-      # (#search) and a pure parser (#parse) so tests can exercise the
+      # (#search) and a pure parser (.parse) so tests can exercise the
       # parser against fixture JSON without hitting the network. The
-      # cascade in {Engines.search} owns the final Markdown rendering.
+      # cascade in {Engines#search} owns the final Markdown rendering.
       #
-      # Requires a Brave Search API key. Get one at
-      # https://api-dashboard.search.brave.com — the free "Data for Search"
-      # tier allows 1 query/sec and ~2k queries/month.
+      # A class constructed with the API key it should use
+      # (+Brave.new(api_key:)+); {Engines} builds one only when a Brave key
+      # was configured and then drives it through the same +#search+ /
+      # +#label+ interface as every other provider. pikuri reads no key
+      # from the environment (see CLAUDE.md "Environment is not a secret
+      # store"). Get a key at https://api-dashboard.search.brave.com — the
+      # free "Data for Search" tier allows 1 query/sec and ~2k queries/month.
       #
       # == Privacy posture
       #
@@ -32,49 +36,59 @@ module Pikuri
       # 90-day retention by default, real ZDR if you pay for it. Still a
       # logged 90-day window on the cheap tier, so not a substitute for
       # ZDR for genuinely sensitive queries.
-      module Brave
+      class Brave
         # @return [String] Web Search endpoint
         ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
         # @return [Integer] default number of results returned, matching
         #   {DuckDuckGo::DEFAULT_MAX_RESULTS}
         DEFAULT_MAX_RESULTS = 10
-        # @return [String] env var holding the API key; +X-Subscription-Token+
-        ENV_KEY = 'BRAVE_SEARCH_API_KEY'
         # @return [RateLimiter] free-tier Brave caps at 1 req/sec; the
         #   5-minute cooldown protects the limited monthly quota from
         #   being burned on doomed retries when a 429 hits.
         LIMITER = RateLimiter.new(min_interval: 1.0, cooldown: 300.0)
 
+        # @param api_key [String] Brave Search subscription token. Required
+        #   and non-blank: pikuri reads no key from the environment — the
+        #   host supplies it ({Engines} only constructs a Brave when a key
+        #   was configured).
+        # @raise [ArgumentError] if +api_key+ is blank
+        def initialize(api_key:)
+          raise ArgumentError, 'Brave Search API key is blank' if api_key.to_s.strip.empty?
+
+          @api_key = api_key
+        end
+
+        # @return [String] short provider label for {Engines} logging /
+        #   fallback messages.
+        def label
+          'Brave'
+        end
+
         # Fetch results for +query+ and return them as an +Array<Result>+.
         # Calls are throttled to one per second and circuit-broken for 5
         # minutes on rate-limit / quota-exhausted responses; see {LIMITER}.
-        # The caller (typically {Engines.search}) is expected to have
+        # The caller (typically {Engines#search}) is expected to have
         # already normalized the query and to wrap this in a result cache.
         #
         # @param query [String] search query (already normalized)
         # @param max_results [Integer] maximum number of result entries;
         #   passed through as Brave's +count+ (1..20)
-        # @param api_key [String] Brave Search subscription token; defaults to
-        #   the {ENV_KEY} environment variable
         # @return [Array<Result>] hits, possibly empty when Brave ran the
         #   query and matched nothing
-        # @raise [ArgumentError] if no API key is available
         # @raise [Engines::Unavailable] when Brave returns HTTP 429
         #   (rate limit / quota exhausted) or 5xx — "try again later"
-        #   responses the cascade in {Engines.search} can fall back
+        #   responses the cascade in {Engines#search} can fall back
         #   from. Also raised immediately if {LIMITER} is in cooldown.
         #   Other non-2xx (e.g. 401/403 from a bad API key) bubble up as
         #   +RuntimeError+ so config problems stay visible.
         # @raise [RuntimeError] for non-rate-limit HTTP failures or when the
         #   response shape contains no results.
-        def self.search(query, max_results: DEFAULT_MAX_RESULTS, api_key: ENV.fetch(ENV_KEY, nil))
-          raise ArgumentError, "Brave Search API key not set (#{ENV_KEY})" if api_key.to_s.strip.empty?
-
+        def search(query, max_results: DEFAULT_MAX_RESULTS)
           LIMITER.call do
             response = Faraday.get(
               ENDPOINT,
               { q: query, count: max_results },
-              { 'X-Subscription-Token' => api_key, 'Accept' => 'application/json' }
+              { 'X-Subscription-Token' => @api_key, 'Accept' => 'application/json' }
             )
             unless response.success?
               if response.status == 429 || response.status >= 500
@@ -84,7 +98,7 @@ module Pikuri
               raise "Brave Search request failed: #{response.status} #{response.body}"
             end
 
-            parse(response.body, max_results: max_results)
+            self.class.parse(response.body, max_results: max_results)
           end
         end
 

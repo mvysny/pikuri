@@ -16,7 +16,7 @@ module Pikuri
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
-    #     c.add_tool     Pikuri::Tool::WEB_SEARCH
+    #     c.add_tool     Pikuri::Tool::WebSearch.build
     #     c.add_tool     Pikuri::Tool::WEB_SCRAPE
     #     c.add_tool     Pikuri::Tool::FETCH
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)

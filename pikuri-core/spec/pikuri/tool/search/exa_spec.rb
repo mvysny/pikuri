@@ -62,10 +62,10 @@ RSpec.describe Pikuri::Tool::Search::Exa do
     end
   end
 
-  describe '.search' do
-    it 'rejects a missing api key' do
-      err = assert_raises(ArgumentError) { described_class.search('ruby', api_key: '') }
-      assert_includes err.message, described_class::ENV_KEY
+  describe '.new' do
+    it 'rejects a blank api key' do
+      err = assert_raises(ArgumentError) { described_class.new(api_key: '') }
+      assert_includes err.message, 'Exa Search API key is blank'
     end
   end
 end

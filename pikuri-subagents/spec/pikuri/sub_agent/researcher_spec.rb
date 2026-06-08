@@ -22,7 +22,7 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
 
   describe 'integration with Pikuri::SubAgent::Extension' do
     let(:tools) do
-      [Pikuri::Tool::WEB_SEARCH, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH]
+      [Pikuri::Tool::WebSearch.build, Pikuri::Tool::WEB_SCRAPE, Pikuri::Tool::FETCH]
     end
 
     let(:configurator) do
@@ -46,7 +46,7 @@ RSpec.describe Pikuri::SubAgent::RESEARCHER do
     end
 
     it "raises Extension#configure when one of the persona's tools is missing" do
-      configurator.add_tool(Pikuri::Tool::WEB_SEARCH)
+      configurator.add_tool(Pikuri::Tool::WebSearch.build)
       # web_scrape and fetch deliberately missing
       ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
 
