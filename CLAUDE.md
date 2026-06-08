@@ -480,7 +480,7 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   bare `Object` or `Any`. Document expected exceptions with
   `@raise`. One-line summary first, blank line, then tags.
   Applies to `lib/`; `bin/` and `spec/` don't need it. **Rationale
-  belongs here, not in CLAUDE.md** — when adding a non-obvious
+  belongs there, not in CLAUDE.md** — when adding a non-obvious
   design decision, put it in the class's yardoc and reference it
   from CLAUDE.md only if it's a cross-cutting invariant.
 - **Bundler.** Entry-point scripts live in `bin/` and are run
