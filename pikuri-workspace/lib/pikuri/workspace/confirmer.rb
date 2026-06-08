@@ -30,11 +30,12 @@ module Pikuri
     # invoke {#confirm?} with a semantic {Request} — *what* is being
     # asked, never *how* it should look. All presentation belongs to the
     # confirmer implementation: color, the answer cue, answer parsing,
-    # and — security-relevant — escaping of hostile bytes in
-    # LLM-supplied text. Escaping is medium-specific (a terminal must
-    # neutralize +\r+ / ESC so the model can't visually overwrite the
-    # echoed command; a web client must HTML-escape instead), so it can
-    # only live with the renderer that knows its medium. Tools do *not*
+    # and — security-relevant — neutralizing hostile bytes in
+    # LLM-supplied text. The chrome-independent half of that (escape
+    # control bytes, flag bidi / zero-width / homoglyph spoofs) is the
+    # shared {Pikuri::Sanitizer}; the medium-specific half stays with the
+    # renderer that knows its medium (a terminal prints the sanitized
+    # text directly; a web client wraps it in HTML-escaping). Tools do *not*
     # call +gets+ / +puts+ directly — same lesson as listeners, keep IO
     # at the seam so a TUI / web client can plug a different
     # implementation in without touching tool code.
@@ -51,9 +52,9 @@ module Pikuri
       #
       # Both fields are RAW, straight from tool arguments the LLM
       # composed (+detail+ is the command verbatim; +question+ may embed
-      # an LLM-written description). Renderers MUST escape them for
-      # their medium before display — see {Terminal} for the
-      # control-byte treatment, and use HTML-escaping in a web client.
+      # an LLM-written description). Renderers MUST neutralize them before
+      # display — route through {Pikuri::Sanitizer} (see {Terminal}), and
+      # additionally HTML-escape in a web client.
       Request = Data.define(:question, :detail) do
         # @param question [String] one-line headline; caller owns phrasing
         # @param detail [String, nil] optional preformatted body
@@ -71,20 +72,27 @@ module Pikuri
         raise NotImplementedError, "#{self.class}#confirm? must be implemented"
       end
 
-      # Stdin/stdout implementation. Renders the request as up to three
+      # Stdin/stdout implementation. Renders the request as up to several
       # lines (a leading +puts+ guarantees separation from any streamed
       # output the +Terminal+ listener may have produced just above):
       #
-      # 1. the question, bold
-      # 2. the detail, dim — omitted when +nil+
-      # 3. the +(y/n)?+ cue
+      # 1. a bold-yellow warning block — one line per
+      #    {Pikuri::Sanitizer::Warning} — shown only when the sanitizer
+      #    flagged something suspicious in the question or detail
+      # 2. the question, bold
+      # 3. the detail, dim — omitted when +nil+
+      # 4. the +(y/n)?+ cue
       #
-      # Both question and detail pass through {#visible}, which escapes
-      # control bytes — without it, a model could craft a command or
-      # description containing +"\rrm -rf ~/"+ that visually overwrites
-      # the echoed line after the user has already read it. Colors come
-      # from Rainbow (already in the dependency closure via pikuri-core),
-      # which self-disables on non-TTY output.
+      # Both question and detail pass through {Pikuri::Sanitizer}, which
+      # neutralizes control bytes — without it, a model could craft a
+      # command or description containing +"\rrm -rf ~/"+ that visually
+      # overwrites the echoed line after the user has already read it —
+      # and reports *why* it was unsafe so the user reads the warning
+      # before answering. Colors come from Rainbow (already in the
+      # dependency closure via pikuri-core), which self-disables on
+      # non-TTY output; the bold-yellow warning rendering is this
+      # terminal chrome's call, not the sanitizer's (the +Warning+
+      # carries plain text only).
       #
       # Then reads one line from +$stdin+ and parses it strictly:
       #
@@ -99,9 +107,17 @@ module Pikuri
         # @param request [Request]
         # @return [Boolean]
         def confirm?(request:)
+          question = Pikuri::Sanitizer.sanitize(request.question)
+          detail   = request.detail ? Pikuri::Sanitizer.sanitize(request.detail) : nil
+          warnings = question.warnings + (detail ? detail.warnings : [])
+
           puts
-          puts Rainbow(visible(request.question)).bold
-          puts Rainbow(visible(request.detail)).dimgray if request.detail
+          unless warnings.empty?
+            puts Rainbow('⚠ Suspicious content detected — read carefully before approving:').yellow.bold
+            warnings.each { |w| puts Rainbow("  ! #{w.explanation}").yellow }
+          end
+          puts Rainbow(question.text).bold
+          puts Rainbow(detail.text).dimgray if detail
           puts '(y/n)?'
           $stdout.flush
           loop do
@@ -115,21 +131,6 @@ module Pikuri
             print 'Please answer y or n: '
             $stdout.flush
           end
-        end
-
-        private
-
-        # Escape control bytes for safe terminal display while
-        # preserving +\n+ (multi-line shell commands are normal).
-        # Catches +\r+, +\x1b+ (ESC, the ANSI introducer), +\b+, NUL,
-        # DEL, etc. Same treatment as +Pikuri::Code::Bash.visible+,
-        # which guards the *observation* echo on the other side of the
-        # seam — keep the two in sync.
-        #
-        # @param text [String]
-        # @return [String]
-        def visible(text)
-          text.gsub(/[\x00-\x09\x0b-\x1f\x7f]/) { |c| format('\\x%02x', c.ord) }
         end
       end
 

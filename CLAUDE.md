@@ -185,10 +185,16 @@ yardoc. CLAUDE.md only records the invariant.
   and route every prompt through `#confirm?(request:)` with a
   semantic `Confirmer::Request` (question + optional detail, raw
   bytes). Presentation belongs to the confirmer — color, the
-  answer cue, and medium-specific escaping of hostile bytes (ANSI
-  control bytes in a terminal, HTML in web) — never to tool code,
-  which also never touches `gets` / `puts` / `$stdin` / `$stdout`
-  directly. See {Pikuri::Workspace::Confirmer}.
+  answer cue, and neutralizing hostile LLM bytes — never to tool
+  code, which also never touches `gets` / `puts` / `$stdin` /
+  `$stdout` directly. The chrome-independent half of that
+  neutralization (defang control bytes incl. ESC, flag bidi /
+  zero-width / homoglyph spoofs) is the shared `Pikuri::Sanitizer`,
+  which every chrome routes attacker-controlled text through;
+  only the medium-specific wrapping stays in the chrome (a
+  terminal prints the sanitized text directly; a web client
+  additionally HTML-escapes). See {Pikuri::Workspace::Confirmer}
+  and {Pikuri::Sanitizer}.
 - **Sandbox seam.** `Pikuri::Code::Bash` takes a
   `Pikuri::Code::Bash::Sandbox` (default `Sandbox::NONE`) and
   wraps every spawned argv through `#wrap(argv)`. Distinct from

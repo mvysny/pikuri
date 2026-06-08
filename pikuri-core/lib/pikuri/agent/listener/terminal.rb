@@ -234,12 +234,20 @@ module Pikuri
         # exactly this" from "tool returned much more, you're
         # seeing a slice."
         #
+        # Whitespace is flattened *first* (collapsing real tabs, CRs and
+        # newlines into single spaces — fine here, since this passive
+        # echo is a status line, not an approval artifact), then the
+        # result runs through {Pikuri::Sanitizer} so a tool observation
+        # can't smuggle an ESC or other control byte into this cyan line.
+        # The sanitizer's warnings are dropped — they belong at a
+        # confirmation prompt, not the stream narration.
+        #
         # @param content [String] tool observation
         # @return [String] single-line display form, possibly
         #   truncated
         def truncate_tool_result(content)
           original_bytes = content.to_s.bytesize
-          flattened = content.to_s.gsub(/\s+/, ' ').strip
+          flattened = Sanitizer.sanitize(content.to_s.gsub(/\s+/, ' ').strip).text
           return flattened if flattened.length <= MAX_TOOL_RESULT_CHARS
 
           "#{flattened[0, MAX_TOOL_RESULT_CHARS]}… (#{original_bytes} bytes total)"

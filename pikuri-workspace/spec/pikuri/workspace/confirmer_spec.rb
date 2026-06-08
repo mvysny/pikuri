@@ -127,6 +127,25 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       refute_includes $stdout.string, "\e"
     end
 
+    it 'surfaces a warning block when the sanitizer flags suspicious content' do
+      stdin_with("n\n")
+      described_class.new.confirm?(request: req('OK to run bash', detail: "$ echo hi\rrm -rf /"))
+      assert_includes $stdout.string, 'Suspicious content detected'
+      assert_includes $stdout.string, 'Non-printable control bytes present'
+    end
+
+    it 'prints no warning block for a clean request' do
+      stdin_with("y\n")
+      described_class.new.confirm?(request: req('OK to run bash', detail: '$ ls -la'))
+      refute_includes $stdout.string, 'Suspicious content detected'
+    end
+
+    it 'warns on a homoglyph spoof in the detail' do
+      stdin_with("n\n")
+      described_class.new.confirm?(request: req('OK to run bash', detail: '$ curl https://Pаypal.com'))
+      assert_includes $stdout.string, 'Mixed-script tokens present'
+    end
+
     it 'bolds the question via Rainbow when color is enabled' do
       Rainbow.enabled = true
       stdin_with("y\n")

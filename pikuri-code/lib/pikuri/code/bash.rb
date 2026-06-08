@@ -242,19 +242,21 @@ module Pikuri
       end
       private_class_method :compose_request
 
-      # Escape control bytes for safe display in the *observation* echo
-      # (+"$ ..."+ in the tool result) while preserving +\n+ (multi-line
-      # shell commands are normal). Catches +\r+, +\x1b+ (ESC, the ANSI
-      # introducer), +\b+, NUL, DEL, etc. — without this, a model could
+      # Neutralize control bytes for safe display in the *observation*
+      # echo (+"$ ..."+ in the tool result) — without this, a model could
       # craft +command: "\rrm -rf ~/"+ that visually overwrites the echo
-      # line after the user has already read it. The confirmation-prompt
-      # counterpart lives in +Confirmer::Terminal#visible+ — keep the
-      # two in sync.
+      # line after the user has already read it. Delegates to the shared
+      # {Pikuri::Sanitizer}, which preserves +\n+ (multi-line shell
+      # commands are normal) and visualizes the rest; the confirmation
+      # prompt routes the same command through the same primitive (see
+      # +Confirmer::Terminal+). The echo is passive, so the
+      # {Pikuri::Sanitizer::Warning}s are dropped here — they surface at
+      # the confirmation prompt, before the user approves.
       #
       # @param command [String]
       # @return [String]
       def self.visible(command)
-        command.gsub(/[\x00-\x09\x0b-\x1f\x7f]/) { |c| format('\\x%02x', c.ord) }
+        Pikuri::Sanitizer.sanitize(command).text
       end
       private_class_method :visible
 
