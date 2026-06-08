@@ -50,8 +50,8 @@ examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examp
 
 server           = examples_config['llm_server'] || 'http://localhost:8080'
 model            = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'  # chat (may think)
-extraction_model = 'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M'  # mem0 (non-reasoning)
-embed_model      = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
+extraction_model = examples_config['extraction_model'] || 'bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M'  # mem0 (non-reasoning)
+embed_model      = examples_config['embed_model'] || 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 user_id          = ENV['USER'] || 'default'
 mem0_url         = nil # BYO mem0 endpoint; when set, the supervisor is skipped
 mem0_router_url  = nil # router URL as the mem0 *container* sees it; nil => the socat relay to llm_server
@@ -61,8 +61,6 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-memory [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--extraction-model NAME', "mem0 extraction model — must be non-reasoning (default: #{extraction_model})") { |v| extraction_model = v }
-  opts.on('--embed-model NAME', "mem0 embedding model (default: #{embed_model})") { |v| embed_model = v }
   opts.on('--user-id ID', "Memory namespace, one per user (default: #{user_id})") { |v| user_id = v }
   opts.on('--mem0-url URL', 'Use an existing mem0 server at this URL instead of the self-managed sidecar') { |v| mem0_url = v }
   opts.on('--mem0-router-url URL', 'Advanced: router base URL as seen from inside the mem0 container, bypassing the socat relay (default: relay to the configured llm_server)') { |v| mem0_router_url = v }

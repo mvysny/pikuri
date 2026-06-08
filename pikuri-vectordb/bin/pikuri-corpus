@@ -46,9 +46,9 @@ examples_config = File.exist?(examples_config_path) ? JSON.parse(File.read(examp
 
 server          = examples_config['llm_server'] || 'http://localhost:8080'
 model           = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
-embed_model     = 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
-reranker_server = nil # defaults to +server+; override for a separate reranker host
-reranker_model  = 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
+embed_model     = examples_config['embed_model'] || 'nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
+reranker_server = examples_config['reranker_server'] # nil ⇒ defaults to +server+ below
+reranker_model  = examples_config['reranker_model'] || 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
 use_reranker    = true
 source          = File.expand_path('../../docs/guide', __dir__)
 streaming       = false
@@ -60,9 +60,6 @@ parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
-  opts.on('--embed-model NAME', "Embedding model identifier (default: #{embed_model})") { |v| embed_model = v }
-  opts.on('--reranker-server URL', 'Reranker base URL (default: same as llm_server)') { |v| reranker_server = v }
-  opts.on('--reranker-model NAME', "Reranker model identifier (default: #{reranker_model})") { |v| reranker_model = v }
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
@@ -99,9 +96,9 @@ openai_api_base = "#{server}/v1"
 # at +server+. The reranker is *not* an OpenAI-shape call (it goes
 # through +Reranker::LlamaServer+ against +POST /v1/rerank+) so it
 # takes its own endpoint argument — defaulted to +server+ above,
-# overridable via +--reranker-server+ if you'd rather keep the
-# reranker pinned in its own llama-server instance instead of
-# sharing the router's swap budget.
+# overridable via the +reranker_server+ config key if you'd rather
+# keep the reranker pinned in its own llama-server instance instead
+# of sharing the router's swap budget.
 RubyLLM.configure do |c|
   c.openai_api_base           = openai_api_base
   c.openai_api_key            = examples_config.fetch('llm_api_key', 'not-needed')
