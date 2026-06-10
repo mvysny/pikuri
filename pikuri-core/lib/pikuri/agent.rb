@@ -82,12 +82,13 @@ module Pikuri
     LOGGER = Pikuri.logger_for('Agent')
     private_constant :LOGGER
 
-    # @param transport [ChatTransport] the model-resolution triple
-    #   (+model+ / +provider+ / +assume_model_exists+) forwarded
-    #   to +RubyLLM.chat+. Bundled into one value object so every
-    #   construction site — this constructor and the synthesizer
-    #   rescue below — can forward all three with one assignment
-    #   instead of three kwargs (where dropping one would silently
+    # @param transport [ChatTransport] the model-resolution bundle
+    #   (+model+ / +provider+ / +assume_model_exists+ and, for a model
+    #   on a non-global server, +api_base+ / +api_key+) the chat is
+    #   built from. Bundled into one value object so every construction
+    #   site — this constructor, the synthesizer rescue below, a
+    #   mid-conversation switch — can forward it with one assignment
+    #   instead of loose kwargs (where dropping one would silently
     #   route the chat elsewhere or raise
     #   +RubyLLM::ModelNotFoundError+). If +transport.model+ is
     #   +nil+, it's filled in from +RubyLLM.config.default_model+.
@@ -480,7 +481,7 @@ module Pikuri
       end
       @extensions = configurator.extensions.dup
 
-      @chat = RubyLLM.chat(**@transport.to_h)
+      @chat = build_chat(@transport)
       @chat.with_instructions(@system_prompt)
       @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
 
@@ -542,7 +543,17 @@ module Pikuri
     #
     # @return [void]
     def detect_and_emit_context_cap!
-      @context_window_cap = @context_window || ContextWindowDetector.detect(@transport)
+      # Probe the server this transport actually targets — after a
+      # cross-server switch the chat's connection points at
+      # +@transport.api_base+, but the process-global config the
+      # detector defaults to still names the *old* server, so derive the
+      # base from the transport (falling back to the global base for a
+      # transport that rides it).
+      @context_window_cap = @context_window ||
+                            ContextWindowDetector.detect(
+                              @transport,
+                              openai_base: @transport.api_base || RubyLLM.config.openai_api_base
+                            )
       @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
     end
 
@@ -561,6 +572,20 @@ module Pikuri
     # transport, unformatted, for the chrome to present) then re-resolves
     # and re-emits the cap via {#detect_and_emit_context_cap!}.
     #
+    # == Cross-server switches
+    #
+    # +with_model+ alone re-resolves against the chat's *existing*
+    # connection, so it can only move between models on one server. When
+    # either the new or the old transport overrides the connection
+    # (+ChatTransport#connection_overrides?+ — a different +api_base+ /
+    # +api_key+), the swap first installs a fresh +RubyLLM::Context+ via
+    # +Chat#with_context+ (which re-points the connection and re-resolves
+    # the model in place, again preserving history + callbacks) before
+    # +with_model+ lands the new model id. The "old overrode" half of
+    # the guard handles switching *back* to a global-config model: the
+    # rebuilt context dups the process-global config, resetting the
+    # connection the previous override installed.
+    #
     # @param transport [ChatTransport] the model to switch to
     # @return [void]
     def apply_transport!(transport)
@@ -568,10 +593,45 @@ module Pikuri
       return if filled == @transport
 
       old = @transport
+      @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
       @chat.with_model(filled.model, provider: filled.provider, assume_exists: filled.assume_model_exists)
       @transport = filled
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
       detect_and_emit_context_cap!
+    end
+
+    # Build the chat for +transport+: through a dedicated
+    # +RubyLLM::Context+ when it overrides the connection, else through
+    # the process-global +RubyLLM.chat+ (which the construction-time
+    # path has always used).
+    #
+    # @param transport [ChatTransport]
+    # @return [RubyLLM::Chat]
+    def build_chat(transport)
+      if transport.connection_overrides?
+        build_context(transport).chat(**transport.chat_kwargs)
+      else
+        RubyLLM.chat(**transport.chat_kwargs)
+      end
+    end
+
+    # A +RubyLLM::Context+ carrying +transport+'s connection overrides
+    # mapped onto the provider's ruby_llm config slots
+    # (+#{provider}_api_base+ / +#{provider}_api_key+). +RubyLLM.context+
+    # dups the process-global config, so an absent override inherits the
+    # global value; a transport with no overrides yields a plain dup
+    # (used by {#apply_transport!} to reset a prior override). The
+    # +ChatTransport+ guarantees a non-+nil+ +provider+ whenever an
+    # override is set, so the slot name is always resolvable.
+    #
+    # @param transport [ChatTransport]
+    # @return [RubyLLM::Context]
+    def build_context(transport)
+      slug = transport.provider
+      RubyLLM.context do |c|
+        c.public_send("#{slug}_api_base=", transport.api_base) unless transport.api_base.nil?
+        c.public_send("#{slug}_api_key=", transport.api_key) unless transport.api_key.nil?
+      end
     end
 
     # Fire the per-turn {Extension#on_user_message} hook on every

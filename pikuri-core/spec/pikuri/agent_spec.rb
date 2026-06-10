@@ -54,6 +54,15 @@ RSpec.describe Pikuri::Agent do
         self
       end
 
+      # Records each +with_context+ install so cross-server switch specs
+      # can assert a dedicated +RubyLLM::Context+ was applied.
+      attr_reader :contexts
+
+      def with_context(context)
+        (@contexts ||= []) << context
+        self
+      end
+
       def after_message(&block);     @hooks[:after_message] << block;     self; end
       def before_tool_call(&block);  @hooks[:before_tool_call] << block;  self; end
       def after_tool_result(&block); @hooks[:after_tool_result] << block; self; end
@@ -347,6 +356,46 @@ RSpec.describe Pikuri::Agent do
 
         assert_equal 8_192, agent.context_window_cap
         assert_equal 8_192, token_log.context_window_cap
+      end
+
+      it 'routes a cross-server switch through with_context then with_model' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true,
+                         api_base: 'http://cloud:9000/v1', api_key: 'sek'
+                       ))
+
+        # A dedicated context was installed, carrying the new server's
+        # base on the provider's ruby_llm slot, before with_model landed.
+        assert_equal 1, fake_chat.contexts.size
+        assert_equal 'http://cloud:9000/v1', fake_chat.contexts.first.config.openai_api_base
+        assert_equal [['big', :openai, true]], fake_chat.model_switches
+      end
+
+      it 'leaves a same-server switch on the with_model-only path' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true
+                       ))
+
+        assert_nil fake_chat.contexts
+        assert_equal [['big', :openai, true]], fake_chat.model_switches
+      end
+
+      it 'carries the new connection on ModelSwitched.to' do
+        agent = build_agent
+        recorder.events.clear
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true,
+                         api_base: 'http://cloud:9000/v1', api_key: 'sek'
+                       ))
+
+        ev = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) }
+        assert_equal 'http://cloud:9000/v1', ev.to.api_base
+        assert_equal 'sek', ev.to.api_key
       end
     end
   end
