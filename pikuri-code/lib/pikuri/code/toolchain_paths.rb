@@ -105,6 +105,7 @@ module Pikuri
           File.join(home, '.config/mise'),
           File.join(home, '.asdf'),
           File.join(home, '.rbenv'),
+          File.join(home, '.gem'),
           File.join(home, '.pyenv'),
           File.join(home, '.nvm'),
           File.join(home, '.rustup'),
