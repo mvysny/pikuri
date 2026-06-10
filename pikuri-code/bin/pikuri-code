@@ -229,14 +229,6 @@ system_prompt += if sandbox_enabled
                      "(keeps the host's /tmp clean)."
                  end
 
-server = server.chomp('/')
-openai_api_base = "#{server}/v1"
-
-RubyLLM.configure do |c|
-  c.openai_api_base = openai_api_base
-  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
-end
-
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 # MCP servers available to the assistant. Hand-edit this array to add
@@ -271,10 +263,12 @@ mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(
-    transport: Pikuri::Agent::ChatTransport.new(
+    # Connection rides the transport's own RubyLLM::Context (not a global
+    # RubyLLM.configure); from_openai_server normalizes a trailing /v1.
+    transport: Pikuri::Agent::ChatTransport.from_openai_server(
+      server: server,
       model: model,
-      provider: :openai,
-      assume_model_exists: true
+      api_key: examples_config.fetch('llm_api_key', 'not-needed')
     ),
     system_prompt: system_prompt,
     # Default :raise policy, deliberately NOT :synthesize — a coding turn

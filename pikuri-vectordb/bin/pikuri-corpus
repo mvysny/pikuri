@@ -84,21 +84,28 @@ if use_qdrant && use_chroma
   exit 2
 end
 
-server          = server.chomp('/')
-reranker_server = (reranker_server || server).chomp('/')
+# Normalize the origin once: strip a trailing +/v1+ (and slash) so a
+# server value works with or without it, then re-append +/v1+ for the
+# OpenAI base. The reranker endpoint stays a bare origin (it appends
+# +/v1/rerank+ itself), so it gets the +/v1+-free form.
+server          = server.chomp('/').delete_suffix('/v1')
+reranker_server = (reranker_server || server).chomp('/').delete_suffix('/v1')
 openai_api_base = "#{server}/v1"
 
-# A single +llama-server+ running in router mode serves all three
-# models — chat, embedder, and reranker — and dispatches each
-# request to the matching cached GGUF. RubyLLM's OpenAI provider
-# shares one +openai_api_base+ between +RubyLLM.chat+ and
-# +RubyLLM.embed+, which is fine here because both naturally live
-# at +server+. The reranker is *not* an OpenAI-shape call (it goes
-# through +Reranker::LlamaServer+ against +POST /v1/rerank+) so it
-# takes its own endpoint argument — defaulted to +server+ above,
-# overridable via the +reranker_server+ config key if you'd rather
-# keep the reranker pinned in its own llama-server instance instead
-# of sharing the router's swap budget.
+# Unlike the other bins, this one keeps a process-global
+# +RubyLLM.configure+: a single +llama-server+ in router mode serves all
+# three models — chat, embedder, and reranker — and the embedder/Indexer
+# run *outside* any Agent (the +--watch+ daemon and +vectordb_reindex+
+# call +RubyLLM.embed+ on their own), so the connection can't ride a
+# per-agent +ChatTransport+ the way the chat-only bins now do. RubyLLM's
+# OpenAI provider shares this one +openai_api_base+ between
+# +RubyLLM.chat+ and +RubyLLM.embed+, which is fine here because both
+# naturally live at +server+. The reranker is *not* an OpenAI-shape call
+# (it goes through +Reranker::LlamaServer+ against +POST /v1/rerank+) so
+# it takes its own endpoint argument — defaulted to +server+ above,
+# overridable via the +reranker_server+ config key if you'd rather keep
+# the reranker pinned in its own llama-server instance instead of
+# sharing the router's swap budget.
 RubyLLM.configure do |c|
   c.openai_api_base           = openai_api_base
   c.openai_api_key            = examples_config.fetch('llm_api_key', 'not-needed')

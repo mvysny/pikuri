@@ -62,14 +62,6 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-server = server.chomp('/')
-openai_api_base = "#{server}/v1"
-
-RubyLLM.configure do |c|
-  c.openai_api_base = openai_api_base
-  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
-end
-
 # Explicit extractor opt-in (requiring the gem alone changes
 # nothing): pikuri-extractors' sandboxed converter covers PDF and
 # the office formats (DOCX / ODT / XLSX / PPTX / EPUB / RTF) in one
@@ -130,10 +122,12 @@ mcp_ext = Pikuri::Mcp::Extension.new(
 prev_boot_trap = trap('INT') { cancel_flag.cancel! }
 begin
   agent = Pikuri::Agent.new(
-    transport: Pikuri::Agent::ChatTransport.new(
+    # Connection rides the transport's own RubyLLM::Context (not a global
+    # RubyLLM.configure); from_openai_server normalizes a trailing /v1.
+    transport: Pikuri::Agent::ChatTransport.from_openai_server(
+      server: server,
       model: model,
-      provider: :openai,
-      assume_model_exists: true
+      api_key: examples_config.fetch('llm_api_key', 'not-needed')
     ),
     system_prompt: system_prompt,
     # :synthesize — this is a Q&A agent: when the budget trips, salvage an

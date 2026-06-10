@@ -98,11 +98,23 @@ Every seam below has detailed rationale in the corresponding class's
 yardoc. CLAUDE.md only records the invariant.
 
 - **Loop seam.** ruby_llm owns `Chat#complete`; pikuri-side
-  loop-wiring is confined to `bin/pikuri-*` (boot/`RubyLLM.configure`),
+  loop-wiring is confined to `bin/pikuri-*` (boot),
   `pikuri-core/lib/pikuri/agent.rb` (callbacks + `run_loop`), and
   `pikuri-core/lib/pikuri/tool.rb` (the `Pikuri::Tool` →
   `RubyLLM::Tool` adapter). Don't construct a `Chat` or attach
   callbacks from anywhere else. See {Pikuri::Agent}.
+- **Connection seam.** A model's connection (base URL + key) rides
+  its `Agent::ChatTransport`, not a process-global `RubyLLM.configure`:
+  `Agent` maps `transport.api_base`/`api_key` onto a per-chat
+  `RubyLLM::Context` (`build_context`), so several agents — and the
+  sub-agents / synthesizer that inherit `parent.transport` — stay
+  isolated and can't stomp a shared global. The chat-only `bin/pikuri-*`
+  build their transport with `ChatTransport.from_openai_server`, which
+  also normalizes a trailing `/v1` (so a server value works with or
+  without it). The one surviving `RubyLLM.configure` is
+  `bin/pikuri-corpus`, where `RubyLLM.embed` (the Indexer/Watcher) runs
+  outside any Agent and so can't ride a per-agent Context. See
+  {Pikuri::Agent::ChatTransport} and {Pikuri::Agent#build_context}.
 - **Value-type passthrough.** Anywhere in pikuri-* `lib/` may
   reference `RubyLLM::Content` / `Attachment` / `Message` directly
   when wrapping would be a transparent passthrough. See

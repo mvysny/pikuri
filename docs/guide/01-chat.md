@@ -269,7 +269,7 @@ The recognized keys:
 
 | Key | Used by | Meaning |
 |-----|---------|---------|
-| `llm_server` | all scripts | LLM server base URL |
+| `llm_server` | all scripts | LLM server base URL; a trailing `/v1` is optional (`https://api.x.ai` and `https://api.x.ai/v1` both work) |
 | `llm_model` | all scripts | chat model identifier |
 | `llm_api_key` | all scripts | API key for a hosted provider; omit for a keyless local server |
 | `brave_search_api_key` | chat, code, assistant | enables Brave web search (below) |

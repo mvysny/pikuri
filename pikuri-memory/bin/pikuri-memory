@@ -78,14 +78,16 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-server          = server.chomp('/')
-openai_api_base = "#{server}/v1"
-
-# The chat agent runs on the host, so it talks to the router directly.
-RubyLLM.configure do |c|
-  c.openai_api_base = openai_api_base
-  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
-end
+# The chat agent runs on the host and talks to the router directly. Its
+# connection rides this transport's own RubyLLM::Context (not a global
+# RubyLLM.configure); from_openai_server normalizes a trailing /v1, and
+# transport.api_base is the resulting .../v1 base — reused below as the
+# router URL the mem0 sidecar relays to.
+transport = Pikuri::Agent::ChatTransport.from_openai_server(
+  server: server,
+  model: model,
+  api_key: examples_config.fetch('llm_api_key', 'not-needed')
+)
 
 # Memory store: a self-managed mem0 + Qdrant sidecar by default, or a
 # bring-your-own server via --mem0-url. The sidecar needs docker (with the
@@ -102,7 +104,7 @@ client =
     # Mem0Server's "router relay" yardoc section.
     begin
       mem0_server = Pikuri::Memory::Mem0Server.ensure_running(
-        router_url:           "#{server}/v1",
+        router_url:           transport.api_base,
         container_router_url: mem0_router_url&.then { |u| "#{u.chomp('/')}/v1" },
         llm_model:            extraction_model,
         embedder_model:       embed_model
@@ -124,11 +126,7 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 memory_ext = Pikuri::Memory::Extension.new(client: client, user_id: user_id)
 
 agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
-    model: model,
-    provider: :openai,
-    assume_model_exists: true
-  ),
+  transport: transport,
   system_prompt: system_prompt,
   # :synthesize — this is a Q&A agent: when the budget trips, salvage an
   # answer from the evidence gathered so far instead of raising. (Coding

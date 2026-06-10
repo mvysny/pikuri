@@ -1,6 +1,51 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Agent::ChatTransport do
+  describe '.from_openai_server' do
+    it 'builds an :openai transport that overrides the connection' do
+      t = described_class.from_openai_server(server: 'http://localhost:8080', model: 'm')
+      assert_equal :openai, t.provider
+      assert_equal 'm', t.model
+      assert t.assume_model_exists
+      assert t.connection_overrides?
+    end
+
+    it 'appends /v1 to a bare server origin' do
+      t = described_class.from_openai_server(server: 'http://localhost:8080', model: 'm')
+      assert_equal 'http://localhost:8080/v1', t.api_base
+    end
+
+    it 'does not double a server that already ends in /v1' do
+      t = described_class.from_openai_server(server: 'https://api.x.ai/v1', model: 'm')
+      assert_equal 'https://api.x.ai/v1', t.api_base
+    end
+
+    it 'normalizes a trailing /v1/ (slash) the same way' do
+      t = described_class.from_openai_server(server: 'https://api.x.ai/v1/', model: 'm')
+      assert_equal 'https://api.x.ai/v1', t.api_base
+    end
+
+    it 'strips a lone trailing slash' do
+      t = described_class.from_openai_server(server: 'http://localhost:8080/', model: 'm')
+      assert_equal 'http://localhost:8080/v1', t.api_base
+    end
+
+    it 'leaves a path that merely resembles /v1 untouched (e.g. /v10)' do
+      t = described_class.from_openai_server(server: 'https://host/v10', model: 'm')
+      assert_equal 'https://host/v10/v1', t.api_base
+    end
+
+    it "defaults api_key to the keyless 'not-needed' placeholder" do
+      t = described_class.from_openai_server(server: 'http://localhost:8080', model: 'm')
+      assert_equal 'not-needed', t.api_key
+    end
+
+    it 'carries an explicit api_key through' do
+      t = described_class.from_openai_server(server: 'https://api.x.ai/v1', model: 'm', api_key: 'sk-1')
+      assert_equal 'sk-1', t.api_key
+    end
+  end
+
   describe '#chat_kwargs' do
     it 'exposes only the model-resolution kwargs, never the connection' do
       t = described_class.new(model: 'm', provider: :openai, assume_model_exists: true,

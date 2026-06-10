@@ -47,24 +47,19 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-server = server.chomp('/')
-openai_api_base = "#{server}/v1"
-
-RubyLLM.configure do |c|
-  c.openai_api_base = openai_api_base
-  c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
-end
-
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 system_prompt = Pikuri.prompt(:'pikuri-minions')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
+# Connection rides the transport's own RubyLLM::Context (not a global
+# RubyLLM.configure), and sub-agents inherit it through parent.transport;
+# from_openai_server normalizes a trailing /v1.
 agent = Pikuri::Agent.new(
-  transport: Pikuri::Agent::ChatTransport.new(
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(
+    server: server,
     model: model,
-    provider: :openai,
-    assume_model_exists: true
+    api_key: examples_config.fetch('llm_api_key', 'not-needed')
   ),
   system_prompt: system_prompt,
   # :synthesize — this is a Q&A agent: when the budget trips, salvage an
