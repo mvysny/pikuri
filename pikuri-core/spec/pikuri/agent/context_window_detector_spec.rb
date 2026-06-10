@@ -4,11 +4,12 @@ require 'faraday'
 require 'faraday/adapter/test'
 require 'stringio'
 
-# Drive +ContextWindowDetector#detect+ against an in-memory Faraday test
+# Drive +ContextWindowDetector.detect+ against an in-memory Faraday test
 # adapter for the /props probe. Same +Faraday.new+ stub pattern as
 # +spec/tool/scraper/simple_spec.rb+. The log sink is swapped to a
 # +StringIO+ so probe-failure warnings can be asserted on without leaking
-# to +$stderr+.
+# to +$stderr+. +openai_base:+ is passed explicitly so the spec never
+# touches global +RubyLLM.config+.
 RSpec.describe Pikuri::Agent::ContextWindowDetector do
   let(:buf) { StringIO.new }
 
@@ -20,6 +21,14 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
   after { Pikuri.log_io = @original_io }
 
   let(:stubs) { Faraday::Adapter::Test::Stubs.new }
+  let(:base)  { 'http://example.com/v1' }
+  let(:url)   { 'http://example.com/props' }
+
+  def transport(model: 'm', provider: :openai)
+    Pikuri::Agent::ChatTransport.new(
+      model: model, provider: provider, assume_model_exists: provider == :openai
+    )
+  end
 
   around do |example|
     original_new = Faraday.method(:new)
@@ -34,83 +43,71 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
     end
   end
 
-  describe 'precedence' do
-    it 'returns the override when set, ignoring ruby_llm_reported and the probe' do
-      detector = described_class.new(
-        override: 64_000,
-        ruby_llm_reported: 32_000,
-        llama_probe_url: 'http://example.com/props'
-      )
-      # No stub registered: if the probe were attempted, the test adapter
+  describe 'gate + URL derivation' do
+    it 'returns nil for a non-openai transport without probing' do
+      # No stub registered: if a probe were attempted, the test adapter
       # would raise on the un-stubbed request.
-      assert_equal 64_000, detector.detect
+      assert_nil described_class.detect(transport(provider: :anthropic), openai_base: base)
+      assert_equal '', buf.string
     end
 
-    it 'returns ruby_llm_reported when override is nil' do
-      detector = described_class.new(
-        override: nil,
-        ruby_llm_reported: 200_000,
-        llama_probe_url: 'http://example.com/props'
-      )
-      assert_equal 200_000, detector.detect
+    it 'returns nil when the openai base is blank, without probing' do
+      assert_nil described_class.detect(transport, openai_base: '')
+      assert_equal '', buf.string
     end
 
-    it 'probes llama.cpp /props when override and ruby_llm_reported are both nil' do
-      stubs.get('http://example.com/props') do
+    it 'strips a trailing /v1 to reach /props at the host root' do
+      stubs.get(url) do
         [200, { 'content-type' => 'application/json' },
          JSON.generate('default_generation_settings' => { 'n_ctx' => 32_768 })]
       end
-      detector = described_class.new(
-        override: nil, ruby_llm_reported: nil, llama_probe_url: 'http://example.com/props'
-      )
-      assert_equal 32_768, detector.detect
+      assert_equal 32_768, described_class.detect(transport, openai_base: 'http://example.com/v1')
     end
 
-    it 'returns nil when all three sources are unset' do
-      detector = described_class.new(override: nil, ruby_llm_reported: nil, llama_probe_url: nil)
-      assert_nil detector.detect
+    it 'appends /props directly when the base has no /v1 suffix' do
+      stubs.get(url) do
+        [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 4096 })]
+      end
+      assert_equal 4096, described_class.detect(transport, openai_base: 'http://example.com')
     end
 
-    it 'skips the probe when llama_probe_url is the empty string' do
-      detector = described_class.new(override: nil, ruby_llm_reported: nil, llama_probe_url: '')
-      assert_nil detector.detect
-      assert_equal '', buf.string
+    it 'tolerates a trailing slash on the base' do
+      assert_equal url, described_class.props_url('http://example.com/v1/')
     end
   end
 
   describe 'probe failure modes' do
-    let(:url) { 'http://example.com/props' }
-    let(:detector) do
-      described_class.new(override: nil, ruby_llm_reported: nil, llama_probe_url: url)
+    def detect
+      described_class.detect(transport, openai_base: base)
     end
 
     it 'returns nil and warns on a non-200 response' do
       stubs.get(url) { [404, {}, ''] }
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'HTTP 404 from'
     end
 
     it 'returns nil and warns on Faraday::ConnectionFailed' do
       stubs.get(url) { raise Faraday::ConnectionFailed, 'getaddrinfo: Name does not resolve' }
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'ConnectionFailed'
     end
 
     it 'returns nil and warns on Faraday::TimeoutError' do
       stubs.get(url) { raise Faraday::TimeoutError, 'execution expired' }
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'TimeoutError'
     end
 
     it 'returns nil and warns on a malformed JSON body' do
       stubs.get(url) { [200, { 'content-type' => 'application/json' }, 'not-json'] }
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'ParserError'
     end
 
     it 'returns nil and warns when default_generation_settings.n_ctx is missing' do
       stubs.get(url) { [200, {}, JSON.generate('other' => 1)] }
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
 
@@ -118,7 +115,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       stubs.get(url) do
         [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => 0 })]
       end
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
 
@@ -126,14 +123,12 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       stubs.get(url) do
         [200, {}, JSON.generate('default_generation_settings' => { 'n_ctx' => '4096' })]
       end
-      assert_nil detector.detect
+      assert_nil detect
       assert_includes buf.string, 'default_generation_settings.n_ctx'
     end
   end
 
   describe 'llama.cpp router mode' do
-    let(:url) { 'http://example.com/props' }
-
     # The router answers a bare /props with role=router and n_ctx 0; the
     # real per-model cap lives at /props?model=<id>. One stub block serves
     # both, branching on the presence of the +model+ query param.
@@ -148,13 +143,12 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
       end
     end
 
-    it 'follows the router to /props?model= and returns the per-model n_ctx' do
+    it 'follows the router to /props?model= using the transport model id' do
       router_stub(model_n_ctx: 262_144)
-      detector = described_class.new(
-        override: nil, ruby_llm_reported: nil, llama_probe_url: url,
-        model_id: 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+      cap = described_class.detect(
+        transport(model: 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'), openai_base: base
       )
-      assert_equal 262_144, detector.detect
+      assert_equal 262_144, cap
       assert_equal '', buf.string
     end
 
@@ -169,22 +163,15 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
                                   'default_generation_settings' => { 'n_ctx' => 0 })]
         end
       end
-      detector = described_class.new(
-        override: nil, ruby_llm_reported: nil, llama_probe_url: url,
-        model_id: 'org/Model:Q4_K_M'
-      )
-      assert_equal 4096, detector.detect
+      assert_equal 4096, described_class.detect(transport(model: 'org/Model:Q4_K_M'), openai_base: base)
       # Faraday decodes the param back, proving the id round-tripped intact
       # through CGI.escape rather than being sent raw.
       assert_equal ['org/Model:Q4_K_M'], seen.compact
     end
 
-    it 'does not follow the router when no model_id is given' do
+    it 'does not follow the router when the transport has no model id' do
       router_stub(model_n_ctx: 262_144)
-      detector = described_class.new(
-        override: nil, ruby_llm_reported: nil, llama_probe_url: url, model_id: nil
-      )
-      assert_nil detector.detect
+      assert_nil described_class.detect(transport(model: nil), openai_base: base)
       assert_includes buf.string, "in #{url} response"
     end
 
@@ -197,10 +184,7 @@ RSpec.describe Pikuri::Agent::ContextWindowDetector do
                                   'default_generation_settings' => { 'n_ctx' => 0 })]
         end
       end
-      detector = described_class.new(
-        override: nil, ruby_llm_reported: nil, llama_probe_url: url, model_id: 'm'
-      )
-      assert_nil detector.detect
+      assert_nil described_class.detect(transport, openai_base: base)
       assert_includes buf.string, 'router probe'
     end
   end

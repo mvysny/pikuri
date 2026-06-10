@@ -186,15 +186,29 @@ module Pikuri
       # {Listener::TokenLog#context_window_size} tracks.
       Tokens = Data.define(:input, :output, :cached, :cache_creation, :thinking, :model_id)
 
-      # Model's resolved context-window cap. Emitted once by
-      # {Agent#initialize} immediately after
-      # {Agent::ContextWindowDetector} runs. Carries +nil+ when no
-      # source produced a value (custom local model with no override
-      # and no reachable llama.cpp +/props+). Listeners that care —
-      # {Listener::TokenLog} renders +ctx=<used>/<cap>+ when set,
-      # +ctx=<used>+ when +nil+ — pick the value off this event and
-      # cache it; non-caring listeners ignore.
+      # Model's resolved context-window cap. Emitted at construction
+      # by {Agent#initialize}, and again after every model switch
+      # (see {Agent#run_loop}'s +transport:+) since the cap is a
+      # property of the model. Carries +nil+ when no source produced
+      # a value (a non-llama server with no explicit cap). Listeners
+      # that care — {Listener::TokenLog} renders +ctx=<used>/<cap>+
+      # when set, +ctx=<used>+ when +nil+ — pick the value off this
+      # event and cache it; non-caring listeners ignore. A second
+      # ContextCap simply overwrites the first; the conversation is
+      # not re-baselined (a switch keeps the running context size).
       ContextCap = Data.define(:cap)
+
+      # The agent switched to a different model mid-conversation,
+      # emitted by {Agent#run_loop} (via +apply_transport!+) just
+      # before the matching {ContextCap} for the new model. Carries
+      # the old and new {Agent::ChatTransport}s verbatim — unformatted
+      # by design, so each chrome presents them its own way (a TUI
+      # adds ANSI off +.model+, a web client adds CSS). The cap rides
+      # on the paired {ContextCap}, not here, so {Listener::TokenLog}
+      # needs no awareness of this event (its existing {ContextCap}
+      # arm picks up the new cap); a renderer wanting "switched to X
+      # (128k)" on one line correlates the two.
+      ModelSwitched = Data.define(:from, :to)
 
       # Out-of-band notice that the agent had to take a rescue path.
       # Emitted by {Agent#run_loop} when {Control::StepLimit} trips

@@ -115,18 +115,17 @@ module Pikuri
     #   every +after_tool_result+ and each item becomes a
     #   {Event::UserTurn} with +mid_loop: true+. +nil+ means
     #   "no mid-loop injection" (the bundled CLIs default).
-    # @param context_window [Integer, nil] explicit override for
-    #   the model's context-window cap. When set, it wins over
-    #   ruby_llm's reported value and the llama.cpp probe — see
-    #   {ContextWindowDetector} for precedence. Resolved cap is
-    #   emitted as an {Event::ContextCap} immediately after
-    #   construction.
-    # @param llama_probe_url [String, nil] llama.cpp +/props+ URL
-    #   used as the third detection source. Only consulted when
-    #   neither +context_window+ nor ruby_llm's reported value is
-    #   set. Typically derived by +bin/pikuri-chat+ from its
-    #   configured +openai_api_base+; leave +nil+ when the
-    #   configured server is anything other than llama.cpp.
+    # @param context_window [Integer, nil] explicit context-window
+    #   cap. When set, it's used verbatim and the auto-detection
+    #   probe is skipped; +nil+ defers to {ContextWindowDetector}
+    #   (a llama.cpp +/props+ probe, which itself yields +nil+ for a
+    #   non-llama server). This is also the cap-inheritance channel:
+    #   the +agent+ tool from +pikuri-subagents+ and the synthesizer
+    #   pass the parent's already-resolved {#context_window_cap}
+    #   here so a spawned agent reuses it instead of re-probing. The
+    #   resolved cap is emitted as an {Event::ContextCap} immediately
+    #   after construction, and re-resolved + re-emitted on every
+    #   model switch (see {#run_loop}'s +transport:+).
     # @param id [String] unique identifier for this agent. Empty
     #   for the main agent; sub-agents get persona-rooted ids
     #   like +"researcher 0"+, +"researcher 1"+, +"file_miner 0"+, ...
@@ -162,7 +161,7 @@ module Pikuri
     # @return [Agent]
     def initialize(transport:, system_prompt:,
                    step_limit: nil, cancellable: nil, interloper: nil,
-                   context_window: nil, llama_probe_url: nil, id: '',
+                   context_window: nil, id: '',
                    streaming: false,
                    &block)
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
@@ -180,7 +179,6 @@ module Pikuri
       # build phase below out of a separate method.
       @block = block
       @context_window = context_window
-      @llama_probe_url = llama_probe_url
 
       # Register *before* the build phase so a mid-construction raise
       # is still recoverable: extensions arm their cleanup via
@@ -290,13 +288,14 @@ module Pikuri
     #   extensions).
     attr_reader :extensions
 
-    # @return [Integer, nil] context-window cap resolved by
-    #   {ContextWindowDetector} at construction time. +nil+ when
-    #   no source produced a value (custom local model with no
-    #   override and no reachable llama.cpp +/props+). Read by
-    #   extensions that spawn their own ruby_llm calls (notably
-    #   the +agent+ tool from +pikuri-subagents+, so spawned
-    #   sub-agents inherit the same cap without re-probing).
+    # @return [Integer, nil] resolved context-window cap — the
+    #   explicit +context_window:+ if one was given, else what
+    #   {ContextWindowDetector} probed. +nil+ when neither produced
+    #   a value (a non-llama server with no explicit cap). Re-resolved
+    #   on every model switch (see {#run_loop}'s +transport:+). Read by
+    #   extensions that spawn their own ruby_llm calls (notably the
+    #   +agent+ tool from +pikuri-subagents+, so spawned sub-agents
+    #   inherit the same cap without re-probing).
     attr_reader :context_window_cap
 
     # Final assistant message content for the most recent
@@ -339,8 +338,31 @@ module Pikuri
     # Subsequent calls keep building on the same chat history, so
     # the model sees full multi-turn context.
     #
+    # == Switching models mid-conversation
+    #
+    # Passing a +transport:+ that differs from the current one
+    # switches the underlying chat to that model — via
+    # +Chat#with_model+, so the history and the registered
+    # callbacks survive — re-resolves the context-window cap, and
+    # emits an {Event::ModelSwitched} followed by a fresh
+    # {Event::ContextCap}. The switch is deliberately confined to
+    # the top of this method (a private +apply_transport!+) rather
+    # than exposed as a standalone setter: the chat is
+    # single-thread-confined, so doing it here serializes the swap
+    # with the turn on the loop's own thread — a background thread
+    # mutating +with_model+'s connection mid-completion would tear
+    # an in-flight stream. A +nil+ +transport:+ (the default) keeps
+    # the current model. The conversation is *not* re-baselined: a
+    # switch is the same conversation under a new model, so the
+    # message count and running context size carry over (the next
+    # turn's token report self-corrects to the new model's count).
+    #
     # @param user_message [String] the user's request for this
     #   turn; must not be +nil+, empty, or whitespace-only
+    # @param transport [ChatTransport, nil] when non-+nil+ and
+    #   structurally different from the current transport, switch to
+    #   it before running the turn (see above); +nil+ keeps the
+    #   current model
     # @raise [ArgumentError] if +user_message+ is +nil+, empty,
     #   or contains only whitespace — an empty turn would poison
     #   the chat history and burn a step budget on nothing
@@ -350,10 +372,11 @@ module Pikuri
     # @raise [Control::StepLimit::Exceeded] if the step budget
     #   tripped and its policy is +:raise+ (the default)
     # @return [nil]
-    def run_loop(user_message:)
+    def run_loop(user_message:, transport: nil)
       raise ArgumentError, "user_message must not be blank, got #{user_message.inspect}" \
         if user_message.nil? || user_message.to_s.strip.empty?
 
+      apply_transport!(transport) if transport
       @synth_answer = nil
       @step_limit&.reset!
       @cancellable&.reset!
@@ -461,13 +484,6 @@ module Pikuri
       @chat.with_instructions(@system_prompt)
       @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
 
-      @context_window_cap = ContextWindowDetector.new(
-        override: @context_window,
-        ruby_llm_reported: @chat.model.context_window,
-        llama_probe_url: @llama_probe_url,
-        model_id: @chat.model.id
-      ).detect
-
       # Wire @chat for pikuri's event stream and controls — the
       # three message-level registered callbacks (+after_message+,
       # +before_tool_call+, +after_tool_result+). The per-chunk
@@ -489,10 +505,11 @@ module Pikuri
         drain_interloper if @interloper
       end
 
-      # One-shot context-window cap: lets every listener that
-      # cares (notably TokenLog) pick the value off the stream
-      # before any Tokens event arrives.
-      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+      # Context-window cap: lets every listener that cares (notably
+      # TokenLog) pick the value off the stream before any Tokens
+      # event arrives. Re-fires on each model switch (see
+      # {#apply_transport!}).
+      detect_and_emit_context_cap!
 
       # The runtime capability facade — constructed once, after the
       # chat and listener list are final, and handed to every
@@ -513,6 +530,48 @@ module Pikuri
       # fully wired. See IDEAS.md §"Extension protocol design" for
       # what #configure vs #bind are each for.
       @extensions.each { |ext| ext.bind(@extension_context) }
+    end
+
+    # Resolve the context-window cap and announce it on the listener
+    # stream as an {Event::ContextCap}. An explicit/inherited
+    # +context_window:+ wins verbatim; otherwise {ContextWindowDetector}
+    # probes the server (yielding +nil+ for a non-llama one). Shared by
+    # {#run_configure} (construction) and {#apply_transport!} (each
+    # model switch) so "how the cap is resolved and emitted" lives in
+    # one place.
+    #
+    # @return [void]
+    def detect_and_emit_context_cap!
+      @context_window_cap = @context_window || ContextWindowDetector.detect(@transport)
+      @listeners.emit(Event::ContextCap.new(cap: @context_window_cap))
+    end
+
+    # Switch the underlying chat to +transport+ when it differs from
+    # the current one. Called only from the top of {#run_loop} — see
+    # that method's "Switching models mid-conversation" section for why
+    # the swap is confined to the loop's own thread.
+    #
+    # Mirrors {#initialize}'s +nil+-model fill before the structural
+    # comparison, so a +transport+ that defers its model to the default
+    # doesn't read as "different" and switch spuriously.
+    # +Chat#with_model+ swaps only the model / provider / connection,
+    # leaving +@chat+'s message history and registered callbacks
+    # intact, so the conversation continues seamlessly under the new
+    # model. Emits {Event::ModelSwitched} (the narration: old → new
+    # transport, unformatted, for the chrome to present) then re-resolves
+    # and re-emits the cap via {#detect_and_emit_context_cap!}.
+    #
+    # @param transport [ChatTransport] the model to switch to
+    # @return [void]
+    def apply_transport!(transport)
+      filled = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
+      return if filled == @transport
+
+      old = @transport
+      @chat.with_model(filled.model, provider: filled.provider, assume_exists: filled.assume_model_exists)
+      @transport = filled
+      @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
+      detect_and_emit_context_cap!
     end
 
     # Fire the per-turn {Extension#on_user_message} hook on every

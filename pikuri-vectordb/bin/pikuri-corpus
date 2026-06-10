@@ -105,8 +105,6 @@ RubyLLM.configure do |c|
   c.default_embedding_model   = embed_model
 end
 
-llama_probe_url = "#{server}/props"
-
 # Explicit opt-in (requiring pikuri-pdf alone changes nothing): from
 # here on the Extractor registry — and so the Indexer, the Watcher,
 # and vectordb_read — handles PDFs in the corpus.
@@ -185,7 +183,6 @@ agent = Pikuri::Agent.new(
   # agents take the default :raise — see bin/pikuri-code.)
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20, on_exhausted: :synthesize),
   cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url,
   streaming: streaming
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)

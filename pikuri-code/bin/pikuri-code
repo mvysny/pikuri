@@ -244,12 +244,6 @@ RubyLLM.configure do |c|
   c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
 end
 
-# llama.cpp exposes the server's launched +n_ctx+ at +/props+ on the base
-# host (NOT under +/v1+). Hand the derived URL to {Agent::ContextWindowDetector}
-# so the +ctx=<used>/<cap>+ headline lights up against this local server,
-# which is unknown to ruby_llm's bundled model registry.
-llama_probe_url = "#{server}/props"
-
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 # MCP servers available to the assistant. Hand-edit this array to add
@@ -297,8 +291,7 @@ begin
     # run_turn below tells the user, the chat history survives, and the
     # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
-    cancellable: cancel_flag,
-    llama_probe_url: llama_probe_url
+    cancellable: cancel_flag
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new
     c.add_listener Pikuri::Agent::Listener::TokenLog.new

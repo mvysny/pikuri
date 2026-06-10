@@ -8,9 +8,10 @@ RSpec.describe Pikuri::Agent do
   # calls, +add_message+ calls). Pins the agent-level wiring
   # without going anywhere near a real provider.
   #
-  # +RubyLLM::Model::Info+ stand-in just so
-  # +Pikuri::Agent#initialize+ can read +@chat.model.context_window+ and
-  # +@chat.model.id+ for {Pikuri::Agent::ContextWindowDetector}.
+  # Minimal +RubyLLM::Chat#model+ stand-in. Cap detection no longer
+  # reads it (the probe keys off the transport + global config — see
+  # {Pikuri::Agent::ContextWindowDetector}), but a real Chat exposes
+  # +#model+, so the fake mirrors that.
   fake_model = Struct.new(:context_window, :id).new(nil, 'm')
 
   let(:fake_chat_class) do
@@ -39,6 +40,17 @@ RSpec.describe Pikuri::Agent do
 
       def with_tool(tool)
         @tools << tool
+        self
+      end
+
+      # Records each model switch as a [model, provider, assume_exists]
+      # triple so specs can assert +apply_transport!+ forwarded the full
+      # transport (and used ruby_llm's +assume_exists:+ kwarg name). The
+      # history (not just the latest) survives, mirroring a real Chat.
+      attr_reader :model_switches
+
+      def with_model(model_id, provider: nil, assume_exists: false)
+        (@model_switches ||= []) << [model_id, provider, assume_exists]
         self
       end
 
@@ -249,23 +261,13 @@ RSpec.describe Pikuri::Agent do
         c.add_listener token_log
       end
 
-      it 'pushes the detected cap onto every TokenLog via the ContextCap event' do
-        # No ruby_llm reported value (fake .model.context_window is nil),
-        # no probe URL — explicit override wins.
+      it 'pushes the explicit cap onto every TokenLog via the ContextCap event' do
+        # The transport has no :openai provider, so the probe never runs;
+        # the explicit context_window: is used verbatim.
         Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                           system_prompt: 's', context_window: 32_768) { |c| wire_token_log(c) }
 
         assert_equal 32_768, token_log.context_window_cap
-      end
-
-      it 'falls back to ruby_llm reported value when no override is given' do
-        # Rebind the fake_chat's model to one that reports a window.
-        fake_chat.instance_variable_set(:@model_info, Struct.new(:context_window, :id).new(200_000, 'm'))
-
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's') { |c| wire_token_log(c) }
-
-        assert_equal 200_000, token_log.context_window_cap
       end
 
       it 'exposes the resolved cap via #context_window_cap' do
@@ -275,12 +277,76 @@ RSpec.describe Pikuri::Agent do
         assert_equal 8_192, agent.context_window_cap
       end
 
-      it 'leaves cap nil when nothing produces a value (no override, no registry, no probe URL)' do
+      it 'leaves cap nil when there is no explicit cap and the probe does not apply' do
+        # Non-:openai transport → ContextWindowDetector returns nil
+        # without probing, and no explicit context_window: was given.
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                   system_prompt: 's') { |c| wire_token_log(c) }
 
         assert_nil agent.context_window_cap
         assert_nil token_log.context_window_cap
+      end
+    end
+
+    describe 'switching models via run_loop(transport:)' do
+      let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
+
+      def build_agent
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's', context_window: 8_192) do |c|
+          c.add_listener recorder
+          c.add_listener token_log
+        end
+      end
+
+      it 'forwards the full transport to Chat#with_model on a different transport' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true
+                       ))
+
+        assert_equal [['big', :openai, true]], fake_chat.model_switches
+        assert_equal 'big', agent.model
+      end
+
+      it 'does not switch when the transport is structurally identical' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi', transport: Pikuri::Agent::ChatTransport.new(model: 'm'))
+
+        assert_nil fake_chat.model_switches
+        assert_equal 'm', agent.model
+      end
+
+      it 'emits ModelSwitched then a fresh ContextCap on a switch' do
+        agent = build_agent
+        recorder.events.clear
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true
+                       ))
+
+        kinds = recorder.events.map(&:class)
+        switched = kinds.index(Pikuri::Agent::Event::ModelSwitched)
+        cap = kinds.index(Pikuri::Agent::Event::ContextCap)
+        refute_nil switched
+        refute_nil cap
+        assert switched < cap, 'ModelSwitched must precede the new ContextCap'
+
+        ev = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) }
+        assert_equal 'm', ev.from.model
+        assert_equal 'big', ev.to.model
+      end
+
+      it 'keeps the explicit cap sticky across a switch (no re-probe)' do
+        agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true
+                       ))
+
+        assert_equal 8_192, agent.context_window_cap
+        assert_equal 8_192, token_log.context_window_cap
       end
     end
   end

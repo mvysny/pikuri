@@ -87,8 +87,6 @@ RubyLLM.configure do |c|
   c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
 end
 
-llama_probe_url = "#{server}/props"
-
 # Memory store: a self-managed mem0 + Qdrant sidecar by default, or a
 # bring-your-own server via --mem0-url. The sidecar needs docker (with the
 # compose plugin) and git; its first run clones + builds the mem0 image
@@ -137,7 +135,6 @@ agent = Pikuri::Agent.new(
   # agents take the default :raise — see bin/pikuri-code.)
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20, on_exhausted: :synthesize),
   cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url,
   streaming: streaming
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)

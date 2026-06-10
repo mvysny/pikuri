@@ -6,8 +6,12 @@ module Pikuri
       # Logs the conversation's context-window consumption per
       # assistant turn via +Pikuri.logger_for('Tokens')+. Consumes
       # {Event::Tokens} (one log line per emission) and
-      # {Event::ContextCap} (one-shot cap, picked off and cached);
-      # every other event variant is a no-op.
+      # {Event::ContextCap} (the cap, picked off and cached —
+      # refreshed if a later {Event::ContextCap} arrives after a
+      # model switch); every other event variant is a no-op. A
+      # switch does not reset the running size or message count: the
+      # next {Event::Tokens} self-corrects the headline to the new
+      # model's count.
       #
       # Existence rationale: catch context-window growth before the
       # provider raises +RubyLLM::ContextLengthExceededError+.

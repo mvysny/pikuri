@@ -55,13 +55,6 @@ RubyLLM.configure do |c|
   c.openai_api_key  = examples_config.fetch('llm_api_key', 'not-needed')
 end
 
-# llama.cpp exposes the server's launched +n_ctx+ at +/props+ on the
-# base host (NOT under +/v1+). Hand the derived URL to
-# {Agent::ContextWindowDetector} so the +ctx=<used>/<cap>+ headline
-# lights up against this local server, which is unknown to ruby_llm's
-# bundled model registry.
-llama_probe_url = "#{server}/props"
-
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 system_prompt = Pikuri.prompt(:'pikuri-minions')
@@ -79,7 +72,6 @@ agent = Pikuri::Agent.new(
   # agents take the default :raise — see bin/pikuri-code.)
   step_limit: Pikuri::Agent::Control::StepLimit.new(max: 20, on_exhausted: :synthesize),
   cancellable: cancel_flag,
-  llama_probe_url: llama_probe_url,
   streaming: streaming
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)

@@ -8,7 +8,8 @@ module Pikuri
       # Terminal renderer for the normalized event stream: dim grey
       # reasoning, assistant content printed raw (Markdown as-is),
       # cyan tool-call and tool-result lines, yellow fallback
-      # notice, red cancelled notice. An {Event::SystemInjected} block (recalled
+      # notice, red cancelled notice, magenta model-switch notice.
+      # An {Event::SystemInjected} block (recalled
       # memory / context an extension injected) renders dim grey
       # with a +⊕+ marker. {Event::UserTurn} is intentionally silent
       # (the terminal user just typed the message, so re-rendering
@@ -131,6 +132,8 @@ module Pikuri
             println(indent(Rainbow("→ #{name}(#{args})").cyan))
           in Event::ToolResult(content:)
             println(indent(Rainbow("= #{truncate_tool_result(content)}").cyan))
+          in Event::ModelSwitched(from:, to:)
+            println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
           in Event::FallbackNotice(reason:)
             println(indent(Rainbow("! #{reason}").yellow))
           in Event::Cancelled

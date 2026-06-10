@@ -1,36 +1,54 @@
 # frozen_string_literal: true
 
+require 'ruby_llm'
 require 'faraday'
 require 'json'
 require 'cgi'
 
 module Pikuri
   class Agent
-    # Resolves the model's context-window cap from three sources, in order:
-    # an explicit override, the value ruby_llm reports for the model, or a
-    # llama.cpp +/props+ probe. Returns +nil+ if none of those produce a
-    # value.
+    # Resolves the model's context-window cap by asking the server that
+    # actually serves it. The only authoritative runtime source pikuri
+    # has is llama.cpp's non-standard +/props+ endpoint, which reports
+    # the server's *launched* +n_ctx+ (the real window — possibly
+    # smaller than the model's theoretical max, e.g. +llama-server -c
+    # 8192+ on a 128k model). Returns +nil+ — an honest "we don't
+    # know" — for anything else.
     #
-    # Used by {Agent#initialize} at construction time to feed
-    # {Listener::TokenLog} a cap it can render alongside the running
-    # context size (so the +ctx=12.2k/32.0k+ line tells the operator how
-    # close the conversation is to the limit).
+    # Used by {Agent#detect_and_emit_context_cap!} at construction and
+    # after every model switch to feed {Listener::TokenLog} a cap it can
+    # render alongside the running context size (so the +ctx=12.2k/32.0k+
+    # line tells the operator how close the conversation is to the limit).
+    # The caller prefers an explicit/inherited +context_window:+ over this
+    # probe; this runs only when none was given.
     #
-    # == Precedence
+    # == Why no ruby_llm registry source
     #
-    # 1. +override+ — the +Agent.new(context_window:)+ kwarg. Wins over
-    #    everything; an explicit value is the operator's statement of
-    #    truth.
-    # 2. +ruby_llm_reported+ — +RubyLLM::Model::Info#context_window+ from
-    #    {Agent#chat}'s resolved model. Populated for models in ruby_llm's
-    #    bundled registry (OpenAI, Anthropic, Gemini, …); +nil+ for custom
-    #    local model ids that fall through to +Model::Info.default+.
-    # 3. +llama_probe_url+ — HTTP GET against llama.cpp's non-standard
-    #    +/props+ endpoint. The server exposes the launched +n_ctx+ at
-    #    +default_generation_settings.n_ctx+ there. Probed only when the
-    #    first two are +nil+. Provider-specific to llama.cpp; the caller
-    #    (typically +bin/pikuri-chat+) derives the right URL from its configured
-    #    base.
+    # +RubyLLM::Model::Info#context_window+ is a static lookup in a
+    # bundled +models.json+ snapshot: +nil+ for every +assume_exists+
+    # local model id, +nil+ for anything newer than the snapshot, and —
+    # worst — a *frozen* value for known models, so a window the provider
+    # later bumped (256k → 1M) still reports the old number. A cap you
+    # have to caveat defeats the cap's only job (a number trustworthy
+    # enough to act on before +RubyLLM::ContextLengthExceededError+), so
+    # pikuri deliberately does not consult it. The probe (server truth)
+    # and an explicit +context_window:+ (operator/parent truth) are the
+    # only two sources; absent both, the cap is +nil+.
+    #
+    # == The openai-provider gate + auto-derived URL
+    #
+    # The probe only makes sense against an OpenAI-compatible local
+    # server (llama.cpp), reached through ruby_llm's +:openai+ provider
+    # with a custom base. So {.detect} runs only when
+    # +transport.provider == :openai+ and derives the probe URL from the
+    # *same* +RubyLLM.config.openai_api_base+ the chat itself uses —
+    # +/props+ lives at the host root, NOT under +/v1+, so the +/v1+
+    # suffix is stripped. Deriving from the live config (rather than a
+    # URL passed in) means the probe can't target a different server than
+    # the chat. A bare +:openai+ pointed at real +api.openai.com+ gets
+    # one fast +/props+ 404 that degrades to +nil+ (the simple gate; not
+    # worth narrowing — you're already sending that server the whole
+    # conversation).
     #
     # == llama.cpp router mode
     #
@@ -62,48 +80,80 @@ module Pikuri
       LOGGER = Pikuri.logger_for('ContextWindowDetector')
 
       # Connect timeout in seconds for the llama.cpp +/props+ probe.
-      # Short on purpose: this runs synchronously during +Agent.new+ and
-      # a wedged server should not stall startup noticeably.
+      # Short on purpose: a server that isn't even listening should fail
+      # fast rather than stall +Agent+ construction.
       #
       # @return [Integer]
       OPEN_TIMEOUT = 2
-      # Read timeout in seconds for the llama.cpp +/props+ probe; matches
-      # {OPEN_TIMEOUT} for the same reason.
+      # Read timeout in seconds for the llama.cpp +/props+ probe.
+      # Generous on purpose, and the reason it differs from
+      # {OPEN_TIMEOUT}: a llama.cpp router answers +/props?model=<id>+
+      # only *after* spinning up that model's instance, and a cold model
+      # load can take 10+ seconds — which the next chat turn must wait
+      # for anyway. A read timeout shorter than the load would abandon
+      # the probe (and lose the cap) precisely when switching to a
+      # cold model. A server that accepts the connection but then hangs
+      # would stall the actual chat identically, so tolerating the wait
+      # here costs nothing extra.
       #
       # @return [Integer]
-      READ_TIMEOUT = 2
+      READ_TIMEOUT = 30
 
-      # @param override [Integer, nil] explicit cap from the caller; wins if
-      #   non-+nil+
-      # @param ruby_llm_reported [Integer, nil] value off
-      #   +RubyLLM::Chat#model.context_window+
-      # @param llama_probe_url [String, nil] full URL to llama.cpp +/props+;
-      #   +nil+ or empty string skips the probe
-      # @param model_id [String, nil] the chat model id, used only to
-      #   follow a llama.cpp router via +/props?model=<id>+ when the bare
-      #   probe reports +role: router+. +nil+ or empty disables that
-      #   second hop.
-      def initialize(override:, ruby_llm_reported:, llama_probe_url:, model_id: nil)
-        @override = override
-        @ruby_llm_reported = ruby_llm_reported
-        @llama_probe_url = llama_probe_url
+      # Resolve the context-window cap for +transport+ by probing the
+      # server that serves it.
+      #
+      # @param transport [Agent::ChatTransport] the model-resolution
+      #   triple; +provider+ gates the probe and +model+ drives the
+      #   router +?model=+ hop
+      # @param openai_base [String, nil] the configured OpenAI-compatible
+      #   base URL the probe URL is derived from; defaults to the live
+      #   +RubyLLM.config.openai_api_base+. Passed explicitly only by
+      #   tests, which don't want to mutate global config.
+      # @return [Integer, nil] the launched +n_ctx+, or +nil+ for a
+      #   non-+:openai+ transport, an unconfigured base, or any probe
+      #   failure
+      def self.detect(transport, openai_base: RubyLLM.config.openai_api_base)
+        return nil unless transport.provider == :openai
+
+        url = props_url(openai_base)
+        return nil if url.nil?
+
+        new(probe_url: url, model_id: transport.model).probe
+      end
+
+      # Derive the llama.cpp +/props+ URL from the OpenAI-compatible
+      # base. +/props+ sits at the host root, so a trailing +/v1+ is
+      # stripped before appending.
+      #
+      # @param openai_base [String, nil]
+      # @return [String, nil] the +/props+ URL, or +nil+ when the base
+      #   is blank
+      def self.props_url(openai_base)
+        base = openai_base.to_s.strip.chomp('/')
+        return nil if base.empty?
+
+        "#{base.delete_suffix('/v1')}/props"
+      end
+
+      # @param probe_url [String] full URL to llama.cpp +/props+
+      # @param model_id [String, nil] the chat model id, used to follow a
+      #   llama.cpp router via +/props?model=<id>+ when the bare probe
+      #   reports +role: router+. +nil+ or empty disables that second hop.
+      def initialize(probe_url:, model_id:)
+        @probe_url = probe_url
         @model_id = model_id
       end
 
-      # @return [Integer, nil] resolved cap, or +nil+ if no source produced
-      #   one
-      def detect
-        return @override if @override
-        return @ruby_llm_reported if @ruby_llm_reported
-        return nil if @llama_probe_url.nil? || @llama_probe_url.empty?
-
+      # @return [Integer, nil] resolved cap, or +nil+ if the probe
+      #   produced none
+      def probe
         probe_llama_cpp
       end
 
       private
 
       def probe_llama_cpp
-        data = fetch_props(@llama_probe_url)
+        data = fetch_props(@probe_url)
         return nil if data.nil?
 
         n_ctx = positive_n_ctx(data)
@@ -114,12 +164,12 @@ module Pikuri
         return probe_router_model if data['role'] == 'router' && model_id_present?
 
         warn_and_nil(
-          "no positive integer at default_generation_settings.n_ctx in #{@llama_probe_url} response"
+          "no positive integer at default_generation_settings.n_ctx in #{@probe_url} response"
         )
       end
 
       def probe_router_model
-        url = "#{@llama_probe_url}?model=#{CGI.escape(@model_id)}"
+        url = "#{@probe_url}?model=#{CGI.escape(@model_id)}"
         data = fetch_props(url)
         return nil if data.nil?
 
