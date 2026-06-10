@@ -195,6 +195,74 @@ RSpec.describe Pikuri::Code::Bash do
     end
   end
 
+  describe '.env_delta (pure bundler-env diff)' do
+    # The subprocess must not inherit the BUNDLE_*/RUBYOPT pollution
+    # pikuri's own boot injected, or a `bundle exec` the agent runs in
+    # another project resolves against pikuri's Gemfile. env_delta is the
+    # pure diff that turns the polluted ENV back into Bundler.unbundled_env.
+
+    it 'unsets a bundler-injected var the clean env lacks (nil ⇒ removed in child)' do
+      delta = described_class.send(:env_delta,
+                                   current: { 'BUNDLE_GEMFILE' => '/pikuri/Gemfile', 'PATH' => '/bin' },
+                                   clean:   { 'PATH' => '/bin' })
+
+      assert delta.key?('BUNDLE_GEMFILE'), 'expected BUNDLE_GEMFILE in the delta'
+      assert_nil delta['BUNDLE_GEMFILE'], 'expected BUNDLE_GEMFILE unset (nil) in the child'
+    end
+
+    it 'restores a host value the clean env changed (apt-ruby GEM_HOME, not a blanket GEM_* wipe)' do
+      delta = described_class.send(:env_delta,
+                                   current: { 'GEM_HOME' => '/proj/.bundle/ruby' },
+                                   clean:   { 'GEM_HOME' => '/home/u/.gem' })
+
+      assert_equal '/home/u/.gem', delta['GEM_HOME']
+    end
+
+    it 'omits keys both envs share (minimal delta)' do
+      delta = described_class.send(:env_delta,
+                                   current: { 'PATH' => '/bin', 'HOME' => '/home/u' },
+                                   clean:   { 'PATH' => '/bin', 'HOME' => '/home/u' })
+
+      assert_equal({}, delta)
+    end
+  end
+
+  describe '.bundler_clean_delta' do
+    it 'is empty when Bundler is absent (gem-installed / no bundler/setup)' do
+      # Specs run under bundler, so Bundler is defined here. Swap it out
+      # for a stand-in WITHOUT #unbundled_env to drive the no-bundler path.
+      saved = Object.send(:remove_const, :Bundler)
+      Object.const_set(:Bundler, Module.new)
+      assert_equal({}, described_class.send(:bundler_clean_delta))
+    ensure
+      Object.send(:remove_const, :Bundler)
+      Object.const_set(:Bundler, saved)
+    end
+  end
+
+  describe '.run de-bundlerizes the subprocess (regression)' do
+    it 'does not leak pikuri\'s BUNDLE_GEMFILE into the command' do
+      # Under bundler BUNDLE_GEMFILE points at pikuri's own Gemfile; the
+      # bash subprocess must not see it, or `bundle exec` in another
+      # project breaks. Skip when not running under bundler.
+      skip 'not running under bundler' unless ENV['BUNDLE_GEMFILE']
+
+      result = described_class.run(workspace: workspace, confirmer: confirmer,
+                                   command: 'echo "[${BUNDLE_GEMFILE:-unset}]"',
+                                   description: nil, timeout: 30)
+
+      assert_includes result, '[unset]'
+    end
+
+    it 'preserves the host PATH so the command still finds its tools' do
+      result = described_class.run(workspace: workspace, confirmer: confirmer,
+                                   command: 'command -v echo >/dev/null && echo ok',
+                                   description: nil, timeout: 30)
+
+      assert_includes result, 'ok'
+    end
+  end
+
   describe '.visible sanitization' do
     it 'preserves newlines (multi-line commands are normal)' do
       assert_equal "for x in 1 2 3; do\n  echo $x\ndone",

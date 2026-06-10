@@ -37,6 +37,12 @@ module Pikuri
     # +--kill-after=5s+ gives the command 5 seconds to handle SIGTERM
     # cleanly before SIGKILL is sent.
     #
+    # The subprocess environment is "de-bundlerized" first — pikuri is
+    # usually launched under Bundler, which would otherwise leak its own
+    # +BUNDLE_GEMFILE+ / +RUBYOPT+ / ... into the command so a +bundle
+    # exec+ run against another project picks up *pikuri's* Gemfile. See
+    # {.subprocess_env} / {.bundler_clean_delta}.
+    #
     # == Timeout detection
     #
     # GNU coreutils' +timeout+ exits +124+ after a successful SIGTERM,
@@ -205,7 +211,8 @@ module Pikuri
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
           'bash', '-c', command
         ])
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s, env: workspace.env).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s,
+                                                 env: subprocess_env(workspace)).wait
 
         output = truncate(result.output)
         exit_code = result.status.exitstatus
@@ -241,6 +248,80 @@ module Pikuri
         Pikuri::Workspace::Confirmer::Request.new(question: question, detail: "$ #{command}")
       end
       private_class_method :compose_request
+
+      # Environment for the bash subprocess: the workspace's git-identity
+      # vars ({Pikuri::Workspace::Filesystem#env}) layered over a
+      # "de-bundlerized" base.
+      #
+      # pikuri is typically launched under Bundler — the +bin/pikuri-code+
+      # demo and every downstream host (e.g. pikuri-tui) pin
+      # +BUNDLE_GEMFILE+ to their *own* Gemfile and +require
+      # 'bundler/setup'+ at boot. Doing so makes Bundler rewrite
+      # +BUNDLE_GEMFILE+ / +RUBYOPT+ / +GEM_HOME+ / +GEM_PATH+ / +RUBYLIB+
+      # / +PATH+ in the *process* environment (stashing the pre-bundler
+      # values under +BUNDLER_ORIG_*+). Those vars are inherited by every
+      # subprocess we spawn — so a +bundle exec rspec+ the agent runs in
+      # *another* Ruby project would resolve against PIKURI's Gemfile and
+      # die with a baffling "the Gemfile specifies ... is missing" error.
+      #
+      # The fix is to hand bash the environment as it was *before* bundler
+      # touched it (see {.bundler_clean_delta}), with the workspace's git
+      # identity on top.
+      #
+      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @return [Hash{String=>(String,nil)}] +env:+ delta for
+      #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key in the
+      #   child).
+      def self.subprocess_env(workspace)
+        bundler_clean_delta.merge(workspace.env)
+      end
+      private_class_method :subprocess_env
+
+      # The delta that, merged onto the current (bundler-polluted) +ENV+
+      # via {Pikuri::Subprocess.spawn}'s +env:+, reconstructs
+      # +Bundler.unbundled_env+ — the environment as it was before
+      # +bundler/setup+ ran.
+      #
+      # +Bundler.unbundled_env+ restores each +BUNDLER_ORIG_*+ backup, so
+      # a host-level +GEM_HOME+/+GEM_PATH+ from a +sudo apt install ruby+
+      # install (pointing at +~/.gem+) passes straight through and the
+      # subprocess still finds the user's gems — it is *not* a blanket
+      # +GEM_*+ wipe — while the bundler-only vars (+BUNDLE_*+, the
+      # +-rbundler/setup+ +RUBYOPT+) are dropped. We diff against the live
+      # +ENV+ rather than passing the full hash because +spawn+'s +env:+
+      # is additive: changed/added keys carry their clean value, keys
+      # bundler injected that aren't in the clean env map to +nil+
+      # (+Open3.popen2e+ unsets a +nil+-valued key in the child).
+      #
+      # When pikuri runs *without* Bundler (gem-installed, or a host that
+      # never required +bundler/setup+) this is empty and the child
+      # inherits the environment unchanged.
+      #
+      # @return [Hash{String=>(String,nil)}]
+      def self.bundler_clean_delta
+        return {} unless defined?(Bundler) && Bundler.respond_to?(:unbundled_env)
+
+        env_delta(current: ENV.to_h, clean: Bundler.unbundled_env)
+      end
+      private_class_method :bundler_clean_delta
+
+      # Pure diff between two environment hashes: the additive delta that,
+      # applied to +current+ via {Pikuri::Subprocess.spawn}'s +env:+,
+      # yields +clean+. A key whose value differs (or is new in +clean+)
+      # carries the +clean+ value; a key present in +current+ but absent
+      # from +clean+ maps to +nil+ (which +Open3.popen2e+ unsets). Keys
+      # equal in both are omitted, keeping the delta minimal.
+      #
+      # @param current [Hash{String=>String}]
+      # @param clean [Hash{String=>String}]
+      # @return [Hash{String=>(String,nil)}]
+      def self.env_delta(current:, clean:)
+        delta = {}
+        clean.each { |k, v| delta[k] = v unless current[k] == v }
+        current.each_key { |k| delta[k] = nil unless clean.key?(k) }
+        delta
+      end
+      private_class_method :env_delta
 
       # Neutralize control bytes for safe display in the *observation*
       # echo (+"$ ..."+ in the tool result) — without this, a model could
