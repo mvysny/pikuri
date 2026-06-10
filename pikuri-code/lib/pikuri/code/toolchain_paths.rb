@@ -2,17 +2,15 @@
 
 module Pikuri
   module Code
-    # Curated lists of filesystem prefixes a coding agent benefits
-    # from seeing: system toolchains under +/usr+ and +/opt+, per-user
+    # Curated list of filesystem prefixes a coding agent benefits from
+    # seeing: system toolchains under +/usr+ and +/opt+, per-user
     # toolchain managers (mise/asdf/rbenv/pyenv/nvm/rustup), and the
     # per-user dependency caches the toolchains themselves mutate
     # (Gradle, Maven, Cargo, npm, pip, …). Not a tool — a
     # configuration helper that +bin/pikuri-code+ (and any downstream
     # coding binary built on pikuri-code) feeds into
     # +Pikuri::Workspace::Filesystem.new(readable: ...)+ alongside the
-    # skill catalog's roots, and into
-    # +Pikuri::Code::Bash::Sandbox::Bubblewrap.new(ephemeral_overlay: ...)+
-    # for the overlay layer.
+    # skill catalog's roots.
     #
     # The list is the "allowlist a coding agent reads" surface derived
     # from the threat-model discussion that drove this gem; see
@@ -20,43 +18,47 @@ module Pikuri
     # containment story and CLAUDE.md's Scope decisions for the
     # Linux-first stance.
     #
-    # == .readable vs. .ephemeral_overlay
+    # == One list, overlaid — not a readable-vs-writable split
     #
-    # The split exists because the bubblewrap sandbox treats these two
-    # groups differently:
+    # Earlier this module split the paths into "true read-only"
+    # (toolchains) and "ephemeral overlay" (caches the toolchain
+    # mutates). That split is gone: every entry here is mounted by
+    # {Pikuri::Code::Bash::Sandbox::Bubblewrap} as a *read-write
+    # ephemeral overlay* (when the kernel supports overlayfs in a user
+    # namespace; read-only bind otherwise). The host's real dir is the
+    # read-through lower; a per-session upper absorbs writes and is
+    # discarded at process exit.
     #
-    # * {.readable} — true read-only: system toolchains (+/usr+,
-    #   +/opt+) and per-user toolchain managers (+~/.rbenv+, +~/.pyenv+,
-    #   +~/.nvm+, +~/.asdf+, +~/.rustup+, +~/.local/share/mise+, +~/.config/mise+).
-    #   The user installed these out-of-band; the LLM should be able
-    #   to grep them but neither write nor *appear* to write to them.
-    #   Bubblewrap +--ro-bind+'s each.
-    # * {.ephemeral_overlay} — per-user dependency caches the
-    #   toolchain itself mutates when invoked: subdirs of +~/.gradle+,
-    #   +~/.m2/repository+, +~/.cargo/registry+, +~/.ivy2/cache+,
-    #   +~/go/pkg/mod+, +~/.cache/pip+, +~/.cache/uv+, +~/.npm+, the
-    #   pnpm store, +~/.nuget/packages+. The toolchain *needs* to
-    #   write to these (Gradle's journal/locks, Maven downloading a
-    #   new dep, …), but persistent host pollution from a poisoned
-    #   pikuri-code session would propagate to the user's other
-    #   projects. The bubblewrap sandbox overlays each with a
-    #   per-session ephemeral upper layer under
-    #   +<workspace.internal_temp>/overlay-<slug>/+ — writes survive
-    #   across bash calls within one session, then vanish at process
-    #   exit. See {Pikuri::Code::Bash::Sandbox::Bubblewrap} for the
-    #   wiring.
+    # The reason is that build tools assume their dirs are writable.
+    # A read-only +~/.rbenv+ (or mise/asdf/system Ruby) breaks
+    # +gem install+ / +bundle install+ with +EROFS+ — the gem install
+    # target lives *inside* the version-manager dir, so there's no
+    # separate cache to overlay. Overlaying the whole dir lets the
+    # install succeed against an ephemeral copy: the toolchain writes,
+    # the warm result survives across bash calls within the session,
+    # and the host's real toolchain is never touched. The same
+    # ephemerality that makes a writable +/usr+ safe (writes vanish at
+    # exit, host untouched) is what makes "the LLM must not even appear
+    # to write here" moot — so the old read-only treatment bought
+    # nothing and cost a class of confusing failures.
     #
-    # The host-side workspace continues to include both lists in its
-    # +readable+ set, so the LLM can Read/Grep/Glob them via the file
-    # tools (which operate on the host filesystem, not the sandbox view).
+    # The host-side workspace includes this list in its +readable+ set,
+    # so the LLM can Read/Grep/Glob the paths via the file tools (which
+    # operate on the host filesystem, not the sandbox view). Writes the
+    # LLM makes through bash land in the overlay and are *not* visible
+    # to the host-reading file tools — the same accepted asymmetry the
+    # cache overlays always had.
     #
     # == Why subdirs, not whole toolchain dirs
     #
-    # Every entry in {.ephemeral_overlay} is a content-only subdir
-    # chosen to *exclude* the toolchain's credential / persistence
-    # files. The exposed path holds cache content (downloaded jars,
-    # distributions, modules); the excluded paths hold secrets or
-    # build-config:
+    # The per-user dependency caches are listed as *content-only
+    # subdirs* chosen to *exclude* the toolchain's credential /
+    # persistence files. Even though the overlay is ephemeral, the
+    # host's real file is the read-through lower — so a narrower mount
+    # keeps secrets out of the sandbox's view entirely rather than
+    # relying on "the write vanished." The exposed path holds cache
+    # content (downloaded jars, distributions, modules); the excluded
+    # paths hold secrets or build-config:
     #
     #   * +~/.gradle/caches+ + +~/.gradle/wrapper/dists+ + +~/.gradle/jdks+
     #     — NOT +~/.gradle/gradle.properties+ (signing keys, OSSRH /
@@ -71,24 +73,32 @@ module Pikuri
     #     (crates.io publish tokens).
     #   * +~/.ivy2/cache+ — NOT +~/.ivy2/.credentials+ (resolver creds).
     #
-    # +bwrap+ creates the parent dir (e.g. +~/.gradle/+) as an empty
-    # tmpfs directory inside the sandbox automatically, so the
-    # toolchain can mkdir new subdirs there (e.g. +~/.gradle/daemon/+)
-    # without seeing anything we didn't bind. The cost is mild: dirs
-    # outside the overlay list (+~/.gradle/daemon/+, native cache,
-    # configuration cache) start empty each bash call instead of
-    # persisting within a session. That's acceptable for daemon-style
-    # caches — the warm-cache value lives in +caches/+ and +wrapper/+,
-    # which the overlays cover.
+    # The version-manager roots (+~/.rbenv+, +~/.pyenv+, …) are listed
+    # *whole* because they don't carry credential files — their gem /
+    # package install targets live directly under them, so a narrower
+    # mount would defeat the purpose. mise installs Ruby/Node under
+    # +~/.local/share/mise/installs+, so overlaying +~/.local/share/mise+
+    # covers mise-managed +gem install+; system Ruby installs under
+    # +/usr+, covered by the +/usr+ overlay.
     module ToolchainPaths
       # @return [Array<String>] absolute paths, in stable order, each
       #   one confirmed to be an existing directory at the moment of
       #   the call. Presence-filtered: a developer who doesn't have
       #   Rust installed doesn't get a phantom +~/.rustup+ in their
-      #   workspace.
+      #   workspace, and a missing +~/.gradle/caches+ stays out (on the
+      #   assumption the user doesn't use Gradle yet — its eventual
+      #   bootstrap inside the sandbox without a host lower would fail
+      #   noisily, which is what we want). The whole list is mounted as
+      #   read-write ephemeral overlays by
+      #   {Pikuri::Code::Bash::Sandbox::Bubblewrap}; see the module
+      #   header for why each cache entry is a content-only subdir
+      #   rather than the whole toolchain dir.
       def self.readable
         home = Dir.home
         candidates = [
+          # System + per-user toolchains. Whole dirs — no credential
+          # files live here, and gem/package install targets sit
+          # directly under them.
           '/usr',
           '/opt',
           File.join(home, '.local/share/mise'),
@@ -97,24 +107,10 @@ module Pikuri
           File.join(home, '.rbenv'),
           File.join(home, '.pyenv'),
           File.join(home, '.nvm'),
-          File.join(home, '.rustup')
-        ]
-        candidates.select { |p| File.directory?(p) }.freeze
-      end
-
-      # @return [Array<String>] absolute paths to per-user dependency
-      #   caches the toolchain mutates. Presence-filtered, same
-      #   discipline as {.readable}: a missing +~/.gradle/caches+
-      #   stays out of the list, on the assumption the user doesn't
-      #   use Gradle yet (and Gradle's eventual bootstrap inside the
-      #   sandbox without a host lower would fail noisily, which is
-      #   what we want — see the rationale in
-      #   {Pikuri::Code::Bash::Sandbox::Bubblewrap}). See the module
-      #   header for why each entry is a content-only subdir rather
-      #   than the whole toolchain dir.
-      def self.ephemeral_overlay
-        home = Dir.home
-        candidates = [
+          File.join(home, '.rustup'),
+          # Per-user dependency caches the toolchain mutates. Each is a
+          # content-only subdir that excludes the toolchain's
+          # credential / persistence files — see the module header.
           File.join(home, '.cargo/registry'),
           File.join(home, '.m2/repository'),
           # Gradle: caches/ (jar + journal + transforms + build-cache),

@@ -146,18 +146,6 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
 # Intended for use inside a container where the container itself is
 # the security boundary; the toolchain/skill readable list is moot
 # since everything is reachable anyway.
-# Per-user dependency caches (~/.gradle, ~/.m2/repository,
-# ~/.cargo/registry, ~/.npm, ~/go/pkg/mod, ...) that the toolchain
-# itself mutates when invoked. Included in workspace.readable so the
-# LLM can grep/read them via the file tools (which run on the host),
-# AND passed to Bubblewrap as overlay paths so the bash subprocess
-# sees a fully writable view whose writes vanish at session exit —
-# preventing a poisoned session from leaking into other projects' or
-# the user's normal builds through ~/.gradle/init.d, dep cache
-# corruption, etc. See Pikuri::Code::ToolchainPaths and
-# Pikuri::Code::Bash::Sandbox::Bubblewrap for the rationale.
-toolchain_overlay = Pikuri::Code::ToolchainPaths.ephemeral_overlay
-
 workspace = if yolo
               # --readable/--writable are moot under AllowAll (everything
               # short of the credential denylist resolves anyway); warn so
@@ -173,13 +161,19 @@ workspace = if yolo
             else
               # User-supplied --readable/--writable extras ride the same
               # lists as the toolchain paths, so they propagate to the
-              # file tools AND the bubblewrap binds (--ro-bind for
-              # readable, read+write --bind for writable) with no extra
-              # wiring.
+              # file tools AND the bubblewrap binds. Readable dirs (the
+              # toolchains + caches + skill roots + --readable extras)
+              # are mounted by Bubblewrap as read-write ephemeral
+              # overlays so toolchain installs (gem/bundle/mvn/pip/...)
+              # succeed but vanish at session exit — preventing a
+              # poisoned session from leaking into other projects' or
+              # the user's normal builds. Writable extras get a
+              # persistent read+write --bind. See
+              # Pikuri::Code::ToolchainPaths and
+              # Pikuri::Code::Bash::Sandbox::Bubblewrap for the rationale.
               Pikuri::Workspace::Filesystem.new(
                 project_root:      project_root,
                 readable:          Pikuri::Code::ToolchainPaths.readable +
-                                   toolchain_overlay +
                                    skill_catalog.roots +
                                    extra_readable,
                 writable:          extra_writable,
@@ -191,17 +185,16 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
-# OS-runtime baseline (/etc/ssl, /etc/resolv.conf, /etc/localtime, …)
-# and the toolchain caches mounted as per-session overlays.
+# OS-runtime baseline (/etc/ssl, /etc/resolv.conf, /etc/localtime, …).
+# Readable dirs are mounted as per-session read-write overlays (so
+# toolchain installs succeed and vanish at exit); on a kernel without
+# overlayfs-in-userns support the sandbox degrades to read-only binds.
 # Probes `bwrap` at construction and raises if it isn't installed or the
 # kernel lacks user-namespace support — fail-loud, so a host that
 # expects the sandbox doesn't silently run without one. Disable with
 # --no-sandbox / --yolo.
 sandbox = if sandbox_enabled
-            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(
-              workspace:         workspace,
-              ephemeral_overlay: toolchain_overlay
-            )
+            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
           else
             Pikuri::Code::Bash::Sandbox::NONE
           end

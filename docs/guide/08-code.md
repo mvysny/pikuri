@@ -85,8 +85,7 @@ rejected with an LLM-readable `Error:` string.
 ```ruby
 workspace = Pikuri::Workspace::Filesystem.new(
   project_root: project_root,                  # writable; the anchor
-  readable:     Pikuri::Code::ToolchainPaths.readable +
-                toolchain_overlay,
+  readable:     Pikuri::Code::ToolchainPaths.readable,
   temp:         true                           # ephemeral playground
 )
 ```
@@ -101,11 +100,16 @@ The four kwargs:
   `bin/pikuri-code` actually `Dir.chdir`s the Ruby process to the
   discovered project root at startup so the process cwd and the
   workspace agree on one anchor.
-- **`readable`** — extra read-only roots. `pikuri-code` includes
-  system toolchains (`/usr`, `/opt`) and per-user dependency caches
-  (`~/.gradle`, `~/.m2/repository`, `~/.cargo/registry`, …), so the
-  LLM can `grep` the Ruby stdlib or read JDK sources without those
-  paths becoming writable.
+- **`readable`** — extra roots the LLM can `grep`/`read` via the
+  file tools. `pikuri-code` includes system toolchains (`/usr`,
+  `/opt`), per-user toolchain managers (`~/.rbenv`, `~/.pyenv`,
+  mise, …), and per-user dependency caches (`~/.gradle/caches`,
+  `~/.m2/repository`, `~/.cargo/registry`, …), so the LLM can `grep`
+  the Ruby stdlib or read JDK sources. The file tools read these on
+  the *host* (so they're read-only to the LLM's eyes); inside the
+  bash sandbox the same dirs are mounted read-*write* as ephemeral
+  overlays so `gem install` / `mvn` / `gradle` actually work — see
+  the Sandbox seam below.
 - **`writable`** — extra writable roots. Empty by default for
   `pikuri-code`; the project root is already writable.
 - **`temp: true`** — mints an ephemeral playground subdir under
@@ -181,36 +185,50 @@ implementations:
 
 `Bubblewrap` composes its `bwrap` argv from three sources:
 
-1. `workspace.readable` → each path bound read-only at the same
-   path in the sandbox. `workspace.writable` → each path bound
-   read-write.
+1. `workspace.writable` → each path bound read-write (persistent —
+   a plain `--bind`). `workspace.readable` → each path mounted as a
+   **read-write ephemeral overlay**: the host's real dir is the
+   lower (read-through), and a per-session upper layer under
+   `<workspace.internal_temp>/overlay-<slug>/` absorbs writes. So
+   the bash subprocess sees a fully *writable* `/usr`, `~/.rbenv`,
+   `~/.gradle/caches`, … — but the writes land in the upper and
+   vanish at process exit; the host's real toolchain stays clean.
 2. A curated `/etc` baseline (`ETC_BASELINE`): `/etc/ssl`,
    `/etc/ca-certificates`, `/etc/resolv.conf`,
    `/etc/nsswitch.conf`, `/etc/localtime`, `/etc/hosts`. Allowlist,
    not the whole `/etc` — nothing sensitive (no `/etc/shadow`, no
-   `~/.ssh_config`, no NetworkManager state).
-3. **Per-toolchain ephemeral overlays** (`~/.gradle/caches`,
-   `~/.m2/repository`, `~/.cargo/registry`, …): each mounted as a
-   bubblewrap overlay where the host's real cache is the lower
-   (read-through), and a per-session upper layer under
-   `<workspace.internal_temp>/overlay-<slug>/` absorbs writes.
-   Toolchains see a fully writable cache; the host's real cache
-   stays clean; writes vanish at process exit.
+   `~/.ssh_config`, no NetworkManager state). These stay read-only
+   binds; nothing writes to `resolv.conf`.
+3. `/lib`, `/bin`, `/sbin` (the dynamic linker + core utilities,
+   bound read-only) plus synthetic `/proc`, `/dev`, and `/tmp`.
 
-The overlays exist because gradle/maven/cargo need to *write* to
-their caches to function, but giving the agent persistent
-read-write across sessions would mean a prompt-injected
-`pikuri-code` session could plant `~/.gradle/init.d/payload.gradle`
-and have it execute the next time the user ran `gradle` outside
-the agent. The overlay lets the toolchain function within one
-session and discards everything at session end.
+The reason `readable` dirs are overlaid rather than bound
+read-only is that build tools *expect to write* to their dirs. A
+read-only `~/.rbenv` (or mise/asdf/system Ruby) breaks
+`gem install` / `bundle install` with `EROFS` — the install target
+lives *inside* the toolchain dir, so there's no separate cache to
+single out. The overlay lets the install succeed against an
+ephemeral copy; the warm result survives across `bash` calls
+within one session (the upper is a real dir on disk, re-mounted
+each call — not a tmpfs that dies with the `bwrap` process); and
+across sessions everything is discarded, so a prompt-injected
+session can't plant `~/.gradle/init.d/payload.gradle` and have it
+run the next time the user invokes `gradle` outside the agent.
 
-The bundled overlays are content-only subdirs of each toolchain's
-`$HOME`, deliberately *not* the toolchain's whole `$HOME`. That
-way `~/.gradle/gradle.properties` (which may hold signing keys and
-OSSRH tokens), `~/.gradle/init.d` (a persistence vector),
-`~/.m2/settings.xml`, `~/.cargo/credentials.toml` — those never
-appear in the sandbox at all.
+Two caveats. First, the **cache** entries in `ToolchainPaths` are
+content-only subdirs (`~/.gradle/caches`, not `~/.gradle`),
+deliberately *not* the toolchain's whole `$HOME` — because the
+overlay's lower layer is the host's real file, a narrower mount is
+what keeps `~/.gradle/gradle.properties` (signing keys, OSSRH
+tokens), `~/.gradle/init.d`, `~/.m2/settings.xml`,
+`~/.cargo/credentials.toml` out of the sandbox entirely. The
+version-manager roots (`~/.rbenv`, `~/.pyenv`, …) are listed whole
+because they carry no credential files. Second, overlayfs in a
+user namespace needs **Linux ≥ 5.11**; on an older kernel the
+sandbox probes once at startup, logs a warning, and falls back to
+read-only binds. It still runs — but writes into a toolchain dir
+(e.g. `gem install`) then fail with `EROFS`, surfaced to the LLM
+as the `bash` observation.
 
 ## How the `pikuri-code` wiring looks all together
 

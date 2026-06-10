@@ -13,6 +13,19 @@ rescue Errno::ENOENT
   false
 end
 
+# overlayfs in a user namespace needs Linux >= 5.11. The sandbox now
+# degrades to --ro-bind when it's unavailable, so the overlay-asserting
+# tests gate on this rather than just BWRAP_AVAILABLE.
+OVERLAY_AVAILABLE = BWRAP_AVAILABLE && begin
+  Pikuri::Subprocess.spawn(
+    'bwrap', '--unshare-all', '--share-net', '--ro-bind', '/', '/',
+    '--overlay-src', '/usr', '--tmp-overlay', '/tmp', '--die-with-parent',
+    '/bin/true', chdir: '/'
+  ).wait.status.success?
+rescue Errno::ENOENT
+  false
+end
+
 RSpec.describe Pikuri::Code::Bash::Sandbox do
   describe described_class::NONE do
     it '#wrap returns argv unchanged' do
@@ -92,7 +105,9 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
       end
 
-      it 'does NOT run the overlay probe when ephemeral_overlay is empty' do
+      it 'does NOT run the overlay probe when there are no readable dirs to overlay' do
+        # workspace is project_root-only — nothing in readable, so the
+        # overlay probe would be wasted.
         calls = []
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0]])
         begin
@@ -109,14 +124,14 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
                         'basic probe should not include --tmp-overlay'
       end
 
-      it 'DOES run the overlay probe when ephemeral_overlay is non-empty' do
+      it 'DOES run the overlay probe when the workspace has readable dirs' do
         overlay_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-probe-')).realpath
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [overlay_dir])
 
         calls = []
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0], [true, 0]])
         begin
-          described_class.new(workspace: ws, ephemeral_overlay: [overlay_dir])
+          described_class.new(workspace: ws)
         ensure
           restore_subprocess_spawn(original)
           FileUtils.rm_rf(overlay_dir)
@@ -130,36 +145,45 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
                         "second probe should include --tmp-overlay; got #{bwrap_calls.last.inspect}"
       end
 
-      it 'surfaces a kernel-pointer error when the overlay probe fails' do
-        overlay_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-probe-fail-')).realpath
-        ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [overlay_dir])
+      it 'degrades to --ro-bind (no raise) when the overlay probe fails' do
+        ro_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-degrade-')).realpath
+        ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [ro_dir])
 
         calls = []
-        # First probe (basic) succeeds; second probe (overlay) fails.
+        # Basic probe succeeds; overlay probe fails (old kernel).
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0], [false, 1]])
         begin
-          err = assert_raises(RuntimeError) do
-            described_class.new(workspace: ws, ephemeral_overlay: [overlay_dir])
-          end
-          assert_includes err.message, 'overlay probe failed'
-          assert_includes err.message, '5.11',
-                          'expected kernel-version hint in the message'
-          assert_includes err.message, 'ephemeral_overlay: []',
-                          'expected escape-hatch hint in the message'
+          # Construction must NOT raise — it degrades.
+          sandbox = described_class.new(workspace: ws)
+          restore_subprocess_spawn(original)
+
+          # wrap() does not spawn, so it's safe after restore. The
+          # readable dir falls back to a plain --ro-bind, no overlay.
+          argv = sandbox.wrap(['true'])
+          assert argv.each_cons(2).any? { |a, b| a == '--ro-bind' && b == ro_dir.to_s },
+                 "expected --ro-bind #{ro_dir} in the degraded argv: #{argv.inspect}"
+          refute argv.each_cons(2).any? { |a, b| a == '--overlay-src' && b == ro_dir.to_s },
+                 "did not expect an overlay for #{ro_dir} after the probe failed: #{argv.inspect}"
         ensure
           restore_subprocess_spawn(original)
-          FileUtils.rm_rf(overlay_dir)
+          FileUtils.rm_rf(ro_dir)
         end
       end
 
       it 'does NOT run the overlay probe when the basic probe already failed' do
+        # Give the workspace a readable dir so the overlay probe WOULD
+        # run absent the basic-probe gate — then assert it doesn't.
+        ro_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-gate-')).realpath
+        ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [ro_dir])
+
         calls = []
         # Basic probe fails; overlay probe must not be attempted.
         original = stub_subprocess_spawn(call_log: calls, results: [[false, 1]])
         begin
-          assert_raises(RuntimeError) { described_class.new(workspace: workspace) }
+          assert_raises(RuntimeError) { described_class.new(workspace: ws) }
         ensure
           restore_subprocess_spawn(original)
+          FileUtils.rm_rf(ro_dir)
         end
 
         bwrap_calls = calls.select { |argv| argv.first == 'bwrap' }
@@ -245,31 +269,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
     end
 
-    it 'refuses construction when an ephemeral_overlay path is not in workspace.readable' do
-      ws = Pikuri::Workspace::Filesystem.new(project_root: root)
-      stray = Pathname.new(Dir.mktmpdir('pikuri-sb-stray-')).realpath
-      begin
-        err = assert_raises(RuntimeError) do
-          described_class.new(workspace: ws, ephemeral_overlay: [stray])
-        end
-        assert_includes err.message, 'ephemeral_overlay'
-        assert_includes err.message, 'workspace.readable'
-      ensure
-        FileUtils.rm_rf(stray)
-      end
-    end
-
-    if BWRAP_AVAILABLE
-      it 'constructs successfully when bwrap is available' do
-        sandbox = described_class.new(workspace: workspace)
-        assert_kind_of described_class, sandbox
-      end
-
-      it '#wrap emits --overlay-src/--overlay for ephemeral_overlay paths (not --ro-bind)' do
+    if OVERLAY_AVAILABLE
+      it '#wrap overlays workspace.readable dirs (--overlay-src/--overlay, not --ro-bind)' do
         overlay_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-overlay-')).realpath
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [overlay_dir])
         begin
-          sandbox = described_class.new(workspace: ws, ephemeral_overlay: [overlay_dir])
+          sandbox = described_class.new(workspace: ws)
           argv = sandbox.wrap(['true'])
 
           # The overlay path appears as --overlay-src <lower> followed by
@@ -304,19 +309,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
           FileUtils.remove_entry(ws.internal_temp.to_s) if ws.internal_temp&.exist?
         end
       end
+    end
 
-      it 'readable paths NOT in ephemeral_overlay still get --ro-bind' do
-        plain_ro = Pathname.new(Dir.mktmpdir('pikuri-sb-ro-')).realpath
-        ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [plain_ro])
-        begin
-          sandbox = described_class.new(workspace: ws)
-          argv = sandbox.wrap(['true'])
-
-          assert argv.each_cons(2).any? { |a, b| a == '--ro-bind' && b == plain_ro.to_s },
-                 "expected --ro-bind #{plain_ro} in #{argv.inspect}"
-        ensure
-          FileUtils.rm_rf(plain_ro)
-        end
+    if BWRAP_AVAILABLE
+      it 'constructs successfully when bwrap is available' do
+        sandbox = described_class.new(workspace: workspace)
+        assert_kind_of described_class, sandbox
       end
 
       it '#wrap composes the expected bwrap argv shape' do

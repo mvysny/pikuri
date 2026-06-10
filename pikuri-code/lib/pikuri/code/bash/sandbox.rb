@@ -79,37 +79,59 @@ module Pikuri
         #   own processes due to +--unshare-pid+) and +/dev+ (synthetic,
         #   +null+/+zero+/+random+/+tty+ only) round out the synthetic
         #   mounts.
-        # * +workspace.readable+ → +--ro-bind+ each path at the same
-        #   path in the sandbox, EXCEPT paths that also appear in
-        #   +ephemeral_overlay:+ (see below).
-        # * +workspace.writable+ → +--bind+ (read+write) each path. The
-        #   workspace temp's host path (under +~/.cache/pikuri+, not
-        #   under +/tmp+) is bound at its host path too — so the same
-        #   dir is reachable via both +/tmp+ (LLM reflex) and the host
-        #   path (advertised by the system prompt, used consistently
-        #   by the file tools off the host filesystem).
-        # * +ephemeral_overlay+ — per-user dependency caches the
-        #   toolchain mutates (+~/.gradle/caches+, +~/.m2/repository+,
-        #   +~/.cargo/registry+, …). Each path is mounted as a
-        #   bubblewrap overlay: the host's real dir is the lower
-        #   (read-through), and a per-session upper +
-        #   workdir under +<workspace.internal_temp>/overlay-<slug>/+
-        #   absorb writes. Result: gradle/maven/cargo see a fully
-        #   read-write view of their cache, the host's real cache is
-        #   untouched, and on process exit the umbrella (and with it
-        #   every upper layer) is removed by the workspace's
-        #   {Pikuri::Finalizers} registration. Within one pikuri-code session writes survive
-        #   across bash calls (warm cache after the first build);
-        #   across sessions they don't (so a session that gets
-        #   prompt-injected into poisoning the in-sandbox view of
-        #   gradle's cache cannot propagate the damage to the host's
-        #   normal +gradle+ invocations or to a future pikuri-code
-        #   session). Note: the overlay paths are deliberately *narrow*
-        #   subdirs (e.g. +~/.gradle/caches+, not +~/.gradle+) so
-        #   +gradle.properties+ / +init.d+ / +.credentials+ never
-        #   reach the sandbox at all — see
-        #   {Pikuri::Code::ToolchainPaths} for the credential / persistence
-        #   exclusion rationale.
+        # * +workspace.readable+ → mounted as a *read-write ephemeral
+        #   overlay* each (when the kernel supports overlayfs in a user
+        #   namespace; +--ro-bind+ fallback otherwise — see "Overlay
+        #   support" below). The host's real dir is the lower
+        #   (read-through), and a per-session upper + workdir under
+        #   +<workspace.internal_temp>/overlay-<slug>/+ absorb writes.
+        #   Result: the bash subprocess sees a fully read-write view of
+        #   +/usr+, +~/.rbenv+, +~/.gradle/caches+, +~/.m2/repository+,
+        #   …, so +gem install+ / +bundle install+ / +mvn+ / +gradle+ /
+        #   +cargo+ / +pip+ all succeed; the host's real toolchain and
+        #   caches are untouched; and on process exit the umbrella (and
+        #   with it every upper layer) is removed by the workspace's
+        #   {Pikuri::Finalizers} registration. Within one pikuri-code
+        #   session writes survive across bash calls (warm cache after
+        #   the first build — the upper is a persistent dir on disk,
+        #   re-mounted each call, *not* a tmpfs that dies with the
+        #   bwrap process); across sessions they don't (so a session
+        #   that gets prompt-injected into poisoning the in-sandbox
+        #   view of gradle's cache or a toolchain binary cannot
+        #   propagate the damage to the host's normal +gradle+
+        #   invocations or to a future pikuri-code session). Note: the
+        #   cache entries in {Pikuri::Code::ToolchainPaths} are
+        #   deliberately *narrow* subdirs (e.g. +~/.gradle/caches+, not
+        #   +~/.gradle+) so +gradle.properties+ / +init.d+ /
+        #   +.credentials+ never reach the sandbox at all — the lower
+        #   layer is the host's real file, so a narrow mount, not the
+        #   write's ephemerality, is what keeps secrets out. See
+        #   {Pikuri::Code::ToolchainPaths} for the credential /
+        #   persistence exclusion rationale.
+        # * +workspace.writable+ → +--bind+ (read+write, *persistent* —
+        #   not an overlay) each path. The workspace temp's host path
+        #   (under +~/.cache/pikuri+, not under +/tmp+) is bound at its
+        #   host path too — so the same dir is reachable via both
+        #   +/tmp+ (LLM reflex) and the host path (advertised by the
+        #   system prompt, used consistently by the file tools off the
+        #   host filesystem).
+        #
+        # == Overlay support
+        #
+        # overlayfs in a user namespace needs Linux ≥ 5.11. The
+        # constructor probes for it once and remembers the result:
+        # when supported, +workspace.readable+ dirs are overlaid (the
+        # writes-just-work path above); when not, they fall back to
+        # +--ro-bind+ and the sandbox still functions — but writes into
+        # a read-only toolchain dir (e.g. +gem install+ into
+        # +~/.rbenv+) fail with +EROFS+, surfaced to the LLM as the
+        # bash observation. The probe degrades with a logged warning
+        # rather than raising, so an old-kernel host still gets a
+        # working (if less convenient) sandbox. {SYSTEM_ROOTS} and
+        # {ETC_BASELINE} stay +--ro-bind+ regardless — nothing writes
+        # to +/lib+ or +/etc/resolv.conf+ (and overlayfs is
+        # directory-only, so the single-file +/etc+ entries can't be
+        # overlays anyway).
         #
         # == Concurrency contract
         #
@@ -174,7 +196,7 @@ module Pikuri
         # == Failures that surface at construction
         #
         # The constructor probes the workspace shape, then +bwrap+ with a
-        # no-op invocation. Four cases raise loudly:
+        # no-op invocation. Three cases raise loudly:
         #
         # * Workspace lists +/+ as writable (typically
         #   {Workspace::Filesystem::AllowAll}) — Bubblewrap exists for
@@ -190,15 +212,22 @@ module Pikuri
         #   file tools; fail at construction instead of letting that
         #   trap fire mid-conversation.
         # * +bwrap+ not on +PATH+ → +Errno::ENOENT+ wrapped as +RuntimeError+.
-        # * Kernel lacks user-namespace support (some hardened distros)
-        #   → +bwrap+ exits non-zero, surfaced as +RuntimeError+.
+        # * Kernel lacks user-namespace support entirely (some hardened
+        #   distros) → the basic +bwrap+ probe exits non-zero, surfaced
+        #   as +RuntimeError+.
         #
-        # Either way the binary should fail at boot, not on the first
-        # +bash+ tool call — matches the "errors are loud" convention.
-        # The host opts out of sandboxing via +--no-sandbox+ /
-        # +--yolo+.
+        # The constructor *also* probes overlayfs support, but a failure
+        # there does NOT raise — it degrades to read-only binds with a
+        # logged warning (see "Overlay support" above). A working
+        # sandbox on an old kernel beats no sandbox at all.
+        #
+        # The raising cases fail at boot, not on the first +bash+ tool
+        # call — matches the "errors are loud" convention. The host
+        # opts out of sandboxing entirely via +--no-sandbox+ / +--yolo+.
         class Bubblewrap
           BWRAP_BINARY = 'bwrap'
+
+          LOGGER = Pikuri.logger_for('Sandbox')
 
           # System-root dirs the subprocess needs that aren't in
           # {Workspace#readable}. Each is +--ro-bind+'d if it exists on
@@ -271,13 +300,9 @@ module Pikuri
           #   per-host readable/writable roots, the +chdir+ target for
           #   the subprocess, and the parent of the per-session
           #   overlay state ({Workspace::Filesystem#internal_temp}).
-          # @param ephemeral_overlay [Array<String, Pathname>] paths
-          #   (must each be a member of +workspace.readable+) to mount
-          #   as bubblewrap overlays instead of read-only binds.
-          #   Typically wired with
-          #   +Pikuri::Code::ToolchainPaths.ephemeral_overlay+. Empty
-          #   by default — pure read-only baseline. See the class
-          #   header for the rationale.
+          #   Every +workspace.readable+ dir is mounted as a read-write
+          #   ephemeral overlay (or +--ro-bind+ if the kernel lacks
+          #   overlayfs-in-userns support); see the class header.
           # @raise [RuntimeError] if the workspace lists +/+ as writable
           #   (Bubblewrap is for filesystem containment, which is moot
           #   when the entire filesystem is the workspace — typically
@@ -285,23 +310,19 @@ module Pikuri
           #   {NONE} instead).
           # @raise [RuntimeError] if the workspace has +temp+ set but
           #   +alias_tmp_to_temp+ unset — see the class header.
-          # @raise [RuntimeError] if any +ephemeral_overlay+ path is
-          #   not also a member of +workspace.readable+ (so the LLM's
-          #   host-side file tools and the sandbox view stay
-          #   consistent on which paths are visible).
           # @raise [RuntimeError] if any workspace path equals or is
           #   an ancestor of a known container/VM control socket
           #   (+/var/run/docker.sock+, +containerd.sock+, +podman.sock+,
           #   …); see {DENIED_CONTAINER_SOCKETS}.
           # @raise [RuntimeError] if +bwrap+ isn't on +PATH+ or fails
-          #   its probe (typically: kernel without user-namespace
-          #   support).
-          def initialize(workspace:, ephemeral_overlay: [])
+          #   its basic probe (typically: kernel without user-namespace
+          #   support). A *separate* overlayfs probe failure does NOT
+          #   raise — it degrades to read-only binds (see the class
+          #   header's "Overlay support").
+          def initialize(workspace:)
             @workspace = workspace
-            @ephemeral_overlay = ephemeral_overlay.map { |p| Pathname.new(p).realpath }.uniq
             reject_unbounded_workspace!
             reject_unaliased_temp!
-            reject_overlay_outside_readable!
             reject_container_socket_exposure!
             check_bwrap!
           end
@@ -388,25 +409,14 @@ module Pikuri
                   'intend the agent to drive a container daemon.'
           end
 
-          # Every +ephemeral_overlay+ path must also be in
-          # +workspace.readable+ — otherwise the LLM's host-side file
-          # tools (Read/Grep/Glob, which read the real host
-          # filesystem, not the sandbox view) would reject the same
-          # path as outside the workspace while bash inside the
-          # sandbox could see it through the overlay. That asymmetry
-          # would burn an entire turn of LLM confusion every time. Fail
-          # at construction.
-          def reject_overlay_outside_readable!
-            readable = @workspace.readable.to_set
-            stray = @ephemeral_overlay.reject { |p| readable.include?(p) }
-            return if stray.empty?
-
-            raise 'Code::Bash::Sandbox::Bubblewrap: ephemeral_overlay paths ' \
-                  "#{stray.map(&:to_s).inspect} are not in workspace.readable " \
-                  '— the LLM would see one view via Read/Grep/Glob and a different ' \
-                  "view via bash. Add the path(s) to the workspace's readable: list."
-          end
-
+          # Probes +bwrap+ itself (raises if missing or user namespaces
+          # are unsupported), then probes overlayfs support and caches
+          # the result in +@overlay_supported+. The overlay probe runs
+          # only when there's at least one dir that would actually be
+          # overlaid — i.e. a +workspace.readable+ entry that isn't
+          # already a +workspace.writable+ +--bind+ (a project-root-only
+          # workspace overlays nothing, so the second spawn would be
+          # wasted).
           def check_bwrap!
             result = Pikuri::Subprocess.spawn(
               BWRAP_BINARY,
@@ -422,7 +432,8 @@ module Pikuri
                     'support enabled in the kernel? Pass --no-sandbox to skip.'
             end
 
-            check_overlay! unless @ephemeral_overlay.empty?
+            overlayable = @workspace.readable - @workspace.writable
+            @overlay_supported = overlayable.empty? ? false : probe_overlay_support?
           rescue Errno::ENOENT
             raise "Code::Bash::Sandbox::Bubblewrap: 'bwrap' not found on PATH. " \
                   'Install bubblewrap (apt-get install bubblewrap / dnf install ' \
@@ -430,11 +441,14 @@ module Pikuri
           end
 
           # Second-stage probe: overlayfs in a user namespace requires
-          # Linux ≥ 5.11. The basic +check_bwrap!+ above succeeds on
-          # older kernels too (it doesn't touch overlay), so without
-          # this stage a kernel < 5.11 would pass construction and
-          # then fail at the *first* bash tool call with a confusing
-          # mount error. Probe at boot, fail loud at boot.
+          # Linux ≥ 5.11. The basic +check_bwrap!+ probe succeeds on
+          # older kernels too (it doesn't touch overlay), so we probe
+          # separately here. Unlike the basic probe this does NOT raise
+          # on failure — it logs a warning and returns +false+, and
+          # {#bwrap_args} falls back to +--ro-bind+ for the readable
+          # dirs. A working sandbox (toolchain dirs visible read-only,
+          # writes failing with +EROFS+) beats no sandbox on an old
+          # kernel; the host can still pass +--no-sandbox+ to opt out.
           #
           # Uses +--overlay-src /usr --tmp-overlay /tmp+: declares
           # +/usr+ as the read-only lower layer (always present on
@@ -443,7 +457,9 @@ module Pikuri
           # back the upper with tmpfs. No host paths to manage, no
           # leftover state, and the +--overlay-src+ is required —
           # +--tmp-overlay+ refuses to construct without at least one.
-          def check_overlay!
+          #
+          # @return [Boolean] whether overlayfs-in-userns works here.
+          def probe_overlay_support?
             result = Pikuri::Subprocess.spawn(
               BWRAP_BINARY,
               '--unshare-all', '--share-net',
@@ -454,20 +470,21 @@ module Pikuri
               '/bin/true',
               chdir: '/'
             ).wait
-            return if result.status.success?
+            return true if result.status.success?
 
-            raise 'Code::Bash::Sandbox::Bubblewrap: overlay probe failed ' \
-                  "(exit #{result.status.exitstatus}). The bubblewrap " \
-                  'sandbox can run but overlayfs in a user namespace is ' \
-                  'not supported on this kernel (Linux ≥ 5.11 required). ' \
-                  'Construct with ephemeral_overlay: [] to skip overlays, ' \
-                  'or pass --no-sandbox to disable the sandbox entirely.'
+            LOGGER.warn(
+              "overlayfs in a user namespace is unavailable (bwrap overlay probe " \
+              "exit #{result.status.exitstatus}; Linux >= 5.11 required). Falling " \
+              'back to read-only binds for toolchain dirs — gem/bundle/pip/build ' \
+              'installs into read-only toolchain dirs will fail with EROFS. Pass ' \
+              '--no-sandbox to disable the sandbox entirely.'
+            )
+            false
           end
 
           def bwrap_args
             args = []
             mounted = Set.new
-            overlay_set = @ephemeral_overlay.map(&:to_s).to_set
 
             # 1. OS-runtime baseline — NOT in workspace by design.
             (SYSTEM_ROOTS + ETC_BASELINE).each do |p|
@@ -494,9 +511,11 @@ module Pikuri
             # 3. Workspace-derived mounts. Writable wins on overlap
             #    (writable ⊆ readable in the Workspace constructor;
             #    iterating writable first + the `mounted` guard
-            #    ensures each path is mounted once). Readable paths
-            #    that are also in @ephemeral_overlay get an overlay
-            #    mount instead of a plain --ro-bind.
+            #    ensures each path is mounted once). Writable paths are
+            #    plain read+write --bind (persistent). Readable paths
+            #    are read-write ephemeral overlays when overlayfs is
+            #    supported (so toolchain installs succeed but vanish at
+            #    session exit), falling back to --ro-bind otherwise.
             @workspace.writable.each do |p|
               s = p.to_s
               next if mounted.include?(s)
@@ -506,7 +525,7 @@ module Pikuri
             @workspace.readable.each do |p|
               s = p.to_s
               next if mounted.include?(s)
-              args.concat(overlay_set.include?(s) ? overlay_mount_args(s) : ['--ro-bind', s, s])
+              args.concat(@overlay_supported ? overlay_mount_args(s) : ['--ro-bind', s, s])
               mounted << s
             end
 
