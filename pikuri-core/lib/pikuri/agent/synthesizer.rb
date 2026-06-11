@@ -142,7 +142,10 @@ module Pikuri
         # than the original loop.
         synth_id = ctx.agent.id.empty? ? 'synthesizer' : "#{ctx.agent.id}_synthesizer"
         synth = Agent.new(
-          transport: ctx.agent.transport,
+          # Carry the parent's resolved cap on the transport so the synth
+          # reuses it without a re-probe — the cap rides {ChatTransport}
+          # now, not an +Agent.new(context_window:)+ kwarg.
+          transport: ctx.agent.transport.with(context_window: ctx.agent.context_window_cap),
           system_prompt: Synthesizer::SYSTEM_PROMPT,
           # Defensive budget with the default :raise policy: the
           # synth has no tools so it should never tick, but a buggy
@@ -151,7 +154,6 @@ module Pikuri
           # not a rescue.
           step_limit: Control::StepLimit.new(max: 1),
           cancellable: ctx.agent.cancellable,
-          context_window: ctx.agent.context_window_cap,
           id: synth_id,
           streaming: ctx.agent.streaming
         ) { |c| c.add_listeners(ctx.sub_agent_listeners(id: synth_id)) }

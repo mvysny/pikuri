@@ -252,8 +252,8 @@ RSpec.describe Pikuri::Agent do
     end
 
     it 'emits a one-shot Event::ContextCap at construction so TokenLog can pick the cap up' do
-      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                        system_prompt: 's', context_window: 32_768) do |c|
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 32_768),
+                        system_prompt: 's') do |c|
         c.add_listener recorder
       end
 
@@ -272,23 +272,23 @@ RSpec.describe Pikuri::Agent do
 
       it 'pushes the explicit cap onto every TokenLog via the ContextCap event' do
         # The transport has no :openai provider, so the probe never runs;
-        # the explicit context_window: is used verbatim.
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's', context_window: 32_768) { |c| wire_token_log(c) }
+        # the transport's context_window is used verbatim.
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 32_768),
+                          system_prompt: 's') { |c| wire_token_log(c) }
 
         assert_equal 32_768, token_log.context_window_cap
       end
 
       it 'exposes the resolved cap via #context_window_cap' do
-        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                  system_prompt: 's', context_window: 8_192) { |c| wire_token_log(c) }
+        agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192),
+                                  system_prompt: 's') { |c| wire_token_log(c) }
 
         assert_equal 8_192, agent.context_window_cap
       end
 
       it 'leaves cap nil when there is no explicit cap and the probe does not apply' do
         # Non-:openai transport → ContextWindowDetector returns nil
-        # without probing, and no explicit context_window: was given.
+        # without probing, and the transport carries no context_window.
         agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                                   system_prompt: 's') { |c| wire_token_log(c) }
 
@@ -301,8 +301,8 @@ RSpec.describe Pikuri::Agent do
       let(:token_log) { Pikuri::Agent::Listener::TokenLog.new }
 
       def build_agent
-        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                          system_prompt: 's', context_window: 8_192) do |c|
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192),
+                          system_prompt: 's') do |c|
           c.add_listener recorder
           c.add_listener token_log
         end
@@ -321,10 +321,28 @@ RSpec.describe Pikuri::Agent do
 
       it 'does not switch when the transport is structurally identical' do
         agent = build_agent
-        agent.run_loop(user_message: 'hi', transport: Pikuri::Agent::ChatTransport.new(model: 'm'))
+        # Identical includes the cap now that it rides ChatTransport — a
+        # transport equal in every field (model + context_window) is a
+        # no-op switch.
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 8_192))
 
         assert_nil fake_chat.model_switches
         assert_equal 'm', agent.model
+      end
+
+      it 'switches when only the context_window differs, re-emitting the cap' do
+        agent = build_agent
+        recorder.events.clear
+        # Same model, different cap: a cap-only change is a real switch
+        # (the transport is structurally different) and re-resolves the
+        # cap — proof the window travels with the transport.
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 64_000))
+
+        assert_equal 64_000, agent.context_window_cap
+        assert_equal 64_000, token_log.context_window_cap
+        assert recorder.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) && e.cap == 64_000 }
       end
 
       it 'emits ModelSwitched then a fresh ContextCap on a switch' do
@@ -347,23 +365,40 @@ RSpec.describe Pikuri::Agent do
         assert_equal 'big', ev.to.model
       end
 
-      it 'keeps the explicit cap sticky across a switch (no re-probe)' do
+      it "adopts the new transport's own cap on a switch (no bleed from the old one)" do
         agent = build_agent
+        agent.run_loop(user_message: 'hi',
+                       transport: Pikuri::Agent::ChatTransport.new(
+                         model: 'big', provider: :openai, assume_model_exists: true,
+                         context_window: 2_000_000
+                       ))
+
+        assert_equal 2_000_000, agent.context_window_cap
+        assert_equal 2_000_000, token_log.context_window_cap
+      end
+
+      it 'drops the cap to nil when switching to a capless transport the probe cannot resolve' do
+        agent = build_agent
+        # The new transport carries no cap and (api_base nil → global
+        # openai_api_base nil) the probe does not apply, so the boot
+        # model's 8_192 must NOT linger: the cap is per-model now.
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true
                        ))
 
-        assert_equal 8_192, agent.context_window_cap
-        assert_equal 8_192, token_log.context_window_cap
+        assert_nil agent.context_window_cap
+        assert_nil token_log.context_window_cap
       end
 
       it 'routes a cross-server switch through with_context then with_model' do
         agent = build_agent
+        # Explicit cap so the switch's cap resolution stays off the
+        # network (the cross-server target would otherwise be probed).
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true,
-                         api_base: 'http://cloud:9000/v1', api_key: 'sek'
+                         api_base: 'http://cloud:9000/v1', api_key: 'sek', context_window: 128_000
                        ))
 
         # A dedicated context was installed, carrying the new server's
@@ -390,7 +425,7 @@ RSpec.describe Pikuri::Agent do
         agent.run_loop(user_message: 'hi',
                        transport: Pikuri::Agent::ChatTransport.new(
                          model: 'big', provider: :openai, assume_model_exists: true,
-                         api_base: 'http://cloud:9000/v1', api_key: 'sek'
+                         api_base: 'http://cloud:9000/v1', api_key: 'sek', context_window: 128_000
                        ))
 
         ev = recorder.events.find { |e| e.is_a?(Pikuri::Agent::Event::ModelSwitched) }

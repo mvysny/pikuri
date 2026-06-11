@@ -55,7 +55,22 @@ module Pikuri
     #     rides the process-global config key. Mapped to the provider's
     #     +#{provider}_api_key+ slot by {Agent}. Redacted in {#inspect}
     #     so it never leaks into a log line or backtrace.
-    class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key)
+    # @!attribute [r] context_window
+    #   @return [Integer, nil] explicit context-window cap for this
+    #     model on this server, or +nil+ to defer to
+    #     {ContextWindowDetector}'s probe. Travels with the model
+    #     because the cap *is* a per-model-per-server property: a
+    #     {Ctrl+P}-style switch to a different transport must carry its
+    #     own cap, not inherit the previous model's. Never sent to
+    #     ruby_llm (it is neither a {#chat_kwargs} entry nor a
+    #     connection slot) — pure pikuri metadata read by
+    #     {Agent#detect_and_emit_context_cap!}. The cap-inheritance
+    #     channel too: the +agent+ tool from +pikuri-subagents+ and the
+    #     synthesizer hand a spawned agent +parent.transport.with(
+    #     context_window: parent.context_window_cap)+ so the parent's
+    #     *resolved* cap (explicit or probed) rides along without a
+    #     re-probe.
+    class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key, :context_window)
       # Build an +:openai+-provider transport for an OpenAI-compatible
       # server (a local llama.cpp, a cloud endpoint, ...), carrying that
       # server's connection so the agent rides a per-chat
@@ -80,16 +95,22 @@ module Pikuri
       #   ruby_llm's bundled registry)
       # @param api_key [String] API key for the server; the conventional
       #   +"not-needed"+ placeholder for a keyless local server
+      # @param context_window [Integer, nil] explicit context-window cap
+      #   for this model, or +nil+ to defer to {ContextWindowDetector}'s
+      #   +/props+ probe (the right default for a local llama.cpp, which
+      #   reports its launched +n_ctx+; the right *override* for a cloud
+      #   server the probe can't reach, e.g. a 2M-window model on x.ai)
       # @return [ChatTransport] a transport whose +api_base+ is the
       #   normalized +.../v1+ URL and whose +api_key+ is +api_key+
-      def self.from_openai_server(server:, model:, api_key: 'not-needed')
+      def self.from_openai_server(server:, model:, api_key: 'not-needed', context_window: nil)
         base = server.to_s.strip.chomp('/').delete_suffix('/v1')
         new(
           model: model,
           provider: :openai,
           assume_model_exists: true,
           api_base: "#{base}/v1",
-          api_key: api_key
+          api_key: api_key,
+          context_window: context_window
         )
       end
 
@@ -98,11 +119,12 @@ module Pikuri
       # @param assume_model_exists [Boolean]
       # @param api_base [String, nil]
       # @param api_key [String, nil]
+      # @param context_window [Integer, nil]
       # @raise [ArgumentError] if +api_base+ or +api_key+ is set without
       #   a +provider+ (the provider names the config slots the
       #   connection overrides map onto)
       def initialize(model:, provider: nil, assume_model_exists: false,
-                     api_base: nil, api_key: nil)
+                     api_base: nil, api_key: nil, context_window: nil)
         if (api_base || api_key) && provider.nil?
           raise ArgumentError, "api_base/api_key require a provider, got #{provider.inspect}"
         end
@@ -136,7 +158,7 @@ module Pikuri
       def inspect
         "#<#{self.class} model=#{model.inspect} provider=#{provider.inspect} " \
           "assume_model_exists=#{assume_model_exists} api_base=#{api_base.inspect} " \
-          "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'}>"
+          "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'} context_window=#{context_window.inspect}>"
       end
       alias to_s inspect
     end

@@ -116,17 +116,6 @@ module Pikuri
     #   every +after_tool_result+ and each item becomes a
     #   {Event::UserTurn} with +mid_loop: true+. +nil+ means
     #   "no mid-loop injection" (the bundled CLIs default).
-    # @param context_window [Integer, nil] explicit context-window
-    #   cap. When set, it's used verbatim and the auto-detection
-    #   probe is skipped; +nil+ defers to {ContextWindowDetector}
-    #   (a llama.cpp +/props+ probe, which itself yields +nil+ for a
-    #   non-llama server). This is also the cap-inheritance channel:
-    #   the +agent+ tool from +pikuri-subagents+ and the synthesizer
-    #   pass the parent's already-resolved {#context_window_cap}
-    #   here so a spawned agent reuses it instead of re-probing. The
-    #   resolved cap is emitted as an {Event::ContextCap} immediately
-    #   after construction, and re-resolved + re-emitted on every
-    #   model switch (see {#run_loop}'s +transport:+).
     # @param id [String] unique identifier for this agent. Empty
     #   for the main agent; sub-agents get persona-rooted ids
     #   like +"researcher 0"+, +"researcher 1"+, +"file_miner 0"+, ...
@@ -162,7 +151,7 @@ module Pikuri
     # @return [Agent]
     def initialize(transport:, system_prompt:,
                    step_limit: nil, cancellable: nil, interloper: nil,
-                   context_window: nil, id: '',
+                   id: '',
                    streaming: false,
                    &block)
       @transport = transport.model ? transport : transport.with(model: RubyLLM.config.default_model)
@@ -179,7 +168,6 @@ module Pikuri
       # Stashed for {#run_configure}, which runs the failure-prone
       # build phase below out of a separate method.
       @block = block
-      @context_window = context_window
 
       # Register *before* the build phase so a mid-construction raise
       # is still recoverable: extensions arm their cleanup via
@@ -290,13 +278,14 @@ module Pikuri
     attr_reader :extensions
 
     # @return [Integer, nil] resolved context-window cap — the
-    #   explicit +context_window:+ if one was given, else what
+    #   {ChatTransport#context_window} if one was given, else what
     #   {ContextWindowDetector} probed. +nil+ when neither produced
     #   a value (a non-llama server with no explicit cap). Re-resolved
     #   on every model switch (see {#run_loop}'s +transport:+). Read by
     #   extensions that spawn their own ruby_llm calls (notably the
-    #   +agent+ tool from +pikuri-subagents+, so spawned sub-agents
-    #   inherit the same cap without re-probing).
+    #   +agent+ tool from +pikuri-subagents+, which hands a sub-agent
+    #   +parent.transport.with(context_window: this)+ so the resolved
+    #   cap rides along without a re-probe).
     attr_reader :context_window_cap
 
     # Final assistant message content for the most recent
@@ -534,10 +523,12 @@ module Pikuri
     end
 
     # Resolve the context-window cap and announce it on the listener
-    # stream as an {Event::ContextCap}. An explicit/inherited
-    # +context_window:+ wins verbatim; otherwise {ContextWindowDetector}
-    # probes the server (yielding +nil+ for a non-llama one). Shared by
-    # {#run_configure} (construction) and {#apply_transport!} (each
+    # stream as an {Event::ContextCap}. The transport's explicit
+    # +context_window+ wins verbatim; otherwise {ContextWindowDetector}
+    # probes the server (yielding +nil+ for a non-llama one). Because the
+    # cap rides {ChatTransport}, a model switch resolves the *new*
+    # transport's cap — explicit caps don't bleed across models. Shared
+    # by {#run_configure} (construction) and {#apply_transport!} (each
     # model switch) so "how the cap is resolved and emitted" lives in
     # one place.
     #
@@ -549,7 +540,7 @@ module Pikuri
       # detector defaults to still names the *old* server, so derive the
       # base from the transport (falling back to the global base for a
       # transport that rides it).
-      @context_window_cap = @context_window ||
+      @context_window_cap = @transport.context_window ||
                             ContextWindowDetector.detect(
                               @transport,
                               openai_base: @transport.api_base || RubyLLM.config.openai_api_base

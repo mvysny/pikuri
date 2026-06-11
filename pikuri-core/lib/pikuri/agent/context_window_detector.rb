@@ -19,8 +19,9 @@ module Pikuri
     # after every model switch to feed {Listener::TokenLog} a cap it can
     # render alongside the running context size (so the +ctx=12.2k/32.0k+
     # line tells the operator how close the conversation is to the limit).
-    # The caller prefers an explicit/inherited +context_window:+ over this
-    # probe; this runs only when none was given.
+    # The caller prefers an explicit/inherited
+    # {ChatTransport#context_window} over this probe; this runs only when
+    # the transport carries none.
     #
     # == Why no ruby_llm registry source
     #
@@ -32,8 +33,8 @@ module Pikuri
     # have to caveat defeats the cap's only job (a number trustworthy
     # enough to act on before +RubyLLM::ContextLengthExceededError+), so
     # pikuri deliberately does not consult it. The probe (server truth)
-    # and an explicit +context_window:+ (operator/parent truth) are the
-    # only two sources; absent both, the cap is +nil+.
+    # and an explicit {ChatTransport#context_window} (operator/parent
+    # truth) are the only two sources; absent both, the cap is +nil+.
     #
     # == The openai-provider gate + auto-derived URL
     #

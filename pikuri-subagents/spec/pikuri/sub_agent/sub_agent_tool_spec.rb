@@ -248,9 +248,9 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
   describe 'sub-agent naming and control derivation' do
     # Capture every kwarg handed to Pikuri::Agent.new so the spec can
-    # read the generated +id:+ / +step_limit:+ / +cancellable:+ /
-    # +context_window:+ without having to introspect a built
-    # Pikuri::Agent.
+    # read the generated +id:+ / +step_limit:+ / +cancellable:+ (the
+    # context-window cap rides +transport.context_window+ now, not a
+    # ctor kwarg) without having to introspect a built Pikuri::Agent.
     def with_captured_agent_new
       received = []
       original_new = Pikuri::Agent.method(:new)

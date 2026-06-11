@@ -213,9 +213,11 @@ RSpec.describe Pikuri::SubAgent::Extension do
       refute(tools.any? { |t| t.is_a?(Pikuri::SubAgent::SubAgentTool) })
     end
 
-    it "forwards the parent's resolved context_window_cap to the sub-agent" do
-      agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
-                                system_prompt: 's', context_window: 12_345) do |c|
+    it "forwards the parent's resolved context_window_cap to the sub-agent via its transport" do
+      agent = Pikuri::Agent.new(
+        transport: Pikuri::Agent::ChatTransport.new(model: 'm', context_window: 12_345),
+        system_prompt: 's'
+      ) do |c|
         c.add_listener recorder
         c.add_tool web_search_tool
         c.add_extension described_class.new(personas: [tiny_persona])
@@ -248,7 +250,9 @@ RSpec.describe Pikuri::SubAgent::Extension do
         ctx = agent.instance_variable_get(:@extension_context)
         sub_tool = Pikuri::SubAgent::SubAgentTool.new(ctx, personas: ext.personas)
         sub_tool.run('name' => 'researcher', 'task' => 'do the thing')
-        assert_equal 12_345, received_kwargs[:context_window]
+        # The cap rides the sub-agent's transport now, not a ctor kwarg.
+        refute received_kwargs.key?(:context_window)
+        assert_equal 12_345, received_kwargs[:transport].context_window
       ensure
         Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
       end

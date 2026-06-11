@@ -119,10 +119,14 @@ module Pikuri
       # @return [SubAgentTool]
       def initialize(ctx, personas:)
         parent            = ctx.agent
-        transport         = parent.transport
+        # Bake the parent's *resolved* cap (explicit or probed) onto the
+        # transport the sub-agent rides, so it inherits the cap without
+        # re-running the +/props+ probe — the cap-inheritance channel,
+        # now that {Pikuri::Agent::ChatTransport} carries the window
+        # instead of an +Agent.new(context_window:)+ kwarg.
+        transport         = parent.transport.with(context_window: parent.context_window_cap)
         parent_tools      = parent.tools + parent.sub_agent_tools
         parent_cancel     = parent.cancellable
-        context_window    = parent.context_window_cap
         streaming         = parent.streaming
         # Per-persona monotonic counter — "researcher 0",
         # "researcher 1", "file_miner 0", ... Independent counters per
@@ -198,7 +202,6 @@ module Pikuri
               step_limit: Pikuri::Agent::Control::StepLimit.new(max: persona.max_steps,
                                                                 on_exhausted: :synthesize),
               cancellable: parent_cancel,
-              context_window: context_window,
               id: sub_id,
               streaming: streaming
             ) do |c|
