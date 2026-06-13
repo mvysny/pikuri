@@ -118,14 +118,16 @@ module Pikuri
 
         Usage:
         - Use for tasks the dedicated tools can't do: git, tests, package managers, multi-step shell pipelines.
-        - Prefer `read` / `write` / `edit` / `grep` / `glob` over `cat` / `sed` / `rg` / `find` — they're workspace-resolved.
+        - IMPORTANT: Avoid using this tool to run `cat`, plain `head` or `tail`, `sed`, `awk`, `rg`, `find` or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user, respect the workspace and produce cleaner output.
         - Working directory is ALWAYS the project root: `pwd` returns it, and relative paths in commands resolve from there. To operate in a subfolder, chain `cd` in the same command (`cd src/foo && make test`) — `cd` does NOT persist across calls; each call starts fresh at the project root.
         - stdin is closed; interactive commands hang until timeout. Use non-interactive flags (`apt -y`, `git commit -m`).
         - Plain `cmd &` does NOT detach — the backgrounded process inherits our output pipe and blocks. To genuinely background, redirect fds: `cmd >/dev/null 2>&1 &`. Add `nohup` or `setsid` to survive pikuri exit.
         - Combined stdout+stderr is returned. Suppress either via `2>/dev/null` etc.
         - Large outputs are head+tail-truncated. Pipe through `head`/`tail`/`grep`/`wc` to control volume.
-        - Non-zero exit status is a normal observation, not an error.
-        - The user must confirm every command before it runs; on rejection an Error is returned.
+        # Git
+        - Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.
+        - Use the `gh` CLI (if available) for GitHub operations (PRs, issues, API).
+        - Commit or push only when the user asks.
       DESC
 
       # @param workspace [Pikuri::Workspace::Filesystem] captured for
