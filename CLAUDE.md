@@ -575,6 +575,7 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
   measurably better with one.
+- Don't repeat tool descriptions in the system prompt.
 - **User-facing docs: prefer concrete over abstract.** Readers
   abstract easily; the reverse takes effort. *"Delete your home
   folder"* beats *"filesystem mutation outside the workspace"*;
