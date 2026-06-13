@@ -73,8 +73,9 @@ module Pikuri
         Edit a file by exact-string replacement.
 
         Usage:
-        - Use for partial changes to an existing file; for full rewrites or new files use `write` instead.
-        - `old_string` must match the file byte-for-byte (whitespace and indentation count); re-read the file with `read` if uncertain.
+        - You must Read the file in this conversation before editing, or the call will fail.
+        - Use for partial changes to an existing file.
+        - `old_string` must match the file byte-for-byte (whitespace and indentation count). Strip the Read line prefix (line number + tab) before matching.
         - `old_string` and `new_string` must differ.
         - If `old_string` matches multiple times the call fails — add surrounding context to make the match unique, or set `replace_all: true`.
         - Cannot create files (rejects empty `old_string` and missing files).
