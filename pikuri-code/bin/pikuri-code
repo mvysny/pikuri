@@ -300,6 +300,7 @@ begin
     c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
     c.add_tool Pikuri::Code::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::CALCULATOR
+      c.add_tool Pikuri::Code::EnterPlanMode.new
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
       brave_key: examples_config['brave_search_api_key'],
       exa_key: examples_config['exa_api_key']

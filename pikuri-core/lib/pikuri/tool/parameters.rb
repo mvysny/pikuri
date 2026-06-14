@@ -24,6 +24,8 @@ module Pikuri
       # can be fed back to the LLM verbatim as the next tool-call observation.
       class ValidationError < StandardError; end
 
+      EMPTY = Parameters.new.freeze
+
       # Yield a fresh builder, freeze it, and return it.
       #
       # @yieldparam builder [Parameters]
