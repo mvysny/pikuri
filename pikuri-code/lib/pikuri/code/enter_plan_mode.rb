@@ -103,7 +103,7 @@ module Pikuri
           name: 'enter_plan_mode',
           description: DESCRIPTION,
           parameters: Parameters::EMPTY,
-          execute: -> { "You are in plan mode. Once you're done with your research, call exit_plan_mode." }
+          execute: -> { "You are in plan mode. When you finish the plan, call exit_plan_mode." }
         )
       end
     end
