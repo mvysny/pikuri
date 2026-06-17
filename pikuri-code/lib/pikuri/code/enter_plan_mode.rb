@@ -19,7 +19,8 @@ module Pikuri
 
         ## When to Use This Tool
 
-        **Prefer using enter_plan_mode** for implementation tasks unless they're simple. Use it when ANY of these conditions apply:
+        **Prefer using enter_plan_mode** for implementation tasks unless they're simple.
+        Use it when ANY of these conditions apply:
 
         1. **New Feature Implementation**: Adding meaningful new functionality
            - Example: "Add a logout button" - where should it go? What should happen on click?
