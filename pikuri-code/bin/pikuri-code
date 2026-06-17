@@ -298,25 +298,18 @@ begin
     c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
-    c.add_tool Pikuri::Code::Bash.new(workspace: workspace, confirmer: confirmer, sandbox: sandbox)
     c.add_tool Pikuri::Tool::CALCULATOR
-      c.add_tool Pikuri::Code::EnterPlanMode.new
-      c.add_tool Pikuri::Code::ExitPlanMode.new
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
       brave_key: examples_config['brave_search_api_key'],
       exa_key: examples_config['exa_api_key']
     )
     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
     c.add_sub_agent_tool Pikuri::Tool::FETCH
-    # git_clone lives on the sub-agent-only pool too: the parent's
-    # bash already covers git for the project itself; this tool exists
-    # for the git_repo_researcher persona, which clones into its own
-    # throwaway temp workspace (minted by the persona's
-    # +workspace_factory+ at spawn time, then handed to GitClone via
-    # +#with_workspace+). The boot-time instance below holds the
-    # parent's workspace just to satisfy the constructor; it's
-    # never executed against that workspace.
-    c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
+    c.add_extension Pikuri::Code::Extension.new(
+      workspace: workspace,
+      confirmer: confirmer,
+      sandbox: sandbox
+    )
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
     # In-memory task list + four +task_*+ tools (task_create /
     # task_in_progress / task_completed / task_delete). The LLM
