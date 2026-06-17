@@ -2,9 +2,9 @@
 
 RSpec.describe Pikuri::Code::Extension do
   let(:workspace) do
-    Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd, mode: :allow_all)
+    Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd)
   end
-  let(:confirmer) { Pikuri::Workspace::Confirmer::Null.new }
+  let(:confirmer) { Pikuri::Workspace::Confirmer::AutoApprove.new }
   let(:configurator) do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),

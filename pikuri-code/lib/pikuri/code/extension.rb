@@ -27,7 +27,7 @@ module Pikuri
       # @param workspace [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]
-      def initialize(workspace:, confirmer:, sandbox: Sandbox::NONE)
+      def initialize(workspace:, confirmer:, sandbox: Bash::Sandbox::NONE)
         @workspace = workspace
         @confirmer = confirmer
         @sandbox   = sandbox
