@@ -28,7 +28,7 @@ PATH
       rainbow (~> 3.1)
       reverse_markdown (~> 3.0)
       ruby-readability (~> 0.7)
-      ruby_llm (~> 1.15)
+      ruby_llm (~> 1.16)
       zeitwerk (~> 2.7)
 
 PATH
@@ -194,7 +194,7 @@ GEM
     ruby-readability (0.7.3)
       guess_html_encoding (>= 0.0.4)
       nokogiri (>= 1.6.0)
-    ruby_llm (1.15.0)
+    ruby_llm (1.16.0)
       base64
       event_stream_parser (~> 1)
       faraday (>= 1.10.0)
@@ -297,7 +297,7 @@ CHECKSUMS
   rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
   ruby-rc4 (0.1.5) sha256=00cc40a39d20b53f5459e7ea006a92cf584e9bc275e2a6f7aa1515510e896c03
   ruby-readability (0.7.3) sha256=bd213fab037118cc15d999e167a8ea2cc6b689dc78c033e78fb36a2a37efc241
-  ruby_llm (1.15.0) sha256=ca207465bca1cca007010a79fce500d4012b1fbe188b025040cd37b884fb98af
+  ruby_llm (1.16.0) sha256=26bd5310cf2ce55f74a60f8aae0b0d0327b586ff4532c84828103c3b2b905a18
   ruby_llm-schema (0.4.0) sha256=e930f5a5316f9301bff3fb7fe572e44727d05bb8e50621001bbb49a47d63b8da
   stringio (3.2.0) sha256=c37cb2e58b4ffbd33fe5cd948c05934af997b36e0b6ca6fdf43afa234cf222e1
   timecop (0.9.11) sha256=41284dc6e5041f2184f781ace766f942108c842f8d8c1386a26e6343decc7542
