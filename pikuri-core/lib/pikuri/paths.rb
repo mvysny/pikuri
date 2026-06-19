@@ -25,5 +25,16 @@ module Pikuri
       home = File.expand_path('~/.cache') if home.nil? || home.empty?
       Pathname.new(home).join('pikuri')
     end
+
+    # Pikuri's state root: `~/.local/state/pikuri`. Created automatically.
+    #
+    # @return [Pathname] the +<state home>/pikuri+ directory
+    def self.state
+      state = ENV['XDG_STATE_HOME']
+      state = File.expand_path('~/.local/state') if state.nil? || state.empty?
+      state = Pathname.new(state).join('pikuri')
+      FileUtils.mkdir_p(state.to_path)
+      state
+    end
   end
 end
