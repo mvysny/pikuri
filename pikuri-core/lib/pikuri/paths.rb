@@ -28,6 +28,12 @@ module Pikuri
 
     # Pikuri's state root: `~/.local/state/pikuri`. Created automatically.
     #
+    # The place for state data that should persist between application restarts
+    # but isn't important or portable enough to live in XDG_DATA_HOME. The examples
+    # it gives include things like action history (logs, command history, recently-used
+    # files) and the current state of an application (window layout, open files,
+    # undo history).
+    #
     # @return [Pathname] the +<state home>/pikuri+ directory
     def self.state
       state = ENV['XDG_STATE_HOME']
