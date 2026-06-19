@@ -34,11 +34,7 @@ module Pikuri
     # collide. The directory is created lazily on first cache write; pikuri
     # does not pre-create it.
     # @return [String]
-    ROOT_DIR = begin
-      xdg = ENV['XDG_CACHE_HOME']
-      cache_home = xdg && !xdg.empty? ? xdg : File.join(Dir.home, '.cache')
-      File.join(cache_home, 'pikuri', 'url_cache')
-    end.freeze
+    ROOT_DIR = Paths.cache.join('url_cache').to_path
 
     # Default freshness window: 2 hours, in seconds.
     #
