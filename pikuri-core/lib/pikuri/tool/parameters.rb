@@ -24,8 +24,6 @@ module Pikuri
       # can be fed back to the LLM verbatim as the next tool-call observation.
       class ValidationError < StandardError; end
 
-      EMPTY = Parameters.new.freeze
-
       # Yield a fresh builder, freeze it, and return it.
       #
       # @yieldparam builder [Parameters]
@@ -41,6 +39,9 @@ module Pikuri
         @properties = {}
         @required = []
       end
+
+      # @return [Parameters]
+      EMPTY = new.freeze
 
       # Freeze the builder along with its internal collections, so post-build
       # mutation attempts raise +FrozenError+ instead of silently succeeding.

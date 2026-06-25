@@ -482,6 +482,17 @@ RSpec.describe Pikuri::Tool::Parameters do
         external << 'mutated'
         assert_equal ['researcher'], schema[:properties][:n][:enum]
       end
+
+      it 'empty' do
+        assert_equal(
+          {
+            type: 'object',
+            properties: {},
+            required: []
+          },
+          Pikuri::Tool::Parameters::EMPTY.to_openai
+        )
+      end
     end
 
     describe 'freeze after build' do
