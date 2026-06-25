@@ -396,7 +396,7 @@ RSpec.describe Pikuri::Code::Bash do
 
   describe 'parameters schema' do
     it 'advertises command as required string, description optional string, timeout optional integer' do
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
 
       assert_equal %w[command], schema[:required]
       assert_equal 'string',  schema[:properties][:command][:type]

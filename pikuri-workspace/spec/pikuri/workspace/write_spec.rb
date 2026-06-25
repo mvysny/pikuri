@@ -232,7 +232,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
   describe 'parameters schema' do
     it 'advertises path and content as required strings' do
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
 
       assert_equal %w[path content], schema[:required]
       assert_equal 'string', schema[:properties][:path][:type]

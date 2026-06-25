@@ -200,7 +200,7 @@ module Pikuri
       # Schema in OpenAI JSON-Schema shape.
       #
       # @return [Hash] +{type: 'object', properties: {...}, required: [...]}+
-      def to_h
+      def to_openai
         { type: 'object', properties: @properties, required: @required }
       end
 

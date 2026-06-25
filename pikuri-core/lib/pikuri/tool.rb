@@ -110,7 +110,7 @@ module Pikuri
     # @return [Class] anonymous +RubyLLM::Tool+ subclass
     def to_ruby_llm_tool
       pikuri_tool = self
-      schema      = @parameters.to_h
+      schema      = @parameters.to_openai
       tool_name   = @name
       tool_desc   = @description
 

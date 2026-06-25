@@ -30,7 +30,7 @@ describe Pikuri::VectorDb::Tools::Reindex do
 
     it 'declares no parameters' do
       tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer)
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal({}, schema[:properties])
       assert_equal [], schema[:required]
     end

@@ -8,14 +8,14 @@ RSpec.describe 'Pikuri::Tool::WebSearch.build' do
   end
 
   it 'declares a required string `query` parameter' do
-    schema = tool.parameters.to_h
+    schema = tool.parameters.to_openai
     assert_equal({ type: 'string', description: 'The search query, e.g. "BigDecimal precision Ruby".' },
                  schema[:properties][:query])
     assert_includes schema[:required], 'query'
   end
 
   it 'declares an optional integer `max_results` parameter' do
-    schema = tool.parameters.to_h
+    schema = tool.parameters.to_openai
     assert_equal 'integer', schema[:properties][:max_results][:type]
     refute_includes schema[:required], 'max_results'
   end

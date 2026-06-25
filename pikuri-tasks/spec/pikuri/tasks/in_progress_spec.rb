@@ -8,7 +8,7 @@ RSpec.describe Pikuri::Tasks::InProgress do
     it 'is named task_in_progress with a required id integer' do
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'task_in_progress', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['id'], schema[:required]
       assert_equal 'integer', schema[:properties][:id][:type]
     end

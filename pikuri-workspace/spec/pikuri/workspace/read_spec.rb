@@ -267,7 +267,7 @@ RSpec.describe Pikuri::Workspace::Read do
 
   describe 'parameters schema' do
     it 'advertises path as required and offset/limit as optional integers' do
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
 
       assert_equal %w[path], schema[:required]
       assert_equal 'string', schema[:properties][:path][:type]

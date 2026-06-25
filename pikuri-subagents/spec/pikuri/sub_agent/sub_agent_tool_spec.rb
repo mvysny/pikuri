@@ -159,7 +159,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'agent', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal %w[name task], schema[:required]
       assert_equal 'string', schema[:properties][:name][:type]
       assert_equal ['researcher'], schema[:properties][:name][:enum]

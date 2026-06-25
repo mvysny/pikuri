@@ -12,7 +12,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
 
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'skill', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['name'], schema[:required]
       assert_equal 'string', schema[:properties][:name][:type]
     end

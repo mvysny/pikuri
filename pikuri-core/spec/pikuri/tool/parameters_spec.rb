@@ -12,7 +12,7 @@ RSpec.describe Pikuri::Tool::Parameters do
     end
   end
 
-  describe '.build / #to_h' do
+  describe '.build / #to_openai' do
     it 'serializes to OpenAI JSON-Schema shape' do
       assert_equal(
         {
@@ -22,19 +22,19 @@ RSpec.describe Pikuri::Tool::Parameters do
           },
           required: ['query']
         },
-        single_required.to_h
+        single_required.to_openai
       )
     end
 
     it 'lists required and optional fields correctly' do
-      schema = mixed.to_h
+      schema = mixed.to_openai
       assert_equal %i[query region], schema[:properties].keys
       assert_equal ['query'], schema[:required]
     end
 
     it 'returns an empty schema when no fields are declared' do
       empty = described_class.build { |_p| }
-      assert_equal({ type: 'object', properties: {}, required: [] }, empty.to_h)
+      assert_equal({ type: 'object', properties: {}, required: [] }, empty.to_openai)
     end
   end
 
@@ -144,14 +144,14 @@ RSpec.describe Pikuri::Tool::Parameters do
       described_class.build { |p| p.required_integer :count, 'Number of items.' }
     end
 
-    it 'serializes the integer type in to_h' do
-      schema = int_required.to_h
+    it 'serializes the integer type in to_openai' do
+      schema = int_required.to_openai
       assert_equal 'integer', schema[:properties][:count][:type]
       assert_equal ['count'], schema[:required]
     end
 
     it 'has an optional_integer variant that does not appear in required' do
-      schema = described_class.build { |p| p.optional_integer :count, 'c' }.to_h
+      schema = described_class.build { |p| p.optional_integer :count, 'c' }.to_openai
       assert_equal [], schema[:required]
     end
 
@@ -237,13 +237,13 @@ RSpec.describe Pikuri::Tool::Parameters do
       described_class.build { |p| p.required_number :temp, 'Temperature.' }
     end
 
-    it 'serializes the number type in to_h' do
-      schema = num_required.to_h
+    it 'serializes the number type in to_openai' do
+      schema = num_required.to_openai
       assert_equal 'number', schema[:properties][:temp][:type]
     end
 
     it 'has an optional_number variant that does not appear in required' do
-      schema = described_class.build { |p| p.optional_number :temp, 't' }.to_h
+      schema = described_class.build { |p| p.optional_number :temp, 't' }.to_openai
       assert_equal [], schema[:required]
     end
 
@@ -302,14 +302,14 @@ RSpec.describe Pikuri::Tool::Parameters do
       described_class.build { |p| p.required_boolean :flag, 'Enable the thing.' }
     end
 
-    it 'serializes the boolean type in to_h' do
-      schema = bool_required.to_h
+    it 'serializes the boolean type in to_openai' do
+      schema = bool_required.to_openai
       assert_equal 'boolean', schema[:properties][:flag][:type]
       assert_equal ['flag'], schema[:required]
     end
 
     it 'has an optional_boolean variant that does not appear in required' do
-      schema = described_class.build { |p| p.optional_boolean :flag, 'f' }.to_h
+      schema = described_class.build { |p| p.optional_boolean :flag, 'f' }.to_openai
       assert_equal [], schema[:required]
     end
 
@@ -354,8 +354,8 @@ RSpec.describe Pikuri::Tool::Parameters do
       described_class.build { |p| p.required_string_array :items, 'Task contents.' }
     end
 
-    it 'serializes as array-of-strings JSON Schema in to_h' do
-      schema = array_required.to_h
+    it 'serializes as array-of-strings JSON Schema in to_openai' do
+      schema = array_required.to_openai
       assert_equal 'array', schema[:properties][:items][:type]
       assert_equal({ type: 'string' }, schema[:properties][:items][:items])
       assert_equal ['items'], schema[:required]
@@ -446,12 +446,12 @@ RSpec.describe Pikuri::Tool::Parameters do
 
       it 'rejects an Array containing duplicates only if any individual entry is invalid' do
         # duplicates are not specifically forbidden — JSON Schema allows them
-        schema = described_class.build { |p| p.required_enum :n, 'd', values: %w[a a] }.to_h
+        schema = described_class.build { |p| p.required_enum :n, 'd', values: %w[a a] }.to_openai
         assert_equal %w[a a], schema[:properties][:n][:enum]
       end
     end
 
-    describe '#to_h' do
+    describe '#to_openai' do
       it 'emits {type: string, enum: [...], description: ...}' do
         assert_equal(
           {
@@ -461,24 +461,24 @@ RSpec.describe Pikuri::Tool::Parameters do
             },
             required: ['name']
           },
-          enum_required.to_h
+          enum_required.to_openai
         )
       end
 
       it 'has an optional_enum variant that does not appear in required' do
-        schema = described_class.build { |p| p.optional_enum :n, 'd', values: ['a'] }.to_h
+        schema = described_class.build { |p| p.optional_enum :n, 'd', values: ['a'] }.to_openai
         assert_equal [], schema[:required]
         assert_equal ['a'], schema[:properties][:n][:enum]
       end
 
       it 'freezes the enum array so callers cannot mutate it post-build' do
-        schema = enum_required.to_h
+        schema = enum_required.to_openai
         assert_raises(FrozenError) { schema[:properties][:name][:enum] << 'planner' }
       end
 
       it 'duplicates the caller-supplied values: array so external mutation does not leak in' do
         external = ['researcher']
-        schema = described_class.build { |p| p.required_enum :n, 'd', values: external }.to_h
+        schema = described_class.build { |p| p.required_enum :n, 'd', values: external }.to_openai
         external << 'mutated'
         assert_equal ['researcher'], schema[:properties][:n][:enum]
       end
