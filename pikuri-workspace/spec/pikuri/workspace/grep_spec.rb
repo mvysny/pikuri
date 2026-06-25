@@ -312,7 +312,7 @@ RSpec.describe Pikuri::Workspace::Grep do
 
   describe 'parameters schema' do
     it 'advertises the expected types and required set' do
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
 
       assert_equal %w[pattern], schema[:required]
       assert_equal 'string',  schema[:properties][:pattern][:type]
