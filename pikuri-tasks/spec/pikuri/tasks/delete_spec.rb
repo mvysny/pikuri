@@ -8,7 +8,7 @@ RSpec.describe Pikuri::Tasks::Delete do
     it 'is named task_delete with a required id integer' do
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'task_delete', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['id'], schema[:required]
       assert_equal 'integer', schema[:properties][:id][:type]
     end

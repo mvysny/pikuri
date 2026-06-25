@@ -34,7 +34,7 @@ describe Pikuri::Memory::Recall do
 
     assert_equal 'recall', tool.name
     assert_kind_of Pikuri::Tool, tool
-    assert_equal ['topic'], tool.parameters.to_h[:required].map(&:to_s)
+    assert_equal ['topic'], tool.parameters.to_openai[:required].map(&:to_s)
   end
 
   it 'searches the fixed namespace and formats results with timestamps' do

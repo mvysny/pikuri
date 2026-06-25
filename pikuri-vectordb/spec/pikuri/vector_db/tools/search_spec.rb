@@ -61,7 +61,7 @@ describe Pikuri::VectorDb::Tools::Search do
 
     it 'declares a single required-string query parameter' do
       tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['query'], schema[:required]
       props = schema[:properties]
       query_schema = props[:query] || props['query']

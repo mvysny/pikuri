@@ -8,7 +8,7 @@ RSpec.describe Pikuri::Tasks::Create do
     it 'is a Pikuri::Tool named task_create with a required items array-of-strings parameter' do
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'task_create', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['items'], schema[:required]
       assert_equal 'array', schema[:properties][:items][:type]
       assert_equal({ type: 'string' }, schema[:properties][:items][:items])

@@ -179,7 +179,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         personas: { 'researcher' => simple_persona, 'file_miner' => other }
       )
 
-      assert_equal %w[researcher file_miner], tool.parameters.to_h[:properties][:name][:enum]
+      assert_equal %w[researcher file_miner], tool.parameters.to_openai[:properties][:name][:enum]
     end
   end
 

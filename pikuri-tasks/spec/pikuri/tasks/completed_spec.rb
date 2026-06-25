@@ -8,7 +8,7 @@ RSpec.describe Pikuri::Tasks::Completed do
     it 'is named task_completed with a required id integer' do
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'task_completed', tool.name
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
       assert_equal ['id'], schema[:required]
       assert_equal 'integer', schema[:properties][:id][:type]
     end

@@ -37,7 +37,7 @@ describe Pikuri::VectorDb::Tools::Read do
     end
 
     it 'advertises source as required and offset/limit as optional integers' do
-      schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root).parameters.to_h
+      schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root).parameters.to_openai
       assert_equal %w[source], schema[:required]
       assert_equal 'string', schema[:properties][:source][:type]
       assert_equal 'integer', schema[:properties][:offset][:type]

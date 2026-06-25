@@ -281,7 +281,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
   describe 'parameters schema' do
     it 'advertises path/old_string/new_string as required and replace_all as optional' do
-      schema = tool.parameters.to_h
+      schema = tool.parameters.to_openai
 
       assert_equal %w[path old_string new_string], schema[:required]
       assert_equal 'string',  schema[:properties][:path][:type]
