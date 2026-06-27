@@ -48,6 +48,13 @@ RSpec.describe Pikuri::Code::Extension do
       assert_includes c.sub_agent_tools.map(&:name), 'git_clone'
     end
 
+    it 'appends the plan-mode explainer to the system prompt' do
+      c = build_configurator(plan_mode: plan_mode)
+      described_class.new(workspace: workspace, confirmer: confirmer).configure(c)
+
+      assert(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
+    end
+
     it 'raises if any of its tools was already registered' do
       c = build_configurator(plan_mode: plan_mode)
       c.add_tool(Pikuri::Code::EnterPlanMode.new(plan_mode: plan_mode))
@@ -69,6 +76,7 @@ RSpec.describe Pikuri::Code::Extension do
       refute_includes names, 'enter_plan_mode'
       refute_includes names, 'exit_plan_mode'
       assert_includes c.sub_agent_tools.map(&:name), 'git_clone'
+      refute(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
     end
   end
 
@@ -83,7 +91,7 @@ RSpec.describe Pikuri::Code::Extension do
 
       plan_mode.enter!
       reminder = ext.on_user_message(nil, 'hello')
-      assert_match(/PLAN MODE/, reminder)
+      assert_match(/plan mode/i, reminder)
     end
 
     it 'injects nothing when no plan-mode control is wired' do

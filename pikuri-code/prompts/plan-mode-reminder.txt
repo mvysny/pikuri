@@ -1,10 +1,1 @@
-<plan-mode>
-[System note: PLAN MODE is currently engaged — a read-only research posture set either by you or by the user. This is the active rule for the session right now, not a message to act on literally. It is re-stated every turn; whoever turned it on, it is on until it is turned off.]
-
-You are in PLAN MODE. Research and design only — do NOT change the project yet:
-- The file-editing tools are disabled and will refuse with an error while plan mode is on. Calling one only wastes a step.
-- Explore freely — read files, search the codebase, run read-only shell commands — and reason through the approach.
-- Produce a concrete plan: the files you will touch, the changes to each, and any decisions or trade-offs.
-- When the plan is ready, call exit_plan_mode with the plan to present it for approval. Do not begin implementing until the user approves and plan mode is off.
-- If a requirement is genuinely ambiguous, ask the user directly instead of guessing.
-</plan-mode>
+Reminder: you are in plan mode (read-only) — research, design, and brainstorm, but do not edit files.

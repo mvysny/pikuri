@@ -12,7 +12,8 @@ module Pikuri
     #
     # == Plan mode is opt-in via the control
     #
-    # The plan-mode tools, the per-turn read-only reminder, and the
+    # The plan-mode tools, the {PLAN_MODE_PROMPT} system-prompt
+    # explainer, the per-turn read-only reminder, and the
     # {PlanModeChanged} UI event are wired only when the agent was
     # constructed with a {Pikuri::Agent::Control::PlanMode} — read off
     # the {Pikuri::Agent::Configurator} as {Configurator#plan_mode}.
@@ -42,6 +43,30 @@ module Pikuri
       # would shadow the wiring done here.
       TOOL_CLASSES = [Bash, EnterPlanMode, ExitPlanMode].freeze
 
+      # Static plan-mode explainer, appended *once* to the system
+      # prompt (and so prefix-cached) when plan mode is wired. The
+      # mechanics and the active-behavior contract live here, paid
+      # once; the per-turn injection ({Pikuri.prompt} +plan-mode-reminder+)
+      # is then just a one-line state re-assertion, paid every turn at
+      # the uncached tail. Same shape as {Pikuri::Tasks::Extension}'s
+      # +PROMPT_SNIPPET+ — an extension-owned snippet that names its own
+      # tools (the persona/extension carve-out to "no tool names in a
+      # main prompt").
+      #
+      # @return [String]
+      PLAN_MODE_PROMPT = <<~PROMPT
+        <plan_mode>
+        You can work in plan mode — a read-only posture for researching and designing a change before writing any of it. Reach for enter_plan_mode before a non-trivial change (new features, multi-file edits, refactors, anything with several viable approaches); the user can also turn plan mode on directly. While it is active you will see a short reminder each turn.
+
+        While in plan mode:
+        - The file-editing tools are disabled and will refuse — do not try to create, overwrite, or edit files.
+        - Explore freely: read files, search the codebase, and run read-only shell commands.
+        - Work out a concrete plan — which files change, the change to each, and any trade-offs — and write it out.
+        - Call exit_plan_mode with that plan to present it for approval. Only start implementing once the user approves.
+        - If a requirement is genuinely ambiguous, ask the user directly rather than guessing.
+        </plan_mode>
+      PROMPT
+
       # @param workspace [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]
@@ -69,6 +94,7 @@ module Pikuri
         if @plan_mode
           c.add_tool EnterPlanMode.new(plan_mode: @plan_mode)
           c.add_tool ExitPlanMode.new(plan_mode: @plan_mode, confirmer: @confirmer)
+          c.append_system_prompt(PLAN_MODE_PROMPT)
         end
 
         # GitClone is intentionally added via +add_sub_agent_tool+ only

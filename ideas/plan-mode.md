@@ -137,7 +137,7 @@ event, see layer 4).
   human-in-the-loop machinery; it is the same prompt path `Write` and
   `Bash` already use, with a plan-specific `Request`.
 
-### 3. The reminder — `on_user_message`, reused verbatim
+### 3. The reminder — `on_user_message`, split for the prefix cache
 
 The mechanism is *already* general: an `Extension#on_user_message(ctx,
 content)` that returns a `String` has it injected as a `:system`
@@ -148,16 +148,27 @@ didn't need memory-specific shaping.
 
 ```ruby
 def on_user_message(_ctx, _content)
-  return nil unless @plan_mode.active?
-  Pikuri.prompt('plan-mode-reminder')   # a <plan-mode>…</plan-mode> block
+  return nil unless @plan_mode&.active?
+  @reminder ||= Pikuri.prompt(:'plan-mode-reminder')   # ONE line
 end
 ```
 
 Re-asserted every turn ⇒ the model "knows" it is in plan mode even when
-the **human** engaged it and the model never saw a tool call. No new
-generalization is required; the seam already is the general mechanism.
-Frame the reminder with the same provenance-block style memory uses
-(`<memory-context>` → `<plan-mode>`).
+the **human** engaged it and the model never saw a tool call.
+
+**Where the prose lives matters for cost.** This block lands *after*
+each user message, at the tail — outside the provider prefix cache, so
+it is re-paid every turn. The substantive prose (what plan mode is, the
+active-behavior contract, how to exit) therefore lives in the **system
+prompt**, paid once and cached: `Extension#configure` appends a
+`PLAN_MODE_PROMPT` snippet via `c.append_system_prompt` (only when plan
+mode is wired) — the same extension-owned-snippet shape `pikuri-tasks`
+uses, and the same persona/extension carve-out to "no tool names in a
+main prompt." The per-turn injection is then a **one-line state
+re-assertion** ("you are in plan mode — research/design, do not edit"),
+nothing more. No provenance-block framing is needed (unlike memory's
+`<memory-context>`, this text is author-controlled, not retrieved
+untrusted data).
 
 ### 4. Enforcement — mutation tools consult the control (pikuri-workspace)
 
