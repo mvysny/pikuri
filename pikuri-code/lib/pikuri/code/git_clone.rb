@@ -118,26 +118,14 @@ module Pikuri
         )
       end
 
-      # Produce a new {GitClone} bound to the supplied workspace's
-      # {Pikuri::Workspace::Filesystem}.
+      # Produce a new {GitClone} bound to +filesystem+. The sandbox is
+      # NOT carried over — the new instance lazily mints a fresh
+      # Bubblewrap from the new filesystem, since a sandbox's bind set
+      # depends on the filesystem it constrains. See class header.
       #
-      # The +with_workspace+ protocol ({Pikuri::SubAgent::SubAgentTool})
-      # hands every rebuilt tool the session's {Pikuri::Workspace::Workspace}
-      # *composite* — the right shape for the file tools, which resolve
-      # paths and track a read record. GitClone is different: it drives a
-      # {Bash::Sandbox::Bubblewrap}, which needs the bare {Filesystem}'s
-      # +readable+/+writable+/+temp+ (the composite forwards only
-      # +project_root+ / +resolve_for_*+). So we unwrap +.filesystem+ here;
-      # a bare {Filesystem} is also accepted, for direct callers.
-      #
-      # The sandbox is NOT carried over — the new instance lazily mints a
-      # fresh Bubblewrap from the new filesystem, since a sandbox's bind
-      # set depends on the filesystem it constrains. See class header.
-      #
-      # @param workspace [Pikuri::Workspace::Workspace, Pikuri::Workspace::Filesystem]
+      # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [GitClone]
-      def with_workspace(workspace)
-        filesystem = workspace.respond_to?(:filesystem) ? workspace.filesystem : workspace
+      def with_workspace(filesystem)
         self.class.new(filesystem: filesystem)
       end
 
