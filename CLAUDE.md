@@ -596,7 +596,19 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   belongs in that tool's own description (e.g. "don't delegate what
   you can read yourself" lives on the `agent` tool, not on `read`).
   This subsumes the older "don't repeat tool descriptions in the
-  system prompt."
+  system prompt." The line to draw: *per-tool mechanics* (what it
+  returns, its caveats) go in the description and are reused by
+  every prompt that wires the tool; *agent-level orchestration*
+  (which move is primary for this agent, how to sequence the mix)
+  stays in the prompt — phrased as an action, not a tool name
+  ("searching the corpus is your primary move", not "`vectordb_search`
+  is your primary tool"). The rule covers a gem's own tools too:
+  `pikuri-corpus` always wires `vectordb_*`, but the "always wired
+  here" argument applies equally to `pikuri-code` always wiring
+  `bash`/`read`, so it can't earn a carve-out without voiding the
+  rule — and keeping `vectordb_*` mechanics in the descriptions is
+  what lets any other agent reuse those tools without re-deriving
+  their usage.
 
   **Persona system prompts are the carve-out.** A persona
   (`prompts/persona-*.txt`) is narrow, single-purpose, and wired
@@ -607,9 +619,10 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 
   Grep-enforceable — a backtick-delimited tool name in a non-persona
   prompt is the violation:
-  `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
+  `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+|vectordb_[a-z]+|recall|skill)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
   should hit nothing (`\x60` is the backtick the tool name is
-  wrapped in).
+  wrapped in). MCP tools are named by their server at runtime, so no
+  static pattern can list them — a reviewer catches those by eye.
 - **User-facing docs: prefer concrete over abstract.** Readers
   abstract easily; the reverse takes effort. *"Delete your home
   folder"* beats *"filesystem mutation outside the workspace"*;
