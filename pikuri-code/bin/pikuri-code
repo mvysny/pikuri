@@ -231,6 +231,14 @@ system_prompt += if sandbox_enabled
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
+# One plan-mode control, shared by reference across the agent, the
+# file-editing tools (Edit/Write refuse to write while it is active),
+# and Pikuri::Code::Extension (which wires the enter/exit tools, the
+# per-turn reminder, and the UI event off it). The host keeps the
+# reference so a future TUI can flip it from a key binding; this REPL
+# leaves entry/exit to the model's tools.
+plan_mode_flag = Pikuri::Agent::Control::PlanMode.new
+
 # MCP servers available to the assistant. Hand-edit this array to add
 # providers — id is what the LLM references via +mcp_connect("...")+.
 # Two entry types: +StdioEntry+ for a local subprocess (argv to spawn)
@@ -278,7 +286,8 @@ begin
     # run_turn below tells the user, the chat history survives, and the
     # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
-    cancellable: cancel_flag
+    cancellable: cancel_flag,
+    plan_mode: plan_mode_flag
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
@@ -296,8 +305,8 @@ begin
     c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
     c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
+    c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace, plan_mode: plan_mode_flag)
+    c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer, plan_mode: plan_mode_flag)
     c.add_tool Pikuri::Tool::CALCULATOR
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
       brave_key: examples_config['brave_search_api_key'],

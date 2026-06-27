@@ -2,109 +2,55 @@
 
 module Pikuri
   module Code
+    # The +enter_plan_mode+ tool: flips the shared
+    # {Pikuri::Agent::Control::PlanMode} into its active, read-only
+    # posture. Once active, the file-editing tools refuse to write
+    # (see +pikuri-workspace+'s +Write+ / +Edit+) and the
+    # {Extension}'s per-turn reminder tells the model to research and
+    # propose rather than implement. The model exits via
+    # {ExitPlanMode}; the host can also flip the same control from a
+    # key binding (see {Pikuri::Agent::Control::PlanMode}).
+    #
+    # Self-entry is opportunistic: the model is encouraged (via the
+    # description) to enter plan mode before a non-trivial change, but
+    # entry is just as often host-initiated. Either way the flag is
+    # the single source of truth.
     class EnterPlanMode < Pikuri::Tool
-      # @return [Logger]
-      LOGGER = Pikuri.logger_for('EnterPlanMode')
-
-      # Description shown to the LLM. opencode-shape: summary + +Usage:+
-      # bullets. Per-parameter constraints (default, max) live in the
-      # parameter descriptions.
+      # Description shown to the LLM. opencode-shape: one-line summary,
+      # blank line, +Usage:+ bullets.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
-        Use this tool proactively when you're about to start a non-trivial implementation
-        task. Getting user sign-off on your approach before writing code prevents wasted
-        effort and ensures alignment. This tool transitions you into plan mode where you
-        can explore the codebase and design an implementation approach for user approval.
+        Enter plan mode: a read-only posture for researching and designing a change before writing any of it.
 
-        ## When to Use This Tool
-
-        **Prefer using enter_plan_mode** for implementation tasks unless they're simple.
-        Use it when ANY of these conditions apply:
-
-        1. **New Feature Implementation**: Adding meaningful new functionality
-           - Example: "Add a logout button" - where should it go? What should happen on click?
-           - Example: "Add form validation" - what rules? What error messages?
-
-        2. **Multiple Valid Approaches**: The task can be solved in several different ways
-           - Example: "Add caching to the API" - could use Redis, in-memory, file-based, etc.
-           - Example: "Improve performance" - many optimization strategies possible
-
-        3. **Code Modifications**: Changes that affect existing behavior or structure
-           - Example: "Update the login flow" - what exactly should change?
-           - Example: "Refactor this component" - what's the target architecture?
-
-        4. **Architectural Decisions**: The task requires choosing between patterns or technologies
-           - Example: "Add real-time updates" - WebSockets vs SSE vs polling
-           - Example: "Implement state management" - Redux vs Context vs custom solution
-
-        5. **Multi-File Changes**: The task will likely touch more than 2-3 files
-           - Example: "Refactor the authentication system"
-           - Example: "Add a new API endpoint with tests"
-
-        6. **Unclear Requirements**: You need to explore before understanding the full scope
-           - Example: "Make the app faster" - need to profile and identify bottlenecks
-           - Example: "Fix the bug in checkout" - need to investigate root cause
-
-        ## When NOT to Use This Tool
-
-        Only skip enter_plan_mode for simple tasks:
-        - Single-line or few-line fixes (typos, obvious bugs, small tweaks)
-        - Adding a single function with clear requirements
-        - Tasks where the user has given very specific, detailed instructions
-        - Pure research/exploration tasks
-
-        ## What Happens in Plan Mode
-
-        In plan mode, you'll:
-        1. Thoroughly explore the codebase using `glob`, `grep`, and `read`
-        2. Understand existing patterns and architecture
-        3. Design an implementation approach
-        4. Present your plan to the user for approval
-        5. Ask the user (without calling tools and without leaving the plan mode) if you need to clarify approaches
-        6. Exit plan mode with `exit_plan_mode` when ready to implement
-
-        ## Examples
-
-        ### GOOD - Use enter_plan_mode:
-        User: "Add user authentication to the app"
-        - Requires architectural decisions (session vs JWT, where to store tokens, middleware structure)
-
-        User: "Optimize the database queries"
-        - Multiple approaches possible, need to profile first, significant impact
-
-        User: "Implement dark mode"
-        - Architectural decision on theme system, affects many components
-
-        User: "Add a delete button to the user profile"
-        - Seems simple but involves: where to place it, confirmation dialog, API call, error handling, state updates
-
-        User: "Update the error handling in the API"
-        - Affects multiple files, user should approve the approach
-
-        ### BAD - Don't use enter_plan_mode:
-        User: "Fix the typo in the README"
-        - Straightforward, no planning needed
-
-        User: "Add a console.log to debug this function"
-        - Simple, obvious implementation
-
-        User: "What files handle routing?"
-        - Research task, not implementation planning
-
-        ## Important Notes
-
-        - If unsure whether to use it, err on the side of planning - it's better to get alignment upfront than to redo work
-        - Users appreciate being consulted before significant changes are made to their codebase
+        Usage:
+        - Reach for this before a non-trivial change — new features, multi-file edits, refactors, or anything with several valid approaches — so the user can sign off on the approach before code is written.
+        - Skip it for small, unambiguous edits (a typo, an obvious one-line fix) and for pure research questions.
+        - While in plan mode the file-editing tools are disabled; explore and reason freely, then present a plan with exit_plan_mode for approval.
+        - When unsure, prefer entering: alignment up front is cheaper than redone work.
       DESC
 
-      def initialize
+      # @param plan_mode [Pikuri::Agent::Control::PlanMode] the shared
+      #   plan-mode control to activate.
+      # @return [EnterPlanMode]
+      def initialize(plan_mode:)
         super(
           name: 'enter_plan_mode',
           description: DESCRIPTION,
           parameters: Parameters::EMPTY,
-          execute: -> { "You are in plan mode. When you finish the plan, call exit_plan_mode." }
+          execute: -> { EnterPlanMode.run(plan_mode: plan_mode) }
         )
+      end
+
+      # Activate plan mode (idempotent) and return the observation that
+      # confirms the posture to the model.
+      #
+      # @param plan_mode [Pikuri::Agent::Control::PlanMode]
+      # @return [String] tool observation
+      def self.run(plan_mode:)
+        plan_mode.enter!
+        'You are now in plan mode (read-only): research and design only, do not edit ' \
+          'files. When the plan is ready, call exit_plan_mode to present it for approval.'
       end
     end
   end
