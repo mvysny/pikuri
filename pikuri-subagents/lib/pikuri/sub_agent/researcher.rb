@@ -31,7 +31,8 @@ module Pikuri
     RESEARCHER = Persona.new(
       name: 'researcher',
       description: 'Focused web research with web_search, web_scrape, fetch. ' \
-                   'Use to delegate multi-page lookups so their contents stay out of your context. ' \
+                   'Use to delegate multi-page lookups (stack traces, library docs, ' \
+                   'API references) so their contents stay out of your context. ' \
                    'Returns one paragraph + sources.',
       tool_names: %w[web_search web_scrape fetch].freeze,
       system_prompt: Pikuri.prompt('persona-researcher'),
