@@ -185,11 +185,22 @@ yardoc. CLAUDE.md only records the invariant.
   is the capability-user roster, and `listeners.emit` outside
   `agent.rb` / `extension_context.rb` should hit nothing. See
   {Pikuri::Agent::ExtensionContext}.
-- **Workspace seam.** Tools touching files (`Read`, `Write`,
-  `Edit`, `Grep`, `Glob`, `Bash`) take a
-  `Pikuri::Workspace::Filesystem` via constructor and route every
-  path through `#resolve_for_read` / `#resolve_for_write` before
-  touching the filesystem. See {Pikuri::Workspace::Filesystem}
+- **Workspace seam.** The five file tools (`Read`, `Write`,
+  `Edit`, `Grep`, `Glob`) take a `Pikuri::Workspace::Workspace`
+  composite via constructor; `Bash` takes the bare
+  `Pikuri::Workspace::Filesystem` (it governs the subprocess fs
+  view, not the read record). Every path routes through
+  `#resolve_for_read` / `#resolve_for_write` before touching the
+  filesystem. The composite pairs the `Filesystem` (path
+  resolution / containment / sandboxing, kept pure) with this
+  session's read record, and enforces the **read-before-edit
+  gate**: `Read` marks a path read (`#mark_read`); `Edit` and
+  overwrite-`Write` refuse a path not yet read (`#read?`) — making
+  Edit's "you must Read first" promise real. Each `Workspace` owns
+  its own record, so a sub-agent's temp clone starts empty.
+  `Workspace::Extension` is the single registration point that wires
+  the five tools sharing one composite. See
+  {Pikuri::Workspace::Workspace} and {Pikuri::Workspace::Filesystem}
   (project_root semantics, containment algorithm, `AllowAll`
   variant, project-root denylist).
 - **Confirmer seam.** Tools that mutate user state (`Write`,
@@ -349,11 +360,13 @@ per-gem one-liners:
   listeners observe the list without touching the
   agent-thread-confined `List`). Depends on
   `pikuri-core`. Stdlib-only; no new runtime deps.
-- **`pikuri-workspace/`** — `Workspace::Filesystem`,
-  `Workspace::Confirmer`, and the five file tools (`Read`,
-  `Write`, `Edit`, `Grep`, `Glob`). Depends on `pikuri-core`.
-  No new runtime deps (Rainbow rides in via pikuri-core for
-  `Confirmer::Terminal`); no subprocess execution.
+- **`pikuri-workspace/`** — `Workspace::Filesystem`, the
+  `Workspace::Workspace` composite (Filesystem + read record,
+  backing the read-before-edit gate), `Workspace::Confirmer`, the
+  five file tools (`Read`, `Write`, `Edit`, `Grep`, `Glob`), and
+  `Workspace::Extension` (their single registration point). Depends
+  on `pikuri-core`. No new runtime deps (Rainbow rides in via
+  pikuri-core for `Confirmer::Terminal`); no subprocess execution.
 - **`pikuri-code/`** — `Code::Bash`, `Code::Bash::Sandbox`,
   `Code::ToolchainPaths`, `Code::GitClone`, bundled
   `GIT_REPO_RESEARCHER` persona, `bin/pikuri-code`. Depends on

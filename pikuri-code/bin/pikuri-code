@@ -199,13 +199,6 @@ sandbox = if sandbox_enabled
             Pikuri::Code::Bash::Sandbox::NONE
           end
 
-# The file tools (read/write/edit/grep/glob) operate against the
-# Workspace composite — the Filesystem plus this session's read record,
-# which backs the read-before-edit gate. Bash and the sandbox take the
-# raw Filesystem: they govern the subprocess's filesystem view, not the
-# read-ledger, so they have no business in it.
-workspace = Pikuri::Workspace::Workspace.new(filesystem: filesystem)
-
 # Build the system prompt: static base + optional project context + footer.
 # AGENTS.md wins over CLAUDE.md when both exist; lookup is at the
 # project root.
@@ -300,11 +293,15 @@ begin
     # a prompt injection. See SECURITY.md §"Defense: capability
     # boundaries via sub-agents". The `skill` tool, when the catalog
     # is non-empty, is appended by the Skill::Extension below.
-    c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer)
+    # The five file tools (read/grep/glob/edit/write) share one
+    # Workspace composite (Filesystem + this session's read record) so
+    # the read-before-edit gate works across them. The extension owns
+    # that composite; Bash and the sandbox take the raw `filesystem`
+    # below (they govern the subprocess fs view, not the read record).
+    c.add_extension Pikuri::Workspace::Extension.new(
+      filesystem: filesystem,
+      confirmer: confirmer
+    )
     c.add_tool Pikuri::Tool::CALCULATOR
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
       brave_key: examples_config['brave_search_api_key'],
