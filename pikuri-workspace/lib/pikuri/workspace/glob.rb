@@ -112,7 +112,7 @@ module Pikuri
         - Output is truncated to #{MAX_BYTES_LABEL}; refine the pattern or narrow `path` if the response ends in a truncation marker.
       DESC
 
-      # @param workspace [Filesystem] captured for path resolution
+      # @param workspace [Workspace] captured for path resolution
       #   and as +chdir+ for rg. All path arguments route through
       #   +workspace.resolve_for_read+.
       # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
@@ -145,7 +145,7 @@ module Pikuri
       # the sub-agent's fresh workspace so paths resolve against the
       # right root.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @return [Glob]
       def with_workspace(workspace)
         self.class.new(workspace: workspace)
@@ -156,7 +156,7 @@ module Pikuri
       # formatted listing, a "no files match" message, or
       # +"Error: ..."+.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @param pattern [String]
       # @param path [String, nil]
       # @return [String]

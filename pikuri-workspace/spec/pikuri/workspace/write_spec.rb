@@ -4,10 +4,11 @@ require 'tmpdir'
 require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Write do
-  let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-write-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
-  let(:confirmer) { build_confirmer }
-  let(:tool)      { described_class.new(workspace: workspace, confirmer: confirmer) }
+  let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-write-root-')).realpath }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
+  let(:confirmer)  { build_confirmer }
+  let(:tool)       { described_class.new(workspace: workspace, confirmer: confirmer) }
 
   after { FileUtils.rm_rf(root) }
 
@@ -29,7 +30,17 @@ RSpec.describe Pikuri::Workspace::Write do
     confirmer
   end
 
+  # Create a file AND mark it read in the ledger — the common overwrite
+  # fixture is "a file the model has already read", so it clears the
+  # read-before-overwrite gate. Tests that exercise the gate itself use
+  # +create_unread+.
   def write_file(rel, content)
+    path = create_unread(rel, content)
+    workspace.mark_read(path)
+    path
+  end
+
+  def create_unread(rel, content)
     path = root + rel
     FileUtils.mkdir_p(path.dirname)
     File.write(path, content)
@@ -145,6 +156,39 @@ RSpec.describe Pikuri::Workspace::Write do
       assert result.start_with?('Error: utf.txt already contains'),
              "expected identical-content error, got #{result.inspect}"
       assert_equal [], confirmer.requests
+    end
+  end
+
+  describe '.write read-before-overwrite gate' do
+    it 'refuses overwriting an existing file that has not been read, before confirming' do
+      create_unread('unread.txt', "old\n")
+
+      result = described_class.write(workspace: workspace, confirmer: confirmer,
+                                     path: 'unread.txt', content: "new\n")
+
+      assert result.start_with?('Error: unread.txt exists but has not been read this conversation'),
+             "expected read-first error, got #{result.inspect}"
+      assert_equal [], confirmer.requests
+      assert_equal "old\n", (root + 'unread.txt').read
+    end
+
+    it 'allows the overwrite once the file has been read via the read tool' do
+      create_unread('viaread.txt', "old\n")
+      Pikuri::Workspace::Read.read(workspace: workspace, path: 'viaread.txt', offset: 1, limit: 2000)
+      cf = build_confirmer(true)
+
+      result = described_class.write(workspace: workspace, confirmer: cf,
+                                     path: 'viaread.txt', content: "new\n")
+
+      assert_equal 'Updated viaread.txt (4 → 4 bytes)', result
+      assert_equal "new\n", (root + 'viaread.txt').read
+    end
+
+    it 'does not gate a new file (nothing to read)' do
+      result = described_class.write(workspace: workspace, confirmer: confirmer,
+                                     path: 'brand-new.txt', content: "hi\n")
+
+      assert_equal 'Created brand-new.txt (3 bytes)', result
     end
   end
 

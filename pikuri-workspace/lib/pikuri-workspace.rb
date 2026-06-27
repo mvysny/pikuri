@@ -3,7 +3,8 @@
 require 'pikuri-core'
 
 # Entry file for the pikuri-workspace gem. After
-# +require 'pikuri-workspace'+, +Pikuri::Workspace::Filesystem+,
+# +require 'pikuri-workspace'+, +Pikuri::Workspace::Filesystem+, the
+# +Pikuri::Workspace::Workspace+ composite (Filesystem + read record),
 # +Pikuri::Workspace::Confirmer+, and the five file tools (+Read+,
 # +Write+, +Edit+, +Grep+, +Glob+) are all defined under the
 # +Pikuri::Workspace+ namespace.

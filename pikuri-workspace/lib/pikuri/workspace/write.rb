@@ -28,12 +28,16 @@ module Pikuri
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #
-    # Edit's +old_string+ argument is an implicit read-check: the model
-    # can't write a correct +old_string+ without having read the file, so
-    # blast radius is bounded by what the model actually knows about file
-    # state. Write has no such check, so a hallucinated 500-line +content+
-    # could clobber unread work. The confirmation prompt guards exactly
-    # the gap Edit's argument shape already covers.
+    # Both tools share the read-before-edit gate (an overwrite of an
+    # existing file is refused unless the {Workspace}'s read record shows
+    # a read this conversation). But Edit has a *second*, content-level guard
+    # the gate can't give Write: its +old_string+ must match the current
+    # bytes, so even a read file can only be changed where the model
+    # demonstrably knows the content. Write has no such per-change check
+    # — a hallucinated 500-line +content+ would clobber the whole file —
+    # so on top of the shared gate it asks for confirmation, covering the
+    # gap Edit's argument shape covers for free. New-file writes hit
+    # neither (nothing to read, nothing to clobber).
     #
     # == Side effects
     #
@@ -58,14 +62,15 @@ module Pikuri
 
         Usage:
         - Use for new files or full-file rewrites; for partial changes use `edit` instead.
-        - Overwriting an existing file requires user confirmation; identical content is rejected as a no-op error — if you see that error, re-read the file rather than trying again.
+        - Overwriting an existing file requires that you have read it this conversation, and then user confirmation; identical content is rejected as a no-op error — if you see that error, re-read the file rather than trying again.
         - Parent directories are created automatically (mkdir -p).
         - Writes the exact bytes supplied: no trailing-newline normalization, no encoding conversion.
         - Paths outside the workspace are refused.
       DESC
 
-      # @param workspace [Filesystem] captured for path resolution;
-      #   all writes route through +workspace.resolve_for_write+.
+      # @param workspace [Workspace] captured for path resolution, the
+      #   read-before-overwrite gate, and read-ledger marking; writes
+      #   route through +workspace.resolve_for_write+.
       # @param confirmer [Confirmer] consulted before any overwrite
       #   of an existing file with non-identical content.
       # @return [Write]
@@ -92,7 +97,7 @@ module Pikuri
       # (new / identical / differs), and return either a success
       # observation or an +"Error: ..."+ observation.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @param confirmer [Confirmer]
       # @param path [String] raw path as supplied by the LLM
       # @param content [String] bytes to write
@@ -102,6 +107,11 @@ module Pikuri
 
         if resolved.exist?
           return "Error: #{path} is a directory" if resolved.directory?
+
+          unless workspace.read?(resolved)
+            return "Error: #{path} exists but has not been read this conversation; " \
+                   'use the read tool first so you do not clobber unread changes.'
+          end
 
           existing = read_for_compare(resolved, path)
 
@@ -117,9 +127,13 @@ module Pikuri
           return "Error: user declined the write to #{path}." unless confirmer.confirm?(request: request)
 
           write_bytes(resolved, content)
+          workspace.mark_read(resolved)
           "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)"
         else
           write_bytes(resolved, content)
+          # A just-authored file counts as read: the model supplied its
+          # full bytes, so a follow-up edit needn't re-read it.
+          workspace.mark_read(resolved)
           "Created #{path} (#{content.bytesize} bytes)"
         end
       rescue Filesystem::Error, Error => e

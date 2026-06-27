@@ -5,7 +5,8 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Glob do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-glob-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after do

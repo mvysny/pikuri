@@ -26,8 +26,9 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
   end
 
   describe 'integration with Pikuri::SubAgent::Extension' do
-    let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-grr-spec-')).realpath }
-    let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+    let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-grr-spec-')).realpath }
+    let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+    let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
 
     after { FileUtils.rm_rf(root) }
 

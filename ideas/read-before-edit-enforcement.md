@@ -1,10 +1,19 @@
 # Read-before-edit enforcement
 
-Status: **designed, not built.** The design is locked (this file); what
-remains is a workspace refactor, staged below. The one *harness* item
-in the Claude-parity backport set — Claude Code's harness fails an
-`edit` whose target wasn't `Read` earlier in the conversation; pikuri's
-`edit` only *claims* to.
+Status: **mostly built.** The enforcement + composite landed and the
+full suite is green; the only remaining piece is the optional
+`Workspace::Extension` dedup (refactor step 3, see below) — deferred
+until a second host (`pikuri-tui` / `pikuri-web`) makes the single
+registration point pay off. The one *harness* item in the Claude-parity
+backport set — Claude Code's harness fails an `edit` whose target wasn't
+`Read` earlier in the conversation; pikuri's `edit` used to only *claim*
+to, and now actually does.
+
+One design change from the locked plan: the `ReadLedger` class was
+**inlined** into the {Workspace} composite (an inline `Set` of
+relative-path strings). It had exactly one caller and no logic of its
+own beyond membership, so a separate class was the kind of speculative
+abstraction the project avoids.
 
 ## The gap: the description promises an enforcement that doesn't exist
 
@@ -117,17 +126,22 @@ it takes a `Filesystem` today despite the name; it'll take a `Workspace`.
 
 ## Refactor scope (reviewable steps)
 
-1. Add `ReadLedger` + the `Workspace::Workspace` composite, with specs.
-2. Flip the five tools to take the composite; wire `mark_read` into
+1. ✅ Add the `Workspace::Workspace` composite (read record inlined as a
+   `Set`, no separate `ReadLedger` class), with specs.
+2. ✅ Flip the five tools to take the composite; wire `mark_read` into
    `Read`/`Edit`/`Write` and the `read?` checks into `Edit`/`Write`;
    fix the `with_workspace` signatures.
-3. Add `Workspace::Extension`; switch `bin/pikuri-code` from five
-   `add_tool` calls to one `add_extension`.
-4. Update the `sub_agent_tool.rb` temp-workspace site to wrap its
+3. ⏳ **Remaining.** Add `Workspace::Extension`; switch `bin/pikuri-code`
+   from five `add_tool` calls to one `add_extension`. Deferred until a
+   second host wires the file tools (the dedup payoff). Until then the
+   bin builds the composite inline (`bin/pikuri-code`: `filesystem` for
+   Bash/sandbox, `workspace` composite for the file tools).
+4. ✅ Update the `sub_agent_tool.rb` temp-workspace site to wrap its
    freshly-minted `Filesystem` in a `Workspace` composite.
-5. Update specs — the bulk of the diff: every `Read.new(workspace: fs)`
-   (and siblings) becomes the composite.
-6. Reconcile the "Why no confirmer" paragraph in `edit.rb`'s yardoc.
+5. ✅ Update specs (pikuri-workspace, plus `git_repo_researcher_spec`,
+   the subagents temp-workspace spec, and pikuri-pdf's read spec).
+6. ✅ Reconcile the "Why no confirmer" paragraph in `edit.rb`'s yardoc
+   (and Write's "Why ask-on-overwrite").
 
 ## Source
 

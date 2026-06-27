@@ -166,8 +166,10 @@ module Pikuri
         - Avoid tiny repeated slices — if you need more context, read a larger window.
       DESC
 
-      # @param workspace [Filesystem] captured for path resolution;
-      #   all reads route through +workspace.resolve_for_read+.
+      # @param workspace [Workspace] captured for path resolution and
+      #   read-ledger marking; reads route through
+      #   +workspace.resolve_for_read+ and record via
+      #   +workspace.mark_read+.
       # @return [Read]
       def initialize(workspace:)
         super(
@@ -192,12 +194,12 @@ module Pikuri
       end
 
       # Produce a new {Read} bound to +workspace+. Used by
-      # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
-      # +workspace_factory:+ — the parent's instance is rebuilt for
-      # the sub-agent's fresh workspace so paths resolve against the
-      # right root.
+      # {Pikuri::SubAgent::SubAgentTool} when a persona needs a fresh
+      # (temp) workspace — the parent's instance is rebuilt so paths
+      # resolve against the right root and reads land in that
+      # workspace's own ledger.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @return [Read]
       def with_workspace(workspace)
         self.class.new(workspace: workspace)
@@ -207,7 +209,7 @@ module Pikuri
       # missing files, and return either the cat-n-formatted slice or an
       # +"Error: ..."+ observation.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @param path [String] raw path as supplied by the LLM
       # @param offset [Integer] 1-indexed line number to start at
       # @param limit [Integer] maximum lines to return
@@ -230,6 +232,11 @@ module Pikuri
           resolved, offset: offset, limit: limit,
           max_bytes: MAX_BYTES, max_line_length: MAX_LINE_LENGTH
         )
+        # Record the read so a later edit/overwrite of this path clears
+        # the read-before-edit gate. Any successful text/PDF read counts,
+        # including a partial window — the exact-bytes guard is Edit's
+        # +old_string+ match; the ledger only attests "engaged via read".
+        workspace.mark_read(resolved)
         render_page(page)
       rescue Filesystem::Error => e
         "Error: #{e.message}"

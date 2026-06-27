@@ -15,8 +15,9 @@ require 'pathname'
 require 'pikuri-workspace'
 
 RSpec.describe 'Workspace::Read on a registered PDF extractor' do
-  let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-pdf-read-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-pdf-read-')).realpath }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
 
   before { Pikuri::Extractors::PDF.register }
 
