@@ -6,10 +6,10 @@ require 'uri'
 module Pikuri
   module Code
     # The +git_clone+ tool — shallow-clone a public git repository into
-    # the workspace. Instantiating +Code::GitClone.new(workspace: ws)+
+    # the workspace. Instantiating +Code::GitClone.new(filesystem: fs)+
     # produces a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is
     # identical to any bundled tool's; +execute+ closes over the
-    # workspace and a lazily-minted {Bash::Sandbox::Bubblewrap}.
+    # filesystem and a lazily-minted {Bash::Sandbox::Bubblewrap}.
     #
     # == Why this exists
     #
@@ -92,17 +92,17 @@ module Pikuri
         - Clones run inside a sandbox bound to your workspace — host files, SSH keys, and `~/.gitconfig` are NOT visible to the cloned repo's hooks/filters.
       DESC
 
-      # @param workspace [Pikuri::Workspace::Filesystem] captured for
+      # @param filesystem [Pikuri::Workspace::Filesystem] captured for
       #   the clone target root and the sandbox bind set.
       # @param sandbox [Bash::Sandbox, nil] optional sandbox override
       #   (defaults to a lazily-minted {Bash::Sandbox::Bubblewrap}
-      #   bound to +workspace+). Pass {Bash::Sandbox::NONE} in tests
+      #   bound to +filesystem+). Pass {Bash::Sandbox::NONE} in tests
       #   that don't have +bwrap+ on +PATH+; production wiring leaves
       #   it +nil+ so the Bubblewrap mint happens at the right moment
-      #   (after {#with_workspace} replaces the workspace).
+      #   (after {#with_workspace} replaces the filesystem).
       # @return [GitClone]
-      def initialize(workspace:, sandbox: nil)
-        @workspace = workspace
+      def initialize(filesystem:, sandbox: nil)
+        @filesystem = filesystem
         @sandbox = sandbox
         super(
           name: 'git_clone',
@@ -118,15 +118,15 @@ module Pikuri
         )
       end
 
-      # Produce a new {GitClone} bound to +workspace+. The sandbox is
+      # Produce a new {GitClone} bound to +filesystem+. The sandbox is
       # NOT carried over — the new instance lazily mints a fresh
-      # Bubblewrap from the new workspace, since a sandbox's bind set
-      # depends on the workspace it constrains. See class header.
+      # Bubblewrap from the new filesystem, since a sandbox's bind set
+      # depends on the filesystem it constrains. See class header.
       #
-      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [GitClone]
-      def with_workspace(workspace)
-        self.class.new(workspace: workspace)
+      def with_workspace(filesystem)
+        self.class.new(filesystem: filesystem)
       end
 
       private
@@ -134,7 +134,7 @@ module Pikuri
       # Mint the sandbox on first use, cache for subsequent calls.
       # See class header for why this isn't eager.
       def sandbox
-        @sandbox ||= Bash::Sandbox::Bubblewrap.new(workspace: @workspace)
+        @sandbox ||= Bash::Sandbox::Bubblewrap.new(filesystem: @filesystem)
       end
 
       def execute_clone(url:)
@@ -142,7 +142,7 @@ module Pikuri
         return uri if uri.is_a?(String) # error message
 
         target_name = derive_target_name(uri)
-        target_path = @workspace.project_root.join(target_name)
+        target_path = @filesystem.project_root.join(target_name)
         if target_path.exist?
           return "Error: target directory #{target_name.inspect} already exists in the workspace."
         end
@@ -152,7 +152,7 @@ module Pikuri
           'git', 'clone', '--depth', '1', '--no-recurse-submodules', '--quiet',
           '--', url, target_name
         ])
-        result = Pikuri::Subprocess.spawn(*argv, chdir: @workspace.project_root.to_s).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: @filesystem.project_root.to_s).wait
 
         if result.status.success?
           "Cloned #{url} → #{target_name}/ (depth=1, no submodules)."
@@ -187,7 +187,7 @@ module Pikuri
       # for path-less URLs. The basename is intentionally taken from
       # the parsed URI so path-traversal segments (+..+) in the URL
       # collapse to harmless directory names — the clone still lands
-      # inside +workspace.project_root+ because the +chdir+ + the
+      # inside +filesystem.project_root+ because the +chdir+ + the
       # workspace containment check on subsequent reads enforce it.
       def derive_target_name(uri)
         name = File.basename(uri.path.to_s)

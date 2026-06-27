@@ -3,10 +3,10 @@
 module Pikuri
   module Code
     # The +bash+ tool — run an arbitrary shell command in the workspace.
-    # Instantiating +Code::Bash.new(workspace: ws, confirmer: c)+ produces
+    # Instantiating +Code::Bash.new(filesystem: fs, confirmer: c)+ produces
     # a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
     # any bundled tool's. Same shape as {Pikuri::Workspace::Write}
-    # (workspace + confirmer captured by the +execute+ closure at
+    # (filesystem + confirmer captured by the +execute+ closure at
     # construction).
     #
     # == Confirmation
@@ -130,8 +130,8 @@ module Pikuri
         - Commit or push only when the user asks.
       DESC
 
-      # @param workspace [Pikuri::Workspace::Filesystem] captured for
-      #   +chdir+; commands run in +workspace.project_root+, always.
+      # @param filesystem [Pikuri::Workspace::Filesystem] captured for
+      #   +chdir+; commands run in +filesystem.project_root+, always.
       #   Even when the surrounding Ruby process has already chdir'd
       #   to the project root (e.g. +bin/pikuri-code+ does this at
       #   startup), Bash still passes the explicit +chdir:+ — so a
@@ -143,14 +143,14 @@ module Pikuri
       #   every command.
       # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam
       #   (default {Sandbox::NONE} — identity passthrough). Pass
-      #   {Sandbox::Bubblewrap.new(workspace: workspace)+} for an
-      #   isolated subprocess whose filesystem view is the workspace's
+      #   {Sandbox::Bubblewrap.new(filesystem: filesystem)+} for an
+      #   isolated subprocess whose filesystem view is the filesystem's
       #   readable/writable roots plus the OS-runtime baseline. See
       #   {Sandbox} for the rationale.
       # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+;
       #   fail-loud at construction rather than the first tool call.
       # @return [Bash]
-      def initialize(workspace:, confirmer:, sandbox: Sandbox::NONE)
+      def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE)
         Bash.send(:check_binaries!)
         # Capability advisory when no sandbox is in play. Without a
         # sandbox, +bash+ runs with pikuri's own UID + filesystem view —
@@ -182,7 +182,7 @@ module Pikuri
                                "max #{MAX_TIMEOUT}, e.g. 300."
           },
           execute: ->(command:, description: nil, timeout: DEFAULT_TIMEOUT) {
-            Bash.run(workspace: workspace, confirmer: confirmer, sandbox: sandbox,
+            Bash.run(filesystem: filesystem, confirmer: confirmer, sandbox: sandbox,
                      command: command, description: description, timeout: timeout)
           }
         )
@@ -192,7 +192,7 @@ module Pikuri
       # either +"$ ...\n<out>\n\nexit status: N"+ on a normal exit, or
       # +"Error: ..."+ on rejection / timeout / bad inputs.
       #
-      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv;
       #   {Sandbox::NONE} for identity passthrough,
@@ -201,7 +201,7 @@ module Pikuri
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
       # @return [String]
-      def self.run(workspace:, confirmer:, command:, description:, timeout:, sandbox: Sandbox::NONE)
+      def self.run(filesystem:, confirmer:, command:, description:, timeout:, sandbox: Sandbox::NONE)
         return 'Error: empty bash command.' if command.strip.empty?
         return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
@@ -213,8 +213,8 @@ module Pikuri
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",
           'bash', '-c', command
         ])
-        result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s,
-                                                 env: subprocess_env(workspace)).wait
+        result = Pikuri::Subprocess.spawn(*argv, chdir: filesystem.project_root.to_s,
+                                                 env: subprocess_env(filesystem)).wait
 
         output = truncate(result.output)
         exit_code = result.status.exitstatus
@@ -251,7 +251,7 @@ module Pikuri
       end
       private_class_method :compose_request
 
-      # Environment for the bash subprocess: the workspace's git-identity
+      # Environment for the bash subprocess: the filesystem's git-identity
       # vars ({Pikuri::Workspace::Filesystem#env}) layered over a
       # "de-bundlerized" base.
       #
@@ -267,15 +267,15 @@ module Pikuri
       # die with a baffling "the Gemfile specifies ... is missing" error.
       #
       # The fix is to hand bash the environment as it was *before* bundler
-      # touched it (see {.bundler_clean_delta}), with the workspace's git
+      # touched it (see {.bundler_clean_delta}), with the filesystem's git
       # identity on top.
       #
-      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [Hash{String=>(String,nil)}] +env:+ delta for
       #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key in the
       #   child).
-      def self.subprocess_env(workspace)
-        bundler_clean_delta.merge(workspace.env)
+      def self.subprocess_env(filesystem)
+        bundler_clean_delta.merge(filesystem.env)
       end
       private_class_method :subprocess_env
 

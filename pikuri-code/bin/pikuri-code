@@ -194,7 +194,7 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # expects the sandbox doesn't silently run without one. Disable with
 # --no-sandbox / --yolo.
 sandbox = if sandbox_enabled
-            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: filesystem)
+            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(filesystem: filesystem)
           else
             Pikuri::Code::Bash::Sandbox::NONE
           end
@@ -322,7 +322,7 @@ begin
     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
     c.add_sub_agent_tool Pikuri::Tool::FETCH
     c.add_extension Pikuri::Code::Extension.new(
-      workspace: filesystem,
+      filesystem: filesystem,
       confirmer: confirmer,
       sandbox: sandbox
     )

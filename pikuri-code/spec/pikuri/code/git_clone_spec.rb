@@ -5,10 +5,10 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Code::GitClone do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-git-clone-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   # Override the lazy Bubblewrap sandbox with the identity passthrough,
   # so the kernel-namespace probe doesn't bite this spec.
-  let(:tool)      { described_class.new(workspace: workspace, sandbox: Pikuri::Code::Bash::Sandbox::NONE) }
+  let(:tool)      { described_class.new(filesystem: filesystem, sandbox: Pikuri::Code::Bash::Sandbox::NONE) }
 
   after { FileUtils.rm_rf(root) }
 
@@ -120,8 +120,8 @@ RSpec.describe Pikuri::Code::GitClone do
         assert_kind_of described_class, forked
         refute_equal tool.object_id, forked.object_id
         # The forked instance lazily mints its own sandbox — verify by
-        # reading the private @workspace ivar.
-        assert_equal other_root, forked.instance_variable_get(:@workspace).project_root
+        # reading the private @filesystem ivar.
+        assert_equal other_root, forked.instance_variable_get(:@filesystem).project_root
       ensure
         FileUtils.rm_rf(other_root)
       end

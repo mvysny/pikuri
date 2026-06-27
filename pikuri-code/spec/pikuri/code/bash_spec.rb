@@ -5,9 +5,9 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Code::Bash do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-bash-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:confirmer) { build_confirmer(true) }
-  let(:tool)      { described_class.new(workspace: workspace, confirmer: confirmer) }
+  let(:tool)      { described_class.new(filesystem: filesystem, confirmer: confirmer) }
 
   after do
     FileUtils.rm_rf(root)
@@ -36,14 +36,14 @@ RSpec.describe Pikuri::Code::Bash do
 
   describe '.run happy path' do
     it 'runs the command and returns command-echo + output + exit status' do
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo hello', description: nil, timeout: 120)
 
       assert_equal "$ echo hello\nhello\n\n\nexit status: 0", result
     end
 
     it 'combines stdout and stderr into one stream' do
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo out; echo err >&2',
                                    description: nil, timeout: 120)
 
@@ -53,7 +53,7 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'reports non-zero exit status as a normal observation (not an Error)' do
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'exit 3', description: nil, timeout: 120)
 
       refute result.start_with?('Error:'), "expected non-Error observation, got #{result.inspect}"
@@ -61,7 +61,7 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'runs in the workspace project_root' do
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'pwd', description: nil, timeout: 120)
 
       assert_includes result, root.to_s
@@ -72,7 +72,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'composes the request with description and a non-default timeout' do
       cf = build_confirmer(true)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: 'ls -la', description: 'List files',
                           timeout: 300)
 
@@ -84,7 +84,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'drops the trailing colon when no description is given' do
       cf = build_confirmer(true)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: 'pwd', description: nil, timeout: 120)
 
       assert_equal 'OK to run bash', cf.requests.first.question
@@ -93,7 +93,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'omits the timeout suffix at the default 120s' do
       cf = build_confirmer(true)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: 'pwd', description: 'Print working dir',
                           timeout: 120)
 
@@ -103,7 +103,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'includes the timeout suffix when non-default with no description' do
       cf = build_confirmer(true)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: 'pwd', description: nil, timeout: 300)
 
       assert_equal 'OK to run bash [Timeout: 300s]', cf.requests.first.question
@@ -112,7 +112,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'treats whitespace-only description as no description' do
       cf = build_confirmer(true)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: 'pwd', description: '   ', timeout: 120)
 
       assert_equal 'OK to run bash', cf.requests.first.question
@@ -121,7 +121,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'returns a decline-Error when the user rejects' do
       cf = build_confirmer(false)
 
-      result = described_class.run(workspace: workspace, confirmer: cf,
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: 'rm -rf /', description: nil, timeout: 120)
 
       assert_equal 'Error: user declined the bash command.', result
@@ -133,7 +133,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'rejects empty command before consulting the confirmer' do
       cf = build_confirmer # no answers queued
 
-      result = described_class.run(workspace: workspace, confirmer: cf,
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: '', description: nil, timeout: 120)
 
       assert_equal 'Error: empty bash command.', result
@@ -142,7 +142,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'rejects whitespace-only command' do
       cf = build_confirmer
-      result = described_class.run(workspace: workspace, confirmer: cf,
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: "  \t\n  ", description: nil, timeout: 120)
 
       assert_equal 'Error: empty bash command.', result
@@ -151,7 +151,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'rejects timeout < 1 before consulting the confirmer' do
       cf = build_confirmer
-      result = described_class.run(workspace: workspace, confirmer: cf,
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: 'echo hi', description: nil, timeout: 0)
 
       assert_equal 'Error: timeout must be >= 1, got 0', result
@@ -160,7 +160,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'rejects timeout > MAX_TIMEOUT before consulting the confirmer' do
       cf = build_confirmer
-      result = described_class.run(workspace: workspace, confirmer: cf,
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command: 'echo hi', description: nil, timeout: 601)
 
       assert_equal 'Error: timeout must be <= 600, got 601', result
@@ -172,7 +172,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'returns a timeout Error when the command exceeds the limit' do
       # 1s timeout, sleeping 3s: timeout sends SIGTERM, sleep handles it,
       # exits via signal — `timeout` exits 124.
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'sleep 3', description: nil, timeout: 1)
 
       assert result.start_with?('Error: command timed out after 1s'),
@@ -185,7 +185,7 @@ RSpec.describe Pikuri::Code::Bash do
       # Print before sleeping so popen2e's pipe carries the line; then
       # block past the 1s timeout. Echo's stdout is line-buffered, so
       # the line lands before the sleep.
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo partial; sleep 3',
                                    description: nil, timeout: 1)
 
@@ -247,7 +247,7 @@ RSpec.describe Pikuri::Code::Bash do
       # project breaks. Skip when not running under bundler.
       skip 'not running under bundler' unless ENV['BUNDLE_GEMFILE']
 
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo "[${BUNDLE_GEMFILE:-unset}]"',
                                    description: nil, timeout: 30)
 
@@ -255,7 +255,7 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'preserves the host PATH so the command still finds its tools' do
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'command -v echo >/dev/null && echo ok',
                                    description: nil, timeout: 30)
 
@@ -292,7 +292,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'the confirmation request carries the raw command — display escaping is the renderer\'s job' do
       cf = build_confirmer(false)
 
-      described_class.run(workspace: workspace, confirmer: cf,
+      described_class.run(filesystem: filesystem, confirmer: cf,
                           command: "echo hi\rrm -rf /", description: nil, timeout: 120)
 
       assert_equal "$ echo hi\rrm -rf /", cf.requests.first.detail
@@ -325,7 +325,7 @@ RSpec.describe Pikuri::Code::Bash do
       # Generate output large enough to trigger truncation: 32 KB > 30 KB cap.
       # Use a quick `printf` repetition; combined head+tail is 30 KB so this
       # exercises the cap with a small margin.
-      result = described_class.run(workspace: workspace, confirmer: confirmer,
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'yes x | head -c 32768',
                                    description: nil, timeout: 30)
 
@@ -340,7 +340,7 @@ RSpec.describe Pikuri::Code::Bash do
       # But `chdir` for the spawn is fixed to workspace.project_root. Verify by
       # writing a file from inside the command via a relative path; it
       # should land under root.
-      described_class.run(workspace: workspace, confirmer: confirmer,
+      described_class.run(filesystem: filesystem, confirmer: confirmer,
                           command: "echo content > marker.txt",
                           description: nil, timeout: 30)
 
@@ -372,7 +372,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'accepts an optional description and propagates it to the confirmer' do
       cf = build_confirmer(true)
-      t  = described_class.new(workspace: workspace, confirmer: cf)
+      t  = described_class.new(filesystem: filesystem, confirmer: cf)
 
       t.run('command' => 'echo desc', 'description' => 'Echo a token')
 

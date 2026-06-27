@@ -9,10 +9,10 @@ module Pikuri
     class Bash
       # Filesystem-sandbox seam for the bash tool. {Bash} runs +bash -c
       # <command>+ unmediated by default ({NONE}, identity wrap); host
-      # binaries that want isolation pass {Bubblewrap.new(workspace:)+}
+      # binaries that want isolation pass {Bubblewrap.new(filesystem:)+}
       # to get a +bwrap+-wrapped subprocess whose filesystem view is
-      # constrained to the {Workspace}'s readable/writable roots plus a
-      # curated OS-runtime baseline.
+      # constrained to the {Workspace::Filesystem}'s readable/writable
+      # roots plus a curated OS-runtime baseline.
       #
       # == Why a seam, not a flag on Bash
       #
@@ -296,21 +296,21 @@ module Pikuri
             paths.map { |p| Pathname.new(p) }.uniq.freeze
           end
 
-          # @param workspace [Pikuri::Workspace::Filesystem] the source of
+          # @param filesystem [Pikuri::Workspace::Filesystem] the source of
           #   per-host readable/writable roots, the +chdir+ target for
           #   the subprocess, and the parent of the per-session
           #   overlay state ({Workspace::Filesystem#internal_temp}).
-          #   Every +workspace.readable+ dir is mounted as a read-write
+          #   Every +filesystem.readable+ dir is mounted as a read-write
           #   ephemeral overlay (or +--ro-bind+ if the kernel lacks
           #   overlayfs-in-userns support); see the class header.
-          # @raise [RuntimeError] if the workspace lists +/+ as writable
+          # @raise [RuntimeError] if the filesystem lists +/+ as writable
           #   (Bubblewrap is for filesystem containment, which is moot
           #   when the entire filesystem is the workspace — typically
           #   {Workspace::Filesystem::AllowAll}; the host should pass
           #   {NONE} instead).
-          # @raise [RuntimeError] if the workspace has +temp+ set but
+          # @raise [RuntimeError] if the filesystem has +temp+ set but
           #   +alias_tmp_to_temp+ unset — see the class header.
-          # @raise [RuntimeError] if any workspace path equals or is
+          # @raise [RuntimeError] if any filesystem path equals or is
           #   an ancestor of a known container/VM control socket
           #   (+/var/run/docker.sock+, +containerd.sock+, +podman.sock+,
           #   …); see {DENIED_CONTAINER_SOCKETS}.
@@ -319,8 +319,8 @@ module Pikuri
           #   support). A *separate* overlayfs probe failure does NOT
           #   raise — it degrades to read-only binds (see the class
           #   header's "Overlay support").
-          def initialize(workspace:)
-            @workspace = workspace
+          def initialize(filesystem:)
+            @filesystem = filesystem
             reject_unbounded_workspace!
             reject_unaliased_temp!
             reject_container_socket_exposure!
@@ -345,7 +345,7 @@ module Pikuri
           # construct rather than +--bind / /+ over our own
           # tmpfs/proc/dev layout.
           def reject_unbounded_workspace!
-            return unless @workspace.writable.include?(Pathname.new('/').realpath)
+            return unless @filesystem.writable.include?(Pathname.new('/').realpath)
 
             raise "Code::Bash::Sandbox::Bubblewrap: workspace lists '/' as " \
                   'writable (likely Workspace::Filesystem::AllowAll). ' \
@@ -362,8 +362,8 @@ module Pikuri
           # and then hits "outside workspace" on every Read/Write/Edit/
           # Grep/Glob against the same +/tmp/*+ path. Fail at boot.
           def reject_unaliased_temp!
-            return if @workspace.temp.nil?
-            return if @workspace.alias_tmp_to_temp
+            return if @filesystem.temp.nil?
+            return if @filesystem.alias_tmp_to_temp
 
             raise 'Code::Bash::Sandbox::Bubblewrap: workspace has temp set ' \
                   'but alias_tmp_to_temp is off. This sandbox binds ' \
@@ -390,7 +390,7 @@ module Pikuri
           # carry +S+ along).
           def reject_container_socket_exposure!
             exposed = []
-            roots = (@workspace.writable + @workspace.readable).uniq
+            roots = (@filesystem.writable + @filesystem.readable).uniq
             DENIED_CONTAINER_SOCKETS.each do |sock|
               root = roots.find do |r|
                 r == sock || sock.to_s.start_with?(r.to_s + File::SEPARATOR)
@@ -432,7 +432,7 @@ module Pikuri
                     'support enabled in the kernel? Pass --no-sandbox to skip.'
             end
 
-            overlayable = @workspace.readable - @workspace.writable
+            overlayable = @filesystem.readable - @filesystem.writable
             @overlay_supported = overlayable.empty? ? false : probe_overlay_support?
           rescue Errno::ENOENT
             raise "Code::Bash::Sandbox::Bubblewrap: 'bwrap' not found on PATH. " \
@@ -500,8 +500,8 @@ module Pikuri
             #    across bash calls); otherwise we fall back to tmpfs.
             args.concat(['--proc', '/proc', '--dev', '/dev'])
 
-            if @workspace.temp
-              args.concat(['--bind', @workspace.temp.to_s, '/tmp'])
+            if @filesystem.temp
+              args.concat(['--bind', @filesystem.temp.to_s, '/tmp'])
               mounted << '/tmp'
             else
               args.concat(['--tmpfs', '/tmp'])
@@ -516,13 +516,13 @@ module Pikuri
             #    are read-write ephemeral overlays when overlayfs is
             #    supported (so toolchain installs succeed but vanish at
             #    session exit), falling back to --ro-bind otherwise.
-            @workspace.writable.each do |p|
+            @filesystem.writable.each do |p|
               s = p.to_s
               next if mounted.include?(s)
               args.concat(['--bind', s, s])
               mounted << s
             end
-            @workspace.readable.each do |p|
+            @filesystem.readable.each do |p|
               s = p.to_s
               next if mounted.include?(s)
               args.concat(@overlay_supported ? overlay_mount_args(s) : ['--ro-bind', s, s])
@@ -533,7 +533,7 @@ module Pikuri
             args.concat([
               '--unshare-all', '--share-net',
               '--die-with-parent', '--new-session',
-              '--chdir', @workspace.project_root.to_s
+              '--chdir', @filesystem.project_root.to_s
             ])
             args
           end
@@ -561,7 +561,7 @@ module Pikuri
           # {Bubblewrap} would hit +EBUSY+ at the second mount.
           def overlay_mount_args(path)
             slug = path.gsub(/[^A-Za-z0-9._-]/, '_').sub(/\A_+/, '')
-            overlay_dir = @workspace.internal_temp + "overlay-#{slug}"
+            overlay_dir = @filesystem.internal_temp + "overlay-#{slug}"
             upper = overlay_dir + 'upper'
             work  = overlay_dir + 'work'
             FileUtils.mkdir_p(upper)

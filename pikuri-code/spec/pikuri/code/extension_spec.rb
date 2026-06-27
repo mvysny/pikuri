@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Code::Extension do
-  let(:workspace) do
+  let(:filesystem) do
     Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd)
   end
   let(:confirmer) { Pikuri::Workspace::Confirmer::AutoApprove.new }
@@ -29,7 +29,7 @@ RSpec.describe Pikuri::Code::Extension do
   end
 
   it 'is an Agent::Extension by composition' do
-    ext = described_class.new(workspace: workspace, confirmer: confirmer)
+    ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
     assert_kind_of Pikuri::Agent::Extension, ext
   end
 
@@ -38,7 +38,7 @@ RSpec.describe Pikuri::Code::Extension do
 
     it 'registers Bash, the plan-mode pair, and GitClone as a sub-agent tool' do
       c = build_configurator(plan_mode: plan_mode)
-      described_class.new(workspace: workspace, confirmer: confirmer).configure(c)
+      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
 
       names = c.tools.map(&:name)
       assert_includes names, 'bash'
@@ -50,7 +50,7 @@ RSpec.describe Pikuri::Code::Extension do
 
     it 'appends the plan-mode explainer to the system prompt' do
       c = build_configurator(plan_mode: plan_mode)
-      described_class.new(workspace: workspace, confirmer: confirmer).configure(c)
+      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
 
       assert(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
     end
@@ -60,7 +60,7 @@ RSpec.describe Pikuri::Code::Extension do
       c.add_tool(Pikuri::Code::EnterPlanMode.new(plan_mode: plan_mode))
 
       err = assert_raises(RuntimeError) do
-        described_class.new(workspace: workspace, confirmer: confirmer).configure(c)
+        described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
       end
       assert_match(/EnterPlanMode.*cannot be pre-registered/, err.message)
     end
@@ -69,7 +69,7 @@ RSpec.describe Pikuri::Code::Extension do
   describe '#configure without a plan-mode control' do
     it 'still wires Bash + GitClone but no plan-mode tools' do
       c = build_configurator(plan_mode: nil)
-      described_class.new(workspace: workspace, confirmer: confirmer).configure(c)
+      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
 
       names = c.tools.map(&:name)
       assert_includes names, 'bash'
@@ -84,7 +84,7 @@ RSpec.describe Pikuri::Code::Extension do
     let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
 
     it 'injects the read-only reminder while plan mode is active' do
-      ext = described_class.new(workspace: workspace, confirmer: confirmer)
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
       ext.configure(build_configurator(plan_mode: plan_mode))
 
       assert_nil ext.on_user_message(nil, 'hello')
@@ -95,7 +95,7 @@ RSpec.describe Pikuri::Code::Extension do
     end
 
     it 'injects nothing when no plan-mode control is wired' do
-      ext = described_class.new(workspace: workspace, confirmer: confirmer)
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
       ext.configure(build_configurator(plan_mode: nil))
 
       assert_nil ext.on_user_message(nil, 'hello')
@@ -106,7 +106,7 @@ RSpec.describe Pikuri::Code::Extension do
     let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
 
     it 'emits PlanModeChanged on every transition' do
-      ext = described_class.new(workspace: workspace, confirmer: confirmer)
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
       ext.configure(build_configurator(plan_mode: plan_mode))
       ctx = build_ctx
       ext.bind(ctx)
@@ -119,7 +119,7 @@ RSpec.describe Pikuri::Code::Extension do
     end
 
     it 'is a no-op when no plan-mode control is wired' do
-      ext = described_class.new(workspace: workspace, confirmer: confirmer)
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
       ext.configure(build_configurator(plan_mode: nil))
       ctx = build_ctx
 

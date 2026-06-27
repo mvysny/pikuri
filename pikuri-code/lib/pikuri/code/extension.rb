@@ -30,7 +30,7 @@ module Pikuri
     #     c.add_tool Pikuri::Workspace::Edit.new(workspace:, plan_mode:)
     #     c.add_tool Pikuri::Workspace::Write.new(workspace:, confirmer:, plan_mode:)
     #     c.add_extension Pikuri::Code::Extension.new(
-    #       workspace: workspace,
+    #       filesystem: filesystem,
     #       confirmer: confirmer,
     #       sandbox: sandbox
     #     )
@@ -79,14 +79,14 @@ module Pikuri
         'Reminder: you are in plan mode (read-only) — research, design, ' \
         'and brainstorm, but do not edit files.'
 
-      # @param workspace [Pikuri::Workspace::Filesystem]
+      # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]
-      def initialize(workspace:, confirmer:, sandbox: Bash::Sandbox::NONE)
-        @workspace = workspace
-        @confirmer = confirmer
-        @sandbox   = sandbox
-        @plan_mode = nil
+      def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE)
+        @filesystem = filesystem
+        @confirmer  = confirmer
+        @sandbox    = sandbox
+        @plan_mode  = nil
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -98,7 +98,7 @@ module Pikuri
           end
         end
 
-        c.add_tool Bash.new(workspace: @workspace, confirmer: @confirmer, sandbox: @sandbox)
+        c.add_tool Bash.new(filesystem: @filesystem, confirmer: @confirmer, sandbox: @sandbox)
 
         # Plan mode rides the host-owned control; only wire its surface
         # when one was given to Agent.new (see the class header).
@@ -112,7 +112,7 @@ module Pikuri
         # GitClone is intentionally added via +add_sub_agent_tool+ only
         # (never visible to the parent). It exists solely for the
         # GIT_REPO_RESEARCHER persona.
-        c.add_sub_agent_tool GitClone.new(workspace: @workspace)
+        c.add_sub_agent_tool GitClone.new(filesystem: @filesystem)
         nil
       end
 

@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
   describe described_class::Bubblewrap do
     let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-sb-root-')).realpath }
-    let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+    let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
 
     after do
       FileUtils.rm_rf(root)
@@ -50,7 +50,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
     unless BWRAP_AVAILABLE
       it 'raises a clear RuntimeError when bwrap is missing' do
-        err = assert_raises(RuntimeError) { described_class.new(workspace: workspace) }
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: filesystem) }
         assert_includes err.message, "'bwrap' not found"
         assert_includes err.message, '--no-sandbox'
       end
@@ -60,7 +60,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
     # independent.
     it 'refuses construction when the workspace lists / as writable' do
       ws = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
-      err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+      err = assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
       assert_includes err.message, "lists '/' as"
       assert_includes err.message, 'Sandbox::NONE'
     end
@@ -71,7 +71,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         project_root: root, temp: true, alias_tmp_to_temp: false
       )
       begin
-        err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
         assert_includes err.message, 'temp set'
         assert_includes err.message, 'alias_tmp_to_temp'
       ensure
@@ -111,7 +111,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         calls = []
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0]])
         begin
-          described_class.new(workspace: workspace)
+          described_class.new(filesystem: filesystem)
         ensure
           restore_subprocess_spawn(original)
         end
@@ -131,7 +131,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         calls = []
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0], [true, 0]])
         begin
-          described_class.new(workspace: ws)
+          described_class.new(filesystem: ws)
         ensure
           restore_subprocess_spawn(original)
           FileUtils.rm_rf(overlay_dir)
@@ -154,7 +154,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         original = stub_subprocess_spawn(call_log: calls, results: [[true, 0], [false, 1]])
         begin
           # Construction must NOT raise — it degrades.
-          sandbox = described_class.new(workspace: ws)
+          sandbox = described_class.new(filesystem: ws)
           restore_subprocess_spawn(original)
 
           # wrap() does not spawn, so it's safe after restore. The
@@ -180,7 +180,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         # Basic probe fails; overlay probe must not be attempted.
         original = stub_subprocess_spawn(call_log: calls, results: [[false, 1]])
         begin
-          assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+          assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
         ensure
           restore_subprocess_spawn(original)
           FileUtils.rm_rf(ro_dir)
@@ -220,7 +220,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         # workspace.readable includes fake_sock_root → the bind would
         # carry fake_sock_root/docker.sock into the sandbox.
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [fake_sock_root])
-        err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
         assert_includes err.message, 'container/VM control sockets'
         assert_includes err.message, fake_sock.to_s
         assert_includes err.message, 'root escape'
@@ -228,7 +228,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
       it 'refuses construction when a workspace.writable root contains a denied socket' do
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, writable: [fake_sock_root])
-        err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
         assert_includes err.message, 'container/VM control sockets'
         assert_includes err.message, fake_sock.to_s
       end
@@ -240,7 +240,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         # regular file or socket. We point writable directly at the
         # socket file.
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, writable: [fake_sock])
-        err = assert_raises(RuntimeError) { described_class.new(workspace: ws) }
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: ws) }
         assert_includes err.message, fake_sock.to_s
       end
 
@@ -254,7 +254,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
           # in the absence of bwrap we just confirm the socket check
           # passes (i.e. the error is the bwrap-not-found one).
           err = begin
-            described_class.new(workspace: ws)
+            described_class.new(filesystem: ws)
             nil
           rescue RuntimeError => e
             e
@@ -274,7 +274,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         overlay_dir = Pathname.new(Dir.mktmpdir('pikuri-sb-overlay-')).realpath
         ws = Pikuri::Workspace::Filesystem.new(project_root: root, readable: [overlay_dir])
         begin
-          sandbox = described_class.new(workspace: ws)
+          sandbox = described_class.new(filesystem: ws)
           argv = sandbox.wrap(['true'])
 
           # The overlay path appears as --overlay-src <lower> followed by
@@ -313,12 +313,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
     if BWRAP_AVAILABLE
       it 'constructs successfully when bwrap is available' do
-        sandbox = described_class.new(workspace: workspace)
+        sandbox = described_class.new(filesystem: filesystem)
         assert_kind_of described_class, sandbox
       end
 
       it '#wrap composes the expected bwrap argv shape' do
-        sandbox = described_class.new(workspace: workspace)
+        sandbox = described_class.new(filesystem: filesystem)
         argv = sandbox.wrap(['bash', '-c', 'echo hi'])
 
         assert_equal 'bwrap', argv.first
@@ -344,7 +344,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
           project_root: root, temp: true, alias_tmp_to_temp: true
         )
         begin
-          sandbox = described_class.new(workspace: ws)
+          sandbox = described_class.new(filesystem: ws)
           argv = sandbox.wrap(['true'])
 
           # /tmp is bound to the workspace temp (persistent across bash calls).
@@ -363,7 +363,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
 
       it '#wrap exposes the OS-runtime baseline (/etc/ssl, etc.) when present' do
-        sandbox = described_class.new(workspace: workspace)
+        sandbox = described_class.new(filesystem: filesystem)
         argv = sandbox.wrap(['true'])
 
         described_class::ETC_BASELINE.each do |p|
@@ -374,7 +374,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
 
       it 'end-to-end: bwrap-wrapped echo runs inside the sandbox' do
-        sandbox = described_class.new(workspace: workspace)
+        sandbox = described_class.new(filesystem: filesystem)
         argv = sandbox.wrap(['bash', '-c', 'echo sandboxed'])
         result = Pikuri::Subprocess.spawn(*argv, chdir: root.to_s).wait
 
@@ -387,7 +387,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         begin
           File.write(outside + 'secret.txt', 'PEEKABOO')
 
-          sandbox = described_class.new(workspace: workspace)
+          sandbox = described_class.new(filesystem: filesystem)
           argv = sandbox.wrap(['bash', '-c', "cat #{outside}/secret.txt 2>&1 || echo blocked"])
           result = Pikuri::Subprocess.spawn(*argv, chdir: root.to_s).wait
 

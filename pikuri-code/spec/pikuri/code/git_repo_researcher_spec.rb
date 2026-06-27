@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
 
     let(:tools) do
       [
-        Pikuri::Code::GitClone.new(workspace: workspace, sandbox: Pikuri::Code::Bash::Sandbox::NONE),
+        Pikuri::Code::GitClone.new(filesystem: filesystem, sandbox: Pikuri::Code::Bash::Sandbox::NONE),
         Pikuri::Workspace::Read.new(workspace: workspace),
         Pikuri::Workspace::Grep.new(workspace: workspace),
         Pikuri::Workspace::Glob.new(workspace: workspace),
