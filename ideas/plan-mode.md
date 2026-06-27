@@ -1,9 +1,14 @@
 # Plan mode: host-owned read-only state, re-asserted per turn
 
-Status: **designed, not built.** The model is settled (this file) and
-the three open forks are decided (gem layout, enforcement scope, model
-entry — see "Decisions" below). Staging area: drain into source +
-`docs/guide/` as it lands.
+Status: **built.** Landed across pikuri-core (`Control::PlanMode` +
+`Agent`/`Configurator` plumbing), pikuri-workspace (the `Write`/`Edit`
+read-only gate), and pikuri-code (`EnterPlanMode` / `ExitPlanMode`
+tools, the `Extension` wiring, the `PlanModeChanged` event, the
+`plan-mode-reminder` prompt, and the `bin/pikuri-code` wiring). The
+three forks are decided as recorded below. Remaining: render
+`PlanModeChanged` in UI chrome — deferred until a TUI with a status
+line exists (the current REPL has none). Still to drain into
+`docs/guide/`.
 
 The shape is almost entirely *compositional* — one new core `Control`,
 a two-line gate in two existing tools, and a self-contained feature
