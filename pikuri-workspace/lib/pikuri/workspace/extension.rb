@@ -21,6 +21,15 @@ module Pikuri
     # raw {Filesystem} (it governs the subprocess's filesystem view, not
     # the read record). It lives in {Pikuri::Code::Extension}.
     #
+    # == Plan mode
+    #
+    # When the agent was built with a {Pikuri::Agent::Control::PlanMode}
+    # (read off the {Pikuri::Agent::Configurator} as +c.plan_mode+), the
+    # extension threads it into {Edit} and {Write} so they refuse while
+    # plan mode is active — the read-only tools take no gate. The host
+    # passes the control once, to +Agent.new+; it does not hand it here.
+    # With no control wired the gate is simply off.
+    #
     # == Usage
     #
     #   Pikuri::Agent.new(...) do |c|
@@ -62,11 +71,17 @@ module Pikuri
           end
         end
 
+        # Plan mode (when the host wired a control onto Agent.new) is
+        # read off the configurator and threaded into the two mutators
+        # so they refuse while it is active — the read-only tools take
+        # no gate. +nil+ when unwired, which disables the gate.
+        plan_mode = c.plan_mode
+
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Grep.new(workspace: @workspace)
         c.add_tool Glob.new(workspace: @workspace)
-        c.add_tool Edit.new(workspace: @workspace)
-        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer)
+        c.add_tool Edit.new(workspace: @workspace, plan_mode: plan_mode)
+        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer, plan_mode: plan_mode)
         nil
       end
     end

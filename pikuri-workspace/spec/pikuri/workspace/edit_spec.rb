@@ -344,4 +344,32 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal 'edit', tool.to_ruby_llm_tool.name
     end
   end
+
+  describe 'plan-mode gate' do
+    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+
+    it 'refuses an edit while plan mode is active, leaving the file untouched' do
+      write_file('foo.rb', "alpha\nbeta\n")
+      plan_mode.enter!
+
+      result = described_class.edit(workspace: workspace, plan_mode: plan_mode,
+                                    path: 'foo.rb', old_string: 'beta',
+                                    new_string: 'BETA', replace_all: false)
+
+      assert_match(/plan mode/, result)
+      assert_equal "alpha\nbeta\n", (root + 'foo.rb').binread
+    end
+
+    it 'edits normally once plan mode is exited' do
+      write_file('foo.rb', "alpha\nbeta\n")
+      plan_mode.enter!
+      plan_mode.exit!
+
+      result = described_class.edit(workspace: workspace, plan_mode: plan_mode,
+                                    path: 'foo.rb', old_string: 'beta',
+                                    new_string: 'BETA', replace_all: false)
+
+      assert_equal 'Edited foo.rb: replaced 1 occurrence.', result
+    end
+  end
 end

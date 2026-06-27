@@ -1,7 +1,35 @@
 # frozen_string_literal: true
 
 RSpec.describe Pikuri::Code::EnterPlanMode do
-  it 'smokes' do
-    Pikuri::Code::EnterPlanMode.new
+  let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+
+  describe '#initialize' do
+    it 'builds under the enter_plan_mode name' do
+      tool = described_class.new(plan_mode: plan_mode)
+      assert_equal 'enter_plan_mode', tool.name
+    end
+  end
+
+  describe '.run' do
+    it 'activates the control and returns a plan-mode observation' do
+      result = described_class.run(plan_mode: plan_mode)
+
+      assert plan_mode.active?
+      assert_match(/plan mode/i, result)
+    end
+
+    it 'is idempotent — entering while already active stays active' do
+      plan_mode.enter!
+      described_class.run(plan_mode: plan_mode)
+      assert plan_mode.active?
+    end
+  end
+
+  describe 'execute wiring' do
+    it 'flips the control when the tool is run' do
+      tool = described_class.new(plan_mode: plan_mode)
+      tool.run({})
+      assert plan_mode.active?
+    end
   end
 end

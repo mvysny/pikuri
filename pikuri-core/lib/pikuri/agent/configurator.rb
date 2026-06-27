@@ -85,6 +85,12 @@ module Pikuri
       #   passed to the Agent ctor, or +nil+.
       attr_reader :interloper
 
+      # @return [Control::PlanMode, nil] plan-mode control passed to
+      #   the Agent ctor, or +nil+. The +pikuri-code+ plan extension
+      #   reads this in +configure+ so the host doesn't have to pass
+      #   the same instance to both +Agent.new+ and the extension.
+      attr_reader :plan_mode
+
       # @return [Array<Tool>] tools added via {#add_tool}, in
       #   declaration order. Drained by {Agent#initialize} and
       #   registered with ruby_llm so the parent LLM can call them.
@@ -127,6 +133,8 @@ module Pikuri
       # @param step_limit [Control::StepLimit, nil]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper, nil]
+      # @param plan_mode [Control::PlanMode, nil] defaults to +nil+ so
+      #   existing direct callers (specs) need not pass it.
       # @param on_close_sink [Array<Proc>, nil] array that {#on_close}
       #   appends to. {Agent#initialize} passes its own live
       #   +@on_close_handlers+ so a handler an extension arms via
@@ -135,7 +143,8 @@ module Pikuri
       #   later extension's +configure+ raises. Defaults to a fresh
       #   array for standalone use (e.g. specs).
       def initialize(transport:, system_prompt_base:, id:, streaming:,
-                     step_limit:, cancellable:, interloper:, on_close_sink: nil)
+                     step_limit:, cancellable:, interloper:, plan_mode: nil,
+                     on_close_sink: nil)
         @transport = transport
         @system_prompt_base = system_prompt_base
         @id = id
@@ -143,6 +152,7 @@ module Pikuri
         @step_limit = step_limit
         @cancellable = cancellable
         @interloper = interloper
+        @plan_mode = plan_mode
 
         @tools = []
         @sub_agent_tools = []

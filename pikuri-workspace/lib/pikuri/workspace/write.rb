@@ -73,8 +73,14 @@ module Pikuri
       #   route through +workspace.resolve_for_write+.
       # @param confirmer [Confirmer] consulted before any overwrite
       #   of an existing file with non-identical content.
+      # @param plan_mode [Control::PlanMode, nil] when set and
+      #   {Control::PlanMode#active?}, every write is refused with a
+      #   read-only observation *before* any filesystem touch — the
+      #   hard half of plan mode's defense (the soft half is the
+      #   per-turn reminder). +nil+ (the default) disables the gate,
+      #   so non-plan wirings are unchanged.
       # @return [Write]
-      def initialize(workspace:, confirmer:)
+      def initialize(workspace:, confirmer:, plan_mode: nil)
         super(
           name: 'write',
           description: DESCRIPTION,
@@ -88,7 +94,8 @@ module Pikuri
                               '"class Foo\nend\n".'
           },
           execute: ->(path:, content:) {
-            Write.write(workspace: workspace, confirmer: confirmer, path: path, content: content)
+            Write.write(workspace: workspace, confirmer: confirmer,
+                        plan_mode: plan_mode, path: path, content: content)
           }
         )
       end
@@ -101,8 +108,16 @@ module Pikuri
       # @param confirmer [Confirmer]
       # @param path [String] raw path as supplied by the LLM
       # @param content [String] bytes to write
+      # @param plan_mode [Control::PlanMode, nil] read-only gate; see
+      #   {#initialize}. Defaults to +nil+ for direct callers (specs).
       # @return [String] tool observation
-      def self.write(workspace:, confirmer:, path:, content:)
+      def self.write(workspace:, confirmer:, path:, content:, plan_mode: nil)
+        if plan_mode&.active?
+          return "Error: cannot write #{path} — the agent is in plan mode " \
+                 '(read-only). Add this change to your plan and exit plan ' \
+                 'mode to apply it.'
+        end
+
         resolved = workspace.resolve_for_write(path)
 
         if resolved.exist?
