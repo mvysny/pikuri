@@ -74,7 +74,7 @@ module Pikuri
           '',
           '',
           'The following skills provide specialized instructions for specific tasks.',
-          "Use the `skill` tool with the skill's name to load its full instructions.",
+          "When a skill matches the task, load it with the `skill` tool *before* answering from your own knowledge — the skill's instructions take precedence over your training. If none matches, just proceed normally.",
           '',
           '<available_skills>'
         ]

@@ -31,9 +31,12 @@ long-form note to be tackled individually:
 - ~~act-dont-survey prose~~ — **shipped.** "When you have enough to
   act, act; recommend, don't survey" added to the coding and assistant
   main prompts.
-- [`ideas/skill-invocation-emphasis.md`](ideas/skill-invocation-emphasis.md)
-  — stronger "use the skill instead of winging it" phrasing in the
-  `<available_skills>` snippet (prose, low priority, measure first).
+- ~~skill-invocation emphasis~~ — **shipped.** The `<available_skills>`
+  intro now carries the match-conditional override ("when a skill
+  matches, load it *before* answering from your own knowledge"). Still
+  worth measuring on the target model: does the stronger wording raise
+  correct skill fires more than spurious ones? Dial back the emphasis if
+  it over-triggers.
 
 The **deliberately not backported** items, with why — recorded so the
 absence doesn't read as oversight:
