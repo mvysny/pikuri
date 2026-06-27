@@ -18,12 +18,10 @@ destination. Most of its recommendations already shipped before the
 study was written (safety/honesty block, harness contract, Lesson-0
 tool-rule migration, plan mode, tasks, memory, skills, typed
 sub-agents); the study is kept as a historical analysis, not rewritten.
-What's still open:
+Read-before-edit enforcement shipped too (the `Workspace::Workspace`
+composite + read-record gate; `edit`/overwrite-`write` now refuse an
+unread path). What's still open:
 
-- **Read-before-edit enforcement** —
-  [`ideas/read-before-edit-enforcement.md`](ideas/read-before-edit-enforcement.md).
-  `edit`'s description claims a read-before-edit guarantee the runtime
-  doesn't enforce; make it true. The one harness item left.
 - **Skill-invocation emphasis — measure.** The `<available_skills>`
   intro now carries the match-conditional "load it *before* answering
   from your own knowledge" override. Open question: does the stronger

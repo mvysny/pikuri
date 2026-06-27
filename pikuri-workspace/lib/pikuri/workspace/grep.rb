@@ -115,7 +115,7 @@ module Pikuri
         - Long lines are truncated to #{MAX_LINE_LENGTH} chars with a preview marker; use `read` to see full lines.
       DESC
 
-      # @param workspace [Filesystem] captured for path resolution
+      # @param workspace [Workspace] captured for path resolution
       #   and as +chdir+ for rg. All path arguments route through
       #   +workspace.resolve_for_read+.
       # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
@@ -158,7 +158,7 @@ module Pikuri
       # the sub-agent's fresh workspace so paths resolve against the
       # right root.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @return [Grep]
       def with_workspace(workspace)
         self.class.new(workspace: workspace)
@@ -168,7 +168,7 @@ module Pikuri
       # rg, and render the observation. Returns either the formatted
       # results, a "no matches" string, or +"Error: ..."+.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @param pattern [String]
       # @param path [String, nil]
       # @param glob [String, nil]

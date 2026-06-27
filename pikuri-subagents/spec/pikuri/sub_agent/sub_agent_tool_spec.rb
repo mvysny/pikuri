@@ -435,7 +435,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       ws_a = tools_a.find { |t| t.name == 'workspace_aware' }.workspace
       ws_b = tools_b.find { |t| t.name == 'workspace_aware' }.workspace
 
-      assert_kind_of Pikuri::Workspace::Filesystem, ws_a
+      assert_kind_of Pikuri::Workspace::Workspace, ws_a
       refute_equal ws_a.project_root, ws_b.project_root, 'each invocation gets its own temp dir'
       assert_match(%r{/pikuri-investigator-}, ws_a.project_root.to_s)
     end
@@ -447,8 +447,9 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       tools = run_with_captured_tools(tool, name: 'investigator')
       ws = tools.find { |t| t.name == 'workspace_aware' }.workspace
 
-      # /usr exists on any Linux host this gem targets — assert it's in readable.
-      assert_includes ws.readable, Pathname.new('/usr').realpath
+      # /usr exists on any Linux host this gem targets — assert it's in
+      # the wrapped filesystem's readable set.
+      assert_includes ws.filesystem.readable, Pathname.new('/usr').realpath
     end
 
     it 'rebuilds workspace-aware tools onto the new workspace and passes others through unchanged' do

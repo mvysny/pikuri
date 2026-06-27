@@ -146,7 +146,7 @@ skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
 # Intended for use inside a container where the container itself is
 # the security boundary; the toolchain/skill readable list is moot
 # since everything is reachable anyway.
-workspace = if yolo
+filesystem = if yolo
               # --readable/--writable are moot under AllowAll (everything
               # short of the credential denylist resolves anyway); warn so
               # the user knows the flags did nothing rather than silently
@@ -194,7 +194,7 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # expects the sandbox doesn't silently run without one. Disable with
 # --no-sandbox / --yolo.
 sandbox = if sandbox_enabled
-            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: workspace)
+            Pikuri::Code::Bash::Sandbox::Bubblewrap.new(workspace: filesystem)
           else
             Pikuri::Code::Bash::Sandbox::NONE
           end
@@ -203,10 +203,10 @@ sandbox = if sandbox_enabled
 # AGENTS.md wins over CLAUDE.md when both exist; lookup is at the
 # project root.
 system_prompt = Pikuri.prompt(:'coding-system-prompt')
-md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| workspace.project_root.join(f) }.find(&:file?)
+md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| filesystem.project_root.join(f) }.find(&:file?)
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
-system_prompt += "\nProject root: #{workspace.project_root}"
+system_prompt += "\nProject root: #{filesystem.project_root}"
 # Advertise --writable extras: that the agent may edit outside the
 # project root is non-obvious to the LLM. --readable extras are
 # deliberately not advertised — like the toolchain paths, the model
@@ -224,7 +224,7 @@ system_prompt += if sandbox_enabled
                    "\nScratch space: /tmp — persistent across all bash and tool calls; " \
                      'use for downloads, clones, unpacks. Cleared on exit.'
                  else
-                   "\nScratch space: #{workspace.temp} — persistent across tool calls, " \
+                   "\nScratch space: #{filesystem.temp} — persistent across tool calls, " \
                      'cleared on exit. Prefer it over /tmp for downloads, clones, unpacks ' \
                      "(keeps the host's /tmp clean)."
                  end
@@ -302,11 +302,18 @@ begin
     # a prompt injection. See SECURITY.md §"Defense: capability
     # boundaries via sub-agents". The `skill` tool, when the catalog
     # is non-empty, is appended by the Skill::Extension below.
-    c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
-    c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace, plan_mode: plan_mode_flag)
-    c.add_tool Pikuri::Workspace::Write.new(workspace: workspace, confirmer: confirmer, plan_mode: plan_mode_flag)
+    # The five file tools (read/grep/glob/edit/write) share one
+    # Workspace composite (Filesystem + this session's read record) so
+    # the read-before-edit gate works across them. The extension owns
+    # that composite; Bash and the sandbox take the raw `filesystem`
+    # below (they govern the subprocess fs view, not the read record).
+    # It also threads the shared plan-mode control (read off the
+    # configurator) into edit/write, so they refuse while plan mode is
+    # active — the same control Code::Extension's plan tools flip.
+    c.add_extension Pikuri::Workspace::Extension.new(
+      filesystem: filesystem,
+      confirmer: confirmer
+    )
     c.add_tool Pikuri::Tool::CALCULATOR
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
       brave_key: examples_config['brave_search_api_key'],
@@ -315,7 +322,7 @@ begin
     c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
     c.add_sub_agent_tool Pikuri::Tool::FETCH
     c.add_extension Pikuri::Code::Extension.new(
-      workspace: workspace,
+      workspace: filesystem,
       confirmer: confirmer,
       sandbox: sandbox
     )
@@ -384,7 +391,7 @@ ensure
   trap('INT', prev_trap || 'DEFAULT')
 end
 
-puts "Pikuri Coding Agent. Working in #{workspace.project_root}. Press Ctrl+C or Ctrl+D to quit."
+puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
 puts "Loaded project context from #{md_path}." if md_path
 unless skill_catalog.empty?
   names = skill_catalog.list.map(&:name).sort.join(', ')

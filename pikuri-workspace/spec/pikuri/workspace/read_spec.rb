@@ -5,7 +5,8 @@ require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Read do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-read-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
   let(:tool)      { described_class.new(workspace: workspace) }
 
   after { FileUtils.rm_rf(root) }
@@ -279,6 +280,24 @@ RSpec.describe Pikuri::Workspace::Read do
       klass = tool.to_ruby_llm_tool
 
       assert_equal 'read', klass.name
+    end
+  end
+
+  describe 'read-ledger marking' do
+    it 'marks the path read in the workspace ledger on a successful read' do
+      path = write_file('seen.txt', "x\n")
+      refute workspace.read?(path), 'precondition: not yet read'
+
+      described_class.read(workspace: workspace, path: 'seen.txt', offset: 1, limit: 2000)
+
+      assert workspace.read?(path), 'expected a successful read to mark the ledger'
+    end
+
+    it 'does not mark the path read when the file is missing' do
+      result = described_class.read(workspace: workspace, path: 'absent.txt', offset: 1, limit: 2000)
+
+      assert result.start_with?('Error: file not found'), result
+      refute workspace.read?(root + 'absent.txt')
     end
   end
 end

@@ -161,23 +161,27 @@ module Pikuri
 
             # Per-invocation workspace mint, when the persona set
             # +needs_temp_workspace: true+. We own everything uniformly
-            # — Dir.mktmpdir for the path, Pikuri::Workspace::Filesystem
-            # for the workspace wrapped around it, FileUtils.remove_entry
+            # — Dir.mktmpdir for the path, a fresh
+            # Pikuri::Workspace::Workspace (Filesystem + its own empty
+            # read record) wrapped around it, FileUtils.remove_entry
             # via the sub-agent's +on_close+. The persona has no control
             # over shape or cleanup — it's always a fresh temp dir as
             # +project_root+ plus {TEMP_WORKSPACE_READABLE} for the
             # OS toolchain (so subprocess tools like +git+ under +/usr+
             # are reachable), always deleted at close. Tools that respond
             # to +#with_workspace+ are rebuilt onto the fresh workspace
-            # so paths resolve against the right root; stateless tools
-            # (web_search, calculator, ...) pass through unchanged.
+            # so paths resolve against the right root (and reads land in
+            # this clone's own record); stateless tools (web_search,
+            # calculator, ...) pass through unchanged.
             session_temp_root = nil
             if persona.needs_temp_workspace?
               session_temp_root = Dir.mktmpdir("pikuri-#{persona.name}-")
-              session_workspace = Pikuri::Workspace::Filesystem.new(
-                project_root: Pathname.new(session_temp_root),
-                readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) },
-                temp: false
+              session_workspace = Pikuri::Workspace::Workspace.new(
+                filesystem: Pikuri::Workspace::Filesystem.new(
+                  project_root: Pathname.new(session_temp_root),
+                  readable: TEMP_WORKSPACE_READABLE.select { |p| File.directory?(p) },
+                  temp: false
+                )
               )
               sub_tools = sub_tools.map do |t|
                 t.respond_to?(:with_workspace) ? t.with_workspace(session_workspace) : t

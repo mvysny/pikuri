@@ -4,13 +4,24 @@ require 'tmpdir'
 require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Edit do
-  let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-edit-root-')).realpath }
-  let(:workspace) { Pikuri::Workspace::Filesystem.new(project_root: root) }
-  let(:tool)      { described_class.new(workspace: workspace) }
+  let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-edit-root-')).realpath }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+  let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
+  let(:tool)       { described_class.new(workspace: workspace) }
 
   after { FileUtils.rm_rf(root) }
 
+  # Create a file AND mark it read in the workspace ledger — the common
+  # fixture is "a file the model has already read", so it clears the
+  # read-before-edit gate. Tests that exercise the gate itself use
+  # +create_unread+ instead.
   def write_file(rel, content)
+    path = create_unread(rel, content)
+    workspace.mark_read(path)
+    path
+  end
+
+  def create_unread(rel, content)
     path = root + rel
     FileUtils.mkdir_p(path.dirname)
     File.binwrite(path, content)
@@ -232,6 +243,45 @@ RSpec.describe Pikuri::Workspace::Edit do
       ensure
         File.chmod(0o644, path)
       end
+    end
+  end
+
+  describe '.edit read-before-edit gate' do
+    it 'refuses an existing file that has not been read this conversation' do
+      create_unread('unread.rb', "alpha\nbeta\n")
+
+      result = described_class.edit(workspace: workspace, path: 'unread.rb',
+                                    old_string: 'beta', new_string: 'BETA',
+                                    replace_all: false)
+
+      assert result.start_with?('Error: unread.rb has not been read this conversation'),
+             "expected read-first error, got #{result.inspect}"
+      assert_equal "alpha\nbeta\n", (root + 'unread.rb').binread
+    end
+
+    it 'allows the edit once the file has been read via the read tool' do
+      create_unread('via_read.rb', "alpha\nbeta\n")
+      Pikuri::Workspace::Read.read(workspace: workspace, path: 'via_read.rb', offset: 1, limit: 2000)
+
+      result = described_class.edit(workspace: workspace, path: 'via_read.rb',
+                                    old_string: 'beta', new_string: 'BETA',
+                                    replace_all: false)
+
+      assert_equal 'Edited via_read.rb: replaced 1 occurrence.', result
+    end
+
+    it 'stays marked after an edit so a consecutive edit needs no re-read' do
+      create_unread('refresh.rb', "a\nb\nc\n")
+      Pikuri::Workspace::Read.read(workspace: workspace, path: 'refresh.rb', offset: 1, limit: 2000)
+
+      first = described_class.edit(workspace: workspace, path: 'refresh.rb',
+                                   old_string: 'a', new_string: 'A', replace_all: false)
+      second = described_class.edit(workspace: workspace, path: 'refresh.rb',
+                                    old_string: 'b', new_string: 'B', replace_all: false)
+
+      assert_equal 'Edited refresh.rb: replaced 1 occurrence.', first
+      assert_equal 'Edited refresh.rb: replaced 1 occurrence.', second
+      assert_equal "A\nB\nc\n", (root + 'refresh.rb').binread
     end
   end
 

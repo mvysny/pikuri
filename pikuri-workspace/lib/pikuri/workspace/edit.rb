@@ -10,13 +10,17 @@ module Pikuri
     #
     # == Why no confirmer
     #
-    # The +old_string+ argument is itself an implicit read-check: the
-    # model can't write a correct +old_string+ without having seen the
-    # file (via {Read} or out-of-band), so the blast radius of any
-    # Edit is bounded by the model's actual knowledge of file state.
-    # That makes Edit safe to execute without prompting — by contrast,
-    # {Write} requires a confirmer because a hallucinated 500-line
-    # +content+ could clobber unread bytes.
+    # Two guards bound an Edit's blast radius, so it runs without a
+    # prompt. First, the explicit read-before-edit gate: +.edit+ refuses
+    # a path the {Workspace}'s read record hasn't recorded as read this
+    # conversation (via {Read}), so an edit can't land on a file the
+    # model never opened. Second, the +old_string+ argument is itself an implicit
+    # read-check — the model can't supply a correct +old_string+ for
+    # bytes it hasn't seen — so even within a read file the change is
+    # pinned to content the model actually has. By contrast, {Write}
+    # requires a confirmer because a hallucinated 500-line +content+
+    # could clobber unread bytes (and Write now shares the same
+    # read-before-overwrite gate as a second line).
     #
     # == Matching is strict (no fuzz cascade)
     #
@@ -61,6 +65,8 @@ module Pikuri
     # * +old_string+ found multiple times without +replace_all+ →
     #   multi-match error suggesting more context or +replace_all+.
     # * File missing / is a directory / is binary → respective error.
+    # * File not read this conversation → "use the read tool first" error
+    #   (the read-before-edit gate; checked after the binary refusal).
     # * Workspace boundary violation / EACCES → standard rescue path.
     class Edit < Pikuri::Tool
       # Description shown to the LLM. Follows the opencode-shape (summary
@@ -83,10 +89,11 @@ module Pikuri
         - CRLF files are matched in LF space; the original line endings are preserved on write.
       DESC
 
-      # @param workspace [Filesystem] captured for path resolution;
-      #   all reads/writes route through +workspace.resolve_for_write+
-      #   (Edit modifies, so it uses the write-set even though it doesn't
-      #   create files).
+      # @param workspace [Workspace] captured for path resolution and
+      #   the read-before-edit gate; writes route through
+      #   +workspace.resolve_for_write+ (Edit modifies, so it uses the
+      #   write-set even though it doesn't create files) and the gate
+      #   consults +workspace.read?+.
       # @param plan_mode [Control::PlanMode, nil] when set and
       #   {Control::PlanMode#active?}, every edit is refused with a
       #   read-only observation *before* any filesystem touch — the
@@ -129,7 +136,7 @@ module Pikuri
       # binary), match +old_string+ in line-ending-normalized form, and
       # write the result back preserving the file's original line endings.
       #
-      # @param workspace [Filesystem]
+      # @param workspace [Workspace]
       # @param path [String] raw path as supplied by the LLM
       # @param old_string [String] text to find
       # @param new_string [String] text to substitute in
@@ -153,6 +160,11 @@ module Pikuri
         return "Error: #{path} is a directory" if resolved.directory?
 
         return "Error: cannot edit binary file: #{path}" if Pikuri::FileType.binary?(resolved)
+
+        unless workspace.read?(resolved)
+          return "Error: #{path} has not been read this conversation; use the read tool " \
+                 'first so the edit applies to the current bytes.'
+        end
 
         raw = resolved.binread
 
@@ -186,6 +198,11 @@ module Pikuri
 
         final = crlf ? new_content.gsub("\n", "\r\n") : new_content
         resolved.write(final)
+
+        # Keep the path marked read: the editor knows the resulting
+        # bytes, so a follow-up edit needn't re-read (the "refresh"
+        # policy). Idempotent — the read? gate above already passed.
+        workspace.mark_read(resolved)
 
         "Edited #{path}: replaced #{replaced} occurrence#{replaced == 1 ? '' : 's'}."
       rescue Filesystem::Error => e
