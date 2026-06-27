@@ -46,9 +46,9 @@ module Pikuri
       # Static plan-mode explainer, appended *once* to the system
       # prompt (and so prefix-cached) when plan mode is wired. The
       # mechanics and the active-behavior contract live here, paid
-      # once; the per-turn injection ({Pikuri.prompt} +plan-mode-reminder+)
-      # is then just a one-line state re-assertion, paid every turn at
-      # the uncached tail. Same shape as {Pikuri::Tasks::Extension}'s
+      # once; the per-turn injection ({PLAN_MODE_REMINDER}) is then
+      # just a one-line state re-assertion, paid every turn at the
+      # uncached tail. Same shape as {Pikuri::Tasks::Extension}'s
       # +PROMPT_SNIPPET+ — an extension-owned snippet that names its own
       # tools (the persona/extension carve-out to "no tool names in a
       # main prompt").
@@ -66,6 +66,18 @@ module Pikuri
         - If a requirement is genuinely ambiguous, ask the user directly rather than guessing.
         </plan_mode>
       PROMPT
+
+      # One-line per-turn state re-assertion, injected as a +:system+
+      # message while plan mode is active (see {#on_user_message}). It
+      # lands at the uncached tail after each user message, so it is
+      # deliberately tiny — the substantive prose lives once, cached,
+      # in {PLAN_MODE_PROMPT}. Inlined rather than read from +prompts/+
+      # precisely because it is a single line.
+      #
+      # @return [String]
+      PLAN_MODE_REMINDER =
+        'Reminder: you are in plan mode (read-only) — research, design, ' \
+        'and brainstorm, but do not edit files.'
 
       # @param workspace [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
@@ -130,7 +142,7 @@ module Pikuri
       def on_user_message(_ctx, _content)
         return nil unless @plan_mode&.active?
 
-        @reminder ||= Pikuri.prompt(:'plan-mode-reminder')
+        PLAN_MODE_REMINDER
       end
     end
   end
