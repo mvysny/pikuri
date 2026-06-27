@@ -28,9 +28,9 @@ long-form note to be tackled individually:
 - [`ideas/read-before-edit-enforcement.md`](ideas/read-before-edit-enforcement.md)
   — the one harness item: `edit`'s description claims a
   read-before-edit guarantee the runtime doesn't enforce; make it true.
-- [`ideas/act-dont-survey-prose.md`](ideas/act-dont-survey-prose.md)
-  — add "when you have enough, act; recommend, don't survey" to the
-  main prompts (pure prose).
+- ~~act-dont-survey prose~~ — **shipped.** "When you have enough to
+  act, act; recommend, don't survey" added to the coding and assistant
+  main prompts.
 - [`ideas/skill-invocation-emphasis.md`](ideas/skill-invocation-emphasis.md)
   — stronger "use the skill instead of winging it" phrasing in the
   `<available_skills>` snippet (prose, low priority, measure first).
