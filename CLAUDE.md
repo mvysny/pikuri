@@ -575,7 +575,41 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
   measurably better with one.
-- Don't repeat tool descriptions in the system prompt.
+- **No tool names in a main/binary system prompt.** The system
+  prompt for a *main* agent (the per-binary `prompts/<bin>.txt`)
+  names no specific pikuri tool — so it can never go stale against
+  the wiring or reference a tool a given binary doesn't wire. The
+  main prompt's scope is broad ("you are a coding agent; use the
+  tools you have"), and the *same* prompt should survive being
+  wired onto a differently-toolset agent — one binary edits the
+  local workspace, another might edit a remote GitHub repo via a
+  completely different mechanism. So a tool's existence and
+  mechanics live in its `description:` (sub-agents: the persona
+  `description`, which `SubAgent::Extension` renders into the
+  runtime `<available_agents>` snippet — so the catalog stays in
+  lockstep with the wired persona list). The main prompt keeps only
+  general engineering norms, stated tool-agnostically: "search for
+  its callers before editing" (norm), not "`grep` for its callers"
+  (named tool); "a tool may ask for confirmation — if the user
+  declines, accept it" (norm), not "the `bash` and `write` tools
+  may prompt" (named tools). Advice about *when* to reach for a tool
+  belongs in that tool's own description (e.g. "don't delegate what
+  you can read yourself" lives on the `agent` tool, not on `read`).
+  This subsumes the older "don't repeat tool descriptions in the
+  system prompt."
+
+  **Persona system prompts are the carve-out.** A persona
+  (`prompts/persona-*.txt`) is narrow, single-purpose, and wired
+  with the *minimum* toolset for that one job; its `tool_names:` and
+  `system_prompt:` are co-located in the same persona file, so a
+  tool reference can't silently drift out of sync the way a shared
+  main prompt can. Persona prompts may name their tools.
+
+  Grep-enforceable — a backtick-delimited tool name in a non-persona
+  prompt is the violation:
+  `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
+  should hit nothing (`\x60` is the backtick the tool name is
+  wrapped in).
 - **User-facing docs: prefer concrete over abstract.** Readers
   abstract easily; the reverse takes effort. *"Delete your home
   folder"* beats *"filesystem mutation outside the workspace"*;
