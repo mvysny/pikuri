@@ -245,4 +245,45 @@ RSpec.describe Pikuri::Workspace::Write do
       assert_equal 'write', klass.name
     end
   end
+
+  describe 'plan-mode gate' do
+    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+
+    it 'refuses a new-file write while plan mode is active, touching nothing' do
+      plan_mode.enter!
+
+      result = described_class.write(workspace: workspace, confirmer: confirmer,
+                                     plan_mode: plan_mode, path: 'hello.txt',
+                                     content: "alpha\n")
+
+      assert_match(/plan mode/, result)
+      refute (root + 'hello.txt').exist?
+    end
+
+    it 'refuses before consulting the confirmer on an overwrite' do
+      write_file('foo.rb', "old\n")
+      plan_mode.enter!
+      # confirmer with no queued answers raises if consulted
+      guard = build_confirmer
+
+      result = described_class.write(workspace: workspace, confirmer: guard,
+                                     plan_mode: plan_mode, path: 'foo.rb',
+                                     content: "new\n")
+
+      assert_match(/plan mode/, result)
+      assert_empty guard.requests
+      assert_equal "old\n", (root + 'foo.rb').read
+    end
+
+    it 'writes normally once plan mode is exited' do
+      plan_mode.enter!
+      plan_mode.exit!
+
+      result = described_class.write(workspace: workspace, confirmer: confirmer,
+                                     plan_mode: plan_mode, path: 'hello.txt',
+                                     content: "alpha\n")
+
+      assert_equal 'Created hello.txt (6 bytes)', result
+    end
+  end
 end
