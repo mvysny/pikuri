@@ -619,10 +619,12 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 
   Grep-enforceable — a backtick-delimited tool name in a non-persona
   prompt is the violation:
-  `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+|vectordb_[a-z]+|recall|skill)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
+  `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+|vectordb_[a-z]+|recall|skill|mcp_connect)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
   should hit nothing (`\x60` is the backtick the tool name is
-  wrapped in). MCP tools are named by their server at runtime, so no
-  static pattern can list them — a reviewer catches those by eye.
+  wrapped in). `mcp_connect` is pikuri's own tool, so it's in the
+  list; the *server-supplied* MCP tools are named by their server at
+  runtime, so no static pattern can list them — a reviewer catches
+  those by eye.
 - **User-facing docs: prefer concrete over abstract.** Readers
   abstract easily; the reverse takes effort. *"Delete your home
   folder"* beats *"filesystem mutation outside the workspace"*;

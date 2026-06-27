@@ -487,7 +487,7 @@ module Pikuri
 
         Usage:
         - The list of available server ids and their descriptions is in your system prompt under `<available_mcps>`.
-        - Call with a single `id` that matches one of those entries. The server's tools become callable immediately after.
+        - Call with a single `id` that matches one of those entries. The server's tools become callable immediately after, namespaced as `<id>__<tool_name>` in your toolset.
         - On `Error: server '...' is already connected`, do NOT retry — the tools are already in your toolset; call them directly.
         - On `Error: unknown MCP server id ...`, pick an id that actually appears in `<available_mcps>`.
       DESC
