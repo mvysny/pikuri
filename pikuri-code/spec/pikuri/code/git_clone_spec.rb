@@ -111,17 +111,22 @@ RSpec.describe Pikuri::Code::GitClone do
   end
 
   describe '#with_workspace' do
-    it 'returns a new instance bound to the supplied workspace' do
+    # SubAgentTool hands the protocol the session Workspace composite;
+    # GitClone reads .filesystem off it so its lazy Bubblewrap (which
+    # needs readable/writable/temp) gets the bare Filesystem, not the
+    # composite (which would blow up on the missing .writable).
+    it 'binds a new instance to the composite workspace\'s Filesystem' do
       other_root = Pathname.new(Dir.mktmpdir('pikuri-git-clone-other-')).realpath
       begin
-        other_ws = Pikuri::Workspace::Filesystem.new(project_root: other_root)
+        other_fs = Pikuri::Workspace::Filesystem.new(project_root: other_root)
+        other_ws = Pikuri::Workspace::Workspace.new(filesystem: other_fs)
         forked = tool.with_workspace(other_ws)
 
         assert_kind_of described_class, forked
         refute_equal tool.object_id, forked.object_id
-        # The forked instance lazily mints its own sandbox — verify by
-        # reading the private @filesystem ivar.
-        assert_equal other_root, forked.instance_variable_get(:@filesystem).project_root
+        bound = forked.instance_variable_get(:@filesystem)
+        assert_same other_fs, bound
+        assert_equal other_root, bound.project_root
       ensure
         FileUtils.rm_rf(other_root)
       end
