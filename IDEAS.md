@@ -13,33 +13,25 @@ punted, here's why."
 
 A pass over the `claude.txt` vs `pikuri.txt` study
 (`prompts-examples/system_prompts/claude-pikuri.md` /
-`claude-pikuri-prose.md`) — treating Claude Code's system prompt as a
-destination and asking, item by item, what's worth bringing across.
-Most of it is **already done**: the safety/honesty/objectivity block,
-the harness contract (markdown surface, denied-call), the Lesson-0
-migration of tool rules into tool descriptions, plan mode, the
-todo/task tool, memory, skills, and typed sub-agents all shipped since
-the study was written. The study itself is stale on those — kept as a
-historical analysis, not rewritten.
+`claude-pikuri-prose.md`), treating Claude Code's system prompt as a
+destination. Most of its recommendations already shipped before the
+study was written (safety/honesty block, harness contract, Lesson-0
+tool-rule migration, plan mode, tasks, memory, skills, typed
+sub-agents); the study is kept as a historical analysis, not rewritten.
+What's still open:
 
-What's left splits two ways. The **backport** items each got a
-long-form note to be tackled individually:
+- **Read-before-edit enforcement** —
+  [`ideas/read-before-edit-enforcement.md`](ideas/read-before-edit-enforcement.md).
+  `edit`'s description claims a read-before-edit guarantee the runtime
+  doesn't enforce; make it true. The one harness item left.
+- **Skill-invocation emphasis — measure.** The `<available_skills>`
+  intro now carries the match-conditional "load it *before* answering
+  from your own knowledge" override. Open question: does the stronger
+  wording raise correct skill fires more than spurious ones on the
+  target model? Dial it back if it over-triggers.
 
-- [`ideas/read-before-edit-enforcement.md`](ideas/read-before-edit-enforcement.md)
-  — the one harness item: `edit`'s description claims a
-  read-before-edit guarantee the runtime doesn't enforce; make it true.
-- ~~act-dont-survey prose~~ — **shipped.** "When you have enough to
-  act, act; recommend, don't survey" added to the coding and assistant
-  main prompts.
-- ~~skill-invocation emphasis~~ — **shipped.** The `<available_skills>`
-  intro now carries the match-conditional override ("when a skill
-  matches, load it *before* answering from your own knowledge"). Still
-  worth measuring on the target model: does the stronger wording raise
-  correct skill fires more than spurious ones? Dial back the emphasis if
-  it over-triggers.
-
-The **deliberately not backported** items, with why — recorded so the
-absence doesn't read as oversight:
+Deliberately **not** backported, with why — recorded so the absence
+doesn't read as oversight:
 
 - **Branch-first when on the default branch.** Claude branches before
   committing on the default branch; pikuri does not, by choice.
