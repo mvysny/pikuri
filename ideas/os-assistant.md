@@ -58,6 +58,7 @@ Available tools:
 Security:
 - We trust local files, man pages and local documentation (e.g. Ubuntu docs) for no prompt injection
 - No internet access, severing trifecta leg.
+- Biggest danger: LLM hallucinating rm -rf ~ or such
 
 ## Future ideas (deferred for now)
 
