@@ -175,8 +175,14 @@ paths:
 - Bake into the system prompt at boot: `/etc/lsb-release` (distro +
   version), desktop environment (GNOME/KDE), `$HOME`, login shell, and
   current date/time.
-- Optionally fold in `inxi`/`lsb_release` output for hardware/DE
-  context.
+- Optionally fold in `inxi -b -c 0` for desktop-environment + machine
+  context (distro, `Init: systemd`, `Desktop: GNOME <ver>`, CPU/mem at a
+  glance). Use `-b` (*basic*), **not** `-e`/`-F` — the latter is a full
+  hardware dump (audio codecs, sensors, every partition, GPU/EGL APIs)
+  that bloats the prompt with detail an OS-help agent rarely needs.
+  `-c 0` strips inxi's color codes. Treat it as a source to curate from,
+  not bytes to paste verbatim (inxi has cosmetic quirks, and `Desktop:`
+  only populates inside a running graphical session).
 - Linux-first; **target Ubuntu 26.04 LTS or newer** (Debian likely free).
   Pinning a recent baseline lets us assume what ships by default — e.g.
   the GNOME file index (§"File search") — instead of probing for it.
