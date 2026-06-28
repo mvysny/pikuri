@@ -49,16 +49,15 @@ module Pikuri
         @path = Pathname.new(path)
       end
 
-      # Host-scoped XDG path: +$XDG_CONFIG_HOME/pikuri/MACHINE.md+, or
-      # +~/.config/pikuri/MACHINE.md+ when +XDG_CONFIG_HOME+ is unset. Not
-      # project-local — for this agent the machine *and the user's home*
-      # are the subject, so the notes span the whole host.
+      # Host-scoped path under pikuri's XDG config root
+      # ({Pikuri::Paths.config} — +$XDG_CONFIG_HOME/pikuri+ or
+      # +~/.config/pikuri+). Not project-local: for this agent the machine
+      # *and the user's home* are the subject, so the notes span the whole
+      # host.
       #
       # @return [String]
       def self.default_path
-        config_home = ENV['XDG_CONFIG_HOME']
-        config_home = File.join(Dir.home, '.config') if config_home.nil? || config_home.empty?
-        File.join(config_home, 'pikuri', FILENAME)
+        Pikuri::Paths.config.join(FILENAME).to_s
       end
 
       # Raw file content, or +''+ when the file doesn't exist. Memoized

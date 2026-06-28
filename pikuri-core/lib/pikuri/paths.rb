@@ -26,6 +26,23 @@ module Pikuri
       Pathname.new(home).join('pikuri')
     end
 
+    # Pikuri's config root: +$XDG_CONFIG_HOME/pikuri+ when
+    # +XDG_CONFIG_HOME+ is set and non-empty, else +~/.config/pikuri+.
+    # Home for user-owned configuration the user is expected to read and
+    # hand-edit (e.g. the OS helper's +MACHINE.md+ memory).
+    #
+    # A method, not a constant, for the same reason as {.cache} (no
+    # +require+-time snapshot of the env). The directory is *not* created
+    # — config is user-owned, so callers +mkdir_p+ only when actually
+    # writing (e.g. +Paths.config.join('MACHINE.md')+).
+    #
+    # @return [Pathname] the +<config home>/pikuri+ directory
+    def self.config
+      home = ENV['XDG_CONFIG_HOME']
+      home = File.expand_path('~/.config') if home.nil? || home.empty?
+      Pathname.new(home).join('pikuri')
+    end
+
     # Pikuri's state root: `~/.local/state/pikuri`. Created automatically.
     #
     # The place for state data that should persist between application restarts
