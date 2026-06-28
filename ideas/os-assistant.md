@@ -124,10 +124,12 @@ bytes and neutralize hostile control characters — see CLAUDE.md
 - **Memory** of facts about *this particular computer* — where the user
   keeps music / work folders / documents, whether they're synced and by
   what (Dropbox, Syncthing, …), and useful conclusions from past
-  sessions. This is the `@private`-posture memory: no untrusted ingest
-  by construction (the user's own words + this machine's state) and no
-  egress, so auto-capture is sound here — the exact context
-  `pikuri-memory`'s DESIGN.md calls safe.
+  sessions. Useful, but **not** the clean `@private`-posture memory: a
+  pure `@private` agent has no untrusted ingest by construction, whereas
+  this agent *reads untrusted local content* (logs, `~/Downloads`, PDFs)
+  as its core job — so auto-capture here can be poisoned by what it
+  read. See §"Open problem: memory pollution". No-egress contains the
+  blast radius, but does not close the write-time sink.
 
 ## Is a 35B-A3B model big enough to know Linux? (educated guess: yes)
 
@@ -339,6 +341,47 @@ mutations — but classifying "read-only" from a shell string is a losing
 parse game (`cat x | sh`, command substitution). v1 keeps
 confirm-everything as the safe default; smarter gating is a later
 refinement, not a launch blocker.
+
+## Open problem: memory pollution from local content (deferred)
+
+This is a real problem, documented now and **deliberately left
+unsolved** for v1.
+
+`pikuri-memory`'s auto-capture is sound on a *pure* `@private` agent
+because that agent has no untrusted ingest — every word it could
+remember is the user's own. **This agent breaks that premise.** Reading
+untrusted local content (logs, `~/Downloads`, cloned repos, PDFs) is its
+*core job*, so a prompt injection sitting in a file the agent reads can
+attempt to **write a poisoned fact into durable memory** — the
+write-time-poisoning sink. A bad memory then steers later sessions
+("your backup server is `evil.example`"), and unlike a one-shot
+injection it *persists* across conversations.
+
+What partially helps (but does not close it):
+
+- **No-egress contains the blast radius.** A polluted memory can't be
+  exfiltrated; the worst case is the agent giving the *user* bad advice,
+  not data leaving the machine. Real harm, smaller harm.
+- **`pikuri-memory`'s "capture user-role content only" defense.** File
+  contents arrive as *tool observations*, not user turns, so a
+  strictly user-role-only extraction never sees the malicious bytes
+  directly. This is the main reason the sink is *narrow* rather than
+  wide — but it leaks at the seam where the user paraphrases untrusted
+  content into their own message ("the log says X, remember that"),
+  laundering it into user-role. That residual is the same
+  human-as-author risk the trifecta notes already accept.
+
+Why we can defer rather than solve now: the safe fallback is cheap —
+**ship v1 with explicit-only memory** (the `recall` tool + "remember
+this" on demand) and **no automatic capture**, which removes the
+write-time sink entirely at the cost of some convenience. The
+interesting design work — can auto-capture be made safe on an
+untrusted-ingest agent, e.g. by capturing only from user turns with a
+provenance check, or quarantining file-derived facts — is exactly the
+kind of question the [federation note](assistant.md) and
+[`private-context-taint.md`](private-context-taint.md) are circling, and
+it shouldn't be rushed into this gem. v1: explicit memory only; revisit
+auto-capture when the taint machinery is further along.
 
 ## Future (deferred)
 
