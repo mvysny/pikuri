@@ -108,9 +108,9 @@ RSpec.describe Pikuri::Os::LocalSearch do
     end
   end
 
-  describe '.search_documents' do
+  describe '.search_files' do
     it 'rejects an empty query before spawning anything' do
-      assert_equal 'Error: empty query.', described_class.search_documents(query: '   ')
+      assert_equal 'Error: empty query.', described_class.search_files(query: '   ')
     end
 
     it 'runs the full search → info → window pipeline (stubbed subprocess)' do
@@ -136,10 +136,10 @@ RSpec.describe Pikuri::Os::LocalSearch do
       end
 
       begin
-        out = described_class.search_documents(query: 'needle', limit: 5, window_words: 4)
+        out = described_class.search_files(query: 'needle', limit: 5, window_words: 4)
         assert_includes out, path
         assert_includes out, 'needle'
-        assert_includes out, 'Found 1 document'
+        assert_includes out, 'Found 1 file'
       ensure
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
         file.close
@@ -157,8 +157,8 @@ RSpec.describe Pikuri::Os::LocalSearch do
         result_struct.new(status_struct.new(true, 0), "no results\n")
       end
       begin
-        out = described_class.search_documents(query: 'nonesuch')
-        assert_includes out, "No documents found matching 'nonesuch'"
+        out = described_class.search_files(query: 'nonesuch')
+        assert_includes out, "No files found matching 'nonesuch'"
       ensure
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
       end
@@ -166,15 +166,15 @@ RSpec.describe Pikuri::Os::LocalSearch do
   end
 
   if LOCALSEARCH_AVAILABLE
-    it 'constructs as a Pikuri::Tool named search_documents' do
+    it 'constructs as a Pikuri::Tool named search_files' do
       tool = described_class.new
       assert_kind_of Pikuri::Tool, tool
-      assert_equal 'search_documents', tool.name
+      assert_equal 'search_files', tool.name
     end
 
     it 'end-to-end smoke: a real search returns a String observation' do
       described_class.new # proves the binary is wired
-      out = described_class.search_documents(query: 'the', limit: 2, window_words: 40)
+      out = described_class.search_files(query: 'the', limit: 2, window_words: 40)
       assert_kind_of String, out
     end
   else

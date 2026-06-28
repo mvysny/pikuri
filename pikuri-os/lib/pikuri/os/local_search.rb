@@ -4,7 +4,7 @@ require 'json'
 
 module Pikuri
   module Os
-    # The +search_documents+ tool — keyword content search over the
+    # The +search_files+ tool — keyword content search over the
     # user's files (including PDFs and office documents) via GNOME's
     # desktop index, returning a window of context around each match.
     # A +Pikuri::Tool+ in the same shape as {Pikuri::Workspace::Grep}:
@@ -97,7 +97,7 @@ module Pikuri
       def initialize
         LocalSearch.send(:check_binaries!)
         super(
-          name: 'search_documents',
+          name: 'search_files',
           description: DESCRIPTION,
           parameters: Parameters.build { |p|
             p.required_string :query,
@@ -111,7 +111,7 @@ module Pikuri
                                "(default #{DEFAULT_WINDOW}, capped at #{MAX_WINDOW}), e.g. 100."
           },
           execute: lambda { |query:, limit: DEFAULT_LIMIT, window_words: DEFAULT_WINDOW|
-            LocalSearch.search_documents(query: query, limit: limit, window_words: window_words)
+            LocalSearch.search_files(query: query, limit: limit, window_words: window_words)
           }
         )
       end
@@ -124,7 +124,7 @@ module Pikuri
       # @param window_words [Integer]
       # @return [String] formatted windows, a "no documents" message, or
       #   +"Error: ..."+.
-      def self.search_documents(query:, limit: DEFAULT_LIMIT, window_words: DEFAULT_WINDOW)
+      def self.search_files(query:, limit: DEFAULT_LIMIT, window_words: DEFAULT_WINDOW)
         q = query.to_s.strip
         return 'Error: empty query.' if q.empty?
 
@@ -311,7 +311,7 @@ module Pikuri
       # @return [String]
       def self.format_output(blocks, query:)
         content, marker = head_truncate(blocks.join("\n\n"))
-        footer = "Found #{pluralize(blocks.size, 'document', 'documents')} matching '#{query}'."
+        footer = "Found #{pluralize(blocks.size, 'file', 'files')} matching '#{query}'."
         [content.chomp, '', footer + marker].join("\n")
       end
       private_class_method :format_output
@@ -334,7 +334,7 @@ module Pikuri
 
       # @return [String]
       def self.no_match_message(query)
-        "No documents found matching '#{query}'. (Searches your indexed home / " \
+        "No files found matching '#{query}'. (Searches your indexed home / " \
           'user folders, not system paths; the index may also be disabled or still building.)'
       end
       private_class_method :no_match_message
@@ -369,7 +369,7 @@ module Pikuri
 
       # @return [String]
       def self.install_hint
-        "search_documents requires '#{BINARY}' on PATH — GNOME's desktop file " \
+        "search_files requires '#{BINARY}' on PATH — GNOME's desktop file " \
           "indexer (package 'localsearch', formerly 'tracker-miners'), which ships " \
           'with the GNOME desktop on Ubuntu 26.04+. Install it, or wire this tool ' \
           'only on hosts that have it.'
