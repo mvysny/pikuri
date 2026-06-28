@@ -569,6 +569,153 @@ module Pikuri
             ['--overlay-src', path, '--overlay', upper.to_s, work.to_s, path]
           end
         end
+
+        # Full-filesystem, network-severed sandbox: the *inverse* of
+        # {Bubblewrap}. Where Bubblewrap contains the subprocess to a
+        # curated subset of the filesystem while *keeping* the network
+        # (+--unshare-all --share-net+), {FullFsNoNet} does the opposite —
+        # it binds the entire real root read-write (+--bind / /+) and
+        # unshares *only* the network (+--unshare-net+).
+        #
+        # This is the sandbox for the offline OS-helper agent
+        # (+pikuri-os+ / +bin/pikuri-os-assistant+; design in
+        # +ideas/os-assistant.md+). That agent's whole job is to operate
+        # the real host, so filesystem *containment* is the wrong tool —
+        # there is deliberately no fs sandbox. The one isolation that
+        # matters is egress: with the network namespace unshared, an
+        # injection in a file the agent reads has nowhere to exfiltrate
+        # to. The trifecta's egress leg is cut by the kernel, not by a
+        # prompt — the load-bearing invariant of that design.
+        #
+        # == What's bound
+        #
+        # * +--bind / /+ — the entire real root, read-write. No overlays,
+        #   no allowlist: the agent sees and edits the host as it is.
+        #   Running unprivileged, +bwrap+ creates a user namespace that
+        #   maps the caller's uid to itself, so root-owned files
+        #   (+/etc/*+, +/usr/*+, another user's +$HOME+) appear owned by
+        #   an unmapped id and are *not* writable — and +/etc/shadow+ &
+        #   friends stay unreadable. That lines up exactly with the
+        #   OS-helper's "advise, don't execute, anything privileged" rule:
+        #   privileged edits need +sudo+, which isn't available in the
+        #   namespace and is handed to the user instead.
+        # * +--proc /proc+ + +--dev /dev+ — a fresh procfs and a minimal
+        #   synthetic +/dev+ (null/zero/random/tty …) layered over the
+        #   bound root. Because the PID namespace is *not* unshared (see
+        #   "Isolation"), the fresh +/proc+ still shows host processes —
+        #   essential for the agent's job (+ps+, +top+, +systemctl
+        #   status+, resource diagnosis). Raw block devices aren't in the
+        #   synthetic +/dev+, but reading them needs root anyway, so that
+        #   path is user-run regardless.
+        #
+        # == Isolation: network only, deliberately
+        #
+        # +--unshare-net+ and nothing else. In particular the PID, IPC,
+        # and UTS namespaces are *kept shared* — unlike {Bubblewrap}'s
+        # +--unshare-all+ — because an OS helper must see and reason about
+        # host processes and services. Unsharing PID would make
+        # +ps+/+systemctl+ see only the sandbox's own processes and break
+        # core use-cases. +--die-with-parent --new-session+ are kept for
+        # the same hygiene as Bubblewrap (dies with pikuri; own session,
+        # no controlling-terminal injection).
+        #
+        # == No fallback if the network can't be severed
+        #
+        # If +bwrap+ is missing, or the kernel forbids unprivileged user /
+        # network namespaces, the constructor *raises* — it does NOT
+        # degrade to a networked sandbox. This is the opposite of
+        # {Bubblewrap}'s overlay probe (a convenience that degrades): here
+        # the severed network IS the security property, so silently
+        # running with the network attached would void the no-egress
+        # invariant. A host that genuinely cannot unshare the network must
+        # fix the kernel setting (e.g. +kernel.unprivileged_userns_clone+)
+        # or accept that this agent can't run safely there — never fall
+        # back.
+        #
+        # == What this does NOT defend
+        #
+        # +--bind / /+ exposes everything, including container/VM control
+        # sockets (+/var/run/docker.sock+, …). Unsharing the *bash
+        # process's* own network namespace does not constrain a container
+        # the agent asks the *host daemon* to spawn — a confirmed +docker
+        # run --network=host …+ would have full connectivity. So this is
+        # NOT a malware boundary; it severs the agent's own egress, and
+        # the guard against socket abuse is the confirmer: +docker+/+nc+/
+        # +curl+ are mutating, non-allowlisted commands, so they reach the
+        # human (see {Bash} confirmation + the OS-helper's read-only
+        # auto-confirmer). Users who need a hard boundary run the whole
+        # agent inside a container / VM.
+        class FullFsNoNet
+          BWRAP_BINARY = 'bwrap'
+
+          # @param filesystem [Pikuri::Workspace::Filesystem] used only
+          #   for its +project_root+ (the subprocess's +--chdir+ target);
+          #   the bind set is the whole real root regardless, so the
+          #   readable/writable lists are intentionally ignored. Pairs
+          #   naturally with {Workspace::Filesystem::AllowAll}, which
+          #   {Bubblewrap} rejects and this sandbox embraces.
+          # @raise [RuntimeError] if +bwrap+ isn't on +PATH+, or if the
+          #   kernel refuses an unprivileged user / network namespace (so
+          #   the network cannot be severed). There is deliberately no
+          #   fallback — see the class header.
+          def initialize(filesystem:)
+            @filesystem = filesystem
+            check_bwrap!
+          end
+
+          # @param argv [Array<String>] the +timeout … bash -c <cmd>+
+          #   argv {Bash.run} would have spawned unmediated.
+          # @return [Array<String>] +bwrap+ + full-root bind + fresh
+          #   /proc + /dev + +--unshare-net+ + isolation + +argv+, ready
+          #   to hand to {Pikuri::Subprocess.spawn}.
+          def wrap(argv)
+            [
+              BWRAP_BINARY,
+              '--bind', '/', '/',
+              '--dev', '/dev',
+              '--proc', '/proc',
+              '--unshare-net',
+              '--die-with-parent', '--new-session',
+              '--chdir', @filesystem.project_root.to_s,
+              *argv
+            ]
+          end
+
+          private
+
+          # Probe the exact isolation we rely on: a full-root bind in a
+          # fresh, *network-unshared* namespace. Unlike {Bubblewrap}'s
+          # probe (which keeps +--share-net+), this MUST exercise
+          # +--unshare-net+ so a kernel that forbids unprivileged net
+          # namespaces fails here, loudly, rather than at the first bash
+          # call — and never degrades to a networked run.
+          #
+          # @raise [RuntimeError] on probe failure or missing +bwrap+.
+          def check_bwrap!
+            result = Pikuri::Subprocess.spawn(
+              BWRAP_BINARY,
+              '--bind', '/', '/',
+              '--unshare-net',
+              '--die-with-parent',
+              '/bin/true',
+              chdir: '/'
+            ).wait
+            return if result.status.success?
+
+            raise 'Code::Bash::Sandbox::FullFsNoNet: bwrap probe failed ' \
+                  "(exit #{result.status.exitstatus}). The network sandbox " \
+                  'needs unprivileged user + network namespaces; some hardened ' \
+                  'kernels disable them (e.g. kernel.unprivileged_userns_clone=0). ' \
+                  'This sandbox does NOT fall back to a networked run — severing ' \
+                  'the network is the security property. Fix the kernel setting, ' \
+                  'or do not run the OS assistant on this host.'
+          rescue Errno::ENOENT
+            raise "Code::Bash::Sandbox::FullFsNoNet: 'bwrap' not found on PATH. " \
+                  'Install bubblewrap (apt-get install bubblewrap / dnf install ' \
+                  'bubblewrap / pacman -S bubblewrap). This agent runs every bash ' \
+                  'command in a network-severed namespace; there is no fallback.'
+          end
+        end
       end
     end
   end

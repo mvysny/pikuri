@@ -400,4 +400,151 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
     end
   end
+
+  describe described_class::FullFsNoNet do
+    let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-ffnn-root-')).realpath }
+    let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
+
+    after do
+      FileUtils.rm_rf(root)
+      Pikuri::Subprocess.cleanup!
+    end
+
+    # Stub Subprocess.spawn so the construction probe is deterministic
+    # regardless of whether the host allows unprivileged net namespaces.
+    def stub_subprocess_spawn(call_log:, results:)
+      original = Pikuri::Subprocess.method(:spawn)
+      result_struct = Struct.new(:status) do
+        def wait; self; end
+      end
+      status_struct = Struct.new(:success?, :exitstatus)
+      results = results.dup
+      Pikuri::Subprocess.define_singleton_method(:spawn) do |*args, **_kwargs|
+        call_log << args
+        ok, code = results.shift || [true, 0]
+        result_struct.new(status_struct.new(ok, code))
+      end
+      original
+    end
+
+    def restore_subprocess_spawn(original)
+      Pikuri::Subprocess.define_singleton_method(:spawn, original)
+    end
+
+    # Construct past the probe (stubbed to succeed) and return the
+    # sandbox; #wrap does not spawn, so it's safe to call after restore.
+    def build_with_stubbed_probe(fs)
+      original = stub_subprocess_spawn(call_log: [], results: [[true, 0]])
+      described_class.new(filesystem: fs)
+    ensure
+      restore_subprocess_spawn(original)
+    end
+
+    unless BWRAP_AVAILABLE
+      it 'raises a clear RuntimeError when bwrap is missing' do
+        err = assert_raises(RuntimeError) { described_class.new(filesystem: filesystem) }
+        assert_includes err.message, "'bwrap' not found"
+        assert_includes err.message, 'no fallback'
+      end
+    end
+
+    describe 'bwrap probe' do
+      it 'probes with --unshare-net (not --share-net) and binds the whole root' do
+        calls = []
+        original = stub_subprocess_spawn(call_log: calls, results: [[true, 0]])
+        begin
+          described_class.new(filesystem: filesystem)
+        ensure
+          restore_subprocess_spawn(original)
+        end
+
+        probe = calls.find { |argv| argv.first == 'bwrap' }
+        assert probe, 'expected a bwrap probe'
+        assert_includes probe, '--unshare-net'
+        refute_includes probe, '--share-net'
+        assert probe.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' },
+               "expected --bind / / in the probe: #{probe.inspect}"
+      end
+
+      it 'raises (no networked fallback) when the netns probe fails' do
+        calls = []
+        original = stub_subprocess_spawn(call_log: calls, results: [[false, 1]])
+        begin
+          err = assert_raises(RuntimeError) { described_class.new(filesystem: filesystem) }
+          assert_includes err.message, 'probe failed'
+          assert_includes err.message, 'does NOT fall back'
+        ensure
+          restore_subprocess_spawn(original)
+        end
+      end
+    end
+
+    describe '#wrap argv shape' do
+      it 'binds the whole root and severs only the network' do
+        argv = build_with_stubbed_probe(filesystem).wrap(['bash', '-c', 'echo hi'])
+
+        assert_equal 'bwrap', argv.first
+        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' },
+               "expected --bind / / in #{argv.inspect}"
+        assert_includes argv, '--unshare-net'
+        # The inverse of Bubblewrap: no shared-net, and PID/IPC/UTS stay
+        # shared so the agent can see host processes/services.
+        refute_includes argv, '--share-net'
+        refute_includes argv, '--unshare-all'
+        refute_includes argv, '--unshare-pid'
+        assert_includes argv, '--die-with-parent'
+        assert_includes argv, '--new-session'
+        assert argv.each_cons(2).any? { |a, b| a == '--proc' && b == '/proc' },
+               "expected --proc /proc in #{argv.inspect}"
+        assert argv.each_cons(2).any? { |a, b| a == '--dev' && b == '/dev' },
+               "expected --dev /dev in #{argv.inspect}"
+        assert argv.each_cons(2).any? { |a, b| a == '--chdir' && b == root.to_s },
+               "expected --chdir #{root} in #{argv.inspect}"
+        # User argv preserved at the tail.
+        assert_equal %w[bash -c], argv[-3..-2]
+        assert_equal 'echo hi', argv[-1]
+      end
+
+      it 'does NOT reject a Filesystem::AllowAll workspace (unlike Bubblewrap)' do
+        ws = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
+        sandbox = build_with_stubbed_probe(ws)
+        assert_kind_of described_class, sandbox
+        argv = sandbox.wrap(['true'])
+        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' }
+      end
+    end
+
+    if BWRAP_AVAILABLE
+      it 'constructs when bwrap + unprivileged netns are available' do
+        # Also requires unprivileged user+net namespaces; if the host has
+        # bwrap but disables those, this (correctly) raises.
+        sandbox = described_class.new(filesystem: filesystem)
+        assert_kind_of described_class, sandbox
+      end
+
+      it 'end-to-end: a command runs and sees the real filesystem' do
+        File.write(root + 'marker.txt', 'REALFS')
+        sandbox = described_class.new(filesystem: filesystem)
+        argv = sandbox.wrap(['bash', '-c', "cat #{root}/marker.txt"])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: '/').wait
+
+        assert result.status.success?, "spawn failed: #{result.output}"
+        assert_includes result.output, 'REALFS'
+      end
+
+      it 'end-to-end: the network is severed (fresh netns has only loopback)' do
+        sandbox = described_class.new(filesystem: filesystem)
+        # A fresh network namespace has exactly one interface (lo). With a
+        # fresh --proc (net-namespaced), /proc/net/dev lists interfaces
+        # after two header lines, so a count of 1 proves the process is in
+        # an isolated netns — the host has more.
+        argv = sandbox.wrap(['bash', '-c', 'tail -n +3 /proc/net/dev | wc -l'])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: '/').wait
+
+        assert result.status.success?, "spawn failed: #{result.output}"
+        assert_equal '1', result.output.strip,
+                     "expected only loopback in the sandbox netns: #{result.output.inspect}"
+      end
+    end
+  end
 end
