@@ -300,6 +300,15 @@ keeps its existing, distinct job — a small *curated* corpus
 (`pikuri-corpus`), not the home directory — and stays out of this
 design.
 
+The one honest caveat to test for: the windowed content tool is only as
+good as `localsearch`'s **keyword** match. A fuzzy/semantic ask ("the
+doc about our refund policy") can miss when the words don't literally
+appear — and that miss is exactly the gap semantic recall would close.
+So the deferred semantic option isn't dead, it's *scoped*: revisit it
+only if real usage shows keyword recall failing, and even then for that
+specific gap, not as a wholesale home-directory re-index. Find out when
+we prototype.
+
 ## Use-cases (the broader wishlist, for direction)
 
 - Spotlight-style: "find file xyz", "open the budget spreadsheet".
