@@ -124,12 +124,11 @@ bytes and neutralize hostile control characters — see CLAUDE.md
 - **Memory** of facts about *this particular computer* — where the user
   keeps music / work folders / documents, whether they're synced and by
   what (Dropbox, Syncthing, …), and useful conclusions from past
-  sessions. Useful, but **not** the clean `@private`-posture memory: a
-  pure `@private` agent has no untrusted ingest by construction, whereas
-  this agent *reads untrusted local content* (logs, `~/Downloads`, PDFs)
-  as its core job — so auto-capture here can be poisoned by what it
-  read. See §"Open problem: memory pollution". No-egress contains the
-  blast radius, but does not close the write-time sink.
+  sessions. **A single user-owned `MACHINE.md`**, not mem0 — a
+  `CLAUDE.md`-for-this-host: appended to the system prompt at boot,
+  agent-editable through the confirmed `Write`/`Edit` path,
+  user-inspectable and -editable any time. See §"Memory: a single
+  auditable `MACHINE.md`" for why this beats mem0 here.
 
 ## Is a 35B-A3B model big enough to know Linux? (educated guess: yes)
 
@@ -342,49 +341,85 @@ parse game (`cat x | sh`, command substitution). v1 keeps
 confirm-everything as the safe default; smarter gating is a later
 refinement, not a launch blocker.
 
-## Open problem: memory pollution from local content (deferred)
+## Memory: a single auditable `MACHINE.md`
 
-This is a real problem, documented now and **deliberately left
-unsolved** for v1.
+The memory-pollution problem below is real, and **the v1 answer is a
+markdown file, not mem0.** A single user-owned `MACHINE.md` (a
+`CLAUDE.md` for this host) holds the facts — folder locations, sync
+system, learned conventions — and is **appended to the system prompt at
+boot**. The agent edits it through the normal confirmed `Write`/`Edit`
+path; the user can open, diff, and edit it any time.
 
-`pikuri-memory`'s auto-capture is sound on a *pure* `@private` agent
-because that agent has no untrusted ingest — every word it could
-remember is the user's own. **This agent breaks that premise.** Reading
-untrusted local content (logs, `~/Downloads`, cloned repos, PDFs) is its
-*core job*, so a prompt injection sitting in a file the agent reads can
-attempt to **write a poisoned fact into durable memory** — the
-write-time-poisoning sink. A bad memory then steers later sessions
-("your backup server is `evil.example`"), and unlike a one-shot
-injection it *persists* across conversations.
+Why this beats mem0 *for this agent*:
 
-What partially helps (but does not close it):
+- **It reuses the existing machinery — no new infra, no new tool
+  surface.** No Qdrant, no docker sidecar, no socket relay, no embedder;
+  just read a file at boot and hand the agent the `Edit`/`Write` it
+  already has. For one machine's facts — a small, bounded set — the
+  whole thing fits in the prompt and needs no retrieval tier at all.
+  This is the line-count and audit-first ethos applied to memory.
+- **It makes pollution *visible* instead of trying to prevent it
+  invisibly.** mem0's safety rested on "capture user-role content only"
+  — a structural filter that leaks exactly when the user paraphrases
+  untrusted content into their own turn. `MACHINE.md`'s safety is
+  **visible + confirmed + reversible**: a poisoned fact can't land
+  silently, because the write is a plain-text diff routed through the
+  confirmer (invariant 2) — "agent wants to append: *backup server is
+  `evil.example`*" surfaces *before* it lands, and the user can read
+  the whole memory at will.
 
-- **No-egress contains the blast radius.** A polluted memory can't be
-  exfiltrated; the worst case is the agent giving the *user* bad advice,
-  not data leaving the machine. Real harm, smaller harm.
-- **`pikuri-memory`'s "capture user-role content only" defense.** File
-  contents arrive as *tool observations*, not user turns, so a
-  strictly user-role-only extraction never sees the malicious bytes
-  directly. This is the main reason the sink is *narrow* rather than
-  wide — but it leaks at the seam where the user paraphrases untrusted
-  content into their own message ("the log says X, remember that"),
-  laundering it into user-role. That residual is the same
-  human-as-author risk the trifecta notes already accept.
+Prior art: this is the `CLAUDE.md` / `AGENTS.md` convention (opencode,
+PI, Claude Code), and the [federation note](assistant.md) already
+gestured at it ("a `@team` agent nudges `AGENTS.md` — shared ⇒
+human-gated write").
 
-Why we can defer rather than solve now: the safe fallback is cheap —
-**ship v1 with explicit-only memory** (the `recall` tool + "remember
-this" on demand) and **no automatic capture**, which removes the
-write-time sink entirely at the cost of some convenience. The
-interesting design work — can auto-capture be made safe on an
-untrusted-ingest agent, e.g. by capturing only from user turns with a
-provenance check, or quarantining file-derived facts — is exactly the
-kind of question the [federation note](assistant.md) and
-[`private-context-taint.md`](private-context-taint.md) are circling, and
-it shouldn't be rushed into this gem. v1: explicit memory only; revisit
-auto-capture when the taint machinery is further along.
+### The pollution risk, now mitigated rather than deferred
+
+Reading untrusted local content (logs, `~/Downloads`, cloned repos,
+PDFs) is this agent's *core job*, so an injection in a read file can try
+to **write a poisoned fact into durable memory** — the write-time sink.
+A bad fact persists across sessions and steers later advice, which is
+worse than a one-shot injection. The `MACHINE.md` design doesn't make
+the sink vanish; it downgrades it from *silent durable poison* to *a
+confirmed, auditable, reversible one-line diff*. The residuals to keep
+in view:
+
+- **A fact in `MACHINE.md` is in the *system prompt* — instructions-
+  adjacent.** That's higher-privilege than mem0's recall-as-`:system`
+  mid-conversation, so a poisoned fact there has more steering power.
+  The counterweights: it's the user's own trusted file (same trust model
+  as `CLAUDE.md`) and every write is confirmed — but it raises the
+  stakes of a rubber-stamped edit.
+- **Confirmation fatigue, again.** The defense is only as strong as the
+  user actually reading the memory diff. Memory edits should be *rare*
+  and the diff *small* (unlike a sprawling bash command), so this is far
+  more reviewable than the bash-confirm case — but it rests on the same
+  human attention.
+- **No-egress still contains the blast radius.** Even a poisoned fact
+  can't be exfiltrated; worst case is bad advice to the user, not data
+  leaving the machine.
+
+### Size guard
+
+A markdown file is the right tool *because* one machine's fact set is
+small and bounded; it is explicitly **not** a general large-scale
+memory. To keep it from silently bloating the prompt, a simple size
+check — mirroring how the Claude CLI nudges an oversized `CLAUDE.md`
+(~40k) to be trimmed: **if `MACHINE.md` grows past ~10k, log a
+warning** that it's time to trim. No hard cap, no auto-eviction — just a
+visible nudge. If a host ever genuinely needs more than that, the
+bounded-file model has been outgrown and semantic memory (below) is the
+conversation to reopen.
 
 ## Future (deferred)
 
+- **Semantic / large-scale memory.** Only if the bounded `MACHINE.md`
+  proves too small. mem0-style auto-capture on an untrusted-ingest agent
+  reopens the write-time-poisoning question in a form the markdown
+  file's visible-and-confirmed model sidesteps — so it waits on the
+  taint machinery the [federation note](assistant.md) and
+  [`private-context-taint.md`](private-context-taint.md) are circling,
+  rather than being rushed into this gem.
 - **Internet access**, likely via a privilege-separated investigator
   sub-agent that can search the web but is structurally barred from the
   private filesystem context — at which point the full trifecta work
