@@ -248,6 +248,22 @@ its whole extracted text. That's the same two-step shape as
 pre-installed index for free, which is part of why `pikuri-vectordb`
 earns no place here (below).
 
+**A purpose-built tool collapses the two calls into one.** Rather than
+make the LLM orchestrate `search` → `info -c` → slice-by-hand every
+time, wrap it: a single content-search tool that takes a phrase, runs
+`localsearch search` to find the matching files, then for each top hit
+pulls the full extracted text (`info -c`) and returns a **~500-word
+window centered on the match** — enough context for the model to judge
+relevance and answer, without dragging an entire PDF into the context
+window. Defaults worth pinning in the parameter descriptions: a
+configurable window (~500 words, capped), a cap on how many hits/windows
+come back, and multiple windows when a file matches in several places.
+For system paths outside the index, the same tool degrades to `rg`'s own
+context flag (`-C`) over plain text, or extract-then-window via
+`pikuri-extractors`. This is the content half of "spotlight" as one tool
+the LLM reaches for, mirroring `grep`'s `-C` but word-based and seeing
+inside PDFs/office docs.
+
 Three caveats, all of which point to keeping `rg` as the fallback, not
 the primary:
 
