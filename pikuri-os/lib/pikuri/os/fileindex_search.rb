@@ -80,7 +80,12 @@ module Pikuri
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
         [content.chomp, '', disclaimer(hits.size) + marker].join("\n")
       rescue LocalSearch::CommandError => e
-        "Error: localsearch: #{e.message}"
+        # Cap the error too: localsearch's stderr is normally short (it's a
+        # daemon query, not a filesystem walk), but a raw subprocess error
+        # returned verbatim is the shape that overflows the model's context
+        # — share the success path's ceiling. See {Pikuri::Workspace::Grep}.
+        content, marker = head_truncate(e.message)
+        "Error: localsearch: #{content}#{marker}"
       end
 
       # @return [String] +"<path>"+ or +"<path>\n  <snippet>"+

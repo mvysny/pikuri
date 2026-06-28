@@ -57,6 +57,20 @@ RSpec.describe Pikuri::Os::FileindexSearch do
       end
     end
 
+    it 'caps an oversized backend CommandError at MAX_BYTES' do
+      huge = 'x' * (described_class::MAX_BYTES * 3)
+      original = stub_backend_search { |**| raise Pikuri::Os::LocalSearch::CommandError, huge }
+      begin
+        result = described_class.search(query: 'x')
+        assert result.start_with?('Error: localsearch:'), "got #{result[0, 40].inspect}"
+        assert_includes result, 'bytes omitted'
+        assert result.bytesize <= described_class::MAX_BYTES + 200,
+               "error not capped: #{result.bytesize} bytes"
+      ensure
+        restore_backend_search(original)
+      end
+    end
+
     it 'clamps limit to MAX_LIMIT' do
       seen = nil
       original = stub_backend_search do |query:, limit:|
