@@ -557,20 +557,29 @@ conversation to reopen.
 ## Placement: a new `pikuri-os` gem (not `pikuri-assistant`)
 
 The instinct to reuse `pikuri-assistant` should be resisted — it's the
-wrong home, for three reasons:
+wrong home, for two reasons:
 
 - **Opposite posture.** `pikuri-assistant` is the egress-capable,
   MCP-wired, mem0 + vectordb assistant (ch7). This agent is the inverse:
   no egress, no MCP, no mem0 (it uses `MACHINE.md`), no vectordb. Sharing
   a gem drags those deps into a binary that must *not* wire them, bloating
   the audit surface of an agent whose whole pitch is "small, no-egress,
-  auditable."
-- **`pikuri-assistant` has no library code of its own;** this agent needs
-  new library code (the localsearch tool, the `MACHINE.md` memory), which
-  would force that gem to grow a `lib/` and change character.
+  auditable." (Note: *not* because `pikuri-assistant` lacks library code —
+  its empty `lib/` is a temporary RubyGems-name placeholder that will fill
+  in; the objection is the clashing posture, not the empty gem.)
 - **Convention.** Each distinct agent *shape* is its own capability gem +
   demo bin (`pikuri-code`, `pikuri-corpus`, `pikuri-memory`,
   `pikuri-assistant`). This is a distinct shape.
+
+On the name specifically: every pikuri gem is named for its capability
+*domain* and puts the assistant in `bin/` — `pikuri-vectordb` →
+`bin/pikuri-corpus`, `pikuri-code` → `bin/pikuri-code`, `pikuri-memory` →
+`bin/pikuri-memory`, `pikuri-mcp` → `bin/pikuri-openlibrary`. So
+`pikuri-os` (the util layer) + `bin/pikuri-os-assistant` (the assistant)
+is the *consistent* choice; `pikuri-os-helper` would be the only gem with
+a `-helper` suffix — the odd one out. "It sounds like a pile of OS utils"
+is correct and fine: the gem **is** the utils; the assistant-ness lives
+in the bin, exactly as vectordb's does in `bin/pikuri-corpus`.
 
 So: **a new `pikuri-os` gem**, depending on `pikuri-core` +
 `pikuri-workspace` + `pikuri-code` (and deliberately *not* mcp / memory /
