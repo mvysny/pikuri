@@ -350,6 +350,13 @@ system, learned conventions — and is **appended to the system prompt at
 boot**. The agent edits it through the normal confirmed `Write`/`Edit`
 path; the user can open, diff, and edit it any time.
 
+**Location: `~/.config/pikuri/MACHINE.md`** (XDG, host-scoped) — not
+project-local, because for this agent the machine *and the user's home*
+**are** the project: `MACHINE.md` records facts spanning the whole host
+(where music/work/documents live, which sync system, system quirks), not
+any one directory. A single canonical XDG path is what the boot-append
+and the agent's edit-path both resolve to.
+
 Why this beats mem0 *for this agent*:
 
 - **It reuses the existing machinery — no new infra, no new tool
