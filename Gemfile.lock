@@ -51,6 +51,14 @@ PATH
       pikuri-core (= 0.0.7)
 
 PATH
+  remote: pikuri-os
+  specs:
+    pikuri-os (0.0.7)
+      pikuri-code (= 0.0.7)
+      pikuri-core (= 0.0.7)
+      pikuri-workspace (= 0.0.7)
+
+PATH
   remote: pikuri-pdf
   specs:
     pikuri-pdf (0.0.7)
@@ -226,6 +234,7 @@ DEPENDENCIES
   pikuri-extractors!
   pikuri-mcp!
   pikuri-memory!
+  pikuri-os!
   pikuri-pdf!
   pikuri-skills!
   pikuri-subagents!
@@ -274,6 +283,7 @@ CHECKSUMS
   pikuri-extractors (0.0.7)
   pikuri-mcp (0.0.7)
   pikuri-memory (0.0.7)
+  pikuri-os (0.0.7)
   pikuri-pdf (0.0.7)
   pikuri-skills (0.0.7)
   pikuri-subagents (0.0.7)

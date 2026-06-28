@@ -1,0 +1,38 @@
+# pikuri-os
+
+Offline Linux/OS helper agent + OS-integration tools for the
+[pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
+
+`pikuri-os` is the home of `bin/pikuri-os-assistant`: a single, local,
+**network-severed** agent that understands and operates the host OS —
+answer questions about the machine, find and open files, read logs and
+explain errors, advise on configuration. It is the federation's
+privacy-first `@os` member shipped as a standalone single agent (see
+[`ideas/os-assistant.md`](../ideas/os-assistant.md) for the full
+design).
+
+Posture (the load-bearing parts):
+
+- **Egress severed at the kernel.** Bash runs in a full-filesystem,
+  net-isolated sandbox (the inverse of the coding agent's networked
+  one), so the trifecta's exfiltration leg is gone by construction —
+  not by a prompt.
+- **Every mutation confirmed.** `Bash`/`Write`/`Edit` route through the
+  confirmer; a conservative deterministic auto-confirmer waves through
+  only provably-read-only commands.
+- **Advise, don't execute, anything privileged or networked.** Anything
+  needing `sudo` or the network is handed to the user to run.
+- **Memory is a single `MACHINE.md`**, not mem0 — a `CLAUDE.md` for this
+  host, appended to the system prompt at boot and editable through the
+  confirmed write path.
+
+**Target platform:** Ubuntu 26.04 LTS or newer, GNOME desktop.
+
+Depends on `pikuri-core` (Agent + Tool framework), `pikuri-workspace`
+(file tools + confirmer), and `pikuri-code` (Bash + sandbox).
+Deliberately **not** `pikuri-mcp` / `pikuri-memory` / `pikuri-vectordb`
+— severing those keeps the no-egress, audit-first posture honest.
+
+> Status: skeleton. The OS-specific surface (localsearch-backed
+> content search, `MACHINE.md` memory, boot grounding) and the binary
+> land incrementally.

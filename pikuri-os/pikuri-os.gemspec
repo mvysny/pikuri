@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+require_relative '../pikuri-core/lib/pikuri/version'
+
+Gem::Specification.new do |spec|
+  spec.name        = 'pikuri-os'
+  spec.version     = Pikuri::VERSION
+  spec.authors     = ['Martin Vysny']
+  spec.email       = ['martin@vysny.me']
+
+  spec.summary     = 'Offline Linux/OS helper agent + tools for pikuri.'
+  spec.description = <<~DESC
+    pikuri-os is the OS-integration layer for pikuri and the home of
+    the +bin/pikuri-os-assistant+ demo: a single, local, network-severed
+    agent that understands and operates the host OS (answer questions
+    about the machine, find and open files, read logs and explain
+    errors, advise on configuration). It is the federation's privacy-
+    first +@os+ member shipped standalone — no egress, no MCP, no cloud.
+
+    The gem holds the OS-specific surface (a localsearch-backed
+    content-search tool, a single-file +MACHINE.md+ resident memory,
+    and boot-time machine grounding) on top of pikuri-core's Agent +
+    Tool framework, pikuri-workspace's file tools, and pikuri-code's
+    Bash + sandbox. It deliberately does NOT depend on
+    pikuri-mcp/-memory/-vectordb: severing those keeps the no-egress,
+    "small enough to audit" posture honest.
+
+    See +ideas/os-assistant.md+ in the repo for the full design.
+  DESC
+
+  spec.homepage = 'https://codeberg.org/mvysny/pikuri'
+  spec.license  = 'MIT'
+
+  spec.required_ruby_version = '>= 3.3'
+
+  spec.metadata = {
+    'source_code_uri'       => "#{spec.homepage}/src/branch/master",
+    'changelog_uri'         => "#{spec.homepage}/src/branch/master/CHANGELOG.md",
+    'bug_tracker_uri'       => "#{spec.homepage}/issues",
+    'rubygems_mfa_required' => 'true'
+  }
+
+  spec.files = Dir[
+    'lib/**/*.rb',
+    'prompts/*.txt',
+    'LICENSE',
+    'README.md'
+  ]
+  spec.require_paths = ['lib']
+
+  # Agent runtime + Tool base class + Extension protocol live in
+  # pikuri-core; the five file tools + Confirmer live in
+  # pikuri-workspace; Bash + Bash::Sandbox (the net-isolation seam this
+  # agent rides) live in pikuri-code. Lockstep-versioned so an upgrade
+  # to any of them always pulls the matching peer.
+  spec.add_dependency 'pikuri-code',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
+end
