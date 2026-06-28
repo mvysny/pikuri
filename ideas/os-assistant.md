@@ -175,28 +175,31 @@ paths:
 - Bake into the system prompt at boot: `/etc/lsb-release` (distro +
   version), desktop environment (GNOME/KDE), `$HOME`, login shell, and
   current date/time.
-- Optionally fold in `inxi -b -c 0` for desktop-environment + machine
-  context (distro, `Init: systemd`, `Desktop: GNOME <ver>`, CPU/mem at a
-  glance). Use `-b` (*basic*), **not** `-e`/`-F` — the latter is a full
-  hardware dump (audio codecs, sensors, every partition, GPU/EGL APIs)
-  that bloats the prompt with detail an OS-help agent rarely needs.
-  `-c 0` strips inxi's color codes. Treat it as a source to curate from,
-  not bytes to paste verbatim (inxi has cosmetic quirks, and `Desktop:`
-  only populates inside a running graphical session).
-- **inxi is enrichment, not a dependency — if it's absent, degrade
-  silently; do not raise and do not nag the user to install it.** It's
-  a convenience aggregator (and only in `universe`, not guaranteed
-  pre-installed), and every grounding fact it carries has an
-  always-present source: distro from `/etc/os-release`, kernel/arch from
-  `uname -srm`, init from `ps -p1 -o comm=`, **DE from
+- **Always fold in desktop-environment + machine context** (distro,
+  `Init: systemd`, `Desktop: GNOME <ver>`, CPU/mem at a glance). This
+  *information* is not optional — it's the highest-value grounding,
+  cheap, and stops the model guessing about the host. What's optional is
+  the **source**: `inxi -b -c 0` is the convenient one when present. Use
+  `-b` (*basic*), **not** `-e`/`-F` — the latter is a full hardware dump
+  (audio codecs, sensors, every partition, GPU/EGL APIs) that bloats the
+  prompt with detail an OS-help agent rarely needs. `-c 0` strips inxi's
+  color codes. Treat it as a source to curate from, not bytes to paste
+  verbatim (inxi has cosmetic quirks, and `Desktop:` only populates
+  inside a running graphical session).
+- **inxi is one source for that info, not a dependency — if it's absent,
+  gather the same facts from primitives; do not raise and do not nag the
+  user to install it.** inxi is a convenience aggregator (and only in
+  `universe`, not guaranteed pre-installed); every grounding fact it
+  carries has an always-present source: distro from `/etc/os-release`,
+  kernel/arch from `uname -srm`, init from `ps -p1 -o comm=`, **DE from
   `$XDG_CURRENT_DESKTOP`** (more reliable than inxi, which needs a live
   graphical session), CPU/mem from `/proc` or `free -h`, shell/home from
-  the environment. So build boot grounding from those primitives and use
-  inxi `-b` only to embellish when present. The deeper hardware detail
-  inxi alone gives (exact GPU, sensors, mobo) isn't needed up front; if
-  a question ever calls for it, the agent runs `inxi`/`lspci`/`lscpu` on
-  demand — when it exists. A missing inxi is never a fatal or
-  user-facing condition.
+  the environment. So the grounding block is always built — from inxi
+  `-b` when present, from those primitives otherwise. The deeper
+  hardware detail inxi alone gives (exact GPU, sensors, mobo) isn't
+  needed up front; if a question ever calls for it, the agent runs
+  `inxi`/`lspci`/`lscpu` on demand — when it exists. A missing inxi is
+  never a fatal or user-facing condition.
 - Linux-first; **target Ubuntu 26.04 LTS or newer** (Debian likely free).
   Pinning a recent baseline lets us assume what ships by default — e.g.
   the GNOME file index (§"File search") — instead of probing for it.
