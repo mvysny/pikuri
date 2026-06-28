@@ -23,17 +23,18 @@ module Pikuri
     #
     # == Mechanism: a two-call split, collapsed into one tool
     #
-    # +localsearch search+ is *discovery* — it returns matching file paths
-    # but only a 3-4 word built-in snippet, too small to reason on. So for
-    # each hit this tool makes a second call, +localsearch info -c -o
-    # json-ld <path>+, which returns the file's full extracted text
-    # (+nie:plainTextContent+, already extracted at index time — PDFs and
-    # office docs included, no re-parsing), then slices a ~+window_words+
-    # window centred on the match. That mirrors the
-    # +vectordb_search+ → +vectordb_read+ shape, free from the
-    # pre-installed index. The window is deliberately modest (~100 words):
-    # enough to judge relevance and often answer, cheap enough to return
-    # several hits — read the file in full if a window isn't enough.
+    # +localsearch search -d+ is *discovery* — it returns matching file
+    # paths plus a tiny (3-4 word) snippet, too small to reason on but
+    # with the *matched word* ANSI-highlighted. So for each hit this tool
+    # makes a second call, +localsearch info -c -o json-ld <path>+, which
+    # returns the file's full extracted text (+nie:plainTextContent+,
+    # already extracted at index time — PDFs and office docs included, no
+    # re-parsing), then slices a ~+window_words+ window centred on the
+    # match. That mirrors the +vectordb_search+ → +vectordb_read+ shape,
+    # free from the pre-installed index. The window is deliberately modest
+    # (~100 words): enough to judge relevance and often answer, cheap
+    # enough to return several hits — read the file in full if a window
+    # isn't enough.
     #
     # == Scope and freshness (surfaced in the description)
     #
@@ -43,15 +44,22 @@ module Pikuri
     # writes, and some users disable it; a healthy, populated index is
     # assumed (+localsearch status+ reports its state).
     #
-    # == Stemming fallback
+    # == Locating the match (window around the matched *word*, stemmed)
     #
-    # LocalSearch's full-text search is stemmed (+"environment"+ matches
-    # +"environmental"+), so the literal query may not appear verbatim in
-    # the stored text. {.window_around} therefore windows around the first
-    # word that *contains* any query term, and falls back to the document
-    # head when no term is found literally — never dropping a hit. (Parsing
-    # the snippet's highlighted surface form for an exact locus is a
-    # possible refinement; the head fallback is the safe v1.)
+    # LocalSearch's full-text search is stemmed: querying +"mouse"+ can
+    # match the document word +"mice"+, +"environment"+ matches
+    # +"environmental"+. So the *query* often isn't in the stored text
+    # verbatim — windowing around the query directly would miss. Instead
+    # we window around the word the index actually matched: +search -d+
+    # ANSI-highlights that surface form in its snippet
+    # (+\\e[..m<word>\\e[0m+), {.parse_search_hits} extracts it per file,
+    # and {.window_around} centres on the first occurrence of *that* word
+    # in the full text. This handles every stem divergence, not just
+    # suffixes.
+    #
+    # Layered fallback, so a hit is never dropped: matched surface form →
+    # (if no highlight was parseable) the query terms as substrings →
+    # (if neither is found in the text) the document head.
     class LocalSearch < Pikuri::Tool
       # @return [String] the indexer/search CLI (GNOME LocalSearch, the
       #   2024 rename of tracker3 / tracker-miners).
@@ -131,7 +139,9 @@ module Pikuri
         limit = clamp(limit, 1, MAX_LIMIT)
         window_words = clamp(window_words, MIN_WINDOW, MAX_WINDOW)
 
-        result = Pikuri::Subprocess.spawn(BINARY, 'search', '--limit', limit.to_s, q,
+        # -d adds the URN (ignored) and, crucially, the ANSI-highlighted
+        # matched word in the snippet — see {.parse_search_hits}.
+        result = Pikuri::Subprocess.spawn(BINARY, 'search', '-d', '--limit', limit.to_s, q,
                                           chdir: '/').wait
         unless result.status.success?
           stderr = result.output.strip
@@ -139,30 +149,50 @@ module Pikuri
           return "Error: localsearch: #{stderr}"
         end
 
-        paths = parse_search_paths(result.output)
-        return no_match_message(q) if paths.empty?
+        hits = parse_search_hits(result.output)
+        return no_match_message(q) if hits.empty?
 
-        blocks = paths.filter_map { |path| build_block(path: path, query: q, window_words: window_words) }
+        blocks = hits.filter_map { |hit| build_block(hit: hit, query: q, window_words: window_words) }
         return no_match_message(q) if blocks.empty?
 
         format_output(blocks, query: q)
       end
 
-      # Extract filesystem paths from +localsearch search+ output. Plain
-      # (no +-d+) output is one +file://+ URI per matching file; we
-      # percent-decode each to a path. Lines that aren't +file://+ URIs
-      # (any header/footer) are ignored.
+      # Parse +localsearch search -d+ output into hits. Each result is a
+      # +file://<uri> (urn:...)+ line followed by an indented snippet line
+      # in which the *matched* word is ANSI-highlighted; a hit pairs the
+      # decoded path with the highlighted surface form(s) from its snippet
+      # (the actual document words the index matched — possibly stems of
+      # the query). De-duplicated by path.
       #
       # @param raw [String]
-      # @return [Array<String>] decoded, de-duplicated filesystem paths
-      def self.parse_search_paths(raw)
-        raw.each_line.filter_map do |line|
+      # @return [Array<Hash>] +[{ path: String, terms: Array<String> }, ...]+
+      def self.parse_search_hits(raw)
+        hits = []
+        current = nil
+        raw.each_line do |line|
           encoded = line[%r{\Afile://(\S+)}, 1]
-          next unless encoded
-
-          decode_file_uri(encoded)
-        end.uniq
+          if encoded
+            current = { path: decode_file_uri(encoded), terms: [] }
+            hits << current
+          elsif current
+            current[:terms].concat(highlighted_terms(line))
+          end
+        end
+        hits.uniq { |hit| hit[:path] }
       end
+
+      # @return [Regexp] one ANSI-highlighted run: +\e[..m<text>\e[0m+.
+      ANSI_HIGHLIGHT = /\e\[[0-9;]*m([^\e]+?)\e\[0m/
+
+      # Pull the ANSI-highlighted (matched) words out of a snippet line.
+      #
+      # @param line [String]
+      # @return [Array<String>] highlighted surface forms, trimmed
+      def self.highlighted_terms(line)
+        line.scan(ANSI_HIGHLIGHT).flatten.map(&:strip).reject(&:empty?)
+      end
+      private_class_method :highlighted_terms
 
       # Percent-decode a +file://+ URI tail to a filesystem path. Decodes
       # +%XX+ only (NOT +++ → space — that's form-encoding, wrong for file
@@ -178,16 +208,25 @@ module Pikuri
 
       # One result block: +"<path>\n<window>"+, or +nil+ to skip (path is
       # not a regular file, has no stored text, or vanished since
-      # indexing).
+      # indexing). Windows around the index's matched word(s)
+      # (+hit[:terms]+); falls back to the query terms when the snippet
+      # had no parseable highlight.
       #
+      # @param hit [Hash] +{ path:, terms: }+ from {.parse_search_hits}
+      # @param query [String]
+      # @param window_words [Integer]
       # @return [String, nil]
-      def self.build_block(path:, query:, window_words:)
+      def self.build_block(hit:, query:, window_words:)
+        path = hit[:path]
         return nil unless File.file?(path)
 
         content = plain_text_for(path)
         return nil if content.nil? || content.strip.empty?
 
-        window = window_around(content, query, window_words)
+        terms = hit[:terms].map(&:downcase)
+        terms = query.downcase.split if terms.empty?
+
+        window = window_around(content, terms, window_words)
         return nil if window.empty?
 
         "#{path}\n#{window}"
@@ -260,20 +299,21 @@ module Pikuri
       private_class_method :find_plain_text
 
       # Slice a ~+window_words+ window of +text+ centred on the first word
-      # containing any query term. Falls back to the document head when no
-      # term is found literally (stemming). Adds leading/trailing ellipses
-      # when the window is interior.
+      # containing any of +terms+ (the index's matched surface forms, or
+      # the query terms as a fallback). Falls back to the document head
+      # when none is found. Adds leading/trailing ellipses when the window
+      # is interior.
       #
       # @param text [String]
-      # @param query [String]
+      # @param terms [Array<String>] lowercased words to locate
       # @param window_words [Integer]
       # @return [String]
-      def self.window_around(text, query, window_words)
+      def self.window_around(text, terms, window_words)
         words = text.split
         return '' if words.empty?
 
         half = [window_words / 2, 1].max
-        idx = match_index(words, query)
+        idx = match_index(words, terms)
         if idx.nil?
           selected = words.first(window_words)
           lead = false
@@ -292,15 +332,18 @@ module Pikuri
         out
       end
 
+      # @param words [Array<String>] document words
+      # @param terms [Array<String>] target words (matched surface forms
+      #   or query terms)
       # @return [Integer, nil] index of the first word containing any
-      #   query term (case-insensitive), or +nil+
-      def self.match_index(words, query)
-        terms = query.downcase.split.reject(&:empty?)
-        return nil if terms.empty?
+      #   term (case-insensitive), or +nil+
+      def self.match_index(words, terms)
+        cleaned = terms.map(&:downcase).reject(&:empty?)
+        return nil if cleaned.empty?
 
         words.find_index do |word|
           downcased = word.downcase
-          terms.any? { |term| downcased.include?(term) }
+          cleaned.any? { |term| downcased.include?(term) }
         end
       end
       private_class_method :match_index

@@ -14,22 +14,30 @@ rescue Errno::ENOENT
 end
 
 RSpec.describe Pikuri::Os::LocalSearch do
-  describe '.parse_search_paths' do
-    it 'extracts and percent-decodes file:// paths, dropping non-URI lines, de-duped' do
-      raw = <<~OUT
-        file:///home/u/Documents/report.pdf
-        file:///home/u/My%20Notes/todo.txt
-        some header or footer line
-        file:///home/u/Documents/report.pdf
-      OUT
-      assert_equal(
-        ['/home/u/Documents/report.pdf', '/home/u/My Notes/todo.txt'],
-        described_class.parse_search_paths(raw)
-      )
+  describe '.parse_search_hits' do
+    it 'pairs each path with its ANSI-highlighted matched word(s), percent-decoded and de-duped' do
+      raw = "file:///home/u/Documents/report.pdf (urn:fileid:x:1)\n" \
+            "  …physical or \e[0;1;39menvironmental\e[0m damage…\n" \
+            "\n" \
+            "file:///home/u/My%20Notes/todo.txt ((null))\n" \
+            "  \e[0;1;39mEnvironmentalReverb\e[0m.java\n" \
+            "\n" \
+            "file:///home/u/Documents/report.pdf (urn:fileid:x:1)\n"
+      hits = described_class.parse_search_hits(raw)
+      assert_equal ['/home/u/Documents/report.pdf', '/home/u/My Notes/todo.txt'],
+                   hits.map { |h| h[:path] }
+      assert_equal ['environmental'], hits[0][:terms]
+      assert_equal ['EnvironmentalReverb'], hits[1][:terms]
     end
 
     it 'returns [] when there are no file:// lines' do
-      assert_empty described_class.parse_search_paths("no results\n")
+      assert_empty described_class.parse_search_hits("no results\n")
+    end
+
+    it 'tolerates a hit whose snippet has no highlight (empty terms)' do
+      hits = described_class.parse_search_hits("file:///a/b.txt (urn:x)\n  plain snippet, no color\n")
+      assert_equal '/a/b.txt', hits[0][:path]
+      assert_empty hits[0][:terms]
     end
   end
 
@@ -60,7 +68,7 @@ RSpec.describe Pikuri::Os::LocalSearch do
     let(:fifty) { (1..50).map { |i| "w#{i}" }.join(' ') }
 
     it 'centres an interior window on the match, with ellipses both sides' do
-      out = described_class.window_around(fifty, 'w25', 10)
+      out = described_class.window_around(fifty, ['w25'], 10)
       assert_includes out, 'w25'
       assert_includes out, 'w20'
       assert_includes out, 'w30'
@@ -71,23 +79,23 @@ RSpec.describe Pikuri::Os::LocalSearch do
     end
 
     it 'falls back to the document head when no term is found literally' do
-      out = described_class.window_around(fifty, 'zzz', 5)
+      out = described_class.window_around(fifty, ['zzz'], 5)
       assert out.start_with?('w1 w2 w3'), out.inspect
       refute out.start_with?('… '), 'head window has no leading ellipsis'
       assert out.end_with?(' …'), 'head of a longer doc has a trailing ellipsis'
     end
 
-    it 'matches stems (query is a substring of an indexed word)' do
-      out = described_class.window_around('the quick environmental fox', 'environment', 10)
+    it 'matches by substring (a term contained in an indexed word — query fallback)' do
+      out = described_class.window_around('the quick environmental fox', ['environment'], 10)
       assert_includes out, 'environmental'
     end
 
     it 'returns the whole text without ellipses when shorter than the window' do
-      assert_equal 'a b c', described_class.window_around('a b c', 'b', 100)
+      assert_equal 'a b c', described_class.window_around('a b c', ['b'], 100)
     end
 
     it 'returns empty string for empty text' do
-      assert_equal '', described_class.window_around('   ', 'x', 100)
+      assert_equal '', described_class.window_around('   ', ['x'], 100)
     end
   end
 
@@ -125,7 +133,9 @@ RSpec.describe Pikuri::Os::LocalSearch do
       Pikuri::Subprocess.define_singleton_method(:spawn) do |*args, **_kwargs|
         out =
           if args.include?('search')
-            "file://#{path}\n"
+            # -d format: path + URN, then a snippet with the matched word
+            # ANSI-highlighted.
+            "file://#{path} (urn:x:1)\n  …alpha beta \e[0;1;39mneedle\e[0m gamma…\n"
           elsif args.include?('info')
             JSON.generate('@graph' => [{ '@graph' => [{ 'nie:plainTextContent' =>
               'alpha beta needle gamma delta' }] }])
