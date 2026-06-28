@@ -2,7 +2,7 @@
 
 TODO: this is a crude capture of ideas, needs to be polished and brainstormed.
 
-A generic assistant is a very hard thing to do:
+A generic assistant (in `ideas/assistant.md`) is a very hard thing to do:
 
 - Security: Trifecta bites
 - Complexity: all gems combined; MCPs for virtually any task available
