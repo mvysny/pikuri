@@ -26,7 +26,9 @@ Related:
 
 A single local agent whose job is to **understand and operate the host
 OS**: answer questions about this machine, find and open files, read
-logs and explain errors, advise on configuration. Full read-write view
+logs and explain errors, advise on configuration. **Target platform:
+Ubuntu 26.04 LTS or newer**, GNOME desktop (a recent baseline we can
+make assumptions about — see §"File search"). Full read-write view
 of the real filesystem (the whole point is to control the host, so
 there is no *filesystem* sandbox). Local LLM only, running in
 `llama-server`. No cloud account, consistent with pikuri's
@@ -46,7 +48,7 @@ actual environment, that can read man pages and local docs.
 
 ## How the egress leg is severed (the load-bearing part)
 
-The naive framing — *"no sandbox, just don't give it internet"* — does
+The naive framing — *"no sandbox, just don't give it internet tools"* — does
 not hold: an unsandboxed `bash` reaches the network freely (`curl`,
 `wget`, `nc`, `apt`). "No internet" stated only in the system prompt is
 a *request*, not a property, and a prompt injection in a local file can
@@ -174,8 +176,10 @@ paths:
   current date/time.
 - Optionally fold in `inxi`/`lsb_release` output for hardware/DE
   context.
-- Linux-first; initially Ubuntu (Debian likely free). XDG conventions
-  are cheap to include and pay off in path accuracy.
+- Linux-first; **target Ubuntu 26.04 LTS or newer** (Debian likely free).
+  Pinning a recent baseline lets us assume what ships by default — e.g.
+  the GNOME file index (§"File search") — instead of probing for it.
+  XDG conventions are cheap to include and pay off in path accuracy.
 - Local offline docs (Ubuntu help, man pages) are a natural
   `pikuri-vectordb` corpus if recall quality justifies it — deferred,
   not v1.
@@ -187,19 +191,69 @@ properties cover completely:
 
 - **Answer questions about this system** (what's installed, what's
   running, disk/resource state).
-- **Find and open files** — `find`/`rg`/glob; open/edit via `xdg-open`.
+- **Find and open files** — filenames via `find`/glob, content via the
+  GNOME index (§"File search"); open/edit via `xdg-open`.
 - **Read logs and explain errors** — `journalctl`, `dmesg`, kernel log;
   resolve from local knowledge + man pages where possible.
 
 Deferred past v1: package install/eval, systemd mutation, GUI-config
-*application* (vs. advice), content indexing (tracker/`localsearch`),
-app launching, and anything needing the network.
+*application* (vs. advice), app launching, and anything needing the
+network.
+
+## File search: filenames vs. content (the indexer question)
+
+`find`/`rg` are fine for *filenames* and for *plain-text content*, but
+they fall down on the two things a "spotlight" needs most: they're slow
+over a large home directory cold, and they can't see inside PDFs or
+office documents at all. So the design splits into two tiers:
+
+**Filename / path search → no index needed.** `find` / `fd` / glob over
+the relevant roots. Fast enough, always correct, zero setup. Handles
+"find file xyz", "where's my budget spreadsheet".
+
+**Content search, including PDFs and office docs → prefer the
+pre-installed GNOME index.** Ubuntu's GNOME desktop already ships and
+runs a file indexer — **`localsearch`** (the indexer/miner) backed by
+**`tinysparql`** (the SPARQL store), the 2024 rename of
+`tracker-miners` / `tracker3`. It's the same index GNOME Files and the
+Shell search already use, it extracts full text from PDFs (via poppler)
+and office formats, and — crucially for us — it's **entirely local and
+inbound**, so it fits the no-egress posture with nothing to add. The
+agent queries it by shelling out (`localsearch search "<terms>"`, or a
+SPARQL query against `tinysparql` for structured filters like
+mime-type/mtime). Targeting Ubuntu 26.04+ is what lets us *assume* it's
+there rather than probe.
+
+Three caveats, all of which point to keeping `rg` as the fallback, not
+the primary:
+
+1. **Scope.** `localsearch` indexes the user's content directories
+   (`$HOME` + XDG dirs by default), **not the whole filesystem**.
+   Anything under `/etc`, `/var`, or other system paths is outside the
+   index — those still go through `rg`/`grep`. That's fine: system-file
+   search is small and text, exactly `rg`'s strength.
+2. **Reliability.** The indexer has a mixed reputation (resource churn,
+   occasional stale/empty index) and some Ubuntu users disable it. So
+   the agent should **check it's alive and populated** (`localsearch
+   status`) before trusting it, and fall back to an extract-then-grep
+   pass otherwise — which pikuri can already do via the
+   `pikuri-extractors` PDF/office→text seam, just slower and ad-hoc.
+3. **Freshness.** The index lags very recent writes; for "the file I
+   saved 10 seconds ago", a filename `find` is more reliable than the
+   content index.
+
+So: filenames via `find`, content via `localsearch` when healthy and
+in-scope, `rg` + on-demand extraction everywhere else. A curated,
+always-fresh corpus (vs. the OS-wide index) remains
+`pikuri-vectordb`'s job — out of scope for the OS assistant's
+"search my actual disk" use-case, but the natural upgrade if recall
+quality on `localsearch` disappoints.
 
 ## Use-cases (the broader wishlist, for direction)
 
 - Spotlight-style: "find file xyz", "open the budget spreadsheet".
-- Find-in-files / find-in-content (via a baked-in indexer like GNOME
-  `localsearch`/`tracker3`, *if* it's reliable; otherwise plain `rg`).
+- Find-in-files / find-in-content — see §"File search" (GNOME
+  `localsearch` for PDFs/docs when healthy, `rg` otherwise).
 - System health: high resource usage, running out of disk.
 - systemd: detect failed services, summarize their logs (read + advise;
   restart is user-run).
