@@ -2,9 +2,11 @@
 
 Status: **brainstorm, but a buildable one.** Unlike the federation
 ([`assistant.md`](assistant.md)), this note does *not* depend on an
-unsolved UX problem — it's a single agent with one chat box. The open
-questions here are scoping and confirmation ergonomics, not "is the
-whole shape viable."
+unsolved UX problem — it's a single agent with one chat box. Scope and
+confirmation are settled into a v1/v2 split below; what's left is
+empirical validation (does the local model cope, does keyword recall
+suffice) — not open design questions, and never "is the whole shape
+viable."
 
 Related:
 
@@ -222,9 +224,10 @@ properties cover completely:
 - **Read logs and explain errors** — `journalctl`, `dmesg`, kernel log;
   resolve from local knowledge + man pages where possible.
 
-Deferred past v1: package install/eval, systemd mutation, GUI-config
-*application* (vs. advice), app launching, and anything needing the
-network.
+Deferred past v1: package *installation* (vs. advice — the agent may
+still recommend *which* package per invariant 3; running the install is
+user-run), systemd mutation, GUI-config *application* (vs. advice), app
+launching, and anything needing the network.
 
 ## File search: filenames vs. content (the indexer question)
 
