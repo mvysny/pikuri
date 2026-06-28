@@ -34,7 +34,7 @@ module Pikuri
       # @return [String] the memory filename.
       FILENAME = 'MACHINE.md'
 
-      # @return [Integer] soft size ceiling. Past this we log a warning to
+      # @return [Integer] soft size ceiling. On overshoot we log a warning to
       #   trim — mirrors the Claude CLI nudging an oversized CLAUDE.md.
       #   No hard cap, no eviction: the file is prepended to every prompt,
       #   so a visible nudge is enough.
@@ -87,7 +87,8 @@ module Pikuri
           # Notes about this machine
 
           Durable, user-owned notes about this computer (kept in #{@path}). Treat
-          them as trusted context, and keep them current as you learn lasting facts.
+          them as trusted context; edit the file to keep the notes current as you
+          learn about this computer's setup.
 
           #{text}
         SECTION
