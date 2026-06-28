@@ -115,8 +115,10 @@ bytes and neutralize hostile control characters — see CLAUDE.md
 
 ## Tools
 
-- **`bash`**, net-isolated (invariant 1), confirm-every-command
-  (invariant 2).
+- **`bash`**, net-isolated (invariant 1). Confirmed by default, with a
+  conservative deterministic auto-confirmer for provably-read-only
+  commands — mutations always reach the human (invariant 2). See
+  §"Confirmation fatigue".
 - **Workspace tools** (`read`/`edit`/`glob`/`grep`) with unrestricted
   access to the whole disk, including `/etc` and sensitive home files
   like `~/.ssh`. `edit` mutates, so it confirms; `read`/`glob`/`grep`
@@ -380,16 +382,97 @@ we prototype.
   app launching is possible but slower than the native launcher
   (acceptable only if the user opts in).
 
-## Open question: confirmation fatigue
+## Confirmation fatigue
 
-"Confirm every command" is correct for mutations but tiresome for
-obviously read-only ones (`ls`, `cat`, `journalctl`, `nmcli d show`).
-With egress kernel-severed, read-only bash is genuinely low-risk, so
-there's room to auto-allow read-only commands and confirm only
-mutations — but classifying "read-only" from a shell string is a losing
-parse game (`cat x | sh`, command substitution). v1 keeps
-confirm-everything as the safe default; smarter gating is a later
-refinement, not a launch blocker.
+"Confirm every command" is correct for mutations but tiresome for the
+frequent harmless ones (`ls`, `cat`, `journalctl`). The handling here
+is more than a footnote because of one reframe:
+
+**Fatigue is a security problem, not just UX.** A user who has clicked
+"yes" forty times this session has stopped reading; the forty-first
+prompt — the hallucinated or injected one — gets rubber-stamped. So
+cutting fatigue *is* security work; the two pull the same direction.
+And the job is narrower than it looks: with egress kernel-severed
+(invariant 1) and sudo user-run (invariant 3), confirmation guards
+exactly **one** thing — *irreversible local destruction* of the user's
+files. Not exfiltration, not privilege escalation. The classifier's
+question is "could this destroy data?", not the much harder "is this
+safe in general?"
+
+**Two tool classes, split by analyzability.**
+
+- **`Write`/`Edit` are structurally analyzable** — a known path + known
+  bytes. Reliable rules are possible: auto-allow new files / edits to
+  already-read files in non-sensitive zones; always confirm sensitive
+  targets (`~/.ssh`, `~/.config`, dotfiles, `/etc`, outside `$HOME`) and
+  show the diff. (Deferred to v2 — see the menu — but reliable when
+  built, *because* the inputs are structured.)
+- **`Bash` is an opaque, Turing-complete program.** Static allow-
+  patterns on the command string lose: `git st | rm -rf ~`, `$(rm -rf
+  ~)`, `eval`, `awk 'BEGIN{system(...)}'` all defeat "starts with git."
+  Note `Code::Bash` runs `bash -c <command>` and does **not** restrict
+  metacharacters at execution — what it sanitizes is the *display*
+  (`Sanitizer` → displayed == executed), which is the *precondition* for
+  any safe gate, not a gate itself.
+
+**No AI in the decision — ever (and none at all in v1).** An AI
+*approver* can be talked into "yes" by the same laundered content that
+fooled the agent — and it's slow and non-deterministic. An AI *warner*
+that's usually silent is worse than it looks: it trains the user to read
+"no warning" as "safe," so it becomes an approver by conditioning — and
+its blind spots **correlate with attacker effort** (an injection crafted
+to look benign looks benign to the warner too), so it goes quiet exactly
+when noise is needed, having *already lowered* the human's vigilance. It
+can make the system worse than honest manual confirmation. (Contrast the
+MCP verifier: a one-shot, low-frequency check of static text where the
+human isn't in a per-call loop — opposite cost/benefit.) The only safe
+use of AI here is to *translate* ("this deletes `~/tmp` recursively"),
+always shown beside the raw command, never as a ✓/⚠ verdict — and even
+that waits for later. The invariant: **AI translates; code and the human
+decide.**
+
+### v1: a conservative deterministic auto-confirmer
+
+Implementable now as a `Confirmer` decorator wired onto `Bash` (it
+implements `confirm?(request:)` and wraps the human confirmer; the
+request already carries the command verbatim). It auto-approves **only**
+a command that is a *single invocation, with zero shell metacharacters,
+whose binary is on a tight read-only allowlist*; everything else is
+delegated to the human. Failure mode is "asks too often," never
+"approved destruction."
+
+The care is in the **allowlist**, not the code: metacharacter-free is
+necessary but not sufficient — `find . -delete`, `sort -o f`, `systemctl
+stop`, `git reset --hard`, `dd`, `tee`, `truncate`, `shred` are all
+single, metacharacter-free, *destructive* invocations. So the list holds
+only binaries safe in *all* arg forms (`ls cat head tail wc grep rg
+nproc uname id pwd date stat file df du free ps uptime whoami hostname`
+…) and excludes anything with a destructive mode. ~40 lines on top of
+the existing seam; the substance is curating that list.
+
+### v1's bigger lever: route reads off bash
+
+The cheapest win needs almost no code. The fatigue is overwhelmingly
+*read-only* commands, and the agent already has non-confirming
+`Read`/`Grep`/`Glob` tools. A prompt/persona nudge — "prefer the read
+tools; use bash for *actions*, not for looking" — pushes that whole 80%
+onto tools that never prompt, leaving bash carrying mostly genuine
+mutations, which you *want* confirmed anyway. So v1's residual
+confirmations are *aligned* with where confirmation earns its keep.
+
+### v2 menu
+
+- **`Write`/`Edit` path-zone auto-allow + diff render** (reliable, per
+  the analyzability split above).
+- **Session-sticky grants** — "always allow `journalctl` this session,"
+  sticking the *simple-invocation* form only. This is Claude Code's
+  actual shape: deterministic allow/deny rules + user-granted session
+  approvals, **no LLM in the yes/no** — the strongest precedent for "AI
+  never approves."
+- **Batching** — present several queued commands as one prompt, not N
+  round-trips.
+- **AI translation aid** — optional, never a verdict, always beside the
+  raw command.
 
 ## Memory: a single auditable `MACHINE.md`
 
