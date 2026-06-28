@@ -225,6 +225,22 @@ RSpec.describe Pikuri::Workspace::Grep do
 
       assert_equal 'Error: path not found: does/not/exist', result
     end
+
+    it 'refuses an oversized root (home / filesystem root) under AllowAll' do
+      # AllowAll lets a path escape to anywhere; / and $HOME are the
+      # pathological roots that flood the search with traversal errors.
+      allow_all = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
+      ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
+
+      [Dir.home, '/'].each do |danger|
+        result = described_class.search(
+          workspace: ws, pattern: 'x', path: danger, glob: nil,
+          case_insensitive: false, output_mode: 'content'
+        )
+        assert result.start_with?('Error: refusing to search'), "got #{result[0, 80].inspect}"
+        assert_includes result, 'too broad'
+      end
+    end
   end
 
   describe '.search truncation' do

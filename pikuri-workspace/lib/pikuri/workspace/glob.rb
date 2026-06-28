@@ -166,6 +166,7 @@ module Pikuri
         return 'Error: empty pattern.' if pattern.empty?
 
         search_target = '.'
+        resolved_root = workspace.project_root
         if path
           resolved = workspace.resolve_for_read(path)
           return "Error: path not found: #{path}" unless resolved.exist?
@@ -173,8 +174,13 @@ module Pikuri
             return "Error: #{path} is a file, not a directory; use the read tool to view it."
           end
 
+          resolved_root = resolved
           rel = resolved.relative_path_from(workspace.project_root).to_s
           search_target = rel
+        end
+
+        if (refusal = oversized_root_refusal(resolved_root))
+          return refusal
         end
 
         argv = build_argv(path: search_target)
@@ -199,6 +205,36 @@ module Pikuri
       #   +{a,b}+ alternation, +FNM_DOTMATCH+ to match dotfiles (rg
       #   does this when +--hidden+ is set).
       FNMATCH_FLAGS = File::FNM_PATHNAME | File::FNM_EXTGLOB | File::FNM_DOTMATCH
+
+      # Refuse a listing rooted at the filesystem root or the user's whole
+      # home directory. Either walks an enormous tree and — under an
+      # +AllowAll+ workspace (the OS-helper shape) — floods rg with
+      # unreadable-path diagnostics from places like
+      # +~/.local/share/docker+ overlay snapshots, which the model then
+      # pays context for. Lesser roots (a project dir, +~/work+) stay
+      # allowed — only +/+ and +$HOME+ are pathological.
+      #
+      # @param resolved [Pathname] the absolute search root
+      # @return [String, nil] the +"Error: ..."+ refusal, or +nil+ to proceed
+      def self.oversized_root_refusal(resolved)
+        roots = [Pathname.new('/'), Pathname.new(Dir.home)].map { |r| normalize_root(r) }
+        return nil unless roots.include?(normalize_root(resolved))
+
+        "Error: refusing to list from #{resolved} — listing the entire " \
+          'filesystem root or your whole home directory is too broad. Narrow ' \
+          '`path` to a specific subdirectory.'
+      end
+      private_class_method :oversized_root_refusal
+
+      # @param path [String, Pathname]
+      # @return [String] symlink-resolved absolute path; falls back to a
+      #   lexical cleanup when the path doesn't exist on disk.
+      def self.normalize_root(path)
+        Pathname.new(path).realpath.to_s
+      rescue SystemCallError
+        Pathname.new(path).expand_path.cleanpath.to_s
+      end
+      private_class_method :normalize_root
 
       # Build the +rg+ argv. User pattern is NOT passed to rg — see
       # the class header for why (rg's +--glob+ overrides

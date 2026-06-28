@@ -108,6 +108,17 @@ RSpec.describe Pikuri::Workspace::Glob do
       assert_equal 'Error: path not found: does/not/exist', result
     end
 
+    it 'refuses an oversized root (home / filesystem root) under AllowAll' do
+      allow_all = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
+      ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
+
+      [Dir.home, '/'].each do |danger|
+        result = described_class.search(workspace: ws, pattern: '**/*', path: danger)
+        assert result.start_with?('Error: refusing to list'), "got #{result[0, 80].inspect}"
+        assert_includes result, 'too broad'
+      end
+    end
+
     it 'rejects a path outside the workspace via a Workspace::Error rescue' do
       Dir.mktmpdir('pikuri-glob-outside-') do |outside|
         File.write(File.join(outside, 'leak.rb'), '')
