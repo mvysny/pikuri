@@ -121,6 +121,18 @@ module Pikuri
         raise install_hint
       end
 
+      # Non-raising presence probe — for callers (e.g. {Pikuri::Os::Extension})
+      # that want to wire the file-index tools only when localsearch is
+      # actually installed and degrade gracefully otherwise, rather than
+      # failing the whole agent.
+      #
+      # @return [Boolean]
+      def self.available?
+        Pikuri::Subprocess.spawn(BINARY, '--version', chdir: '/').wait.status.success?
+      rescue Errno::ENOENT
+        false
+      end
+
       # @param encoded [String] the tail of a +file://+ URI
       # @return [String] percent-decoded path (+%XX+ only, UTF-8 tagged)
       def self.decode_file_uri(encoded)

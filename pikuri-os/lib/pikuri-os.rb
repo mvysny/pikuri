@@ -27,6 +27,8 @@ require 'pikuri-code'
 # The loader is per-gem (not shared with the sibling gems' loaders) so
 # each gem owns its own +lib/+ tree; cooperation between gems is via
 # the +Pikuri+ namespace alone.
+Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
+
 module Pikuri
   module Os
     LOADER = Zeitwerk::Loader.new

@@ -1,0 +1,153 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / demo entry point — runs from a source checkout only, not installed
+# by `gem install`. Demonstrates wiring the offline OS-helper agent: a
+# single local, network-severed agent that understands and operates this
+# Linux host. Production binaries (e.g. a TUI) live in their own gems and
+# wire the same Pikuri::Os::Extension.
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+
+require 'bundler/setup'
+require 'optparse'
+require 'yaml'
+
+require 'pikuri-os' # pulls in pikuri-core + -workspace + -code
+
+sandbox_enabled = true   # FullFsNoNet: full filesystem, network severed
+confirm_enabled = true
+
+# Example-only config: LLM connection + keys live verbatim in a user-owned
+# YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
+examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
+
+server = examples_config['llm_server'] || 'http://localhost:8080'
+model  = examples_config['llm_model']  || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-os-assistant [options] [initial message...]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--no-sandbox', 'Disable the network sandbox around bash. WARNING: bash can then ' \
+                          'reach the internet — the no-egress security property is OFF.') { sandbox_enabled = false }
+  opts.on('--no-confirm', 'Auto-approve every confirmation (skip the y/n prompt for writes + bash).') { confirm_enabled = false }
+  opts.on('--yolo', 'Combines --no-sandbox + --no-confirm. Use only in a throwaway environment.') do
+    sandbox_enabled = false
+    confirm_enabled = false
+  end
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn e.message
+  warn parser
+  exit 2
+end
+
+# The whole host is in scope (that's the point) — AllowAll, minus the
+# credential denylist for the *file* tools (~/.ssh, ~/.aws, …; bash can
+# still reach those as the user). project_root is the relative-path base
+# and the bash chdir target; the launch directory is the intuitive anchor
+# ("what's in this folder?"), and absolute paths reach everywhere anyway.
+filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd)
+
+confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
+
+# Default sandbox: FullFsNoNet — binds / read-write (full host control)
+# but unshares the network namespace, so bash cannot exfiltrate. This is
+# the load-bearing security property; it probes bwrap + unprivileged
+# user/net namespaces at construction and raises (no silent fallback) if
+# they're unavailable. --no-sandbox / --yolo swap in NONE and re-open the
+# network — only for a throwaway box.
+sandbox = if sandbox_enabled
+            Pikuri::Code::Bash::Sandbox::FullFsNoNet.new(filesystem: filesystem)
+          else
+            Pikuri::Code::Bash::Sandbox::NONE
+          end
+
+# Base prompt + date. The "# This machine" facts and the MACHINE.md memory
+# section are appended by Os::Extension (via append_system_prompt), so the
+# binary doesn't assemble them.
+system_prompt = Pikuri.prompt(:'os-assistant')
+system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
+
+cancel_flag = Pikuri::Agent::Control::Cancellable.new
+
+agent = Pikuri::Agent.new(
+  transport: Pikuri::Agent::ChatTransport.from_openai_server(
+    server: server,
+    model: model,
+    api_key: examples_config.fetch('llm_api_key', 'not-needed')
+  ),
+  system_prompt: system_prompt,
+  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
+  cancellable: cancel_flag
+) do |c|
+  c.add_listener Pikuri::Agent::Listener::Terminal.new
+  c.add_listener Pikuri::Agent::Listener::TokenLog.new
+  c.add_tool Pikuri::Tool::CALCULATOR
+  # One extension wires the whole OS-helper surface: the five file tools,
+  # bash (gated by the read-only auto-confirmer + the sandbox above), the
+  # file-index tools, and the machine facts + MACHINE.md memory folded
+  # into the system prompt.
+  c.add_extension Pikuri::Os::Extension.new(
+    filesystem: filesystem,
+    confirmer: confirmer,
+    sandbox: sandbox
+  )
+end
+
+# Trap SIGINT only during a turn (flips the Cancellable flag; the next
+# tool-call boundary raises Cancelled). Outside a turn the default handler
+# is restored so Ctrl+C exits the REPL.
+run_turn = lambda do |message|
+  prev_trap = trap('INT') { cancel_flag.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener.
+rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
+  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
+  warn "Type 'continue' to let it keep going, or redirect it."
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
+puts "Pikuri OS Assistant for this machine. Working from #{filesystem.project_root}. Ctrl+C / Ctrl+D to quit."
+warnings = []
+warnings << 'Network sandbox: DISABLED — bash can reach the internet (egress is OPEN).' unless sandbox_enabled
+warnings << 'Confirmer: AUTO-APPROVE — mutations run without asking.' unless confirm_enabled
+unless warnings.empty?
+  warnings << 'Use only in a throwaway environment.'
+  puts warnings.join(' ')
+end
+
+run_turn.call(ARGV.join(' ')) unless ARGV.empty?
+
+begin
+  loop do
+    print '> '
+    $stdout.flush
+    line = $stdin.gets
+    break if line.nil? # Ctrl+D / EOF
+
+    message = line.chomp
+    next if message.strip.empty?
+
+    run_turn.call(message)
+  end
+rescue Interrupt
+  # Ctrl+C at the prompt — clean exit.
+end
+
+puts
+agent.close

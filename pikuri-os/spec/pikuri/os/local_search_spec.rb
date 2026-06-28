@@ -117,4 +117,34 @@ RSpec.describe Pikuri::Os::LocalSearch do
       end
     end
   end
+
+  describe '.available?' do
+    it 'is true when the version probe succeeds' do
+      original = stub_spawn(success: true, output: 'LocalSearch 3.11.0')
+      begin
+        assert described_class.available?
+      ensure
+        restore_spawn(original)
+      end
+    end
+
+    it 'is false (no raise) when the version probe fails' do
+      original = stub_spawn(success: false, output: '')
+      begin
+        refute described_class.available?
+      ensure
+        restore_spawn(original)
+      end
+    end
+
+    it 'is false (no raise) when the binary is missing' do
+      original = Pikuri::Subprocess.method(:spawn)
+      Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| raise Errno::ENOENT, 'localsearch' }
+      begin
+        refute described_class.available?
+      ensure
+        Pikuri::Subprocess.define_singleton_method(:spawn, original)
+      end
+    end
+  end
 end
