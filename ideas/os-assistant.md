@@ -554,6 +554,45 @@ visible nudge. If a host ever genuinely needs more than that, the
 bounded-file model has been outgrown and semantic memory (below) is the
 conversation to reopen.
 
+## Placement: a new `pikuri-os` gem (not `pikuri-assistant`)
+
+The instinct to reuse `pikuri-assistant` should be resisted — it's the
+wrong home, for three reasons:
+
+- **Opposite posture.** `pikuri-assistant` is the egress-capable,
+  MCP-wired, mem0 + vectordb assistant (ch7). This agent is the inverse:
+  no egress, no MCP, no mem0 (it uses `MACHINE.md`), no vectordb. Sharing
+  a gem drags those deps into a binary that must *not* wire them, bloating
+  the audit surface of an agent whose whole pitch is "small, no-egress,
+  auditable."
+- **`pikuri-assistant` has no library code of its own;** this agent needs
+  new library code (the localsearch tool, the `MACHINE.md` memory), which
+  would force that gem to grow a `lib/` and change character.
+- **Convention.** Each distinct agent *shape* is its own capability gem +
+  demo bin (`pikuri-code`, `pikuri-corpus`, `pikuri-memory`,
+  `pikuri-assistant`). This is a distinct shape.
+
+So: **a new `pikuri-os` gem**, depending on `pikuri-core` +
+`pikuri-workspace` + `pikuri-code` (and deliberately *not* mcp / memory /
+vectordb). It holds the OS-integration surface and the demo binary:
+
+- `Os::LocalSearch` — the localsearch content-search wrap tool
+  (§"File search").
+- The `MACHINE.md` resident memory — boot-append + edit target
+  (§"Memory").
+- Boot grounding — `inxi -b` + primitives (§"How the LLM learns about
+  this machine").
+- `bin/pikuri-os-assistant` + its prompt.
+
+The two cross-cutting pieces land in **`pikuri-code`**, the gem that
+already owns the OS-touching primitives (`Bash`, `Sandbox`,
+`ToolchainPaths`):
+
+- `Bash::Sandbox::FullFsNoNet` — full-fs, net-isolated (§"How the egress
+  leg is severed").
+- The conservative auto-confirmer — a shell-aware `Confirmer` decorator
+  (§"Confirmation fatigue").
+
 ## Future (deferred)
 
 - **Semantic / large-scale memory.** Only if the bounded `MACHINE.md`
