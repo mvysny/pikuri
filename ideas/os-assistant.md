@@ -250,43 +250,70 @@ there rather than probe.
 
 **Getting enough context around a match (a two-call split).**
 `localsearch search` is *discovery*, not *retrieval*: it returns which
-files matched plus a **small** built-in snippet — a few words on either
-side of the hit, meant only to confirm "is this the right file." There
-is no flag for a ~500-word window. (Add `-d`/`--detailed` to surface the
-snippet + the resource URN; version note — some builds, e.g. current
-Debian packages, enable snippets by default and instead expose
-`--disable-snippets`, so the tool should check `localsearch search
---help` on the actual machine rather than hard-code the flag.) The route
-to a real context window is a **second call**: LocalSearch already
-extracted and stored each file's plain text, so
+files matched plus a **tiny** built-in snippet — measured on a 26.04 box,
+about 3–4 words each side of the hit ("…physical or **environmental**
+damage…"), meant only to confirm "is this the right file." There is
+**no flag to widen it** — verified: `-d`/`--detailed` only adds the
+resource URN, `-t`/`--documents` is a type filter (not "detailed"), and
+the snippet length isn't configurable. The route to a real window is a
+**second call**: LocalSearch already extracted and stored each file's
+plain text, so
 
 ```
-localsearch info -c /path/to/file.pdf
+localsearch info -c -o json-ld /path/to/file.pdf
 ```
 
-dumps that full indexed text (PDF included, no re-extraction), and the
-agent slices whatever window it wants from it. So the content tier is a
-*search → read-full* pair: `search` finds the file, `info -c` returns
-its whole extracted text. That's the same two-step shape as
-`vectordb_search` → `vectordb_read` — and we get it from the
-pre-installed index for free, which is part of why `pikuri-vectordb`
-earns no place here (below).
+returns that full indexed text (PDF/office included, no re-extraction).
+Use `-o json-ld` and read `nie:plainTextContent` — it comes back as a
+clean JSON string with real newlines; the default turtle output indents
+the body to align under the RDF property, which is fiddly to de-mangle.
+So the content tier is a *search → read-full* pair: `search` finds the
+file, `info -c` returns its whole extracted text. That's the same
+two-step shape as `vectordb_search` → `vectordb_read` — and we get it
+from the pre-installed index for free, which is part of why
+`pikuri-vectordb` earns no place here (below).
 
 **A purpose-built tool collapses the two calls into one.** Rather than
 make the LLM orchestrate `search` → `info -c` → slice-by-hand every
 time, wrap it: a single content-search tool that takes a phrase, runs
-`localsearch search` to find the matching files, then for each top hit
-pulls the full extracted text (`info -c`) and returns a **~500-word
-window centered on the match** — enough context for the model to judge
-relevance and answer, without dragging an entire PDF into the context
-window. Defaults worth pinning in the parameter descriptions: a
-configurable window (~500 words, capped), a cap on how many hits/windows
-come back, and multiple windows when a file matches in several places.
-For system paths outside the index, the same tool degrades to `rg`'s own
-context flag (`-C`) over plain text, or extract-then-window via
-`pikuri-extractors`. This is the content half of "spotlight" as one tool
-the LLM reaches for, mirroring `grep`'s `-C` but word-based and seeing
-inside PDFs/office docs.
+`localsearch search` to find matching files, then for each top hit pulls
+the stored text (`info -c -o json-ld`) and returns a **~100-word window
+centered on the match**.
+
+*Why ~100, not 500.* This tool is the **search** half of a search→read
+pair, not the only step — if a hit looks right, the full document is one
+cheap `info -c` away (parent-document retrieval, the same escalation
+`vectordb_read` gives). So the window only has to be big enough to
+*judge relevance and often answer*, not to be the whole answer. ~100
+words (±~50 around the term, ~130 tokens) hits that: ~8–10 hits still
+fit in ~1k tokens, which matters because the local Qwen is likely served
+with a far smaller context (8–32K) than its 262K ceiling. 50 words is
+too thin (barely beats the native snippet); 500 is *reading a page* —
+that's the escalation step, not the default. Keep it **configurable
+(default ~100, cap ~300–400)**, with "read the full document" as the
+explicit next move.
+
+Tool shape (matching the parameter conventions):
+
+- **Description advertises scope** — that it searches the GNOME index
+  (point at `localsearch status` for what's indexed: `$HOME` + XDG dirs,
+  *not* system paths), so the LLM knows to reach for `grep` on `/etc`,
+  `/var`, etc.
+- **Params:** `query`, `limit` (default ~10), `window_words`
+  (default ~100), optional type filter.
+- **Returns** per hit: path + a ~100-word window centered on the match;
+  ≤2–3 merged windows when a file matches in several places.
+- **Stemming gotcha:** localsearch FTS is stemmed (`environment` matches
+  `environmental`), so a literal grep of the query against the stored
+  text can miss. Locate the **highlighted surface form** the snippet
+  already returns, fall back to a prefix/stem match, then to the
+  document head if still unfound.
+- **Fallbacks:** path outside the index → `rg -C` over the live file
+  (or extract-then-window via `pikuri-extractors`); binary and text are
+  both handled because `info -c` returns already-extracted text.
+
+This is the content half of "spotlight" as one tool the LLM reaches for
+— `grep`'s `-C`, but word-based and able to see inside PDFs/office docs.
 
 Three caveats, all of which point to keeping `rg` as the fallback, not
 the primary:
