@@ -224,6 +224,30 @@ SPARQL query against `tinysparql` for structured filters like
 mime-type/mtime). Targeting Ubuntu 26.04+ is what lets us *assume* it's
 there rather than probe.
 
+**Getting enough context around a match (a two-call split).**
+`localsearch search` is *discovery*, not *retrieval*: it returns which
+files matched plus a **small** built-in snippet — a few words on either
+side of the hit, meant only to confirm "is this the right file." There
+is no flag for a ~500-word window. (Add `-d`/`--detailed` to surface the
+snippet + the resource URN; version note — some builds, e.g. current
+Debian packages, enable snippets by default and instead expose
+`--disable-snippets`, so the tool should check `localsearch search
+--help` on the actual machine rather than hard-code the flag.) The route
+to a real context window is a **second call**: LocalSearch already
+extracted and stored each file's plain text, so
+
+```
+localsearch info -c /path/to/file.pdf
+```
+
+dumps that full indexed text (PDF included, no re-extraction), and the
+agent slices whatever window it wants from it. So the content tier is a
+*search → read-full* pair: `search` finds the file, `info -c` returns
+its whole extracted text. That's the same two-step shape as
+`vectordb_search` → `vectordb_read` — and we get it from the
+pre-installed index for free, which is part of why `pikuri-vectordb`
+earns no place here (below).
+
 Three caveats, all of which point to keeping `rg` as the fallback, not
 the primary:
 
@@ -242,12 +266,23 @@ the primary:
    saved 10 seconds ago", a filename `find` is more reliable than the
    content index.
 
-So: filenames via `find`, content via `localsearch` when healthy and
-in-scope, `rg` + on-demand extraction everywhere else. A curated,
-always-fresh corpus (vs. the OS-wide index) remains
-`pikuri-vectordb`'s job — out of scope for the OS assistant's
-"search my actual disk" use-case, but the natural upgrade if recall
-quality on `localsearch` disappoints.
+So: filenames via `find`, content via `localsearch` (discover with
+`search`, read full text with `info -c`) when healthy and in-scope,
+`rg` + on-demand extraction everywhere else.
+
+**`pikuri-vectordb` is explicitly *not* the upgrade path here.** It is
+not a better `localsearch` — it's a *different* tool (semantic/embedding
+recall vs. keyword full-text), and pointing it at `$HOME` would
+**duplicate the corpus `localsearch` already indexes**: a second walk, a
+second extracted-text store, embeddings + a vector DB to maintain — all
+to discover the *same files* `localsearch` already surfaces. The OS
+assistant's job is "search my actual disk," which is keyword-shaped and
+already covered. Semantic recall over the whole home is a *deferred,
+speculative* use-case at most, and even then it buys little over the
+pre-installed index for discovery; it doesn't supersede it. `vectordb`
+keeps its existing, distinct job — a small *curated* corpus
+(`pikuri-corpus`), not the home directory — and stays out of this
+design.
 
 ## Use-cases (the broader wishlist, for direction)
 
