@@ -118,6 +118,29 @@ RSpec.describe Pikuri::Workspace::Glob do
         assert_includes result, 'outside the workspace'
       end
     end
+
+    it 'caps an oversized exit-2 error blob at MAX_BYTES' do
+      # See the Grep equivalent: rg emits one diagnostic line per
+      # unreadable path, so the error path must share the success cap.
+      huge_error = (1..20_000).map { |i| "rg: /x/#{i}: IO error (os error 2)" }.join("\n") + "\n"
+      status = Struct.new(:exitstatus, :success?).new(2, false)
+      fake = Struct.new(:output, :status).new(huge_error, status)
+      spawner = Object.new
+      spawner.define_singleton_method(:wait) { fake }
+
+      original = Pikuri::Subprocess.method(:spawn)
+      Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| spawner }
+      begin
+        result = described_class.search(**search_args)
+      ensure
+        Pikuri::Subprocess.define_singleton_method(:spawn, original)
+      end
+
+      assert result.start_with?('Error: ripgrep:'), "got #{result[0, 80].inspect}"
+      assert_includes result, 'bytes omitted'
+      assert result.bytesize <= described_class::MAX_BYTES + 200,
+             "error blob not capped: #{result.bytesize} bytes"
+    end
   end
 
   describe '.search no matches' do

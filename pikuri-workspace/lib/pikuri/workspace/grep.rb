@@ -60,7 +60,10 @@ module Pikuri
     # tails usually carry less signal than the first matches; opposite
     # bias from {Pikuri::Code::Bash}). Cut at the last line boundary, with a
     # marker reporting omitted bytes and the original total so the model
-    # knows how much it missed.
+    # knows how much it missed. The exit-2 error blob shares the same
+    # {MAX_BYTES} ceiling (see {.truncate_error}) — rg emits one diagnostic
+    # line per unreadable path, so an untruncated error can dwarf any
+    # match output and overflow the model's context.
     #
     # == Exit codes
     #
@@ -205,9 +208,7 @@ module Pikuri
         when 1
           no_match_message(pattern: pattern, path: path)
         else
-          stderr = result.output.strip
-          stderr = "exited #{exit_code}" if stderr.empty?
-          "Error: ripgrep: #{stderr}"
+          "Error: ripgrep: #{truncate_error(result.output, exit_code)}"
         end
       rescue Filesystem::Error => e
         "Error: #{e.message}"
@@ -286,6 +287,26 @@ module Pikuri
         [head, marker]
       end
       private_class_method :head_truncate
+
+      # Head-truncate an rg error blob to {MAX_BYTES}. rg writes one
+      # diagnostic line per unreadable path (broken symlinks, permission
+      # denials — e.g. a search that escapes into +~/.local/share/docker+
+      # overlay snapshots), so on exit 2 the merged stderr can run to
+      # hundreds of KB and, left whole, overflow the model's context. The
+      # success path already caps at {MAX_BYTES} via {.head_truncate}; this
+      # gives the error path the same ceiling.
+      #
+      # @param raw [String] rg's merged stdout+stderr
+      # @param exit_code [Integer] for the empty-output fallback
+      # @return [String]
+      def self.truncate_error(raw, exit_code)
+        stderr = raw.strip
+        return "exited #{exit_code}" if stderr.empty?
+
+        content, marker = head_truncate(stderr)
+        content + marker
+      end
+      private_class_method :truncate_error
 
       # Compose a one-line footer summarizing the result. Format depends
       # on +output_mode+; counts derive from rg's text output.

@@ -180,6 +180,32 @@ RSpec.describe Pikuri::Workspace::Grep do
       assert result.start_with?('Error: ripgrep:'), "got #{result.inspect}"
       assert_includes result, 'regex parse error'
     end
+
+    it 'caps an oversized exit-2 error blob at MAX_BYTES' do
+      # rg emits one diagnostic line per unreadable path; a search that
+      # escapes into a tree full of broken symlinks / permission denials
+      # (e.g. ~/.local/share/docker overlay snapshots) can produce
+      # hundreds of KB of stderr. Untruncated, it overflows the model's
+      # context — so the error path must share the success path's cap.
+      huge_error = (1..20_000).map { |i| "rg: /x/#{i}: IO error (os error 2)" }.join("\n") + "\n"
+      status = Struct.new(:exitstatus, :success?).new(2, false)
+      fake = Struct.new(:output, :status).new(huge_error, status)
+      spawner = Object.new
+      spawner.define_singleton_method(:wait) { fake }
+
+      original = Pikuri::Subprocess.method(:spawn)
+      Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| spawner }
+      begin
+        result = described_class.search(**search_args)
+      ensure
+        Pikuri::Subprocess.define_singleton_method(:spawn, original)
+      end
+
+      assert result.start_with?('Error: ripgrep:'), "got #{result[0, 80].inspect}"
+      assert_includes result, 'bytes omitted'
+      assert result.bytesize <= described_class::MAX_BYTES + 200,
+             "error blob not capped: #{result.bytesize} bytes"
+    end
   end
 
   describe '.search workspace boundary' do
