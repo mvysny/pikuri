@@ -23,11 +23,14 @@ module Pikuri
       #
       # == The decision rule (deny-by-default)
       #
-      # A command is auto-approved iff ALL hold; otherwise it is delegated
-      # to the wrapped confirmer:
+      # The command is split on the literal +&&+ operator into one or
+      # more *segments* (at most {MAX_CHAIN}); the command auto-approves
+      # iff *every* segment is a provably-read-only simple invocation —
+      # ALL of the following hold per segment, otherwise the whole
+      # command is delegated to the wrapped confirmer:
       #
       # 1. It contains no shell metacharacter or control byte
-      #    ({SHELL_METACHARACTERS}). A pipe, +;+, +&&+, +$(...)+, backtick,
+      #    ({SHELL_METACHARACTERS}). A pipe, +;+, +$(...)+, backtick,
       #    redirect, glob, brace/tilde expansion, quote, or escape means
       #    "more than a single simple invocation" — we do not try to parse
       #    compound shell, we refuse it. (+git st | rm -rf ~+, +$(rm -rf
@@ -40,6 +43,29 @@ module Pikuri
       #
       # The failure mode is always "asks the human too often," never
       # "auto-approved something destructive."
+      #
+      # == Why splitting on +&&+ is safe (the faithful-split argument)
+      #
+      # A conjunction of provably-read-only invocations is itself
+      # read-only, so +cd notes && ls && cat x+ should auto-approve as
+      # readily as a single +ls+. The split is *faithful* — every +&&+
+      # we cut on is a genuine control operator, never one hidden inside
+      # a string — precisely *because the per-segment check in (1) still
+      # forbids every other metacharacter, including +&+ and both quote
+      # characters*:
+      #
+      # * No quote or backslash survives in any segment, so no +&&+ could
+      #   have been quoted/escaped into a literal — every +&&+ was real.
+      # * A stray single +&+ (backgrounding: +ls & pwd+) lands inside a
+      #   segment and trips the metacharacter check ⇒ delegated.
+      # * +&+ therefore stays in {SHELL_METACHARACTERS}: the regex runs on
+      #   the *post-split* segments, where any remaining +&+ is illegal.
+      #
+      # So the +&&+ separator is the *only* metacharacter that can appear
+      # across the whole command, and it only ever joins independently
+      # read-only pieces. This holds regardless of egress: each segment
+      # must still be an allowlisted read-only binary, none of which can
+      # write or exfiltrate.
       #
       # == Why a binary allowlist, and why it's short
       #
@@ -87,10 +113,23 @@ module Pikuri
         # binary.
         SHELL_METACHARACTERS = /[;&|<>$`()\\!#"'*?\[\]{}~\x00-\x1f]/
 
+        # Defensive ceiling on the number of +&&+-joined segments. A
+        # legitimate read-only chain is short; a pathologically long
+        # generated one simply delegates rather than being split.
+        MAX_CHAIN = 8
+
         # Binaries that are read-only in *every* argument form (no
         # mutating mode reachable, with or without root). See the class
         # header for the curation principle and notable exclusions.
+        #
+        # +cd+ is the one entry that is a shell builtin rather than a
+        # PATH binary; the classifier only string-matches the first
+        # token, so it slots in cleanly. It has no destructive form and
+        # is meaningful only inside an +&&+ chain (+cd notes && ls+); a
+        # bare +cd+ alone auto-approves harmlessly, changing the dir of a
+        # subshell that immediately exits.
         READ_ONLY_BINARIES = Set[
+          'cd',
           'ls', 'cat', 'tac', 'nl', 'head', 'tail', 'wc',
           'grep', 'egrep', 'fgrep', 'rg',
           'pwd', 'basename', 'dirname', 'realpath', 'readlink',
@@ -127,12 +166,29 @@ module Pikuri
 
         # @param detail [String, nil] the request detail; {Bash} sets it
         #   to +"$ <command>"+.
-        # @return [Boolean] whether the command is a single, bare,
-        #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry.
+        # @return [Boolean] whether the command is an +&&+-joined chain
+        #   (one or more segments, up to {MAX_CHAIN}) of provably
+        #   read-only simple invocations. See the class header for why
+        #   splitting on +&&+ is faithful.
         def read_only?(detail)
           return false if detail.nil?
 
           command = detail.sub(/\A\$ /, '').strip
+          return false if command.empty?
+
+          # -1 keeps trailing/leading empty fields, so a dangling +&&+
+          # (+ls &&+, +&& ls+) yields an empty segment and delegates
+          # rather than being silently dropped.
+          segments = command.split('&&', -1)
+          return false if segments.size > MAX_CHAIN
+
+          segments.all? { |segment| simple_read_only?(segment.strip) }
+        end
+
+        # @param command [String] one +&&+ segment, already stripped.
+        # @return [Boolean] whether it is a single, bare,
+        #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry.
+        def simple_read_only?(command)
           return false if command.empty?
           return false if SHELL_METACHARACTERS.match?(command)
 

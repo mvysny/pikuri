@@ -52,6 +52,27 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
     end
   end
 
+  describe 'auto-approves &&-joined chains of read-only commands' do
+    # Every segment is independently a provably read-only invocation, so
+    # the conjunction is read-only too.
+    [
+      'ls && pwd',
+      'df -h && free -m',
+      'cat a && cat b',
+      'cd /home/u/notes && ls -la',
+      'cd /etc && cat hostname && wc -l fstab',
+      'ls&&pwd' # no spaces around the operator
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(false)
+        confirmer = described_class.new(inner)
+        assert confirmer.confirm?(request: req(cmd)),
+               "expected auto-approval for #{cmd.inspect}"
+        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+      end
+    end
+  end
+
   describe 'delegates everything not provably read-only' do
     {
       'pipe'                 => 'ls | rm -rf /',
@@ -75,7 +96,17 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'git mutation'         => 'git reset --hard',
       'dd'                   => 'dd if=/dev/zero of=/dev/sda',
       'tee (writes)'         => 'tee /etc/hosts',
-      'env (runs program)'   => 'env FOO=bar ls'
+      'env (runs program)'   => 'env FOO=bar ls',
+      # &&-chain segments that are not all provably read-only.
+      'chain with mutation'  => 'ls && rm -rf ~',
+      'chain hides git'      => 'cd notes && git diff', # git stays delegated
+      'chain hides write'    => 'cd x && tee out',
+      'background not &&'     => 'ls & pwd',            # single & trips the metachar check
+      'triple-amp'           => 'ls &&& pwd',          # segment "& pwd" has a stray &
+      'trailing &&'          => 'ls && ',              # empty trailing segment
+      'leading &&'           => '&& ls',               # empty leading segment
+      'quoted && literal'    => 'echo "a && b"',       # quotes trip the metachar check
+      'over MAX_CHAIN'       => (['ls'] * 9).join(' && ')
     }.each do |label, cmd|
       it "delegates: #{label} (#{cmd.inspect})" do
         inner = RecordingConfirmer.new(true)

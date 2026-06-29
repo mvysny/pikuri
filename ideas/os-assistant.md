@@ -440,9 +440,24 @@ Implementable now as a `Confirmer` decorator wired onto `Bash` (it
 implements `confirm?(request:)` and wraps the human confirmer; the
 request already carries the command verbatim). It auto-approves **only**
 a command that is a *single invocation, with zero shell metacharacters,
-whose binary is on a tight read-only allowlist*; everything else is
-delegated to the human. Failure mode is "asks too often," never
-"approved destruction."
+whose binary is on a tight read-only allowlist* — or, since the
+`&&`-composition refinement below, an `&&`-joined chain of such
+invocations; everything else is delegated to the human. Failure mode is
+"asks too often," never "approved destruction."
+
+**Shipped refinement — `&&` composition.** The decorator now also
+auto-approves a command split on the literal `&&` operator when *every*
+segment is independently a provably-read-only invocation (`cd notes &&
+ls && cat x`). The split is faithful precisely because the per-segment
+metacharacter check still forbids `&` and both quote characters, so no
+`&&` can hide inside a string and a stray single `&` always delegates —
+the `&&` separator is the only metacharacter that can appear across the
+whole command. `cd` was added to the allowlist for this (a builtin with
+no destructive form, useful only in a chain). Note this is *necessary
+but not sufficient* for `cd X && git diff`: `git` stays delegated (see
+the v2 menu — read-only `git`/`systemctl`/`journalctl` subcommands need
+subcommand-aware rules and, for `git`, pager/textconv/`ext::` hardening
+the boolean confirmer can't inject).
 
 The care is in the **allowlist**, not the code: metacharacter-free is
 necessary but not sufficient — `find . -delete`, `sort -o f`, `systemctl
@@ -467,6 +482,15 @@ confirmations are *aligned* with where confirmation earns its keep.
 
 - **`Write`/`Edit` path-zone auto-allow + diff render** (reliable, per
   the analyzability split above).
+- **Subcommand-aware read rules** — recover the *read* verbs of
+  otherwise-excluded binaries: `git diff`/`status`/`log`/`show`,
+  `systemctl status`, plain `journalctl`. The hard part is `git`: its
+  read verbs invoke a pager and honor repo-local config
+  (`GIT_EXTERNAL_DIFF`, `diff.*.textconv`, `ext::` transports), so a
+  hostile cloned repo can make a plain `git diff` execute code. A
+  boolean confirmer can't rewrite the command to inject `--no-pager` /
+  disable textconv, so this needs either a command-rewriting seam or a
+  curated set of hardening flags the agent is required to pass.
 - **Session-sticky grants** — "always allow `journalctl` this session,"
   sticking the *simple-invocation* form only. This is Claude Code's
   actual shape: deterministic allow/deny rules + user-granted session
