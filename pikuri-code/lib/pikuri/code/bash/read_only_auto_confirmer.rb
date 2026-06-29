@@ -56,12 +56,16 @@ module Pikuri
       # * *The split is faithful.* Every operator we cut on is a genuine
       #   control operator, never one hidden inside a string — because the
       #   per-segment check in (1) still forbids both quote characters and
-      #   the backslash, so nothing could have quoted/escaped a +;+ or +|+
-      #   into a literal. And every *other* metacharacter stays forbidden
-      #   per segment, so a redirect (+ps | grep x > out+), a background
-      #   +&+ (+ls & pwd+ — +&+ is not a sequencer), +|&+, or +&>+ all trip
-      #   the metacharacter check ⇒ the whole command delegates. Only the
-      #   four sequencers can appear across the command.
+      #   the backslash, so nothing could have quoted/escaped a +;+, +|+
+      #   or newline into a literal. And every *other* metacharacter stays
+      #   forbidden per segment, so an arbitrary-target redirect
+      #   (+ps | grep x > out+), a background +&+ (+ls & pwd+ — +&+ is not
+      #   a sequencer), or +|&+ all trip the metacharacter check ⇒ the
+      #   whole command delegates. The lone exception is a write-nothing
+      #   redirect fragment ({SAFE_REDIRECT}: +2>&1+, +2>/dev/null+ …),
+      #   stripped per-segment *before* the gate — fd duplication and
+      #   +/dev/null+ discards add no capability (see {#simple_read_only?}).
+      #   Only the sequencers can appear across the command.
       # * *A pipe grants no new capability.* +|+ wires stdout→stdin as
       #   *data*. No {READ_ONLY_BINARIES} entry writes a file or executes
       #   a program from its stdin — they are pure transducers (+grep+,
@@ -84,36 +88,39 @@ module Pikuri
       # guarantee doesn't rely on the agent running non-root. That
       # deliberately excludes some otherwise-common tools:
       #
-      # * +journalctl+ / +systemctl+ — core to an OS helper, but each has
-      #   metacharacter-free destructive subcommands (+--vacuum-*+,
-      #   +stop+/+disable+). Recovering their *read* subcommands
-      #   (+systemctl status+, plain +journalctl+) needs subcommand-aware
-      #   rules of the {#read_only_dpkg?}/{#read_only_apt?} shape below;
-      #   not yet written, so v1 just delegates them.
+      # * +journalctl+ — its read vs. mutate split is by *flag*
+      #   (+--vacuum-*+ / +--rotate+ / +--flush+), not a leading
+      #   subcommand, so the immediately-after-the-binary trick the
+      #   subcommand classifiers below rely on doesn't apply; recovering
+      #   it cleanly needs a flag denylist, deferred — v1 delegates it.
+      #   (+systemctl+ *is* subcommand-shaped and is recovered below.)
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
       #
-      # == Read-only package queries (+dpkg+ / +apt+), unconditional
+      # == Read-only subcommand queries (+dpkg+ / +apt+ / +systemctl+), unconditional
       #
-      # +dpkg+ and +apt+ are the same shape as +journalctl+ above — a
-      # mixed binary whose *query* forms are read-only but whose
-      # install/remove forms are not (+dpkg -i+/+-r+/+--purge+,
-      # +apt install+/+remove+/+update+) — so they cannot join
-      # {READ_ONLY_BINARIES} wholesale. {#read_only_dpkg?} and
-      # {#read_only_apt?} recover the query subset the same way
-      # {#read_only_git?} recovers read-only git: the read-only
-      # action/subcommand must appear *immediately* after the binary
-      # name ({READ_ONLY_DPKG_ACTIONS} / {READ_ONLY_APT_SUBCOMMANDS}),
-      # which refuses a leading admindir/root/config redirection
-      # (+dpkg --admindir=/x ...+, +apt -o APT::Foo=bar ...+) by making
-      # the second token not a known query verb.
+      # +dpkg+, +apt+ and +systemctl+ are mixed binaries whose *query*
+      # forms are read-only but whose mutating forms are not
+      # (+dpkg -i+/+-r+/+--purge+, +apt install+/+remove+/+update+,
+      # +systemctl start+/+stop+/+enable+) — so they cannot join
+      # {READ_ONLY_BINARIES} wholesale. {#read_only_dpkg?},
+      # {#read_only_apt?} and {#read_only_systemctl?} recover the query
+      # subset the same way {#read_only_git?} recovers read-only git: the
+      # read-only action/subcommand must appear *immediately* after the
+      # binary name ({READ_ONLY_DPKG_ACTIONS} / {READ_ONLY_APT_SUBCOMMANDS}
+      # / {READ_ONLY_SYSTEMCTL_SUBCOMMANDS}), which refuses a leading
+      # redirection or global option (+dpkg --admindir=/x …+,
+      # +apt -o APT::Foo=bar …+, +systemctl --root=/x …+) by making the
+      # second token not a known query verb.
       #
       # Unlike git, these are *unconditional* (no +allow_git:+-style
-      # gate): the query forms read the package database / cache and have
-      # no command-execution vector — apt's pre/post-invoke hooks fire on
-      # install/update, never on +search+/+show+/+list+/+policy+. The
-      # pure-query companion binaries +dpkg-query+ and +apt-cache+ have no
-      # mutating form at all and so sit directly in {READ_ONLY_BINARIES}.
+      # gate): the query forms read the package database / cache / unit
+      # state and have no command-execution vector — apt's pre/post-invoke
+      # hooks fire on install/update (never on +search+/+show+), and
+      # +systemctl+ spawns its pager only on a tty, which {Bash}'s captured
+      # (piped) stdout is not. The pure-query companion binaries
+      # +dpkg-query+ and +apt-cache+ have no mutating form at all and so
+      # sit directly in {READ_ONLY_BINARIES}.
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
@@ -188,25 +195,39 @@ module Pikuri
         # and is rejected per segment. Alternation order matters:
         # the two-char +&&+ / +||+ must be tried before the single +|+
         # so +a || b+ splits into two segments, not three.
-        SEQUENCERS = /&&|\|\||;|\|/
+        #
+        # A newline is included because it is a command *terminator*
+        # exactly like +;+ — a multi-line script is a sequence of
+        # commands. The faithfulness argument carries over unchanged: a
+        # newline that was meant literally (inside a quoted string) can't
+        # appear in an auto-approvable command, because the per-segment
+        # check forbids both quote characters outright.
+        SEQUENCERS = /&&|\|\||;|\||\n/
 
-        # Defensive ceiling on the number of sequencer-joined segments. A
-        # legitimate read-only chain is short; a pathologically long
-        # generated one simply delegates rather than being split.
-        MAX_CHAIN = 8
+        # Defensive ceiling on the number of sequencer-joined segments.
+        # The split and per-segment checks are linear and cheap, so this
+        # is only a sanity backstop against pathological input, set high
+        # enough to clear a real generated batch (e.g. a +dpkg -S … || true+
+        # probe per unit file across dozens of files); beyond it the whole
+        # command simply delegates to the human rather than being analyzed.
+        MAX_CHAIN = 64
 
         # Binaries that are read-only in *every* argument form (no
         # mutating mode reachable, with or without root). See the class
         # header for the curation principle and notable exclusions.
         #
-        # +cd+ is the one entry that is a shell builtin rather than a
-        # PATH binary; the classifier only string-matches the first
-        # token, so it slots in cleanly. It has no destructive form and
-        # is meaningful only inside a sequencer chain (+cd notes && ls+);
-        # a bare +cd+ alone auto-approves harmlessly, changing the dir of
-        # a subshell that immediately exits.
+        # +cd+, +true+ and +false+ are shell builtins rather than PATH
+        # binaries; the classifier only string-matches the first token,
+        # so they slot in cleanly. None has a destructive form. +cd+ is
+        # meaningful only inside a sequencer chain (+cd notes && ls+); a
+        # bare +cd+ alone auto-approves harmlessly, changing the dir of a
+        # subshell that immediately exits. +true+/+false+ are pure
+        # exit-status no-ops — their value is the ubiquitous +cmd || true+
+        # idiom that swallows a probe's failure (+dpkg -S x || true+), so
+        # the +true+ tail-segment must classify as read-only for the whole
+        # chain to auto-approve.
         READ_ONLY_BINARIES = Set[
-          'cd',
+          'cd', 'true', 'false',
           'ls', 'cat', 'tac', 'nl', 'head', 'tail', 'wc',
           'grep', 'egrep', 'fgrep', 'rg',
           'pwd', 'basename', 'dirname', 'realpath', 'readlink',
@@ -220,6 +241,45 @@ module Pikuri
           'which', 'type',
           'locale', 'getconf',
           'dpkg-query', 'apt-cache'
+        ].freeze
+
+        # A redirect fragment that writes nothing to the filesystem,
+        # stripped from a segment before the {SHELL_METACHARACTERS} gate
+        # runs (it contains +>+/+&+, which the gate otherwise rejects).
+        # Two safe families only:
+        #
+        # * file-descriptor *duplication* — +[n]>&[m]+ (+2>&1+ merges
+        #   stderr into stdout, +1>&2+ the reverse): pure in-process
+        #   fd-table manipulation, never a file.
+        # * *discard* to +/dev/null+ — +[n|&]>[>] /dev/null+
+        #   (+2>/dev/null+, +> /dev/null+, +&>/dev/null+, append forms):
+        #   the kernel bit bucket.
+        #
+        # The discard target is pinned to *exactly* +/dev/null+ by the
+        # +(?=\s|\z)+ lookahead, so a look-alike write target
+        # (+2>/dev/nullx+, +2>/dev/null.bak+) does not match, survives,
+        # and trips the gate ⇒ delegates — as does any arbitrary-file
+        # redirect (+2>/etc/passwd+, +> out+). +\s*+ accepts the operator
+        # and target either glued (+2>/dev/null+) or spaced (+> /dev/null+).
+        # The fragment contains no {SEQUENCERS} byte, so stripping happens
+        # per-segment, after the faithful split.
+        SAFE_REDIRECT = %r{[0-9]*>&[0-9]+|(?:[0-9]|&)?>>?\s*/dev/null(?=\s|\z)}
+
+        # +systemctl+ subcommands with no mutating form — the only
+        # +systemctl+ invocations {#read_only_systemctl?} accepts (and,
+        # like dpkg/apt, the verb must appear *immediately* after
+        # +systemctl+, so a leading global such as +--root=/x+ delegates).
+        # Deliberately excludes every state mutator (+start+/+stop+/
+        # +restart+/+reload+/+enable+/+disable+/+mask+/+unmask+/+isolate+/
+        # +kill+/+daemon-reload+/+set-default+/+reset-failed+/+edit+).
+        # These only read unit/job state; +systemctl+ pages output solely
+        # on a tty, and {Bash} captures stdout (a pipe), so the pager
+        # never spawns — the one exec vector is closed by the wiring, not
+        # this set.
+        READ_ONLY_SYSTEMCTL_SUBCOMMANDS = Set[
+          'list-units', 'list-unit-files', 'list-timers', 'list-sockets',
+          'list-jobs', 'list-dependencies', 'status', 'show', 'cat',
+          'is-active', 'is-enabled', 'is-failed', 'get-default'
         ].freeze
 
         # +dpkg+ action flags with no mutating form — the only +dpkg+
@@ -308,17 +368,32 @@ module Pikuri
         # @param command [String] one sequencer segment, already stripped.
         # @return [Boolean] whether it is a single, bare,
         #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry
-        #   — or, under +allow_git:+, a read-only git invocation
-        #   ({#read_only_git?}).
+        #   (or a read-only +dpkg+/+apt+/+systemctl+ query, or — under
+        #   +allow_git:+ — a read-only git invocation). A pure-comment
+        #   segment (one beginning with +#+) is a no-op and auto-approves.
         def simple_read_only?(command)
           return false if command.empty?
-          return false if SHELL_METACHARACTERS.match?(command)
 
-          first = command.split(/\s+/).first
-          return false if first.include?('/')
+          # A segment starting with +#+ is a shell comment — it executes
+          # nothing, so it is trivially read-only. Sound because every
+          # segment boundary is a command separator, where +#+ genuinely
+          # opens a comment; a mid-segment +#+ (+ls #+) does not start
+          # the segment and so still trips the gate below.
+          return true if command.start_with?('#')
+
+          # Drop the write-nothing redirect fragments before the gate,
+          # which would otherwise reject their +>+/+&+. Only fd-dups and
+          # +/dev/null+ discards match (see {SAFE_REDIRECT}); anything
+          # else survives and trips.
+          bare = command.gsub(SAFE_REDIRECT, ' ')
+          return false if SHELL_METACHARACTERS.match?(bare)
+
+          first = bare.split(/\s+/).first
+          return false if first.nil? || first.include?('/')
           return true if READ_ONLY_BINARIES.include?(first)
           return true if read_only_dpkg?(command)
           return true if read_only_apt?(command)
+          return true if read_only_systemctl?(command)
 
           @allow_git && read_only_git?(command)
         end
@@ -348,6 +423,20 @@ module Pikuri
           return false unless tokens[0] == 'apt'
 
           READ_ONLY_APT_SUBCOMMANDS.include?(tokens[1])
+        end
+
+        # @param command [String] one sequencer segment, already stripped
+        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @return [Boolean] whether it is a read-only +systemctl+ query:
+        #   +systemctl+ followed *immediately* by a
+        #   {READ_ONLY_SYSTEMCTL_SUBCOMMANDS} verb. Requiring the verb
+        #   right after +systemctl+ refuses a leading global option
+        #   (+--root=/x+, +-H host+) and every state-mutating verb.
+        def read_only_systemctl?(command)
+          tokens = command.split(/\s+/)
+          return false unless tokens[0] == 'systemctl'
+
+          READ_ONLY_SYSTEMCTL_SUBCOMMANDS.include?(tokens[1])
         end
 
         # @param command [String] one sequencer segment, already stripped

@@ -54,6 +54,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       apt\ list\ --installed
       apt\ policy\ nginx
       apt-cache\ search\ ruby
+      systemctl\ list-units
+      systemctl\ list-unit-files
+      systemctl\ status\ sshd
+      systemctl\ show\ nginx
+      systemctl\ cat\ ssh
+      systemctl\ is-active\ cron
+      systemctl\ is-enabled\ cron
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -82,6 +89,37 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'df -h ; free -m',
       'ls || pwd',                 # logical-or
       'cd /etc && cat hostname | wc -l' # mixed operators
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(false)
+        confirmer = described_class.new(inner)
+        assert confirmer.confirm?(request: req(cmd)),
+               "expected auto-approval for #{cmd.inspect}"
+        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+      end
+    end
+  end
+
+  describe 'auto-approves write-nothing redirects, comments, and newline batches' do
+    [
+      'dpkg -S /bin/ls 2>&1',                 # stderr merged to stdout
+      'dpkg -S /bin/ls 2>/dev/null',          # stderr discarded
+      'dpkg -S /bin/ls 2>&1 || true',         # the || true error-swallow idiom
+      'cat /etc/hostname >/dev/null',         # stdout discarded
+      'ls>/dev/null',                         # discard glued to the command name
+      'cat /etc/hostname > /dev/null 2>&1',   # both discarded, two tokens
+      'ls 2>&1 | grep foo',                   # redirect composes with a pipe
+      "# explain\nls",                        # leading full-line comment
+      "ls\npwd\ndf -h",                       # newline-separated batch
+      "dpkg -S /a 2>&1 || true\ndpkg -S /b 2>&1 || true", # the reported shape
+      'systemctl list-units 2>/dev/null',     # systemctl query + safe redirect
+      # The reported batch verbatim: a comment line then many
+      # `dpkg -S <unit> 2>&1 || true` probes, newline-separated.
+      (['# Check which packages provided these unit files'] +
+       %w[auto-cpufreq connman fcoe grub-common kbd lxc networking
+          nslcd ntp ntpsec oem-config].map do |u|
+         "dpkg -S /usr/lib/systemd/system/#{u}.service 2>&1 || true"
+       end).join("\n")
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -124,6 +162,19 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'apt upgrade'          => 'apt upgrade',
       'apt -o before verb'   => 'apt -o APT::Foo=bar install ruby', # config injection before verb
       'apt-get install'      => 'apt-get install ruby', # apt-get not allowlisted at all
+      'systemctl enable'     => 'systemctl enable nginx',
+      'systemctl daemon-rel' => 'systemctl daemon-reload',
+      'systemctl --root glob'=> 'systemctl --root=/x list-units', # leading global → delegates
+      # Redirects that actually write: only fd-dup / /dev/null are safe.
+      'redirect to file'     => 'cat x 2>/tmp/err',     # arbitrary stderr target
+      'stdout to file'       => 'ls > out.txt',         # arbitrary stdout target
+      'attached file redir'  => 'ls>out.txt',           # arbitrary target, glued → trips gate
+      'devnull-lookalike'    => 'ls 2>/dev/nullx',      # not exactly /dev/null
+      'devnull-suffix'       => 'ls 2>/dev/null.bak',   # /dev/null.bak is a real file
+      # Comments only no-op when they START a segment.
+      'mid-segment hash'     => 'ls # then rm',         # # not at segment start → trips gate
+      'newline hides rm'     => "ls\nrm -rf /",         # second line is a real mutation
+      'over MAX_CHAIN lines' => (['ls'] * 65).join("\n"), # too many newline segments
       'git mutation'         => 'git reset --hard',
       'dd'                   => 'dd if=/dev/zero of=/dev/sda',
       'tee (writes)'         => 'tee /etc/hosts',
@@ -136,7 +187,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'trailing &&'          => 'ls && ',              # empty trailing segment
       'leading &&'           => '&& ls',               # empty leading segment
       'quoted && literal'    => 'echo "a && b"',       # quotes trip the metachar check
-      'over MAX_CHAIN'       => (['ls'] * 9).join(' && '),
+      'over MAX_CHAIN'       => (['ls'] * 65).join(' && '),
       # A pipe grants no write/exec: the escalators aren't allowlisted.
       'pipe into xargs'      => 'ls | xargs rm',       # xargs not allowlisted
       'pipe into sh'         => 'ls | sh',             # sh not allowlisted
