@@ -28,6 +28,21 @@ module Pikuri
     # commands run without a prompt and everything else still reaches the
     # human — the conservative half of the confirmation-fatigue answer.
     #
+    # The wrapper is built with +allow_git: true+, so read-only git verbs
+    # (+status+ / +diff+ / +log+ / +show+ / +blame+ / ...) also auto-approve
+    # — there is no per-repo trust prompt. That is safe here *only because*
+    # {Pikuri::Code::Bash} hardens the git subprocess environment
+    # ({Pikuri::Code::Bash::GIT_HARDENING}): a hostile repo-local
+    # +core.fsmonitor+ is neutralized regardless of what the repo's
+    # +.git/config+ says, which is the vector that fires on a plain
+    # +git status+. The accepted residual is diff-driver execution
+    # (+diff.external+ / +.gitattributes+-selected +textconv+) on a repo
+    # whose +.git/config+ an attacker wrote — env can't disable those
+    # cleanly, and we don't rewrite the model's command to inject
+    # +--no-ext-diff+. A plain +git clone+ never copies the remote's
+    # config, so the residual is confined to non-clone-delivered repos.
+    # See {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}'s +allow_git:+ yardoc.
+    #
     # == Sandbox
     #
     # The +sandbox+ is the caller's choice (default {NONE} — a safe library
@@ -72,7 +87,7 @@ module Pikuri
         c.add_extension(Pikuri::Workspace::Extension.new(filesystem: @filesystem, confirmer: @confirmer))
         c.add_extension(Pikuri::Code::Extension.new(
                           filesystem: @filesystem,
-                          confirmer: Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(@confirmer),
+                          confirmer: Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(@confirmer, allow_git: true),
                           sandbox: @sandbox
                         ))
 

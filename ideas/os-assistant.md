@@ -459,11 +459,11 @@ no allowlisted binary writes a file or executes a program from its
 stdin, and the data→action escalators (`xargs`, `sh`, `tee`) aren't on
 the allowlist, so `ls | xargs rm` / `cat x | tee y` both delegate. `cd`
 was added to the allowlist for this (a builtin with no destructive
-form, useful only in a chain). Note this is *necessary but not
-sufficient* for `cd X && git diff`: `git` stays delegated (see the v2
-menu — read-only `git`/`systemctl`/`journalctl` subcommands need
-subcommand-aware rules and, for `git`, pager/textconv/`ext::` hardening
-the boolean confirmer can't inject).
+form, useful only in a chain). A `git` segment in such a chain
+(`cd X && git diff`) auto-approves only under `allow_git:` — shipped,
+backed by `Bash` env hardening rather than a confirmer-injected flag
+(see the v2 menu's `git` arm). `systemctl status` / plain `journalctl`
+remain delegated pending subcommand-aware rules.
 
 The care is in the **allowlist**, not the code: metacharacter-free is
 necessary but not sufficient — `find . -delete`, `sort -o f`, `systemctl
@@ -489,50 +489,65 @@ confirmations are *aligned* with where confirmation earns its keep.
 - **`Write`/`Edit` path-zone auto-allow + diff render** (reliable, per
   the analyzability split above).
 - **Subcommand-aware read rules** — recover the *read* verbs of
-  otherwise-excluded binaries: `git diff`/`status`/`log`/`show`,
-  `systemctl status`, plain `journalctl`. The hard part is `git`,
-  because **even a bare `git diff` is not an inert read — it executes
-  whatever the repo's git config directs.** The live code-execution
-  vectors:
-  - `core.fsmonitor = <cmd>` — `git diff` refreshes the index, which
-    runs the fsmonitor command (regardless of TTY). RCE.
-  - `diff.<driver>.command` / `.textconv` — a *committed*
-    `.gitattributes` selects a driver; the driver's command lives in
-    config. Runs during the diff. RCE.
-  - the pager (`core.pager`/`PAGER`) is the one vector *already closed*
-    here: `Subprocess.spawn` captures via `Open3.popen2e`, so git's
-    stdout is a pipe not a TTY and plain `git diff` won't auto-page —
-    so the residual is the config-*execution* keys above, not the pager.
+  otherwise-excluded binaries: `systemctl status`, plain `journalctl`.
+  (The `git` arm of this is **shipped** — see below.) The general hard
+  part is that a "read" verb of a mutating binary may still execute
+  config-directed code, which is exactly why `git` needed its own
+  treatment.
 
-  All the live vectors are **config-gated**, and `git clone` never
-  copies the remote's config into local `.git/config`. So the deciding
-  variable is **repo-config trust, not network/sandbox**: a repo *you
-  cloned yourself* has clean config and `git diff` is effectively safe;
-  a checkout *handed to you with its `.git/` intact* (tarball, shared
-  dir, a config an earlier tool step wrote) has attacker-controlled
-  config and `git diff` ⇒ RCE. (`safe.directory` only guards repos
-  owned by a *different* uid.) And no current mode rescues an
-  untrusted-config repo — each closes the wrong leg of the trifecta:
-  under `FullFsNoNet` the no-net stops exfil but not a wiper
-  (`core.fsmonitor = rm -rf ~` is exactly the irreversible local
-  destruction the confirmer exists to prevent); a sandboxed-but-
-  networked agent contains fs damage but allows exfil. A boolean
-  confirmer can't rewrite the command to harden it, so the real
-  prerequisite is **hardened git execution** (`git --no-pager -c
-  core.fsmonitor= -c diff.external= …`, with neutralized system/global
-  config) — a config-key *denylist*, which is why `git` stays delegated
-  here.
+  **`git` (shipped).** Even a bare `git diff`/`status` is not an inert
+  read — it executes whatever the repo's git config directs. The live
+  code-execution vectors:
+  - `core.fsmonitor = <cmd>` — `git status`/`diff` refreshes the index,
+    which runs the fsmonitor command (regardless of TTY). RCE, and it
+    fires on a plain `git status` with no `.gitattributes` or matching
+    file needed.
+  - `diff.external` (global) and `diff.<driver>.command` / `.textconv`
+    (a *committed* `.gitattributes` selects the driver; the driver's
+    command lives in config) — run during a diff. RCE.
+  - the pager (`core.pager`/`PAGER`) is inert here: `Subprocess.spawn`
+    captures via `Open3.popen2e`, so git's stdout is a pipe not a TTY
+    and plain `git diff` won't auto-page.
 
-  The *other* way past this — taken by `bin/pikuri-code`, not the OS
-  helper — is to make the user assert config trust: an interactive
-  startup prompt (like Claude CLI / VS Code Workspace Trust) flips
-  `ReadOnlyAutoConfirmer`'s `allow_git:` on, which auto-approves a
-  curated read-only verb set (`git diff`/`status`/`log`/`show`/… , no
-  mutating form, `--output`/global-option escapes refused). That trades
-  the unconditional guarantee for "the user vouches for this repo's
-  config." The OS helper keeps `git` delegated because its blast radius
-  is worse — `FullFsNoNet` is full-RW-fs, so a mis-trusted config wipes
-  `$HOME` rather than (pikuri-code's sandboxed) ephemeral overlay.
+  All the vectors are **config-gated**, and `git clone` never copies the
+  remote's config into local `.git/config` — a repo *you cloned
+  yourself* has clean config; only a checkout *handed to you with its
+  `.git/` intact* (tarball, shared dir, a config a build step wrote)
+  carries attacker config.
+
+  The fix is **environment hardening, not a trust prompt and not command
+  rewriting**: `Pikuri::Code::Bash::GIT_HARDENING` forces
+  `core.fsmonitor=false` (+ `core.pager=cat`) via the
+  `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` env
+  protocol, which **overrides repo-local `.git/config`** (same top
+  precedence as `-c`) and applies to *every* git in a `&&`/`|` chain
+  without parsing the model's command. That deterministically closes the
+  headline `core.fsmonitor = rm -rf ~` wiper — the one that fires on the
+  most common command — so `pikuri-os` wires `ReadOnlyAutoConfirmer.new(
+  …, allow_git: true)` **unconditionally, no startup trust prompt** (its
+  agent roams the whole disk; there is no single repo to vouch for).
+
+  **The residual we accept:** diff-driver execution (`diff.external`,
+  attribute-selected `diff.<driver>.command`/`.textconv`). The env trick
+  *cannot* close these — there is no config value meaning "use the
+  internal diff" (an earlier draft's `-c diff.external=` is a **bug**:
+  empty makes git try to run the empty string and aborts every diff,
+  `fatal: external diff died`), and the only clean disable is the
+  command-line `--no-ext-diff`/`--no-textconv`, which we decline to
+  inject because it means parsing/rewriting the opaque shell string. So
+  diff-driver RCE remains reachable on a repo whose `.git/config` an
+  attacker wrote — the non-clone-delivery case above — via the
+  diff-family verbs. Documented, no prompt: a genuinely untrusted repo
+  belongs in a VM, not in `$HOME`.
+
+  `bin/pikuri-code` makes the trade-off differently: it still gates
+  `allow_git:` behind an interactive startup "trust this repo's config?"
+  prompt (like Claude CLI / VS Code Workspace Trust), now covering only
+  the diff-driver residual since env hardening already closed fsmonitor
+  there too. The verb set (`READ_ONLY_GIT_SUBCOMMANDS` — no mutating
+  form, `--output`/global-option escapes refused) is shared by both.
+  (`safe.directory` only guards repos owned by a *different* uid, so it
+  is not part of this.)
 - **Session-sticky grants** — "always allow `journalctl` this session,"
   sticking the *simple-invocation* form only. This is Claude Code's
   actual shape: deterministic allow/deny rules + user-granted session

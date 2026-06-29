@@ -240,6 +240,69 @@ RSpec.describe Pikuri::Code::Bash do
     end
   end
 
+  describe '.git_hardening_delta (git config-execution hardening)' do
+    # Even a read-only `git diff`/`status` runs whatever the repo config
+    # directs (core.fsmonitor); these keys force the GIT_CONFIG_* env
+    # protocol, which overrides a hostile repo-local .git/config. See
+    # Bash::GIT_HARDENING.
+
+    it 'forces core.fsmonitor=false and core.pager=cat at indices 0,1 with no inherited count' do
+      saved = ENV.delete('GIT_CONFIG_COUNT')
+      delta = described_class.send(:git_hardening_delta)
+
+      assert_equal '2', delta['GIT_CONFIG_COUNT']
+      assert_equal 'core.fsmonitor', delta['GIT_CONFIG_KEY_0']
+      assert_equal 'false',          delta['GIT_CONFIG_VALUE_0']
+      assert_equal 'core.pager',     delta['GIT_CONFIG_KEY_1']
+      assert_equal 'cat',            delta['GIT_CONFIG_VALUE_1']
+    ensure
+      ENV['GIT_CONFIG_COUNT'] = saved unless saved.nil?
+    end
+
+    it 'offsets past an inherited GIT_CONFIG_COUNT so host entries are not clobbered' do
+      saved = ENV['GIT_CONFIG_COUNT']
+      ENV['GIT_CONFIG_COUNT'] = '2'
+      delta = described_class.send(:git_hardening_delta)
+
+      # Ours append at 2,3 (higher index ⇒ wins on duplicate key); the
+      # host's KEY_0/KEY_1 are left untouched (absent from our delta).
+      assert_equal '4', delta['GIT_CONFIG_COUNT']
+      assert_equal 'core.fsmonitor', delta['GIT_CONFIG_KEY_2']
+      assert_equal 'core.pager',     delta['GIT_CONFIG_KEY_3']
+      refute delta.key?('GIT_CONFIG_KEY_0'), 'must not overwrite a host-set GIT_CONFIG_KEY_0'
+    ensure
+      saved.nil? ? ENV.delete('GIT_CONFIG_COUNT') : ENV['GIT_CONFIG_COUNT'] = saved
+    end
+
+    it 'subprocess_env carries the hardening keys alongside the bundler/identity deltas' do
+      env = described_class.send(:subprocess_env, filesystem)
+
+      assert env.key?('GIT_CONFIG_COUNT')
+      assert_includes env.values, 'core.fsmonitor'
+      assert_includes env.values, 'false'
+    end
+  end
+
+  describe '.run hardens git config-execution (regression)' do
+    it 'overrides a hostile repo-local core.fsmonitor with false' do
+      skip 'git not on PATH' unless system('command -v git >/dev/null 2>&1')
+
+      # Make the project root a repo whose OWN config sets a code-exec
+      # fsmonitor. Without env hardening, `git config core.fsmonitor`
+      # echoes the hostile command; with it, the env override wins.
+      git = ->(*args) { system('git', '-C', root.to_s, *args, out: File::NULL, err: File::NULL) }
+      git.call('init', '-q')
+      git.call('config', 'core.fsmonitor', 'echo HOSTILE_FSMONITOR_RAN')
+
+      result = described_class.run(filesystem: filesystem, confirmer: confirmer,
+                                   command: 'git config core.fsmonitor',
+                                   description: nil, timeout: 30)
+
+      assert_includes result, 'false'
+      refute_includes result, 'HOSTILE_FSMONITOR_RAN'
+    end
+  end
+
   describe '.run de-bundlerizes the subprocess (regression)' do
     it 'does not leak pikuri\'s BUNDLE_GEMFILE into the command' do
       # Under bundler BUNDLE_GEMFILE points at pikuri's own Gemfile; the

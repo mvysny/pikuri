@@ -92,24 +92,43 @@ module Pikuri
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
       #
-      # == Trusted-repo read-only git (+allow_git:+, opt-in, default off)
+      # == Read-only git (+allow_git:+, opt-in, default off)
       #
       # Everything above is *unconditional* — it assumes nothing about the
       # repository. +allow_git: true+ relaxes that one notch: it
       # additionally auto-approves the read-only git verbs
       # ({READ_ONLY_GIT_SUBCOMMANDS} — +git diff+/+status+/+log+/+show+ …,
       # with +git diff --cached+ and friends accepted for free, see
-      # {#read_only_git?}). This is sound *only* on a repo whose git config
-      # the user trusts, because even a bare +git diff+ executes whatever
-      # the repo config directs (+core.fsmonitor+, +diff.*.textconv+) — see
-      # +ideas/os-assistant.md+ §"Confirmation fatigue". Trust neutralizes
-      # that config-execution vector; it does NOT license *destructive*
-      # git (the LLM, steered by other untrusted content, could still emit
-      # +git reset --hard+), so the verb set excludes every mutating form
-      # and {#read_only_git?} additionally refuses inline config /
-      # repo-redirection / +--output+. The caller (e.g. bin/pikuri-code's
-      # trust prompt) must obtain that affirmation before passing
-      # +allow_git: true+.
+      # {#read_only_git?}). Even a bare +git diff+ executes whatever the
+      # repo config directs (+core.fsmonitor+, +diff.*.textconv+), so
+      # auto-approving it is only sound when that config-execution vector
+      # is contained.
+      #
+      # Containment is provided by {Pikuri::Code::Bash}, not by this
+      # decorator: {Pikuri::Code::Bash::GIT_HARDENING} forces
+      # +core.fsmonitor=false+ (and +core.pager=cat+) onto every git
+      # subprocess via the +GIT_CONFIG_*+ environment, overriding a hostile
+      # repo-local +.git/config+ — so the headline vector (+core.fsmonitor
+      # = rm -rf ~+, which fires on a plain +git status+) is closed for any
+      # +Bash+-wired agent. The *residual* the caller accepts with
+      # +allow_git: true+ is therefore narrow: diff-driver execution
+      # (+diff.external+, or a +.gitattributes+-selected
+      # +diff.<driver>.command+/+.textconv+), which the environment cannot
+      # disable cleanly and we do not rewrite the command to suppress. A
+      # plain +git clone+ never copies the remote's config, so that
+      # residual is confined to a repo whose +.git/config+ an attacker
+      # wrote (a tarball with +.git/+ intact, a shared/synced dir, or
+      # config a build step left behind). Two wirings make the trade-off
+      # differently: +bin/pikuri-code+ still gates +allow_git: true+ behind
+      # a startup "trust this repo's config?" prompt; +pikuri-os+ enables
+      # it unconditionally and documents the residual (its agent roams the
+      # whole disk, so there is no single repo to vouch for — see
+      # +Pikuri::Os::Extension+ and +ideas/os-assistant.md+).
+      #
+      # Hardening does NOT license *destructive* git (the LLM, steered by
+      # other untrusted content, could still emit +git reset --hard+), so
+      # the verb set excludes every mutating form and {#read_only_git?}
+      # additionally refuses inline config / repo-redirection / +--output+.
       #
       # == Residual the allowlist does NOT close
       #
@@ -195,10 +214,12 @@ module Pikuri
         #   (typically {Pikuri::Workspace::Confirmer::TERMINAL}).
         # @param allow_git [Boolean] when +true+, additionally auto-approve
         #   read-only git invocations ({#read_only_git?}). Default +false+.
-        #   This opt-in *trades the unconditional guarantee for a
-        #   repo-config-trust assumption* (see the class header), so a
-        #   caller must only enable it after the user affirms the repo is
-        #   trusted.
+        #   Sound only when paired with {Pikuri::Code::Bash}'s git
+        #   environment hardening ({Pikuri::Code::Bash::GIT_HARDENING}),
+        #   which closes the +core.fsmonitor+ config-execution vector; the
+        #   caller accepts the narrow diff-driver residual (see the class
+        #   header). +bin/pikuri-code+ gates this behind a startup trust
+        #   prompt; +pikuri-os+ enables it unconditionally.
         def initialize(inner, allow_git: false)
           super()
           @inner = inner

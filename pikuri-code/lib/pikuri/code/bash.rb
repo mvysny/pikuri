@@ -101,6 +101,43 @@ module Pikuri
       #   passed to +timeout --kill-after=...+.
       KILL_AFTER = '5s'
 
+      # Git config keys forced onto every git invocation in the bash
+      # subprocess, threaded in via {.git_hardening_delta}. These exist
+      # because even a *read-only* git command (+git status+ / +diff+ /
+      # +show+ ...) executes whatever the repo's config directs, and the
+      # +ReadOnlyAutoConfirmer+ auto-approves those verbs — so on an
+      # unsandboxed or full-RW agent a hostile repo-local +.git/config+
+      # would be an unconfirmed RCE the moment the model runs +git diff+.
+      #
+      # * +core.fsmonitor=false+ — the headline vector. A repo-local
+      #   +core.fsmonitor = <cmd>+ runs +<cmd>+ on every index refresh
+      #   (so on plain +git status+ / +diff+, no +.gitattributes+ or
+      #   matching file needed). +false+ is git's default-disabled state,
+      #   so legitimate status/diff are unaffected.
+      # * +core.pager=cat+ — belt-and-suspenders; git auto-paging is
+      #   already inert under our combined-output pipe (non-TTY), but a
+      #   forced +cat+ makes the pager a no-op vector regardless.
+      #
+      # Deliberately NOT here: +diff.external+ (and the +.gitattributes+-
+      # selected +diff.<driver>.command+ / +.textconv+ drivers). There is
+      # no config *value* meaning "use the internal diff" — an empty
+      # +diff.external=+ makes git try to run the empty string and aborts
+      # every diff ("external diff died"). Only the command-line
+      # +--no-ext-diff+ / +--no-textconv+ flags disable them cleanly, and
+      # we deliberately do not rewrite the model's command string to
+      # inject flags (see {.git_hardening_delta}). So diff-driver
+      # execution remains a documented residual, reachable only via a
+      # repo whose +.git/config+ an attacker wrote (a plain +git clone+
+      # never copies the remote's config) — see
+      # {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}'s +allow_git:+ yardoc
+      # and +ideas/os-assistant.md+.
+      #
+      # @return [Array<Array(String, String)>] +[key, value]+ pairs.
+      GIT_HARDENING = [
+        ['core.fsmonitor', 'false'],
+        ['core.pager', 'cat']
+      ].freeze
+
       # @return [Integer] bytes preserved from the start of the output
       #   when the combined-output stream exceeds {OUTPUT_HEAD} + {OUTPUT_TAIL}.
       OUTPUT_HEAD = 15 * 1024
@@ -267,17 +304,53 @@ module Pikuri
       # die with a baffling "the Gemfile specifies ... is missing" error.
       #
       # The fix is to hand bash the environment as it was *before* bundler
-      # touched it (see {.bundler_clean_delta}), with the filesystem's git
-      # identity on top.
+      # touched it (see {.bundler_clean_delta}), with git hardening
+      # ({.git_hardening_delta}) and then the filesystem's git identity on
+      # top. The three deltas touch disjoint keys (bundler vars /
+      # +GIT_CONFIG_*+ / +GIT_AUTHOR_*+ + +GIT_COMMITTER_*+), so merge
+      # order is immaterial.
       #
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [Hash{String=>(String,nil)}] +env:+ delta for
       #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key in the
       #   child).
       def self.subprocess_env(filesystem)
-        bundler_clean_delta.merge(filesystem.env)
+        bundler_clean_delta.merge(git_hardening_delta).merge(filesystem.env)
       end
       private_class_method :subprocess_env
+
+      # Emit the {GIT_HARDENING} keys as a +GIT_CONFIG_COUNT+ /
+      # +GIT_CONFIG_KEY_<n>+ / +GIT_CONFIG_VALUE_<n>+ env delta. This
+      # environment protocol overrides a repo's own +.git/config+ (it has
+      # the same top precedence as command-line +-c+), so a hostile
+      # repo-local +core.fsmonitor+ is neutralized regardless of what the
+      # repo says.
+      #
+      # We harden via *environment* rather than by rewriting the model's
+      # command string for two reasons: the command is opaque shell syntax
+      # (+cd repo && git diff | grep x+) that we refuse to parse, and env
+      # applies uniformly to *every* git process spawned by the command —
+      # each one in a +&&+/+|+ chain, and any git a script underneath
+      # forks — with no parsing at all.
+      #
+      # The indices are *offset* past any +GIT_CONFIG_COUNT+ already in the
+      # inherited environment, so our keys append to (rather than clobber)
+      # entries a host set deliberately. Appending also gives ours the
+      # higher index, so on a duplicate key git's last-wins rule keeps the
+      # hardened value.
+      #
+      # @return [Hash{String=>String}]
+      def self.git_hardening_delta
+        base = ENV['GIT_CONFIG_COUNT'].to_i
+        delta = {}
+        GIT_HARDENING.each_with_index do |(key, value), i|
+          delta["GIT_CONFIG_KEY_#{base + i}"] = key
+          delta["GIT_CONFIG_VALUE_#{base + i}"] = value
+        end
+        delta['GIT_CONFIG_COUNT'] = (base + GIT_HARDENING.size).to_s
+        delta
+      end
+      private_class_method :git_hardening_delta
 
       # The delta that, merged onto the current (bundler-polluted) +ENV+
       # via {Pikuri::Subprocess.spawn}'s +env:+, reconstructs

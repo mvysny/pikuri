@@ -196,13 +196,17 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # confirming branch is wrapped.
 #
 # Read-only *git* (git diff/status/log/show/…) is gated behind an explicit
-# trust prompt: a hostile repo's .git/config or committed .gitattributes
-# can make even `git diff` execute arbitrary code (and, with the sandbox
-# network shared, exfiltrate), so we auto-approve git only after the user
-# affirms they control this directory's git config. Asked every
-# interactive session (no persistence — this bin is illustrative); skipped
-# when stdin isn't a TTY (so piped input is never consumed) and under
-# --yolo/--no-confirm (which already auto-approve everything).
+# trust prompt. Bash already hardens the git environment
+# (Code::Bash::GIT_HARDENING) so a hostile repo-local `core.fsmonitor`
+# can't fire on `git status`; what the prompt covers is the residual a
+# hostile committed .gitattributes / repo-local diff driver can still
+# reach — a `diff.external`/`textconv` command that runs (and, with the
+# sandbox network shared, exfiltrates) when the model diffs a matching
+# file. So we auto-approve read-only git only after the user affirms they
+# control this directory's git config. Asked every interactive session (no
+# persistence — this bin is illustrative); skipped when stdin isn't a TTY
+# (so piped input is never consumed) and under --yolo/--no-confirm (which
+# already auto-approve everything).
 trusted_repo =
   confirm_enabled && $stdin.tty? &&
   Pikuri::Workspace::Confirmer::TERMINAL.confirm?(
@@ -210,9 +214,9 @@ trusted_repo =
       question: "Trust this directory's git config? Read-only git " \
                 '(status/diff/log/show/blame/…) will then run WITHOUT confirmation.',
       detail: "#{project_root}\n\nSay yes ONLY if you control this repo's " \
-              '.git/config and committed .gitattributes. A hostile one can make ' \
-              "even `git diff` execute arbitrary code — and with the sandbox's " \
-              'network shared, exfiltrate. Default is no.'
+              '.git/config and committed .gitattributes. A hostile diff driver ' \
+              "(diff.external / textconv) can make `git diff` execute arbitrary " \
+              'code — and with the sandbox network shared, exfiltrate. Default is no.'
     )
   )
 code_confirmer = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer, allow_git: trusted_repo) : confirmer

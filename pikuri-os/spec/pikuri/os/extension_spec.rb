@@ -84,19 +84,22 @@ RSpec.describe Pikuri::Os::Extension do
       end
     end
 
-    it 'gives Bash a ReadOnlyAutoConfirmer wrapping the human confirmer (Write keeps the human one)' do
+    it 'gives Bash a ReadOnlyAutoConfirmer wrapping the human confirmer, with allow_git on (Write keeps the human one)' do
       with_singleton(Pikuri::Os::LocalSearch, :available?) do
         with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
           with_singleton(Pikuri::Code::Bash::ReadOnlyAutoConfirmer, :new) do |orig|
             stub_localsearch_available(true)
             captured = nil
-            Pikuri::Code::Bash::ReadOnlyAutoConfirmer.define_singleton_method(:new) do |inner|
+            captured_allow_git = nil
+            Pikuri::Code::Bash::ReadOnlyAutoConfirmer.define_singleton_method(:new) do |inner, allow_git: false|
               captured = inner
-              orig.call(inner)
+              captured_allow_git = allow_git
+              orig.call(inner, allow_git: allow_git)
             end
 
             configure!(build_configurator)
             assert_same human, captured, 'Bash should be gated by a ReadOnlyAutoConfirmer over the human confirmer'
+            assert captured_allow_git, 'pikuri-os enables allow_git: true (read-only git auto-approves, backed by Bash env hardening)'
           end
         end
       end
