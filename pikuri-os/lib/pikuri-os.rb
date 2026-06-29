@@ -10,8 +10,8 @@ require 'pikuri-code'
 #
 # pikuri-os is the OS-integration layer and the home of the
 # +bin/pikuri-os-assistant+ demo — a single, local, network-severed
-# agent for understanding and operating the host OS. The design lives
-# in +ideas/os-assistant.md+; the load-bearing posture is: egress is
+# agent for understanding and operating the host OS. The design notes
+# live in +ideas/os-assistant.md+; the load-bearing posture is: egress is
 # severed at the kernel (a net-isolated Bash sandbox), every mutation
 # is confirmed, and durable memory is a single user-owned +MACHINE.md+
 # rather than mem0 — so this gem depends on pikuri-code (Bash +

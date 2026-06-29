@@ -11,7 +11,7 @@ module Pikuri
       # OS-helper's answer to confirmation fatigue: the frequent harmless
       # commands (+ls+, +cat+, +grep+, +df+ …) stop prompting, while every
       # mutation — and anything it can't prove safe — still reaches the
-      # human. See +ideas/os-assistant.md+ §"Confirmation fatigue".
+      # human. See +ideas/os-assistant.md+.
       #
       # == Why fatigue is a security concern, not just UX
       #

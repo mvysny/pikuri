@@ -8,7 +8,7 @@ module Pikuri
     # user-owned +MACHINE.md+, the +CLAUDE.md+-for-this-host. Read at boot
     # and folded into the system prompt; the agent updates it through the
     # ordinary (confirmed) +write+/+edit+ tools, and the user can inspect
-    # or edit it any time. See +ideas/os-assistant.md+ §"Memory".
+    # or edit it any time. See +ideas/os-assistant.md+.
     #
     # == Why a markdown file, not mem0
     #

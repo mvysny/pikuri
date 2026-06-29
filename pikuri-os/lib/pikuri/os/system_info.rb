@@ -7,7 +7,7 @@ module Pikuri
     # Boot-time machine facts for the OS helper: the small block of facts
     # about *this* host that gets folded into the system prompt so the
     # model doesn't guess the distro, init system, or paths. See
-    # +ideas/os-assistant.md+ §"How the LLM learns about this machine".
+    # +ideas/os-assistant.md+.
     #
     # == Mandatory info, optional source
     #

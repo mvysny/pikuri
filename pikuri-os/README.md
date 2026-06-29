@@ -7,9 +7,10 @@ Offline Linux/OS helper agent + OS-integration tools for the
 **network-severed** agent that understands and operates the host OS —
 answer questions about the machine, find and open files, read logs and
 explain errors, advise on configuration. It is the federation's
-privacy-first `@os` member shipped as a standalone single agent (see
-[`ideas/os-assistant.md`](../ideas/os-assistant.md) for the full
-design).
+privacy-first `@os` member shipped as a standalone single agent (walked
+through in [guide chapter 7](../docs/guide/07-os-assistant.md); see
+[`ideas/os-assistant.md`](../ideas/os-assistant.md) for the design
+origin and the work still deferred).
 
 Posture (the load-bearing parts):
 
