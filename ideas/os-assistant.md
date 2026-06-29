@@ -490,13 +490,38 @@ confirmations are *aligned* with where confirmation earns its keep.
   the analyzability split above).
 - **Subcommand-aware read rules** — recover the *read* verbs of
   otherwise-excluded binaries: `git diff`/`status`/`log`/`show`,
-  `systemctl status`, plain `journalctl`. The hard part is `git`: its
-  read verbs invoke a pager and honor repo-local config
-  (`GIT_EXTERNAL_DIFF`, `diff.*.textconv`, `ext::` transports), so a
-  hostile cloned repo can make a plain `git diff` execute code. A
-  boolean confirmer can't rewrite the command to inject `--no-pager` /
-  disable textconv, so this needs either a command-rewriting seam or a
-  curated set of hardening flags the agent is required to pass.
+  `systemctl status`, plain `journalctl`. The hard part is `git`,
+  because **even a bare `git diff` is not an inert read — it executes
+  whatever the repo's git config directs.** The live code-execution
+  vectors:
+  - `core.fsmonitor = <cmd>` — `git diff` refreshes the index, which
+    runs the fsmonitor command (regardless of TTY). RCE.
+  - `diff.<driver>.command` / `.textconv` — a *committed*
+    `.gitattributes` selects a driver; the driver's command lives in
+    config. Runs during the diff. RCE.
+  - the pager (`core.pager`/`PAGER`) is the one vector *already closed*
+    here: `Subprocess.spawn` captures via `Open3.popen2e`, so git's
+    stdout is a pipe not a TTY and plain `git diff` won't auto-page —
+    so the residual is the config-*execution* keys above, not the pager.
+
+  All the live vectors are **config-gated**, and `git clone` never
+  copies the remote's config into local `.git/config`. So the deciding
+  variable is **repo-config trust, not network/sandbox**: a repo *you
+  cloned yourself* has clean config and `git diff` is effectively safe;
+  a checkout *handed to you with its `.git/` intact* (tarball, shared
+  dir, a config an earlier tool step wrote) has attacker-controlled
+  config and `git diff` ⇒ RCE. (`safe.directory` only guards repos
+  owned by a *different* uid.) And no current mode rescues an
+  untrusted-config repo — each closes the wrong leg of the trifecta:
+  under `FullFsNoNet` the no-net stops exfil but not a wiper
+  (`core.fsmonitor = rm -rf ~` is exactly the irreversible local
+  destruction the confirmer exists to prevent); a sandboxed-but-
+  networked agent contains fs damage but allows exfil. A boolean
+  confirmer can't rewrite the command to harden it, so the real
+  prerequisite is **hardened git execution** (`git --no-pager -c
+  core.fsmonitor= -c diff.external= …`, with neutralized system/global
+  config) — a config-key *denylist*, which is why `git` stays delegated
+  for now.
 - **Session-sticky grants** — "always allow `journalctl` this session,"
   sticking the *simple-invocation* form only. This is Claude Code's
   actual shape: deterministic allow/deny rules + user-granted session
