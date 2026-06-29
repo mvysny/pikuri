@@ -253,7 +253,7 @@ SPARQL query against `tinysparql` for structured filters like
 mime-type/mtime). Targeting Ubuntu 26.04+ is what lets us *assume* it's
 there rather than probe.
 
-**A search → read-full pair, not a windowing tool (as shipped).**
+**A search → read-full pair.**
 `localsearch search` is *discovery*, not *retrieval*: it returns which
 files matched plus a **tiny** built-in snippet — measured on a 26.04 box,
 about 3–4 words each side of the hit ("…physical or **environmental**
@@ -292,15 +292,11 @@ read-full* pair, the same two-step shape as `vectordb_search` →
   `Use offset=N to continue` trailer). This is the parent-document
   retrieval step — the full document, not a snippet.
 
-An earlier draft of this note proposed instead a *single* tool that
-collapsed the two calls and returned a configurable **~100-word window
-centered on the match** (`window_words` param, merged sub-windows, a
-stemmed surface-form locator to find the term in the stored text). That
-was **not** built and is **superseded**: the shipped pair is simpler
-(no in-tool windowing, no stemmer to chase localsearch's FTS stemming),
-honest about the index's one-snippet-per-file reality, and reuses the
-`read`-tool paging machinery wholesale. Relevance-judging is the native
-snippet's job; reading is `fileindex_read`'s.
+Relevance-judging is the native snippet's job; reading is
+`fileindex_read`'s. The tool stays out of the windowing business
+entirely: no in-tool snippet widening, no stemmer to chase localsearch's
+FTS stemming — it's honest about the index's one-snippet-per-file
+reality and reuses the `read`-tool paging machinery wholesale.
 
 The shared localsearch backend ({Pikuri::Os::LocalSearch}) holds the
 argv / output-parsing / json-ld knowledge for both tools; it is not a
