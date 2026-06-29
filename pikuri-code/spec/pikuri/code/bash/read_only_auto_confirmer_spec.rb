@@ -171,4 +171,31 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       assert_kind_of Pikuri::Workspace::Confirmer, described_class.new(RecordingConfirmer.new(true))
     end
   end
+
+  # bin/pikuri-code wires this wrapper onto Bash (Code::Extension) while
+  # Write/Edit (Workspace::Extension) keep the bare human confirmer. The
+  # asymmetry is the primary guard, but this pins the secondary one: even
+  # if a Write request reached the wrapper, it is never auto-approved —
+  # Write builds a Request with a question and NO detail (see
+  # pikuri-workspace/lib/pikuri/workspace/write.rb), and a nil detail
+  # delegates. So the same wrapper auto-approves a read-only command yet
+  # always defers an overwrite to the human.
+  describe 'shared-confirmer safety (pikuri-code wiring)' do
+    it 'auto-approves a read-only command but defers a Write overwrite' do
+      inner = RecordingConfirmer.new(false) # would REJECT if consulted
+      confirmer = described_class.new(inner)
+
+      # Read-only bash command: auto-approved, human never consulted.
+      assert confirmer.confirm?(request: req('ps aux | grep ssh'))
+      assert_empty inner.calls
+
+      # Write's actual Request shape (overwrite question, nil detail):
+      # delegated, so it follows the (rejecting) inner confirmer.
+      overwrite = Pikuri::Workspace::Confirmer::Request.new(
+        question: 'OK to overwrite lib/foo.rb: 100 → 120 bytes?'
+      )
+      refute confirmer.confirm?(request: overwrite)
+      assert_equal 1, inner.calls.size
+    end
+  end
 end
