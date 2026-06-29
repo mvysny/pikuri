@@ -521,7 +521,18 @@ confirmations are *aligned* with where confirmation earns its keep.
   prerequisite is **hardened git execution** (`git --no-pager -c
   core.fsmonitor= -c diff.external= …`, with neutralized system/global
   config) — a config-key *denylist*, which is why `git` stays delegated
-  for now.
+  here.
+
+  The *other* way past this — taken by `bin/pikuri-code`, not the OS
+  helper — is to make the user assert config trust: an interactive
+  startup prompt (like Claude CLI / VS Code Workspace Trust) flips
+  `ReadOnlyAutoConfirmer`'s `allow_git:` on, which auto-approves a
+  curated read-only verb set (`git diff`/`status`/`log`/`show`/… , no
+  mutating form, `--output`/global-option escapes refused). That trades
+  the unconditional guarantee for "the user vouches for this repo's
+  config." The OS helper keeps `git` delegated because its blast radius
+  is worse — `FullFsNoNet` is full-RW-fs, so a mis-trusted config wipes
+  `$HOME` rather than (pikuri-code's sandboxed) ephemeral overlay.
 - **Session-sticky grants** — "always allow `journalctl` this session,"
   sticking the *simple-invocation* form only. This is Claude Code's
   actual shape: deterministic allow/deny rules + user-granted session
