@@ -92,8 +92,10 @@ module Pikuri
       #   (+--vacuum-*+ / +--rotate+ / +--flush+), not a leading
       #   subcommand, so the immediately-after-the-binary trick the
       #   subcommand classifiers below rely on doesn't apply; recovering
-      #   it cleanly needs a flag denylist, deferred — v1 delegates it.
-      #   (+systemctl+ *is* subcommand-shaped and is recovered below.)
+      #   it cleanly needs a flag denylist, still deferred — v1 delegates
+      #   it. (+systemctl+ *is* subcommand-shaped and is recovered below;
+      #   +dmesg+ is the same flag-split shape and *is* recovered, by the
+      #   flag denylist described next.)
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
       #
@@ -121,6 +123,37 @@ module Pikuri
       # (piped) stdout is not. The pure-query companion binaries
       # +dpkg-query+ and +apt-cache+ have no mutating form at all and so
       # sit directly in {READ_ONLY_BINARIES}.
+      #
+      # == Read-only dmesg (flag denylist), unconditional
+      #
+      # +dmesg+ prints the kernel ring buffer read-only by default, but a
+      # handful of *flags* mutate kernel/console state: +-C+/+--clear+ and
+      # +-c+/+--read-clear+ wipe the buffer, +-D+/+--console-off+ /
+      # +-E+/+--console-on+ toggle console printing, +-n+/+--console-level+
+      # sets it. The read/mutate split is by flag (like +journalctl+, unlike
+      # the subcommand-shaped trio above), so {#read_only_dmesg?} recovers it
+      # with a *denylist*: a +dmesg+ invocation auto-approves iff none of its
+      # arguments is a mutating flag ({DMESG_MUTATING_SHORT} /
+      # {DMESG_MUTATING_LONG}). Bundled short options are caught
+      # character-by-character (+-xC+ contains the +C+ clear, so it
+      # delegates), and a long option's +=value+ tail is stripped before the
+      # lookup (+--console-level=1+ matches +--console-level+); a long form
+      # written spaced (+--console-level 1+) is caught on its flag token.
+      # Everything else +dmesg+ does only reads, so the default-on read mode
+      # needs no allowlisting — a bare value token (a level name, a glued
+      # read-only flag) just passes.
+      #
+      # This is the one deviation from the otherwise-absolute "never
+      # auto-approve a destructive command": a denylist's residual is a
+      # *future* +dmesg+ mutating flag this set doesn't yet name, which would
+      # auto-approve. It's the same residual shape the git +--output+ check
+      # already carries (a future read-verb file-writer flag would slip), and
+      # +dmesg+'s mutating surface is small and stable (util-linux), so the
+      # residual is accepted; an allowlist of read-only flags would close it
+      # at the cost of delegating every new read flag, which is the inferior
+      # trade here. The guarantee is privilege-independent as before
+      # (+dmesg+ often needs root to *work*, but that's orthogonal to whether
+      # the form mutates).
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
@@ -315,6 +348,23 @@ module Pikuri
           'rev-parse', 'describe', 'shortlog'
         ].freeze
 
+        # +dmesg+ short-option *letters* that mutate kernel/console state —
+        # the buffer wipers (+-C+ clear, +-c+ read-clear) and the console
+        # controls (+-D+ off, +-E+ on, +-n+ set-level). {#read_only_dmesg?}
+        # scans each short-option cluster character-by-character against this
+        # set, so a bundled +-xC+ is caught on its +C+. Every other +dmesg+
+        # flag only reads.
+        DMESG_MUTATING_SHORT = Set['C', 'c', 'D', 'E', 'n'].freeze
+
+        # +dmesg+ long options that mutate kernel/console state — the
+        # long-form spellings of {DMESG_MUTATING_SHORT}. {#read_only_dmesg?}
+        # strips a +=value+ tail before the lookup, so +--console-level=1+
+        # matches +--console-level+.
+        DMESG_MUTATING_LONG = Set[
+          '--clear', '--read-clear', '--console-off', '--console-on',
+          '--console-level'
+        ].freeze
+
         # @param inner [Pikuri::Workspace::Confirmer] the confirmer to
         #   delegate to whenever a command is not provably read-only
         #   (typically {Pikuri::Workspace::Confirmer::TERMINAL}).
@@ -394,6 +444,7 @@ module Pikuri
           return true if read_only_dpkg?(command)
           return true if read_only_apt?(command)
           return true if read_only_systemctl?(command)
+          return true if read_only_dmesg?(command)
 
           @allow_git && read_only_git?(command)
         end
@@ -437,6 +488,37 @@ module Pikuri
           return false unless tokens[0] == 'systemctl'
 
           READ_ONLY_SYSTEMCTL_SUBCOMMANDS.include?(tokens[1])
+        end
+
+        # @param command [String] one sequencer segment, already stripped
+        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @return [Boolean] whether it is a read-only +dmesg+ invocation:
+        #   +dmesg+ with no mutating flag among its arguments
+        #   ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG}). Bundled short
+        #   options are scanned per character (+-xC+ trips on +C+); a long
+        #   option's +=value+ tail is dropped before the lookup. Non-flag
+        #   tokens (level names, a surviving +/dev/null+ redirect fragment)
+        #   are read-only data and pass.
+        def read_only_dmesg?(command)
+          tokens = command.split(/\s+/)
+          return false unless tokens[0] == 'dmesg'
+
+          tokens.drop(1).none? { |t| dmesg_mutating_arg?(t) }
+        end
+
+        # @param token [String] one whitespace-delimited +dmesg+ argument.
+        # @return [Boolean] whether it names a mutating +dmesg+ flag — a long
+        #   option in {DMESG_MUTATING_LONG} (ignoring any +=value+ tail), or
+        #   a short-option cluster containing a {DMESG_MUTATING_SHORT} letter.
+        #   A bare value token (no leading +-+) is read-only data ⇒ +false+.
+        def dmesg_mutating_arg?(token)
+          if token.start_with?('--')
+            DMESG_MUTATING_LONG.include?(token.split('=', 2).first)
+          elsif token.start_with?('-')
+            token[1..].chars.any? { |c| DMESG_MUTATING_SHORT.include?(c) }
+          else
+            false
+          end
         end
 
         # @param command [String] one sequencer segment, already stripped

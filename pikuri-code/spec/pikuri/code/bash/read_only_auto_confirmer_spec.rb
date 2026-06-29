@@ -61,6 +61,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       systemctl\ cat\ ssh
       systemctl\ is-active\ cron
       systemctl\ is-enabled\ cron
+      dmesg
+      dmesg\ -T
+      dmesg\ -xT
+      dmesg\ --level=err,warn,crit
+      dmesg\ -l\ err
+      dmesg\ -k\ --human
+      dmesg\ --since\ -1\ --until\ now
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -113,6 +120,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       "ls\npwd\ndf -h",                       # newline-separated batch
       "dpkg -S /a 2>&1 || true\ndpkg -S /b 2>&1 || true", # the reported shape
       'systemctl list-units 2>/dev/null',     # systemctl query + safe redirect
+      'dmesg --level=err,warn,crit 2>/dev/null | tail -80', # reported dmesg shape
+      'dmesg -T | grep -i error',             # dmesg piped into a read-only filter
       # The reported batch verbatim: a comment line then many
       # `dpkg -S <unit> 2>&1 || true` probes, newline-separated.
       (['# Check which packages provided these unit files'] +
@@ -151,6 +160,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'sort -o (writes)'     => 'sort -o out.txt in.txt',
       'systemctl stop'       => 'systemctl stop sshd',
       'journalctl --vacuum'  => 'journalctl --vacuum-time=1s',
+      'dmesg --clear'        => 'dmesg --clear',          # wipes the ring buffer
+      'dmesg -C'             => 'dmesg -C',               # short clear
+      'dmesg -c'             => 'dmesg -c',               # read-clear
+      'dmesg bundled clear'  => 'dmesg -xC',              # clear hidden in a short cluster
+      'dmesg --console-off'  => 'dmesg --console-off',    # toggles console printing
+      'dmesg --console-level'=> 'dmesg --console-level=1',# sets console level (=value)
+      'dmesg -n spaced'      => 'dmesg -n 1',             # set-level, spaced argument
       'dpkg install'         => 'dpkg -i pkg.deb',
       'dpkg remove'          => 'dpkg -r ruby',
       'dpkg purge'           => 'dpkg --purge ruby',
