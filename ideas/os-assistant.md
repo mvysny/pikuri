@@ -253,72 +253,64 @@ SPARQL query against `tinysparql` for structured filters like
 mime-type/mtime). Targeting Ubuntu 26.04+ is what lets us *assume* it's
 there rather than probe.
 
-**Getting enough context around a match (a two-call split).**
+**A search → read-full pair, not a windowing tool (as shipped).**
 `localsearch search` is *discovery*, not *retrieval*: it returns which
 files matched plus a **tiny** built-in snippet — measured on a 26.04 box,
 about 3–4 words each side of the hit ("…physical or **environmental**
-damage…"), meant only to confirm "is this the right file." There is
-**no flag to widen it** — verified: `-d`/`--detailed` only adds the
-resource URN, `-t`/`--documents` is a type filter (not "detailed"), and
-the snippet length isn't configurable. The route to a real window is a
-**second call**: LocalSearch already extracted and stored each file's
-plain text, so
+damage…"), at most *one* per file, meant only to confirm "is this the
+right file." (`localsearch search -d` is what surfaces that snippet, on
+the line after each `file://` path; the snippet length isn't
+configurable and there's no flag to widen it.) The full text lives one
+**second call** away: LocalSearch already extracted and stored each
+file's plain text, so
 
 ```
 localsearch info -c -o json-ld /path/to/file.pdf
 ```
 
-returns that full indexed text (PDF/office included, no re-extraction).
+returns that whole indexed text (PDF/office included, no re-extraction).
 Use `-o json-ld` and read `nie:plainTextContent` — it comes back as a
 clean JSON string with real newlines; the default turtle output indents
 the body to align under the RDF property, which is fiddly to de-mangle.
-So the content tier is a *search → read-full* pair: `search` finds the
-file, `info -c` returns its whole extracted text. That's the same
-two-step shape as `vectordb_search` → `vectordb_read` — and we get it
-from the pre-installed index for free, which is part of why
-`pikuri-vectordb` earns no place here (below).
 
-**A purpose-built tool collapses the two calls into one.** Rather than
-make the LLM orchestrate `search` → `info -c` → slice-by-hand every
-time, wrap it: a single content-search tool that takes a phrase, runs
-`localsearch search` to find matching files, then for each top hit pulls
-the stored text (`info -c -o json-ld`) and returns a **~100-word window
-centered on the match**.
+So the content tier ships as **two tools, not one** — a *search →
+read-full* pair, the same two-step shape as `vectordb_search` →
+`vectordb_read`, and we get it from the pre-installed index for free
+(part of why `pikuri-vectordb` earns no place here, below):
 
-*Why ~100, not 500.* This tool is the **search** half of a search→read
-pair, not the only step — if a hit looks right, the full document is one
-cheap `info -c` away (parent-document retrieval, the same escalation
-`vectordb_read` gives). So the window only has to be big enough to
-*judge relevance and often answer*, not to be the whole answer. ~100
-words (±~50 around the term, ~130 tokens) hits that: ~8–10 hits still
-fit in ~1k tokens, which matters because the local Qwen is likely served
-with a far smaller context (8–32K) than its 262K ceiling. 50 words is
-too thin (barely beats the native snippet); 500 is *reading a page* —
-that's the escalation step, not the default. Keep it **configurable
-(default ~100, cap ~300–400)**, with "read the full document" as the
-explicit next move.
+- **`fileindex_search`** ({Pikuri::Os::FileindexSearch}) — takes a
+  `query` + `limit` (default 10, max 25), runs `localsearch search -d`,
+  and returns the matching paths, each with the index's **native**
+  one-per-file snippet (ANSI-stripped). It does *not* fabricate a wider
+  window: the index reports one match per file, so the tool is honest
+  about being a locator and tells the model to *read* the file for the
+  full story and any other matches.
+- **`fileindex_read`** ({Pikuri::Os::FileindexRead}) — takes a `path` +
+  `offset`/`limit`, pulls the stored text (`info -c -o json-ld`), and
+  returns it **line-paged `cat -n`** exactly like the `read` tool
+  (shared {Pikuri::Extractor.extract_paged}, same caps and
+  `Use offset=N to continue` trailer). This is the parent-document
+  retrieval step — the full document, not a snippet.
 
-Tool shape (matching the parameter conventions):
+An earlier draft of this note proposed instead a *single* tool that
+collapsed the two calls and returned a configurable **~100-word window
+centered on the match** (`window_words` param, merged sub-windows, a
+stemmed surface-form locator to find the term in the stored text). That
+was **not** built and is **superseded**: the shipped pair is simpler
+(no in-tool windowing, no stemmer to chase localsearch's FTS stemming),
+honest about the index's one-snippet-per-file reality, and reuses the
+`read`-tool paging machinery wholesale. Relevance-judging is the native
+snippet's job; reading is `fileindex_read`'s.
 
-- **Description advertises scope** — that it searches the GNOME index
-  (point at `localsearch status` for what's indexed: `$HOME` + XDG dirs,
-  *not* system paths), so the LLM knows to reach for `grep` on `/etc`,
-  `/var`, etc.
-- **Params:** `query`, `limit` (default ~10), `window_words`
-  (default ~100), optional type filter.
-- **Returns** per hit: path + a ~100-word window centered on the match;
-  ≤2–3 merged windows when a file matches in several places.
-- **Stemming gotcha:** localsearch FTS is stemmed (`environment` matches
-  `environmental`), so a literal grep of the query against the stored
-  text can miss. Locate the **highlighted surface form** the snippet
-  already returns, fall back to a prefix/stem match, then to the
-  document head if still unfound.
-- **Fallbacks:** path outside the index → `rg -C` over the live file
-  (or extract-then-window via `pikuri-extractors`); binary and text are
-  both handled because `info -c` returns already-extracted text.
+The shared localsearch backend ({Pikuri::Os::LocalSearch}) holds the
+argv / output-parsing / json-ld knowledge for both tools; it is not a
+`Pikuri::Tool` itself. Both tools fail loud at construction if
+`localsearch` is missing, and the extension wires them only when it's
+present (degrading to omitted otherwise).
 
-This is the content half of "spotlight" as one tool the LLM reaches for
-— `grep`'s `-C`, but word-based and able to see inside PDFs/office docs.
+This is the content half of "spotlight": a keyword search that sees
+inside PDFs/office docs, paired with a full-text read — `grep` plus
+`read`, but over the desktop index instead of the live bytes.
 
 Three caveats, all of which point to keeping `rg` as the fallback, not
 the primary:
@@ -339,8 +331,8 @@ the primary:
    content index.
 
 So: filenames via `find`, content via `localsearch` (discover with
-`search`, read full text with `info -c`) when healthy and in-scope,
-`rg` + on-demand extraction everywhere else.
+`fileindex_search`, read full text with `fileindex_read`) when healthy
+and in-scope, `rg` + on-demand extraction everywhere else.
 
 **`pikuri-vectordb` is explicitly *not* the upgrade path here.** It is
 not a better `localsearch` — it's a *different* tool (semantic/embedding
@@ -356,7 +348,7 @@ keeps its existing, distinct job — a small *curated* corpus
 (`pikuri-corpus`), not the home directory — and stays out of this
 design.
 
-The one honest caveat to test for: the windowed content tool is only as
+The one honest caveat to test for: `fileindex_search` is only as
 good as `localsearch`'s **keyword** match. A fuzzy/semantic ask ("the
 doc about our refund policy") can miss when the words don't literally
 appear — and that miss is exactly the gap semantic recall would close.
@@ -666,8 +658,9 @@ So: **a new `pikuri-os` gem**, depending on `pikuri-core` +
 `pikuri-workspace` + `pikuri-code` (and deliberately *not* mcp / memory /
 vectordb). It holds the OS-integration surface and the demo binary:
 
-- `Os::LocalSearch` — the localsearch content-search wrap tool
-  (§"File search").
+- `Os::FileindexSearch` / `Os::FileindexRead` — the localsearch
+  *search → read-full* tool pair, over the shared `Os::LocalSearch`
+  backend module (§"File search").
 - The `MACHINE.md` resident memory — boot-append + edit target
   (§"Memory").
 - Boot grounding — `inxi -b` + primitives (§"How the LLM learns about
