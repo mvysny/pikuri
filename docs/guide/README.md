@@ -12,15 +12,19 @@ local site, or — once gems are published — see
 
 ## How the guide is shaped
 
-A chapter zero of one-time machine setup, then twelve chapters in
-three movements. The first two are the base
-vocabulary; the middle six are the **assistant track** (broader
-audience, privacy-conscious user), capped by the security
-chapter that earns the reassurance prefixes above each earlier
-chapter; the last four are the **code track** (narrower
-audience, developer-flavoured), revisiting MCP and security at
-the sharper edges. Tasks and skills close out as smaller
-chapters that apply across both tracks.
+A chapter zero of one-time machine setup, then thirteen chapters.
+The first two are the base vocabulary. Chapters 3–7 are the
+**assistant track** (broader audience, privacy-conscious user):
+recall, memory, and MCP, capped by the security chapter (6) and
+then paid off concretely by chapter 7 — the first *complete,
+fully-implemented* assistant in the book, a full-disk OS helper
+made safe by a severed network. Chapters 8–10 are the **code
+track** (narrower audience, developer-flavoured): it opens by
+taking the very seams chapter 7 introduced and growing the
+*opposite* teeth, then revisits MCP and security at the sharper
+edges. Tasks and skills (11–12) close out as smaller chapters
+across both tracks, and chapter 13 is a coda — the universal
+assistant that combines every gem, landing once they stabilise.
 
 ## Chapters
 
@@ -49,7 +53,7 @@ chapters that apply across both tracks.
    private, give the reader an agent that can't leak it. Demo via
    `pikuri-corpus` against the pikuri guide itself. (The
    privilege-separated `LIBRARIAN` persona, for an agent that
-   *does* have egress, is deferred to chapters 6–7.)
+   *does* have egress, is deferred to chapter 13.)
 4. **[Memories](04-memories.md).** Durable facts the agent keeps
    across conversations, paired with chapter 3's vector DB for
    recall. The three retrieval tiers (resident persona / automatic
@@ -74,15 +78,27 @@ chapters that apply across both tracks.
    operational one. No new binary — read it before pointing any
    write- or network-capable agent at something sensitive. This
    is where every "chapter 6 explains why" reassurance pays off.
-7. **[pikuri-assistant (stub)](07-assistant.md).** Placeholder.
-   The privacy-conscious assistant binary that integrates
-   vectordb, memories, MCP, and the four bundled tools. Stub
-   until the gems it depends on stabilise.
-8. **[The in-repo coding agent](08-code.md).** The dense
-   chapter. Three new seams at once (`Workspace`, `Confirmer`,
-   `Sandbox`), file + shell tools, and read-only code recon via
-   the `FILE_MINER` persona. The mechanics; the threat model
-   moves to chapter 9 as its closing pair.
+7. **[The OS assistant: your machine, no network](07-os-assistant.md).**
+   The first complete assistant in the book — and the gentle
+   introduction of the file/shell/sandbox/confirmer seams through
+   a concept every reader owns: operating their own machine. Full
+   read-write over the disk, but the network severed *by the
+   kernel* (`FullFsNoNet`) — the trifecta's egress leg cut
+   structurally, chapter 6 made concrete. Confirmed mutations, a
+   read-only auto-confirmer, spotlight-style content search over
+   the GNOME index, and a `MACHINE.md` resident memory. No MCP, no
+   mem0, no vectordb — deliberately minimal. Demo via
+   `pikuri-os-assistant`.
+8. **[The in-repo coding agent](08-code.md).** The same three
+   seams from chapter 7 — `Workspace`, `Confirmer`, `Sandbox` —
+   now in a developer's hands and grown up: where chapter 7
+   severed the network and kept the disk, the coding agent keeps
+   the network (builds need it) and confines the disk instead
+   (`Bubblewrap` + a project-rooted workspace). Same adversary,
+   opposite trifecta leg. Plus read-only recon via `FILE_MINER` /
+   `GIT_REPO_RESEARCHER` and the git-config hardening chapter 7
+   deferred. The mechanics; the threat model moves to chapter 9 as
+   its closing pair.
 9. **[Security revisited: the coding-agent shape](09-security-revisited.md).**
    What `pikuri-code`'s defaults actually protect and where they
    stop, plus wrapping the whole pikuri process in Docker for
@@ -102,7 +118,14 @@ chapters that apply across both tracks.
     chapter — what skills are in one paragraph, a minimal `lol`
     demo, and a TBD list. Coming back to flesh out once the
     guide has workflows that motivate it.
+13. **[pikuri-assistant (stub)](13-assistant.md).** The book's
+    coda: the universal privacy-conscious assistant — vector-DB
+    recall, persistent memories, MCP, and the four bundled tools
+    in one binary, the one agent that reaches for all three
+    trifecta legs. Stub until the gems it integrates stabilise and
+    the quarantined corpus wiring (persona-owned tools) lands.
 
-Further chapters (a deeper `pikuri-assistant` walkthrough, more
-advanced coding-agent recipes) will land as those surfaces
+Further chapters — a deeper `pikuri-assistant` walkthrough, the OS
+assistant *with* internet (the trifecta's third leg returns), and
+more advanced coding-agent recipes — will land as those surfaces
 stabilise.

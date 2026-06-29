@@ -22,7 +22,7 @@ uses semver as documented in `lib/pikuri/version.rb`.
   pikuri-core (guide ch1) — scraping a PDF there now surfaces
   `Error: ...` until ch3 plugs the extractor in. Pick-one-per-wiring
   with pikuri-extractors' new PDF arm: `bin/pikuri-assistant`
-  registers `DOCUMENTS` instead, superseding this gem in the ch7
+  registers `DOCUMENTS` instead, superseding this gem in the ch13
   shape (untrusted documents on an egress-capable agent parse in the
   sandbox); this gem is the no-infrastructure wiring with lazy
   paging and PDF-specific Read-tool wording.

@@ -204,7 +204,7 @@ files, no memory — the missing trifecta leg from the top of this
 chapter is missing *structurally*, baked into the binary, not held
 open by your restraint. (That's also why this demo gets its own
 binary instead of riding `pikuri-assistant`: the assistant will
-grow memory and file access in [chapter 7](07-assistant.md), and
+grow memory and file access in [chapter 13](13-assistant.md), and
 this chapter's "nothing private is wired in" guarantee has to
 survive that.)
 
@@ -289,7 +289,7 @@ shows up one more time here:
   `#close`.
 
 The registry is the layer `bin/pikuri-openlibrary` hardcodes —
-and the layer `bin/pikuri-assistant` ([chapter 7](07-assistant.md))
+and the layer `bin/pikuri-assistant` ([chapter 13](13-assistant.md))
 instead leaves as an empty slot for you to hand-edit your own
 servers into.
 
@@ -349,7 +349,7 @@ Sub-agents do **not** inherit the extension or the `mcp_connect`
 tool — the chapter 2 lesson about extension non-inheritance
 applies. `pikuri-openlibrary` spawns no sub-agents, but the rule
 matters the moment you wire MCP into an agent that does, as
-[chapter 7](07-assistant.md)'s assistant will: a `RESEARCHER` it
+[chapter 13](13-assistant.md)'s assistant will: a `RESEARCHER` it
 spawns has no way to reach the Open Library MCP. If you want a
 persona to reach MCP tools, you'd have to write one whose
 `tool_names` includes the MCP-synthesised tools by name — out of

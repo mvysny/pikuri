@@ -442,7 +442,7 @@ a **hard boundary, not advice**: porting memory onto an egress-capable
 agent re-opens recall-poisoning, and you'd have to re-derive the
 mitigations (cap recall size, frame recalled text as untrusted, log
 every recall) before doing it. [Chapter 6](06-security.md) makes the
-full argument; [chapter 7](07-assistant.md) is where memory, vector
+full argument; [chapter 13](13-assistant.md) is where memory, vector
 search, and MCP finally share one agent and the cuts have to be made.
 
 ## The forget story
@@ -480,7 +480,7 @@ for readers who want the full design journey rather than the tour.
 Chapters 3 and 4 are the two halves of recall: vector search *over a
 corpus you indexed*, and memory *of facts the agent learned about
 you*. They pair naturally inside `pikuri-assistant`
-([chapter 7](07-assistant.md)) — but that's still a few chapters off,
+([chapter 13](13-assistant.md)) — but that's still a few chapters off,
 and it's the chapter where these private capabilities first share an
 agent that *also* has egress, so it leans hardest on the security kit.
 

@@ -351,7 +351,7 @@ per-gem one-liners:
   five transitive deps stay out of the core audit tree. Wired by
   `bin/pikuri-corpus` (guide ch3 — the no-docker registry intro);
   deliberately NOT by `bin/pikuri-chat` (ch1 stays pure-core) nor by
-  `bin/pikuri-assistant` (ch7 supersedes it with pikuri-extractors'
+  `bin/pikuri-assistant` (ch13 supersedes it with pikuri-extractors'
   sandboxed PDF arm — one extractor per format per wiring; the
   trade-off table lives in {Pikuri::Extractors::Documents}'s
   yardoc). Depends on `pikuri-core` + pdf-reader.
@@ -463,7 +463,7 @@ per-gem one-liners:
   egress; it is NOT wired in `bin/pikuri-corpus` (a correct wiring
   needs persona-owned tools — see `ideas/trifecta-detector.md` —
   since sub-agent tools are a subset of the parent's). Its worked
-  home is `pikuri-assistant` (ch7); same precedent as
+  home is `pikuri-assistant` (ch13); same precedent as
   `GIT_REPO_RESEARCHER`. Depends on `pikuri-core` +
   `pikuri-subagents` + the `listen` gem (filesystem events for
   `Watcher`).
@@ -522,7 +522,7 @@ per-gem one-liners:
   arm supersedes ch3's pikuri-pdf — untrusted documents on an
   egress-capable agent parse in the sandbox) +
   `pikuri-vectordb` + `pikuri-memory` — the last two are
-  forward-prep for the ch7 assistant shape: declared but not yet
+  forward-prep for the ch13 assistant shape: declared but not yet
   wired in the binary (vectordb's correct wiring is gated on
   persona-owned tools, see `ideas/trifecta-detector.md`).
 - **`pikuri/`** (metagem) — `lib/pikuri.rb` is the sibling

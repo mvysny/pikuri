@@ -143,7 +143,7 @@ Why Qdrant gets the recommendation, in pikuri-specific order:
    technology to learn, audit, and trust — and one image on disk —
    instead of two. (Instances stay separate; only the engine
    converges. Sharing one instance is a possible later step, gated on
-   the ch7 assistant wiring.)
+   the ch13 assistant wiring.)
 2. **Wire-surface stability.** Qdrant's 1.x REST has been stable since
    2023; Chroma has one major API break on record. Pikuri hand-rolls
    its backend clients, so API churn is paid in pikuri's own code.

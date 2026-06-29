@@ -38,7 +38,7 @@ means no docker and no host CLIs, and it's what makes the lazy
 page-windowed reads possible (a subprocess converter must convert
 the whole document before emitting anything, and re-converts it on
 every paged read). The guide wires this gem in chapter 3 and
-supersedes it with pikuri-extractors in chapter 7's assistant.
+supersedes it with pikuri-extractors in chapter 13's assistant.
 
 ## Install
 

@@ -41,7 +41,7 @@ instructions.
   [Chapter 5 of the guide](../docs/guide/05-mcp.md) walks the
   MCP-side wiring of this binary end-to-end with a gentle
   example (a local iCalendar reader), and
-  [chapter 7](../docs/guide/07-assistant.md) is the placeholder
+  [chapter 13](../docs/guide/13-assistant.md) is the placeholder
   for a fuller `pikuri-assistant` walkthrough — landing once the
   vectordb and memories surfaces stabilise. See
   [the guide's index](../docs/guide/) for the current state.

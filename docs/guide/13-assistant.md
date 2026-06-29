@@ -1,21 +1,26 @@
-# Chapter 7 — pikuri-assistant (stub)
+# Chapter 13 — pikuri-assistant (stub)
 
-> **Stub chapter.** `pikuri-assistant` exists as a binary in the
-> repo, but the surface it integrates — vector-DB recall
-> ([chapter 3](03-vectordb.md)), persistent memories
-> ([chapter 4](04-memories.md)) — isn't stable yet. This chapter is
-> a placeholder until those land. For now: a one-paragraph "what
-> it is," and a TBD list of what the full chapter will cover.
+> **Stub chapter, and the book's coda.** `pikuri-assistant` exists
+> as a binary in the repo, but the surface it integrates — vector-DB
+> recall ([chapter 3](03-vectordb.md)), persistent memories
+> ([chapter 4](04-memories.md)), MCP ([chapter 5](05-mcp.md)) —
+> isn't all stable yet. This chapter is a placeholder until those
+> land. For now: a one-paragraph "what it is," and a TBD list of
+> what the full chapter will cover.
 
-You've just read [chapter 6](06-security.md) — the kit, the
-trifecta, the decision procedure. `pikuri-assistant` is the first
-binary in this guide where the kit's reassurances are
-*load-bearing* rather than aspirational: an assistant that
-remembers things about you, can look across your notes, and
-plugs into MCP servers is an agent with all three legs at the
-parent if you're not careful. The chapter that walks it through
-end-to-end will be the chapter that shows you which legs each
-piece holds, and where the kit cuts.
+Every other agent in this book holds at most two of the trifecta's
+three legs. The OS assistant ([chapter 7](07-os-assistant.md)) keeps
+the disk and severs the network; the coding agent
+([chapter 8](08-code.md)) keeps the network and confines the disk.
+`pikuri-assistant` is the one binary that *reaches for all three* —
+an assistant that remembers things about you (private data), looks
+across your notes, browses the web, and plugs into MCP servers
+(untrusted content + egress) is an agent with the full trifecta at
+the parent if you're not careful. That's exactly why it's last, and
+why it's still a stub: the chapter that walks it through end-to-end
+is the chapter that has to show which legs each piece holds and where
+the kit ([chapter 6](06-security.md)) cuts — and the quarantined
+wiring that makes those cuts real isn't built yet (below).
 
 ## What it is, in one paragraph
 
@@ -141,10 +146,14 @@ What the full chapter will cover, once the gems land:
 
 ## What's next
 
-The remaining chapters revisit the kit on the
-sharper-edges side — [chapter 8 — the in-repo coding
-agent](08-code.md) is the dense file/shell/sandbox chapter,
-[chapter 9 — security revisited](09-security-revisited.md) closes
-on the code-track threat model, and [chapter 10 — MCPs
-revisited](10-mcp-revisited.md) wires the GitHub MCP server in
-Docker as the worked example for higher-stakes integrations.
+This is the last chapter as the guide stands — the coda the rest of
+the book builds toward. The seams it leans on are all in place: the
+file/shell/sandbox/confirmer kit from chapters 7 and 8, the trifecta
+calculus from [chapter 6](06-security.md), corpus recall from
+[chapter 3](03-vectordb.md), memories from
+[chapter 4](04-memories.md), and MCP from [chapter 5](05-mcp.md).
+What's missing is the gem stability and the persona-owned-tools
+prerequisite above; once they land, this stub becomes the end-to-end
+walkthrough. A further chapter — the OS assistant *with* internet,
+where the trifecta's third leg returns — waits on the same taint
+machinery this chapter's quarantine needs.

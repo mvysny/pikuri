@@ -1,16 +1,28 @@
 # Chapter 8 — The in-repo coding agent
 
-This is the dense chapter. `pikuri-code` is an in-repo coding
-agent in the spirit of Claude Code / opencode / pi-code, and
-wiring it up reapplies the Extension pattern from chapter 2 across
-**three new seams at once** — `Workspace` (what the LLM sees on
-the filesystem), `Confirmer` (how user-state mutations get
-approved), and `Sandbox` (what filesystem the `bash` subprocess
-actually runs against). It also wires three sub-agent personas:
-`FILE_MINER` (the read-only counterpart to `RESEARCHER` from chapter 2)
-for code recon, `RESEARCHER` itself for web lookups, and
-`GIT_REPO_RESEARCHER` for the "clone a public repo and dig
-through it" case.
+`pikuri-code` is an in-repo coding agent in the spirit of Claude
+Code / opencode / pi-code. You already met its machinery in
+[chapter 7](07-os-assistant.md): the three filesystem-and-shell seams
+— `Workspace` (what the LLM sees on the filesystem), `Confirmer` (how
+user-state mutations get approved), and `Sandbox` (what filesystem the
+`bash` subprocess actually runs against) — were introduced there, at
+introductory depth, through the OS assistant. This chapter takes the
+*same three seams* and grows them up for a developer's repo, then
+unpacks the edges chapter 7 deferred (bubblewrap's overlays, the
+git-config hardening), and adds three sub-agent personas: `FILE_MINER`
+(the read-only counterpart to `RESEARCHER` from chapter 2) for code
+recon, `RESEARCHER` itself for web lookups, and `GIT_REPO_RESEARCHER`
+for the "clone a public repo and dig through it" case.
+
+The single sentence that ties this chapter to the last: chapter 7's
+OS assistant kept the whole disk and severed the network — it cut the
+trifecta's *egress* leg, because reading your machine was its job.
+The coding agent makes the **opposite cut**. A build genuinely needs
+the network (npm, `git fetch`), so egress stays; what it gives up
+instead is disk-reach — `Sandbox::Bubblewrap` confines `bash` to the
+project, and a project-rooted `Workspace` confines the file tools the
+same way, so an injection can phone home but has nothing of yours to
+send. Same adversary, opposite leg.
 
 The three seams are the **kit slots** from [chapter 6](06-security.md)
 made concrete. Read this chapter for the *mechanics*; for the
@@ -21,9 +33,11 @@ inside it.
 
 ## Prerequisites
 
-Chapters 1, 2, and 6 — you'll meet the kit slots here that
-[chapter 6](06-security.md) named. `llama-server` running.
-`bundle install` done. Plus a couple of OS-level pieces:
+Chapters 1, 2, 6, and 7 — chapter 7 introduced the `Workspace` /
+`Confirmer` / `Sandbox` seams you'll see grown up here, and
+[chapter 6](06-security.md) named the kit slots they fill.
+`llama-server` running. `bundle install` done. Plus a couple of
+OS-level pieces:
 
 - **`bubblewrap`** (`bwrap`) — the filesystem sandbox the `bash`
   tool uses by default. On Debian / Ubuntu:

@@ -629,7 +629,7 @@ The instinct to reuse `pikuri-assistant` should be resisted — it's the
 wrong home, for two reasons:
 
 - **Opposite posture.** `pikuri-assistant` is the egress-capable,
-  MCP-wired, mem0 + vectordb assistant (ch7). This agent is the inverse:
+  MCP-wired, mem0 + vectordb assistant (ch13). This agent is the inverse:
   no egress, no MCP, no mem0 (it uses `MACHINE.md`), no vectordb. Sharing
   a gem drags those deps into a binary that must *not* wire them, bloating
   the audit surface of an agent whose whole pitch is "small, no-egress,

@@ -93,7 +93,7 @@ module Pikuri
     #   bytes in-process (pure Ruby, so DoS at worst).
     #
     # The guide walks this as a progression: chapter 3 wires
-    # pikuri-pdf (no docker yet), chapter 7's assistant supersedes it
+    # pikuri-pdf (no docker yet), chapter 13's assistant supersedes it
     # with this extractor.
     #
     # == Deliberately out of scope

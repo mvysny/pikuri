@@ -314,7 +314,7 @@ Two deliberate design choices worth noticing:
 
 One forward note: pikuri-pdf is the *training-wheels* PDF extractor
 — in-process, pure Ruby, nothing to install — and it's the right
-wiring for this chapter's no-egress corpus agent. Chapter 7's
+wiring for this chapter's no-egress corpus agent. Chapter 13's
 assistant, which fetches untrusted documents from the open web,
 will swap it out for `pikuri-extractors`: the same registry slot,
 but the parsing happens inside a networkless docker container, and
@@ -438,7 +438,7 @@ behind a sub-agent that itself has no egress: the bundled
 `LIBRARIAN` persona, the privilege-separation arc from
 [chapter 2](02-subagents.md) applied to retrieval. [Chapter
 6](06-security.md) makes the full trifecta argument and shows where
-the `LIBRARIAN` cut goes; [chapter 7](07-assistant.md) wires it into
+the `LIBRARIAN` cut goes; [chapter 13](13-assistant.md) wires it into
 the assistant. Here, with retrieval as the agent's only job, we
 don't need it.
 
@@ -571,7 +571,7 @@ takes the Qdrant container down — so no write is ever cut off
 half-done. The next boot's reconcile sweep folds in anything the
 interrupted run didn't reach.
 
-This is the shape `pikuri-assistant` ([chapter 7](07-assistant.md))
+This is the shape `pikuri-assistant` ([chapter 13](13-assistant.md))
 builds on: a corpus that stays indexed between sessions and keeps
 itself current.
 
@@ -582,7 +582,7 @@ indexed*. The next chapter — [memories](04-memories.md) — is the
 other half: recall *of facts the agent learned across earlier
 conversations*. The two pair naturally inside
 `pikuri-assistant` — the privacy-conscious assistant binary
-chapter 7 walks through, with vector search over your notes plus
+chapter 13 walks through, with vector search over your notes plus
 persistent memories about you across sessions — but each is
 introduced on its own first.
 

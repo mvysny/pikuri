@@ -80,10 +80,10 @@ authoritative reference, and the `pikuri-skills`
 
 ## What's next
 
-This is the last chapter. The natural follow-on is a fleshed-out
-version of [chapter 7 — pikuri-assistant](07-assistant.md),
-which itself waits on the vectordb and memories gems
-stabilising. Until then, the vocabulary you have now
+The book closes on [chapter 13 — pikuri-assistant](13-assistant.md),
+itself still a stub; a fleshed-out version of it — waiting on the
+vectordb and memories gems stabilising — is the natural follow-on
+to the whole guide. Until then, the vocabulary you have now
 (`Pikuri::Agent`, `Tool`, listeners, the Extension protocol,
 configure/bind, sub-agent privilege separation, the kit from
 chapter 6, MCP's verifier + synthesizer + per-agent

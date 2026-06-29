@@ -5,12 +5,14 @@ far has been pointing at. Up to now you've been told the
 defaults are designed to be safe and that this chapter explains
 why — that explanation lives here. From this chapter onward,
 you'll meet harnesses where the kit below is **load-bearing**
-rather than aspirational: [chapter 7](07-assistant.md) is an
-assistant that remembers things across conversations,
+rather than aspirational: [chapter 7](07-os-assistant.md) is a
+full-disk OS assistant made safe by a kernel-severed network,
 [chapter 8](08-code.md) is a coding agent with `bash` plus
 network egress, [chapter 10](10-mcp-revisited.md) wires in MCPs
-that hold credentials. Each of those rests on a piece of what
-this chapter introduces.
+that hold credentials, and [chapter 13](13-assistant.md) is the
+universal assistant that reaches for all three trifecta legs at
+once. Each of those rests on a piece of what this chapter
+introduces.
 
 That framing matters because pikuri is a *toolkit*, not a single
 product. `pikuri-chat`, `pikuri-assistant`, and `pikuri-code` are
@@ -464,13 +466,15 @@ Stated plainly so the model above isn't mistaken for a guarantee
 
 ## What's next
 
-[Chapter 7 — pikuri-assistant (stub)](07-assistant.md) is the
-first binary in the guide where the kit above is *load-bearing*
-rather than aspirational: an assistant that remembers things
-about you and looks across your notes is an agent with the
-private-data leg by definition. The chapter is a stub until the
-gems it integrates stabilise, but the framing from this chapter
-is the lens you'd read it through once it lands.
+[Chapter 7 — the OS assistant](07-os-assistant.md) is the first
+binary in the guide where the kit above is *load-bearing* rather
+than aspirational — and the cleanest demonstration of one move
+from this chapter. It holds two trifecta legs (your whole disk,
+untrusted logs and downloads) and structurally removes the third:
+the network is severed in the kernel, so a poisoned file has
+nowhere to send what it steals. The universal assistant that
+reaches for all three legs at once waits for
+[chapter 13](13-assistant.md).
 
 For the committed one-page posture — what pikuri guarantees and
 what it explicitly doesn't — see [`SECURITY.md`](../../SECURITY.md)
