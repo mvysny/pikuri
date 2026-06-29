@@ -20,8 +20,8 @@ then paid off concretely by chapter 7 — the first *complete,
 fully-implemented* assistant in the book, a full-disk OS helper
 made safe by a severed network. Chapters 8–10 are the **code
 track** (narrower audience, developer-flavoured): it opens by
-taking the very seams chapter 7 introduced and growing the
-*opposite* teeth, then revisits MCP and security at the sharper
+taking the very seams chapter 7 introduced and making the
+*opposite* cut, then revisits MCP and security at the sharper
 edges. Tasks and skills (11–12) close out as smaller chapters
 across both tracks, and chapter 13 is a coda — the universal
 assistant that combines every gem, landing once they stabilise.

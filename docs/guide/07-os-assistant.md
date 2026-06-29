@@ -142,11 +142,13 @@ narrowing is a credential denylist for the *file tools* — they won't
 read `~/.ssh`, `~/.aws`, and friends — though `bash`, running as you,
 still can if you confirm a command that does.
 
-With containment switched off, the Workspace's one remaining tooth is
-the **read-before-edit gate**: `edit` (and an overwriting `write`)
+Think of the Workspace as a fence around what the LLM can touch
+through the file tools. Here the perimeter is down on purpose — the
+whole disk is in scope — so just one gate still stands in it: the
+**read-before-edit gate**, where `edit` (and an overwriting `write`)
 refuses a path the agent hasn't `read` first. It's a small thing here;
-chapter 8 grows the second tooth, containment, when the stakes are a
-shared repo rather than your own machine.
+chapter 8 raises the perimeter too, fencing the file tools into the
+project, when the stakes are a shared repo rather than your own machine.
 
 ## The Confirmer seam — mutations stop for a human
 
@@ -216,7 +218,7 @@ genuine changes you want to see anyway.
 ## Finding things — fileindex_search and fileindex_read
 
 `find` and `grep` are fine for filenames and plain-text content, but
-they're slow over a cold home directory and blind to PDFs and office
+they're slow over the entire home directory and blind to PDFs and office
 documents. GNOME already solved this: the desktop ships `localsearch`,
 a file indexer that has *already extracted the full text* of your
 PDFs, spreadsheets, and documents, and it's entirely local — inbound
@@ -345,7 +347,7 @@ design simple and safe.
 ## What's next
 
 [Chapter 8 — the in-repo coding agent](08-code.md) takes the four
-seams you just met and grows the *other* teeth. Where this agent
+seams you just met and makes the opposite cut. Where this agent
 severed the network and kept the whole disk, the coding agent keeps
 the network — a build needs it — and confines the disk instead:
 `Bubblewrap` in place of `FullFsNoNet`, a project-rooted `Workspace`
