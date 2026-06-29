@@ -360,6 +360,18 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal "alpha\nbeta\n", (root + 'foo.rb').binread
     end
 
+    it "surfaces the flag's custom reason in the refusal" do
+      write_file('foo.rb', "alpha\nbeta\n")
+      custom = Pikuri::Workspace::ReadOnly.new(message: 'plan mode is on; call exit_plan_mode')
+      custom.activate!
+
+      result = described_class.edit(workspace: workspace, read_only: custom,
+                                    path: 'foo.rb', old_string: 'beta',
+                                    new_string: 'BETA', replace_all: false)
+
+      assert_match(/cannot edit foo\.rb — plan mode is on; call exit_plan_mode/, result)
+    end
+
     it 'edits normally once read-only is deactivated' do
       write_file('foo.rb', "alpha\nbeta\n")
       read_only.activate!

@@ -85,8 +85,12 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 # the PlanModeChanged event the Terminal listener renders). The host
 # keeps the reference so the REPL can flip it on the /plan and /impl
 # slash commands below (a future TUI from a key binding). It gates
-# Write/Edit only, NOT bash — see Pikuri::Workspace::ReadOnly.
-read_only = Pikuri::Workspace::ReadOnly.new
+# Write/Edit only, NOT bash — see Pikuri::Workspace::ReadOnly. The
+# refusal message is plan-mode's (names exit_plan_mode), owned by
+# Code::Extension.
+read_only = Pikuri::Workspace::ReadOnly.new(
+  message: Pikuri::Code::Extension::PLAN_MODE_READONLY_MESSAGE
+)
 
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.from_openai_server(

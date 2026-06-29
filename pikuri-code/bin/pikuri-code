@@ -276,8 +276,11 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 # and the REPL flips it on the /plan and /impl slash commands below (a
 # future TUI would flip it from a key binding); the model can also
 # enter/exit via its own tools. It gates Write/Edit only, NOT bash —
-# see Pikuri::Workspace::ReadOnly.
-read_only = Pikuri::Workspace::ReadOnly.new
+# see Pikuri::Workspace::ReadOnly. The refusal message is plan-mode's
+# (names exit_plan_mode), owned by Code::Extension.
+read_only = Pikuri::Workspace::ReadOnly.new(
+  message: Pikuri::Code::Extension::PLAN_MODE_READONLY_MESSAGE
+)
 
 # MCP servers available to the assistant. Hand-edit this array to add
 # providers — id is what the LLM references via +mcp_connect("...")+.

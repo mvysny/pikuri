@@ -53,13 +53,34 @@ module Pikuri
     # transition. Callbacks run *outside* the lock so a callback that
     # re-enters this object (or blocks) can't deadlock the next flip.
     class ReadOnly
+      # Default reason clause, used when the host gives no +message:+.
+      # Self-contained and posture-agnostic — it must NOT assume plan
+      # mode is the reason (a host can engage read-only for other
+      # reasons). {Write} / {Edit} splice it after their own
+      # "cannot <verb> <path> — " prefix, so it is just the trailing
+      # explanation. A feature that drives this flag (pikuri-code's plan
+      # mode) passes its own, more actionable reason instead — see
+      # {Pikuri::Code::Extension::PLAN_MODE_READONLY_MESSAGE}.
+      #
+      # @return [String]
+      DEFAULT_MESSAGE = 'the workspace is read-only, so changes are disabled right now'
+
       # @param active [Boolean] initial posture; +true+ starts the
       #   workspace already read-only (e.g. a +--plan+ startup flag).
-      def initialize(active: false)
+      # @param message [String] the reason clause {Write} / {Edit} append
+      #   to their refusal; defaults to {DEFAULT_MESSAGE}. Immutable once
+      #   set — the host (which constructs the shared flag) supplies the
+      #   wording, sourcing it from whatever feature drives the flag.
+      def initialize(active: false, message: DEFAULT_MESSAGE)
         @mutex = Mutex.new
         @active = active
+        @message = message
         @on_change = []
       end
+
+      # @return [String] the reason clause to surface when a write is
+      #   refused; see {#initialize}.
+      attr_reader :message
 
       # @return [Boolean] whether writes are currently disabled.
       #   Observable from any thread.

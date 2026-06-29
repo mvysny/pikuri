@@ -146,11 +146,7 @@ module Pikuri
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
       # @return [String] tool observation
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:, read_only: nil)
-        if read_only&.active?
-          return "Error: cannot edit #{path} — the workspace is read-only " \
-                 'right now. If you are planning, add this change to your ' \
-                 'plan and leave plan mode to apply it.'
-        end
+        return "Error: cannot edit #{path} — #{read_only.message}" if read_only&.active?
 
         return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?
         return 'Error: old_string and new_string are identical — this edit is a no-op.' if old_string == new_string

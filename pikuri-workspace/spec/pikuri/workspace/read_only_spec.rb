@@ -11,6 +11,18 @@ RSpec.describe Pikuri::Workspace::ReadOnly do
     end
   end
 
+  describe '#message' do
+    it 'defaults to the generic, posture-agnostic reason' do
+      assert_equal described_class::DEFAULT_MESSAGE, described_class.new.message
+      refute_match(/plan mode/i, described_class.new.message)
+    end
+
+    it 'honors a custom reason supplied by the host' do
+      flag = described_class.new(message: 'we are in plan mode; call exit_plan_mode')
+      assert_equal 'we are in plan mode; call exit_plan_mode', flag.message
+    end
+  end
+
   describe '#activate! / #deactivate!' do
     it 'activate! turns the flag on' do
       flag = described_class.new

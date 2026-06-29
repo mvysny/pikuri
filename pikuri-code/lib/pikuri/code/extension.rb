@@ -84,6 +84,20 @@ module Pikuri
         'Reminder: you are in plan mode (read-only) — research, design, ' \
         'and brainstorm, but do not edit files.'
 
+      # Reason clause for a write/edit refusal *while plan mode is the
+      # reason the workspace is read-only*. Handed to
+      # {Pikuri::Workspace::ReadOnly} (via the host) so that a refused
+      # Write/Edit names the recovery path — +exit_plan_mode+ — instead
+      # of the generic {Pikuri::Workspace::ReadOnly::DEFAULT_MESSAGE},
+      # which can't assume plan mode is the cause. The owning words live
+      # here, in pikuri-code, beside {PLAN_MODE_PROMPT} /
+      # {PLAN_MODE_REMINDER}; the host just wires it into the flag.
+      #
+      # @return [String]
+      PLAN_MODE_READONLY_MESSAGE =
+        'you are in plan mode (read-only). Add this change to your plan and ' \
+        'call exit_plan_mode to present it; you can apply it once the user approves.'
+
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]

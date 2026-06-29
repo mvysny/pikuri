@@ -112,11 +112,7 @@ module Pikuri
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
       # @return [String] tool observation
       def self.write(workspace:, confirmer:, path:, content:, read_only: nil)
-        if read_only&.active?
-          return "Error: cannot write #{path} — the workspace is read-only " \
-                 'right now. If you are planning, add this change to your ' \
-                 'plan and leave plan mode to apply it.'
-        end
+        return "Error: cannot write #{path} — #{read_only.message}" if read_only&.active?
 
         resolved = workspace.resolve_for_write(path)
 
