@@ -88,9 +88,32 @@ module Pikuri
       #   metacharacter-free destructive subcommands (+--vacuum-*+,
       #   +stop+/+disable+). Recovering their *read* subcommands
       #   (+systemctl status+, plain +journalctl+) needs subcommand-aware
-      #   rules — a deliberate v2 refinement; v1 just delegates them.
+      #   rules of the {#read_only_dpkg?}/{#read_only_apt?} shape below;
+      #   not yet written, so v1 just delegates them.
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
+      #
+      # == Read-only package queries (+dpkg+ / +apt+), unconditional
+      #
+      # +dpkg+ and +apt+ are the same shape as +journalctl+ above — a
+      # mixed binary whose *query* forms are read-only but whose
+      # install/remove forms are not (+dpkg -i+/+-r+/+--purge+,
+      # +apt install+/+remove+/+update+) — so they cannot join
+      # {READ_ONLY_BINARIES} wholesale. {#read_only_dpkg?} and
+      # {#read_only_apt?} recover the query subset the same way
+      # {#read_only_git?} recovers read-only git: the read-only
+      # action/subcommand must appear *immediately* after the binary
+      # name ({READ_ONLY_DPKG_ACTIONS} / {READ_ONLY_APT_SUBCOMMANDS}),
+      # which refuses a leading admindir/root/config redirection
+      # (+dpkg --admindir=/x ...+, +apt -o APT::Foo=bar ...+) by making
+      # the second token not a known query verb.
+      #
+      # Unlike git, these are *unconditional* (no +allow_git:+-style
+      # gate): the query forms read the package database / cache and have
+      # no command-execution vector — apt's pre/post-invoke hooks fire on
+      # install/update, never on +search+/+show+/+list+/+policy+. The
+      # pure-query companion binaries +dpkg-query+ and +apt-cache+ have no
+      # mutating form at all and so sit directly in {READ_ONLY_BINARIES}.
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
@@ -195,7 +218,30 @@ module Pikuri
           'printenv', 'echo', 'printf',
           'whoami', 'id', 'groups',
           'which', 'type',
-          'locale', 'getconf'
+          'locale', 'getconf',
+          'dpkg-query', 'apt-cache'
+        ].freeze
+
+        # +dpkg+ action flags with no mutating form — the only +dpkg+
+        # invocations {#read_only_dpkg?} accepts. Each must appear
+        # immediately after +dpkg+ (so a leading +--admindir+/+--root+
+        # redirection delegates). Deliberately excludes every database
+        # mutator (+-i+/+--install+, +-r+/+--remove+, +-P+/+--purge+,
+        # +--unpack+, +--configure+, +-A+, +--update-avail+,
+        # +--clear-avail+, +--set-selections+, +--clear-selections+).
+        READ_ONLY_DPKG_ACTIONS = Set[
+          '-l', '--list', '-L', '--listfiles', '-s', '--status',
+          '-S', '--search', '-p', '--print-avail'
+        ].freeze
+
+        # +apt+ subcommands that only query the package cache — the only
+        # +apt+ invocations {#read_only_apt?} accepts. Each must appear
+        # immediately after +apt+ (so a leading +-o Foo=bar+ config
+        # injection delegates). These run no pre/post-invoke hooks — those
+        # fire only on the mutating verbs (+install+/+remove+/+update+/
+        # +upgrade+/+purge+/+autoremove+), which are excluded.
+        READ_ONLY_APT_SUBCOMMANDS = Set[
+          'search', 'show', 'list', 'policy', 'depends', 'rdepends'
         ].freeze
 
         # git verbs with no mutating form in any argument — the only git
@@ -271,8 +317,37 @@ module Pikuri
           first = command.split(/\s+/).first
           return false if first.include?('/')
           return true if READ_ONLY_BINARIES.include?(first)
+          return true if read_only_dpkg?(command)
+          return true if read_only_apt?(command)
 
           @allow_git && read_only_git?(command)
+        end
+
+        # @param command [String] one sequencer segment, already stripped
+        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @return [Boolean] whether it is a read-only +dpkg+ query: +dpkg+
+        #   followed *immediately* by a {READ_ONLY_DPKG_ACTIONS} flag.
+        #   Requiring the action right after +dpkg+ refuses a leading
+        #   +--admindir+/+--root+ redirection (the second token would not
+        #   be a known query action) as well as every install/remove form.
+        def read_only_dpkg?(command)
+          tokens = command.split(/\s+/)
+          return false unless tokens[0] == 'dpkg'
+
+          READ_ONLY_DPKG_ACTIONS.include?(tokens[1])
+        end
+
+        # @param command [String] one sequencer segment, already stripped
+        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @return [Boolean] whether it is a read-only +apt+ query: +apt+
+        #   followed *immediately* by a {READ_ONLY_APT_SUBCOMMANDS} verb.
+        #   Requiring the verb right after +apt+ refuses a leading
+        #   +-o Foo=bar+ config injection and every mutating verb.
+        def read_only_apt?(command)
+          tokens = command.split(/\s+/)
+          return false unless tokens[0] == 'apt'
+
+          READ_ONLY_APT_SUBCOMMANDS.include?(tokens[1])
         end
 
         # @param command [String] one sequencer segment, already stripped

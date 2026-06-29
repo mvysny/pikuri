@@ -41,6 +41,19 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       head\ -n20\ /var/log/dmesg
       printenv\ HOME
       grep\ --color=never\ foo\ /tmp/x
+      dpkg\ -l
+      dpkg\ -l\ ruby
+      dpkg\ --list
+      dpkg\ -S\ /bin/ls
+      dpkg\ --search\ /usr/bin/git
+      dpkg\ -L\ coreutils
+      dpkg\ -s\ bash
+      dpkg-query\ -W\ -f\ ruby
+      apt\ search\ ruby
+      apt\ show\ ruby
+      apt\ list\ --installed
+      apt\ policy\ nginx
+      apt-cache\ search\ ruby
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -100,6 +113,17 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'sort -o (writes)'     => 'sort -o out.txt in.txt',
       'systemctl stop'       => 'systemctl stop sshd',
       'journalctl --vacuum'  => 'journalctl --vacuum-time=1s',
+      'dpkg install'         => 'dpkg -i pkg.deb',
+      'dpkg remove'          => 'dpkg -r ruby',
+      'dpkg purge'           => 'dpkg --purge ruby',
+      'dpkg set-selections'  => 'dpkg --set-selections',
+      'dpkg admindir before' => 'dpkg --admindir=/x -i pkg.deb', # redirect before action
+      'apt install'          => 'apt install ruby -y',
+      'apt remove'           => 'apt remove ruby',
+      'apt update'           => 'apt update',
+      'apt upgrade'          => 'apt upgrade',
+      'apt -o before verb'   => 'apt -o APT::Foo=bar install ruby', # config injection before verb
+      'apt-get install'      => 'apt-get install ruby', # apt-get not allowlisted at all
       'git mutation'         => 'git reset --hard',
       'dd'                   => 'dd if=/dev/zero of=/dev/sda',
       'tee (writes)'         => 'tee /etc/hosts',
