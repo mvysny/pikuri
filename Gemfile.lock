@@ -108,6 +108,7 @@ PATH
       pikuri-extractors (= 0.0.7)
       pikuri-mcp (= 0.0.7)
       pikuri-memory (= 0.0.7)
+      pikuri-os (= 0.0.7)
       pikuri-pdf (= 0.0.7)
       pikuri-skills (= 0.0.7)
       pikuri-subagents (= 0.0.7)

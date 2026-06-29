@@ -8,7 +8,7 @@ truth and this file just records the invariant.
 ## What this project is
 
 A Ruby implementation of an AI assistant on top of
-[ruby_llm](https://rubyllm.com), shipped as twelve sibling gems in
+[ruby_llm](https://rubyllm.com), shipped as sibling gems in
 one monorepo. ruby_llm owns the chat transport and the Thought /
 Tool-call / Observation loop; pikuri owns the *extension surface*:
 the strict `Pikuri::Tool::Parameters` validator, the
@@ -36,6 +36,10 @@ The gem inventory:
 - `pikuri-workspace` — `Filesystem` / `Confirmer` seams +
   Read/Write/Edit/Grep/Glob.
 - `pikuri-code` — `Bash` + `bin/pikuri-code` (in-repo coding agent).
+- `pikuri-os` — offline, network-severed OS-helper agent: OS
+  surface (`fileindex_search` / `fileindex_read` over GNOME's
+  localsearch, `MACHINE.md` resident memory, boot grounding) +
+  `bin/pikuri-os-assistant`.
 - `pikuri-mcp` — Model Context Protocol support +
   `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
@@ -50,7 +54,7 @@ The gem inventory:
   (`Memory::Extension`), self-managed mem0 + Qdrant sidecar
   (`Mem0Server`), `bin/pikuri-memory` no-egress demo.
 - `pikuri-assistant` — MCP-aware `bin/pikuri-assistant`.
-- `pikuri` — convenience metagem depending on all twelve.
+- `pikuri` — convenience metagem depending on all the sibling gems.
 
 ## Why this exists
 
@@ -381,6 +385,20 @@ per-gem one-liners:
   pikuri-subagents/pikuri-workspace surface). pikuri-tasks rides
   along on the parent agent only — sub-agents do not inherit
   the task list (consistent with the no-inherit rule).
+- **`pikuri-os/`** — the offline OS-helper agent shape:
+  `Os::Extension` (one-call wiring) layers the OS surface on
+  Workspace + Code — `Os::FileindexSearch` / `Os::FileindexRead`
+  (a search→read-full pair over GNOME's `localsearch`, degrading
+  to omitted when it's absent), `Os::MachineMemory` (the
+  `~/.config/pikuri/MACHINE.md` resident memory folded into the
+  prompt), and `Os::SystemInfo` (boot grounding via `inxi -b` +
+  primitives) — plus `bin/pikuri-os-assistant`. The binary's
+  load-bearing posture is `Sandbox::FullFsNoNet` (full disk,
+  kernel-severed egress) + confirmed mutations + the read-only
+  bash auto-confirmer with the git arm. Depends on `pikuri-core`
+  + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
+  memory / vectordb (keeps the no-egress, audit-first posture).
+  See {Pikuri::Os::Extension} and `ideas/os-assistant.md`.
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
   summarization), `Mcp::Verifier` (injection check), `Mcp::Thinker`
@@ -502,11 +520,11 @@ per-gem one-liners:
   forward-prep for the ch7 assistant shape: declared but not yet
   wired in the binary (vectordb's correct wiring is gated on
   persona-owned tools, see `ideas/trifecta-detector.md`).
-- **`pikuri/`** (metagem) — `lib/pikuri.rb` is twelve `require`s
-  in dependency order. Lockstep version pins. No Ruby code.
+- **`pikuri/`** (metagem) — `lib/pikuri.rb` is the sibling
+  `require`s in dependency order. Lockstep version pins. No Ruby code.
   Releases last on each release.
 
-The seven `bin/pikuri-*` scripts are dev / demo entry points only —
+The `bin/pikuri-*` scripts are dev / demo entry points only —
 not advertised as gem executables. Production binaries built on
 pikuri (notably the planned `pikuri-tui`) live in downstream gems.
 
