@@ -52,16 +52,23 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
     end
   end
 
-  describe 'auto-approves &&-joined chains of read-only commands' do
+  describe 'auto-approves sequencer-joined chains of read-only commands' do
     # Every segment is independently a provably read-only invocation, so
-    # the conjunction is read-only too.
+    # the composition (&&, ||, ;, |) is read-only too.
     [
       'ls && pwd',
       'df -h && free -m',
       'cat a && cat b',
       'cd /home/u/notes && ls -la',
       'cd /etc && cat hostname && wc -l fstab',
-      'ls&&pwd' # no spaces around the operator
+      'ls&&pwd',                   # no spaces around the operator
+      'ps aux | grep ssh',         # pipe
+      'ls | wc -l',
+      'cat a | grep b | head',     # multi-stage pipe
+      'ls; pwd',                   # semicolon
+      'df -h ; free -m',
+      'ls || pwd',                 # logical-or
+      'cd /etc && cat hostname | wc -l' # mixed operators
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -97,16 +104,24 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'dd'                   => 'dd if=/dev/zero of=/dev/sda',
       'tee (writes)'         => 'tee /etc/hosts',
       'env (runs program)'   => 'env FOO=bar ls',
-      # &&-chain segments that are not all provably read-only.
+      # Sequencer segments that are not all provably read-only.
       'chain with mutation'  => 'ls && rm -rf ~',
       'chain hides git'      => 'cd notes && git diff', # git stays delegated
       'chain hides write'    => 'cd x && tee out',
-      'background not &&'     => 'ls & pwd',            # single & trips the metachar check
       'triple-amp'           => 'ls &&& pwd',          # segment "& pwd" has a stray &
       'trailing &&'          => 'ls && ',              # empty trailing segment
       'leading &&'           => '&& ls',               # empty leading segment
       'quoted && literal'    => 'echo "a && b"',       # quotes trip the metachar check
-      'over MAX_CHAIN'       => (['ls'] * 9).join(' && ')
+      'over MAX_CHAIN'       => (['ls'] * 9).join(' && '),
+      # A pipe grants no write/exec: the escalators aren't allowlisted.
+      'pipe into xargs'      => 'ls | xargs rm',       # xargs not allowlisted
+      'pipe into sh'         => 'ls | sh',             # sh not allowlisted
+      'pipe into tee'        => 'cat x | tee y',       # tee writes
+      'pipe then redirect'   => 'ps | grep x > out',   # redirect in last segment
+      'pipe into dd'         => 'cat /dev/zero | dd of=x',
+      'double-semicolon'     => 'ls ;; pwd',           # empty middle segment
+      'background not seq'   => 'ls & pwd',            # single & not a sequencer; trips metachar
+      'pipe-amp (stderr)'    => 'ls |& grep x'         # |& leaves a stray & → metachar
     }.each do |label, cmd|
       it "delegates: #{label} (#{cmd.inspect})" do
         inner = RecordingConfirmer.new(true)

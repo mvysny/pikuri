@@ -441,21 +441,27 @@ implements `confirm?(request:)` and wraps the human confirmer; the
 request already carries the command verbatim). It auto-approves **only**
 a command that is a *single invocation, with zero shell metacharacters,
 whose binary is on a tight read-only allowlist* — or, since the
-`&&`-composition refinement below, an `&&`-joined chain of such
+composition refinement below, a `&&`/`||`/`;`/`|`-joined chain of such
 invocations; everything else is delegated to the human. Failure mode is
 "asks too often," never "approved destruction."
 
-**Shipped refinement — `&&` composition.** The decorator now also
-auto-approves a command split on the literal `&&` operator when *every*
-segment is independently a provably-read-only invocation (`cd notes &&
-ls && cat x`). The split is faithful precisely because the per-segment
-metacharacter check still forbids `&` and both quote characters, so no
-`&&` can hide inside a string and a stray single `&` always delegates —
-the `&&` separator is the only metacharacter that can appear across the
-whole command. `cd` was added to the allowlist for this (a builtin with
-no destructive form, useful only in a chain). Note this is *necessary
-but not sufficient* for `cd X && git diff`: `git` stays delegated (see
-the v2 menu — read-only `git`/`systemctl`/`journalctl` subcommands need
+**Shipped refinement — sequencer / pipe composition.** The decorator
+now also auto-approves a command split on the shell sequencer/pipe
+operators (`&&`, `||`, `;`, `|`) when *every* segment is independently a
+provably-read-only invocation (`cd notes && ls`, `ps aux | grep ssh`,
+`df -h ; free -m`). Two facts make it sound: (1) the split is faithful
+because the per-segment metacharacter check still forbids both quote
+characters and the backslash (so no operator can hide in a string) and
+every *other* metacharacter — redirects, background `&`, `$()`, globs —
+stays forbidden per segment, so a writing operator like `ps | grep x >
+out` delegates the whole command; (2) a pipe grants no new capability —
+no allowlisted binary writes a file or executes a program from its
+stdin, and the data→action escalators (`xargs`, `sh`, `tee`) aren't on
+the allowlist, so `ls | xargs rm` / `cat x | tee y` both delegate. `cd`
+was added to the allowlist for this (a builtin with no destructive
+form, useful only in a chain). Note this is *necessary but not
+sufficient* for `cd X && git diff`: `git` stays delegated (see the v2
+menu — read-only `git`/`systemctl`/`journalctl` subcommands need
 subcommand-aware rules and, for `git`, pager/textconv/`ext::` hardening
 the boolean confirmer can't inject).
 
