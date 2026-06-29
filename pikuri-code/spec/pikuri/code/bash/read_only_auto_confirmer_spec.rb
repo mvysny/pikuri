@@ -142,6 +142,75 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
     end
   end
 
+  describe 'with allow_git: true (trusted-repo read-only git)' do
+    # Approved only because the caller asserted repo-config trust; the
+    # human is never consulted (inner would REJECT, proving auto-approval).
+    [
+      'git diff',
+      'git diff --cached',
+      'git diff --staged',
+      'git diff --stat',
+      'git status',
+      'git log -p',
+      'git show HEAD',
+      'git blame lib/foo.rb',
+      'cd repo && git diff --cached', # composes with the sequencer split
+      'git status | wc -l'            # composes with a read-only pipe
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(false)
+        confirmer = described_class.new(inner, allow_git: true)
+        assert confirmer.confirm?(request: req(cmd)), "expected auto-approval for #{cmd.inspect}"
+        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+      end
+    end
+
+    # Trust neutralizes config-execution; it does NOT license destructive
+    # git or config/repo-redirection/--output escapes — these still prompt.
+    {
+      'reset (destructive)'   => 'git reset --hard',
+      'checkout (mutates)'    => 'git checkout .',
+      'clean (deletes)'       => 'git clean -fd',
+      'stash (mutates)'       => 'git stash',
+      'commit (mutates)'      => 'git commit -m wip',
+      'push (network/write)'  => 'git push',
+      'config (writes)'       => 'git config user.email x',
+      'tag (creates)'         => 'git tag v1',
+      'branch -d (deletes)'   => 'git branch -d topic',
+      'inline -c config'      => 'git -c core.pager=evil diff',  # global opt before verb
+      'repo redirection -C'   => 'git -C /other diff',           # global opt before verb
+      'diff --output= writes' => 'git diff --output=f',
+      'diff --output writes'  => 'git diff --output f',
+      'diff redirect'         => 'git diff > out',               # metachar, refused first
+      'bare git'              => 'git'
+    }.each do |label, cmd|
+      it "delegates even with allow_git: #{label} (#{cmd.inspect})" do
+        inner = RecordingConfirmer.new(true)
+        confirmer = described_class.new(inner, allow_git: true)
+        assert confirmer.confirm?(request: req(cmd))
+        assert_equal 1, inner.calls.size, "expected the human to be consulted for #{cmd.inspect}"
+      end
+    end
+
+    it 'still auto-approves the plain read-only binaries (git is additive)' do
+      inner = RecordingConfirmer.new(false)
+      confirmer = described_class.new(inner, allow_git: true)
+      assert confirmer.confirm?(request: req('ls -la && cat foo'))
+      assert_empty inner.calls
+    end
+  end
+
+  describe 'with allow_git default (false) — git stays delegated' do
+    %w[git\ diff git\ status git\ log].each do |cmd|
+      it "delegates: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(true)
+        confirmer = described_class.new(inner) # allow_git omitted
+        assert confirmer.confirm?(request: req(cmd))
+        assert_equal 1, inner.calls.size
+      end
+    end
+  end
+
   describe 'edge cases' do
     it 'delegates when detail is nil (e.g. a non-Bash request)' do
       inner = RecordingConfirmer.new(true)

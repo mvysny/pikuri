@@ -92,6 +92,25 @@ module Pikuri
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
       #
+      # == Trusted-repo read-only git (+allow_git:+, opt-in, default off)
+      #
+      # Everything above is *unconditional* — it assumes nothing about the
+      # repository. +allow_git: true+ relaxes that one notch: it
+      # additionally auto-approves the read-only git verbs
+      # ({READ_ONLY_GIT_SUBCOMMANDS} — +git diff+/+status+/+log+/+show+ …,
+      # with +git diff --cached+ and friends accepted for free, see
+      # {#read_only_git?}). This is sound *only* on a repo whose git config
+      # the user trusts, because even a bare +git diff+ executes whatever
+      # the repo config directs (+core.fsmonitor+, +diff.*.textconv+) — see
+      # +ideas/os-assistant.md+ §"Confirmation fatigue". Trust neutralizes
+      # that config-execution vector; it does NOT license *destructive*
+      # git (the LLM, steered by other untrusted content, could still emit
+      # +git reset --hard+), so the verb set excludes every mutating form
+      # and {#read_only_git?} additionally refuses inline config /
+      # repo-redirection / +--output+. The caller (e.g. bin/pikuri-code's
+      # trust prompt) must obtain that affirmation before passing
+      # +allow_git: true+.
+      #
       # == Residual the allowlist does NOT close
       #
       # PATH hijacking: a bare +ls+ resolves via +$PATH+, so a planted
@@ -160,12 +179,30 @@ module Pikuri
           'locale', 'getconf'
         ].freeze
 
+        # git verbs with no mutating form in any argument — the only git
+        # commands {#read_only_git?} accepts (and only under +allow_git:+).
+        # Deliberately excludes +tag+/+branch+/+remote+/+stash+/+reflog+
+        # (each has a delete/create/expire form) and every working-tree /
+        # ref mutator (+checkout+ +switch+ +restore+ +reset+ +clean+
+        # +commit+ +merge+ +rebase+ +pull+ +push+ +config+ +gc+ …).
+        READ_ONLY_GIT_SUBCOMMANDS = Set[
+          'status', 'diff', 'log', 'show', 'blame',
+          'rev-parse', 'describe', 'shortlog'
+        ].freeze
+
         # @param inner [Pikuri::Workspace::Confirmer] the confirmer to
         #   delegate to whenever a command is not provably read-only
         #   (typically {Pikuri::Workspace::Confirmer::TERMINAL}).
-        def initialize(inner)
+        # @param allow_git [Boolean] when +true+, additionally auto-approve
+        #   read-only git invocations ({#read_only_git?}). Default +false+.
+        #   This opt-in *trades the unconditional guarantee for a
+        #   repo-config-trust assumption* (see the class header), so a
+        #   caller must only enable it after the user affirms the repo is
+        #   trusted.
+        def initialize(inner, allow_git: false)
           super()
           @inner = inner
+          @allow_git = allow_git
         end
 
         # @param request [Pikuri::Workspace::Confirmer::Request]
@@ -203,15 +240,41 @@ module Pikuri
 
         # @param command [String] one sequencer segment, already stripped.
         # @return [Boolean] whether it is a single, bare,
-        #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry.
+        #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry
+        #   — or, under +allow_git:+, a read-only git invocation
+        #   ({#read_only_git?}).
         def simple_read_only?(command)
           return false if command.empty?
           return false if SHELL_METACHARACTERS.match?(command)
 
           first = command.split(/\s+/).first
           return false if first.include?('/')
+          return true if READ_ONLY_BINARIES.include?(first)
 
-          READ_ONLY_BINARIES.include?(first)
+          @allow_git && read_only_git?(command)
+        end
+
+        # @param command [String] one sequencer segment, already stripped
+        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @return [Boolean] whether it is a read-only git invocation: +git+
+        #   followed *immediately* by a {READ_ONLY_GIT_SUBCOMMANDS} verb,
+        #   with no +--output+ argument. Requiring the verb immediately
+        #   after +git+ refuses a leading global option
+        #   (+git -c core.pager=evil diff+, +git -C /other diff+,
+        #   +--git-dir+, +--exec-path+) — the inline-config and
+        #   repo-redirection escapes — since that makes the second token
+        #   start with +-+. +--output+ is the one in-tool file writer
+        #   reachable in this verb set (+git diff --output=f+). Redirects /
+        #   pipes / substitution are already impossible here —
+        #   {SHELL_METACHARACTERS} ran first. +git diff --cached+ /
+        #   +--staged+ / +--stat+ / pathspecs are accepted for free (just
+        #   non-+--output+ tokens after the verb).
+        def read_only_git?(command)
+          tokens = command.split(/\s+/)
+          return false unless tokens[0] == 'git'
+          return false unless READ_ONLY_GIT_SUBCOMMANDS.include?(tokens[1])
+
+          tokens.drop(2).none? { |t| t.start_with?('--output') }
         end
       end
     end

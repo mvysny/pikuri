@@ -194,7 +194,28 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # (Workspace::Extension below) keep the bare human confirmer, so every
 # overwrite confirms. Wrapping AUTO_APPROVE would be a no-op, so only the
 # confirming branch is wrapped.
-code_confirmer = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer) : confirmer
+#
+# Read-only *git* (git diff/status/log/show/…) is gated behind an explicit
+# trust prompt: a hostile repo's .git/config or committed .gitattributes
+# can make even `git diff` execute arbitrary code (and, with the sandbox
+# network shared, exfiltrate), so we auto-approve git only after the user
+# affirms they control this directory's git config. Asked every
+# interactive session (no persistence — this bin is illustrative); skipped
+# when stdin isn't a TTY (so piped input is never consumed) and under
+# --yolo/--no-confirm (which already auto-approve everything).
+trusted_repo =
+  confirm_enabled && $stdin.tty? &&
+  Pikuri::Workspace::Confirmer::TERMINAL.confirm?(
+    request: Pikuri::Workspace::Confirmer::Request.new(
+      question: "Trust this directory's git config? Read-only git " \
+                '(status/diff/log/show/blame/…) will then run WITHOUT confirmation.',
+      detail: "#{project_root}\n\nSay yes ONLY if you control this repo's " \
+              '.git/config and committed .gitattributes. A hostile one can make ' \
+              "even `git diff` execute arbitrary code — and with the sandbox's " \
+              'network shared, exfiltrate. Default is no.'
+    )
+  )
+code_confirmer = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer, allow_git: trusted_repo) : confirmer
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
@@ -405,6 +426,7 @@ ensure
 end
 
 puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
+puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo
 puts "Loaded project context from #{md_path}." if md_path
 unless skill_catalog.empty?
   names = skill_catalog.list.map(&:name).sort.join(', ')
