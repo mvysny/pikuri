@@ -3,8 +3,8 @@
 module Pikuri
   module Code
     # The +exit_plan_mode+ tool: presents the finished plan to the
-    # user for approval and, on a yes, flips the shared
-    # {Pikuri::Agent::Control::PlanMode} back off so the file-editing
+    # user for approval and, on a yes, turns the shared
+    # {Pikuri::Workspace::ReadOnly} flag back off so the file-editing
     # tools work again.
     #
     # == Approval rides the Confirmer seam
@@ -33,12 +33,12 @@ module Pikuri
         - Do not use this for pure research tasks — those never enter plan mode in the first place.
       DESC
 
-      # @param plan_mode [Pikuri::Agent::Control::PlanMode] the shared
-      #   plan-mode control to deactivate on approval.
+      # @param read_only [Pikuri::Workspace::ReadOnly] the shared
+      #   read-only flag to deactivate on approval.
       # @param confirmer [Pikuri::Workspace::Confirmer] consulted to
       #   present the plan and collect the approval.
       # @return [ExitPlanMode]
-      def initialize(plan_mode:, confirmer:)
+      def initialize(read_only:, confirmer:)
         super(
           name: 'exit_plan_mode',
           description: DESCRIPTION,
@@ -50,7 +50,7 @@ module Pikuri
                               '"## Plan\n1. Add X to foo.rb\n2. ...".'
           },
           execute: ->(plan:) {
-            ExitPlanMode.run(plan_mode: plan_mode, confirmer: confirmer, plan: plan)
+            ExitPlanMode.run(read_only: read_only, confirmer: confirmer, plan: plan)
           }
         )
       end
@@ -58,12 +58,12 @@ module Pikuri
       # Present +plan+ for approval; on yes deactivate plan mode, on no
       # keep it active. Returns the observation the model reacts to.
       #
-      # @param plan_mode [Pikuri::Agent::Control::PlanMode]
+      # @param read_only [Pikuri::Workspace::ReadOnly]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param plan [String] the LLM-authored plan to show the user
       # @return [String] tool observation
-      def self.run(plan_mode:, confirmer:, plan:)
-        unless plan_mode.active?
+      def self.run(read_only:, confirmer:, plan:)
+        unless read_only.active?
           return 'Error: not in plan mode, so there is nothing to exit. ' \
                  'Proceed with the work directly.'
         end
@@ -74,7 +74,7 @@ module Pikuri
         )
 
         if confirmer.confirm?(request: request)
-          plan_mode.exit!
+          read_only.deactivate!
           'Plan approved — you are no longer in plan mode. Implement the plan now.'
         else
           'The user did not approve the plan; you are still in plan mode (read-only). ' \

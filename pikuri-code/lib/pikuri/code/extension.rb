@@ -10,29 +10,34 @@ module Pikuri
     # still expected to add Skill, Tasks, Mcp and SubAgent extensions
     # themselves if they want those features.
     #
-    # == Plan mode is opt-in via the control
+    # == Plan mode is opt-in via the read-only flag
     #
     # The plan-mode tools, the {PLAN_MODE_PROMPT} system-prompt
-    # explainer, the per-turn read-only reminder, and the
-    # {PlanModeChanged} UI event are wired only when the agent was
-    # constructed with a {Pikuri::Agent::Control::PlanMode} — read off
-    # the {Pikuri::Agent::Configurator} as {Configurator#plan_mode}.
-    # That same instance must be the one the host hands the file-editing
-    # tools ({Pikuri::Workspace::Write} / {Pikuri::Workspace::Edit}),
-    # so their refusal and this reminder stay in lockstep. With no
-    # control wired, the extension still installs {Bash} + {GitClone}
-    # but no plan-mode surface — plan mode is simply unavailable.
+    # explainer, and the per-turn read-only reminder are wired only
+    # when the host passes a {Pikuri::Workspace::ReadOnly} flag via the
+    # +read_only:+ constructor argument. That same instance must be the
+    # one the host hands the file-editing tools (through
+    # {Pikuri::Workspace::Extension}'s own +read_only:+), so their
+    # refusal and this reminder stay in lockstep on one flag. With no
+    # flag, the extension still installs {Bash} + {GitClone} but no
+    # plan-mode surface — plan mode is simply unavailable.
+    #
+    # The transition is surfaced as a {PlanModeChanged} domain event,
+    # emitted from {#bind} off the flag's +on_change+ — a pikuri-code
+    # concern, not a core agent event (the loop never reads plan mode).
     #
     # == Usage
     #
-    #   plan_mode = Pikuri::Agent::Control::PlanMode.new
-    #   Pikuri::Agent.new(..., plan_mode: plan_mode) do |c|
-    #     c.add_tool Pikuri::Workspace::Edit.new(workspace:, plan_mode:)
-    #     c.add_tool Pikuri::Workspace::Write.new(workspace:, confirmer:, plan_mode:)
+    #   read_only = Pikuri::Workspace::ReadOnly.new
+    #   Pikuri::Agent.new(...) do |c|
+    #     c.add_extension Pikuri::Workspace::Extension.new(
+    #       filesystem:, confirmer:, read_only: read_only
+    #     )
     #     c.add_extension Pikuri::Code::Extension.new(
     #       filesystem: filesystem,
     #       confirmer: confirmer,
-    #       sandbox: sandbox
+    #       sandbox: sandbox,
+    #       read_only: read_only
     #     )
     #   end
     class Extension
@@ -82,11 +87,16 @@ module Pikuri
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]
-      def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE)
+      # @param read_only [Pikuri::Workspace::ReadOnly, nil] the shared
+      #   read-only flag (the same one handed to
+      #   {Pikuri::Workspace::Extension}). When present, the plan-mode
+      #   tools + prompt + reminder + event are wired; +nil+ leaves plan
+      #   mode unavailable.
+      def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE, read_only: nil)
         @filesystem = filesystem
         @confirmer  = confirmer
         @sandbox    = sandbox
-        @plan_mode  = nil
+        @read_only  = read_only
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -100,12 +110,11 @@ module Pikuri
 
         c.add_tool Bash.new(filesystem: @filesystem, confirmer: @confirmer, sandbox: @sandbox)
 
-        # Plan mode rides the host-owned control; only wire its surface
-        # when one was given to Agent.new (see the class header).
-        @plan_mode = c.plan_mode
-        if @plan_mode
-          c.add_tool EnterPlanMode.new(plan_mode: @plan_mode)
-          c.add_tool ExitPlanMode.new(plan_mode: @plan_mode, confirmer: @confirmer)
+        # Plan mode rides the host-owned read-only flag; only wire its
+        # surface when one was supplied (see the class header).
+        if @read_only
+          c.add_tool EnterPlanMode.new(read_only: @read_only)
+          c.add_tool ExitPlanMode.new(read_only: @read_only, confirmer: @confirmer)
           c.append_system_prompt(PLAN_MODE_PROMPT)
         end
 
@@ -118,15 +127,15 @@ module Pikuri
 
       # Bridge plan-mode transitions onto the listener stream so UI
       # chrome can render the current posture — for both model-driven
-      # ({EnterPlanMode} / {ExitPlanMode}) and host-driven (key
-      # binding) flips. No-op when plan mode isn't wired.
+      # ({EnterPlanMode} / {ExitPlanMode}) and host-driven (key binding /
+      # slash command) flips. No-op when plan mode isn't wired.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
       def bind(ctx)
-        return nil unless @plan_mode
+        return nil unless @read_only
 
-        @plan_mode.on_change { |active| ctx.emit_event(PlanModeChanged.new(active: active)) }
+        @read_only.on_change { |active| ctx.emit_event(PlanModeChanged.new(active: active)) }
         nil
       end
 
@@ -140,7 +149,7 @@ module Pikuri
       # @param _content [String]
       # @return [String, nil]
       def on_user_message(_ctx, _content)
-        return nil unless @plan_mode&.active?
+        return nil unless @read_only&.active?
 
         PLAN_MODE_REMINDER
       end

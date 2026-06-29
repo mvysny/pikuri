@@ -94,14 +94,14 @@ module Pikuri
       #   +workspace.resolve_for_write+ (Edit modifies, so it uses the
       #   write-set even though it doesn't create files) and the gate
       #   consults +workspace.read?+.
-      # @param plan_mode [Control::PlanMode, nil] when set and
-      #   {Control::PlanMode#active?}, every edit is refused with a
-      #   read-only observation *before* any filesystem touch — the
-      #   hard half of plan mode's defense (the soft half is the
-      #   per-turn reminder). +nil+ (the default) disables the gate,
-      #   so non-plan wirings are unchanged.
+      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?},
+      #   every edit is refused with a read-only observation *before* any
+      #   filesystem touch — the hard half of the read-only posture (the
+      #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
+      #   +nil+ (the default) disables the gate, so non-gated wirings are
+      #   unchanged.
       # @return [Edit]
-      def initialize(workspace:, plan_mode: nil)
+      def initialize(workspace:, read_only: nil)
         super(
           name: 'edit',
           description: DESCRIPTION,
@@ -124,7 +124,7 @@ module Pikuri
                                'Defaults to false, e.g. true.'
           },
           execute: ->(path:, old_string:, new_string:, replace_all: false) {
-            Edit.edit(workspace: workspace, plan_mode: plan_mode, path: path,
+            Edit.edit(workspace: workspace, read_only: read_only, path: path,
                       old_string: old_string, new_string: new_string,
                       replace_all: replace_all)
           }
@@ -142,14 +142,14 @@ module Pikuri
       # @param new_string [String] text to substitute in
       # @param replace_all [Boolean] when true, every occurrence is
       #   replaced; when false (default) multiple matches are an error
-      # @param plan_mode [Control::PlanMode, nil] read-only gate; see
+      # @param read_only [ReadOnly, nil] read-only gate; see
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
       # @return [String] tool observation
-      def self.edit(workspace:, path:, old_string:, new_string:, replace_all:, plan_mode: nil)
-        if plan_mode&.active?
-          return "Error: cannot edit #{path} — the agent is in plan mode " \
-                 '(read-only). Add this change to your plan and exit plan ' \
-                 'mode to apply it.'
+      def self.edit(workspace:, path:, old_string:, new_string:, replace_all:, read_only: nil)
+        if read_only&.active?
+          return "Error: cannot edit #{path} — the workspace is read-only " \
+                 'right now. If you are planning, add this change to your ' \
+                 'plan and leave plan mode to apply it.'
         end
 
         return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?

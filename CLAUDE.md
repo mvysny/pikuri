@@ -182,8 +182,11 @@ yardoc. CLAUDE.md only records the invariant.
   consumers (`SubAgentTool`, `Mcp::Servers::Connect`) receive it by
   explicit handoff from their extension's `bind`. Core `Event`
   variants remain Agent-emitted loop narration; gems define domain
-  events in their own namespace (e.g. `Tasks::ListChanged`) and emit
-  via `ctx.emit_event` — listeners must no-op on unknown variants.
+  events in their own namespace (e.g. `Tasks::ListChanged`,
+  `Code::PlanModeChanged`) and emit via `ctx.emit_event` — listeners
+  must no-op on unknown variants (the demo `Listener::Terminal`
+  renders an unrecognized event generically via its `to_s`, so a new
+  domain event is visible without core knowing its type).
   Grep-enforceable:
   `grep -rn 'emit_event\|add_raw_tool\|sub_agent_listeners' pikuri-*/lib/`
   is the capability-user roster, and `listeners.emit` outside
@@ -370,8 +373,10 @@ per-gem one-liners:
 - **`pikuri-workspace/`** — `Workspace::Filesystem`, the
   `Workspace::Workspace` composite (Filesystem + read record,
   backing the read-before-edit gate), `Workspace::Confirmer`, the
-  five file tools (`Read`, `Write`, `Edit`, `Grep`, `Glob`), and
-  `Workspace::Extension` (their single registration point). Depends
+  five file tools (`Read`, `Write`, `Edit`, `Grep`, `Glob`),
+  `Workspace::ReadOnly` (the host-flippable gate that makes Write/Edit
+  refuse — gates those two only, never Bash), and `Workspace::Extension`
+  (their single registration point; takes `read_only:`). Depends
   on `pikuri-core`. No new runtime deps (Rainbow rides in via
   pikuri-core for `Confirmer::Terminal`); no subprocess execution.
 - **`pikuri-code/`** — `Code::Bash`, `Code::Bash::Sandbox`,

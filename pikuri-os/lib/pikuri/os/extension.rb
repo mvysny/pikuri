@@ -69,14 +69,20 @@ module Pikuri
       #   policy").
       # @param sandbox [Pikuri::Code::Bash::Sandbox] bash subprocess
       #   isolation; defaults to {Pikuri::Code::Bash::Sandbox::NONE}.
+      # @param read_only [Pikuri::Workspace::ReadOnly, nil] the shared
+      #   read-only flag; when present it is threaded into both
+      #   {Pikuri::Workspace::Extension} (gates Write/Edit) and
+      #   {Pikuri::Code::Extension} (wires plan mode), so one instance
+      #   drives the whole posture. +nil+ leaves plan mode unavailable.
       # @param memory [MachineMemory] the MACHINE.md reader.
       # @param system_info [SystemInfo] the boot-time machine facts.
       def initialize(filesystem:, confirmer:,
-                     sandbox: Pikuri::Code::Bash::Sandbox::NONE,
+                     sandbox: Pikuri::Code::Bash::Sandbox::NONE, read_only: nil,
                      memory: MachineMemory.new, system_info: SystemInfo.new)
         @filesystem = filesystem
         @confirmer = confirmer
         @sandbox = sandbox
+        @read_only = read_only
         @memory = memory
         @system_info = system_info
       end
@@ -84,11 +90,14 @@ module Pikuri
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
       def configure(c)
-        c.add_extension(Pikuri::Workspace::Extension.new(filesystem: @filesystem, confirmer: @confirmer))
+        c.add_extension(Pikuri::Workspace::Extension.new(
+                          filesystem: @filesystem, confirmer: @confirmer, read_only: @read_only
+                        ))
         c.add_extension(Pikuri::Code::Extension.new(
                           filesystem: @filesystem,
                           confirmer: Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(@confirmer, allow_git: true),
-                          sandbox: @sandbox
+                          sandbox: @sandbox,
+                          read_only: @read_only
                         ))
 
         if LocalSearch.available?

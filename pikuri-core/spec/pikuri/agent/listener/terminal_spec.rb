@@ -87,6 +87,16 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     assert_includes out, 'cancelled'
   end
 
+  it 'renders an unrecognized (gem domain) event generically via its to_s' do
+    # Stand-in for a gem domain event like Pikuri::Code::PlanModeChanged:
+    # core knows nothing of the type, so it prints the event's own to_s.
+    domain_event = Class.new do
+      def to_s = 'plan mode: on (read-only)'
+    end.new
+    out = capture_stdout { listener.on_event(domain_event) }
+    assert_includes out, 'plan mode: on (read-only)'
+  end
+
   describe '#to_s' do
     it 'renders as "Terminal"' do
       assert_equal 'Terminal', described_class.new.to_s

@@ -269,13 +269,15 @@ system_prompt += if sandbox_enabled
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
-# One plan-mode control, shared by reference across the agent, the
-# file-editing tools (Edit/Write refuse to write while it is active),
-# and Pikuri::Code::Extension (which wires the enter/exit tools, the
-# per-turn reminder, and the UI event off it). The host keeps the
-# reference so a future TUI can flip it from a key binding; this REPL
-# leaves entry/exit to the model's tools.
-plan_mode_flag = Pikuri::Agent::Control::PlanMode.new
+# One read-only flag, shared by reference across the file-editing tools
+# (Edit/Write refuse to write while it is active) and
+# Pikuri::Code::Extension (which wires the enter/exit tools, the per-turn
+# reminder, and the PlanModeChanged event). The host keeps the reference
+# and the REPL flips it on the /plan and /impl slash commands below (a
+# future TUI would flip it from a key binding); the model can also
+# enter/exit via its own tools. It gates Write/Edit only, NOT bash —
+# see Pikuri::Workspace::ReadOnly.
+read_only = Pikuri::Workspace::ReadOnly.new
 
 # MCP servers available to the assistant. Hand-edit this array to add
 # providers — id is what the LLM references via +mcp_connect("...")+.
@@ -324,8 +326,7 @@ begin
     # run_turn below tells the user, the chat history survives, and the
     # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
-    cancellable: cancel_flag,
-    plan_mode: plan_mode_flag
+    cancellable: cancel_flag
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
@@ -345,12 +346,13 @@ begin
     # the read-before-edit gate works across them. The extension owns
     # that composite; Bash and the sandbox take the raw `filesystem`
     # below (they govern the subprocess fs view, not the read record).
-    # It also threads the shared plan-mode control (read off the
-    # configurator) into edit/write, so they refuse while plan mode is
-    # active — the same control Code::Extension's plan tools flip.
+    # It also threads the shared read-only flag into edit/write, so they
+    # refuse while it is active — the same flag Code::Extension's plan
+    # tools (and the /plan, /impl slash commands) flip.
     c.add_extension Pikuri::Workspace::Extension.new(
       filesystem: filesystem,
-      confirmer: confirmer
+      confirmer: confirmer,
+      read_only: read_only
     )
     c.add_tool Pikuri::Tool::CALCULATOR
     c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(
@@ -362,7 +364,8 @@ begin
     c.add_extension Pikuri::Code::Extension.new(
       filesystem: filesystem,
       confirmer: code_confirmer,
-      sandbox: sandbox
+      sandbox: sandbox,
+      read_only: read_only
     )
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
     # In-memory task list + four +task_*+ tools (task_create /
@@ -430,6 +433,7 @@ ensure
 end
 
 puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
+puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
 puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo
 puts "Loaded project context from #{md_path}." if md_path
 unless skill_catalog.empty?
@@ -459,6 +463,16 @@ begin
 
     message = line.chomp
     next if message.strip.empty?
+
+    # Host-side plan-mode toggle. These flip the shared read-only flag
+    # directly and are NOT sent to the LLM; Code::Extension emits a
+    # PlanModeChanged event on the flip, which the Terminal listener
+    # renders (so no puts here). activate!/deactivate! are idempotent,
+    # so a repeat is a silent no-op.
+    case message.strip.downcase
+    when '/plan' then read_only.activate!;   next
+    when '/impl' then read_only.deactivate!; next
+    end
 
     run_turn.call(message)
   end

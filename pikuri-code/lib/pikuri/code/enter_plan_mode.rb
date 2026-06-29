@@ -2,19 +2,20 @@
 
 module Pikuri
   module Code
-    # The +enter_plan_mode+ tool: flips the shared
-    # {Pikuri::Agent::Control::PlanMode} into its active, read-only
-    # posture. Once active, the file-editing tools refuse to write
-    # (see +pikuri-workspace+'s +Write+ / +Edit+) and the
+    # The +enter_plan_mode+ tool: turns on the shared
+    # {Pikuri::Workspace::ReadOnly} flag, putting the workspace into its
+    # read-only posture. Once active, the file-editing tools refuse to
+    # write (see +pikuri-workspace+'s +Write+ / +Edit+) and the
     # {Extension}'s per-turn reminder tells the model to research and
-    # propose rather than implement. The model exits via
-    # {ExitPlanMode}; the host can also flip the same control from a
-    # key binding (see {Pikuri::Agent::Control::PlanMode}).
+    # propose rather than implement. The model exits via {ExitPlanMode};
+    # the host can also flip the same flag from a key binding / slash
+    # command (see {Pikuri::Workspace::ReadOnly}).
     #
     # Self-entry is opportunistic: the model is encouraged (via the
     # description) to enter plan mode before a non-trivial change, but
     # entry is just as often host-initiated. Either way the flag is
-    # the single source of truth.
+    # the single source of truth. (Note: the read-only flag gates
+    # Write/Edit, not Bash — see {Pikuri::Workspace::ReadOnly}.)
     class EnterPlanMode < Pikuri::Tool
       # Description shown to the LLM. opencode-shape: one-line summary,
       # blank line, +Usage:+ bullets.
@@ -30,25 +31,25 @@ module Pikuri
         - When unsure, prefer entering: alignment up front is cheaper than redone work.
       DESC
 
-      # @param plan_mode [Pikuri::Agent::Control::PlanMode] the shared
-      #   plan-mode control to activate.
+      # @param read_only [Pikuri::Workspace::ReadOnly] the shared
+      #   read-only flag to activate.
       # @return [EnterPlanMode]
-      def initialize(plan_mode:)
+      def initialize(read_only:)
         super(
           name: 'enter_plan_mode',
           description: DESCRIPTION,
           parameters: Parameters::EMPTY,
-          execute: -> { EnterPlanMode.run(plan_mode: plan_mode) }
+          execute: -> { EnterPlanMode.run(read_only: read_only) }
         )
       end
 
       # Activate plan mode (idempotent) and return the observation that
       # confirms the posture to the model.
       #
-      # @param plan_mode [Pikuri::Agent::Control::PlanMode]
+      # @param read_only [Pikuri::Workspace::ReadOnly]
       # @return [String] tool observation
-      def self.run(plan_mode:)
-        plan_mode.enter!
+      def self.run(read_only:)
+        read_only.activate!
         'You are now in plan mode (read-only): research and design only, do not edit ' \
           'files. When the plan is ready, call exit_plan_mode to present it for approval.'
       end

@@ -22,7 +22,7 @@ RSpec.describe Pikuri::Os::Extension do
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base', id: '', streaming: false,
-      step_limit: nil, cancellable: nil, interloper: nil, plan_mode: nil
+      step_limit: nil, cancellable: nil, interloper: nil
     )
   end
 
@@ -40,9 +40,9 @@ RSpec.describe Pikuri::Os::Extension do
     Pikuri::Os::LocalSearch.define_singleton_method(:check_binaries!) { nil }
   end
 
-  def configure!(c)
+  def configure!(c, read_only: nil)
     described_class.new(
-      filesystem: filesystem, confirmer: human,
+      filesystem: filesystem, confirmer: human, read_only: read_only,
       memory: memory, system_info: system_info
     ).configure(c)
   end
@@ -101,6 +101,40 @@ RSpec.describe Pikuri::Os::Extension do
             assert_same human, captured, 'Bash should be gated by a ReadOnlyAutoConfirmer over the human confirmer'
             assert captured_allow_git, 'pikuri-os enables allow_git: true (read-only git auto-approves, backed by Bash env hardening)'
           end
+        end
+      end
+    end
+  end
+
+  describe 'read-only / plan-mode propagation through the composite' do
+    # Os::Extension composes Workspace::Extension + Code::Extension, both
+    # of which take read_only:. A flag handed to Os::Extension must
+    # therefore light up the enter/exit tools transitively — this guards
+    # against a refactor silently dropping that propagation.
+    it 'wires the enter/exit tools when a read-only flag is present' do
+      with_singleton(Pikuri::Os::LocalSearch, :available?) do
+        with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
+          stub_localsearch_available(true)
+          c = build_configurator
+          configure!(c, read_only: Pikuri::Workspace::ReadOnly.new)
+
+          names = c.tools.map(&:name)
+          assert_includes names, 'enter_plan_mode'
+          assert_includes names, 'exit_plan_mode'
+        end
+      end
+    end
+
+    it 'omits the plan-mode tools when no flag is wired' do
+      with_singleton(Pikuri::Os::LocalSearch, :available?) do
+        with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
+          stub_localsearch_available(true)
+          c = build_configurator
+          configure!(c) # read_only: nil
+
+          names = c.tools.map(&:name)
+          refute_includes names, 'enter_plan_mode'
+          refute_includes names, 'exit_plan_mode'
         end
       end
     end

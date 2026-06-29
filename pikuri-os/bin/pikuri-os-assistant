@@ -79,6 +79,15 @@ system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
+# One read-only flag, shared by reference: Os::Extension threads it into
+# both the file tools (Edit/Write refuse while active) and
+# Pikuri::Code::Extension (the enter/exit tools + per-turn reminder +
+# the PlanModeChanged event the Terminal listener renders). The host
+# keeps the reference so the REPL can flip it on the /plan and /impl
+# slash commands below (a future TUI from a key binding). It gates
+# Write/Edit only, NOT bash — see Pikuri::Workspace::ReadOnly.
+read_only = Pikuri::Workspace::ReadOnly.new
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.from_openai_server(
     server: server,
@@ -99,7 +108,8 @@ agent = Pikuri::Agent.new(
   c.add_extension Pikuri::Os::Extension.new(
     filesystem: filesystem,
     confirmer: confirmer,
-    sandbox: sandbox
+    sandbox: sandbox,
+    read_only: read_only
   )
 end
 
@@ -123,6 +133,7 @@ ensure
 end
 
 puts "Pikuri OS Assistant for this machine. Working from #{filesystem.project_root}. Ctrl+C / Ctrl+D to quit."
+puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
 warnings = []
 warnings << 'Network sandbox: DISABLED — bash can reach the internet (egress is OPEN).' unless sandbox_enabled
 warnings << 'Confirmer: AUTO-APPROVE — mutations run without asking.' unless confirm_enabled
@@ -142,6 +153,16 @@ begin
 
     message = line.chomp
     next if message.strip.empty?
+
+    # Host-side plan-mode toggle. These flip the shared read-only flag
+    # directly and are NOT sent to the LLM; Code::Extension emits a
+    # PlanModeChanged event on the flip, which the Terminal listener
+    # renders (so no puts here). activate!/deactivate! are idempotent,
+    # so a repeat is a silent no-op.
+    case message.strip.downcase
+    when '/plan' then read_only.activate!;   next
+    when '/impl' then read_only.deactivate!; next
+    end
 
     run_turn.call(message)
   end

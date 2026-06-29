@@ -21,14 +21,15 @@ module Pikuri
     # raw {Filesystem} (it governs the subprocess's filesystem view, not
     # the read record). It lives in {Pikuri::Code::Extension}.
     #
-    # == Plan mode
+    # == Read-only gate
     #
-    # When the agent was built with a {Pikuri::Agent::Control::PlanMode}
-    # (read off the {Pikuri::Agent::Configurator} as +c.plan_mode+), the
-    # extension threads it into {Edit} and {Write} so they refuse while
-    # plan mode is active — the read-only tools take no gate. The host
-    # passes the control once, to +Agent.new+; it does not hand it here.
-    # With no control wired the gate is simply off.
+    # When the host passes a {ReadOnly} flag, the extension threads it into
+    # {Edit} and {Write} so they refuse while it is active — the read-only
+    # tools ({Read} / {Grep} / {Glob}) take no gate. The host owns the
+    # flag and hands the *same* instance to whatever drives it (pikuri-code
+    # wires it into its +enter_plan_mode+ / +exit_plan_mode+ tools). With
+    # no flag the gate is simply off. Note: this gate covers Write/Edit
+    # only, never Bash — see {ReadOnly}.
     #
     # == Usage
     #
@@ -55,9 +56,13 @@ module Pikuri
       #   wrapped in a fresh {Workspace} (with an empty read record).
       # @param confirmer [Confirmer] consulted by {Write} before an
       #   overwrite.
-      def initialize(filesystem:, confirmer:)
+      # @param read_only [ReadOnly, nil] when set, threaded into {Edit}
+      #   and {Write} so they refuse while it is active; +nil` (default)
+      #   leaves the gate off. See "Read-only gate".
+      def initialize(filesystem:, confirmer:, read_only: nil)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
+        @read_only = read_only
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -71,17 +76,15 @@ module Pikuri
           end
         end
 
-        # Plan mode (when the host wired a control onto Agent.new) is
-        # read off the configurator and threaded into the two mutators
-        # so they refuse while it is active — the read-only tools take
-        # no gate. +nil+ when unwired, which disables the gate.
-        plan_mode = c.plan_mode
-
+        # The read-only flag (when the host supplied one) is threaded into
+        # the two mutators so they refuse while it is active — the
+        # read-only tools take no gate. +nil+ when unwired, which disables
+        # the gate.
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Grep.new(workspace: @workspace)
         c.add_tool Glob.new(workspace: @workspace)
-        c.add_tool Edit.new(workspace: @workspace, plan_mode: plan_mode)
-        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer, plan_mode: plan_mode)
+        c.add_tool Edit.new(workspace: @workspace, read_only: @read_only)
+        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer, read_only: @read_only)
         nil
       end
     end

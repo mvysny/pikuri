@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Agent::Control::PlanMode do
+RSpec.describe Pikuri::Workspace::ReadOnly do
   describe '#initialize' do
     it 'defaults to inactive' do
       refute described_class.new.active?
@@ -11,29 +11,29 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
     end
   end
 
-  describe '#enter! / #exit!' do
-    it 'enter! activates the flag' do
+  describe '#activate! / #deactivate!' do
+    it 'activate! turns the flag on' do
       flag = described_class.new
-      flag.enter!
+      flag.activate!
       assert flag.active?
     end
 
-    it 'exit! deactivates the flag' do
+    it 'deactivate! turns the flag off' do
       flag = described_class.new(active: true)
-      flag.exit!
+      flag.deactivate!
       refute flag.active?
     end
 
-    it 'enter! is idempotent' do
+    it 'activate! is idempotent' do
       flag = described_class.new
-      flag.enter!
-      flag.enter!
+      flag.activate!
+      flag.activate!
       assert flag.active?
     end
 
-    it 'exit! is idempotent' do
+    it 'deactivate! is idempotent' do
       flag = described_class.new
-      flag.exit!
+      flag.deactivate!
       refute flag.active?
     end
   end
@@ -44,8 +44,8 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
       seen = []
       flag.on_change { |active| seen << active }
 
-      flag.enter!
-      flag.exit!
+      flag.activate!
+      flag.deactivate!
 
       assert_equal [true, false], seen
     end
@@ -55,9 +55,9 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
       seen = []
       flag.on_change { |active| seen << active }
 
-      flag.exit! # already inactive
-      flag.enter!
-      flag.enter! # already active
+      flag.deactivate! # already inactive
+      flag.activate!
+      flag.activate! # already active
 
       assert_equal [true], seen
     end
@@ -69,7 +69,7 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
       flag.on_change { |s| a << s }
       flag.on_change { |s| b << s }
 
-      flag.enter!
+      flag.activate!
 
       assert_equal [true], a
       assert_equal [true], b
@@ -81,10 +81,10 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
   end
 
   describe 'cross-thread transitions' do
-    it 'an #enter! from another thread is observed via #active?' do
+    it 'an #activate! from another thread is observed via #active?' do
       flag = described_class.new
 
-      Thread.new { flag.enter! }.join
+      Thread.new { flag.activate! }.join
 
       assert flag.active?
     end
@@ -92,11 +92,11 @@ RSpec.describe Pikuri::Agent::Control::PlanMode do
 
   describe '#to_s' do
     it 'renders the off state' do
-      assert_equal 'PlanMode(off)', described_class.new.to_s
+      assert_equal 'ReadOnly(off)', described_class.new.to_s
     end
 
     it 'renders the on state' do
-      assert_equal 'PlanMode(on)', described_class.new(active: true).to_s
+      assert_equal 'ReadOnly(on)', described_class.new(active: true).to_s
     end
   end
 end

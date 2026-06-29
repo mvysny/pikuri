@@ -116,15 +116,6 @@ module Pikuri
     #   every +after_tool_result+ and each item becomes a
     #   {Event::UserTurn} with +mid_loop: true+. +nil+ means
     #   "no mid-loop injection" (the bundled CLIs default).
-    # @param plan_mode [Control::PlanMode, nil] read-only-posture
-    #   flag. When set, the same instance is shared with the
-    #   file-mutation tools (which refuse to write while
-    #   {Control::PlanMode#active?}) and the +pikuri-code+ plan
-    #   extension (which injects the per-turn reminder and re-emits
-    #   transitions as a UI event). The Agent itself never reads it —
-    #   it only holds the instance and exposes it on the
-    #   {Configurator}. +nil+ means "plan mode unavailable" (the
-    #   pure-core CLIs default).
     # @param id [String] unique identifier for this agent. Empty
     #   for the main agent; sub-agents get persona-rooted ids
     #   like +"researcher 0"+, +"researcher 1"+, +"file_miner 0"+, ...
@@ -160,7 +151,6 @@ module Pikuri
     # @return [Agent]
     def initialize(transport:, system_prompt:,
                    step_limit: nil, cancellable: nil, interloper: nil,
-                   plan_mode: nil,
                    id: '',
                    streaming: false,
                    &block)
@@ -171,7 +161,6 @@ module Pikuri
       @system_prompt = system_prompt
       @step_limit = step_limit
       @interloper = interloper
-      @plan_mode = plan_mode
       @id = id
       @streaming = streaming
       @synth_answer = nil
@@ -260,13 +249,6 @@ module Pikuri
     #   control this agent was constructed with, or +nil+ when
     #   none.
     attr_reader :interloper
-
-    # @return [Control::PlanMode, nil] the plan-mode control this
-    #   agent was constructed with, or +nil+ when none. The Agent
-    #   does not read it; it is held so the host can flip it
-    #   out-of-band and exposed on the {Configurator} so the
-    #   +pikuri-code+ plan extension can pick it up in +configure+.
-    attr_reader :plan_mode
 
     # @return [String] this agent's unique identifier — empty for
     #   the main agent; for sub-agents, the persona-rooted id
@@ -475,7 +457,6 @@ module Pikuri
         step_limit: @step_limit,
         cancellable: @cancellable,
         interloper: @interloper,
-        plan_mode: @plan_mode,
         on_close_sink: @on_close_handlers
       )
 

@@ -345,27 +345,27 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
   end
 
-  describe 'plan-mode gate' do
-    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+  describe 'read-only gate' do
+    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
 
-    it 'refuses an edit while plan mode is active, leaving the file untouched' do
+    it 'refuses an edit while read-only is active, leaving the file untouched' do
       write_file('foo.rb', "alpha\nbeta\n")
-      plan_mode.enter!
+      read_only.activate!
 
-      result = described_class.edit(workspace: workspace, plan_mode: plan_mode,
+      result = described_class.edit(workspace: workspace, read_only: read_only,
                                     path: 'foo.rb', old_string: 'beta',
                                     new_string: 'BETA', replace_all: false)
 
-      assert_match(/plan mode/, result)
+      assert_match(/read-only/, result)
       assert_equal "alpha\nbeta\n", (root + 'foo.rb').binread
     end
 
-    it 'edits normally once plan mode is exited' do
+    it 'edits normally once read-only is deactivated' do
       write_file('foo.rb', "alpha\nbeta\n")
-      plan_mode.enter!
-      plan_mode.exit!
+      read_only.activate!
+      read_only.deactivate!
 
-      result = described_class.edit(workspace: workspace, plan_mode: plan_mode,
+      result = described_class.edit(workspace: workspace, read_only: read_only,
                                     path: 'foo.rb', old_string: 'beta',
                                     new_string: 'BETA', replace_all: false)
 

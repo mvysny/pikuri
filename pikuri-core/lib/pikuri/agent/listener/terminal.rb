@@ -9,6 +9,9 @@ module Pikuri
       # reasoning, assistant content printed raw (Markdown as-is),
       # cyan tool-call and tool-result lines, yellow fallback
       # notice, red cancelled notice, magenta model-switch notice.
+      # Any unrecognized event — notably a gem domain event — renders
+      # generically via its +to_s+ (dim grey, +·+ marker), so a new
+      # event variant is visible in the demo without a code change here.
       # An {Event::SystemInjected} block (recalled
       # memory / context an extension injected) renders dim grey
       # with a +⊕+ marker. {Event::UserTurn} is intentionally silent
@@ -138,11 +141,19 @@ module Pikuri
             println(indent(Rainbow("! #{reason}").yellow))
           in Event::Cancelled
             println(indent(Rainbow('! cancelled').red))
+          in Event::UserTurn | Event::Tokens | Event::ContextCap
+            # Deliberately silent: UserTurn echoes input the terminal
+            # user just typed; Tokens / ContextCap are TokenLog's
+            # business. (Non-streaming deltas no-op in their own
+            # branches above, so they never reach here.)
           else
-            # UserTurn / Tokens / ContextCap silent on the terminal.
-            # In non-streaming mode the deltas fall through here
-            # too (the final Thinking / Assistant bookend already
-            # renders the full text).
+            # Any other event — notably a gem *domain* event (e.g.
+            # Pikuri::Code::PlanModeChanged, Tasks::ListChanged) —
+            # renders generically via its own to_s. Core needs no
+            # knowledge of the gem's type; the owning gem controls the
+            # wording. Good enough for this demo chrome; a richer host
+            # (the planned TUI) pattern-matches the variants it styles.
+            println(indent(Rainbow("· #{event}").color(85, 85, 85)))
           end
         end
 

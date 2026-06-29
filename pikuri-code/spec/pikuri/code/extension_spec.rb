@@ -6,7 +6,7 @@ RSpec.describe Pikuri::Code::Extension do
   end
   let(:confirmer) { Pikuri::Workspace::Confirmer::AutoApprove.new }
 
-  def build_configurator(plan_mode: nil)
+  def build_configurator
     Pikuri::Agent::Configurator.new(
       transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
       system_prompt_base: 'base',
@@ -14,8 +14,7 @@ RSpec.describe Pikuri::Code::Extension do
       streaming: false,
       step_limit: nil,
       cancellable: nil,
-      interloper: nil,
-      plan_mode: plan_mode
+      interloper: nil
     )
   end
 
@@ -33,12 +32,12 @@ RSpec.describe Pikuri::Code::Extension do
     assert_kind_of Pikuri::Agent::Extension, ext
   end
 
-  describe '#configure with a plan-mode control' do
-    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+  describe '#configure with a read-only flag' do
+    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
 
     it 'registers Bash, the plan-mode pair, and GitClone as a sub-agent tool' do
-      c = build_configurator(plan_mode: plan_mode)
-      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
+      c = build_configurator
+      described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only).configure(c)
 
       names = c.tools.map(&:name)
       assert_includes names, 'bash'
@@ -49,26 +48,26 @@ RSpec.describe Pikuri::Code::Extension do
     end
 
     it 'appends the plan-mode explainer to the system prompt' do
-      c = build_configurator(plan_mode: plan_mode)
-      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
+      c = build_configurator
+      described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only).configure(c)
 
       assert(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
     end
 
     it 'raises if any of its tools was already registered' do
-      c = build_configurator(plan_mode: plan_mode)
-      c.add_tool(Pikuri::Code::EnterPlanMode.new(plan_mode: plan_mode))
+      c = build_configurator
+      c.add_tool(Pikuri::Code::EnterPlanMode.new(read_only: read_only))
 
       err = assert_raises(RuntimeError) do
-        described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
+        described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only).configure(c)
       end
       assert_match(/EnterPlanMode.*cannot be pre-registered/, err.message)
     end
   end
 
-  describe '#configure without a plan-mode control' do
+  describe '#configure without a read-only flag' do
     it 'still wires Bash + GitClone but no plan-mode tools' do
-      c = build_configurator(plan_mode: nil)
+      c = build_configurator
       described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
 
       names = c.tools.map(&:name)
@@ -81,46 +80,46 @@ RSpec.describe Pikuri::Code::Extension do
   end
 
   describe '#on_user_message' do
-    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
 
     it 'injects the read-only reminder while plan mode is active' do
-      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
-      ext.configure(build_configurator(plan_mode: plan_mode))
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only)
+      ext.configure(build_configurator)
 
       assert_nil ext.on_user_message(nil, 'hello')
 
-      plan_mode.enter!
+      read_only.activate!
       reminder = ext.on_user_message(nil, 'hello')
       assert_match(/plan mode/i, reminder)
     end
 
-    it 'injects nothing when no plan-mode control is wired' do
+    it 'injects nothing when no read-only flag is wired' do
       ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
-      ext.configure(build_configurator(plan_mode: nil))
+      ext.configure(build_configurator)
 
       assert_nil ext.on_user_message(nil, 'hello')
     end
   end
 
   describe '#bind event bridge' do
-    let(:plan_mode) { Pikuri::Agent::Control::PlanMode.new }
+    let(:read_only) { Pikuri::Workspace::ReadOnly.new }
 
-    it 'emits PlanModeChanged on every transition' do
-      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
-      ext.configure(build_configurator(plan_mode: plan_mode))
+    it 'emits Code::PlanModeChanged on every transition' do
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only)
+      ext.configure(build_configurator)
       ctx = build_ctx
       ext.bind(ctx)
 
-      plan_mode.enter!
-      plan_mode.exit!
+      read_only.activate!
+      read_only.deactivate!
 
       assert_equal [true, false], ctx.events.map(&:active)
       assert ctx.events.all? { |e| e.is_a?(Pikuri::Code::PlanModeChanged) }
     end
 
-    it 'is a no-op when no plan-mode control is wired' do
+    it 'is a no-op when no read-only flag is wired' do
       ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
-      ext.configure(build_configurator(plan_mode: nil))
+      ext.configure(build_configurator)
       ctx = build_ctx
 
       ext.bind(ctx) # must not raise
