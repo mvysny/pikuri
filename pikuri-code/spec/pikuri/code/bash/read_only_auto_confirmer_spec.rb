@@ -48,6 +48,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       dpkg\ --search\ /usr/bin/git
       dpkg\ -L\ coreutils
       dpkg\ -s\ bash
+      dpkg\ --get-selections
       dpkg-query\ -W\ -f\ ruby
       apt\ search\ ruby
       apt\ show\ ruby
@@ -122,6 +123,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'systemctl list-units 2>/dev/null',     # systemctl query + safe redirect
       'dmesg --level=err,warn,crit 2>/dev/null | tail -80', # reported dmesg shape
       'dmesg -T | grep -i error',             # dmesg piped into a read-only filter
+      'dpkg --get-selections | grep -w install | wc -l', # the reported shape, unquoted
       # The reported batch verbatim: a comment line then many
       # `dpkg -S <unit> 2>&1 || true` probes, newline-separated.
       (['# Check which packages provided these unit files'] +
@@ -172,6 +174,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'dpkg purge'           => 'dpkg --purge ruby',
       'dpkg set-selections'  => 'dpkg --set-selections',
       'dpkg admindir before' => 'dpkg --admindir=/x -i pkg.deb', # redirect before action
+      'quoted filter arg'    => "dpkg --get-selections | grep -w 'install' | wc -l", # quotes trip the gate even though every binary is read-only
       'apt install'          => 'apt install ruby -y',
       'apt remove'           => 'apt remove ruby',
       'apt update'           => 'apt update',

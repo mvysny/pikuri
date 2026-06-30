@@ -318,13 +318,15 @@ module Pikuri
         # +dpkg+ action flags with no mutating form — the only +dpkg+
         # invocations {#read_only_dpkg?} accepts. Each must appear
         # immediately after +dpkg+ (so a leading +--admindir+/+--root+
-        # redirection delegates). Deliberately excludes every database
+        # redirection delegates). +--get-selections+ dumps the
+        # selection state and is the read-side sibling of the excluded
+        # +--set-selections+. Deliberately excludes every database
         # mutator (+-i+/+--install+, +-r+/+--remove+, +-P+/+--purge+,
         # +--unpack+, +--configure+, +-A+, +--update-avail+,
         # +--clear-avail+, +--set-selections+, +--clear-selections+).
         READ_ONLY_DPKG_ACTIONS = Set[
           '-l', '--list', '-L', '--listfiles', '-s', '--status',
-          '-S', '--search', '-p', '--print-avail'
+          '-S', '--search', '-p', '--print-avail', '--get-selections'
         ].freeze
 
         # +apt+ subcommands that only query the package cache — the only
