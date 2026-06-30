@@ -398,114 +398,161 @@ module Pikuri
 
         # @param detail [String, nil] the request detail; {Bash} sets it
         #   to +"$ <command>"+.
-        # @return [Boolean] whether the command is a {SEQUENCERS}-joined
-        #   chain (one or more segments, up to {MAX_CHAIN}) of provably
-        #   read-only simple invocations. See the class header for why
-        #   splitting on the sequencers is faithful.
+        # @return [Boolean] whether the command {#tokenize}s into a
+        #   {SEQUENCERS}-joined chain (up to {MAX_CHAIN} segments) in which
+        #   every segment is a provably read-only simple invocation
+        #   ({#segment_read_only?}). See the class header for why splitting
+        #   on the sequencers is faithful.
         def read_only?(detail)
           return false if detail.nil?
 
           command = detail.sub(/\A\$ /, '').strip
           return false if command.empty?
 
+          segments = tokenize(command)
+          return false if segments.nil?
+
+          segments.all? { |words| segment_read_only?(words) }
+        end
+
+        # Parse the command into one word list per {SEQUENCERS} segment, or
+        # +nil+ if it cannot be safely analyzed as such a chain.
+        #
+        # The single parse chokepoint: the {MAX_CHAIN} ceiling lives here
+        # and the per-segment {SHELL_METACHARACTERS} gate + {SAFE_REDIRECT}
+        # strip live in {#scan_segment}, so the classifiers downstream
+        # receive clean word arrays and never re-split a string. See the
+        # class header for why splitting on the sequencers is faithful
+        # (quotes and backslash are forbidden, so no sequencer can hide
+        # inside a string).
+        #
+        # @param command [String] the command, +$ + prefix already stripped.
+        # @return [Array<Array<String>>, nil] one de-redirected word list
+        #   per segment (an empty list marks a pure-comment no-op segment),
+        #   or +nil+ to delegate — more than {MAX_CHAIN} segments, or any
+        #   segment empty (a dangling sequencer) or not a simple read-only
+        #   invocation (metacharacter, unsafe redirect, …).
+        def tokenize(command)
           # -1 keeps trailing/leading empty fields, so a dangling operator
           # (+ls &&+, +| ls+, +ls ;+) yields an empty segment and delegates
           # rather than being silently dropped.
-          segments = command.split(SEQUENCERS, -1)
-          return false if segments.size > MAX_CHAIN
+          raw = command.split(SEQUENCERS, -1)
+          return nil if raw.size > MAX_CHAIN
 
-          segments.all? { |segment| simple_read_only?(segment.strip) }
+          segments = raw.map { |segment| scan_segment(segment) }
+          return nil if segments.any?(&:nil?)
+
+          segments
         end
 
-        # @param command [String] one sequencer segment, already stripped.
-        # @return [Boolean] whether it is a single, bare,
-        #   metacharacter-free invocation of a {READ_ONLY_BINARIES} entry
-        #   (or a read-only +dpkg+/+apt+/+systemctl+ query, or — under
-        #   +allow_git:+ — a read-only git invocation). A pure-comment
-        #   segment (one beginning with +#+) is a no-op and auto-approves.
-        def simple_read_only?(command)
-          return false if command.empty?
+        # Reduce one sequencer segment to its word list, or signal that the
+        # whole command must delegate.
+        #
+        # @param segment [String] one {SEQUENCERS} segment, not yet stripped.
+        # @return [Array<String>, nil] the segment's words with any
+        #   {SAFE_REDIRECT} fragments removed; +[]+ for a pure-comment
+        #   segment (a no-op, trivially read-only); or +nil+ to delegate —
+        #   an empty segment (a dangling sequencer), a {SHELL_METACHARACTERS}
+        #   byte (incl. a quote or escape), or a redirect that is not
+        #   write-nothing.
+        def scan_segment(segment)
+          command = segment.strip
+          return nil if command.empty?
 
           # A segment starting with +#+ is a shell comment — it executes
           # nothing, so it is trivially read-only. Sound because every
           # segment boundary is a command separator, where +#+ genuinely
           # opens a comment; a mid-segment +#+ (+ls #+) does not start
           # the segment and so still trips the gate below.
-          return true if command.start_with?('#')
+          return [] if command.start_with?('#')
 
           # Drop the write-nothing redirect fragments before the gate,
           # which would otherwise reject their +>+/+&+. Only fd-dups and
           # +/dev/null+ discards match (see {SAFE_REDIRECT}); anything
           # else survives and trips.
           bare = command.gsub(SAFE_REDIRECT, ' ')
-          return false if SHELL_METACHARACTERS.match?(bare)
+          return nil if SHELL_METACHARACTERS.match?(bare)
 
-          first = bare.split(/\s+/).first
-          return false if first.nil? || first.include?('/')
-          return true if READ_ONLY_BINARIES.include?(first)
-          return true if read_only_dpkg?(command)
-          return true if read_only_apt?(command)
-          return true if read_only_systemctl?(command)
-          return true if read_only_dmesg?(command)
-
-          @allow_git && read_only_git?(command)
+          words = bare.split
+          words.empty? ? nil : words
         end
 
-        # @param command [String] one sequencer segment, already stripped
-        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @param words [Array<String>] one segment's words from
+        #   {#scan_segment} (+[]+ for a comment no-op).
+        # @return [Boolean] whether the segment is a single, bare
+        #   invocation of a {READ_ONLY_BINARIES} entry (or a read-only
+        #   +dpkg+/+apt+/+systemctl+/+dmesg+ query, or — under +allow_git:+
+        #   — a read-only git invocation), or an empty (comment) segment.
+        #   A first word containing +/+ is a path that could point at a
+        #   planted binary, so it delegates.
+        def segment_read_only?(words)
+          return true if words.empty?
+
+          first = words.first
+          return false if first.include?('/')
+          return true if READ_ONLY_BINARIES.include?(first)
+          return true if read_only_dpkg?(words)
+          return true if read_only_apt?(words)
+          return true if read_only_systemctl?(words)
+          return true if read_only_dmesg?(words)
+
+          @allow_git && read_only_git?(words)
+        end
+
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {#scan_segment}.
         # @return [Boolean] whether it is a read-only +dpkg+ query: +dpkg+
         #   followed *immediately* by a {READ_ONLY_DPKG_ACTIONS} flag.
         #   Requiring the action right after +dpkg+ refuses a leading
-        #   +--admindir+/+--root+ redirection (the second token would not
+        #   +--admindir+/+--root+ redirection (the second word would not
         #   be a known query action) as well as every install/remove form.
-        def read_only_dpkg?(command)
-          tokens = command.split(/\s+/)
-          return false unless tokens[0] == 'dpkg'
+        def read_only_dpkg?(words)
+          return false unless words[0] == 'dpkg'
 
-          READ_ONLY_DPKG_ACTIONS.include?(tokens[1])
+          READ_ONLY_DPKG_ACTIONS.include?(words[1])
         end
 
-        # @param command [String] one sequencer segment, already stripped
-        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {#scan_segment}.
         # @return [Boolean] whether it is a read-only +apt+ query: +apt+
         #   followed *immediately* by a {READ_ONLY_APT_SUBCOMMANDS} verb.
         #   Requiring the verb right after +apt+ refuses a leading
         #   +-o Foo=bar+ config injection and every mutating verb.
-        def read_only_apt?(command)
-          tokens = command.split(/\s+/)
-          return false unless tokens[0] == 'apt'
+        def read_only_apt?(words)
+          return false unless words[0] == 'apt'
 
-          READ_ONLY_APT_SUBCOMMANDS.include?(tokens[1])
+          READ_ONLY_APT_SUBCOMMANDS.include?(words[1])
         end
 
-        # @param command [String] one sequencer segment, already stripped
-        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {#scan_segment}.
         # @return [Boolean] whether it is a read-only +systemctl+ query:
         #   +systemctl+ followed *immediately* by a
         #   {READ_ONLY_SYSTEMCTL_SUBCOMMANDS} verb. Requiring the verb
         #   right after +systemctl+ refuses a leading global option
         #   (+--root=/x+, +-H host+) and every state-mutating verb.
-        def read_only_systemctl?(command)
-          tokens = command.split(/\s+/)
-          return false unless tokens[0] == 'systemctl'
+        def read_only_systemctl?(words)
+          return false unless words[0] == 'systemctl'
 
-          READ_ONLY_SYSTEMCTL_SUBCOMMANDS.include?(tokens[1])
+          READ_ONLY_SYSTEMCTL_SUBCOMMANDS.include?(words[1])
         end
 
-        # @param command [String] one sequencer segment, already stripped
-        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {#scan_segment}.
         # @return [Boolean] whether it is a read-only +dmesg+ invocation:
         #   +dmesg+ with no mutating flag among its arguments
         #   ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG}). Bundled short
         #   options are scanned per character (+-xC+ trips on +C+); a long
         #   option's +=value+ tail is dropped before the lookup. Non-flag
-        #   tokens (level names, a surviving +/dev/null+ redirect fragment)
-        #   are read-only data and pass.
-        def read_only_dmesg?(command)
-          tokens = command.split(/\s+/)
-          return false unless tokens[0] == 'dmesg'
+        #   words (level names, a value argument) are read-only data and pass.
+        def read_only_dmesg?(words)
+          return false unless words[0] == 'dmesg'
 
-          tokens.drop(1).none? { |t| dmesg_mutating_arg?(t) }
+          words.drop(1).none? { |t| dmesg_mutating_arg?(t) }
         end
 
         # @param token [String] one whitespace-delimited +dmesg+ argument.
@@ -523,27 +570,27 @@ module Pikuri
           end
         end
 
-        # @param command [String] one sequencer segment, already stripped
-        #   and guaranteed metacharacter-free by {#simple_read_only?}.
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {#scan_segment}.
         # @return [Boolean] whether it is a read-only git invocation: +git+
         #   followed *immediately* by a {READ_ONLY_GIT_SUBCOMMANDS} verb,
         #   with no +--output+ argument. Requiring the verb immediately
         #   after +git+ refuses a leading global option
         #   (+git -c core.pager=evil diff+, +git -C /other diff+,
         #   +--git-dir+, +--exec-path+) — the inline-config and
-        #   repo-redirection escapes — since that makes the second token
+        #   repo-redirection escapes — since that makes the second word
         #   start with +-+. +--output+ is the one in-tool file writer
         #   reachable in this verb set (+git diff --output=f+). Redirects /
         #   pipes / substitution are already impossible here —
-        #   {SHELL_METACHARACTERS} ran first. +git diff --cached+ /
-        #   +--staged+ / +--stat+ / pathspecs are accepted for free (just
-        #   non-+--output+ tokens after the verb).
-        def read_only_git?(command)
-          tokens = command.split(/\s+/)
-          return false unless tokens[0] == 'git'
-          return false unless READ_ONLY_GIT_SUBCOMMANDS.include?(tokens[1])
+        #   {#scan_segment} ran first. +git diff --cached+ / +--staged+ /
+        #   +--stat+ / pathspecs are accepted for free (just non-+--output+
+        #   words after the verb).
+        def read_only_git?(words)
+          return false unless words[0] == 'git'
+          return false unless READ_ONLY_GIT_SUBCOMMANDS.include?(words[1])
 
-          tokens.drop(2).none? { |t| t.start_with?('--output') }
+          words.drop(2).none? { |t| t.start_with?('--output') }
         end
       end
     end
