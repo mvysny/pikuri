@@ -117,6 +117,54 @@ module Pikuri
       # @return [String, nil] an optional block of text to be injected verbatim as
       #   a system-role message (after the user message), or +nil+ to inject nothing
       def on_user_message(ctx, content); end
+
+      # Optional hook fired by {Agent#clear_conversation} when the host
+      # clears the conversation log (a "/clear"). Override to drop
+      # *conversation-scoped* state the extension owns; the default is a
+      # no-op, so an extension that holds only process / infrastructure
+      # state (MCP connections, a self-managed server, the memory
+      # capture worker) opts out simply by not defining it.
+      #
+      # == Conversation-scoped vs infrastructure
+      #
+      # The distinction is the whole point of the hook. State that only
+      # makes sense *within one conversation* is reset here:
+      # +Pikuri::Tasks::Extension+ clears its list (a plan with no
+      # context to plan against is meaningless) and the workspace
+      # extension clears its read-record (the read-before-edit gate's
+      # memory of what was read). State that spans conversations or is
+      # plain infrastructure is *not*: MCP subprocesses stay connected,
+      # a docker-backed server keeps running, and the memory recorder
+      # keeps draining its queue — a clear is not a quit, and turns
+      # already enqueued are real memories the background worker should
+      # still write.
+      #
+      # == System prompt is handled for you
+      #
+      # An extension's system-prompt contributions
+      # ({Configurator#append_system_prompt}) are baked into the agent's
+      # system prompt at construction; {Agent#clear_conversation}
+      # re-applies that prompt verbatim, so there is nothing to do here
+      # for them. Snippets read from live state at +configure+ time
+      # (e.g. a resident memory persona) are deliberately *not* refreshed
+      # on clear — the construction-time snapshot persists, matching how
+      # they already don't refresh per-turn within a conversation.
+      #
+      # An extension that owns a domain event should emit it from here so
+      # UI listeners see the reset — e.g. +Pikuri::Tasks::Extension+'s
+      # list clear fires +Tasks::ListChanged+ with an empty list, the
+      # same way every other list mutation notifies. Runs on the agent
+      # thread, synchronously, after the {Event::Reset} the Agent emits
+      # to the listener stream.
+      #
+      # Like the rest of the extension surface, this fires on the parent
+      # agent only — sub-agents do not inherit extensions.
+      #
+      # @param ctx [ExtensionContext] capability facade for the live
+      #   agent whose conversation is being cleared — same instance
+      #   +bind+ received
+      # @return [void]
+      def on_conversation_reset(ctx); end
     end
   end
 end

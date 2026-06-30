@@ -397,6 +397,58 @@ module Pikuri
       nil
     end
 
+    # Clear the conversation log, returning this agent to a
+    # fresh-conversation state *without* tearing down its wiring — the
+    # host "/clear". Distinct from {#close}, which fires the teardown
+    # handlers (killing MCP subprocesses, docker-backed servers, the
+    # memory worker); +clear_conversation+ keeps every one of those
+    # alive and only resets what belongs to the conversation that just
+    # ended. It is the cheap counterpart to building a new {Agent}:
+    # nothing is re-probed, re-synthesized, or re-connected.
+    #
+    # What it resets, in order:
+    #
+    # 1. The chat history, via +Chat#reset_messages!+ — which also
+    #    drops the mid-conversation +:system+ injections (memory
+    #    +<memory-context>+ blocks land as +:system+) — then re-applies
+    #    {#system_prompt} via +with_instructions+. The system prompt is
+    #    the one baked at construction (base + every extension snippet),
+    #    so all extension prompt contributions survive verbatim; the
+    #    registered callbacks and tool registrations live on the same
+    #    reused +@chat+ object and are untouched.
+    # 2. The controls — +@step_limit+ / +@cancellable+ reset, the
+    #    interloper queue drained (stale mid-loop input from the old
+    #    conversation must not leak into the new one), and the cached
+    #    synthesizer answer dropped.
+    # 3. The listener stream, via a single {Event::Reset} — so
+    #    pure-consumer listeners reset their display state
+    #    ({Listener::TokenLog} zeroes its running context-size
+    #    snapshot; a chrome can print a separator).
+    # 4. Extension-owned state, via {Extension#on_conversation_reset}
+    #    on every extension — the tasks list clears (emitting
+    #    +Tasks::ListChanged+), the workspace read-record clears.
+    #    Infrastructure extensions inherit the no-op default and keep
+    #    running.
+    #
+    # The model and transport are left as-is: a clear is a fresh
+    # conversation with the *same* model, not a model switch. Safe to
+    # call between turns on the agent's own thread; not designed to race
+    # an in-flight {#run_loop} (the chat is single-thread-confined, same
+    # as a mid-conversation model switch).
+    #
+    # @return [void]
+    def clear_conversation
+      @chat.reset_messages!
+      @chat.with_instructions(@system_prompt)
+      @synth_answer = nil
+      @step_limit&.reset!
+      @cancellable&.reset!
+      @interloper&.drain!
+      @listeners.emit(Event::Reset.new)
+      @extensions.each { |ext| ext.on_conversation_reset(@extension_context) }
+      nil
+    end
+
     # Release agent-owned resources. Fires every handler registered
     # via {Configurator#on_close} (during the +Agent.new+ block) and
     # {ExtensionContext#on_close} (during {Extension#bind} or any

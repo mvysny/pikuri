@@ -141,6 +141,8 @@ module Pikuri
             println(indent(Rainbow("! #{reason}").yellow))
           in Event::Cancelled
             println(indent(Rainbow('! cancelled').red))
+          in Event::Reset
+            println(indent(Rainbow('— context cleared —').color(85, 85, 85)))
           in Event::UserTurn | Event::Tokens | Event::ContextCap
             # Deliberately silent: UserTurn echoes input the terminal
             # user just typed; Tokens / ContextCap are TokenLog's

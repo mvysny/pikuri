@@ -8,7 +8,9 @@ module Pikuri
       # {Event::Tokens} (one log line per emission) and
       # {Event::ContextCap} (the cap, picked off and cached —
       # refreshed if a later {Event::ContextCap} arrives after a
-      # model switch); every other event variant is a no-op. A
+      # model switch) and {Event::Reset} (the host cleared the
+      # conversation — zero the running snapshot, see {#reset_snapshot});
+      # every other event variant is a no-op. A
       # switch does not reset the running size or message count: the
       # next {Event::Tokens} self-corrects the headline to the new
       # model's count.
@@ -193,6 +195,8 @@ module Pikuri
             log_tokens(tokens)
           in Event::ContextCap(cap:)
             @context_window_cap = cap
+          in Event::Reset
+            reset_snapshot
           else
             # Every other variant: no-op.
           end
@@ -206,6 +210,25 @@ module Pikuri
         end
 
         private
+
+        # Zero the running snapshot on an {Event::Reset} (the host
+        # cleared the conversation): the next conversation starts from
+        # message #1 again, so the message counter, the running
+        # context-window size, and the status line all reset to their
+        # construction-time values. The cap is *not* cleared — it is a
+        # property of the (unchanged) model, not the conversation. The
+        # cleared status line is pushed to {#on_status_line} so a TUI
+        # footer blanks immediately rather than showing the prior
+        # conversation's +ctx=+ until the first new turn arrives.
+        #
+        # @return [void]
+        def reset_snapshot
+          @msg = 0
+          @context_window_size = 0
+          @status_line = ''
+          @on_status_line&.call(@id, @status_line)
+          nil
+        end
 
         # Update the snapshot, write one +INFO+ line to the
         # subsystem logger, and push the line to the status-line

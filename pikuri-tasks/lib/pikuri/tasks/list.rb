@@ -143,6 +143,24 @@ module Pikuri
         removed
       end
 
+      # Drop every item and rewind the id counter to 1, then fire
+      # {#on_change}. Called by {Extension#on_conversation_reset} when
+      # the host clears the conversation: a task list is meaningless
+      # without the conversation that produced it. Rewinding +@next_id+
+      # is safe here (unlike after a {#delete}, which keeps ids dead to
+      # avoid confusing the LLM mid-conversation) — a clear wipes the
+      # model's context too, so no stale id survives to collide with a
+      # reused one. Always notifies, even when already empty, so a UI
+      # listener reliably observes the cleared state.
+      #
+      # @return [void]
+      def clear
+        @items = []
+        @next_id = 1
+        @on_change&.call
+        nil
+      end
+
       # The canonical rendering returned as the observation by every
       # task tool, so the LLM sees the latest full state — including
       # each item's id — on each call without needing a separate read

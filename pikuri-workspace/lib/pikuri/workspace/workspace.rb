@@ -82,6 +82,20 @@ module Pikuri
         @read.include?(relativize(resolved))
       end
 
+      # Forget every path read so far, returning the read-before-edit
+      # gate to its construction-time empty state. Called by
+      # {Extension#on_conversation_reset} when the host clears the
+      # conversation: the gate is a guard against editing a file the
+      # model only *thinks* it has seen, and a cleared conversation has
+      # seen nothing — so the next {Edit} / overwrite-{Write} must be
+      # preceded by a fresh {Read}, same as a brand-new agent.
+      #
+      # @return [void]
+      def clear_reads
+        @read.clear
+        nil
+      end
+
       private
 
       # Absolute resolved path → workspace-relative key. Both operands

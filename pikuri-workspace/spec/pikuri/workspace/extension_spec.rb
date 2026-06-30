@@ -67,4 +67,24 @@ RSpec.describe Pikuri::Workspace::Extension do
       assert_equal 'Edited foo.rb: replaced 1 occurrence.', edited
     end
   end
+
+  describe '#on_conversation_reset' do
+    it 'clears the shared read record so the gate re-arms after a clear' do
+      File.write(root + 'foo.rb', "alpha\nbeta\n")
+
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
+      ext.configure(configurator)
+      read = configurator.tools.find { |t| t.name == 'read' }
+      edit = configurator.tools.find { |t| t.name == 'edit' }
+
+      read.run('path' => 'foo.rb') # gate now open for foo.rb
+
+      ext.on_conversation_reset(nil) # the ctx is unused by this hook
+
+      # The read-before-edit gate must refuse again — the cleared
+      # conversation has "seen" nothing.
+      refused = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA')
+      assert refused.start_with?('Error: foo.rb has not been read'), refused
+    end
+  end
 end

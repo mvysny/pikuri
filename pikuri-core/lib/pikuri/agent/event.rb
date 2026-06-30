@@ -227,6 +227,23 @@ module Pikuri
       # re-raised and the caller is expected to return control to the
       # user (typically the REPL prompt).
       Cancelled = Data.define
+
+      # The conversation log was cleared by {Agent#clear_conversation}
+      # (a host "/clear"): the chat history is back to just the system
+      # prompt, the controls are reset, and each extension's
+      # {Extension#on_conversation_reset} has run to drop its
+      # conversation-scoped state. Emitted once per clear, *before* the
+      # extension sweep, so pure-consumer listeners reset their own
+      # display state off it — {Listener::TokenLog} zeroes its running
+      # context-size snapshot (otherwise a stale +ctx=+ headline would
+      # linger beside an empty conversation until the next turn
+      # self-corrected it), and a chrome can render a "context cleared"
+      # separator. Extension-owned state is *not* signalled here; those
+      # extensions emit their own domain events from
+      # {Extension#on_conversation_reset} (e.g. +Tasks::ListChanged+
+      # with an empty list). Carries no payload — a clear has nothing to
+      # report beyond having happened.
+      Reset = Data.define
     end
   end
 end

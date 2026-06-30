@@ -117,6 +117,22 @@ module Pikuri
         @list.on_change = -> { ctx.emit_event(ListChanged.new(items: @list.items)) }
         nil
       end
+
+      # Clear the task list when the host clears the conversation — a
+      # plan is meaningless without the conversation that produced it.
+      # {List#clear} fires the +on_change+ armed in {#bind}, so a
+      # {ListChanged} with an empty +items+ snapshot reaches the
+      # listener stream and any UI task panel empties, exactly like
+      # every other list mutation notifies.
+      #
+      # @param ctx [Pikuri::Agent::ExtensionContext] unused (the
+      #   +on_change+ wiring already closes over the context); part of
+      #   the protocol signature.
+      # @return [void]
+      def on_conversation_reset(_ctx)
+        @list.clear
+        nil
+      end
     end
   end
 end

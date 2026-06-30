@@ -87,6 +87,22 @@ module Pikuri
         c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer, read_only: @read_only)
         nil
       end
+
+      # Clear the shared read-record when the host clears the
+      # conversation, so the read-before-edit gate forgets what the
+      # now-discarded conversation read. Without this, an {Edit} right
+      # after a "/clear" could touch a file the model can no longer see
+      # in its (wiped) context — defeating the gate's "you must Read
+      # first" promise. The {Filesystem}'s containment / sandbox policy
+      # is untouched; only the session read-ledger resets.
+      #
+      # @param ctx [Pikuri::Agent::ExtensionContext] unused; part of the
+      #   protocol signature.
+      # @return [void]
+      def on_conversation_reset(_ctx)
+        @workspace.clear_reads
+        nil
+      end
     end
   end
 end
