@@ -174,7 +174,6 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'dpkg purge'           => 'dpkg --purge ruby',
       'dpkg set-selections'  => 'dpkg --set-selections',
       'dpkg admindir before' => 'dpkg --admindir=/x -i pkg.deb', # redirect before action
-      'quoted filter arg'    => "dpkg --get-selections | grep -w 'install' | wc -l", # quotes trip the gate even though every binary is read-only
       'apt install'          => 'apt install ruby -y',
       'apt remove'           => 'apt remove ruby',
       'apt update'           => 'apt update',
@@ -301,6 +300,57 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
         confirmer = described_class.new(inner) # allow_git omitted
         assert confirmer.confirm?(request: req(cmd))
         assert_equal 1, inner.calls.size
+      end
+    end
+  end
+
+  describe 'single-quoted arguments' do
+    # A single-quoted span is decoded by real shell quote-removal: the
+    # marks drop and the interior is kept verbatim as one literal word,
+    # so a read-only command with a quoted argument auto-approves.
+    [
+      "grep -w 'install'",
+      "grep 'foo bar' /etc/hosts",             # quoted whitespace = one word
+      "echo 'a | b'",                          # quoted sequencer is literal
+      "echo 'a && b'",                         # quoted && does not split
+      "grep 'a|b' /tmp/x",                     # quoted metachar is literal
+      "grep 'a\"b' /tmp/x",                    # quoted double-quote is literal
+      "grep ''",                               # empty quoted arg
+      "dpkg --get-selections | grep -w 'install' | wc -l" # the reported shape
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(false)
+        confirmer = described_class.new(inner)
+        assert confirmer.confirm?(request: req(cmd)),
+               "expected auto-approval for #{cmd.inspect}"
+        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+      end
+    end
+
+    # Bypass guards: a quote must never let a mutating flag through. Real
+    # quote-removal hands the classifiers the TRUE flag (+--clear+, not
+    # +--_clear+), so an empty/mid-token quote pair collapses into the
+    # flag it was hiding and is caught. Double quotes and backslashes stay
+    # forbidden. (See the adversarial review in the class header.)
+    {
+      "dmesg empty-pair clear"  => "dmesg --''clear",      # → dmesg --clear (wipes buffer)
+      "dmesg mid-token clear"   => "dmesg --cl'e'ar",      # → dmesg --clear
+      "dmesg empty-pair -C"     => "dmesg ''-C",           # → dmesg -C (short clear)
+      "git empty-pair --output" => "git diff --''output=/tmp/x", # → --output (writes a file)
+      "quoted command name"     => "'rm' -rf ~",           # → rm, not allowlisted
+      "unbalanced single quote" => "grep 'foo",            # never closes → delegate
+      "ansi-c quote keeps $"    => "echo $'\\n'",          # the $ trips the gate
+      "quoted sequencer word"   => "ls' ; 'rm",            # one literal word "ls ; rm"
+      "double quote forbidden"  => 'echo "$(rm -rf ~)"',   # " stays forbidden
+      "backslash forbidden"     => 'echo a\\;b'            # \\ stays forbidden
+    }.each do |label, cmd|
+      it "delegates: #{label} (#{cmd.inspect})" do
+        inner = RecordingConfirmer.new(true)
+        # allow_git so the git guard is actually exercised, not gated off.
+        confirmer = described_class.new(inner, allow_git: true)
+        assert confirmer.confirm?(request: req(cmd))
+        assert_equal 1, inner.calls.size,
+                     "expected the human to be consulted for #{cmd.inspect}"
       end
     end
   end

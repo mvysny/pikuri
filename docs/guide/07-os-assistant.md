@@ -187,14 +187,18 @@ Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer, allow_git: true)
 ```
 
 This is a `Confirmer` decorator. It auto-approves a command **only**
-when every part of it is a single, metacharacter-free invocation whose
-binary is on a tight read-only allowlist (`ls cat head tail wc grep df
-du free ps uptime …`, plus `|`/`&&`/`;`-joined chains of such). The
-allowlist holds only binaries that are safe in *all* their argument
-forms — `find` is excluded (`-delete`), `dd`/`tee`/`truncate`/`shred`
-are excluded, anything with a destructive mode is out. The failure
-mode is "asks too often," never "approved a deletion." Everything else
-falls through to the human.
+when every part of it is a single invocation whose binary is on a tight
+read-only allowlist (`ls cat head tail wc grep df du free ps uptime …`,
+plus `|`/`&&`/`;`-joined chains of such), with no command substitution,
+no redirect to a real file, and no shell trickery. The allowlist holds
+only binaries that are safe in *all* their argument forms — `find` is
+excluded (`-delete`), `dd`/`tee`/`truncate`/`shred` are excluded,
+anything with a destructive mode is out. A small tokenizer does the
+parse: it understands single-quoted arguments (`grep -w 'install'` is
+fine — the quotes are stripped and the text is one literal word), but
+double quotes and backslashes still fall through to the human (inside
+`"…"` a `$(…)` would execute). The failure mode is "asks too often,"
+never "approved a deletion." Everything else falls through to the human.
 
 `allow_git: true` extends that to read-only git verbs (`status`,
 `diff`, `log`, `show`, `blame`). On its face that's unsafe — even a

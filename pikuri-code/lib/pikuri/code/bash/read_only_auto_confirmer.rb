@@ -23,25 +23,31 @@ module Pikuri
       #
       # == The decision rule (deny-by-default)
       #
-      # The command is split on the shell *sequencer / pipe* operators
-      # ({SEQUENCERS}: +&&+, +||+, +;+, +|+) into one or more *segments*
-      # (at most {MAX_CHAIN}); the command auto-approves iff *every*
-      # segment is a provably-read-only simple invocation — ALL of the
-      # following hold per segment, otherwise the whole command is
-      # delegated to the wrapped confirmer:
+      # The command is parsed by a small tokenizer ({#tokenize}):
+      # {#split_segments} cuts it on the shell *sequencer / pipe* operators
+      # ({SEQUENCERS}: +&&+, +||+, +;+, +|+, newline) into one or more
+      # *segments* (at most {MAX_CHAIN}), and {#scan_segment} reduces each
+      # to a list of *words*. The command auto-approves iff *every* segment
+      # is a provably-read-only simple invocation — ALL of the following
+      # hold per segment, otherwise the whole command is delegated to the
+      # wrapped confirmer:
       #
-      # 1. It contains no shell metacharacter or control byte
-      #    ({SHELL_METACHARACTERS}). After the sequencer split, what a
-      #    segment may still illegally contain is a *redirect* (+>+ +<+),
+      # 1. It scans cleanly: no shell metacharacter or control byte
+      #    ({SHELL_METACHARACTERS}) outside a single-quoted span. What a
+      #    segment may illegally contain is a *redirect* (+>+ +<+),
       #    background +&+, +$(...)+, backtick, glob, brace/tilde
-      #    expansion, quote, or escape — any of those means "more than a
-      #    single simple invocation" and we refuse it. (+$(rm -rf ~)+,
-      #    +echo x > /etc/passwd+, +ls *.txt+ all fail here.)
-      # 2. The first token is a *bare* command name — no +/+. +./ls+,
+      #    expansion, a double quote, or an escape — any of those means
+      #    "more than a single simple invocation" and we refuse it.
+      #    (+$(rm -rf ~)+, +echo x > /etc/passwd+, +ls *.txt+ all fail
+      #    here.) Single quotes are the one quoting form decoded — see
+      #    below.
+      # 2. The first word is a *bare* command name — no +/+. +./ls+,
       #    +/tmp/ls+, +bin/ls+ are paths that could point at a planted
       #    binary, so they delegate; only PATH-resolved bare names
       #    (+ls+, +cat+, …) qualify.
-      # 3. That bare name is on {READ_ONLY_BINARIES}.
+      # 3. That bare name is on {READ_ONLY_BINARIES} (or the segment is a
+      #    read-only +dpkg+/+apt+/+systemctl+/+dmesg+ query, or — under
+      #    +allow_git:+ — a read-only git invocation).
       #
       # The failure mode is always "asks the human too often," never
       # "auto-approved something destructive."
@@ -53,19 +59,19 @@ module Pikuri
       # ssh+, +cd notes && ls+, +df -h ; free -m+ should auto-approve as
       # readily as a single +ls+. Two facts make it sound:
       #
-      # * *The split is faithful.* Every operator we cut on is a genuine
-      #   control operator, never one hidden inside a string — because the
-      #   per-segment check in (1) still forbids both quote characters and
-      #   the backslash, so nothing could have quoted/escaped a +;+, +|+
-      #   or newline into a literal. And every *other* metacharacter stays
-      #   forbidden per segment, so an arbitrary-target redirect
-      #   (+ps | grep x > out+), a background +&+ (+ls & pwd+ — +&+ is not
-      #   a sequencer), or +|&+ all trip the metacharacter check ⇒ the
-      #   whole command delegates. The lone exception is a write-nothing
-      #   redirect fragment ({SAFE_REDIRECT}: +2>&1+, +2>/dev/null+ …),
-      #   stripped per-segment *before* the gate — fd duplication and
-      #   +/dev/null+ discards add no capability (see {#simple_read_only?}).
-      #   Only the sequencers can appear across the command.
+      # * *The split is faithful.* {#split_segments} cuts only on a genuine
+      #   control operator, never one hidden inside a string — it tracks
+      #   single-quote state and refuses to split inside a quoted span, and
+      #   double quotes / backslashes stay forbidden, so nothing can
+      #   quote/escape a +;+, +|+ or newline past it. Every *other*
+      #   metacharacter stays forbidden per segment, so an arbitrary-target
+      #   redirect (+ps | grep x > out+), a background +&+ (+ls & pwd+ —
+      #   +&+ is not a sequencer), or +|&+ all trip the metacharacter check
+      #   ⇒ the whole command delegates. The lone exception is a
+      #   write-nothing redirect fragment ({SAFE_REDIRECT}: +2>&1+,
+      #   +2>/dev/null+ …), consumed and dropped during the scan — fd
+      #   duplication and +/dev/null+ discards add no capability (see
+      #   {#scan_segment}).
       # * *A pipe grants no new capability.* +|+ wires stdout→stdin as
       #   *data*. No {READ_ONLY_BINARIES} entry writes a file or executes
       #   a program from its stdin — they are pure transducers (+grep+,
@@ -76,6 +82,37 @@ module Pikuri
       # This holds regardless of egress: each segment must still be an
       # allowlisted read-only binary, none of which can write or
       # exfiltrate.
+      #
+      # == Single quotes: real quote-removal, not a placeholder rewrite
+      #
+      # A single-quoted argument is common and harmless (+grep -w
+      # 'install'+, +grep 'foo bar' f+), so {#scan_segment} decodes it.
+      # POSIX single quotes are the *only* quoting form safe to decode:
+      # the interior is purely literal — no escapes, no expansion, closed
+      # by the next +'+ — so a quoted span can contribute nothing to
+      # command *structure*. The scan performs genuine shell quote-removal:
+      # the +'+ marks are dropped and the interior is appended to the
+      # current word *verbatim*, with interior bytes never treated as
+      # separators or metacharacters (so +echo 'a | b'+ is one segment, one
+      # echo). An unbalanced +'+ delegates; a quoted command name decodes
+      # to a word the allowlist won't match (+'rm'+ → +rm+), so it delegates
+      # too.
+      #
+      # The subtlety — and why a cheap +gsub+ would be *unsafe* — is that
+      # some classifiers below match flags by spelling, not by a
+      # metacharacter gate. A rewrite that blanks +'...'+ to a placeholder
+      # (+--''clear+ → +--_clear+) diverges from real quote-removal and
+      # smuggles an analyzer-only byte into the middle of a flag, so the
+      # +dmesg+ denylist / git +--output+ check would miss the mutating
+      # flag while the shell still runs +--clear+ / +--output+. Real
+      # quote-removal collapses +--''clear+ to the true +--clear+, which the
+      # denylist catches. The asymmetry to keep in mind when extending this:
+      # an *exact-match allowlist* (a binary name, a dpkg/apt/systemctl/git
+      # *verb*) fails *safe* under quote injection — the match just breaks
+      # and we delegate; a *denylist / prefix* check (the +dmesg+ flags,
+      # git +--output+) fails *open* unless it sees the genuinely de-quoted
+      # word. {#scan_segment} hands the classifiers that de-quoted word, so
+      # both kinds are sound.
       #
       # == Why a binary allowlist, and why it's short
       #
@@ -211,30 +248,35 @@ module Pikuri
       # +"$ <command>"+; a +nil+/other +detail+ (e.g. {Write}'s) simply
       # delegates.
       class ReadOnlyAutoConfirmer < Pikuri::Workspace::Confirmer
-        # Any shell metacharacter or ASCII control byte. Presence of one
-        # means the command is more than a single simple invocation (or is
-        # trying to hide something), so it delegates. Note +=+ is *not*
-        # here: it appears in ordinary long options (+--color=never+) and
-        # is harmless except as a leading +VAR=val+ assignment, which is
-        # caught anyway because the first token then isn't a bare allowed
-        # binary.
-        SHELL_METACHARACTERS = /[;&|<>$`()\\!#"'*?\[\]{}~\x00-\x1f]/
+        # Any shell metacharacter or ASCII control byte that, encountered
+        # *outside* a single-quoted span, means the segment is more than a
+        # single simple invocation (or is hiding something) — so it
+        # delegates. {#scan_segment} consults this per character only after
+        # handling single quotes, whitespace and the {SAFE_REDIRECT} forms,
+        # so the +>+/+&+ of a safe redirect and every byte inside a
+        # single-quoted argument never reach it.
+        #
+        # The double quote +"+ and the backslash +\+ stay here (still
+        # forbidden): inside +"..."+ the +$+ and backtick remain live
+        # (+"$(rm -rf ~)"+ executes) and +\+ escapes, so decoding them
+        # would reopen the parsing surface single quotes deliberately
+        # avoid — only the escape-free, purely-literal single quote is
+        # decoded (see the class header). Note +=+ is *not* here
+        # (+--color=never+); a leading +VAR=val+ is caught anyway because
+        # the first word then isn't a bare allowed binary.
+        SHELL_METACHARACTERS = /[;&|<>$`()\\!#"*?\[\]{}~\x00-\x1f]/
 
-        # Shell control operators that merely *sequence or pipe*
-        # commands. The command is split on these and each resulting
-        # segment is checked independently. The split is faithful because
-        # every other metacharacter (redirects, background +&+,
-        # substitution, globs, quotes) stays in {SHELL_METACHARACTERS}
-        # and is rejected per segment. Alternation order matters:
-        # the two-char +&&+ / +||+ must be tried before the single +|+
-        # so +a || b+ splits into two segments, not three.
+        # Shell control operators that merely *sequence or pipe* commands.
+        # {#split_segments} cuts the command on these — but only outside
+        # single quotes, so a quoted +|+/+;+ is literal data
+        # (+echo 'a | b'+ is one segment). Alternation order matters: the
+        # two-char +&&+ / +||+ must be tried before the single +|+ so
+        # +a || b+ splits into two segments, not three.
         #
         # A newline is included because it is a command *terminator*
         # exactly like +;+ — a multi-line script is a sequence of
-        # commands. The faithfulness argument carries over unchanged: a
-        # newline that was meant literally (inside a quoted string) can't
-        # appear in an auto-approvable command, because the per-segment
-        # check forbids both quote characters outright.
+        # commands. (A newline meant literally would have to sit inside a
+        # single-quoted span, where {#split_segments} treats it as data.)
         SEQUENCERS = /&&|\|\||;|\||\n/
 
         # Defensive ceiling on the number of sequencer-joined segments.
@@ -276,10 +318,11 @@ module Pikuri
           'dpkg-query', 'apt-cache'
         ].freeze
 
-        # A redirect fragment that writes nothing to the filesystem,
-        # stripped from a segment before the {SHELL_METACHARACTERS} gate
-        # runs (it contains +>+/+&+, which the gate otherwise rejects).
-        # Two safe families only:
+        # A redirect fragment that writes nothing to the filesystem.
+        # {#scan_segment} anchors this at a +>+ (or +&>+) it meets and, on
+        # a match, consumes and drops it (so the +>+/+&+ never reaches the
+        # {SHELL_METACHARACTERS} gate); a +>+ that does *not* match here is
+        # a real redirect and delegates. Two safe families only:
         #
         # * file-descriptor *duplication* — +[n]>&[m]+ (+2>&1+ merges
         #   stderr into stdout, +1>&2+ the reverse): pure in-process
@@ -290,12 +333,13 @@ module Pikuri
         #
         # The discard target is pinned to *exactly* +/dev/null+ by the
         # +(?=\s|\z)+ lookahead, so a look-alike write target
-        # (+2>/dev/nullx+, +2>/dev/null.bak+) does not match, survives,
-        # and trips the gate ⇒ delegates — as does any arbitrary-file
-        # redirect (+2>/etc/passwd+, +> out+). +\s*+ accepts the operator
-        # and target either glued (+2>/dev/null+) or spaced (+> /dev/null+).
-        # The fragment contains no {SEQUENCERS} byte, so stripping happens
-        # per-segment, after the faithful split.
+        # (+2>/dev/nullx+, +2>/dev/null.bak+) does not match ⇒ the +>+
+        # delegates — as does any arbitrary-file redirect (+2>/etc/passwd+,
+        # +> out+). +\s*+ accepts the operator and target either glued
+        # (+2>/dev/null+) or spaced (+> /dev/null+). The leading +[0-9]*+ is
+        # the fd that {#scan_segment} has accumulated into the current word
+        # (the +2+ of +2>&1+); it trims those digits back off when the
+        # match succeeds.
         SAFE_REDIRECT = %r{[0-9]*>&[0-9]+|(?:[0-9]|&)?>>?\s*/dev/null(?=\s|\z)}
 
         # +systemctl+ subcommands with no mutating form — the only
@@ -418,43 +462,91 @@ module Pikuri
         # Parse the command into one word list per {SEQUENCERS} segment, or
         # +nil+ if it cannot be safely analyzed as such a chain.
         #
-        # The single parse chokepoint: the {MAX_CHAIN} ceiling lives here
-        # and the per-segment {SHELL_METACHARACTERS} gate + {SAFE_REDIRECT}
-        # strip live in {#scan_segment}, so the classifiers downstream
-        # receive clean word arrays and never re-split a string. See the
-        # class header for why splitting on the sequencers is faithful
-        # (quotes and backslash are forbidden, so no sequencer can hide
-        # inside a string).
+        # The single parse chokepoint: {#split_segments} cuts the command
+        # on the sequencers (quote-awarely) and {#scan_segment} reduces
+        # each segment to its words (the {SHELL_METACHARACTERS} gate, the
+        # {SAFE_REDIRECT} strip and single-quote removal all live there), so
+        # the classifiers downstream receive clean, de-quoted word arrays
+        # and never re-split a string. See the class header for why the
+        # split is faithful and why single-quote removal is sound.
         #
         # @param command [String] the command, +$ + prefix already stripped.
-        # @return [Array<Array<String>>, nil] one de-redirected word list
-        #   per segment (an empty list marks a pure-comment no-op segment),
-        #   or +nil+ to delegate — more than {MAX_CHAIN} segments, or any
-        #   segment empty (a dangling sequencer) or not a simple read-only
-        #   invocation (metacharacter, unsafe redirect, …).
+        # @return [Array<Array<String>>, nil] one de-redirected, de-quoted
+        #   word list per segment (an empty list marks a pure-comment no-op
+        #   segment), or +nil+ to delegate — more than {MAX_CHAIN} segments,
+        #   an unbalanced single quote, or any segment empty (a dangling
+        #   sequencer) or not a simple read-only invocation (metacharacter,
+        #   unsafe redirect, …).
         def tokenize(command)
-          # -1 keeps trailing/leading empty fields, so a dangling operator
-          # (+ls &&+, +| ls+, +ls ;+) yields an empty segment and delegates
-          # rather than being silently dropped.
-          raw = command.split(SEQUENCERS, -1)
-          return nil if raw.size > MAX_CHAIN
+          segments = split_segments(command)
+          return nil if segments.nil?
 
-          segments = raw.map { |segment| scan_segment(segment) }
-          return nil if segments.any?(&:nil?)
+          words_per_segment = segments.map { |segment| scan_segment(segment) }
+          return nil if words_per_segment.any?(&:nil?)
 
-          segments
+          words_per_segment
         end
 
-        # Reduce one sequencer segment to its word list, or signal that the
-        # whole command must delegate.
+        # Split the command into raw segment strings on the {SEQUENCERS}
+        # operators, but only *outside* single quotes — so a quoted
+        # operator (+echo 'a | b'+) stays inside its segment as literal
+        # data. The single quotes themselves are preserved here and removed
+        # later, per segment, by {#scan_segment}.
+        #
+        # @param command [String] the command, +$ + prefix already stripped.
+        # @return [Array<String>, nil] the raw segments (quotes intact;
+        #   empty strings kept, so a dangling/doubled operator yields an
+        #   empty segment that {#scan_segment} delegates on), or +nil+ on an
+        #   unbalanced single quote or more than {MAX_CHAIN} segments.
+        def split_segments(command)
+          segments = []
+          buf = +''
+          in_quote = false
+          i = 0
+          while i < command.length
+            char = command[i]
+            if in_quote
+              buf << char
+              in_quote = false if char == "'"
+              i += 1
+            elsif char == "'"
+              buf << char
+              in_quote = true
+              i += 1
+            elsif (op = SEQUENCERS.match(command, i)) && op.begin(0) == i
+              segments << buf
+              buf = +''
+              i += op[0].length
+            else
+              buf << char
+              i += 1
+            end
+          end
+          return nil if in_quote
+
+          segments << buf
+          segments.size > MAX_CHAIN ? nil : segments
+        end
+
+        # Reduce one sequencer segment to its de-quoted word list, or signal
+        # that the whole command must delegate.
+        #
+        # A left-to-right scan that performs shell single-quote removal —
+        # the +'+ marks are dropped and the interior is kept *verbatim* and
+        # *literal* (an interior +|+, +;+, +$+ neither splits nor trips the
+        # gate), so the word handed to the classifiers is the true argument
+        # (+--clear+, never +--_clear+ — see the class header on why a
+        # placeholder rewrite is unsafe). Outside quotes the bytes are
+        # classified: whitespace ends a word, a {SAFE_REDIRECT} fragment is
+        # consumed and dropped, a {SHELL_METACHARACTERS} byte delegates.
         #
         # @param segment [String] one {SEQUENCERS} segment, not yet stripped.
-        # @return [Array<String>, nil] the segment's words with any
+        # @return [Array<String>, nil] the segment's de-quoted words with any
         #   {SAFE_REDIRECT} fragments removed; +[]+ for a pure-comment
         #   segment (a no-op, trivially read-only); or +nil+ to delegate —
-        #   an empty segment (a dangling sequencer), a {SHELL_METACHARACTERS}
-        #   byte (incl. a quote or escape), or a redirect that is not
-        #   write-nothing.
+        #   an empty segment (a dangling sequencer), an unbalanced single
+        #   quote, a {SHELL_METACHARACTERS} byte (incl. +"+ or +\+), or a
+        #   redirect that is not write-nothing.
         def scan_segment(segment)
           command = segment.strip
           return nil if command.empty?
@@ -462,18 +554,55 @@ module Pikuri
           # A segment starting with +#+ is a shell comment — it executes
           # nothing, so it is trivially read-only. Sound because every
           # segment boundary is a command separator, where +#+ genuinely
-          # opens a comment; a mid-segment +#+ (+ls #+) does not start
-          # the segment and so still trips the gate below.
+          # opens a comment; a mid-segment +#+ (+ls #+) does not start the
+          # segment and so still trips the gate below.
           return [] if command.start_with?('#')
 
-          # Drop the write-nothing redirect fragments before the gate,
-          # which would otherwise reject their +>+/+&+. Only fd-dups and
-          # +/dev/null+ discards match (see {SAFE_REDIRECT}); anything
-          # else survives and trips.
-          bare = command.gsub(SAFE_REDIRECT, ' ')
-          return nil if SHELL_METACHARACTERS.match?(bare)
+          words = []
+          word = nil          # current word buffer; nil between words
+          in_quote = false
+          i = 0
+          while i < command.length
+            char = command[i]
+            if in_quote
+              # Single-quote interior: literal, never a separator/metachar.
+              char == "'" ? (in_quote = false) : (word = (word || +'') << char)
+              i += 1
+            elsif char == "'"
+              word ||= +''     # an opening quote starts a (maybe empty) word
+              in_quote = true
+              i += 1
+            elsif char == ' ' || char == "\t"
+              words << word unless word.nil?
+              word = nil
+              i += 1
+            elsif char == '>' || (char == '&' && command[i + 1] == '>')
+              # A redirect. Anchor {SAFE_REDIRECT} at the fd prefix (the
+              # trailing digits of the current word, e.g. the +2+ of
+              # +2>&1+), accepting only the write-nothing forms; anything
+              # else (a real target) delegates. The fd digits belonged to
+              # the redirect, not the word, so trim them off.
+              digits = char == '>' && word ? word[/\d*\z/].length : 0
+              redirect = SAFE_REDIRECT.match(command, i - digits)
+              return nil unless redirect && redirect.begin(0) == i - digits
 
-          words = bare.split
+              if digits.positive?
+                word = word[0...-digits]
+                word = nil if word.empty?
+              end
+              words << word unless word.nil?
+              word = nil
+              i = redirect.end(0)
+            elsif SHELL_METACHARACTERS.match?(char)
+              return nil
+            else
+              word = (word || +'') << char
+              i += 1
+            end
+          end
+          return nil if in_quote
+
+          words << word unless word.nil?
           words.empty? ? nil : words
         end
 
