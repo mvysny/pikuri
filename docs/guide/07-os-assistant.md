@@ -71,7 +71,7 @@ or with no argument for an interactive REPL:
 ```sh
 ./bin/pikuri-os-assistant
 > find the budget spreadsheet I was editing last week
-> why did bluetooth.service fail to start this boot?
+> Any kernel errors or warnings in the log?
 ```
 
 You'll watch it reach for read-only shell commands (`du`, `df`,
