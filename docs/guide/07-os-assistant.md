@@ -288,11 +288,19 @@ A local model knows the FHS, man pages, `apt`, XDG, and bash well —
 the prompt doesn't waste words re-teaching those. What it *can't* know
 is *this* host, so the agent folds a small grounding block into the
 system prompt at boot: distro and version, desktop environment, init
-system, kernel, CPU/memory at a glance, the current date. When `inxi`
-is present, `inxi -b` enriches it; when it isn't, the same facts come
-from `/etc/os-release`, `uname`, `$XDG_CURRENT_DESKTOP`, and `/proc`.
-`inxi` is a convenience, never a dependency — a missing one is silent,
-not fatal. This is cheap and stops the model guessing distro paths.
+system, kernel, CPU/memory at a glance, the current date. Two of the
+facts pre-empt a wrong guess the model otherwise makes routinely: the
+**packaging** line names the host's manager (apt / dnf / pacman / …,
+plus whether flatpak and snap are present), so it hands the user the
+right install command instead of assuming apt; and the **dmesg** line
+says up front whether reading the kernel ring buffer works as this user
+or needs `sudo` (read from `kernel.dmesg_restrict`, not by spawning
+`dmesg`), so it doesn't propose a command that returns "operation not
+permitted". When `inxi` is present, `inxi -b` enriches the block; when
+it isn't, the same facts come from `/etc/os-release`, `uname`,
+`$XDG_CURRENT_DESKTOP`, `/proc`, and a `$PATH` probe. `inxi` is a
+convenience, never a dependency — a missing one is silent, not fatal.
+This is cheap and stops the model guessing distro paths.
 
 ## The wiring all together
 

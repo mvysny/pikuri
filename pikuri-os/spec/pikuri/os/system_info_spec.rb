@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
+
 RSpec.describe Pikuri::Os::SystemInfo do
   describe '.render' do
     it 'renders facts as "- Label: value" in order, skipping nil/blank' do
@@ -30,6 +32,50 @@ RSpec.describe Pikuri::Os::SystemInfo do
       assert_equal Dir.home, facts[:home]
       assert_kind_of Integer, facts[:cpus]
       assert_match(/\A\d{4}-\d\d-\d\d /, facts[:date])
+    end
+
+    it 'reports packaging and dmesg as String-or-nil (host-dependent)' do
+      # On a box with no package manager and no dmesg both are nil and the
+      # lines drop — so the contract is "String when present, nil otherwise".
+      [facts[:packaging], facts[:dmesg]].each do |v|
+        assert(v.nil? || v.is_a?(String))
+      end
+    end
+  end
+
+  describe '#packaging / #dmesg_access (stubbed $PATH)' do
+    let(:info) { described_class.new }
+
+    def with_path(dir)
+      original = ENV['PATH']
+      ENV['PATH'] = dir
+      yield
+    ensure
+      ENV['PATH'] = original
+    end
+
+    it 'names the first native manager on PATH plus flatpak/snap' do
+      Dir.mktmpdir do |dir|
+        ['apt', 'flatpak'].each do |cmd|
+          path = File.join(dir, cmd)
+          File.write(path, "#!/bin/sh\n")
+          File.chmod(0o755, path)
+        end
+        with_path(dir) do
+          out = info.send(:packaging)
+          assert_includes out, 'apt (Debian/Ubuntu, dpkg)'
+          assert_includes out, 'flatpak'
+          refute_includes out, 'snap'
+        end
+      end
+    end
+
+    it 'returns nil packaging when no manager is on PATH' do
+      Dir.mktmpdir { |dir| with_path(dir) { assert_nil info.send(:packaging) } }
+    end
+
+    it 'drops the dmesg fact when dmesg is not installed' do
+      Dir.mktmpdir { |dir| with_path(dir) { assert_nil info.send(:dmesg_access) } }
     end
   end
 

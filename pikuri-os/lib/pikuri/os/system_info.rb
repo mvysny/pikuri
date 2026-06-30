@@ -11,11 +11,17 @@ module Pikuri
     #
     # == Mandatory info, optional source
     #
-    # The core facts (distro, kernel, init, desktop, CPU/mem, home, shell,
-    # date) are gathered from **always-present primitives** — Ruby's
-    # +Etc+, +/etc/os-release+, +/proc+, and the environment — so the
-    # block is deterministic, needs no external binary, and works on a
-    # headless box or in CI. When +inxi+ is installed, its +inxi -b+
+    # The core facts (distro, kernel, init, packaging, desktop, CPU/mem,
+    # home, shell, dmesg access, date) are gathered from **always-present
+    # primitives** — Ruby's +Etc+, +/etc/os-release+, +/proc+, +ENV+, and a
+    # +$PATH+ probe for command names — so the block is deterministic, needs
+    # no external binary, and works on a headless box or in CI. The
+    # packaging line tells the model which manager command to hand the user
+    # (apt / dnf / pacman / …, plus whether flatpak and snap are present);
+    # the dmesg line tells it up front whether reading the kernel ring
+    # buffer will work as this user or fail with "operation not permitted"
+    # (read from +kernel.dmesg_restrict+, so we don't spawn +dmesg+ just to
+    # learn it). When +inxi+ is installed, its +inxi -b+
     # output is appended as extra hardware/desktop detail (machine type,
     # GPU, mobo, …); when it isn't, that section is simply omitted. inxi
     # is enrichment, never a dependency — a missing or failing +inxi+ is
@@ -35,19 +41,39 @@ module Pikuri
       #   inxi can't bloat the prompt.
       INXI_MAX_BYTES = 4 * 1024
 
+      # Native package managers, in detection order: +[command, distro
+      # hint]+. The first whose command is on +$PATH+ wins and is reported
+      # as this host's primary manager, so the model hands the user the
+      # right install/remove verb instead of guessing apt on a Fedora box.
+      # flatpak and snap are detected separately (cross-distro, can coexist
+      # with any of these) — see {#packaging}.
+      NATIVE_PACKAGE_MANAGERS = [
+        ['apt',          'Debian/Ubuntu, dpkg'],
+        ['dnf',          'Fedora/RHEL, rpm'],
+        ['yum',          'RHEL/CentOS, rpm'],
+        ['zypper',       'openSUSE, rpm'],
+        ['pacman',       'Arch'],
+        ['apk',          'Alpine'],
+        ['xbps-install', 'Void'],
+        ['emerge',       'Gentoo, portage'],
+        ['eopkg',        'Solus']
+      ].freeze
+
       # Ordered (fact-key, label) pairs for {.render}. A +nil+ value is
       # skipped, so a fact we couldn't read just doesn't appear.
       FACT_ORDER = [
-        [:os,       'OS'],
-        [:kernel,   'Kernel'],
-        [:init,     'Init'],
-        [:desktop,  'Desktop'],
-        [:hostname, 'Hostname'],
-        [:home,     'Home'],
-        [:shell,    'Shell'],
-        [:cpus,     'CPUs'],
-        [:memory,   'Memory'],
-        [:date,     'Date (at startup)']
+        [:os,        'OS'],
+        [:kernel,    'Kernel'],
+        [:init,      'Init'],
+        [:packaging, 'Packaging'],
+        [:desktop,   'Desktop'],
+        [:hostname,  'Hostname'],
+        [:home,      'Home'],
+        [:shell,     'Shell'],
+        [:cpus,      'CPUs'],
+        [:memory,    'Memory'],
+        [:dmesg,     'Kernel log (dmesg)'],
+        [:date,      'Date (at startup)']
       ].freeze
 
       # The system-prompt grounding section: a +# This machine+ heading,
@@ -84,20 +110,71 @@ module Pikuri
       # @return [Hash{Symbol=>Object}]
       def facts
         {
-          os:       os_pretty_name,
-          kernel:   kernel_string,
-          init:     init_system,
-          desktop:  presence(ENV['XDG_CURRENT_DESKTOP']),
-          hostname: uname[:nodename],
-          home:     home_dir,
-          shell:    presence(ENV['SHELL']),
-          cpus:     cpu_count,
-          memory:   total_memory,
-          date:     Time.now.strftime('%Y-%m-%d %H:%M:%S %z')
+          os:        os_pretty_name,
+          kernel:    kernel_string,
+          init:      init_system,
+          packaging: packaging,
+          desktop:   presence(ENV['XDG_CURRENT_DESKTOP']),
+          hostname:  uname[:nodename],
+          home:      home_dir,
+          shell:     presence(ENV['SHELL']),
+          cpus:      cpu_count,
+          memory:    total_memory,
+          dmesg:     dmesg_access,
+          date:      Time.now.strftime('%Y-%m-%d %H:%M:%S %z')
         }
       end
 
       private
+
+      # The host's package-management surface: the primary native manager
+      # (first {NATIVE_PACKAGE_MANAGERS} entry on +$PATH+, with its distro
+      # hint) followed by whichever of flatpak / snap are installed, e.g.
+      # +"apt (Debian/Ubuntu, dpkg); flatpak"+. +nil+ when none are found
+      # (so the line is dropped rather than asserting a bare box has no way
+      # to install software).
+      #
+      # @return [String, nil]
+      def packaging
+        native = NATIVE_PACKAGE_MANAGERS.find { |cmd, _| on_path?(cmd) }
+        parts = []
+        parts << "#{native[0]} (#{native[1]})" if native
+        parts << 'flatpak' if on_path?('flatpak')
+        parts << 'snap' if on_path?('snap')
+        parts.empty? ? nil : parts.join('; ')
+      end
+
+      # Whether this user can read the kernel ring buffer (+dmesg+), decided
+      # from +kernel.dmesg_restrict+ rather than by spawning +dmesg+ — so
+      # the model knows in advance whether a +dmesg+ call returns logs or
+      # fails with "read kernel buffer failed: Operation not permitted".
+      # +nil+ (line dropped) when +dmesg+ isn't installed.
+      #
+      # @return [String, nil]
+      def dmesg_access
+        return nil unless on_path?('dmesg')
+        return 'readable (running as root)' if Process.uid.zero?
+
+        case File.read('/proc/sys/kernel/dmesg_restrict').strip
+        when '0' then 'readable'
+        when '1' then 'restricted as this user — needs sudo (kernel.dmesg_restrict=1)'
+        end
+      rescue SystemCallError
+        # dmesg_restrict absent on this kernel: unprivileged reads are the
+        # historical default, so treat it as readable rather than guessing.
+        'likely readable (kernel.dmesg_restrict unset)'
+      end
+
+      # @param name [String] a bare command name, e.g. "flatpak"
+      # @return [Boolean] true if an executable by that name is on +$PATH+
+      def on_path?(name)
+        ENV['PATH'].to_s.split(File::PATH_SEPARATOR).any? do |dir|
+          next false if dir.empty?
+
+          path = File.join(dir, name)
+          File.file?(path) && File.executable?(path)
+        end
+      end
 
       # +inxi -b -c 0+ output (color stripped) when inxi is on PATH, capped
       # to {INXI_MAX_BYTES}; +nil+ when inxi is absent, errors, or is
