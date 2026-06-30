@@ -47,16 +47,9 @@ module Pikuri
       # @return [Pikuri::Skill::Catalog]
       attr_reader :catalog
 
-      # Append +<available_skills>+ to the system prompt and
-      # register the +skill+ tool. No-op when the catalog is empty.
-      #
-      # The catalog's +format_for_prompt+ historically returns a
-      # snippet with leading blank lines (designed for the old
-      # +system_prompt + format_for_prompt+ concatenation). The
-      # Configurator handles the separator between base and snippet
-      # itself ({Configurator#append_system_prompt} drains with a
-      # +\n\n+ join), so we +lstrip+ to avoid doubling up the blank
-      # lines.
+      # Register the +skill+ tool. No-op when the catalog is empty
+      # (the +<available_skills>+ snippet is contributed by
+      # {#system_prompt_snippets}).
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
@@ -68,9 +61,22 @@ module Pikuri
                 'when adding Pikuri::Skill::Extension — the extension auto-registers it from the catalog.'
         end
 
-        c.append_system_prompt(@catalog.format_for_prompt.lstrip)
         c.add_tool(Pikuri::Skill::SkillTool.new(catalog: @catalog))
         nil
+      end
+
+      # The +<available_skills>+ catalog block, or none for an empty
+      # catalog. The catalog's +format_for_prompt+ historically returns
+      # a snippet with leading blank lines (designed for the old
+      # +system_prompt + format_for_prompt+ concatenation); the Agent
+      # joins sections with +\n\n+, so +lstrip+ avoids doubling the
+      # blank lines.
+      #
+      # @return [Array<String>]
+      def system_prompt_snippets
+        return [] if @catalog.empty?
+
+        [@catalog.format_for_prompt.lstrip]
       end
     end
   end

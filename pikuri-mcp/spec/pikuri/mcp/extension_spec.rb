@@ -81,11 +81,11 @@ RSpec.describe Pikuri::Mcp::Extension do
       ext.configure(configurator)
 
       assert_nil ext.servers
-      assert_equal [], configurator.system_prompt_additions
+      assert_equal [], ext.system_prompt_snippets
       assert_equal [], configurator.on_close_handlers
     end
 
-    it 'builds Mcp::Servers, registers an on_close handler, and appends the snippet (non-empty registry, live servers)' do
+    it 'builds Mcp::Servers, registers an on_close handler, and exposes the snippet (non-empty registry, live servers)' do
       tracker = tracker_servers_class.new(empty: false, snippet: "\n\n<available_mcps>...</available_mcps>")
       ext = described_class.new(registry: non_empty_registry,
                                 synthesize_descriptions: false,
@@ -94,9 +94,9 @@ RSpec.describe Pikuri::Mcp::Extension do
       with_stubbed_servers(tracker) { ext.configure(configurator) }
 
       assert_same tracker, ext.servers
-      assert_equal 1, configurator.system_prompt_additions.size
-      snippet = configurator.system_prompt_additions.first
-      refute snippet.start_with?("\n"), 'snippet must be lstripped — Configurator owns the separator'
+      assert_equal 1, ext.system_prompt_snippets.size
+      snippet = ext.system_prompt_snippets.first
+      refute snippet.start_with?("\n"), 'snippet must be lstripped — Agent owns the separator'
       assert_equal 1, configurator.on_close_handlers.size
 
       # on_close handler calls servers.close
@@ -149,7 +149,7 @@ RSpec.describe Pikuri::Mcp::Extension do
       with_stubbed_servers(tracker) { ext.configure(configurator) }
 
       assert_same tracker, ext.servers
-      assert_equal [], configurator.system_prompt_additions # empty → no snippet
+      assert_equal [], ext.system_prompt_snippets # empty → no snippet
       assert_equal 1, configurator.on_close_handlers.size
     end
   end

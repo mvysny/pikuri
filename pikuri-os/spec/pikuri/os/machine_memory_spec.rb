@@ -48,6 +48,16 @@ RSpec.describe Pikuri::Os::MachineMemory do
       path.write('a tiny note')
       refute described_class.new(path: path).oversized?
     end
+
+    it 'reads fresh on each call, so an edit surfaces without a new instance' do
+      path.write('first note')
+      mem = described_class.new(path: path)
+      assert_equal 'first note', mem.content
+
+      # Same instance, file edited mid-session (the /clear re-pull case).
+      path.write('edited note')
+      assert_equal 'edited note', mem.content
+    end
   end
 
   describe '#prompt_section' do

@@ -41,10 +41,12 @@ RSpec.describe Pikuri::Os::Extension do
   end
 
   def configure!(c, read_only: nil)
-    described_class.new(
+    ext = described_class.new(
       filesystem: filesystem, confirmer: human, read_only: read_only,
       memory: memory, system_info: system_info
-    ).configure(c)
+    )
+    ext.configure(c)
+    ext
   end
 
   it 'is an Agent::Extension by composition' do
@@ -68,14 +70,14 @@ RSpec.describe Pikuri::Os::Extension do
       end
     end
 
-    it 'folds the machine facts and the memory affordance into the system prompt' do
+    it 'contributes the machine facts and the memory affordance via system_prompt_snippets' do
       with_singleton(Pikuri::Os::LocalSearch, :available?) do
         with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
           stub_localsearch_available(true)
           c = build_configurator
-          configure!(c)
+          ext = configure!(c)
 
-          additions = c.system_prompt_additions.join("\n")
+          additions = ext.system_prompt_snippets.join("\n")
           assert_includes additions, '# This machine'
           assert_includes additions, '- OS: TestOS'
           # memory.prompt_section was nil → affordance naming the path

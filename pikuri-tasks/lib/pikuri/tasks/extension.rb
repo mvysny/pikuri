@@ -9,9 +9,9 @@ module Pikuri
   module Tasks
     # An {Pikuri::Agent::Extension} that auto-wires an in-memory
     # task list onto an agent: constructs a fresh {List}, registers
-    # the four task tool classes against it, appends a brief
-    # workflow snippet to the system prompt, and (in {#bind}) arms
-    # {ListChanged} emission so listeners can observe every list
+    # the four task tool classes against it, contributes a brief
+    # workflow snippet via {#system_prompt_snippets}, and (in {#bind})
+    # arms {ListChanged} emission so listeners can observe every list
     # mutation.
     #
     # == Usage
@@ -100,9 +100,11 @@ module Pikuri
         end
 
         TOOL_CLASSES.each { |cls| c.add_tool(cls.new(list: @list)) }
-        c.append_system_prompt(PROMPT_SNIPPET)
         nil
       end
+
+      # @return [Array<String>] the static task-workflow snippet.
+      def system_prompt_snippets = [PROMPT_SNIPPET]
 
       # Arm {List#on_change} to emit a {ListChanged} (carrying a
       # fresh {List#items} snapshot) onto the agent's listener

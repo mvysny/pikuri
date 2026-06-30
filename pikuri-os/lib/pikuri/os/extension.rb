@@ -108,9 +108,21 @@ module Pikuri
                       'disabled (GNOME desktop file index unavailable on this host).')
         end
 
-        c.append_system_prompt(@system_info.prompt_section)
-        c.append_system_prompt(@memory.prompt_section || empty_memory_affordance)
         nil
+      end
+
+      # Two grounding sections: the machine facts and the MACHINE.md
+      # notes (or an affordance pointing the agent at where to record
+      # them). The system-info section is memoized at its source so a
+      # re-pull on clear is free; the memory section is read **fresh**, so
+      # MACHINE.md edits surface on a "/clear" — the durable notes stay
+      # current across a conversation reset. The nested Workspace / Code
+      # extensions (added in {#configure}) contribute their own snippets
+      # independently.
+      #
+      # @return [Array<String>]
+      def system_prompt_snippets
+        [@system_info.prompt_section, @memory.prompt_section || empty_memory_affordance]
       end
 
       private

@@ -4,10 +4,12 @@ module Pikuri
   class Agent
     # Build-time collector yielded into the +Pikuri::Agent.new+ block.
     # Hosts and {Extension} implementations call its methods to declare
-    # additional tools, listeners, system-prompt snippets, +on_close+
-    # handlers, extension instances, and persona-flavored sub-agents;
+    # additional tools, listeners, +on_close+ handlers, extension
+    # instances, and persona-flavored sub-agents;
     # {Agent#initialize} drains the collected state into the agent's
-    # final wiring before returning.
+    # final wiring before returning. (System-prompt contributions are
+    # *not* collected here — the Agent pulls them from each extension's
+    # {Extension#system_prompt_snippets} at assembly time.)
     #
     # == Why this exists
     #
@@ -56,10 +58,9 @@ module Pikuri
       attr_reader :transport
 
       # @return [String] the +system_prompt:+ kwarg passed to
-      #   {Agent#initialize}, untouched. Extensions append to the
-      #   prompt via {#append_system_prompt} rather than mutating
-      #   this; the attribute exists so a peek at the base is
-      #   available for diagnostics.
+      #   {Agent#initialize}, untouched. The base the Agent prepends to
+      #   the pulled {Extension#system_prompt_snippets}; exposed here so
+      #   an extension's +configure+ can peek at the base for diagnostics.
       attr_reader :system_prompt_base
 
       # @return [String] this agent's unique identifier; empty for the
@@ -103,12 +104,6 @@ module Pikuri
       #   {Agent#initialize}.
       attr_reader :listeners
 
-      # @return [Array<String>] system-prompt snippets added via
-      #   {#append_system_prompt}, in declaration order. Joined with
-      #   double-newline separators between the base prompt and each
-      #   snippet by {Agent#initialize}.
-      attr_reader :system_prompt_additions
-
       # @return [Array<Proc>] +on_close+ handlers added via
       #   {#on_close}, in declaration order. Fired by {Agent#close}
       #   in LIFO order with per-handler rescue.
@@ -148,7 +143,6 @@ module Pikuri
         @tools = []
         @sub_agent_tools = []
         @listeners = []
-        @system_prompt_additions = []
         @on_close_handlers = on_close_sink || []
         @extensions = []
       end
@@ -200,21 +194,6 @@ module Pikuri
       # @return [void]
       def add_listeners(listeners)
         listeners.each { |l| @listeners << l }
-        nil
-      end
-
-      # Append a snippet to the system prompt. Snippets are joined
-      # to the base prompt with double-newline separators.
-      #
-      # Used by extensions to register +<available_skills>+,
-      # +<available_mcps>+, and similar advertisement blocks. Block
-      # users typically pass the full system prompt via the ctor's
-      # +system_prompt:+ kwarg instead.
-      #
-      # @param snippet [String]
-      # @return [void]
-      def append_system_prompt(snippet)
-        @system_prompt_additions << snippet
         nil
       end
 

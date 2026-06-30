@@ -100,9 +100,20 @@ module Pikuri
         @servers = Mcp::Servers.new(@registry, synthesizer: synthesizer, verifier: verifier)
         c.on_close { @servers.close }
         @servers.start_all
-
-        c.append_system_prompt(@servers.system_prompt_snippet.lstrip) unless @servers.empty?
         nil
+      end
+
+      # The +<available_mcps>+ block describing the started servers.
+      # Reads the already-probed server state (no re-probe), so it's
+      # cheap to re-pull on a conversation clear — and a clear then
+      # reflects any servers connected via +mcp_connect+ since boot.
+      # +[]+ when no registry / no live servers.
+      #
+      # @return [Array<String>]
+      def system_prompt_snippets
+        return [] if @servers.nil? || @servers.empty?
+
+        [@servers.system_prompt_snippet.lstrip]
       end
 
       # Register a per-agent +mcp_connect+ tool on the agent's chat.

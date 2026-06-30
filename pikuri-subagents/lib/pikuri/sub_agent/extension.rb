@@ -33,9 +33,8 @@ module Pikuri
     # * +configure(c)+ — agent-agnostic setup. Validates that every
     #   persona's +tool_names+ resolves against tools already
     #   registered on the Configurator (host-side bug to catch at
-    #   boot, not at first LLM call), then appends the
-    #   +<available_agents>+ snippet via
-    #   {Pikuri::Agent::Configurator#append_system_prompt}.
+    #   boot, not at first LLM call). The +<available_agents>+ snippet
+    #   is contributed via +system_prompt_snippets+.
     # * +bind(ctx)+ — agent-keyed setup. Constructs the
     #   {SubAgentTool} closing over the parent agent's
     #   {Pikuri::Agent::ExtensionContext} (for its +tools+,
@@ -112,9 +111,12 @@ module Pikuri
                 "Currently registered: #{have.inspect}."
         end
 
-        c.append_system_prompt(SubAgentTool.available_agents_snippet(@personas))
         nil
       end
+
+      # @return [Array<String>] the +<available_agents>+ catalog built
+      #   from the wired persona list (fixed for the agent's lifetime).
+      def system_prompt_snippets = [SubAgentTool.available_agents_snippet(@personas)]
 
       # Construct the {SubAgentTool} closing over the parent agent's
       # {Pikuri::Agent::ExtensionContext} and register it on the

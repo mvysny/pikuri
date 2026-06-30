@@ -23,9 +23,13 @@ module Pikuri
     #
     # == Read-once-at-boot
     #
-    # Like {MachineMemory}, this is a snapshot taken when the prompt is
-    # built; the date in particular is "at startup". The host doesn't
-    # change distro mid-session, so that's fine.
+    # This is a snapshot taken when the prompt is first built; the date
+    # in particular is "at startup". The host doesn't change distro
+    # mid-session, so that's fine — and {#prompt_section} is **memoized**,
+    # so the (subprocess-spawning) +inxi+ probe runs exactly once no
+    # matter how often the prompt is re-assembled (e.g. on every
+    # {Pikuri::Agent#clear_conversation}). Unlike {MachineMemory}, this
+    # section deliberately does *not* refresh on clear.
     class SystemInfo
       # @return [Integer] cap on the appended +inxi -b+ block, so a chatty
       #   inxi can't bloat the prompt.
@@ -48,13 +52,18 @@ module Pikuri
 
       # The system-prompt grounding section: a +# This machine+ heading,
       # the core facts, and (when +inxi+ is present) an extra-detail block.
+      # Memoized — the +inxi+ subprocess runs only on the first call, so
+      # re-pulling the prompt (every {Pikuri::Agent#clear_conversation}) is
+      # free.
       #
       # @return [String]
       def prompt_section
-        parts = ['# This machine', '', self.class.render(facts)]
-        detail = inxi_detail
-        parts += ['', 'Further hardware/desktop detail (from `inxi -b`):', detail] if detail
-        parts.join("\n")
+        @prompt_section ||= begin
+          parts = ['# This machine', '', self.class.render(facts)]
+          detail = inxi_detail
+          parts += ['', 'Further hardware/desktop detail (from `inxi -b`):', detail] if detail
+          parts.join("\n")
+        end
       end
 
       # Render a facts hash as +"- Label: value"+ lines in {FACT_ORDER},

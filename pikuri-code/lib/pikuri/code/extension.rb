@@ -125,11 +125,11 @@ module Pikuri
         c.add_tool Bash.new(filesystem: @filesystem, confirmer: @confirmer, sandbox: @sandbox)
 
         # Plan mode rides the host-owned read-only flag; only wire its
-        # surface when one was supplied (see the class header).
+        # tools when one was supplied (see the class header). The prompt
+        # half is contributed by {#system_prompt_snippets}.
         if @read_only
           c.add_tool EnterPlanMode.new(read_only: @read_only)
           c.add_tool ExitPlanMode.new(read_only: @read_only, confirmer: @confirmer)
-          c.append_system_prompt(PLAN_MODE_PROMPT)
         end
 
         # GitClone is intentionally added via +add_sub_agent_tool+ only
@@ -138,6 +138,11 @@ module Pikuri
         c.add_sub_agent_tool GitClone.new(filesystem: @filesystem)
         nil
       end
+
+      # @return [Array<String>] the plan-mode prompt, only when the
+      #   read-only flag is wired (so the prompt and the plan-mode tools
+      #   appear together); otherwise none.
+      def system_prompt_snippets = @read_only ? [PLAN_MODE_PROMPT] : []
 
       # Bridge plan-mode transitions onto the listener stream so UI
       # chrome can render the current posture — for both model-driven

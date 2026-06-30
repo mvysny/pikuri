@@ -18,8 +18,8 @@ module Pikuri
     # is a plain-text diff that goes through the confirmer, and the whole
     # memory is one file the user can read. It also needs no infra — no
     # vector store, no embedder — which fits the "small enough to audit"
-    # posture. The cost is read-once-at-boot: edits made mid-session (by
-    # the agent or the user) aren't reflected until the next start.
+    # posture. Edits are picked up on the next prompt assembly (boot or a
+    # conversation clear; see "Re-read on each prompt assembly" below).
     #
     # == This class's job
     #
@@ -28,6 +28,16 @@ module Pikuri
     # system-prompt section. The *write* half is the existing file tools
     # plus a line in the system prompt pointing the agent at {.default_path}
     # — nothing tool-specific lives here.
+    #
+    # == Re-read on each prompt assembly
+    #
+    # {#content} reads the file fresh on every call, and the OS extension
+    # pulls {#prompt_section} into the system prompt at construction and
+    # again on every {Pikuri::Agent#clear_conversation}. So edits to
+    # +MACHINE.md+ (by the user or the agent) surface on the next "/clear"
+    # — the durable memory stays current across a conversation reset,
+    # rather than freezing at boot. The file is small and the read happens
+    # only a handful of times (boot + clears), never per turn.
     class MachineMemory
       LOGGER = Pikuri.logger_for('MachineMemory')
 
@@ -60,12 +70,13 @@ module Pikuri
         Pikuri::Paths.config.join(FILENAME).to_s
       end
 
-      # Raw file content, or +''+ when the file doesn't exist. Memoized
-      # (read-once-at-boot); logs the size-guard warning on first read.
+      # Raw file content, or +''+ when the file doesn't exist. Read
+      # fresh on each call (not memoized) so a re-pull on conversation
+      # clear picks up edits; logs the size-guard warning on each read.
       #
       # @return [String]
       def content
-        @content ||= read_content
+        read_content
       end
 
       # @return [Boolean] whether the content exceeds {OVERSIZE_BYTES}.

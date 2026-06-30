@@ -72,5 +72,26 @@ RSpec.describe Pikuri::Os::SystemInfo do
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
       end
     end
+
+    it 'is memoized — the inxi subprocess runs at most once across repeated calls' do
+      original = Pikuri::Subprocess.method(:spawn)
+      spawns = 0
+      result_struct = Struct.new(:status, :output) { def wait = self }
+      status_struct = Struct.new(:success?, :exitstatus)
+      Pikuri::Subprocess.define_singleton_method(:spawn) do |*_args, **_kwargs|
+        spawns += 1
+        result_struct.new(status_struct.new(true, 0), "System:\n  Host: box\n")
+      end
+      begin
+        info = described_class.new
+        first = info.prompt_section
+        second = info.prompt_section
+
+        assert_equal 1, spawns # second call hit the memo, no re-spawn
+        assert_same first, second # same frozen-snapshot String object
+      ensure
+        Pikuri::Subprocess.define_singleton_method(:spawn, original)
+      end
+    end
   end
 end

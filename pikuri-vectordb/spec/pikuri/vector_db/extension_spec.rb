@@ -96,12 +96,14 @@ describe Pikuri::VectorDb::Extension do
       assert_equal 0, backend.count
     end
 
-    it 'does NOT append a system-prompt snippet' do
+    it 'contributes no system-prompt snippet' do
       # Two use modes (direct + LIBRARIAN-mediated) live behind
-      # the same Extension; appending a one-or-the-other usage
-      # block would conflict in the LIBRARIAN-mediated case.
-      build_extension.configure(configurator)
-      assert_empty configurator.system_prompt_additions
+      # the same Extension; contributing a one-or-the-other usage
+      # block would conflict in the LIBRARIAN-mediated case. It
+      # inherits the no-op system_prompt_snippets default.
+      ext = build_extension
+      ext.configure(configurator)
+      assert_empty ext.system_prompt_snippets
     end
 
     it 'does NOT auto-register the LIBRARIAN persona' do

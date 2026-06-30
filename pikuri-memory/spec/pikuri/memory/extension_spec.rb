@@ -86,7 +86,7 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c)
 
-      snippet = c.system_prompt_additions.join
+      snippet = ext.system_prompt_snippets.join
       assert_match(/<memory_persona>/, snippet)
       assert_match(/lives in Brno/, snippet)
       assert_match(/writes Ruby/, snippet)
@@ -103,7 +103,7 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c)
 
-      assert_match(/complete set \(1 fact\)/, c.system_prompt_additions.join)
+      assert_match(/complete set \(1 fact\)/, ext.system_prompt_snippets.join)
     end
 
     it 'frames the persona as partial when the store exceeds resident_limit' do
@@ -113,7 +113,7 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c)
 
-      snippet = c.system_prompt_additions.join
+      snippet = ext.system_prompt_snippets.join
       assert_match(/Showing 2 of 5/, snippet)
       assert_match(/look up anything more specific/, snippet)
       refute_match(/complete set/, snippet)
@@ -128,7 +128,7 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c)
 
-      assert_equal [], c.system_prompt_additions
+      assert_equal [], ext.system_prompt_snippets
     end
 
     it 'survives an unreachable store at boot (no persona, no raise)' do
@@ -138,7 +138,7 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c) # must not raise
 
-      assert_equal [], c.system_prompt_additions
+      assert_equal [], ext.system_prompt_snippets
     end
 
     it 'skips the persona entirely when resident_persona: false' do
@@ -148,7 +148,23 @@ describe Pikuri::Memory::Extension do
       c = build_configurator
       ext.configure(c)
 
-      assert_equal [], c.system_prompt_additions
+      assert_equal [], ext.system_prompt_snippets
+    end
+
+    it 're-queries the store on each call, so the persona refreshes (e.g. on clear)' do
+      client = fake_client_class.new
+      client.all_rows = [record('lives in Brno')]
+      ext = described_class.new(client: client, user_id: 'u')
+
+      first = ext.system_prompt_snippets.join
+      assert_match(/lives in Brno/, first)
+      refute_match(/writes Ruby/, first)
+
+      # A fact captured during the conversation now exists in the store.
+      client.all_rows = [record('lives in Brno'), record('writes Ruby')]
+
+      second = ext.system_prompt_snippets.join
+      assert_match(/writes Ruby/, second) # re-fetched, not the cached first pull
     end
 
     it 'raises if recall was pre-registered' do

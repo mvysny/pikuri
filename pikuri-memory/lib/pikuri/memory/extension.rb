@@ -17,9 +17,11 @@ module Pikuri
     #
     # == What it wires (the three retrieval tiers)
     #
-    # * **configure** registers the +recall+ tool ({Recall}) and, when
-    #   +resident_persona:+ is on, appends a small always-in-prompt
-    #   persona summary read from the store (tier 1 + tier 3).
+    # * **configure** registers the +recall+ tool ({Recall}); the
+    #   always-in-prompt persona summary (tier 1 + tier 3) is contributed
+    #   by **system_prompt_snippets**, when +resident_persona:+ is on —
+    #   re-pulled (and so refreshed from the store) on every
+    #   {Pikuri::Agent#clear_conversation}.
     # * **on_user_message** (the per-turn hook) does tier 2 — the
     #   automatic prefetch — *and* the asynchronous capture: it enqueues
     #   the user's turn for off-path extraction, then returns a small
@@ -140,12 +142,23 @@ module Pikuri
         end
 
         c.add_tool Recall.new(client: @client, user_id: @user_id)
+        nil
+      end
 
-        return unless @resident_persona
+      # The resident-persona summary, freshly fetched from the store.
+      # Because the Agent re-pulls this on every clear, the persona
+      # **refreshes** across a "/clear" — facts captured during the
+      # cleared conversation show up, instead of staying frozen at
+      # construction. Returns +[]+ when the resident persona is off, the
+      # store is empty, or (via {#resident_persona_snippet}'s own rescue)
+      # the store is unreachable this pass.
+      #
+      # @return [Array<String>]
+      def system_prompt_snippets
+        return [] unless @resident_persona
 
         snippet = resident_persona_snippet
-        c.append_system_prompt(snippet) if snippet
-        nil
+        snippet ? [snippet] : []
       end
 
       # Start the capture worker and arm its bounded flush on agent

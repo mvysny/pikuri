@@ -47,8 +47,9 @@ module Pikuri
   # == Three retrieval tiers (the layered shape)
   #
   # 1. **Resident persona** — a small always-in-prompt summary of
-  #    high-frequency facts, appended once via
-  #    {Configurator#append_system_prompt} at construction.
+  #    high-frequency facts, contributed via
+  #    {Extension#system_prompt_snippets} and re-pulled (refreshed from
+  #    the store) on every {Pikuri::Agent#clear_conversation}.
   # 2. **Automatic prefetch** — {Extension#on_user_message} embeds
   #    the latest user message, searches mem0, and injects a small
   #    high-precision slice as a +:system+ +<memory-context>+ block.

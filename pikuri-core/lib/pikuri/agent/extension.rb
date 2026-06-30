@@ -3,41 +3,41 @@
 module Pikuri
   class Agent
     # The Extension protocol — how hosts bolt extra capabilities
-    # (system-prompt snippets, tools, lifecycle hooks) onto an
+    # (system-prompt sections, tools, lifecycle hooks) onto an
     # {Agent}. Extensions are added via {Configurator#add_extension}
-    # inside the +Agent.new+ block; the Agent then drives three hooks
-    # on each — {#configure} during the block, {#bind} once the agent
-    # is fully constructed, and {#on_user_message} on every user turn
-    # thereafter.
+    # inside the +Agent.new+ block; the Agent then drives a fixed set
+    # of hooks on each: {#configure} during the block, {#bind} once the
+    # agent is fully constructed, {#system_prompt_snippets} whenever the
+    # prompt is (re)assembled, {#on_user_message} on every user turn,
+    # and {#on_conversation_reset} on every {Agent#clear_conversation}.
     #
     # Each phase receives that phase's context object: +configure+
-    # gets the build-time {Configurator}; +bind+ and
-    # +on_user_message+ get the runtime {ExtensionContext} — the
-    # capability facade for everything that acts on the live agent
-    # (domain-event emission, raw tool registration, sub-agent
-    # listener derivation), with the agent itself readable via
-    # {ExtensionContext#agent}.
+    # gets the build-time {Configurator}; +bind+,
+    # +on_user_message+, and +on_conversation_reset+ get the runtime
+    # {ExtensionContext} — the capability facade for everything that
+    # acts on the live agent (domain-event emission, raw tool
+    # registration, sub-agent listener derivation), with the agent
+    # itself readable via {ExtensionContext#agent}.
+    # {#system_prompt_snippets} takes no argument — it reads instance
+    # state populated in +configure+.
     #
     # Mix this module into an extension class to inherit empty
-    # default implementations of all three hooks; override the ones
+    # default implementations of every hook; override the ones
     # you need. Extensions that don't +include+ this module still
-    # work *if they define all three methods themselves* — the Agent
+    # work *if they define every hook themselves* — the Agent
     # and Configurator call them by name with no +respond_to?+ guard,
     # so a missing one raises. The module exists to make the protocol
     # *explicit* and to give "I want to implement just +configure+"
-    # extensions free no-op +bind+ / +on_user_message+ defaults (and
-    # any other combination).
+    # extensions free no-op defaults for the rest (in any combination).
     #
     # == Example
     #
     #   class MyExtension
     #     include Pikuri::Agent::Extension
     #
-    #     def configure(c)
-    #       c.append_system_prompt("Always be polite.")
-    #     end
+    #     def system_prompt_snippets = ["Always be polite."]
     #
-    #     # bind not overridden — inherits the empty default
+    #     # configure / bind not overridden — inherit the empty defaults
     #   end
     #
     # See +Pikuri::Mcp::Extension+ and +Pikuri::Skill::Extension+
@@ -52,8 +52,6 @@ module Pikuri
       # no-op; override when you need to install *agent-agnostic*
       # state. Things you typically do here:
       #
-      # * append snippets to the system prompt via
-      #   {Configurator#append_system_prompt}
       # * register tools via {Configurator#add_tool}
       # * register listeners via {Configurator#add_listener}
       # * register parent-only +on_close+ handlers via
@@ -139,16 +137,15 @@ module Pikuri
       # already enqueued are real memories the background worker should
       # still write.
       #
-      # == System prompt is handled for you
+      # == System prompt is handled separately
       #
-      # An extension's system-prompt contributions
-      # ({Configurator#append_system_prompt}) are baked into the agent's
-      # system prompt at construction; {Agent#clear_conversation}
-      # re-applies that prompt verbatim, so there is nothing to do here
-      # for them. Snippets read from live state at +configure+ time
-      # (e.g. a resident memory persona) are deliberately *not* refreshed
-      # on clear — the construction-time snapshot persists, matching how
-      # they already don't refresh per-turn within a conversation.
+      # Do *not* touch the system prompt here. An extension's prompt
+      # contribution comes from {#system_prompt_snippets}, which
+      # {Agent#clear_conversation} re-pulls and re-assembles on every
+      # clear — so a section read from live state (a resident memory
+      # persona, +MACHINE.md+ notes) refreshes automatically without any
+      # code in this hook. This hook is only for *imperative*
+      # conversation-scoped state the prompt machinery can't express.
       #
       # An extension that owns a domain event should emit it from here so
       # UI listeners see the reset — e.g. +Pikuri::Tasks::Extension+'s
@@ -165,6 +162,45 @@ module Pikuri
       #   +bind+ received
       # @return [void]
       def on_conversation_reset(ctx); end
+
+      # This extension's contributions to the agent's system prompt, as
+      # a list of text sections. The default is none ([]); override to
+      # contribute one or more.
+      #
+      # == Pull, not push — and why it refreshes on clear
+      #
+      # The {Agent} *assembles* its system prompt by concatenating its
+      # base prompt with the sections every extension returns here —
+      # once at construction, and again on every
+      # {Agent#clear_conversation}. So this method is the single source
+      # of an extension's prompt contribution; there is no
+      # "append once" call. The payoff is refresh: a section computed
+      # from live state (a resident memory persona fetched from a store,
+      # +MACHINE.md+ read from disk) is *recomputed* on clear, so
+      # persistent data stays current across a "/clear" instead of being
+      # frozen at construction. A static section just returns the same
+      # constant each call.
+      #
+      # == Argument-free; reads instance state set in +configure+
+      #
+      # No context is passed: a contributor reads its own instance state
+      # (catalogs, clients, registries) populated during {#configure},
+      # which always runs first. Side effects that *produce* that state
+      # (starting MCP servers, probing a model) belong in {#configure};
+      # this method only *reads* the result, so it stays cheap enough to
+      # call on every clear. The one caller-managed cost is deliberate —
+      # e.g. re-reading a small file or re-querying a store; an expensive
+      # one-shot probe should be memoized at its source so a re-pull is
+      # free (worked example: +Pikuri::Os::SystemInfo#prompt_section+).
+      #
+      # Sections are joined by the Agent (blank/nil entries dropped), in
+      # extension-registration order. Like the rest of the surface, this
+      # is consulted on the parent agent only — sub-agents do not inherit
+      # extensions.
+      #
+      # @return [Array<String>] zero or more prompt sections; +[]+ to
+      #   contribute nothing
+      def system_prompt_snippets = []
     end
   end
 end

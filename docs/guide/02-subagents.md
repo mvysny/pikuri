@@ -146,18 +146,24 @@ end
 ```
 
 `add_extension` is the host-facing seam for any package that wants
-to add capabilities to an agent. An extension implements two
-methods, both with empty defaults so each extension only writes
+to add capabilities to an agent. An extension implements a handful
+of hooks, all with empty defaults so each extension only writes
 the ones it needs:
 
 - **`configure(c)`** — agent-agnostic setup. Runs once during the
   `Agent.new` block, against the `Configurator` itself (the `c`
-  yielded into the block). `SubAgent::Extension#configure` does
-  two things here: validate that every persona's `tool_names`
-  resolves against tools already on `c.tools` (host-side bug —
-  better to crash at boot than at first LLM call), and append the
-  `<available_agents>` snippet to the system prompt via
-  `c.append_system_prompt`.
+  yielded into the block). `SubAgent::Extension#configure`
+  validates that every persona's `tool_names` resolves against
+  tools already on `c.tools` (host-side bug — better to crash at
+  boot than at first LLM call).
+- **`system_prompt_snippets`** — returns this extension's
+  contributions to the system prompt as an array of strings.
+  `SubAgent::Extension` returns the `<available_agents>` block here.
+  The agent *assembles* the full prompt from its base plus every
+  extension's snippets, both at construction and again on
+  `clear_conversation` — so a snippet read from live state (a memory
+  persona, a notes file) refreshes when the conversation is cleared
+  instead of freezing at boot.
 - **`bind(ctx)`** — agent-keyed setup. Runs once the agent is
   fully constructed, with the agent's
   `Pikuri::Agent::ExtensionContext` — the capability facade for

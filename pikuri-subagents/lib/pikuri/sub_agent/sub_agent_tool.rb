@@ -225,10 +225,8 @@ module Pikuri
       end
 
       # Build the +<available_agents>+ system-prompt snippet from
-      # a personas hash. Called by {Extension#configure} when at
-      # least one persona was wired, then appended via
-      # {Pikuri::Agent::Configurator#append_system_prompt} so
-      # renderers see one coherent prompt.
+      # a personas hash. Returned by {Extension#system_prompt_snippets},
+      # which the Agent assembles into the system prompt.
       #
       # The snippet is the LLM's only source of "what does each
       # persona do" — the +agent+ tool's static description points

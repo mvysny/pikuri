@@ -36,7 +36,6 @@ RSpec.describe Pikuri::Agent::Configurator do
       assert_equal [], c.tools
       assert_equal [], c.sub_agent_tools
       assert_equal [], c.listeners
-      assert_equal [], c.system_prompt_additions
       assert_equal [], c.on_close_handlers
       assert_equal [], c.extensions
     end
@@ -78,15 +77,6 @@ RSpec.describe Pikuri::Agent::Configurator do
       c.add_listener(:l1)
       c.add_listener(:l2)
       assert_equal %i[l1 l2], c.listeners
-    end
-  end
-
-  describe '#append_system_prompt' do
-    it 'appends snippets in declaration order' do
-      c = new_configurator
-      c.append_system_prompt('snippet A')
-      c.append_system_prompt('snippet B')
-      assert_equal ['snippet A', 'snippet B'], c.system_prompt_additions
     end
   end
 

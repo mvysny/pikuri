@@ -36,8 +36,11 @@ which is the load-bearing piece of its memory design:
 1. **Resident persona (always-in-prompt).** A few always-true,
    high-frequency facts (name, core preferences, current main project)
    too universally relevant to gate behind a query match. Present every
-   turn, paid once, frozen at session start so the prefix cache stays
-   stable. Implemented via the existing `append_system_prompt`.
+   turn, paid once, and frozen *for the duration of a conversation* so
+   the prefix cache stays stable — re-fetched (refreshed from the store)
+   only on `clear_conversation`, where the cache resets anyway.
+   Implemented via the `system_prompt_snippets` extension hook, which the
+   agent re-pulls on each clear.
 2. **Automatic prefetch (per-turn, query-driven).** Embed the latest
    user message, semantic-search the store, inject a small
    high-precision slice. The persona's long tail, surfaced only when

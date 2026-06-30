@@ -92,11 +92,11 @@ module Pikuri
     #   route the chat elsewhere or raise
     #   +RubyLLM::ModelNotFoundError+). If +transport.model+ is
     #   +nil+, it's filled in from +RubyLLM.config.default_model+.
-    # @param system_prompt [String] system message prepended to
-    #   the chat. Extensions append their advertisement blocks
-    #   (e.g. +<available_skills>+, +<available_mcps>+) onto this
-    #   base via {Configurator#append_system_prompt} during the
-    #   block.
+    # @param system_prompt [String] base system message. The chat's
+    #   actual instructions are this base plus every extension's
+    #   {Extension#system_prompt_snippets} (e.g. +<available_skills>+,
+    #   +<available_mcps>+), assembled by {#assemble_system_prompt} at
+    #   construction and re-assembled on {#clear_conversation}.
     # @param step_limit [Control::StepLimit, nil] step budget
     #   control. When set, {Control::StepLimit#tick!} fires on
     #   every +before_tool_call+ and {Control::StepLimit#reset!}
@@ -140,11 +140,13 @@ module Pikuri
     # @yield [Configurator] yields a {Configurator} that collects
     #   tools (via {Configurator#add_tool} / {Configurator#add_tools}),
     #   listeners (via {Configurator#add_listener} /
-    #   {Configurator#add_listeners}), system-prompt snippets (via
-    #   {Configurator#append_system_prompt}), extension instances
+    #   {Configurator#add_listeners}), extension instances
     #   (via {Configurator#add_extension} — which fires +configure+
     #   immediately), and close handlers (via
-    #   {Configurator#on_close}). The Configurator is the *only*
+    #   {Configurator#on_close}). System-prompt contributions are not
+    #   pushed here — they are pulled from each extension's
+    #   {Extension#system_prompt_snippets} at assembly time. The
+    #   Configurator is the *only*
     #   path for adding any of these — there are no parallel ctor
     #   kwargs. The block is optional; an agent constructed without
     #   one has no tools, no listeners, no extensions.
@@ -158,6 +160,12 @@ module Pikuri
       @cancellable = cancellable
       @closed = false
 
+      # The raw constructor prompt, kept separate from the assembled
+      # +@system_prompt+ so {#assemble_system_prompt} can recompute the
+      # full prompt (base + each extension's {Extension#system_prompt_snippets})
+      # from scratch — at construction and again on every
+      # {#clear_conversation}, which is what lets dynamic sections refresh.
+      @system_prompt_base = system_prompt
       @system_prompt = system_prompt
       @step_limit = step_limit
       @interloper = interloper
@@ -226,11 +234,13 @@ module Pikuri
     end
 
     # @return [String] system prompt actually sent to the chat —
-    #   equal to the constructor's +system_prompt:+ argument plus
-    #   any snippets appended via {Configurator#append_system_prompt}
+    #   the assembled result of the constructor's +system_prompt:+
+    #   argument plus every extension's {Extension#system_prompt_snippets}
     #   (extensions' +<available_skills>+ / +<available_mcps>+ /
-    #   +<available_agents>+, ...). Not inherited by sub-agents —
-    #   each persona owns its own system prompt verbatim.
+    #   +<available_agents>+, a resident memory persona, ...). Re-assembled
+    #   on {#clear_conversation}, so a dynamic section may differ from its
+    #   construction-time value. Not inherited by sub-agents — each persona
+    #   owns its own system prompt verbatim. See {#assemble_system_prompt}.
     attr_reader :system_prompt
 
     # @return [Control::StepLimit, nil] the step-budget control
@@ -411,11 +421,16 @@ module Pikuri
     # 1. The chat history, via +Chat#reset_messages!+ — which also
     #    drops the mid-conversation +:system+ injections (memory
     #    +<memory-context>+ blocks land as +:system+) — then re-applies
-    #    {#system_prompt} via +with_instructions+. The system prompt is
-    #    the one baked at construction (base + every extension snippet),
-    #    so all extension prompt contributions survive verbatim; the
-    #    registered callbacks and tool registrations live on the same
-    #    reused +@chat+ object and are untouched.
+    #    a freshly **re-assembled** system prompt via +with_instructions+.
+    #    Re-assembly ({#assemble_system_prompt}) re-pulls every
+    #    extension's {Extension#system_prompt_snippets}, so *dynamic*
+    #    sections refresh — a resident memory persona re-fetched from the
+    #    store, +MACHINE.md+ re-read from disk — while static sections and
+    #    the base prompt are reproduced unchanged. (This is why a clear
+    #    does the dynamic sections' I/O; an expensive one-shot source is
+    #    expected to memoize so the re-pull is free.) The registered
+    #    callbacks and tool registrations live on the same reused +@chat+
+    #    object and are untouched.
     # 2. The controls — +@step_limit+ / +@cancellable+ reset, the
     #    interloper queue drained (stale mid-loop input from the old
     #    conversation must not leak into the new one), and the cached
@@ -439,6 +454,7 @@ module Pikuri
     # @return [void]
     def clear_conversation
       @chat.reset_messages!
+      @system_prompt = assemble_system_prompt
       @chat.with_instructions(@system_prompt)
       @synth_answer = nil
       @step_limit&.reset!
@@ -517,10 +533,11 @@ module Pikuri
       @tools = configurator.tools.dup
       @sub_agent_tools = configurator.sub_agent_tools.dup
       @listeners = ListenerList.new(configurator.listeners)
-      configurator.system_prompt_additions.each do |snippet|
-        @system_prompt = "#{@system_prompt}\n\n#{snippet}"
-      end
       @extensions = configurator.extensions.dup
+      # Assemble the prompt now that every extension's +configure+ has
+      # run (so the state their snippets read is populated). The same
+      # call re-runs on {#clear_conversation} to refresh dynamic sections.
+      @system_prompt = assemble_system_prompt
 
       @chat = build_chat(@transport)
       @chat.with_instructions(@system_prompt)
@@ -572,6 +589,26 @@ module Pikuri
       # fully wired. See IDEAS.md §"Extension protocol design" for
       # what #configure vs #bind are each for.
       @extensions.each { |ext| ext.bind(@extension_context) }
+    end
+
+    # Build the full system prompt from the base prompt plus every
+    # extension's {Extension#system_prompt_snippets}, in
+    # extension-registration order, joined with blank lines. Blank / nil
+    # sections are dropped so an extension contributing nothing this pass
+    # (an empty catalog, a memory store that's down) leaves no stray
+    # separator. Pure function of the base prompt and the extensions'
+    # current state — no side effects, no chat mutation — so it can be
+    # called both at construction ({#run_configure}) and on every
+    # {#clear_conversation}; the latter is what refreshes dynamic
+    # sections. Sub-agents construct their own prompt and don't go
+    # through here.
+    #
+    # @return [String]
+    def assemble_system_prompt
+      sections = @extensions.flat_map(&:system_prompt_snippets)
+      [@system_prompt_base, *sections]
+        .reject { |s| s.nil? || s.to_s.strip.empty? }
+        .join("\n\n")
     end
 
     # Resolve the context-window cap and announce it on the listener

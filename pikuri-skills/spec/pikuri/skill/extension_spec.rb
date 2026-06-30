@@ -50,15 +50,15 @@ RSpec.describe Pikuri::Skill::Extension do
     assert_kind_of Pikuri::Agent::Extension, ext
   end
 
-  describe '#configure' do
-    it 'appends the catalog block to the system prompt and registers Skill::SkillTool (non-empty catalog)' do
+  describe '#configure / #system_prompt_snippets' do
+    it 'contributes the catalog block and registers Skill::SkillTool (non-empty catalog)' do
       ext = described_class.new(catalog: non_empty_catalog)
       ext.configure(configurator)
 
-      assert_equal 1, configurator.system_prompt_additions.size
-      snippet = configurator.system_prompt_additions.first
+      assert_equal 1, ext.system_prompt_snippets.size
+      snippet = ext.system_prompt_snippets.first
       # The snippet itself must not start with blank lines — the
-      # Configurator handles the separator at drain time.
+      # Agent handles the separator at assembly time.
       refute snippet.start_with?("\n"), 'snippet should be lstripped'
       assert snippet.include?('<available_skills>'), snippet
       assert snippet.include?('<name>sample</name>'), snippet
@@ -72,7 +72,7 @@ RSpec.describe Pikuri::Skill::Extension do
       ext = described_class.new(catalog: empty_catalog)
       ext.configure(configurator)
 
-      assert_equal [], configurator.system_prompt_additions
+      assert_equal [], ext.system_prompt_snippets
       assert_equal [], configurator.tools
     end
 

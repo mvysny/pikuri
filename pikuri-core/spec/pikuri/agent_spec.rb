@@ -1339,15 +1339,34 @@ RSpec.describe Pikuri::Agent do
       assert(second.events.any? { |e| e.is_a?(Pikuri::Agent::Event::ContextCap) })
     end
 
-    it 'joins append_system_prompt snippets onto the base prompt with blank-line separators' do
+    it 'assembles the base prompt with each extension system_prompt_snippets, blank-line separated' do
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        def system_prompt_snippets = ['first snippet', 'second snippet']
+      end
+
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 'base') do |c|
         c.add_listener recorder
-        c.append_system_prompt('first snippet')
-        c.append_system_prompt('second snippet')
+        c.add_extension(ext_class.new)
       end
 
       assert_equal "base\n\nfirst snippet\n\nsecond snippet", fake_chat.instructions
+    end
+
+    it 'drops nil/blank snippets so an empty contributor leaves no stray separator' do
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        def system_prompt_snippets = ['', nil, '   ', 'real']
+      end
+
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 'base') do |c|
+        c.add_listener recorder
+        c.add_extension(ext_class.new)
+      end
+
+      assert_equal "base\n\nreal", fake_chat.instructions
     end
 
     it 'runs extension.configure during the block and extension.bind once after construction' do
@@ -1479,6 +1498,30 @@ RSpec.describe Pikuri::Agent do
 
       assert_empty fake_chat.messages
       assert_equal 'base prompt', fake_chat.instructions
+    end
+
+    it 're-assembles the prompt on clear, refreshing dynamic extension snippets' do
+      # An extension whose snippet changes between pulls — stands in for
+      # a resident memory persona / MACHINE.md that gained content during
+      # the conversation that's now being cleared.
+      ext_class = Class.new do
+        include Pikuri::Agent::Extension
+        def initialize = @n = 0
+        def system_prompt_snippets
+          @n += 1
+          ["pull ##{@n}"]
+        end
+      end
+
+      agent = build_agent { |c| c.add_extension(ext_class.new); c.add_listener recorder }
+      # Construction did the first pull.
+      assert_equal "base prompt\n\npull #1", fake_chat.instructions
+
+      agent.clear_conversation
+
+      # Clear re-pulled — the refreshed value is now in the system prompt.
+      assert_equal "base prompt\n\npull #2", fake_chat.instructions
+      assert_equal "base prompt\n\npull #2", agent.system_prompt
     end
 
     it 'emits exactly one Event::Reset to the listener stream' do

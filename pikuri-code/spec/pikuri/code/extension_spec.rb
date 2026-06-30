@@ -47,11 +47,10 @@ RSpec.describe Pikuri::Code::Extension do
       assert_includes c.sub_agent_tools.map(&:name), 'git_clone'
     end
 
-    it 'appends the plan-mode explainer to the system prompt' do
-      c = build_configurator
-      described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only).configure(c)
+    it 'contributes the plan-mode explainer via system_prompt_snippets' do
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer, read_only: read_only)
 
-      assert(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
+      assert(ext.system_prompt_snippets.any? { |s| s.match?(/plan mode/i) })
     end
 
     it 'raises if any of its tools was already registered' do
@@ -68,14 +67,15 @@ RSpec.describe Pikuri::Code::Extension do
   describe '#configure without a read-only flag' do
     it 'still wires Bash + GitClone but no plan-mode tools' do
       c = build_configurator
-      described_class.new(filesystem: filesystem, confirmer: confirmer).configure(c)
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
+      ext.configure(c)
 
       names = c.tools.map(&:name)
       assert_includes names, 'bash'
       refute_includes names, 'enter_plan_mode'
       refute_includes names, 'exit_plan_mode'
       assert_includes c.sub_agent_tools.map(&:name), 'git_clone'
-      refute(c.system_prompt_additions.any? { |s| s.match?(/plan mode/i) })
+      assert_empty ext.system_prompt_snippets
     end
   end
 

@@ -36,12 +36,11 @@ RSpec.describe Pikuri::Tasks::Extension do
       assert_equal 'completed', ext.list.items.first.status
     end
 
-    it 'appends the workflow snippet to the system prompt' do
+    it 'contributes the workflow snippet via system_prompt_snippets' do
       ext = described_class.new
-      ext.configure(configurator)
 
-      assert_equal 1, configurator.system_prompt_additions.size
-      snippet = configurator.system_prompt_additions.first
+      assert_equal 1, ext.system_prompt_snippets.size
+      snippet = ext.system_prompt_snippets.first
       assert snippet.include?('<tasks_usage>'), snippet
       assert snippet.include?('task_create'), snippet
       assert snippet.include?('task_in_progress'), snippet
