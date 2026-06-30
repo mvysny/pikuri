@@ -69,6 +69,14 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       dmesg\ -l\ err
       dmesg\ -k\ --human
       dmesg\ --since\ -1\ --until\ now
+      journalctl
+      journalctl\ -k
+      journalctl\ -u\ sshd
+      journalctl\ -b\ -p\ err
+      journalctl\ -r\ -n\ 100
+      journalctl\ --no-pager
+      journalctl\ --since\ -1h\ --until\ now
+      journalctl\ -k\ --level=err,warn
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         inner = RecordingConfirmer.new(false)
@@ -123,6 +131,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'systemctl list-units 2>/dev/null',     # systemctl query + safe redirect
       'dmesg --level=err,warn,crit 2>/dev/null | tail -80', # reported dmesg shape
       'dmesg -T | grep -i error',             # dmesg piped into a read-only filter
+      'journalctl -k --level=err,warn 2>&1 | head -100', # the reported journalctl shape
+      'journalctl -u sshd --since -1h 2>/dev/null', # journalctl query + safe redirect
       'dpkg --get-selections | grep -w install | wc -l', # the reported shape, unquoted
       # The reported batch verbatim: a comment line then many
       # `dpkg -S <unit> 2>&1 || true` probes, newline-separated.
@@ -161,7 +171,14 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'find -delete'         => 'find . -name x -delete',
       'sort -o (writes)'     => 'sort -o out.txt in.txt',
       'systemctl stop'       => 'systemctl stop sshd',
-      'journalctl --vacuum'  => 'journalctl --vacuum-time=1s',
+      'journalctl --vacuum'  => 'journalctl --vacuum-time=1s', # trims stored logs (=value)
+      'journalctl vacuum-sz' => 'journalctl --vacuum-size=100M', # space trimmer
+      'journalctl --rotate'  => 'journalctl --rotate',         # rotates journal files
+      'journalctl --flush'   => 'journalctl --flush',          # moves /run journal to /var
+      'journalctl relinquish'=> 'journalctl --smart-relinquish-space',
+      'journalctl setup-keys'=> 'journalctl --setup-keys',     # generates FSS key pair
+      'journalctl upd-catalog'=> 'journalctl --update-catalog', # rebuilds catalog index
+      'journalctl vacuum mid'=> 'journalctl -u sshd --vacuum-time=1s', # mutator not first arg
       'dmesg --clear'        => 'dmesg --clear',          # wipes the ring buffer
       'dmesg -C'             => 'dmesg -C',               # short clear
       'dmesg -c'             => 'dmesg -c',               # read-clear

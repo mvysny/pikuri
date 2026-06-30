@@ -65,11 +65,10 @@ module Pikuri
       # * +journalctl+ — its read vs. mutate split is by *flag*
       #   (+--vacuum-*+ / +--rotate+ / +--flush+), not a leading
       #   subcommand, so the immediately-after-the-binary trick the
-      #   subcommand classifiers below rely on doesn't apply; recovering
-      #   it cleanly needs a flag denylist, still deferred — v1 delegates
-      #   it. (+systemctl+ *is* subcommand-shaped and is recovered below;
-      #   +dmesg+ is the same flag-split shape and *is* recovered, by the
-      #   flag denylist described next.)
+      #   subcommand classifiers below rely on doesn't apply. It is the
+      #   same flag-split shape as +dmesg+ and is recovered the same way,
+      #   by the flag denylist described below. (+systemctl+ *is*
+      #   subcommand-shaped and is recovered below.)
       # * +find+ (+-delete+/+-exec+), +env+/+command+ (run other
       #   programs), +date+/+hostname+ (have set-forms).
       #
@@ -128,6 +127,32 @@ module Pikuri
       # trade here. The guarantee is privilege-independent as before
       # (+dmesg+ often needs root to *work*, but that's orthogonal to whether
       # the form mutates).
+      #
+      # == Read-only journalctl (flag denylist), unconditional
+      #
+      # +journalctl+ prints the systemd journal read-only by default; the
+      # maintenance ops that mutate on-disk state are all *long flags* — the
+      # space trimmers (+--vacuum-size+/+--vacuum-time+/+--vacuum-files+),
+      # +--rotate+/+--flush+/+--relinquish-var+/+--smart-relinquish-space+,
+      # and the two writers +--setup-keys+ (FSS key pair) and
+      # +--update-catalog+ (catalog index). The read/mutate split is by flag
+      # (like +dmesg+, unlike the subcommand-shaped trio above), so
+      # {#read_only_journalctl?} recovers it with a *denylist*: a +journalctl+
+      # invocation auto-approves iff none of its arguments is a mutating flag
+      # ({JOURNALCTL_MUTATING_LONG}), with a long option's +=value+ tail
+      # stripped before the lookup (+--vacuum-time=1s+ matches
+      # +--vacuum-time+). Unlike +dmesg+ there is no short companion set —
+      # every journalctl maintenance op is long-only (+-k+/+-f+/+-r+/+-b+/
+      # +-u+/+-o+/+-D+/+-n+/+-p+ all only read) — so a short-option cluster
+      # never mutates. Like +systemctl+, journalctl's pager is its only exec
+      # vector and spawns solely on a tty, which {Bash}'s captured (piped)
+      # stdout is not.
+      #
+      # Same residual shape as +dmesg+: a *future* journalctl mutating flag
+      # this set doesn't yet name would auto-approve. journalctl's
+      # maintenance surface is small and stable (systemd), so the residual is
+      # accepted; the inverse — an allowlist of read-only flags — would
+      # delegate every new read flag, the inferior trade here.
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
@@ -285,6 +310,24 @@ module Pikuri
           '--console-level'
         ].freeze
 
+        # +journalctl+ long options that mutate journal / FSS-key / catalog
+        # state — the space-maintenance ops (+--rotate+, +--flush+,
+        # +--relinquish-var+, +--smart-relinquish-space+, the three
+        # +--vacuum-*+ trimmers) and the two on-disk writers (+--setup-keys+
+        # generates the FSS key pair, +--update-catalog+ rebuilds the
+        # message-catalog index). {#read_only_journalctl?} strips a +=value+
+        # tail before the lookup, so +--vacuum-time=1s+ matches
+        # +--vacuum-time+. Unlike {DMESG_MUTATING_SHORT} there is *no* short
+        # companion set: every journalctl maintenance op is long-only — the
+        # short options (+-k+/+-f+/+-r+/+-b+/+-u+/+-o+/+-D+/+-n+/+-p+ …) all
+        # only read — so a short-option cluster never mutates.
+        JOURNALCTL_MUTATING_LONG = Set[
+          '--rotate', '--flush', '--relinquish-var',
+          '--smart-relinquish-space',
+          '--vacuum-size', '--vacuum-time', '--vacuum-files',
+          '--setup-keys', '--update-catalog'
+        ].freeze
+
         # @param inner [Pikuri::Workspace::Confirmer] the confirmer to
         #   delegate to whenever a command is not provably read-only
         #   (typically {Pikuri::Workspace::Confirmer::TERMINAL}).
@@ -336,8 +379,9 @@ module Pikuri
         #   {Tokenizer} (+[]+ for a comment no-op).
         # @return [Boolean] whether the segment is a single, bare
         #   invocation of a {READ_ONLY_BINARIES} entry (or a read-only
-        #   +dpkg+/+apt+/+systemctl+/+dmesg+ query, or — under +allow_git:+
-        #   — a read-only git invocation), or an empty (comment) segment.
+        #   +dpkg+/+apt+/+systemctl+/+dmesg+/+journalctl+ query, or — under
+        #   +allow_git:+ — a read-only git invocation), or an empty (comment)
+        #   segment.
         #   A first word containing +/+ is a path that could point at a
         #   planted binary, so it delegates.
         def segment_read_only?(words)
@@ -350,6 +394,7 @@ module Pikuri
           return true if read_only_apt?(words)
           return true if read_only_systemctl?(words)
           return true if read_only_dmesg?(words)
+          return true if read_only_journalctl?(words)
 
           @allow_git && read_only_git?(words)
         end
@@ -423,6 +468,33 @@ module Pikuri
           else
             false
           end
+        end
+
+        # @param words [Array<String>] one segment's words, redirect
+        #   fragments already removed and metacharacters rejected by
+        #   {Tokenizer}.
+        # @return [Boolean] whether it is a read-only +journalctl+
+        #   invocation: +journalctl+ with no mutating flag among its
+        #   arguments ({JOURNALCTL_MUTATING_LONG}). A long option's +=value+
+        #   tail is dropped before the lookup; journalctl has no mutating
+        #   short option, so a short-option cluster is read-only data and
+        #   passes. Same flag-denylist shape as {#read_only_dmesg?}.
+        def read_only_journalctl?(words)
+          return false unless words[0] == 'journalctl'
+
+          words.drop(1).none? { |t| journalctl_mutating_arg?(t) }
+        end
+
+        # @param token [String] one whitespace-delimited +journalctl+
+        #   argument.
+        # @return [Boolean] whether it names a mutating +journalctl+ long
+        #   flag in {JOURNALCTL_MUTATING_LONG} (ignoring any +=value+ tail).
+        #   A short-option cluster or a bare value token never mutates ⇒
+        #   +false+.
+        def journalctl_mutating_arg?(token)
+          return false unless token.start_with?('--')
+
+          JOURNALCTL_MUTATING_LONG.include?(token.split('=', 2).first)
         end
 
         # @param words [Array<String>] one segment's words, redirect
