@@ -14,6 +14,7 @@ ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 require 'bundler/setup'
 require 'optparse'
 require 'yaml'
+require 'reline' # line editing + history for the interactive prompt
 
 require 'pikuri-core'
 require 'pikuri-subagents'
@@ -108,9 +109,7 @@ run_turn.call(ARGV.join(' ')) unless ARGV.empty?
 
 begin
   loop do
-    print '> '
-    $stdout.flush
-    line = $stdin.gets
+    line = Reline.readline('> ', true) # arrow-key history + line editing
     break if line.nil? # Ctrl+D / EOF on empty line
 
     message = line.chomp
