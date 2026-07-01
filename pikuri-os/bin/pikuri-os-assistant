@@ -16,6 +16,7 @@ require 'pikuri-os' # pulls in pikuri-core + -workspace + -code
 
 sandbox_enabled = true   # FullFsNoNet: full filesystem, network severed
 confirm_enabled = true
+internet_enabled = false # web_search off by default — keeps the agent networkless
 
 # Example-only config: LLM connection + keys live verbatim in a user-owned
 # YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
@@ -32,6 +33,10 @@ parser = OptionParser.new do |opts|
   opts.on('--no-sandbox', 'Disable the network sandbox around bash. WARNING: bash can then ' \
                           'reach the internet — the no-egress security property is OFF.') { sandbox_enabled = false }
   opts.on('--no-confirm', 'Auto-approve every confirmation (skip the y/n prompt for writes + bash).') { confirm_enabled = false }
+  opts.on('--with-internet', 'Wire the web_search tool. This is a SEPARATE network boundary from the bash ' \
+                             'sandbox: it lets the pikuri process make outbound search queries (a bounded, ' \
+                             'write-only egress leg), while bash stays kernel-severed. The agent then holds ' \
+                             'all three trifecta legs.') { internet_enabled = true }
   opts.on('--yolo', 'Combines --no-sandbox + --no-confirm. Use only in a throwaway environment.') do
     sandbox_enabled = false
     confirm_enabled = false
@@ -105,6 +110,18 @@ agent = Pikuri::Agent.new(
   c.add_listener Pikuri::Agent::Listener::Terminal.new
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
   c.add_tool Pikuri::Tool::CALCULATOR
+  # --with-internet only: the destination-pinned web_search tool (pikuri
+  # picks the engine, the LLM only fills the query — a bounded, write-only,
+  # attacker-blind egress leg). Deliberately NOT web_scrape / fetch, whose
+  # LLM-supplied URL is an unbounded attacker-controlled exfil channel.
+  # Wired here in the binary, not Os::Extension — the extension is the
+  # offline OS surface and keeps its networkless identity.
+  if internet_enabled
+    c.add_tool Pikuri::Tool::WebSearch.build(
+      brave_key: examples_config['brave_search_api_key'],
+      exa_key: examples_config['exa_api_key']
+    )
+  end
   # One extension wires the whole OS-helper surface: the five file tools,
   # bash (gated by the read-only auto-confirmer + the sandbox above), the
   # file-index tools, and the machine facts + MACHINE.md memory folded
@@ -144,6 +161,14 @@ warnings << 'Confirmer: AUTO-APPROVE — mutations run without asking.' unless c
 unless warnings.empty?
   warnings << 'Use only in a throwaway environment.'
   puts warnings.join(' ')
+end
+if internet_enabled
+  # Not a throwaway-only warning: web_search is a *bounded* egress leg
+  # (pikuri picks the engine; the attacker can't read a search query back).
+  # Distinct from the --no-sandbox warning above, which re-opens bash's
+  # unbounded egress. Named so the user knows the third trifecta leg is live.
+  puts 'Internet: web_search ENABLED — outbound search queries leave this machine ' \
+       '(bounded, write-only egress). Bash stays network-severed regardless.'
 end
 
 run_turn.call(ARGV.join(' ')) unless ARGV.empty?

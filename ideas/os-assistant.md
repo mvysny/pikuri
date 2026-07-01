@@ -88,11 +88,19 @@ when an injection is crafted to look benign.
   machinery [`assistant.md`](assistant.md) and
   [`private-context-taint.md`](private-context-taint.md) are circling.
 - **Internet access** — a future guide chapter ("the third leg
-  returns"), likely a privilege-separated investigator sub-agent that
-  can search the web but is structurally barred from the private
-  filesystem context. At that point the full trifecta work (and possibly
-  the federation) is back on the table. Until then, the severed network
-  is what keeps this design simple and safe.
+  returns"). The first slice **shipped**: `web_search` behind the
+  binary's `--with-internet` flag (default off), safe because pikuri owns
+  the destination — a bounded, write-only, attacker-blind egress leg
+  (the LLM only fills the query; `web_scrape`/`fetch` are excluded because
+  their LLM-supplied URL is an unbounded attacker-controlled channel).
+  Still open: the privilege-separated investigator sub-agent that can
+  search/scrape but is structurally barred from the private filesystem
+  context, and the human-in-the-loop confirmers for an LLM-driven `fetch`
+  — see [`more-confirmers.md`](more-confirmers.md). At that point the full
+  trifecta work (and possibly the federation) is back on the table. The
+  chapter itself (what changes under `--with-internet`, the two
+  independent network boundaries, the bounded residual) is not yet
+  written.
 - **GUI-config *application*, app launching, package *installation*.**
   The agent advises (prints the exact `gsettings` / `apt` command) but
   doesn't run these: installs need root + egress (barred by the severed

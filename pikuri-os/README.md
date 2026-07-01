@@ -27,6 +27,17 @@ Posture (the load-bearing parts):
   host, appended to the system prompt at boot and editable through the
   confirmed write path.
 
+**Opt-in web search.** `--with-internet` wires the `web_search` tool.
+This is a *separate* network boundary from the bash sandbox: it lets the
+pikuri process make outbound search queries — a bounded, write-only,
+attacker-blind egress leg (pikuri picks the engine; the LLM only fills
+the query) — while **bash stays kernel-severed regardless**. Deliberately
+not `web_scrape`/`fetch`, whose LLM-supplied URL is an unbounded
+attacker-controlled channel. Off by default; the agent stays networkless
+until you pass the flag. See
+[`ideas/more-confirmers.md`](../ideas/more-confirmers.md) for the harder
+pieces still deferred.
+
 **Target platform:** Ubuntu 26.04 LTS or newer, GNOME desktop.
 
 Depends on `pikuri-core` (Agent + Tool framework), `pikuri-workspace`
