@@ -14,6 +14,17 @@ require 'yaml'
 
 require 'pikuri-os' # pulls in pikuri-core + -workspace + -code
 require 'pikuri-subagents' # the `agent` tool + RESEARCHER persona (--with-internet only)
+require 'pikuri-pdf' # PDF → text extractor (see registration below)
+
+# Explicit opt-in (requiring pikuri-pdf alone changes nothing): teach the
+# Extractor registry to handle PDFs, so both the file tools (local
+# ~/docs/*.pdf) and — under --with-internet — the researcher's web_scrape
+# / fetch can read them. pikuri-pdf is pure Ruby: no subprocess, no
+# docker, no network, and it neither runs embedded JS nor fetches remote
+# resources — so it fits pikuri-os's offline, audit-first posture and
+# keeps parsing off the Subprocess/sandbox seam. It front-inserts because
+# the %PDF- magic sniff must beat HTML's content-type match.
+Pikuri::Extractors::PDF.register
 
 sandbox_enabled = true   # FullFsNoNet: full filesystem, network severed
 confirm_enabled = true
