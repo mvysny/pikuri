@@ -496,6 +496,66 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     end
   end
 
+  describe 'task-prompt confirmation gate' do
+    # Minimal confirmer: records the request it was asked, answers with a
+    # fixed verdict. Mirrors the Pikuri::Workspace::Confirmer duck type
+    # (only #confirm?(request:) is used here).
+    let(:confirmer_class) do
+      Class.new do
+        attr_reader :requests
+
+        def initialize(approve:)
+          @approve = approve
+          @requests = []
+        end
+
+        def confirm?(request:)
+          @requests << request
+          @approve
+        end
+      end
+    end
+
+    it 'confirms the task before dispatch and shows the task as the request detail' do
+      confirmer = confirmer_class.new(approve: true)
+      tool = described_class.new(
+        build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
+      )
+
+      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+
+      assert_equal 'sub-agent reply', result
+      assert_equal 1, confirmer.requests.size
+      assert_equal 'look up X', confirmer.requests.first.detail
+      assert_match(/researcher/, confirmer.requests.first.question)
+      # @fake_chats holds the parent's chat (from build_parent) plus the
+      # sub-agent's — so a spawned delegation makes it 2.
+      assert_equal 2, @fake_chats.size
+    end
+
+    it 'returns a decline observation and spawns no sub-agent when rejected' do
+      confirmer = confirmer_class.new(approve: false)
+      tool = described_class.new(
+        build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
+      )
+
+      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+
+      assert_equal 'Error: user declined delegation to researcher.', result
+      # Only the parent's chat exists; no sub-agent was spawned.
+      assert_equal 1, @fake_chats.size
+    end
+
+    it 'delegates without asking when no confirmer is wired (default)' do
+      tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
+
+      result = tool.run('name' => 'researcher', 'task' => 'go')
+
+      assert_equal 'sub-agent reply', result
+      assert_equal 2, @fake_chats.size
+    end
+  end
+
   describe '.available_agents_snippet' do
     it 'lists each persona name and description as a markdown bullet inside <available_agents>' do
       other = Pikuri::SubAgent::Persona.new(

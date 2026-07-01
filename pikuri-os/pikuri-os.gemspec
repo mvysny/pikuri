@@ -55,5 +55,6 @@ Gem::Specification.new do |spec|
   # to any of them always pulls the matching peer.
   spec.add_dependency 'pikuri-code',      "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-core',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-subagents', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace', "= #{Pikuri::VERSION}"
 end

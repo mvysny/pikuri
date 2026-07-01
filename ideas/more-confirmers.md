@@ -1,10 +1,16 @@
 # More confirmers: human-in-the-loop shapes for the returning third leg
 
-Status: **brainstorm — nothing designed, nothing built.** Staging area
-for the human-in-the-loop confirmer ideas surfaced while scoping optional
-web access for `pikuri-os` (the `--with-internet` `web_search` slice
-shipped; these are the *harder* pieces deliberately left out of it).
-Drain into source + `docs/guide/` as pieces graduate.
+Status: **partly shipped, rest brainstorm.** Staging area for the
+human-in-the-loop confirmer ideas surfaced while scoping web access for
+`pikuri-os`. **Shipped:** all web quarantined in the `RESEARCHER`
+sub-agent (no filesystem), reached via the `agent` tool, with a
+**boolean approve/reject gate on the task prompt** before dispatch —
+`SubAgent::Extension.new(personas:, confirmer:)` (see
+[`os-assistant.md`](os-assistant.md) §"Internet access"). **Still open**
+(this file): the *editable* task prompt (the pure author seat), a
+*reject-reason* steering channel, the URL confirmers for an LLM-driven
+`fetch`, and the ingest-axis output gate. Drain into source +
+`docs/guide/` as pieces graduate.
 
 Related, already worked out:
 
@@ -28,21 +34,53 @@ Related, already worked out:
 
 ## Why these exist
 
-`pikuri-os` now offers `web_search` behind `--with-internet`: safe
-*because* pikuri owns the destination (the LLM only fills the query, so
-the leak is bounded + attacker-blind). The two things it deliberately
-does **not** offer are the hard problems this file collects:
+`pikuri-os` offers web access behind `--with-internet`, quarantined in the
+`RESEARCHER` sub-agent (web tools, no filesystem) and gated by a boolean
+confirmation of the *task prompt* before dispatch. That gate is the
+**egress-axis input confirmation** (see "Task-prompt gate" below) — it
+already ships. What remains are the *harder* confirmer shapes this file
+collects:
 
-1. **`fetch` / `web_scrape`** — the LLM picks the entire URL incl. host,
-   so the destination *is* the attack (`exfil.com/?d=<secret>`). Can a
-   human-in-the-loop make an LLM-driven fetch safe? (Egress axis.)
-2. **Untrusted web content entering the private context** — even with
-   `web_search`, poisoned result pages land in the same context that
-   holds the user's files. Can a human gate what gets in? (Ingest axis.)
+1. **Making the task-prompt gate a true author seat** — today it's
+   approve/reject of a *shown* task (legible, but technically the
+   approver seat); the clean version lets the human *edit* it. Plus a
+   *reject-reason* channel to steer instead of a bare decline. (Egress
+   axis, refinements.)
+2. **An LLM-driven `fetch` on the parent** — the LLM picks the entire URL
+   incl. host, so the destination *is* the attack (`exfil.com/?d=<secret>`).
+   Can a human-in-the-loop make that safe without the sub-agent hop?
+   (Egress axis.)
+3. **Untrusted web content entering the private context** — the
+   researcher summary flows back to the parent unconfirmed. Can a human
+   gate what gets *in*? (Ingest axis.)
 
-The ideas split cleanly along those two axes. Keeping the axes distinct
-is load-bearing: a confirmer that governs *where bytes go* is a different
-mechanism from one that governs *what bytes come in*.
+The ideas split along two axes. Keeping them distinct is load-bearing: a
+confirmer that governs *where bytes go* (egress) is a different mechanism
+from one that governs *what bytes come in* (ingest). The shipped gate is
+egress-axis; note that for `pikuri-os` egress is the axis that *needed*
+protecting (ingest is already accepted — it reads hostile files off disk
+today).
+
+## Task-prompt gate — shipped (boolean); author seat + reason deferred
+
+The delegation gate: before the parent dispatches a task to a
+network-capable sub-agent, a `Confirmer` confirms the task string. This
+is the egress break — the parent's only way to leak private data is to
+launder it into the task, and the human approves that. Two refinements
+are deferred to their own session:
+
+- **Editable task (author seat).** Today the human approves/rejects a
+  *shown* task via the existing boolean `Confirmer#confirm?`. The pure
+  break is to pre-fill the task into the input box *editable*, so the
+  human rewrites rather than rubber-stamps — the forced-authorship shape
+  from [`assistant.md`](assistant.md). Needs the `Confirmer` seam to
+  return the (possibly edited) text, not a bool.
+- **Reject-reason steering.** A decline currently returns a fixed
+  observation. Letting the human type *why* ("use the other library")
+  turns a rejection into steering — useful well beyond delegation (a
+  declined bash command too). Also a richer-than-bool `Confirmer` return.
+  Explicitly *not* the `:once/:always` scope knob the `Confirmer` yardoc
+  rejected (that was about fatigue) — an orthogonal, compatible axis.
 
 ## Egress axis — destination control for a future `fetch`/scrape
 

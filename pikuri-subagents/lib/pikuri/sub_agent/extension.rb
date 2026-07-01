@@ -59,10 +59,18 @@ module Pikuri
       # @param personas [Array<Persona>] personas the LLM may spawn
       #   via the +agent+ tool. Must contain at least one entry;
       #   names must be unique across the list.
+      # @param confirmer [Pikuri::Workspace::Confirmer, nil] optional
+      #   gate threaded into {SubAgentTool}; when present, each
+      #   delegation's +task+ is confirmed before dispatch. +nil+
+      #   (default) preserves the un-gated behavior +bin/pikuri-code+ /
+      #   +bin/pikuri-minions+ rely on. Hosts wire one when a persona
+      #   reaches the network and the parent holds private data.
       # @raise [ArgumentError] if +personas+ is empty, contains a
       #   non-{Persona}, or two entries share a +name+
-      def initialize(personas:)
+      def initialize(personas:, confirmer: nil)
         raise ArgumentError, 'personas: must contain at least one Persona' if personas.empty?
+
+        @confirmer = confirmer
 
         @personas = {}
         personas.each do |persona|
@@ -129,7 +137,7 @@ module Pikuri
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
       def bind(ctx)
-        sub_tool = SubAgentTool.new(ctx, personas: @personas)
+        sub_tool = SubAgentTool.new(ctx, personas: @personas, confirmer: @confirmer)
         ctx.add_raw_tool(sub_tool.to_ruby_llm_tool)
         nil
       end

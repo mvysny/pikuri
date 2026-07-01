@@ -117,8 +117,14 @@ module Pikuri
       #   +personas:+ kwarg. The hash's keys become the enum values
       #   exposed to the LLM via the +name:+ parameter; +task:+ is
       #   free-form.
+      # @param confirmer [Pikuri::Workspace::Confirmer, nil] optional
+      #   gate asked to approve each delegation's +task+ before the
+      #   sub-agent is spawned. +nil+ (default) delegates without
+      #   asking. A host wires one when a persona can reach the network
+      #   and the parent holds private data, so the human — not an
+      #   injection-driven parent — approves what leaves the machine.
       # @return [SubAgentTool]
-      def initialize(ctx, personas:)
+      def initialize(ctx, personas:, confirmer: nil)
         parent            = ctx.agent
         # Bake the parent's *resolved* cap (explicit or probed) onto the
         # transport the sub-agent rides, so it inherits the cap without
@@ -153,6 +159,26 @@ module Pikuri
           },
           execute: lambda { |name:, task:|
             persona = personas.fetch(name)
+
+            # Optional human gate on the *task prompt* before dispatch
+            # (opt-in via the extension's +confirmer:+). The human
+            # approves what the sub-agent is asked to do — the seam
+            # where a network-capable persona would otherwise let an
+            # injection-driven parent launder private data out through
+            # the task string (pikuri-os's researcher wiring is the
+            # worked example). The reply is deliberately NOT
+            # re-confirmed: it returns as data the parent owns. A
+            # decline steers the parent via the observation rather than
+            # raising.
+            if confirmer
+              request = Pikuri::Workspace::Confirmer::Request.new(
+                question: "Delegate this task to the '#{name}' sub-agent? " \
+                          'It reaches the network — you approve what leaves this machine.',
+                detail: task
+              )
+              return "Error: user declined delegation to #{name}." unless confirmer.confirm?(request: request)
+            end
+
             idx = counters[name]
             counters[name] += 1
             sub_id = "#{persona.name} #{idx}"
