@@ -88,10 +88,15 @@ sandbox = if sandbox_enabled
             Pikuri::Code::Bash::Sandbox::NONE
           end
 
-# Base prompt + date. The "# This machine" facts and the MACHINE.md memory
-# section are appended by Os::Extension (via append_system_prompt), so the
-# binary doesn't assemble them.
+# Base prompt + a network-posture block chosen by --with-internet + date.
+# The network block is mode-specific: offline says "your tools can't reach
+# the net, hand networked commands to the user"; online adds "your shell is
+# still severed, but you may delegate a web lookup to the research agent,
+# and the user approves what leaves the machine." The "# This machine"
+# facts and the MACHINE.md memory section are appended by Os::Extension
+# (via append_system_prompt), so the binary doesn't assemble them.
 system_prompt = Pikuri.prompt(:'os-assistant')
+system_prompt += "\n\n" + Pikuri.prompt(internet_enabled ? :'os-network-online' : :'os-network-offline')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
