@@ -346,13 +346,16 @@ module Pikuri
         end
 
         # @param request [Pikuri::Workspace::Confirmer::Request]
-        # @return [Boolean] +true+ (auto-approved) for a provably
-        #   read-only command; otherwise whatever the wrapped confirmer
-        #   returns.
-        def confirm?(request:)
-          return true if read_only?(request.detail)
+        # @return [Pikuri::Workspace::Confirmer::Approved,
+        #   Pikuri::Workspace::Confirmer::Rejected] an {Approved} carrying
+        #   the command unchanged for a provably read-only command;
+        #   otherwise the wrapped confirmer's own decision (so its edit /
+        #   reason flow through — this decorator only *adds* auto-approvals,
+        #   it never rejects on its own).
+        def decide(request:)
+          return Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail) if read_only?(request.detail)
 
-          @inner.confirm?(request: request)
+          @inner.decide(request: request)
         end
 
         private

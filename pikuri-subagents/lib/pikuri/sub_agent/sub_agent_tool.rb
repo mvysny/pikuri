@@ -166,17 +166,29 @@ module Pikuri
             # where a network-capable persona would otherwise let an
             # injection-driven parent launder private data out through
             # the task string (pikuri-os's researcher wiring is the
-            # worked example). The reply is deliberately NOT
-            # re-confirmed: it returns as data the parent owns. A
-            # decline steers the parent via the observation rather than
-            # raising.
+            # worked example). The task is +editable: true+ — the human
+            # sits in the *author* seat and may rewrite it, the clean
+            # break the "human as author, not approver" primitive asks
+            # for (+ideas/more-confirmers.md+); the (possibly edited)
+            # text is what the sub-agent actually receives. The reply is
+            # deliberately NOT re-confirmed: it returns as data the parent
+            # owns. A decline steers the parent via the observation
+            # (including the human's optional reason) rather than raising.
             if confirmer
               request = Pikuri::Workspace::Confirmer::Request.new(
                 question: "Delegate this task to the '#{name}' sub-agent? " \
                           'It reaches the network — you approve what leaves this machine.',
-                detail: task
+                detail: task,
+                editable: true
               )
-              return "Error: user declined delegation to #{name}." unless confirmer.confirm?(request: request)
+              case confirmer.decide(request: request)
+              in Pikuri::Workspace::Confirmer::Approved(new_request_detail:)
+                task = new_request_detail
+              in Pikuri::Workspace::Confirmer::Rejected(reason:)
+                msg = +"Error: user declined delegation to #{name}."
+                msg << " Reason: #{reason}" if reason && !reason.empty?
+                return msg
+              end
             end
 
             idx = counters[name]

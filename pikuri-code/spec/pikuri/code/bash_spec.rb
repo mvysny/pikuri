@@ -17,18 +17,24 @@ RSpec.describe Pikuri::Code::Bash do
   end
 
   # Inline confirmer double: records every request it sees, returns
-  # successive elements of +answers+. Calling +confirm?+ when no answer
-  # is queued raises — surfaces "test silently consumed a confirmation"
-  # bugs rather than letting nil flow through as a false answer.
+  # successive elements of +answers+. Each answer is +true+ (→ Approved
+  # carrying the command unchanged), +false+ (→ Rejected with no reason),
+  # or an explicit Approved/Rejected value. Calling +decide+ when no
+  # answer is queued raises — surfaces "test silently consumed a
+  # confirmation" bugs rather than letting nil flow through as a decline.
   def build_confirmer(*answers)
     queue    = answers.dup
     requests = []
     cf = Object.new
-    cf.define_singleton_method(:confirm?) do |request:|
+    cf.define_singleton_method(:decide) do |request:|
       requests << request
-      raise "build_confirmer received an unexpected #confirm? call (request: #{request.inspect})" if queue.empty?
+      raise "build_confirmer received an unexpected #decide call (request: #{request.inspect})" if queue.empty?
 
-      queue.shift
+      case (answer = queue.shift)
+      when true  then Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      when false then Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
+      else answer
+      end
     end
     cf.define_singleton_method(:requests) { requests }
     cf
@@ -126,6 +132,15 @@ RSpec.describe Pikuri::Code::Bash do
 
       assert_equal 'Error: user declined the bash command.', result
       assert_equal 1, cf.requests.size
+    end
+
+    it 'folds the human decline reason into the observation for steering' do
+      cf = build_confirmer(Pikuri::Workspace::Confirmer::Rejected.new(reason: 'too risky right now'))
+
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
+                                   command: 'rm -rf /', description: nil, timeout: 120)
+
+      assert_equal 'Error: user declined the bash command. Reason: too risky right now', result
     end
   end
 

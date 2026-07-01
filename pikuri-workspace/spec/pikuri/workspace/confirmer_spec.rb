@@ -8,6 +8,11 @@ RSpec.describe Pikuri::Workspace::Confirmer do
     Pikuri::Workspace::Confirmer::Request.new(question: question, detail: detail)
   end
 
+  # An editable request (the author-seat shape used by the +agent+ tool).
+  def editable_req(detail, question = 'Delegate?')
+    Pikuri::Workspace::Confirmer::Request.new(question: question, detail: detail, editable: true)
+  end
+
   describe Pikuri::Workspace::Confirmer::Request do
     it 'carries question and detail' do
       r = described_class.new(question: 'OK?', detail: '$ ls')
@@ -17,6 +22,14 @@ RSpec.describe Pikuri::Workspace::Confirmer do
 
     it 'defaults detail to nil' do
       assert_nil described_class.new(question: 'OK?').detail
+    end
+
+    it 'defaults editable to false' do
+      assert_equal false, described_class.new(question: 'OK?').editable
+    end
+
+    it 'carries editable when set' do
+      assert_equal true, described_class.new(question: 'OK?', detail: 't', editable: true).editable
     end
   end
 
@@ -152,12 +165,103 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       described_class.new.confirm?(request: req('OK to run bash', detail: '$ ls'))
       assert_includes $stdout.string, "\e[1mOK to run bash\e[0m"
     end
+
+    describe '#decide return type' do
+      it 'returns Approved carrying the detail on a plain approve' do
+        stdin_with("y\n")
+        decision = described_class.new.decide(request: req('go?', detail: '$ ls'))
+        assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
+        assert_equal '$ ls', decision.new_request_detail
+      end
+
+      it 'returns Rejected on decline' do
+        stdin_with("n\n")
+        decision = described_class.new.decide(request: req)
+        assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
+      end
+    end
+
+    describe 'decline reason (steering)' do
+      it 'prompts for and returns a typed decline reason' do
+        stdin_with("n\nuse the local docs\n")
+        decision = described_class.new.decide(request: req)
+        assert_equal 'use the local docs', decision.reason
+        assert_includes $stdout.string, 'Reason (optional'
+      end
+
+      it 'returns a nil reason when left blank' do
+        stdin_with("n\n\n")
+        assert_nil described_class.new.decide(request: req).reason
+      end
+
+      it 'returns a nil reason on EOF after the decline' do
+        stdin_with("n\n")
+        assert_nil described_class.new.decide(request: req).reason
+      end
+    end
+
+    describe 'editable task (author seat)' do
+      it 'offers the edit cue for an editable request' do
+        stdin_with("y\n")
+        described_class.new.decide(request: editable_req('research foo'))
+        assert_includes $stdout.string, '[y] approve  [e] edit  [n] reject'
+      end
+
+      it 'approves as-is via [y], returning the original detail' do
+        stdin_with("y\n")
+        decision = described_class.new.decide(request: editable_req('research foo'))
+        assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
+        assert_equal 'research foo', decision.new_request_detail
+      end
+
+      it 'returns the edited text via [e], with pre-fill enabled for a clean task' do
+        stdin_with("e\n")
+        term = described_class.new
+        captured_prefill = nil
+        term.define_singleton_method(:read_edited) do |initial:, prefill:|
+          captured_prefill = prefill
+          "#{initial} (edited)"
+        end
+        decision = term.decide(request: editable_req('research foo'))
+        assert_equal 'research foo (edited)', decision.new_request_detail
+        assert_equal true, captured_prefill, 'a clean task pre-fills the editable buffer'
+      end
+
+      it 'refuses bare approve and forces a no-prefill retype for a flagged task' do
+        # The \r makes the sanitizer flag the payload, so pre-fill is refused.
+        stdin_with("y\ne\n") # 'y' is not accepted here; 'e' then edits
+        term = described_class.new
+        captured_prefill = nil
+        term.define_singleton_method(:read_edited) do |initial:, prefill:|
+          captured_prefill = prefill
+          'retyped from scratch'
+        end
+        decision = term.decide(request: editable_req("bad\rtask"))
+        assert_includes $stdout.string, 'retype required'
+        assert_includes $stdout.string, 'Please answer e or n: '
+        assert_equal 'retyped from scratch', decision.new_request_detail
+        assert_equal false, captured_prefill, 'a flagged task refuses pre-fill'
+      end
+
+      it 'rejects an editable task via [n], capturing the reason' do
+        stdin_with("n\nnot now\n")
+        decision = described_class.new.decide(request: editable_req('research foo'))
+        assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
+        assert_equal 'not now', decision.reason
+      end
+    end
   end
 
   describe Pikuri::Workspace::Confirmer::AutoApprove do
     it 'returns true regardless of request' do
       assert_equal true, described_class.new.confirm?(request: req('anything', detail: '$ rm -rf /'))
       assert_equal true, described_class.new.confirm?(request: req(''))
+    end
+
+    it 'decides Approved carrying the detail unchanged' do
+      decision = described_class.new.decide(request: req('anything', detail: '$ rm -rf /'))
+      assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
+      assert_equal '$ rm -rf /', decision.new_request_detail
     end
   end
 

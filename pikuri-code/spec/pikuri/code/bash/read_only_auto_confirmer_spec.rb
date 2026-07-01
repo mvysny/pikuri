@@ -12,9 +12,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       @calls = []
     end
 
-    def confirm?(request:)
+    def decide(request:)
       @calls << request
-      @answer
+      if @answer
+        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      else
+        Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
+      end
     end
   end
 

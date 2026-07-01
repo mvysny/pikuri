@@ -211,20 +211,36 @@ yardoc. CLAUDE.md only records the invariant.
   (project_root semantics, containment algorithm, `AllowAll`
   variant, project-root denylist).
 - **Confirmer seam.** Tools that mutate user state (`Write`,
-  `Bash`) take a `Pikuri::Workspace::Confirmer` via constructor
-  and route every prompt through `#confirm?(request:)` with a
-  semantic `Confirmer::Request` (question + optional detail, raw
-  bytes). Presentation belongs to the confirmer — color, the
-  answer cue, and neutralizing hostile LLM bytes — never to tool
-  code, which also never touches `gets` / `puts` / `$stdin` /
-  `$stdout` directly. The chrome-independent half of that
-  neutralization (defang control bytes incl. ESC, flag bidi /
-  zero-width / homoglyph spoofs) is the shared `Pikuri::Sanitizer`,
-  which every chrome routes attacker-controlled text through;
-  only the medium-specific wrapping stays in the chrome (a
-  terminal prints the sanitized text directly; a web client
-  additionally HTML-escapes). See {Pikuri::Workspace::Confirmer}
-  and {Pikuri::Sanitizer}.
+  `Bash`) or dispatch a network-capable sub-agent (the `agent`
+  tool) take a `Pikuri::Workspace::Confirmer` via constructor and
+  route every prompt through `#decide(request:)` with a semantic
+  `Confirmer::Request` (question + optional detail + `editable`
+  flag, raw bytes). `#decide` returns one of two value types —
+  `Approved(new_request_detail)` carrying the possibly-edited
+  detail to act on, or `Rejected(reason)` carrying the human's
+  optional decline steering; callers pattern-match. `#confirm?` is
+  the derived boolean convenience (`Write`, `ExitPlanMode`) for
+  gates that need neither. Two orthogonal axes ride the richer
+  return: a **universal reject-reason** (any decline can steer the
+  model via the observation) and **opt-in editing** (`editable:
+  true` only where `detail` is the verbatim actionable payload —
+  the `agent` task, not bash's decorated `"$ <command>"`), the
+  "human as author, not approver" shape. This is distinct from the
+  still-rejected `:once/:always` fatigue-scope knob (see the class
+  yardoc). Presentation belongs to the confirmer — color, the
+  answer cue, the edit affordance, and neutralizing hostile LLM
+  bytes — never to tool code, which also never touches `gets` /
+  `puts` / `$stdin` / `$stdout` directly. The chrome-independent
+  half of that neutralization (defang control bytes incl. ESC,
+  flag bidi / zero-width / homoglyph spoofs) is the shared
+  `Pikuri::Sanitizer`, which every chrome routes attacker-controlled
+  text through; only the medium-specific wrapping stays in the
+  chrome (a terminal prints the sanitized text directly; a web
+  client additionally HTML-escapes). The `Terminal` gates the
+  editable pre-fill on the sanitizer's verdict — a clean task
+  pre-fills the editable buffer, a flagged one refuses pre-fill and
+  forces a full retype (no raw bytes on the terminal). See
+  {Pikuri::Workspace::Confirmer} and {Pikuri::Sanitizer}.
 - **Sandbox seam.** `Pikuri::Code::Bash` takes a
   `Pikuri::Code::Bash::Sandbox` (default `Sandbox::NONE`) and
   wraps every spawned argv through `#wrap(argv)`. Distinct from

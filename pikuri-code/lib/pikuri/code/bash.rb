@@ -244,7 +244,15 @@ module Pikuri
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
 
         request = compose_request(command: command, description: description, timeout: timeout)
-        return 'Error: user declined the bash command.' unless confirmer.confirm?(request: request)
+        case confirmer.decide(request: request)
+        in Pikuri::Workspace::Confirmer::Rejected(reason:)
+          msg = +'Error: user declined the bash command.'
+          msg << " Reason: #{reason}" if reason && !reason.empty?
+          return msg
+        in Pikuri::Workspace::Confirmer::Approved
+          # fall through to execution (the command is non-editable, so the
+          # approved detail is the same command we already hold)
+        end
 
         argv = sandbox.wrap([
           'timeout', '--signal=TERM', "--kill-after=#{KILL_AFTER}", "#{timeout}s",

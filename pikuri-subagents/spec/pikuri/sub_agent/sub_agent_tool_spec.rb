@@ -497,27 +497,42 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   end
 
   describe 'task-prompt confirmation gate' do
-    # Minimal confirmer: records the request it was asked, answers with a
-    # fixed verdict. Mirrors the Pikuri::Workspace::Confirmer duck type
-    # (only #confirm?(request:) is used here).
+    # Minimal confirmer: records the request it was asked, then returns
+    # whatever its +decision+ lambda produces for that request. Mirrors
+    # the Pikuri::Workspace::Confirmer duck type (only #decide(request:)
+    # is used here).
     let(:confirmer_class) do
       Class.new do
         attr_reader :requests
 
-        def initialize(approve:)
-          @approve = approve
+        # @param decision [#call] request -> Approved / Rejected
+        def initialize(decision:)
+          @decision = decision
           @requests = []
         end
 
-        def confirm?(request:)
+        def decide(request:)
           @requests << request
-          @approve
+          @decision.call(request)
         end
       end
     end
 
-    it 'confirms the task before dispatch and shows the task as the request detail' do
-      confirmer = confirmer_class.new(approve: true)
+    # Convenience builders for the two decision arms.
+    def approve_as_is
+      ->(r) { Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: r.detail) }
+    end
+
+    def approve_edited(text)
+      ->(_r) { Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: text) }
+    end
+
+    def reject_with(reason)
+      ->(_r) { Pikuri::Workspace::Confirmer::Rejected.new(reason: reason) }
+    end
+
+    it 'confirms the task before dispatch, marking it editable and showing it as the detail' do
+      confirmer = confirmer_class.new(decision: approve_as_is)
       tool = described_class.new(
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
@@ -527,14 +542,29 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       assert_equal 'sub-agent reply', result
       assert_equal 1, confirmer.requests.size
       assert_equal 'look up X', confirmer.requests.first.detail
+      assert confirmer.requests.first.editable, 'the task must be offered editable (author seat)'
       assert_match(/researcher/, confirmer.requests.first.question)
       # @fake_chats holds the parent's chat (from build_parent) plus the
       # sub-agent's — so a spawned delegation makes it 2.
       assert_equal 2, @fake_chats.size
     end
 
+    it 'dispatches the human-edited task, not the original, when approved with an edit' do
+      confirmer = confirmer_class.new(decision: approve_edited('look up Y instead'))
+      tool = described_class.new(
+        build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
+      )
+
+      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+
+      assert_equal 'sub-agent reply', result
+      sub_chat = @fake_chats.last
+      user_turns = sub_chat.messages.select { |m| m.role == :user }.map(&:content)
+      assert_equal ['look up Y instead'], user_turns
+    end
+
     it 'returns a decline observation and spawns no sub-agent when rejected' do
-      confirmer = confirmer_class.new(approve: false)
+      confirmer = confirmer_class.new(decision: reject_with(nil))
       tool = described_class.new(
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
@@ -543,6 +573,18 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
 
       assert_equal 'Error: user declined delegation to researcher.', result
       # Only the parent's chat exists; no sub-agent was spawned.
+      assert_equal 1, @fake_chats.size
+    end
+
+    it 'folds the human decline reason into the observation for steering' do
+      confirmer = confirmer_class.new(decision: reject_with('use the local docs, not the web'))
+      tool = described_class.new(
+        build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
+      )
+
+      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+
+      assert_equal 'Error: user declined delegation to researcher. Reason: use the local docs, not the web', result
       assert_equal 1, @fake_chats.size
     end
 
