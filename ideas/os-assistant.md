@@ -8,10 +8,13 @@ still open to validation, and the explicitly deferred work. For the
 shipped design and its rationale, read:
 
 - **Guide [chapter 7](../docs/guide/07-os-assistant.md)** — the
-  narrative walkthrough: the severed-network sandbox, the
+  narrative walkthrough. Part 1: the severed-network sandbox, the
   read-before-edit fence, confirmed mutations, the read-only
   auto-confirmer, the file-index pair, `MACHINE.md`, boot grounding,
-  and why egress is the trifecta leg this agent removes.
+  and why egress is the trifecta leg this agent removes. Part 2 ("the
+  third leg returns"): reattaching the network via the quarantined
+  `RESEARCHER` sub-agent + the confirmed task prompt + the two
+  independent network boundaries.
 - **YARD headers** — {Pikuri::Os::Extension} (one-call wiring +
   confirmation policy), {Pikuri::Os::FileindexSearch} /
   {Pikuri::Os::FileindexRead} / {Pikuri::Os::LocalSearch} (the
@@ -87,7 +90,7 @@ when an injection is crafted to look benign.
   visible-and-confirmed model sidesteps — so it waits on the taint
   machinery [`assistant.md`](assistant.md) and
   [`private-context-taint.md`](private-context-taint.md) are circling.
-- **Internet access** — a future guide chapter ("the third leg
+- **Internet access** — now guide **chapter 7, Part 2** ("the third leg
   returns"). **Shipped** behind the binary's `--with-internet` flag
   (default off): web access is quarantined in the bundled `RESEARCHER`
   sub-agent — it holds `web_search`/`web_scrape`/`fetch` (wired
@@ -101,8 +104,8 @@ when an injection is crafted to look benign.
   task prompt (the pure author seat, vs today's approve/reject of a shown
   task) and a **reject-reason** steering channel — both deferred to their
   own session, tracked in [`more-confirmers.md`](more-confirmers.md). The
-  guide chapter itself (the researcher isolation, the approve-the-task
-  gate, the two independent network boundaries) is not yet written.
+  guide walkthrough (the researcher isolation, the approve-the-task gate,
+  the two independent network boundaries) is chapter 7, Part 2.
 - **GUI-config *application*, app launching, package *installation*.**
   The agent advises (prints the exact `gsettings` / `apt` command) but
   doesn't run these: installs need root + egress (barred by the severed

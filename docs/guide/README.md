@@ -18,7 +18,8 @@ The first two are the base vocabulary. Chapters 3–7 are the
 recall, memory, and MCP, capped by the security chapter (6) and
 then paid off concretely by chapter 7 — the first *complete,
 fully-implemented* assistant in the book, a full-disk OS helper
-made safe by a severed network. Chapters 8–10 are the **code
+made safe by a severed network, then a second part that carefully
+reattaches it through a quarantined researcher. Chapters 8–10 are the **code
 track** (narrower audience, developer-flavoured): it opens by
 taking the very seams chapter 7 introduced and making the
 *opposite* cut, then revisits MCP and security at the sharper
@@ -78,17 +79,20 @@ assistant that combines every gem, landing once they stabilise.
    operational one. No new binary — read it before pointing any
    write- or network-capable agent at something sensitive. This
    is where every "chapter 6 explains why" reassurance pays off.
-7. **[The OS assistant: your machine, no network](07-os-assistant.md).**
+7. **[The OS assistant: your machine](07-os-assistant.md).**
    The first complete assistant in the book — and the gentle
    introduction of the file/shell/sandbox/confirmer seams through
-   a concept every reader owns: operating their own machine. Full
-   read-write over the disk, but the network severed *by the
-   kernel* (`FullFsNoNet`) — the trifecta's egress leg cut
-   structurally, chapter 6 made concrete. Confirmed mutations, a
-   read-only auto-confirmer, spotlight-style content search over
-   the GNOME index, and a `MACHINE.md` resident memory. No MCP, no
-   mem0, no vectordb — deliberately minimal. Demo via
-   `pikuri-os-assistant`.
+   a concept every reader owns: operating their own machine. In two
+   parts. **Part 1:** full read-write over the disk, but the network
+   severed *by the kernel* (`FullFsNoNet`) — the trifecta's egress
+   leg cut structurally, chapter 6 made concrete. Confirmed
+   mutations, a read-only auto-confirmer, spotlight-style content
+   search over the GNOME index, and a `MACHINE.md` resident memory.
+   **Part 2 — the third leg returns:** carefully reattaching the
+   network (`--with-internet`) by quarantining all web tools in a
+   privilege-separated `RESEARCHER` sub-agent with no filesystem,
+   reached through a confirmed task prompt — so no single context
+   holds all three trifecta legs. Demo via `pikuri-os-assistant`.
 8. **[The in-repo coding agent](08-code.md).** The same three
    seams from chapter 7 — `Workspace`, `Confirmer`, `Sandbox` —
    now in a developer's hands and grown up: where chapter 7
@@ -125,7 +129,7 @@ assistant that combines every gem, landing once they stabilise.
     trifecta legs. Stub until the gems it integrates stabilise and
     the quarantined corpus wiring (persona-owned tools) lands.
 
-Further chapters — a deeper `pikuri-assistant` walkthrough, the OS
-assistant *with* internet (the trifecta's third leg returns), and
-more advanced coding-agent recipes — will land as those surfaces
-stabilise.
+Further chapters — a deeper `pikuri-assistant` walkthrough and more
+advanced coding-agent recipes — will land as those surfaces stabilise.
+(The OS assistant *with* internet — the trifecta's third leg returning
+— has landed as chapter 7, Part 2.)

