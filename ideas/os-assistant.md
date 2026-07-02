@@ -46,6 +46,38 @@ shipped design and its rationale, read:
   construction — the agent iterates with tools rather than one-shotting,
   and verifies recall by *reading* (a man-page `read` beats a remembered
   flag) — but whether that's enough is a "try it" question, not settled.
+
+  **Why MoE, not a bigger dense model:** a dense model needs its full
+  parameter count resident in fast memory *and* run through the matmul
+  on every token, so matching a MoE's quality densely means the whole
+  thing must fit in VRAM on a strong discrete GPU — expensive, and
+  against the no-cloud, no-strong-GPU-required posture this gem targets.
+  A MoE activates only ~3-4 B params worth of experts per token, so the
+  *inactive* experts can sit in ordinary system RAM while only the
+  active path needs to be fast — the iGPU/CPU-RAM machine this project
+  is shooting for. So "bigger total params, same 3-4 B active" is the
+  only upgrade axis that keeps that target machine viable; a bigger
+  dense model would instead demand a stronger GPU.
+
+  **Bigger-box escalation, if not laptop-bound:** the ~3 B active-param
+  budget is an inference-cost floor, not a total-param ceiling — a user
+  running from an LLM-dedicated machine (still iGPU/CPU-RAM-class, just
+  more RAM) can trade up in *total* params while keeping the same active
+  budget and roughly the same tokens/sec. `Qwen/Qwen3-Coder-Next`
+  (80B-A3B, ~3 B active, Feb 2026) is the candidate: same inference-cost
+  class as the 35B default, 80B total params, and — unlike the
+  general-purpose 35B model — agentically trained on long-horizon tool
+  use and *recovery from execution failures*, which speaks more directly
+  to the causal-diagnosis worry above. Needs ~50GB combined VRAM+RAM at
+  Q4_K_M — comfortably a CPU-RAM box (e.g. 64GB system RAM) with little
+  or no discrete GPU, not a jump to data-center hardware — so it's
+  explicitly the dedicated-machine tier, not the laptop default. Also
+  worth an empirical try at the *same* cost tier as the 35B default:
+  `GLM-4.7-Flash` (30B-A3B) — same ~3 B active budget, benchmarks lower
+  on general reasoning but ahead on agentic tool-use (τ²-Bench 79.5% vs.
+  Qwen3.6-35B-A3B), which is most of what this assistant actually does.
+  Neither swap is validated here — both ride the same "settle by using
+  it" caveat as the 35B default.
 - **Does keyword recall suffice, or is semantic search needed?**
   `fileindex_search` is only as good as `localsearch`'s keyword match; a
   fuzzy ask ("the doc about our refund policy") can miss when the words
