@@ -71,7 +71,9 @@ only needs the `llama-server` binary.
 The model `pikuri-chat` is wired for is
 `unsloth/Qwen3.6-35B-A3B-GGUF` — a mixture-of-experts model from
 the Qwen series, quantized by the folks at Unsloth so it fits on
-regular hardware. `llama-server` itself is the download tool: run
+regular hardware. (Why *mixture-of-experts* is the property that
+makes local-first practical — and what to swap in on bigger or
+smaller machines — is explained at the end of step 3.) `llama-server` itself is the download tool: run
 it once pointing at the Hugging Face repo, and the GGUF lands in
 `~/.cache/llama.cpp/`:
 
@@ -129,12 +131,59 @@ the same physical RAM, the iGPU pathway is dramatically faster
 than CPU-only inference. A discrete NVIDIA or AMD card with
 ≥32 GB VRAM works the same way.
 
-**If you don't have 32 GB to spare**, use a smaller model — a
-7B-parameter Q4 GGUF fits in 4–6 GB, a 13B in 8–10 GB. **Ask
-your favourite AI assistant to suggest a GGUF that fits your CPU,
-GPU, and RAM** — they're good at this, and pikuri serves whatever
+### Why a mixture-of-experts model
+
+The model's name decodes as: 35 B parameters *total*, ~3 B
+*active* per token (the "A3B"). A **dense** model runs every
+parameter it has on every token — so a dense model of comparable
+quality would need its entire bulk streamed through the compute
+unit thousands of times per sentence, which in practice means the
+whole thing sitting in fast VRAM on a serious discrete GPU: the
+kind of card that costs more than the rest of your workstation.
+A **mixture-of-experts** (MoE) model stores many small "experts"
+and routes each token through only a few of them, so each token
+reads and computes only ~3 B parameters' worth. The other ~32 B
+just have to *exist* in memory — they don't have to be fast.
+
+That asymmetry is what makes the iGPU path above work at all:
+total parameters (what the model *knows*) scale with cheap
+ordinary RAM, while active parameters (what each token *costs*)
+stay small enough for an iGPU — or even a plain CPU — to keep
+up. Privacy-savvy users don't generally have a datacenter in the
+basement; an MoE sitting in system RAM is what makes local-first
+practical without one. When choosing your own model, the shape
+to look for is: **MoE, ~3–4 B active parameters, total size
+picked by how much memory you have.**
+
+### Picking a different model
+
+The model landscape moves fast — the picks below are current as
+of **mid-2026, this book's knowledge cutoff**, and better options
+likely exist by the time you read this. The *shape* outlives any
+specific pick, and pikuri doesn't care: it serves whatever
 `llama-server` loads, so swapping is just a different `-hf …:…`
-line in step 2.
+line in step 2 (and one `llm_model:` line in the config — see
+*Configuring the example scripts* below).
+
+- **Less than 32 GB to spare:** use a smaller model — a
+  7B-parameter Q4 GGUF fits in 4–6 GB, a 13B in 8–10 GB. **Ask
+  your favourite AI assistant to suggest a GGUF that fits your
+  CPU, GPU, and RAM** — they're good at this.
+- **Same 32 GB budget, tuned for agents:**
+  [GLM-4.7-Flash](https://huggingface.co/unsloth/GLM-4.7-Flash-GGUF)
+  (30B-A3B) trades some of Qwen's general knowledge for stronger
+  tool-calling — and driving tools in a loop is most of what a
+  pikuri agent does. Same memory budget, so trying it is free:
+  `llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q4_K_M`.
+- **A dedicated LLM box with 64 GB:** the active-param budget is
+  a per-token cost floor, not a ceiling on total size — more RAM
+  buys more *knowledge* at the same speed.
+  [Qwen3-Coder-Next](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF)
+  (80B-A3B) is the same ~3 B-active class with 80 B total
+  parameters, trained specifically for long tool-use loops and
+  recovering from failed commands; its Q4_K_M weighs ~49 GB, a
+  comfortable fit in a 64 GB machine:
+  `llama-server -hf unsloth/Qwen3-Coder-Next-GGUF:Q4_K_M`.
 
 Without GPU offload you can still run on CPU: the model will run
 a bit slower but still reasonably fast - plenty enough for our experiments.

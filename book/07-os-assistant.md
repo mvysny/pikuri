@@ -465,7 +465,7 @@ to…"), not a live instruction. Confirm what goes *out*; let what comes
 (The gate today is a plain yes/no on the shown task. Two sharper shapes —
 letting you *edit* the task in place before it goes, and typing a reason
 on a rejection to steer the agent — are sketched in
-[`ideas/more-confirmers.md`](../../ideas/more-confirmers.md) and deferred
+[`ideas/more-confirmers.md`](../ideas/more-confirmers.md) and deferred
 to their own pass.)
 
 ## Two network boundaries, not one
@@ -526,7 +526,7 @@ Part 2 *weakens* the third leg; it does not delete it. What remains:
 
 Everything sharper — the editable-task author seat, richer confirmers, an
 ingest-side gate on what the researcher returns — is future work in
-[`ideas/more-confirmers.md`](../../ideas/more-confirmers.md).
+[`ideas/more-confirmers.md`](../ideas/more-confirmers.md).
 
 ## What's next
 

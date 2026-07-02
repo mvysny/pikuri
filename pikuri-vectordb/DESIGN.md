@@ -1,7 +1,7 @@
 # pikuri-vectordb design notes
 
 The settled design rationale that fits neither the user-facing guide
-chapter ([`docs/guide/03-vectordb.md`](../docs/guide/03-vectordb.md))
+chapter ([`book/03-vectordb.md`](../book/03-vectordb.md))
 nor the per-class YARD headers. Currently it holds one thing: the
 backend-engine survey behind the decision to add a Qdrant backend
 alongside Chroma, and to recommend Qdrant as the persistent default.

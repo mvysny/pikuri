@@ -172,7 +172,7 @@ Verifier you already met in [chapter 5](05-mcp.md).
 | **Break the trifecta** | give an agent ≤2 legs (sub-agent personas) | chat, `minions`, recon | the relay leg — a reply carrying the injection to a parent that has the third leg |
 | **Blast-radius containment** | workspace allowlist + Bubblewrap; `~/.ssh`, `~/.aws`, other projects don't resolve | coding, attended or not | the workspace itself is reachable — "leak *this* project's `.env`" still works |
 | **Human gate** | the Confirmer prompts before an irreversible or outbound action runs | coding **with a human watching** | confirmation fatigue; worth nothing when nobody's there |
-| **Egress allowlist** *(in-process form planned — see [`IDEAS.md`](../../IDEAS.md); enforceable at the network layer today)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
+| **Egress allowlist** *(in-process form planned — see [`IDEAS.md`](../IDEAS.md); enforceable at the network layer today)* | allow your package registries + git remote, deny the rest | **unattended** coding | coarse; an allowlisted host is still a hole, and DNS exfil rides port 53 |
 | **Outer isolation** | a container or VM around the whole pikuri process | `--yolo`, "I trust none of this" | adds no *inner* gate — yolo drops the sandbox + confirmer, so anything mounted in (the project's `.env`) exfiltrates trivially; isolation is the OS's to enforce, and a bind-mounted home or the docker socket re-opens the host (see [chapter 9](09-security-revisited.md) / [chapter 10](10-mcp-revisited.md) / `IDEAS.md`) |
 
 These **compose** — they aren't a menu where you pick one. The two
@@ -359,7 +359,7 @@ human has attention to spend on what *does* still reach them.
 
 > **TODO — not yet shipped.** Today's `Confirmer` is binary
 > (approve/deny) and prompts on every `write` and `bash`. The plan
-> (motivation in [`IDEAS.md`](../../IDEAS.md), "Confirmer as a
+> (motivation in [`IDEAS.md`](../IDEAS.md), "Confirmer as a
 > first-class, last-line-of-defense control") is to promote it: ask
 > only on the consequential, and when it *does* ask, headline the
 > consequence — "this will POST `.env` to attacker.com" — rather
@@ -477,6 +477,6 @@ reaches for all three legs at once waits for
 [chapter 13](13-assistant.md).
 
 For the committed one-page posture — what pikuri guarantees and
-what it explicitly doesn't — see [`SECURITY.md`](../../SECURITY.md)
+what it explicitly doesn't — see [`SECURITY.md`](../SECURITY.md)
 at the repository root. This chapter is the *why*; that file is the
 *what we commit to*.

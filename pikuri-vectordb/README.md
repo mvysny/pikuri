@@ -119,14 +119,14 @@ From a source checkout (not installed by `gem install`):
 ./pikuri-vectordb/bin/pikuri-corpus --qdrant --watch
 ```
 
-A single recall agent over `docs/guide/` (the pikuri guide itself)
+A single recall agent over `book/` (the pikuri guide itself)
 with **no egress** — its tools are the three above plus
 `calculator`; no web search, no fetch, no bash. The corpus stands
 in for private data, and an agent that can read it must not also be
 able to send it out. `--qdrant` / `--chroma` persist the index
 across runs, `--watch` keeps it live, `--no-reranker` drops the
 reranker requirement. The guide's
-[chapter 3](../docs/guide/03-vectordb.md) is the full walkthrough.
+[chapter 3](../book/03-vectordb.md) is the full walkthrough.
 
 ## The LIBRARIAN persona
 
@@ -157,8 +157,8 @@ whichever model each request asks for. Requires a recent enough
 `llama.cpp` build to include the
 [model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp);
 Ubuntu 26.04+ packages one. The guide's
-[chapter 1](../docs/guide/01-chat.md) walks through the setup;
-[chapter 3](../docs/guide/03-vectordb.md) adds the embedder and
+[chapter 1](../book/01-chat.md) walks through the setup;
+[chapter 3](../book/03-vectordb.md) adds the embedder and
 reranker on top.
 
 If you'd rather pin the reranker in its own process — to avoid
@@ -186,7 +186,7 @@ events for the `Watcher`; loaded only when a `Watcher` starts).
 ## Further reading
 
 - **Guide chapter:** [Agentic search and the vector
-  DB](../docs/guide/03-vectordb.md) — concepts, model setup, the
+  DB](../book/03-vectordb.md) — concepts, model setup, the
   no-egress argument, `--qdrant --watch` day-to-day shape.
 - **Design notes:** [`DESIGN.md`](DESIGN.md) — the Chroma-vs-Qdrant
   engine survey.

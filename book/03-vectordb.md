@@ -160,7 +160,7 @@ one forward pass, so setting `batch-size == ubatch-size` is the
 right shape and the value just bounds how much you embed (or
 rerank) per pass. The hard constraint is `batch-size` ≥ the
 longest *single* input: with pikuri's default 512-token chunks
-(see [`Chunker::FixedWindow`](../../pikuri-vectordb/lib/pikuri/vector_db/chunker/fixed_window.rb)),
+(see [`Chunker::FixedWindow`](../pikuri-vectordb/lib/pikuri/vector_db/chunker/fixed_window.rb)),
 4096 leaves 8× headroom for the embedder and 2048 leaves 4× for
 the reranker (whose pairs are query + one chunk, ~600 tokens
 typical). If you change the chunker to larger windows, bump both
@@ -226,7 +226,7 @@ This boots a single chat agent with:
 - The `calculator` from chapter 1 (so non-corpus arithmetic still
   works),
 - A `Pikuri::VectorDb::Backend::InMemory` pointed at the
-  `docs/guide/` directory of this checkout (i.e., the chapters
+  `book/` directory of this checkout (i.e., the chapters
   you're reading).
 
 No web tools, no sub-agents — just retrieval, full-document read,
@@ -518,7 +518,7 @@ breaking API revision on record), its server image is less than
 half the size, and chapter 4's memory stack already runs it — one
 engine to learn, audit, and trust instead of two. The full
 side-by-side survey lives in
-[`pikuri-vectordb/DESIGN.md`](../../pikuri-vectordb/DESIGN.md).
+[`pikuri-vectordb/DESIGN.md`](../pikuri-vectordb/DESIGN.md).
 `pgvector` and others would be similarly thin Faraday clients;
 they're deferred until a concrete need shows up.
 
@@ -547,7 +547,7 @@ The flags are independent and stack cleanly:
 
 On the **first** run the two combine like this: docker starts the
 `pikuri-internal-qdrant` container, the `Watcher` kicks off a
-background sweep of `docs/guide/`, and you drop straight to the `>`
+background sweep of `book/`, and you drop straight to the `>`
 prompt while the index fills in underneath you — a question asked in
 the first few seconds may retrieve less than the same one a minute
 later. On **subsequent** runs Qdrant already holds the embeddings

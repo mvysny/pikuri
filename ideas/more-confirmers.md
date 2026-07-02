@@ -13,7 +13,7 @@ rubber-stamps, and a decline carries an optional **reject-reason** back
 to the model as steering — a channel wired into `Bash` too (see
 "Task-prompt gate" below). **Still open** (this file): the URL confirmers
 for an LLM-driven `fetch`, and the ingest-axis output gate. Drain into
-source + `docs/guide/` as pieces graduate.
+source + `book/` as pieces graduate.
 
 Related, already worked out:
 

@@ -3,7 +3,7 @@
 Status: **designed, not built.** The model is settled (this file).
 One part deliberately left open: *where the mechanism lives* (Q3 —
 core listener/control vs coupling egress tools to the taint state).
-Staging area — drain into source + `docs/guide/` as it lands.
+Staging area — drain into source + `book/` as it lands.
 
 Sibling: [`trifecta-detector.md`](trifecta-detector.md). That note is
 the **static, design-time** check ("this wiring *could* hold all three

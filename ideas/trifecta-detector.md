@@ -3,7 +3,7 @@
 Status: **designed, not built.** Algorithm is settled (this file);
 two parts still open (human-gated-egress primitive; how/where to
 surface it in docs + example scripts). This file is the staging
-area — as pieces land in source or in `docs/guide/`, cut them from
+area — as pieces land in source or in `book/`, cut them from
 here so what remains is always "not yet done."
 
 Related, already in the repo:
@@ -253,7 +253,7 @@ the `fetch` whitelist is killed.
 The algorithm is settled; how it shows up to a *reader* is not. To
 brainstorm next (the *what*, not yet the technical *how*):
 
-- Which `bin/pikuri-*` and `docs/guide/` examples deliberately *should*
+- Which `bin/pikuri-*` and `book/` examples deliberately *should*
   trip the detector as a teaching moment, and which should be wired to
   stay quiet so the contrast is legible.
 - Where the named concepts (`:private` as a user-declared property,

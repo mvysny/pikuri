@@ -38,13 +38,13 @@ instructions.
 ## Further reading
 
 - **Narrative walkthrough:**
-  [Chapter 5 of the guide](../docs/guide/05-mcp.md) walks the
+  [Chapter 5 of the guide](../book/05-mcp.md) walks the
   MCP-side wiring of this binary end-to-end with a gentle
   example (a local iCalendar reader), and
-  [chapter 13](../docs/guide/13-assistant.md) is the placeholder
+  [chapter 13](../book/13-assistant.md) is the placeholder
   for a fuller `pikuri-assistant` walkthrough — landing once the
   vectordb and memories surfaces stabilise. See
-  [the guide's index](../docs/guide/) for the current state.
+  [the guide's index](../book/) for the current state.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-assistant> (once published),
   or run `bundle exec yard` in this directory for a local copy.

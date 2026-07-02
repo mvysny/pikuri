@@ -36,14 +36,14 @@ Chapters 3+ of the guide also run local infrastructure (vector
 store, memory store, MCP servers) in Docker — set up **rootless**,
 not via the `docker` group, which is passwordless root. The
 one-time setup lives in
-[docs/guide/00-prerequisites.md](docs/guide/00-prerequisites.md).
+[book/00-prerequisites.md](book/00-prerequisites.md).
 
 Pikuri itself is now installed in dev mode. To actually have a
 conversation you also need a model running. The shortest route —
 install `llama.cpp` and start `llama-server` with the default Qwen
 model — is the first thing the guide walks through:
 
-→ **[docs/guide/01-chat.md](docs/guide/01-chat.md)** — your first
+→ **[book/01-chat.md](book/01-chat.md)** — your first
 conversation, from a fresh checkout to a working assistant.
 
 ## Where to go next
@@ -51,7 +51,7 @@ conversation, from a fresh checkout to a working assistant.
 Pikuri is small enough to read end-to-end in an evening. Two ways
 in:
 
-- **Read the guide** at [`docs/guide/`](docs/guide/). It's a short
+- **Read the guide** at [`book/`](book/). It's a short
   book — chapter 01 starts a chat agent, chapter 02 introduces
   sub-agents (`pikuri-minions`), chapter 03 walks the in-repo
   coding agent (`pikuri-code`) and its security posture. Reading

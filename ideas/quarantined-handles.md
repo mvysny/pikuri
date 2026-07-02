@@ -4,7 +4,7 @@ Status: **draft, shelved.** The shape is sketched (this file); nothing
 is settled and nothing is built. Parked deliberately because its
 payoff is narrow (see "When it applies" — the general assistant is the
 *wrong* shape for it). Revisit when a concrete pipeline-shaped agent
-actually wants it. Staging area: drain into source + `docs/guide/`
+actually wants it. Staging area: drain into source + `book/`
 only if/when it graduates from draft.
 
 Prior art:

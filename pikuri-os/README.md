@@ -8,7 +8,7 @@ Offline Linux/OS helper agent + OS-integration tools for the
 answer questions about the machine, find and open files, read logs and
 explain errors, advise on configuration. It is the federation's
 privacy-first `@os` member shipped as a standalone single agent (walked
-through in [guide chapter 7](../docs/guide/07-os-assistant.md); see
+through in [guide chapter 7](../book/07-os-assistant.md); see
 [`ideas/os-assistant.md`](../ideas/os-assistant.md) for the design
 origin and the work still deferred).
 

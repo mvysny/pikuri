@@ -207,7 +207,7 @@ The *role* — last-line-of-defense for the parent agent in
 `bin/pikuri-code`, where structural defense has run out and the
 human gate is what stops a poisoned context from leaking — is now
 documented in [chapter 6 §"The human gate, and why fatigue is the
-enemy"](docs/guide/06-security.md). The two requirements (bother the
+enemy"](book/06-security.md). The two requirements (bother the
 human only on the genuinely consequential; be excellent when it does
 fire) and the dependency on the rest of the kit carrying the routine
 load are stated there.
@@ -379,7 +379,7 @@ Pikuri::VectorDb::Extension.new(backend:, source:)`. Per-piece
 rationale (Extension / Backend `InMemory`+`Chroma` / Embedder /
 Reranker / Chunker / `bin/pikuri-corpus` + `LIBRARIAN`) lives in the
 gem's YARD headers and the inventory in [`CLAUDE.md`](CLAUDE.md); the
-three-model ops guidance graduated into the `docs/guide/` chapters.
+three-model ops guidance graduated into the `book/` chapters.
 Both trifecta defenses (the no-egress `pikuri-corpus` posture and the
 privilege-separated `LIBRARIAN`) are documented in {Pikuri::VectorDb::LIBRARIAN}
 and `SECURITY.md`; the reason `LIBRARIAN` isn't wired into a binary

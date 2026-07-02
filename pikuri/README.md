@@ -49,7 +49,7 @@ tree stays auditable.
 ## Further reading
 
 - **Narrative walkthrough:** the [pikuri
-  guide](../docs/guide/) — a short sequential book covering the
+  guide](../book/) — a short sequential book covering the
   whole family, chapter by chapter.
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri> (once published), or run

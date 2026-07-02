@@ -9,7 +9,7 @@ This is the *committed* model — what ships today, stated tersely.
 The teaching version — the threat from first principles, five
 worked attacks told as stories, and a decision procedure for
 designing your own harness — is
-[chapter 6 of the guide](docs/guide/06-security.md). Open questions,
+[chapter 6 of the guide](book/06-security.md). Open questions,
 deferred mitigations, and prior-art notes live in
 [`IDEAS.md`](IDEAS.md) §"Security perspective".
 
@@ -172,7 +172,7 @@ call too.
 > destructive command in a vendored file, a malicious MCP
 > description, a poisoned MCP *response*, and the compound
 > MCP-plus-bash-plus-tired-user case — are walked end to end in
-> [chapter 6 of the guide](docs/guide/06-security.md). The first
+> [chapter 6 of the guide](book/06-security.md). The first
 > three are structural (or best-effort) wins; the last two are where
 > structural defense ends and operational caution takes over.
 
@@ -220,7 +220,7 @@ as a guarantee:
 
 ## See also
 
-- [Chapter 6 of the guide](docs/guide/06-security.md) — the teaching
+- [Chapter 6 of the guide](book/06-security.md) — the teaching
   companion to this page: the threat from first principles, the five
   attacks as stories, and a decision procedure for picking a model
   when you build your own harness.

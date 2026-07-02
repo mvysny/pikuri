@@ -2,7 +2,7 @@
 
 Status: **designed, not built.** The model is settled (this file); the
 sequencing note at the bottom is the live part. Staging area — drain
-into source + `docs/guide/` as it lands.
+into source + `book/` as it lands.
 
 Related, already in the repo:
 

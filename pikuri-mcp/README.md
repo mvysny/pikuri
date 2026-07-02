@@ -62,11 +62,11 @@ activation set.
 ## Further reading
 
 - **Narrative walkthrough:** [chapter 5 of the
-  guide](../docs/guide/05-mcp.md) is the gentle MCP intro — one
+  guide](../book/05-mcp.md) is the gentle MCP intro — one
   low-stakes server in a locally-built container (run via
   `bin/pikuri-openlibrary`), rootless Docker as the boundary, the
   verifier and synthesizer in depth.
-  [Chapter 10](../docs/guide/10-mcp-revisited.md) picks
+  [Chapter 10](../book/10-mcp-revisited.md) picks
   the thread back up at the harder end: the official GitHub MCP
   in Docker, npx- and pip-based community servers, Playwright,
   and the full threat model.

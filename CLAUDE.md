@@ -319,6 +319,11 @@ Rails-shape monorepo: each gem owns its own `lib/`, `spec/`,
 out `rake test` and orchestrates `rake release VERSION=x.y.z` in
 lockstep.
 
+**"The book"** means the `book/` folder — the sequential guide
+(chapters `00`–`13`, `book/README.md` is its table of contents).
+When the user says "the book", "the guide", or "chapter N", that's
+where to look. (Renamed from `docs/guide/` in July 2026.)
+
 Everything pikuri ships lives under the `Pikuri::` namespace,
 contributed cooperatively by each gem's own Zeitwerk loader. The
 `Pikuri::PROMPT_DIRS` list is similarly cooperative: each gem
@@ -685,7 +690,7 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   folder"* beats *"filesystem mutation outside the workspace"*;
   *"the CPU's NX flag"* beats *"a structural data/instructions
   distinction."* Applies to `README.md`, `SECURITY.md`,
-  `IDEAS.md`, `COMPARISON.md`, and the `docs/guide/` chapters —
+  `IDEAS.md`, `COMPARISON.md`, and the `book/` chapters —
   any prose meant for a human reader.
 
 ## Working on this codebase

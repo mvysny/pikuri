@@ -110,7 +110,7 @@ holds a credential whose blast radius is the next section.
 
 ## Why Docker?
 
-[`SECURITY.md`](../../SECURITY.md) §"Code trust" and chapter 6's
+[`SECURITY.md`](../SECURITY.md) §"Code trust" and chapter 6's
 code-trust section both settle the general posture in one bullet:
 MCP server processes are untrusted code you didn't write, so run
 them in a container. This chapter adopts that across the board.
@@ -511,5 +511,5 @@ The vocabulary you have now (`Pikuri::Agent`, `Tool`, listeners,
 the Extension protocol with its worked examples, configure/bind,
 sub-agent privilege separation, MCP's verifier + synthesizer +
 per-agent `mcp_connect`, Docker as the MCP boundary) is enough
-to read the [`pikuri-mcp`](../../pikuri-mcp/README.md) sources
+to read the [`pikuri-mcp`](../pikuri-mcp/README.md) sources
 directly.

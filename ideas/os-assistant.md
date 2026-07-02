@@ -7,7 +7,7 @@ documented — so this note keeps only the *origin map*, the questions
 still open to validation, and the explicitly deferred work. For the
 shipped design and its rationale, read:
 
-- **Guide [chapter 7](../docs/guide/07-os-assistant.md)** — the
+- **Guide [chapter 7](../book/07-os-assistant.md)** — the
   narrative walkthrough. Part 1: the severed-network sandbox, the
   read-before-edit fence, confirmed mutations, the read-only
   auto-confirmer, the file-index pair, `MACHINE.md`, boot grounding,

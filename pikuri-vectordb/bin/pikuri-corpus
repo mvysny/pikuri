@@ -12,14 +12,14 @@
 # send it out. That single rule keeps all three legs of the lethal
 # trifecta off this agent (chapter 6), and is why a prompt-injected
 # document has no hand to act with — vectordb_search and vectordb_read
-# are both inbound-only. The default corpus is the +docs/guide/+
+# are both inbound-only. The default corpus is the +book/+
 # directory inside this checkout, so the reader can ask the agent about
 # the very book they're reading.
 #
 # The privilege-separated `LIBRARIAN` persona is bundled by this gem but
 # deliberately NOT wired here — it earns its keep only under an agent
 # that *does* have egress (the chapter-7 assistant), where the corpus
-# must be quarantined in a sub-agent. See docs/guide/03-vectordb.md.
+# must be quarantined in a sub-agent. See book/03-vectordb.md.
 #
 # Same Bundler bootstrap pattern as the other bundled bins so callers
 # don't need the `bundle exec` ceremony.
@@ -51,7 +51,7 @@ embed_model     = examples_config['embed_model'] || 'nomic-ai/nomic-embed-text-v
 reranker_server = examples_config['reranker_server'] # nil ⇒ defaults to +server+ below
 reranker_model  = examples_config['reranker_model'] || 'gpustack/bge-reranker-v2-m3-GGUF:Q8_0'
 use_reranker    = true
-source          = File.expand_path('../../docs/guide', __dir__)
+source          = File.expand_path('../../book', __dir__)
 streaming       = false
 watch           = false
 use_qdrant      = false

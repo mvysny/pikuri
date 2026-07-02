@@ -76,7 +76,7 @@ workflows to anchor it:
 
 Until then: <https://agentskills.io/specification> is the
 authoritative reference, and the `pikuri-skills`
-[README](../../pikuri-skills/README.md) covers the API surface.
+[README](../pikuri-skills/README.md) covers the API surface.
 
 ## What's next
 
