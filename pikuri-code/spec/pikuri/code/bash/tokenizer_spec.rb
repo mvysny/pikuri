@@ -48,11 +48,53 @@ RSpec.describe Pikuri::Code::Bash::Tokenizer do
     end
   end
 
+  describe 'double-quote removal (inert interior only)' do
+    it 'drops the marks and keeps the interior as one literal word' do
+      assert_equal [['cat', 'f'], ['echo', ' bytes']], tok('cat f && echo " bytes"')
+      assert_equal [['grep', 'foo bar', '/etc/hosts']], tok('grep "foo bar" /etc/hosts')
+      assert_equal [['grep', '']], tok('grep ""') # empty quoted arg is a real word
+    end
+
+    it 'treats an interior operator/metacharacter as literal, not structural' do
+      assert_equal [['echo', 'a | b']], tok('echo "a | b"')   # quoted pipe does not split
+      assert_equal [['echo', 'a && b']], tok('echo "a && b"')
+      assert_equal [['echo', "a\nb"]], tok(%(echo "a\nb"))    # quoted newline does not split
+      assert_equal [['echo', 'a * b ~ #c']], tok('echo "a * b ~ #c"')
+    end
+
+    it 'concatenates across quote styles and keeps the other quote literal' do
+      assert_equal [%w[echo abc]], tok(%q(echo "a"'b'c))
+      assert_equal [['echo', 'say "hi"']], tok(%q(echo 'say "hi"')) # " inside '...'
+      assert_equal [['echo', "it's"]], tok(%q(echo "it's")) # ' inside "..."
+    end
+
+    it 'hands back the TRUE de-quoted word (no placeholder), collapsing empty pairs' do
+      assert_equal [%w[dmesg --clear]], tok('dmesg --""clear')
+      assert_equal [%w[dmesg --clear]], tok('dmesg --cl"e"ar')
+      assert_equal [%w[git diff --output=/x]], tok('git diff --"output"=/x')
+    end
+
+    it 'keeps ! literal (history expansion is interactive-only; Bash spawns bash -c)' do
+      assert_equal [['echo', 'done!']], tok('echo "done!"')
+    end
+
+    it 'returns nil the moment a POSIX-live byte appears inside the span' do
+      assert_nil tok('echo "$HOME"')          # parameter expansion
+      assert_nil tok('echo "$(rm -rf ~)"')    # command substitution
+      assert_nil tok('echo "`rm`"')           # backtick substitution
+      assert_nil tok('echo "a\\"b; rm x"')    # backslash — the escaped-quote mis-parse bait
+      assert_nil tok('echo "a\\nb"')          # backslash, even a harmless-looking one
+    end
+
+    it 'returns nil on an unbalanced double quote' do
+      assert_nil tok('grep "foo')
+    end
+  end
+
   describe 'forbidden bytes (more than a simple chain)' do
     [
       'echo $(rm -rf ~)',        # command substitution
       'echo `rm`',               # backtick
-      'echo "$(rm)"',            # double quote stays forbidden
       'echo a\\;b',              # backslash stays forbidden
       'ls *.txt',                # glob
       'ls ~/secret',             # tilde

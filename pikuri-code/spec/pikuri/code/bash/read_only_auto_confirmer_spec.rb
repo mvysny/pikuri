@@ -225,7 +225,6 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'triple-amp'           => 'ls &&& pwd',          # segment "& pwd" has a stray &
       'trailing &&'          => 'ls && ',              # empty trailing segment
       'leading &&'           => '&& ls',               # empty leading segment
-      'quoted && literal'    => 'echo "a && b"',       # quotes trip the metachar check
       'over MAX_CHAIN'       => (['ls'] * 65).join(' && '),
       # A pipe grants no write/exec: the escalators aren't allowlisted.
       'pipe into xargs'      => 'ls | xargs rm',       # xargs not allowlisted
@@ -351,8 +350,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
     # Bypass guards: a quote must never let a mutating flag through. Real
     # quote-removal hands the classifiers the TRUE flag (+--clear+, not
     # +--_clear+), so an empty/mid-token quote pair collapses into the
-    # flag it was hiding and is caught. Double quotes and backslashes stay
-    # forbidden. (See the adversarial review in the class header.)
+    # flag it was hiding and is caught. Backslashes stay forbidden.
+    # (See the adversarial review in the class header.)
     {
       "dmesg empty-pair clear"  => "dmesg --''clear",      # → dmesg --clear (wipes buffer)
       "dmesg mid-token clear"   => "dmesg --cl'e'ar",      # → dmesg --clear
@@ -362,8 +361,54 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       "unbalanced single quote" => "grep 'foo",            # never closes → delegate
       "ansi-c quote keeps $"    => "echo $'\\n'",          # the $ trips the gate
       "quoted sequencer word"   => "ls' ; 'rm",            # one literal word "ls ; rm"
-      "double quote forbidden"  => 'echo "$(rm -rf ~)"',   # " stays forbidden
       "backslash forbidden"     => 'echo a\\;b'            # \\ stays forbidden
+    }.each do |label, cmd|
+      it "delegates: #{label} (#{cmd.inspect})" do
+        inner = RecordingConfirmer.new(true)
+        # allow_git so the git guard is actually exercised, not gated off.
+        confirmer = described_class.new(inner, allow_git: true)
+        assert confirmer.confirm?(request: req(cmd))
+        assert_equal 1, inner.calls.size,
+                     "expected the human to be consulted for #{cmd.inspect}"
+      end
+    end
+  end
+
+  describe 'double-quoted arguments (inert interior only)' do
+    # A double-quoted span with none of the POSIX-live bytes ($, backtick,
+    # backslash) is literal exactly like a single-quoted one, so the same
+    # real quote-removal applies and the command auto-approves.
+    [
+      'cat /etc/hostname && echo " bytes"',    # the motivating LLM shape
+      'grep "foo bar" /etc/hosts',             # quoted whitespace = one word
+      'echo "a | b"',                          # quoted sequencer is literal
+      'echo "done!"',                          # ! is inert under bash -c
+      'grep ""',                               # empty quoted arg
+      %q(grep "it's" /tmp/x),                  # single quote literal inside "..."
+      'dpkg --get-selections | grep -w "install" | wc -l'
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        inner = RecordingConfirmer.new(false)
+        confirmer = described_class.new(inner)
+        assert confirmer.confirm?(request: req(cmd)),
+               "expected auto-approval for #{cmd.inspect}"
+        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+      end
+    end
+
+    # Any POSIX-live byte inside the span → delegate; and quote-smuggled
+    # mutating flags collapse to their true spelling and are caught.
+    {
+      'parameter expansion'      => 'echo "$HOME"',
+      'command substitution'     => 'echo "$(rm -rf ~)"',
+      'backtick substitution'    => 'echo "`rm`"',
+      'escaped-quote mis-parse'  => 'echo "a\\"b; rm -rf ~"', # \ rejects before the bait quote
+      'harmless-looking escape'  => 'echo "a\\nb"',           # any \ inside "..." delegates
+      'dmesg empty-pair clear'   => 'dmesg --""clear',        # → dmesg --clear (wipes buffer)
+      'dmesg mid-token clear'    => 'dmesg --cl"e"ar',        # → dmesg --clear
+      'git mid-token --output'   => 'git diff --"output"=/x', # → --output (writes a file)
+      'quoted command name'      => '"rm" -rf ~',             # → rm, not allowlisted
+      'unbalanced double quote'  => 'grep "foo'               # never closes → delegate
     }.each do |label, cmd|
       it "delegates: #{label} (#{cmd.inspect})" do
         inner = RecordingConfirmer.new(true)

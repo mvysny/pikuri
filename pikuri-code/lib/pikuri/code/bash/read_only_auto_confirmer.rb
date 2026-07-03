@@ -41,8 +41,9 @@ module Pikuri
       #    +allow_git:+ — a read-only git invocation).
       #
       # The lexing half — why the sequencer split is faithful, why a pipe
-      # grants no capability, and why single quotes are decoded by *real*
-      # quote-removal (so this class receives the genuine de-quoted word,
+      # grants no capability, and why quotes (single, and double with a
+      # verifiably inert interior) are decoded by *real* quote-removal (so
+      # this class receives the genuine de-quoted word,
       # +--clear+ not +--_clear+) — lives in {Tokenizer}. The relevant
       # consequence here: the {Tokenizer} hands the classifiers below the
       # *true* de-quoted word, which is what makes the denylist/prefix

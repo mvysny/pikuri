@@ -204,11 +204,13 @@ no redirect to a real file, and no shell trickery. The allowlist holds
 only binaries that are safe in *all* their argument forms — `find` is
 excluded (`-delete`), `dd`/`tee`/`truncate`/`shred` are excluded,
 anything with a destructive mode is out. A small tokenizer does the
-parse: it understands single-quoted arguments (`grep -w 'install'` is
-fine — the quotes are stripped and the text is one literal word), but
-double quotes and backslashes still fall through to the human (inside
-`"…"` a `$(…)` would execute). The failure mode is "asks too often,"
-never "approved a deletion." Everything else falls through to the human.
+parse: it understands quoted arguments (`grep -w 'install'` and
+`echo " bytes"` are fine — the quotes are stripped and the text is one
+literal word), but a double-quoted string containing `$`, a backtick or
+a backslash still falls through to the human (inside `"…"` those stay
+live — a `"$(…)"` would execute), as does any backslash outside quotes.
+The failure mode is "asks too often," never "approved a deletion."
+Everything else falls through to the human.
 
 `allow_git: true` extends that to read-only git verbs (`status`,
 `diff`, `log`, `show`, `blame`). On its face that's unsafe — even a
