@@ -96,6 +96,88 @@ When designing new features, the closest prior art to mine:
 Both opencode and PI implement the [Agent Skills standard](https://agentskills.io/specification),
 which is also what Claude Code follows.
 
+## Documentation kinds
+
+Pikuri's prose lives in several kinds of document, each with a distinct
+audience, length, and *what it is allowed to own*. Knowing which kind
+you're writing keeps any one file from becoming a mixed bag (concepts +
+reference + quickstart fused). Match the target's kind before you write
+a line.
+
+| Kind | Audience | Scope & length | Owns |
+|---|---|---|---|
+| `ideas/*.md` | you + the author | dense, technical, provisional | design rationale *in flight*; transient (trimmed as pieces land — see graduation) |
+| `IDEAS.md` (root) | a future contributor | short entries | *considered-then-deferred* decisions, so an absence reads as a choice, not an oversight |
+| `COMPARISON.md` | an evaluator / contributor | long, comparative | external prior art + "ideas to borrow" (the outward-sourced counterpart to `IDEAS.md`) |
+| per-gem `DESIGN.md` | someone extending that one gem | dense, gem-scoped | that gem's design rationale + threat model (only where a gem earns one: `pikuri-memory`, `pikuri-vectordb`) |
+| **book** (`book/`, cover-to-cover) | a learner, reading in order | verbose, narrative, order-dependent | *concepts, the teaching narrative, the cross-cutting why* |
+| **YARD** (source headers) | someone at the API | dense, per-symbol, standalone | the precise technical workings **and the design rationale** of each class/method — the source of truth |
+| **README** | a prospective user at the front door | thin: positioning + quickstart + a couple of examples + pointers | luring the reader in and routing them onward |
+| **SECURITY.md** | a security-conscious user | concrete, user-facing | the threat model + the shipped defenses |
+| **CLAUDE.md** (this file) | a contributor / coding agent | invariant-focused | "what you must not break" — pointers to the yardoc that owns each rationale |
+
+Rules that make these documents survivable:
+
+- **Single source of truth per fact.** Each fact has one home; the
+  others link to it rather than restating it. The **yardoc** owns the
+  per-symbol technical truth *and its rationale*; the **book** owns
+  cross-cutting concepts and teaching order; **CLAUDE.md** owns
+  invariants and points at the yardoc (`see {ClassName}`) rather than
+  re-explaining. When tempted to explain something twice, link instead.
+  (This is the rule the intro states — the same discipline, written out
+  for every document kind.)
+- **But don't over-link into unreadability.** A tiny, load-bearing
+  restatement is fine when it saves the reader a jump — e.g. "capture
+  feeds user-role content only; see {Pikuri::Memory::Extension} for
+  why." The test: repeat the *one-line fact*, defer the *explanation*.
+  Ten hops to assemble one mental picture is worse than one repeated
+  sentence.
+- **YARD is browsed standalone** on rubydoc.info by someone who won't
+  click into the book, so it must carry the complete *local* truth of
+  the symbol — its workings **and** its why. It may defer only the
+  book-wide *narrative* ("the guide's ch6 walks the whole threat
+  model"), never the local what/why of the symbol. This is pikuri's
+  inversion of the usual split: rationale lives *in* the yardoc, not
+  deferred out of it — which is exactly why CLAUDE.md can stay a thin
+  pointer map.
+- **The book grows organically** — chapters `00`–`13` already track the
+  two tracks (see `book/README.md`). Add a chapter when a concept has
+  earned one, not to fill an outline.
+- **README stays a front door.** Positioning, install, one hello-world,
+  a couple of example pointers, then links onward. Concepts migrate to
+  the book; per-symbol API + rationale migrate to the yardoc.
+- **`ideas/*.md` vs `IDEAS.md` are not the same file kind.**
+  `ideas/*.md` is long-form rationale *in flight* that trims toward
+  nothing as it ships; `IDEAS.md` is the durable short registry of
+  things we *considered and punted*. Don't fold one into the other.
+
+**The graduation pipeline.** `ideas/*.md` is transient by design — a
+scratchpad "for the two of us," not user docs. It is still a vital part
+of the mechanism: it's where rationale is born. As pieces land in
+source, the book, or CLAUDE.md, **cut them from the note** (each idea
+file documents this trim-as-you-go rule inline — see the top of
+`ideas/trifecta-detector.md`), so what remains is always "not yet
+done." On full graduation the note keeps only its origin map + the
+questions still open to validation + explicitly deferred work, and its
+substance has moved to its final homes:
+
+- the **reader-half** → the book, rewritten for a learner;
+- the **per-symbol rationale** → the yardoc of the class it describes;
+- the **invariant / must-not-break half** → CLAUDE.md, as a **Seam** or
+  **Convention** entry;
+- the **considered-then-punted residue** → `IDEAS.md`.
+
+The worked example is the OS helper: designed in `ideas/os-assistant.md`,
+then on shipping its narrative graduated into book chapter 7, its
+rationale into {Pikuri::Os::Extension} and the tool yardocs, and its
+must-not-break half into the **Sandbox seam** below
+(`Sandbox::FullFsNoNet` — full disk, kernel-severed egress). The note
+now keeps only the origin map and the one open question (local-model
+fit) — the pipeline run start to finish. (The `book/`-relative `Owns`
+here is also why the "prefer concrete over abstract" convention only
+governs the human-facing kinds — README / SECURITY / IDEAS /
+COMPARISON / book — not the yardoc.)
+
 ## Seams (invariants)
 
 Every seam below has detailed rationale in the corresponding class's
