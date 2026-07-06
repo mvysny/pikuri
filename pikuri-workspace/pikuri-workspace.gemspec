@@ -45,4 +45,10 @@ Gem::Specification.new do |spec|
   # pikuri-core; lockstep-versioned so an upgrade to either always
   # pulls the matching peer.
   spec.add_dependency 'pikuri-core', "= #{Pikuri::VERSION}"
+
+  # Reline drives Confirmer::Terminal's editable-task input buffer
+  # (Reline.readline + pre_input_hook). It shipped as a Ruby default
+  # gem through 3.x but was removed from the defaults in Ruby 4.0, so
+  # it must now be declared explicitly.
+  spec.add_dependency 'reline', '~> 0.6'
 end
