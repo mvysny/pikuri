@@ -28,6 +28,10 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       assert_equal false, described_class.new(question: 'OK?').editable
     end
 
+    it 'defaults change to nil' do
+      assert_nil described_class.new(question: 'OK?').change
+    end
+
     it 'carries editable when set' do
       assert_equal true, described_class.new(question: 'OK?', detail: 't', editable: true).editable
     end
@@ -248,6 +252,27 @@ RSpec.describe Pikuri::Workspace::Confirmer do
         decision = described_class.new.decide(request: editable_req('research foo'))
         assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
         assert_equal 'not now', decision.reason
+      end
+    end
+
+    describe 'change diff rendering' do
+      it 'renders a unified diff of the change and approves on y' do
+        stdin_with("y\n")
+        change = Pikuri::Workspace::Confirmer::Change.new(
+          path: 'a.txt', old: "one\ntwo\n", new: "one\nTWO\n"
+        )
+        assert_equal true,
+                     described_class.new.confirm?(request: req('OK to write a.txt?').with(change: change))
+        out = $stdout.string
+        assert_includes out, '-two'
+        assert_includes out, '+TWO'
+      end
+
+      it 'shows all lines added for a new file (old is nil)' do
+        stdin_with("y\n")
+        change = Pikuri::Workspace::Confirmer::Change.new(path: 'new.txt', old: nil, new: "hello\n")
+        described_class.new.confirm?(request: req('OK to write new.txt?').with(change: change))
+        assert_includes $stdout.string, '+hello'
       end
     end
   end

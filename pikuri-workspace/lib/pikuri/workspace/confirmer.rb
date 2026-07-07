@@ -2,6 +2,7 @@
 
 require 'rainbow'
 require 'reline'
+require 'tmpdir'
 
 module Pikuri
   module Workspace
@@ -85,14 +86,26 @@ module Pikuri
       # LLM composed. Renderers MUST neutralize them before display —
       # route through {Pikuri::Sanitizer} (see {Terminal}), and
       # additionally HTML-escape in a web client.
-      Request = Data.define(:question, :detail, :editable) do
+      Request = Data.define(:question, :detail, :editable, :change) do
         # @param question [String] one-line headline; caller owns phrasing
         # @param detail [String, nil] optional preformatted body / editable payload
         # @param editable [Boolean] whether the human may rewrite +detail+
-        def initialize(question:, detail: nil, editable: false)
+        # @param change [Change, nil] optional structured file change; when
+        #   present a diff-capable chrome renders a diff of it (see {Change}).
+        def initialize(question:, detail: nil, editable: false, change: nil)
           super
         end
       end
+
+      # A structured file change for a {Write} / {Edit} confirmation. The
+      # tool hands over the *semantic* change — path + old bytes + new
+      # bytes — rather than a pre-rendered string, so that rendering the
+      # diff stays the confirmer's job (the Confirmer seam: presentation
+      # belongs to the chrome). {Terminal} renders a unified diff by
+      # shelling to +diff+ (the educational chrome's differ); a richer
+      # client (pikuri-tui) renders the same {Change} with its own diff
+      # library. +old+ is the current file bytes, or +nil+ for a new file.
+      Change = Data.define(:path, :old, :new)
 
       # An approval. Carries the text to act on: the human-authored
       # (possibly edited) form of {Request#detail} when the request was
@@ -168,6 +181,12 @@ module Pikuri
       # seat is a richer-UI (web) invariant. The warning-gated
       # forced-retype is the terminal's partial answer.
       class Terminal < Confirmer
+        LOGGER = Pikuri.logger_for('Workspace::Confirmer')
+
+        # Maximum diff lines rendered before truncation — keeps a
+        # whole-file rewrite from scrolling the terminal off-screen.
+        DIFF_MAX_LINES = 300
+
         # @param request [Request]
         # @return [Approved, Rejected]
         def decide(request:)
@@ -189,7 +208,9 @@ module Pikuri
         def render(request)
           question = Pikuri::Sanitizer.sanitize(request.question)
           detail   = request.detail ? Pikuri::Sanitizer.sanitize(request.detail) : nil
-          warnings = question.warnings + (detail ? detail.warnings : [])
+          raw_diff = request.change ? unified_diff(request.change) : nil
+          diff     = raw_diff ? Pikuri::Sanitizer.sanitize(raw_diff) : nil
+          warnings = question.warnings + (detail ? detail.warnings : []) + (diff ? diff.warnings : [])
 
           puts
           unless warnings.empty?
@@ -198,7 +219,63 @@ module Pikuri
           end
           puts Rainbow(question.text).bold
           puts Rainbow(detail.text).dimgray if detail
+          print_diff(diff.text) if diff
           warnings
+        end
+
+        # Render a unified diff of +change+ by shelling to +diff -u+ (the
+        # educational chrome's differ, routed through the {Pikuri::Subprocess}
+        # chokepoint; a richer client renders the same {Change} with its own
+        # diff library). Old/new bytes go to tempfiles under a
+        # self-cleaning dir. Returns the diff text, capped at
+        # {DIFF_MAX_LINES}, or +nil+ on any failure (empty diff, missing
+        # +diff+, IO error) — a cosmetic path secondary to the confirm, so
+        # it degrades to "no diff shown" rather than raising.
+        #
+        # @param change [Change]
+        # @return [String, nil]
+        def unified_diff(change)
+          Dir.mktmpdir('pikuri-diff-') do |dir|
+            old_f = File.join(dir, 'old')
+            new_f = File.join(dir, 'new')
+            out_f = File.join(dir, 'out')
+            File.binwrite(old_f, change.old || '')
+            File.binwrite(new_f, change.new)
+            File.open(out_f, 'w') do |o|
+              Pikuri::Subprocess.run(
+                'diff', '-u', '--label', "a/#{change.path}", '--label', "b/#{change.path}",
+                old_f, new_f, stdin_data: '', stdout: o, chdir: dir
+              )
+            end
+            text = File.read(out_f)
+            return nil if text.empty?
+
+            lines = text.lines
+            return text if lines.size <= DIFF_MAX_LINES
+
+            lines.first(DIFF_MAX_LINES).join + "… (#{lines.size - DIFF_MAX_LINES} more diff lines)\n"
+          end
+        rescue StandardError => e
+          LOGGER.warn("diff render failed (#{e.class}: #{e.message}); confirming without a diff")
+          nil
+        end
+
+        # Print a sanitized unified diff, coloring +added+ / -removed /
+        # @@hunk@@ lines. Sanitization already ran in {#render}; this only
+        # adds medium-specific color (Rainbow self-disables on non-TTY).
+        #
+        # @param text [String] sanitized diff text
+        # @return [void]
+        def print_diff(text)
+          text.each_line do |line|
+            body = line.chomp
+            puts(case body[0]
+                 when '+' then Rainbow(body).green
+                 when '-' then Rainbow(body).red
+                 when '@' then Rainbow(body).cyan
+                 else Rainbow(body).dimgray
+                 end)
+          end
         end
 
         # The classic +(y/n)?+ flow, now returning {Approved} / {Rejected}
