@@ -117,9 +117,10 @@ when an injection is crafted to look benign.
 - **Subcommand-aware read rules** for mutating binaries still delegated
   whole — `systemctl status`, plain `journalctl`. The hard part, as with
   `git`, is that a "read" verb may still execute config-directed code.
-- **Session-sticky grants** — "always allow `journalctl` this session,"
-  the simple-invocation form only (Claude Code's shape: deterministic
-  rules + user-granted session approvals, no LLM in the yes/no).
+- **Session-sticky / always-allow grants** — the runtime-populated
+  companion to the static allowlist ("the human vouches for `pytest`
+  this session"). Design space + why it's deferred moved to its own
+  note: [`bash-confirmer.md`](bash-confirmer.md).
 - **Batching** — present several queued commands as one prompt.
 - **AI translation aid** — optional, never a verdict, always beside the
   raw command.
