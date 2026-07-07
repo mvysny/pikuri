@@ -127,12 +127,6 @@ when an injection is crafted to look benign.
 
 **Larger pieces:**
 
-- **Semantic / large-scale memory.** Only if the bounded `MACHINE.md`
-  proves too small. mem0-style auto-capture on an untrusted-ingest agent
-  reopens the write-time-poisoning question that `MACHINE.md`'s
-  visible-and-confirmed model sidesteps — so it waits on the taint
-  machinery [`assistant.md`](assistant.md) and
-  [`private-context-taint.md`](private-context-taint.md) are circling.
 - **Internet access** — now guide **chapter 7, Part 2** ("the third leg
   returns"). **Shipped** behind the binary's `--with-internet` flag
   (default off): web access is quarantined in the bundled `RESEARCHER`
