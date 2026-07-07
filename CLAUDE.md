@@ -293,7 +293,14 @@ yardoc. CLAUDE.md only records the invariant.
   the five tools sharing one composite. See
   {Pikuri::Workspace::Workspace} and {Pikuri::Workspace::Filesystem}
   (project_root semantics, containment algorithm, `AllowAll`
-  variant, project-root denylist).
+  variant, project-root denylist). `AllowAll`'s credential floor
+  (`~/.ssh`, `~/.aws`, … `/etc/shadow`) is a generic `denylist:`
+  constructor param defaulting to `DEFAULT_CREDENTIAL_DENYLIST` —
+  default-on so an unconfigured `AllowAll` is safe; a caller passes a
+  reduced/empty list **only behind an outer egress boundary** (bash
+  bypasses this denylist regardless via `FullFsNoNet`, so a read-block on
+  the file tools is friction, not a boundary, wherever bash is open —
+  see `ideas/write-edit-confirmer.md`).
 - **Confirmer seam.** Tools that mutate user state (`Write`,
   `Bash`) or dispatch a network-capable sub-agent (the `agent`
   tool) take a `Pikuri::Workspace::Confirmer` via constructor and
