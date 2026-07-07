@@ -131,5 +131,3 @@ when an injection is crafted to look benign.
   The agent advises (prints the exact `gsettings` / `apt` command) but
   doesn't run these: installs need root + egress (barred by the severed
   network anyway), and the rest are post-v1.
-- **Local offline docs** (Ubuntu help, man pages) as a `pikuri-vectordb`
-  corpus, if recall quality ever justifies it.
