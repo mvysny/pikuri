@@ -1,44 +1,38 @@
-# Write/Edit path-zone confirmer: full read, confirmed writes
+# Write/Edit confirmer: full read, confirmed writes
 
 Status: **deferred design — Piece 1 machinery shipped, Piece 2 (this
-note) not built.** This is the write-side half of the pikuri-os
-tool-consistency work sketched in [`os-assistant.md`](os-assistant.md)
-(the "path-zone auto-allow" fatigue item, kept there as a pointer). It
-was split from a companion read-side change:
+note) not built.** The write-side half of the pikuri-os tool-consistency
+work sketched in [`os-assistant.md`](os-assistant.md). Split from the
+read-side change:
 
 - **Piece 1 (shipped)** — {Pikuri::Workspace::Filesystem::AllowAll} gained
-  a `denylist:` constructor parameter (default
+  a generic `denylist:` constructor parameter (default
   `DEFAULT_CREDENTIAL_DENYLIST`, the old hardcoded floor). Pure
   machinery, zero behavior change: every current caller gets the default
   and denies credential reads/writes exactly as before. This is the knob
   Piece 2 turns.
 - **Piece 2 (this note)** — pikuri-os flips that knob to `[]` (full read,
-  consistent with bash) *and* adds a write-confirmation tier so the
-  now-reachable sensitive writes prompt with a diff. The two land
-  together so no intermediate state has unconfirmed writes to secrets.
+  consistent with bash) *and* makes Write/Edit **confirm every write the
+  agent can actually perform**, with a diff. The two land together so no
+  intermediate state has unconfirmed writes to reachable secrets.
 
 ## Related
 
 - [`os-assistant.md`](os-assistant.md) §"Deferred / not yet built" — the
-  "path-zone auto-allow" pointer; pikuri-os is the (only) customer.
+  pointer bullet; pikuri-os is the (only) customer.
 - [`bash-confirmer.md`](bash-confirmer.md) — the *bash*-side confirmer
-  fatigue work. This note is its Write/Edit analog: same governing
-  invariant (**code + the human decide — an LLM may translate, never
-  render the ✓/⚠ verdict**), different tool surface. The key asymmetry:
-  a bash command is Turing-complete (effect unknowable statically),
-  whereas Write/Edit have structured inputs — a known path + exact bytes
-  — so a path-zone rule is *sound* and the diff is *exact*. That's why
-  the auto-approve/confirm split is reliable here and only heuristic
-  there.
+  fatigue work. Same governing invariant (**code + the human decide — an
+  LLM may translate, never render the ✓/⚠ verdict**), different tool
+  surface. The diff below is the deterministic cousin of that note's AI
+  translation aid: same "human as informed decider" goal, no LLM.
 - [`more-confirmers.md`](more-confirmers.md) — the authorship/steering
-  axis (author seat, reason channel). Distinct from this note's
-  fatigue/comprehension axis.
-- {Pikuri::Workspace::Filesystem::AllowAll} — the Piece-1
-  `denylist:` knob.
+  axis. We deliberately do *not* pull in its editable "author seat" here
+  (see "Not editable").
+- {Pikuri::Workspace::Filesystem::AllowAll} — the Piece-1 `denylist:` knob.
 - {Pikuri::Workspace::Write} / {Pikuri::Workspace::Edit} /
   {Pikuri::Workspace::Confirmer} — the tools + seam Piece 2 extends.
 
-## The threat-model reconciliation (why this is the right shape)
+## The threat-model reconciliation (why this shape)
 
 pikuri-os is a full-host operator, so its boundary is **egress**, not
 containment (kernel-severed bash + human-confirmed research tasks — see
@@ -46,81 +40,147 @@ book ch7). Under that model the read denylist on the *file* tools was
 never load-bearing: bash already reads any secret (`cat ~/.ssh/id_rsa`
 is auto-approved by the read-only auto-confirmer, which classifies the
 command, not the path), so blocking `Read` while leaving bash open was
-**a false-consistency wart**, not a defense. Piece 2 removes it.
-
-The resulting posture puts each axis behind the boundary that actually
-governs it:
+**false-consistency**, not a defense. Piece 2 removes it, and puts each
+axis behind the boundary that actually governs it:
 
 - **Reads gated by egress.** All tools read the whole disk (the owner's
   own files); a secret in context can't leave, because egress is severed
   / user-confirmed. If the owner approves leaking their own keys, that's
-  the owner operating their own box — not something we can or should
-  prevent.
-- **Writes gated by confirmation.** Reachable ≠ silently writable:
-  sensitive-path writes prompt the human with an exact diff. This is
-  where `confirm_paths` comes in.
-
-This keeps pikuri-code untouched (it keeps the network, so *containment*
-is its boundary — the default `denylist` floor stays, and
-`confirm_paths` is empty).
+  the owner operating their own box.
+- **Writes gated by confirmation.** Reachable ≠ silently writable: every
+  write the agent can perform is confirmed with an exact diff.
 
 ## Piece 2 — the change
 
+Two knobs, **no path list**:
+
 1. **pikuri-os opts out of the read floor.** In
-   `bin/pikuri-os-assistant`, construct
-   `Filesystem::AllowAll.new(project_root:, denylist: [])`
-   with a comment binding the opt-out to the user-confirmed-egress
-   invariant (re-instate the floor the moment the parent gains
-   *unmediated* egress). Read/Grep/Glob now see what bash sees.
+   `bin/pikuri-os-assistant`, `Filesystem::AllowAll.new(project_root:,
+   denylist: [])`, commented to bind the opt-out to the
+   user-confirmed-egress invariant (re-instate the floor the moment the
+   parent gains *unmediated* egress). Read/Grep/Glob now see what bash
+   sees.
 
-2. **`confirm_paths:` on Write and Edit.** Both tools take a list of
-   absolute paths via constructor. A write/edit whose *resolved* target
-   equals or lies under any entry → confirm; otherwise current behavior.
-   - **Reuse the denylist's matcher**, don't reimplement it: filesystem
-     already does symlink-resolved descendant matching (so
-     `/tmp/link → ~/.ssh` can't dodge the gate). Path matching in tool
-     code is exactly where a bypass hides — expose a small `Filesystem`
-     helper and call it.
-   - **Additive.** Write keeps its existing overwrite-confirm; the list
-     only *adds* triggers (pikuri-code's `[]` ⇒ unchanged). Edit gains a
-     `confirmer:` (a `Workspace::Extension` wiring change) used *only*
-     when the target is in `confirm_paths` — ordinary edits stay
-     unprompted, so edit.rb's "why no confirmer" rationale narrows to
-     "no confirmer *for ordinary edits*."
+2. **Confirm-all-writable on Write/Edit.** Every write the agent *can*
+   perform is confirmed with a diff; writes that would fail short-circuit
+   to a permission error with no prompt (below).
 
-3. **Deterministic diff in the confirmation.** Since both byte sequences
-   are in hand, the sensitive-path prompt carries an exact unified diff
-   in `Confirmer::Request.detail` (Edit's `old_string`→`new_string` *is*
-   the diff; Write's is old-bytes→new-content). `Terminal` already
-   renders `detail`, so this is nearly free and is the whole point of
-   confirming a sensitive file. It's the deterministic cousin of
-   bash-confirmer's AI translation aid — same "human as informed
-   decider" goal, no LLM, no manipulability.
+### Why confirm-all, not a "sensitive paths" list
 
-The single emptied `denylist` + `confirm_paths` yields "full
-read, confirmed write" without ever needing a *write*-side denylist
-variant — the confirmation is the write gate.
+The original sketch was "auto-allow ordinary writes, confirm sensitive
+ones" — which forces us to *enumerate what's sensitive* for a full-disk
+agent (`/etc`, every app's `~/.config`, dotfiles, `/boot`, systemd,
+cron, other users' homes…). That's the same unwinnable enumeration the
+"Environment is not a secret store" seam and the bash auto-confirmer both
+reject. Confirm-all sidesteps it, and it fits pikuri-os specifically:
 
-## Open question — the pikuri-os `confirm_paths` list
+- **Writes are rare.** It's a *diagnosis* agent — it reads constantly and
+  writes exceptionally (fix a config, repair a file). So the fatigue
+  argument for auto-allow nearly evaporates; there's little volume to cut.
+- **It's the true bash-consistency.** In pikuri-os, bash routes *every*
+  mutation through the confirmer (read-only auto-approves; everything
+  else → human). So the consistent posture for the file tools is *every*
+  Write/Edit confirms too — not "sometimes, if the path looks sensitive."
+- **It can't be gamed** — no path classification to get wrong.
 
-The set to define (absolute, HOME-expanded; matched as file-or-directory
-prefix). Starting proposal, to refine by use:
+If selectivity is ever needed (a frequent-writing full-disk agent — none
+ships today), the right generalization is the *inverse* of the sensitive
+list: an **allowlist of auto-allowed (safe) paths**, deny-by-default =
+confirm — the winning side of the enumeration game, same as
+`READ_ONLY_BINARIES`. Build that only when such an agent exists; see
+"Deferred."
 
-- `/etc` (system config), `/boot` (bootloader/kernel)
-- the credential dirs now reachable: `~/.ssh`, `~/.gnupg`, `~/.aws`,
-  `~/.kube`, `~/.docker`, `~/.netrc`
-- shell init (run on login → exec risk): `~/.bashrc`, `~/.bash_profile`,
-  `~/.profile`, `~/.zshrc`, `~/.zprofile`
-- `~/.gitconfig`, `~/.config` (app + systemd-user config)
+### The writability short-circuit (subsumes /etc, /boot)
 
-Tension to settle: **too broad reintroduces the fatigue this is meant to
-cut; too narrow misses a dangerous edit.** And for a full-disk agent, is
-"outside `$HOME`" itself a sensitivity signal (writing `/usr`, `/opt`,
-another user's home)? That's the policy-heavy part and the reason this
-half stayed deferred while Piece 1 shipped.
+Before confirming, check writability; only prompt for writes that will
+actually land:
+
+> Not writable → return `Error: permission denied — cannot write <path>
+> as this user; ask the user to make the change with sudo.` Writable →
+> build the diff → confirm → write.
+
+The fact that makes this exact: **the file tools run in the main pikuri
+process as the real user — the sandbox (`FullFsNoNet`) wraps only
+*bash*.** So a `Write`/`Edit` to `/etc` fails with a plain
+`Errno::EACCES` in-process, and `File.writable?` reflects the user's
+*real* permissions (existing file → `File.writable?(path)`; new file →
+`File.writable?(dirname)`).
+
+The payoff: the confirm set is **self-defining** and we never enumerate
+`/etc` or `/boot`. Writable-by-the-agent = the user's own files (their
+`$HOME`, dotfiles, `~/.ssh`, docs, configs) — exactly the set worth a
+human look. Unwritable = `/etc`, `/boot`, `/usr`, root-owned, other
+users' homes → short-circuit to "sudo it yourself," no prompt, no noise.
+This is also what the OS helper is *supposed* to do for privileged edits:
+advise, don't execute (it has no sudo in the namespace anyway).
+
+Honest wrinkle: `File.writable?` is a heuristic vs. ACLs / read-only
+mounts / TOCTOU. So if it says writable but the write then fails, return
+the real OS error; if it's occasionally pessimistic, worst case we
+tell the user to sudo when they marginally could — accepted.
+
+### The diff is presentation (the chrome renders it)
+
+The confirm is only meaningful if the human sees *what changes*, and
+under the Confirmer seam presentation belongs to the chrome. So the tool
+hands the Confirmer the **semantic change** — path + old bytes + new
+bytes (Edit: `old_string`/`new_string`, the hunk; Write: old-file /
+new-content) — and each chrome renders the diff its own way:
+
+- **educational shipped bins** → shell out to the `diff` binary (through
+  the `Subprocess` seam — legible and teachable);
+- **pikuri-tui** (downstream production) → its LCS Ruby gem.
+
+That keeps the differ choice at the *deployment* layer, with no differ
+dependency in the tool or `pikuri-core`. Structural consequence:
+`Confirmer::Request` grows an optional structured change payload (path +
+old + new) alongside the current pre-rendered `detail` string — a
+diff-capable chrome renders it, a plain one falls back to a size summary
+(`"120 → 245 bytes"`, the shape `Write` already uses). Large-file writes
+cap the rendered diff (first N hunks, "…M more").
+
+### Not editable
+
+Allow, or deny-with-reason — no editing of the bytes. The confirmer's
+`Rejected(reason)` already carries steering back to the model; we simply
+don't set `editable: true`. The editable "author seat" (human rewrites
+the config before it lands) is the richer work tracked in
+[`more-confirmers.md`](more-confirmers.md); deliberately out of scope
+here.
+
+### Edit gains a confirmer
+
+Today {Pikuri::Workspace::Edit} takes no confirmer (bounded by the
+read-before-edit gate + `old_string` as an implicit read-check). Piece 2
+threads one in via `Workspace::Extension`, fired for every writable edit.
+edit.rb's "why no confirmer" rationale narrows to "no confirmer where the
+host wires none; the OS helper wires confirm-all." pikuri-code passes no
+confirmer to Edit (unchanged) — this is opt-in for the full-disk agent.
+
+## `DEFAULT_CREDENTIAL_DENYLIST` stays
+
+The Piece-1 constant does **not** go away — it remains the safe default
+for `AllowAll`, load-bearing for callers that aren't pikuri-os. The other
+`AllowAll` caller is **`pikuri-code --yolo`** (`Sandbox::NONE`: full fs,
+full network, no confirmer), where the denylist is exactly the
+defense-in-depth the yardoc describes — best-effort protection against
+the file tools reading bind-mounted host credentials in a throwaway
+container. pikuri-os is the *sole* explicit opt-out. The whole
+"default-on, opt-out explicitly" structure exists precisely so pikuri-os
+can drop it without weakening `--yolo` / container callers.
+
+Three coherent postures, one `denylist:` knob + one confirm-all flag:
+
+| agent | boundary | denylist | writes |
+|---|---|---|---|
+| pikuri-code (contained) | containment | default-on | rarely confirmed (containment protects) |
+| pikuri-code `--yolo` (container) | the container | default-on (defense-in-depth) | no confirmer |
+| pikuri-os (full-disk) | egress-severance | `[]` (opt-out) | every *writable* write confirmed with a diff |
 
 ## Deferred / not yet built
 
-All of Piece 2 above. Piece 1 (the `denylist:` parameter) is
-in `pikuri-workspace`; nothing turns the knob yet, so pikuri-os behaves
-exactly as before until this lands.
+All of Piece 2 above (Piece 1's `denylist:` parameter is shipped;
+nothing turns the knob yet). The one explicitly-punted generalization:
+the **allowlist-of-safe-paths** auto-allow (for a hypothetical
+frequent-writing full-disk agent) — build it if such an agent ships,
+not speculatively.

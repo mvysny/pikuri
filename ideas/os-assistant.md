@@ -110,8 +110,9 @@ it trains the user to read "no warning" as "safe" and goes quiet exactly
 when an injection is crafted to look benign.
 
 - **`Write`/`Edit` full read + confirmed writes** — the file-tool
-  consistency work (full read to match bash, sensitive writes confirmed
-  with a diff). Piece-1 machinery shipped (the `denylist:` parameter on
+  consistency work (full read to match bash; every *writable* write
+  confirmed with a diff, unwritable writes short-circuited to "sudo it
+  yourself"). Piece-1 machinery shipped (the `denylist:` parameter on
   {Pikuri::Workspace::Filesystem::AllowAll}); design + the remaining
   Piece 2 in [`write-edit-confirmer.md`](write-edit-confirmer.md).
 - **The rest of the confirmer-gate fatigue work** — session-sticky
