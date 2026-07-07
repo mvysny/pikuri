@@ -1,20 +1,30 @@
 # Write/Edit confirmer: full read, confirmed writes
 
-Status: **deferred design — Piece 1 machinery shipped, Piece 2 (this
-note) not built.** The write-side half of the pikuri-os tool-consistency
-work sketched in [`os-assistant.md`](os-assistant.md). Split from the
-read-side change:
+Status: **shipped.** The write-side half of the pikuri-os
+tool-consistency work sketched in [`os-assistant.md`](os-assistant.md).
+Landed in two steps:
 
-- **Piece 1 (shipped)** — {Pikuri::Workspace::Filesystem::AllowAll} gained
-  a generic `denylist:` constructor parameter (default
-  `DEFAULT_CREDENTIAL_DENYLIST`, the old hardcoded floor). Pure
-  machinery, zero behavior change: every current caller gets the default
-  and denies credential reads/writes exactly as before. This is the knob
-  Piece 2 turns.
-- **Piece 2 (this note)** — pikuri-os flips that knob to `[]` (full read,
-  consistent with bash) *and* makes Write/Edit **confirm every write the
-  agent can actually perform**, with a diff. The two land together so no
-  intermediate state has unconfirmed writes to reachable secrets.
+- **Piece 1** — {Pikuri::Workspace::Filesystem::AllowAll} gained a generic
+  `denylist:` constructor parameter (default `DEFAULT_CREDENTIAL_DENYLIST`,
+  the old hardcoded floor).
+- **Piece 2** — pikuri-os flips that knob to `[]` (full read, consistent
+  with bash) *and* Write/Edit **confirm every write the agent can actually
+  perform**, with a diff; unwritable targets short-circuit to "sudo it
+  yourself" without prompting.
+
+Where it graduated (source of truth is now the code + yardoc):
+
+- {Pikuri::Workspace::WriteGate} — the pre-write gate (writability
+  short-circuit + confirm-with-diff + decline messages).
+- {Pikuri::Workspace::Write} / {Pikuri::Workspace::Edit} — the
+  `confirm_all_writes:` posture.
+- {Pikuri::Workspace::Confirmer::Change} + `Confirmer::Terminal` — the
+  structured change payload + `diff -u` rendering.
+- {Pikuri::Os::Extension} (`confirm_all_writes: true`) + the bin's
+  `denylist: []`.
+
+This note keeps the cross-cutting *why* (the threat-model reconciliation)
+and the one explicitly-deferred generalization.
 
 ## Related
 
@@ -50,7 +60,7 @@ axis behind the boundary that actually governs it:
 - **Writes gated by confirmation.** Reachable ≠ silently writable: every
   write the agent can perform is confirmed with an exact diff.
 
-## Piece 2 — the change
+## The design (shipped)
 
 Two knobs, **no path list**:
 
@@ -179,8 +189,7 @@ Three coherent postures, one `denylist:` knob + one confirm-all flag:
 
 ## Deferred / not yet built
 
-All of Piece 2 above (Piece 1's `denylist:` parameter is shipped;
-nothing turns the knob yet). The one explicitly-punted generalization:
-the **allowlist-of-safe-paths** auto-allow (for a hypothetical
-frequent-writing full-disk agent) — build it if such an agent ships,
-not speculatively.
+The one explicitly-punted generalization: the **allowlist-of-safe-paths**
+auto-allow (for a hypothetical frequent-writing full-disk agent, which
+would want *some* writes to skip the prompt) — build it if such an agent
+ships, not speculatively. Everything else in this note is shipped.

@@ -22,11 +22,17 @@ module Pikuri
     # == Confirmation policy
     #
     # The caller passes the *human* confirmer (e.g.
-    # {Pikuri::Workspace::Confirmer::TERMINAL}). +Write+ gets it directly
-    # (every overwrite confirms). +Bash+ gets it wrapped in
-    # {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, so provably read-only
-    # commands run without a prompt and everything else still reaches the
-    # human — the conservative half of the confirmation-fatigue answer.
+    # {Pikuri::Workspace::Confirmer::TERMINAL}). The file tools get it via
+    # {Pikuri::Workspace::Extension} with +confirm_all_writes: true+: since
+    # this agent roams the full disk (no containment), *every* writable
+    # Write/Edit confirms with a diff and an unwritable target
+    # short-circuits to "ask the user to sudo" (see {Pikuri::Workspace::WriteGate}
+    # and +ideas/write-edit-confirmer.md+). +Bash+ gets the confirmer
+    # wrapped in {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, so provably
+    # read-only commands run without a prompt and everything else still
+    # reaches the human — the conservative half of the confirmation-fatigue
+    # answer. So bash mutations and file-tool writes are on the same page:
+    # both always confirm.
     #
     # The wrapper is built with +allow_git: true+, so read-only git verbs
     # (+status+ / +diff+ / +log+ / +show+ / +blame+ / ...) also auto-approve
@@ -91,7 +97,8 @@ module Pikuri
       # @return [void]
       def configure(c)
         c.add_extension(Pikuri::Workspace::Extension.new(
-                          filesystem: @filesystem, confirmer: @confirmer, read_only: @read_only
+                          filesystem: @filesystem, confirmer: @confirmer, read_only: @read_only,
+                          confirm_all_writes: true
                         ))
         c.add_extension(Pikuri::Code::Extension.new(
                           filesystem: @filesystem,

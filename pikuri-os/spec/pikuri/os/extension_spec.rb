@@ -106,6 +106,25 @@ RSpec.describe Pikuri::Os::Extension do
         end
       end
     end
+
+    it 'wires the file tools with confirm_all_writes: true (full-disk confirm-all posture)' do
+      with_singleton(Pikuri::Os::LocalSearch, :available?) do
+        with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
+          with_singleton(Pikuri::Workspace::Extension, :new) do |orig|
+            stub_localsearch_available(true)
+            captured = nil
+            Pikuri::Workspace::Extension.define_singleton_method(:new) do |**kwargs|
+              captured = kwargs
+              orig.call(**kwargs)
+            end
+
+            configure!(build_configurator)
+            assert_equal true, captured[:confirm_all_writes],
+                         'pikuri-os wires Write/Edit to confirm every writable write'
+          end
+        end
+      end
+    end
   end
 
   describe 'read-only / plan-mode propagation through the composite' do
