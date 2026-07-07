@@ -122,8 +122,10 @@ when an injection is crafted to look benign.
   this session"). Design space + why it's deferred moved to its own
   note: [`bash-confirmer.md`](bash-confirmer.md).
 - **Batching** — present several queued commands as one prompt.
-- **AI translation aid** — optional, never a verdict, always beside the
-  raw command.
+- **AI translation aid** — explain a command in plain language beside
+  the raw bytes to aid the human's decision (never a verdict). Design +
+  the deterministic-first fork moved to
+  [`bash-confirmer.md`](bash-confirmer.md).
 
 **Larger pieces:**
 

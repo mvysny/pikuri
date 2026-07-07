@@ -1,13 +1,22 @@
-# Bash session-grant confirmer: runtime-populated auto-approval
+# Bash confirmer: deferred work beyond the read-only auto-confirmer
 
 Status: **deferred brainstorm** — design space mapped, not scheduled.
-The static read-only allowlist
-({Pikuri::Code::Bash::ReadOnlyAutoConfirmer}) handles fatigue for the
-commands it can *prove* read-only; this note is the runtime-populated
-companion — "the human vouches for `pytest` this session" — and the
-reasons it is harder than it looks. Moved out of
-[`os-assistant.md`](os-assistant.md)'s deferred list so the design has
-room to breathe.
+This note collects the deferred bash-confirmation-gate ideas pulled out
+of [`os-assistant.md`](os-assistant.md)'s fatigue list so each has room
+to breathe. Two so far, on different axes:
+
+1. **Session-sticky / always-allow grants** — cut prompt *volume* by
+   letting the human vouch for a command this session. The bulk of this
+   note (through "Recommendation").
+2. **AI translation aid** — improve the *comprehension* of the prompts
+   that remain, by explaining a command in plain language beside it.
+   The final section.
+
+Both extend {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, which already
+handles fatigue for commands it can *prove* read-only, and both obey the
+same governing invariant (stated in "The invariant" below): **code and
+the human decide — an LLM may *translate*, never render the ✓/⚠
+verdict.**
 
 ## Related
 
@@ -17,10 +26,10 @@ room to breathe.
   below).
 - [`more-confirmers.md`](more-confirmers.md) — the sibling
   human-in-the-loop confirmer shapes (the author seat, the reason
-  channel, the ingest gate). This note is the **fatigue** axis; that
-  file is the **authorship / steering** axis. Kept distinct on purpose —
-  a confirmer that governs *how often we ask* is a different mechanism
-  from one that governs *who authors the payload*.
+  channel, the ingest gate). That file is the **authorship / steering**
+  axis (*who* authors the payload); this note is the **fatigue +
+  comprehension** axis (*how often* we ask, and *how well* the human
+  understands what they're approving). Kept distinct on purpose.
 - {Pikuri::Code::Bash::ReadOnlyAutoConfirmer} — the static allowlist
   this extends; the design below reuses its `Tokenizer` +
   `segment_read_only?` discipline wholesale.
@@ -176,3 +185,68 @@ Deferred anyway, because:
   scope bounds the window, the simple-invocation gate bounds
   composition, and granularity + the TOCTOU-on-bytes truth are the
   human's explicit, informed choice.
+
+---
+
+## AI translation aid — describe the command, never judge it
+
+The second extracted item, and a different axis from grants: grants cut
+prompt *volume*; this improves the *comprehension* of the prompts that
+remain. The confirmation gate is only as good as the human's ability to
+parse what they're approving — and pikuri-os's audience is a
+privacy-conscious user, not necessarily a sysadmin.
+
+**What it is.** When the gate shows a command for confirmation, add —
+*beside* the raw `$ <command>` — a plain-language rendering of what it
+does: next to `find . -mtime +30 -delete`, a dim "≈ deletes every file
+here not modified in the last 30 days." A decoration on the existing
+`Confirmer::Terminal` render, not a new gate.
+
+**The three constraints, and why each is load-bearing.** This is the
+literal "an LLM may *translate*" half of the section invariant above —
+and the constraints are what keep it a translation, not a verdict:
+
+- **Never a verdict** (no "safe ✓" / "dangerous ⚠"). An AI verdict is
+  corruptible by *the same laundered content that steered the agent into
+  emitting the command* — a second LLM in the same poisoned context adds
+  zero security. And a *silent-by-default warner* is worse: the user
+  learns to read silence as "safe," and it goes quiet exactly when an
+  injection is crafted to look benign. So it is neither approver nor
+  warner — only a describer.
+- **Always beside the raw command.** The translation can itself be wrong
+  or manipulated (it summarizes hostile bytes). If it *replaced* the raw
+  command, a mistranslation of `rm -rf ~` as "cleans a temp folder"
+  would be the attack. The raw bytes stay the authoritative thing the
+  human confirms against; the aid can only *add* context.
+- **Optional.** A decoration, not a gate — the confirmer works without
+  it.
+
+It complements the shipped {Pikuri::Sanitizer}, which is the
+*deterministic, byte-level* flag ("this text contains a right-to-left
+override" — a fact about spoofing, not a verdict). The translation aid
+is the *semantic-level* companion ("these bytes, read plainly, do X").
+Both leave the yes/no to the human.
+
+**Why deferred, and the design fork.** `Confirmer` is a pure
+presentation seam with no transport, so an LLM translator would need one
+wired in — and safely: an **isolated one-shot pass** (a
+{Pikuri::Mcp::Thinker}-style call) fed *only the raw command*, no
+conversation history, or the surrounding poisoned context can steer the
+translation and reintroduce the manipulability the "no verdict" rule
+fought. That is an LLM call + latency on *every* mutating prompt, not a
+free decoration. So **deterministic-first**:
+
+- **Rules-based translator** — reuse the auto-confirmer's `Tokenizer` to
+  recognize the high-value destructive shapes (`rm -rf <path>`,
+  `dd of=<dev>`, `find … -delete`, `> <file>` truncation, `chmod -R`)
+  and print a canned plain-language line. No LLM, no manipulation
+  surface, deterministic — fits the "concrete code that does one named
+  thing" ethos, and covers most of the value.
+- **LLM one-shot pass** — only if the rules prove too narrow, and only
+  in the isolated-pass shape above.
+
+**Soft residual.** Even a pure, accurate translation can *drift into
+being read as a verdict* ("the AI explained it, so it must be fine") —
+the same complacency one level up. Neutral framing (a description, never
+safety language) is a presentation discipline, not something code can
+enforce.
