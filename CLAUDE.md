@@ -731,14 +731,31 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   mechanics live in its `description:` (sub-agents: the persona
   `description`, which `SubAgent::Extension` renders into the
   runtime `<available_agents>` snippet — so the catalog stays in
-  lockstep with the wired persona list). The main prompt keeps only
-  general engineering norms, stated tool-agnostically: "search for
-  its callers before editing" (norm), not "`grep` for its callers"
-  (named tool); "a tool may ask for confirmation — if the user
-  declines, accept it" (norm), not "the `bash` and `write` tools
-  may prompt" (named tools). Advice about *when* to reach for a tool
-  belongs in that tool's own description (e.g. "don't delegate what
-  you can read yourself" lives on the `agent` tool, not on `read`).
+  lockstep with the wired persona list).
+
+  *What "tool" means here:* the rule targets **pikuri's wired LLM
+  tools** — the ones the agent invokes, whose `description:` is the
+  source of truth — because naming them in a shared prompt duplicates
+  that description and can go stale against the wiring. It does **not**
+  restrict naming the OS/shell commands the agent runs *through* those
+  tools: concrete Linux tips are welcome and the model uses them well —
+  a prompt may say "run `man <cmd>` when unsure of a flag" or "`apropos`
+  a keyword to find the right utility." `man`/`apropos` aren't pikuri
+  tools, so their wording owns no `description:` to drift against. The
+  dual-natured names (`grep`, `read`, `write`, `edit`, `bash` — each
+  also a shell command) are off-limits only when they name the *pikuri
+  tool* or restate its mechanics; the same word as a concrete
+  shell-command tip ("`grep` the logs for the error") is fine.
+
+  The main prompt keeps only general engineering norms, phrased so they
+  survive being re-wired onto a different toolset: "search for its
+  callers before editing" (norm), not "use the `grep` *tool*" (naming a
+  wired tool); "a tool may ask for confirmation — if the user declines,
+  accept it" (norm), not "the `bash` and `write` *tools* may prompt"
+  (naming wired tools + restating their mechanics). Advice about *when*
+  to reach for a tool belongs in that tool's own description (e.g.
+  "don't delegate what you can read yourself" lives on the `agent`
+  tool, not on `read`).
   This subsumes the older "don't repeat tool descriptions in the
   system prompt." The line to draw: *per-tool mechanics* (what it
   returns, its caveats) go in the description and are reused by
@@ -765,10 +782,14 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   prompt is the violation:
   `grep -rnoE '\x60(bash|write|read|grep|glob|edit|agent|calculator|web_search|web_scrape|fetch|task_[a-z]+|vectordb_[a-z]+|recall|skill|mcp_connect)\x60' --include='*.txt' --exclude='persona-*.txt' */prompts/`
   should hit nothing (`\x60` is the backtick the tool name is
-  wrapped in). `mcp_connect` is pikuri's own tool, so it's in the
-  list; the *server-supplied* MCP tools are named by their server at
-  runtime, so no static pattern can list them — a reviewer catches
-  those by eye.
+  wrapped in). A dual-natured hit (`grep`/`read`/`write`/`edit`/`bash`)
+  used as a *shell-command tip* rather than as the pikuri tool is a
+  false positive a reviewer clears — the pattern is a blunt tripwire,
+  and the per-tool judgement above ("names the wired tool / restates its
+  mechanics") is the real rule. `mcp_connect` is pikuri's own tool, so
+  it's in the list; the *server-supplied* MCP tools are named by their
+  server at runtime, so no static pattern can list them — a reviewer
+  catches those by eye.
 - **User-facing docs: prefer concrete over abstract.** Readers
   abstract easily; the reverse takes effort. *"Delete your home
   folder"* beats *"filesystem mutation outside the workspace"*;
