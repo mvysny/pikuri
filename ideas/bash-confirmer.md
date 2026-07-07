@@ -3,17 +3,22 @@
 Status: **deferred brainstorm** — design space mapped, not scheduled.
 This note collects the deferred bash-confirmation-gate ideas pulled out
 of [`os-assistant.md`](os-assistant.md)'s fatigue list so each has room
-to breathe. Two so far, on different axes:
+to breathe. Four so far — three on the **volume** axis (fewer, more
+meaningful prompts), one on the **comprehension** axis (understand the
+prompts that remain):
 
-1. **Session-sticky / always-allow grants** — cut prompt *volume* by
-   letting the human vouch for a command this session. The bulk of this
-   note (through "Recommendation").
-2. **AI translation aid** — improve the *comprehension* of the prompts
-   that remain, by explaining a command in plain language beside it.
-   The final section.
+1. **Session-sticky / always-allow grants** (volume) — let the human
+   vouch for a command this session. The bulk of this note (through
+   "Recommendation").
+2. **Subcommand-aware read rules** (volume) — extend the allowlist's
+   subcommand recovery to more mixed read/mutate binaries.
+3. **Batching** (volume) — collapse several queued confirmations into
+   one prompt.
+4. **AI translation aid** (comprehension) — explain a command in plain
+   language beside it. The final section.
 
-Both extend {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, which already
-handles fatigue for commands it can *prove* read-only, and both obey the
+All extend {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, which already
+handles fatigue for commands it can *prove* read-only, and all obey the
 same governing invariant (stated in "The invariant" below): **code and
 the human decide — an LLM may *translate*, never render the ✓/⚠
 verdict.**
@@ -185,6 +190,44 @@ Deferred anyway, because:
   scope bounds the window, the simple-invocation gate bounds
   composition, and granularity + the TOCTOU-on-bytes truth are the
   human's explicit, informed choice.
+
+## Subcommand-aware read rules
+
+Extend the allowlist's existing subcommand recovery — the way
+{Pikuri::Code::Bash::ReadOnlyAutoConfirmer} already carves the read-only
+query subset out of mixed binaries (`dpkg`/`apt`/`systemctl` by leading
+subcommand, `dmesg`/`journalctl` by flag denylist, `git` under
+`allow_git:`) — to further binaries still delegated whole.
+
+The examples the OS-helper note originally cited have since **shipped**:
+`systemctl status` is in `READ_ONLY_SYSTEMCTL_SUBCOMMANDS`, and plain
+(read) `journalctl` passes the flag denylist. What remains is the
+general direction — each new mixed binary is a hand-audited entry, added
+only when a real session shows it prompting often enough to matter.
+
+The hard part, and why it stays deferred rather than "just add more
+verbs": a "read" verb can still **execute config-directed code** — the
+lesson `git` taught (a bare `git status` runs `core.fsmonitor`; closed
+only by `Bash::GIT_HARDENING`). So a candidate binary earns an entry
+only after its read verbs are shown to have no such vector, or the
+vector is hardened the way git's was. Deny-by-default holds throughout:
+an un-audited binary keeps delegating to the human.
+
+## Batching
+
+Collapse several queued confirmations into a single prompt — when the
+agent emits a run of mutations (or the read-only auto-confirmer passes
+some and leaves three that need a human), present them together rather
+than one modal at a time. Pure prompt-*volume* reduction; the decision
+stays per-command.
+
+The invariant still binds: batching changes *presentation*, never *who
+decides* — no "approve all" that becomes a rubber-stamp, and each
+command's raw bytes stay individually visible and individually sanitized
+(the human may approve a subset). The open part is UI-shaped — how a
+terminal renders a multi-item approve/reject without losing the
+sanitizer's per-item warning gating — which is why it rides here rather
+than in the auto-confirmer's pure-code lineage.
 
 ---
 
