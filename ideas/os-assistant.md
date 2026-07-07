@@ -127,22 +127,6 @@ when an injection is crafted to look benign.
 
 **Larger pieces:**
 
-- **Internet access** — now guide **chapter 7, Part 2** ("the third leg
-  returns"). **Shipped** behind the binary's `--with-internet` flag
-  (default off): web access is quarantined in the bundled `RESEARCHER`
-  sub-agent — it holds `web_search`/`web_scrape`/`fetch` (wired
-  `add_sub_agent_tool`, so the parent LLM never sees them) but **no
-  filesystem**, and is reached via the `agent` tool. The parent keeps
-  **zero direct egress**; each delegation's task prompt is confirmed
-  before dispatch (the human authors what leaves the machine), and the
-  researcher — having no private data — can at worst leak that approved
-  task plus the public pages it read. Bash stays kernel-severed
-  regardless (a separate network boundary). Still open: the **editable**
-  task prompt (the pure author seat, vs today's approve/reject of a shown
-  task) and a **reject-reason** steering channel — both deferred to their
-  own session, tracked in [`more-confirmers.md`](more-confirmers.md). The
-  guide walkthrough (the researcher isolation, the approve-the-task gate,
-  the two independent network boundaries) is chapter 7, Part 2.
 - **GUI-config *application*, app launching, package *installation*.**
   The agent advises (prints the exact `gsettings` / `apt` command) but
   doesn't run these: installs need root + egress (barred by the severed
