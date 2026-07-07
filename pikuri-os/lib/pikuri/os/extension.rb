@@ -27,7 +27,7 @@ module Pikuri
     # this agent roams the full disk (no containment), *every* writable
     # Write/Edit confirms with a diff and an unwritable target
     # short-circuits to "ask the user to sudo" (see {Pikuri::Workspace::WriteGate}
-    # and +ideas/write-edit-confirmer.md+). +Bash+ gets the confirmer
+    # and the guide's ch7). +Bash+ gets the confirmer
     # wrapped in {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, so provably
     # read-only commands run without a prompt and everything else still
     # reaches the human — the conservative half of the confirmation-fatigue

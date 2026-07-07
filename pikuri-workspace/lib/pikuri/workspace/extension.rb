@@ -63,8 +63,8 @@ module Pikuri
       #   {Edit}: when +true+ (the full-disk OS-helper posture) every
       #   writable write/edit confirms with a diff and unwritable targets
       #   short-circuit; +false+ (default) keeps the classic policy (Write
-      #   confirms overwrites only, Edit stays promptless). See
-      #   +ideas/write-edit-confirmer.md+.
+      #   confirms overwrites only, Edit stays promptless). See the
+      #   guide's ch7.
       def initialize(filesystem:, confirmer:, read_only: nil, confirm_all_writes: false)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer

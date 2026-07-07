@@ -112,8 +112,10 @@ when an injection is crafted to look benign.
 - **`Write`/`Edit` full read + confirmed writes** — **shipped**: full
   read to match bash (`denylist: []`), and every *writable* write
   confirmed with a diff, unwritable writes short-circuited to "sudo it
-  yourself" (`confirm_all_writes`). Design record:
-  [`write-edit-confirmer.md`](write-edit-confirmer.md).
+  yourself" (`confirm_all_writes`). Narrative in the guide's ch7
+  (Workspace + Confirmer seam sections); mechanism in
+  {Pikuri::Workspace::WriteGate}. Deferred residue (allowlist-safe
+  auto-allow) in `IDEAS.md`.
 - **The rest of the confirmer-gate fatigue work** — session-sticky
   grants, subcommand-aware read rules, batching, and the AI translation
   aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).

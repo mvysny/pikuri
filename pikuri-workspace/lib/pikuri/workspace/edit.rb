@@ -26,7 +26,7 @@ module Pikuri
     # +confirm_all_writes:+ (the OS-helper posture) does confirm every
     # writable edit with a diff via {WriteGate} — the two guards above are
     # why the default can safely stay promptless, not a claim that Edit
-    # can never confirm. See +ideas/write-edit-confirmer.md+.
+    # can never confirm. See the guide's ch7.
     #
     # == Matching is strict (no fuzz cascade)
     #

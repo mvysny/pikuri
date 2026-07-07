@@ -33,7 +33,7 @@ module Pikuri
     # with a diff via {WriteGate}, and an unwritable target short-circuits
     # to a permission-denied observation without prompting (the write
     # would fail anyway). The identical-content no-op still returns early.
-    # See +ideas/write-edit-confirmer.md+.
+    # See the guide's ch7.
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #

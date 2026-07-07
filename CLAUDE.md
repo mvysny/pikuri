@@ -300,7 +300,7 @@ yardoc. CLAUDE.md only records the invariant.
   reduced/empty list **only behind an outer egress boundary** (bash
   bypasses this denylist regardless via `FullFsNoNet`, so a read-block on
   the file tools is friction, not a boundary, wherever bash is open —
-  see `ideas/write-edit-confirmer.md`). The file tools run **in the main
+  see the guide's ch7). The file tools run **in the main
   process as the real user** — only `Bash` is sandboxed — so
   `File.writable?` on a target is exact; that's what lets the
   `confirm_all_writes:` posture (Write/Edit take it; pikuri-os passes it)

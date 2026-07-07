@@ -3,7 +3,7 @@
 module Pikuri
   module Workspace
     # The shared pre-write gate for the *confirm-all-writes* posture (the
-    # OS-helper wiring, see +ideas/write-edit-confirmer.md+). Before a
+    # OS-helper wiring; the guide's ch7 walks the posture). Before a
     # {Write} / {Edit} mutates a file it runs {.check}, which:
     #
     # 1. **Short-circuits an unwritable target.** If the current user

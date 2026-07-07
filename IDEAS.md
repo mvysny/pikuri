@@ -433,3 +433,17 @@ deferrals stay here.
   `#rerank(query:, documents:)` protocol — deferred until someone
   wants a non-local reranker. Referenced from `VectorDb::Reranker`
   yardoc.
+
+## OS-helper file confirmations: allowlist-safe auto-allow
+
+`pikuri-os` confirms **every** writable `write`/`edit` with a diff
+(`confirm_all_writes`), because writes are rare for a diagnosis agent, so
+there's little fatigue to cut and no "sensitive path" list to maintain —
+see book ch7 and {Pikuri::Workspace::WriteGate}. The considered-and-punted
+generalization: an **allowlist of auto-allowed (safe) write paths**,
+deny-by-default = confirm. It's the inverse of a sensitive-path denylist
+(and the winning side of the enumeration game, like `READ_ONLY_BINARIES`),
+for a *hypothetical frequent-writing full-disk agent* that would want some
+writes — a scratch dir, `/tmp` — to skip the prompt. No such agent ships,
+so building the allowlist plumbing now would be speculative. Revisit when
+one exists; `confirm_all_writes` is `[]`-safe-paths as a special case.

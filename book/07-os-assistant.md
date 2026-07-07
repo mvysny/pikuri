@@ -137,46 +137,73 @@ the opposite leg, forced by the opposite need.
 
 `Workspace` is the *other* filesystem seam — not what the shell
 touches, but what the LLM observes through `read` / `write` / `edit` /
-`grep` / `glob`. For this agent the whole host is in scope, so it's
-wired with the permissive variant:
+`grep` / `glob`. For this agent the whole host is in scope, and — unlike
+the coding agent of chapter 8 — the file tools are opened all the way up
+to see exactly what `bash` sees:
 
 ```ruby
-filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd)
+filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: [])
 ```
 
-There's no containment here — that's deliberate, and it's the opposite
-of chapter 8's project-rooted workspace. `project_root` is just the
-anchor for relative paths ("what's in *this* folder?") and the
-directory `bash` starts in; absolute paths reach anywhere. The one
-narrowing is a credential denylist for the *file tools* — they won't
-read `~/.ssh`, `~/.aws`, and friends — though `bash`, running as you,
-still can if you confirm a command that does.
+`AllowAll` normally keeps a credential floor: the file tools refuse
+`~/.ssh`, `~/.aws`, `/etc/shadow` and friends. This agent passes
+`denylist: []` to drop it. That looks alarming until you notice `bash`,
+running as you, could already `cat ~/.ssh/id_rsa` — and the read-only
+auto-confirmer below even waves `cat` through with no prompt. A
+read-block on the file tools that `bash` sidesteps for free isn't a
+boundary; it's theatre, and it also blinds the agent to the very config
+files it's here to help you fix. So the honest move is to make the tools
+agree: they can all read your files. What actually stops a secret from
+*leaving* is a different boundary — the severed network Part 1 built.
+The rule of thumb: **reads are safe because egress is; what needs a
+human is writes.**
 
-Think of the Workspace as a fence around what the LLM can touch
-through the file tools. Here the perimeter is down on purpose — the
-whole disk is in scope — so just one gate still stands in it: the
-**read-before-edit gate**, where `edit` (and an overwriting `write`)
-refuses a path the agent hasn't `read` first. It's a small thing here;
-chapter 8 raises the perimeter too, fencing the file tools into the
-project, when the stakes are a shared repo rather than your own machine.
+`project_root` is just the anchor for relative paths ("what's in *this*
+folder?") and where `bash` starts; absolute paths reach anywhere. There's
+no containment fence — the opposite of chapter 8's project-rooted
+workspace, and deliberate: the job is the whole machine. One gate still
+stands: the **read-before-edit gate**, where `edit` (and an overwriting
+`write`) refuses a path the agent hasn't `read` first — so a change can't
+land on bytes the model never saw. Chapter 8 raises the perimeter too,
+fencing the file tools into the project, when the stakes are a shared
+repo rather than your own machine.
 
-## The Confirmer seam — mutations stop for a human
+## The Confirmer seam — writes stop for a human, with a diff
 
-Anything that changes your machine routes through a `Confirmer` and
-stops for a yes/no. The binary wires the terminal one:
+Reads are open; writes are where a human steps in. Every `write` and
+`edit` this agent makes routes through a `Confirmer` and stops for a
+yes/no — and because a file change is *structured* (a known path, exact
+bytes), the confirmer shows you an exact **diff** of what's about to
+change, not a bare "OK to write?". The binary wires the terminal one:
 
 ```ruby
 confirmer = Pikuri::Workspace::Confirmer::TERMINAL
 ```
 
+Two details make this pull its weight on a full-disk agent:
+
+- **Every writable write confirms** — not just risky overwrites. Writes
+  are rare for a diagnosis agent (it mostly reads), so confirming each
+  one is cheap, and it matches the posture `bash` already has: every
+  mutation stops for you. You approve a change you can *see*, line by
+  line, rather than a blind write.
+- **A write that can't succeed never prompts.** The file tools run as
+  you, so a `write` to `/etc/fstab` fails with permission denied whether
+  or not you approve — the confirmer detects that up front and returns
+  "ask the user to do this with `sudo`" instead of a pointless prompt.
+  This is also why there's no list of "sensitive paths" to maintain: the
+  files worth confirming are simply *the ones you can actually write* —
+  your own. `/etc`, `/boot`, another user's home are unwritable, so they
+  never reach the prompt in the first place.
+
 The tool never touches `gets`/`puts` itself — it hands the confirmer a
-semantic request (the question, the exact command or bytes) and the
-confirmer owns the presentation, including neutralising hostile
-control characters in attacker-influenced text before it reaches your
-terminal. That last part matters precisely because this agent reads
-untrusted files: a log line engineered to look like a confirmation
-prompt gets defanged, not rendered. (The `--no-confirm` flag swaps in
-an auto-approver — again, throwaway-box only.)
+semantic request (the question plus the change) and the confirmer owns
+presentation, including neutralising hostile control characters in
+attacker-influenced bytes before they reach your terminal. That matters
+precisely because this agent reads untrusted files: a diff line
+engineered to look like a confirmation prompt gets defanged, not
+rendered. (The `--no-confirm` flag swaps in an auto-approver — again,
+throwaway-box only.)
 
 You'll see this fire first not on a destructive command but on the
 agent editing its own memory file, which is the next section.
