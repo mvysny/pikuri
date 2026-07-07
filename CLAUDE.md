@@ -172,8 +172,10 @@ then on shipping its narrative graduated into book chapter 7, its
 rationale into {Pikuri::Os::Extension} and the tool yardocs, and its
 must-not-break half into the **Sandbox seam** below
 (`Sandbox::FullFsNoNet` — full disk, kernel-severed egress). The note
-now keeps only the origin map and the one open question (local-model
-fit) — the pipeline run start to finish. (The `book/`-relative `Owns`
+now keeps only the origin map, the remaining open questions, and the
+deferred-work list — its local-model-fit question is provisionally
+settled (35B-A3B confirmed by initial testing) — the pipeline run start
+to finish. (The `book/`-relative `Owns`
 here is also why the "prefer concrete over abstract" convention only
 governs the human-facing kinds — README / SECURITY / IDEAS /
 COMPARISON / book — not the yardoc.)

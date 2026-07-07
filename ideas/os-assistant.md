@@ -1,11 +1,13 @@
 # OS/Linux Assistant
 
 Status: **shipped** as the `pikuri-os` gem + `bin/pikuri-os-assistant`
-(built; the empirical question of local-model fit, below, is what's
-left). The design brainstormed in this note is now implemented and
-documented — so this note keeps only the *origin map*, the questions
-still open to validation, and the explicitly deferred work. For the
-shipped design and its rationale, read:
+(built; the local-model-fit question is provisionally settled — initial
+testing confirms the recommended 35B-A3B model can diagnose a real
+issue, see below — so what's left is the deferred work list). The design
+brainstormed in this note is now implemented and documented — so this
+note keeps only the *origin map*, the questions still open to
+validation, and the explicitly deferred work. For the shipped design and
+its rationale, read:
 
 - **Guide [chapter 7](../book/07-os-assistant.md)** — the
   narrative walkthrough. Part 1: the severed-network sandbox, the
@@ -35,17 +37,21 @@ shipped design and its rationale, read:
   design breaks the trifecta by **enforced removal of the egress leg**,
   not by trusting its inputs.
 
-## Open questions (empirical — settle by using it)
+## Settled by initial testing
 
-- **Does a 35B-A3B model know Linux deeply enough?** Target model:
-  `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` — MoE, ~3 B active params per
-  token. Factual recall scales with *total* params (35 B — ample for
-  FHS / man pages / apt), but multi-step *reasoning* depth scales with
-  the ~3 B active budget, so deep causal diagnosis ("service failed →
-  log says Y → therefore Z") may be shallow. The design hedges by
-  construction — the agent iterates with tools rather than one-shotting,
-  and verifies recall by *reading* (a man-page `read` beats a remembered
-  flag) — but whether that's enough is a "try it" question, not settled.
+- **A 35B-A3B model knows Linux deeply enough — the recommended
+  default.** Target model: `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` — MoE,
+  ~3 B active params per token. Factual recall scales with *total*
+  params (35 B — ample for FHS / man pages / apt); the open worry was
+  that multi-step *reasoning* depth scales with the ~3 B active budget,
+  so deep causal diagnosis ("service failed → log says Y → therefore Z")
+  might be shallow. Initial testing confirms it isn't: the model carries
+  a real diagnosis end to end, not just flag recall. The design hedge
+  holds up in practice — the agent iterates with tools rather than
+  one-shotting, and verifies recall by *reading* (a man-page `read`
+  beats a remembered flag). So this stays the **recommended** model; if
+  further experience shows the ~3 B active reasoning budget falling short
+  on deeper causal chains, we'll revisit.
 
   **Why MoE, not a bigger dense model:** a dense model needs its full
   parameter count resident in fast memory *and* run through the matmul
@@ -77,7 +83,11 @@ shipped design and its rationale, read:
   on general reasoning but ahead on agentic tool-use (τ²-Bench 79.5% vs.
   Qwen3.6-35B-A3B), which is most of what this assistant actually does.
   Neither swap is validated here — both ride the same "settle by using
-  it" caveat as the 35B default.
+  it" caveat, though the 35B default itself is now provisionally
+  confirmed (above).
+
+## Open questions (empirical — settle by using it)
+
 - **Does keyword recall suffice, or is semantic search needed?**
   `fileindex_search` is only as good as `localsearch`'s keyword match; a
   fuzzy ask ("the doc about our refund policy") can miss when the words
