@@ -330,4 +330,61 @@ RSpec.describe Pikuri::Workspace::Write do
       assert_equal 'Created hello.txt (6 bytes)', result
     end
   end
+
+  describe '.write confirm_all_writes' do
+    def deciding(decision)
+      requests = []
+      c = Object.new
+      c.define_singleton_method(:decide) do |request:|
+        requests << request
+        if decision == :approve
+          Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+        else
+          Pikuri::Workspace::Confirmer::Rejected.new(reason: decision)
+        end
+      end
+      c.define_singleton_method(:requests) { requests }
+      c
+    end
+
+    it 'confirms a NEW file (change.old is nil) and writes on approve' do
+      cf = deciding(:approve)
+      result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                                     path: 'new.txt', content: "hi\n")
+      assert_equal 'Created new.txt (3 bytes)', result
+      assert_equal "hi\n", File.read(root + 'new.txt')
+      change = cf.requests.first.change
+      assert_equal 'new.txt', change.path
+      assert_nil change.old
+    end
+
+    it 'confirms an overwrite carrying old+new bytes and writes on approve' do
+      write_file('a.txt', "old\n")
+      cf = deciding(:approve)
+      described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                            path: 'a.txt', content: "new\n")
+      assert_equal "new\n", File.read(root + 'a.txt')
+      change = cf.requests.first.change
+      assert_equal "old\n", change.old
+      assert_equal "new\n", change.new
+    end
+
+    it 'declines with a reason and leaves the file unchanged' do
+      write_file('a.txt', "old\n")
+      cf = deciding('use the other config')
+      result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                                     path: 'a.txt', content: "new\n")
+      assert_includes result, 'use the other config'
+      assert_equal "old\n", File.read(root + 'a.txt')
+    end
+
+    it 'still no-ops identical content before consulting the confirmer' do
+      write_file('a.txt', "same\n")
+      cf = deciding(:approve)
+      result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                                     path: 'a.txt', content: "same\n")
+      assert_match(/already contains/, result)
+      assert_equal [], cf.requests
+    end
+  end
 end

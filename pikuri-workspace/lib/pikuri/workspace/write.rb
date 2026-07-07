@@ -26,6 +26,15 @@ module Pikuri
     #    +"OK to overwrite <path>: <old> → <new> bytes?"+ via {Confirmer};
     #    on yes, write. On no, return a decline-Error observation.
     #
+    # == Confirm-all-writes (opt-in)
+    #
+    # With +confirm_all_writes: true+ (the OS-helper posture) the policy
+    # tightens: *every* writable write — new file or overwrite — confirms
+    # with a diff via {WriteGate}, and an unwritable target short-circuits
+    # to a permission-denied observation without prompting (the write
+    # would fail anyway). The identical-content no-op still returns early.
+    # See +ideas/write-edit-confirmer.md+.
+    #
     # == Why ask-on-overwrite (Edit doesn't)
     #
     # Both tools share the read-before-edit gate (an overwrite of an
@@ -79,8 +88,14 @@ module Pikuri
       #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
       #   +nil+ (the default) disables the gate, so non-gated wirings are
       #   unchanged.
+      # @param confirm_all_writes [Boolean] when +true+ (the OS-helper
+      #   posture), *every* writable write — new file or overwrite —
+      #   confirms with a diff via {WriteGate}, and an unwritable target
+      #   short-circuits to "ask the user to sudo" without prompting. When
+      #   +false+ (default) the classic policy holds: only an overwrite of
+      #   an existing file with differing content confirms.
       # @return [Write]
-      def initialize(workspace:, confirmer:, read_only: nil)
+      def initialize(workspace:, confirmer:, read_only: nil, confirm_all_writes: false)
         super(
           name: 'write',
           description: DESCRIPTION,
@@ -95,7 +110,8 @@ module Pikuri
           },
           execute: ->(path:, content:) {
             Write.write(workspace: workspace, confirmer: confirmer,
-                        read_only: read_only, path: path, content: content)
+                        read_only: read_only, confirm_all_writes: confirm_all_writes,
+                        path: path, content: content)
           }
         )
       end
@@ -110,8 +126,10 @@ module Pikuri
       # @param content [String] bytes to write
       # @param read_only [ReadOnly, nil] read-only gate; see
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
+      # @param confirm_all_writes [Boolean] see {#initialize}. Defaults to
+      #   +false+ for direct callers (specs).
       # @return [String] tool observation
-      def self.write(workspace:, confirmer:, path:, content:, read_only: nil)
+      def self.write(workspace:, confirmer:, path:, content:, read_only: nil, confirm_all_writes: false)
         return "Error: cannot write #{path} — #{read_only.message}" if read_only&.active?
 
         resolved = workspace.resolve_for_write(path)
@@ -132,15 +150,33 @@ module Pikuri
                    'file and try again.'
           end
 
-          request = Confirmer::Request.new(
-            question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?"
-          )
-          return "Error: user declined the write to #{path}." unless confirmer.confirm?(request: request)
+          if confirm_all_writes
+            gate = WriteGate.check(
+              confirmer: confirmer, path: path, resolved: resolved,
+              question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
+              change: Confirmer::Change.new(path: path, old: existing, new: content.b)
+            )
+            return gate if gate
+          else
+            request = Confirmer::Request.new(
+              question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?"
+            )
+            return "Error: user declined the write to #{path}." unless confirmer.confirm?(request: request)
+          end
 
           write_bytes(resolved, content)
           workspace.mark_read(resolved)
           "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)"
         else
+          if confirm_all_writes
+            gate = WriteGate.check(
+              confirmer: confirmer, path: path, resolved: resolved,
+              question: "OK to create #{path} (#{content.bytesize} bytes)?",
+              change: Confirmer::Change.new(path: path, old: nil, new: content.b)
+            )
+            return gate if gate
+          end
+
           write_bytes(resolved, content)
           # A just-authored file counts as read: the model supplied its
           # full bytes, so a follow-up edit needn't re-read it.

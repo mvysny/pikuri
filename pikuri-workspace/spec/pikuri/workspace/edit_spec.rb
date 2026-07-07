@@ -384,4 +384,44 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal 'Edited foo.rb: replaced 1 occurrence.', result
     end
   end
+
+  describe '.edit confirm_all_writes' do
+    def deciding(decision)
+      requests = []
+      c = Object.new
+      c.define_singleton_method(:decide) do |request:|
+        requests << request
+        if decision == :approve
+          Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+        else
+          Pikuri::Workspace::Confirmer::Rejected.new(reason: decision)
+        end
+      end
+      c.define_singleton_method(:requests) { requests }
+      c
+    end
+
+    it 'confirms with a diff payload (old=file, new=result) and writes on approve' do
+      write_file('a.txt', "one\ntwo\n")
+      cf = deciding(:approve)
+      result = described_class.edit(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                                    path: 'a.txt', old_string: 'two', new_string: 'TWO',
+                                    replace_all: false)
+      assert_equal 'Edited a.txt: replaced 1 occurrence.', result
+      assert_equal "one\nTWO\n", (root + 'a.txt').binread
+      change = cf.requests.first.change
+      assert_equal "one\ntwo\n", change.old
+      assert_equal "one\nTWO\n", change.new
+    end
+
+    it 'declines with a reason and leaves the file unchanged' do
+      write_file('a.txt', "one\ntwo\n")
+      cf = deciding('leave it as is')
+      result = described_class.edit(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+                                    path: 'a.txt', old_string: 'two', new_string: 'TWO',
+                                    replace_all: false)
+      assert_includes result, 'leave it as is'
+      assert_equal "one\ntwo\n", (root + 'a.txt').binread
+    end
+  end
 end

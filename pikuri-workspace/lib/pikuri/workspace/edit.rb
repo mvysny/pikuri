@@ -22,6 +22,12 @@ module Pikuri
     # could clobber unread bytes (and Write now shares the same
     # read-before-overwrite gate as a second line).
     #
+    # This governs the *default* wiring. A wiring that opts into
+    # +confirm_all_writes:+ (the OS-helper posture) does confirm every
+    # writable edit with a diff via {WriteGate} — the two guards above are
+    # why the default can safely stay promptless, not a claim that Edit
+    # can never confirm. See +ideas/write-edit-confirmer.md+.
+    #
     # == Matching is strict (no fuzz cascade)
     #
     # +old_string+ must match the file byte-for-byte. v1 ships *no*
@@ -100,8 +106,17 @@ module Pikuri
       #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
       #   +nil+ (the default) disables the gate, so non-gated wirings are
       #   unchanged.
+      # @param confirmer [Confirmer, nil] consulted only under
+      #   +confirm_all_writes:+ (below); +nil+ (default) when the wiring
+      #   doesn't confirm edits.
+      # @param confirm_all_writes [Boolean] when +true+ (the OS-helper
+      #   posture), every writable edit confirms with a diff via
+      #   {WriteGate} and an unwritable target short-circuits to "ask the
+      #   user to sudo". When +false+ (default) Edit stays promptless —
+      #   bounded by the read-before-edit gate + the +old_string+
+      #   content-check (see "Why no confirmer").
       # @return [Edit]
-      def initialize(workspace:, read_only: nil)
+      def initialize(workspace:, read_only: nil, confirmer: nil, confirm_all_writes: false)
         super(
           name: 'edit',
           description: DESCRIPTION,
@@ -124,7 +139,8 @@ module Pikuri
                                'Defaults to false, e.g. true.'
           },
           execute: ->(path:, old_string:, new_string:, replace_all: false) {
-            Edit.edit(workspace: workspace, read_only: read_only, path: path,
+            Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
+                      confirm_all_writes: confirm_all_writes, path: path,
                       old_string: old_string, new_string: new_string,
                       replace_all: replace_all)
           }
@@ -144,8 +160,13 @@ module Pikuri
       #   replaced; when false (default) multiple matches are an error
       # @param read_only [ReadOnly, nil] read-only gate; see
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
+      # @param confirmer [Confirmer, nil] see {#initialize}; used only
+      #   under +confirm_all_writes+. Defaults to +nil+.
+      # @param confirm_all_writes [Boolean] see {#initialize}. Defaults to
+      #   +false+ for direct callers (specs).
       # @return [String] tool observation
-      def self.edit(workspace:, path:, old_string:, new_string:, replace_all:, read_only: nil)
+      def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
+                    read_only: nil, confirmer: nil, confirm_all_writes: false)
         return "Error: cannot edit #{path} — #{read_only.message}" if read_only&.active?
 
         return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?
@@ -193,6 +214,16 @@ module Pikuri
           end
 
         final = crlf ? new_content.gsub("\n", "\r\n") : new_content
+
+        if confirm_all_writes
+          gate = WriteGate.check(
+            confirmer: confirmer, path: path, resolved: resolved,
+            question: "OK to edit #{path} (#{replaced} occurrence#{replaced == 1 ? '' : 's'})?",
+            change: Confirmer::Change.new(path: path, old: raw, new: final)
+          )
+          return gate if gate
+        end
+
         resolved.write(final)
 
         # Keep the path marked read: the editor knows the resulting

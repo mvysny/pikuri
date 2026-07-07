@@ -59,10 +59,17 @@ module Pikuri
       # @param read_only [ReadOnly, nil] when set, threaded into {Edit}
       #   and {Write} so they refuse while it is active; +nil` (default)
       #   leaves the gate off. See "Read-only gate".
-      def initialize(filesystem:, confirmer:, read_only: nil)
+      # @param confirm_all_writes [Boolean] threaded into {Write} and
+      #   {Edit}: when +true+ (the full-disk OS-helper posture) every
+      #   writable write/edit confirms with a diff and unwritable targets
+      #   short-circuit; +false+ (default) keeps the classic policy (Write
+      #   confirms overwrites only, Edit stays promptless). See
+      #   +ideas/write-edit-confirmer.md+.
+      def initialize(filesystem:, confirmer:, read_only: nil, confirm_all_writes: false)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
         @read_only = read_only
+        @confirm_all_writes = confirm_all_writes
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -83,8 +90,10 @@ module Pikuri
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Grep.new(workspace: @workspace)
         c.add_tool Glob.new(workspace: @workspace)
-        c.add_tool Edit.new(workspace: @workspace, read_only: @read_only)
-        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer, read_only: @read_only)
+        c.add_tool Edit.new(workspace: @workspace, read_only: @read_only,
+                            confirmer: @confirmer, confirm_all_writes: @confirm_all_writes)
+        c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer,
+                             read_only: @read_only, confirm_all_writes: @confirm_all_writes)
         nil
       end
 
