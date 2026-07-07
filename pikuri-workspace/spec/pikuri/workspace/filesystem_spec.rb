@@ -524,23 +524,15 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
   end
 
   describe 'credential denylist' do
-    # Stub HOME to a tmpdir so we can populate fake credential dirs without
-    # touching the developer's real ones. The constant snapshots HOME at
-    # class-load time, so override the constant for the duration of these
-    # specs.
-    before do
-      @original_denylist = described_class::CREDENTIAL_DENYLIST
-      per_home = %w[.ssh .aws .gnupg .docker .kube .netrc]
-      stub_list = per_home.map { |p| Pathname.new(File.join(fake_home, p)) }
-                          .push(Pathname.new('/etc/shadow'))
-      described_class.send(:remove_const, :CREDENTIAL_DENYLIST)
-      described_class.const_set(:CREDENTIAL_DENYLIST, stub_list.freeze)
+    # Point +denylist:+ at fake_home so we can populate fake
+    # credential dirs without touching the developer's real ones — this
+    # exercises the constructor knob directly (no constant stubbing).
+    let(:denylist) do
+      %w[.ssh .aws .gnupg .docker .kube .netrc]
+        .map { |p| Pathname.new(File.join(fake_home, p)) }
+        .push(Pathname.new('/etc/shadow'))
     end
-
-    after do
-      described_class.send(:remove_const, :CREDENTIAL_DENYLIST)
-      described_class.const_set(:CREDENTIAL_DENYLIST, @original_denylist)
-    end
+    let(:workspace) { described_class.new(project_root: root, denylist: denylist) }
 
     it 'rejects reads into a denied directory' do
       FileUtils.mkdir_p(fake_home + '.ssh')
@@ -618,22 +610,41 @@ RSpec.describe Pikuri::Workspace::Filesystem::AllowAll do
       result = workspace.resolve_for_read((fake_home + 'projects/code.rb').to_s)
       assert_equal fake_home + 'projects/code.rb', result
     end
+
+    it 'permits credential paths when denylist is emptied' do
+      # The Piece-1 knob: an outer-boundary agent (e.g. pikuri-os, egress
+      # kernel-severed) opts out, so the file tools reach secrets just as
+      # bash already does. Read AND write both open.
+      open = described_class.new(project_root: root, denylist: [])
+      FileUtils.mkdir_p(fake_home + '.ssh')
+      File.write(fake_home + '.ssh/id_rsa', 'secret')
+
+      assert_equal fake_home + '.ssh/id_rsa',
+                   open.resolve_for_read((fake_home + '.ssh/id_rsa').to_s)
+      assert_equal fake_home + '.ssh/authorized_keys',
+                   open.resolve_for_write((fake_home + '.ssh/authorized_keys').to_s)
+    end
   end
 
-  describe 'CREDENTIAL_DENYLIST (default)' do
+  describe 'DEFAULT_CREDENTIAL_DENYLIST' do
     it 'covers ~/.ssh / ~/.aws / ~/.gnupg / ~/.docker / ~/.kube / ~/.netrc' do
-      basenames = described_class::CREDENTIAL_DENYLIST.map { |p| p.basename.to_s }
+      basenames = described_class::DEFAULT_CREDENTIAL_DENYLIST.map { |p| p.basename.to_s }
       %w[.ssh .aws .gnupg .docker .kube .netrc].each do |b|
         assert_includes basenames, b
       end
     end
 
     it 'covers /etc/shadow' do
-      assert_includes described_class::CREDENTIAL_DENYLIST.map(&:to_s), '/etc/shadow'
+      assert_includes described_class::DEFAULT_CREDENTIAL_DENYLIST.map(&:to_s), '/etc/shadow'
     end
 
     it 'covers /root/.ssh in addition to the current user' do
-      assert_includes described_class::CREDENTIAL_DENYLIST.map(&:to_s), '/root/.ssh'
+      assert_includes described_class::DEFAULT_CREDENTIAL_DENYLIST.map(&:to_s), '/root/.ssh'
+    end
+
+    it 'is the default when no denylist is passed' do
+      assert_equal described_class::DEFAULT_CREDENTIAL_DENYLIST,
+                   described_class.new(project_root: root).instance_variable_get(:@denylist)
     end
   end
 end

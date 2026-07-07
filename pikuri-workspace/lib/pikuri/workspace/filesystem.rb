@@ -426,9 +426,10 @@ module Pikuri
       end
 
       # Unrestricted variant of {Filesystem}: every path resolves, with one
-      # carve-out — paths under {CREDENTIAL_DENYLIST} (the user's +~/.ssh+,
-      # +~/.aws+, +~/.gnupg+, +~/.docker+, +~/.kube+, +~/.netrc+, and
-      # +/etc/shadow+) still raise. Intended for dev-container / Docker
+      # carve-out — paths under the +denylist:+ (default
+      # {DEFAULT_CREDENTIAL_DENYLIST}: the user's +~/.ssh+, +~/.aws+,
+      # +~/.gnupg+, +~/.docker+, +~/.kube+, +~/.netrc+, and +/etc/shadow+)
+      # still raise. Intended for dev-container / Docker
       # mode where the container is the security boundary; the denylist
       # remains as defense-in-depth against prompt-injection exfiltration
       # of credentials that are commonly bind-mounted into a container
@@ -456,12 +457,20 @@ module Pikuri
       # entries fall back to a literal-prefix match — blocks the agent
       # from *creating* a credential dir the user doesn't have yet (e.g.
       # planting +~/.gnupg+ for a later GPG operation to pick up). The
-      # list is hardcoded; subclass for a host with a different policy.
+      # list is a constructor parameter (+denylist:+, default
+      # {DEFAULT_CREDENTIAL_DENYLIST}); pass a reduced or empty list to
+      # widen access — but only behind an outer egress boundary, since
+      # bash bypasses this denylist anyway (see the header). Prefer the
+      # parameter over subclassing — composition over inheritance.
       class AllowAll < Filesystem
-        # Credential locations that even ALLOW_ALL refuses. Expanded
-        # via +ENV['HOME']+ at class-load time and unioned with the
-        # +/root+ variants (dev-container default user). Frozen.
-        CREDENTIAL_DENYLIST = begin
+        # Default credential floor: locations even ALLOW_ALL refuses,
+        # for both reads and writes. This is the *default* value of the
+        # +denylist:+ constructor parameter, so an unconfigured
+        # AllowAll is safe out of the box; a caller widens access only by
+        # explicitly passing a smaller (or empty) list. Expanded via
+        # +ENV['HOME']+ at class-load time and unioned with the +/root+
+        # variants (dev-container default user). Frozen.
+        DEFAULT_CREDENTIAL_DENYLIST = begin
           homes = [ENV.fetch('HOME', nil), '/root'].compact.uniq
           per_home = %w[.ssh .aws .gnupg .docker .kube .netrc]
           user_paths = homes.flat_map { |h| per_home.map { |p| File.join(h, p) } }
@@ -476,13 +485,23 @@ module Pikuri
         #   inputs rewrite to land under {#temp}.
         # @param env [Hash{String=>String}, nil] same semantics as
         #   {Filesystem}; see {Filesystem#env}.
-        def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false, env: nil)
+        # @param denylist [Array<String, Pathname>] paths this
+        #   filesystem refuses to resolve for read *or* write
+        #   (symlink-resolved descendant match). Defaults to
+        #   {DEFAULT_CREDENTIAL_DENYLIST}. Pass a reduced list — or +[]+ —
+        #   ONLY when an outer boundary makes reaching secrets acceptable
+        #   (kernel-severed / user-confirmed egress, or a container);
+        #   emptying it without such a boundary re-opens credential
+        #   exfiltration.
+        def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false,
+                       env: nil, denylist: DEFAULT_CREDENTIAL_DENYLIST)
           @project_root = Pathname.new(project_root).realpath
 
           @internal_temp = nil
           @temp = temp ? mint_playground : nil
           @alias_tmp_to_temp = alias_tmp_to_temp && !@temp.nil?
           @env_override = env
+          @denylist = denylist.map { |p| Pathname.new(p) }.uniq.freeze
 
           # Advertise "everything is in scope" via the accessor surface so
           # callers that inspect +readable+/+writable+ (system-prompt
@@ -495,14 +514,14 @@ module Pikuri
 
         # @param path [String]
         # @return [Pathname]
-        # @raise [Error] if the resolved path lands under {CREDENTIAL_DENYLIST}.
+        # @raise [Error] if the resolved path lands under the credential denylist.
         def resolve_for_read(path)
           resolve_unrestricted(path)
         end
 
         # @param path [String]
         # @return [Pathname]
-        # @raise [Error] if the resolved path lands under {CREDENTIAL_DENYLIST}.
+        # @raise [Error] if the resolved path lands under the credential denylist.
         def resolve_for_write(path)
           resolve_unrestricted(path)
         end
@@ -520,16 +539,15 @@ module Pikuri
           base = existing.realpath
           resolved = base + cleaned.relative_path_from(existing)
 
-          CREDENTIAL_DENYLIST.each do |denied|
+          @denylist.each do |denied|
             candidate = denied.exist? ? denied.realpath : denied
             next unless resolved == candidate ||
                         resolved.to_s.start_with?(candidate.to_s + File::SEPARATOR)
 
             raise Error,
                   "path '#{path}' resolves under a denied credential location " \
-                  "('#{denied}') — even in ALLOW_ALL mode, ~/.ssh / ~/.aws / " \
-                  '~/.gnupg / ~/.docker / ~/.kube / ~/.netrc / /etc/shadow ' \
-                  'are off-limits.'
+                  "('#{denied}') — this AllowAll's denylist blocks it. " \
+                  'Reduce denylist: only behind an outer egress boundary.'
           end
 
           resolved

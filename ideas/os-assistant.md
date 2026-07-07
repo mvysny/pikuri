@@ -109,11 +109,11 @@ content that fooled the agent; a usually-silent AI warner is worse, as
 it trains the user to read "no warning" as "safe" and goes quiet exactly
 when an injection is crafted to look benign.
 
-- **`Write`/`Edit` path-zone auto-allow + diff render.** Reliable
-  *because* the inputs are structured (known path + bytes): auto-allow
-  new files / edits to already-read files in non-sensitive zones, always
-  confirm sensitive targets (`~/.ssh`, dotfiles, `/etc`) and show the
-  diff.
+- **`Write`/`Edit` full read + confirmed writes** — the file-tool
+  consistency work (full read to match bash, sensitive writes confirmed
+  with a diff). Piece-1 machinery shipped (the `denylist:` parameter on
+  {Pikuri::Workspace::Filesystem::AllowAll}); design + the remaining
+  Piece 2 in [`write-edit-confirmer.md`](write-edit-confirmer.md).
 - **The rest of the confirmer-gate fatigue work** — session-sticky
   grants, subcommand-aware read rules, batching, and the AI translation
   aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).

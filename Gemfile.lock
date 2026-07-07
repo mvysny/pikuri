@@ -99,6 +99,7 @@ PATH
   specs:
     pikuri-workspace (0.0.7)
       pikuri-core (= 0.0.7)
+      reline (~> 0.6)
 
 PATH
   remote: pikuri
