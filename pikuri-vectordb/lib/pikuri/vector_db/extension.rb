@@ -98,8 +98,8 @@ module Pikuri
       # @param source [String, Pathname] path to index. A file
       #   indexes directly; a directory is walked recursively
       #   (see {Indexer::DENYLIST}). Single source only in v1
-      #   — multi-source is deferred (see IDEAS.md §"Vector DB
-      #   / RAG" → "Deferred").
+      #   — multi-source is deferred (see
+      #   +ideas/vectordb-deferrals.md+ §"Multi-source indexing").
       # @param embedder [#embed, nil] anything implementing
       #   +embed(Array<String>) -> Array<Array<Float>>+; +nil+
       #   constructs {Embedder} with the default model.

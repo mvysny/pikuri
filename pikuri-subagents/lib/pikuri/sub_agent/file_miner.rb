@@ -30,8 +30,8 @@ module Pikuri
     # has no tool to act on it — no shell to run +curl+, no +fetch+
     # to POST, no +write+ to plant a payload, no +agent+ to delegate
     # the attack. The miner's reply is just text returned to the
-    # parent. See +IDEAS.md+ §"The lethal trifecta" for the broader
-    # framing.
+    # parent. See +SECURITY.md+ §"Prompt injection" and
+    # +ideas/trifecta-detector.md+ for the broader framing.
     #
     # == Decoupled from pikuri-workspace
     #

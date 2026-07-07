@@ -106,9 +106,8 @@ a line.
 
 | Kind | Audience | Scope & length | Owns |
 |---|---|---|---|
-| `ideas/*.md` | you + the author | dense, technical, provisional | design rationale *in flight*; transient (trimmed as pieces land — see graduation) |
-| `IDEAS.md` (root) | a future contributor | short entries | *considered-then-deferred* decisions, so an absence reads as a choice, not an oversight |
-| `COMPARISON.md` | an evaluator / contributor | long, comparative | external prior art + "ideas to borrow" (the outward-sourced counterpart to `IDEAS.md`) |
+| `ideas/*.md` | you + the author | dense, technical, provisional | design rationale *in flight* **and** each topic's list of *considered-then-deferred* work still on the table — all transient (trimmed as pieces graduate, removed once rejected; see graduation), so a present entry is genuinely open and an absence reads as a choice, not an oversight |
+| `COMPARISON.md` | an evaluator / contributor | long, comparative | external prior art + "ideas to borrow" (the outward-sourced counterpart to the `ideas/*.md` deferral registries) |
 | per-gem `DESIGN.md` | someone extending that one gem | dense, gem-scoped | that gem's design rationale + threat model (only where a gem earns one: `pikuri-memory`, `pikuri-vectordb`) |
 | **book** (`book/`, cover-to-cover) | a learner, reading in order | verbose, narrative, order-dependent | *concepts, the teaching narrative, the cross-cutting why* |
 | **YARD** (source headers) | someone at the API | dense, per-symbol, standalone | the precise technical workings **and the design rationale** of each class/method — the source of truth |
@@ -146,10 +145,22 @@ Rules that make these documents survivable:
 - **README stays a front door.** Positioning, install, one hello-world,
   a couple of example pointers, then links onward. Concepts migrate to
   the book; per-symbol API + rationale migrate to the yardoc.
-- **`ideas/*.md` vs `IDEAS.md` are not the same file kind.**
-  `ideas/*.md` is long-form rationale *in flight* that trims toward
-  nothing as it ships; `IDEAS.md` is the durable short registry of
-  things we *considered and punted*. Don't fold one into the other.
+- **`ideas/*.md` carries two things at once.** The long-form rationale
+  *in flight* that trims toward nothing as it ships, **and** each topic's
+  running list of what we *considered and deferred* — the part still on
+  the table after the in-flight half graduates (e.g.
+  `ideas/coding-agent.md`, `ideas/security-open-questions.md` are almost
+  entirely deferral lists). Both halves are transient: an entry leaves by
+  graduating, or by being removed once rejected — it is never *kept for
+  its own sake*. A **deferred** idea ("not now, revisit
+  when the friction shows up") lives in its topic's note. A **rejected**
+  idea ("considered and decided against") stays *inline, marked*
+  `REJECTED`/`Killed`, next to the live design its reasoning bounds
+  (worked examples: the killed `fetch` whitelist in
+  `ideas/private-context-taint.md`, the "'Clean URL' auto-approve —
+  REJECTED" in `ideas/more-confirmers.md`) — never exhumed into a
+  separate graveyard, because a rejection's reason is usually
+  load-bearing for the decision beside it.
 
 **The graduation pipeline.** `ideas/*.md` is transient by design — a
 scratchpad "for the two of us," not user docs. It is still a vital part
@@ -165,7 +176,11 @@ substance has moved to its final homes:
 - the **per-symbol rationale** → the yardoc of the class it describes;
 - the **invariant / must-not-break half** → CLAUDE.md, as a **Seam** or
   **Convention** entry;
-- the **considered-then-punted residue** → `IDEAS.md`.
+- the **considered-then-deferred residue** → the relevant topic's
+  `ideas/*.md` deferral note (deferrals live beside the in-flight
+  rationale for the same area; an outright *rejection* stays inline
+  there too, marked as such with its reason — see the `ideas/*.md`
+  rule above).
 
 The worked example is the OS helper: designed in `ideas/os-assistant.md`,
 then on shipping its narrative graduated into book chapter 7, its
@@ -177,7 +192,7 @@ deferred-work list — its local-model-fit question is provisionally
 settled (35B-A3B confirmed by initial testing) — the pipeline run start
 to finish. (The `book/`-relative `Owns`
 here is also why the "prefer concrete over abstract" convention only
-governs the human-facing kinds — README / SECURITY / IDEAS /
+governs the human-facing kinds — README / SECURITY /
 COMPARISON / book — not the yardoc.)
 
 ## Seams (invariants)
@@ -809,7 +824,7 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   folder"* beats *"filesystem mutation outside the workspace"*;
   *"the CPU's NX flag"* beats *"a structural data/instructions
   distinction."* Applies to `README.md`, `SECURITY.md`,
-  `IDEAS.md`, `COMPARISON.md`, and the `book/` chapters —
+  `COMPARISON.md`, and the `book/` chapters —
   any prose meant for a human reader.
 
 ## Working on this codebase

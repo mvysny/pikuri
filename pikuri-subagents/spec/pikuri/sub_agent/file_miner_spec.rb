@@ -24,8 +24,8 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
     # Stub tools whose names match FILE_MINER.tool_names. Hand-rolled
     # rather than pulling in the real Pikuri::Workspace::Read / Grep /
     # Glob so pikuri-subagents stays decoupled from pikuri-workspace at
-    # both the runtime-dep level (IDEAS.md "File-miner persona") and the
-    # test-closure level.
+    # both the runtime-dep level ({Pikuri::SubAgent::FILE_MINER}
+    # §"Decoupled from pikuri-workspace") and the test-closure level.
     def stub_tool(name)
       Pikuri::Tool.new(
         name:        name,

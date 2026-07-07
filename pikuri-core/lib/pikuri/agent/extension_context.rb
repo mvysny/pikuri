@@ -94,15 +94,15 @@ module Pikuri
       # via {Configurator#add_tool}) so they get {Tool::Parameters}
       # validation and the LLM-actionable +"Error: ..."+ contract.
       # Intended callers: {Pikuri::Mcp::Servers} (MCP tools
-      # deliberately bypass — see IDEAS.md §"MCP tools bypass
-      # +Pikuri::Tool+ entirely") and
+      # deliberately bypass — see {Pikuri::Mcp::Servers} "Why MCP
+      # tools bypass +Pikuri::Tool+") and
       # {Pikuri::SubAgent::Extension} (the +agent+ tool must
       # register after the parent's tool list is final).
       #
       # The added tool does NOT enter {Agent#tools}, only the chat's
       # tool list. Sub-agents therefore cannot snapshot it — which
-      # is the whole point: activation is strictly per-agent, see
-      # IDEAS.md §"Per-agent activation, no propagation".
+      # is the whole point: activation is strictly per-agent (the
+      # capability seam; see {Pikuri::Agent::ExtensionContext}).
       #
       # @param ruby_llm_tool [Class] subclass of +RubyLLM::Tool+
       # @return [void]

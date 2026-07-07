@@ -1278,7 +1278,7 @@ RSpec.describe Pikuri::Agent do
 
   # The block-based configuration surface is the sole wiring path
   # for tools / listeners / extensions / system-prompt snippets.
-  # See IDEAS.md §"Extension protocol design".
+  # See {Pikuri::Agent::Extension} and {Pikuri::Agent::Configurator}.
   describe 'Configurator block' do
     let(:tool) do
       Pikuri::Tool.new(

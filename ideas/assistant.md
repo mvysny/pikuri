@@ -24,8 +24,9 @@ Related, already worked out:
   stream is all-trusted, where auto-extraction is safe (and the
   shared-vs-private reasoning). The federation gives that agent a home
   (`@private` below).
-- [`../IDEAS.md`](../IDEAS.md) §"Trifecta — open mitigations" and the
-  bundled privilege-separated `RESEARCHER` / `FILE_MINER`.
+- [`security-open-questions.md`](security-open-questions.md) §"Trifecta
+  — open mitigations" and the bundled privilege-separated `RESEARCHER` /
+  `FILE_MINER`.
 - Likely home: the `pikuri-assistant` gem — same precedent as `LIBRARIAN`
   and `GIT_REPO_RESEARCHER` ([`CLAUDE.md`](../CLAUDE.md) inventory).
 
@@ -122,7 +123,11 @@ personalities.
   of one egress payload; the federation makes the human the author of
   every cross-agent transfer. Same primitive, whole-topology scope.
 - **shared-vs-private buckets become agents.** `@private` = private
-  personal + episodic memory; a `@team`/coding agent nudges `AGENTS.md`
+  personal + episodic memory *plus* local-corpus recall — the egress-free
+  stack that composes `pikuri-memory` + `pikuri-vectordb` onto one agent,
+  homed in the future federation/assistant gem (same precedent as
+  `LIBRARIAN` / `GIT_REPO_RESEARCHER`), not in `pikuri-memory` itself;
+  a `@team`/coding agent nudges `AGENTS.md`
   (shared ⇒ human-gated write, committed to git); `@comms` = egress;
   `@research` = untrusted+egress lookups. One agent per row of the
   memory-note table.

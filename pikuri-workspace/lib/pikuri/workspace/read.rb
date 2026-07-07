@@ -79,8 +79,8 @@ module Pikuri
     # above that come back as +"Error: image too large…"+ rather than
     # being silently encoded into a payload the upstream API would
     # reject. No auto-resize: pikuri doesn't pull in an image-processing
-    # dep for one tool's ergonomics. See +IDEAS.md+ for the deferred
-    # auto-resize discussion.
+    # dep for one tool's ergonomics. See +ideas/coding-agent.md+ for
+    # the deferred auto-resize discussion.
     #
     # Vision capability of the underlying model is *not* checked here.
     # Sending an image to a non-vision model produces a provider error

@@ -11,7 +11,7 @@ worked attacks told as stories, and a decision procedure for
 designing your own harness — is
 [chapter 6 of the guide](book/06-security.md). Open questions,
 deferred mitigations, and prior-art notes live in
-[`IDEAS.md`](IDEAS.md) §"Security perspective".
+[`ideas/security-open-questions.md`](ideas/security-open-questions.md).
 
 Two axes, in order. **Code trust:** which processes do you trust to
 execute their intended code? A short section, settled in one pass.
@@ -33,8 +33,8 @@ can't cover.
 | **Trifecta-break** | sub-agent capability boundaries — `RESEARCHER` / `FILE_MINER` hold at most two of the three legs | chat, `minions`, web / file recon | the *relay* leg: a sub-agent's reply carrying the injection up to a parent that *does* hold the third leg |
 | **Blast-radius containment** | Workspace seam + Bubblewrap — `~/.ssh`, `~/.aws`, other projects don't resolve; bash sees only the workspace | coding, attended or not | the workspace is itself inside the radius — "leak *this* project's `.env`" still works |
 | **Human gate** | `Confirmer` prompts before an irreversible or egress-bearing action runs | coding **with a human present** | confirmation fatigue; worth zero when nobody's watching |
-| **Egress allowlist** *(planned — see [`IDEAS.md`](IDEAS.md))* | allow your package registries + git remote, deny the rest — cuts exfil at the network without removing `bash` | **unattended** coding | coarse: an allowlisted host is still open, and DNS exfil rides port 53 |
-| **Outer isolation** | a VM / container wrapping the whole pikuri process | `--yolo`, "I don't trust any of this" | delegated to the OS; DinD footguns (see IDEAS) |
+| **Egress allowlist** *(planned — see [`ideas/security-open-questions.md`](ideas/security-open-questions.md))* | allow your package registries + git remote, deny the rest — cuts exfil at the network without removing `bash` | **unattended** coding | coarse: an allowlisted host is still open, and DNS exfil rides port 53 |
+| **Outer isolation** | a VM / container wrapping the whole pikuri process | `--yolo`, "I don't trust any of this" | delegated to the OS; DinD footguns (see [`ideas/security-open-questions.md`](ideas/security-open-questions.md)) |
 
 **Why coding needs the kit, not the headline.** A coding agent's job
 *is* the trifecta: read your source (a), pull docs and dependencies (b),
@@ -224,8 +224,8 @@ as a guarantee:
   companion to this page: the threat from first principles, the five
   attacks as stories, and a decision procedure for picking a model
   when you build your own harness.
-- [`IDEAS.md`](IDEAS.md) §"Security perspective" — open
-  mitigations under consideration (egress allowlists, per-tool
+- [`ideas/security-open-questions.md`](ideas/security-open-questions.md)
+  — open mitigations under consideration (egress allowlists, per-tool
   first-use consent, output-byte caps with spillover, secret-
   placeholder patterns), and prior-art notes on how PI and
   opencode handle the same threats.

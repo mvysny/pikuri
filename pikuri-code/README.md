@@ -96,7 +96,7 @@ model has glaring holes:
 In short: run it inside a Docker container, a dev container, a
 VM, a fresh user account — anywhere you'd be fine with a stranger
 having a shell. The sandboxing story is a known gap and tracked
-as future work (see [`IDEAS.md`](../IDEAS.md)); until it lands,
+as future work (see [`ideas/security-open-questions.md`](../ideas/security-open-questions.md)); until it lands,
 **assume the agent can do anything your user can do**, and
 approve prompts on that basis.
 

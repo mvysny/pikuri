@@ -1,0 +1,63 @@
+# Vector DB / RAG deferrals
+
+Status: **v1 shipped, follow-ups deferred.** `pikuri-vectordb` shipped —
+local-corpus vector search + agentic RAG, wired onto an `Agent` via
+`c.add_extension Pikuri::VectorDb::Extension.new(backend:, source:)`.
+Per-piece rationale (Extension / Backend `InMemory`+`Qdrant`+`Chroma` /
+Embedder / Reranker / Chunker / `bin/pikuri-corpus` + `LIBRARIAN`) lives
+in the gem's YARD headers, the inventory in [`../CLAUDE.md`](../CLAUDE.md),
+and [`../pikuri-vectordb/DESIGN.md`](../pikuri-vectordb/DESIGN.md); the
+three-model ops guidance graduated into the `book/` chapters. Both
+trifecta defenses (the no-egress `pikuri-corpus` posture and the
+privilege-separated `LIBRARIAN`) are documented in
+{Pikuri::VectorDb::LIBRARIAN} and [`../SECURITY.md`](../SECURITY.md); the
+reason `LIBRARIAN` isn't wired into a binary yet (sub-agent tools are a
+subset of the parent's, so corpus-behind-the-sub-agent needs
+persona-owned tools) is in [`trifecta-detector.md`](trifecta-detector.md).
+Only the deferrals stay here.
+
+## Deferred
+
+- **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
+  start of each turn (no tool call) — hermes' prefetch shape (see
+  [`../pikuri-memory/DESIGN.md`](../pikuri-memory/DESIGN.md) §"The three
+  retrieval tiers"). v1 ships agentic search only — fits the
+  loop-agnostic ethos and the agent gets to refine queries. Add
+  the listener variant if a concrete "the model forgot to search"
+  pattern shows up.
+- **Per-doc-type chunkers.** Markdown-heading-aware splitter,
+  AST-aware code chunker, contextual chunking. All real quality
+  wins, all separately scoped features. (Parent-document
+  retrieval shipped instead as the `vectordb_read` tool — the
+  agent reads the whole source document on a clean hit, rather
+  than the chunker stitching parent context onto every chunk.)
+- **Onyx as a separate gem.** Onyx is a product (UI + connector
+  framework + scheduler), not a vector DB. If pikuri wants Google
+  Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —
+  a thin tool gem that calls a self-hosted Onyx's search API over
+  HTTP. Same precedent as MCP: integrate with the protocol, don't
+  reimplement it. Onyx's heavy operational footprint stays opt-in
+  and out of pikuri-vectordb's scope.
+- **Memory growth tier integration.** `pikuri-memory` v1 shipped on
+  its own external semantic store (mem0 + Qdrant; see
+  [`../pikuri-memory/DESIGN.md`](../pikuri-memory/DESIGN.md) §"Why mem0"),
+  *not* pikuri-vectordb — so the once-open "could memory ride the same
+  primitive?" question is moot for now. Revisit only if consolidating
+  the two stores onto one backend ever becomes worth it; not a v1 goal.
+- **Configurable ignore rules.** `Indexer::DENYLIST` ships a fixed
+  set (`.git`, `node_modules`, dot-files); `.gitignore`-shaped
+  user-configurable skip rules defer until someone asks.
+- **Multi-source indexing.** `Extension.new(source:)` takes a single
+  file-or-directory root in v1; `Indexer` walks one root. Indexing
+  several disjoint roots into one collection (the user's notes dir +
+  a checked-out repo + a downloads folder) is deferred — it needs a
+  source-list API and a provenance story for which root a hit came
+  from. Referenced from `VectorDb::Extension` / `Indexer` yardoc
+  (that yardoc is the source of truth).
+- **Additional reranker backends.** Only `Reranker::LlamaServer`
+  ships. Because it speaks the same `/v1/rerank` wire format as
+  Cohere's hosted reranker, a `Reranker::Cohere` (or any other
+  hosted cross-encoder) is a thin adapter behind the same duck-typed
+  `#rerank(query:, documents:)` protocol — deferred until someone
+  wants a non-local reranker. Referenced from `VectorDb::Reranker`
+  yardoc (that yardoc is the source of truth).

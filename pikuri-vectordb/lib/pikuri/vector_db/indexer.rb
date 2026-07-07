@@ -93,8 +93,8 @@ module Pikuri
       # cruft people accidentally have inside a notes folder
       # they've put under +sources:+ — a cloned repo, a Python
       # workspace, a build directory. Conservative; configurable
-      # ignore rules are a follow-up (see IDEAS.md §"Vector DB /
-      # RAG" → "Open questions").
+      # ignore rules are a follow-up (see +ideas/vectordb-deferrals.md+
+      # §"Configurable ignore rules").
       DENYLIST = %w[
         .git
         node_modules
@@ -128,8 +128,8 @@ module Pikuri
       # {Backend#upsert}'s replace-by-id semantics would
       # silently let the second file's chunks overwrite the
       # first's. Single source eliminates the clash entirely.
-      # Multiple-roots support is deferred — see IDEAS.md
-      # §"Vector DB / RAG" → "Deferred".
+      # Multiple-roots support is deferred — see
+      # +ideas/vectordb-deferrals.md+ §"Multi-source indexing".
       def initialize(backend:, source:, embedder:, chunker:)
         @backend  = backend
         @source   = Pathname.new(source).expand_path

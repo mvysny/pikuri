@@ -33,8 +33,7 @@ module Pikuri
     # When the catalog is {Pikuri::Skill::Catalog#empty?}, the
     # extension is a no-op — no snippet, no tool. Same semantics as
     # the legacy +skill_catalog:+ kwarg on {Pikuri::Agent#initialize},
-    # which still routes through this extension as a transition layer
-    # until Step 5 of the gem-split refactor (see IDEAS.md).
+    # which still routes through this extension as a transition layer.
     class Extension
       include Pikuri::Agent::Extension
 

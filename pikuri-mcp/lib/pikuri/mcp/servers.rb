@@ -480,7 +480,8 @@ module Pikuri
     # the tools in its toolset and should just call them). Each agent
     # owns its own {Connect} instance and therefore its own
     # activation set — activation does not propagate between parent and
-    # sub-agent. See IDEAS.md §"v1 implementation shape".
+    # sub-agent (consistent with the no-inherit rule in
+    # {Pikuri::SubAgent::SubAgentTool}).
     class Connect < Pikuri::Tool
       DESCRIPTION = <<~DESC
         Connect to an MCP (Model Context Protocol) server, adding its tools to your toolset for the rest of this conversation.

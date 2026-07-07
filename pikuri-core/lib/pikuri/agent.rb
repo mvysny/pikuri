@@ -586,8 +586,8 @@ module Pikuri
       # {ExtensionContext#add_raw_tool}, per-agent close hooks via
       # {ExtensionContext#on_close}, domain-event wiring via
       # {ExtensionContext#emit_event}, etc.) now that the chat is
-      # fully wired. See IDEAS.md §"Extension protocol design" for
-      # what #configure vs #bind are each for.
+      # fully wired. See {Pikuri::Agent::Extension} for what
+      # #configure vs #bind are each for.
       @extensions.each { |ext| ext.bind(@extension_context) }
     end
 

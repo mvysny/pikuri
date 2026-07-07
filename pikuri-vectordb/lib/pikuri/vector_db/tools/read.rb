@@ -24,7 +24,7 @@ module Pikuri
       # +bin/pikuri-corpus+ agent stays egress-free, and the {LIBRARIAN}
       # sub-agent's privilege-separation argument survives intact — a
       # poisoned full document still has no hand to act with. See
-      # {LIBRARIAN} and IDEAS.md §"Vector DB / RAG".
+      # {LIBRARIAN} and +ideas/vectordb-deferrals.md+.
       #
       # == The read domain is exactly the search domain
       #

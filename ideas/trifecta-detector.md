@@ -12,11 +12,13 @@ Related, already in the repo:
   structural defense (privilege-separated `RESEARCHER` / `FILE_MINER`).
   The detector *measures* whether that separation actually held for a
   given wiring; it doesn't replace it.
-- [`IDEAS.md`](../IDEAS.md) §"Trifecta — open mitigations" — the
+- [`security-open-questions.md`](security-open-questions.md)
+  §"Trifecta — open mitigations beyond sub-agent separation" — the
   short adjacent-ideas list; this file is the long-form version of
   the structural-check entry.
-- [`IDEAS.md`](../IDEAS.md) §"Typed transport classes (private vs
-  public)" and §"Egress is broader than `web_search`" — the
+- [`typed-transports.md`](typed-transports.md) and
+  [`security-open-questions.md`](security-open-questions.md)
+  §"Egress is broader than `web_search`" — the
   detector's two closest cousins. Transport classes answer "is the
   *LLM endpoint* private?"; the detector answers "does this *agent*
   hold all three trifecta legs?". Egress-is-broad is why the
@@ -86,7 +88,8 @@ can determine; make the user supply the one it can't.**
 - `:egress` — the framework *knows* a tool reaches a network sink.
   Default on for `web_search` / `web_scrape` / `fetch`, and for `Bash`
   whenever its sandbox permits network. Tag generously: egress is
-  broader than the obvious senders (see [`IDEAS.md`](../IDEAS.md)
+  broader than the obvious senders (see
+  [`security-open-questions.md`](security-open-questions.md)
   §"Egress is broader than `web_search`" — a *search query string* is
   already an outbound channel; DNS, error echoes, writes into a synced
   folder all count). The leg people will under-tag, so default to on

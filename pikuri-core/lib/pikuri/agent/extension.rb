@@ -40,10 +40,8 @@ module Pikuri
     #     # configure / bind not overridden — inherit the empty defaults
     #   end
     #
-    # See +Pikuri::Mcp::Extension+ and +Pikuri::Skill::Extension+
-    # (once those land in Steps 2-3 of the gem-split refactor — see
-    # IDEAS.md §"Extension protocol design") for the canonical
-    # worked implementations.
+    # See +Pikuri::Mcp::Extension+ and +Pikuri::Skill::Extension+ for
+    # the canonical worked implementations.
     module Extension
       # Called immediately by {Configurator#add_extension} during the
       # +Agent.new+ block, with the parent agent's {Configurator}.

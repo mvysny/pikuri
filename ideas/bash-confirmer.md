@@ -229,6 +229,31 @@ terminal renders a multi-item approve/reject without losing the
 sanitizer's per-item warning gating — which is why it rides here rather
 than in the auto-confirmer's pure-code lineage.
 
+## Permission-model granularity — the broader wishlist
+
+`Confirmer::TERMINAL` is binary today (approve / deny per call). The
+real-world ergonomics push, beyond the session-grant mechanism above:
+
+- **Per-tool, per-pattern stickiness** ("always allow `git status`",
+  "always allow read under `./src/**`"). This is the general form of
+  the session grants worked out above (Options A–C) — those cover the
+  bash-binary slice; the wishlist extends the same shape to read/glob
+  path globs and to the other tools.
+- **Risk tiers** — read light, write medium, bash heavy, unknown-host
+  fetch heavy. A tier could pick the default answer / how loud the
+  prompt is, rather than every call being flat.
+- **Dry-run preview for `Bash`** (echoed argv, no shell-metachar
+  surprise) — the deterministic cousin of the AI translation aid below.
+- **Time-bound approvals** ("for this session only" — implicit on
+  session boundaries). The session-only constraint above is the
+  in-memory realization of this; a longer-lived grant would reopen the
+  persistence attack surface the grant design deliberately refuses.
+
+Risk to weigh, cutting across all four: **every persisted approval is
+past-you trusting future-you's judgment, which prompt injection can lean
+on** — the same standing-capability danger §"The danger" states for
+session grants, amplified the moment a grant outlives the session.
+
 ---
 
 ## AI translation aid — describe the command, never judge it

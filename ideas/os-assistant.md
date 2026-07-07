@@ -115,10 +115,24 @@ when an injection is crafted to look benign.
   yourself" (`confirm_all_writes`). Narrative in the guide's ch7
   (Workspace + Confirmer seam sections); mechanism in
   {Pikuri::Workspace::WriteGate}. Deferred residue (allowlist-safe
-  auto-allow) in `IDEAS.md`.
+  auto-allow) in §"File confirmations: allowlist-safe auto-allow" below.
 - **The rest of the confirmer-gate fatigue work** — session-sticky
   grants, subcommand-aware read rules, batching, and the AI translation
   aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).
+
+## File confirmations: allowlist-safe auto-allow
+
+`pikuri-os` confirms **every** writable `write`/`edit` with a diff
+(`confirm_all_writes`), because writes are rare for a diagnosis agent, so
+there's little fatigue to cut and no "sensitive path" list to maintain —
+see book ch7 and {Pikuri::Workspace::WriteGate}. The considered-and-punted
+generalization: an **allowlist of auto-allowed (safe) write paths**,
+deny-by-default = confirm. It's the inverse of a sensitive-path denylist
+(and the winning side of the enumeration game, like `READ_ONLY_BINARIES`),
+for a *hypothetical frequent-writing full-disk agent* that would want some
+writes — a scratch dir, `/tmp` — to skip the prompt. No such agent ships,
+so building the allowlist plumbing now would be speculative. Revisit when
+one exists; `confirm_all_writes` is `[]`-safe-paths as a special case.
 
 **Larger pieces:**
 

@@ -12,7 +12,7 @@ module Pikuri
     #   cross-encoder model on a llama.cpp server. Same wire
     #   format Cohere's hosted reranker speaks, so adding a
     #   +Reranker::Cohere+ later is a thin adapter (see
-    #   IDEAS.md §"Vector DB / RAG" → "Deferred").
+    #   +ideas/vectordb-deferrals.md+ §"Additional reranker backends").
     #
     # == Reranker protocol
     #

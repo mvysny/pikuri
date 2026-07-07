@@ -160,7 +160,7 @@ the chat tool set. Three binaries on a shared `Agent` + `Tool` core.
 and *MCP-augmented assistant* tool surfaces from one codebase, with
 Skills bridging static text knowledge between them. The remaining gaps
 versus opencode are todo/plan tools and LSP — both deliberately
-deferred (see `IDEAS.md` "Coding-agent deferrals"). The gap versus
+deferred (see `ideas/coding-agent.md`). The gap versus
 langchainrb is vector search / RAG — out of scope by design; pikuri is
 an agent, not a RAG framework.
 
@@ -397,8 +397,8 @@ development. Pikuri's choice is the latter — fine for its scope.
     `podman.sock`, `libvirt-sock`, …) — exposing one effectively
     undoes the sandbox via `docker run --privileged -v / /host`.
   Opencode-style glob rules (`allow` / `deny` / `ask`) are
-  deferred — see IDEAS.md "Coding-agent deferrals". The next step
-  per IDEAS.md: ClaudeCode-style agentic review of bash commands
+  deferred — see `ideas/coding-agent.md`. The next step
+  per that note: ClaudeCode-style agentic review of bash commands
   for auto-approval / -denial of the obviously-safe cases,
   layered *on top of* (not replacing) bubblewrap.
 - **`Pikuri::Subprocess.spawn` chokepoint**: every subprocess spawn
@@ -498,8 +498,10 @@ coding is the harness where pikuri's structural model runs out and the
 operational one takes over — exactly Claude Code's territory. And
 Claude Code's visible investment in reducing confirmation fatigue
 (smarter triage so the human is interrupted less, and better when they
-are) is the same conclusion driving pikuri's "Confirmer as a
-first-class, last-line-of-defense control" (IDEAS.md): for an *attended*
+are) is the same conclusion driving pikuri's confirmer-as-last-line-of-defense
+framing (book [chapter 6](book/06-security.md) §"The human gate, and why
+fatigue is the enemy"; the not-yet-shipped seam residue in
+`ideas/more-confirmers.md`): for an *attended*
 coding agent the human gate is the load-bearing control, and its whole
 value rides on not inducing fatigue. The shared nuance is deployment
 shape — the human gate is worth zero *unattended* (cron / CI / a
@@ -600,8 +602,8 @@ warnings.
 - **Disk spillover for over-cap output** (both). Per-tool byte caps
   already exist in `Bash` / `Read` / `WebScrape`; the missing piece
   is writing the overflow to a tempfile and returning the path so the
-  LLM can `grep` it. (Cross-cutting version tracked in IDEAS.md
-  §"Output-size DoS and cost".)
+  LLM can `grep` it. (Cross-cutting version tracked in
+  `ideas/security-open-questions.md` §"Output-size DoS and cost".)
 - **Sub-agent toolset narrowing** — *shipped* via personas; see
   §"Sub-agents" above.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
@@ -710,7 +712,7 @@ Cross-cutting by role:
 | read-only recon (cheap model) | `RESEARCHER` (web) + `FILE_MINER` (fs) + `GIT_REPO_RESEARCHER` (clone-and-dig) | `scout` (Haiku) | `explore` + `scout` | `Explore` (Haiku) |
 | planner (read-only, intent-shaping) | — | `planner` (Sonnet) | `plan` (primary mode, not subagent) | `Plan` |
 | reviewer (read-only correctness) | queued | `reviewer` (Sonnet, bash for git) | — | — |
-| general-purpose catch-all | — (escape hatch documented in IDEAS) | `worker` | `general` | `general-purpose` |
+| general-purpose catch-all | — (escape hatch documented in `ideas/subagent-deferrals.md`) | `worker` | `general` | `general-purpose` |
 | infra housekeeping | — (synthesizer is hard-coded) | — | `compaction`, `title`, `summary` (tools: none) | — |
 | UX helpers (slash-command-driven) | — (no slash commands) | — | — | `statusline-setup`, `claude-code-guide` |
 
@@ -719,7 +721,7 @@ Cross-cutting by role:
 opencode's eight, Claude Code's five — which matches the
 read-it-in-an-evening ceiling: ship the personas that demonstrate
 the mechanism along each axis, document the rest as queued in
-IDEAS.md, let downstream gems publish more if the ecosystem needs
+`ideas/subagent-deferrals.md`, let downstream gems publish more if the ecosystem needs
 them. The three break down as: `RESEARCHER` (web recon) and `FILE_MINER`
 (fs recon) are the direct analogs of pi's `scout` / opencode's
 `explore` / Claude Code's `Explore` — the universal "read-only
@@ -750,7 +752,8 @@ Notable shape differences:
   Same shape as pikuri keeping bundled personas in pikuri-subagents
   rather than pikuri-core.
 - **Per-persona model pinning** — only pi does this (haiku for
-  `scout`, sonnet for the rest). Pikuri's IDEAS.md §"Personas"
+  `scout`, sonnet for the rest). Pikuri's `ideas/subagent-deferrals.md`
+  §"Per-persona `model:`"
   records this as a deferred feature ("requires `ChatTransport`
   variations per sub-agent").
 
@@ -864,7 +867,7 @@ more than wiring through ruby_llm's existing primitive.
 7. **Permission system with glob rules** (opencode). Pikuri ships
    `Workspace` + `Confirmer` as v1; the three-action `allow` / `deny` /
    `ask` glob model is the right next step once friction shows up.
-   Tracked in IDEAS.md "Coding-agent deferrals".
+   Tracked in `ideas/coding-agent.md`.
 8. **Structured event stream** — **DONE**. The `Agent::Event` sealed
    hierarchy + four bundled listeners covers the surface that was a
    `puts`-only path in the previous writeup. New rendering sinks (web

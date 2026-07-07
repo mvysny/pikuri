@@ -333,7 +333,8 @@ summaries below tell you what each owns.
   50 tokens of overlap; the overlap exists so an answer that
   straddles a chunk boundary survives in *at least one* chunk.
   Markdown-heading-aware and AST-aware chunkers are sketched in
-  IDEAS.md as quality-improvement follow-ups.
+  [`ideas/vectordb-deferrals.md`](../ideas/vectordb-deferrals.md) as
+  quality-improvement follow-ups.
 - **Tokenizer** (`Tokenizer::CharHeuristic` /
   `Tokenizer::LlamaServer`) — counts tokens so the chunker knows
   when a window is full. `CharHeuristic` is the

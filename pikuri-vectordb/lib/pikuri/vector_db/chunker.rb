@@ -36,7 +36,8 @@ module Pikuri
     #   precision but return larger parent regions for context.
     #
     # All real quality wins, all separately scoped features
-    # (see IDEAS.md §"Vector DB / RAG" → "Deferred"). v1 ships
+    # (see +ideas/vectordb-deferrals.md+ §"Per-doc-type chunkers").
+    # v1 ships
     # the simplest token-budgeted sliding window because it
     # works on every text format the {TextExtractor} produces
     # (txt, md, pdf, html — all flattened to plain text upstream)

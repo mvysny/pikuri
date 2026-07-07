@@ -119,7 +119,7 @@ module Pikuri
       # Register a per-agent +mcp_connect+ tool on the agent's chat.
       # The tool's +execute+ closure captures the {ExtensionContext}
       # so activations register their tools on the correct chat — see
-      # IDEAS.md §"Two invariants worth recording" for the
+      # {Pikuri::Agent::ExtensionContext#add_raw_tool} for the
       # static-vs-dynamic tool boundary.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]

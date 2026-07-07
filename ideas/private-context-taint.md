@@ -19,10 +19,12 @@ egress); that one is the **integrity** enforcement (untrusted in → keep
 the bytes out of the parent). Same per-context, structural spirit;
 opposite trifecta leg. Draft, shelved (narrow payoff).
 
-Also related: [`../IDEAS.md`](../IDEAS.md) §"Egress allowlist" (this
-is the long-form version) and §"Typed transport classes" / §"Egress
-is broader than `web_search`" (the provider-privacy cousin — see
-"Reroute is not a trifecta break" below).
+Also related:
+[`security-open-questions.md`](security-open-questions.md) §"Trifecta —
+open mitigations" (the egress-allowlist entry — this note is its
+long-form version) and §"Egress is broader than `web_search`"; and
+[`typed-transports.md`](typed-transports.md) (the provider-privacy
+cousin — see "Reroute is not a trifecta break" below).
 
 ## The core idea: coarse, monotonic context taint
 

@@ -222,6 +222,29 @@ Open sub-questions if this graduates:
   text straight into the parent — that return is the exact point to
   interpose the gate).
 
+## Structured action context on the `Request` — the remaining seam gap
+
+The Confirmer's *role* — last-line-of-defense for the parent agent in
+`bin/pikuri-code`, where structural defense has run out and the human
+gate is what stops a poisoned context from leaking — is documented in
+[chapter 6 §"The human gate, and why fatigue is the enemy"](../book/06-security.md).
+The two requirements (bother the human only on the genuinely
+consequential; be excellent when it does fire) and the dependency on the
+rest of the kit carrying the routine load are stated there.
+
+The not-yet-shipped technical piece survives the `#decide` seam change
+above. `Request` today carries a `question` + optional verbatim `detail`
++ `editable` flag — enough for the author seat, but the chrome still
+largely *echoes* a caller-built string. To live up to the guide's
+"headline the consequence, not the 80-char `curl` pipe" framing, the
+`Request` wants **structured action context** (kind: write / bash /
+fetch; target path or URL; egress destination; in/out of workspace), so
+the seam can *render* the load-bearing presentation rather than echoing
+whatever the caller built. Composes with the per-pattern stickiness
+wishlist in [`bash-confirmer.md`](bash-confirmer.md)
+§"Permission-model granularity" — sticky rules key naturally on
+structured fields, badly on raw strings.
+
 ## Open (cross-cutting)
 
 - **Where confirmers live.** *Partly answered by the built gate.* The
