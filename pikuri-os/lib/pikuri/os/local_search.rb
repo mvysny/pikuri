@@ -28,6 +28,28 @@ module Pikuri
       # @return [String] the localsearch CLI.
       BINARY = 'localsearch'
 
+      # Plain-English note of this backend's *structural* blind spots —
+      # what it will never surface no matter how the query is phrased —
+      # for the fileindex tools to append to their LLM description so the
+      # model knows when to fall back to a filesystem text/regex search.
+      #
+      # Lives on the backend, not the tool, because the blind spots are
+      # backend-specific: a different index (e.g. a future +recoll+ arm)
+      # has different ones and would ship its own text. All three below
+      # are confirmed against GNOME localsearch (see +ideas/os-assistant.md+):
+      # extraction is mime-gated so source code is name-only; any tree
+      # with a +.git+ is skipped wholesale; and there is no directory
+      # filter, so results rank across the whole home index and a common
+      # word in one project can stay buried below the result limit.
+      #
+      # @return [String]
+      LIMITATIONS = <<~LIMITS.chomp
+        Not covered by this index (fall back to a text/regex search over the files for these):
+        - Source code and other developer files are not content-indexed — only their names are. Search their text directly.
+        - Nothing inside a git checkout is indexed (any folder containing a .git). Search those files directly.
+        - No folder scoping: it ranks across your whole home at once, so a common word confined to one project may stay buried below the results shown. Prefer distinctive words, or search that folder's text directly.
+      LIMITS
+
       # Raised when a localsearch invocation exits non-zero — a
       # recoverable failure the calling tool renders as +"Error: ..."+.
       class CommandError < StandardError; end

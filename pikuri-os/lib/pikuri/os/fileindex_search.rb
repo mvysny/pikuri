@@ -19,6 +19,11 @@ module Pikuri
     # plain-text search, and covers the user's home / XDG content folders
     # — not system paths like +/etc+ (use a text/regex search there).
     # Because it's just an index lookup it's cheap to run repeatedly.
+    #
+    # The backend's structural blind spots (source code, git checkouts,
+    # no folder scoping) are appended to the LLM description verbatim from
+    # {LocalSearch::LIMITATIONS} — kept on the backend so a different
+    # index arm ships its own text.
     class FileindexSearch < Pikuri::Tool
       # @return [Integer] default / max matching files returned.
       DEFAULT_LIMIT = 10
@@ -42,6 +47,8 @@ module Pikuri
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
         - Cheap and fast: fine to run many times to narrow down.
         - Output is truncated to #{MAX_BYTES_LABEL}; narrow the query if it ends in a truncation marker.
+
+        #{LocalSearch::LIMITATIONS}
       DESC
 
       # @raise [RuntimeError] if +localsearch+ isn't on +PATH+.
