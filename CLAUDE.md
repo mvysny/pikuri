@@ -318,11 +318,13 @@ yardoc. CLAUDE.md only records the invariant.
   see the guide's ch7). The file tools run **in the main
   process as the real user** — only `Bash` is sandboxed — so
   `File.writable?` on a target is exact; that's what lets the
-  `confirm_all_writes:` posture (Write/Edit take it; pikuri-os passes it)
-  confirm every *writable* write with a diff (`Confirmer::Change` →
-  chrome-rendered) and short-circuit unwritable ones (`/etc`, `/boot`,
-  root-owned) to a permission-denied observation with no prompt — see
-  {Pikuri::Workspace::WriteGate}.
+  confirm-all-writes posture (Write takes the `confirm_all_writes:` flag,
+  Edit takes confirmer-presence; pikuri-os wires both) confirm every
+  *writable* write with a diff (`Confirmer::Change` → chrome-rendered) and
+  short-circuit unwritable ones (`/etc`, `/boot`, root-owned) to a
+  permission-denied observation with no prompt. Both mutators always route
+  a confirmed write through {Pikuri::Workspace::WriteGate} — the flag only
+  scopes *which* writes are gated, never *how* — see there.
 - **Confirmer seam.** Tools that mutate user state (`Write`,
   `Bash`) or dispatch a network-capable sub-agent (the `agent`
   tool) take a `Pikuri::Workspace::Confirmer` via constructor and

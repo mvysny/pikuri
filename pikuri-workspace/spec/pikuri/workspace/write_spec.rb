@@ -13,18 +13,24 @@ RSpec.describe Pikuri::Workspace::Write do
   after { FileUtils.rm_rf(root) }
 
   # Inline confirmer double: records every request it sees, returns
-  # successive elements of +answers+. Calling +confirm?+ when no answer
-  # is queued raises — surfaces "test silently consumed a confirmation"
-  # bugs rather than letting nil flow through as a false answer.
+  # successive elements of +answers+ as {Confirmer::Approved} (for +true+)
+  # or {Confirmer::Rejected} (for +false+) — Write reaches the confirmer
+  # only through {WriteGate}, which calls +#ask+. Calling +#ask+ when no
+  # answer is queued raises — surfaces "test silently consumed a
+  # confirmation" bugs rather than letting nil flow through as an answer.
   def build_confirmer(*answers)
     queue    = answers.dup
     requests = []
     confirmer = Object.new
-    confirmer.define_singleton_method(:confirm?) do |request:|
+    confirmer.define_singleton_method(:ask) do |request:|
       requests << request
-      raise "build_confirmer received an unexpected #confirm? call (request: #{request.inspect})" if queue.empty?
+      raise "build_confirmer received an unexpected #ask call (request: #{request.inspect})" if queue.empty?
 
-      queue.shift
+      if queue.shift
+        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+      else
+        Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
+      end
     end
     confirmer.define_singleton_method(:requests) { requests }
     confirmer

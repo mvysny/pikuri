@@ -19,10 +19,13 @@ module Pikuri
     #    decline surface the optional steering reason back to the model.
     #
     # Stateless module (composition, not a base class): both tools call
-    # {.check} and return immediately on a non-nil result. In the default
-    # posture neither tool calls this — {Write} keeps its overwrite-only
-    # confirm (its +confirm_all_writes: false+), {Edit} stays promptless
-    # (no confirmer passed).
+    # {.check} and return immediately on a non-nil result. The two tools
+    # reach it differently, because their default postures differ:
+    # {Write} always routes an *overwrite* through {.check} (its confirmer
+    # is mandatory), and +confirm_all_writes+ only decides whether
+    # *new-file* writes go through it too; {Edit} stays promptless unless a
+    # confirmer is passed, in which case *every* edit routes through
+    # {.check}.
     module WriteGate
       module_function
 

@@ -23,17 +23,28 @@ module Pikuri
     #    differences trigger the confirm path; encoding tags can't make
     #    equal bytes compare unequal).
     # 3. *Existing file, content differs* — confirm with
-    #    +"OK to overwrite <path>: <old> → <new> bytes?"+ via {Confirmer};
-    #    on yes, write. On no, return a decline-Error observation.
+    #    +"OK to overwrite <path>: <old> → <new> bytes?"+ via {WriteGate};
+    #    on yes, write. On no (or on an unwritable target), return the
+    #    corresponding +"Error: ..."+ observation.
+    #
+    # An overwrite *always* routes through {WriteGate} — there is no
+    # separate promptless-confirm path — so it gets the diff payload, the
+    # decline-reason steering, and the "unwritable target short-circuits
+    # without a doomed prompt" behavior in every posture. +WriteGate+
+    # subsumes a plain +confirmer.confirm?+ (which is just
+    # +ask(...).is_a?(Approved)+), so nothing is lost by always using it.
     #
     # == Confirm-all-writes (opt-in)
     #
-    # With +confirm_all_writes: true+ (the OS-helper posture) the policy
-    # tightens: *every* writable write — new file or overwrite — confirms
-    # with a diff via {WriteGate}, and an unwritable target short-circuits
-    # to a permission-denied observation without prompting (the write
-    # would fail anyway). The identical-content no-op still returns early.
-    # See the guide's ch7.
+    # +confirm_all_writes+ scopes *which* writes are gated, not *how* they
+    # are gated (overwrites use {WriteGate} regardless). With
+    # +confirm_all_writes: true+ (the OS-helper posture) the *new-file*
+    # branch also confirms with a diff via {WriteGate} — so every writable
+    # write, create or overwrite, is confirmed and an unwritable target
+    # short-circuits to a permission-denied observation without prompting.
+    # With +false+ (default) new files write silently; only overwrites
+    # confirm. The identical-content no-op returns early in both. See the
+    # guide's ch7.
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #
@@ -80,20 +91,22 @@ module Pikuri
       # @param workspace [Workspace] captured for path resolution, the
       #   read-before-overwrite gate, and read-ledger marking; writes
       #   route through +workspace.resolve_for_write+.
-      # @param confirmer [Confirmer] consulted before any overwrite
-      #   of an existing file with non-identical content.
+      # @param confirmer [Confirmer] consulted (via {WriteGate}) before any
+      #   overwrite of an existing file with non-identical content, and —
+      #   under +confirm_all_writes+ — before new-file writes too.
       # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?},
       #   every write is refused with a read-only observation *before* any
       #   filesystem touch — the hard half of the read-only posture (the
       #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
       #   +nil+ (the default) disables the gate, so non-gated wirings are
       #   unchanged.
-      # @param confirm_all_writes [Boolean] when +true+ (the OS-helper
-      #   posture), *every* writable write — new file or overwrite —
-      #   confirms with a diff via {WriteGate}, and an unwritable target
+      # @param confirm_all_writes [Boolean] scopes which writes are gated
+      #   (overwrites always confirm via {WriteGate} regardless). When
+      #   +true+ (the OS-helper posture), the new-file branch also confirms
+      #   with a diff via {WriteGate}, and an unwritable target
       #   short-circuits to "ask the user to sudo" without prompting. When
-      #   +false+ (default) the classic policy holds: only an overwrite of
-      #   an existing file with differing content confirms.
+      #   +false+ (default) the classic policy holds: new files write
+      #   silently, only overwrites confirm.
       # @return [Write]
       def initialize(workspace:, confirmer:, read_only: nil, confirm_all_writes: false)
         super(
@@ -150,19 +163,12 @@ module Pikuri
                    'file and try again.'
           end
 
-          if confirm_all_writes
-            gate = WriteGate.check(
-              confirmer: confirmer, path: path, resolved: resolved,
-              question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
-              change: Confirmer::Change.new(path: path, old: existing, new: content.b)
-            )
-            return gate if gate
-          else
-            request = Confirmer::Request.new(
-              question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?"
-            )
-            return "Error: user declined the write to #{path}." unless confirmer.confirm?(request: request)
-          end
+          gate = WriteGate.check(
+            confirmer: confirmer, path: path, resolved: resolved,
+            question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
+            change: Confirmer::Change.new(path: path, old: existing, new: content.b)
+          )
+          return gate if gate
 
           write_bytes(resolved, content)
           workspace.mark_read(resolved)
