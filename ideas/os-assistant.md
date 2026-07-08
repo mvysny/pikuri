@@ -93,12 +93,18 @@ its rationale, read:
   When it whiffs, the cause is one of *three*, and they have different
   answers — only the third is a genuine "nothing we can do":
 
-  1. **Content not indexed** — a format `localsearch`'s extractors
-     don't full-text, or the index is stale / scoped out. (In practice
-     `localsearch`'s full-text coverage is uneven: some hosts full-text
-     PDFs but skip `.odt`/`.md`/`.py`, indexing only their metadata.)
-     The fix is a *better lexical indexer* — the one place `recoll`
-     earns a mention (comparison below). Not a semantic problem.
+  1. **Content not indexed / not reachable** — confirmed the dominant
+     real limit, and it's *structural*, not a quality problem.
+     `localsearch` **mime-gates** extraction: `text/plain` / Markdown /
+     PDF / office get full body text, but **source code is
+     filename-only** (`text/x-java` etc. store zero content — a 90 KB
+     `.java` indexes 0 chars), and any tree containing `.git` is skipped
+     wholesale. On top of that it has **no directory scoping** — it
+     ranks globally over the whole `$HOME` index, so a small target
+     corpus is buried below the default result limit even when fully
+     indexed. So on a dev box the code is invisible and the target
+     folder is drowned. The fix is grep (cause 2 already wires it) or a
+     *different indexer* (`recoll`; comparison below) — not embeddings.
   2. **Phrasing / synonym miss** — the doc is indexed but the user's
      words differ ("the doc about our refund policy" vs. a file that
      says "returns & cancellations"). This is **already ours and
@@ -128,45 +134,67 @@ its rationale, read:
      kept out of the candidate set can't be re-ranked back in.
 
   **Actionable for pikuri.** (2) is the primary answer and needs no new
-  infra — at most a prompt nudge to reformulate / grep on a weak hit.
-  (1) is the only lever that points *outward*: recommend the user
-  install `recoll`. But that recommendation only helps pikuri if
-  `fileindex_search` can actually *query* recoll — today it speaks
-  `localsearch` only, so "just install recoll" closes nothing on its
-  own. The real deferred item is therefore a `Recoll` backend
-  (`recollq`) parallel to {Pikuri::Os::LocalSearch}, chosen via the same
-  `available?` degrade-gracefully probe (see "Deferred" below). (3)
-  stays declined.
+  infra — at most a prompt nudge to reformulate / grep on a weak hit,
+  *especially* for code and git repos, which `fileindex_search` cannot
+  see at all (cause 1). (1)'s only outward lever is `recoll`, but the
+  measurement below shows it's a thin slice: on content `localsearch`
+  indexes, recoll's recall is *identical*, and the cases where recoll
+  wins (source, `.git`, scoped search) are already covered by the wired
+  grep. A deferred `Recoll` (`recollq`) backend parallel to
+  {Pikuri::Os::LocalSearch}, `available?`-probed (see "Deferred"),
+  earns its keep only for *large non-code corpora* outside GNOME's
+  indexed set. (3) stays declined.
 
 ### `recoll` vs `localsearch` — is recoll actually better?
 
-Qualified yes — but for *coverage and portability*, not for the
-semantic gap. Both are **lexical** (stemmed keyword) indexers; neither
-does embeddings, so neither closes cause (3).
+Qualified yes — but for *coverage and scoping*, **not for search
+quality** and not for the semantic gap. Both are **lexical** (stemmed
+keyword) indexers; neither does embeddings, so neither closes cause (3).
+
+**Measured (2026-07; `localsearch` vs `recoll` vs `rg` over a 59-file
+pikuri Markdown corpus and `~/flowsrc`, ~825 Java files; harness +
+numbers were a throwaway bench).** On content `localsearch` actually
+indexes (the Markdown), `localsearch` and `recoll` are **equivalent** —
+both reach ~100% recall against a ripgrep oracle across distinctive,
+common, morphological, and multi-word/concept queries, returning
+near-identical file sets; `localsearch` stems and does stemmed-AND
+multiword just like `recoll`. recoll is *not* a better engine here. The
+tempting "recoll wins 100%→single-digits" on the Java corpus was an
+**artifact** — `localsearch` doesn't content-index source at all, so
+those `localsearch` "hits" were *filename* matches; the fair corpus is
+prose. `localsearch`'s real limits are structural, not quality:
+**(a) no source code** (mime-gated; `.java` etc. filename-only, `.git`
+trees skipped); **(b) no directory scoping** — global ranking over the
+whole `$HOME` index, so a small target corpus is buried below the
+default limit (everything is *in* the index — ~100% at a high limit —
+but the LLM, capped at ten hits, sees none of it for a common word).
 
 | | `localsearch` (tracker3) | `recoll` |
 |---|---|---|
 | Backend | GNOME knowledge graph (SPARQL) | Xapian |
 | Setup | **zero** — already running on GNOME | install + build index + pick dirs |
 | Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
-| Formats | built-in extractors; full-text coverage uneven in practice | broader, via external filter helpers |
-| Query | one snippet/file, simple | phrase / proximity / wildcard / field filters |
+| Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
+| Source code | **filename-only** (mime-gated); `.git` trees skipped | full-text (all text mimes) |
+| Directory scope | **none** — global ranking only | `dir:` filter + per-config `topdirs` |
+| Query ops | stemmed AND / OR | + phrase / proximity / wildcard / field filters |
 | Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
-| Stemming | yes | yes (language switchable at query time) |
 | Headless CLI | `localsearch search` / `info` | `recollq` |
 
 Reading the table: on a GNOME box `localsearch` is the right default
-*because* it's already indexing, always fresh, and zero-config — "use
-what the OS offers." recoll earns the recommendation in two concrete
-situations, both cause-(1) fixes: **(a) non-GNOME hosts**, where
-`localsearch` is absent and the fileindex tools currently degrade to
-*omitted* entirely — a `recollq` backend would restore an index there;
-and **(b) coverage gaps**, where the user keeps hitting documents
-`localsearch` doesn't full-text. What recoll does *not* buy is a fix
-for a fuzzy conceptual ask — that's cause (2)/(3): agent iteration or
-declined, respectively.
+for whole-`$HOME` *document* discovery — already indexing, always
+fresh, zero-config, and (measured) as good as recoll at it. recoll only
+pulls ahead where `localsearch` is structurally blind — **source trees,
+`.git` repos, scoped in-folder search, non-GNOME hosts** — and those
+cases are *already* covered by the wired `grep`/`glob` (scoped, exact,
+zero-setup, blind to none of it). So recoll's marginal value over the
+shipped `localsearch` + grep pairing is a thin slice: fast indexed,
+stemmed, ranked search over *large non-code corpora* outside GNOME's
+indexed set. What recoll does *not* buy, anywhere, is a fix for a fuzzy
+conceptual ask — that's cause (2)/(3): agent iteration or declined.
 
-Sources: [recoll.org](https://www.recoll.org/),
+Sources: local measurement (above);
+[recoll.org](https://www.recoll.org/),
 [Recoll (Wikipedia)](https://en.wikipedia.org/wiki/Recoll),
 [Tracker SupportedFormats](https://wiki.gnome.org/Projects/Tracker/SupportedFormats).
 
@@ -195,15 +223,16 @@ when an injection is crafted to look benign.
 
 **A `Recoll` file-index backend** (`recollq`) parallel to
 {Pikuri::Os::LocalSearch}, selected via the same `available?`
-degrade-gracefully probe. The lever behind cause (1) in the open
-question above: `localsearch` is GNOME-only, so on KDE/Xfce/headless
-hosts the fileindex pair degrades to *omitted* entirely — a recoll
-backend restores an index there, and also covers formats `localsearch`
-doesn't full-text. Deferred, not rejected: it's the only path that
-makes "recommend the user install recoll" actually reach the LLM's
-tools, but no non-GNOME host has driven the need yet. Both backends
-front the same `fileindex_search` / `fileindex_read` seam, so it's an
-added `available?`-picked alternative, not a rewrite.
+degrade-gracefully probe. Both backends would front the same
+`fileindex_search` / `fileindex_read` seam, so it's an
+`available?`-picked alternative, not a rewrite. But the measurement in
+the open question above **weakened** this: on content `localsearch`
+indexes, recoll's recall is *identical*, and recoll's genuine wins
+(source code, `.git` trees, scoped in-folder search, non-GNOME hosts)
+are already served by the wired grep. So the residual niche is narrow —
+a non-GNOME host, *or* a large non-code corpus wanting fast indexed
+ranking that grep would scan too slowly. Deferred, not rejected: real,
+but no host has driven it, and grep shrinks the payoff.
 
 ## File confirmations: allowlist-safe auto-allow
 
