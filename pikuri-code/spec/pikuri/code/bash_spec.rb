@@ -144,6 +144,34 @@ RSpec.describe Pikuri::Code::Bash do
     end
   end
 
+  describe '.run command_approver' do
+    # A predicate that approves iff the command matches a fixed string —
+    # enough to prove the branch without pulling in ReadOnlyCommandApprover.
+    def approver_for(ok)
+      Object.new.tap { |o| o.define_singleton_method(:approves?) { |cmd| cmd == ok } }
+    end
+
+    it 'runs an approved command WITHOUT consulting the confirmer' do
+      cf = build_confirmer # empty queue → #decide raises if reached
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
+                                   command_approver: approver_for('echo hi'),
+                                   command: 'echo hi', description: nil, timeout: 120)
+
+      assert_equal "$ echo hi\nhi\n\n\nexit status: 0", result
+      assert_empty cf.requests, 'an approved command must not reach the confirmer'
+    end
+
+    it 'falls through to the confirmer for a command the approver does not vouch for' do
+      cf = build_confirmer(false) # rejects
+      result = described_class.run(filesystem: filesystem, confirmer: cf,
+                                   command_approver: approver_for('echo hi'),
+                                   command: 'rm -rf /', description: nil, timeout: 120)
+
+      assert_equal 'Error: user declined the bash command.', result
+      assert_equal 1, cf.requests.size
+    end
+  end
+
   describe '.run input validation' do
     it 'rejects empty command before consulting the confirmer' do
       cf = build_confirmer # no answers queued

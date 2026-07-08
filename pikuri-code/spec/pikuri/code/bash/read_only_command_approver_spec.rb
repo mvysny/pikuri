@@ -1,35 +1,7 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
-  # Records whether it was consulted and returns a configured answer, so
-  # we can distinguish "auto-approved without asking" from "delegated".
-  class RecordingConfirmer < Pikuri::Workspace::Confirmer
-    attr_reader :calls
-
-    def initialize(answer)
-      super()
-      @answer = answer
-      @calls = []
-    end
-
-    def decide(request:)
-      @calls << request
-      if @answer
-        Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
-      else
-        Pikuri::Workspace::Confirmer::Rejected.new(reason: nil)
-      end
-    end
-  end
-
-  def req(command)
-    Pikuri::Workspace::Confirmer::Request.new(question: 'OK to run bash', detail: "$ #{command}")
-  end
-
-  describe 'auto-approves provably read-only commands' do
-    # These approve regardless of the inner confirmer — proven by wiring
-    # an inner that would say NO and asserting the result is still true
-    # and the inner was never consulted.
+RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
+  describe 'approves provably read-only commands' do
     %w[
       ls
       ls\ -la\ /etc
@@ -83,16 +55,12 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       journalctl\ -k\ --level=err,warn
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner)
-        assert confirmer.confirm?(request: req(cmd)),
-               "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'auto-approves sequencer-joined chains of read-only commands' do
+  describe 'approves sequencer-joined chains of read-only commands' do
     # Every segment is independently a provably read-only invocation, so
     # the composition (&&, ||, ;, |) is read-only too.
     [
@@ -111,16 +79,12 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'cd /etc && cat hostname | wc -l' # mixed operators
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner)
-        assert confirmer.confirm?(request: req(cmd)),
-               "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'auto-approves write-nothing redirects, comments, and newline batches' do
+  describe 'approves write-nothing redirects, comments, and newline batches' do
     [
       'dpkg -S /bin/ls 2>&1',                 # stderr merged to stdout
       'dpkg -S /bin/ls 2>/dev/null',          # stderr discarded
@@ -147,16 +111,12 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
        end).join("\n")
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner)
-        assert confirmer.confirm?(request: req(cmd)),
-               "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'delegates everything not provably read-only' do
+  describe 'does not approve anything not provably read-only' do
     {
       'pipe'                 => 'ls | rm -rf /',
       'semicolon chain'      => 'ls; rm -rf ~',
@@ -203,7 +163,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'apt-get install'      => 'apt-get install ruby', # apt-get not allowlisted at all
       'systemctl enable'     => 'systemctl enable nginx',
       'systemctl daemon-rel' => 'systemctl daemon-reload',
-      'systemctl --root glob'=> 'systemctl --root=/x list-units', # leading global → delegates
+      'systemctl --root glob'=> 'systemctl --root=/x list-units', # leading global → not approved
       # Redirects that actually write: only fd-dup / /dev/null are safe.
       'redirect to file'     => 'cat x 2>/tmp/err',     # arbitrary stderr target
       'stdout to file'       => 'ls > out.txt',         # arbitrary stdout target
@@ -220,7 +180,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'env (runs program)'   => 'env FOO=bar ls',
       # Sequencer segments that are not all provably read-only.
       'chain with mutation'  => 'ls && rm -rf ~',
-      'chain hides git'      => 'cd notes && git diff', # git stays delegated
+      'chain hides git'      => 'cd notes && git diff', # git stays not-approved without allow_git
       'chain hides write'    => 'cd x && tee out',
       'triple-amp'           => 'ls &&& pwd',          # segment "& pwd" has a stray &
       'trailing &&'          => 'ls && ',              # empty trailing segment
@@ -233,31 +193,17 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'pipe then redirect'   => 'ps | grep x > out',   # redirect in last segment
       'pipe into dd'         => 'cat /dev/zero | dd of=x',
       'double-semicolon'     => 'ls ;; pwd',           # empty middle segment
-      'background not seq'   => 'ls & pwd',            # single & not a sequencer; trips metachar
+      'background not seq'    => 'ls & pwd',            # single & not a sequencer; trips metachar
       'pipe-amp (stderr)'    => 'ls |& grep x'         # |& leaves a stray & → metachar
     }.each do |label, cmd|
-      it "delegates: #{label} (#{cmd.inspect})" do
-        inner = RecordingConfirmer.new(true)
-        confirmer = described_class.new(inner)
-        result = confirmer.confirm?(request: req(cmd))
-
-        assert_equal 1, inner.calls.size,
-                     "expected the human to be consulted for #{cmd.inspect}"
-        assert result, 'delegated result should follow the inner confirmer (true here)'
+      it "does not approve: #{label} (#{cmd.inspect})" do
+        refute described_class.new.approves?(cmd), "expected no approval for #{cmd.inspect}"
       end
-    end
-
-    it 'propagates an inner rejection (returns false) when delegating' do
-      inner = RecordingConfirmer.new(false)
-      confirmer = described_class.new(inner)
-      refute confirmer.confirm?(request: req('rm -rf /'))
-      assert_equal 1, inner.calls.size
     end
   end
 
   describe 'with allow_git: true (trusted-repo read-only git)' do
-    # Approved only because the caller asserted repo-config trust; the
-    # human is never consulted (inner would REJECT, proving auto-approval).
+    # Approved only because the caller asserted repo-config trust.
     [
       'git diff',
       'git diff --cached',
@@ -271,15 +217,12 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'git status | wc -l'            # composes with a read-only pipe
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner, allow_git: true)
-        assert confirmer.confirm?(request: req(cmd)), "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new(allow_git: true).approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
     # Trust neutralizes config-execution; it does NOT license destructive
-    # git or config/repo-redirection/--output escapes — these still prompt.
+    # git or config/repo-redirection/--output escapes — these are not approved.
     {
       'reset (destructive)'   => 'git reset --hard',
       'checkout (mutates)'    => 'git checkout .',
@@ -297,29 +240,20 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'diff redirect'         => 'git diff > out',               # metachar, refused first
       'bare git'              => 'git'
     }.each do |label, cmd|
-      it "delegates even with allow_git: #{label} (#{cmd.inspect})" do
-        inner = RecordingConfirmer.new(true)
-        confirmer = described_class.new(inner, allow_git: true)
-        assert confirmer.confirm?(request: req(cmd))
-        assert_equal 1, inner.calls.size, "expected the human to be consulted for #{cmd.inspect}"
+      it "does not approve even with allow_git: #{label} (#{cmd.inspect})" do
+        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
 
-    it 'still auto-approves the plain read-only binaries (git is additive)' do
-      inner = RecordingConfirmer.new(false)
-      confirmer = described_class.new(inner, allow_git: true)
-      assert confirmer.confirm?(request: req('ls -la && cat foo'))
-      assert_empty inner.calls
+    it 'still approves the plain read-only binaries (git is additive)' do
+      assert described_class.new(allow_git: true).approves?('ls -la && cat foo')
     end
   end
 
-  describe 'with allow_git default (false) — git stays delegated' do
+  describe 'with allow_git default (false) — git stays not approved' do
     %w[git\ diff git\ status git\ log].each do |cmd|
-      it "delegates: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(true)
-        confirmer = described_class.new(inner) # allow_git omitted
-        assert confirmer.confirm?(request: req(cmd))
-        assert_equal 1, inner.calls.size
+      it "does not approve: #{cmd.inspect}" do
+        refute described_class.new.approves?(cmd) # allow_git omitted
       end
     end
   end
@@ -327,7 +261,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
   describe 'single-quoted arguments' do
     # A single-quoted span is decoded by real shell quote-removal: the
     # marks drop and the interior is kept verbatim as one literal word,
-    # so a read-only command with a quoted argument auto-approves.
+    # so a read-only command with a quoted argument approves.
     [
       "grep -w 'install'",
       "grep 'foo bar' /etc/hosts",             # quoted whitespace = one word
@@ -339,11 +273,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       "dpkg --get-selections | grep -w 'install' | wc -l" # the reported shape
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner)
-        assert confirmer.confirm?(request: req(cmd)),
-               "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -358,18 +288,14 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       "dmesg empty-pair -C"     => "dmesg ''-C",           # → dmesg -C (short clear)
       "git empty-pair --output" => "git diff --''output=/tmp/x", # → --output (writes a file)
       "quoted command name"     => "'rm' -rf ~",           # → rm, not allowlisted
-      "unbalanced single quote" => "grep 'foo",            # never closes → delegate
+      "unbalanced single quote" => "grep 'foo",            # never closes → not approved
       "ansi-c quote keeps $"    => "echo $'\\n'",          # the $ trips the gate
       "quoted sequencer word"   => "ls' ; 'rm",            # one literal word "ls ; rm"
       "backslash forbidden"     => 'echo a\\;b'            # \\ stays forbidden
     }.each do |label, cmd|
-      it "delegates: #{label} (#{cmd.inspect})" do
-        inner = RecordingConfirmer.new(true)
+      it "does not approve: #{label} (#{cmd.inspect})" do
         # allow_git so the git guard is actually exercised, not gated off.
-        confirmer = described_class.new(inner, allow_git: true)
-        assert confirmer.confirm?(request: req(cmd))
-        assert_equal 1, inner.calls.size,
-                     "expected the human to be consulted for #{cmd.inspect}"
+        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
@@ -377,7 +303,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
   describe 'double-quoted arguments (inert interior only)' do
     # A double-quoted span with none of the POSIX-live bytes ($, backtick,
     # backslash) is literal exactly like a single-quoted one, so the same
-    # real quote-removal applies and the command auto-approves.
+    # real quote-removal applies and the command approves.
     [
       'cat /etc/hostname && echo " bytes"',    # the motivating LLM shape
       'grep "foo bar" /etc/hosts',             # quoted whitespace = one word
@@ -388,93 +314,39 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyAutoConfirmer do
       'dpkg --get-selections | grep -w "install" | wc -l'
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
-        inner = RecordingConfirmer.new(false)
-        confirmer = described_class.new(inner)
-        assert confirmer.confirm?(request: req(cmd)),
-               "expected auto-approval for #{cmd.inspect}"
-        assert_empty inner.calls, "should not consult the human for #{cmd.inspect}"
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
-    # Any POSIX-live byte inside the span → delegate; and quote-smuggled
+    # Any POSIX-live byte inside the span → not approved; and quote-smuggled
     # mutating flags collapse to their true spelling and are caught.
     {
       'parameter expansion'      => 'echo "$HOME"',
       'command substitution'     => 'echo "$(rm -rf ~)"',
       'backtick substitution'    => 'echo "`rm`"',
       'escaped-quote mis-parse'  => 'echo "a\\"b; rm -rf ~"', # \ rejects before the bait quote
-      'harmless-looking escape'  => 'echo "a\\nb"',           # any \ inside "..." delegates
+      'harmless-looking escape'  => 'echo "a\\nb"',           # any \ inside "..." not approved
       'dmesg empty-pair clear'   => 'dmesg --""clear',        # → dmesg --clear (wipes buffer)
       'dmesg mid-token clear'    => 'dmesg --cl"e"ar',        # → dmesg --clear
       'git mid-token --output'   => 'git diff --"output"=/x', # → --output (writes a file)
       'quoted command name'      => '"rm" -rf ~',             # → rm, not allowlisted
-      'unbalanced double quote'  => 'grep "foo'               # never closes → delegate
+      'unbalanced double quote'  => 'grep "foo'               # never closes → not approved
     }.each do |label, cmd|
-      it "delegates: #{label} (#{cmd.inspect})" do
-        inner = RecordingConfirmer.new(true)
+      it "does not approve: #{label} (#{cmd.inspect})" do
         # allow_git so the git guard is actually exercised, not gated off.
-        confirmer = described_class.new(inner, allow_git: true)
-        assert confirmer.confirm?(request: req(cmd))
-        assert_equal 1, inner.calls.size,
-                     "expected the human to be consulted for #{cmd.inspect}"
+        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
 
   describe 'edge cases' do
-    it 'delegates when detail is nil (e.g. a non-Bash request)' do
-      inner = RecordingConfirmer.new(true)
-      confirmer = described_class.new(inner)
-      req = Pikuri::Workspace::Confirmer::Request.new(question: 'OK to overwrite foo?', detail: nil)
-      assert confirmer.confirm?(request: req)
-      assert_equal 1, inner.calls.size
+    it 'does not approve a nil command' do
+      refute described_class.new.approves?(nil)
     end
 
-    it 'delegates an empty command' do
-      inner = RecordingConfirmer.new(true)
-      confirmer = described_class.new(inner)
-      assert confirmer.confirm?(request: req('   '))
-      assert_equal 1, inner.calls.size
-    end
-
-    it 'still classifies when the "$ " echo prefix is absent' do
-      # Robust to a caller that passes the bare command as detail.
-      inner = RecordingConfirmer.new(false)
-      confirmer = described_class.new(inner)
-      bare = Pikuri::Workspace::Confirmer::Request.new(question: 'q', detail: 'ls -la')
-      assert confirmer.confirm?(request: bare)
-      assert_empty inner.calls
-    end
-
-    it 'is itself a Confirmer (duck-types into the seam)' do
-      assert_kind_of Pikuri::Workspace::Confirmer, described_class.new(RecordingConfirmer.new(true))
-    end
-  end
-
-  # bin/pikuri-code wires this wrapper onto Bash (Code::Extension) while
-  # Write/Edit (Workspace::Extension) keep the bare human confirmer. The
-  # asymmetry is the primary guard, but this pins the secondary one: even
-  # if a Write request reached the wrapper, it is never auto-approved —
-  # Write builds a Request with a question and NO detail (see
-  # pikuri-workspace/lib/pikuri/workspace/write.rb), and a nil detail
-  # delegates. So the same wrapper auto-approves a read-only command yet
-  # always defers an overwrite to the human.
-  describe 'shared-confirmer safety (pikuri-code wiring)' do
-    it 'auto-approves a read-only command but defers a Write overwrite' do
-      inner = RecordingConfirmer.new(false) # would REJECT if consulted
-      confirmer = described_class.new(inner)
-
-      # Read-only bash command: auto-approved, human never consulted.
-      assert confirmer.confirm?(request: req('ps aux | grep ssh'))
-      assert_empty inner.calls
-
-      # Write's actual Request shape (overwrite question, nil detail):
-      # delegated, so it follows the (rejecting) inner confirmer.
-      overwrite = Pikuri::Workspace::Confirmer::Request.new(
-        question: 'OK to overwrite lib/foo.rb: 100 → 120 bytes?'
-      )
-      refute confirmer.confirm?(request: overwrite)
-      assert_equal 1, inner.calls.size
+    it 'does not approve an empty / whitespace command' do
+      refute described_class.new.approves?('   ')
+      refute described_class.new.approves?('')
     end
   end
 end

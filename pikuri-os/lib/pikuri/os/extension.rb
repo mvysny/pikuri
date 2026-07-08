@@ -5,7 +5,7 @@ module Pikuri
     # One-call wiring for the offline OS-helper agent. Adding this single
     # extension to an +Agent.new+ block gives the complete surface — the
     # five workspace file tools, +bash+ (net-severable, with the read-only
-    # auto-confirmer), the file-index tools, and the machine grounding +
+    # command approver), the file-index tools, and the machine grounding +
     # +MACHINE.md+ memory folded into the system prompt. The +bin/+ script
     # and the planned TUI / web clients all wire the agent through this one
     # object rather than re-deriving the toolset and confirmation policy.
@@ -22,21 +22,21 @@ module Pikuri
     # == Confirmation policy
     #
     # The caller passes the *human* confirmer (e.g.
-    # {Pikuri::Workspace::Confirmer::TERMINAL}). The file tools get it via
+    # {Pikuri::Workspace::Confirmer::Terminal}). The file tools get it via
     # {Pikuri::Workspace::Extension} with +confirm_all_writes: true+: since
     # this agent roams the full disk (no containment), *every* writable
     # Write/Edit confirms with a diff and an unwritable target
     # short-circuits to "ask the user to sudo" (see {Pikuri::Workspace::WriteGate}
-    # and the guide's ch7). +Bash+ gets the confirmer
-    # wrapped in {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, so provably
-    # read-only commands run without a prompt and everything else still
-    # reaches the human — the conservative half of the confirmation-fatigue
-    # answer. So bash mutations and file-tool writes are on the same page:
-    # both always confirm.
+    # and the guide's ch7). +Bash+ gets that same human confirmer plus a
+    # {Pikuri::Code::Bash::ReadOnlyCommandApprover} as its +command_approver+,
+    # so provably read-only commands run without a prompt and everything else
+    # still reaches the human — the conservative half of the
+    # confirmation-fatigue answer. So bash mutations and file-tool writes are
+    # on the same page: both always confirm.
     #
-    # The wrapper is built with +allow_git: true+, so read-only git verbs
-    # (+status+ / +diff+ / +log+ / +show+ / +blame+ / ...) also auto-approve
-    # — there is no per-repo trust prompt. That is safe here *only because*
+    # The approver is built with +allow_git: true+, so read-only git verbs
+    # (+status+ / +diff+ / +log+ / +show+ / +blame+ / ...) also skip the
+    # prompt — there is no per-repo trust prompt. That is safe here *only because*
     # {Pikuri::Code::Bash} hardens the git subprocess environment
     # ({Pikuri::Code::Bash::GIT_HARDENING}): a hostile repo-local
     # +core.fsmonitor+ is neutralized regardless of what the repo's
@@ -47,7 +47,7 @@ module Pikuri
     # cleanly, and we don't rewrite the model's command to inject
     # +--no-ext-diff+. A plain +git clone+ never copies the remote's
     # config, so the residual is confined to non-clone-delivered repos.
-    # See {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}'s +allow_git:+ yardoc.
+    # See {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
     #
     # == Sandbox
     #
@@ -102,7 +102,8 @@ module Pikuri
                         ))
         c.add_extension(Pikuri::Code::Extension.new(
                           filesystem: @filesystem,
-                          confirmer: Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(@confirmer, allow_git: true),
+                          confirmer: @confirmer,
+                          command_approver: Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: true),
                           sandbox: @sandbox,
                           read_only: @read_only
                         ))

@@ -182,7 +182,7 @@ filesystem = if yolo
                 alias_tmp_to_temp: sandbox_enabled
               )
             end
-confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
+confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::Terminal.new : Pikuri::Workspace::Confirmer::AUTO_APPROVE
 
 # Bash auto-gates provably read-only commands on top of the human
 # confirmer (mirrors pikuri-os/lib/pikuri/os/extension.rb): the frequent
@@ -191,10 +191,10 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # read-only — still reaches the human. Safe even with the sandbox's
 # shared network: no allowlisted binary can write or exfiltrate, so this
 # grants nothing the agent's own non-confirming Read/Grep/Glob don't.
-# The wrap is asymmetric — only Code::Extension (Bash) gets it; Write/Edit
-# (Workspace::Extension below) keep the bare human confirmer, so every
-# overwrite confirms. Wrapping AUTO_APPROVE would be a no-op, so only the
-# confirming branch is wrapped.
+# The gate is asymmetric — only Code::Extension (Bash) gets a
+# command_approver; Write/Edit (Workspace::Extension below) keep the bare
+# human confirmer, so every overwrite confirms. Under --yolo/--no-confirm
+# there is nothing to skip, so no approver is built.
 #
 # Read-only *git* (git diff/status/log/show/…) is gated behind an explicit
 # trust prompt. Bash already hardens the git environment
@@ -210,7 +210,7 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::W
 # already auto-approve everything).
 trusted_repo =
   confirm_enabled && $stdin.tty? &&
-  Pikuri::Workspace::Confirmer::TERMINAL.confirm?(
+  confirmer.confirm?(
     request: Pikuri::Workspace::Confirmer::Request.new(
       question: "Trust this directory's git config? Read-only git " \
                 '(status/diff/log/show/blame/…) will then run WITHOUT confirmation.',
@@ -220,7 +220,7 @@ trusted_repo =
               'code — and with the sandbox network shared, exfiltrate. Default is no.'
     )
   )
-code_confirmer = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer, allow_git: trusted_repo) : confirmer
+code_command_approver = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: trusted_repo) : nil
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
@@ -367,7 +367,8 @@ begin
     c.add_sub_agent_tool Pikuri::Tool::FETCH
     c.add_extension Pikuri::Code::Extension.new(
       filesystem: filesystem,
-      confirmer: code_confirmer,
+      confirmer: confirmer,
+      command_approver: code_command_approver,
       sandbox: sandbox,
       read_only: read_only
     )

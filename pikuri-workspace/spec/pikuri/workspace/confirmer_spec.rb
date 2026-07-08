@@ -291,10 +291,6 @@ RSpec.describe Pikuri::Workspace::Confirmer do
   end
 
   describe 'singleton constants' do
-    it 'TERMINAL is a Terminal instance' do
-      assert_instance_of Pikuri::Workspace::Confirmer::Terminal, Pikuri::Workspace::Confirmer::TERMINAL
-    end
-
     it 'AUTO_APPROVE is an AutoApprove instance' do
       assert_instance_of Pikuri::Workspace::Confirmer::AutoApprove, Pikuri::Workspace::Confirmer::AUTO_APPROVE
     end

@@ -9,9 +9,9 @@ module Pikuri
       # into one word list per *sequencer segment*, or returns +nil+ when
       # it cannot prove the command is such a simple chain. It makes **no
       # read-only judgement** — that policy lives in its caller
-      # ({ReadOnlyAutoConfirmer}, which classifies the word lists this
+      # ({ReadOnlyCommandApprover}, which classifies the word lists this
       # produces). The split here is between *lexing* (this class) and
-      # *authorization* (the confirmer), so a second consumer could reuse
+      # *authorization* (the approver), so a second consumer could reuse
       # the same parse.
       #
       # {.tokenize} either returns +Array<Array<String>>+ — segments

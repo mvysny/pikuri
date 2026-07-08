@@ -534,7 +534,7 @@ per-gem one-liners:
   primitives) — plus `bin/pikuri-os-assistant`. The binary's
   load-bearing posture is `Sandbox::FullFsNoNet` (full disk,
   kernel-severed egress) + confirmed mutations + the read-only
-  bash auto-confirmer with the git arm. Depends on `pikuri-core`
+  bash command approver with the git arm. Depends on `pikuri-core`
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
   See {Pikuri::Os::Extension} and `ideas/os-assistant.md`.

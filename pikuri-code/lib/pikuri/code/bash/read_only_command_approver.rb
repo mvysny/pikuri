@@ -5,20 +5,33 @@ require 'set'
 module Pikuri
   module Code
     class Bash
-      # A {Pikuri::Workspace::Confirmer} decorator that auto-approves
-      # *provably* read-only bash commands and delegates everything else
-      # to a wrapped (human) confirmer. The conservative half of the
-      # OS-helper's answer to confirmation fatigue: the frequent harmless
-      # commands (+ls+, +cat+, +grep+, +df+ …) stop prompting, while every
-      # mutation — and anything it can't prove safe — still reaches the
+      # A predicate over bash command strings: {#approves?} is +true+ iff
+      # the command is *provably* read-only. {Bash} consults it as its
+      # +command_approver:+ — an approved command runs without a
+      # confirmation prompt, while everything else (and anything not
+      # provably safe) falls through to Bash's human {Confirmer}. The
+      # conservative half of the OS-helper's answer to confirmation
+      # fatigue: the frequent harmless commands (+ls+, +cat+, +grep+,
+      # +df+ …) stop prompting, while every mutation still reaches the
       # human. See +ideas/os-assistant.md+.
+      #
+      # It is NOT a {Pikuri::Workspace::Confirmer}: it renders nothing and
+      # only ever *approves or abstains* — a +false+ is not a rejection,
+      # it just means "ask the human". Separating this content
+      # classification from the confirmer is deliberate: a Confirmer's one
+      # job is to resolve a request (a human chrome, or blanket
+      # auto-approve), and it must never parse a command — see
+      # {Pikuri::Workspace::Confirmer}. That split also makes +--yolo+
+      # (blanket {Pikuri::Workspace::Confirmer::AutoApprove}) and read-only
+      # auto-gating (this predicate) independent, composable axes rather
+      # than a single tangled decorator.
       #
       # == Why fatigue is a security concern, not just UX
       #
       # A user who has clicked "yes" forty times this session has stopped
       # reading; the forty-first prompt — the hallucinated or injected one
       # — gets rubber-stamped. Cutting the volume of pointless prompts is
-      # what keeps attention on the prompts that matter. This decorator
+      # what keeps attention on the prompts that matter. This predicate
       # exists to make confirmations *rare and meaningful*.
       #
       # == The decision rule (deny-by-default)
@@ -27,14 +40,14 @@ module Pikuri
       # per *sequencer segment* (+&&+/+||+/+;+/+|+/newline-joined), or
       # +nil+ when it is more than such a simple chain (a metacharacter, an
       # unsafe redirect, an unbalanced quote, too many segments) — in which
-      # case the whole command delegates to the wrapped confirmer. When the
-      # parse succeeds the command auto-approves iff *every* segment is a
-      # provably-read-only simple invocation — both of the following hold,
-      # otherwise it delegates:
+      # case the whole command is not approved (fall through to the human).
+      # When the parse succeeds the command approves iff *every* segment is
+      # a provably-read-only simple invocation — both of the following
+      # hold, otherwise it is not approved:
       #
       # 1. The first word is a *bare* command name — no +/+. +./ls+,
       #    +/tmp/ls+, +bin/ls+ are paths that could point at a planted
-      #    binary, so they delegate; only PATH-resolved bare names
+      #    binary, so they are not approved; only PATH-resolved bare names
       #    (+ls+, +cat+, …) qualify.
       # 2. That bare name is on {READ_ONLY_BINARIES} (or the segment is a
       #    read-only +dpkg+/+apt+/+systemctl+/+dmesg+ query, or — under
@@ -106,13 +119,13 @@ module Pikuri
       # +-E+/+--console-on+ toggle console printing, +-n+/+--console-level+
       # sets it. The read/mutate split is by flag (like +journalctl+, unlike
       # the subcommand-shaped trio above), so {#read_only_dmesg?} recovers it
-      # with a *denylist*: a +dmesg+ invocation auto-approves iff none of its
+      # with a *denylist*: a +dmesg+ invocation approves iff none of its
       # arguments is a mutating flag ({DMESG_MUTATING_SHORT} /
       # {DMESG_MUTATING_LONG}). Bundled short options are caught
-      # character-by-character (+-xC+ contains the +C+ clear, so it
-      # delegates), and a long option's +=value+ tail is stripped before the
-      # lookup (+--console-level=1+ matches +--console-level+); a long form
-      # written spaced (+--console-level 1+) is caught on its flag token.
+      # character-by-character (+-xC+ contains the +C+ clear, so it is
+      # not approved), and a long option's +=value+ tail is stripped before
+      # the lookup (+--console-level=1+ matches +--console-level+); a long
+      # form written spaced (+--console-level 1+) is caught on its flag token.
       # Everything else +dmesg+ does only reads, so the default-on read mode
       # needs no allowlisting — a bare value token (a level name, a glued
       # read-only flag) just passes.
@@ -120,12 +133,12 @@ module Pikuri
       # This is the one deviation from the otherwise-absolute "never
       # auto-approve a destructive command": a denylist's residual is a
       # *future* +dmesg+ mutating flag this set doesn't yet name, which would
-      # auto-approve. It's the same residual shape the git +--output+ check
+      # be approved. It's the same residual shape the git +--output+ check
       # already carries (a future read-verb file-writer flag would slip), and
       # +dmesg+'s mutating surface is small and stable (util-linux), so the
       # residual is accepted; an allowlist of read-only flags would close it
-      # at the cost of delegating every new read flag, which is the inferior
-      # trade here. The guarantee is privilege-independent as before
+      # at the cost of not approving every new read flag, which is the
+      # inferior trade here. The guarantee is privilege-independent as before
       # (+dmesg+ often needs root to *work*, but that's orthogonal to whether
       # the form mutates).
       #
@@ -139,7 +152,7 @@ module Pikuri
       # +--update-catalog+ (catalog index). The read/mutate split is by flag
       # (like +dmesg+, unlike the subcommand-shaped trio above), so
       # {#read_only_journalctl?} recovers it with a *denylist*: a +journalctl+
-      # invocation auto-approves iff none of its arguments is a mutating flag
+      # invocation approves iff none of its arguments is a mutating flag
       # ({JOURNALCTL_MUTATING_LONG}), with a long option's +=value+ tail
       # stripped before the lookup (+--vacuum-time=1s+ matches
       # +--vacuum-time+). Unlike +dmesg+ there is no short companion set —
@@ -150,25 +163,25 @@ module Pikuri
       # stdout is not.
       #
       # Same residual shape as +dmesg+: a *future* journalctl mutating flag
-      # this set doesn't yet name would auto-approve. journalctl's
+      # this set doesn't yet name would be approved. journalctl's
       # maintenance surface is small and stable (systemd), so the residual is
       # accepted; the inverse — an allowlist of read-only flags — would
-      # delegate every new read flag, the inferior trade here.
+      # not approve every new read flag, the inferior trade here.
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
       # Everything above is *unconditional* — it assumes nothing about the
       # repository. +allow_git: true+ relaxes that one notch: it
-      # additionally auto-approves the read-only git verbs
+      # additionally approves the read-only git verbs
       # ({READ_ONLY_GIT_SUBCOMMANDS} — +git diff+/+status+/+log+/+show+ …,
       # with +git diff --cached+ and friends accepted for free, see
       # {#read_only_git?}). Even a bare +git diff+ executes whatever the
       # repo config directs (+core.fsmonitor+, +diff.*.textconv+), so
-      # auto-approving it is only sound when that config-execution vector
+      # approving it is only sound when that config-execution vector
       # is contained.
       #
       # Containment is provided by {Pikuri::Code::Bash}, not by this
-      # decorator: {Pikuri::Code::Bash::GIT_HARDENING} forces
+      # predicate: {Pikuri::Code::Bash::GIT_HARDENING} forces
       # +core.fsmonitor=false+ (and +core.pager=cat+) onto every git
       # subprocess via the +GIT_CONFIG_*+ environment, overriding a hostile
       # repo-local +.git/config+ — so the headline vector (+core.fsmonitor
@@ -198,19 +211,18 @@ module Pikuri
       # PATH hijacking: a bare +ls+ resolves via +$PATH+, so a planted
       # +~/bin/ls+ earlier in +PATH+ would run instead of the system one.
       # Planting requires a prior *confirmed* write, and altering +PATH+
-      # within the same command needs +export+/+;+ (metacharacters →
-      # delegated), so this needs at least one human-approved step; it is
+      # within the same command needs +export+/+;+ (metacharacters → not
+      # approved), so this needs at least one human-approved step; it is
       # not a one-command bypass. Documented, accepted for v1.
       #
       # == Wiring
       #
-      # +Bash.new(confirmer: ReadOnlyAutoConfirmer.new(Confirmer::TERMINAL),
-      # …)+. The decorator only auto-approves; it never *rejects* on its
-      # own, so wrapping the terminal confirmer is always safe. It keys off
-      # {Pikuri::Workspace::Confirmer::Request#detail}, which {Bash} sets to
-      # +"$ <command>"+; a +nil+/other +detail+ (e.g. {Write}'s) simply
-      # delegates.
-      class ReadOnlyAutoConfirmer < Pikuri::Workspace::Confirmer
+      # +Bash.new(command_approver: ReadOnlyCommandApprover.new, …)+ (or
+      # +.new(allow_git: true)+). {Bash} passes {#approves?} the raw
+      # command string; a non-command tool never consults this predicate at
+      # all, so — unlike the old confirmer-decorator shape — there is no
+      # cross-tool coupling to reason about.
+      class ReadOnlyCommandApprover
         # Binaries that are read-only in *every* argument form (no
         # mutating mode reachable, with or without root). See the class
         # header for the curation principle and notable exclusions.
@@ -219,12 +231,12 @@ module Pikuri
         # binaries; the classifier only string-matches the first token,
         # so they slot in cleanly. None has a destructive form. +cd+ is
         # meaningful only inside a sequencer chain (+cd notes && ls+); a
-        # bare +cd+ alone auto-approves harmlessly, changing the dir of a
+        # bare +cd+ alone approves harmlessly, changing the dir of a
         # subshell that immediately exits. +true+/+false+ are pure
         # exit-status no-ops — their value is the ubiquitous +cmd || true+
         # idiom that swallows a probe's failure (+dpkg -S x || true+), so
         # the +true+ tail-segment must classify as read-only for the whole
-        # chain to auto-approve.
+        # chain to approve.
         READ_ONLY_BINARIES = Set[
           'cd', 'true', 'false',
           'ls', 'cat', 'tac', 'nl', 'head', 'tail', 'wc',
@@ -245,12 +257,12 @@ module Pikuri
         # +systemctl+ subcommands with no mutating form — the only
         # +systemctl+ invocations {#read_only_systemctl?} accepts (and,
         # like dpkg/apt, the verb must appear *immediately* after
-        # +systemctl+, so a leading global such as +--root=/x+ delegates).
-        # Deliberately excludes every state mutator (+start+/+stop+/
-        # +restart+/+reload+/+enable+/+disable+/+mask+/+unmask+/+isolate+/
-        # +kill+/+daemon-reload+/+set-default+/+reset-failed+/+edit+).
-        # These only read unit/job state; +systemctl+ pages output solely
-        # on a tty, and {Bash} captures stdout (a pipe), so the pager
+        # +systemctl+, so a leading global such as +--root=/x+ is not
+        # approved). Deliberately excludes every state mutator (+start+/
+        # +stop+/+restart+/+reload+/+enable+/+disable+/+mask+/+unmask+/
+        # +isolate+/+kill+/+daemon-reload+/+set-default+/+reset-failed+/
+        # +edit+). These only read unit/job state; +systemctl+ pages output
+        # solely on a tty, and {Bash} captures stdout (a pipe), so the pager
         # never spawns — the one exec vector is closed by the wiring, not
         # this set.
         READ_ONLY_SYSTEMCTL_SUBCOMMANDS = Set[
@@ -262,7 +274,7 @@ module Pikuri
         # +dpkg+ action flags with no mutating form — the only +dpkg+
         # invocations {#read_only_dpkg?} accepts. Each must appear
         # immediately after +dpkg+ (so a leading +--admindir+/+--root+
-        # redirection delegates). +--get-selections+ dumps the
+        # redirection is not approved). +--get-selections+ dumps the
         # selection state and is the read-side sibling of the excluded
         # +--set-selections+. Deliberately excludes every database
         # mutator (+-i+/+--install+, +-r+/+--remove+, +-P+/+--purge+,
@@ -276,9 +288,9 @@ module Pikuri
         # +apt+ subcommands that only query the package cache — the only
         # +apt+ invocations {#read_only_apt?} accepts. Each must appear
         # immediately after +apt+ (so a leading +-o Foo=bar+ config
-        # injection delegates). These run no pre/post-invoke hooks — those
-        # fire only on the mutating verbs (+install+/+remove+/+update+/
-        # +upgrade+/+purge+/+autoremove+), which are excluded.
+        # injection is not approved). These run no pre/post-invoke hooks —
+        # those fire only on the mutating verbs (+install+/+remove+/
+        # +update+/+upgrade+/+purge+/+autoremove+), which are excluded.
         READ_ONLY_APT_SUBCOMMANDS = Set[
           'search', 'show', 'list', 'policy', 'depends', 'rdepends'
         ].freeze
@@ -329,10 +341,7 @@ module Pikuri
           '--setup-keys', '--update-catalog'
         ].freeze
 
-        # @param inner [Pikuri::Workspace::Confirmer] the confirmer to
-        #   delegate to whenever a command is not provably read-only
-        #   (typically {Pikuri::Workspace::Confirmer::TERMINAL}).
-        # @param allow_git [Boolean] when +true+, additionally auto-approve
+        # @param allow_git [Boolean] when +true+, additionally approve
         #   read-only git invocations ({#read_only_git?}). Default +false+.
         #   Sound only when paired with {Pikuri::Code::Bash}'s git
         #   environment hardening ({Pikuri::Code::Bash::GIT_HARDENING}),
@@ -340,37 +349,21 @@ module Pikuri
         #   caller accepts the narrow diff-driver residual (see the class
         #   header). +bin/pikuri-code+ gates this behind a startup trust
         #   prompt; +pikuri-os+ enables it unconditionally.
-        def initialize(inner, allow_git: false)
-          super()
-          @inner = inner
+        def initialize(allow_git: false)
           @allow_git = allow_git
         end
 
-        # @param request [Pikuri::Workspace::Confirmer::Request]
-        # @return [Pikuri::Workspace::Confirmer::Approved,
-        #   Pikuri::Workspace::Confirmer::Rejected] an {Approved} carrying
-        #   the command unchanged for a provably read-only command;
-        #   otherwise the wrapped confirmer's own decision (so its edit /
-        #   reason flow through — this decorator only *adds* auto-approvals,
-        #   it never rejects on its own).
-        def decide(request:)
-          return Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail) if read_only?(request.detail)
-
-          @inner.decide(request: request)
-        end
-
-        private
-
-        # @param detail [String, nil] the request detail; {Bash} sets it
-        #   to +"$ <command>"+.
+        # @param command [String, nil] the raw bash command string (as
+        #   {Bash} received it — no +"$ "+ echo decoration).
         # @return [Boolean] whether the command {Tokenizer.tokenize}s into a
         #   sequencer-joined chain in which every segment is a provably
         #   read-only simple invocation ({#segment_read_only?}). A +nil+
-        #   parse (more than a simple chain) is not read-only.
-        def read_only?(detail)
-          return false if detail.nil?
+        #   parse (more than a simple chain), a +nil+/empty command, is not
+        #   approved.
+        def approves?(command)
+          return false if command.nil?
 
-          command = detail.sub(/\A\$ /, '').strip
+          command = command.strip
           return false if command.empty?
 
           segments = Tokenizer.tokenize(command)
@@ -378,6 +371,8 @@ module Pikuri
 
           segments.all? { |words| segment_read_only?(words) }
         end
+
+        private
 
         # @param words [Array<String>] one segment's words from
         #   {Tokenizer} (+[]+ for a comment no-op).
@@ -387,7 +382,7 @@ module Pikuri
         #   +allow_git:+ — a read-only git invocation), or an empty (comment)
         #   segment.
         #   A first word containing +/+ is a path that could point at a
-        #   planted binary, so it delegates.
+        #   planted binary, so it is not approved.
         def segment_read_only?(words)
           return true if words.empty?
 

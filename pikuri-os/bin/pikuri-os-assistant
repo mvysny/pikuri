@@ -82,7 +82,7 @@ end
 # launch dir is the intuitive anchor; absolute paths reach everywhere).
 filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: [])
 
-confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::TERMINAL : Pikuri::Workspace::Confirmer::AUTO_APPROVE
+confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::Terminal.new : Pikuri::Workspace::Confirmer::AUTO_APPROVE
 
 # Default sandbox: FullFsNoNet — binds / read-write (full host control)
 # but unshares the network namespace, so bash cannot exfiltrate. This is

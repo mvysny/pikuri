@@ -189,7 +189,7 @@ as a guarantee:
   downstream of every defense in this document. Restated from the
   code-trust section because it's the load-bearing trust choice.
 - **Permission prompts are UX, not isolation.** The
-  `Workspace::Confirmer::TERMINAL` prompts on `Write` / `Bash`
+  `Workspace::Confirmer::Terminal` prompts on `Write` / `Bash`
   reduce honest mistakes; they do not stop a determined or injected
   call once the user has approved sticky permissions. (Borrowed
   framing from opencode's `SECURITY.md`, which puts this same line

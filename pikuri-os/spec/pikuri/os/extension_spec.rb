@@ -86,22 +86,26 @@ RSpec.describe Pikuri::Os::Extension do
       end
     end
 
-    it 'gives Bash a ReadOnlyAutoConfirmer wrapping the human confirmer, with allow_git on (Write keeps the human one)' do
+    it 'gives Bash the human confirmer plus a ReadOnlyCommandApprover with allow_git on (Write keeps the human one)' do
       with_singleton(Pikuri::Os::LocalSearch, :available?) do
         with_singleton(Pikuri::Os::LocalSearch, :check_binaries!) do
-          with_singleton(Pikuri::Code::Bash::ReadOnlyAutoConfirmer, :new) do |orig|
+          with_singleton(Pikuri::Code::Bash, :new) do |orig|
             stub_localsearch_available(true)
-            captured = nil
-            captured_allow_git = nil
-            Pikuri::Code::Bash::ReadOnlyAutoConfirmer.define_singleton_method(:new) do |inner, allow_git: false|
-              captured = inner
-              captured_allow_git = allow_git
-              orig.call(inner, allow_git: allow_git)
+            captured_confirmer = nil
+            captured_approver = nil
+            Pikuri::Code::Bash.define_singleton_method(:new) do |**kwargs|
+              captured_confirmer = kwargs[:confirmer]
+              captured_approver  = kwargs[:command_approver]
+              orig.call(**kwargs)
             end
 
             configure!(build_configurator)
-            assert_same human, captured, 'Bash should be gated by a ReadOnlyAutoConfirmer over the human confirmer'
-            assert captured_allow_git, 'pikuri-os enables allow_git: true (read-only git auto-approves, backed by Bash env hardening)'
+            assert_same human, captured_confirmer,
+                        'Bash should get the bare human confirmer, not a wrapper'
+            assert_instance_of Pikuri::Code::Bash::ReadOnlyCommandApprover, captured_approver
+            assert captured_approver.approves?('git status'),
+                   'pikuri-os enables allow_git: true, so read-only git skips the prompt ' \
+                   '(backed by Bash env hardening)'
           end
         end
       end

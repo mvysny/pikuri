@@ -31,7 +31,7 @@ require 'pikuri-core'
 require 'pikuri-workspace'
 
 workspace = Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd)
-confirmer = Pikuri::Workspace::Confirmer::TERMINAL
+confirmer = Pikuri::Workspace::Confirmer::Terminal.new
 
 agent = Pikuri::Agent.new(
   transport: ...,

@@ -149,7 +149,7 @@ filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, 
 `~/.ssh`, `~/.aws`, `/etc/shadow` and friends. This agent passes
 `denylist: []` to drop it. That looks alarming until you notice `bash`,
 running as you, could already `cat ~/.ssh/id_rsa` — and the read-only
-auto-confirmer below even waves `cat` through with no prompt. A
+command approver below even waves `cat` through with no prompt. A
 read-block on the file tools that `bash` sidesteps for free isn't a
 boundary; it's theatre, and it also blinds the agent to the very config
 files it's here to help you fix. So the honest move is to make the tools
@@ -177,7 +177,7 @@ bytes), the confirmer shows you an exact **diff** of what's about to
 change, not a bare "OK to write?". The binary wires the terminal one:
 
 ```ruby
-confirmer = Pikuri::Workspace::Confirmer::TERMINAL
+confirmer = Pikuri::Workspace::Confirmer::Terminal.new
 ```
 
 Two details make this pull its weight on a full-disk agent:
@@ -208,7 +208,7 @@ throwaway-box only.)
 You'll see this fire first not on a destructive command but on the
 agent editing its own memory file, which is the next section.
 
-## Confirmation fatigue — the read-only auto-confirmer
+## Confirmation fatigue — the read-only command approver
 
 "Confirm every command" is right for changes and *miserable* for the
 constant harmless reads (`ls`, `cat`, `journalctl`, `df`). And the
@@ -217,13 +217,22 @@ clicked "yes" forty times this session has stopped reading; the
 forty-first prompt, the injected one, gets rubber-stamped. Cutting
 fatigue *is* security work.
 
-So `bash` isn't handed the human confirmer directly. It's wrapped:
+So alongside the human confirmer, `bash` gets a separate *command
+approver* — a predicate answering one question, "is this command
+provably read-only?":
 
 ```ruby
-Pikuri::Code::Bash::ReadOnlyAutoConfirmer.new(confirmer, allow_git: true)
+Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: true)
 ```
 
-This is a `Confirmer` decorator. It auto-approves a command **only**
+This is deliberately **not** a `Confirmer`. A confirmer's one job is to
+ask a human, and it never inspects what a command *does*; deciding
+whether a command is safe enough to skip the prompt is a different
+concern, so it's a different object. `bash` consults the approver first
+and only falls through to the human confirmer for whatever it can't
+vouch for. (Keeping the two apart also means `--yolo` — a blanket
+auto-approving confirmer — and this read-only skip are independent
+knobs, not one tangled class.) It approves a command **only**
 when every part of it is a single invocation whose binary is on a tight
 read-only allowlist (`ls cat head tail wc grep df du free ps uptime …`,
 plus `|`/`&&`/`;`-joined chains of such), with no command substitution,
@@ -368,8 +377,8 @@ end
 ```
 
 `Os::Extension` is a composite: it adds `Workspace::Extension` (the
-five file tools) and `Code::Extension` (`bash`, wrapped in the
-read-only auto-confirmer), then layers on the `fileindex_*` tools, the
+five file tools) and `Code::Extension` (`bash`, with the
+read-only command approver), then layers on the `fileindex_*` tools, the
 grounding block, and the `MACHINE.md` section. The binary doesn't
 re-derive any of that — and neither will the TUI or web client that
 wire the same object later.
@@ -566,7 +575,7 @@ quarantined researcher — the coding agent keeps the network in the
 parent's own hands (a build needs it) and confines the disk instead:
 `Bubblewrap` in place of `FullFsNoNet`, a project-rooted `Workspace`
 in place of `AllowAll`. Same `Confirmer`, same `bash`, same
-read-only auto-confirmer (now with the git hardening unpacked). Same
+read-only command approver (now with the git hardening unpacked). Same
 adversary, opposite trifecta leg — and now in a developer's hands,
 with read-only recon sub-agents on top. The threat-model accounting
 for both shapes is [chapter 9 — security

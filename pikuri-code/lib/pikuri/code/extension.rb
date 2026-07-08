@@ -106,11 +106,19 @@ module Pikuri
       #   {Pikuri::Workspace::Extension}). When present, the plan-mode
       #   tools + prompt + reminder + event are wired; +nil+ leaves plan
       #   mode unavailable.
-      def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE, read_only: nil)
-        @filesystem = filesystem
-        @confirmer  = confirmer
-        @sandbox    = sandbox
-        @read_only  = read_only
+      # @param command_approver [#approves?, nil] optional read-only
+      #   pre-approval predicate handed to {Bash}
+      #   ({Bash::ReadOnlyCommandApprover}); commands it vouches for run
+      #   without a confirmation prompt. +nil+ (default) confirms every
+      #   command. Applies to Bash only — the plan-mode +exit_plan_mode+
+      #   gate always uses the bare +confirmer+.
+      def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE, read_only: nil,
+                     command_approver: nil)
+        @filesystem       = filesystem
+        @confirmer        = confirmer
+        @sandbox          = sandbox
+        @read_only        = read_only
+        @command_approver = command_approver
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -122,7 +130,8 @@ module Pikuri
           end
         end
 
-        c.add_tool Bash.new(filesystem: @filesystem, confirmer: @confirmer, sandbox: @sandbox)
+        c.add_tool Bash.new(filesystem: @filesystem, confirmer: @confirmer, sandbox: @sandbox,
+                            command_approver: @command_approver)
 
         # Plan mode rides the host-owned read-only flag; only wire its
         # tools when one was supplied (see the class header). The prompt

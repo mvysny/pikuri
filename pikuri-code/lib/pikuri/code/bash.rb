@@ -105,7 +105,7 @@ module Pikuri
       # subprocess, threaded in via {.git_hardening_delta}. These exist
       # because even a *read-only* git command (+git status+ / +diff+ /
       # +show+ ...) executes whatever the repo's config directs, and the
-      # +ReadOnlyAutoConfirmer+ auto-approves those verbs — so on an
+      # +ReadOnlyCommandApprover+ approves those verbs — so on an
       # unsandboxed or full-RW agent a hostile repo-local +.git/config+
       # would be an unconfirmed RCE the moment the model runs +git diff+.
       #
@@ -129,7 +129,7 @@ module Pikuri
       # execution remains a documented residual, reachable only via a
       # repo whose +.git/config+ an attacker wrote (a plain +git clone+
       # never copies the remote's config) — see
-      # {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}'s +allow_git:+ yardoc
+      # {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc
       # and +ideas/os-assistant.md+.
       #
       # @return [Array<Array(String, String)>] +[key, value]+ pairs.
@@ -177,7 +177,14 @@ module Pikuri
       #   individual arguments — the +command+ string is opaque shell
       #   syntax.
       # @param confirmer [Pikuri::Workspace::Confirmer] consulted before
-      #   every command.
+      #   every command that +command_approver+ does not pre-approve.
+      # @param command_approver [#approves?, nil] optional predicate over
+      #   the raw command string ({ReadOnlyCommandApprover}); a +true+
+      #   verdict runs the command with no confirmation prompt, +false+
+      #   (and the +nil+ default) falls through to +confirmer+. This is the
+      #   read-only-auto-gate seam, kept separate from the confirmer so
+      #   "how to ask" ({Confirmer}) and "what may skip asking" (this
+      #   predicate) stay independent, composable axes.
       # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam
       #   (default {Sandbox::NONE} — identity passthrough). Pass
       #   {Sandbox::Bubblewrap.new(filesystem: filesystem)+} for an
@@ -187,7 +194,7 @@ module Pikuri
       # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+;
       #   fail-loud at construction rather than the first tool call.
       # @return [Bash]
-      def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE)
+      def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE, command_approver: nil)
         Bash.send(:check_binaries!)
         # Capability advisory when no sandbox is in play. Without a
         # sandbox, +bash+ runs with pikuri's own UID + filesystem view —
@@ -220,6 +227,7 @@ module Pikuri
           },
           execute: ->(command:, description: nil, timeout: DEFAULT_TIMEOUT) {
             Bash.run(filesystem: filesystem, confirmer: confirmer, sandbox: sandbox,
+                     command_approver: command_approver,
                      command: command, description: description, timeout: timeout)
           }
         )
@@ -234,24 +242,32 @@ module Pikuri
       # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv;
       #   {Sandbox::NONE} for identity passthrough,
       #   {Sandbox::Bubblewrap} for filesystem isolation.
+      # @param command_approver [#approves?, nil] optional read-only
+      #   pre-approval predicate; when it approves the command, execution
+      #   proceeds with no confirmation prompt. See {#initialize}.
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
       # @return [String]
-      def self.run(filesystem:, confirmer:, command:, description:, timeout:, sandbox: Sandbox::NONE)
+      def self.run(filesystem:, confirmer:, command:, description:, timeout:,
+                   sandbox: Sandbox::NONE, command_approver: nil)
         return 'Error: empty bash command.' if command.strip.empty?
         return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
 
-        request = compose_request(command: command, description: description, timeout: timeout)
-        case confirmer.decide(request: request)
-        in Pikuri::Workspace::Confirmer::Rejected(reason:)
-          msg = +'Error: user declined the bash command.'
-          msg << " Reason: #{reason}" if reason && !reason.empty?
-          return msg
-        in Pikuri::Workspace::Confirmer::Approved
-          # fall through to execution (the command is non-editable, so the
-          # approved detail is the same command we already hold)
+        # A command the approver vouches for (provably read-only) runs
+        # without a prompt; everything else is confirmed by the human.
+        unless command_approver&.approves?(command)
+          request = compose_request(command: command, description: description, timeout: timeout)
+          case confirmer.decide(request: request)
+          in Pikuri::Workspace::Confirmer::Rejected(reason:)
+            msg = +'Error: user declined the bash command.'
+            msg << " Reason: #{reason}" if reason && !reason.empty?
+            return msg
+          in Pikuri::Workspace::Confirmer::Approved
+            # fall through to execution (the command is non-editable, so the
+            # approved detail is the same command we already hold)
+          end
         end
 
         argv = sandbox.wrap([
