@@ -20,8 +20,9 @@ module Pikuri
     #
     # Stateless module (composition, not a base class): both tools call
     # {.check} and return immediately on a non-nil result. In the default
-    # posture (+confirm_all_writes: false+) neither tool calls this — Write
-    # keeps its overwrite-only confirm, Edit stays promptless.
+    # posture neither tool calls this — {Write} keeps its overwrite-only
+    # confirm (its +confirm_all_writes: false+), {Edit} stays promptless
+    # (no confirmer passed).
     module WriteGate
       module_function
 

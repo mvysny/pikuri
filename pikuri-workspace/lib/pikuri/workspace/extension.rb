@@ -59,12 +59,14 @@ module Pikuri
       # @param read_only [ReadOnly, nil] when set, threaded into {Edit}
       #   and {Write} so they refuse while it is active; +nil` (default)
       #   leaves the gate off. See "Read-only gate".
-      # @param confirm_all_writes [Boolean] threaded into {Write} and
-      #   {Edit}: when +true+ (the full-disk OS-helper posture) every
-      #   writable write/edit confirms with a diff and unwritable targets
-      #   short-circuit; +false+ (default) keeps the classic policy (Write
-      #   confirms overwrites only, Edit stays promptless). See the
-      #   guide's ch7.
+      # @param confirm_all_writes [Boolean] the host's write posture: when
+      #   +true+ (the full-disk OS-helper posture) every writable write/edit
+      #   confirms with a diff and unwritable targets short-circuit;
+      #   +false+ (default) keeps the classic policy (Write confirms
+      #   overwrites only, Edit stays promptless). {Write} takes this flag
+      #   directly; {Edit} has no such flag — it infers the posture from
+      #   whether a confirmer was passed (see {Edit}), so this reaches Edit
+      #   as +confirmer+-or-+nil+. See the guide's ch7.
       def initialize(filesystem:, confirmer:, read_only: nil, confirm_all_writes: false)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer
@@ -90,8 +92,12 @@ module Pikuri
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Grep.new(workspace: @workspace)
         c.add_tool Glob.new(workspace: @workspace)
+        # Edit takes no posture flag: a non-nil confirmer *is* its
+        # confirm-all-writes posture (see {Edit}). So the host's
+        # +confirm_all_writes+ choice reaches Edit as confirmer-or-nil —
+        # promptless default, diff-confirmed under the OS-helper posture.
         c.add_tool Edit.new(workspace: @workspace, read_only: @read_only,
-                            confirmer: @confirmer, confirm_all_writes: @confirm_all_writes)
+                            confirmer: @confirm_all_writes ? @confirmer : nil)
         c.add_tool Write.new(workspace: @workspace, confirmer: @confirmer,
                              read_only: @read_only, confirm_all_writes: @confirm_all_writes)
         nil

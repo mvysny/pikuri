@@ -5,28 +5,33 @@ module Pikuri
     # The +edit+ tool — exact-string replacement on an existing file.
     # Instantiating +Edit.new(workspace: ws)+ produces a tool whose
     # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
-    # tool's. Same shape as {Read} (workspace captured by +execute+; no
-    # confirmer needed).
+    # tool's. In its default (promptless) form it takes the same lone
+    # +workspace:+ as {Read}; an optional +confirmer:+ turns on
+    # diff-confirmation (see "Confirmer is optional" below).
     #
-    # == Why no confirmer
+    # == Confirmer is optional (and self-describing)
     #
-    # Two guards bound an Edit's blast radius, so it runs without a
-    # prompt. First, the explicit read-before-edit gate: +.edit+ refuses
-    # a path the {Workspace}'s read record hasn't recorded as read this
-    # conversation (via {Read}), so an edit can't land on a file the
-    # model never opened. Second, the +old_string+ argument is itself an implicit
-    # read-check — the model can't supply a correct +old_string+ for
-    # bytes it hasn't seen — so even within a read file the change is
-    # pinned to content the model actually has. By contrast, {Write}
-    # requires a confirmer because a hallucinated 500-line +content+
-    # could clobber unread bytes (and Write now shares the same
-    # read-before-overwrite gate as a second line).
+    # Constructed with no +confirmer:+ (the default), Edit runs without a
+    # prompt, because two guards bound its blast radius. First, the
+    # explicit read-before-edit gate: +.edit+ refuses a path the
+    # {Workspace}'s read record hasn't recorded as read this conversation
+    # (via {Read}), so an edit can't land on a file the model never
+    # opened. Second, the +old_string+ argument is itself an implicit
+    # read-check — the model can't supply a correct +old_string+ for bytes
+    # it hasn't seen — so even within a read file the change is pinned to
+    # content the model actually has. By contrast, {Write} *always* takes a
+    # confirmer because a hallucinated 500-line +content+ could clobber
+    # unread bytes (Write shares the same read-before-overwrite gate as a
+    # second line).
     #
-    # This governs the *default* wiring. A wiring that opts into
-    # +confirm_all_writes:+ (the OS-helper posture) does confirm every
-    # writable edit with a diff via {WriteGate} — the two guards above are
-    # why the default can safely stay promptless, not a claim that Edit
-    # can never confirm. See the guide's ch7.
+    # Handing Edit a +confirmer:+ opts it into the confirm-all-writes
+    # posture (the OS-helper wiring; the guide's ch7 walks it): every
+    # writable edit then confirms with a diff via {WriteGate}, and an
+    # unwritable target short-circuits to "ask the user to sudo". So the
+    # confirmer's presence *is* the posture — no separate flag — which is
+    # what lets the ctor make sense on its own: a confirmer means "confirm
+    # edits", its absence means "don't". The two guards above are why the
+    # promptless default is safe, not a claim that Edit can never confirm.
     #
     # == Matching is strict (no fuzz cascade)
     #
@@ -106,17 +111,14 @@ module Pikuri
       #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
       #   +nil+ (the default) disables the gate, so non-gated wirings are
       #   unchanged.
-      # @param confirmer [Confirmer, nil] consulted only under
-      #   +confirm_all_writes:+ (below); +nil+ (default) when the wiring
-      #   doesn't confirm edits.
-      # @param confirm_all_writes [Boolean] when +true+ (the OS-helper
-      #   posture), every writable edit confirms with a diff via
-      #   {WriteGate} and an unwritable target short-circuits to "ask the
-      #   user to sudo". When +false+ (default) Edit stays promptless —
-      #   bounded by the read-before-edit gate + the +old_string+
-      #   content-check (see "Why no confirmer").
+      # @param confirmer [Confirmer, nil] when non-nil, opts Edit into the
+      #   confirm-all-writes posture (the OS-helper wiring): every writable
+      #   edit confirms with a diff via {WriteGate} and an unwritable target
+      #   short-circuits to "ask the user to sudo". +nil+ (the default)
+      #   keeps Edit promptless — bounded by the read-before-edit gate + the
+      #   +old_string+ content-check (see "Confirmer is optional").
       # @return [Edit]
-      def initialize(workspace:, read_only: nil, confirmer: nil, confirm_all_writes: false)
+      def initialize(workspace:, read_only: nil, confirmer: nil)
         super(
           name: 'edit',
           description: DESCRIPTION,
@@ -140,8 +142,7 @@ module Pikuri
           },
           execute: ->(path:, old_string:, new_string:, replace_all: false) {
             Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
-                      confirm_all_writes: confirm_all_writes, path: path,
-                      old_string: old_string, new_string: new_string,
+                      path: path, old_string: old_string, new_string: new_string,
                       replace_all: replace_all)
           }
         )
@@ -160,13 +161,11 @@ module Pikuri
       #   replaced; when false (default) multiple matches are an error
       # @param read_only [ReadOnly, nil] read-only gate; see
       #   {#initialize}. Defaults to +nil+ for direct callers (specs).
-      # @param confirmer [Confirmer, nil] see {#initialize}; used only
-      #   under +confirm_all_writes+. Defaults to +nil+.
-      # @param confirm_all_writes [Boolean] see {#initialize}. Defaults to
-      #   +false+ for direct callers (specs).
+      # @param confirmer [Confirmer, nil] see {#initialize}; when non-nil
+      #   every writable edit confirms with a diff. Defaults to +nil+.
       # @return [String] tool observation
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
-                    read_only: nil, confirmer: nil, confirm_all_writes: false)
+                    read_only: nil, confirmer: nil)
         return "Error: cannot edit #{path} — #{read_only.message}" if read_only&.active?
 
         return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?
@@ -215,7 +214,7 @@ module Pikuri
 
         final = crlf ? new_content.gsub("\n", "\r\n") : new_content
 
-        if confirm_all_writes
+        if confirmer
           gate = WriteGate.check(
             confirmer: confirmer, path: path, resolved: resolved,
             question: "OK to edit #{path} (#{replaced} occurrence#{replaced == 1 ? '' : 's'})?",

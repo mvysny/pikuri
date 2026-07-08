@@ -385,7 +385,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
   end
 
-  describe '.edit confirm_all_writes' do
+  describe '.edit with a confirmer (confirm-all-writes posture)' do
     def deciding(decision)
       requests = []
       c = Object.new
@@ -404,7 +404,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'confirms with a diff payload (old=file, new=result) and writes on approve' do
       write_file('a.txt', "one\ntwo\n")
       cf = deciding(:approve)
-      result = described_class.edit(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+      result = described_class.edit(workspace: workspace, confirmer: cf,
                                     path: 'a.txt', old_string: 'two', new_string: 'TWO',
                                     replace_all: false)
       assert_equal 'Edited a.txt: replaced 1 occurrence.', result
@@ -417,7 +417,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'declines with a reason and leaves the file unchanged' do
       write_file('a.txt', "one\ntwo\n")
       cf = deciding('leave it as is')
-      result = described_class.edit(workspace: workspace, confirmer: cf, confirm_all_writes: true,
+      result = described_class.edit(workspace: workspace, confirmer: cf,
                                     path: 'a.txt', old_string: 'two', new_string: 'TWO',
                                     replace_all: false)
       assert_includes result, 'leave it as is'
