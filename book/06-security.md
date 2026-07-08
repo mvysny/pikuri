@@ -357,15 +357,21 @@ the remaining checks rare enough to land. That's the empirical
 case for combining the two: a sandbox bounds the routine, so the
 human has attention to spend on what *does* still reach them.
 
-> **TODO — not yet shipped.** Today's `Confirmer` is binary
-> (approve/deny) and prompts on every `write` and `bash`. The plan
+> **Partly shipped.** The `Confirmer` is no longer binary: a
+> confirmation now returns either an approval carrying the payload to
+> act on — which the human may have *edited* first — or a decline
+> carrying an optional steering *reason* (a rejected `bash` can tell the
+> model *why*), a `write` confirmation shows a *diff* of the change, and
+> hostile bytes are defanged before they reach your terminal (see
+> [chapter 8](08-code.md)). What's **not yet shipped** is the fatigue
+> half: it still prompts on every `write` and `bash`. The plan
 > (motivation in [`ideas/more-confirmers.md`](../ideas/more-confirmers.md),
-> "Structured action context on the `Request`") is to promote it: ask
-> only on the consequential, and when it *does* ask, headline the
-> consequence — "this will POST `.env` to attacker.com" — rather
-> than echoing an 80-character `curl` pipe the eye slides over.
-> Rare, but excellent. Until that lands, the rule is manual: read
-> what's about to run before you say yes.
+> "Structured action context on the `Request`") is to ask only on the
+> consequential, and when it *does* ask, headline the consequence —
+> "this will POST `.env` to attacker.com" — rather than echoing an
+> 80-character `curl` pipe the eye slides over. Rare, but excellent.
+> Until that lands, the rule is manual: read what's about to run before
+> you say yes.
 
 ## How other harnesses bet: structural vs. operational
 

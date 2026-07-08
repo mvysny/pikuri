@@ -2,18 +2,24 @@
 
 Status: **partly shipped, rest brainstorm.** Staging area for the
 human-in-the-loop confirmer ideas surfaced while scoping web access for
-`pikuri-os`. **Shipped:** all web quarantined in the `RESEARCHER`
-sub-agent (no filesystem), reached via the `agent` tool, gated on the
-task prompt before dispatch — `SubAgent::Extension.new(personas:,
-confirmer:)` (see [`os-assistant.md`](os-assistant.md) §"Internet
-access"). That gate is now the **full author seat**: `Confirmer#ask`
-returns `Approved(new_request_detail)` / `Rejected(reason)`, the task is
-offered `editable: true` so the human *rewrites* rather than
-rubber-stamps, and a decline carries an optional **reject-reason** back
-to the model as steering — a channel wired into `Bash` too (see
-"Task-prompt gate" below). **Still open** (this file): the URL confirmers
-for an LLM-driven `fetch`, and the ingest-axis output gate. Drain into
-source + `book/` as pieces graduate.
+`pikuri-os`. **Shipped and graduated — no longer detailed here:** all web
+quarantined in the `RESEARCHER` sub-agent (no filesystem), reached via
+the `agent` tool, gated on the task prompt before dispatch —
+`SubAgent::Extension.new(personas:, confirmer:)` (see
+[`os-assistant.md`](os-assistant.md) §"Internet access"). That gate is
+now the **full author seat**: `Confirmer#ask` returns
+`Approved(new_request_detail)` / `Rejected(reason)`, the task is offered
+`editable: true` so the human *rewrites* rather than rubber-stamps, and a
+decline carries an optional **reject-reason** back to the model as
+steering (a channel wired into `Bash` too). The worked-out design has
+moved to its permanent homes: {Pikuri::Workspace::Confirmer} and
+{Pikuri::Workspace::Confirmer::Terminal} own the per-symbol rationale
+(the `#ask` return type, the edit/reason axes, the still-rejected
+`:once/:always` fatigue knob, and the sanitizer-gated editable pre-fill),
+and CLAUDE.md's **Confirmer seam** owns the invariant. **Still open**
+(this file): the URL confirmers for an LLM-driven `fetch`, the
+ingest-axis output gate, and the structured action context on `Request`.
+Drain into source + `book/` as pieces graduate.
 
 Related, already worked out:
 
@@ -40,8 +46,9 @@ Related, already worked out:
 `pikuri-os` offers web access behind `--with-internet`, quarantined in the
 `RESEARCHER` sub-agent (web tools, no filesystem) and gated by a
 confirmation of the *task prompt* before dispatch. That gate is the
-**egress-axis input confirmation** (see "Task-prompt gate" below) — it
-already ships, now as a full author seat with a reject-reason channel.
+**egress-axis input confirmation** — it already ships as a full author
+seat with a reject-reason channel (design now in
+{Pikuri::Workspace::Confirmer} + CLAUDE.md's Confirmer seam).
 What remains are the *harder* confirmer shapes this file collects:
 
 1. **An LLM-driven `fetch` on the parent** — the LLM picks the entire URL
@@ -53,9 +60,10 @@ What remains are the *harder* confirmer shapes this file collects:
    gate what gets *in*? (Ingest axis.)
 
 (The original list opened with a third item — "make the task-prompt gate
-a true author seat plus a reject-reason channel." That one is now built;
-its worked-out design is the "Task-prompt gate" section immediately
-below.)
+a true author seat plus a reject-reason channel." That one shipped; its
+worked-out design graduated to {Pikuri::Workspace::Confirmer} +
+{Pikuri::Workspace::Confirmer::Terminal} and CLAUDE.md's Confirmer seam,
+so it is no longer detailed here.)
 
 The ideas split along two axes. Keeping them distinct is load-bearing: a
 confirmer that governs *where bytes go* (egress) is a different mechanism
@@ -63,71 +71,6 @@ from one that governs *what bytes come in* (ingest). The shipped gate is
 egress-axis; note that for `pikuri-os` egress is the axis that *needed*
 protecting (ingest is already accepted — it reads hostile files off disk
 today).
-
-## Task-prompt gate — shipped (author seat + reason)
-
-The delegation gate: before the parent dispatches a task to a
-network-capable sub-agent, a `Confirmer` confirms the task string. This
-is the egress break — the parent's only way to leak private data is to
-launder it into the task, and the human approves that. Both refinements
-that were deferred here are now built.
-
-### The seam change: a richer-than-bool return
-
-`Confirmer#confirm?` used to return a bare `Boolean`, and the yardoc had
-deliberately rejected a richer return. The refinements need two things a
-bool can't carry — the *edited* task, and a *decline reason* — so the
-primitive is now `Confirmer#ask(request:)`, returning one of two
-value types (idiomatic-Ruby "case classes" — two `Data.define`s
-dispatched by pattern matching, no shared base):
-
-- `Approved(new_request_detail)` — the (possibly edited) `Request.detail`
-  to act on.
-- `Rejected(reason)` — the human's optional steering text, or `nil`.
-
-`confirm?` survives as the derived boolean convenience
-(`ask(request:).is_a?(Approved)`) for the mutation gates (`Write`,
-`ExitPlanMode`) that need neither field. Two orthogonal axes ride the
-richer return, and keeping them orthogonal is the point:
-
-- **Reason (universal).** *Any* decline can carry steering back to the
-  model as the next observation. Wired into the delegation gate *and*
-  `Bash` (a declined command now says *why*), exactly the "useful well
-  beyond delegation" the earlier draft called out.
-- **Editing (opt-in per request).** `Request` grows an `editable:` flag,
-  set `true` only where `detail` is the *verbatim actionable payload* —
-  the `agent` task, where `detail == task`. Bash's `"$ <command>"` is a
-  decorated display string, not a payload, so it stays reason-only.
-
-Both are distinct from the `:once/:always` scope knob the yardoc still
-rejects: that manages *decision fatigue*, this manages *authorship and
-steering*. The added axes don't reopen it.
-
-### The terminal chrome, and the sanitizer knife-edge
-
-For an editable task the terminal offers `[y] approve  [e] edit  [n]
-reject`; `e` opens the raw task in a Reline-editable buffer, `n` prompts
-for the optional reason. But pre-filling that buffer surfaced a sharp
-tension worth recording: **the payload sent onward must be raw bytes,
-while the terminal must *display* sanitized bytes** (the `Sanitizer`
-control-byte defense). Pre-filling an editable line with raw bytes would
-reintroduce the very `\rrm -rf ~/` overwrite attack the sanitizer exists
-to defang.
-
-Resolution — **the sanitizer's warning set gates the pre-fill**:
-
-- **Clean task** (no warnings): pre-fill the raw task, editable — the
-  convenience shape, `[y]/[e]/[n]`.
-- **Flagged task** (warnings present): refuse the pre-fill *and* drop the
-  bare-approve path — `[e] edit  [n] reject`, where `e` makes the human
-  retype from scratch. Forced authorship exactly where it matters most,
-  and no raw hostile bytes ever hit the terminal.
-
-Honest limit, in the same spirit as the taint model's "soft, not gone": a
-terminal cannot *structurally* forbid a rubber-stamp `y` on a clean task
-— the pure no-rubber-stamp author seat is a richer-UI (web) invariant
-(see "Open (cross-cutting)"). The warning-gated forced-retype is the
-terminal's partial answer, not a proof.
 
 ## Egress axis — destination control for a future `fetch`/scrape
 
@@ -232,9 +175,10 @@ The two requirements (bother the human only on the genuinely
 consequential; be excellent when it does fire) and the dependency on the
 rest of the kit carrying the routine load are stated there.
 
-The not-yet-shipped technical piece survives the `#ask` seam change
-above. `Request` today carries a `question` + optional verbatim `detail`
-+ `editable` flag — enough for the author seat, but the chrome still
+The not-yet-shipped technical piece survives the shipped `#ask` seam
+({Pikuri::Workspace::Confirmer}). `Request` today carries a `question` +
+optional verbatim `detail` + `editable` flag (plus a `change:` for
+diffable writes) — enough for the author seat, but the chrome still
 largely *echoes* a caller-built string. To live up to the guide's
 "headline the consequence, not the 80-char `curl` pipe" framing, the
 `Request` wants **structured action context** (kind: write / bash /
@@ -261,8 +205,8 @@ structured fields, badly on raw strings.
   check from the built terminal:* a terminal can't structurally forbid a
   rubber-stamp keystroke, so it only *partially* honors this — the
   built compromise is to force a full retype for sanitizer-flagged tasks
-  (see "Task-prompt gate"). The pure invariant remains a richer-UI (web)
-  target.
+  (see {Pikuri::Workspace::Confirmer::Terminal}). The pure invariant
+  remains a richer-UI (web) target.
 - **Which of these earns a build.** Leaning: the investigator +
   human-verifier (ingest axis) first — it's the one that makes `pikuri-os`
   materially safer *while keeping web useful*, and it doesn't reopen the

@@ -147,21 +147,27 @@ defeat both layers.
 `Pikuri::Workspace::Confirmer` is the *only* path through which
 the `write` and `bash` tools reach the user for approval. Tools
 never call `gets` / `puts` / `$stdin` directly; they call
-`confirmer.confirm?(request: ...)` with a small
-`Confirmer::Request` value — a one-line *question* ("OK to run
-bash: List files") plus an optional preformatted *detail* (the
-raw command). The tool says *what* is being asked; the confirmer
-owns *how it looks* — bold/dim colors in a terminal, buttons in a
-web UI — and, security-relevant, escapes hostile bytes for its
-medium (a terminal neutralizes `\r`/ESC so a command can't
-visually overwrite itself after you've read it; a web client
-HTML-escapes instead). Two bundled implementations:
+`confirmer.ask(request: ...)` with a small `Confirmer::Request`
+value — a one-line *question* ("OK to run bash: List files") plus
+an optional preformatted *detail* (the raw command). The tool says
+*what* is being asked; the confirmer owns *how it looks* — bold/dim
+colors in a terminal, buttons in a web UI — and, security-relevant,
+escapes hostile bytes for its medium (a terminal neutralizes
+`\r`/ESC so a command can't visually overwrite itself after you've
+read it; a web client HTML-escapes instead). `#ask` returns one of
+two values: an **approval** carrying the payload to act on (which
+the human may have *edited* first) or a **decline** carrying an
+optional steering *reason* — a rejected `bash` can tell the model
+*why*, becoming its next observation. (`#confirm?` is the boolean
+shortcut over `#ask` for gates like `write` that need neither.)
+Two bundled implementations:
 
 - **`Pikuri::Workspace::Confirmer::Terminal`** — prompts on
-  stdin/stdout, returns `true` on `y` / `yes` (case-insensitive)
-  and `false` on `n` / `no` or Ctrl+D, re-asking on anything
-  else. The default for `pikuri-code` (construct one with
-  `Terminal.new`) and what you saw at the `(y/n)?` prompt.
+  stdin/stdout, parsing `y` / `yes` (case-insensitive), `n` / `no`
+  or Ctrl+D as a decline, and `e` to *edit* when the request is
+  editable, re-asking on anything else. The default for
+  `pikuri-code` (construct one with `Terminal.new`) and what you
+  saw at the `(y/n)?` prompt.
 - **`Pikuri::Workspace::Confirmer::AUTO_APPROVE`** —
   yes-to-everything. Used by `--no-confirm` and `--yolo`, and by
   specs.
