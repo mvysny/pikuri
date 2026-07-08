@@ -20,7 +20,7 @@ Related:
 
 - **Permission system.** opencode's three-action `allow` / `deny` /
   `ask` glob rules. v1 ships with two coarse modes (interactive
-  `Workspace::Confirmer::TERMINAL` on `Write` / `Bash`; `--yolo` swaps in
+  `Workspace::Confirmer::Terminal` on `Write` / `Bash`; `--yolo` swaps in
   `AUTO_APPROVE`). Revisit once `bin/pikuri-code` has lived a while
   and we know where the friction is. Where things are headed:
   yolo-in-docker, or ClaudeCode's agentic review of the command + automatic approval/denial.

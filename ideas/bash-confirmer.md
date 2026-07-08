@@ -1,4 +1,4 @@
-# Bash confirmer: deferred work beyond the read-only auto-confirmer
+# Bash confirmer: deferred work beyond the read-only command approver
 
 Status: **deferred brainstorm** — design space mapped, not scheduled.
 This note collects the deferred bash-confirmation-gate ideas pulled out
@@ -17,11 +17,12 @@ prompts that remain):
 4. **AI translation aid** (comprehension) — explain a command in plain
    language beside it. The final section.
 
-All extend {Pikuri::Code::Bash::ReadOnlyAutoConfirmer}, which already
-handles fatigue for commands it can *prove* read-only, and all obey the
-same governing invariant (stated in "The invariant" below): **code and
-the human decide — an LLM may *translate*, never render the ✓/⚠
-verdict.**
+All build on {Pikuri::Code::Bash::ReadOnlyCommandApprover} — the
+predicate {Pikuri::Code::Bash} consults as its `command_approver:`, which
+already handles fatigue for commands it can *prove* read-only — and all
+obey the same governing invariant (stated in "The invariant" below):
+**code and the human decide — an LLM may *translate*, never render the
+✓/⚠ verdict.**
 
 ## Related
 
@@ -35,7 +36,7 @@ verdict.**
   axis (*who* authors the payload); this note is the **fatigue +
   comprehension** axis (*how often* we ask, and *how well* the human
   understands what they're approving). Kept distinct on purpose.
-- {Pikuri::Code::Bash::ReadOnlyAutoConfirmer} — the static allowlist
+- {Pikuri::Code::Bash::ReadOnlyCommandApprover} — the static allowlist
   this extends; the design below reuses its `Tokenizer` +
   `segment_read_only?` discipline wholesale.
 - {Pikuri::Workspace::Confirmer} — records the **rejected**
@@ -45,12 +46,12 @@ verdict.**
 ## The problem
 
 Fatigue is a **security** concern, not UX (see
-{Pikuri::Code::Bash::ReadOnlyAutoConfirmer}'s "why fatigue is a security
+{Pikuri::Code::Bash::ReadOnlyCommandApprover}'s "why fatigue is a security
 concern"): a user who has clicked "yes" forty times this session has
 stopped reading, so the injected forty-first prompt gets rubber-stamped.
 The allowlist's whole job is to make prompts **rare and meaningful**.
 
-`ReadOnlyAutoConfirmer` handles fatigue for commands it can *prove*
+`ReadOnlyCommandApprover` handles fatigue for commands it can *prove*
 read-only, and it keeps absorbing more cases (the `journalctl` example
 the OS-helper note once used for "session grants" is now stale — it
 shipped in the flag denylist). But one residue can **never** join a
@@ -101,12 +102,16 @@ Two documented positions look like they collide:
   knob — "the long-term answer to fatigue is making confirmations rare
   (sandboxing, `--yolo`), not smarter approval modes."
 
-They reconcile once you see they name different things. What the yardoc
-killed was a *scope knob baked into the confirmer's return* — making the
-`Confirmer` protocol cleverer about saying yes. What this note wants is a
-**deterministic rule layer in the `ReadOnlyAutoConfirmer` lineage**:
-the human authors a rule, *code* matches it. That is the same category as
-the static allowlist, just runtime-populated — not a smarter approval
+They reconcile once you see they name different things — and the
+predicate/confirmer split makes the reconciliation *structural*, not just
+rhetorical. What the yardoc killed was a *scope knob baked into the
+confirmer's return* — making the `Confirmer` protocol cleverer about
+saying yes. What this note wants is a **deterministic rule layer inside
+{Pikuri::Code::Bash::ReadOnlyCommandApprover}**: the human authors a rule,
+*code* matches it. That layer lives in the `command_approver` predicate —
+a different object from the `Confirmer` entirely — so it is the same
+category as the static allowlist, just runtime-populated, and it cannot
+touch the confirmer protocol even in principle. Not a smarter approval
 mode.
 
 So the governing invariant (inherited from `os-assistant.md`): **AI may
@@ -154,28 +159,41 @@ proves insufficient.
 
 ## Architectural fit — no protocol change
 
-The clean shape avoids reopening the return type:
+The clean shape falls out of the predicate/confirmer split and reopens
+no return type:
 
 - A **shared, in-memory, session-scoped grant-set**.
-- The **matcher** is a decorator in the `ReadOnlyAutoConfirmer` lineage
-  (or a small addition to it) that reads the grant-set.
+- The **matcher** is a small addition *inside*
+  {Pikuri::Code::Bash::ReadOnlyCommandApprover}: `segment_read_only?`
+  additionally consults the grant-set, so a granted bare name approves a
+  simple segment. It must live *inside* the approver, **not** as a
+  sibling predicate OR'd beside it — the whole-line safety (the
+  `Tokenizer` parse plus the "every segment read-only" quantifier) is a
+  *conjunctive gate* a granted command must clear too, and re-running
+  that gate in a second matcher is exactly how a bypass slips in. (Same
+  lesson that keeps the static rules one parse-based predicate rather
+  than one-approver-per-command.)
 - The **chrome** (`Confirmer::Terminal`) offers a third answer on an
-  otherwise-approved prompt — `[y] yes  [a] always (this session)
+  otherwise-declined prompt — `[y] yes  [a] always (this session)
   [n] no` — and on `a` **mutates the shared grant-set directly**.
 
-Because chrome and matcher hold a reference to the *same* object, the
-"always" keystroke needs **no new `Approved` case and no `remember:`
-flag** — the confirmer return type stays exactly as-is. The grant is a
-side-effect on a shared session object, authored by a human keystroke,
-not a value threaded through the confirmer protocol. That is the
-mechanical reason this doesn't resurrect `:once/:always`.
+`Bash` already orchestrates the two in the right order:
+`command_approver` first (now reading the grant-set), and only on a miss
+the human `Confirmer` — whose `[a]` keystroke feeds the grant-set the
+approver reads next time. Because approver and chrome hold a reference to
+the *same* object, the "always" keystroke needs **no new `Approved` case
+and no `remember:` flag** — the confirmer return type stays exactly
+as-is. Better still, the grant now lives in the `command_approver`
+predicate, a different object from the `Confirmer` altogether, so this
+can't resurrect `:once/:always` *by construction* — not merely by the
+discipline of "it's a side-effect, not a return value."
 
 ## Recommendation, and why it's deferred
 
 If built: **Option B**, under the five constraints above
 (human-authored · simple-invocation-gated · session-only · in-memory ·
 shared-object side-effect). It is a small add given the `Tokenizer` and
-decorator already exist.
+`segment_read_only?` gate already exist inside the approver.
 
 Deferred anyway, because:
 
@@ -194,7 +212,7 @@ Deferred anyway, because:
 ## Subcommand-aware read rules
 
 Extend the allowlist's existing subcommand recovery — the way
-{Pikuri::Code::Bash::ReadOnlyAutoConfirmer} already carves the read-only
+{Pikuri::Code::Bash::ReadOnlyCommandApprover} already carves the read-only
 query subset out of mixed binaries (`dpkg`/`apt`/`systemctl` by leading
 subcommand, `dmesg`/`journalctl` by flag denylist, `git` under
 `allow_git:`) — to further binaries still delegated whole.
@@ -216,7 +234,7 @@ an un-audited binary keeps delegating to the human.
 ## Batching
 
 Collapse several queued confirmations into a single prompt — when the
-agent emits a run of mutations (or the read-only auto-confirmer passes
+agent emits a run of mutations (or the read-only command approver passes
 some and leaves three that need a human), present them together rather
 than one modal at a time. Pure prompt-*volume* reduction; the decision
 stays per-command.
@@ -226,12 +244,12 @@ decides* — no "approve all" that becomes a rubber-stamp, and each
 command's raw bytes stay individually visible and individually sanitized
 (the human may approve a subset). The open part is UI-shaped — how a
 terminal renders a multi-item approve/reject without losing the
-sanitizer's per-item warning gating — which is why it rides here rather
-than in the auto-confirmer's pure-code lineage.
+sanitizer's per-item warning gating — a `Confirmer`-chrome concern, not
+one for the command approver's pure-code predicate.
 
 ## Permission-model granularity — the broader wishlist
 
-`Confirmer::TERMINAL` is binary today (approve / deny per call). The
+`Confirmer::Terminal` is binary today (approve / deny per call). The
 real-world ergonomics push, beyond the session-grant mechanism above:
 
 - **Per-tool, per-pattern stickiness** ("always allow `git status`",
@@ -304,7 +322,7 @@ translation and reintroduce the manipulability the "no verdict" rule
 fought. That is an LLM call + latency on *every* mutating prompt, not a
 free decoration. So **deterministic-first**:
 
-- **Rules-based translator** — reuse the auto-confirmer's `Tokenizer` to
+- **Rules-based translator** — reuse the command approver's `Tokenizer` to
   recognize the high-value destructive shapes (`rm -rf <path>`,
   `dd of=<dev>`, `find … -delete`, `> <file>` truncation, `chmod -R`)
   and print a canned plain-language line. No LLM, no manipulation

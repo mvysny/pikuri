@@ -12,7 +12,7 @@ its rationale, read:
 - **Guide [chapter 7](../book/07-os-assistant.md)** — the
   narrative walkthrough. Part 1: the severed-network sandbox, the
   read-before-edit fence, confirmed mutations, the read-only
-  auto-confirmer, the file-index pair, `MACHINE.md`, boot grounding,
+  command approver, the file-index pair, `MACHINE.md`, boot grounding,
   and why egress is the trifecta leg this agent removes. Part 2 ("the
   third leg returns"): reattaching the network via the quarantined
   `RESEARCHER` sub-agent + the confirmed task prompt + the two
@@ -23,8 +23,8 @@ its rationale, read:
   search → read-full pair), {Pikuri::Os::MachineMemory} (`MACHINE.md`),
   {Pikuri::Os::SystemInfo} (grounding),
   {Pikuri::Code::Bash::Sandbox::FullFsNoNet} (the kernel-severed
-  network) and {Pikuri::Code::Bash::ReadOnlyAutoConfirmer} +
-  `Pikuri::Code::Bash::GIT_HARDENING` (the auto-confirmer + git arm).
+  network) and {Pikuri::Code::Bash::ReadOnlyCommandApprover} +
+  `Pikuri::Code::Bash::GIT_HARDENING` (the command approver + git arm).
 - **[`../CLAUDE.md`](../CLAUDE.md)** — the `pikuri-os` gem entry and the
   Sandbox / Confirmer / Workspace seam invariants.
 
@@ -99,9 +99,9 @@ its rationale, read:
 
 ## Deferred / not yet built
 
-**Confirmation-fatigue work beyond the shipped read-only auto-confirmer**
+**Confirmation-fatigue work beyond the shipped read-only command approver**
 (the sequencer/pipe composition and the `git` arm are shipped — see
-{Pikuri::Code::Bash::ReadOnlyAutoConfirmer}). The governing invariant
+{Pikuri::Code::Bash::ReadOnlyCommandApprover}). The governing invariant
 for everything below: **AI may *translate* a command ("this deletes
 `~/tmp` recursively"), but code and the human *decide* — never an AI
 ✓/⚠ verdict.** An AI approver is talked into "yes" by the same laundered
