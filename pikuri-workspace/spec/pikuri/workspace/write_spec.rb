@@ -335,7 +335,7 @@ RSpec.describe Pikuri::Workspace::Write do
     def deciding(decision)
       requests = []
       c = Object.new
-      c.define_singleton_method(:decide) do |request:|
+      c.define_singleton_method(:ask) do |request:|
         requests << request
         if decision == :approve
           Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)

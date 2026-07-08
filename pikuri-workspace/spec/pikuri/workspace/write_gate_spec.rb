@@ -9,7 +9,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
 
   def approving
     c = Object.new
-    c.define_singleton_method(:decide) do |request:|
+    c.define_singleton_method(:ask) do |request:|
       Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     c
@@ -17,7 +17,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
 
   def rejecting(reason)
     c = Object.new
-    c.define_singleton_method(:decide) do |request:|
+    c.define_singleton_method(:ask) do |request:|
       Pikuri::Workspace::Confirmer::Rejected.new(reason: reason)
     end
     c
@@ -25,7 +25,7 @@ RSpec.describe Pikuri::Workspace::WriteGate do
 
   def never_called
     c = Object.new
-    c.define_singleton_method(:decide) { |request:| raise "confirmer must not be consulted (#{request.inspect})" }
+    c.define_singleton_method(:ask) { |request:| raise "confirmer must not be consulted (#{request.inspect})" }
     c
   end
 

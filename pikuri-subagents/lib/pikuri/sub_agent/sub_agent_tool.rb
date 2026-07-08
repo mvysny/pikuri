@@ -181,7 +181,7 @@ module Pikuri
                 detail: task,
                 editable: true
               )
-              case confirmer.decide(request: request)
+              case confirmer.ask(request: request)
               in Pikuri::Workspace::Confirmer::Approved(new_request_detail:)
                 task = new_request_detail
               in Pikuri::Workspace::Confirmer::Rejected(reason:)

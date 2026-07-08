@@ -36,7 +36,7 @@ module Pikuri
       def check(confirmer:, path:, resolved:, question:, change:)
         return permission_denied(path) unless writable_target?(resolved)
 
-        case confirmer.decide(request: Confirmer::Request.new(question: question, change: change))
+        case confirmer.ask(request: Confirmer::Request.new(question: question, change: change))
         in Confirmer::Rejected(reason:) then declined(path, reason)
         else nil
         end

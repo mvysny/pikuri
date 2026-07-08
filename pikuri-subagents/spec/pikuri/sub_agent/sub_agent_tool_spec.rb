@@ -499,7 +499,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
   describe 'task-prompt confirmation gate' do
     # Minimal confirmer: records the request it was asked, then returns
     # whatever its +decision+ lambda produces for that request. Mirrors
-    # the Pikuri::Workspace::Confirmer duck type (only #decide(request:)
+    # the Pikuri::Workspace::Confirmer duck type (only #ask(request:)
     # is used here).
     let(:confirmer_class) do
       Class.new do
@@ -511,7 +511,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
           @requests = []
         end
 
-        def decide(request:)
+        def ask(request:)
           @requests << request
           @decision.call(request)
         end

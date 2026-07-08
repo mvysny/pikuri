@@ -5,7 +5,7 @@ module Pikuri
     # Port for resolving a "may I do this?" confirmation to a decision —
     # currently {Pikuri::Code::Bash} (every command), {Write} (overwrite
     # of an existing file with non-identical content) and the +agent+
-    # tool's delegation gate. Subclass and implement {#decide}.
+    # tool's delegation gate. Subclass and implement {#ask}.
     #
     # == The one job: resolve a {Request} to a decision
     #
@@ -33,12 +33,12 @@ module Pikuri
     #
     # == The return type: {Approved} / {Rejected}
     #
-    # {#decide} returns one of exactly two value types — {Approved}
+    # {#ask} returns one of exactly two value types — {Approved}
     # (carrying the possibly-edited {Request#detail} to act on) or
     # {Rejected} (carrying an optional human decline reason). Callers
     # dispatch by pattern-matching:
     #
-    #   case confirmer.decide(request: request)
+    #   case confirmer.ask(request: request)
     #   in Confirmer::Approved(new_request_detail:) then ...act on it...
     #   in Confirmer::Rejected(reason:)             then ...steer with it...
     #   end
@@ -73,7 +73,7 @@ module Pikuri
     # == Seam discipline
     #
     # Tools that need confirmation take a {Confirmer} via constructor and
-    # invoke {#decide} with a semantic {Request} — *what* is being asked,
+    # invoke {#ask} with a semantic {Request} — *what* is being asked,
     # never *how* it should look. All presentation belongs to the
     # confirmer implementation: color, the answer cue, answer parsing, the
     # edit affordance, and — security-relevant — neutralizing hostile
@@ -143,17 +143,17 @@ module Pikuri
       #   the question, and parses the answer.
       # @return [Approved, Rejected]
       # @raise [NotImplementedError] in the abstract base
-      def decide(request:)
-        raise NotImplementedError, "#{self.class}#decide must be implemented"
+      def ask(request:)
+        raise NotImplementedError, "#{self.class}#ask must be implemented"
       end
 
-      # Boolean convenience over {#decide} for mutation gates that need
+      # Boolean convenience over {#ask} for mutation gates that need
       # neither the edited payload nor the decline reason.
       #
       # @param request [Request]
       # @return [Boolean] +true+ iff approved
       def confirm?(request:)
-        decide(request:).is_a?(Approved)
+        ask(request:).is_a?(Approved)
       end
 
       # Approves everything unedited — the headless "user opted out of
@@ -166,7 +166,7 @@ module Pikuri
       class AutoApprove < Confirmer
         # @param request [Request]
         # @return [Approved] always, carrying +detail+ unchanged
-        def decide(request:)
+        def ask(request:)
           Approved.new(new_request_detail: request.detail)
         end
       end

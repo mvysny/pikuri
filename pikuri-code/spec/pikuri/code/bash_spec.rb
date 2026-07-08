@@ -19,16 +19,16 @@ RSpec.describe Pikuri::Code::Bash do
   # Inline confirmer double: records every request it sees, returns
   # successive elements of +answers+. Each answer is +true+ (→ Approved
   # carrying the command unchanged), +false+ (→ Rejected with no reason),
-  # or an explicit Approved/Rejected value. Calling +decide+ when no
+  # or an explicit Approved/Rejected value. Calling +ask+ when no
   # answer is queued raises — surfaces "test silently consumed a
   # confirmation" bugs rather than letting nil flow through as a decline.
   def build_confirmer(*answers)
     queue    = answers.dup
     requests = []
     cf = Object.new
-    cf.define_singleton_method(:decide) do |request:|
+    cf.define_singleton_method(:ask) do |request:|
       requests << request
-      raise "build_confirmer received an unexpected #decide call (request: #{request.inspect})" if queue.empty?
+      raise "build_confirmer received an unexpected #ask call (request: #{request.inspect})" if queue.empty?
 
       case (answer = queue.shift)
       when true  then Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
@@ -152,7 +152,7 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'runs an approved command WITHOUT consulting the confirmer' do
-      cf = build_confirmer # empty queue → #decide raises if reached
+      cf = build_confirmer # empty queue → #ask raises if reached
       result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    command_approver: approver_for('echo hi'),
                                    command: 'echo hi', description: nil, timeout: 120)

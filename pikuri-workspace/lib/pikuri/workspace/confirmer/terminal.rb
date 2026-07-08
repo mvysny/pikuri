@@ -66,12 +66,12 @@ module Pikuri
 
         # @param request [Request]
         # @return [Approved, Rejected]
-        def decide(request:)
+        def ask(request:)
           warnings = render(request)
           if request.editable && !request.detail.nil?
-            decide_editable(request, clean: warnings.empty?)
+            ask_editable(request, clean: warnings.empty?)
           else
-            decide_plain(request)
+            ask_plain(request)
           end
         end
 
@@ -160,7 +160,7 @@ module Pikuri
         #
         # @param request [Request]
         # @return [Approved, Rejected]
-        def decide_plain(request)
+        def ask_plain(request)
           puts '(y/n)?'
           $stdout.flush
           loop do
@@ -182,7 +182,7 @@ module Pikuri
         # @param clean [Boolean] whether the payload passed the sanitizer
         #   (gates the pre-fill and the bare-approve path)
         # @return [Approved, Rejected]
-        def decide_editable(request, clean:)
+        def ask_editable(request, clean:)
           puts(clean ? '[y] approve  [e] edit  [n] reject' : '⚠ retype required — [e] edit  [n] reject')
           $stdout.flush
           loop do

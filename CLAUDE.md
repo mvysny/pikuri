@@ -326,9 +326,9 @@ yardoc. CLAUDE.md only records the invariant.
 - **Confirmer seam.** Tools that mutate user state (`Write`,
   `Bash`) or dispatch a network-capable sub-agent (the `agent`
   tool) take a `Pikuri::Workspace::Confirmer` via constructor and
-  route every prompt through `#decide(request:)` with a semantic
+  route every prompt through `#ask(request:)` with a semantic
   `Confirmer::Request` (question + optional detail + `editable`
-  flag, raw bytes). `#decide` returns one of two value types —
+  flag, raw bytes). `#ask` returns one of two value types —
   `Approved(new_request_detail)` carrying the possibly-edited
   detail to act on, or `Rejected(reason)` carrying the human's
   optional decline steering; callers pattern-match. `#confirm?` is

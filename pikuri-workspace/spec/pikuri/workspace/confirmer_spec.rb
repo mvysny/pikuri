@@ -170,17 +170,17 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       assert_includes $stdout.string, "\e[1mOK to run bash\e[0m"
     end
 
-    describe '#decide return type' do
+    describe '#ask return type' do
       it 'returns Approved carrying the detail on a plain approve' do
         stdin_with("y\n")
-        decision = described_class.new.decide(request: req('go?', detail: '$ ls'))
+        decision = described_class.new.ask(request: req('go?', detail: '$ ls'))
         assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
         assert_equal '$ ls', decision.new_request_detail
       end
 
       it 'returns Rejected on decline' do
         stdin_with("n\n")
-        decision = described_class.new.decide(request: req)
+        decision = described_class.new.ask(request: req)
         assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
       end
     end
@@ -188,32 +188,32 @@ RSpec.describe Pikuri::Workspace::Confirmer do
     describe 'decline reason (steering)' do
       it 'prompts for and returns a typed decline reason' do
         stdin_with("n\nuse the local docs\n")
-        decision = described_class.new.decide(request: req)
+        decision = described_class.new.ask(request: req)
         assert_equal 'use the local docs', decision.reason
         assert_includes $stdout.string, 'Reason (optional'
       end
 
       it 'returns a nil reason when left blank' do
         stdin_with("n\n\n")
-        assert_nil described_class.new.decide(request: req).reason
+        assert_nil described_class.new.ask(request: req).reason
       end
 
       it 'returns a nil reason on EOF after the decline' do
         stdin_with("n\n")
-        assert_nil described_class.new.decide(request: req).reason
+        assert_nil described_class.new.ask(request: req).reason
       end
     end
 
     describe 'editable task (author seat)' do
       it 'offers the edit cue for an editable request' do
         stdin_with("y\n")
-        described_class.new.decide(request: editable_req('research foo'))
+        described_class.new.ask(request: editable_req('research foo'))
         assert_includes $stdout.string, '[y] approve  [e] edit  [n] reject'
       end
 
       it 'approves as-is via [y], returning the original detail' do
         stdin_with("y\n")
-        decision = described_class.new.decide(request: editable_req('research foo'))
+        decision = described_class.new.ask(request: editable_req('research foo'))
         assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
         assert_equal 'research foo', decision.new_request_detail
       end
@@ -226,7 +226,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
           captured_prefill = prefill
           "#{initial} (edited)"
         end
-        decision = term.decide(request: editable_req('research foo'))
+        decision = term.ask(request: editable_req('research foo'))
         assert_equal 'research foo (edited)', decision.new_request_detail
         assert_equal true, captured_prefill, 'a clean task pre-fills the editable buffer'
       end
@@ -240,7 +240,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
           captured_prefill = prefill
           'retyped from scratch'
         end
-        decision = term.decide(request: editable_req("bad\rtask"))
+        decision = term.ask(request: editable_req("bad\rtask"))
         assert_includes $stdout.string, 'retype required'
         assert_includes $stdout.string, 'Please answer e or n: '
         assert_equal 'retyped from scratch', decision.new_request_detail
@@ -249,7 +249,7 @@ RSpec.describe Pikuri::Workspace::Confirmer do
 
       it 'rejects an editable task via [n], capturing the reason' do
         stdin_with("n\nnot now\n")
-        decision = described_class.new.decide(request: editable_req('research foo'))
+        decision = described_class.new.ask(request: editable_req('research foo'))
         assert_instance_of Pikuri::Workspace::Confirmer::Rejected, decision
         assert_equal 'not now', decision.reason
       end
@@ -283,8 +283,8 @@ RSpec.describe Pikuri::Workspace::Confirmer do
       assert_equal true, described_class.new.confirm?(request: req(''))
     end
 
-    it 'decides Approved carrying the detail unchanged' do
-      decision = described_class.new.decide(request: req('anything', detail: '$ rm -rf /'))
+    it 'returns Approved carrying the detail unchanged' do
+      decision = described_class.new.ask(request: req('anything', detail: '$ rm -rf /'))
       assert_instance_of Pikuri::Workspace::Confirmer::Approved, decision
       assert_equal '$ rm -rf /', decision.new_request_detail
     end

@@ -6,7 +6,7 @@ human-in-the-loop confirmer ideas surfaced while scoping web access for
 sub-agent (no filesystem), reached via the `agent` tool, gated on the
 task prompt before dispatch — `SubAgent::Extension.new(personas:,
 confirmer:)` (see [`os-assistant.md`](os-assistant.md) §"Internet
-access"). That gate is now the **full author seat**: `Confirmer#decide`
+access"). That gate is now the **full author seat**: `Confirmer#ask`
 returns `Approved(new_request_detail)` / `Rejected(reason)`, the task is
 offered `editable: true` so the human *rewrites* rather than
 rubber-stamps, and a decline carries an optional **reject-reason** back
@@ -77,7 +77,7 @@ that were deferred here are now built.
 `Confirmer#confirm?` used to return a bare `Boolean`, and the yardoc had
 deliberately rejected a richer return. The refinements need two things a
 bool can't carry — the *edited* task, and a *decline reason* — so the
-primitive is now `Confirmer#decide(request:)`, returning one of two
+primitive is now `Confirmer#ask(request:)`, returning one of two
 value types (idiomatic-Ruby "case classes" — two `Data.define`s
 dispatched by pattern matching, no shared base):
 
@@ -86,7 +86,7 @@ dispatched by pattern matching, no shared base):
 - `Rejected(reason)` — the human's optional steering text, or `nil`.
 
 `confirm?` survives as the derived boolean convenience
-(`decide(request:).is_a?(Approved)`) for the mutation gates (`Write`,
+(`ask(request:).is_a?(Approved)`) for the mutation gates (`Write`,
 `ExitPlanMode`) that need neither field. Two orthogonal axes ride the
 richer return, and keeping them orthogonal is the point:
 
@@ -232,7 +232,7 @@ The two requirements (bother the human only on the genuinely
 consequential; be excellent when it does fire) and the dependency on the
 rest of the kit carrying the routine load are stated there.
 
-The not-yet-shipped technical piece survives the `#decide` seam change
+The not-yet-shipped technical piece survives the `#ask` seam change
 above. `Request` today carries a `question` + optional verbatim `detail`
 + `editable` flag — enough for the author seat, but the chrome still
 largely *echoes* a caller-built string. To live up to the guide's
@@ -249,10 +249,10 @@ structured fields, badly on raw strings.
 
 - **Where confirmers live.** *Partly answered by the built gate.* The
   existing seam *stretched*: `Confirmer::Request` grew an `editable:`
-  flag, and `#decide` now returns `Approved`/`Rejected` instead of a bool
+  flag, and `#ask` now returns `Approved`/`Rejected` instead of a bool
   — no sibling seam was needed for the egress *author seat*. The still-open
   question is whether the *ingest* gate (confirming a returned summary,
-  not a mutation about to happen) also fits `Request`/`decide`, or whether
+  not a mutation about to happen) also fits `Request`/`ask`, or whether
   gating *inbound* content is different enough to want its own shape.
 - **The forced-authorship UI contract.** Every idea here that pre-fills
   anything must, by construction, refuse a one-click accept — otherwise
