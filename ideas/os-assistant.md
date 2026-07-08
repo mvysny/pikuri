@@ -89,13 +89,86 @@ its rationale, read:
 ## Open questions (empirical — settle by using it)
 
 - **Does keyword recall suffice, or is semantic search needed?**
-  `fileindex_search` is only as good as `localsearch`'s keyword match; a
-  fuzzy ask ("the doc about our refund policy") can miss when the words
-  don't literally appear. Revisit semantic recall (below) only if real
-  usage shows keyword recall failing — and even then for that specific
-  gap, not a wholesale home re-index. `pikuri-vectordb` is **not** the
-  discovery upgrade path: pointed at `$HOME` it would just re-index the
-  corpus `localsearch` already holds.
+  `fileindex_search` is only as good as `localsearch`'s lexical match.
+  When it whiffs, the cause is one of *three*, and they have different
+  answers — only the third is a genuine "nothing we can do":
+
+  1. **Content not indexed** — a format `localsearch`'s extractors
+     don't full-text, or the index is stale / scoped out. (In practice
+     `localsearch`'s full-text coverage is uneven: some hosts full-text
+     PDFs but skip `.odt`/`.md`/`.py`, indexing only their metadata.)
+     The fix is a *better lexical indexer* — the one place `recoll`
+     earns a mention (comparison below). Not a semantic problem.
+  2. **Phrasing / synonym miss** — the doc is indexed but the user's
+     words differ ("the doc about our refund policy" vs. a file that
+     says "returns & cancellations"). This is **already ours and
+     already in posture**: we already ship the RAG/agentic search — the
+     agent reformulates (synonyms, narrower terms) and, because
+     `pikuri-os` runs `FullFsNoNet` with full-disk *read* and wires
+     `grep`/`glob`/`bash`, falls back to grepping likely directories
+     when the index misses. No sub-agent wrapper needed — that framing
+     is a technicality; the iteration is the substance.
+     `localsearch`'s index is also already stemmed ("mouse"↔"mice",
+     see {Pikuri::Os::LocalSearch}), so inflectional variants come free;
+     the residue is true synonymy, which query iteration handles better
+     than any lexical index would.
+  3. **Genuine semantic / conceptual gap** — cross-lingual, or "that
+     thing about being frugal" → an unlabelled budget spreadsheet. The
+     only cause embeddings actually address, and the rarest on a
+     personal machine. We decline it deliberately — **not** because
+     `pikuri-vectordb` "would re-index what `localsearch` already holds"
+     (that conflates *indexing cost* with retrieval *modality*; the
+     point of vectordb would be a **different modality** over the same
+     bytes), but because owning a live `$HOME` embedding index means
+     reinventing the freshness daemon `localsearch` hands us for free
+     (the `Watcher`), plus embedding VRAM and a large new surface —
+     straight against the offline, "small enough to audit" posture.
+     Semantic *re-ranking* of `localsearch` hits doesn't rescue this
+     either: it fixes precision, not recall — a doc the keyword miss
+     kept out of the candidate set can't be re-ranked back in.
+
+  **Actionable for pikuri.** (2) is the primary answer and needs no new
+  infra — at most a prompt nudge to reformulate / grep on a weak hit.
+  (1) is the only lever that points *outward*: recommend the user
+  install `recoll`. But that recommendation only helps pikuri if
+  `fileindex_search` can actually *query* recoll — today it speaks
+  `localsearch` only, so "just install recoll" closes nothing on its
+  own. The real deferred item is therefore a `Recoll` backend
+  (`recollq`) parallel to {Pikuri::Os::LocalSearch}, chosen via the same
+  `available?` degrade-gracefully probe (see "Deferred" below). (3)
+  stays declined.
+
+### `recoll` vs `localsearch` — is recoll actually better?
+
+Qualified yes — but for *coverage and portability*, not for the
+semantic gap. Both are **lexical** (stemmed keyword) indexers; neither
+does embeddings, so neither closes cause (3).
+
+| | `localsearch` (tracker3) | `recoll` |
+|---|---|---|
+| Backend | GNOME knowledge graph (SPARQL) | Xapian |
+| Setup | **zero** — already running on GNOME | install + build index + pick dirs |
+| Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
+| Formats | built-in extractors; full-text coverage uneven in practice | broader, via external filter helpers |
+| Query | one snippet/file, simple | phrase / proximity / wildcard / field filters |
+| Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
+| Stemming | yes | yes (language switchable at query time) |
+| Headless CLI | `localsearch search` / `info` | `recollq` |
+
+Reading the table: on a GNOME box `localsearch` is the right default
+*because* it's already indexing, always fresh, and zero-config — "use
+what the OS offers." recoll earns the recommendation in two concrete
+situations, both cause-(1) fixes: **(a) non-GNOME hosts**, where
+`localsearch` is absent and the fileindex tools currently degrade to
+*omitted* entirely — a `recollq` backend would restore an index there;
+and **(b) coverage gaps**, where the user keeps hitting documents
+`localsearch` doesn't full-text. What recoll does *not* buy is a fix
+for a fuzzy conceptual ask — that's cause (2)/(3): agent iteration or
+declined, respectively.
+
+Sources: [recoll.org](https://www.recoll.org/),
+[Recoll (Wikipedia)](https://en.wikipedia.org/wiki/Recoll),
+[Tracker SupportedFormats](https://wiki.gnome.org/Projects/Tracker/SupportedFormats).
 
 ## Deferred / not yet built
 
@@ -119,6 +192,18 @@ when an injection is crafted to look benign.
 - **The rest of the confirmer-gate fatigue work** — session-sticky
   grants, subcommand-aware read rules, batching, and the AI translation
   aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).
+
+**A `Recoll` file-index backend** (`recollq`) parallel to
+{Pikuri::Os::LocalSearch}, selected via the same `available?`
+degrade-gracefully probe. The lever behind cause (1) in the open
+question above: `localsearch` is GNOME-only, so on KDE/Xfce/headless
+hosts the fileindex pair degrades to *omitted* entirely — a recoll
+backend restores an index there, and also covers formats `localsearch`
+doesn't full-text. Deferred, not rejected: it's the only path that
+makes "recommend the user install recoll" actually reach the LLM's
+tools, but no non-GNOME host has driven the need yet. Both backends
+front the same `fileindex_search` / `fileindex_read` seam, so it's an
+added `available?`-picked alternative, not a rewrite.
 
 ## File confirmations: allowlist-safe auto-allow
 
