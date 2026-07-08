@@ -17,9 +17,11 @@ moved to its permanent homes: {Pikuri::Workspace::Confirmer} and
 (the `#ask` return type, the edit/reason axes, the still-rejected
 `:once/:always` fatigue knob, and the sanitizer-gated editable pre-fill),
 and CLAUDE.md's **Confirmer seam** owns the invariant. **Still open**
-(this file): the URL confirmers for an LLM-driven `fetch`, the
-ingest-axis output gate, and the structured action context on `Request`.
-Drain into source + `book/` as pieces graduate.
+(this file): whether a *parent-level* `fetch` should ever be gated by an
+editable-URL confirmer (the author-vs-approver dichotomy is settled by the
+shipped seat — only this wiring question remains), the ingest-axis output
+gate, and the structured action context on `Request`. Drain into source +
+`book/` as pieces graduate.
 
 Related, already worked out:
 
@@ -72,13 +74,33 @@ egress-axis; note that for `pikuri-os` egress is the axis that *needed*
 protecting (ingest is already accepted — it reads hostile files off disk
 today).
 
-## Egress axis — destination control for a future `fetch`/scrape
+## Egress axis — destination control for a `fetch`/scrape
 
 The single question: **who picks the destination host?** If it's ever
 the LLM, an injection can point it at an attacker server. A human in the
 loop can only help if it moves destination-authorship back to the human.
 
-### Pre-filled, editable URL — the safe shape
+The author-vs-approver *dichotomy* below is **settled** — the shipped
+author seat decided it (see the status note at the top of this file). What
+stays open is narrower: whether a *parent-level* `fetch` should ever be
+gated by an editable-URL confirmer at all, given that the two wirings
+that ship today both answer "no" a different way —
+
+- **pikuri-os** keeps `fetch`/`web_scrape` *off* the parent entirely,
+  quarantined in the `RESEARCHER` sub-agent (no filesystem) and reached
+  through the task-prompt author seat (`c.add_sub_agent_tool` in
+  `bin/pikuri-os-assistant`). So there is no parent URL to confirm — the
+  egress question was answered by the **sub-agent hop**, the very move
+  item 1 of "Why these exist" was probing whether we could *avoid*. We
+  didn't avoid it; we leaned on it.
+- **pikuri-assistant** puts `fetch`/`web_scrape` *on* the parent
+  (`c.add_tool`) with **no URL confirmer at all** — the egress-capable
+  shape, a different threat model where the trifecta isn't being broken.
+
+So a parent `fetch` gated by an editable-URL confirmer is the one shape
+nobody has built. The two sub-shapes it could take are already decided:
+
+### Pre-filled, editable URL — the safe shape (mechanism shipped)
 
 The LLM proposes a URL; it lands in the human's input box **pre-filled
 and editable**; the human edits or accepts, then it fires. Because the
@@ -87,13 +109,23 @@ construction, exactly the `private-context-taint.md` result generalized
 from egress *payloads* to the fetch *destination*. The pre-fill is pure
 convenience (saves typing a long URL the human was going to type anyway).
 
-### One-click URL approve — the unsafe twin, same knife-edge
+The **mechanism** this needs already ships — the editable, sanitizer-gated
+author seat ({Pikuri::Workspace::Confirmer::Request}'s `editable:` flag +
+{Pikuri::Workspace::Confirmer::Terminal}'s pre-fill), applied today to the
+`agent` **task string**. Pointing it at a URL instead is a wiring, not a
+new primitive. It stays unbuilt only because neither shipping wiring
+routes a `fetch` through the parent in a shape that wants it (see above).
+
+### One-click URL approve — the unsafe twin — REJECTED
 
 Drop the editability and it collapses into *approver* mode: the human
-only says yes/no to the LLM's URL. This is the seat both taint notes and
-`assistant.md` reject — a human can't reliably spot a laundered secret in
-a plausible-looking URL (`exfil.com/aGVsbG8=/…`, or a redirect chain).
-The user's own intuition ("little value in the human editing the URL") is
+only says yes/no to the LLM's URL. **Rejected**, and it's the same
+rejection the shipped author seat already enforces (a rubber-stamp is
+never the intended path; the terminal even forces a full retype for
+sanitizer-flagged payloads). Recorded here because the URL case is where
+it's most tempting: a human can't reliably spot a laundered secret in a
+plausible-looking URL (`exfil.com/aGVsbG8=/…`, or a redirect chain). The
+user's own intuition ("little value in the human editing the URL") is
 *precisely* the gravitational pull toward this seat; naming it as the
 unsafe twin of the editable form — not an interchangeable variant — is
 the point of recording it. If a UI offers pre-fill, it must **refuse
