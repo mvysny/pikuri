@@ -50,9 +50,17 @@ module Pikuri
       # @return [String]
       DEFAULT_TOPDIRS = '~'
 
+      # @return [String] the Xapian index directory name inside the config
+      #   dir; its presence is what {.available?} treats as "usable".
+      INDEX_DIR = 'xapiandb'
+
       # Raised when a recollq invocation exits non-zero — a recoverable
       # failure the calling tool renders as +"Error: ..."+.
       class CommandError < StandardError; end
+
+      # @return [String] short human name for this backend, used by the
+      #   fileindex tools when prefixing an +"Error: ..."+ observation.
+      def self.label = 'recoll'
 
       # Plain-English note of what this backend will *not* surface, for the
       # fileindex tools to append to their LLM description so the model knows
@@ -201,12 +209,19 @@ module Pikuri
         raise install_hint
       end
 
-      # Non-raising presence probe — for callers that wire the file-index
-      # tools only when recoll is installed and degrade gracefully
-      # otherwise. See {.check_binaries!} for why exit status is ignored.
+      # Non-raising *usability* probe — for callers that select a backend
+      # among several and want the one that can actually serve searches.
+      # Stricter than {.check_binaries!}: it requires both the +recollq+
+      # binary *and* a built index ({INDEX_DIR} under {.confdir}), because
+      # an installed-but-never-indexed recoll errors ("Xapian index open
+      # error") on every query — so it must not win backend selection over
+      # a working alternative. See {.check_binaries!} for why exit status is
+      # ignored for the binary half.
       #
       # @return [Boolean]
       def self.available?
+        return false unless File.directory?(File.join(confdir, INDEX_DIR))
+
         Pikuri::Subprocess.spawn(BINARY, '-h', chdir: '/').wait
         true
       rescue Errno::ENOENT

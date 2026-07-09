@@ -5,20 +5,20 @@ require 'stringio'
 module Pikuri
   module Os
     # The +fileindex_read+ tool — read a file's full text *as stored in
-    # the desktop index* ({LocalSearch}), line-paged like
-    # {Pikuri::Workspace::Read}. The companion to {FileindexSearch}: that
-    # tool locates a file and previews one match, this one returns the
-    # whole text so the LLM can actually answer.
+    # the desktop index*, line-paged like {Pikuri::Workspace::Read}. The
+    # companion to {FileindexSearch}: that tool locates a file and previews
+    # one match, this one returns the whole text so the LLM can actually
+    # answer. Shares its swappable +backend:+ ({LocalSearch} / {Recoll});
+    # only +#read_text+ and +#check_binaries!+ are used here.
     #
     # == Why read the index, not the file
     #
     # The index already holds every indexed file's extracted plain text —
     # PDFs and office documents included — so this reads them in full with
     # no extractor dependency. The cost: it's the *indexed snapshot*, which
-    # can lag very recent edits, and it only covers files the index knows
-    # (home / XDG content folders). For a live or system text file
-    # (+/etc+, +/var/log+, something just written), read it directly
-    # instead.
+    # can lag very recent edits, and it only covers files the index knows.
+    # For a live or system text file (+/etc+, +/var/log+, something just
+    # written), read it directly instead.
     #
     # == Paging
     #
@@ -41,14 +41,17 @@ module Pikuri
         Usage:
         - The companion to fileindex_search: after it locates a file, read the file in full here.
         - Reads the indexed text, so PDFs and office documents come back as their extracted text — no special handling needed.
-        - This is the indexed snapshot: it can lag very recent edits, and only files the index knows (home / XDG folders) are available. For a live or system text file (/etc, /var/log, a just-written file), use the read tool instead.
+        - This is the indexed snapshot: it can lag very recent edits, and only files the index knows are available. For a live or system text file (/etc, /var/log, a just-written file), use the read tool instead.
         - Output is line-numbered `cat -n` style; use `offset` and `limit` to page. When the response ends in `Use offset=N to continue`, call again with that offset.
       DESC
 
-      # @raise [RuntimeError] if +localsearch+ isn't on +PATH+.
+      # @param backend [Module] a file-index backend ({LocalSearch} /
+      #   {Recoll}); only +#read_text+ and +#check_binaries!+ are used here.
+      # @raise [RuntimeError] if the backend's binary isn't on +PATH+.
       # @return [FileindexRead]
-      def initialize
-        LocalSearch.check_binaries!
+      def initialize(backend:)
+        @backend = backend
+        backend.check_binaries!
         super(
           name: 'fileindex_read',
           description: DESCRIPTION,
@@ -64,24 +67,25 @@ module Pikuri
                                "#{DEFAULT_LIMIT}, e.g. 500."
           },
           execute: lambda { |path:, offset: 1, limit: DEFAULT_LIMIT|
-            FileindexRead.read(path: path, offset: offset, limit: limit)
+            FileindexRead.read(path: path, offset: offset, limit: limit, backend: backend)
           }
         )
       end
 
       # @param path [String]
+      # @param backend [Module] the file-index backend to read from
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] max lines
       # @return [String] the cat-n windowed text, or +"Error: ..."+
-      def self.read(path:, offset: 1, limit: DEFAULT_LIMIT)
+      def self.read(path:, backend:, offset: 1, limit: DEFAULT_LIMIT)
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
 
-        text = LocalSearch.read_text(path)
+        text = backend.read_text(path)
         if text.nil?
-          return "Error: #{path} is not in the index (only your home / XDG content " \
-                 'folders are indexed; PDFs and office docs are included). For a live ' \
-                 'or system text file, use the read tool.'
+          return "Error: #{path} is not in the index (only indexed folders are " \
+                 'available; PDFs and office docs are included). For a live or ' \
+                 'system text file, use the read tool.'
         end
 
         page = Pikuri::Extractor.extract_paged(

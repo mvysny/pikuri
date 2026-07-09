@@ -2,12 +2,21 @@
 
 module Pikuri
   module Os
-    # The +fileindex_search+ tool — a fast, cheap keyword lookup over
-    # GNOME's desktop file index ({LocalSearch}). Returns the matching
-    # file paths, each with the *single* snippet the index provides.
-    # A {Pikuri::Tool} in the {Pikuri::Workspace::Grep} shape (shells out
-    # through {LocalSearch}, fails loud at construction if the binary is
-    # missing).
+    # The +fileindex_search+ tool — a fast, cheap keyword lookup over a
+    # desktop file index. Returns the matching file paths, each with the
+    # *single* snippet the index provides. A {Pikuri::Tool} in the
+    # {Pikuri::Workspace::Grep} shape (shells out through the backend, fails
+    # loud at construction if the binary is missing).
+    #
+    # == Swappable backend
+    #
+    # The +backend:+ is a stateless module satisfying the file-index duck
+    # type — {LocalSearch} (GNOME) or {Recoll} (DE-independent); {Extension}
+    # picks whichever is usable. The tool needs only +#search+,
+    # +#read_text+ (its companion), +#check_binaries!+, +#limitations+,
+    # +#label+, and a +CommandError+ constant. Backend-specific text — the
+    # blind-spot note and the error label — is read from the backend, so a
+    # new index arm ships its own without touching the tool.
     #
     # == Honest, not a window
     #
@@ -16,14 +25,8 @@ module Pikuri
     # one match each, and tells the LLM to {FileindexRead read the file}
     # for the complete content / any other matches. It also sees inside
     # PDFs and office documents (indexed at extract time), unlike a
-    # plain-text search, and covers the user's home / XDG content folders
-    # — not system paths like +/etc+ (use a text/regex search there).
-    # Because it's just an index lookup it's cheap to run repeatedly.
-    #
-    # The backend's structural blind spots (source code, git checkouts,
-    # no folder scoping) are appended to the LLM description verbatim from
-    # {LocalSearch::LIMITATIONS} — kept on the backend so a different
-    # index arm ships its own text.
+    # plain-text search. Because it's just an index lookup it's cheap to
+    # run repeatedly.
     class FileindexSearch < Pikuri::Tool
       # @return [Integer] default / max matching files returned.
       DEFAULT_LIMIT = 10
@@ -36,28 +39,33 @@ module Pikuri
       # @return [String] human-readable form of {MAX_BYTES}.
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
-      # @return [String] opencode-shape description (summary + Usage).
+      # @return [String] opencode-shape description (summary + Usage),
+      #   backend-neutral; the backend's blind-spot note is appended at
+      #   construction (see {#initialize}).
       DESCRIPTION = <<~DESC
         Find files whose contents contain your words or phrase, using the desktop search index.
 
         Usage:
         - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text — reach for this when the answer may live in a file's contents.
-        - Covers your home and standard user folders (Documents, Downloads, …), NOT system paths like /etc or /var — search those with a text/regex tool instead.
         - Keyword match (and word stems); type the actual words that would appear in the file.
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
         - Cheap and fast: fine to run many times to narrow down.
+        - Only indexed folders are covered; system paths like /etc or /var are not — search those with a text/regex tool instead.
         - Output is truncated to #{MAX_BYTES_LABEL}; narrow the query if it ends in a truncation marker.
-
-        #{LocalSearch::LIMITATIONS}
       DESC
 
-      # @raise [RuntimeError] if +localsearch+ isn't on +PATH+.
+      # @param backend [Module] a file-index backend ({LocalSearch} /
+      #   {Recoll}) — must respond to +#search+, +#read_text+,
+      #   +#check_binaries!+, +#limitations+, +#label+ and define a
+      #   +CommandError+.
+      # @raise [RuntimeError] if the backend's binary isn't on +PATH+.
       # @return [FileindexSearch]
-      def initialize
-        LocalSearch.check_binaries!
+      def initialize(backend:)
+        @backend = backend
+        backend.check_binaries!
         super(
           name: 'fileindex_search',
-          description: DESCRIPTION,
+          description: "#{DESCRIPTION}\n#{backend.limitations}",
           parameters: Parameters.build { |p|
             p.required_string :query,
                               'Words or a phrase to find in file contents, ' \
@@ -67,32 +75,34 @@ module Pikuri
                                "(default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 10."
           },
           execute: lambda { |query:, limit: DEFAULT_LIMIT|
-            FileindexSearch.search(query: query, limit: limit)
+            FileindexSearch.search(query: query, limit: limit, backend: backend)
           }
         )
       end
 
       # @param query [String]
       # @param limit [Integer]
+      # @param backend [Module] the file-index backend to query
       # @return [String] formatted hits + disclaimer, a no-match message,
       #   or +"Error: ..."+
-      def self.search(query:, limit: DEFAULT_LIMIT)
+      def self.search(query:, backend:, limit: DEFAULT_LIMIT)
         q = query.to_s.strip
         return 'Error: empty query.' if q.empty?
 
         limit = clamp(limit, 1, MAX_LIMIT)
-        hits = LocalSearch.search(query: q, limit: limit)
+        hits = backend.search(query: q, limit: limit)
         return no_match_message(q) if hits.empty?
 
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
         [content.chomp, '', disclaimer(hits.size) + marker].join("\n")
-      rescue LocalSearch::CommandError => e
-        # Cap the error too: localsearch's stderr is normally short (it's a
-        # daemon query, not a filesystem walk), but a raw subprocess error
-        # returned verbatim is the shape that overflows the model's context
-        # — share the success path's ceiling. See {Pikuri::Workspace::Grep}.
+      rescue backend::CommandError => e
+        # Cap the error too: the backend's stderr is normally short (it's a
+        # daemon/index query, not a filesystem walk), but a raw subprocess
+        # error returned verbatim is the shape that overflows the model's
+        # context — share the success path's ceiling. See
+        # {Pikuri::Workspace::Grep}.
         content, marker = head_truncate(e.message)
-        "Error: localsearch: #{content}#{marker}"
+        "Error: #{backend.label}: #{content}#{marker}"
       end
 
       # @return [String] +"<path>"+ or +"<path>\n  <snippet>"+
@@ -110,8 +120,8 @@ module Pikuri
 
       # @return [String]
       def self.no_match_message(query)
-        "No files found matching '#{query}'. (Searches your indexed home / user " \
-          'folders, not system paths; the index may also be disabled or still building.)'
+        "No files found matching '#{query}'. (Searches your indexed folders, " \
+          'not system paths; the index may also be disabled or still building.)'
       end
       private_class_method :no_match_message
 

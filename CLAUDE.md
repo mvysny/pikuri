@@ -529,8 +529,14 @@ per-gem one-liners:
 - **`pikuri-os/`** — the offline OS-helper agent shape:
   `Os::Extension` (one-call wiring) layers the OS surface on
   Workspace + Code — `Os::FileindexSearch` / `Os::FileindexRead`
-  (a search→read-full pair over GNOME's `localsearch`, degrading
-  to omitted when it's absent), `Os::MachineMemory` (the
+  (a search→read-full pair over a swappable, stateless file-index
+  backend: `Os::LocalSearch` (GNOME) or `Os::Recoll` (Xapian,
+  DE-independent), both a `#search`/`#read_text`/`#available?`/
+  `#check_binaries!`/`#limitations`/`#label` + `CommandError` duck
+  type — the tool holds no backend-specific text; `Extension` wires
+  the pair on the first backend in `FILE_INDEX_BACKENDS` whose
+  `available?` is true (localsearch, then recoll-with-a-built-index),
+  omitting them when none is), `Os::MachineMemory` (the
   `~/.config/pikuri/MACHINE.md` resident memory folded into the
   prompt), and `Os::SystemInfo` (boot grounding via `inxi -b` +
   primitives) — plus `bin/pikuri-os-assistant`. The binary's

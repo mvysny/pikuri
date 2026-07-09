@@ -28,6 +28,19 @@ module Pikuri
       # @return [String] the localsearch CLI.
       BINARY = 'localsearch'
 
+      # @return [String] short human name for this backend, used by the
+      #   fileindex tools when prefixing an +"Error: ..."+ observation.
+      def self.label = 'localsearch'
+
+      # Uniform accessor mirroring {Recoll.limitations}, so the fileindex
+      # tools can read either backend's blind-spot note the same way. Here
+      # it's simply {LIMITATIONS} — this backend's blind spots are the same
+      # on every host, so unlike recoll's (which depends on the configured
+      # folders) it can be a constant.
+      #
+      # @return [String]
+      def self.limitations = LIMITATIONS
+
       # Plain-English note of this backend's *structural* blind spots —
       # what it will never surface no matter how the query is phrased —
       # for the fileindex tools to append to their LLM description so the

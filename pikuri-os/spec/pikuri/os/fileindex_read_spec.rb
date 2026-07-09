@@ -17,16 +17,19 @@ RSpec.describe Pikuri::Os::FileindexRead do
     Pikuri::Os::LocalSearch.define_singleton_method(:read_text, original)
   end
 
+  # The default backend under test; the module methods are stubbed above.
+  def backend = Pikuri::Os::LocalSearch
+
   describe '.read' do
     it 'rejects offset < 1 and limit < 1' do
-      assert_includes described_class.read(path: '/x', offset: 0, limit: 10), 'offset must be >= 1'
-      assert_includes described_class.read(path: '/x', offset: 1, limit: 0), 'limit must be >= 1'
+      assert_includes described_class.read(path: '/x', offset: 0, limit: 10, backend: backend), 'offset must be >= 1'
+      assert_includes described_class.read(path: '/x', offset: 1, limit: 0, backend: backend), 'limit must be >= 1'
     end
 
     it 'returns a not-in-index error when the backend has no text' do
       original = stub_backend_read { |_path| nil }
       begin
-        out = described_class.read(path: '/home/u/missing.pdf', offset: 1, limit: 10)
+        out = described_class.read(path: '/home/u/missing.pdf', offset: 1, limit: 10, backend: backend)
         assert_includes out, 'is not in the index'
         assert_includes out, 'use the read tool'
       ensure
@@ -38,7 +41,7 @@ RSpec.describe Pikuri::Os::FileindexRead do
       text = (1..30).map { |i| "line #{i}" }.join("\n")
       original = stub_backend_read { |_path| text }
       begin
-        out = described_class.read(path: '/x', offset: 1, limit: 10)
+        out = described_class.read(path: '/x', offset: 1, limit: 10, backend: backend)
         assert_includes out, "     1\tline 1"
         assert_includes out, "    10\tline 10"
         refute_includes out, 'line 11'
@@ -52,7 +55,7 @@ RSpec.describe Pikuri::Os::FileindexRead do
       text = (1..5).map { |i| "line #{i}" }.join("\n")
       original = stub_backend_read { |_path| text }
       begin
-        out = described_class.read(path: '/x', offset: 3, limit: 100)
+        out = described_class.read(path: '/x', offset: 3, limit: 100, backend: backend)
         assert_includes out, "     3\tline 3"
         assert_includes out, "     5\tline 5"
         refute_includes out, 'line 2'
@@ -65,13 +68,13 @@ RSpec.describe Pikuri::Os::FileindexRead do
 
   if LOCALSEARCH_AVAILABLE
     it 'constructs as a Pikuri::Tool named fileindex_read' do
-      tool = described_class.new
+      tool = described_class.new(backend: backend)
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'fileindex_read', tool.name
     end
   else
-    it 'raises a clear error at construction when localsearch is missing' do
-      err = assert_raises(RuntimeError) { described_class.new }
+    it 'raises a clear error at construction when the backend binary is missing' do
+      err = assert_raises(RuntimeError) { described_class.new(backend: backend) }
       assert_includes err.message, 'localsearch'
     end
   end

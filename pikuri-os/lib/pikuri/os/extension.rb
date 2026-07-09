@@ -59,13 +59,21 @@ module Pikuri
     #
     # == Degradation
     #
-    # The file-index tools need GNOME's +localsearch+. When it's absent the
-    # extension logs a warning and simply omits them — the agent still works
-    # (bash + file tools); it doesn't fail to construct on a non-GNOME host.
+    # The file-index tools need a usable index backend. The extension tries
+    # each of {FILE_INDEX_BACKENDS} in order and wires the tools on the
+    # first that is {LocalSearch.available? usable} — {LocalSearch} (GNOME,
+    # zero-setup) first, then {Recoll} (DE-independent, but only when it has
+    # a built index). When none is usable it logs a warning and simply omits
+    # the tools — the agent still works (bash + file tools); it doesn't fail
+    # to construct on a host with no file index.
     class Extension
       include Pikuri::Agent::Extension
 
       LOGGER = Pikuri.logger_for('Os::Extension')
+
+      # @return [Array<Module>] file-index backends in preference order; the
+      #   first one whose +#available?+ is true backs the fileindex tools.
+      FILE_INDEX_BACKENDS = [LocalSearch, Recoll].freeze
 
       # @param filesystem [Pikuri::Workspace::Filesystem] the host fs view
       #   for the file tools and bash (typically
@@ -82,15 +90,21 @@ module Pikuri
       #   drives the whole posture. +nil+ leaves plan mode unavailable.
       # @param memory [MachineMemory] the MACHINE.md reader.
       # @param system_info [SystemInfo] the boot-time machine facts.
+      # @param file_index_backends [Array<Module>] file-index backends in
+      #   preference order; defaults to {FILE_INDEX_BACKENDS}. The first
+      #   usable one backs the fileindex tools; if none is usable they are
+      #   omitted.
       def initialize(filesystem:, confirmer:,
                      sandbox: Pikuri::Code::Bash::Sandbox::NONE, read_only: nil,
-                     memory: MachineMemory.new, system_info: SystemInfo.new)
+                     memory: MachineMemory.new, system_info: SystemInfo.new,
+                     file_index_backends: FILE_INDEX_BACKENDS)
         @filesystem = filesystem
         @confirmer = confirmer
         @sandbox = sandbox
         @read_only = read_only
         @memory = memory
         @system_info = system_info
+        @file_index_backends = file_index_backends
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -108,12 +122,14 @@ module Pikuri
                           read_only: @read_only
                         ))
 
-        if LocalSearch.available?
-          c.add_tool FileindexSearch.new
-          c.add_tool FileindexRead.new
+        backend = @file_index_backends.find(&:available?)
+        if backend
+          c.add_tool FileindexSearch.new(backend: backend)
+          c.add_tool FileindexRead.new(backend: backend)
         else
-          LOGGER.warn('localsearch not found on PATH; fileindex_search / fileindex_read ' \
-                      'disabled (GNOME desktop file index unavailable on this host).')
+          tried = @file_index_backends.map(&:label).join(' / ')
+          LOGGER.warn("no usable file index (tried #{tried}); fileindex_search / " \
+                      'fileindex_read disabled on this host.')
         end
 
         nil

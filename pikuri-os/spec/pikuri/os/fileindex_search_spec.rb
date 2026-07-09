@@ -18,9 +18,12 @@ RSpec.describe Pikuri::Os::FileindexSearch do
     Pikuri::Os::LocalSearch.define_singleton_method(:search, original)
   end
 
+  # The default backend under test; the module methods are stubbed above.
+  def backend = Pikuri::Os::LocalSearch
+
   describe '.search' do
     it 'rejects an empty query without touching the backend' do
-      assert_equal 'Error: empty query.', described_class.search(query: '   ')
+      assert_equal 'Error: empty query.', described_class.search(query: '   ', backend: backend)
     end
 
     it 'renders path + snippet per hit and a one-match-per-file disclaimer' do
@@ -29,7 +32,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
          { path: '/home/u/b.txt', snippet: nil }]
       end
       begin
-        out = described_class.search(query: 'beta', limit: 10)
+        out = described_class.search(query: 'beta', limit: 10, backend: backend)
         assert_includes out, "/home/u/a.pdf\n  alpha beta"
         assert_includes out, '/home/u/b.txt'
         assert_includes out, 'one match shown per file'
@@ -42,16 +45,17 @@ RSpec.describe Pikuri::Os::FileindexSearch do
     it 'reports no matches on an empty result' do
       original = stub_backend_search { |**| [] }
       begin
-        assert_includes described_class.search(query: 'nonesuch'), "No files found matching 'nonesuch'"
+        assert_includes described_class.search(query: 'nonesuch', backend: backend),
+                        "No files found matching 'nonesuch'"
       ensure
         restore_backend_search(original)
       end
     end
 
-    it 'renders a backend CommandError as an Error observation' do
+    it 'renders a backend CommandError as an Error observation, prefixed with its label' do
       original = stub_backend_search { |**| raise Pikuri::Os::LocalSearch::CommandError, 'bad query' }
       begin
-        assert_equal 'Error: localsearch: bad query', described_class.search(query: 'x')
+        assert_equal 'Error: localsearch: bad query', described_class.search(query: 'x', backend: backend)
       ensure
         restore_backend_search(original)
       end
@@ -61,7 +65,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
       huge = 'x' * (described_class::MAX_BYTES * 3)
       original = stub_backend_search { |**| raise Pikuri::Os::LocalSearch::CommandError, huge }
       begin
-        result = described_class.search(query: 'x')
+        result = described_class.search(query: 'x', backend: backend)
         assert result.start_with?('Error: localsearch:'), "got #{result[0, 40].inspect}"
         assert_includes result, 'bytes omitted'
         assert result.bytesize <= described_class::MAX_BYTES + 200,
@@ -78,7 +82,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
         []
       end
       begin
-        described_class.search(query: 'x', limit: 9999)
+        described_class.search(query: 'x', limit: 9999, backend: backend)
         assert_equal described_class::MAX_LIMIT, seen
       ensure
         restore_backend_search(original)
@@ -86,15 +90,24 @@ RSpec.describe Pikuri::Os::FileindexSearch do
     end
   end
 
+  it 'appends the backend limitations to the tool description' do
+    fake = Module.new do
+      def self.check_binaries! = nil
+      def self.limitations = 'BACKEND BLIND SPOTS HERE'
+    end
+    tool = described_class.new(backend: fake)
+    assert_includes tool.description, 'BACKEND BLIND SPOTS HERE'
+  end
+
   if LOCALSEARCH_AVAILABLE
     it 'constructs as a Pikuri::Tool named fileindex_search' do
-      tool = described_class.new
+      tool = described_class.new(backend: backend)
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'fileindex_search', tool.name
     end
   else
-    it 'raises a clear error at construction when localsearch is missing' do
-      err = assert_raises(RuntimeError) { described_class.new }
+    it 'raises a clear error at construction when the backend binary is missing' do
+      err = assert_raises(RuntimeError) { described_class.new(backend: backend) }
       assert_includes err.message, 'localsearch'
     end
   end

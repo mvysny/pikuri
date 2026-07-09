@@ -158,22 +158,52 @@ RSpec.describe Pikuri::Os::Recoll do
   end
 
   describe '.available?' do
-    it 'is true when recollq runs at all (ignoring its non-zero -h exit)' do
-      original = stub_spawn(success: false, output: 'Usage: recollq')
-      begin
-        assert described_class.available?
-      ensure
-        restore_spawn(original)
+    # available? requires BOTH a built index and the binary; drive it with a
+    # confdir tmpdir that does/doesn't contain an xapiandb.
+    def with_confdir(indexed:)
+      Dir.mktmpdir do |confdir|
+        Dir.mkdir(File.join(confdir, 'xapiandb')) if indexed
+        original_env = ENV['RECOLL_CONFDIR']
+        ENV['RECOLL_CONFDIR'] = confdir
+        begin
+          yield
+        ensure
+          ENV['RECOLL_CONFDIR'] = original_env
+        end
+      end
+    end
+
+    it 'is true when the index exists and recollq runs (ignoring its non-zero -h exit)' do
+      with_confdir(indexed: true) do
+        original = stub_spawn(success: false, output: 'Usage: recollq')
+        begin
+          assert described_class.available?
+        ensure
+          restore_spawn(original)
+        end
+      end
+    end
+
+    it 'is false when there is no built index, even though recollq is present' do
+      with_confdir(indexed: false) do
+        original = stub_spawn(success: false, output: 'Usage: recollq')
+        begin
+          refute described_class.available?
+        ensure
+          restore_spawn(original)
+        end
       end
     end
 
     it 'is false (no raise) when the binary is missing' do
-      original = Pikuri::Subprocess.method(:spawn)
-      Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| raise Errno::ENOENT, 'recollq' }
-      begin
-        refute described_class.available?
-      ensure
-        Pikuri::Subprocess.define_singleton_method(:spawn, original)
+      with_confdir(indexed: true) do
+        original = Pikuri::Subprocess.method(:spawn)
+        Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| raise Errno::ENOENT, 'recollq' }
+        begin
+          refute described_class.available?
+        ensure
+          Pikuri::Subprocess.define_singleton_method(:spawn, original)
+        end
       end
     end
   end

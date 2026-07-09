@@ -19,8 +19,9 @@ its rationale, read:
   independent network boundaries.
 - **YARD headers** — {Pikuri::Os::Extension} (one-call wiring +
   confirmation policy), {Pikuri::Os::FileindexSearch} /
-  {Pikuri::Os::FileindexRead} / {Pikuri::Os::LocalSearch} (the
-  search → read-full pair), {Pikuri::Os::MachineMemory} (`MACHINE.md`),
+  {Pikuri::Os::FileindexRead} / {Pikuri::Os::LocalSearch} /
+  {Pikuri::Os::Recoll} (the search → read-full pair over a swappable
+  file-index backend), {Pikuri::Os::MachineMemory} (`MACHINE.md`),
   {Pikuri::Os::SystemInfo} (grounding),
   {Pikuri::Code::Bash::Sandbox::FullFsNoNet} (the kernel-severed
   network) and {Pikuri::Code::Bash::ReadOnlyCommandApprover} +
@@ -140,10 +141,11 @@ its rationale, read:
   measurement below shows it's a thin slice: on content `localsearch`
   indexes, recoll's recall is *identical*, and the cases where recoll
   wins (source, `.git`, scoped search) are already covered by the wired
-  grep. A deferred `Recoll` (`recollq`) backend parallel to
-  {Pikuri::Os::LocalSearch}, `available?`-probed (see "Deferred"),
-  earns its keep only for *large non-code corpora* outside GNOME's
-  indexed set. (3) stays declined.
+  grep. The `Recoll` (`recollq`) backend parallel to
+  {Pikuri::Os::LocalSearch}, `available?`-probed, is now **shipped and
+  wired** (see "Deferred / not yet built" below for its shape); it earns
+  its keep only for *non-GNOME hosts* or *large non-code corpora* outside
+  GNOME's indexed set. (3) stays declined.
 
 ### `recoll` vs `localsearch` — is recoll actually better?
 
@@ -221,18 +223,30 @@ when an injection is crafted to look benign.
   grants, subcommand-aware read rules, batching, and the AI translation
   aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).
 
-**A `Recoll` file-index backend** (`recollq`) parallel to
-{Pikuri::Os::LocalSearch}, selected via the same `available?`
-degrade-gracefully probe. Both backends would front the same
-`fileindex_search` / `fileindex_read` seam, so it's an
-`available?`-picked alternative, not a rewrite. But the measurement in
-the open question above **weakened** this: on content `localsearch`
-indexes, recoll's recall is *identical*, and recoll's genuine wins
-(source code, `.git` trees, scoped in-folder search, non-GNOME hosts)
-are already served by the wired grep. So the residual niche is narrow —
-a non-GNOME host, *or* a large non-code corpus wanting fast indexed
-ranking that grep would scan too slowly. Deferred, not rejected: real,
-but no host has driven it, and grep shrinks the payoff.
+**A `Recoll` file-index backend** — **shipped** as
+{Pikuri::Os::Recoll}, a stateless module parallel to
+{Pikuri::Os::LocalSearch} behind the same `#search` / `#read_text` /
+`#available?` / `#limitations` / `#label` + `CommandError` duck type.
+{Pikuri::Os::Extension} wires the `fileindex_*` pair on the first
+backend in `FILE_INDEX_BACKENDS` whose `available?` is true —
+`localsearch` first (GNOME, zero-setup), then `recoll` (but only with a
+*built* index: recoll's `available?` requires `<confdir>/xapiandb`, so
+an installed-but-unindexed recoll doesn't win selection and then error
+on every query). The measurement in the open question above bounds the
+payoff: on content `localsearch` indexes, recoll's recall is
+*identical*, and recoll's genuine wins (source code, `.git` trees,
+scoped in-folder search) are already served by the wired grep — so its
+live niche is the **non-GNOME host** (no `localsearch` at all) *or* a
+large non-code corpus wanting fast indexed ranking grep would scan too
+slowly. That thinness is why it's a *fallback*, not a co-equal: the
+selection order encodes "localsearch if you have it." Two things worth
+noting on the shape: recoll's blind spot is the **inverse** of
+localsearch's — it indexes exactly the configured `topdirs` (source
+code included) rather than all of `$HOME` minus source, so its
+`limitations` is a *method* reading the live `topdirs` (parsed from
+`$RECOLL_CONFDIR`/`~/.recoll`), not a constant; and pikuri never
+*builds* or *configures* a recoll index — it only queries an index the
+user already maintains.
 
 ## File confirmations: allowlist-safe auto-allow
 
