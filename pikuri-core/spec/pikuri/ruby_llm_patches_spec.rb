@@ -15,19 +15,33 @@ RSpec.describe Pikuri::RubyLlmPatches do
   end
 
   describe '#parse_streaming_error' do
-    it 'returns the body as the message for a bare JSON string (the crash case)' do
-      # Pre-patch this raised TypeError: String does not have #dig, because
-      # String#['error'] substring-matches past the intended key guard.
+    it 'handles a {"error": "<string>"} body (xAI/Grok shape — the real crash)' do
+      # error is a *string value*, not a nested object. Pre-patch,
+      # error_data.dig('error', 'type') recursed into the string and
+      # called String#dig => TypeError. nil status defers to HTTP status.
+      body = { error: 'The model grok-4.5 is not available in your region.' }.to_json
+      status, message = mod.parse_streaming_error(body)
+      assert_nil status
+      assert_equal 'The model grok-4.5 is not available in your region.', message
+    end
+
+    it 'returns the body as the message for a bare JSON string' do
+      # String#['error'] substring-matches past the original key guard.
       body = %q("The model foo is not available in your region (error).")
       status, message = mod.parse_streaming_error(body)
-      assert_equal 500, status
+      assert_nil status
       assert_equal 'The model foo is not available in your region (error).', message
     end
 
     it 'does not raise on a JSON string that lacks the substring "error"' do
       status, message = mod.parse_streaming_error(%q("plain message"))
-      assert_equal 500, status
+      assert_nil status
       assert_equal 'plain message', message
+    end
+
+    it 'defers status on a Hash with no error key' do
+      status, = mod.parse_streaming_error(%q({"choices":[]}))
+      assert_nil status
     end
 
     it 'still maps a well-formed rate-limit error hash to 429' do
@@ -55,8 +69,9 @@ RSpec.describe Pikuri::RubyLlmPatches do
       # This is how ruby_llm actually calls it: the provider includes the
       # Streaming module, so the fix must reach the instance-method copy.
       klass = Class.new { include RubyLLM::Providers::OpenAI::Streaming }
-      status, = klass.new.send(:parse_streaming_error, %q("some error body"))
-      assert_equal 500, status
+      status, message = klass.new.send(:parse_streaming_error, %q("some error body"))
+      assert_nil status
+      assert_equal 'some error body', message
     end
   end
 end

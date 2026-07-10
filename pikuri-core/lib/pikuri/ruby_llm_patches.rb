@@ -22,15 +22,27 @@ module Pikuri
   # OpenAI-compatible gateways return for "model not available in your
   # region") crashes ruby_llm 1.16.0 with +TypeError: String does not have
   # #dig method+ at +providers/openai/streaming.rb:43+, instead of
-  # surfacing the endpoint's actual error message. The guard
-  # +return unless error_data['error']+ is meant as a key-presence check,
-  # but on a +String+ that is +String#[]+ *substring* matching, so a body
-  # containing the substring +error+ slips past it into +.dig+, which
-  # +String+ doesn't implement. The non-streaming path
-  # (+RubyLLM::Provider#parse_error+) already handles the same body
-  # gracefully by casing on Hash/Array/else — this patch brings the
-  # streaming path in line by refusing to +.dig+ a non-Hash body and
-  # returning the raw body as the message instead.
+  # surfacing the endpoint's actual error message. Two distinct bodies
+  # trigger the same crash, both because the method assumes the error is a
+  # nested object it can +.dig+ into:
+  #
+  # 1. A bare JSON string body (e.g. +"...not available..."+). The guard
+  #    +return unless error_data['error']+ is meant as a key-presence
+  #    check, but on a +String+ that is +String#[]+ *substring* matching,
+  #    so a body containing the substring +error+ slips past it into
+  #    +.dig+, which +String+ doesn't implement.
+  # 2. A +{"error": "<message>"}+ body where +error+ is a *string value*
+  #    (xAI/Grok's shape), not a nested object. The guard passes, then
+  #    +error_data.dig('error', 'type')+ recurses into the string and
+  #    calls +String#dig+ — the same +TypeError+.
+  #
+  # The non-streaming path (+RubyLLM::Provider#parse_error+) already
+  # handles both gracefully by casing on Hash/Array/else and short-
+  # circuiting a string +error+ value (+return error if error.is_a?(String)+).
+  # This patch mirrors that logic: it never +.dig+s something that isn't a
+  # Hash, and hands a non-typed error up as the message with a +nil+
+  # status so ruby_llm's own +build_stream_error_response+ falls back to
+  # the real HTTP status (+env.status+) for classification.
   #
   # We redefine the whole method (rather than +prepend+ + +super+) because
   # it is a small, self-contained +module_function+ with no state — a
@@ -59,18 +71,28 @@ module RubyLLM
         # to remove it (ruby_llm #837).
         #
         # @param data [String] the JSON error body as received
-        # @return [Array(Integer, String)] HTTP-ish status + human message
+        # @return [Array(Integer, nil), String] a +[status, message]+
+        #   pair; +status+ is +nil+ when the body carries no error type,
+        #   deferring classification to the response's HTTP status
         def parse_streaming_error(data)
           error_data = JSON.parse(data)
-          return [500, error_data.to_s] unless error_data.is_a?(Hash) && error_data['error']
+          # Non-Hash body (a bare JSON string/number/array): no structured
+          # error to read — surface it as the message, defer status.
+          return [nil, error_data.to_s] unless error_data.is_a?(Hash)
 
-          case error_data.dig('error', 'type')
+          error = error_data['error']
+          return [nil, error_data.to_s] unless error
+          # A string error value (xAI/Grok's {"error": "..."}) has no type
+          # field — hand it up as-is, defer status to the HTTP response.
+          return [nil, error] if error.is_a?(String)
+
+          case error['type']
           when 'server_error'
-            [500, error_data['error']['message']]
+            [500, error['message']]
           when 'rate_limit_exceeded', 'insufficient_quota'
-            [429, error_data['error']['message']]
+            [429, error['message']]
           else
-            [400, error_data['error']['message']]
+            [400, error['message']]
           end
         end
         module_function :parse_streaming_error
