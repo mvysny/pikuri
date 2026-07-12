@@ -126,6 +126,103 @@ tractable if we chose it.
 That still leaves context-length detection and model metadata as things
 we consciously either port or drop.
 
+## The fourth option: adopt a dedicated OpenAI client instead of hand-rolling
+
+"The honest middle" says *own the OpenAI transport*. That doesn't have to
+mean *hand-roll the SSE parser from scratch* — the fiddly part under
+"Against dropping." There is a middle-of-the-middle: swap ruby_llm's
+multi-provider machinery for a **single-provider OpenAI client**, keeping
+someone else's battle-tested SSE framing and multipart handling and
+owning only the loop + tool-call dispatch + value types on top. Two real
+candidates plus the incumbent (numbers measured 2026-07-12):
+
+| | official `openai` | `ruby-openai` | `ruby_llm` (today) |
+|---|---|---|---|
+| Author | OpenAI (Stainless-generated) | Alex Rudall (community) | Carmine Paolino |
+| First release | 2025 | 2020 | 2025 |
+| Latest | 0.69.0 (2026-07-09) | 8.3.0 (2025-08-29) | 1.16.0 (2026-06-09) |
+| Total downloads | 1.47M | 43.6M | 10.3M |
+| GitHub stars | 439 | 3,222 | 4,237 |
+| Last push | 2026-07-09 | 2026-05-01 | 2026-07-07 |
+| License | Apache-2.0 | MIT | MIT |
+| Direct runtime deps | `base64`, `cgi`, `connection_pool` | `event_stream_parser`, `faraday`, `faraday-multipart` | 9 (`faraday`×4 + `marcel` + `zeitwerk` + `ruby_llm-schema` + `base64` + `event_stream_parser`) |
+| HTTP stack | `net/http` (own) | Faraday | Faraday |
+| Scope | full OpenAI API, generated | OpenAI API, hand-written | all major providers |
+
+### Maturity
+
+- **`ruby-openai`** is the oldest and most established (2020, five-plus
+  years, 8.x line). But it is visibly *slowing*: last gem release
+  2025-08, last repo push 2026-05. For a **frozen** surface —
+  `/v1/chat/completions` barely changes — "done and quiet" is arguably a
+  feature, not decay. The risk is the day OpenAI ships a
+  chat-completions knob we need and nobody's home.
+- **official `openai`** is young (2025) and still `0.x` — nominally
+  unstable public API, 87 versions in ~16 months. But it is
+  **Stainless-generated and vendor-backed**, so it tracks new API
+  features (Responses API, structured outputs) fastest and won't be
+  abandoned. The flip side is exactly why it's a poor fit here (below).
+- **`ruby_llm`** is the most actively developed of the three and the
+  only one being pushed weekly — but its churn is *multi-provider*
+  churn, i.e. movement in surface we don't use, which is where our bugs
+  have come from.
+
+### Popularity
+
+Two different signals disagree. By **downloads** `ruby-openai` dwarfs
+everything (43.6M — it *is* the Ruby-meets-OpenAI default, and much of
+that is transitive/legacy). By **stars** `ruby_llm` (4.2k) edges out
+`ruby-openai` (3.2k) with the official gem a distant third (439) — but
+generated SDKs always under-star, so 439 understates real use (1.47M
+downloads and climbing). Read together: `ruby-openai` is the safe,
+widely-deployed choice; `ruby_llm` has the momentum; the official gem
+has the vendor but not yet the ecosystem.
+
+### Dependencies (the axis that actually moves our audit surface)
+
+Raw direct-dep counts (3 / 3 / 9) mislead. What matters is **net-new to
+pikuri-core's audit tree**, which already ships Faraday + Zeitwerk +
+`base64`:
+
+- **`ruby-openai`** is the cheapest by this measure. `faraday` and
+  `base64` are already ours; `zeitwerk` is already ours; net-new is
+  `event_stream_parser` (one file, zero deps — *the same SSE parser
+  ruby_llm itself uses*) plus `faraday-multipart`. It also **reuses our
+  Faraday stack**, so there's one HTTP client in the process, not two.
+- **`ruby_llm`** adds `marcel`, `ruby_llm-schema`, `faraday-retry`,
+  `faraday-net_http` on top of that — the pieces a lean OpenAI-only
+  client doesn't need.
+- **official `openai`** looks lean (`base64`/`cgi` are default gems,
+  `connection_pool` is tiny) but the count lies in the *opposite*
+  direction: it **doesn't use Faraday** — it hand-rolls `net/http`
+  inside a **large machine-generated SDK** (the whole OpenAI API surface
+  as generated Ruby). So it (a) adds a *second* HTTP path to a process
+  that already speaks Faraday everywhere, and (b) is code you cannot
+  "read end-to-end in an evening" even though the *dependency* line is
+  short. Generated breadth is exactly the thing the audit-first value
+  rejects — it's ruby_llm's multi-provider problem in a different suit.
+
+### Reading
+
+For pikuri's stated posture — single provider, audit-first, already
+Faraday-native — **`ruby-openai` is the strongest fit of the three, and
+a better target than a from-scratch hand-roll.** It hands us the SSE +
+multipart machinery (the surface that bit us), reuses the HTTP stack we
+already audit, adds essentially two tiny gems, and is small readable
+hand-written Ruby rather than generated bulk. We'd still own the loop,
+tool-call dispatch, value types, and — note — the streaming
+**error-body** parsing that started this whole note (`ruby-openai` hands
+raw chunks to a block; the "is the error body a Hash or a bare String"
+call becomes *ours*, which is the point). The official gem's vendor
+backing doesn't pay off for a frozen single endpoint and its generated
+bulk actively fights the audit value; keeping `ruby_llm` remains the
+zero-work default until a decision criterion below trips.
+
+This doesn't change the recommendation (keep `ruby_llm`, fix the bug on
+its own track) — it just means *if* a criterion trips, "adopt
+`ruby-openai` and own the thin layer above it" should be costed
+alongside "hand-roll from scratch," and probably beats it.
+
 ## Decision criteria — only reopen when one trips
 
 1. **A second bug of this kind** in ruby_llm's OpenAI path that upstream
