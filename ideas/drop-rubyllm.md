@@ -189,9 +189,12 @@ pikuri-core's audit tree**, which already ships Faraday + Zeitwerk +
   `event_stream_parser` (one file, zero deps — *the same SSE parser
   ruby_llm itself uses*) plus `faraday-multipart`. It also **reuses our
   Faraday stack**, so there's one HTTP client in the process, not two.
-- **`ruby_llm`** adds `marcel`, `ruby_llm-schema`, `faraday-retry`,
-  `faraday-net_http` on top of that — the pieces a lean OpenAI-only
-  client doesn't need.
+- **`ruby_llm`** adds `marcel`, `ruby_llm-schema`, and `faraday-retry`
+  on top of that — the pieces a lean OpenAI-only client doesn't need.
+  (Not `faraday-net_http`: that's a dependency of `faraday` itself —
+  faraday 2.14 requires `faraday-net_http >= 2.0` as its default
+  adapter — so it's already in the tree via our own Faraday and stays
+  regardless of ruby_llm.)
 - **official `openai`** looks lean (`base64`/`cgi` are default gems,
   `connection_pool` is tiny) but the count lies in the *opposite*
   direction: it **doesn't use Faraday** — it hand-rolls `net/http`
@@ -201,6 +204,29 @@ pikuri-core's audit tree**, which already ships Faraday + Zeitwerk +
   "read end-to-end in an evening" even though the *dependency* line is
   short. Generated breadth is exactly the thing the audit-first value
   rejects — it's ruby_llm's multi-provider problem in a different suit.
+
+**The `ruby_llm` → `ruby-openai` swap, gem by gem** (ruby_llm's 9
+runtime deps, measured 2026-07-12). Net result: **−3 gems**, and the one
+gem we *add* (`ruby-openai`) is small hand-written Ruby replacing the
+large multi-provider `ruby_llm`.
+
+| ruby_llm runtime dep | Fate after swap | Why |
+|---|---|---|
+| `marcel` | **removed** | MIME sniffing; ruby_llm-only, no other consumer in the tree |
+| `ruby_llm-schema` | **removed** | ruby_llm-only |
+| `faraday-retry` | **removed** | ruby_llm-only; `ruby-openai` doesn't depend on it |
+| `event_stream_parser` | stays | `ruby-openai` needs it too — *the same SSE parser*, net-neutral |
+| `faraday-multipart` | stays | moves from ruby_llm to `ruby-openai` |
+| `faraday` | stays | pikuri's own direct dep (23 files) + `ruby-openai` |
+| `faraday-net_http` | stays | pulled by `faraday` itself, not by ruby_llm |
+| `zeitwerk` | stays | pikuri's own direct dep (13 files) |
+| `base64` | stays | pikuri uses it directly (3 files); a default gem regardless |
+
+So the three gems that genuinely leave the audit tree are `marcel`,
+`ruby_llm-schema`, and `faraday-retry` — plus `ruby_llm` itself, swapped
+for `ruby-openai`. Everything `ruby-openai` "brings"
+(`event_stream_parser`, `faraday`, `faraday-multipart`) is already
+present, so the transitive surface only *shrinks*.
 
 ### Reading
 
@@ -223,6 +249,61 @@ its own track) — it just means *if* a criterion trips, "adopt
 `ruby-openai` and own the thin layer above it" should be costed
 alongside "hand-roll from scratch," and probably beats it.
 
+## Sizing the port: is there a way to guess-estimate?
+
+Yes, and it beats "a few hundred lines." Method: take the **measured**
+symbol table above (what we *actually* touch), map each symbol to the
+ruby_llm source file that implements it, read that file's line count as
+an **upper bound**, then discount along three axes that all cut the same
+way for us:
+
+1. **Single provider** — drop everything under `providers/openai/` that
+   isn't chat/streaming/tools (`capabilities.rb` 273, `models.rb`,
+   `embeddings`/`images`/`moderation`/`transcription`) and the whole
+   base-`provider.rb` (281) dispatch machine, which exists to pick
+   *between* providers we don't have.
+2. **`ruby-openai` absorbs the fiddly HTTP** — SSE framing/buffering,
+   the `[DONE]` sentinel, auth, multipart. That deletes the *framing*
+   half of `streaming.rb` (179) + `openai/streaming.rb` (55) and all of
+   the Faraday plumbing. We keep only the *semantic* half: assembling
+   `tool_calls` across deltas and tallying `usage`.
+3. **We already own the adjacent code** — `Pikuri::Tool` (126),
+   `context_window_detector.rb` (222), `chat_transport.rb` (166) exist
+   today; the port *retargets* them from `RubyLLM::` types to ours
+   rather than writing them fresh.
+
+Measured against ruby_llm 1.16.0's sources, the net-new hand-written
+code we'd **own** (as opposed to delete or retarget):
+
+| Piece we'd own | ruby_llm ref (LOC) | our est. | why the discount |
+|---|---|---|---|
+| Chat loop — `complete` + tool-dispatch + message accumulation | `chat.rb` 521 | ~150 | one provider, no tool-DSL, no async/batch variants; the pikuri loop wiring already lives in `agent.rb` |
+| Value types — `Message`/`Content`/`Chunk`/`Attachment` | 127+91+6+224 = 448 | ~120 | `Data.define`; `Attachment`/multimodal is 1 hit total, so a stub |
+| Request rendering — messages+tools → params hash | `openai/chat.rb` 236 + `openai/tools.rb` 125 | ~120 | we build the hash `ruby-openai` passes through verbatim |
+| Streaming **semantics** — merge tool-call deltas, usage, error-body | `openai/streaming.rb` 55 + half of `streaming.rb` | ~80 | framing is `ruby-openai`'s; the *"is the error body Hash or bare String"* call (the bug that started this note) becomes ours here |
+| Error taxonomy — context-length regexes + HTTP→error mapping | `error_middleware.rb` 81 + `error.rb` 48 | ~60 | port the `CONTEXT_LENGTH_PATTERNS` set + a few `raise` branches |
+| Tool schema — our type → OpenAI `function` JSON | `tool.rb` 271 (theirs) / `tool.rb` 126 (ours) | ~30 | already ours; just swap the base class it targets |
+| Context isolation — per-agent base-URL/key | `context.rb` 29 | ~0 | **free**: a per-`Agent` `OpenAI::Client` *is* the isolation; the Connection seam collapses into the client constructor |
+| Model metadata / registry / pricing | `capabilities.rb` 273 + `models.json` | **drop** | unused; `ModelNotFound` degrades to a plain error string |
+
+**Headline: ~500–600 LOC of new owned code**, plus a mechanical
+retarget of the existing ~1,000 LOC of `agent/` + `tool.rb` from
+`RubyLLM::` symbols to `Pikuri::` ones (≈11 call sites per symbol, per
+the table — rename-and-compile, not redesign). Against that we *delete*
+`ruby_llm_patches.rb` (102) and the whole ruby_llm dependency subtree.
+For scale: this owns ~550 lines to replace the ~1,450 LOC of ruby_llm
+*core* we lean on — itself a slice of a much larger multi-provider gem.
+
+Caveats that would push the number **up** if we wanted parity, not just
+"works against llama.cpp": streaming **reasoning/thinking** deltas
+(`Chunk.thinking`), real **multimodal** `Attachment` handling, and
+**prompt-caching** hints are all handled-today, drop-on-the-floor in the
+estimate above; each is additive. The estimate is a *design-time* figure
+from source-mapping — the decision-criteria coda still stands: before
+committing, build the throwaway spike (client + delta-merge + one
+tool-call round-trip against llama.cpp) to convert this ~550 into a
+*measured* count.
+
 ## Decision criteria — only reopen when one trips
 
 1. **A second bug of this kind** in ruby_llm's OpenAI path that upstream
@@ -236,7 +317,8 @@ alongside "hand-roll from scratch," and probably beats it.
 
 Absent one of these: **keep ruby_llm.** The fix for the current bug is
 upstream-issue + local monkeypatch, tracked separately. If we do build
-the spike, do it as a scoped throwaway first (client + SSE parser +
-one round-trip against llama.cpp) to *measure the real line count*
-before committing — the "few hundred lines" claim above is an estimate,
-not a measurement.
+the spike, do it as a scoped throwaway first (a `ruby-openai` client +
+tool-call delta-merge + one round-trip against llama.cpp) to *measure
+the real line count* before committing — the ~550-LOC figure under
+"Sizing the port" is a source-mapped design-time estimate, not a
+measurement.
