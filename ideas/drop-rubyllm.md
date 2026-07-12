@@ -213,7 +213,7 @@ large multi-provider `ruby_llm`.
 | ruby_llm runtime dep | Fate after swap | Why |
 |---|---|---|
 | `marcel` | **removed** | MIME sniffing; ruby_llm-only, no other consumer in the tree |
-| `ruby_llm-schema` | **removed** | ruby_llm-only |
+| `ruby_llm-schema` | **removed** | ruby_llm-only *and* a feature we already replaced — `Pikuri::Tool::Parameters` is our own JSON-Schema builder + arg validator, so we never touch ruby_llm's schema DSL |
 | `faraday-retry` | **removed** | ruby_llm-only; `ruby-openai` doesn't depend on it |
 | `event_stream_parser` | stays | `ruby-openai` needs it too — *the same SSE parser*, net-neutral |
 | `faraday-multipart` | stays | moves from ruby_llm to `ruby-openai` |
@@ -282,7 +282,7 @@ code we'd **own** (as opposed to delete or retarget):
 | Request rendering — messages+tools → params hash | `openai/chat.rb` 236 + `openai/tools.rb` 125 | ~120 | we build the hash `ruby-openai` passes through verbatim |
 | Streaming **semantics** — merge tool-call deltas, usage, error-body | `openai/streaming.rb` 55 + half of `streaming.rb` | ~80 | framing is `ruby-openai`'s; the *"is the error body Hash or bare String"* call (the bug that started this note) becomes ours here |
 | Error taxonomy — context-length regexes + HTTP→error mapping | `error_middleware.rb` 81 + `error.rb` 48 | ~60 | port the `CONTEXT_LENGTH_PATTERNS` set + a few `raise` branches |
-| Tool schema — our type → OpenAI `function` JSON | `tool.rb` 271 (theirs) / `tool.rb` 126 (ours) | ~30 | already ours; just swap the base class it targets |
+| Tool schema — our type → OpenAI `function` JSON | `tool.rb` 271 (theirs) / `tool.rb` 126 (ours) | ~30 | not a port — `Pikuri::Tool::Parameters` already emits the OpenAI JSON-Schema shape and validates args (this is *why* `ruby_llm-schema` leaves without a hole); the ~30 is only retargeting the adapter's base class from `RubyLLM::Tool` to ours |
 | Context isolation — per-agent base-URL/key | `context.rb` 29 | ~0 | **free**: a per-`Agent` `OpenAI::Client` *is* the isolation; the Connection seam collapses into the client constructor |
 | Model metadata / registry / pricing | `capabilities.rb` 273 + `models.json` | **drop** | unused; `ModelNotFound` degrades to a plain error string |
 
