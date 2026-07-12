@@ -179,6 +179,24 @@ vectordb_ext = Pikuri::VectorDb::Extension.new(
   reranker: reranker
 )
 
+# Run one agent turn, trapping SIGINT only for the duration of the turn.
+# Ctrl+C during a turn flips the agent's Cancellable flag — the next
+# tool-call boundary raises Cancelled, which we rescue below to return to
+# the prompt. Outside a turn (at the `> ` input) the default handler is
+# restored so Ctrl+C still exits the REPL the way it did before.
+def run_turn(agent, message)
+  prev_trap = trap('INT') { agent.cancellable&.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener; nothing else to do.
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: model,
@@ -222,50 +240,32 @@ if watch
   watcher = Pikuri::VectorDb::Watcher.new(indexer: vectordb_ext.indexer).start
 end
 
-# Trap SIGINT only for the duration of the agent's turn. Ctrl+C during
-# a turn flips the Cancellable flag — the next tool-call boundary
-# raises Cancelled, which we rescue below to return to the prompt.
-# Outside a turn (at the `> ` input) the default handler is restored
-# so Ctrl+C still exits the REPL the way it did before.
-run_turn = lambda do |message|
-  prev_trap = trap('INT') { cancel_flag.cancel! }
-  agent.run_loop(user_message: message)
-rescue Pikuri::Agent::Control::Cancellable::Cancelled
-  # Notice already rendered by the Terminal listener; nothing else to do.
-rescue RubyLLM::ContextLengthExceededError => e
-  warn "\nContext window exhausted: #{e.message}"
-  warn 'The conversation has grown too large for the model. Start a fresh question.'
-  exit 1
-ensure
-  trap('INT', prev_trap || 'DEFAULT')
-end
-
-puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
-puts "Corpus: #{source}"
-backend_label =
-  if use_qdrant then 'Qdrant (persistent)'
-  elsif use_chroma then 'ChromaDB (persistent)'
-  else 'InMemory (RAM-only)'
-  end
-puts "Backend: #{backend_label}"
-# backend.count is 0 for a fresh InMemory and for a persistent
-# collection that's never been indexed; positive for a corpus persisted
-# by a previous run.
-already_indexed = backend.count
-if already_indexed.positive?
-  puts "Index already populated (#{already_indexed} chunk(s) from a previous run). Ask away — or say \"reindex\" to refresh."
-elsif !watch
-  puts 'The corpus is NOT indexed yet. Ask me to "index the corpus" first (I will run vectordb_reindex), then ask away.'
-end
-if watch
-  puts "Watching #{source} — reindexing files as they change. If the index is empty it's building in the background now (give it a moment)."
-end
-puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
-puts 'Press Ctrl+C or Ctrl+D to quit.'
-
-run_turn.call(ARGV.join(' ')) unless ARGV.empty?
-
 begin
+  puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
+  puts "Corpus: #{source}"
+  backend_label =
+    if use_qdrant then 'Qdrant (persistent)'
+    elsif use_chroma then 'ChromaDB (persistent)'
+    else 'InMemory (RAM-only)'
+    end
+  puts "Backend: #{backend_label}"
+  # backend.count is 0 for a fresh InMemory and for a persistent
+  # collection that's never been indexed; positive for a corpus persisted
+  # by a previous run.
+  already_indexed = backend.count
+  if already_indexed.positive?
+    puts "Index already populated (#{already_indexed} chunk(s) from a previous run). Ask away — or say \"reindex\" to refresh."
+  elsif !watch
+    puts 'The corpus is NOT indexed yet. Ask me to "index the corpus" first (I will run vectordb_reindex), then ask away.'
+  end
+  if watch
+    puts "Watching #{source} — reindexing files as they change. If the index is empty it's building in the background now (give it a moment)."
+  end
+  puts 'Try: "What does the pikuri guide say about how the RESEARCHER persona stops a prompt-injected web page from making it run bash?"'
+  puts 'Press Ctrl+C or Ctrl+D to quit.'
+
+  run_turn(agent, ARGV.join(' ')) unless ARGV.empty?
+
   loop do
     line = Reline.readline('> ', true) # arrow-key history + line editing
     break if line.nil? # Ctrl+D / EOF on empty line
@@ -273,19 +273,20 @@ begin
     message = line.chomp
     next if message.strip.empty?
 
-    run_turn.call(message)
+    run_turn(agent, message)
   end
 rescue Interrupt
   # Ctrl+C — fall through to clean exit
+ensure
+  # Teardown in reverse of open order: stop the indexing daemon first
+  # (halt writes), release the agent's resources, then close the server
+  # (a docker supervisor removes its container; the InMemory null
+  # supervisor drops the stores). Pikuri::Finalizers backstops the
+  # docker case on an unclean exit — same LIFO order.
+  watcher&.close
+  agent.close
+  server.close
 end
 
 puts
-# Teardown in reverse of open order: stop the indexing daemon first
-# (halt writes), release the agent's resources, then close the server
-# (a docker supervisor removes its container; the InMemory null
-# supervisor drops the stores). Pikuri::Finalizers backstops the
-# docker case on an unclean exit — same LIFO order.
-watcher&.close
-agent.close
-server.close
 puts 'Goodbye'

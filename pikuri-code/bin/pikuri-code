@@ -308,6 +308,30 @@ read_only = Pikuri::Workspace::ReadOnly.new(
 mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
+# Run one agent turn, trapping SIGINT only for the duration of the turn.
+# Ctrl+C during a turn flips the agent's Cancellable flag — the next
+# tool-call boundary raises Cancelled, which we rescue below to return to
+# the prompt. Outside a turn (at the `> ` input) the default handler is
+# restored so Ctrl+C still exits the REPL the way it did before.
+def run_turn(agent, message)
+  prev_trap = trap('INT') { agent.cancellable&.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener; nothing else to do.
+rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
+  # The :raise policy (see the StepLimit construction above): no
+  # synthesizer salvage for a coding agent. Work done so far is on disk
+  # and in the chat history; the budget resets at the next turn boundary.
+  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
+  warn "Type 'continue' to let the agent keep going, or redirect it."
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
 # Boot-time LLM work — synthesize_descriptions: + verify_mcp_servers:
 # each run a one-shot thinker agent once per configured MCP server on a cold
 # cache. Trap SIGINT around Agent.new so a Ctrl+C unwinds startup.
@@ -413,53 +437,29 @@ end
 # could raise. Otherwise the first turn would inherit a stale cancellation.
 cancel_flag.reset!
 
-# Trap SIGINT only for the duration of the agent's turn. Ctrl+C during a
-# turn flips the Cancellable flag — the next tool-call boundary raises
-# Cancelled, which we rescue below to return to the prompt. Outside a
-# turn (at the `> ` input) the default handler is restored so Ctrl+C
-# still exits the REPL the way it did before.
-run_turn = lambda do |message|
-  prev_trap = trap('INT') { cancel_flag.cancel! }
-  agent.run_loop(user_message: message)
-rescue Pikuri::Agent::Control::Cancellable::Cancelled
-  # Notice already rendered by the Terminal listener; nothing else to do.
-rescue Pikuri::Agent::Control::StepLimit::Exceeded => e
-  # The :raise policy (see the StepLimit construction above): no
-  # synthesizer salvage for a coding agent. Work done so far is on disk
-  # and in the chat history; the budget resets at the next turn boundary.
-  warn "\nStep budget exhausted (#{e.max_steps} tool calls this turn)."
-  warn "Type 'continue' to let the agent keep going, or redirect it."
-rescue RubyLLM::ContextLengthExceededError => e
-  warn "\nContext window exhausted: #{e.message}"
-  warn 'The conversation has grown too large for the model. Start a fresh question.'
-  exit 1
-ensure
-  trap('INT', prev_trap || 'DEFAULT')
-end
-
-puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
-puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
-puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo
-puts "Loaded project context from #{md_path}." if md_path
-unless skill_catalog.empty?
-  names = skill_catalog.list.map(&:name).sort.join(', ')
-  puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
-end
-# Print reduced-safety status only when a layer is off. Silent at
-# defaults; loud when something the user might want to know about has
-# been disabled.
-warnings = []
-warnings << 'Sandbox: DISABLED.' unless sandbox_enabled
-warnings << 'Confirmer: AUTO-APPROVE.' unless confirm_enabled
-warnings << 'Filesystem: ALLOW_ALL (credential denylist only).' if yolo
-unless warnings.empty?
-  warnings << 'Use only with an outer sandbox (docker / dev-container) or in a throwaway environment.'
-  puts warnings.join(' ')
-end
-
-run_turn.call(ARGV.join(' ')) unless ARGV.empty?
-
 begin
+  puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
+  puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
+  puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo
+  puts "Loaded project context from #{md_path}." if md_path
+  unless skill_catalog.empty?
+    names = skill_catalog.list.map(&:name).sort.join(', ')
+    puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
+  end
+  # Print reduced-safety status only when a layer is off. Silent at
+  # defaults; loud when something the user might want to know about has
+  # been disabled.
+  warnings = []
+  warnings << 'Sandbox: DISABLED.' unless sandbox_enabled
+  warnings << 'Confirmer: AUTO-APPROVE.' unless confirm_enabled
+  warnings << 'Filesystem: ALLOW_ALL (credential denylist only).' if yolo
+  unless warnings.empty?
+    warnings << 'Use only with an outer sandbox (docker / dev-container) or in a throwaway environment.'
+    puts warnings.join(' ')
+  end
+
+  run_turn(agent, ARGV.join(' ')) unless ARGV.empty?
+
   loop do
     line = Reline.readline('> ', true) # arrow-key history + line editing
     break if line.nil? # Ctrl+D / EOF on empty line
@@ -477,12 +477,13 @@ begin
     when '/impl' then read_only.deactivate!; next
     end
 
-    run_turn.call(message)
+    run_turn(agent, message)
   end
 rescue Interrupt
   # Ctrl+C — fall through to clean exit
+ensure
+  agent.close
 end
 
 puts
-agent.close
 
