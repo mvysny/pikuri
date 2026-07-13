@@ -4,77 +4,54 @@ require 'fileutils'
 
 module Pikuri
   module Workspace
-    # The +write+ tool, expressed as a {Pikuri::Tool} subclass:
-    # instantiating +Write.new(workspace: ws, confirmer: c)+ produces a
-    # tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
-    # any bundled tool's, so ruby_llm sees nothing special about it.
-    # Same shape as {Read} — workspace and confirmer are captured by
-    # the +execute+ closure at construction.
+    # The +write+ tool as a {Pikuri::Tool} subclass:
+    # +Write.new(workspace: ws, confirmer: c)+ produces a tool wired like any
+    # bundled tool's. Workspace and confirmer are captured by the +execute+
+    # closure.
     #
     # == Policy
     #
-    # Three branches based on the on-disk state of +path+:
+    # Three branches on +path+'s on-disk state:
     #
     # 1. *New file* — write, no prompt.
-    # 2. *Existing file, identical content* — return an +"Error: ..."+
-    #    no-op observation *before* invoking the confirmer; don't ask the
-    #    user to approve a write that wouldn't change the file. Comparison
-    #    is byte-strict, in BINARY encoding (trailing-newline-only
-    #    differences trigger the confirm path; encoding tags can't make
-    #    equal bytes compare unequal).
-    # 3. *Existing file, content differs* — confirm with
-    #    +"OK to overwrite <path>: <old> → <new> bytes?"+ via {WriteGate};
-    #    on yes, write. On no (or on an unwritable target), return the
-    #    corresponding +"Error: ..."+ observation.
+    # 2. *Existing, identical content* — return an +"Error: ..."+ no-op
+    #    *before* the confirmer (don't ask to approve a no-change write).
+    #    Comparison is byte-strict, BINARY (trailing-newline diffs still confirm).
+    # 3. *Existing, differs* — confirm +"OK to overwrite <path>: <old> → <new>
+    #    bytes?"+ via {WriteGate}; on yes write, on no (or unwritable target)
+    #    return the matching +"Error: ..."+.
     #
-    # An overwrite *always* routes through {WriteGate} — there is no
-    # separate promptless-confirm path — so it gets the diff payload, the
-    # decline-reason steering, and the "unwritable target short-circuits
-    # without a doomed prompt" behavior in every posture. +WriteGate+
-    # subsumes a plain +confirmer.confirm?+ (which is just
-    # +ask(...).is_a?(Approved)+), so nothing is lost by always using it.
+    # An overwrite *always* routes through {WriteGate} (no separate
+    # promptless-confirm path), so it gets the diff payload, decline-reason
+    # steering, and unwritable-target short-circuit in every posture.
     #
     # == Confirm-all-writes (opt-in)
     #
-    # +confirm_all_writes+ scopes *which* writes are gated, not *how* they
-    # are gated (overwrites use {WriteGate} regardless). With
-    # +confirm_all_writes: true+ (the OS-helper posture) the *new-file*
-    # branch also confirms with a diff via {WriteGate} — so every writable
-    # write, create or overwrite, is confirmed and an unwritable target
-    # short-circuits to a permission-denied observation without prompting.
-    # With +false+ (default) new files write silently; only overwrites
-    # confirm. The identical-content no-op returns early in both. See the
-    # guide's ch7.
+    # +confirm_all_writes+ scopes *which* writes are gated, not *how* (overwrites
+    # use {WriteGate} regardless). +true+ (the OS-helper posture) also confirms
+    # the *new-file* branch via {WriteGate} — every writable write confirms, an
+    # unwritable target short-circuits without prompting. +false+ (default) writes
+    # new files silently; only overwrites confirm. See the guide's ch7.
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #
-    # Both tools share the read-before-edit gate (an overwrite of an
-    # existing file is refused unless the {Workspace}'s read record shows
-    # a read this conversation). But Edit has a *second*, content-level guard
-    # the gate can't give Write: its +old_string+ must match the current
-    # bytes, so even a read file can only be changed where the model
-    # demonstrably knows the content. Write has no such per-change check
-    # — a hallucinated 500-line +content+ would clobber the whole file —
-    # so on top of the shared gate it asks for confirmation, covering the
-    # gap Edit's argument shape covers for free. New-file writes hit
-    # neither (nothing to read, nothing to clobber).
+    # Both share the read-before-edit gate (an overwrite is refused unless the
+    # {Workspace}'s read record shows a read this conversation). But Edit has a
+    # *second*, content-level guard: its +old_string+ must match current bytes,
+    # so a read file can only change where the model demonstrably knows the
+    # content. Write has no per-change check — a hallucinated +content+ would
+    # clobber the file — so it asks for confirmation on top of the gate. New-file
+    # writes hit neither (nothing to read or clobber).
     #
     # == Side effects
     #
-    # Parent directories are created (+FileUtils.mkdir_p+) before the
-    # write — matches the +git add lib/new/dir/foo.rb+ mental model and
-    # mirrors opencode's and pi's behavior. Edge case: +mkdir_p+ succeeds
-    # but the write fails; an empty directory is left behind. Accepted
-    # for v1 — users have version control.
-    #
-    # No atomic temp-file+rename. Plain +File.write+, same as opencode and
-    # pi. The crash-safety story is "the user has git".
+    # Parent dirs are created (+FileUtils.mkdir_p+) before the write (the
+    # +git add lib/new/dir/foo.rb+ mental model). If +mkdir_p+ succeeds but the
+    # write fails, an empty dir is left — accepted for v1 (users have git). No
+    # atomic temp+rename; plain +File.write+ — crash safety is "the user has git".
     class Write < Pikuri::Tool
-      # Description shown to the LLM. Follows the opencode-shape (summary
-      # + +Usage:+ bullets) prescribed by the project's tool-description
-      # convention. Per-parameter constraints live in the parameter
-      # descriptions; the +Usage:+ bullets are for "when do I pick this?
-      # how does it chain with other tools?".
+      # Description shown to the LLM (opencode-shape). Per-parameter constraints
+      # live in the parameter descriptions.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
@@ -89,24 +66,18 @@ module Pikuri
       DESC
 
       # @param workspace [Workspace] captured for path resolution, the
-      #   read-before-overwrite gate, and read-ledger marking; writes
-      #   route through +workspace.resolve_for_write+.
-      # @param confirmer [Confirmer] consulted (via {WriteGate}) before any
-      #   overwrite of an existing file with non-identical content, and —
-      #   under +confirm_all_writes+ — before new-file writes too.
-      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?},
-      #   every write is refused with a read-only observation *before* any
-      #   filesystem touch — the hard half of the read-only posture (the
-      #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
-      #   +nil+ (the default) disables the gate, so non-gated wirings are
-      #   unchanged.
+      #   read-before-overwrite gate, and read-ledger marking
+      #   (+resolve_for_write+).
+      # @param confirmer [Confirmer] consulted (via {WriteGate}) before an
+      #   overwrite with non-identical content, and — under +confirm_all_writes+
+      #   — before new-file writes too.
+      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?}, every
+      #   write is refused *before* any filesystem touch — the hard half of the
+      #   read-only posture. +nil+ (default) disables the gate.
       # @param confirm_all_writes [Boolean] scopes which writes are gated
-      #   (overwrites always confirm via {WriteGate} regardless). When
-      #   +true+ (the OS-helper posture), the new-file branch also confirms
-      #   with a diff via {WriteGate}, and an unwritable target
-      #   short-circuits to "ask the user to sudo" without prompting. When
-      #   +false+ (default) the classic policy holds: new files write
-      #   silently, only overwrites confirm.
+      #   (overwrites always confirm regardless). +true+ (OS-helper posture)
+      #   also confirms the new-file branch and short-circuits an unwritable
+      #   target without prompting; +false+ (default) writes new files silently.
       # @return [Write]
       def initialize(workspace:, confirmer:, read_only: nil, confirm_all_writes: false)
         super(
@@ -129,18 +100,16 @@ module Pikuri
         )
       end
 
-      # Resolve +path+ against +workspace+, apply the three-branch policy
-      # (new / identical / differs), and return either a success
-      # observation or an +"Error: ..."+ observation.
+      # Resolve +path+ against +workspace+, apply the three-branch policy, and
+      # return a success or +"Error: ..."+ observation.
       #
       # @param workspace [Workspace]
       # @param confirmer [Confirmer]
-      # @param path [String] raw path as supplied by the LLM
+      # @param path [String] raw path from the LLM
       # @param content [String] bytes to write
-      # @param read_only [ReadOnly, nil] read-only gate; see
-      #   {#initialize}. Defaults to +nil+ for direct callers (specs).
-      # @param confirm_all_writes [Boolean] see {#initialize}. Defaults to
-      #   +false+ for direct callers (specs).
+      # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
+      #   (default +nil+ for direct callers/specs).
+      # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
       # @return [String] tool observation
       def self.write(workspace:, confirmer:, path:, content:, read_only: nil, confirm_all_writes: false)
         return "Error: cannot write #{path} — #{read_only.message}" if read_only&.active?
@@ -195,21 +164,18 @@ module Pikuri
         "Error: cannot write #{path}: #{e.message}"
       end
 
-      # Internal-only signal for LLM-actionable preconditions that Write
-      # detects before any filesystem mutation — today, "existing file is
-      # unreadable so the identical-content check can't run". Mirrors
-      # {Filesystem::Error} in shape: caught by {.write}'s outer
-      # rescue and rendered as a +"Error: ..."+ observation. The class
-      # is +private_constant+ to keep it from leaking out as a public
-      # exception type; callers should never +rescue+ this directly.
+      # Internal-only signal for an LLM-actionable precondition Write detects
+      # before any mutation (today: "existing file unreadable, so the
+      # identical-content check can't run"). Caught by {.write}'s outer rescue,
+      # rendered as +"Error: ..."+; +private_constant+ so it doesn't leak as a
+      # public exception.
       class Error < StandardError; end
       private_constant :Error
 
-      # Read the existing file in BINARY mode so the equality check is
-      # purely byte-wise. Raises {Error} on +Errno::EACCES+ so {.write}'s
-      # outer rescue can render a specific "cannot read for overwrite
-      # check" message — without this conversion the bottom +Errno::EACCES+
-      # rescue would mislabel the read-side problem as "cannot write".
+      # Read the existing file in BINARY so the equality check is byte-wise.
+      # Raises {Error} on +Errno::EACCES+ so {.write}'s outer rescue renders a
+      # "cannot read for overwrite check" message — else the bottom
+      # +Errno::EACCES+ rescue would mislabel a read problem as "cannot write".
       #
       # @param resolved [Pathname]
       # @param path [String] original path for the error message
@@ -222,9 +188,7 @@ module Pikuri
       end
       private_class_method :read_for_compare
 
-      # +mkdir_p+ the parent, then write. Split out so both the create-
-      # and overwrite-branches can reuse it without duplicating the
-      # +mkdir_p+ call.
+      # +mkdir_p+ the parent, then write. Shared by both branches.
       #
       # @param resolved [Pathname]
       # @param content [String]

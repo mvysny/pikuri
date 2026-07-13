@@ -7,56 +7,40 @@ require 'tmpdir'
 module Pikuri
   module Workspace
     class Confirmer
-      # Stdin/stdout implementation. Renders the request as up to several
-      # lines (a leading +puts+ guarantees separation from any streamed
-      # output the +Terminal+ listener may have produced just above):
+      # Stdin/stdout implementation. Renders the request as up to several lines
+      # (a leading +puts+ separates it from any streamed output above):
       #
-      # 1. a bold-yellow warning block — one line per
-      #    {Pikuri::Sanitizer::Warning} — shown only when the sanitizer
-      #    flagged something suspicious in the question or detail
+      # 1. a bold-yellow warning block (one line per {Pikuri::Sanitizer::Warning})
+      #    when the sanitizer flagged the question or detail
       # 2. the question, bold
       # 3. the detail, dim — omitted when +nil+
       # 4. the answer cue
       #
-      # Both question and detail pass through {Pikuri::Sanitizer}, which
-      # neutralizes control bytes — without it, a model could craft a
-      # command or description containing +"\rrm -rf ~/"+ that visually
-      # overwrites the echoed line after the user has already read it —
-      # and reports *why* it was unsafe so the user reads the warning
-      # before answering. Colors come from Rainbow (already in the
-      # dependency closure via pikuri-core), which self-disables on
-      # non-TTY output.
+      # Question and detail pass through {Pikuri::Sanitizer}, which neutralizes
+      # control bytes (else a model could craft +"\rrm -rf ~/"+ that overwrites
+      # the echoed line after the user read it) and reports *why* it was unsafe.
+      # Colors are Rainbow (self-disables on non-TTY).
       #
-      # This is the human *chrome* — the one confirmer that renders a
-      # dialog and reads an answer. It lives in its own file (this one)
-      # rather than in +confirmer.rb+ so the base seam file carries no
-      # rendering dependencies (Rainbow / Reline / tmpdir ride only here).
+      # The human *chrome* — the one confirmer that renders a dialog and reads an
+      # answer. In its own file so the base seam carries no rendering deps
+      # (Rainbow / Reline / tmpdir ride only here).
       #
       # == The two flows
       #
-      # A *non-editable* request (bash, write) gets the classic +(y/n)?+
-      # cue: +y+/+yes+ → {Approved}, +n+/+no+ → {Rejected} (after an
-      # optional reason prompt), EOF → {Rejected} with no reason, anything
-      # else re-prompts.
+      # A *non-editable* request (bash, write) gets +(y/n)?+: +y+ → {Approved},
+      # +n+ → {Rejected} (after an optional reason), EOF → {Rejected}, else
+      # re-prompt.
       #
-      # An *editable* request (the +agent+ task) additionally offers +e+
-      # to edit. Here the sanitizer warning set gates the pre-fill: the
-      # payload sent onward must be RAW bytes, but the terminal must
-      # *display* sanitized bytes — so pre-filling an editable buffer with
-      # raw bytes would reintroduce the very control-byte attack the
-      # sanitizer defends against. Therefore:
-      #
-      # * *clean* task (no warnings) — offer +[y] approve  [e] edit
-      #   [n] reject+; +e+ opens the raw task in a Reline-editable buffer.
-      # * *flagged* task (warnings present) — refuse the pre-fill and drop
-      #   the bare-approve path: +[e] edit  [n] reject+, where +e+ makes
-      #   the human retype from scratch. Forced authorship exactly where
-      #   it matters most.
-      #
-      # Honest limit: a terminal cannot *structurally* forbid a
-      # rubber-stamp +y+ on a clean task — the pure no-rubber-stamp author
-      # seat is a richer-UI (web) invariant. The warning-gated
-      # forced-retype is the terminal's partial answer.
+      # An *editable* request (the +agent+ task) also offers +e+ to edit, and
+      # the warning set gates the pre-fill: the payload sent onward is RAW bytes
+      # but the terminal must *display* sanitized bytes, so pre-filling an
+      # editable buffer with raw bytes would reintroduce the control-byte attack.
+      # So a *clean* task offers +[y] approve  [e] edit  [n] reject+ (+e+ opens
+      # the raw task editable), a *flagged* task drops bare-approve and forces a
+      # retype: +[e] edit  [n] reject+. Honest limit: a terminal can't
+      # *structurally* forbid a rubber-stamp +y+ on a clean task — the pure
+      # no-rubber-stamp author seat is a richer-UI invariant; the warning-gated
+      # retype is the terminal's partial answer.
       class Terminal < Confirmer
         LOGGER = Pikuri.logger_for('Workspace::Confirmer')
 
@@ -100,14 +84,12 @@ module Pikuri
           warnings
         end
 
-        # Render a unified diff of +change+ by shelling to +diff -u+ (the
-        # educational chrome's differ, routed through the {Pikuri::Subprocess}
-        # chokepoint; a richer client renders the same {Change} with its own
-        # diff library). Old/new bytes go to tempfiles under a
-        # self-cleaning dir. Returns the diff text, capped at
-        # {DIFF_MAX_LINES}, or +nil+ on any failure (empty diff, missing
-        # +diff+, IO error) — a cosmetic path secondary to the confirm, so
-        # it degrades to "no diff shown" rather than raising.
+        # Render a unified diff of +change+ by shelling to +diff -u+ (routed
+        # through {Pikuri::Subprocess}; a richer client uses its own diff lib).
+        # Old/new bytes go to tempfiles under a self-cleaning dir. Returns the
+        # diff capped at {DIFF_MAX_LINES}, or +nil+ on any failure (empty diff,
+        # missing +diff+, IO error) — a cosmetic path, so it degrades to "no
+        # diff shown" rather than raising.
         #
         # @param change [Change]
         # @return [String, nil]
@@ -137,9 +119,8 @@ module Pikuri
           nil
         end
 
-        # Print a sanitized unified diff, coloring +added+ / -removed /
-        # @@hunk@@ lines. Sanitization already ran in {#render}; this only
-        # adds medium-specific color (Rainbow self-disables on non-TTY).
+        # Print a sanitized unified diff, coloring +added+/-removed/@@hunk@@
+        # lines. Sanitization ran in {#render}; this only adds color.
         #
         # @param text [String] sanitized diff text
         # @return [void]
@@ -155,8 +136,8 @@ module Pikuri
           end
         end
 
-        # The classic +(y/n)?+ flow, now returning {Approved} / {Rejected}
-        # and prompting for a decline reason on +n+.
+        # The +(y/n)?+ flow, returning {Approved}/{Rejected} and prompting for a
+        # decline reason on +n+.
         #
         # @param request [Request]
         # @return [Approved, Rejected]
@@ -206,11 +187,10 @@ module Pikuri
         # Read the human's (re)authored task.
         #
         # @param initial [String] the raw payload to pre-fill with
-        # @param prefill [Boolean] when +true+ the initial text is placed
-        #   in the editable buffer (clean payloads only); when +false+ the
-        #   human types a fresh line — the forced retype for flagged input,
-        #   which never puts raw bytes on the terminal.
-        # @return [String] the edited text (may be empty if the human cleared it)
+        # @param prefill [Boolean] +true+ places +initial+ in the editable buffer
+        #   (clean payloads only); +false+ forces a fresh line — the retype for
+        #   flagged input, which never puts raw bytes on the terminal.
+        # @return [String] the edited text (may be empty)
         def read_edited(initial:, prefill:)
           if prefill
             Reline.pre_input_hook = lambda do
@@ -223,8 +203,8 @@ module Pikuri
           Reline.pre_input_hook = nil
         end
 
-        # Prompt for an optional decline reason (steering text handed back
-        # to the model as the next observation).
+        # Prompt for an optional decline reason (steering handed back to the
+        # model).
         #
         # @return [String, nil] the trimmed reason, or +nil+ for blank / EOF
         def read_reason

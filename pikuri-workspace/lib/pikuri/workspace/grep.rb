@@ -2,95 +2,63 @@
 
 module Pikuri
   module Workspace
-    # The +grep+ tool — content search across the workspace via
-    # +ripgrep+. Instantiating +Grep.new(workspace: ws)+ produces a
-    # tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
-    # any bundled tool's. Same shape as {Read} (workspace captured by
-    # the +execute+ closure, no confirmer — search is read-only).
+    # The +grep+ tool — content search across the workspace via +ripgrep+.
+    # +Grep.new(workspace: ws)+ produces a tool wired like any bundled tool's
+    # (workspace captured by the +execute+ closure, no confirmer — read-only).
     #
     # == ripgrep dependency
     #
-    # Hard dependency: {.check_binaries!} runs in +initialize+ and raises
-    # if +rg+ isn't on +PATH+. Mirrors {Pikuri::Code::Bash}'s posture for
-    # +bash+/+timeout+. We don't ship a Ruby fallback — replicating
-    # rg's Rust-regex dialect, glob handling, and +.gitignore+ parsing
-    # is a research-loop dead end. Failure message includes the install
-    # hint.
+    # Hard: {.check_binaries!} runs in +initialize+ and raises if +rg+ isn't on
+    # +PATH+. No Ruby fallback — replicating rg's Rust-regex dialect, globs, and
+    # +.gitignore+ parsing is a dead end. The failure message includes the
+    # install hint.
     #
     # == Argv
     #
     #   rg --line-number --color=never --no-heading --with-filename \
-    #      --hidden --max-columns=2000 --max-columns-preview \
-    #      --sort=path \
+    #      --hidden --max-columns=2000 --max-columns-preview --sort=path \
     #      [-i] [--glob <g>] [--files-with-matches|--count-matches] \
-    #      -- <pattern> <relative-path-or-dot>
+    #      -- <pattern> <path-or-dot>
     #
-    # * +--no-heading+ + +--with-filename+ → flat +path:line:content+ rows
-    #   regardless of whether the search target is a directory or a single
-    #   file (rg defaults to suppressing the filename for single-file
-    #   searches — we force it on for output consistency).
+    # * +--no-heading+ + +--with-filename+ → flat +path:line:content+ rows even
+    #   for a single-file search (rg suppresses the filename there by default).
     # * +--hidden+ → search dotfiles (still respects +.gitignore+).
-    # * +--max-columns=2000 --max-columns-preview+ → rg truncates lines
-    #   longer than {MAX_LINE_LENGTH} bytes server-side and appends a
-    #   preview marker, sparing us per-line truncation.
-    # * +--sort=path+ → deterministic output (single-threaded; fine for
-    #   typical repos under ~10k files). Makes specs assertable and gives
-    #   the model a stable order to scan.
-    # * Subprocess runs with +chdir: workspace.project_root+ and is *always* given
-    #   an explicit path argument. {Pikuri::Subprocess.spawn} uses
-    #   +popen2e+ which gives the child a piped (non-tty) stdin; rg's
-    #   default heuristic on no-path-arg-with-piped-stdin is to search
-    #   stdin (which we then close — yielding zero matches). Passing the
-    #   path argument explicitly bypasses the heuristic. Output paths
-    #   come back as +./...+ when the path is +.+; the leading +./+ is
-    #   stripped post-rg so the model sees clean workspace-relative paths.
+    # * +--max-columns=2000 --max-columns-preview+ → rg truncates long lines
+    #   server-side with a preview marker.
+    # * +--sort=path+ → deterministic (single-threaded; fine under ~10k files).
+    # * The subprocess is *always* given an explicit path arg: {Subprocess}'s
+    #   +popen2e+ gives the child a piped stdin, and rg's no-path heuristic would
+    #   then search that (closed) stdin and match nothing. Output +./+ prefixes
+    #   (from path +.+) are stripped post-rg.
     #
     # == Output modes
     #
-    # * +content+ (default) — +path:line:content+ rows.
-    # * +files_with_matches+ — just file paths, one per line.
-    # * +count+ — +path:count+ per file.
+    # +content+ (default, +path:line:content+) · +files_with_matches+ (paths) ·
+    # +count+ (+path:count+). Use +files_with_matches+ to scope a broad search
+    # cheaply before paying for +content+.
     #
-    # Use +files_with_matches+ to scope a broad search cheaply before
-    # paying tokens for +content+.
+    # == Truncation / exit codes
     #
-    # == Truncation
+    # Head-truncated to {MAX_BYTES} (head-only — grep tails carry less signal;
+    # opposite bias from {Pikuri::Code::Bash}), cut at a line boundary with a
+    # marker. The exit-2 error blob shares the ceiling ({.truncate_error} — rg
+    # emits one diagnostic per unreadable path). Exit +0+ → results with footer;
+    # +1+ → "No matches"; +2+ → +"Error: ripgrep: ..."+.
     #
-    # Total output is head-truncated to {MAX_BYTES} (head-only — grep
-    # tails usually carry less signal than the first matches; opposite
-    # bias from {Pikuri::Code::Bash}). Cut at the last line boundary, with a
-    # marker reporting omitted bytes and the original total so the model
-    # knows how much it missed. The exit-2 error blob shares the same
-    # {MAX_BYTES} ceiling (see {.truncate_error}) — rg emits one diagnostic
-    # line per unreadable path, so an untruncated error can dwarf any
-    # match output and overflow the model's context.
+    # == Refusals (all as +"Error: ..."+)
     #
-    # == Exit codes
-    #
-    # * +0+ → matches; format with footer.
-    # * +1+ → no matches; return +"No matches for pattern '...'"+.
-    # * +2+ → rg error (bad regex, missing path); return +"Error: ripgrep: ..."+.
-    #
-    # == Refusals
-    #
-    # All returned as +"Error: ..."+ observations:
-    #
-    # * Empty +pattern+ → fast reject.
-    # * Unknown +output_mode+ → enum error listing valid values.
-    # * Path outside the workspace → caught from {Filesystem::Error}.
-    # * Nonexistent path → +"Error: path not found: <path>"+.
+    # Empty +pattern+; unknown +output_mode+; path outside the workspace
+    # ({Filesystem::Error}); nonexistent path.
     class Grep < Pikuri::Tool
-      # @return [Integer] hard byte cap on combined rg output. Same value
-      #   as {Read::MAX_BYTES} so the two file-touching tools share
-      #   a budget shape.
+      # @return [Integer] hard byte cap on combined rg output. Same value as
+      #   {Read::MAX_BYTES}.
       MAX_BYTES = 50 * 1024
 
-      # @return [String] human-readable form of {MAX_BYTES} for the
-      #   truncation marker.
+      # @return [String] human-readable {MAX_BYTES} for the truncation marker.
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
-      # @return [Integer] per-line cap passed to rg's +--max-columns+.
-      #   Long lines are truncated server-side with a preview marker.
+      # @return [Integer] per-line cap passed to rg's +--max-columns+; long
+      #   lines are truncated server-side with a preview marker.
       MAX_LINE_LENGTH = 2000
 
       # @return [Array<String>] valid +output_mode+ values.
@@ -99,9 +67,8 @@ module Pikuri
       # @return [String] default +output_mode+.
       DEFAULT_OUTPUT_MODE = 'content'
 
-      # Description shown to the LLM. opencode-shape (summary + +Usage:+
-      # bullets). Per-parameter constraints live in parameter
-      # descriptions.
+      # Description shown to the LLM (opencode-shape). Per-parameter constraints
+      # live in the parameter descriptions.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
@@ -118,11 +85,9 @@ module Pikuri
         - Long lines are truncated to #{MAX_LINE_LENGTH} chars with a preview marker; use `read` to see full lines.
       DESC
 
-      # @param workspace [Workspace] captured for path resolution
-      #   and as +chdir+ for rg. All path arguments route through
-      #   +workspace.resolve_for_read+.
-      # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
-      #   construction rather than the first tool call.
+      # @param workspace [Workspace] captured for path resolution and as +chdir+
+      #   for rg; path arguments route through +resolve_for_read+.
+      # @raise [RuntimeError] if +rg+ isn't on +PATH+ (fail-loud at construction).
       # @return [Grep]
       def initialize(workspace:)
         Grep.send(:check_binaries!)
@@ -155,11 +120,9 @@ module Pikuri
         )
       end
 
-      # Produce a new {Grep} bound to +workspace+. Used by
+      # A new {Grep} bound to +workspace+. Used by
       # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
-      # +workspace_factory:+ — the parent's instance is rebuilt for
-      # the sub-agent's fresh workspace so paths resolve against the
-      # right root.
+      # +workspace_factory:+, so paths resolve against the sub-agent's root.
       #
       # @param workspace [Workspace]
       # @return [Grep]
@@ -167,9 +130,8 @@ module Pikuri
         self.class.new(workspace: workspace)
       end
 
-      # Validate inputs, resolve the path against the workspace, spawn
-      # rg, and render the observation. Returns either the formatted
-      # results, a "no matches" string, or +"Error: ..."+.
+      # Validate inputs, resolve the path, spawn rg, render the observation.
+      # Returns the results, a "no matches" string, or +"Error: ..."+.
       #
       # @param workspace [Workspace]
       # @param pattern [String]
@@ -220,15 +182,12 @@ module Pikuri
         "Error: #{e.message}"
       end
 
-      # Refuse a search rooted at the filesystem root or the user's whole
-      # home directory. Either walks an enormous tree and — under an
-      # +AllowAll+ workspace (the OS-helper shape) — floods rg with
-      # unreadable-path diagnostics from places like
-      # +~/.local/share/docker+ overlay snapshots, which the model then
-      # pays context for. Refused regardless of any +glob+: rg traverses
-      # the whole tree *before* the glob narrows which files it searches,
-      # so a filter doesn't bound the traversal. Lesser roots (a project
-      # dir, +~/work+) stay allowed — only +/+ and +$HOME+ are pathological.
+      # Refuse a search rooted at +/+ or the user's whole home dir: either walks
+      # an enormous tree and — under an +AllowAll+ workspace — floods rg with
+      # unreadable-path diagnostics the model pays context for. Refused
+      # regardless of any +glob+: rg traverses the tree *before* the glob narrows
+      # which files it searches, so a filter doesn't bound traversal. Lesser
+      # roots (a project dir, +~/work+) stay allowed.
       #
       # @param resolved [Pathname] the absolute search root
       # @return [String, nil] the +"Error: ..."+ refusal, or +nil+ to proceed
@@ -252,8 +211,8 @@ module Pikuri
       end
       private_class_method :normalize_root
 
-      # Build the +rg+ argv. Path is always passed (defaults to +.+) —
-      # see the class header for why.
+      # Build the +rg+ argv. Path is always passed (defaults to +.+) — see the
+      # class header.
       #
       # @return [Array<String>]
       def self.build_argv(pattern:, glob:, case_insensitive:, output_mode:, path:)
@@ -279,9 +238,8 @@ module Pikuri
       end
       private_class_method :build_argv
 
-      # Render rg output: strip the +./+ prefix rg adds when path is
-      # +.+, head-truncate at {MAX_BYTES}, append a footer summarizing
-      # the result count.
+      # Render rg output: strip the +./+ prefix, head-truncate at {MAX_BYTES},
+      # append a count footer.
       #
       # @return [String]
       def self.format_output(raw, output_mode:, pattern:, path:)
@@ -296,10 +254,8 @@ module Pikuri
       end
       private_class_method :format_output
 
-      # Strip leading +./+ from each line of rg output. rg emits this
-      # prefix when invoked with +.+ as the search path; we want clean
-      # workspace-relative paths regardless of whether the user passed a
-      # path or we defaulted to +.+.
+      # Strip leading +./+ from each line — rg emits it when invoked with +.+ as
+      # the search path; we want clean workspace-relative paths.
       #
       # @return [String]
       def self.strip_dot_slash(raw)
@@ -307,9 +263,9 @@ module Pikuri
       end
       private_class_method :strip_dot_slash
 
-      # Head-truncate +raw+ to {MAX_BYTES}, cutting at the last newline
-      # boundary so the final row is never partial. Returns the truncated
-      # content and a marker String (empty if no truncation).
+      # Head-truncate +raw+ to {MAX_BYTES}, cutting at the last newline so the
+      # final row is never partial. Returns the content and a marker (empty if
+      # no truncation).
       #
       # @return [Array(String, String)]
       def self.head_truncate(raw)
@@ -326,13 +282,11 @@ module Pikuri
       end
       private_class_method :head_truncate
 
-      # Head-truncate an rg error blob to {MAX_BYTES}. rg writes one
-      # diagnostic line per unreadable path (broken symlinks, permission
-      # denials — e.g. a search that escapes into +~/.local/share/docker+
-      # overlay snapshots), so on exit 2 the merged stderr can run to
-      # hundreds of KB and, left whole, overflow the model's context. The
-      # success path already caps at {MAX_BYTES} via {.head_truncate}; this
-      # gives the error path the same ceiling.
+      # Head-truncate an rg error blob to {MAX_BYTES}. rg writes one diagnostic
+      # per unreadable path (broken symlinks, permission denials — a search
+      # escaping into +~/.local/share/docker+ overlays), so on exit 2 the merged
+      # stderr can run to hundreds of KB and overflow context; this gives the
+      # error path the same ceiling as the success path.
       #
       # @param raw [String] rg's merged stdout+stderr
       # @param exit_code [Integer] for the empty-output fallback
@@ -346,8 +300,7 @@ module Pikuri
       end
       private_class_method :truncate_error
 
-      # Compose a one-line footer summarizing the result. Format depends
-      # on +output_mode+; counts derive from rg's text output.
+      # One-line footer summarizing the result; format depends on +output_mode+.
       #
       # @return [String]
       def self.build_footer(content, output_mode)
@@ -381,10 +334,8 @@ module Pikuri
       end
       private_class_method :no_match_message
 
-      # Verify +rg+ is reachable on +PATH+. Routed through
-      # {Pikuri::Subprocess.spawn} to honor the subprocess seam.
-      # rg missing surfaces as +Errno::ENOENT+; an installed rg returns
-      # exit 0 from +--version+.
+      # Verify +rg+ is on +PATH+ (via {Pikuri::Subprocess.spawn}, honoring the
+      # subprocess seam). Missing → +Errno::ENOENT+; installed → exit 0.
       #
       # @return [void]
       # @raise [RuntimeError] if rg is missing

@@ -2,75 +2,57 @@
 
 module Pikuri
   module Workspace
-    # A workspace-scoped read-only flag: when active, the workspace's
-    # *mutating file tools* ({Write} / {Edit}) refuse to write and return
-    # a read-only observation instead of touching the filesystem. It is a
-    # plain shared boolean with change notification — the host constructs
-    # one and hands it to {Workspace::Extension} (which threads it into
-    # Write/Edit) and to whatever drives it.
+    # A workspace-scoped read-only flag: when active, the mutating file tools
+    # ({Write}/{Edit}) refuse to write and return a read-only observation
+    # instead. A plain shared boolean with change notification — the host
+    # constructs one and hands it to {Workspace::Extension} (which threads it
+    # into Write/Edit) and to whatever drives it.
     #
     # == What this does NOT gate: Bash
     #
-    # This flag governs only {Write} and {Edit}. It does **not** constrain
-    # {Pikuri::Code::Bash}. A shell command is Turing-complete and there is
-    # no reliable static test for "does this command write" — +echo+ with a
-    # redirect, a script, a downloaded binary, +sed -i+, +>+, +dd+, a
-    # Makefile target — so we make no attempt to gate Bash on this flag and
-    # do not pretend to. A "read-only" workspace can still mutate the disk
-    # (and beyond) through bash, subject only to bash's own confirmer. If a
-    # host needs a truly inert posture it must also withhold or sandbox
-    # bash; this flag is not that boundary. See {Pikuri::Code::Bash} and
-    # {Pikuri::Code::Bash::Sandbox}.
+    # This governs only {Write}/{Edit}, **not** {Pikuri::Code::Bash}. A shell
+    # command is Turing-complete with no reliable static "does this write" test
+    # (+echo+ + redirect, +sed -i+, +>+, +dd+, a Makefile target), so we make no
+    # attempt to gate Bash and don't pretend to: a "read-only" workspace can
+    # still mutate disk through bash, subject only to bash's own confirmer. A
+    # truly inert posture must also withhold or sandbox bash; this flag is not
+    # that boundary.
     #
     # == Two writers, one flag
     #
-    # The flag is the single source of truth for "are writes disabled right
-    # now". Both a host (a key binding, a slash command, a startup default)
-    # and a feature built on top of it (pikuri-code's +enter_plan_mode+ /
-    # +exit_plan_mode+ tools, which call {#activate!} / {#deactivate!}) flip
-    # the *same* instance. {#on_change} lets an observer (pikuri-code's plan
-    # extension re-emits it as a {Pikuri::Code::PlanModeChanged} domain
-    # event) render the current posture continuously, sourced from this flag
-    # rather than inferred.
+    # The single source of truth for "are writes disabled now". Both a host (a
+    # key binding, a slash command) and a feature on top (pikuri-code's
+    # +enter_plan_mode+/+exit_plan_mode+ via {#activate!}/{#deactivate!}) flip
+    # the *same* instance. {#on_change} lets an observer (pikuri-code re-emits it
+    # as {Pikuri::Code::PlanModeChanged}) render the posture continuously.
     #
     # == Not an Agent control
     #
-    # Deliberately *not* under +Pikuri::Agent::Control+: unlike
-    # {Pikuri::Agent::Control::StepLimit} / +Cancellable+ / +Interloper+,
-    # the agent loop never reads this — it is consulted only by the Write /
-    # Edit tools' +execute+ (the loop cannot deny a tool call and still feed
-    # the model an explanatory observation, so the refusal lives inside the
-    # tool, the one place that returns the next observation). It is a
+    # Deliberately not under +Pikuri::Agent::Control+: unlike {StepLimit} /
+    # +Cancellable+ / +Interloper+, the loop never reads this — only Write/Edit's
+    # +execute+ does (the loop can't deny a tool call *and* feed the model an
+    # explanatory observation, so the refusal lives in the tool). It's a
     # workspace property, not a loop control.
     #
-    # == Thread safety
-    #
-    # The two writers can live on different threads (a host input thread vs.
-    # the agent's run thread), so the compare-and-set in {#flip} is guarded
-    # by a {Mutex}: detecting "did this call actually change the value" is a
-    # read-then-write that is not atomic under the GVL, and getting it wrong
-    # would fire {#on_change} twice (or zero times) for one logical
-    # transition. Callbacks run *outside* the lock so a callback that
-    # re-enters this object (or blocks) can't deadlock the next flip.
+    # Thread-safe: the two writers may be on different threads, so the
+    # compare-and-set in {#flip} is +Mutex+-guarded (a read-then-write isn't
+    # atomic under the GVL; getting it wrong would fire {#on_change} twice or
+    # zero times). Callbacks run *outside* the lock so a re-entrant or blocking
+    # one can't deadlock the next flip.
     class ReadOnly
-      # Default reason clause, used when the host gives no +message:+.
-      # Self-contained and posture-agnostic — it must NOT assume plan
-      # mode is the reason (a host can engage read-only for other
-      # reasons). {Write} / {Edit} splice it after their own
-      # "cannot <verb> <path> — " prefix, so it is just the trailing
-      # explanation. A feature that drives this flag (pikuri-code's plan
-      # mode) passes its own, more actionable reason instead — see
+      # Default reason clause when the host gives no +message:+. Posture-agnostic
+      # — it must NOT assume plan mode (a host can engage read-only for other
+      # reasons); {Write}/{Edit} splice it after their own "cannot <verb> <path>
+      # — " prefix. A driving feature (plan mode) passes its own — see
       # {Pikuri::Code::Extension::PLAN_MODE_READONLY_MESSAGE}.
       #
       # @return [String]
       DEFAULT_MESSAGE = 'the workspace is read-only, so changes are disabled right now'
 
-      # @param active [Boolean] initial posture; +true+ starts the
-      #   workspace already read-only (e.g. a +--plan+ startup flag).
-      # @param message [String] the reason clause {Write} / {Edit} append
-      #   to their refusal; defaults to {DEFAULT_MESSAGE}. Immutable once
-      #   set — the host (which constructs the shared flag) supplies the
-      #   wording, sourcing it from whatever feature drives the flag.
+      # @param active [Boolean] initial posture; +true+ starts read-only (a
+      #   +--plan+ startup flag).
+      # @param message [String] the reason clause {Write}/{Edit} append; default
+      #   {DEFAULT_MESSAGE}. Immutable — the host supplies the wording.
       def initialize(active: false, message: DEFAULT_MESSAGE)
         @mutex = Mutex.new
         @active = active
@@ -88,28 +70,24 @@ module Pikuri
         @mutex.synchronize { @active }
       end
 
-      # Turn the read-only posture on. Idempotent: a no-op (and no
-      # {#on_change} fan-out) when already active. Safe to call from a
-      # thread other than the one running the agent loop.
+      # Turn the posture on. Idempotent (no {#on_change} when already active);
+      # safe off the loop thread.
       #
       # @return [void]
       def activate!
         flip(true)
       end
 
-      # Turn the read-only posture off. Idempotent: a no-op (and no
-      # {#on_change} fan-out) when already inactive. Safe to call from a
-      # thread other than the one running the agent loop.
+      # Turn the posture off. Idempotent (no {#on_change} when already inactive);
+      # safe off the loop thread.
       #
       # @return [void]
       def deactivate!
         flip(false)
       end
 
-      # Register a callback fired once per real transition, with the new
-      # state. Registration is typically a one-time wiring step (the
-      # +pikuri-code+ extension's +bind+), but is guarded so a late
-      # registration races safely with a concurrent flip.
+      # Register a callback fired once per real transition, with the new state.
+      # Guarded so a late registration races safely with a concurrent flip.
       #
       # @yieldparam active [Boolean] the new posture
       # @return [void]
@@ -129,8 +107,8 @@ module Pikuri
 
       private
 
-      # Compare-and-set under the lock; fan out to {#on_change} callbacks
-      # outside it, only when the value actually changed.
+      # Compare-and-set under the lock; fan out to {#on_change} outside it, only
+      # when the value actually changed.
       #
       # @param target [Boolean] desired posture
       # @return [void]

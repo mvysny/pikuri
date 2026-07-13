@@ -3,29 +3,24 @@
 module Pikuri
   module Workspace
     # The shared pre-write gate for the *confirm-all-writes* posture (the
-    # OS-helper wiring; the guide's ch7 walks the posture). Before a
-    # {Write} / {Edit} mutates a file it runs {.check}, which:
+    # OS-helper wiring; the guide's ch7). Before a {Write}/{Edit} mutates a file
+    # it runs {.check}, which:
     #
-    # 1. **Short-circuits an unwritable target.** If the current user
-    #    can't write the path, the write would fail anyway and confirming
-    #    a doomed write is noise — so return a "permission denied — ask the
-    #    user to sudo" observation without prompting. This is exact, not a
-    #    guess: the file tools run in-process as the real user (only *bash*
-    #    is sandboxed), so +File.writable?+ reflects real permissions. It
-    #    also subsumes +/etc+ / +/boot+ — no path list needed; unwritable
-    #    system locations simply never reach the prompt.
-    # 2. **Confirms with a diff.** Otherwise ask the human via a
-    #    {Confirmer::Change} payload (the chrome renders the diff), and on
-    #    decline surface the optional steering reason back to the model.
+    # 1. **Short-circuits an unwritable target.** If the user can't write the
+    #    path, the write would fail anyway and confirming a doomed write is
+    #    noise — so return a "permission denied — ask the user to sudo"
+    #    observation without prompting. Exact, not a guess: the file tools run
+    #    in-process as the real user (only *bash* is sandboxed), so
+    #    +File.writable?+ is real. Subsumes +/etc+ / +/boot+ — no path list.
+    # 2. **Confirms with a diff.** Else ask the human via a {Confirmer::Change}
+    #    payload (the chrome renders the diff), surfacing the decline reason on
+    #    no.
     #
-    # Stateless module (composition, not a base class): both tools call
-    # {.check} and return immediately on a non-nil result. The two tools
-    # reach it differently, because their default postures differ:
-    # {Write} always routes an *overwrite* through {.check} (its confirmer
-    # is mandatory), and +confirm_all_writes+ only decides whether
-    # *new-file* writes go through it too; {Edit} stays promptless unless a
-    # confirmer is passed, in which case *every* edit routes through
-    # {.check}.
+    # Stateless module (composition, not a base class); both tools call {.check}
+    # and return on a non-nil result. {Write} always routes an overwrite through
+    # it (its confirmer is mandatory; +confirm_all_writes+ only decides whether
+    # new-file writes go through too); {Edit} stays promptless unless a confirmer
+    # is passed, then every edit routes through it.
     module WriteGate
       module_function
 
@@ -45,9 +40,8 @@ module Pikuri
         end
       end
 
-      # Whether the current user can write the target — the file itself if
-      # it exists, else the nearest existing ancestor directory (where
-      # {Write} would +mkdir_p+ and create the new file).
+      # Whether the user can write the target — the file if it exists, else the
+      # nearest existing ancestor dir (where {Write} would +mkdir_p+).
       #
       # @param resolved [Pathname]
       # @return [Boolean]

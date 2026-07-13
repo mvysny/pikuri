@@ -4,117 +4,61 @@ require 'ruby_llm'
 
 module Pikuri
   module Workspace
-    # The +read+ tool, expressed as a {Pikuri::Tool} subclass: instantiating
-    # +Read.new(workspace: ws)+ produces a tool whose
-    # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
-    # tool's, so ruby_llm sees nothing special about it. Same shape as
-    # the +agent+ tool from +pikuri-subagents+ — workspace is captured by
-    # the +execute+ closure at construction.
+    # The +read+ tool as a {Pikuri::Tool} subclass: +Read.new(workspace: ws)+
+    # produces a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical
+    # to any bundled tool's. Workspace is captured by the +execute+ closure.
     #
     # == Output format
     #
-    # cat-n: each line is rendered as +"%6d\t%s"+ (six-column right-
-    # padded line number, tab, content). Chosen for breadth of training-
-    # data exposure: +cat -n+ output shows up across virtually every Unix
-    # tutorial and Stack Overflow answer, so even small local models
-    # recognize the shape. opencode's shorter +"<n>: <content>"+ format
-    # saves a few thousand tokens per 2K-line file but trades model
-    # familiarity; pi omits line numbers entirely (cheapest tokens, but
-    # the model loses the ability to cite ranges or pick {Edit}
-    # boundaries precisely).
+    # cat-n: each line +"%6d\t%s"+ (6-col line number, tab, content). Chosen for
+    # training-data familiarity — +cat -n+ is everywhere, so even small local
+    # models recognize it; opencode's +"<n>: "+ saves tokens but trades
+    # familiarity, pi omits numbers (cheapest, but no range citation or {Edit}
+    # boundaries).
     #
     # == Truncation rules
     #
-    # The line/byte windowing is delegated to
-    # {Pikuri::FileType.read_as_text_paged}, which returns a
-    # {Pikuri::Extractor::Page} this tool renders; the same windower
-    # backs +VectorDb::Tools::Read+. Two independent limits, whichever fires
-    # first wins:
+    # Line/byte windowing is delegated to {Pikuri::FileType.read_as_text_paged},
+    # which returns a {Pikuri::Extractor::Page} this tool renders (same windower
+    # backs +VectorDb::Tools::Read+). Two limits, first to fire wins: a line
+    # limit ({DEFAULT_LIMIT}, overridable via +limit+) and a byte cap
+    # ({MAX_BYTES}, not a parameter, bypassable by paging via +offset+). Lines
+    # over {MAX_LINE_LENGTH} are truncated with {LINE_TRUNCATION_MARKER}. (The
+    # constants alias the +PAGE_*+ ones on {Pikuri::Extractor}.)
     #
-    # * *Line limit* — {DEFAULT_LIMIT} lines (overridable via +limit+).
-    # * *Byte cap* — {MAX_BYTES} bytes of input content; not exposed as a
-    #   parameter. Bypassable in practice by paging via +offset+.
+    # == PDF and other extracted formats
     #
-    # Additionally, individual lines longer than {MAX_LINE_LENGTH} chars
-    # are truncated with {LINE_TRUNCATION_MARKER} appended; the model is
-    # told to reach for +grep+ to find content inside such files. (These
-    # constants alias the +PAGE_*+ ones on {Pikuri::Extractor} — one
-    # source of truth, shared with +VectorDb::Tools::Read+.)
-    #
-    # == PDF (and other extracted formats)
-    #
-    # Which formats read as text is the {Pikuri::Extractor} registry's
-    # business, not this tool's: with pikuri-pdf's extractor
-    # registered, PDFs are claimed by their +%PDF-+ magic prefix ahead
-    # of the binary refusal and extracted with one synthetic
-    # +"--- Page N ---"+ header line per page (see
-    # +Pikuri::Extractors::PDF+); a gem plugging another extractor
-    # into the registry extends this tool for free. Extraction is lazy
-    # where the format allows (+extract_lines+): reading the first
-    # window of a 500-page PDF parses only the pages the window needs.
-    # Formats without a lazy line shape (HTML) are extracted in full
-    # and then windowed. Line numbers in PDF output are for citation
-    # back to the user only; PDFs are not editable through {Edit}.
-    #
-    # PDFs with no extractable text (scanned images, empty documents) come
-    # back with an LLM-actionable hint string rather than an empty
-    # observation. Encrypted / malformed / XFA-form PDFs surface as
-    # +"Error: ..."+ — same convention as other tool errors the model
-    # can react to. No OCR.
+    # Which formats read as text is the {Pikuri::Extractor} registry's business:
+    # with pikuri-pdf registered, PDFs are claimed by +%PDF-+ ahead of the
+    # binary refusal and extracted with one +"--- Page N ---"+ header per page,
+    # lazily where the format allows (a 500-page PDF's first window parses only
+    # its pages). PDF line numbers are for citation only — PDFs aren't editable.
+    # No extractable text (scanned/empty) → an LLM-actionable hint;
+    # encrypted/malformed → +"Error: ..."+. No OCR.
     #
     # == Image attachments
     #
-    # PNG / JPEG / GIF / WebP files are detected by magic bytes (see
-    # {.image_mime}) and routed to {.format_image} ahead of the binary
-    # sniff. Instead of a +String+ observation, the tool returns a
-    # +RubyLLM::Content+ carrying a short metadata note ("Read image:
-    # path (bytes, mime)") plus the file as an attachment; the
-    # per-provider Media formatter turns that into the right image
-    # content block inside the +tool_result+. The text half is what the
-    # model cites back ("the image at lib/foo.png shows…"); the image
-    # half is what the model actually looks at.
+    # PNG/JPEG/GIF/WebP (magic-byte detected) route to {.format_image} ahead of
+    # the binary sniff, returning a +RubyLLM::Content+: a metadata note ("Read
+    # image: …") the model cites, plus the file as an attachment the model
+    # looks at. +offset+/+limit+ are ignored (no line paging). Over
+    # {MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
+    # provider rejects; no auto-resize (see +ideas/coding-agent.md+). Vision
+    # capability is not checked — a non-vision model's provider error is
+    # something the LLM reacts to, cheaper than tracking model metadata.
     #
-    # +offset+ / +limit+ are ignored on the image path — there's no
-    # line-paging concept. The hard size cap is {MAX_IMAGE_BYTES}; files
-    # above that come back as +"Error: image too large…"+ rather than
-    # being silently encoded into a payload the upstream API would
-    # reject. No auto-resize: pikuri doesn't pull in an image-processing
-    # dep for one tool's ergonomics. See +ideas/coding-agent.md+ for
-    # the deferred auto-resize discussion.
+    # == Refusals (all as +"Error: ..."+)
     #
-    # Vision capability of the underlying model is *not* checked here.
-    # Sending an image to a non-vision model produces a provider error
-    # the LLM can react to on the next turn; coupling Read to model
-    # capability metadata (notoriously incomplete for local servers)
-    # buys less than the friction it adds.
-    #
-    # == Refusals
-    #
-    # * Path outside the workspace → caught from
-    #   {Filesystem::Error}, returned as +"Error: ..."+.
-    # * File not found, EACCES → +"Error: ..."+.
-    # * Path is a directory → +"Error: ... use the glob tool"+, keeping
-    #   directory listing as the glob tool's responsibility (Step 9).
-    # * Image larger than {MAX_IMAGE_BYTES} → +"Error: image too large…"+,
-    #   leaving the model to pick a different file or ask the user to
-    #   resize.
-    # * Binary content → nothing in the {Pikuri::Extractor} registry
-    #   claims it ({Pikuri::Extractor::Passthrough} declines on the
-    #   {Pikuri::FileType.binary?} heuristic: any +NUL+ byte or a
-    #   sample dense in control characters). Catches archives and
-    #   compiled artifacts without an extension list to maintain.
-    #   Registered extractors (pikuri-pdf's PDF, pikuri-extractors'
-    #   office formats) claim their bytes ahead of that refusal;
-    #   images are intercepted here via {Pikuri::FileType.detect_mime}
-    #   before extraction is attempted — see above.
-    # * Offset past EOF → +"Error: offset N is beyond end of file (M lines total)"+.
+    # Path outside the workspace ({Filesystem::Error}), not found, EACCES, a
+    # directory ("use the glob tool"), image over {MAX_IMAGE_BYTES}, binary
+    # content (nothing in the registry claims it — the {Pikuri::FileType.binary?}
+    # heuristic catches archives/artifacts with no extension list), offset past
+    # EOF.
     class Read < Pikuri::Tool
-      # The windowing constants live on {Pikuri::Extractor} (shared
-      # with +VectorDb::Tools::Read+); these aliases keep the names this tool's
-      # description and specs reference pointing at the single source.
+      # These alias the +PAGE_*+ constants on {Pikuri::Extractor} (one source of
+      # truth, shared with +VectorDb::Tools::Read+).
 
-      # @return [Integer] default value of the +limit+ parameter (number
-      #   of lines to read per call).
+      # @return [Integer] default value of the +limit+ parameter (lines per call).
       DEFAULT_LIMIT = Pikuri::Extractor::PAGE_DEFAULT_LIMIT
 
       # @return [Integer] per-line character cap; longer lines are
@@ -125,30 +69,24 @@ module Pikuri
       #   {MAX_LINE_LENGTH}.
       LINE_TRUNCATION_MARKER = Pikuri::Extractor::PAGE_LINE_TRUNCATION_MARKER
 
-      # @return [Integer] hard byte cap on input content collected per
-      #   call. Counted on the line bytes (plus one for the joining
-      #   newline); the rendered output is slightly larger due to the
-      #   per-line +"%6d\t"+ prefix.
+      # @return [Integer] hard byte cap on input content per call (line bytes +
+      #   the joining newline; rendered output is larger due to the +"%6d\t"+
+      #   prefix).
       MAX_BYTES = Pikuri::Extractor::PAGE_MAX_BYTES
 
-      # @return [String] human-readable form of {MAX_BYTES} for the
-      #   continuation marker.
+      # @return [String] human-readable {MAX_BYTES} for the continuation marker.
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
-      # @return [Integer] hard size cap on inline-attached images. Matches
-      #   Anthropic's per-image limit; same order of magnitude on
-      #   OpenAI / Gemini. Above this we refuse rather than encode a
-      #   payload the provider would reject.
+      # @return [Integer] hard size cap on inline-attached images (Anthropic's
+      #   per-image limit; same order on OpenAI/Gemini). Above it we refuse
+      #   rather than encode a payload the provider would reject.
       MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-      # @return [String] human-readable form of {MAX_IMAGE_BYTES} for
-      #   refusal messages.
+      # @return [String] human-readable {MAX_IMAGE_BYTES} for refusal messages.
       MAX_IMAGE_BYTES_LABEL = "#{MAX_IMAGE_BYTES / (1024 * 1024)} MB"
 
-      # Description shown to the LLM. Follows the opencode-shape (summary
-      # + +Usage:+ bullets) prescribed by the project's tool-description
-      # convention. Per-parameter constraints (defaults, format) live in
-      # the parameter descriptions, not here.
+      # Description shown to the LLM (opencode-shape). Per-parameter constraints
+      # live in the parameter descriptions.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
@@ -167,9 +105,7 @@ module Pikuri
       DESC
 
       # @param workspace [Workspace] captured for path resolution and
-      #   read-ledger marking; reads route through
-      #   +workspace.resolve_for_read+ and record via
-      #   +workspace.mark_read+.
+      #   read-ledger marking (+resolve_for_read+ / +mark_read+).
       # @return [Read]
       def initialize(workspace:)
         super(
@@ -193,11 +129,10 @@ module Pikuri
         )
       end
 
-      # Produce a new {Read} bound to +workspace+. Used by
-      # {Pikuri::SubAgent::SubAgentTool} when a persona needs a fresh
-      # (temp) workspace — the parent's instance is rebuilt so paths
-      # resolve against the right root and reads land in that
-      # workspace's own ledger.
+      # A new {Read} bound to +workspace+. Used by
+      # {Pikuri::SubAgent::SubAgentTool} when a persona needs a fresh (temp)
+      # workspace, so paths resolve against the right root and reads land in
+      # that workspace's ledger.
       #
       # @param workspace [Workspace]
       # @return [Read]
@@ -205,18 +140,16 @@ module Pikuri
         self.class.new(workspace: workspace)
       end
 
-      # Resolve +path+ against +workspace+, refuse directories / binaries /
-      # missing files, and return either the cat-n-formatted slice or an
-      # +"Error: ..."+ observation.
+      # Resolve +path+ against +workspace+, refuse directories/binaries/missing
+      # files, return the cat-n slice or an +"Error: ..."+ observation.
       #
       # @param workspace [Workspace]
-      # @param path [String] raw path as supplied by the LLM
-      # @param offset [Integer] 1-indexed line number to start at
-      # @param limit [Integer] maximum lines to return
-      # @return [String, RubyLLM::Content] tool observation. Text and PDF
-      #   paths return a +String+; supported images return a
-      #   +RubyLLM::Content+ with the file attached so the model receives
-      #   the image inline. See "Image attachments" above.
+      # @param path [String] raw path from the LLM
+      # @param offset [Integer] 1-indexed start line
+      # @param limit [Integer] maximum lines
+      # @return [String, RubyLLM::Content] text/PDF → +String+; a supported
+      #   image → +RubyLLM::Content+ with the file attached (see "Image
+      #   attachments")
       def self.read(workspace:, path:, offset:, limit:)
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
@@ -232,10 +165,10 @@ module Pikuri
           resolved, offset: offset, limit: limit,
           max_bytes: MAX_BYTES, max_line_length: MAX_LINE_LENGTH
         )
-        # Record the read so a later edit/overwrite of this path clears
-        # the read-before-edit gate. Any successful text/PDF read counts,
-        # including a partial window — the exact-bytes guard is Edit's
-        # +old_string+ match; the ledger only attests "engaged via read".
+        # Record the read so a later edit/overwrite clears the read-before-edit
+        # gate. Any successful text/PDF read counts (even a partial window) —
+        # the exact-bytes guard is Edit's +old_string+ match; the ledger only
+        # attests "engaged via read".
         workspace.mark_read(resolved)
         render_page(page)
       rescue Filesystem::Error => e
@@ -253,11 +186,10 @@ module Pikuri
         "Error: #{e.message}"
       end
 
-      # Render a {Pikuri::Extractor::Page} as the cat-n observation: a
-      # six-column line number, a tab, then the (already-truncated)
-      # content, followed by a trailer that tells the model whether to
-      # page on. PDF pages carry +"--- Page N ---"+ marker lines from
-      # the extractor; the +kind+ only changes trailer wording here.
+      # Render a {Pikuri::Extractor::Page} as the cat-n observation (6-col line
+      # number, tab, truncated content) plus a trailer telling the model whether
+      # to page on. PDF pages carry +"--- Page N ---"+ markers from the
+      # extractor; +kind+ only changes trailer wording.
       #
       # @param page [Pikuri::Extractor::Page]
       # @return [String]
@@ -289,9 +221,8 @@ module Pikuri
       end
       private_class_method :render_page
 
-      # The empty-document message, worded by content kind: a scanned /
-      # text-free PDF gets an LLM-actionable hint rather than the
-      # plain-file "(Empty file)".
+      # Empty-document message by kind: a scanned/text-free PDF gets an
+      # LLM-actionable hint rather than the plain "(Empty file)".
       #
       # @param page [Pikuri::Extractor::Page]
       # @return [String]
@@ -304,28 +235,18 @@ module Pikuri
       end
       private_class_method :empty_message
 
-      # Build a multimodal observation: a short metadata note ("Read
-      # image: …") plus the file itself attached as a path. The model
-      # sees the note as the text half of the +tool_result+ and the
-      # image as the image half — both arrive in the same turn.
+      # Build a multimodal observation: a metadata note ("Read image: …") plus
+      # the file attached, both arriving in the same +tool_result+ turn. Over
+      # {MAX_IMAGE_BYTES} we refuse (an +"Error: ..."+ the model reacts to)
+      # rather than encoding a payload the provider rejects; +Pathname#size+
+      # avoids loading bytes just to over-cap them, and +RubyLLM::Attachment+
+      # base64-encodes lazily at format time.
       #
-      # Anthropic's per-image cap is 5 MB on the encoded data, and the
-      # other providers we target sit in the same order of magnitude.
-      # Above {MAX_IMAGE_BYTES} we refuse rather than encoding a payload
-      # the provider will reject; the +"Error: image too large…"+ string
-      # is something the model can react to (pick a different file or
-      # ask the user to resize). Reading the file size via
-      # +Pathname#size+ avoids loading the bytes just to discover they
-      # were over-cap; +RubyLLM::Attachment+ does the actual base64
-      # encoding lazily, once the message is being formatted for the
-      # provider.
-      #
-      # @param path [String] raw path as supplied by the LLM (kept for
-      #   the metadata note)
+      # @param path [String] raw path from the LLM (for the note)
       # @param resolved [Pathname] workspace-resolved path
-      # @param mime [String] MIME type from {.image_mime}
+      # @param mime [String] MIME type
       # @return [String, RubyLLM::Content] +RubyLLM::Content+ on success;
-      #   +"Error: ..."+ String on size refusal.
+      #   +"Error: ..."+ on size refusal
       def self.format_image(path:, resolved:, mime:)
         size = resolved.size
         if size > MAX_IMAGE_BYTES

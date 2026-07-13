@@ -3,87 +3,55 @@
 module Pikuri
   module Workspace
     # The +edit+ tool — exact-string replacement on an existing file.
-    # Instantiating +Edit.new(workspace: ws)+ produces a tool whose
-    # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled
-    # tool's. In its default (promptless) form it takes the same lone
-    # +workspace:+ as {Read}; an optional +confirmer:+ turns on
-    # diff-confirmation (see "Confirmer is optional" below).
+    # +Edit.new(workspace: ws)+ produces a tool wired like any bundled tool's.
+    # In its default (promptless) form it takes the lone +workspace:+ like
+    # {Read}; an optional +confirmer:+ turns on diff-confirmation.
     #
     # == Confirmer is optional (and self-describing)
     #
-    # Constructed with no +confirmer:+ (the default), Edit runs without a
-    # prompt, because two guards bound its blast radius. First, the
-    # explicit read-before-edit gate: +.edit+ refuses a path the
-    # {Workspace}'s read record hasn't recorded as read this conversation
-    # (via {Read}), so an edit can't land on a file the model never
-    # opened. Second, the +old_string+ argument is itself an implicit
-    # read-check — the model can't supply a correct +old_string+ for bytes
-    # it hasn't seen — so even within a read file the change is pinned to
-    # content the model actually has. By contrast, {Write} *always* takes a
-    # confirmer because a hallucinated 500-line +content+ could clobber
-    # unread bytes (Write shares the same read-before-overwrite gate as a
-    # second line).
+    # With no +confirmer:+ (default), Edit runs without a prompt because two
+    # guards bound its blast radius. First, the read-before-edit gate: +.edit+
+    # refuses a path the {Workspace}'s read record doesn't show read this
+    # conversation. Second, +old_string+ is itself an implicit read-check — the
+    # model can't supply correct bytes it hasn't seen — so even within a read
+    # file the change is pinned to content the model has. ({Write} *always*
+    # takes a confirmer because a hallucinated +content+ could clobber unread
+    # bytes.)
     #
-    # Handing Edit a +confirmer:+ opts it into the confirm-all-writes
-    # posture (the OS-helper wiring; the guide's ch7 walks it): every
-    # writable edit then confirms with a diff via {WriteGate}, and an
-    # unwritable target short-circuits to "ask the user to sudo". So the
-    # confirmer's presence *is* the posture — no separate flag — which is
-    # what lets the ctor make sense on its own: a confirmer means "confirm
-    # edits", its absence means "don't". The two guards above are why the
-    # promptless default is safe, not a claim that Edit can never confirm.
+    # Handing Edit a +confirmer:+ opts it into the confirm-all-writes posture
+    # (the OS-helper wiring): every writable edit confirms with a diff via
+    # {WriteGate}, an unwritable target short-circuits to "ask the user to
+    # sudo". So the confirmer's presence *is* the posture — no separate flag.
     #
     # == Matching is strict (no fuzz cascade)
     #
-    # +old_string+ must match the file byte-for-byte. v1 ships *no*
-    # fallback replacer (no whitespace-normalized, line-trimmed, block-
-    # anchor, etc.). Predictability beats fuzz: when an Edit fails, the
-    # model re-reads with {Read} and retries — clear failure mode,
-    # no compounding-heuristic risk. opencode runs a 9-replacer cascade
-    # under the hood despite its own description saying "must match
-    # exactly"; pi stays strict. We match pi.
+    # +old_string+ must match byte-for-byte. v1 ships *no* fallback replacer
+    # (no whitespace-normalized, block-anchor, etc.): predictability beats fuzz
+    # — a failed Edit means re-read and retry, a clear failure mode with no
+    # compounding-heuristic risk. (opencode runs a 9-replacer cascade despite
+    # saying "must match exactly"; pi stays strict, and so do we.)
     #
     # == Line endings get normalized
     #
-    # The one structural exception to "strict bytes": files with CRLF
-    # line endings get matched in LF space, and the original line ending
-    # is restored on write. Reason: {Read} renders content via
-    # +each_line+ + +chomp+, which strips +\r\n+ to +\n+ in what the
-    # model sees. A pure strict byte-match would then never succeed on
-    # CRLF files because the model can only ever supply LF. opencode and
-    # pi both do this normalization for the same reason.
+    # The one exception to "strict bytes": CRLF files are matched in LF space
+    # and the original ending restored on write. {Read} renders via +each_line+
+    # + +chomp+ (stripping +\r\n+ to +\n+), so a pure byte-match would never
+    # succeed on CRLF since the model can only supply LF. Algorithm: detect
+    # +\r\n+ anywhere (treat as CRLF) → normalize content/+old_string+/
+    # +new_string+ to LF → match+replace in LF space → convert +\n+ → +\r\n+ back
+    # if CRLF. Caveat: a mixed-ending file is treated as CRLF, so bare-LF lines
+    # get converted — rare, acceptable for v1.
     #
-    # Algorithm:
+    # == Refusals (all as +"Error: ..."+)
     #
-    # 1. Detect whether the file contains +\r\n+ anywhere (treat as CRLF).
-    # 2. Normalize content, +old_string+, and +new_string+ to LF.
-    # 3. Match + replace in LF space.
-    # 4. If the file was CRLF, convert +\n+ → +\r\n+ on the way back out.
-    #
-    # Caveat: a mixed-line-ending file is treated as CRLF, which means
-    # any pre-existing bare-LF lines get converted on write. Rare in
-    # practice; acceptable for v1.
-    #
-    # == Refusals
-    #
-    # All returned as +"Error: ..."+ observations the LLM can react to:
-    #
-    # * Empty +old_string+ → "use the write tool" (keeps Edit/Write roles
-    #   non-overlapping).
-    # * +old_string+ == +new_string+ → no-op error.
-    # * +old_string+ not found in file → "must match exactly" error
-    #   pointing at the read tool.
-    # * +old_string+ found multiple times without +replace_all+ →
-    #   multi-match error suggesting more context or +replace_all+.
-    # * File missing / is a directory / is binary → respective error.
-    # * File not read this conversation → "use the read tool first" error
-    #   (the read-before-edit gate; checked after the binary refusal).
-    # * Workspace boundary violation / EACCES → standard rescue path.
+    # Empty +old_string+ ("use the write tool") · +old_string+ == +new_string+
+    # (no-op) · not found ("must match exactly") · multiple matches without
+    # +replace_all+ · missing / directory / binary file · not read this
+    # conversation (the gate, after the binary refusal) · workspace boundary /
+    # EACCES.
     class Edit < Pikuri::Tool
-      # Description shown to the LLM. Follows the opencode-shape (summary
-      # + +Usage:+ bullets) prescribed by the project's tool-description
-      # convention. Per-parameter constraints live in the parameter
-      # descriptions.
+      # Description shown to the LLM (opencode-shape). Per-parameter constraints
+      # live in the parameter descriptions.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
@@ -100,23 +68,16 @@ module Pikuri
         - CRLF files are matched in LF space; the original line endings are preserved on write.
       DESC
 
-      # @param workspace [Workspace] captured for path resolution and
-      #   the read-before-edit gate; writes route through
-      #   +workspace.resolve_for_write+ (Edit modifies, so it uses the
-      #   write-set even though it doesn't create files) and the gate
-      #   consults +workspace.read?+.
-      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?},
-      #   every edit is refused with a read-only observation *before* any
-      #   filesystem touch — the hard half of the read-only posture (the
-      #   soft half, in pikuri-code's plan mode, is the per-turn reminder).
-      #   +nil+ (the default) disables the gate, so non-gated wirings are
-      #   unchanged.
-      # @param confirmer [Confirmer, nil] when non-nil, opts Edit into the
-      #   confirm-all-writes posture (the OS-helper wiring): every writable
-      #   edit confirms with a diff via {WriteGate} and an unwritable target
-      #   short-circuits to "ask the user to sudo". +nil+ (the default)
-      #   keeps Edit promptless — bounded by the read-before-edit gate + the
-      #   +old_string+ content-check (see "Confirmer is optional").
+      # @param workspace [Workspace] captured for path resolution and the
+      #   read-before-edit gate; edits route through +resolve_for_write+ (Edit
+      #   modifies, so the write-set) and the gate consults +read?+.
+      # @param read_only [ReadOnly, nil] when set and {ReadOnly#active?}, every
+      #   edit is refused *before* any filesystem touch — the hard half of the
+      #   read-only posture. +nil+ (default) disables the gate.
+      # @param confirmer [Confirmer, nil] non-nil opts Edit into the
+      #   confirm-all-writes posture (every writable edit confirms with a diff,
+      #   unwritable targets short-circuit). +nil+ (default) keeps Edit
+      #   promptless (see "Confirmer is optional").
       # @return [Edit]
       def initialize(workspace:, read_only: nil, confirmer: nil)
         super(
@@ -148,21 +109,20 @@ module Pikuri
         )
       end
 
-      # Resolve +path+ against +workspace+, run the precondition checks
-      # (non-empty / non-identical / file exists / not directory / not
-      # binary), match +old_string+ in line-ending-normalized form, and
-      # write the result back preserving the file's original line endings.
+      # Resolve +path+, run the precondition checks (non-empty / non-identical /
+      # exists / not directory / not binary / read this conversation), match
+      # +old_string+ in LF-normalized form, and write back preserving the file's
+      # original line endings.
       #
       # @param workspace [Workspace]
-      # @param path [String] raw path as supplied by the LLM
+      # @param path [String] raw path from the LLM
       # @param old_string [String] text to find
-      # @param new_string [String] text to substitute in
-      # @param replace_all [Boolean] when true, every occurrence is
-      #   replaced; when false (default) multiple matches are an error
-      # @param read_only [ReadOnly, nil] read-only gate; see
-      #   {#initialize}. Defaults to +nil+ for direct callers (specs).
-      # @param confirmer [Confirmer, nil] see {#initialize}; when non-nil
-      #   every writable edit confirms with a diff. Defaults to +nil+.
+      # @param new_string [String] text to substitute
+      # @param replace_all [Boolean] true replaces every occurrence; false
+      #   (default) errors on multiple matches
+      # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
+      #   (default +nil+ for direct callers/specs).
+      # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
       # @return [String] tool observation
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
                     read_only: nil, confirmer: nil)
@@ -225,9 +185,8 @@ module Pikuri
 
         resolved.write(final)
 
-        # Keep the path marked read: the editor knows the resulting
-        # bytes, so a follow-up edit needn't re-read (the "refresh"
-        # policy). Idempotent — the read? gate above already passed.
+        # Keep the path marked read: the editor knows the resulting bytes, so a
+        # follow-up edit needn't re-read. Idempotent — the read? gate passed.
         workspace.mark_read(resolved)
 
         "Edited #{path}: replaced #{replaced} occurrence#{replaced == 1 ? '' : 's'}."
@@ -237,11 +196,9 @@ module Pikuri
         "Error: cannot edit #{path}: #{e.message}"
       end
 
-      # Force a String to BINARY encoding and collapse +\r\n+ → +\n+ so
-      # all matching/replacement happens in LF space with byte-stable
-      # comparisons. Applied to the file content, +old_string+, and
-      # +new_string+ alike — symmetric normalization keeps the byte-match
-      # semantics consistent across all three inputs.
+      # Force a String to BINARY and collapse +\r\n+ → +\n+ so matching/
+      # replacement happens in LF space with byte-stable comparisons. Applied to
+      # content, +old_string+, and +new_string+ alike (symmetric).
       #
       # @param str [String]
       # @return [String] BINARY-encoded, CRLF-collapsed copy

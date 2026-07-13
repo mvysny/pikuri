@@ -2,104 +2,61 @@
 
 module Pikuri
   module Workspace
-    # The +glob+ tool — list files matching a glob pattern via
-    # +rg --files+, sorted by modification time (newest first).
-    # Instantiating +Glob.new(workspace: ws)+ produces a tool
-    # whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any
-    # bundled tool's. Same shape as {Grep} (workspace captured by the
-    # +execute+ closure, no confirmer — read-only).
+    # The +glob+ tool — list files matching a glob pattern via +rg --files+,
+    # sorted by mtime (newest first). +Glob.new(workspace: ws)+ produces a tool
+    # wired like any bundled tool's (workspace captured by the +execute+ closure,
+    # no confirmer — read-only).
     #
     # == Why a separate tool from Grep
     #
-    # The unique capability is *mtime-descending sort* — "what's been
-    # touched recently" is a common navigation move and Grep can't
-    # express it. The rest (filter by name, default to listing all
-    # matching files) is theoretically reachable through Grep with
-    # +pattern="."+, but Glob avoids that hack and keeps Read / Grep /
-    # Glob as three clean roles: read one file, search content, list
-    # files by name.
+    # The unique capability is *mtime-descending sort* — "what's been touched
+    # recently", which Grep can't express. The rest is reachable via Grep with
+    # +pattern="."+, but a separate tool keeps Read/Grep/Glob three clean roles:
+    # read one file, search content, list files by name.
     #
     # == ripgrep dependency
     #
-    # Hard dependency: {.check_binaries!} runs in +initialize+ and
-    # raises if +rg+ isn't on +PATH+. Each tool owns its own probe so
-    # construction order doesn't matter — Glob doesn't lean on Grep's
-    # check.
+    # Hard: {.check_binaries!} runs in +initialize+ and raises if +rg+ isn't on
+    # +PATH+. Each tool owns its probe so construction order doesn't matter.
     #
     # == Argv & filter pipeline
     #
-    #   rg --files --color=never --hidden --glob '!.git/*' \
-    #      -- <relative-path-or-dot>
-    #   # …then filter the result list in Ruby with File.fnmatch?
+    #   rg --files --color=never --hidden --glob '!.git/*' -- <path-or-dot>
+    #   # …then filter the list in Ruby with File.fnmatch?
     #
-    # Why not pass the user pattern as +--glob+ to rg? Because rg's
-    # +--glob+ documentation says *"This always overrides any other
-    # ignore logic"* — so +--glob '**/*.rb'+ would re-include
-    # +.gitignore+'d Ruby files, breaking our gitignore-respect
-    # promise. We let rg produce the full gitignore-respecting file
-    # list and filter to the user's pattern in Ruby with
-    # +File.fnmatch?(pattern, p, FNM_PATHNAME | FNM_EXTGLOB |
-    # FNM_DOTMATCH)+. The three flags together cover the common rg
-    # glob cases: +**+ recursion (+FNM_PATHNAME+), +{a,b}+ alternation
-    # (+FNM_EXTGLOB+), and dotfile inclusion (+FNM_DOTMATCH+, matching
-    # rg's +--hidden+ behavior). The +.git/+ exclusion stays on the rg
-    # side so its contents never even reach the Ruby filter.
+    # The user pattern is NOT passed to rg as +--glob+: rg's +--glob+ *"always
+    # overrides any other ignore logic"*, so it would re-include +.gitignore+'d
+    # files, breaking the gitignore-respect promise. Instead rg produces the
+    # full gitignore-respecting list and Ruby filters with
+    # +File.fnmatch?(pattern, p, FNM_PATHNAME | FNM_EXTGLOB | FNM_DOTMATCH)+ —
+    # the three flags covering +**+ recursion, +{a,b}+ alternation, and dotfiles
+    # (matching +--hidden+). The +.git/+ exclusion stays on the rg side. Output
+    # +./+ prefixes (from search path +.+) are stripped post-rg.
     #
-    # * +--hidden+ → search dotfiles (still respects +.gitignore+).
-    # * No +--sort+ flag: we re-sort by mtime in Ruby on the way out.
-    # * Output paths come back as +./...+ when the search path is +.+;
-    #   the leading +./+ is stripped post-rg so the model sees clean
-    #   workspace-relative paths.
+    # == Sort / truncation / exit codes
     #
-    # == Sort
+    # mtime-descending in Ruby (path-ascending tiebreaker), one +stat+ per
+    # result — bounded in practice by rg's +.gitignore+ filter. Output
+    # head-truncated to {MAX_BYTES} *after* sort so the newest rows survive; the
+    # exit-2 error blob shares the same ceiling ({.truncate_error} — rg emits one
+    # diagnostic per unreadable path). Exit +0+ → listing with footer; +1+ → "No
+    # files match"; +2+ → +"Error: ripgrep: ..."+.
     #
-    # mtime-descending in Ruby after rg returns, with path-ascending
-    # as a tiebreaker for files with equal mtimes (the common case in
-    # fresh checkouts). Cost: one +stat+ per result. Broad patterns
-    # can make this expensive, but in practice rg's +.gitignore+ filter
-    # keeps result sets bounded; if real friction shows up later we can
-    # cap pre-sort.
+    # == Refusals (all as +"Error: ..."+)
     #
-    # == Truncation
-    #
-    # Total output head-truncated to {MAX_BYTES} *after* mtime sort, so
-    # the kept rows are the newest. Matches {Grep}'s budget and
-    # head-bias. The exit-2 error blob shares the same {MAX_BYTES} ceiling
-    # (see {.truncate_error}) — rg emits one diagnostic line per unreadable
-    # path, so an untruncated error can overflow the model's context.
-    #
-    # == Exit codes
-    #
-    # * +0+ → at least one file; format with footer.
-    # * +1+ → no files; return +"No files match pattern '...'"+.
-    # * +2+ → rg error (bad path, bad glob); return
-    #   +"Error: ripgrep: ..."+.
-    #
-    # == Refusals
-    #
-    # All returned as +"Error: ..."+ observations:
-    #
-    # * Empty +pattern+ → fast reject.
-    # * +path+ is a regular file → fast reject pointing at the +read+
-    #   tool.
-    # * +path+ not found → +"Error: path not found: <path>"+.
-    # * +path+ outside the workspace → caught from
-    #   {Filesystem::Error}.
+    # Empty +pattern+; +path+ is a regular file (→ read tool); +path+ not found;
+    # +path+ outside the workspace ({Filesystem::Error}).
     class Glob < Pikuri::Tool
-      # @return [Integer] hard byte cap on combined rg output. Same
-      #   value as {Grep::MAX_BYTES} so the two file-touching
-      #   tools share a budget shape. Re-declared here rather than
-      #   referenced cross-file because Zeitwerk's eager-load order
-      #   isn't guaranteed between siblings.
+      # @return [Integer] hard byte cap on combined rg output. Same value as
+      #   {Grep::MAX_BYTES}; re-declared rather than cross-referenced because
+      #   Zeitwerk's eager-load order between siblings isn't guaranteed.
       MAX_BYTES = 50 * 1024
 
-      # @return [String] human-readable form of {MAX_BYTES} for the
-      #   truncation marker.
+      # @return [String] human-readable {MAX_BYTES} for the truncation marker.
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
-      # Description shown to the LLM. opencode-shape (summary +
-      # +Usage:+ bullets). Per-parameter constraints live in parameter
-      # descriptions.
+      # Description shown to the LLM (opencode-shape). Per-parameter constraints
+      # live in the parameter descriptions.
       #
       # @return [String]
       DESCRIPTION = <<~DESC
@@ -114,11 +71,9 @@ module Pikuri
         - Output is truncated to #{MAX_BYTES_LABEL}; refine the pattern or narrow `path` if the response ends in a truncation marker.
       DESC
 
-      # @param workspace [Workspace] captured for path resolution
-      #   and as +chdir+ for rg. All path arguments route through
-      #   +workspace.resolve_for_read+.
-      # @raise [RuntimeError] if +rg+ isn't on +PATH+; fail-loud at
-      #   construction rather than the first tool call.
+      # @param workspace [Workspace] captured for path resolution and as +chdir+
+      #   for rg; path arguments route through +resolve_for_read+.
+      # @raise [RuntimeError] if +rg+ isn't on +PATH+ (fail-loud at construction).
       # @return [Glob]
       def initialize(workspace:)
         Glob.send(:check_binaries!)
@@ -141,11 +96,9 @@ module Pikuri
         )
       end
 
-      # Produce a new {Glob} bound to +workspace+. Used by
+      # A new {Glob} bound to +workspace+. Used by
       # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
-      # +workspace_factory:+ — the parent's instance is rebuilt for
-      # the sub-agent's fresh workspace so paths resolve against the
-      # right root.
+      # +workspace_factory:+, so paths resolve against the sub-agent's root.
       #
       # @param workspace [Workspace]
       # @return [Glob]
@@ -153,10 +106,9 @@ module Pikuri
         self.class.new(workspace: workspace)
       end
 
-      # Validate inputs, resolve the path against the workspace, spawn
-      # rg, mtime-sort, head-truncate, render. Returns either the
-      # formatted listing, a "no files match" message, or
-      # +"Error: ..."+.
+      # Validate inputs, resolve the path, spawn rg, mtime-sort, head-truncate,
+      # render. Returns the listing, a "no files match" message, or +"Error:
+      # ..."+.
       #
       # @param workspace [Workspace]
       # @param pattern [String]
@@ -206,13 +158,11 @@ module Pikuri
       #   does this when +--hidden+ is set).
       FNMATCH_FLAGS = File::FNM_PATHNAME | File::FNM_EXTGLOB | File::FNM_DOTMATCH
 
-      # Refuse a listing rooted at the filesystem root or the user's whole
-      # home directory. Either walks an enormous tree and — under an
-      # +AllowAll+ workspace (the OS-helper shape) — floods rg with
-      # unreadable-path diagnostics from places like
-      # +~/.local/share/docker+ overlay snapshots, which the model then
-      # pays context for. Lesser roots (a project dir, +~/work+) stay
-      # allowed — only +/+ and +$HOME+ are pathological.
+      # Refuse a listing rooted at +/+ or the user's whole home dir: either walks
+      # an enormous tree and — under an +AllowAll+ workspace — floods rg with
+      # unreadable-path diagnostics (e.g. +~/.local/share/docker+ overlays) the
+      # model pays context for. Lesser roots (a project dir, +~/work+) stay
+      # allowed.
       #
       # @param resolved [Pathname] the absolute search root
       # @return [String, nil] the +"Error: ..."+ refusal, or +nil+ to proceed
@@ -236,9 +186,8 @@ module Pikuri
       end
       private_class_method :normalize_root
 
-      # Build the +rg+ argv. User pattern is NOT passed to rg — see
-      # the class header for why (rg's +--glob+ overrides
-      # +.gitignore+).
+      # Build the +rg+ argv. The user pattern is NOT passed to rg — see the
+      # class header (rg's +--glob+ overrides +.gitignore+).
       #
       # @return [Array<String>]
       def self.build_argv(path:)
@@ -253,11 +202,9 @@ module Pikuri
       end
       private_class_method :build_argv
 
-      # Strip the +./+ prefix rg adds when invoked with +.+ as the
-      # search path, filter to the user pattern with +fnmatch+,
-      # mtime-sort descending (path ascending as tiebreaker),
-      # head-truncate at {MAX_BYTES}, append a footer summarizing the
-      # count.
+      # Strip the +./+ prefix, filter to the user pattern with +fnmatch+,
+      # mtime-sort descending (path-ascending tiebreaker), head-truncate at
+      # {MAX_BYTES}, append a count footer.
       #
       # @return [String]
       def self.format_output(raw, workspace:, pattern:, path:)
@@ -297,9 +244,9 @@ module Pikuri
       end
       private_class_method :mtime_of
 
-      # Head-truncate +raw+ to {MAX_BYTES}, cutting at the last newline
-      # boundary so the final row is never partial. Returns the
-      # truncated content and a marker String (empty if no truncation).
+      # Head-truncate +raw+ to {MAX_BYTES}, cutting at the last newline so the
+      # final row is never partial. Returns the content and a marker (empty if
+      # no truncation).
       #
       # @return [Array(String, String)]
       def self.head_truncate(raw)
@@ -316,13 +263,11 @@ module Pikuri
       end
       private_class_method :head_truncate
 
-      # Head-truncate an rg error blob to {MAX_BYTES}. rg writes one
-      # diagnostic line per unreadable path (broken symlinks, permission
-      # denials — e.g. a listing that escapes into +~/.local/share/docker+
-      # overlay snapshots), so on exit 2 the merged stderr can run to
-      # hundreds of KB and, left whole, overflow the model's context. The
-      # success path already caps at {MAX_BYTES} via {.head_truncate}; this
-      # gives the error path the same ceiling.
+      # Head-truncate an rg error blob to {MAX_BYTES}. rg writes one diagnostic
+      # per unreadable path (broken symlinks, permission denials — a listing
+      # escaping into +~/.local/share/docker+ overlays), so on exit 2 the merged
+      # stderr can run to hundreds of KB and overflow context; this gives the
+      # error path the same ceiling as the success path.
       #
       # @param raw [String] rg's merged stdout+stderr
       # @param exit_code [Integer] for the empty-output fallback
@@ -350,10 +295,8 @@ module Pikuri
       end
       private_class_method :pluralize
 
-      # Verify +rg+ is reachable on +PATH+. Routed through
-      # {Pikuri::Subprocess.spawn} to honor the subprocess seam. rg
-      # missing surfaces as +Errno::ENOENT+; an installed rg returns
-      # exit 0 from +--version+.
+      # Verify +rg+ is on +PATH+ (via {Pikuri::Subprocess.spawn}, honoring the
+      # subprocess seam). Missing → +Errno::ENOENT+; installed → exit 0.
       #
       # @return [void]
       # @raise [RuntimeError] if rg is missing
