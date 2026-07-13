@@ -2,28 +2,19 @@
 
 module Pikuri
   module Tasks
-    # The +task_create+ tool: mass-create pending items in a single
-    # call from a JSON array of strings — a native +items+ array
-    # parameter, the shape every mainstream harness's task tool uses
-    # and therefore the shape the model's training prior produces
-    # unprompted. (An earlier newline-separated-string design tried to
-    # spare small models the bracket-balancing; in practice models
-    # sent JSON arrays anyway — the prior beats the parameter
-    # description — and the splitter turned `[`, `"foo",`, `]` into
-    # garbage tasks. Match the prior instead of fighting it.)
+    # The +task_create+ tool: mass-create pending items from a JSON array
+    # of strings — a native +items+ array parameter, the shape the model's
+    # training prior produces unprompted. (Regression guard: don't revert
+    # to a newline-separated string. An earlier such design meant to spare
+    # small models the bracket-balancing, but models sent JSON arrays
+    # anyway and the splitter turned `[`, `"foo",`, `]` into garbage tasks
+    # — match the prior, don't fight it.)
     #
-    # Each element is whitespace-stripped; a blank element aborts the
-    # call (it is always an LLM mistake, never intent). If any input
-    # is a duplicate (within the batch, or already in the list), the
-    # whole call likewise aborts with an +"Error: ..."+ string and
-    # nothing is added — the LLM resends a corrected batch on the
-    # next turn. Atomic semantics keep the list in a coherent state
-    # the LLM doesn't have to reconcile.
-    #
-    # On success returns the rendered current list via {List#render} —
-    # including each new item's +#id+, which the three mutation tools
-    # address items by — so the LLM always sees fresh state without a
-    # separate read tool.
+    # Atomic: each element is stripped, and a blank or duplicate element
+    # (within the batch or already in the list) aborts the *whole* call
+    # with an +"Error: ..."+ string and adds nothing — the LLM resends a
+    # corrected batch, and never has to reconcile a half-applied list. On
+    # success returns {List#render}.
     class Create < Pikuri::Tool
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).
@@ -37,9 +28,8 @@ module Pikuri
         - On success the full current list is returned, with each task's `#id` — use that id with `task_in_progress` / `task_completed` / `task_delete`.
       DESC
 
-      # @param list [List] the shared per-Agent list, captured by
-      #   closure so every tool in the {Extension}'s set mutates the
-      #   same instance.
+      # @param list [List] the shared per-Agent list, captured by closure
+      #   so every task tool mutates the same instance.
       # @return [Create]
       def initialize(list:)
         super(
@@ -56,8 +46,7 @@ module Pikuri
         )
       end
 
-      # Validate and apply the batch. Public so specs can drive it
-      # without constructing a tool instance.
+      # Validate and apply the batch.
       #
       # @param list [List]
       # @param items [Array<String>] raw +items+ argument from the LLM

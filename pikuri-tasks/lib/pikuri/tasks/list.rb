@@ -2,55 +2,40 @@
 
 module Pikuri
   module Tasks
-    # Raised by {List#add} when a new item's +content+ already appears
-    # in the list. Items are addressed by {Item#id}, so duplicates
-    # would not be ambiguous — they are rejected because a duplicate
-    # is almost always an LLM mistake (re-sending an already-captured
-    # plan), and catching it early keeps the list coherent. The
-    # exception carries the offending content string so the tool layer
-    # can surface it verbatim in the +"Error: ..."+ observation.
+    # Raised by {List#add} when a new item's +content+ already appears in
+    # the list — rejected because a duplicate is almost always an LLM
+    # mistake (re-sending an already-captured plan). Carries the offending
+    # content for the +"Error: ..."+ observation.
     class DuplicateItem < StandardError; end
 
-    # Raised by {List#set_status} and {List#delete} when no item with
-    # the given +id+ exists. The three mutation tools rescue this and
-    # report +"Error: no such task id: <id>"+ plus the current list
-    # render, so the LLM can pick the right id on the next turn.
+    # Raised by {List#set_status} and {List#delete} when no item with the
+    # given +id+ exists; the mutation tools rescue it into an +"Error: no
+    # such task id"+ observation.
     class ItemNotFound < StandardError; end
 
-    # Allowed values for {Item#status}. Kept deliberately small — three
-    # states match the workflow the prompt advertises (pending → in_progress
-    # → completed) without inviting a +cancelled+ vs +deleted+ debate.
-    # +task_delete+ removes items outright rather than introducing a
-    # fourth status.
+    # Allowed values for {Item#status}. Deliberately three — the workflow
+    # the prompt advertises (pending → in_progress → completed) — with
+    # +task_delete+ removing items outright rather than adding a fourth
+    # +cancelled+/+deleted+ status.
     STATUSES = %w[pending in_progress completed].freeze
 
     # One row in a {List}. +id+ is the numeric identifier the mutation
-    # tools address the item by (assigned by {List#add}, never reused —
-    # see there); +content+ is the LLM-visible task text; +status+ is
-    # one of {STATUSES}.
+    # tools address the item by (assigned by {List#add}, never reused);
+    # +content+ is the LLM-visible task text; +status+ is one of {STATUSES}.
     Item = Data.define(:id, :content, :status)
 
     # An in-memory ordered list of {Item}s, scoped to a single
-    # {Pikuri::Agent}. Held inside {Extension} and captured by closure
-    # into the +execute+ block of each of the four task tool classes,
-    # so every mutation hits the same instance.
+    # {Pikuri::Agent}, shared by closure into all four task tools so every
+    # mutation hits the same instance.
     #
-    # == Concurrency
+    # Agent-thread-confined: the loop dispatches tool calls sequentially,
+    # so there's no locking. Other threads (a UI rendering the list) must
+    # not touch a +List+ directly — they consume the {ListChanged} events
+    # {Extension#bind} wires onto the listener stream, whose +items+
+    # payload is an immutable snapshot safe to hand across threads.
     #
-    # The list is confined to the agent's thread: the agent loop is
-    # single-threaded with respect to tool calls (ruby_llm dispatches
-    # them sequentially), so no locking. Other threads (e.g. a web UI
-    # rendering the list) must not touch a +List+ directly — they
-    # consume the {ListChanged} events {Extension#bind} wires onto
-    # the listener stream, whose +items+ payload is an immutable
-    # snapshot safe to hand across threads. A future
-    # parallel-tool-execution feature would need a +Mutex+ here.
-    #
-    # == Persistence
-    #
-    # None. The list is dropped when the +Agent+ is garbage-collected.
-    # That matches the gem's stated scope: "in-memory only, no
-    # session-state-on-disk."
+    # Not persisted: dropped when the +Agent+ is collected, matching the
+    # gem's "in-memory only" scope.
     class List
       # @return [List]
       def initialize
@@ -59,13 +44,10 @@ module Pikuri
         @on_change = nil
       end
 
-      # Optional zero-argument hook invoked after every successful
-      # mutation ({#add} / {#set_status} / {#delete}) — not on failed
-      # ones (a raise means nothing changed). Set by {Extension#bind}
-      # to emit a {ListChanged} onto the agent's listener stream;
-      # +nil+ (the default) disables notification. Runs on the
-      # mutating (agent) thread, synchronously inside the mutation
-      # call.
+      # Optional zero-argument hook invoked synchronously after every
+      # *successful* mutation (a raise means nothing changed, so no
+      # notify). Set by {Extension#bind} to emit a {ListChanged}; +nil+
+      # (default) disables notification.
       #
       # @return [Proc, nil]
       attr_accessor :on_change
@@ -95,8 +77,7 @@ module Pikuri
       # @param content [String] non-empty content; whitespace is the
       #   caller's responsibility.
       # @return [Item] the newly added item
-      # @raise [DuplicateItem] if an item with the same +content+
-      #   already exists (a duplicate is almost always an LLM mistake).
+      # @raise [DuplicateItem] if an item with the same +content+ exists.
       def add(content)
         raise DuplicateItem, content if @items.any? { |i| i.content == content }
 
@@ -144,14 +125,10 @@ module Pikuri
       end
 
       # Drop every item and rewind the id counter to 1, then fire
-      # {#on_change}. Called by {Extension#on_conversation_reset} when
-      # the host clears the conversation: a task list is meaningless
-      # without the conversation that produced it. Rewinding +@next_id+
-      # is safe here (unlike after a {#delete}, which keeps ids dead to
-      # avoid confusing the LLM mid-conversation) — a clear wipes the
-      # model's context too, so no stale id survives to collide with a
-      # reused one. Always notifies, even when already empty, so a UI
-      # listener reliably observes the cleared state.
+      # {#on_change} (always, even when already empty, so a UI listener
+      # sees the cleared state). Rewinding +@next_id+ is safe here — unlike
+      # after {#delete}, a clear wipes the model's context too, so no stale
+      # id survives to collide with a reused one.
       #
       # @return [void]
       def clear
@@ -161,10 +138,9 @@ module Pikuri
         nil
       end
 
-      # The canonical rendering returned as the observation by every
-      # task tool, so the LLM sees the latest full state — including
-      # each item's id — on each call without needing a separate read
-      # tool. Format:
+      # The canonical rendering every task tool returns as its
+      # observation, so the LLM sees the full state (ids included) each
+      # call without a separate read tool:
       #
       #   <tasks>
       #   - #1 [pending] Add dark mode toggle
@@ -172,9 +148,8 @@ module Pikuri
       #   - #3 [completed] Update README
       #   </tasks>
       #
-      # Empty list renders as +<tasks>(empty)</tasks>+ so the LLM gets
-      # an unambiguous "yes, the call worked and the list is now empty"
-      # signal rather than an ambiguous blank block.
+      # Empty renders as +<tasks>(empty)</tasks>+ — an unambiguous "the
+      # call worked, list is now empty" rather than a blank block.
       #
       # @return [String]
       def render

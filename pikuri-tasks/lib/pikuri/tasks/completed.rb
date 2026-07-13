@@ -3,14 +3,9 @@
 module Pikuri
   module Tasks
     # The +task_completed+ tool: mark the item with the given +id+ as
-    # +completed+. Same shape and rationale as {InProgress} — the
-    # status is baked into the tool name to remove the enum-typo
-    # failure mode (+"completed"+ / +"complete"+ / +"done"+), and the
-    # item is addressed by the numeric +#id+ from the rendered list.
-    #
-    # Returns the rendered current list via {List#render} on success.
-    # On a bad id returns +"Error: no such task id: <id>"+ plus the
-    # current list, so the LLM can pick the right id in one turn.
+    # +completed+. Same shape as {InProgress} (status in the tool name,
+    # item addressed by numeric +#id+). Returns {List#render}; a bad id
+    # returns +"Error: no such task id"+ plus the current list.
     class Completed < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

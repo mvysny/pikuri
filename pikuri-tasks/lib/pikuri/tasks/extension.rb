@@ -7,46 +7,24 @@ module Pikuri
   # event, and the {Extension} that wires them into an
   # {Pikuri::Agent}.
   module Tasks
-    # An {Pikuri::Agent::Extension} that auto-wires an in-memory
-    # task list onto an agent: constructs a fresh {List}, registers
-    # the four task tool classes against it, contributes a brief
-    # workflow snippet via {#system_prompt_snippets}, and (in {#bind})
-    # arms {ListChanged} emission so listeners can observe every list
-    # mutation.
-    #
-    # == Usage
+    # An {Pikuri::Agent::Extension} that auto-wires an in-memory task list
+    # onto an agent: constructs a fresh {List}, registers the four task
+    # tools against it, contributes a workflow snippet, and (in {#bind})
+    # arms {ListChanged} emission.
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_extension Pikuri::Tasks::Extension.new
     #   end
     #
-    # The list is per-Agent and in-memory. It is dropped when the
-    # agent is garbage-collected — nothing is written to disk.
-    #
-    # == Sub-agents
-    #
-    # Sub-agents do not inherit extensions (see CLAUDE.md's "Seams").
-    # Concretely: a sub-agent spawned by the +agent+ tool gets a
-    # fresh persona, fresh toolset, no task list. That keeps the
-    # parent's plan private to the parent and avoids the
-    # who-owns-which-task confusion a shared list would produce.
-    # If a host wants the sub-agent to also have a task list, it
-    # adds the extension to the sub-agent's own configurator —
-    # cleanly opt-in, no implicit sharing.
-    #
-    # == Empty default
-    #
-    # No +catalog+-style empty state: registering the extension
-    # always installs the four tools and the snippet. A host that
-    # doesn't want tasks simply omits the extension.
+    # Sub-agents don't inherit extensions, so a spawned sub-agent gets no
+    # task list — keeping the parent's plan private and avoiding
+    # who-owns-which-task confusion. A host wanting one adds the extension
+    # to the sub-agent's own configurator.
     class Extension
       include Pikuri::Agent::Extension
 
-      # System-prompt snippet appended once per agent. Short by
-      # design: rules-of-thumb only, no inventory (the tool
-      # descriptions cover their own usage). Mirrors the shape of
-      # opencode's +todowrite.txt+ but condensed to fit pikuri's
-      # "short prose over abstract framing" docs convention.
+      # System-prompt snippet appended once per agent. Rules-of-thumb
+      # only, no inventory (the tool descriptions cover their own usage).
       #
       # @return [String]
       PROMPT_SNIPPET = <<~PROMPT
@@ -65,8 +43,7 @@ module Pikuri
         </tasks_usage>
       PROMPT
 
-      # Tool classes the extension auto-registers. Used both for
-      # construction and for the duplicate-registration guard below.
+      # Tool classes the extension auto-registers.
       TOOL_CLASSES = [Create, InProgress, Completed, Delete].freeze
 
       # @return [Extension]
@@ -74,19 +51,16 @@ module Pikuri
         @list = List.new
       end
 
-      # @return [List] the per-agent list, exposed for tests. UI
-      #   hosts should NOT read it from another thread — the list is
-      #   agent-thread-confined; consume the {ListChanged} events
-      #   wired by {#bind} instead (each carries an immutable
-      #   snapshot safe to render from anywhere).
+      # @return [List] the per-agent list, exposed for tests. Do NOT read
+      #   it from another thread — it's agent-thread-confined; consume the
+      #   {ListChanged} events wired by {#bind} instead.
       attr_reader :list
 
-      # Construct the four tools (each sharing +@list+) and register
-      # them, then append {PROMPT_SNIPPET}. Raises if any of the four
-      # tool classes have been pre-registered via +c.add_tool+ — the
-      # whole point of the extension is to be the single owner of the
-      # shared list, and a manually pre-registered tool would bind to
-      # a different list.
+      # Construct the four tools (each sharing +@list+), register them,
+      # and append {PROMPT_SNIPPET}. Raises if any of the four were
+      # pre-registered via +c.add_tool+ — the extension is the single
+      # owner of the shared list, and a pre-registered tool would bind to
+      # a different one.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
@@ -106,12 +80,9 @@ module Pikuri
       # @return [Array<String>] the static task-workflow snippet.
       def system_prompt_snippets = [PROMPT_SNIPPET]
 
-      # Arm {List#on_change} to emit a {ListChanged} (carrying a
-      # fresh {List#items} snapshot) onto the agent's listener
-      # stream after every mutation. This is what lets a UI listener
-      # observe the task list without ever touching the
-      # agent-thread-confined {List} — see the Concurrency note on
-      # {List}.
+      # Arm {List#on_change} to emit a {ListChanged} (carrying a fresh
+      # {List#items} snapshot) after every mutation — how a UI listener
+      # observes the list without touching the agent-thread-confined {List}.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
@@ -120,16 +91,13 @@ module Pikuri
         nil
       end
 
-      # Clear the task list when the host clears the conversation — a
-      # plan is meaningless without the conversation that produced it.
-      # {List#clear} fires the +on_change+ armed in {#bind}, so a
-      # {ListChanged} with an empty +items+ snapshot reaches the
-      # listener stream and any UI task panel empties, exactly like
-      # every other list mutation notifies.
+      # Clear the task list on conversation reset — a plan is meaningless
+      # without the conversation that produced it. {List#clear} fires the
+      # armed +on_change+, so an empty {ListChanged} reaches the listener
+      # stream like any other mutation.
       #
-      # @param ctx [Pikuri::Agent::ExtensionContext] unused (the
-      #   +on_change+ wiring already closes over the context); part of
-      #   the protocol signature.
+      # @param ctx [Pikuri::Agent::ExtensionContext] unused; part of the
+      #   protocol signature.
       # @return [void]
       def on_conversation_reset(_ctx)
         @list.clear

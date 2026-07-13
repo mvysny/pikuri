@@ -2,21 +2,16 @@
 
 module Pikuri
   module Tasks
-    # The +task_in_progress+ tool: mark the item with the given +id+
-    # as +in_progress+. The status name is baked into the tool name
-    # rather than passed as a parameter — that takes one degree of
-    # freedom away from the LLM (no +"in-progress"+ vs +"in_progress"+
-    # vs +"inprogress"+ typos) at the cost of one extra tool class.
+    # The +task_in_progress+ tool: mark the item with the given +id+ as
+    # +in_progress+. The status is baked into the tool name, not a
+    # parameter — one fewer degree of freedom for the LLM (no
+    # +"in-progress"+/+"inprogress"+ typos) at the cost of one tool class.
     #
-    # Items are addressed by the numeric +#id+ shown in every rendered
-    # list (an earlier design used the content string as identifier;
-    # one near-miss in reproducing the exact bytes — a stray quote, a
-    # trailing comma — and the LLM is locked out of its own list. An
-    # id is two digits it just read back; nothing to mis-transcribe.)
-    #
-    # Returns the rendered current list via {List#render} on success.
-    # On a bad id returns +"Error: no such task id: <id>"+ plus the
-    # current list, so the LLM can pick the right id in one turn.
+    # Items are addressed by numeric +#id+, not content string (regression
+    # guard: an earlier content-as-id design locked the LLM out of its own
+    # list on one near-miss byte — a stray quote or trailing comma; an id
+    # is two digits it just read back). Returns {List#render}; a bad id
+    # returns +"Error: no such task id"+ plus the current list.
     class InProgress < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

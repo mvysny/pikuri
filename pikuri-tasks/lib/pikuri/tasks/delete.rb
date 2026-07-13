@@ -2,22 +2,12 @@
 
 module Pikuri
   module Tasks
-    # The +task_delete+ tool: remove the item with the given +id+ from
-    # the list. Used to drop items that turned out to be unnecessary,
-    # were created in error, or have been superseded — rather than
-    # leaving them sitting in +pending+ as visual noise.
-    #
-    # Distinct from {Completed}: +completed+ means the work was
-    # actually done; +delete+ means the task should never have been
-    # there. The list itself draws no such distinction once an item
-    # is gone, but the LLM picks the right verb because the tool
-    # names make the intent clear. A deleted item's id is never
-    # reused (see {List#add}), so a stale id errors loudly instead of
-    # silently hitting a newer task.
-    #
-    # Returns the rendered current list via {List#render} on success.
-    # On a bad id returns +"Error: no such task id: <id>"+ plus the
-    # current list, so the LLM can pick the right id in one turn.
+    # The +task_delete+ tool: remove the item with the given +id+.
+    # Distinct from {Completed} in intent — +completed+ means the work was
+    # done, +delete+ means the task shouldn't have been there — a
+    # distinction the tool names carry, not the list. A deleted id is never
+    # reused ({List#add}). Returns {List#render}; a bad id returns
+    # +"Error: no such task id"+ plus the current list.
     class Delete < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC
