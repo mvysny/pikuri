@@ -6,147 +6,67 @@ require 'json'
 module Pikuri
   module VectorDb
     module Backend
-      # Thin Faraday HTTP client against a self-hosted Chroma
-      # server (v2 API). The persistent backend, behind the same
-      # duck-typed {Backend} protocol as {InMemory}: same method
-      # names, same return shapes, same +ArgumentError+ contract
-      # on empty input + non-positive +top_k+. Where the two
-      # diverge is the vector-dim contract — see below.
+      # Thin Faraday HTTP client against a self-hosted Chroma server (v2 API),
+      # targeting Chroma 0.5.x+. The persistent backend, behind the same
+      # duck-typed {Backend} protocol as {InMemory} (same method names, return
+      # shapes, and +ArgumentError+ contract on empty input / non-positive
+      # +top_k+; the vector-dim contract diverges — see below). Hand-rolled
+      # rather than a +chroma-db+ gem dep so the wire protocol stays auditable
+      # in one readable file; the cost is tracking the v2 API by hand.
       #
-      # The client is hand-rolled rather than a dependency on a
-      # +chroma-db+ gem: only a handful of v2 endpoints are needed
-      # (listed below), Faraday is already in the dependency closure,
-      # and a thin first-party client keeps the wire protocol
-      # auditable in one readable file — consistent with the
-      # read-it-in-an-evening ceiling. The cost is tracking Chroma's
-      # v2 API by hand if it changes.
+      # Two ways to get one: **bring your own** — +Chroma.new(host:, port:,
+      # collection:)+ against an existing deployment (this class is purely the
+      # HTTP client); or **let pikuri manage it** —
+      # {Server::Chroma.ensure_running}'s +#client(collection:)+ returns a
+      # +Chroma+ pointed at a supervised container. Docker lifecycle and HTTP
+      # wire protocol share nothing, so each is its own class.
       #
-      # == Two ways to get one
+      # v2 endpoints used: +collections+ (get-or-create), +.../upsert+,
+      # +.../query+, +.../count+, +DELETE .../{id}+, +.../delete+ (where-filtered),
+      # +.../get+ (where-filtered projection).
       #
-      # * **Bring your own.** +Backend::Chroma.new(host:, port:,
-      #   collection:)+ against an existing chroma deployment
-      #   (production cluster, docker-compose stack, a chroma
-      #   already running on the host for an unrelated project).
-      #   The host owns the process; this class is purely the
-      #   HTTP client.
-      # * **Let pikuri manage it.** {Server::Chroma.ensure_running}
-      #   spawns and supervises a chroma container under the
-      #   +pikuri-internal-chroma+ name, against a pinned image,
-      #   with a bind-mounted volume in the user's cache dir.
-      #   Its +#client(collection:)+ returns a +Backend::Chroma+
-      #   pre-pointed at the supervised container. The split is
-      #   deliberate: docker lifecycle and HTTP wire protocol
-      #   have nothing in common, so each lives in its own class.
+      # == BYO embeddings (Chroma's embedder is never invoked)
       #
-      # == Chroma v2 API
+      # Chroma collections can carry a server-side embedding function; we always
+      # send pre-computed +embeddings+ and never use it. pikuri's {Embedder} is
+      # the single source of truth — a parallel Chroma-side embedder would split
+      # it invisibly (local embedder in pikuri + +OpenAIEmbeddingFunction+ in
+      # Chroma ⇒ every indexed document silently lands at OpenAI).
       #
-      # Endpoints used:
+      # == Contracts
       #
-      # * +POST /api/v2/tenants/{tenant}/databases/{db}/collections+
-      #   with +get_or_create: true+ — idempotent collection
-      #   creation. Returns +{id, name, ...}+.
-      # * +POST /api/v2/.../collections/{id}/upsert+ — insert or
-      #   replace by id. Body carries parallel arrays of +ids+,
-      #   +embeddings+, +documents+, +metadatas+.
-      # * +POST /api/v2/.../collections/{id}/query+ — k-NN
-      #   search. Body: +{query_embeddings, n_results, include}+.
-      # * +GET /api/v2/.../collections/{id}/count+ — integer
-      #   count.
-      # * +DELETE /api/v2/.../collections/{id}+ — drop the
-      #   collection (used by +#delete_all+).
-      # * +POST /api/v2/.../collections/{id}/delete+ — metadata-
-      #   filtered delete (+{where:}+); used by +#delete_by_source+.
-      # * +POST /api/v2/.../collections/{id}/get+ — fetch rows by
-      #   +{where:}+ filter with an +include:+ projection; used by
-      #   +#sources_with_hashes+.
-      #
-      # == BYO embeddings (not Chroma's embedder)
-      #
-      # Chroma collections can carry an embedding function in
-      # their metadata — Chroma's term for what pikuri calls an
-      # {Embedder}. When configured, +add+ / +query+ accept raw
-      # text via +documents+ / +query_texts+ and Chroma embeds
-      # server-side. We deliberately don't use this: pikuri's
-      # +Embedder+ is the one source of truth for embedder
-      # choice, the provider-cliff visibility lives in pikuri's
-      # config, and a parallel Chroma-side embedder config would
-      # split the truth without pikuri noticing (e.g. local
-      # embedder in pikuri + +OpenAIEmbeddingFunction+ in Chroma
-      # — every indexed document silently lands at OpenAI). We
-      # always send pre-computed +embeddings+; Chroma's
-      # collection embedder is never invoked.
-      #
-      # == Vector-dim contract diverges from InMemory
-      #
-      # +InMemory+ enforces vector-dim consistency client-side
-      # (locks on first upsert, raises +ArgumentError+ on
-      # mismatch). +Chroma+ enforces server-side — first upsert
-      # to a collection establishes the dim; mismatched
-      # subsequent upserts produce HTTP 4xx which propagates
-      # as +RuntimeError+. Different exception class, same
-      # loud-failure shape. Documented divergence; not worth
-      # parsing Chroma's error envelope to coerce to +ArgumentError+.
-      #
-      # == Lazy collection resolution
-      #
-      # +Backend::Chroma.new+ doesn't talk to the server. The
-      # first +#upsert+ / +#query+ / +#count+ call resolves
-      # (and creates if missing) the collection by name, caches
-      # the id, and uses it thereafter. +#delete_all+ drops the
-      # collection and clears the cached id; the next +#upsert+
-      # re-creates from scratch.
-      #
-      # == Cosine distance (matches InMemory)
-      #
-      # Collection is created with +hnsw.space: 'cosine'+.
-      # Chroma returns cosine *distance* (range +[0, 2]+ where
-      # +0+ = identical, +1+ = orthogonal); +#query+ converts
-      # to similarity via +1 - distance+ so the {Backend::Result}
-      # score has the same meaning across backends.
-      #
-      # == Metadata key normalization
-      #
-      # Chroma serializes through JSON, so Symbol metadata keys
-      # become Strings on round-trip. +#upsert+ converts the
-      # incoming {Chunk}'s +metadata+ keys to Strings before
-      # sending; +#query+ converts them back to Symbols on the
-      # way out, so the {Chunk} a caller pulls from a query
-      # looks identical to one stored in InMemory. +source+
-      # rides as a special metadata key (Chroma has no native
-      # +source+ concept).
-      #
-      # == Testing posture
-      #
-      # Specs use +Faraday::Adapter::Test+ stubs only — they
-      # verify "we send what we think we're sending" against
-      # the v2 API shape but don't catch real-Chroma protocol
-      # drift. Real-Chroma smoke testing is wired into the demo
-      # binary in a later phase. Targets Chroma 0.5.x+ (v2 API).
+      # * *Vector-dim* diverges from {InMemory}: enforced server-side (first
+      #   upsert sets the dim; a mismatch is HTTP 4xx → +RuntimeError+, not the
+      #   +ArgumentError+ InMemory raises). Same loud-failure shape; not worth
+      #   parsing Chroma's error envelope to coerce the class.
+      # * *Lazy collection resolution*: +new+ doesn't touch the server; the first
+      #   +#upsert+/+#query+/+#count+ resolves (creating if missing) the
+      #   collection by name and caches the id. +#delete_all+ clears it; the next
+      #   +#upsert+ re-creates.
+      # * *Cosine*: collection created +hnsw.space: 'cosine'+; Chroma returns
+      #   *distance* +[0,2]+, +#query+ converts via +1 - distance+ so the
+      #   {Backend::Result} score matches InMemory's similarity scale.
+      # * *Metadata keys*: JSON round-trips Symbol keys to Strings, so +#upsert+
+      #   stringifies and +#query+ re-symbolizes — a queried {Chunk} looks
+      #   identical to one stored in InMemory. +source+ rides as a reserved
+      #   metadata key (Chroma has no native +source+).
       class Chroma
-        # Rows per +/get+ page in {#sources_with_hashes}. Caps the
-        # JSON burst + parse working set of the boot manifest read on
-        # a large corpus; small corpora finish in one page. Chunky but
-        # not arbitrary — one round trip per this-many *files*, and the
-        # manifest is one row per file (the +offset 0+ chunk), so a
-        # 50k-file corpus is ~50 localhost round trips instead of one
-        # multi-MB response.
+        # Rows per +/get+ page in {#sources_with_hashes} — caps the parse
+        # working set of the boot manifest on a large corpus (one row per file,
+        # so a 50k-file corpus is ~50 localhost round trips, not one multi-MB
+        # response). Small corpora finish in one page.
         MANIFEST_PAGE_SIZE = 1_000
 
         # @param host [String]
         # @param port [Integer]
-        # @param collection [String] collection name in Chroma.
-        #   This is a Chroma-specific identifier, so it lives
-        #   here rather than on +VectorDb::Extension+ (where
-        #   it'd be a no-op for +Backend::InMemory+).
-        # @param tenant [String] Chroma v2 tenant; defaults to
-        #   Chroma's own default.
-        # @param database [String] Chroma v2 database; defaults
-        #   to Chroma's own default.
-        # @param connection [Faraday::Connection, nil] optional
-        #   dependency-injection point for tests.
+        # @param collection [String] Chroma collection name — a Chroma-specific
+        #   identifier, so it lives here, not on +VectorDb::Extension+ (a no-op
+        #   for {InMemory}).
+        # @param tenant [String] Chroma v2 tenant; defaults to Chroma's default.
+        # @param database [String] Chroma v2 database; defaults to Chroma's default.
+        # @param connection [Faraday::Connection, nil] DI point for tests.
         # @return [Chroma]
-        # @raise [ArgumentError] on empty +host+ or empty
-        #   +collection+.
+        # @raise [ArgumentError] on empty +host+ or empty +collection+.
         def initialize(host:, port:, collection:,
                        tenant: 'default_tenant',
                        database: 'default_database',
@@ -167,13 +87,9 @@ module Pikuri
           end
         end
 
-        # Insert-or-replace by +chunk.id+. Parallel arrays of
-        # equal length; raises on empty input or length mismatch
-        # (same contract as {InMemory}). Chroma server enforces
-        # vector-dim consistency; mismatched dims surface as
-        # +RuntimeError+ from a 4xx response (the InMemory
-        # backend raises +ArgumentError+ for the same case —
-        # documented divergence).
+        # Insert-or-replace by +chunk.id+ (parallel equal-length arrays).
+        # Vector-dim mismatch surfaces as +RuntimeError+ server-side (InMemory
+        # raises +ArgumentError+ — see the class header).
         #
         # @param chunks [Array<Chunk>]
         # @param vectors [Array<Array<Float>>]
@@ -254,12 +170,9 @@ module Pikuri
           end
         end
 
-        # Drop the collection. Next +#upsert+ re-creates from
-        # scratch — that's the v1 nuke-and-reload reindex path
-        # the {Indexer} drives. No-op if no collection was ever
-        # created (consistent with {InMemory}'s clear-on-empty
-        # behaviour). 404 on the DELETE is treated as "already
-        # gone" — idempotent.
+        # Drop the collection (the nuke-and-reload reindex path the {Indexer}
+        # drives); the next +#upsert+ re-creates. No-op if none was created; a
+        # 404 on the DELETE is treated as "already gone" — idempotent.
         #
         # @return [void]
         def delete_all
@@ -309,22 +222,16 @@ module Pikuri
           nil
         end
 
-        # Replace all chunks for one +source+: delete the old set,
-        # then upsert the new one. The incremental-reindex unit
-        # (see {Indexer#reindex_file!}).
+        # Replace all chunks for one +source+: delete the old set, then upsert
+        # the new (the incremental-reindex unit, {Indexer#reindex_file!}).
         #
-        # == Not transactional (the InMemory divergence)
-        #
-        # These are two HTTP calls, so a +#query+ landing between
-        # them can see the source with zero chunks — a window
-        # {InMemory#replace_source} closes with its monitor but
-        # Chroma cannot, short of server-side transactions it
-        # doesn't expose. The window is small and the
-        # {Indexer} mitigates the *common* failure: it embeds
-        # before calling here, so an embedder outage never reaches
-        # this method and the old chunks stay put. Delete-then-upsert
-        # (not the reverse): upserting first then deleting by source
-        # would delete the just-written chunks.
+        # *Not transactional* (the InMemory divergence): two HTTP calls, so a
+        # +#query+ between them can see the source with zero chunks — a window
+        # {InMemory#replace_source} closes with its monitor but Chroma can't. The
+        # {Indexer} mitigates the common failure by embedding *before* calling
+        # here, so an embedder outage never reaches this and the old chunks stay.
+        # Delete-then-upsert, not the reverse — the reverse would delete the
+        # just-written chunks.
         #
         # @param source [String] the {Chunk#source} being replaced.
         # @param chunks [Array<Chunk>] the new chunk set.
@@ -338,28 +245,20 @@ module Pikuri
           nil
         end
 
-        # The boot-sweep reference: +source+ → stored content hash
-        # for every indexed document. Reads one metadata row per
-        # *file*, not per chunk, via three Chroma +/get+ knobs:
+        # The boot-sweep reference: +source+ → stored content hash, one metadata
+        # row per *file* (not per chunk) via +where: { offset: 0 }+ (every file
+        # has one chunk at offset 0), +include: ['metadatas']+ (drops the heavy
+        # embeddings/documents), and {MANIFEST_PAGE_SIZE} +limit+/+offset+
+        # paging so a large corpus never materializes one multi-MB response.
+        # (Two +offset+s collide in wording: the +where+ one is a *chunk*
+        # metadata field, the top-level one is the *pagination* cursor.)
         #
-        # * +where: { offset: 0 }+ — every file has exactly one
-        #   chunk at offset 0, so this returns one row per source.
-        # * +include: ['metadatas']+ — drops the heavy +embeddings+
-        #   and +documents+ from the response; we pull only the
-        #   metadata projection, never the vectors.
-        # * +limit+ / +offset+ — page the read in
-        #   {MANIFEST_PAGE_SIZE} chunks so a large corpus never
-        #   materializes one multi-MB response. (Two unrelated
-        #   +offset+s collide in the wording: the +where+ +offset+ is
-        #   a *chunk* metadata field; the top-level +offset+ is the
-        #   *pagination* cursor — different namespaces in the API.)
+        # Pagination assumes the manifest isn't mutating mid-read; the {Watcher}
+        # drives this from its single worker thread, so no reindex runs
+        # concurrently.
         #
-        # Pagination assumes the manifest isn't mutating mid-read; the
-        # {Watcher} drives this from its single worker thread, so no
-        # reindex runs concurrently with the boot sweep that calls it.
-        #
-        # @return [Hash{String => String, nil}] +source+ → content
-        #   hash. Empty when the collection doesn't exist yet.
+        # @return [Hash{String => String, nil}] +source+ → content hash. Empty
+        #   when the collection doesn't exist yet.
         # @raise [RuntimeError] on HTTP failure.
         def sources_with_hashes
           return {} if @collection_id.nil? && !collection_exists?

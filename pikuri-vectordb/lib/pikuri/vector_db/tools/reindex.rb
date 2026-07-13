@@ -3,46 +3,23 @@
 module Pikuri
   module VectorDb
     module Tools
-      # The administrative LLM-facing tool: +vectordb_reindex+.
-      # Nukes the backend and re-indexes every source file from
-      # scratch — the nuke-and-reload pattern wired to a tool the
-      # agent can call when (and only when) the user asks to index
-      # or refresh.
+      # The administrative +vectordb_reindex+ tool: nukes the backend and
+      # re-indexes every source file from scratch. Since {Extension} indexes
+      # nothing at boot, this is both the *initial* population path and the
+      # refresh path — until a host populates some other way (an explicit
+      # +indexer.index_if_empty!+, a {Watcher}), the index is empty, {Tools::Search}
+      # returns no hits, and the agent calls this when the user asks to build it.
       #
-      # == The corpus is not indexed automatically
+      # "User-asked-only" framing (in the description): reindex is orders of
+      # magnitude more expensive than search — walks every file, embeds every
+      # chunk, replaces the whole backend, minutes against a local embedder with
+      # the agent blocked. Without the warning a model inclined to "refresh just
+      # in case" before each search would burn the user's patience on turn one.
+      # For keeping a long-running index fresh *without* a full reload, a host
+      # runs a {Watcher} (incremental) rather than this tool.
       #
-      # The {Extension} registers this tool but indexes nothing at
-      # boot (population is host policy — see {Extension}). So this is
-      # both the *initial* population path and the refresh path: until
-      # a host indexes the corpus some other way (an explicit
-      # +indexer.index_if_empty!+, a {Watcher}), the index is empty and
-      # {Tools::Search} returns no hits, and the agent calls +vectordb_reindex+
-      # when the user asks it to build the index.
-      #
-      # == Why the "user-asked-only" framing
-      #
-      # Reindex is orders of magnitude more expensive than
-      # +vectordb_search+: it walks every source file, calls the
-      # embedder once per chunk, and replaces the entire backend
-      # contents. Against a local llama.cpp embedder on a personal
-      # notes corpus this is minutes-not-seconds, and the agent is
-      # blocked for the duration. Without the warning, a model
-      # inclined toward "make sure the index is fresh just in
-      # case" before each search would burn through the user's
-      # patience on the first turn — hence "build/refresh when asked,
-      # not a reflexive refresh." For keeping a long-running index
-      # fresh *without* a full reload, a host runs a {Watcher}
-      # (incremental, per-file) rather than leaning on this tool.
-      #
-      # == Error path
-      #
-      # If the indexer raises a +RuntimeError+ mid-run (Faraday
-      # network failure, embedder 5xx, Chroma backend
-      # unavailable), the tool catches it and returns +"Error: ..."+
-      # as the observation. Same convention as the other tools
-      # whose failures the LLM can react to — the agent tells the
-      # user "the reindex failed because <reason>" rather than
-      # exploding the turn.
+      # A mid-run +RuntimeError+ (network, embedder 5xx, backend down) comes back
+      # as an +"Error: ..."+ observation, not an exploded turn.
       class Reindex < Pikuri::Tool
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).

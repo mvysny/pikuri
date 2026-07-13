@@ -3,35 +3,16 @@
 module Pikuri
   module VectorDb
     module Tokenizer
-      # Approximate tokenization via a fixed chars-per-token
-      # ratio. The zero-dep default; ships at construction
-      # without a network round-trip. Slight overshoot
-      # (under-counting tokens) is fine because embedders
-      # truncate gracefully — a chunk that overshoots by 10%
-      # is silently capped, not rejected.
+      # Approximate tokenization via a fixed chars-per-token ratio — the zero-dep
+      # default, no network round-trip. Overshoot is fine because embedders
+      # truncate gracefully (a 10%-over chunk is capped, not rejected).
       #
-      # == The 4-chars-per-token rule
-      #
-      # English BPE tokenizers — GPT, llama, BGE, the family
-      # of sentence-transformer models pikuri-vectordb users
-      # actually run — settle around 3.5–4.5 chars per token
-      # on natural-language text. Code drops to ~3 (punctuation
-      # density). Mandarin / Japanese drop to ~1–2 (one logograph
-      # per token). Default 4 sits in the English-prose
-      # sweet spot; override +chars_per_token:+ for other
-      # corpora.
-      #
-      # == When to choose this vs LlamaServer
-      #
-      # * **CharHeuristic** — you want zero network dependency,
-      #   you trust the embedder's truncation, you're indexing
-      #   English / Western-European prose. The
-      #   educational / out-of-the-box default.
-      # * **LlamaServer** — you want exact counts, your corpus
-      #   is non-English or code-heavy, or your embedder has a
-      #   tight context window where overshoot matters (e.g.,
-      #   bge-small-en-v1.5 at 512 tokens — 10% slop is 50
-      #   tokens of clipped content).
+      # English BPE tokenizers (GPT, llama, BGE, sentence-transformers) settle
+      # around 3.5–4.5 chars/token on prose; code drops to ~3, CJK to ~1–2 (one
+      # logograph per token). Default 4 is the English sweet spot — override
+      # +chars_per_token:+ for other corpora, or use {LlamaServer} for exact
+      # counts when the corpus is CJK/code-heavy or the embedder's window is
+      # tight enough that overshoot clips content.
       class CharHeuristic
         # @param chars_per_token [Numeric] characters per token
         #   the approximation assumes. Default +4.0+ — English

@@ -6,39 +6,18 @@ require 'pathname'
 module Pikuri
   module VectorDb
     module Server
-      # Supervisor for a self-managed Chroma docker container. Pairs
-      # with {Backend::Chroma}: this class owns the *process*;
-      # {Backend::Chroma} owns the HTTP client that talks to it.
-      # {#client} returns a {Backend::Chroma} pre-pointed at the
-      # running container.
-      #
-      # == Why split server from client
-      #
-      # Container lifecycle and HTTP wire protocol have nothing in
-      # common — they're separate jobs reading separate man pages.
-      # Splitting them keeps {Backend::Chroma} a thin Faraday client
-      # (the audit-friendly shape) and concentrates the docker-shaped
-      # complexity in one place a reader can skip when they don't
-      # care.
-      #
-      # Hosts that already manage Chroma elsewhere (a production
-      # deployment, a docker-compose stack, a Kubernetes service)
-      # wire {Backend::Chroma.new(host:, port:)} directly and never
+      # Supervisor for a self-managed Chroma docker container. Owns the
+      # *process*; {Backend::Chroma} owns the HTTP client, and {#client} returns
+      # one pre-pointed at the running container. Hosts that manage Chroma
+      # elsewhere wire {Backend::Chroma.new(host:, port:)} directly and never
       # touch this class.
       #
-      # == The lifecycle lives in {DockerContainer}
-      #
-      # This class carries Chroma's *identity* — image pin, container
-      # name, persist path, heartbeat path — and hands it to a
-      # composed {DockerContainer}, which does the docker work and
-      # documents the shared rationale: the +pikuri-internal-*+
-      # namespace squat, ephemeral-container-persistent-data, the
-      # subprocess seam, the 127.0.0.1 binding, loud boot errors vs
-      # quiet teardown. What stays here besides identity: the
-      # {#default_data_dir} resolution, the {Backend::Chroma} factory,
-      # and the {Pikuri::Finalizers} registration (the supervisor is
-      # the host-facing ownership boundary, so it — not the helper —
-      # is what registers and what a host unregisters).
+      # This class carries Chroma's *identity* (image pin, name, persist +
+      # heartbeat paths) and hands it to a composed {DockerContainer}, which does
+      # the docker work and documents the shared rationale. What stays here:
+      # {#default_data_dir}, the {Backend::Chroma} factory, and the
+      # {Pikuri::Finalizers} registration (the supervisor is the host-facing
+      # ownership boundary, so it registers, not the helper).
       class Chroma
         # @return [String] pinned chroma docker image. Bumping this
         #   constant is how the codebase upgrades the chroma
@@ -47,15 +26,12 @@ module Pikuri
         #   automatically (the bind-mounted corpus is untouched).
         IMAGE = 'chromadb/chroma:1.5.9'
 
-        # @return [String] the container name pikuri claims for its
-        #   chroma supervisor. Prefix +"pikuri-internal-"+ is the
-        #   namespace pikuri squats — see {DockerContainer}.
+        # @return [String] container name; the +"pikuri-internal-"+ prefix is
+        #   the namespace pikuri squats — see {DockerContainer}.
         CONTAINER_NAME = 'pikuri-internal-chroma'
 
-        # @return [String] docker label set on every container this
-        #   class creates. Used by future +docker ps --filter
-        #   "label=#{LABEL}"+ enumeration; not load-bearing for the
-        #   {#ensure_running!} algorithm itself.
+        # @return [String] docker label set on every container this class
+        #   creates (for +docker ps --filter+ enumeration).
         LABEL = 'pikuri.internal=true'
 
         # @return [String] path inside the container where chroma
@@ -157,10 +133,8 @@ module Pikuri
           nil
         end
 
-        # Remove the supervised container, leaving the bind-mounted
-        # {#data_dir} — the corpus survives. Registered with
-        # {Pikuri::Finalizers} by {#ensure_running!}; safe to call
-        # directly too. Best-effort and idempotent — see
+        # Remove the supervised container, leaving the bind-mounted {#data_dir}
+        # (the corpus survives). Best-effort and idempotent — see
         # {DockerContainer#close}.
         #
         # @return [void]
@@ -168,11 +142,9 @@ module Pikuri
           @container.close
         end
 
-        # Default host-side data directory:
-        # +$XDG_CACHE_HOME/pikuri/chroma+ if set, else
-        # +~/.cache/pikuri/chroma+. Public so tests and chapter
-        # examples can reference the same path the supervisor
-        # resolves at runtime.
+        # Default host-side data directory
+        # (+$XDG_CACHE_HOME/pikuri/chroma+, else +~/.cache/pikuri/chroma+).
+        # Public so tests and chapter examples reference the same path.
         #
         # @return [String]
         def default_data_dir

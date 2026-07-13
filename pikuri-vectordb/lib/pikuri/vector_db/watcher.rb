@@ -5,24 +5,17 @@ require 'monitor'
 
 module Pikuri
   module VectorDb
-    # The auto-watch daemon: keep a persistent index in sync with a
-    # corpus on disk, without the user ever calling
-    # +vectordb_reindex+. A thin layer over the +listen+ gem that
-    # drives the {Indexer}'s per-file entry points
-    # ({Indexer#reindex_file!} / {Indexer#remove_file!}) from
-    # filesystem events plus a boot reconciliation sweep
-    # ({Indexer#reconcile_plan}). The auto-watch half of the
-    # incremental-reindex + auto-watch feature; the per-file
-    # methods it drives live on {Indexer} and {Backend}.
+    # The auto-watch daemon: keep a persistent index in sync with a corpus on
+    # disk without the user ever calling +vectordb_reindex+. A thin layer over
+    # the +listen+ gem driving the {Indexer}'s per-file entry points
+    # ({Indexer#reindex_file!} / {Indexer#remove_file!}) from filesystem events,
+    # plus a boot reconciliation sweep ({Indexer#reconcile_plan}).
     #
     # == Host-owned, not agent-owned
     #
-    # A web app has many {Agent}s but one corpus and one Watcher, so
-    # the Watcher's lifetime is the host *process*, not any single
-    # agent. The host constructs it once, around the same {Indexer}
-    # (and therefore the same {Backend}) every agent's
-    # {Extension} shares, and +#start+s / +#close+s it on process
-    # lifecycle:
+    # A web app has many {Agent}s but one corpus and one Watcher, so its
+    # lifetime is the host *process*. The host constructs it once around the
+    # same {Indexer} every agent's {Extension} shares:
     #
     #   server = Pikuri::VectorDb::Server::Chroma.ensure_running
     #   backend = server.client(collection: 'notes')
@@ -30,67 +23,48 @@ module Pikuri
     #   # ... build agents with `ext` ...
     #   watcher = Pikuri::VectorDb::Watcher.new(indexer: ext.indexer).start
     #
-    # The {Extension} indexes nothing on its own, so the Watcher is
-    # the population path here: its boot reconcile sweep
-    # ({Indexer#reconcile_plan}) fills an empty backend and is uniform
-    # across backends. A host that *also* indexes some other way (an
-    # explicit +ext.indexer.index_if_empty!+ before +start+) is fine
-    # too — the sweep then finds matching hashes and reindexes
-    # nothing.
+    # The {Extension} indexes nothing on its own, so the Watcher is the
+    # population path: its boot sweep fills an empty backend, uniform across
+    # backends.
     #
     # == Single work queue, last-intent-per-path
     #
-    # The boot sweep and the live event stream must not race. They
-    # funnel into one +@pending+ map (path → +:reindex+/+:remove+)
-    # drained by one worker thread, so:
+    # The boot sweep and live events must not race, so both funnel into one
+    # +@pending+ map (path → +:reindex+/+:remove+) drained by one worker thread:
     #
-    # * Rapid edits to one file collapse to a single reindex (the
-    #   map holds one intent per path); +listen+'s +latency+ window
-    #   coalesces most of it before it even reaches us.
-    # * Order doesn't corrupt content: {#process} resolves the file
-    #   from disk *at process time*, and {Indexer#reindex_file!} of
-    #   a vanished file is itself a removal — so a stale +:reindex+
-    #   that runs after a delete self-corrects rather than writing
-    #   old bytes.
+    # * Rapid edits to one file collapse to a single reindex (one intent per
+    #   path); +listen+'s +latency+ window coalesces most before it reaches us.
+    # * Order can't corrupt content: {#process} resolves the file from disk *at
+    #   process time*, and reindexing a vanished file is itself a removal — so a
+    #   stale +:reindex+ after a delete self-corrects rather than writing old
+    #   bytes.
     #
-    # The boot sweep is enqueued by the worker thread *after* the
-    # listener is already subscribed, so a change made mid-sweep
-    # lands in the same queue rather than being lost.
+    # The boot sweep is enqueued *after* the listener is subscribed, so a
+    # mid-sweep change lands in the same queue rather than being lost.
     #
     # == Teardown drains the in-flight job
     #
-    # The Watcher registers with {Pikuri::Finalizers} *last* (after
-    # the host's {Server::Chroma}), so LIFO closes it *first* — before
-    # the container is +docker rm -f+'d. {#close} stops the listener
-    # (no new events), then joins the worker, which finishes the job
-    # it is mid-flight on and exits. That ordering is load-bearing: it
-    # guarantees no {Backend#replace_source} is still writing when the
-    # Chroma container goes down. Remaining queued (not-yet-started) jobs
-    # are abandoned — the next boot's reconcile sweep catches them
-    # (the downtime-gap guarantee).
+    # The Watcher registers with {Pikuri::Finalizers} *last* (after the host's
+    # {Server::Chroma}), so LIFO closes it *first*. {#close} stops the listener,
+    # then joins the worker, which finishes its in-flight job and exits — the
+    # load-bearing ordering that guarantees no {Backend#replace_source} is still
+    # writing when the container goes down. Still-queued jobs are abandoned; the
+    # next boot's sweep catches them (the downtime-gap guarantee).
     #
     # == What it deliberately does not do
     #
-    # * **No model/parameter awareness.** The change signal is the
-    #   file's byte hash ({Indexer#file_hash}), so swapping the
-    #   embedder or chunker config does *not* trigger reindex — the
-    #   recourse is a manual full +vectordb_reindex+. See
-    #   {Extension} for the loud warning.
-    # * **Symlinks are never indexed.** A live event whose path is
-    #   reached through a symlink below the watch root is dropped —
-    #   the leaf may be a symlinked file, or an ancestor a symlinked
-    #   directory. This matches {Indexer#list_files}, which skips the
-    #   same paths on the boot walk, so the watch and the walk index
-    #   exactly the same set. The rule is strict on purpose, not
-    #   OS-default: it is a privacy boundary (a link pointing out of
-    #   the corpus never gets embedded) and it closes the otherwise
-    #   off-tree divergence — a symlink target that changes outside
-    #   the watched tree fires no event, so following it would leave
-    #   stale chunks the walk would later remove.
-    # * **No backpressure.** Re-embedding competes with the chat
-    #   model on a shared llama-server; vectordb targets
-    #   low-churn corpora (notes, docs), so a burst is tolerated
-    #   rather than throttled.
+    # * **No model/parameter awareness.** The change signal is the byte hash
+    #   ({Indexer#file_hash}), so swapping the embedder/chunker config does *not*
+    #   trigger reindex — recourse is a manual +vectordb_reindex+ (see {Extension}).
+    # * **Symlinks are never indexed.** A live event reached through a symlink
+    #   below the watch root (leaf or ancestor) is dropped, matching
+    #   {Indexer#list_files} so watch and walk index the same set. Strict on
+    #   purpose: a privacy boundary, and it closes an off-tree divergence — a
+    #   symlink target changing outside the tree fires no event, so following it
+    #   would leave stale chunks.
+    # * **No backpressure.** Re-embedding competes with the chat model on a
+    #   shared llama-server; vectordb targets low-churn corpora, so a burst is
+    #   tolerated rather than throttled.
     class Watcher
       LOGGER = Pikuri.logger_for('VectorDb::Watcher')
 
@@ -176,15 +150,11 @@ module Pikuri
         nil
       end
 
-      # The +listen+ callback body, also the test seam. Translates a
-      # batch of changed paths into queued work: modified/added →
-      # +:reindex+, removed → +:remove+. Non-indexable paths
-      # (denylisted dirs, dot-files, anything outside the watch root)
-      # are dropped, as are paths reached through a symlink (see the
-      # class doc — strict, to agree with {Indexer#list_files}). The
-      # symlink check guards only +:reindex+: it +lstat+s the path,
-      # which a removed path no longer has, and a +:remove+ for a
-      # never-indexed symlink source is a harmless no-op anyway.
+      # The +listen+ callback body, also the test seam. Modified/added →
+      # +:reindex+, removed → +:remove+; non-indexable paths (denylisted,
+      # dot-files, outside the root) and symlinked paths are dropped. The
+      # symlink check guards only +:reindex+ (it +lstat+s, which a removed path
+      # lacks, and a +:remove+ for a never-indexed symlink source is a no-op).
       #
       # @param modified [Array<String>] absolute paths.
       # @param added [Array<String>] absolute paths.
@@ -325,15 +295,11 @@ module Pikuri
         false
       end
 
-      # Is +path+ reached through a symlink at or below the watch
-      # root? Walks the components from the watch root (+@watch_dir+)
-      # down to the leaf and +lstat+s each, so it catches both a
-      # symlinked leaf file and a symlinked ancestor directory —
-      # matching what {Indexer#list_files} skips. Components in the
-      # watch root's own prefix are not checked: that is the path the
-      # host pointed at, descended even when itself reached through a
-      # link (same as the walk, which always descends its given
-      # +root+).
+      # Is +path+ reached through a symlink at or below the watch root? +lstat+s
+      # each component from +@watch_dir+ down to the leaf, catching both a
+      # symlinked leaf and a symlinked ancestor — matching {Indexer#list_files}.
+      # The watch root's own prefix isn't checked (the host pointed at it, so
+      # it's descended even through a link — as the walk does).
       #
       # @param path [String] an absolute path under the watch root.
       # @return [Boolean]

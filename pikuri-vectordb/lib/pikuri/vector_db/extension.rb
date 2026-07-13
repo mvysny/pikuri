@@ -2,11 +2,8 @@
 
 module Pikuri
   module VectorDb
-    # The host-facing API: wire up local-corpus vector search +
-    # agentic RAG on a {Pikuri::Agent} via +c.add_extension+
-    # inside the +Agent.new+ block.
-    #
-    # == Usage
+    # The host-facing API: wire local-corpus vector search + agentic RAG onto a
+    # {Pikuri::Agent} via +c.add_extension+ in the +Agent.new+ block.
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_extension Pikuri::VectorDb::Extension.new(
@@ -15,79 +12,41 @@ module Pikuri
     #     )
     #   end
     #
-    # On +configure+ the extension registers three tools onto the
-    # parent agent — {Tools::Search} as +vectordb_search+, {Tools::Read} as
-    # +vectordb_read+, and {Tools::Reindex} as +vectordb_reindex+ — and
-    # nothing else. It does *not* index anything: when and whether to
-    # populate the corpus is host policy, not the extension's job.
+    # On +configure+ it registers three tools ({Tools::Search} +
+    # {Tools::Read} + {Tools::Reindex}) and nothing else. It does *not* index:
+    # when/whether to populate the corpus is host policy.
     #
     # == The host owns population
     #
-    # The extension exposes the constructed {Indexer} via {#indexer};
-    # the host decides how the corpus gets filled:
-    #
-    # * Call +extension.indexer.index_all!+ / +#index_if_empty!+ from
-    #   the host (e.g. a CLI flag, a boot step) for an explicit,
-    #   synchronous index.
-    # * Run a {Watcher} around +extension.indexer+ to keep the index
-    #   live as files change — its boot reconcile sweep
-    #   ({Indexer#reconcile_plan}) populates an empty backend and then
-    #   tracks edits.
-    # * Index nothing at boot and let the user drive it: the agent
-    #   calls +vectordb_reindex+ when asked. The corpus is simply
-    #   empty until then — {Tools::Search} returns no hits and says so.
-    #
-    # All three are equally valid; the extension stays agnostic. This
-    # is the same host-owned shape as the {Watcher} (whose lifetime is
-    # the process, not any one agent), and it keeps the wiring — and
-    # the timing — visible in the host rather than hidden in a
-    # constructor knob.
+    # The extension exposes its {Indexer} via {#indexer}; the host fills the
+    # corpus however it likes — an explicit +indexer.index_if_empty!+ at boot, a
+    # {Watcher} around it (whose boot sweep populates an empty backend then
+    # tracks edits), or nothing (the agent calls +vectordb_reindex+ when asked;
+    # {Tools::Search} returns no hits and says so until then). All equally valid;
+    # the same host-owned shape as the {Watcher}, keeping wiring *and* timing
+    # visible in the host rather than in a constructor knob.
     #
     # == Changed your embedder or chunker? Reindex fully.
     #
-    # Neither a {Watcher} nor +index_if_empty!+ reacts to a config
-    # change: the change signal is the file's byte hash, so swapping
-    # the embedder model or the chunker window leaves every
-    # already-indexed chunk in place — silently stale (new queries
-    # embed with the new model but score against old-model vectors).
-    # After changing any indexing setting, run a full
-    # +vectordb_reindex+ to rebuild from scratch.
+    # Neither a {Watcher} nor +index_if_empty!+ reacts to a config change (the
+    # signal is the byte hash), so swapping the embedder model or chunker window
+    # leaves every indexed chunk silently stale — new queries embed with the new
+    # model but score against old-model vectors. Run a full +vectordb_reindex+.
     #
-    # == No system-prompt snippet
+    # == No system-prompt snippet; LIBRARIAN not auto-registered
     #
-    # Unlike {Pikuri::Tasks::Extension}, this extension does
-    # *not* append a +<vectordb_usage>+ block to the agent's
-    # system prompt. Two use modes coexist: the parent agent
-    # may call +vectordb_search+ directly *or* delegate to
-    # {LIBRARIAN} (registered separately via
-    # +Pikuri::SubAgent::Extension+). A snippet recommending
-    # one over the other would conflict with the trifecta-
-    # defense argument in the LIBRARIAN-mediated mode. Tool
-    # descriptions speak for themselves; hosts pick a preferred
-    # mode in their own system prompt if they want.
-    #
-    # == LIBRARIAN is not auto-registered
-    #
-    # The bundled {LIBRARIAN} persona is opt-in — same
-    # precedent as +Pikuri::Code::GIT_REPO_RESEARCHER+. Hosts
-    # that want sub-agent recall add it explicitly:
-    #
-    #   c.add_extension Pikuri::SubAgent::Extension.new(
-    #     personas: [Pikuri::VectorDb::LIBRARIAN]
-    #   )
-    #
-    # That keeps the dependency on +pikuri-subagents+
-    # registration-time-only — hosts using direct search (no
-    # sub-agent mediation) don't need to wire it.
+    # Unlike {Pikuri::Tasks::Extension}, no +<vectordb_usage>+ block is appended:
+    # the parent may call +vectordb_search+ directly *or* delegate to
+    # {LIBRARIAN}, and a snippet favoring one would conflict with the
+    # trifecta-defense argument in the mediated mode. The bundled {LIBRARIAN}
+    # persona is opt-in (same precedent as +Pikuri::Code::GIT_REPO_RESEARCHER+) —
+    # hosts wanting sub-agent recall add it via +SubAgent::Extension.new(personas:
+    # [LIBRARIAN])+, keeping the +pikuri-subagents+ dependency registration-only.
     class Extension
       include Pikuri::Agent::Extension
 
-      # @return [Indexer] the constructed {Indexer} instance.
-      #   Exposed so the host can drive population however it
-      #   chooses — +ext.indexer.index_if_empty!+ at boot, a
-      #   {Watcher} around it, or leaving it empty until the LLM
-      #   calls +vectordb_reindex+. See the class "host owns
-      #   population" header.
+      # @return [Indexer] the constructed {Indexer}, exposed so the host can
+      #   drive population (see the class "host owns population" header).
       attr_reader :indexer
 
       # @param backend [#upsert, #query, #delete_all, #count]
@@ -125,12 +84,10 @@ module Pikuri
         )
       end
 
-      # Register {Tools::Search} + {Tools::Read} + {Tools::Reindex} onto +c+. Does not
-      # index — population is the host's call (see the class header).
-      # Raises if any of the three tool names has been pre-registered:
-      # the extension is the single owner of all three, and a duplicate
-      # registration would point to a different Indexer / Embedder /
-      # backend.
+      # Register {Tools::Search} + {Tools::Read} + {Tools::Reindex} onto +c+; does
+      # not index. Raises if any of the three names is pre-registered — the
+      # extension is their single owner, and a duplicate would point at a
+      # different Indexer / Embedder / backend.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]

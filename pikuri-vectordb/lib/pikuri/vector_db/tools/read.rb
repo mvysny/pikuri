@@ -3,66 +3,40 @@
 module Pikuri
   module VectorDb
     module Tools
-      # The LLM-facing "read a whole indexed document" tool, exposed
-      # as +vectordb_read+. The companion to {Tools::Search}: where
-      # +vectordb_search+ returns ranked *chunks* (lossy fragments
-      # capped at {Search::SNIPPET_LENGTH}), +vectordb_read+ pulls one
-      # full document into context by the +source+ path that search
-      # already printed. The intended loop is
-      # *search to locate → read the one or two clean hits in full →
-      # distil* — so the agent stops re-querying with ever-more-elaborate
-      # phrasings just to reconstruct a document it already found.
+      # The LLM-facing +vectordb_read+ tool — companion to {Tools::Search}:
+      # where search returns ranked *chunks* (lossy, capped at
+      # {Search::SNIPPET_LENGTH}), read pulls one full document into context by
+      # the +source+ path search printed. The loop is *search to locate → read
+      # the one or two clean hits in full → distil*, so the agent stops
+      # re-querying to reconstruct a document it already found.
       #
-      # == Why this does not widen the trifecta
+      # == Does not widen the trifecta
       #
-      # Reading is *inbound only*. The lethal trifecta needs three legs
-      # — private data, untrusted content, and an outbound channel — and
-      # the load-bearing one is egress. +vectordb_read+ pours more
-      # (already-private, already-possibly-poisoned) corpus content into
-      # context but adds no new way to send anything out, so it is safe
-      # by construction in both wirings: the egress-free
-      # +bin/pikuri-corpus+ agent stays egress-free, and the {LIBRARIAN}
-      # sub-agent's privilege-separation argument survives intact — a
-      # poisoned full document still has no hand to act with. See
-      # {LIBRARIAN} and +ideas/vectordb-deferrals.md+.
+      # Reading is *inbound only*. The lethal trifecta's load-bearing leg is
+      # egress; this pours more (already-private, already-possibly-poisoned)
+      # corpus content in but adds no way out, so both wirings stay safe — the
+      # egress-free +bin/pikuri-corpus+ agent stays egress-free, and the
+      # {LIBRARIAN} privilege-separation argument survives (a poisoned document
+      # still has no hand to act with). See {LIBRARIAN}.
       #
       # == The read domain is exactly the search domain
       #
-      # The +source+ argument must be a key the {Indexer} actually
-      # produced — verified against {Backend#source_indexed?} before
-      # any disk access. So the only legal inputs are the citations
-      # +vectordb_search+ handed the model; a poisoned chunk that says
-      # "read ../../.ssh/id_rsa" fails the membership gate (that string
-      # is not an indexed source). This is what keeps the tool from being
-      # a general-purpose file reader smuggled in under a friendly name.
-      # A lexical containment check (resolved path must sit under the
-      # corpus {Indexer#root}) backs the gate as defense-in-depth for any
-      # future non-filesystem source type.
+      # +source+ must be a key the {Indexer} actually produced — checked against
+      # {Backend#source_indexed?} before any disk access — so the only legal
+      # inputs are the citations search handed the model, and a poisoned chunk
+      # saying "read ../../.ssh/id_rsa" fails the membership gate (not an indexed
+      # source). That's what keeps this from being a general file reader under a
+      # friendly name. A lexical containment check (resolved path under the
+      # corpus {Indexer#root}) backs the gate as defense-in-depth.
       #
-      # == Bounding / pagination
-      #
-      # A full document can be far larger than the {Tools::Search} snippet — the
-      # {Chunker} exists precisely because documents are big. So reads are
-      # line-windowed by {Pikuri::FileType.read_as_text_paged} — the same
-      # windower (and the same {DEFAULT_LIMIT}-line / 50 KB caps) that
-      # backs {Pikuri::Workspace::Read}, returning a
-      # {Pikuri::Extractor::Page} this tool formats. Unlike +Workspace::Read+
-      # there is no +cat -n+ line-number prefix: nothing downstream edits
-      # these documents (the citation unit is the +source+ path, not a
-      # line), and dropping the prefix saves tokens on exactly the
-      # operation whose point is to spend context wisely.
-      #
-      # == Errors the LLM can react to
-      #
-      # Extraction goes through {Pikuri::FileType.read_as_text_paged},
-      # which routes through the same {Pikuri::Extractor} registry the
-      # {Indexer}'s {Pikuri::FileType.read_as_text} does — so what you
-      # read matches what was indexed exactly (modulo edits to the file
-      # since), +"--- Page N ---"+ PDF markers included. Images /
-      # binaries / a vanished file / a malformed PDF all come back as
-      # +"Error: ..."+ observations rather than raising, per CLAUDE.md
-      # "Errors are loud" (these are failures the agent reacts to, not
-      # pikuri bugs).
+      # Reads are line-windowed by {Pikuri::FileType.read_as_text_paged} — the
+      # same windower and caps as {Pikuri::Workspace::Read}, returning a
+      # {Pikuri::Extractor::Page}, but with no +cat -n+ prefix (nothing edits
+      # these; the citation unit is the +source+, and dropping the prefix saves
+      # tokens). Extraction routes through the same {Pikuri::Extractor} registry
+      # the {Indexer} uses, so a read matches what was indexed exactly (modulo
+      # later edits), +"--- Page N ---"+ markers included. Images / binaries /
+      # vanished file / malformed PDF come back as +"Error: ..."+, not raises.
       class Read < Pikuri::Tool
         # @return [Integer] default value of the +limit+ parameter
         #   (number of lines returned per call). Aliases the shared
@@ -150,13 +124,11 @@ module Pikuri
           "Error: #{e.message}"
         end
 
-        # Lexical containment: +resolved+ (already +expand_path+'d) must
-        # be the root itself or sit beneath it. Lexical, not +realpath+,
-        # on purpose — the membership gate already restricts +source+ to
-        # indexer-produced keys, and resolving symlinks here would
-        # wrongly reject a symlinked document the {Indexer} itself chose
-        # to index. This check only catches a +..+ / absolute escape that
-        # somehow passed the gate.
+        # Lexical containment: +resolved+ must be the root or sit beneath it.
+        # Lexical, not +realpath+, on purpose — the membership gate already
+        # restricts +source+ to indexer keys, and resolving symlinks here would
+        # wrongly reject a symlinked document the {Indexer} chose to index. Only
+        # catches a +..+ / absolute escape that somehow passed the gate.
         #
         # @param resolved [Pathname]
         # @param root [Pathname]

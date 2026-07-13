@@ -5,72 +5,40 @@ require 'monitor'
 module Pikuri
   module VectorDb
     module Backend
-      # Pure-Ruby vector store. The educational default backend —
-      # the "small enough to audit" first stop the demo + guide walk
-      # through before promoting users to +Chroma+ for persistence.
+      # Pure-Ruby vector store — the educational default backend, the "small
+      # enough to audit" first stop before users promote to {Qdrant} / {Chroma}
+      # for persistence. Holds a Hash from chunk id to +[Chunk, vector]+;
+      # +#query+ scores cosine similarity against every stored vector, O(n) per
+      # query — fine for thousands of chunks (a notes folder), slow for millions.
       #
-      # == What it does
+      # Deliberately no persistence (RAM-only; reloads from sources every boot,
+      # which is *why* it's the teaching shape — the boot code path is the one a
+      # newcomer inspects to learn what "indexing" means) and no approximate-search
+      # index (exhaustive scan; HNSW/IVF adds complexity that teaches nothing once
+      # the cosine math is clear).
       #
-      # Holds an in-memory Hash from chunk id to +[Chunk, vector]+;
-      # +#query+ computes cosine similarity against every stored
-      # vector, sorts descending, returns the top-k as
-      # +Backend::Result+ instances. O(n) per query, where n is
-      # the number of stored chunks. Fine for thousands of chunks
-      # (a personal notes folder, a single product's docs); slow
-      # for millions (a full corporate knowledge base — that's the
-      # +Chroma+ use case).
+      # == Thread-safe (the one backend that locks)
       #
-      # == What it deliberately doesn't do
+      # Every method runs under a reentrant +Monitor+ — real concurrency once
+      # auto-watch is wired (the main thread queries while the {Watcher} thread
+      # replaces/deletes). The lock's load-bearing job is {#replace_source}: it
+      # holds the monitor across the delete-then-upsert so a concurrent +#query+
+      # never sees the zero-chunk gap. +Monitor+ not +Mutex+ because
+      # +#replace_source+ re-enters via +#delete_by_source+ + +#upsert+. Chroma
+      # / Qdrant need no client-side lock — the server serializes.
       #
-      # * **No persistence.** RAM-only, intentional — the user who
-      #   wants persistence picks +Chroma+. Reloads from sources on
-      #   every boot, which makes the in-memory backend the natural
-      #   teaching shape: the same code path the demo binary walks
-      #   on startup is the one the user inspects when they're
-      #   learning what "indexing" actually means.
-      # * **No approximate search.** Exhaustive scan. Approximate
-      #   nearest neighbor (HNSW, IVF) adds complexity that doesn't
-      #   teach anything additional once the cosine math is clear.
-      # * **No approximate-search index.** Exhaustive scan only.
-      #
-      # == Thread safety
-      #
-      # Every public method runs under a single reentrant
-      # +Monitor+. The agent's main thread calls +#query+ while a
-      # background {Watcher} thread calls +#replace_source+ /
-      # +#delete_by_source+, so concurrent access is real once
-      # auto-watch is wired. The lock's load-bearing job is
-      # {#replace_source}: it holds the monitor across the
-      # delete-then-upsert so a concurrent +#query+ never observes
-      # the gap where a source has zero chunks. +Monitor+ (not a
-      # bare +Mutex+) because +#replace_source+ re-enters the lock
-      # via +#delete_by_source+ + +#upsert+, which a non-reentrant
-      # +Mutex+ would deadlock on. +Chroma+ needs no client-side
-      # lock — the server serializes — so this is the one backend
-      # that locks.
-      #
-      # == Cosine, not dot product
-      #
-      # Some embedders return pre-normalized vectors (text-embedding-3,
-      # most sentence-transformers); others don't. Cosine normalizes
-      # at compute time, so the backend works regardless of whether
-      # the embedder did. The readable two-pass form below (compute
-      # dot + magnitudes separately) is intentional over the
-      # single-loop micro-optimization — this is the file the
-      # newcomer reads to understand what's happening.
+      # Cosine (not dot product) so the backend works whether or not the embedder
+      # pre-normalizes; the readable two-pass {#cosine} is intentional over a
+      # single-loop micro-opt — this is the file the newcomer reads.
       class InMemory
         # @return [InMemory]
         def initialize
           # id (String) → [Chunk, vector (Array<Float>)]
           @entries = {}
-          # Dimension of every stored vector. +nil+ before the first
-          # +#upsert+; locked to the dim of the first vector seen and
-          # enforced for every subsequent +#upsert+ + +#query+ — see
-          # the Backend protocol's "Vector-dim contract" yardoc.
+          # Vector dim; +nil+ until the first +#upsert+ locks it, then enforced
+          # on every +#upsert+/+#query+ — see the Backend "Vector-dim contract".
           @dim = nil
-          # Reentrant so +#replace_source+ can call +#delete_by_source+
-          # + +#upsert+ while holding the lock — see the class yardoc's
-          # "Thread safety" section.
+          # Reentrant — see the class header's "Thread-safe" section.
           @lock = Monitor.new
         end
 
@@ -167,20 +135,17 @@ module Pikuri
           nil
         end
 
-        # Atomically replace all chunks for one +source+: delete the
-        # old set, then upsert the new one, under a single hold of the
-        # monitor. The incremental-reindex unit (see {Indexer#reindex_file!}).
-        # Holding the lock across both halves is the point — a
-        # concurrent {#query} sees either the old chunks or the new
-        # ones, never the empty gap between.
+        # Atomically replace all chunks for one +source+ (delete-then-upsert
+        # under a single monitor hold — the point: a concurrent {#query} sees
+        # the old or new chunks, never the empty gap). The incremental-reindex
+        # unit (see {Indexer#reindex_file!}).
         #
         # @param source [String] the {Chunk#source} being replaced.
-        # @param chunks [Array<Chunk>] the new chunk set; every
-        #   +chunk.source+ should equal +source+.
+        # @param chunks [Array<Chunk>] the new chunk set (each +chunk.source+
+        #   should equal +source+).
         # @param vectors [Array<Array<Float>>] parallel to +chunks+.
         # @return [void]
-        # @raise [ArgumentError] on empty input, length mismatch, or
-        #   vector-dim mismatch (from the inner {#upsert}).
+        # @raise [ArgumentError] on empty input, length or vector-dim mismatch.
         def replace_source(source:, chunks:, vectors:)
           @lock.synchronize do
             delete_by_source(source)
@@ -189,17 +154,13 @@ module Pikuri
           nil
         end
 
-        # The boot-sweep reference: a map from each indexed +source+
-        # to the content hash stored on its chunks. {Watcher} (via
-        # {Indexer#reconcile_plan}) diffs this against the hashes of
-        # the files currently on disk to decide what to reindex.
-        # Built from chunk metadata; a chunk indexed before the
-        # +hash+ metadata existed maps its source to +nil+, which the
-        # diff treats as "changed" and reindexes — self-healing.
+        # The boot-sweep reference: each indexed +source+ → the content hash on
+        # its chunks, which {Indexer#reconcile_plan} diffs against disk. A chunk
+        # with no +hash+ metadata maps to +nil+, which the diff treats as
+        # "changed" and reindexes — self-healing.
         #
-        # @return [Hash{String => String, nil}] +source+ → content
-        #   hash. Empty when nothing is indexed (the InMemory case at
-        #   every boot, since RAM resets).
+        # @return [Hash{String => String, nil}] +source+ → content hash. Empty
+        #   when nothing is indexed (the InMemory case at every boot).
         def sources_with_hashes
           @lock.synchronize do
             result = {}
@@ -225,15 +186,12 @@ module Pikuri
 
         private
 
-        # Cosine similarity. Two-pass form is the readable shape;
-        # micro-optimizing into a single loop saves an array
-        # traversal but obscures what's happening for the reader
-        # who's here to learn how a vector store works.
+        # Cosine similarity (readable two-pass — see the class header).
         #
         # @param a [Array<Float>]
         # @param b [Array<Float>]
-        # @return [Float] cosine in +[-1.0, 1.0]+, or +0.0+ if
-        #   either vector is zero (degenerate but valid input).
+        # @return [Float] cosine in +[-1.0, 1.0]+, or +0.0+ if either vector is
+        #   zero (degenerate but valid input).
         def cosine(a, b)
           dot = a.zip(b).sum { |x, y| x * y }
           mag_a = Math.sqrt(a.sum { |x| x * x })

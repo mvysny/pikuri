@@ -4,44 +4,16 @@ require 'ruby_llm'
 
 module Pikuri
   module VectorDb
-    # Thin wrapper over +RubyLLM.embed+. Holds an optional
-    # +model+ kwarg, exposes a single +#embed(texts)+ method that
-    # always takes an +Array<String>+ and always returns an
-    # +Array<Array<Float>>+ (parallel to the input).
-    #
-    # == Why a wrapper at all
-    #
-    # +RubyLLM.embed+'s shape isn't fixed: a single-String input
-    # returns +vectors+ as a flat +Array<Float>+; an array input
-    # returns +Array<Array<Float>>+. The {Indexer} (Phase 7) only
-    # ever wants the second shape, and would otherwise have to
-    # branch on input type at every call site. Pinning the
-    # contract here once means downstream code (Indexer, Search
-    # query path) stays simple.
-    #
-    # The other reason is testability: stubbing +RubyLLM.embed+
-    # in every consumer's spec via +define_singleton_method+ is
-    # repetitive and fragile (the stub leaks across examples if
-    # +after+ blocks aren't disciplined). Routing through this
-    # class lets each consumer inject a fake +#embed+ object via
-    # dependency injection — much cheaper than monkey-patching
-    # ruby_llm in dozens of tests.
-    #
-    # == Why no batching policy
-    #
-    # +RubyLLM.embed+ accepts the array verbatim and the provider
-    # decides what to do with it (OpenAI batches up to 2048
-    # inputs; local llama.cpp processes one at a time but in a
-    # single HTTP call). Batching strategy is the {Indexer}'s
-    # concern, not this wrapper's — the Indexer slices a large
-    # corpus into batches and calls +#embed+ once per batch.
-    #
-    # == Errors are loud
-    #
-    # +RubyLLM+'s exceptions (Faraday network failures, provider
-    # 4xx / 5xx, auth errors) propagate verbatim. This is internal
-    # pikuri code, not an LLM-facing tool, so no
-    # +"Error: ..."+ string return path.
+    # Thin wrapper over +RubyLLM.embed+ that pins one contract: {#embed} always
+    # takes +Array<String>+ and returns +Array<Array<Float>>+ parallel to it.
+    # +RubyLLM.embed+'s shape isn't fixed (a single-String input returns a flat
+    # +Array<Float>+), and the {Indexer} only wants the array shape, so pinning
+    # it here keeps downstream code from branching on input type — and lets
+    # consumers inject a fake +#embed+ in tests instead of monkey-patching
+    # ruby_llm. Batching is the {Indexer}'s concern: +RubyLLM.embed+ takes the
+    # array verbatim and the provider decides, so the Indexer slices a corpus
+    # and calls +#embed+ once per batch. RubyLLM exceptions propagate verbatim
+    # (internal code, not an LLM-facing tool — no +"Error: ..."+ return path).
     class Embedder
       # @return [String, nil] the embedding model name, or +nil+
       #   to use whichever default +RubyLLM.config.default_embedding_model+

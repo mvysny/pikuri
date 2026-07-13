@@ -5,96 +5,48 @@ require 'digest'
 
 module Pikuri
   module VectorDb
-    # The composing piece of the vectordb pipeline. Walks the
-    # configured +sources+, enumerates indexable files (filtering
-    # out the {DENYLIST} and dot-files), extracts text via
-    # {Pikuri::FileType.read_as_text}, chunks via the configured
-    # {Chunker}, embeds via the configured {Embedder}, and
-    # {Backend#upsert}s the result.
+    # The composing piece of the vectordb pipeline: walks the configured
+    # +source+, enumerates indexable files (skipping {DENYLIST} + dot-files),
+    # extracts text via {Pikuri::FileType.read_as_text}, chunks via the
+    # {Chunker}, embeds via the {Embedder}, and {Backend#upsert}s the result.
     #
-    # == Three public entry points
+    # Whole-corpus entry points: {#index_all!} (unconditional), {#reindex!}
+    # (nuke-and-reload), {#index_if_empty!} (boot-time — InMemory always
+    # indexes, Chroma only on first boot / after a manual reindex).
+    # One-file-at-a-time, driven by the {Watcher} daemon: {#reindex_file!},
+    # {#remove_file!}, and {#reconcile_plan} (the boot sweep — a plan, not an
+    # action).
     #
-    # * +#index_all!+ — unconditionally index every source file.
-    #   Caller is responsible for first nuking the backend if a
-    #   full re-index is wanted.
-    # * +#reindex!+ — convenience for "nuke and re-index":
-    #   +backend.delete_all+ followed by +index_all!+. The
-    #   v1 nuke-and-reload path; what
-    #   {Pikuri::VectorDb::Extension} wires to the eventual
-    #   +vectordb_reindex+ tool.
-    # * +#index_if_empty!+ — only index if +backend.count.zero?+.
-    #   The boot-time path: +Backend::InMemory+ always indexes
-    #   (RAM-only, always empty); +Backend::Chroma+ only indexes
-    #   on first boot or after a manual reindex.
-    #
-    # == Incremental entry points (auto-watch)
-    #
-    # The {Watcher} daemon drives three further methods that touch
-    # one file at a time instead of the whole corpus:
-    #
-    # * +#reindex_file!(path)+ — extract → chunk → embed → atomic
-    #   {Backend#replace_source}. The unit of incremental work.
-    # * +#remove_file!(path)+ — {Backend#delete_by_source} for a
-    #   file that was deleted or became unindexable.
-    # * +#reconcile_plan+ — the boot sweep: diff the files on disk
-    #   (by content hash) against {Backend#sources_with_hashes} and
-    #   return the +{reindex:, remove:}+ work list, without
-    #   executing it (the {Watcher} feeds it through its queue).
-    #
-    # == Logging
-    #
-    # Each indexed file emits one INFO line through
-    # {Pikuri::VectorDb::LOGGER}, prefixed with a
-    # +[i/total]+ progress counter (e.g.
-    # +[3/50] cooking/risotto.md: 7 chunks+). Indexing local
-    # corpora against a local llama.cpp embedder takes minutes,
-    # and the user is blocked on the agent boot, so progress
-    # visibility is load-bearing here. Hosts with a richer
-    # output channel (a future TUI, a web client) can mute or
-    # reroute the +PIKURI_LOG_VECTORDB+ stream — see
-    # {Pikuri.logger_for}.
-    #
-    # WARN lines surface skip reasons: image / binary file in
-    # the corpus, source path doesn't exist, file produced no
-    # text (scanned-image PDF, empty file).
+    # Each indexed file emits one +[i/total]+ INFO line through
+    # {Pikuri::VectorDb::LOGGER}; indexing against a local llama.cpp embedder
+    # takes minutes with the user blocked on boot, so progress visibility is
+    # load-bearing (hosts with a richer channel reroute +PIKURI_LOG_VECTORDB+).
+    # WARN lines surface skips (image/binary, missing path, no extractable text).
     #
     # == Chunk identity
     #
-    # +Chunk.id+ is +"source:index"+ — the relative source path
-    # plus the chunk's ordinal within that file. Readable in
-    # logs, deterministic, makes the "one source, many chunks"
-    # rule visible, and stable across reindexes of the same file.
-    # Incremental reindex replaces a document by +source+ (via
-    # {Backend#replace_source}), not by content-addressed id, so
-    # the file's content hash lives in +Chunk.metadata[:hash]+
-    # instead — the same value on every chunk of one file, which
-    # is what lets {#reconcile_plan} read one chunk per source and
-    # still know whether the file changed.
-    #
-    # +Chunk.source+ is the path *relative to the source root
-    # the file was found under* — short, citation-friendly,
-    # survives moving the corpus. Absolute paths would tie the
-    # backend to a particular machine layout; relative travels.
+    # +Chunk.id+ is +"source:index"+ (relative path + ordinal-within-file) —
+    # readable, deterministic, stable across reindexes. Incremental reindex
+    # replaces by +source+ (not by content-addressed id), so the file's content
+    # hash lives in +Chunk.metadata[:hash]+ (same value on every chunk of one
+    # file) — that's what lets {#reconcile_plan} read one chunk per source and
+    # still know whether the file changed. +Chunk.source+ is relative to the
+    # source root: short, citation-friendly, survives moving the corpus;
+    # absolute paths would tie the backend to a machine layout.
     #
     # == Errors mid-indexing
     #
-    # If the embedder fails mid-run (network blip, provider 5xx),
-    # the exception propagates and indexing aborts. Per CLAUDE.md
-    # "Errors are loud" — caller is internal pikuri code, not the
-    # LLM. The backend is left in a partial state; the user's
-    # recourse is +reindex!+ which nukes and starts over. The
-    # +InMemory+ backend resets on process restart anyway; only
-    # +Chroma+ persists partial state, and even then a fresh
-    # +reindex!+ recovers cleanly.
+    # An embedder failure mid-run propagates and aborts (caller is internal
+    # pikuri code, not the LLM — "errors are loud"), leaving the backend partial.
+    # Recourse is {#reindex!}. InMemory resets on restart anyway; only Chroma
+    # persists partial state, and a fresh reindex recovers cleanly.
     class Indexer
       LOGGER = Pikuri.logger_for('VectorDb::Indexer')
 
-      # Basenames that are skipped during the walk. Targets the
-      # cruft people accidentally have inside a notes folder
-      # they've put under +sources:+ — a cloned repo, a Python
-      # workspace, a build directory. Conservative; configurable
-      # ignore rules are a follow-up (see +ideas/vectordb-deferrals.md+
-      # §"Configurable ignore rules").
+      # Basenames skipped during the walk — cruft that accumulates inside a
+      # notes folder put under +source:+ (a cloned repo, a Python venv, a build
+      # dir). Conservative; configurable ignore rules deferred (see
+      # +ideas/vectordb-deferrals.md+).
       DENYLIST = %w[
         .git
         node_modules
@@ -107,29 +59,18 @@ module Pikuri
         vendor
       ].freeze
 
-      # @param backend [#upsert, #query, #delete_all, #count]
-      #   any {Backend} implementation.
-      # @param source [String, Pathname] path to index. A file
-      #   indexes directly; a directory is walked recursively.
-      #   Tilde-expanded.
-      # @param embedder [#embed] an {Embedder} or anything else
-      #   responding to +embed(Array<String>) -> Array<Array<Float>>+.
-      # @param chunker [#chunk] a {Chunker::FixedWindow} or
-      #   anything else responding to +chunk(String) -> Array<String>+.
+      # @param backend [#upsert, #query, #delete_all, #count] any {Backend}.
+      # @param source [String, Pathname] path to index (a file directly, a
+      #   directory recursively). Tilde-expanded.
+      # @param embedder [#embed] +embed(Array<String>) -> Array<Array<Float>>+.
+      # @param chunker [#chunk] +chunk(String) -> Array<String>+.
       # @return [Indexer]
       #
-      # == Why a single source (not an array)
-      #
-      # v0 of this API took +sources: ['~/notes', '~/docs']+
-      # and used +path.relative_path_from(root)+ to derive
-      # {Chunk.source}. Two files named +cooking.md+ across
-      # different roots would produce identical +source+
-      # values, hence identical +"#{source}:#{offset}"+ IDs;
-      # {Backend#upsert}'s replace-by-id semantics would
-      # silently let the second file's chunks overwrite the
-      # first's. Single source eliminates the clash entirely.
-      # Multiple-roots support is deferred — see
-      # +ideas/vectordb-deferrals.md+ §"Multi-source indexing".
+      # A *single* source, not an array: with multiple roots two files both
+      # named +cooking.md+ would derive identical relative +source+ values,
+      # hence identical +"source:offset"+ ids, and {Backend#upsert}'s
+      # replace-by-id would silently let the second overwrite the first.
+      # Multi-source is deferred — see +ideas/vectordb-deferrals.md+.
       def initialize(backend:, source:, embedder:, chunker:)
         @backend  = backend
         @source   = Pathname.new(source).expand_path
@@ -137,16 +78,13 @@ module Pikuri
         @chunker  = chunker
       end
 
-      # @return [Pathname] the configured source, tilde-expanded.
-      #   A single file or a directory tree. The {Watcher} reads
-      #   this to decide what to watch and how to filter events.
+      # @return [Pathname] the configured source, tilde-expanded (a file or a
+      #   directory tree). The {Watcher} reads this to decide what to watch.
       attr_reader :source
 
-      # The directory whose tree is indexed — the anchor for every
-      # relative {Chunk#source}. A directory source is its own
-      # root; a single-file source roots at its parent (so the
-      # citation is just the basename). The {Watcher} watches this
-      # directory.
+      # The directory whose tree is indexed — the anchor for every relative
+      # {Chunk#source}. A directory source is its own root; a single-file source
+      # roots at its parent (citation is just the basename).
       #
       # @return [Pathname]
       def root
@@ -205,23 +143,18 @@ module Pikuri
       end
 
       # Re-index a single file in place: extract → chunk → embed →
-      # {Backend#replace_source}. The atomic unit of incremental
-      # work the {Watcher} drives on a modify/add event.
+      # {Backend#replace_source} (the atomic unit the {Watcher} drives on a
+      # modify/add event). The embed happens *before* the backend write, so an
+      # embedder outage raises here leaving the prior chunks untouched (see
+      # {Backend::Chroma#replace_source}). A file that no longer yields text
+      # (emptied, now-binary, vanished) is treated as a removal — its stale
+      # chunks drop and nothing is written, so no orphans linger.
       #
-      # The embed happens *before* the backend write, so an embedder
-      # outage raises here and leaves the previously-indexed chunks
-      # untouched — see {Backend::Chroma#replace_source} for why the
-      # ordering matters. A file that no longer yields text (emptied,
-      # replaced by a binary, deleted under us) is treated as a
-      # removal: its stale chunks are dropped and nothing is written,
-      # so the index never retains orphans for it.
-      #
-      # @param path [String, Pathname] the file to reindex; need not
-      #   exist (a vanished file resolves to a removal).
-      # @return [Integer] number of chunks now stored for the file
-      #   (0 if it was removed).
-      # @raise [RuntimeError] if the embedder or backend fails — the
-      #   {Watcher} logs it and moves on (loud, per CLAUDE.md).
+      # @param path [String, Pathname] the file; need not exist (vanished ⇒
+      #   removal).
+      # @return [Integer] chunks now stored (0 if removed).
+      # @raise [RuntimeError] if the embedder or backend fails — the {Watcher}
+      #   logs it and moves on.
       def reindex_file!(path)
         path   = Pathname.new(path).expand_path
         source = relative_source(path)
@@ -262,24 +195,18 @@ module Pikuri
         nil
       end
 
-      # The boot reconciliation sweep, as a *plan* rather than an
-      # action: walk the source tree, hash every file, diff against
-      # {Backend#sources_with_hashes}, and return the work list. The
-      # {Watcher} feeds this through its single work queue so the
-      # sweep and live events share one last-intent-wins path (and so
-      # teardown can interrupt between files).
+      # The boot reconciliation sweep, as a *plan* not an action: walk the tree,
+      # hash every file, diff against {Backend#sources_with_hashes}, return the
+      # work list. The {Watcher} feeds it through its single queue so the sweep
+      # and live events share one last-intent-wins path (and teardown can
+      # interrupt between files). Uniform across backends with no +is_a?+:
+      # InMemory reports an empty manifest at boot (RAM reset) so every file
+      # reads as new; Chroma reports its persisted manifest so only changed
+      # files return — which also closes the downtime gap (changes made while no
+      # {Watcher} ran are invisible to filesystem events but caught by the diff).
       #
-      # Uniform across backends with no +is_a?+ branch: +InMemory+
-      # reports an empty manifest at boot (RAM reset) so every file
-      # reads as new; +Chroma+ reports its persisted manifest so only
-      # genuinely-changed files come back. The sweep also closes the
-      # downtime gap — changes made while no {Watcher} was running are
-      # invisible to the filesystem events but caught by the hash diff.
-      #
-      # @return [Hash{Symbol => Array<Pathname>}] +{reindex:, remove:}+
-      #   — files to (re)index because they are new or changed, and
-      #   files (as +root+/source paths) whose chunks should be
-      #   dropped because they are gone from disk.
+      # @return [Hash{Symbol => Array<Pathname>}] +{reindex:, remove:}+ — files
+      #   new-or-changed, and files (as +root+/source paths) gone from disk.
       def reconcile_plan
         on_disk = {} # source (String) => Pathname
         enumerate_files.each { |_root, p| on_disk[relative_source(p)] = p }
@@ -310,24 +237,15 @@ module Pikuri
         end
       end
 
-      # Depth-first walk of +root+'s contents, applying
-      # {DENYLIST} and the dotfile/dot-dir skip rule. Sorts
-      # entries by basename so the indexing order is
-      # deterministic across runs (useful for reading logs
-      # against the same corpus).
+      # Depth-first walk of +root+, applying {DENYLIST} and the dotfile skip
+      # rule, sorted by basename for deterministic order.
       #
-      # Symlinks are skipped outright — a symlinked file is not
-      # indexed and a symlinked directory is not descended into
-      # (the +#symlink?+ check uses +lstat+, so it fires before the
-      # +#directory?+/+#file?+ branch follows the link). This is a
-      # deliberate strict policy, not OS-default behaviour: it keeps
-      # the corpus to the regular files actually under +root+ (a
-      # privacy boundary — a link to +~/.ssh+ never gets embedded)
-      # and keeps this walk in exact agreement with
-      # {Watcher#process_event}, which applies the same rule to live
-      # events. +root+ itself is the path the caller pointed at, so
-      # it is descended even when reached through a symlink; only
-      # links *discovered during* the walk are skipped.
+      # Symlinks are skipped outright (the +#symlink?+ check uses +lstat+, so it
+      # fires before the link is followed) — a deliberate strict policy, not the
+      # OS default: it's a privacy boundary (a link to +~/.ssh+ never gets
+      # embedded) and keeps this walk in exact agreement with
+      # {Watcher#process_event}. +root+ itself is descended even through a
+      # symlink; only links *discovered during* the walk are skipped.
       def list_files(root)
         files = []
         walk = lambda do |dir|
@@ -349,14 +267,12 @@ module Pikuri
         files
       end
 
-      # Process one file end-to-end: extract → chunk → embed →
-      # upsert. Catches the three "skip" cases ({FileType} refusal
-      # for image / binary / unsupported, missing-after-enumeration
-      # races, malformed PDF) and surfaces them as a single WARN
-      # rather than aborting the whole index. Embedder / backend
+      # Process one file end-to-end: extract → chunk → embed → upsert. Catches
+      # the "skip" cases ({FileType} refusal, after-enumeration race, malformed
+      # PDF) as a single WARN rather than aborting the index; embedder/backend
       # failures still propagate.
       #
-      # @return [Integer] number of chunks emitted for this file.
+      # @return [Integer] chunks emitted for this file.
       def index_file(root:, path:, i:, total:)
         source = relative_source(path)
         texts = begin
@@ -390,25 +306,22 @@ module Pikuri
         path.relative_path_from(root).to_s
       end
 
-      # Read + chunk one file. Raised exceptions
-      # ({Pikuri::FileType.read_as_text} refusing an image / binary /
-      # unsupported type, an after-enumeration race, a malformed PDF)
-      # are left for the caller to interpret — a boot skip vs. an
-      # incremental removal.
+      # Read + chunk one file. Raised exceptions ({FileType} refusal, race,
+      # malformed PDF) are left for the caller to interpret (boot skip vs.
+      # incremental removal).
       #
       # @param path [Pathname]
-      # @return [Array<String>] chunk texts; empty when the file has
-      #   no extractable text.
+      # @return [Array<String>] chunk texts; empty when there's no extractable
+      #   text.
       def chunk_texts_for(path)
         @chunker.chunk(Pikuri::FileType.read_as_text(path))
       end
 
       # Embed the chunk texts and assemble {Chunk}s with stable ids
       # (+"source:offset"+) and +offset+/+hash+ metadata. Shared by
-      # {#index_file} and {#reindex_file!} so the boot index and an
-      # incremental reindex produce byte-identical chunks for a file.
-      # The embed is the one network call here; keep it out of any
-      # rescue that would swallow an outage.
+      # {#index_file} and {#reindex_file!} so boot and incremental reindex
+      # produce byte-identical chunks. Keep the embed (the one network call)
+      # out of any rescue that would swallow an outage.
       #
       # @param source [String]
       # @param path [Pathname] hashed for the +hash+ metadata.

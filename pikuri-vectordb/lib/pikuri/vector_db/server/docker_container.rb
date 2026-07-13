@@ -5,78 +5,43 @@ require 'faraday'
 module Pikuri
   module VectorDb
     module Server
-      # Lifecycle engine for one named, disposable docker container
-      # with persistent bind-mounted data — the shared machinery
-      # {Server::Qdrant} and {Server::Chroma} compose. The supervisor
-      # carries the engine's identity (image pin, container name,
-      # persist path, heartbeat path) and hands it all over here as
-      # explicit constructor parameters; this class does the docker
-      # work: create / recreate / remove the container, publish the
+      # Lifecycle engine for one named, disposable docker container with
+      # persistent bind-mounted data — the shared machinery {Server::Qdrant} and
+      # {Server::Chroma} compose. The supervisor carries the engine's identity
+      # (image pin, name, persist/heartbeat paths) as constructor parameters;
+      # this class does the docker work: create/recreate/remove, publish the
       # port, heartbeat-poll until ready.
       #
       # == Namespace squat: pikuri-internal-*
       #
-      # Containers are named +"pikuri-internal-<engine>"+ and carry
-      # the +pikuri.internal=true+ docker label. Any container under
-      # such a name is treated as fully owned by pikuri — wrong
-      # image, stopped, or left behind by a crash, it is removed and
-      # recreated on the pinned image without ceremony. The data
-      # volume is bind-mounted from the user's cache directory and is
-      # *not* nuked by this — the user's corpus is theirs, even when
-      # the container that runs against it gets replaced. The same
-      # convention scales to future internal containers (rerankers,
-      # alternative vector stores): anything starting with
-      # +"pikuri-internal-"+ is fair game for pikuri to manage.
+      # Containers are named +"pikuri-internal-<engine>"+ with a
+      # +pikuri.internal=true+ label, and are treated as fully pikuri-owned —
+      # wrong image, stopped, or crash-orphaned, they are removed and recreated
+      # on the pinned image without ceremony. The bind-mounted data volume is
+      # *not* nuked — the corpus is the user's even when its container is
+      # replaced. The convention scales to any future +pikuri-internal-*+.
       #
       # == Ephemeral container, persistent data
       #
-      # The container is disposable; the data is not. Every byte of
-      # engine state lives on the host volume bind-mounted into the
-      # container, so the container itself carries nothing worth
-      # keeping. {#ensure_running!} therefore *recreates* it from
-      # scratch on every boot — the lone exception is a container
-      # this same instance already started and left running, which it
-      # reuses (so repeated calls within one process stay cheap). A
-      # stopped container, or one left running by a previous run / a
-      # crash / a concurrent pikuri, is removed and recreated rather
-      # than adopted: a fresh container on the pinned image against
-      # the persistent volume is always a clean, known-good start,
-      # and the image tag never has to be reconciled. {#close}
-      # +docker rm -f+s the container — nothing is left behind, not
-      # even a stopped shell. The single-named-container convention
-      # assumes one active pikuri at a time; a second concurrent
-      # pikuri would remove the first's container out from under it.
+      # All engine state lives on the host volume, so the container carries
+      # nothing worth keeping: {#ensure_running!} *recreates* it every boot,
+      # except one this instance already started and left running (reused, so
+      # repeated calls stay cheap). Anything else — stopped, or running from a
+      # previous run / crash / concurrent pikuri — is removed and recreated
+      # rather than adopted: a fresh container on the pinned image against the
+      # persistent volume is always a clean start with no image tag to
+      # reconcile. {#close} +docker rm -f+s it. The single-named-container
+      # convention assumes one active pikuri at a time.
       #
-      # == Subprocess seam
-      #
-      # Docker invocations (+docker inspect+, +docker run+,
-      # +docker rm -f+) are short-lived shell-outs — capture output,
-      # check exit, act. They route through
-      # {Pikuri::Subprocess.spawn} like the rest of pikuri-* +lib/+;
-      # this class is *not* an exception to the subprocess seam,
-      # unlike +pikuri-mcp+'s +ClientWrapper+ (which owns a
-      # long-lived stdio pipe the +mcp+ gem mediates).
-      #
-      # == Bind 127.0.0.1, not 0.0.0.0
-      #
-      # The port publish is built here as
-      # +-p 127.0.0.1:<host>:<container>+, never the docker default
-      # +-p <host>:<container>+. The default binds the host port to
-      # every interface, which would expose the user's indexed corpus
-      # to anyone on the same LAN. Centralizing the publish string in
-      # this class makes the privacy posture a single enforcement
-      # point rather than a per-supervisor convention.
-      #
-      # == Errors are loud at boot, quiet at teardown
-      #
-      # Docker missing, +docker run+ exit non-zero, healthcheck
-      # timeout — all raise +RuntimeError+ with the offending output,
-      # prefixed with the container name. Caller is internal pikuri
-      # code (a host's +Agent.new+ block running at boot); this is
-      # bug territory, not "tell the model and let it retry". {#close}
-      # is the opposite: best-effort, idempotent, logs instead of
-      # raising — teardown shouldn't abort on a container that's
-      # already gone.
+      # Docker shell-outs route through {Pikuri::Subprocess.spawn} per the
+      # subprocess seam — this class is *not* the seam's exception (that's
+      # +pikuri-mcp+'s +ClientWrapper+, which owns a long-lived stdio pipe). The
+      # port publish is built +-p 127.0.0.1:<host>:<container>+, never the docker
+      # default (which binds every interface and would expose the corpus to the
+      # LAN) — centralized here as the single privacy enforcement point. Errors
+      # are loud at boot (docker missing, +run+ non-zero, healthcheck timeout →
+      # +RuntimeError+ — internal caller, bug territory) and quiet at teardown
+      # ({#close} best-effort, logs instead of raising).
       class DockerContainer
         LOGGER = Pikuri.logger_for('VectorDb::Server')
 
@@ -127,18 +92,14 @@ module Pikuri
           "http://localhost:#{@host_port}"
         end
 
-        # Idempotent: ensure a fresh container is running, then
-        # heartbeat-poll until ready. A container this instance
-        # already started and left running is reused (a second call
-        # is one +docker inspect+ plus a heartbeat round trip);
-        # anything else — a stopped container, a running one this
-        # instance did not start, or no container at all — is removed
-        # (if present) and recreated on the pinned image. See
-        # "Ephemeral container, persistent data" in the class header.
+        # Idempotent: ensure a fresh container is running, then heartbeat-poll
+        # until ready. One this instance already started is reused; anything
+        # else is removed (if present) and recreated on the pinned image. See
+        # "Ephemeral container, persistent data".
         #
         # @return [void]
-        # @raise [RuntimeError] on missing docker, any docker
-        #   command failure, or healthcheck timeout.
+        # @raise [RuntimeError] on missing docker, any docker command failure,
+        #   or healthcheck timeout.
         def ensure_running!
           state = container_state
           if @owns_container && state == :running

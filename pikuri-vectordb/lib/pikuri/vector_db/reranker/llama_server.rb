@@ -6,68 +6,24 @@ require 'json'
 module Pikuri
   module VectorDb
     module Reranker
-      # Cross-encoder reranker via HTTP POST +/v1/rerank+
-      # against a llama.cpp server. Same wire format Cohere's
-      # hosted reranker speaks (Cohere is the de facto standard
-      # here; llama.cpp's REST surface mirrors it for the
-      # reranker model), so a +Reranker::Cohere+ later is a
-      # base-URL + auth-header swap on top of this same client.
+      # Cross-encoder reranker via HTTP POST +/v1/rerank+ against a llama.cpp
+      # server, in the same wire format Cohere's hosted reranker speaks — so a
+      # +Reranker::Cohere+ later is a base-URL + auth-header swap on this client:
       #
-      # == Wire format
+      #   POST <endpoint>/v1/rerank   { "model"?, "query", "documents": [...] }
+      #   → 200 { "results": [ { "index": 0, "relevance_score": 0.92 }, ... ] }
       #
-      #   POST <endpoint>/v1/rerank
-      #   Content-Type: application/json
-      #   {
-      #     "model": "<model name, if configured>",
-      #     "query": "<query text>",
-      #     "documents": ["<doc 1>", "<doc 2>", ...]
-      #   }
-      #   →
-      #   200 OK
-      #   {
-      #     "results": [
-      #       { "index": 0, "relevance_score": 0.92 },
-      #       { "index": 2, "relevance_score": 0.18 },
-      #       ...
-      #     ]
-      #   }
+      # {#rerank} extracts +results+, re-sorts descending by +relevance_score+
+      # (defensively — servers usually pre-sort), and maps each to a {Hit}.
+      # +endpoint:+ is the base URL (+/v1/rerank+ appended); most setups point it
+      # at the same router-mode +llama-server+ as chat/embedder. +model:+ is
+      # optional (llama.cpp infers the loaded model; Cohere requires it — set it
+      # forward-compatibly).
       #
-      # +#rerank+ extracts +results+, re-sorts descending by
-      # +relevance_score+ (servers typically return sorted, but
-      # we sort defensively so callers can rely on the
-      # contract), and maps each entry to a {Hit}.
-      #
-      # == Configuration
-      #
-      # +endpoint:+ is the base URL (e.g.
-      # +'http://localhost:8080'+). +/v1/rerank+ is appended
-      # internally. Most setups point this at the same
-      # router-mode +llama-server+ as chat and embedder — one
-      # process, one port. Pass a separate URL only if you want
-      # the reranker resident in its own +llama-server+ while
-      # the router swaps chat and embedder.
-      #
-      # +model:+ is optional. llama.cpp typically infers the
-      # loaded model and doesn't require it in the request;
-      # Cohere requires it. Setting it forward-compatibly means
-      # the same configuration works against either when we add
-      # the Cohere adapter.
-      #
-      # +connection:+ is dependency injection for tests — pass
-      # a +Faraday::Connection+ pre-wired with
-      # +Faraday::Adapter::Test+ stubs and the request/response
-      # JSON middleware. Production callers leave it +nil+; a
-      # fresh connection is built against +endpoint+.
-      #
-      # == Errors are loud
-      #
-      # Same posture as {Tokenizer::LlamaServer}: HTTP non-2xx,
-      # missing +results+ key, malformed body, +Faraday::Error+
-      # all raise rather than swallow + return a fudge value.
-      # Caller is the {Tools::Search} tool, which catches and falls
-      # back to vector-only top-k while logging the failure
-      # loudly — reranker outages degrade gracefully at the
-      # *tool* level, not by the client lying about scores.
+      # Errors are loud (same posture as {Tokenizer::LlamaServer}): non-2xx,
+      # missing +results+, malformed body, +Faraday::Error+ all raise. The
+      # {Tools::Search} caller catches and falls back to vector-only top-k —
+      # outages degrade at the *tool* level, not by the client lying about scores.
       class LlamaServer
         # @param endpoint [String] base URL of the rerank
         #   server, e.g. +'http://localhost:8082'+.

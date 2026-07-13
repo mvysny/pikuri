@@ -5,40 +5,22 @@ require 'monitor'
 module Pikuri
   module VectorDb
     module Server
-      # The null supervisor — the in-process implementation of the
-      # Server protocol ({.ensure_running} / {#client} / {#close})
-      # that {Qdrant} and {Chroma} implement over docker. There is
-      # no container and no process: this class owns the
-      # {Backend::InMemory} stores' *lifetime* the way the docker
-      # supervisors own a *container*, and that is exactly what
-      # makes uniform host wiring possible — +bin/pikuri-corpus+
-      # picks a Server class, calls +ensure_running.client(...)+,
-      # and closes it at teardown, identically for all three
-      # engines.
+      # The null supervisor — the in-process implementation of the Server
+      # protocol ({.ensure_running} / {#client} / {#close}) that {Qdrant} and
+      # {Chroma} implement over docker. No container, no process: it owns the
+      # {Backend::InMemory} stores' *lifetime* the way the docker supervisors own
+      # a *container*, which is what lets +bin/pikuri-corpus+ pick a Server
+      # class, call +ensure_running.client(...)+, and close it identically for
+      # all three engines.
       #
-      # == Collections
-      #
-      # +#client(collection:)+ memoizes one {Backend::InMemory} per
-      # collection name: the same name returns the same store (so
-      # the {Watcher} and the agent share one index), a different
-      # name returns an independent one. The registry is guarded by
-      # a +Monitor+ — same locking discipline {Backend::InMemory}
-      # uses internally — so clients can be minted from any thread.
-      #
-      # == Close semantics
-      #
-      # {#close} empties every store (+delete_all+) and clears the
-      # registry. Outstanding clients keep working but go *empty* —
-      # mirroring the docker servers, where close removes the
-      # container under the client's feet: degraded loudly-visible
-      # behaviour, never silently-stale data. Idempotent.
-      #
-      # == No Finalizers registration
-      #
-      # {#ensure_running!} is a no-op and deliberately does NOT
-      # register with {Pikuri::Finalizers}: the stores are plain
-      # RAM, and process exit already reclaims them. Registering a
-      # no-op teardown would be ceremony.
+      # +#client(collection:)+ memoizes one store per collection name (same name
+      # → same store, so the {Watcher} and agent share one index), guarded by a
+      # +Monitor+ so clients mint from any thread. {#close} empties every store
+      # and clears the registry — outstanding clients keep working but go
+      # *empty*, mirroring the docker servers removing the container under the
+      # client's feet (degraded and visible, never silently stale). {#ensure_running!}
+      # is a no-op and deliberately does NOT register with {Pikuri::Finalizers} —
+      # process exit reclaims RAM, so a no-op teardown would be ceremony.
       class InMemory
         # Construct a server and "ensure it's running" — a no-op
         # for RAM, present so call sites can treat all three Server

@@ -6,56 +6,34 @@ require 'pathname'
 module Pikuri
   module VectorDb
     module Server
-      # Supervisor for a self-managed Qdrant docker container. Pairs
-      # with {Backend::Qdrant} exactly as {Server::Chroma} pairs with
-      # {Backend::Chroma}: this class owns the *process*; the backend
-      # owns the HTTP client. {#client} returns a {Backend::Qdrant}
-      # pre-pointed at the running container.
+      # Supervisor for a self-managed Qdrant docker container — pairs with
+      # {Backend::Qdrant} exactly as {Server::Chroma} pairs with
+      # {Backend::Chroma} (this class owns the *process*; {#client} returns a
+      # backend pre-pointed at it). Carries only the engine's *identity* and
+      # composes a {DockerContainer} for the docker work + shared rationale.
       #
-      # Like {Server::Chroma}, this class carries only the engine's
-      # *identity* — image pin, container name, persist path,
-      # heartbeat path — and composes a {DockerContainer} for the
-      # docker work and the shared rationale (namespace squat,
-      # ephemeral-container-persistent-data, subprocess seam,
-      # 127.0.0.1 binding, loud boot / quiet teardown).
-      #
-      # == The port 6333 caveat
-      #
-      # Published on +127.0.0.1:#{port}+ only, same privacy posture
-      # as {Server::Chroma}. Note that +pikuri-memory+'s +Mem0Server+
-      # compose stack *also* publishes its own internal Qdrant on
-      # host port 6333 (for inspection). The two are separate
-      # instances by design (see +DESIGN.md+ §"Verdict"); running
-      # both on one host at the defaults collides on the port —
-      # pass a different +port:+ to this supervisor when the mem0
-      # stack is up.
+      # *Port 6333 caveat:* +pikuri-memory+'s +Mem0Server+ compose stack also
+      # publishes its own internal Qdrant on host 6333 (separate instance by
+      # design — see +DESIGN.md+), so running both at the defaults collides —
+      # pass a different +port:+ here when the mem0 stack is up.
       class Qdrant
-        # @return [String] pinned qdrant docker image. Bumping this
-        #   constant is how the codebase upgrades the qdrant version
-        #   ({#ensure_running!} recreates the container from scratch
-        #   on the next boot; the bind-mounted data dir is
+        # @return [String] pinned qdrant docker image; bump it to upgrade
+        #   ({#ensure_running!} recreates the container on next boot, data dir
         #   untouched). **Kept in lockstep with
-        #   +Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE+** —
-        #   same tag, so a host running both stacks holds one image
-        #   on disk. The gems don't depend on each other, so the pin
-        #   is a convention, not a shared constant; bump both
-        #   together. See +pikuri-vectordb/DESIGN.md+ §"Verdict".
+        #   +Pikuri::Memory::Mem0Server::DEFAULT_QDRANT_IMAGE+** so a host
+        #   running both stacks holds one image — a convention (the gems don't
+        #   depend on each other), bump both together.
         IMAGE = 'qdrant/qdrant:v1.12.4'
 
-        # @return [String] the container name pikuri claims for its
-        #   qdrant supervisor — the +"pikuri-internal-"+ namespace
-        #   squat (see {DockerContainer}).
+        # @return [String] container name; +"pikuri-internal-"+ namespace squat
+        #   (see {DockerContainer}).
         CONTAINER_NAME = 'pikuri-internal-qdrant'
 
-        # @return [String] docker label set on every container this
-        #   class creates. Same label as {Server::Chroma::LABEL}.
+        # @return [String] docker label (same as {Server::Chroma::LABEL}).
         LABEL = 'pikuri.internal=true'
 
-        # @return [String] path inside the container where qdrant
-        #   persists its data — the +-v+ target the host's
-        #   {#default_data_dir} bind-mounts onto. +/qdrant/storage+
-        #   is the image's documented storage root (the same path
-        #   +pikuri-memory+'s compose file mounts).
+        # @return [String] the +-v+ target {#default_data_dir} bind-mounts onto
+        #   — qdrant's documented storage root (also what +pikuri-memory+ mounts).
         CONTAINER_PERSIST_DIR = '/qdrant/storage'
 
         # @return [Integer] default host port, qdrant's native REST
@@ -150,10 +128,8 @@ module Pikuri
           nil
         end
 
-        # Remove the supervised container (+docker rm -f+), leaving
-        # the bind-mounted {#data_dir} — the corpus survives.
-        # Registered with {Pikuri::Finalizers} by {#ensure_running!};
-        # safe to call directly too. Best-effort and idempotent — see
+        # Remove the supervised container, leaving the bind-mounted {#data_dir}
+        # (the corpus survives). Best-effort and idempotent — see
         # {DockerContainer#close}.
         #
         # @return [void]
@@ -161,11 +137,9 @@ module Pikuri
           @container.close
         end
 
-        # Default host-side data directory:
-        # +$XDG_CACHE_HOME/pikuri/qdrant+ if set, else
-        # +~/.cache/pikuri/qdrant+. Public so tests and chapter
-        # examples can reference the same path the supervisor
-        # resolves at runtime.
+        # Default host-side data directory
+        # (+$XDG_CACHE_HOME/pikuri/qdrant+, else +~/.cache/pikuri/qdrant+).
+        # Public so tests and chapter examples reference the same path.
         #
         # @return [String]
         def default_data_dir

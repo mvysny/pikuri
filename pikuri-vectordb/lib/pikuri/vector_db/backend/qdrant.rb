@@ -7,138 +7,61 @@ require 'digest'
 module Pikuri
   module VectorDb
     module Backend
-      # Thin Faraday HTTP client against a self-hosted Qdrant
-      # server (1.x REST API). The *recommended* persistent
-      # backend (see +pikuri-vectordb/DESIGN.md+ for the
-      # Chroma-vs-Qdrant survey behind that call), behind the same
-      # duck-typed {Backend} protocol as {InMemory} and {Chroma}:
-      # same method names, same return shapes, same
-      # +ArgumentError+ contract on empty input + non-positive
-      # +top_k+.
-      #
-      # Hand-rolled rather than a dependency on a +qdrant-ruby+
-      # gem, for the same reasons as {Chroma}: a handful of
-      # endpoints, Faraday already in the closure, the wire
-      # protocol auditable in one readable file. Qdrant's REST
-      # surface has been stable across the 1.x line, so the
-      # track-it-by-hand cost is lower than Chroma's.
-      #
-      # == Two ways to get one
-      #
-      # * **Bring your own.** +Backend::Qdrant.new(host:, port:,
-      #   collection:)+ against an existing Qdrant deployment.
-      # * **Let pikuri manage it.** {Server::Qdrant.ensure_running}
-      #   supervises a container under the +pikuri-internal-qdrant+
-      #   name; its +#client(collection:)+ returns a
-      #   +Backend::Qdrant+ pre-pointed at it. Same
-      #   server-vs-client split as {Server::Chroma} / {Chroma}.
-      #
-      # == Qdrant REST API
-      #
-      # Endpoints used (all under +/collections/{name}+):
-      #
-      # * +GET .../exists+ — existence probe without creation.
-      # * +PUT /collections/{name}+ — create, with
-      #   +{vectors: {size:, distance: 'Cosine'}}+. A 409 means
-      #   "already exists" and is treated as success.
-      # * +PUT .../points?wait=true+ — insert-or-replace by point
-      #   id. +wait=true+ so the write is visible to the next
-      #   read (the {Indexer} upserts, then {Tools::Search} queries).
-      # * +POST .../points/search+ — k-NN search.
-      # * +POST .../points/count+ — exact count, optionally
-      #   payload-filtered (used by {#count} and
-      #   {#source_indexed?}).
-      # * +POST .../points/delete?wait=true+ — payload-filtered
-      #   delete; used by {#delete_by_source}.
-      # * +POST .../points/scroll+ — cursor-paged payload read;
-      #   used by {#sources_with_hashes}.
-      # * +DELETE /collections/{name}+ — drop the collection
-      #   (used by {#delete_all}).
+      # Thin Faraday HTTP client against a self-hosted Qdrant server (1.x REST,
+      # 1.8+), the *recommended* persistent backend (see
+      # +pikuri-vectordb/DESIGN.md+ for the Chroma-vs-Qdrant survey). Same
+      # duck-typed {Backend} protocol as {InMemory} / {Chroma}. Hand-rolled for
+      # the same reasons as {Chroma}; the 1.x REST surface is stable, so the
+      # track-by-hand cost is lower. Bring your own via +Qdrant.new(host:, port:,
+      # collection:)+, or let {Server::Qdrant.ensure_running} supervise a
+      # container — same server-vs-client split as {Server::Chroma} / {Chroma}.
+      # Endpoints used are all under +/collections/{name}+ (+exists+, +PUT+ to
+      # create, +points+ upsert, +points/search+, +points/count+,
+      # +points/delete+, +points/scroll+, +DELETE+).
       #
       # == Point ids: chunk id → derived UUID
       #
-      # Qdrant point ids must be unsigned integers or UUIDs —
-      # never arbitrary strings — so the {Chunk}'s readable
-      # +"source:offset"+ id can't be the point id directly. Each
-      # point id is derived deterministically as the first 16
-      # bytes of +SHA1(chunk.id)+ formatted as a UUID:
-      # deterministic, so re-upserting the same chunk id replaces
-      # the old point (the insert-or-replace contract); collision
-      # probability is negligible at any corpus size pikuri will
-      # see. The real chunk id rides in the payload under the
-      # reserved +id+ key and is restored on the way out, so
-      # callers never see the UUID.
+      # Qdrant point ids must be unsigned ints or UUIDs, so the {Chunk}'s
+      # readable +"source:offset"+ id can't be the point id. Each is derived as
+      # the first 16 bytes of +SHA1(chunk.id)+ UUID-formatted: deterministic, so
+      # re-upserting the same chunk id replaces the old point (collision
+      # probability negligible at any corpus size). The real chunk id rides in
+      # the payload's reserved +id+ key and is restored out, so callers never
+      # see the UUID.
       #
-      # == Payload shape
+      # == Contracts
       #
-      # Qdrant has no separate document store — everything beyond
-      # the vector lives in the point's payload. Three reserved
-      # keys carry the {Chunk}'s fixed fields (+id+, +source+,
-      # +text+); the chunk's +metadata+ Hash is merged alongside
-      # with keys stringified for JSON round-trip stability, and
-      # symbolized back on the way out — same normalization as
-      # {Chroma}, so a chunk pulled from a query looks identical
-      # across backends.
-      #
-      # == Cosine similarity (no conversion)
-      #
-      # The collection is created with +distance: 'Cosine'+.
-      # Unlike Chroma (which returns cosine *distance*, converted
-      # via +1 - d+), Qdrant's +score+ already *is* a cosine
-      # similarity — higher = better — so it passes through to
-      # {Backend::Result} untouched. (This same convention is why
-      # mem0's ranker is correct on Qdrant and inverted on
-      # pgvector — +pikuri-memory/DESIGN.md+ §"Root cause".)
-      #
-      # == Vector-dim contract diverges from InMemory
-      #
-      # Same divergence as {Chroma}, with one wrinkle: Qdrant
-      # fixes the dimension at *collection creation*, so
-      # {#upsert} creates the collection with the first batch's
-      # vector size. Mismatched later upserts or queries produce
-      # HTTP 4xx, which propagates as +RuntimeError+ — different
-      # exception class than {InMemory}'s +ArgumentError+, same
-      # loud-failure shape.
-      #
-      # == No payload indexes (deliberate)
-      #
-      # Qdrant can index payload fields (+PUT .../index+) to
-      # speed filtered operations. Every filtered call here
-      # (+delete_by_source+, +scroll+, filtered +count+) is an
-      # exact scan that works unindexed, and at pikuri's corpus
-      # scale (10³–10⁵ chunks) the scan is milliseconds — so no
-      # index calls, keeping the client smaller. Add them if a
-      # corpus ever outgrows that.
-      #
-      # == Testing posture
-      #
-      # Same as {Chroma}: +Faraday::Adapter::Test+ stubs verify
-      # the request shapes against the 1.x REST API but don't
-      # catch real-Qdrant protocol drift. Targets Qdrant 1.8+
-      # (the +/exists+ probe is the newest endpoint used).
+      # * *Payload*: Qdrant has no separate document store, so everything beyond
+      #   the vector lives in the point payload — {RESERVED_PAYLOAD_KEYS} carry
+      #   the fixed fields, +metadata+ is merged alongside with the same
+      #   stringify/symbolize normalization as {Chroma} (identical chunk across
+      #   backends).
+      # * *Cosine, no conversion*: created +distance: 'Cosine'+; unlike Chroma
+      #   (distance, +1 - d+), Qdrant's +score+ already *is* a similarity, passed
+      #   through untouched. (Same convention that makes mem0's ranker correct on
+      #   Qdrant and inverted on pgvector — +pikuri-memory/DESIGN.md+.)
+      # * *Vector-dim* diverges from {InMemory} like {Chroma}, with a wrinkle:
+      #   Qdrant fixes the dim at *collection creation*, so {#upsert} creates it
+      #   with the first batch's size; later mismatches are HTTP 4xx →
+      #   +RuntimeError+.
+      # * *No payload indexes* (deliberate): every filtered call is an exact
+      #   scan that works unindexed, milliseconds at pikuri's 10³–10⁵ scale.
       class Qdrant
-        # Rows per +/scroll+ page in {#sources_with_hashes}. Same
-        # rationale as {Chroma::MANIFEST_PAGE_SIZE}: caps the JSON
-        # burst of the boot manifest read; one round trip per
-        # this-many *files*.
+        # Rows per +/scroll+ page in {#sources_with_hashes} — caps the boot
+        # manifest read (cf. {Chroma::MANIFEST_PAGE_SIZE}).
         MANIFEST_PAGE_SIZE = 1_000
 
-        # Payload keys reserved for the {Chunk}'s fixed fields.
-        # User metadata with these keys would collide; the
-        # {Indexer} never sets them.
+        # Payload keys reserved for the {Chunk}'s fixed fields; user metadata
+        # with these keys would collide, so the {Indexer} never sets them.
         RESERVED_PAYLOAD_KEYS = %w[id source text].freeze
 
         # @param host [String]
         # @param port [Integer]
-        # @param collection [String] collection name in Qdrant.
-        #   Engine-specific identifier, so it lives here rather
-        #   than on +VectorDb::Extension+ — same placement as
-        #   {Chroma}'s.
-        # @param connection [Faraday::Connection, nil] optional
-        #   dependency-injection point for tests.
+        # @param collection [String] Qdrant collection name (engine-specific, so
+        #   it lives here, not on +VectorDb::Extension+ — cf. {Chroma}).
+        # @param connection [Faraday::Connection, nil] DI point for tests.
         # @return [Qdrant]
-        # @raise [ArgumentError] on empty +host+ or empty
-        #   +collection+.
+        # @raise [ArgumentError] on empty +host+ or empty +collection+.
         def initialize(host:, port:, collection:, connection: nil)
           raise ArgumentError, 'host must be non-empty' if host.nil? || host.to_s.empty?
           raise ArgumentError, 'collection must be non-empty' if collection.nil? || collection.to_s.empty?
@@ -294,19 +217,15 @@ module Pikuri
           nil
         end
 
-        # The boot-sweep reference: +source+ → stored content hash
-        # for every indexed document. Reads one payload row per
-        # *file* (filter +offset == 0+ — every file has exactly
-        # one chunk at offset 0), projected to the two payload
-        # keys needed, vectors excluded, paged by Qdrant's own
-        # scroll cursor (+next_page_offset+ — no client-side
-        # offset arithmetic, unlike {Chroma}).
+        # The boot-sweep reference: +source+ → stored content hash, one payload
+        # row per *file* (filter +offset == 0+), projected to +source+/+hash+,
+        # vectors excluded, paged by Qdrant's own scroll cursor
+        # (+next_page_offset+ — no client-side offset arithmetic, unlike
+        # {Chroma}). Assumes the manifest isn't mutating mid-read; the {Watcher}
+        # drives it from its single worker thread.
         #
-        # Pagination assumes the manifest isn't mutating mid-read;
-        # the {Watcher} drives this from its single worker thread.
-        #
-        # @return [Hash{String => String, nil}] +source+ → content
-        #   hash. Empty when the collection doesn't exist yet.
+        # @return [Hash{String => String, nil}] +source+ → content hash. Empty
+        #   when the collection doesn't exist yet.
         # @raise [RuntimeError] on HTTP failure.
         def sources_with_hashes
           return {} unless collection_exists?

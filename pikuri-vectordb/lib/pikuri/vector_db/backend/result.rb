@@ -3,43 +3,20 @@
 module Pikuri
   module VectorDb
     module Backend
-      # A single query hit: the {Chunk} that matched + its cosine
-      # similarity score. Returned in descending-score order from
-      # any backend's +#query+ method.
+      # A single query hit: the matched {Chunk} + its score, returned in
+      # descending-score order from a backend's +#query+.
       #
-      # == Fields
+      # * +chunk+ — the stored {Chunk}.
+      # * +score+ — cosine similarity +Float+ +[-1.0, 1.0]+ (in practice
+      #   +[0.0, 1.0]+ for the normalized vectors most embedders produce; 1.0 =
+      #   exact match, 0.0 = orthogonal). But this is cosine only *as returned by
+      #   the backend* — {Tools::Search} substitutes the reranker's relevance
+      #   score (via +Data#with+) when a reranker reorders, so a *surfaced* score
+      #   is cosine only in vector-only mode (see {Tools::Search}'s "Which score
+      #   is shown").
       #
-      # * +chunk+ — the stored {Chunk} (id, text, metadata).
-      # * +score+ — cosine similarity as +Float+, range
-      #   +[-1.0, 1.0]+. For typical sentence-embedder vectors
-      #   (all-positive component dimensions after the softmax /
-      #   normalization most models bake in) scores stay in
-      #   +[0.0, 1.0]+ in practice. 1.0 is exact match; 0.0 is
-      #   orthogonal.
-      #
-      # == Citation
-      #
-      # {Tools::Search} formats hits for the LLM as
-      # +result.chunk.source+ (the citation — relative path, URL,
-      # or doc ID — see {Chunk}'s +source+ field) +
-      # +result.chunk.text+ (the snippet) + the score. The +id+
-      # field is opaque and never surfaced; the +metadata+ Hash
-      # carries optional extras like offset / page / anchor for
-      # callers that want to deep-link.
-      #
-      # The +score+ is cosine *as returned by a backend's
-      # +#query+*. {Tools::Search} substitutes the reranker's relevance
-      # score here (via +Data#with+) before formatting when a
-      # reranker reorders the candidates, so a surfaced score is
-      # cosine only in vector-only mode — see {Tools::Search}'s
-      # "Which score is shown" section.
-      #
-      # == Why a Data.define
-      #
-      # Same convention as {Chunk}. A tuple +[chunk, score]+ or
-      # a +{chunk:, score:}+ Hash would work at runtime but
-      # +result.chunk+ / +result.score+ reads cleaner at call
-      # sites, and value-equality is occasionally useful in specs.
+      # {Tools::Search} cites hits as +chunk.source+ + +chunk.text+ + score; +id+
+      # is never surfaced, +metadata+ carries optional deep-link extras.
       Result = Data.define(:chunk, :score)
     end
   end

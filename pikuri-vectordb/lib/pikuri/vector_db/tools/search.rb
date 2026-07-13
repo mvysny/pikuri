@@ -3,84 +3,48 @@
 module Pikuri
   module VectorDb
     module Tools
-      # The LLM-facing piece: a {Pikuri::Tool} subclass exposed
-      # as +vectordb_search+. Agentic search — the agent decides
-      # when to retrieve. Composes {Embedder} + a {Backend} +
-      # optionally a {Reranker} into one call:
-      #
-      # 1. Embed the query via {Embedder} into a vector.
-      # 2. {Backend#query} for candidates. Window is {CANDIDATE_K}
-      #    when a reranker is configured (we'll narrow back to
-      #    {FINAL_K}), or {FINAL_K} directly when not (no point
-      #    over-fetching candidates we'll just throw away).
-      # 3. Optionally rerank: pass the candidate texts to the
-      #    {Reranker}, reorder by {Reranker::Hit.index}, replace
-      #    each result's score with the reranker's relevance score,
-      #    then take the top {FINAL_K}.
-      # 4. Format as a numbered list with +source+ + +score+ +
-      #    text snippet, capped at {SNIPPET_LENGTH} chars per
-      #    chunk.
+      # The LLM-facing +vectordb_search+ tool — agentic search, the agent
+      # decides when to retrieve. Composes {Embedder} + {Backend} + optional
+      # {Reranker}: embed the query, {Backend#query} for candidates
+      # ({CANDIDATE_K} with a reranker to narrow back to {FINAL_K}, else
+      # {FINAL_K} directly), optionally rerank (reorder by {Reranker::Hit.index},
+      # take top {FINAL_K}), then format as a numbered +source+ + +score+ +
+      # snippet list capped at {SNIPPET_LENGTH} chars.
       #
       # == Which score is shown
       #
-      # The +score+ in the observation tracks whatever actually
-      # determined the ordering, so the number never disagrees with
-      # the rank:
+      # The +score+ tracks whatever determined the ordering, so it never
+      # disagrees with the rank — but the two modes put *different scales* behind
+      # one +score=+ label:
       #
-      # * *Vector-only* (no reranker, or reranker outage fallback) —
-      #   the {Backend::Result} cosine similarity, range +[0, 1]+,
-      #   directly comparable across results.
-      # * *Reranked* — the {Reranker::Hit} relevance score that
-      #   produced the order. This is a cross-encoder score on a
-      #   model-dependent scale (can be negative / unbounded for raw
-      #   logits — see {Reranker::Hit}'s +score+ yardoc), so it's a
-      #   relative confidence gradient, *not* a 0–1 value to
-      #   threshold on. The two modes therefore put different scales
-      #   behind one +score=+ label by design: cosine and a rerank
-      #   score are not comparable, and pikuri shows the one the
-      #   ordering was actually built from rather than a misleading
-      #   cosine next to a rerank-determined list.
+      # * *Vector-only* (no reranker, or outage fallback) — cosine similarity
+      #   +[0, 1]+, comparable across results.
+      # * *Reranked* — the {Reranker::Hit} relevance score, a cross-encoder value
+      #   on a model-dependent scale (can be negative/unbounded for raw logits —
+      #   see {Reranker::Hit}), a relative gradient *not* a 0–1 threshold. pikuri
+      #   shows the one the order was built from rather than a misleading cosine.
       #
-      # == Reranker outage falls back, not fails
+      # A reranker outage falls back, doesn't fail: its {Reranker::LlamaServer}
+      # +RuntimeError+ is caught, WARN-logged, and the vector-only top {FINAL_K}
+      # returned — reranker is a quality knob, degraded results beat a tool error.
       #
-      # If the reranker's HTTP call raises (server down, timeout,
-      # 5xx, malformed response — all surfaced by
-      # {Reranker::LlamaServer} as +RuntimeError+), the tool
-      # catches it, logs a WARN, and returns the vector-only top
-      # {FINAL_K} from the same candidate set. Reranker is a
-      # quality knob, not a correctness one — degraded results
-      # beat a tool error the agent has to recover from.
-      #
-      # == Why a single-param tool surface
-      #
-      # +vectordb_search(query:)+ — no +top_k:+, no +reranker:+
-      # toggle. Retrieval-depth and rerank choice are host
-      # policy decisions baked into the {Extension}'s
-      # configuration; the LLM doesn't need (or want) to be
-      # tuning retrieval parameters mid-conversation — keeping the
-      # tool surface minimal is a deliberate design choice.
+      # Single-param surface (+query:+ only, no +top_k:+/+reranker:+ toggle):
+      # retrieval depth and rerank choice are host policy baked into {Extension},
+      # not something the LLM should tune mid-conversation.
       class Search < Pikuri::Tool
         LOGGER = Pikuri.logger_for('VectorDb::Tools::Search')
 
-        # @return [Integer] number of results returned to the
-        #   LLM. Five is the sweet spot most RAG implementations
-        #   converge on: enough to cover related-but-different
-        #   angles on a query, few enough to fit in a turn
-        #   without budget pressure.
+        # @return [Integer] results returned to the LLM — the RAG sweet spot:
+        #   enough for related-but-different angles, few enough to fit a turn.
         FINAL_K = 5
 
-        # @return [Integer] over-fetch size when a reranker is
-        #   configured. Fifty matches the
-        #   "retrieve-broad-then-narrow" pattern — the reranker's
-        #   cross-encoder sees more candidates than vector search
-        #   alone would surface and reorders by query-conditional
-        #   relevance.
+        # @return [Integer] over-fetch size with a reranker (retrieve-broad-then-
+        #   narrow — the cross-encoder sees more candidates than vector search
+        #   surfaces and reorders by query-conditional relevance).
         CANDIDATE_K = 50
 
-        # @return [Integer] per-result text cap in the observation.
-        #   Keeps a five-result page under ~2.5 KB; the agent can
-        #   re-query with a sharper question if a snippet looks
-        #   like it cuts off mid-thought.
+        # @return [Integer] per-result text cap in the observation (~2.5 KB for a
+        #   five-result page; the agent can re-query if a snippet cuts off).
         SNIPPET_LENGTH = 500
 
         # @return [String] static description shown to the LLM,
@@ -148,20 +112,14 @@ module Pikuri
           format_observation(final)
         end
 
-        # Attempt the rerank; on any +RuntimeError+ from the
-        # reranker (HTTP non-2xx, malformed body, network
-        # failure), log a WARN and return the vector-only ordering
-        # as the fallback.
+        # Attempt the rerank; on any reranker +RuntimeError+, WARN and return the
+        # vector-only ordering. On success each {Backend::Result} carries the
+        # reranker's relevance score (via +Data#with+, replacing cosine) so the
+        # printed number matches the rerank order; the fallback keeps cosine. See
+        # "Which score is shown".
         #
-        # On success, each returned {Backend::Result} carries the
-        # reranker's relevance score in its +score+ field (via
-        # +Data#with+), replacing the backend's cosine score — so
-        # the number {format_observation} prints matches the rerank
-        # order. The fallback path leaves the cosine scores intact.
-        # See the class-level "Which score is shown" section.
-        #
-        # @return [Array<Backend::Result>] reranked (score = rerank
-        #   relevance) or fallback (score = cosine).
+        # @return [Array<Backend::Result>] reranked (score = rerank relevance) or
+        #   fallback (score = cosine).
         def self.reranked_or_fallback(reranker:, query:, candidates:)
           documents = candidates.map { |c| c.chunk.text }
           hits = reranker.rerank(query: query, documents: documents)
@@ -172,16 +130,10 @@ module Pikuri
         end
         private_class_method :reranked_or_fallback
 
-        # Format the final result list as a header + numbered
-        # blocks. Each block is +source (score=X.XX)+ on one line
-        # followed by the snippet on the next; blocks separated
-        # by a blank line. Snippets over {SNIPPET_LENGTH} chars
-        # are truncated with a +...+ suffix. The +score+ printed is
-        # whatever the caller stored in +result.score+ — cosine in
-        # vector-only mode, the reranker's relevance score in
-        # reranked mode (see the class-level "Which score is shown"
-        # section); +%.2f+ handles both, including negative rerank
-        # logits.
+        # Format the results as a header + numbered +source (score=X.XX)+ blocks
+        # with the snippet below, truncated at {SNIPPET_LENGTH} with +...+. The
+        # +score+ is whatever the caller stored (see "Which score is shown");
+        # +%.2f+ handles both scales, including negative rerank logits.
         #
         # @param results [Array<Backend::Result>]
         # @return [String]

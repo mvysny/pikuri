@@ -3,50 +3,25 @@
 module Pikuri
   module VectorDb
     module Chunker
-      # Sliding-window chunker. Splits text on whitespace into
-      # words, then walks forward emitting chunks of approximately
-      # +size+ tokens with +overlap+ tokens of repeated tail from
-      # the previous chunk.
+      # Sliding-window chunker: splits text on whitespace into words, then walks
+      # forward emitting ~+size+-token chunks, each after the first re-including
+      # +overlap+ tokens of the previous chunk's tail so an answer straddling a
+      # boundary stays intact in at least one chunk (standard RAG practice).
       #
-      # == Why whitespace-split rather than a richer tokenization
+      # Whitespace-split gives word boundaries for Western-European languages —
+      # good enough for any text {Pikuri::FileType.read_as_text} flattens to
+      # prose; CJK (no whitespace) degrades to one-huge-unit chunks, a documented
+      # limitation.
       #
-      # Whitespace gives word boundaries for English / Western-
-      # European languages, which is good enough for v1 against
-      # any text the {TextExtractor} produces (Markdown, PDF, HTML
-      # are all flattened to whitespace-separated prose). CJK
-      # languages (no whitespace) degrade to one-huge-unit chunks
-      # — documented limitation, picked up if a real CJK use case
-      # arrives.
+      # *Per-chunk tokenizer cost*: the greedy "add a word, re-count" algorithm
+      # calls +tokenizer.count+ O(n_words × chunks) times — negligible for
+      # {Tokenizer::CharHeuristic}, but one HTTP round-trip each for
+      # {Tokenizer::LlamaServer}, so indexing a large corpus takes minutes. A
+      # one-time boot/reindex cost, accepted for v1.
       #
-      # == How overlap works
-      #
-      # Each chunk after the first re-includes the tail of the
-      # previous chunk, sized to +overlap+ tokens. This gives the
-      # embedder context across chunk boundaries: an answer that
-      # straddles two sliding-window positions stays intact in at
-      # least one chunk. Standard RAG practice; LangChain /
-      # LlamaIndex / opencode all do the same.
-      #
-      # == Per-chunk tokenizer cost
-      #
-      # The greedy "add one word, check token count, repeat"
-      # algorithm calls +tokenizer.count+ once per word per
-      # candidate chunk — O(n_words * chunks_in_text) calls.
-      # For {Tokenizer::CharHeuristic} this is negligible. For
-      # {Tokenizer::LlamaServer} this is one HTTP round-trip per
-      # call; indexing a large corpus takes minutes-not-seconds.
-      # One-time cost paid at boot or explicit reindex;
-      # acceptable for v1. A doubling-search + binary-refine
-      # variant is the obvious optimization if it bites; the
-      # protocol stays the same.
-      #
-      # == Forward-progress guard
-      #
-      # The constructor rejects +overlap >= size+ to keep the
-      # sliding window actually moving forward. Even with valid
-      # inputs, the inner loop always advances by at least one
-      # word — guarantees termination even if a pathological
-      # tokenizer were to report misleading counts.
+      # *Forward-progress guard*: the constructor rejects +overlap >= size+, and
+      # the inner loop always advances at least one word — termination holds even
+      # if a pathological tokenizer reports misleading counts.
       class FixedWindow
         # @return [Integer] target token count per chunk.
         attr_reader :size

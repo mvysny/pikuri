@@ -2,52 +2,27 @@
 
 module Pikuri
   module VectorDb
-    # Namespace for rerankers — the optional quality knob that
-    # narrows a top-N candidate set (typically 50) down to the
-    # top-k the LLM actually sees (typically 5) by scoring each
-    # candidate's relevance to the query with a cross-encoder
-    # model. One ships in v1:
-    #
-    # * {LlamaServer} — Faraday POST +/v1/rerank+ against a
-    #   cross-encoder model on a llama.cpp server. Same wire
-    #   format Cohere's hosted reranker speaks, so adding a
-    #   +Reranker::Cohere+ later is a thin adapter (see
-    #   +ideas/vectordb-deferrals.md+ §"Additional reranker backends").
+    # Namespace for rerankers — the optional quality knob that narrows a top-N
+    # candidate set (~50) down to the top-k the LLM sees (~5) by scoring each
+    # candidate against the query with a cross-encoder. One ships: {LlamaServer}
+    # (+/v1/rerank+ in Cohere's wire format, so a +Reranker::Cohere+ later is a
+    # thin adapter).
     #
     # == Reranker protocol
     #
-    # Duck-typed, single method:
+    # Duck-typed: +#rerank(query:, documents:)+ → +Array<{Hit}>+ sorted
+    # descending by +score+, one entry per input document, +Hit.index+ the
+    # position in +documents+; empty +documents+ → +[]+ with no HTTP call.
     #
-    # * +#rerank(query:, documents:)+ — return an
-    #   +Array<{Hit}>+ sorted by descending +score+; one entry
-    #   per input document (or fewer if the server truncates,
-    #   but typical reranker behaviour is "score every input").
-    #   +documents+ is an +Array<String>+; the +Hit.index+ is
-    #   the position in that input array. Empty +documents+
-    #   short-circuits to +[]+ without an HTTP call.
+    # Index, not document text: {Tools::Search} already holds the candidate
+    # texts, so returning bare indices avoids re-shuttling them over HTTP
+    # (Cohere's +return_documents+ exists for callers that *don't* have the
+    # text, which isn't us).
     #
-    # == Why index, not document text
-    #
-    # The {Tools::Search} tool already holds the candidate
-    # +Backend::Result+s with their text + metadata. Returning
-    # bare indices keeps the rerank API minimal and avoids
-    # re-shuttling the document text over HTTP just to receive
-    # it back — Cohere's +return_documents+ flag exists exactly
-    # for callers that don't already have the text, which isn't
-    # us. Index+score is enough; document+score can be
-    # reconstructed by the caller.
-    #
-    # == Why nil-skip rather than a NOOP default
-    #
-    # +Pikuri::VectorDb::Extension+ accepts +reranker: nil+ as
-    # "skip rerank entirely; retrieve top-k from the backend
-    # directly." A +Reranker::NOOP+ that returns the input
-    # ordering with synthetic scores was considered and
-    # rejected: it doesn't unify the candidate-window choice
-    # (we'd either waste vector lookups by always fetching top-N
-    # or branch anyway on whether the reranker is "real"), and
-    # the faux scores would pollute observation formatting and
-    # debug logs.
+    # nil-skip, not a NOOP default: {Extension} takes +reranker: nil+ as "skip
+    # rerank, retrieve top-k directly." A +Reranker::NOOP+ was **rejected** — it
+    # wouldn't unify the candidate-window choice (still branch on real-vs-fake)
+    # and its faux scores would pollute observations and logs.
     module Reranker
     end
   end

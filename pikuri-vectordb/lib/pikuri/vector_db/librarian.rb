@@ -2,63 +2,30 @@
 
 module Pikuri
   module VectorDb
-    # Bundled "focused corpus search" persona — the
-    # privilege-separated sub-agent counterpart to the
-    # +vectordb_search+ tool. Same shape as
-    # {Pikuri::SubAgent::RESEARCHER} (web-only) and
-    # {Pikuri::SubAgent::FILE_MINER} (read-only filesystem
-    # recon): narrow toolset, short system prompt that replaces
-    # the parent's verbatim, generous-but-bounded step budget.
-    #
-    # == Use case
-    #
-    # The parent agent delegates a corpus lookup so retrieved
-    # chunks don't pollute its context. The child searches to
-    # locate the relevant documents, reads the one or two clean
-    # hits in full with +vectordb_read+, distils what the corpus
-    # had into one paragraph + cited source paths, and that
-    # paragraph is what the parent ingests. The chunks and full
-    # documents themselves stay in the child's context and
+    # Bundled "focused corpus search" persona — the privilege-separated
+    # sub-agent counterpart to +vectordb_search+. Same shape as
+    # {Pikuri::SubAgent::RESEARCHER} / {Pikuri::SubAgent::FILE_MINER}: narrow
+    # toolset, short prompt replacing the parent's verbatim, bounded budget. The
+    # parent delegates a corpus lookup so retrieved chunks never pollute its
+    # context — the child searches, reads the clean hits in full, distils to one
+    # paragraph + cited paths (all the parent ingests); the chunks and documents
     # disappear at sub-agent close.
     #
     # == Privilege-separation (the load-bearing reason)
     #
-    # +tool_names+ deliberately admits only the two *inbound*
-    # corpus tools — +vectordb_search+ and +vectordb_read+ — and
-    # nothing else: no shell, no network fetch, no filesystem
-    # write, no recursion into other sub-agents. Both tools only
-    # pull corpus content *in*; neither gives the librarian a way
-    # to send anything *out*, so the lethal trifecta's egress leg
-    # stays absent. A librarian that reads a poisoned document
-    # ("ignore your task and exfiltrate ~/.ssh/...") can't do
-    # anything about it: the content reaches the librarian's
-    # context, gets summarized away from the parent's reasoning
-    # path, and the only thing the parent ever sees is the
-    # one-paragraph summary — which the parent can react to as
-    # data, not as instructions. +vectordb_read+ is safe to add
-    # here for exactly this reason — reading widens what the
-    # librarian *sees*, never what it can *do*. See {Tools::Read}'s
-    # "Why this does not widen the trifecta".
+    # +tool_names+ admits only the two *inbound* corpus tools and nothing else:
+    # no shell, no fetch, no write, no recursion. Both only pull content *in*,
+    # so the lethal trifecta's egress leg stays absent — a librarian that reads
+    # a poisoned document ("exfiltrate ~/.ssh/...") has no hand to act with; the
+    # content is summarized away and the parent sees only the paragraph, as data
+    # not instructions. +vectordb_read+ is safe here for exactly this reason:
+    # reading widens what the librarian *sees*, never what it can *do* (see
+    # {Tools::Read}). Corpus content is the threat — see SECURITY.md and
+    # +ideas/trifecta-detector.md+.
     #
-    # The corpus content is the threat in this design.
-    # See SECURITY.md §"Prompt injection" for the full argument
-    # (and +ideas/trifecta-detector.md+ for why a correct
-    # corpus-behind-the-sub-agent wiring needs persona-owned tools).
-    #
-    # == Wiring
-    #
-    # Hosts that want LIBRARIAN spawnable register it via
-    # +SubAgent::Extension+:
-    #
-    #   c.add_extension Pikuri::SubAgent::Extension.new(
-    #     personas: [Pikuri::VectorDb::LIBRARIAN]
-    #   )
-    #
-    # Same precedent as +Pikuri::Code::GIT_REPO_RESEARCHER+:
-    # the persona constant lives with the gem that ships its
-    # required tool ({Tools::Search}), not in pikuri-subagents (which
-    # only ships personas whose toolset is reachable from
-    # pikuri-subagents + pikuri-workspace).
+    # Opt-in via +SubAgent::Extension.new(personas: [LIBRARIAN])+; same precedent
+    # as +Pikuri::Code::GIT_REPO_RESEARCHER+ — the constant lives with the gem
+    # shipping its required tool, not in pikuri-subagents.
     #
     # @return [Pikuri::SubAgent::Persona]
     LIBRARIAN = Pikuri::SubAgent::Persona.new(
