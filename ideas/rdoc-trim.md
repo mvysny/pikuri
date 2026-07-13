@@ -155,23 +155,30 @@ one item: `Event::Tokens`' context-window math.)
   same-catalog, Extension's stateless-no-bind + lstrip-avoids-double-blank gotcha.
   Cut the legacy-skill_catalog transition-layer history, the format_for_prompt
   "historically" note, and entry-file Zeitwerk boilerplate.
+- `pikuri-pdf` — 2 files, 107→81 comment lines, −26 net (~24%).
+  Kept the page-marker provenance + scanned-PDF→empty-String contract, the
+  separate-gem rationale (pdf-reader's five-gem dependency tail out of the core
+  audit tree), the front-insert-beats-HTML registration invariant, the
+  lazy-parse windowing property, and the error taxonomy + raised-at-consumption/
+  first-+next+ gotcha. Cut the three-consumer referrer enumeration, the
+  duplicate "Matched by…" line, the redundant best-effort paragraph, and the
+  entry-file Zeitwerk boilerplate (kept only the PDF_LOADER-not-LOADER nugget).
 
-All: comment-only, 0 code changes, all specs green (pikuri-skills: 30
-examples, 0 failures — every prior gem likewise green).
+All: comment-only, 0 code changes, all specs green (pikuri-skills 30,
+pikuri-pdf 30 — every prior gem likewise green).
 
-**Remaining** (comment counts, roughly biggest-impact first):
-- `pikuri-pdf` — 107, 2 files (Extractors::PDF).
-- `pikuri-assistant` — 8 (binary-only gem; likely nothing to trim).
+**Remaining** — none with substantive yardoc.
+- `pikuri-assistant` — 8 (binary-only gem; nothing to trim).
 - `pikuri` (metagem) — 8 (require list; nothing to trim).
 
-Total remaining ≈ 900 comment lines across ~24 files. Cut ratio varies with
-bloat: the threat-model-heavy gems settled ~38% (pikuri-code ~36%,
-pikuri-vectordb ~38%, pikuri-mcp ~38%); already-dense reference gems trimmed
-less (pikuri-memory/-os ~18%); padding-heavy gems more (pikuri-subagents ~44%).
+Both are `bin/`-or-`require`-only — no `lib/` yardoc to sweep. **The pass is
+complete; this file can be deleted** (per the graduation rule at the top) once
+this final commit lands and the user confirms.
 
 ## Note for the fresh session
 
-Suggested opening prompt: *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
+Suggested opening prompt (only if `pikuri-assistant`/metagem turn out to
+have anything after all): *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
 Next gem: pikuri-pdf (the last with real yardoc; pikuri-assistant and the
 metagem are binary/require-only). Same rubric, gem by gem, comment-only,
 verify + specs + commit, pause for my review before the next gem."*

@@ -2,21 +2,13 @@
 
 require 'pikuri-core'
 
-# Entry file for the pikuri-pdf gem. Sets up a dedicated Zeitwerk
-# loader rooted at this gem's +lib/+, contributing to the shared
-# +Pikuri::+ namespace alongside pikuri-core. After +require
-# 'pikuri-pdf'+, +Pikuri::Extractors::PDF+ is defined — but *nothing
-# is registered*: extractors plug into +Pikuri::Extractor.registry+
-# only when the host script calls their +register+ explicitly, so a
-# +bin/pikuri-*+ picks which extractors it wires in (same opt-in
-# philosophy as +c.add_extension+, same shape as pikuri-extractors'
-# +DOCUMENTS.register+).
-#
-# The +Pikuri::Extractors+ namespace is cooperative: pikuri-extractors
-# contributes +Documents+ / +DOCUMENTS+, this gem contributes +PDF+.
-# Each gem's loader manages only its own files; the loader constant is
-# +PDF_LOADER+ (not +LOADER+) so both gems can be loaded together
-# without colliding in the shared namespace.
+# Entry file for the pikuri-pdf gem: a per-gem Zeitwerk loader
+# contributing +Pikuri::Extractors::PDF+ to the shared +Pikuri::+
+# namespace. Defining the module registers *nothing* — a host opts in
+# with {Pikuri::Extractors::PDF.register} (see there). The
+# +Pikuri::Extractors+ namespace is cooperative (pikuri-extractors adds
+# +Documents+/+DOCUMENTS+), so the loader constant is +PDF_LOADER+, not
+# +LOADER+, to avoid a collision when both gems load together.
 module Pikuri
   module Extractors
     PDF_LOADER = Zeitwerk::Loader.new
