@@ -45,6 +45,41 @@ explicitly removes it. Three distinct effects fall out:
 That's the whole game. The gem is small; the lesson it embodies
 is large.
 
+## Watching the window fill
+
+You don't have to take "context grows until things fall off" on
+faith — pikuri's `TokenLog` listener prints a running headline
+every assistant turn, wired into every `bin/pikuri-*` demo:
+
+```
+msg #1: ctx=6.8k  Δ+6.8k  ↑6.8k  ↓0.0k
+msg #2: ctx=8.4k/32.0k  Δ+1.6k  ↑1.0k  ↓0.6k
+```
+
+`ctx` is the number to watch — the whole conversation *through
+this turn* — and it only ever climbs. It's worth knowing exactly
+what feeds it, because it's the number that eventually ends the
+conversation. Each turn the provider reports its token usage split
+across four fields. Three describe the prompt it just processed
+and are *exclusive slices* that sum to this turn's prompt size:
+`input` (freshly-read tokens), `cached` (prompt tokens served from
+the provider's cache), and `cache_creation` (tokens written into
+the cache). The fourth, `output`, is the tokens in the reply. Add
+all four — `input + cached + cache_creation + output` — and you
+have the tokens consumed *through* this turn: that's `ctx`.
+
+The reason `ctx` climbs is the whole point of the chapter: this
+turn's output becomes part of next turn's prompt. Every reply and
+every tool observation is re-fed on the following turn, so the
+running total only grows, and when it crosses the model's context
+cap (the `/32.0k` suffix, shown once pikuri detects it) the
+provider raises `RubyLLM::ContextLengthExceededError` and the turn
+dies. Caching changes the *cost* of that prompt, not its size — a
+big cached prefix is cheaper to reprocess but occupies exactly as
+much of the window. Speed, not head-room. A task list doesn't stop
+the climb; it just makes sure the one thing you can't afford to
+lose — the plan — stays near the top of the pile the whole way up.
+
 ## The four tools
 
 `pikuri-tasks` ships exactly four LLM-facing tools, one per verb:
