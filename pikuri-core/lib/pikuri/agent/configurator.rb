@@ -2,65 +2,40 @@
 
 module Pikuri
   class Agent
-    # Build-time collector yielded into the +Pikuri::Agent.new+ block.
-    # Hosts and {Extension} implementations call its methods to declare
-    # additional tools, listeners, +on_close+ handlers, extension
-    # instances, and persona-flavored sub-agents;
-    # {Agent#initialize} drains the collected state into the agent's
-    # final wiring before returning. (System-prompt contributions are
-    # *not* collected here — the Agent pulls them from each extension's
-    # {Extension#system_prompt_snippets} at assembly time.)
-    #
-    # == Why this exists
-    #
-    # Splits "configure the agent" from "the agent's runtime state".
-    # Hosts can write a block that reads cleanly:
+    # Build-time collector yielded into the +Pikuri::Agent.new+ block. Hosts
+    # and {Extension}s call its methods to declare tools, listeners,
+    # +on_close+ handlers, and extension instances; {Agent#initialize} drains
+    # the collected state into the agent's wiring before returning, then
+    # discards the Configurator (it carries no runtime state). System-prompt
+    # contributions are *not* collected here — the Agent pulls them from each
+    # extension's {Extension#system_prompt_snippets} at assembly time.
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
     #     c.add_tool     Pikuri::Tool::WebSearch.build
-    #     c.add_tool     Pikuri::Tool::WEB_SCRAPE
-    #     c.add_tool     Pikuri::Tool::FETCH
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
+    # Extensions implement +configure(c)+ against this same type, so
+    # block-users and extensions share one API.
+    #
     # == Two tool pools: regular vs. sub-agent-only
     #
-    # {#add_tool} registers a tool the parent agent can call: it lands
-    # in {#tools} and gets handed to ruby_llm via +chat.with_tool+.
-    # {#add_sub_agent_tool} registers a tool the parent *cannot* call
-    # — it lands in {#sub_agent_tools} and is never sent to ruby_llm
-    # for the parent, but is visible to {Pikuri::SubAgent::Extension}'s
-    # persona-tool-name resolution. The use case is the lethal-trifecta
-    # defense in {Pikuri::Code::Bash::Sandbox} terms: keep network tools
-    # (+web_search+ / +web_scrape+ / +fetch+) off the parent so a prompt-
-    # injected file read cannot egress through the parent's own tools,
-    # while still letting the +researcher+ persona reach them via the
-    # +agent+ delegation tool. See SECURITY.md §"Defense: capability
-    # boundaries via sub-agents".
-    #
-    # Extensions implement their +configure(c)+ hook against the same
-    # type, so the call sites for "block users add stuff" and
-    # "extensions add stuff" share one API.
-    #
-    # == Lifecycle
-    #
-    # One +Configurator+ per +Agent.new+ invocation. The Configurator
-    # is constructed inside {Agent#initialize}, yielded to the block
-    # (if any), then its collected state is drained by the Agent body.
-    # The Configurator instance is discarded once +Agent.new+ returns
-    # — it carries no runtime state.
+    # {#add_tool} registers a tool the parent agent can call (lands in {#tools},
+    # handed to ruby_llm). {#add_sub_agent_tool} registers one the parent
+    # *cannot* call (lands in {#sub_agent_tools}, never sent to ruby_llm for the
+    # parent) but which {Pikuri::SubAgent::Extension}'s persona-tool-name
+    # resolution can reach. The use case is the lethal-trifecta defense: keep
+    # network tools (+web_search+ / +web_scrape+ / +fetch+) off the parent so a
+    # prompt-injected file read can't egress through it, while the +researcher+
+    # persona still reaches them via the +agent+ tool. See SECURITY.md.
     class Configurator
-      # @return [Agent::ChatTransport] same transport the Agent will
-      #   use. Extensions read this to wire helpers consistently
-      #   (e.g. an MCP description-synthesizer that calls the same
-      #   model the agent itself uses).
+      # @return [Agent::ChatTransport] same transport the Agent will use, so an
+      #   extension can wire helpers against the same model.
       attr_reader :transport
 
-      # @return [String] the +system_prompt:+ kwarg passed to
-      #   {Agent#initialize}, untouched. The base the Agent prepends to
-      #   the pulled {Extension#system_prompt_snippets}; exposed here so
-      #   an extension's +configure+ can peek at the base for diagnostics.
+      # @return [String] the +system_prompt:+ kwarg, untouched — the base the
+      #   Agent prepends to the pulled {Extension#system_prompt_snippets}.
       attr_reader :system_prompt_base
 
       # @return [String] this agent's unique identifier; empty for the
@@ -75,28 +50,22 @@ module Pikuri
       #   to the Agent ctor, or +nil+.
       attr_reader :step_limit
 
-      # @return [Control::Cancellable, nil] cancellation control
-      #   passed to the Agent ctor, or +nil+. Extensions that run
-      #   sub-LLM calls during +configure+ (e.g. an MCP description
-      #   synthesizer) share this so a user cancel during boot
-      #   propagates correctly.
+      # @return [Control::Cancellable, nil] cancellation control, or +nil+.
+      #   Extensions running sub-LLM calls in +configure+ share it so a user
+      #   cancel during boot propagates.
       attr_reader :cancellable
 
       # @return [Control::Interloper, nil] mid-loop user-input queue
       #   passed to the Agent ctor, or +nil+.
       attr_reader :interloper
 
-      # @return [Array<Tool>] tools added via {#add_tool}, in
-      #   declaration order. Drained by {Agent#initialize} and
-      #   registered with ruby_llm so the parent LLM can call them.
+      # @return [Array<Tool>] tools added via {#add_tool}, in declaration order;
+      #   drained by {Agent#initialize} and registered with ruby_llm.
       attr_reader :tools
 
-      # @return [Array<Tool>] tools added via {#add_sub_agent_tool},
-      #   in declaration order. Drained by {Agent#initialize} but
-      #   *not* registered with ruby_llm — invisible to the parent
-      #   LLM, available only to sub-agents through
-      #   {Pikuri::SubAgent::Extension}'s persona-tool-name
-      #   resolution. See the class header.
+      # @return [Array<Tool>] tools added via {#add_sub_agent_tool}, in
+      #   declaration order; drained but *not* registered with ruby_llm —
+      #   available only to sub-agents (see the class header).
       attr_reader :sub_agent_tools
 
       # @return [Array<Listener::Base>] listeners added via
@@ -110,9 +79,8 @@ module Pikuri
       attr_reader :on_close_handlers
 
       # @return [Array<#configure>] extension instances added via
-      #   {#add_extension}, in declaration order. The Agent ctor
-      #   walks this list after wiring is complete and calls +bind+
-      #   on each with the agent's {ExtensionContext}.
+      #   {#add_extension}, in declaration order. The Agent calls +bind+ on
+      #   each after wiring is complete.
       attr_reader :extensions
 
       # @param transport [Agent::ChatTransport]
@@ -122,13 +90,11 @@ module Pikuri
       # @param step_limit [Control::StepLimit, nil]
       # @param cancellable [Control::Cancellable, nil]
       # @param interloper [Control::Interloper, nil]
-      # @param on_close_sink [Array<Proc>, nil] array that {#on_close}
-      #   appends to. {Agent#initialize} passes its own live
-      #   +@on_close_handlers+ so a handler an extension arms via
-      #   +c.on_close+ is reachable the instant it's registered — which
-      #   is what lets the constructor close a half-built agent if a
-      #   later extension's +configure+ raises. Defaults to a fresh
-      #   array for standalone use (e.g. specs).
+      # @param on_close_sink [Array<Proc>, nil] array {#on_close} appends to.
+      #   {Agent#initialize} passes its live +@on_close_handlers+ so a handler
+      #   armed via +c.on_close+ is reachable instantly — what lets the
+      #   constructor close a half-built agent if a later +configure+ raises.
+      #   Defaults to a fresh array (standalone/spec use).
       def initialize(transport:, system_prompt_base:, id:, streaming:,
                      step_limit:, cancellable:, interloper:,
                      on_close_sink: nil)
@@ -197,15 +163,10 @@ module Pikuri
         nil
       end
 
-      # Register an extension. The extension's +configure(self)+ is
-      # called immediately so source-order matches execution-order.
-      # The instance is also retained for the +bind(ctx)+ sweep
-      # that runs at the end of {Agent#initialize}.
-      #
-      # Extensions must implement both +configure+ and +bind+. The
-      # easy way is to +include Pikuri::Agent::Extension+ — that
-      # mixes in empty defaults for both, so an extension overrides
-      # only what it cares about and leaves the other as a no-op.
+      # Register an extension: its +configure(self)+ runs immediately (so
+      # source order matches execution order), and the instance is retained for
+      # the +bind(ctx)+ sweep at the end of {Agent#initialize}. Both hooks are
+      # required — +include Pikuri::Agent::Extension+ for no-op defaults.
       #
       # @param extension [Extension, #configure, #bind] extension instance
       # @return [void]
@@ -215,9 +176,8 @@ module Pikuri
         nil
       end
 
-      # Register a handler called by {Agent#close}. Handlers fire in
-      # LIFO order, each inside its own +rescue+ — same semantics as
-      # +ensure+-block cleanup discipline.
+      # Register a handler called by {Agent#close} (LIFO, each inside its own
+      # +rescue+).
       #
       # @yield called with no arguments at close time
       # @return [void]

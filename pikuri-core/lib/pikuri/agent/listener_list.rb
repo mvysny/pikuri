@@ -2,20 +2,14 @@
 
 module Pikuri
   class Agent
-    # Listener-list value object that an {Agent} owns. Wraps an
-    # +Array+ of {Listener::Base} instances and fans {#emit} out to
-    # each; {Agent#initialize} stores one of these and is the sole
-    # caller of {#emit}.
+    # Listener-list value object an {Agent} owns: wraps an +Array+ of
+    # {Listener::Base} and fans {#emit} out to each. {Agent#initialize} stores
+    # one and is the sole caller of {#emit}.
     #
-    # == What this is, what it isn't
-    #
-    # One job: fan out. The +Agent+ wires ruby_llm's callbacks
-    # itself, the context-window cap rides the event stream as a
-    # one-shot {Event::ContextCap}, and the sub-agent derivation
-    # rule lives in {#for_sub_agent}. Controls (step budget,
-    # cancellation flag, mid-loop input queue) are not listeners
-    # and do not appear in this list; their sub-agent derivation
-    # lives on each control class instead.
+    # One job: fan out. The +Agent+ wires ruby_llm's callbacks itself, the
+    # context cap rides the stream as a one-shot {Event::ContextCap}, and the
+    # sub-agent derivation rule lives in {#for_sub_agent}. Controls are not
+    # listeners and don't appear here.
     class ListenerList
       # @param listeners [Array<Listener::Base>] listeners that
       #   define +on_event(event)+
@@ -23,25 +17,21 @@ module Pikuri
         @listeners = listeners.dup
       end
 
-      # Dispatch one event to every listener, in registration order.
-      # Exactly two callers: {Agent} (loop-narration {Event}
-      # variants) and {ExtensionContext#emit_event} (extension
-      # domain events). Listeners themselves never call this; the
-      # stream is one-way.
+      # Dispatch one event to every listener, in registration order. Exactly two
+      # callers: {Agent} (loop-narration {Event}s) and
+      # {ExtensionContext#emit_event} (domain events); listeners never call it —
+      # the stream is one-way.
       #
-      # @param event [Object] an {Agent::Event} variant or a
-      #   gem-defined domain event (an immutable value, by
-      #   convention a +Data+ instance)
+      # @param event [Object] an {Agent::Event} variant or a gem domain event
+      #   (an immutable value, by convention a +Data+)
       # @return [void]
       def emit(event)
         @listeners.each { |l| l.on_event(event) }
       end
 
-      # Iterate over the wrapped listeners in registration order. The
-      # method exists so a ListenerList can be passed directly to
-      # {Configurator#add_listeners} (used by the +agent+ tool from
-      # +pikuri-subagents+ when seeding a sub-agent's Configurator
-      # from the parent's list).
+      # Iterate the wrapped listeners in registration order — so a ListenerList
+      # can be passed to {Configurator#add_listeners} (the +agent+ tool seeds a
+      # sub-agent's Configurator from the parent's list).
       #
       # @yield [listener]
       # @yieldparam listener [Listener::Base]
@@ -50,28 +40,17 @@ module Pikuri
         @listeners.each(&block)
       end
 
-      # Return a new {ListenerList} in which every listener has been
-      # asked for its sub-agent variant. Each listener that defines
-      # +for_sub_agent(**params)+ receives the forwarded +params+
-      # and returns either +self+, a replacement instance, or +nil+
-      # to opt out of propagation entirely — the resulting list
-      # compacts +nil+ entries away. Listeners that don't define the
-      # method are kept by reference (structured capture and other
-      # stateful sinks continue to flow into the parent's instances).
+      # A new {ListenerList} where every listener has been asked for its
+      # sub-agent variant: a listener defining +for_sub_agent(**params)+ returns
+      # +self+, a replacement, or +nil+ to opt out (compacted away); listeners
+      # without the method are kept by reference (stateful sinks keep flowing
+      # into the parent's instances). The dispatch lives on each listener so a
+      # new listener type needs no change here — see
+      # {Listener::Terminal#for_sub_agent} / {Listener::TokenLog#for_sub_agent}.
       #
-      # The dispatch lives on each listener so adding a new
-      # listener type with sub-agent-specific behavior doesn't
-      # change this class — see {Listener::Terminal#for_sub_agent}
-      # (fresh padded instance) and
-      # {Listener::TokenLog#for_sub_agent} (fresh, zeroed snapshot
-      # with the forwarded +id:+).
-      #
-      # +params+ is a flat hash forwarded as kwargs to every
-      # listener's hook; each listener picks the keys it cares about
-      # and ignores the rest. The only key currently consumed by
-      # bundled listeners is +id:+ (used by {Listener::TokenLog} to
-      # prefix its log lines with the sub-agent's id). Calling with
-      # no params is always valid.
+      # +params+ is forwarded as kwargs; each listener picks what it needs. The
+      # only key bundled listeners consume is +id:+ ({Listener::TokenLog}); no
+      # params is valid.
       #
       # @param params [Hash{Symbol => Object}]
       # @return [ListenerList]

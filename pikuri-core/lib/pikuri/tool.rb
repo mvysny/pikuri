@@ -5,45 +5,33 @@ require 'ruby_llm'
 module Pikuri
   # A tool the LLM can request via OpenAI-style tool calling.
   #
-  # {Tool} is a plain value object: +name+, +description+, +parameters+,
-  # and an +execute+ Proc that produces the observation. Pikuri's own
-  # code talks to this surface (the bundled tools, the sub-agent factory,
-  # the +Agent+ constructor); the conversion to ruby_llm's runtime shape
-  # happens at exactly one named seam — {#to_ruby_llm_tool} — which the
-  # +Agent+ calls when wiring tools into the underlying +RubyLLM::Chat+.
-  #
-  # Bundled tool implementations live under +lib/tool/+ and are required
-  # explicitly by the scripts that use them; +lib/tool.rb+ itself only
-  # introduces the {Tool} class and {Tool::Parameters} machinery.
+  # A plain value object — +name+, +description+, +parameters+, and an
+  # +execute+ Proc that produces the observation. Pikuri's code talks to this
+  # surface; conversion to ruby_llm's runtime shape happens at exactly one seam,
+  # {#to_ruby_llm_tool}, which the +Agent+ calls when wiring tools into the
+  # +RubyLLM::Chat+. Bundled implementations live under +lib/tool/+ and are
+  # required explicitly by the scripts that use them.
   #
   # == Validation ordering
   #
-  # Pikuri's {Parameters#validate} — DidYouMean suggestions, type coercion,
-  # all-errors-collected — is what the LLM must see when it emits bad
-  # arguments, not ruby_llm's keyword-presence checker. The synthetic
-  # class produced by {#to_ruby_llm_tool} defines +execute(**args)+: the
-  # keyrest signature makes +RubyLLM::Tool#validate_keyword_arguments+
-  # no-op (it bails out at the +accepts_extra_keywords+ check), so
-  # pikuri's validator runs inside {#run} before any user code does.
+  # Pikuri's {Parameters#validate} (DidYouMean suggestions, type coercion,
+  # all-errors-collected) is what the LLM must see on bad arguments, not
+  # ruby_llm's keyword-presence checker. The synthetic class from
+  # {#to_ruby_llm_tool} defines +execute(**args)+: the keyrest signature makes
+  # +RubyLLM::Tool#validate_keyword_arguments+ no-op, so pikuri's validator runs
+  # inside {#run} before any user code.
   #
   # == Error handling convention
   #
-  # Tools split failures into two buckets:
+  # * *Recoverable* failures (bad arguments, HTTP 4xx/5xx, network blips,
+  #   rate-limits, division by zero, ...) come back as +"Error: <message>"+
+  #   Strings and become the next observation, so the model self-corrects.
+  # * *Bugs* in pikuri's own code (parser regressions, schema misuse, ...) keep
+  #   raising — the LLM can't fix them.
   #
-  # * *Recoverable* failures — anything the LLM can react to by retrying with
-  #   different inputs (bad arguments, HTTP 4xx/5xx, network blips, search
-  #   provider rate-limits, division by zero in the calculator, ...). These
-  #   come back as a +"Error: <message>"+ String and become the next
-  #   observation; the model sees them and self-corrects on the following
-  #   turn instead of crashing the agent loop.
-  # * *Bugs* in pikuri's own code (parser regressions, schema misuse,
-  #   misconfigured clients, ...). These keep raising. The LLM cannot fix
-  #   them; a human needs to.
-  #
-  # Argument-validation failures from {Parameters#validate} are caught by
-  # {#run} and turned into +"Error: ..."+ observations. The +execute+ Proc
-  # owns the rest — it should follow the same convention internally for
-  # tool-specific recoverable failures, and let bugs raise.
+  # {#run} catches {Parameters#validate} failures into +"Error: ..."+; the
+  # +execute+ Proc follows the same convention for its own recoverable failures
+  # and lets bugs raise.
   class Tool
     # @return [String] function name advertised to the LLM
     attr_reader :name
@@ -57,25 +45,20 @@ module Pikuri
     #   LLM
     attr_reader :parameters
 
-    # @return [Proc] callable invoked once arguments have been validated;
-    #   receives validated keyword arguments and returns the observation.
-    #   The usual return is a +String+; tools that want to deliver
-    #   multimodal observations (e.g. {Pikuri::Workspace::Read} on a
-    #   PNG) may instead return a +RubyLLM::Content+ with attachments,
-    #   which +RubyLLM::Chat#handle_tool_calls+ accepts via its
-    #   +content_like?+ check and the per-provider Media formatters turn
-    #   into the right image / document blocks inside +tool_result+.
+    # @return [Proc] callable invoked with validated keyword arguments,
+    #   returning the observation — usually a +String+, or a +RubyLLM::Content+
+    #   with attachments for multimodal observations (e.g.
+    #   {Pikuri::Workspace::Read} on a PNG), which +RubyLLM::Chat+ turns into
+    #   the right image/document blocks.
     attr_reader :execute
 
     # @param name [String] function name advertised to the LLM
     # @param description [String] human-readable description used by the LLM
     #   to decide when to call the tool
     # @param parameters [Tool::Parameters] declared schema
-    # @param execute [Proc] callable invoked with validated keyword arguments
-    #   that returns either a +String+ observation or a +RubyLLM::Content+
-    #   (for multimodal observations — see {#execute}). Recoverable failures
-    #   should be returned as +"Error: <message>"+ Strings rather than raised
-    #   — see "Error handling convention" above.
+    # @param execute [Proc] callable invoked with validated keyword arguments,
+    #   returning a +String+ or +RubyLLM::Content+ (see {#execute}). Recoverable
+    #   failures return +"Error: <message>"+ rather than raise.
     # @return [Tool]
     def initialize(name:, description:, parameters:, execute:)
       @name = name
@@ -84,16 +67,13 @@ module Pikuri
       @execute = execute
     end
 
-    # Validate +args+ against {#parameters} and forward them as keyword
-    # arguments to {#execute}. Validation failures are caught and rendered
-    # as +"Error: <message>"+ Strings so the agent loop can feed them back
-    # to the LLM as the next observation; everything else bubbles up.
+    # Validate +args+ against {#parameters} and forward them as kwargs to
+    # {#execute}. Validation failures come back as +"Error: <message>"+ Strings
+    # for the next observation; everything else bubbles up.
     #
     # @param args [Hash] raw arguments supplied by the LLM
-    # @return [String, RubyLLM::Content] tool observation. Validation
-    #   failures always come back as +"Error: ..."+ Strings; the success
-    #   shape is whatever the +execute+ Proc returns (typically a String,
-    #   or a +RubyLLM::Content+ for multimodal observations).
+    # @return [String, RubyLLM::Content] tool observation — validation failures
+    #   always +"Error: ..."+; success is whatever +execute+ returns.
     def run(args)
       validated = @parameters.validate(args)
       @execute.call(**validated)
@@ -101,11 +81,9 @@ module Pikuri
       "Error: #{e.message}"
     end
 
-    # Build a synthetic +RubyLLM::Tool+ subclass that wraps this Tool. The
-    # subclass is what +RubyLLM::Chat#with_tool+ accepts: ruby_llm
-    # instantiates it (+tool.new+) and routes tool calls through
-    # +instance.call(args)+, which lands in +#execute(**args)+ and
-    # delegates back to {#run} on this instance.
+    # Build a synthetic +RubyLLM::Tool+ subclass wrapping this Tool — what
+    # +RubyLLM::Chat#with_tool+ accepts. ruby_llm instantiates it and routes
+    # tool calls through +#execute(**args)+, which delegates to {#run}.
     #
     # @return [Class] anonymous +RubyLLM::Tool+ subclass
     def to_ruby_llm_tool

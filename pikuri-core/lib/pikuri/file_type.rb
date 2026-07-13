@@ -2,66 +2,37 @@
 
 module Pikuri
   # Magic-byte content sniffing, plus the path-aware front over the
-  # {Extractor} registry. Two responsibilities:
+  # {Extractor} registry. Two core responsibilities:
   #
-  # * {.detect_mime} — recognise a file from its leading bytes. Returns
-  #   a MIME String for formats pikuri knows how to handle specially
-  #   ({+application/pdf+}, the four image formats), or +nil+ for
-  #   "unrecognised — could be text, could be opaque binary; caller
-  #   decides".
-  # * {.binary?} — heuristic text-vs-binary classifier. Independent of
-  #   {.detect_mime}: a file can be both recognised (e.g. PDF) *and*
-  #   binary. {.detect_mime} tells you what the bytes are;
-  #   {.binary?} tells you whether they're safe to render as text.
+  # * {.detect_mime} — recognise a file from its leading bytes. Returns a
+  #   MIME String for formats pikuri handles specially (+application/pdf+,
+  #   the four image formats), or +nil+ for "unrecognised".
+  # * {.binary?} — text-vs-binary heuristic, independent of {.detect_mime}
+  #   (a file can be both recognised, e.g. PDF, *and* binary): what the
+  #   bytes are vs. whether they're safe to render as text.
   #
-  # On top of those sit the two +Pathname+ conveniences,
-  # {.read_as_text} (whole document, the {Pikuri::VectorDb} indexer's
-  # shape) and {.read_as_text_paged} (line-windowed, the Read tools'
-  # shape). Both are thin wrappers: they own the *path-level* refusals
-  # (missing file, directory, image) and the exception mapping, then
-  # hand the opened IO to {Extractor.extract} /
-  # {Extractor.extract_paged} — which format the bytes are and how
-  # they become text is entirely the registry's business, so a gem
-  # plugging a new extractor in extends these wrappers for free.
+  # On top sit two +Pathname+ conveniences, {.read_as_text} (whole document)
+  # and {.read_as_text_paged} (line-windowed). Both own the *path-level*
+  # refusals (missing file, directory, image) and the exception mapping,
+  # then hand the IO to {Extractor}; format-to-text is the registry's
+  # business, so a new extractor extends these wrappers for free.
   #
-  # {.detect_mime} and {.binary?} accept either a +String+ of bytes
-  # (sample taken by the caller) or a +Pathname+ — when given a path,
-  # the module opens the file in binary mode and reads {SAMPLE_BYTES}
-  # for the sniff itself. The Pathname form is the convenience path;
-  # the bytes form is for callers that already have the sample or are
-  # calling both methods on the same file and want to avoid a second
-  # open.
-  #
-  # == Why a separate module
-  #
-  # Without this module, magic-byte tables and the binary heuristic
-  # ended up scattered through whichever tool needed them — first PDF
-  # in {Workspace::Read}, then images alongside it, then a copy of
-  # {.binary?} reached for by {Workspace::Edit}. Collecting the
-  # detection logic here lets {Read} focus on routing
-  # (mime-to-formatter), {Edit} drop its cross-tool reach, and new
-  # tools share one set of magic-byte truths.
+  # {.detect_mime}/{.binary?} take either a +String+ of bytes (caller
+  # sampled) or a +Pathname+ (opened binary, {SAMPLE_BYTES} read).
   #
   # == Deliberate non-goals
   #
-  # * *Not a full MIME database.* The set grows when a pikuri tool
-  #   needs a new format, not speculatively. Keeps the "audit in an
-  #   evening" ceiling honest.
-  # * *No path / extension fallback.* Extensions lie (a renamed
-  #   +.png+ → opaque garbage); magic-byte detection on the actual
-  #   content is the source of truth. Callers that need
-  #   extension-based behaviour can layer it themselves.
-  # * *No convenience predicates* like +image?+ / +pdf?+. Callers do
-  #   +mime == 'application/pdf'+ or +mime&.start_with?('image/')+ —
-  #   one extra character, zero added API surface.
+  # * *Not a full MIME database.* The set grows when a tool needs a format,
+  #   not speculatively.
+  # * *No path/extension fallback.* Extensions lie (a renamed +.png+);
+  #   magic-byte detection on content is the source of truth.
+  # * *No +image?+/+pdf?+ predicates.* Callers do +mime == 'application/pdf'+
+  #   — one character, zero added surface.
   module FileType
     module_function
 
-    # @return [Integer] recommended number of bytes to sample for
-    #   {.detect_mime} and {.binary?}. Big enough to catch every
-    #   prefix pikuri sniffs today (the largest is WebP's 12-byte
-    #   container header) with comfortable slack; small enough that
-    #   reading it off any reasonable filesystem is effectively free.
+    # @return [Integer] bytes to sample for {.detect_mime}/{.binary?}. Covers
+    #   every prefix sniffed today (largest: WebP's 12-byte header) with slack.
     SAMPLE_BYTES = 4096
 
     # @return [Float] fraction of the sample that may be non-printable
@@ -85,15 +56,13 @@ module Pikuri
     #   with this five-byte ASCII sequence per ISO 32000-1 §7.5.2.
     PDF_MAGIC = '%PDF-'
 
-    # Recognise a file from its leading bytes. Returns the MIME type
-    # as a String for formats pikuri handles specially, or +nil+ for
-    # "unrecognised" — callers interpret +nil+ themselves (text,
+    # Recognise a file from its leading bytes. Returns the MIME String for
+    # formats pikuri handles specially, or +nil+ for "unrecognised" (text,
     # opaque binary, ...).
     #
-    # @param input [String, Pathname] the bytes to inspect, or a
-    #   +Pathname+ that this method opens in binary mode and reads up
-    #   to {SAMPLE_BYTES} from. Caller is responsible for verifying the
-    #   path exists; missing-file errors propagate as +Errno::ENOENT+.
+    # @param input [String, Pathname] bytes to inspect, or a +Pathname+
+    #   opened binary and read up to {SAMPLE_BYTES}. Caller verifies the path
+    #   exists; missing-file errors propagate as +Errno::ENOENT+.
     # @return [String, nil]
     def detect_mime(input)
       bytes = sample_of(input)
@@ -109,19 +78,13 @@ module Pikuri
       nil
     end
 
-    # Heuristic text-vs-binary classifier matching opencode's: any
-    # +NUL+ byte forces +true+; otherwise count bytes outside the
-    # printable +\t \n \v \f \r+ + ASCII-32..126 range and ratio
-    # against the sample size. UTF-8 continuation bytes (0x80-0xBF)
-    # are >127 so they sit outside the non-printable ranges and pass
-    # through unflagged, letting UTF-8 text read fine. An empty
-    # sample is treated as not-binary (callers reading an empty file
-    # take the empty-text path).
+    # Text-vs-binary heuristic (opencode's): any +NUL+ forces +true+; else
+    # ratio bytes outside printable (+\t\n\v\f\r+ + ASCII 32..126) against the
+    # sample. UTF-8 continuation bytes (0x80-0xBF) sit above 127 so they pass
+    # unflagged; an empty sample is not-binary.
     #
-    # @param input [String, Pathname] the bytes to inspect, or a
-    #   +Pathname+ that this method opens in binary mode and reads up
-    #   to {SAMPLE_BYTES} from. Caller is responsible for verifying
-    #   the path exists.
+    # @param input [String, Pathname] bytes, or a +Pathname+ opened binary
+    #   and read up to {SAMPLE_BYTES}. Caller verifies the path exists.
     # @return [Boolean]
     def binary?(input)
       bytes = sample_of(input)
@@ -136,37 +99,19 @@ module Pikuri
       non_printable.to_f / bytes.bytesize > BINARY_NONPRINTABLE_THRESHOLD
     end
 
-    # Read +path+ and return its content as plain UTF-8 text, routed
-    # through the {Extractor} registry: anything
-    # unrecognised-but-textual passes through verbatim
-    # ({Extractor::Passthrough}); with pikuri-pdf registered, PDFs
-    # are extracted with +"--- Page N ---"+ markers (a scanned-image
-    # PDF with no extractable text comes back as the empty String, a
-    # deliberate silent skip callers detect by length if they care).
-    #
-    # Refusal cases — all raise rather than returning a sentinel
-    # because the callers are internal pikuri code, not an LLM
-    # tool. The LLM-facing +Workspace::Read+ does its own routing and
-    # returns "Error: ..." observations; that's a separate concern.
-    #
-    # * Path doesn't exist → +Errno::ENOENT+.
-    # * Path is a directory → +ArgumentError+.
-    # * Image (PNG / JPEG / GIF / WebP per {.detect_mime}) →
-    #   +ArgumentError+; images aren't text.
-    # * Content no extractor claims (opaque binary) →
-    #   +ArgumentError+, mapped from {Extractor::Unsupported}.
-    # * Extraction failure (malformed PDF, ...) → +RuntimeError+ with
-    #   the path included, mapped from {Extractor::Error} so callers
-    #   don't need to know any extractor's exception hierarchy.
+    # Read +path+ as plain UTF-8 text through the {Extractor} registry:
+    # unrecognised-but-textual passes through verbatim; with pikuri-pdf
+    # registered, PDFs get +"--- Page N ---"+ markers (a scanned-image PDF
+    # comes back empty — a deliberate silent skip callers detect by length).
+    # Refusals raise (callers are internal pikuri code, not an LLM tool).
     #
     # @param path [Pathname] file to read.
-    # @return [String] UTF-8 text. May be empty (empty text file, or
-    #   scanned-image PDF).
-    # @raise [ArgumentError] if +path+ isn't a +Pathname+, points at
-    #   a directory, is an image, or is binary.
+    # @return [String] UTF-8 text; may be empty (empty file, scanned PDF).
+    # @raise [ArgumentError] if +path+ isn't a +Pathname+, is a directory, an
+    #   image, or opaque binary (the last mapped from {Extractor::Unsupported}).
     # @raise [Errno::ENOENT] if +path+ doesn't exist.
-    # @raise [RuntimeError] on an extraction failure (malformed /
-    #   unsupported PDF, ...).
+    # @raise [RuntimeError] on an extraction failure (mapped from
+    #   {Extractor::Error}, path included).
     def read_as_text(path)
       mime = guard_extractable(path)
       path.open('rb') { |io| Extractor.extract(io, content_type: mime) }
@@ -176,29 +121,21 @@ module Pikuri
       raise "Cannot extract text from #{path}: #{e.message}"
     end
 
-    # Extract +path+ and return a windowed {Extractor::Page}: the
-    # lines from +offset+ (1-indexed) up to +limit+ of them, stopping
-    # early if +max_bytes+ is reached, with over-long lines truncated
-    # at +max_line_length+. Same routing and refusal contract as
-    # {.read_as_text}; the windowing semantics (including the lazy
-    # +extract_lines+ consumption that stops parsing once the window
-    # fills) are {Extractor.extract_paged}'s.
-    # The LLM-facing callers map the exceptions into +"Error: ..."+
-    # observations themselves.
+    # Extract +path+ into a windowed {Extractor::Page} (lines from +offset+ up
+    # to +limit+, byte-capped, long lines truncated). Same routing and refusal
+    # contract as {.read_as_text}; windowing semantics are
+    # {Extractor.extract_paged}'s.
     #
     # @param path [Pathname] file to read.
-    # @param offset [Integer] 1-indexed first line to include. The
-    #   caller is responsible for validating +offset >= 1+.
-    # @param limit [Integer] maximum lines to collect. Caller
-    #   validates +limit >= 1+.
+    # @param offset [Integer] 1-indexed first line; caller validates +>= 1+.
+    # @param limit [Integer] max lines to collect; caller validates +>= 1+.
     # @param max_bytes [Integer] hard byte cap on collected content.
     # @param max_line_length [Integer] per-line truncation threshold.
-    # @return [Extractor::Page] the windowed slice.
-    # @raise [ArgumentError] if +path+ isn't a +Pathname+, is a
-    #   directory, an image, or binary.
+    # @return [Extractor::Page]
+    # @raise [ArgumentError] if +path+ isn't a +Pathname+, is a directory, an
+    #   image, or binary.
     # @raise [Errno::ENOENT] if +path+ doesn't exist.
-    # @raise [RuntimeError] on an extraction failure (malformed /
-    #   unsupported PDF, ...).
+    # @raise [RuntimeError] on an extraction failure.
     def read_as_text_paged(path, offset: 1, limit: Extractor::PAGE_DEFAULT_LIMIT,
                            max_bytes: Extractor::PAGE_MAX_BYTES,
                            max_line_length: Extractor::PAGE_MAX_LINE_LENGTH)
@@ -213,16 +150,13 @@ module Pikuri
       raise "Cannot extract text from #{path}: #{e.message}"
     end
 
-    # The shared path-level refusals for {.read_as_text} /
-    # {.read_as_text_paged}: must be an existing non-directory
-    # +Pathname+, and not an image (images are data for a vision
-    # model, never text). Returns the {.detect_mime} result so the
-    # caller can pass it to the {Extractor} as the content-type hint.
+    # Shared path-level refusals for the read-as-text pair: an existing
+    # non-directory +Pathname+, not an image (images are vision-model data).
+    # Returns the {.detect_mime} result as the content-type hint.
     #
     # @param path [Pathname]
     # @return [String, nil] the sniffed MIME type.
-    # @raise [ArgumentError] on a non-Pathname, a directory, or an
-    #   image.
+    # @raise [ArgumentError] on a non-Pathname, a directory, or an image.
     # @raise [Errno::ENOENT] if +path+ doesn't exist.
     def guard_extractable(path)
       raise ArgumentError, "expected Pathname, got #{path.class}" unless path.is_a?(Pathname)
@@ -236,20 +170,14 @@ module Pikuri
     end
     private_class_method :guard_extractable
 
-    # Coerce an +input+ argument into a bytes String for the sniffs.
-    # +String+ inputs are returned as-is (caller already sampled);
-    # +Pathname+ inputs are opened in binary mode and up to
-    # {SAMPLE_BYTES} are read off the front. Empty files come back
-    # as an empty String — {.binary?} treats that as not-binary and
-    # {.detect_mime} returns +nil+ for it, which is what the
-    # empty-text path wants.
+    # Coerce +input+ into a bytes String for the sniffs: a +String+ is
+    # returned as-is, a +Pathname+ is opened binary and up to {SAMPLE_BYTES}
+    # read. Empty files → empty String (not-binary, +nil+ mime).
     #
     # @param input [String, Pathname]
-    # @return [String] raw bytes (ASCII-8BIT encoding for the path
-    #   case; whatever the caller passed for the bytes case)
-    # @raise [ArgumentError] if +input+ is neither a +String+ nor a
-    #   +Pathname+ — refuses to guess, since a bare String could be
-    #   either a path or actual bytes.
+    # @return [String] raw bytes.
+    # @raise [ArgumentError] if neither — refuses to guess, since a bare
+    #   String could be a path or actual bytes.
     def sample_of(input)
       case input
       when String

@@ -2,106 +2,75 @@
 
 module Pikuri
   class Agent
-    # Everything that has to travel together for a chat to resolve to
-    # the same model *on the same server* on every construction: the
-    # model id, the provider hint, the registry-bypass flag, and — when
-    # the model lives on a server other than the process-global
-    # +RubyLLM.config+ default — that server's base URL and API key.
-    #
-    # Bundling them is structural protection against a recurring bug
-    # class — every forwarding site (the synthesizer rescue in
-    # {Agent#run_loop}, the +agent+ tool from +pikuri-subagents+
-    # spawning a sub-agent, a mid-conversation model switch) used to
-    # pass the resolution fields individually, and dropping one routed
-    # the chat to a different server or raised
-    # +RubyLLM::ModelNotFoundError+ on the unknown model id. With a
-    # single value object the call site can't silently miss a field.
+    # Everything that must travel together for a chat to resolve to the same
+    # model *on the same server* on every construction: model id, provider
+    # hint, registry-bypass flag, and — when the model lives off the
+    # process-global +RubyLLM.config+ default — that server's base URL and API
+    # key. One value object so a forwarding site (the synthesizer, a sub-agent
+    # spawn, a mid-conversation switch) can't silently drop a field and route
+    # the chat to the wrong server or raise +RubyLLM::ModelNotFoundError+.
     #
     # == Why +api_base+ / +api_key+ live here
     #
-    # +RubyLLM::Chat#with_model+ swaps only the model/provider against
-    # the chat's *existing* connection config, so switching to a model
-    # on a different server (a small local llama.cpp vs a big cloud
-    # model) needs the connection to travel with the model — otherwise
-    # the new model id is sent to the old server's URL with the old
-    # key. {Agent} maps these two generic fields onto the provider's
-    # ruby_llm config slots (+#{provider}_api_base+ /
-    # +#{provider}_api_key+) via a per-chat +RubyLLM::Context+; both are
-    # +nil+ for a transport that rides the process-global config.
+    # +RubyLLM::Chat#with_model+ swaps only model/provider against the chat's
+    # *existing* connection, so switching to a model on a different server
+    # needs the connection to travel with the model — else the new id is sent
+    # to the old server's URL with the old key. {Agent} maps these two generic
+    # fields onto the provider's config slots (+#{provider}_api_base+ /
+    # +#{provider}_api_key+) via a per-chat +RubyLLM::Context+; both +nil+ for a
+    # transport riding the global config.
     #
-    # Pure data carrier: no +RubyLLM+ references here, so the seam stays
-    # in {Agent}, +bin/pikuri-chat+, and {Tool}.
+    # Pure data carrier — no +RubyLLM+ references here, so the seam stays in
+    # {Agent}, +bin/pikuri-chat+, and {Tool}.
     #
     # @!attribute [r] model
-    #   @return [String, nil] LLM identifier; +nil+ defers to
-    #     +RubyLLM.config.default_model+ at {Agent} construction time
+    #   @return [String, nil] LLM id; +nil+ defers to
+    #     +RubyLLM.config.default_model+ at {Agent} construction.
     # @!attribute [r] provider
-    #   @return [Symbol, nil] forwarded to +RubyLLM.chat+. Required
-    #     together with +assume_model_exists+ when pointing at a local
-    #     OpenAI-compatible server (llama.cpp, gpustack, ...) whose model
-    #     ids are not in ruby_llm's bundled registry; required whenever
-    #     +api_base+ / +api_key+ is set (it names the config slots).
+    #   @return [Symbol, nil] forwarded to +RubyLLM.chat+. Required with
+    #     +assume_model_exists+ for a local OpenAI-compatible server whose ids
+    #     aren't in ruby_llm's registry, and whenever +api_base+/+api_key+ is
+    #     set (it names the config slots).
     # @!attribute [r] assume_model_exists
-    #   @return [Boolean] forwarded to +RubyLLM.chat+; +true+ skips
-    #     ruby_llm's registry lookup and trusts the supplied model id.
-    #     Requires +provider+.
+    #   @return [Boolean] forwarded to +RubyLLM.chat+; +true+ skips the registry
+    #     lookup and trusts the model id. Requires +provider+.
     # @!attribute [r] api_base
-    #   @return [String, nil] connection base URL for this model's
-    #     server (e.g. +http://localhost:8080/v1+). +nil+ rides the
-    #     process-global +RubyLLM.config+ base. Mapped to the provider's
-    #     +#{provider}_api_base+ slot by {Agent}.
+    #   @return [String, nil] this server's base URL (e.g.
+    #     +http://localhost:8080/v1+); +nil+ rides the global config. Mapped to
+    #     +#{provider}_api_base+ by {Agent}.
     # @!attribute [r] api_key
-    #   @return [String, nil] API key for this model's server. +nil+
-    #     rides the process-global config key. Mapped to the provider's
-    #     +#{provider}_api_key+ slot by {Agent}. Redacted in {#inspect}
-    #     so it never leaks into a log line or backtrace.
+    #   @return [String, nil] API key for this server; +nil+ rides the global
+    #     config. Mapped to +#{provider}_api_key+ by {Agent}. Redacted in
+    #     {#inspect}.
     # @!attribute [r] context_window
     #   @return [Integer, nil] explicit context-window cap for this
-    #     model on this server, or +nil+ to defer to
-    #     {ContextWindowDetector}'s probe. Travels with the model
-    #     because the cap *is* a per-model-per-server property: a
-    #     {Ctrl+P}-style switch to a different transport must carry its
-    #     own cap, not inherit the previous model's. Never sent to
-    #     ruby_llm (it is neither a {#chat_kwargs} entry nor a
-    #     connection slot) — pure pikuri metadata read by
-    #     {Agent#detect_and_emit_context_cap!}. The cap-inheritance
-    #     channel too: the +agent+ tool from +pikuri-subagents+ and the
-    #     synthesizer hand a spawned agent +parent.transport.with(
-    #     context_window: parent.context_window_cap)+ so the parent's
-    #     *resolved* cap (explicit or probed) rides along without a
+    #     model-on-server, or +nil+ to defer to {ContextWindowDetector}. Travels
+    #     with the model because the cap *is* per-model-per-server. Never sent to
+    #     ruby_llm — pure pikuri metadata read by
+    #     {Agent#detect_and_emit_context_cap!}, and the cap-inheritance channel:
+    #     a spawned agent gets +parent.transport.with(context_window:
+    #     parent.context_window_cap)+ so the resolved cap rides along without a
     #     re-probe.
     class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key, :context_window)
-      # Build an +:openai+-provider transport for an OpenAI-compatible
-      # server (a local llama.cpp, a cloud endpoint, ...), carrying that
-      # server's connection so the agent rides a per-chat
-      # +RubyLLM::Context+ instead of the process-global +RubyLLM.config+.
-      # This is the host-boot factory the +bin/pikuri-*+ demos use in
-      # place of +RubyLLM.configure+ — one isolated connection per agent,
-      # so several agents pointed at different servers (and different
-      # keys) don't stomp a shared global.
+      # Build an +:openai+-provider transport for an OpenAI-compatible server
+      # (local llama.cpp, cloud endpoint, ...), carrying its connection so the
+      # agent rides a per-chat +RubyLLM::Context+ instead of the global config.
+      # The +bin/pikuri-*+ host-boot factory in place of +RubyLLM.configure+ —
+      # one isolated connection per agent.
       #
-      # +server+ is the bare server origin; a trailing +/v1+ (the
-      # OpenAI-compatible suffix ruby_llm appends to reach
-      # +/v1/chat/completions+) is stripped and re-appended exactly once,
-      # so +https://api.x.ai+, +https://api.x.ai/v1+, and
-      # +https://api.x.ai/v1/+ all normalize to the same +.../v1+ base.
-      # Without this, a +server+ value that already ended in +/v1+ would
-      # double to +/v1/v1+ and every request would 404.
+      # A trailing +/v1+ on +server+ is stripped and re-appended exactly once,
+      # so +https://api.x.ai+, +.../v1+, and +.../v1/+ all normalize to the same
+      # +.../v1+ base — without which a +/v1+-terminated value would double to
+      # +/v1/v1+ and 404.
       #
-      # @param server [String] server origin, with or without a trailing
-      #   +/v1+, e.g. +"http://localhost:8080"+ or +"https://api.x.ai/v1"+
+      # @param server [String] server origin, with or without a trailing +/v1+
       # @param model [String] model id served there, trusted verbatim
-      #   (+assume_model_exists+ is +true+, so it need not appear in
-      #   ruby_llm's bundled registry)
-      # @param api_key [String] API key for the server; the conventional
-      #   +"not-needed"+ placeholder for a keyless local server
-      # @param context_window [Integer, nil] explicit context-window cap
-      #   for this model, or +nil+ to defer to {ContextWindowDetector}'s
-      #   +/props+ probe (the right default for a local llama.cpp, which
-      #   reports its launched +n_ctx+; the right *override* for a cloud
-      #   server the probe can't reach, e.g. a 2M-window model on x.ai)
-      # @return [ChatTransport] a transport whose +api_base+ is the
-      #   normalized +.../v1+ URL and whose +api_key+ is +api_key+
+      # @param api_key [String] API key; the +"not-needed"+ placeholder for a
+      #   keyless local server
+      # @param context_window [Integer, nil] explicit cap, or +nil+ to defer to
+      #   {ContextWindowDetector}'s +/props+ probe (right for local llama.cpp;
+      #   an override for a cloud server the probe can't reach)
+      # @return [ChatTransport]
       def self.from_openai_server(server:, model:, api_key: 'not-needed', context_window: nil)
         base = server.to_s.strip.chomp('/').delete_suffix('/v1')
         new(
@@ -132,10 +101,9 @@ module Pikuri
         super
       end
 
-      # The model-resolution kwargs to spread into +RubyLLM.chat+ /
-      # +RubyLLM::Context#chat+. Excludes the connection fields — those
-      # configure the +Context+ the chat is built from, not the +chat+
-      # call itself.
+      # Model-resolution kwargs to spread into +RubyLLM.chat+ /
+      # +RubyLLM::Context#chat+. Excludes the connection fields (those configure
+      # the +Context+, not the +chat+ call).
       #
       # @return [Hash{Symbol => String, Symbol, Boolean, nil}]
       def chat_kwargs
@@ -150,9 +118,8 @@ module Pikuri
         !api_base.nil? || !api_key.nil?
       end
 
-      # Default +Data#inspect+ would print +api_key+ verbatim, leaking
-      # the secret into any log line, +to_s+ interpolation, or backtrace
-      # that touches the transport. Redact it.
+      # Default +Data#inspect+ would print +api_key+ verbatim into any log line
+      # or backtrace. Redact it.
       #
       # @return [String]
       def inspect

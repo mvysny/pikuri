@@ -3,55 +3,34 @@
 require 'logger'
 require 'zeitwerk'
 
-# +Pikuri::VERSION+ lives in its own tiny file so the gemspec can read
-# the version constant via +require_relative+ at build time without
-# loading Zeitwerk and every runtime dep. Requiring it here makes the
-# constant available to ordinary +require 'pikuri-core'+ callers too —
-# without this line, Zeitwerk's ignore-rule below would leave
-# +Pikuri::VERSION+ undefined for anyone using the installed gem.
+# +Pikuri::VERSION+ lives in its own tiny file so the gemspec can +require_relative+
+# it at build time without loading Zeitwerk and every runtime dep. Requiring it
+# here also defines the constant for ordinary +require 'pikuri-core'+ callers —
+# without this line the Zeitwerk ignore-rule below would leave it undefined.
 require_relative 'pikuri/version'
 
-# Boot file: configures the Zeitwerk autoloader for every file under
-# +pikuri-core/lib/pikuri/+ and eager-loads them all. After
-# +require 'pikuri-core'+, every constant pikuri-core ships
-# (+Pikuri::Agent+, +Pikuri::Tool+, +Pikuri::Tool::Calculator+, ...)
-# is defined and resolvable. Sibling gems (+pikuri-skills+,
-# +pikuri-mcp+, ...) set up their own Zeitwerk loaders rooted at
-# their own +lib/+ and contribute to the same +Pikuri::+ namespace.
+# Boot file: configures the Zeitwerk autoloader for +pikuri-core/lib/pikuri/+
+# and eager-loads it, so after +require 'pikuri-core'+ every constant
+# pikuri-core ships is defined. Sibling gems set up their own loaders into the
+# same +Pikuri::+ namespace.
 #
-# Beyond loading, the +Pikuri+ module owns the logging surface — see
-# {.logger_for}, {.log_io=}, and the +PIKURI_LOG+ /
-# +PIKURI_LOG_<NAME>+ env vars. Each subsystem holds its own
-# memoized +Logger+, all writing through a shared IO that
-# {.log_io=} can swap in one shot (handy in tests, daemons, or
-# anywhere stderr isn't the right sink).
+# The +Pikuri+ module also owns the logging surface ({.logger_for}, {.log_io=},
+# the +PIKURI_LOG+ / +PIKURI_LOG_<NAME>+ env vars): each subsystem holds a
+# memoized +Logger+ writing through a shared IO that {.log_io=} swaps in one shot.
 #
 # == Why eager-load
 #
-# The stateless bundled tools (+Pikuri::Tool::CALCULATOR+,
-# +Pikuri::Tool::WEB_SCRAPE+, +Pikuri::Tool::FETCH+) are +ALL_CAPS+ value
-# constants rather than classes/modules, and Zeitwerk only auto-loads
-# constants that match its filename-↔-CamelCase convention. Eager-loading
-# at boot guarantees the files defining those values run, so the bin
-# script can drop them straight into the +Agent.new+ block via
-# +c.add_tool+ without per-file +require+ ceremony. (web_search is instead
-# host-configured — built per-wiring via {Pikuri::Tool::WebSearch.build}
-# with the host's provider keys — so it is not a value constant.) The cost
-# is a few milliseconds of startup — negligible compared to a single LLM
-# round-trip.
+# The stateless bundled tools (+Tool::CALCULATOR+, +Tool::WEB_SCRAPE+,
+# +Tool::FETCH+) are +ALL_CAPS+ value constants, and Zeitwerk only auto-loads
+# constants matching its filename↔CamelCase convention. Eager-loading runs the
+# files defining those values so a bin script can +c.add_tool+ them without
+# per-file +require+. (web_search is host-configured via
+# {Tool::WebSearch.build}, so it's not a value constant.) Cost: a few ms.
 module Pikuri
-  # Search path for bundled system prompts. Mutable list: each pikuri
-  # gem appends its own +prompts/+ directory when it boots, so a
-  # +Pikuri.prompt(name)+ call from a host that requires +pikuri-code+
-  # (for example) finds +coding-system-prompt.txt+ in
-  # +pikuri-code/prompts/+. The core gem registers its own
-  # +pikuri-core/prompts/+ below; sibling gems do the equivalent in
-  # their own entry files.
-  #
-  # Exposed publicly so a downstream library user can read pikuri's
-  # prompts as a starting point for their own system prompt (or
-  # use them verbatim). Prefer {.prompt} for the common case of
-  # loading one by name.
+  # Search path for bundled system prompts. Mutable: each pikuri gem appends its
+  # own +prompts/+ at boot, so +Pikuri.prompt(name)+ from a host requiring
+  # +pikuri-code+ finds +coding-system-prompt.txt+ there. Public so a downstream
+  # user can read pikuri's prompts as a starting point; prefer {.prompt}.
   #
   # @return [Array<String>]
   PROMPT_DIRS = [File.expand_path('../prompts', __dir__)]
@@ -76,19 +55,15 @@ module Pikuri
     # @return [IO] shared sink every {.logger_for} writes through
     attr_reader :log_io
 
-    # Swap the shared sink (e.g. a +StringIO+ in tests, a file in a
-    # daemon). Re-points every logger already handed out by
-    # {.logger_for} so callers don't have to re-fetch them.
+    # Swap the shared sink (a +StringIO+ in tests, a file in a daemon),
+    # re-pointing every logger already handed out by {.logger_for}.
     #
-    # Why we don't use +Logger#reopen+: that method closes the previous
-    # sink before installing the new one, which makes "swap to a
-    # capture +StringIO+, then swap back to the original" impossible —
-    # the original handle would be dead the second time around. Instead
-    # we swap each logger's +@logdev+ to a fresh +Logger::LogDevice+
-    # over the new +io+, leaving the previous device untouched so the
-    # caller can hand the same +IO+ back in later. This uses a documented
-    # but internal Logger ivar; if a future Ruby renames it the
-    # +Engines+ logging specs will fail loudly.
+    # Not +Logger#reopen+: it closes the previous sink before installing the new
+    # one, which makes "swap to a capture StringIO, then swap back" impossible —
+    # the original handle would be dead. Instead we swap each logger's +@logdev+
+    # to a fresh +Logger::LogDevice+ over +io+, leaving the previous device
+    # open. Uses an internal Logger ivar; if a future Ruby renames it the
+    # +Engines+ logging specs fail loudly.
     #
     # @param io [IO] new sink for every Pikuri logger
     # @return [IO]
@@ -100,16 +75,11 @@ module Pikuri
       io
     end
 
-    # Memoized {Logger} tagged with +name+ in its +progname+, so each
-    # subsystem's lines stand out in the shared sink. Level resolves
-    # in this order: +PIKURI_LOG_<NAME>+ (e.g. +PIKURI_LOG_ENGINES=debug+),
-    # then +PIKURI_LOG+, then +INFO+.
+    # Memoized {Logger} tagged with +name+ as its +progname+. Level resolves
+    # +PIKURI_LOG_<NAME>+ → +PIKURI_LOG+ → +INFO+. Repeated calls with the same
+    # +name+ return the same instance, so {.log_io=} can rewire them all.
     #
-    # Repeated calls with the same +name+ return the same instance so
-    # there is one logger per subsystem and {.log_io=} can rewire them
-    # all in one shot.
-    #
-    # @param name [String] subsystem tag (rendered as +progname+)
+    # @param name [String] subsystem tag (the +progname+)
     # @return [Logger]
     def logger_for(name)
       @log_loggers[name] ||= begin
@@ -120,25 +90,16 @@ module Pikuri
       end
     end
 
-    # Read a bundled prompt by basename. Searches every directory in
-    # {PROMPT_DIRS} in order, returning the first match. +.txt+ is
-    # auto-appended if absent. Symbols are accepted as a convenience
-    # (+:pikuri-chat+ / +'pikuri-chat'+ / +'pikuri-chat.txt'+ all
-    # resolve to the same file).
-    #
-    # Intended for downstream library users who want to bootstrap their
-    # own +Pikuri::Agent+ wiring from pikuri's defaults — read the
-    # prompt, customize the bits they care about, hand the result to
-    # +Agent.new(system_prompt: ...)+.
+    # Read a bundled prompt by basename, searching {PROMPT_DIRS} in order
+    # (+.txt+ auto-appended; Symbols accepted). For downstream users
+    # bootstrapping their own +Agent+ wiring from pikuri's defaults.
     #
     # @example
-    #   chat_prompt = Pikuri.prompt(:'pikuri-chat')
-    #   agent = Pikuri::Agent.new(system_prompt: chat_prompt, ...)
+    #   agent = Pikuri::Agent.new(system_prompt: Pikuri.prompt(:'pikuri-chat'), ...)
     #
     # @param name [String, Symbol] basename of the prompt file
     # @return [String] file contents
-    # @raise [ArgumentError] if no matching file exists in any
-    #   directory in {PROMPT_DIRS}
+    # @raise [ArgumentError] if no matching file exists in any {PROMPT_DIRS}
     def prompt(name)
       basename = name.to_s
       basename += '.txt' unless basename.end_with?('.txt')
@@ -151,23 +112,18 @@ module Pikuri
     end
   end
 
-  # Zeitwerk loader managing every constant under
-  # +pikuri-core/lib/pikuri/+. Exposed as a constant (rather than scoped
-  # to the boot block) so a downstream host that wants to add ignore
-  # rules can reach it without monkey-patching. Sibling gems
-  # (+pikuri-skills+, +pikuri-mcp+, ...) set up their own loaders
-  # rooted at their own +lib/+ dirs — see each gem's entry file.
+  # Zeitwerk loader for every constant under +pikuri-core/lib/pikuri/+. A
+  # constant (not block-scoped) so a downstream host can add ignore rules
+  # without monkey-patching. Sibling gems set up their own loaders.
   #
   # @return [Zeitwerk::Loader]
   Loader = Zeitwerk::Loader.new
   Loader.tag = 'pikuri-core'
   Loader.push_dir(File.expand_path('.', __dir__))
   Loader.ignore(__FILE__)
-  # +pikuri/version.rb+ defines +Pikuri::VERSION+ (an ALL_CAPS value
-  # constant), not +Pikuri::Version+ as Zeitwerk would expect from the
-  # filename — so tell the loader to skip it. The file is +require_relative+'d
-  # at the top of this file (and also by the gemspec at build time), so
-  # the constant is defined before Zeitwerk runs.
+  # +pikuri/version.rb+ defines the ALL_CAPS +Pikuri::VERSION+, not
+  # +Pikuri::Version+ as Zeitwerk expects — so skip it (it's +require_relative+'d
+  # above and by the gemspec, so the constant is already defined).
   Loader.ignore(File.expand_path('pikuri/version.rb', __dir__))
   Loader.inflector.inflect(
     'html'       => 'HTML',

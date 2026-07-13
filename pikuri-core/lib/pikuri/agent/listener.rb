@@ -3,56 +3,36 @@
 module Pikuri
   class Agent
     # Namespace for the +Agent+'s pure event consumers — {Terminal},
-    # {InMemoryEventList}, {TokenLog}, and any host- or test-defined
-    # consumer. Each subclasses {Base} and overrides {Base#on_event}
-    # to pattern-match on the {Event} variants it cares about;
-    # everything else flows through unobserved.
+    # {InMemoryEventList}, {TokenLog}, and any host/test consumer. Each
+    # subclasses {Base} and overrides {Base#on_event} to pattern-match the
+    # {Event} variants it cares about; everything else flows through unobserved.
     #
-    # == What lives here, what doesn't
-    #
-    # The directory holds *pure consumers*: code whose only side
-    # effect is to react to events already emitted. No listener
-    # writes back into the stream — emission belongs to the +Agent+
-    # (loop narration) and to extensions via
-    # {Agent::ExtensionContext#emit_event} (domain events) — and no
-    # listener reaches into ruby_llm's chat callbacks (that wiring
-    # lives in {Agent}).
-    #
-    # Host-facing signal holders — step budget, cancellation flag,
-    # mid-loop user input queue — are *controls*, not listeners.
-    # They live under {Pikuri::Agent::Control} and reach {Agent}
-    # through dedicated kwargs on {Agent#initialize}; they never
-    # appear in the {ListenerList} and they never receive events.
+    # These are *pure consumers*: no listener writes back into the stream
+    # (emission is the +Agent+'s and {Agent::ExtensionContext#emit_event}'s job)
+    # or reaches into ruby_llm's callbacks (that's {Agent}'s). Host-facing signal
+    # holders (step budget, cancel flag, input queue) are *controls* under
+    # {Pikuri::Agent::Control}, not listeners — they never appear in a
+    # {ListenerList} or receive events.
     module Listener
-      # Abstract base for event-stream consumers. Subclasses override
-      # {#on_event} with a +case+ on the {Event} variant; the default
-      # implementation is a no-op so a listener that cares about a
-      # single variant doesn't have to enumerate the rest.
+      # Abstract base for event-stream consumers. Subclasses override {#on_event}
+      # with a +case+ on the {Event} variant; the default is a no-op so a
+      # listener caring about one variant needn't enumerate the rest.
       #
-      # Subclasses optionally define +for_sub_agent(**params)+ to
-      # return a variant suitable for a spawned sub-agent — a fresh
-      # zeroed instance, the same instance shared by reference, or
-      # +nil+ to opt out of propagation. See
-      # {ListenerList#for_sub_agent} for the dispatch and the
-      # per-listener semantics.
+      # Subclasses optionally define +for_sub_agent(**params)+ for a spawned
+      # sub-agent — a fresh instance, the same shared by reference, or +nil+ to
+      # opt out. See {ListenerList#for_sub_agent}.
       class Base
         # Single entry point for every event in the normalized stream.
-        # Concrete subclasses override this and dispatch on the
-        # variant (typically with a +case event in Event::X(...)+
-        # pattern). The default implementation is a no-op so a
-        # listener that only cares about a subset can match
-        # selectively and let everything else fall through.
+        # Subclasses override and dispatch on the variant (a +case event in
+        # Event::X(...)+); the default no-op lets a listener match a subset and
+        # ignore the rest.
         #
-        # @param event [Event::UserTurn, Event::Thinking,
-        #   Event::ThinkingDelta, Event::Assistant,
-        #   Event::AssistantDelta, Event::ToolCall,
+        # @param event [Event::UserTurn, Event::Thinking, Event::ThinkingDelta,
+        #   Event::Assistant, Event::AssistantDelta, Event::ToolCall,
         #   Event::ToolResult, Event::Tokens, Event::ContextCap,
-        #   Event::FallbackNotice, Event::Cancelled, Object] one of
-        #   the core loop-narration variants, or a gem-defined
-        #   domain event emitted via
-        #   {Agent::ExtensionContext#emit_event} (e.g.
-        #   +Pikuri::Tasks::ListChanged+) — match the variants you
-        #   know, let everything else fall through
+        #   Event::FallbackNotice, Event::Cancelled, Object] a core
+        #   loop-narration variant, or a gem domain event via
+        #   {Agent::ExtensionContext#emit_event} (e.g. +Pikuri::Tasks::ListChanged+)
         # @return [void]
         def on_event(event); end
       end

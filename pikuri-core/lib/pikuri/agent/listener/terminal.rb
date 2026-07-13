@@ -5,79 +5,47 @@ require 'rainbow'
 module Pikuri
   class Agent
     module Listener
-      # Terminal renderer for the normalized event stream: dim grey
-      # reasoning, assistant content printed raw (Markdown as-is),
-      # cyan tool-call and tool-result lines, yellow fallback
-      # notice, red cancelled notice, magenta model-switch notice.
-      # Any unrecognized event — notably a gem domain event — renders
-      # generically via its +to_s+ (dim grey, +·+ marker), so a new
-      # event variant is visible in the demo without a code change here.
-      # An {Event::SystemInjected} block (recalled
-      # memory / context an extension injected) renders dim grey
-      # with a +⊕+ marker. {Event::UserTurn} is intentionally silent
-      # (the terminal user just typed the message, so re-rendering
-      # it adds nothing); {Event::Tokens} and {Event::ContextCap}
-      # are silent too (their consumer is {TokenLog}).
+      # Terminal renderer for the normalized event stream: dim grey reasoning,
+      # assistant Markdown printed raw, cyan tool-call/result lines, yellow
+      # fallback notice, red cancelled, magenta model-switch.
+      # {Event::UserTurn} / {Event::Tokens} / {Event::ContextCap} are silent
+      # (echo, or {TokenLog}'s business); {Event::SystemInjected} renders dim
+      # grey with a +⊕+ marker. Any unrecognized event — notably a gem
+      # *domain* event — renders generically via its +to_s+ (dim grey, +·+
+      # marker), so a new variant shows in the demo without a change here.
       #
-      # Assistant Markdown deliberately prints raw, with no
-      # Markdown-to-ANSI rendering. A renderer (+tty-markdown+)
-      # used to sit on the non-streaming path; it was dropped:
-      # rendering can never apply to the streaming path anyway
-      # (half-finished Markdown — broken code fences, half-built
-      # tables — doesn't render), the gem hadn't shipped a release
-      # since 2023 (its known ANSI-in-table crashes forced a
-      # rescue-and-degrade carve-out here), and it pulled seven
-      # transitive gems into the audit surface. Raw Markdown is
-      # perfectly readable in a terminal; proper rendering belongs
-      # to a richer host (the planned pikuri-tui).
+      # Assistant Markdown prints raw, no Markdown-to-ANSI: rendering can't
+      # apply to the streaming path anyway (half-built fences/tables), and the
+      # one gem for it (tty-markdown) was unmaintained, crashed on
+      # ANSI-in-tables, and pulled seven transitive deps — proper rendering
+      # belongs to a richer host (the planned pikuri-tui).
       #
-      # Optionally prepends a fixed number of leading spaces to
-      # every rendered line via the +padding:+ kwarg. Sub-agents
-      # get a fresh padded instance through {#for_sub_agent}
-      # (dispatched by {ListenerList#for_sub_agent}) so their
-      # output is visually indented under the parent's stream.
+      # +padding:+ prepends a fixed number of leading spaces to every line;
+      # sub-agents get a fresh padded instance via {#for_sub_agent}.
       #
       # == Streaming mode
       #
-      # When constructed with +streaming: true+ (typically because
-      # the host's {Agent} was constructed with the matching flag):
-      #
-      # - {Event::ThinkingDelta} fragments print live in the same
-      #   dim grey as the non-streaming {Event::Thinking}, with no
-      #   trailing newline so the next fragment continues the line.
-      # - {Event::AssistantDelta} fragments print live the same
-      #   way, uncolored.
-      # - {Event::Thinking} and {Event::Assistant} bookends print
-      #   a single blank line as a stream terminator, not their
-      #   content (the content already landed via the deltas). The
-      #   terminator gives the next event (tool call, next round,
-      #   final REPL prompt) a clean line to start on.
-      #
-      # In non-streaming mode (+streaming: false+, the default),
-      # the deltas are silently ignored and the bookend events
-      # render the full text the way they always have.
+      # With +streaming: true+ (matching the {Agent}'s flag):
+      # {Event::ThinkingDelta} / {Event::AssistantDelta} print live (dim grey /
+      # uncolored, no trailing newline), and the {Event::Thinking} /
+      # {Event::Assistant} bookends print a single blank line as a terminator,
+      # not their content (already landed via deltas). With +streaming: false+
+      # (default) the deltas are ignored and the bookends render full text.
       class Terminal < Base
-        # Cap, in characters, applied to tool-result content
-        # rendered to the terminal. Anything longer is truncated
-        # with a marker that reports the original byte size so the
-        # reader can tell a 200-char return apart from a 50KB HTML
-        # dump.
+        # Char cap on tool-result content rendered to the terminal; longer is
+        # truncated with a marker reporting the original byte size (so a
+        # 200-char return is distinguishable from a 50KB dump).
         MAX_TOOL_RESULT_CHARS = 200
 
-        # Padding applied to a sub-agent's rendered stream.
-        # Absolute, not additive — sub-agent recursion is blocked
-        # (the sub-agent's tool set excludes +sub_agent+ itself),
-        # so the depth never exceeds 1 in practice and a fixed
-        # indent reads cleanly.
+        # Padding for a sub-agent's stream. Absolute, not additive — sub-agent
+        # recursion is blocked (the sub-agent's toolset excludes +sub_agent+),
+        # so depth never exceeds 1 and a fixed indent reads cleanly.
         SUB_AGENT_PADDING = 2
 
-        # @param padding [Integer] non-negative number of leading
-        #   spaces prepended to every rendered line. Defaults to 0;
-        #   sub-agents get a fresh instance with
-        #   {SUB_AGENT_PADDING} via {#for_sub_agent}.
-        # @param streaming [Boolean] render the chunk-level delta
-        #   stream live. See the class header's "Streaming mode"
-        #   section for the behavior swap. Defaults to +false+.
+        # @param padding [Integer] non-negative leading spaces per line
+        #   (default 0; sub-agents get {SUB_AGENT_PADDING} via {#for_sub_agent}).
+        # @param streaming [Boolean] render the chunk-level delta stream live
+        #   (default +false+; see "Streaming mode").
         def initialize(padding: 0, streaming: false)
           super()
           @padding = padding
@@ -85,22 +53,15 @@ module Pikuri
           @at_line_start = true
         end
 
-        # @return [Integer] current padding width; exposed so
-        #   callers can introspect it (and so tests can assert it).
+        # @return [Integer] current padding width.
         attr_reader :padding
 
-        # @return [Boolean] +true+ when this Terminal is in
-        #   streaming mode (deltas rendered live; bookends emit a
-        #   terminator newline only).
+        # @return [Boolean] +true+ in streaming mode.
         attr_reader :streaming
 
-        # Sub-agent variant: a fresh +Terminal+ at
-        # {SUB_AGENT_PADDING}, carrying the same +streaming+ flag
-        # the parent had, so sub-agent output is visually indented
-        # under the parent's stream and the stream mode stays
-        # consistent across the agent tree. Called by
-        # {ListenerList#for_sub_agent}; ignores any params it's
-        # handed (Terminal has no caller-provided knobs).
+        # Sub-agent variant: a fresh +Terminal+ at {SUB_AGENT_PADDING} carrying
+        # the parent's +streaming+ flag, so sub-agent output indents under the
+        # parent's stream. Ignores any params (Terminal has no caller knobs).
         #
         # @return [Terminal]
         def for_sub_agent(**)
@@ -144,17 +105,12 @@ module Pikuri
           in Event::Reset
             println(indent(Rainbow('— context cleared —').color(85, 85, 85)))
           in Event::UserTurn | Event::Tokens | Event::ContextCap
-            # Deliberately silent: UserTurn echoes input the terminal
-            # user just typed; Tokens / ContextCap are TokenLog's
-            # business. (Non-streaming deltas no-op in their own
-            # branches above, so they never reach here.)
+            # Silent: UserTurn echoes just-typed input; Tokens/ContextCap are
+            # TokenLog's. (Non-streaming deltas no-op in their branches above.)
           else
-            # Any other event — notably a gem *domain* event (e.g.
-            # Pikuri::Code::PlanModeChanged, Tasks::ListChanged) —
-            # renders generically via its own to_s. Core needs no
-            # knowledge of the gem's type; the owning gem controls the
-            # wording. Good enough for this demo chrome; a richer host
-            # (the planned TUI) pattern-matches the variants it styles.
+            # Any other event — notably a gem *domain* event — renders via its
+            # own to_s; core needs no knowledge of the type. A richer host
+            # pattern-matches the variants it styles.
             println(indent(Rainbow("· #{event}").color(85, 85, 85)))
           end
         end
@@ -171,12 +127,9 @@ module Pikuri
 
         private
 
-        # +puts+ wrapper that also resets the streaming line-state
-        # to "at line start" — every full-line print necessarily
-        # leaves the cursor at column 0, so the next fragment
-        # printed in streaming mode knows to insert padding before
-        # its first character. Used by every branch in
-        # {#on_event} except the delta branches.
+        # +puts+ wrapper that resets the streaming line-state to "at line
+        # start" (a full-line print leaves the cursor at column 0, so the next
+        # streamed fragment knows to insert padding first).
         #
         # @param text [String]
         # @return [void]
@@ -185,12 +138,9 @@ module Pikuri
           @at_line_start = true
         end
 
-        # Emit a single newline as a stream terminator and reset
-        # the line-state. Called on {Event::Thinking} /
-        # {Event::Assistant} bookends in streaming mode, where the
-        # content has already been rendered via the delta stream
-        # and what's left to do is give the next event a clean
-        # line to start on.
+        # Emit a newline as a stream terminator and reset line-state — the
+        # {Event::Thinking}/{Event::Assistant} bookend in streaming mode, where
+        # the content already rendered via deltas.
         #
         # @return [void]
         def terminate_stream
@@ -198,16 +148,12 @@ module Pikuri
           @at_line_start = true
         end
 
-        # Print one streaming fragment to stdout *without* a
-        # trailing newline (so the next fragment continues the
-        # line) and flush so the bytes actually reach the
-        # terminal. Threads padding through any mid-fragment
-        # newlines: a fragment that contains "foo\nbar" with
-        # padding 2 prints +"  foo\n  bar"+ when the cursor was
-        # at line start.
+        # Print one streaming fragment without a trailing newline (so the next
+        # continues the line) and flush. Threads padding through mid-fragment
+        # newlines: "foo\nbar" at padding 2 from line start prints
+        # +"  foo\n  bar"+.
         #
-        # @param text [String] the fragment to emit; +nil+ / empty
-        #   short-circuits
+        # @param text [String] the fragment; +nil+/empty short-circuits
         # @return [void]
         def stream_fragment(text)
           return if text.nil? || text.empty?
@@ -228,11 +174,9 @@ module Pikuri
           $stdout.flush
         end
 
-        # Prepend +@padding+ spaces to every line of +text+. Splits
-        # on +each_line+ rather than a +gsub+ trick so a trailing
-        # newline in the input doesn't produce a stray padded blank
-        # line at the end — +puts+ adds the final newline if
-        # missing, same as before.
+        # Prepend +@padding+ spaces to every line of +text+. Uses +each_line+,
+        # not a +gsub+, so a trailing newline doesn't produce a stray padded
+        # blank line.
         #
         # @param text [String]
         # @return [String]
@@ -243,24 +187,17 @@ module Pikuri
           text.to_s.each_line.map { |line| prefix + line }.join
         end
 
-        # Flatten whitespace and cap to {MAX_TOOL_RESULT_CHARS}. The
-        # cap keeps multi-screen dumps (rendered HTML, PDF text)
-        # from drowning the terminal stream; the byte-count suffix
-        # on a truncated result distinguishes "tool returned
-        # exactly this" from "tool returned much more, you're
-        # seeing a slice."
+        # Flatten whitespace and cap to {MAX_TOOL_RESULT_CHARS}; a truncated
+        # result's byte-count suffix distinguishes "returned exactly this" from
+        # "returned much more, you're seeing a slice."
         #
-        # Whitespace is flattened *first* (collapsing real tabs, CRs and
-        # newlines into single spaces — fine here, since this passive
-        # echo is a status line, not an approval artifact), then the
-        # result runs through {Pikuri::Sanitizer} so a tool observation
-        # can't smuggle an ESC or other control byte into this cyan line.
-        # The sanitizer's warnings are dropped — they belong at a
-        # confirmation prompt, not the stream narration.
+        # Whitespace is flattened first (fine — this passive echo is a status
+        # line, not an approval artifact), then run through {Pikuri::Sanitizer}
+        # so a tool observation can't smuggle an ESC/control byte into this
+        # line. Its warnings are dropped (they belong at a confirmation prompt).
         #
         # @param content [String] tool observation
-        # @return [String] single-line display form, possibly
-        #   truncated
+        # @return [String] single-line display form, possibly truncated
         def truncate_tool_result(content)
           original_bytes = content.to_s.bytesize
           flattened = Sanitizer.sanitize(content.to_s.gsub(/\s+/, ' ').strip).text

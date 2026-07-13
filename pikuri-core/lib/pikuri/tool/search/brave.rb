@@ -7,44 +7,33 @@ require 'nokogiri'
 module Pikuri
   class Tool
     module Search
-      # Performs a Brave Search via the official Web Search API and returns
-      # the hits as a list of {Result} rows. Split into a thin HTTP fetch
-      # (#search) and a pure parser (.parse) so tests can exercise the
-      # parser against fixture JSON without hitting the network. The
-      # cascade in {Engines#search} owns the final Markdown rendering.
+      # Performs a Brave Search via the official Web Search API, returning hits
+      # as {Result} rows. Split into a thin HTTP fetch (#search) and a pure
+      # parser (.parse) so tests exercise the parser against fixture JSON.
+      # {Engines#search} owns the final Markdown rendering.
       #
-      # A class constructed with the API key it should use
-      # (+Brave.new(api_key:)+); {Engines} builds one only when a Brave key
-      # was configured and then drives it through the same +#search+ /
-      # +#label+ interface as every other provider. pikuri reads no key
-      # from the environment (see CLAUDE.md "Environment is not a secret
-      # store"). Get a key at https://api-dashboard.search.brave.com — the
-      # free "Data for Search" tier allows 1 query/sec and ~2k queries/month.
+      # Constructed with its API key (+Brave.new(api_key:)+); {Engines} builds
+      # one only when a Brave key was configured. pikuri reads no key from the
+      # environment (CLAUDE.md "Environment is not a secret store"). Key at
+      # https://api-dashboard.search.brave.com — the free "Data for Search" tier
+      # allows 1 query/sec, ~2k/month.
       #
       # == Privacy posture
       #
-      # Brave's API Privacy Notice retains Search Query Logs for 90 days
-      # (billing / troubleshooting) and states +Brave does not collect any
-      # identifiers that can link a search query to an individual or their
-      # devices+. Brave publicly commits that the Search API does not use
-      # query data to train its own models, and offers Zero Data Retention
-      # — but only on the Enterprise plan, not on the free "Data for
-      # Search" tier pikuri defaults to.
-      #
-      # Bottom line: of pikuri's three providers Brave has the cleanest
-      # API-level posture — no training-on-queries, no IP linkage, capped
-      # 90-day retention by default, real ZDR if you pay for it. Still a
-      # logged 90-day window on the cheap tier, so not a substitute for
-      # ZDR for genuinely sensitive queries.
+      # Brave's API notice retains Search Query Logs 90 days and collects no
+      # identifiers linking a query to a person; it publicly commits not to train
+      # on query data, and offers Zero Data Retention — but only on Enterprise,
+      # not the free tier pikuri defaults to. Bottom line: the cleanest
+      # API-level posture of pikuri's three providers (no training, no IP
+      # linkage, capped 90-day retention), but a logged 90-day window on the
+      # cheap tier, so not a ZDR substitute for genuinely sensitive queries.
       class Brave
         # @return [String] Web Search endpoint
         ENDPOINT = 'https://api.search.brave.com/res/v1/web/search'
-        # @return [Integer] default number of results returned, matching
-        #   {DuckDuckGo::DEFAULT_MAX_RESULTS}
+        # @return [Integer] default number of results returned.
         DEFAULT_MAX_RESULTS = 10
-        # @return [RateLimiter] free-tier Brave caps at 1 req/sec; the
-        #   5-minute cooldown protects the limited monthly quota from
-        #   being burned on doomed retries when a 429 hits.
+        # @return [RateLimiter] free-tier Brave caps at 1 req/sec; the 5-minute
+        #   cooldown protects the monthly quota from doomed retries on a 429.
         LIMITER = RateLimiter.new(min_interval: 1.0, cooldown: 300.0)
 
         # @param api_key [String] Brave Search subscription token. Required
@@ -58,31 +47,23 @@ module Pikuri
           @api_key = api_key
         end
 
-        # @return [String] short provider label for {Engines} logging /
-        #   fallback messages.
+        # @return [String] short provider label for {Engines}.
         def label
           'Brave'
         end
 
-        # Fetch results for +query+ and return them as an +Array<Result>+.
-        # Calls are throttled to one per second and circuit-broken for 5
-        # minutes on rate-limit / quota-exhausted responses; see {LIMITER}.
-        # The caller (typically {Engines#search}) is expected to have
-        # already normalized the query and to wrap this in a result cache.
+        # Fetch results for +query+ as an +Array<Result>+. Throttled to 1/sec and
+        # circuit-broken 5 min on rate-limit/quota (see {LIMITER}). The caller
+        # ({Engines#search}) normalizes the query and wraps this in a cache.
         #
         # @param query [String] search query (already normalized)
-        # @param max_results [Integer] maximum number of result entries;
-        #   passed through as Brave's +count+ (1..20)
-        # @return [Array<Result>] hits, possibly empty when Brave ran the
-        #   query and matched nothing
-        # @raise [Engines::Unavailable] when Brave returns HTTP 429
-        #   (rate limit / quota exhausted) or 5xx — "try again later"
-        #   responses the cascade in {Engines#search} can fall back
-        #   from. Also raised immediately if {LIMITER} is in cooldown.
-        #   Other non-2xx (e.g. 401/403 from a bad API key) bubble up as
-        #   +RuntimeError+ so config problems stay visible.
-        # @raise [RuntimeError] for non-rate-limit HTTP failures or when the
-        #   response shape contains no results.
+        # @param max_results [Integer] max entries; Brave's +count+ (1..20)
+        # @return [Array<Result>] hits, possibly empty when Brave matched nothing
+        # @raise [Engines::Unavailable] on HTTP 429 or 5xx (the cascade falls
+        #   back), or if {LIMITER} is in cooldown. Other non-2xx (401/403 bad
+        #   key) bubble up as +RuntimeError+.
+        # @raise [RuntimeError] for non-rate-limit HTTP failures, or a
+        #   zero-result response that isn't a recognized empty-results payload.
         def search(query, max_results: DEFAULT_MAX_RESULTS)
           LIMITER.call do
             response = Faraday.get(
@@ -102,24 +83,16 @@ module Pikuri
           end
         end
 
-        # Parse a Brave Web Search JSON response into a list of {Result} rows.
-        # HTML highlight tags (+<strong>+) inside +title+ and +description+
-        # are stripped via Nokogiri so the output is plain text.
-        #
-        # When the response yields zero result nodes, two cases are
-        # distinguished: a genuine "no results" payload (recognized search
-        # shape with empty +mixed.main+/+top+/+side+ — typically a too-narrow
-        # query Brave couldn't match) returns an empty array instead of
-        # raising, so {Engines.search} can render its standard no-results
-        # stub. Anything else (unknown layout, structured error) raises
-        # with a diagnostic so the failure surfaces.
+        # Parse a Brave JSON response into {Result} rows (+<strong>+ highlights
+        # stripped). A genuine "no results" payload (recognized search shape,
+        # empty +mixed.main/top/side+) returns +[]+ so {Engines.search} renders
+        # its stub; any other zero-result shape raises.
         #
         # @param json [String] response body from {ENDPOINT}
-        # @param max_results [Integer] maximum number of result entries
+        # @param max_results [Integer] max entries
         # @return [Array<Result>] hits, possibly empty on a recognized
         #   empty-results payload
-        # @raise [RuntimeError] when the response yields no result entries and
-        #   is not recognized as a genuine empty-results payload
+        # @raise [RuntimeError] on an unrecognized zero-result response
         def self.parse(json, max_results: DEFAULT_MAX_RESULTS)
           data = JSON.parse(json)
           results = Array(data.dig('web', 'results')).take(max_results).filter_map do |r|
@@ -142,11 +115,11 @@ module Pikuri
           results
         end
 
-        # Strip HTML markup (notably +<strong>+ highlights Brave wraps around
-        # query terms in titles and descriptions) and collapse whitespace.
+        # Strip HTML markup (notably the +<strong>+ highlights Brave wraps around
+        # query terms) and collapse whitespace.
         #
-        # @param html [String, nil] raw text from a Brave result field
-        # @return [String] plain text with tags removed; empty string for nil
+        # @param html [String, nil]
+        # @return [String] plain text; empty string for nil
         def self.strip_html(html)
           return '' if html.nil?
 
@@ -154,13 +127,10 @@ module Pikuri
         end
         private_class_method :strip_html
 
-        # True when a parsed response with zero +web.results+ entries looks
-        # like Brave's own "search ran, nothing matched" payload (typically a
-        # too-narrow query) rather than a malformed or error response. The
-        # markers are the recognized +type: "search"+ envelope and an empty
-        # +mixed+ block — Brave populates +mixed.main/top/side+ with whichever
-        # verticals matched, so all three being empty arrays is the canonical
-        # signal that the search itself succeeded but found nothing.
+        # True when a zero-+web.results+ response is Brave's own "ran, matched
+        # nothing" payload, not an error. Markers: the +type: "search"+ envelope
+        # and an empty +mixed+ block (Brave fills +mixed.main/top/side+ with
+        # matched verticals, so all three empty = succeeded-but-found-nothing).
         #
         # @param data [Hash, Object] parsed response
         # @return [Boolean]
@@ -174,13 +144,12 @@ module Pikuri
         end
         private_class_method :genuine_no_results?
 
-        # Build an error message for a parsed response that yielded zero
-        # results. Quotes Brave's +error.detail+ if present, otherwise
-        # truncates the raw body so the caller can see the actual payload.
+        # Build an error message for a zero-result response: quote Brave's
+        # +error.detail+ if present, else a truncated raw body.
         #
         # @param data [Hash, Object] parsed response
         # @param raw [String] raw response body
-        # @return [String] human-readable diagnostic to feed to +raise+
+        # @return [String] diagnostic to feed to +raise+
         def self.diagnose_empty(data, raw)
           if data.is_a?(Hash) && data['error'].is_a?(Hash)
             err = data['error']

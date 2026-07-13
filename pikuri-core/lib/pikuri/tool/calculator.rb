@@ -2,38 +2,28 @@
 
 module Pikuri
   class Tool
-    # Evaluates a basic arithmetic expression with Python operator
-    # syntax and semantics, via the hand-rolled recursive-descent
-    # {Parser} below.
+    # Evaluates a basic arithmetic expression with Python operator syntax and
+    # semantics, via the hand-rolled recursive-descent {Parser} below.
     #
-    # Why hand-rolled rather than a gem: the previous backend, dentaku,
-    # pulled in concurrent-ruby (~16k lines of Ruby — the single
-    # heaviest audit item in pikuri's whole dependency closure) plus
-    # bigdecimal and tsort, all to evaluate four-function arithmetic.
-    # The ~100 lines here implement Python's expression grammar
-    # directly, which also retires the old preprocessing step that
-    # rewrote Python's +**+ into dentaku's +^+ dialect — the model's
-    # native syntax is now simply the grammar.
+    # Hand-rolled rather than a gem: the previous backend (dentaku) pulled in
+    # concurrent-ruby (~16k lines — pikuri's single heaviest audit item) plus
+    # bigdecimal and tsort just for four-function arithmetic. The ~100 lines
+    # here implement Python's grammar directly, which also retires the old
+    # +**+→+^+ preprocessing (the model's native syntax is now the grammar).
     #
-    # Scope is intentionally narrow: operators (+, -, *, /, //, %, **),
-    # unary minus, parentheses, and integer / decimal / e-notation
-    # literals. No variables, functions, or booleans — those would mean
-    # teaching the model a dialect, which we specifically want to avoid
-    # for this tool.
+    # Scope is intentionally narrow: operators (+, -, *, /, //, %, **), unary
+    # minus, parentheses, and integer/decimal/e-notation literals. No variables,
+    # functions, or booleans — those would teach the model a dialect.
     module Calculator
-      # Raised internally for anything {.calculate} should hand back to
-      # the model as an +"Error: ..."+ observation rather than crash
-      # the agent loop: parse failures, division by zero, complex or
-      # non-finite results. The message always names the offending
-      # token or operands.
+      # Raised internally for anything {.calculate} should return as an
+      # +"Error: ..."+ observation rather than crash the loop: parse failures,
+      # division by zero, complex or non-finite results. Names the offending
+      # token/operands.
       class Error < StandardError; end
 
-      # Evaluate +expression+ and return the result formatted as a
-      # String. Parse and arithmetic failures (division by zero,
-      # overflow to infinity, complex results) are caught and returned
-      # as +"Error: ..."+ strings so the model can read the failure as
-      # the next observation and self-correct rather than crashing the
-      # agent loop.
+      # Evaluate +expression+ and return the result as a String. Parse and
+      # arithmetic failures (division by zero, overflow to infinity, complex
+      # results) come back as +"Error: ..."+ so the model self-corrects.
       #
       # @param expression [String] Python-syntax arithmetic expression
       # @return [String] numeric result, or +"Error: ..."+ on failure
@@ -48,11 +38,9 @@ module Pikuri
         "Error: #{e.message}"
       end
 
-      # Integers (never produced by division — +/+ is Python-3-style
-      # true division) pass through exact. Floats are rounded to 3
-      # places so the model sees a short readable number, and
-      # whole-valued floats drop the trailing +.0+ (+4 / 2+ renders as
-      # +"2"+, not +"2.0"+).
+      # Integers pass through exact (division never produces them — +/+ is
+      # Python-3 true division). Floats round to 3 places, and whole-valued
+      # floats drop the +.0+ (+4 / 2+ → +"2"+).
       def self.format_result(result)
         return result.to_s if result.is_a?(Integer)
 
@@ -61,8 +49,7 @@ module Pikuri
       end
       private_class_method :format_result
 
-      # Recursive-descent parser-evaluator for Python's arithmetic
-      # expression grammar:
+      # Recursive-descent parser-evaluator for Python's arithmetic grammar:
       #
       #   additive       := multiplicative (('+' | '-') multiplicative)*
       #   multiplicative := unary (('*' | '/' | '//' | '%') unary)*
@@ -70,22 +57,19 @@ module Pikuri
       #   power          := atom ('**' unary)?
       #   atom           := NUMBER | '(' additive ')'
       #
-      # The +power+ → +unary+ recursion on the right operand is what
-      # makes +**+ right-associative (+2**3**2+ is 512) and lets a sign
-      # follow it (+2**-3+); +unary+ sitting *above* +power+ on the
-      # left is what makes +-2**2+ evaluate to -4 — both exactly as
-      # Python parses them.
+      # The +power+→+unary+ recursion on the right operand makes +**+
+      # right-associative (+2**3**2+ is 512) and lets a sign follow it
+      # (+2**-3+); +unary+ *above* +power+ on the left makes +-2**2+ evaluate to
+      # -4 — both as Python parses them.
       #
-      # Semantics follow Python 3 where Ruby differs: +/+ is always
-      # true (float) division, +//+ floors, +2**-1+ is the Float 0.5
-      # (Ruby would return a Rational), and a negative base under a
-      # fractional exponent is rejected (Ruby would return a Complex).
+      # Semantics follow Python 3 where Ruby differs: +/+ is always true (float)
+      # division, +//+ floors, +2**-1+ is Float 0.5 (not a Rational), and a
+      # negative base under a fractional exponent is rejected (not a Complex).
       class Parser
-        # One number or operator. +**+ / +//+ listed before their
-        # single-character prefixes so the two-character operators win;
-        # number literals cover +42+, +4.2+, +5.+, +.5+, and e-notation
-        # on any of them. +\G+ anchors each match at the scan position
-        # so nothing between tokens goes unnoticed.
+        # One number or operator. +**+/+//+ listed before their single-char
+        # prefixes so the two-char operators win; number literals cover +42+,
+        # +4.2+, +5.+, +.5+, and e-notation. +\G+ anchors each match at the scan
+        # position so nothing between tokens is missed.
         TOKEN_RE = %r{\G\s*(\*\*|//|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|[-+*/%()])}
 
         # @param expression [String] raw expression as the model wrote it
@@ -190,11 +174,9 @@ module Pikuri
           token
         end
 
-        # +/+ is Python-3 true division (always Float); +//+ floors
-        # (kept exact in Ruby's arbitrary-precision Integer division
-        # when both operands are Integers — Ruby's +Integer#/+ already
-        # floors like Python's +//+); +%+ delegates to Ruby's +%+,
-        # whose sign-of-divisor semantics match Python's exactly.
+        # +/+ is Python-3 true division (always Float); +//+ floors (Ruby's
+        # +Integer#/+ already floors like Python's +//+ for two Integers); +%+
+        # delegates to Ruby's +%+, whose sign-of-divisor matches Python's.
         def apply_multiplicative(op, lhs, rhs)
           return lhs * rhs if op == '*'
           raise Error, 'division by zero' if rhs.zero?
@@ -206,10 +188,9 @@ module Pikuri
           end
         end
 
-        # Two Python-compatibility shims over Ruby's +**+: an Integer
-        # raised to a negative Integer yields a Float (Ruby would
-        # return a Rational), and a Complex result — negative base
-        # under a fractional exponent — is rejected loudly.
+        # Two Python-compat shims over Ruby's +**+: an Integer to a negative
+        # Integer yields a Float (Ruby → Rational), and a Complex result
+        # (negative base, fractional exponent) is rejected loudly.
         def apply_power(base, exponent)
           if base.is_a?(Integer) && exponent.is_a?(Integer) && exponent.negative?
             raise Error, 'division by zero' if base.zero?
@@ -226,10 +207,9 @@ module Pikuri
       end
     end
 
-    # Arithmetic-evaluation tool backed by {Tool::Calculator.calculate}.
-    # Accepts Python expression syntax (+, -, *, /, //, %, ** for
-    # exponentiation, unary minus, parentheses, decimals) so the model
-    # can emit the syntax it already knows.
+    # Arithmetic-evaluation tool backed by {Tool::Calculator.calculate}. Accepts
+    # Python expression syntax (+, -, *, /, //, %, **, unary minus, parentheses,
+    # decimals) so the model emits syntax it already knows.
     #
     # @return [Tool]
     CALCULATOR = new(

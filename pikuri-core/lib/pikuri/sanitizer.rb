@@ -1,73 +1,53 @@
 # frozen_string_literal: true
 
 module Pikuri
-  # Renders attacker-controlled text safe to display, and reports *why*
-  # it was unsafe.
+  # Renders attacker-controlled text safe to display, and reports *why* it was
+  # unsafe.
   #
-  # Every string an LLM composes is untrusted: a bash command, a tool
-  # observation echoed back to the user, a description it wrote for a
-  # confirmation prompt. A model that is broken — or, far more likely,
-  # being driven by a prompt injection — can embed bytes that a terminal
-  # acts on rather than prints: a carriage return that overwrites the
-  # line the user just read, an ESC that recolors or repositions, a
-  # backspace that erases, a bidirectional override that reorders text so
-  # it reads differently than it runs, a zero-width character that hides
-  # in plain sight, or a Cyrillic +а+ masquerading as a Latin +a+. The
-  # whole point of a confirmation prompt collapses if the bytes the user
-  # approves are not the bytes that execute.
+  # Every string an LLM composes is untrusted (a bash command, a tool
+  # observation echoed to the user, a confirmation-prompt description). A model
+  # — usually one being prompt-injected — can embed bytes a terminal *acts on*
+  # rather than prints: a CR that overwrites the line just read, an ESC that
+  # recolors/repositions, a backspace that erases, a bidi override that reorders
+  # text so it reads differently than it runs, a zero-width char, or a Cyrillic
+  # +а+ posing as Latin +a+. A confirmation prompt is worthless if the bytes the
+  # user approves aren't the bytes that execute.
   #
-  # {.sanitize} is the one chrome-independent primitive every renderer
-  # (terminal, TUI, web) routes through. It does two things and returns
-  # both as a {Result}:
+  # {.sanitize} is the one chrome-independent primitive every renderer routes
+  # through, returning a {Result}:
   #
-  # 1. *Neutralize* — make the dangerous bytes visible without changing
-  #    structure. Control bytes become +\xNN+, bidi/zero-width codepoints
-  #    become +\u{NNNN}+, tab becomes +\t+. Newlines are preserved
-  #    (multi-line commands are normal). This is *faithful, not
-  #    beautifying*: it never collapses runs of whitespace or rewrites a
-  #    tab to a space, because the user must see exactly what they are
-  #    approving — a Makefile's leading tab stays visibly a tab. A web
-  #    chrome composes +html_escape(sanitize(s).text)+; the HTML layer is
-  #    the caller's, not ours.
-  # 2. *Warn* — return a {Warning} per category detected, each a semantic
-  #    record (kind + offending tokens + a plain-English explanation).
-  #    Presentation is the chrome's: a terminal renders these bold yellow,
-  #    a web client a banner. The {Warning} carries no color or markup.
+  # 1. *Neutralize* — make dangerous bytes visible without changing structure:
+  #    control bytes → +\xNN+, bidi/zero-width → +\u{NNNN}+, tab → +\t+;
+  #    newlines preserved. *Faithful, not beautifying* — it never collapses
+  #    whitespace or rewrites a tab, because the user must see exactly what they
+  #    approve (a Makefile's leading tab stays a tab). A web chrome adds
+  #    +html_escape+ on top; the HTML layer is the caller's.
+  # 2. *Warn* — one {Warning} per category detected (kind + offending tokens +
+  #    plain-English explanation). Presentation is the chrome's.
   #
   # == Scope (deliberately closed)
   #
-  # Detection covers the *invisibility / cursor-control / reordering*
-  # attack classes completely, because each is a finite, enumerable set
-  # of codepoints: C0 controls, C1 controls (a second ANSI introducer on
-  # some emulators), DEL, the bidi overrides, and the zero-width
-  # characters. On top of that, {.sanitize} flags *mixed-script tokens* —
-  # a single word combining letters from Latin + Cyrillic + Greek, which
-  # is the signature of a homoglyph spoof and has near-zero false
-  # positives on real text (humans do not weld two alphabets inside one
-  # word; +café+ is all-Latin, +Москва+ all-Cyrillic, only +Pаypal+ mixes).
+  # Detection is complete on the *invisibility / cursor-control / reordering*
+  # classes, each a finite codepoint set: C0/C1 controls, DEL, bidi overrides,
+  # zero-width chars. Plus *mixed-script tokens* — one word welding Latin +
+  # Cyrillic + Greek, the homoglyph-spoof signature, near-zero false positives
+  # (+café+ all-Latin, +Москва+ all-Cyrillic, only +Pаypal+ mixes).
   #
-  # Two confusable classes are explicitly *out of scope*, because
-  # detecting them needs Unicode confusables tables and produces heavy
-  # false positives on legitimate multilingual text:
-  #
-  # * *Whole-script* homoglyphs — an entirely-Cyrillic string that merely
-  #   looks Latin (no mixing to detect).
-  # * *Single-symbol* confusables — the Greek question mark +;+ (U+037E)
-  #   that looks like a semicolon, full-width forms, the division slash.
-  #
-  # "Solid" here means complete on the classes above, not exhaustive over
-  # all of Unicode.
+  # Two confusable classes are *out of scope* — detecting them needs Unicode
+  # confusables tables and heavy false positives on legitimate multilingual
+  # text: *whole-script* homoglyphs (an all-Cyrillic string that looks Latin,
+  # no mixing to detect) and *single-symbol* confusables (the Greek +;+ U+037E,
+  # full-width forms). "Solid" means complete on the classes above, not
+  # exhaustive over Unicode.
   module Sanitizer
-    # One reason a piece of text was flagged, ready for a chrome to
-    # render however it surfaces warnings (bold yellow line, web banner).
+    # One reason a piece of text was flagged, for a chrome to render its own way.
     #
-    # * +kind+ — a {Symbol} category: +:backspace+, +:control_bytes+,
-    #   +:bidi+, +:zero_width+, or +:mixed_script+.
-    # * +offenders+ — the distinct offending tokens, in first-seen order:
-    #   the escaped forms (+"\\x1b"+, +"\\u{202e}"+) for byte categories,
-    #   the raw tokens (+"Pаypal"+) for +:mixed_script+.
-    # * +explanation+ — a one-line, chrome-agnostic English summary of
-    #   what the bytes can do.
+    # * +kind+ — a {Symbol}: +:backspace+, +:control_bytes+, +:bidi+,
+    #   +:zero_width+, or +:mixed_script+.
+    # * +offenders+ — the distinct offending tokens, first-seen order: escaped
+    #   forms (+"\\x1b"+, +"\\u{202e}"+) for byte categories, raw tokens
+    #   (+"Pаypal"+) for +:mixed_script+.
+    # * +explanation+ — a one-line chrome-agnostic summary.
     Warning = Data.define(:kind, :offenders, :explanation)
 
     # The output of {Sanitizer.sanitize}.
@@ -84,17 +64,15 @@ module Pikuri
     # zero-width no-break space.
     ZERO_WIDTH = [0x200b, 0x200c, 0x200d, 0xfeff].freeze
 
-    # Codepoints {.sanitize} rewrites: C0 controls including tab (U+0009)
-    # but *excluding* newline (U+000A, which passes through untouched),
-    # C1 controls + DEL (U+007F–009F), the zero-width set, and the bidi
-    # overrides. Newline is the one control character a faithful render
-    # must keep, so the C0 range is split around it.
+    # Codepoints {.sanitize} rewrites: C0 controls including tab (U+0009) but
+    # *excluding* newline (U+000A, passes through), C1 + DEL (U+007F–009F), the
+    # zero-width set, and the bidi overrides. Newline is the one control a
+    # faithful render keeps, so the C0 range splits around it.
     SUSPECT = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2066-\u2069\ufeff]/
 
-    # The three Latin-confusable scripts whose mixing inside one token
-    # signals a homoglyph spoof. Punctuation, digits and spaces are the
-    # +Common+ script and match none of these, so they never count toward
-    # the "two distinct scripts" threshold.
+    # The three Latin-confusable scripts whose mixing inside one token signals a
+    # homoglyph spoof. Punctuation/digits/spaces are +Common+ and match none, so
+    # they never count toward the two-script threshold.
     CONFUSABLE_SCRIPTS = { 'Latin' => /\p{Latin}/, 'Cyrillic' => /\p{Cyrillic}/, 'Greek' => /\p{Greek}/ }.freeze
 
     # Neutralize +text+ for literal display and report what was flagged.

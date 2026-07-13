@@ -2,67 +2,45 @@
 
 module Pikuri
   class Tool
-    # Truncation policy and Tool spec for the +web_scrape+ tool. The actual
-    # scraping lives in {Tool::Scraper}; this module is a thin
-    # wrapper that picks the scraper, applies a character cap so the LLM
-    # doesn't drown in long-form content, and exposes the result to the
-    # agent loop in OpenAI tool-call shape.
+    # Truncation policy and Tool spec for the +web_scrape+ tool. Scraping lives
+    # in {Tool::Scraper}; this wrapper applies a character cap and exposes the
+    # result in OpenAI tool-call shape.
     module WebScrape
-      # @return [Integer] default character cap on the Markdown returned
-      #   by {.visit}. Sized to cover most post-readability article bodies
-      #   in full on the first call, so the LLM doesn't have to re-request
-      #   with a larger cap and pollute its context with the same prefix
-      #   twice. ~5K tokens at the typical char/token ratio — light even
-      #   for small local models. The genuinely long pages (long Wikipedia
-      #   entries, multi-section docs) still get cut, and the truncation
-      #   marker invites a deliberate larger {.visit} call when needed.
+      # @return [Integer] default character cap on the Markdown from {.visit}.
+      #   Sized to cover most post-readability article bodies in full on the
+      #   first call, so the LLM doesn't re-request and duplicate the prefix in
+      #   its context. Genuinely long pages still get cut, and the marker invites
+      #   a deliberate larger call.
       DEFAULT_MAX_CHARS = 20_000
 
-      # @return [Integer] hard ceiling on the +max_chars+ argument to
-      #   {.visit}. Requests above this are clamped silently so the LLM
-      #   cannot dump an arbitrarily large page into the conversation.
+      # @return [Integer] hard ceiling on {.visit}'s +max_chars+; requests above
+      #   it are clamped silently so the LLM can't dump an arbitrarily large page.
       MAX_MAX_CHARS = 100_000
 
-      # On-disk cache used by {.visit} to memoize fetched pages. Defined
-      # as a method so specs can swap it for an isolated cache or
-      # {UrlCache::NULL} without touching the shared instance.
+      # On-disk cache for {.visit}. A method so specs can swap {UrlCache::NULL}.
       #
       # @return [UrlCache, #fetch]
       CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_scrape")
-      # Accessor for {CACHE}; specs override this to swap in
-      # {UrlCache::NULL} or an isolated cache.
+      # Accessor for {CACHE}; specs swap in {UrlCache::NULL} or an isolated cache.
       #
       # @return [UrlCache, #fetch]
       def self.cache
         CACHE
       end
 
-      # Fetch +url+ via {Tool::Scraper} and truncate the rendered
-      # Markdown to +max_chars+ characters.
+      # Fetch +url+ via {Tool::Scraper} and truncate the rendered Markdown to
+      # +max_chars+. The full Markdown is cached on disk keyed by URL (repeat
+      # visits skip the network and extraction); +max_chars+ is *not* in the key
+      # (values share one entry, truncation runs after the lookup).
+      # {Scraper::FetchError} is caught outside +cache.fetch+ and returned as
+      # +"Error: ..."+ (so the LLM can retry a different URL) — never persisted;
+      # other exceptions bubble up.
       #
-      # The full extracted Markdown is cached on disk via {.cache}, keyed
-      # by URL, so repeat visits within the cache TTL skip the network
-      # and the extraction pass entirely. +max_chars+ is not part of the
-      # cache key — different values for the same URL share one entry,
-      # and truncation runs after the cache lookup.
-      #
-      # {Tool::Scraper::FetchError} (HTTP non-2xx, network failure,
-      # redirect-loop, missing +Location+ header) is caught and returned
-      # as +"Error: ..."+ in the calculator-style convention so the agent
-      # loop feeds the failure back to the model as the next observation
-      # instead of crashing — the LLM can then try a different URL or
-      # search again. The rescue lives outside {.cache}'s +fetch+ block,
-      # so failure strings are never persisted: a retry on the next call
-      # hits the network again. Other exceptions (parser bugs in our own
-      # code) bubble up unchanged.
-      #
-      # @param url [String] absolute HTTP(S) URL of the page to download
-      # @param max_chars [Integer] character cap on the returned Markdown.
-      #   Clamped to +[1, {MAX_MAX_CHARS}]+; defaults to
-      #   {DEFAULT_MAX_CHARS}. When the full page exceeds the cap, output
-      #   is cut and a marker noting the original length is appended.
-      # @return [String] Markdown representation of the page, possibly
-      #   truncated, or +"Error: ..."+ on a recoverable fetch failure
+      # @param url [String] absolute HTTP(S) URL
+      # @param max_chars [Integer] Markdown cap, clamped to +[1, {MAX_MAX_CHARS}]+;
+      #   default {DEFAULT_MAX_CHARS}. Over the cap, output is cut with a marker.
+      # @return [String] Markdown, possibly truncated, or +"Error: ..."+ on a
+      #   recoverable fetch failure
       def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
         max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
         markdown = cache.fetch(url) { Scraper.visit(url) }
@@ -71,12 +49,11 @@ module Pikuri
         "Error: #{e.message}"
       end
 
-      # Cut +markdown+ to at most +max_chars+ characters, appending a
-      # marker describing the original length when truncation actually
-      # happens. Returns +markdown+ unchanged if it already fits.
+      # Cut +markdown+ to at most +max_chars+, appending a marker with the
+      # original length when truncation happens.
       #
       # @param markdown [String] full Markdown text
-      # @param max_chars [Integer] character cap; assumed already clamped
+      # @param max_chars [Integer] cap; assumed already clamped
       # @return [String]
       def self.truncate(markdown, max_chars)
         return markdown if markdown.length <= max_chars
@@ -87,9 +64,8 @@ module Pikuri
       end
     end
 
-    # Webpage download + Markdown conversion tool. Thin wrapper over
-    # {Tool::WebScrape.visit} that exposes it to the agent loop in OpenAI
-    # tool-call shape.
+    # Webpage download + Markdown conversion tool — a thin wrapper over
+    # {Tool::WebScrape.visit} in OpenAI tool-call shape.
     #
     # @return [Tool]
     WEB_SCRAPE = new(

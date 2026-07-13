@@ -7,23 +7,18 @@ module Pikuri
     module Search
       # Thread-safe pacing + circuit-breaker wrapper for a search provider.
       #
-      # +#call { ... }+ enforces a minimum interval between consecutive
-      # invocations of the block (sleeping if the previous one was too
-      # recent), and watches for {Engines::Unavailable} raised by the
-      # block: when that happens, a cooldown deadline is recorded and
-      # further calls within the window raise {Engines::Unavailable}
-      # immediately without invoking the block. This stops a provider
-      # that has been rate-limited or bot-blocked from being hammered
-      # with retries.
+      # +#call { ... }+ enforces a minimum interval between block invocations
+      # (sleeping if the previous was too recent) and watches for
+      # {Engines::Unavailable}: on one, a cooldown deadline is recorded and
+      # further calls within the window raise {Engines::Unavailable} immediately
+      # without running the block — so a rate-limited or bot-blocked provider
+      # isn't hammered with retries.
       #
-      # The mutex is held across the block, so concurrent callers
-      # serialize — matching the behavior {DuckDuckGo} has always
-      # required to keep its IP-spacing throttle correct under
-      # concurrent agents.
-      #
-      # Uses wall-clock {Time.now} rather than the monotonic clock; the
-      # intervals here are 1s–5min, well above any realistic NTP step,
-      # and {Time.now} keeps tests trivially fakeable with Timecop.
+      # The mutex is held across the block, so concurrent callers serialize —
+      # what {DuckDuckGo} needs to keep its IP-spacing throttle correct under
+      # concurrent agents. Uses wall-clock {Time.now}, not monotonic: the
+      # intervals (1s–5min) are well above any NTP step, and {Time.now} keeps
+      # tests fakeable with Timecop.
       class RateLimiter
         # @param min_interval [Float] minimum seconds between consecutive
         #   block invocations. {#call} sleeps if a previous call was more
@@ -39,19 +34,15 @@ module Pikuri
           @cooldown_until = nil
         end
 
-        # Run the given block subject to throttle and cooldown rules.
+        # Run the block subject to the throttle and cooldown rules, with the
+        # mutex held (only one block runs at a time per limiter). If it raises
+        # {Engines::Unavailable}, cooldown is armed and the exception re-raised;
+        # any other exception bubbles up without arming cooldown.
         #
-        # The block is invoked with the mutex held, so concurrent calls
-        # serialize: only one block runs at a time per limiter instance.
-        # If the block raises {Engines::Unavailable}, the cooldown is
-        # armed and the exception is re-raised. Any other exception
-        # bubbles up without arming cooldown — only "try again later"
-        # signals from the provider are treated as backoff triggers.
-        #
-        # @yieldreturn [Object] block's return value is passed through
+        # @yieldreturn [Object] passed through
         # @return [Object] whatever the block returned
-        # @raise [Engines::Unavailable] either re-raised from the block,
-        #   or raised directly when the limiter is currently in cooldown
+        # @raise [Engines::Unavailable] re-raised from the block, or raised
+        #   directly when the limiter is in cooldown
         def call
           @mutex.synchronize do
             now = Time.now
@@ -75,12 +66,11 @@ module Pikuri
           end
         end
 
-        # Sleep for +seconds+. Isolated as a private method so tests can
-        # override it on a single instance (typically to advance a frozen
-        # Timecop clock by the same amount) without monkey-patching the
+        # Sleep for +seconds+. A private method so tests can override it on one
+        # instance (to advance a frozen Timecop clock) without monkey-patching
         # global +sleep+.
         #
-        # @param seconds [Float] non-negative duration to sleep
+        # @param seconds [Float] non-negative duration
         # @return [void]
         def sleep_for(seconds)
           sleep(seconds)

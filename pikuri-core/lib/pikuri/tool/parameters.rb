@@ -71,22 +71,13 @@ module Pikuri
         add(name, 'string', description, required: false)
       end
 
-      # Add a required +array+-of-+string+ property — JSON-Schema
-      # +{type: 'array', items: {type: 'string'}}+. The LLM sends a
-      # native JSON array in the tool-call arguments (the shape its
-      # training data overwhelmingly uses for list-valued parameters),
-      # so there is no in-band encoding for it to get wrong.
-      # The value must arrive as an Array — no
-      # JSON-encoded-array-in-a-string fallback. Element coercion
-      # mirrors the scalar fields' one documented leniency, in
-      # reverse: Integers and finite Floats are converted to their
-      # +to_s+ form (a model emitting +["Fix issue 12", 42]+ meant a
-      # string list — the conversion is unambiguous), while booleans,
-      # +nil+, and nested structures are rejected — those signal a
-      # genuinely wrong call shape, not a representational quirk.
-      # An empty array is type-valid; rejecting it (if the tool needs
-      # at least one element) is the tool's job, with a tool-specific
-      # error message.
+      # Add a required +array+-of-+string+ property (+{type: 'array', items:
+      # {type: 'string'}}+). The value must arrive as a native JSON Array — no
+      # JSON-in-a-string fallback. Element coercion mirrors the scalars in
+      # reverse: Integers and finite Floats become their +to_s+ (a model
+      # emitting +["Fix issue 12", 42]+ meant a string list), while booleans,
+      # +nil+, and nested structures are rejected. An empty array is type-valid
+      # — rejecting it is the tool's job.
       #
       # @param name [Symbol] property name
       # @param description [String] human-readable description shown to the LLM
@@ -205,20 +196,18 @@ module Pikuri
         { type: 'object', properties: @properties, required: @required }
       end
 
-      # Validate a tool-call argument hash against the declared schema. Returns
-      # a symbol-keyed hash safe to splat as kwargs into a tool's +execute+
-      # Proc; raises {ValidationError} with an LLM-actionable message listing
-      # every missing/unknown/mistyped field and reprinting the schema.
+      # Validate a tool-call argument hash against the schema. Returns a
+      # symbol-keyed hash safe to splat as kwargs into a tool's +execute+;
+      # raises {ValidationError} with an LLM-actionable message listing every
+      # missing/unknown/mistyped field and reprinting the schema. Strict:
+      # unknown keys rejected (with DidYouMean suggestions), wrong types
+      # rejected, all issues collected so the LLM fixes them in one round trip.
       #
-      # Strict: unknown keys are rejected (with DidYouMean suggestions), wrong
-      # types are rejected. All issues are collected and reported together so
-      # the LLM can fix them in one round trip.
-      #
-      # @param args [Hash] arguments as decoded from the tool-call JSON; keys
-      #   may be Strings or Symbols
+      # @param args [Hash] arguments decoded from the tool-call JSON; keys may
+      #   be Strings or Symbols
       # @return [Hash{Symbol=>Object}] validated, symbol-keyed arguments
-      # @raise [ValidationError] if +args+ is not a Hash, contains unknown
-      #   keys, omits a required key, or has a value of the wrong type
+      # @raise [ValidationError] if +args+ isn't a Hash, has unknown keys, omits
+      #   a required key, or has a wrong-typed value
       def validate(args)
         raise ValidationError, "Arguments must be an object, got #{args.class}." unless args.is_a?(Hash)
 

@@ -4,88 +4,62 @@ require 'open3'
 require 'set'
 
 module Pikuri
-  # Chokepoint for *all* subprocess spawning in pikuri. Forces a new
-  # process group for each invocation, tracks pgids so descendants of
-  # the direct child (commands backgrounded with +&+) can be cleaned
-  # up at process exit. Two front doors: {.spawn} (combined
-  # stdout+stderr through a single pipe — the shell-command shape) and
-  # {.run} (stdin fed from a String or streamed from an IO, stdout
-  # redirected to a file, stderr captured — the filter shape).
+  # Chokepoint for *all* subprocess spawning in pikuri. Forces a new process
+  # group per invocation and tracks pgids so descendants (commands
+  # backgrounded with +&+) can be cleaned up at exit. Two front doors:
+  # {.spawn} (combined stdout+stderr through one pipe — the shell-command
+  # shape) and {.run} (stdin from a String/IO, stdout to a file, stderr
+  # captured — the filter shape).
   #
   # == Seam discipline
   #
-  # All subprocess spawning in +lib/+ goes through {.spawn}. Direct
-  # +Process.spawn+ / +Open3.*+ / +system+ / backticks anywhere in
-  # +lib/+ are bugs. The convention is grep-enforceable:
-  # +grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' lib/+ should
-  # only hit this file (plus the comment in
-  # +pikuri-mcp/lib/pikuri/mcp/servers.rb+ explaining the MCP
-  # exception).
+  # All subprocess spawning in +lib/+ goes through {.spawn}/{.run}; direct
+  # +Process.spawn+ / +Open3.*+ / +system+ / backticks are bugs.
+  # Grep-enforceable: +grep -rnE 'Process\.spawn|Open3\.|\bsystem\(' lib/+
+  # should hit only this file (plus the MCP-exception comment in
+  # +pikuri-mcp/lib/pikuri/mcp/servers.rb+).
   #
   # == Timeouts are the caller's job
   #
-  # {.spawn} does not implement a timeout — Ruby's +Timeout.timeout+
-  # cannot kill subprocesses cleanly. Callers that need a timeout
-  # wrap their argv with coreutils' +timeout+ binary:
+  # {.spawn} implements no timeout — Ruby's +Timeout.timeout+ can't kill
+  # subprocesses cleanly. Callers wrap their argv with coreutils' +timeout+:
   #
   #   Pikuri::Subprocess.spawn(
   #     'timeout', '--signal=TERM', '--kill-after=5s', '120s',
-  #     'bash', '-c', command,
-  #     chdir: workspace.cwd.to_s
-  #   )
+  #     'bash', '-c', command, chdir: workspace.cwd.to_s)
   #
-  # When +timeout+ and its FD-inheriting children die, the combined
-  # output pipe closes and {#wait}'s +io.read+ returns. No Ruby-side
-  # timeout machinery; the +timeout+ binary handles SIGTERM-then-
-  # SIGKILL race-free.
+  # When +timeout+ and its FD-inheriting children die, the output pipe closes
+  # and {#wait}'s +io.read+ returns — +timeout+ handles the
+  # SIGTERM-then-SIGKILL race-free, no Ruby-side machinery.
   #
   # == Backgrounded subprocesses
   #
-  # When a shell command backgrounds work with +&+, the resulting
-  # process stays in our pgroup. {#wait} returns as soon as the
-  # direct child exits, but {.active} keeps the pgid in the tracked
-  # set as long as any process in the group is alive (probed with
-  # +kill(0, -pgid)+). On pikuri exit, {.cleanup!} sends SIGTERM to
-  # every tracked group. The model can opt out via +nohup cmd &+ or
-  # +setsid cmd &+ — both detach from our group.
+  # A command that backgrounds work with +&+ leaves a process in our pgroup.
+  # {#wait} returns when the direct child exits, but {.active} keeps the pgid
+  # tracked while any group member is alive (+kill(0, -pgid)+); {.cleanup!}
+  # SIGTERMs every tracked group at exit. The model opts out with +nohup+ /
+  # +setsid+ (both detach from our group).
   #
   # == State is process-global
   #
-  # One +@active+ Set for the whole process, swept once at exit via
-  # {Pikuri::Finalizers} (see the registration at the bottom of this
-  # file). A +Mutex+ guards register/prune/cleanup; v1 is
-  # single-threaded, so this is more for the exit-sweep/register race
-  # than for current callers.
-  #
-  # == Why +Pikuri::Subprocess+, not top-level
-  #
-  # First class actually under the +Pikuri::+ namespace. Domain
-  # classes (+Tool+, +Agent+, +URLCache+) are top-level as a legacy
-  # convention — they predate the namespacing decision and an
-  # eventual refactor moves them too. For now: library-level
-  # infrastructure under +Pikuri::+; domain objects flat. See
-  # +CLAUDE.md+ for the convention.
+  # One +@active+ Set for the process, swept once at exit via
+  # {Pikuri::Finalizers}. A +Mutex+ guards register/prune/cleanup.
   class Subprocess
     # Combined output + exit status, returned from {#wait}.
     Result = Data.define(:output, :status)
 
-    # Spawn +argv+ in a new process group, redirecting stderr onto
-    # stdout. Tracked for cleanup.
+    # Spawn +argv+ in a new process group with stderr on stdout. Tracked for
+    # cleanup.
     #
-    # @param argv [Array<String>] command and arguments. Caller does
-    #   any shell wrapping (e.g. +'bash', '-c', cmd+) when shell
-    #   interpretation is wanted; +argv+ is passed to +exec+
-    #   directly, so no implicit shell expansion happens here.
+    # @param argv [Array<String>] command + arguments, passed to +exec+
+    #   directly — no implicit shell (caller wraps in +'bash', '-c', cmd+ when
+    #   shell interpretation is wanted).
     # @param chdir [String, Pathname] working directory
-    # @param env [Hash{String=>String}] extra environment variables to
-    #   set in the child process. The child otherwise inherits the
-    #   parent's full environment; entries in +env+ override or add to
-    #   it. Default +{}+ (pure inheritance). Used by {Code::Bash} to
-    #   thread {Pikuri::Workspace::Filesystem#env} (host git identity,
-    #   etc.) into a bash subprocess whose sandbox would otherwise
-    #   strip the host's config files.
-    # @return [Subprocess] handle — call {#wait} to block for the
-    #   direct child to exit and read the captured output
+    # @param env [Hash{String=>String}] extra env vars for the child; it
+    #   otherwise inherits the parent's full environment (default +{}+, pure
+    #   inheritance). {Code::Bash} uses it to thread host git identity into a
+    #   sandboxed bash whose config files would otherwise be stripped.
+    # @return [Subprocess] handle — call {#wait} to block and read output.
     def self.spawn(*argv, chdir:, env: {})
       stdin, io, wait_thr = Open3.popen2e(env, *argv, chdir: chdir.to_s, pgroup: true)
       stdin.close
@@ -93,43 +67,32 @@ module Pikuri
       new(io: io, wait_thr: wait_thr)
     end
 
-    # Run +argv+ as a one-shot *filter*: feed it +stdin_data+, redirect
-    # its stdout straight to +stdout+ (an open +File+), capture stderr
-    # through a pipe, and block until it exits. Built for the
-    # stdin→markdown document converters (pikuri-extractors), where
-    # {.spawn}'s shape is wrong twice over: it closes the child's stdin
-    # immediately, and it merges stderr onto stdout — fatal when stdout
-    # *is* the payload and a converter's warnings would corrupt it.
+    # Run +argv+ as a one-shot *filter*: feed it +stdin_data+, redirect stdout
+    # to +stdout+ (an open +File+), capture stderr through a pipe, block until
+    # it exits. Built for the stdin→markdown converters (pikuri-extractors),
+    # where {.spawn}'s shape is wrong twice: it closes stdin immediately and
+    # merges stderr onto stdout — fatal when stdout *is* the payload.
     #
-    # Redirecting stdout to a file (not a pipe) is also what makes the
-    # I/O deadlock-free with one writer thread: the child never blocks
-    # writing output, so it keeps draining stdin, while the parent
-    # drains the (low-volume) stderr pipe. The returned
-    # {Result#output} is the captured *stderr* — the diagnostics — not
-    # the payload; the payload is in +stdout+, whose file offset is
-    # shared with the child, so rewind before reading it back.
+    # Redirecting stdout to a file (not a pipe) is what makes the I/O
+    # deadlock-free with one writer thread: the child never blocks on output,
+    # so it keeps draining stdin while the parent drains the low-volume stderr
+    # pipe. {Result#output} is the captured *stderr*, not the payload — the
+    # payload is in +stdout+, whose file offset is shared with the child, so
+    # rewind before reading it back. Same discipline as {.spawn} (new group,
+    # exit-sweep tracked, no built-in timeout).
     #
-    # Same discipline as {.spawn}: new process group, registered for
-    # the exit sweep, no built-in timeout (wrap +argv+ with coreutils'
-    # +timeout+ — see the class docs).
-    #
-    # @param argv [Array<String>] command and arguments, passed to
-    #   +exec+ directly — no implicit shell.
-    # @param stdin_data [String, IO, StringIO] the child's stdin: a
-    #   String is written as-is, an IO is streamed through
-    #   +IO.copy_stream+ (so a large source file never materialises in
-    #   the Ruby heap) and read from its current position. Either way
-    #   stdin is closed (EOF) afterwards. May be empty.
-    # @param stdout [File] open writable file the child's stdout is
-    #   redirected to.
+    # @param argv [Array<String>] command + arguments; no implicit shell.
+    # @param stdin_data [String, IO, StringIO] the child's stdin: a String is
+    #   written as-is, an IO is streamed via +IO.copy_stream+ from its current
+    #   position (so a large file never hits the Ruby heap). Closed (EOF)
+    #   after. May be empty.
+    # @param stdout [File] open writable file stdout is redirected to.
     # @param chdir [String, Pathname] working directory.
-    # @param env [Hash{String=>String}] extra environment variables,
-    #   as for {.spawn}.
-    # @return [Result] +output+ is the captured stderr; +status+ the
-    #   child's exit status.
-    # @raise [SystemCallError] whatever an IO +stdin_data+ raises
-    #   mid-stream (disk error, closed handle) — re-raised here after
-    #   the child has been reaped.
+    # @param env [Hash{String=>String}] extra env vars, as for {.spawn}.
+    # @return [Result] +output+ is the captured stderr; +status+ the exit
+    #   status.
+    # @raise [SystemCallError] whatever an IO +stdin_data+ raises mid-stream,
+    #   re-raised after the child is reaped.
     def self.run(*argv, stdin_data:, stdout:, chdir:, env: {})
       in_r, in_w = IO.pipe
       err_r, err_w = IO.pipe
@@ -169,9 +132,8 @@ module Pikuri
     #   child was spawned with +pgroup: true+ (it's the group leader).
     attr_reader :pgid
 
-    # @return [IO] read end of the combined stdout+stderr pipe.
-    #   Exposed for future live-streaming consumers; v1 callers go
-    #   straight to {#wait}, which drains it.
+    # @return [IO] read end of the combined stdout+stderr pipe. Callers
+    #   normally go straight to {#wait}, which drains it.
     attr_reader :io
 
     # @api private — call {.spawn}, not the constructor.
@@ -182,10 +144,9 @@ module Pikuri
       @pgid     = wait_thr.pid # pgroup:true → pgid == pid
     end
 
-    # Block until the direct child exits, read whatever remains on
-    # the combined-output pipe, return a {Result}. The pgid stays
-    # tracked if the group still has live members (backgrounded
-    # children); pruned if everything's gone.
+    # Block until the direct child exits, drain the combined-output pipe,
+    # return a {Result}. The pgid stays tracked if the group still has live
+    # members (backgrounded children); pruned if everything's gone.
     #
     # @return [Result]
     def wait
@@ -196,13 +157,11 @@ module Pikuri
       self.class.send(:prune, @pgid)
     end
 
-    # SIGTERM the whole process group without blocking for output —
-    # the stop button for a *daemon* child (one the caller never
-    # {#wait}s on, e.g. {Pikuri::Memory::Mem0Server}'s socat relay).
-    # Best-effort and idempotent: an already-dead group is a no-op.
-    # The group stays in the exit-sweep set until it actually dies,
-    # so a child that ignores SIGTERM is still re-signalled by
-    # {.cleanup!} at process exit.
+    # SIGTERM the whole process group without blocking for output — the stop
+    # button for a *daemon* child (one the caller never {#wait}s on, e.g.
+    # {Pikuri::Memory::Mem0Server}'s socat relay). Best-effort and idempotent;
+    # the group stays in the exit-sweep set until it dies, so a child ignoring
+    # SIGTERM is re-signalled by {.cleanup!} at exit.
     #
     # @return [void]
     def terminate
@@ -214,9 +173,8 @@ module Pikuri
     end
 
     class << self
-      # Currently-tracked process groups, with dead ones pruned as a
-      # side effect. Useful for a future +/bg+ REPL command or a
-      # between-turn status line.
+      # Currently-tracked process groups, with dead ones pruned as a side
+      # effect.
       #
       # @return [Array<Integer>]
       def active
@@ -227,8 +185,7 @@ module Pikuri
       end
 
       # SIGTERM every tracked process group. Run at process exit via
-      # {Pikuri::Finalizers} (production) and from +after+ blocks
-      # (specs). Best-effort — ignores errors from already-dead groups.
+      # {Pikuri::Finalizers}, and from specs' +after+ blocks. Best-effort.
       #
       # @return [void]
       def cleanup!
@@ -261,10 +218,8 @@ module Pikuri
   end
 end
 
-# Registered at load (boot) — before any agent or server registers at
-# construction time — so in {Pikuri::Finalizers}' LIFO sweep this runs
-# LAST: graceful +#close+ on agents and servers first, then SIGTERM
-# whatever child groups are still alive. The reaper, not a peer. (Was a
-# standalone +at_exit+; routed through Finalizers so the order relative
-# to every other teardown is controlled, not left to file load order.)
+# Registered at load (boot) — before any agent/server registers at
+# construction — so in {Pikuri::Finalizers}' LIFO sweep this runs LAST:
+# graceful +#close+ on agents and servers first, then SIGTERM whatever child
+# groups remain. The reaper, not a peer.
 Pikuri::Finalizers.register { Pikuri::Subprocess.cleanup! }

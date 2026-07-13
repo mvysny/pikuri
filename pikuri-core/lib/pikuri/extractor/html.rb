@@ -9,42 +9,32 @@ module Pikuri
   module Extractor
     # HTML → Markdown extractor.
     #
-    # Matched by content-type only (+text/html+ /
-    # +application/xhtml+xml+) — deliberately no byte sniff. The web
-    # path always has the header; for local files a sniff would route
-    # +Workspace::Read+ of an +.html+ source file through readability
-    # extraction, when a developer reading an HTML file wants the
-    # source. Local HTML stays on the {Passthrough} arm until a
-    # consumer genuinely needs otherwise.
+    # Matched by content-type only (+text/html+ / +application/xhtml+xml+) —
+    # no byte sniff: the web path always has the header, and sniffing would
+    # route a +Workspace::Read+ of a local +.html+ *source* file through
+    # readability when the developer wants the source. Local HTML stays on the
+    # {Passthrough} arm.
     #
-    # Always renders both views of the page when available:
+    # Renders both views when available, concatenated with a horizontal rule,
+    # so the LLM gets structured metadata and rendered body and picks whichever
+    # fits:
     #
-    # 1. JSON-LD section. Any +<script type="application/ld+json">+ node
-    #    whose +@type+ matches a substantive schema.org content type
-    #    (Product, Article, Recipe, ...) is rendered as a header — title,
-    #    metadata bullets (brand, SKU, price, rating, author, published),
-    #    and the +articleBody+/+description+ copy when present.
-    # 2. Readability section. The page is run through +Readability+ +
-    #    +reverse_markdown+, with a +<main>+/+<article>+ fallback for
-    #    pages whose content sits mostly outside +<p>+ tags.
+    # 1. JSON-LD — the first +<script type="application/ld+json">+ node whose
+    #    +@type+ is a substantive schema.org type ({INTERESTING_TYPES}),
+    #    rendered as title + metadata bullets + body copy.
+    # 2. Readability — +Readability+ + +reverse_markdown+, with a
+    #    +<main>+/+<article>+ fallback for pages whose content sits outside
+    #    +<p>+ tags.
     #
-    # Concatenated with a horizontal rule, so the LLM gets both the
-    # structured metadata and the rendered body and can pick whichever
-    # is more useful for the task. Trades some duplication (when a
-    # publisher embeds the article body in JSON-LD AND in HTML) for
-    # fewer type-based heuristics on which branch should win — the
-    # earlier "is this Article's +description+ a teaser or the real
-    # body?" carve-out is no longer needed because both end up in
-    # the output regardless.
+    # Emitting both trades some duplication (a body embedded in JSON-LD *and*
+    # HTML) for dropping type-based "teaser or real body?" heuristics.
     module HTML
       # @return [Array<String>] content-types this extractor claims.
       CONTENT_TYPES = %w[text/html application/xhtml+xml].freeze
 
-      # @return [Array<String>] schema.org +@type+ values that we treat
-      #   as "the primary entity of this page" when picking a JSON-LD
-      #   node to render. Order does not matter — the first matching
-      #   node wins. Skips noise nodes (Organization, BreadcrumbList,
-      #   WebSite, ...) that ship on most pages but carry no page
+      # @return [Array<String>] schema.org +@type+ values treated as the page's
+      #   primary entity when picking a JSON-LD node (first match wins). Skips
+      #   noise nodes (Organization, BreadcrumbList, WebSite) that carry no
       #   content.
       INTERESTING_TYPES = %w[
         Product Article NewsArticle BlogPosting Recipe Event Book Movie
@@ -63,20 +53,16 @@ module Pikuri
       #   is dropped before Markdown conversion
       READABILITY_ATTRS = %w[href src alt title].freeze
 
-      # @return [Float] minimum +<main>+/+<article>+ to Readability
-      #   text-length ratio that triggers the semantic-container
-      #   fallback in {.readability_to_markdown}. Picked low enough to
-      #   catch the failure mode (Readability collapsing a page that
-      #   uses divs/lists instead of +<p>+ — e.g. +vaadin.com/company+,
-      #   ~5x) but high enough that pages where both produce
-      #   comparable output keep Readability's noise filtering.
+      # @return [Float] minimum +<main>+/+<article>+-to-Readability text-length
+      #   ratio that triggers the semantic-container fallback in
+      #   {.readability_to_markdown}. Low enough to catch Readability collapsing
+      #   a div/list-based page (vaadin.com/company, ~5x), high enough to keep
+      #   its noise filtering where both outputs are comparable.
       MAIN_FALLBACK_RATIO = 2.0
 
-      # @return [Integer] minimum text length the
-      #   +<main>+/+<article>+ container must hold before the fallback
-      #   in {.readability_to_markdown} can fire. Below this, the
-      #   ratio comparison is dominated by noise and we'd swap on
-      #   tiny pages where Readability is doing the right thing.
+      # @return [Integer] minimum text length the +<main>+/+<article>+ container
+      #   must hold before the {.readability_to_markdown} fallback can fire —
+      #   below it the ratio is noise-dominated and would swap on tiny pages.
       MAIN_FALLBACK_MIN_CHARS = 500
 
       # @return [Symbol] {Page#kind} tag.
@@ -92,12 +78,9 @@ module Pikuri
         CONTENT_TYPES.include?(content_type)
       end
 
-      # Render the HTML document behind +io+ as Markdown by emitting
-      # both the JSON-LD section (when an interesting node is present)
-      # and the readability / +<main>+ section, joined by a horizontal
-      # rule. Either section may be missing — pages with no JSON-LD
-      # return only the readability output, and a malformed page with
-      # no extractable body returns only the JSON-LD render.
+      # Render the HTML behind +io+ as Markdown: the JSON-LD section (when an
+      # interesting node is present) and the readability/+<main>+ section,
+      # joined by a horizontal rule. Either may be missing.
       #
       # @param io [IO, StringIO] IO over the HTML document.
       # @return [String] Markdown representation
@@ -108,22 +91,13 @@ module Pikuri
         sections.join("\n\n---\n\n")
       end
 
-      # Pick the first JSON-LD node whose +@type+ matches one of
-      # {INTERESTING_TYPES} and render it as Markdown. Returns +nil+
-      # when no such node exists, in which case {.extract} emits only
-      # the readability section.
-      #
-      # No content-field gating: a node carrying just +name+/+author+/
-      # +datePublished+ still renders (as a metadata-only header),
-      # because the readability pass independently produces the page
-      # body. That is the trade-off that lets us drop the type-based
-      # "is this teaser or article copy?" heuristics — duplication is
-      # acceptable when both views are available, and the LLM can
-      # pick whichever it needs.
+      # Pick the first JSON-LD node whose +@type+ is in {INTERESTING_TYPES} and
+      # render it. +nil+ when none matches. No content-field gating — a
+      # metadata-only node (name/author/date) still renders, since the
+      # readability pass independently produces the body.
       #
       # @param html [String] HTML document body
-      # @return [String, nil] Markdown render of the picked JSON-LD
-      #   node, or +nil+ when nothing matched
+      # @return [String, nil] Markdown render, or +nil+ when nothing matched
       def self.jsonld_section(html)
         node = parse_jsonld(html).find do |n|
           Array(n['@type']).any? { |t| INTERESTING_TYPES.include?(t) }
@@ -131,14 +105,12 @@ module Pikuri
         node ? jsonld_to_markdown(node) : nil
       end
 
-      # Collect every JSON-LD payload embedded in +html+, flattening
-      # +@graph+ wrappers so callers see one flat array of schema.org
-      # nodes. Malformed JSON blocks are silently skipped — sites
-      # frequently ship broken JSON-LD and we only need at least one
-      # parseable block.
+      # Collect every JSON-LD payload in +html+, flattening +@graph+ wrappers
+      # into one flat array. Malformed JSON blocks are skipped (sites ship
+      # broken JSON-LD; one parseable block suffices).
       #
       # @param html [String] HTML document body
-      # @return [Array<Hash>] parsed JSON-LD nodes; possibly empty
+      # @return [Array<Hash>] parsed nodes; possibly empty
       def self.parse_jsonld(html)
         doc = Nokogiri::HTML(html)
         blobs = doc.css('script[type="application/ld+json"]').map(&:text)
@@ -156,18 +128,12 @@ module Pikuri
         end
       end
 
-      # Render a single JSON-LD +node+ as Markdown: a top-level title
-      # from +name+/+headline+, a bullet list of common useful fields
-      # (brand, SKU, price, rating, author, published date, ...), the
-      # body copy, and the lead image.
+      # Render a JSON-LD +node+ as Markdown: title from +name+/+headline+, a
+      # bullet list of common fields (brand, SKU, price, rating, author, date),
+      # body copy, and the lead image. +articleBody+ wins over +description+
+      # (the description is usually a lede teaser).
       #
-      # When the node carries +articleBody+ (the full publisher-supplied
-      # article text), that wins over +description+ — the description
-      # is typically a lede teaser and would just repeat the article's
-      # opening lines.
-      #
-      # @param node [Hash] JSON-LD node, typically picked by
-      #   {.jsonld_section}
+      # @param node [Hash] JSON-LD node
       # @return [String] Markdown representation
       def self.jsonld_to_markdown(node)
         out = +''
@@ -212,19 +178,13 @@ module Pikuri
         out
       end
 
-      # Run +Readability+ over +html+ to isolate the main content node,
-      # then convert that to Markdown via +reverse_markdown+. The page
-      # +<title>+ is rendered as a top-level heading.
-      #
-      # When the page uses semantic HTML5 (+<main>+ or +<article>+) but
-      # leaves most of its content outside +<p>+ tags — divs, lists,
-      # spans — Readability's paragraph-density scoring collapses the
-      # extraction to a sliver of the page. In that case we render the
-      # +<main>+/+<article>+ container directly. The fallback only
-      # fires when the container holds substantially more text than
-      # Readability picked up (see {MAIN_FALLBACK_RATIO} /
-      # {MAIN_FALLBACK_MIN_CHARS}); on pages where both agree we keep
-      # Readability so its noise filtering still strips nav/ads/etc.
+      # Run +Readability+ over +html+, convert to Markdown via
+      # +reverse_markdown+, +<title>+ as a top-level heading. When the page
+      # uses HTML5 semantics (+<main>+/+<article>+) but leaves content outside
+      # +<p>+ tags, Readability's paragraph-density scoring collapses the
+      # extraction; then the container is rendered directly. The fallback fires
+      # only when the container holds substantially more text (see
+      # {MAIN_FALLBACK_RATIO} / {MAIN_FALLBACK_MIN_CHARS}).
       #
       # @param html [String] HTML document body
       # @return [String] Markdown representation
@@ -247,20 +207,14 @@ module Pikuri
         out
       end
 
-      # If +html+ has a +<main>+ or +<article>+ element holding
-      # substantially more text than Readability extracted, return that
-      # container's HTML so the caller can render it instead. Returns
-      # +nil+ when the fallback should not fire — when there is no
-      # semantic container, when it's too small to be meaningful, or
-      # when Readability's output is already comparable.
+      # Return the +<main>+/+<article>+ container's HTML when it holds
+      # substantially more text than Readability extracted, else +nil+ (no
+      # container, too small, or Readability comparable).
       #
-      # @param html [String] full HTML document body, used to locate
-      #   the +<main>+/+<article>+ container
-      # @param readability_html [String] HTML produced by
-      #   +Readability::Document#content+, used as the comparison
-      #   baseline
-      # @return [String, nil] container HTML when the fallback should
-      #   fire, +nil+ otherwise
+      # @param html [String] full HTML document body
+      # @param readability_html [String] +Readability::Document#content+ output,
+      #   the comparison baseline
+      # @return [String, nil] container HTML when the fallback should fire
       def self.main_fallback_html(html, readability_html)
         doc = Nokogiri::HTML(html)
         container = doc.at_css('main') || doc.at_css('article')
@@ -276,20 +230,19 @@ module Pikuri
       end
       private_class_method :main_fallback_html
 
-      # JSON-LD fields can be a string, hash, or array of either.
-      # Normalize to a single hash (the first one if it's a list) so
-      # callers can +.dig+ safely.
+      # Normalize a JSON-LD field (string, hash, or array of either) to a single
+      # hash (first if a list) so callers can +.dig+ safely.
       #
       # @param value [Object] raw JSON-LD field value
-      # @return [Hash] empty hash when +value+ does not contain a hash
+      # @return [Hash] empty hash when +value+ contains no hash
       def self.first_obj(value)
         value = value.first if value.is_a?(Array)
         value.is_a?(Hash) ? value : {}
       end
       private_class_method :first_obj
 
-      # Same idea as {.first_obj} but preserves a bare string (e.g.
-      # +brand: "Apple"+) instead of replacing it with +{}+.
+      # Like {.first_obj} but preserves a bare string (e.g. +brand: "Apple"+)
+      # instead of replacing it with +{}+.
       #
       # @param value [Object] raw JSON-LD field value
       # @return [String, Hash, nil]

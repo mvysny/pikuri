@@ -3,55 +3,40 @@
 require 'ruby_llm'
 
 module Pikuri
-  # Local corrections to ruby_llm, applied at load time, that we carry
-  # until the equivalent fix ships upstream.
-  #
-  # Each patch here is a liability: it pins us to the private shape of a
-  # ruby_llm internal, so it must be small, self-contained, and tied to a
-  # tracked upstream issue so we know when to delete it. Reopening a
-  # third-party class is the tool of last resort — used here only because
-  # the defect is on the live chat path (a streaming turn crashes) and the
-  # release cadence is not ours to control.
+  # Local corrections to ruby_llm, applied at load time, carried until the fix
+  # ships upstream. Each patch pins us to a ruby_llm internal's private shape, so
+  # it's a liability: small, self-contained, tied to a tracked upstream issue so
+  # we know when to delete it. Reopening a third-party class is last resort —
+  # here only because the defect is on the live chat path and the release cadence
+  # isn't ours.
   #
   # == The streaming error-parse crash (ruby_llm #837)
   #
   # {https://github.com/crmne/ruby_llm/issues/837}
   #
-  # On a *streaming* turn, a non-200 response whose body parses to a JSON
-  # value that is not a Hash (e.g. a bare JSON string — what some
-  # OpenAI-compatible gateways return for "model not available in your
-  # region") crashes ruby_llm 1.16.0 with +TypeError: String does not have
-  # #dig method+ at +providers/openai/streaming.rb:43+, instead of
-  # surfacing the endpoint's actual error message. Two distinct bodies
-  # trigger the same crash, both because the method assumes the error is a
-  # nested object it can +.dig+ into:
+  # On a *streaming* turn, a non-200 response whose body parses to a non-Hash
+  # JSON value crashes ruby_llm 1.16.0 with +TypeError: String does not have
+  # #dig+ at +providers/openai/streaming.rb:43+, instead of surfacing the
+  # endpoint's error. Two bodies trigger it, both because the method assumes a
+  # nested object to +.dig+:
   #
-  # 1. A bare JSON string body (e.g. +"...not available..."+). The guard
-  #    +return unless error_data['error']+ is meant as a key-presence
-  #    check, but on a +String+ that is +String#[]+ *substring* matching,
-  #    so a body containing the substring +error+ slips past it into
-  #    +.dig+, which +String+ doesn't implement.
-  # 2. A +{"error": "<message>"}+ body where +error+ is a *string value*
-  #    (xAI/Grok's shape), not a nested object. The guard passes, then
-  #    +error_data.dig('error', 'type')+ recurses into the string and
-  #    calls +String#dig+ — the same +TypeError+.
+  # 1. A bare JSON string. The guard +return unless error_data['error']+ is
+  #    meant as key-presence, but on a +String+ that's substring matching, so a
+  #    body containing "error" slips through into +.dig+.
+  # 2. A +{"error": "<message>"}+ body where +error+ is a string value
+  #    (xAI/Grok), not an object: the guard passes, then
+  #    +error_data.dig('error', 'type')+ calls +String#dig+ — same +TypeError+.
   #
-  # The non-streaming path (+RubyLLM::Provider#parse_error+) already
-  # handles both gracefully by casing on Hash/Array/else and short-
-  # circuiting a string +error+ value (+return error if error.is_a?(String)+).
-  # This patch mirrors that logic: it never +.dig+s something that isn't a
-  # Hash, and hands a non-typed error up as the message with a +nil+
-  # status so ruby_llm's own +build_stream_error_response+ falls back to
-  # the real HTTP status (+env.status+) for classification.
+  # The non-streaming path already handles both (cases on Hash/Array/else,
+  # short-circuits a string +error+). This mirrors that: never +.dig+ a non-Hash,
+  # hand a non-typed error up as the message with a +nil+ status so ruby_llm's
+  # +build_stream_error_response+ falls back to the real HTTP status.
   #
-  # We redefine the whole method (rather than +prepend+ + +super+) because
-  # it is a small, self-contained +module_function+ with no state — a
-  # faithful reproduction plus the missing guard is clearer than wrapping
-  # a call to the buggy original. Re-running +module_function+ replaces
-  # both the module method and the private instance-method copy that the
-  # provider picks up via +include+ (the shape it is actually called
-  # through). Delete this file once #837 is released and the gem pin moves
-  # past it.
+  # Redefined whole (not +prepend+ + +super+) because it's a small self-contained
+  # +module_function+ with no state — faithful reproduction plus the guard is
+  # clearer than wrapping the buggy original. Re-running +module_function+
+  # replaces both the module method and the private copy the provider gets via
+  # +include+. Delete this file once #837 ships and the gem pin moves past it.
   module RubyLlmPatches
     module_function
 

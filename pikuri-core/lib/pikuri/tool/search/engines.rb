@@ -2,72 +2,55 @@
 
 module Pikuri
   class Tool
-    # Namespace for the web-search stack used by {Tool::WebSearch}: per-
-    # provider modules ({DuckDuckGo}, {Brave}, {Exa}), the {Result} value
-    # object they all return, the cross-provider {Engines} cascade with
-    # its on-disk cache, and the shared {RateLimiter} a provider can wire
-    # in to back off when a quota header says so.
+    # Namespace for the web-search stack behind {Tool::WebSearch}: per-provider
+    # modules ({DuckDuckGo}, {Brave}, {Exa}), the {Result} they return, the
+    # {Engines} cascade with its on-disk cache, and the shared {RateLimiter}.
     module Search
-      # Search-orchestration object: the cascade across configured
-      # providers, the result cache, and the {Unavailable} protocol marker
-      # the cascade uses to fall back. The LLM-facing tool itself is built
-      # by {Tool::WebSearch.build}, which constructs one of these and wires
-      # its {#search} into a {Tool}. Each {Tool::Search} provider module
-      # ({DuckDuckGo}, {Brave}, {Exa}) raises {Unavailable} when it wants
-      # the cascade to try the next one.
+      # Search-orchestration object: the cascade across configured providers,
+      # the result cache, and the {Unavailable} marker the cascade falls back
+      # on. {Tool::WebSearch.build} constructs one and wires its {#search} into
+      # a {Tool}. Each provider raises {Unavailable} to hand off to the next.
       #
       # == Provider keys are constructor config, not environment
       #
-      # Brave and Exa are paid and need an API key; DuckDuckGo needs none.
-      # An {Engines} is constructed with the keys it should use
-      # (+brave_key:+ / +exa_key:+, both optional) — pikuri reads no key
-      # from the environment, so the only providers in the cascade are
-      # DuckDuckGo plus whichever keyed providers the host actually
-      # configured. The host sources those keys however it likes (the
-      # bundled +bin/+ examples load a JSON config file by convention); see
-      # CLAUDE.md "Environment is not a secret store".
+      # Brave and Exa are paid and need a key; DuckDuckGo needs none. An
+      # {Engines} is built with the keys it should use (+brave_key:+ /
+      # +exa_key:+, both optional) — pikuri reads no key from the environment,
+      # so the cascade is DuckDuckGo plus whichever keyed providers the host
+      # configured. See CLAUDE.md "Environment is not a secret store".
       class Engines
-        # Subsystem logger; set its level with +PIKURI_LOG_ENGINES+
-        # (e.g. +PIKURI_LOG_ENGINES=debug+) or the global +PIKURI_LOG+.
+        # Subsystem logger; level via +PIKURI_LOG_ENGINES+ or +PIKURI_LOG+.
         #
         # @return [Logger]
         LOGGER = Pikuri.logger_for('Engines')
 
-        # Raised by a provider when it is temporarily unavailable (rate-limited,
-        # bot-blocked, quota-exhausted, or otherwise saying "try again later"
-        # rather than "your request is wrong"). The cascade in {#search}
-        # catches this and tries the next provider; any other exception bubbles
-        # up unchanged so genuine bugs and config errors stay visible.
+        # Raised by a provider that is temporarily unavailable (rate-limited,
+        # bot-blocked, quota-exhausted — "try again later", not "your request is
+        # wrong"). The {#search} cascade catches it and tries the next provider;
+        # anything else bubbles up so genuine bugs stay visible.
         class Unavailable < StandardError; end
 
-        # Process-shared on-disk cache backing {#search}'s default. Kept at
-        # class level (not per-instance) so every engine dedupes answered
-        # queries into one directory; the constructor's +cache:+ parameter
-        # injects a different store for tests. Exposed as a method so specs
-        # can swap it for {UrlCache::NULL} without touching the instance.
+        # Process-shared on-disk cache backing {#search}, at class level so every
+        # engine dedupes into one directory; the constructor's +cache:+ injects a
+        # different store for tests.
         #
         # @return [UrlCache, #fetch]
         CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/web_search")
-        # Accessor for {CACHE}, used as the constructor's +cache:+ default;
-        # specs override this to swap in {UrlCache::NULL}.
+        # Accessor for {CACHE}, the constructor's +cache:+ default; specs swap in
+        # {UrlCache::NULL}.
         #
         # @return [UrlCache, #fetch]
         def self.cache
           CACHE
         end
 
-        # Builds the provider cascade once: {DuckDuckGo} always (no key
-        # needed), plus {Brave} / {Exa} when their key was supplied
-        # (non-blank). Each keyed provider is constructed with its key, so
-        # from here on every provider is just an object answering +#search+
-        # / +#label+ — the cascade in {#search} treats them uniformly.
+        # Build the provider cascade once: {DuckDuckGo} always, plus {Brave} /
+        # {Exa} when their key is non-blank. From here each provider is just an
+        # object answering +#search+/+#label+.
         #
-        # @param brave_key [String, nil] Brave Search subscription token;
-        #   non-blank ⇒ Brave joins the cascade. +nil+/blank ⇒ not configured.
-        # @param exa_key [String, nil] Exa API key; non-blank ⇒ Exa joins the
-        #   cascade. +nil+/blank ⇒ not configured.
-        # @param cache [UrlCache, #fetch] result store memoizing answered
-        #   queries; defaults to the process-shared {.cache}.
+        # @param brave_key [String, nil] Brave token; non-blank ⇒ Brave joins.
+        # @param exa_key [String, nil] Exa key; non-blank ⇒ Exa joins.
+        # @param cache [UrlCache, #fetch] result store; defaults to {.cache}.
         # @return [Engines]
         def initialize(brave_key: nil, exa_key: nil, cache: self.class.cache)
           @providers = [DuckDuckGo.new]
@@ -77,41 +60,26 @@ module Pikuri
           @last_logged_providers = nil
         end
 
-        # The provider instances this engine cascades across, in
-        # declaration order (the cascade itself shuffles them per call).
-        #
-        # @return [Array<#search, #label>] configured provider instances
+        # @return [Array<#search, #label>] configured provider instances, in
+        #   declaration order (the cascade shuffles them per call).
         attr_reader :providers
 
-        # Run +query+ through the configured providers in random order, falling
-        # back to the next one each time a provider raises {Unavailable}. The
-        # shuffle spreads load so a single provider isn't always hit first
-        # (and exhausted first); revisit if it stops being the right default.
+        # Run +query+ through the providers in random order, falling back on each
+        # {Unavailable}. The shuffle spreads load so one provider isn't always
+        # hit (and exhausted) first. The query is whitespace-normalized first;
+        # the winning provider's +Array<Result>+ is rendered to Markdown and
+        # cached on disk keyed by the cleaned query (a hit short-circuits the
+        # cascade). +max_results+ is *not* in the cache key, so a non-default
+        # value may return a previously-cached size.
         #
-        # The query is whitespace-trimmed and runs of whitespace collapsed
-        # to a single space before the cascade runs. The winning provider's
-        # +Array<Result>+ is rendered into smolagents-style Markdown here
-        # (+"## Search Results"+ header, then +[title](url)\nbody+ entries
-        # joined by blank lines; an empty array becomes +"No results found."+),
-        # and the rendered Markdown is cached on disk via {#initialize}'s
-        # +cache:+, keyed by the cleaned query. A cache hit short-circuits the
-        # cascade entirely (and benefits whichever provider would have
-        # answered next time too — once a query is cached, the cooldown state
-        # of the original answering provider no longer matters). +max_results+
-        # is not part of the cache key, so callers passing a non-default value
-        # may get a result rendered with the previously-cached size.
-        #
-        # If every provider reports temporary unavailability, returns an
-        # +"Error: ..."+ string instead of raising — same convention as
-        # {Tool::Calculator.calculate}, so the agent loop can feed the failure
-        # back to the model as the next observation. Any non-{Unavailable}
-        # exception (network error, parser failure, malformed response, bad
-        # API key) bubbles up to the caller.
+        # If every provider is unavailable, returns an +"Error: ..."+ string
+        # (the tool convention) rather than raising. Any non-{Unavailable}
+        # exception (network, parser, bad key) bubbles up.
         #
         # @param query [String] search query
-        # @param max_results [Integer] maximum number of result entries
-        # @return [String] Markdown-formatted result list, or +"Error: ..."+
-        #   when all providers are exhausted
+        # @param max_results [Integer] maximum result entries
+        # @return [String] Markdown result list, or +"Error: ..."+ when all
+        #   providers are exhausted
         # @raise [ArgumentError] if the query is empty after normalization
         def search(query, max_results:)
           cleaned = query.to_s.strip.gsub(/\s+/, ' ')
@@ -134,9 +102,8 @@ module Pikuri
               failures << "#{provider.label} (#{e.message})"
             end
             # Raise so {UrlCache#fetch} does NOT persist the all-unavailable
-            # message — otherwise that string would block every future search
-            # for this query until the TTL expires. The outer +rescue+ turns
-            # the raise back into the calculator-style "Error: …" string.
+            # message — else it would block every future search for this query
+            # until the TTL expires. The outer rescue turns it into "Error: …".
             chosen or raise Unavailable, "all search providers temporarily unavailable: #{failures.join('; ')}"
 
             LOGGER.info do
@@ -152,26 +119,23 @@ module Pikuri
 
         private
 
-        # Render an +Array<Result>+ into the smolagents-style Markdown the
-        # LLM consumes: +"## Search Results"+ header, then +[title](url)\nbody+
-        # entries joined by blank lines. An empty array becomes the
-        # +"No results found."+ stub so the agent still gets a real
-        # observation to act on.
+        # Render an +Array<Result>+ into the smolagents-style Markdown the LLM
+        # consumes (+"## Search Results"+ header, then +[title](url)\nbody+
+        # joined by blank lines). Empty → the +"No results found."+ stub.
         #
         # @param results [Array<Result>] hits from the winning provider
-        # @return [String] Markdown-formatted result list
+        # @return [String] Markdown result list
         def render(results)
           return "## Search Results\n\nNo results found." if results.empty?
 
           "## Search Results\n\n" + results.map { |r| "[#{r.title}](#{r.url})\n#{r.body}" }.join("\n\n")
         end
 
-        # Emit an INFO log line listing the currently-available providers,
-        # but only when the set differs from the last one this engine
-        # logged. The memo keeps the log to one line per distinct
-        # configuration rather than one per search.
+        # INFO-log the currently-available providers, but only when the set
+        # differs from the last logged — one line per distinct configuration,
+        # not per search.
         #
-        # @param current [Array<#label>] providers returned by {#providers}
+        # @param current [Array<#label>] providers from {#providers}
         # @return [void]
         def log_providers(current)
           return if @last_logged_providers == current

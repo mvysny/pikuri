@@ -2,33 +2,26 @@
 
 module Pikuri
   class Tool
-    # Truncation policy and Tool spec for the +fetch+ tool. The HTTP work
-    # lives in {Tool::Scraper.fetch}; this module is a thin
-    # wrapper that accepts only textual content-types, applies a character
-    # cap so the LLM doesn't drown in long-form bodies, and exposes the
-    # result to the agent loop in OpenAI tool-call shape.
-    #
-    # Sister of {Tool::WebScrape}, but with no extraction pass
-    # (HTML→Markdown, or whatever plug-in extractors are registered):
-    # bodies are returned verbatim. Useful for raw textual
-    # data — JSON APIs, CSV files, +robots.txt+, sitemaps, source files —
-    # where any rendering pass would corrupt the payload.
+    # Truncation policy and Tool spec for the +fetch+ tool. HTTP work lives in
+    # {Tool::Scraper.fetch}; this wrapper accepts only textual content-types,
+    # applies a character cap, and exposes the result in OpenAI tool-call shape.
+    # Sister of {Tool::WebScrape} but with no extraction pass — bodies are
+    # returned verbatim, for raw textual data (JSON APIs, CSV, +robots.txt+,
+    # sitemaps, source files) where a rendering pass would corrupt the payload.
     module Fetch
-      # @return [Integer] default character cap on the body returned by
-      #   {.fetch}. Smaller than {Tool::WebScrape::DEFAULT_MAX_CHARS}
-      #   because fetch's content profile is bimodal — most JSON/XML/CSV
-      #   responses are tiny, and the long-tail (large data dumps) is
+      # @return [Integer] default character cap on the body from {.fetch}.
+      #   Smaller than {Tool::WebScrape::DEFAULT_MAX_CHARS} because fetch's
+      #   content is bimodal — most JSON/XML/CSV is tiny, and large dumps are
       #   better re-requested deliberately than padded into every default.
       DEFAULT_MAX_CHARS = 5_000
 
-      # @return [Integer] hard ceiling on the +max_chars+ argument to
-      #   {.fetch}. Matches {Tool::WebScrape::MAX_MAX_CHARS}.
+      # @return [Integer] hard ceiling on {.fetch}'s +max_chars+; matches
+      #   {Tool::WebScrape::MAX_MAX_CHARS}.
       MAX_MAX_CHARS = 100_000
 
-      # Application content-types that are textual in practice and so
-      # safe to return verbatim to the LLM, despite their +application/+
-      # prefix making them fail the +text/*+ check. Anything outside
-      # +text/*+ and this allowlist is refused.
+      # Application content-types that are textual in practice, so safe to
+      # return verbatim despite failing the +text/*+ check. Anything outside
+      # +text/*+ and this list is refused.
       # @return [Array<String>]
       TEXTUAL_APPLICATION_TYPES = %w[
         application/json
@@ -39,50 +32,33 @@ module Pikuri
         application/atom+xml
       ].freeze
 
-      # On-disk cache used by {.fetch} to memoize downloads. Defined as a
-      # method so specs can swap it for an isolated cache or
-      # {UrlCache::NULL} without touching the shared instance. Lives in
-      # its own subdir under {UrlCache::ROOT_DIR} so a +fetch+ on a URL
-      # and a +web_scrape+ on the same URL cannot collide on the same
-      # cache file (one returns the raw body, the other returns extracted
-      # Markdown).
+      # On-disk cache for {.fetch}, in its own subdir so a +fetch+ and a
+      # +web_scrape+ on the same URL don't collide (raw body vs extracted
+      # Markdown). A method so specs can swap {UrlCache::NULL}.
       #
       # @return [UrlCache, #fetch]
       CACHE = UrlCache.new(ttl: UrlCache::DEFAULT_TTL, dir: "#{UrlCache::ROOT_DIR}/fetch")
-      # Accessor for {CACHE}; specs override this to swap in
-      # {UrlCache::NULL} or an isolated cache.
+      # Accessor for {CACHE}; specs swap in {UrlCache::NULL} or an isolated cache.
       #
       # @return [UrlCache, #fetch]
       def self.cache
         CACHE
       end
 
-      # Download +url+ via {Tool::Scraper.fetch} and return the
-      # response body verbatim, provided the content-type is one we deem
-      # textual (any +text/*+, plus the formats listed in
-      # {TEXTUAL_APPLICATION_TYPES}). Anything else — PDFs, images, other
-      # binaries — produces an +"Error: ..."+ string in the calculator-
-      # style convention so the agent loop feeds the failure back to the
-      # model as the next observation.
+      # Download +url+ via {Tool::Scraper.fetch} and return the body verbatim,
+      # if the content-type is textual (any +text/*+ plus
+      # {TEXTUAL_APPLICATION_TYPES}); anything else (PDF, image, binary) yields
+      # an +"Error: ..."+ string. Cached on disk keyed by URL; +max_chars+ is
+      # *not* in the key (values share one entry, truncation runs after the
+      # lookup). Cached only on success — {Scraper::FetchError} is caught
+      # outside +cache.fetch+, so failures are never persisted; other
+      # exceptions bubble up.
       #
-      # The body is cached on disk via {.cache}, keyed by URL, so repeat
-      # fetches within the cache TTL skip the network. +max_chars+ is not
-      # part of the cache key — different values for the same URL share
-      # one entry, and truncation runs after the cache lookup. The cache
-      # is only populated on success: {Scraper::FetchError} (HTTP non-2xx,
-      # network failure, redirect-loop exhaustion, refused content-type)
-      # is caught outside the +cache.fetch+ block, so failure strings are
-      # never persisted and a retry on the next call hits the network
-      # again. Other exceptions (parser bugs in our own code) bubble up
-      # unchanged.
-      #
-      # @param url [String] absolute HTTP(S) URL to download
-      # @param max_chars [Integer] character cap on the returned body.
-      #   Clamped to +[1, {MAX_MAX_CHARS}]+; defaults to
-      #   {DEFAULT_MAX_CHARS}. When the body exceeds the cap, output is
-      #   cut and a marker noting the original length is appended.
-      # @return [String] response body, possibly truncated, or
-      #   +"Error: ..."+ on a recoverable failure
+      # @param url [String] absolute HTTP(S) URL
+      # @param max_chars [Integer] body cap, clamped to +[1, {MAX_MAX_CHARS}]+;
+      #   default {DEFAULT_MAX_CHARS}. Over the cap, output is cut with a marker.
+      # @return [String] body, possibly truncated, or +"Error: ..."+ on a
+      #   recoverable failure
       def self.fetch(url, max_chars: DEFAULT_MAX_CHARS)
         max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
         body = cache.fetch(url) { download(url) }
@@ -91,15 +67,13 @@ module Pikuri
         "Error: #{e.message}"
       end
 
-      # GET +url+ and verify the response's content-type is textual.
-      # Caller is responsible for caching and truncation; this method
-      # always hits the network.
+      # GET +url+ and verify the content-type is textual. Always hits the
+      # network (caller caches/truncates).
       #
       # @param url [String]
       # @return [String] response body
-      # @raise [Scraper::FetchError] on HTTP non-2xx, network failure,
-      #   redirect-loop exhaustion, missing +Location+ on a 3xx, or a
-      #   non-textual content-type
+      # @raise [Scraper::FetchError] on HTTP non-2xx, network failure, redirect
+      #   exhaustion, missing +Location+, or a non-textual content-type
       def self.download(url)
         fetched = Scraper.fetch(url)
         return fetched.body if textual?(fetched.content_type)
@@ -109,23 +83,18 @@ module Pikuri
               'is not textual (use web_scrape for rendered pages)'
       end
 
-      # @param content_type [String] normalized content-type (no +charset+
-      #   parameter, lowercased) as produced by {Scraper.fetch}
-      # @return [Boolean] true when the content-type is +text/*+ or one
-      #   of {TEXTUAL_APPLICATION_TYPES}
+      # @param content_type [String] normalized content-type from {Scraper.fetch}
+      # @return [Boolean] true when +text/*+ or in {TEXTUAL_APPLICATION_TYPES}
       def self.textual?(content_type)
         content_type.start_with?('text/') ||
           TEXTUAL_APPLICATION_TYPES.include?(content_type)
       end
 
-      # Cut +body+ to at most +max_chars+ characters, appending a marker
-      # describing the original length when truncation actually happens.
-      # Returns +body+ unchanged if it already fits. Same shape as
-      # {Tool::WebScrape.truncate} so the LLM sees a consistent
-      # truncation marker across both tools.
+      # Cut +body+ to at most +max_chars+, appending a marker with the original
+      # length when truncation happens. Same shape as {Tool::WebScrape.truncate}.
       #
       # @param body [String] full response body
-      # @param max_chars [Integer] character cap; assumed already clamped
+      # @param max_chars [Integer] cap; assumed already clamped
       # @return [String]
       def self.truncate(body, max_chars)
         return body if body.length <= max_chars
@@ -136,11 +105,9 @@ module Pikuri
       end
     end
 
-    # Verbatim URL download tool. Thin wrapper over {Tool::Fetch.fetch}
-    # that exposes it to the agent loop in OpenAI tool-call shape. Use for
-    # raw textual payloads (JSON APIs, CSV files, +robots.txt+, source
-    # files); use {Tool::WEB_SCRAPE} for rendered web pages where
-    # readability extraction makes the result usable.
+    # Verbatim URL download tool — a thin wrapper over {Tool::Fetch.fetch} in
+    # OpenAI tool-call shape. Use for raw textual payloads (JSON, CSV,
+    # +robots.txt+, source files); use {Tool::WEB_SCRAPE} for rendered pages.
     #
     # @return [Tool]
     FETCH = new(

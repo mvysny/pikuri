@@ -7,71 +7,51 @@ require 'uri'
 module Pikuri
   class Tool
     module Search
-      # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+ and
-      # returns the hits as a list of {Result} rows. Split into a thin HTTP
-      # fetch (#search) and a pure parser (.parse) so tests can exercise
-      # the parser against fixture HTML without hitting the network. The
-      # cascade in {Engines#search} owns the final Markdown rendering.
-      #
-      # A class (constructed with no arguments) so it shares the uniform
-      # provider shape with the keyed {Brave} / {Exa}: {Engines} holds a
-      # list of provider *instances* and calls +#search+ / +#label+ on each
-      # without caring which is which.
+      # Performs a DuckDuckGo search by scraping +html.duckduckgo.com+, returning
+      # hits as {Result} rows. Split into a thin HTTP fetch (#search) and a pure
+      # parser (.parse) so tests exercise the parser against fixture HTML.
+      # {Engines#search} owns the final Markdown rendering. Constructed with no
+      # arguments, sharing the uniform +#search+/+#label+ provider shape with the
+      # keyed {Brave} / {Exa}.
       #
       # == Privacy posture
       #
-      # DuckDuckGo's privacy policy states +We don't save your IP address
-      # or any unique identifiers alongside your searches+ and +We have
-      # never sold any personal information+, and they proxy requests on
-      # the user's behalf so downstream content providers can't build a
-      # per-user search history. That part is real — but DDG is mainly a
-      # relay over Bing for web results, so the *query content* still
-      # reaches Microsoft for fulfillment even though DDG strips
-      # identifying info on the way out.
-      #
-      # Bottom line: DDG is a genuine privacy improvement over hitting
-      # Bing directly (your IP isn't tied to the query, no per-user
-      # profile is built on DDG's side), but query content still lands at
-      # Microsoft, who has no comparable no-training pledge. Better than
-      # Exa for sensitive queries, worse than Brave; for anything
-      # genuinely embarrassing, don't search the web at all.
+      # DDG doesn't save your IP or tie a per-user profile to queries, and
+      # proxies requests so downstream providers can't build a search history —
+      # real, but DDG relays web results over Bing, so *query content* still
+      # reaches Microsoft (who has no no-training pledge). Better than Exa for
+      # sensitive queries, worse than Brave; for anything genuinely embarrassing,
+      # don't search the web at all.
       class DuckDuckGo
         # @return [String] HTML search endpoint
         ENDPOINT = 'https://html.duckduckgo.com/html/'
         # @return [String] User-Agent sent with each request; DDG often rejects
-        #   requests with no UA or an obvious bot UA
+        #   a missing or obviously-bot UA.
         USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' \
                      '(KHTML, like Gecko) Chrome/120.0 Safari/537.36'
-        # @return [Integer] default number of results returned, matching smolagents
+        # @return [Integer] default number of results returned.
         DEFAULT_MAX_RESULTS = 10
         # @return [RateLimiter] paces calls (DDG bans IPs that hammer the HTML
-        #   endpoint) and circuit-breaks on {Engines::Unavailable} so a
-        #   soft-block response doesn't get retried for the next 5 minutes
+        #   endpoint) and circuit-breaks 5 min on {Engines::Unavailable}.
         LIMITER = RateLimiter.new(min_interval: 2.0, cooldown: 300.0)
 
-        # @return [String] short provider label for {Engines} logging /
-        #   fallback messages. Uniform across providers (see {Brave#label}).
+        # @return [String] short provider label for {Engines}.
         def label
           'DuckDuckGo'
         end
 
-        # Fetch results for +query+ and return them as an +Array<Result>+.
-        # Calls are throttled to one every 2s and circuit-broken for 5 minutes
-        # after a soft-block; see {LIMITER}. The caller (typically
-        # {Engines#search}) is expected to have already normalized the
-        # query and to wrap this in a result cache.
+        # Fetch results for +query+ as an +Array<Result>+. Throttled to one every
+        # 2s and circuit-broken 5 min after a soft-block (see {LIMITER}). The
+        # caller ({Engines#search}) normalizes the query and wraps this in a cache.
         #
         # @param query [String] search query (already normalized)
-        # @param max_results [Integer] maximum number of result entries
-        # @return [Array<Result>] hits, possibly empty when DDG ran the
-        #   query and matched nothing
-        # @raise [Engines::Unavailable] when DDG soft-blocks the IP
-        #   (anomaly/CAPTCHA page) or returns HTTP 429/5xx — i.e. "try again
-        #   later" responses the cascade in {Engines#search} can fall
-        #   back from. Also raised immediately if {LIMITER} is in cooldown.
-        # @raise [RuntimeError] if the HTTP call fails for other reasons or
-        #   the empty-results page is in an unrecognized layout. A genuine
-        #   empty-results page is *not* an error; see {.parse}.
+        # @param max_results [Integer] max result entries
+        # @return [Array<Result>] hits, possibly empty when DDG matched nothing
+        # @raise [Engines::Unavailable] on a soft-block (anomaly/CAPTCHA page) or
+        #   HTTP 429/5xx (the cascade falls back), or if {LIMITER} is in cooldown.
+        # @raise [RuntimeError] on other HTTP failures or an unrecognized
+        #   empty-results layout. A genuine empty-results page is not an error;
+        #   see {.parse}.
         def search(query, max_results: DEFAULT_MAX_RESULTS)
           LIMITER.call do
             response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
@@ -87,28 +67,18 @@ module Pikuri
           end
         end
 
-        # Parse a +html.duckduckgo.com+ result page into a list of {Result}
-        # rows. +<b>+ highlights inside snippets are stripped.
-        #
-        # When the page has zero result nodes, two cases are distinguished:
-        # a genuine "no results" page (narrow query, DDG's own "No results
-        # found" indicator) returns an empty array instead of raising, so
-        # {Engines.search} can render its standard no-results stub.
-        # Anything else (anomaly modal, CAPTCHA, service-unavailable page,
-        # unknown layout) raises with the diagnostic text extracted from
-        # the body, so an IP soft-block is surfaced rather than silently
+        # Parse a +html.duckduckgo.com+ result page into {Result} rows (+<b>+
+        # highlights stripped). On zero result nodes: a genuine "no results" page
+        # returns +[]+ (so {Engines.search} renders its stub); the anomaly/CAPTCHA
+        # modal raises {Engines::Unavailable}; anything else raises {RuntimeError}
+        # (likely a layout change) — so an IP soft-block surfaces rather than
         # masquerading as an empty search.
         #
-        # @param html [String] HTML document body from html.duckduckgo.com
-        # @param max_results [Integer] maximum number of result entries
-        # @return [Array<Result>] hits, possibly empty on a genuine
-        #   no-results page
-        # @raise [Engines::Unavailable] when the page is the DDG
-        #   anomaly/CAPTCHA modal (IP soft-block) — a "try again later" the
-        #   cascade can fall back from.
-        # @raise [RuntimeError] when the page contains no result nodes and is
-        #   not recognized as either a genuine no-results page or the
-        #   anomaly modal (likely a layout change worth surfacing loudly).
+        # @param html [String] HTML from html.duckduckgo.com
+        # @param max_results [Integer] max result entries
+        # @return [Array<Result>] hits, possibly empty on a genuine no-results page
+        # @raise [Engines::Unavailable] on the anomaly/CAPTCHA modal (IP soft-block)
+        # @raise [RuntimeError] on zero results with an unrecognized layout
         def self.parse(html, max_results: DEFAULT_MAX_RESULTS)
           doc = Nokogiri::HTML(html)
           results = doc.css('div.result.web-result').take(max_results).filter_map do |node|
@@ -133,25 +103,22 @@ module Pikuri
           results
         end
 
-        # True when the page contains DDG's anomaly/CAPTCHA modal — i.e. the
-        # IP has been soft-blocked. Used by {.parse} to pick between
-        # {Engines::Unavailable} (recoverable, fall back to another
-        # provider) and {RuntimeError} (unknown layout, surface loudly).
+        # True when the page is DDG's anomaly/CAPTCHA modal (IP soft-blocked).
+        # {.parse} uses it to pick {Engines::Unavailable} (recoverable) over
+        # {RuntimeError} (unknown layout).
         #
-        # @param doc [Nokogiri::HTML::Document] parsed result page
+        # @param doc [Nokogiri::HTML::Document]
         # @return [Boolean]
         def self.anomaly_modal?(doc)
           !!(doc.at_css('.anomaly-modal__title') || doc.at_css('.anomaly-modal__description'))
         end
         private_class_method :anomaly_modal?
 
-        # True when a results page with zero result nodes looks like DDG's own
-        # "no results found" page (narrow query) rather than an anomaly/CAPTCHA
-        # or other non-results layout. Anomaly modal wins: if the modal divs
-        # are present we never treat the page as a genuine empty result, even
-        # if the surrounding text happens to mention "No results".
+        # True when a zero-node page is DDG's own "no results found" page, not an
+        # anomaly/CAPTCHA. Anomaly wins: if the modal divs are present it's never
+        # a genuine empty result, even if the text mentions "No results".
         #
-        # @param doc [Nokogiri::HTML::Document] parsed result page
+        # @param doc [Nokogiri::HTML::Document]
         # @return [Boolean]
         def self.genuine_no_results?(doc)
           return false if doc.at_css('.anomaly-modal__title') || doc.at_css('.anomaly-modal__description')
@@ -161,14 +128,12 @@ module Pikuri
         end
         private_class_method :genuine_no_results?
 
-        # Build an error message for a results page that yielded zero matches.
-        # Recognizes the DDG anomaly modal explicitly and quotes its title and
-        # description; otherwise extracts visible text from the body (with
-        # +<script>+/+<style>+/+<noscript>+ stripped and whitespace collapsed)
-        # and includes a truncated copy so the caller can see what came back.
+        # Build an error message for a zero-match page: quote the DDG anomaly
+        # modal's title/description if present, else a truncated copy of the
+        # body's visible text (+<script>/<style>/<noscript>+ stripped).
         #
-        # @param doc [Nokogiri::HTML::Document] parsed result page
-        # @return [String] human-readable diagnostic to feed to +raise+
+        # @param doc [Nokogiri::HTML::Document]
+        # @return [String] diagnostic to feed to +raise+
         def self.diagnose_empty(doc)
           title = doc.at_css('.anomaly-modal__title')&.text&.strip
           desc  = doc.at_css('.anomaly-modal__description')&.text&.strip
@@ -184,12 +149,12 @@ module Pikuri
         end
         private_class_method :diagnose_empty
 
-        # Decode DuckDuckGo's +//duckduckgo.com/l/?uddg=<encoded>+ redirect wrapper
-        # back to the real target URL.
+        # Decode DDG's +//duckduckgo.com/l/?uddg=<encoded>+ redirect wrapper to
+        # the real target URL.
         #
-        # @param href [String, nil] href as found on the search-result page
-        # @return [String] the decoded target URL, or +href+ unchanged when it is
-        #   not a recognized DDG redirect or cannot be parsed
+        # @param href [String, nil] href from the result page
+        # @return [String] the decoded target, or +href+ unchanged when not a
+        #   recognized DDG redirect or unparseable
         def self.extract_url(href)
           return href if href.nil? || href.empty?
 
