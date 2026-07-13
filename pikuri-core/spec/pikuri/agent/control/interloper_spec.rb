@@ -110,6 +110,59 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     end
   end
 
+  describe '#on_change' do
+    it 'fires with the new pending count on each injection' do
+      interloper = described_class.new
+      counts = []
+      interloper.on_change = ->(n) { counts << n }
+
+      interloper.inject_user_message('one')
+      interloper.inject_user_message('two')
+
+      assert_equal [1, 2], counts
+    end
+
+    it 'fires with 0 when a non-empty queue is drained' do
+      interloper = described_class.new
+      interloper.inject_user_message('one')
+
+      counts = []
+      interloper.on_change = ->(n) { counts << n }
+      interloper.drain!
+
+      assert_equal [0], counts
+    end
+
+    it 'does not fire when an empty queue is drained' do
+      interloper = described_class.new
+      fired = false
+      interloper.on_change = ->(_n) { fired = true }
+
+      interloper.drain!
+
+      refute fired
+    end
+
+    it 'does nothing when unset (default nil)' do
+      interloper = described_class.new
+      interloper.inject_user_message('one')
+      assert_equal ['one'], interloper.drain!
+    end
+
+    it 'fires outside the queue lock — the callback may re-enter the interloper' do
+      interloper = described_class.new
+      seen = []
+      interloper.on_change = lambda do |n|
+        # Re-entering under the lock would deadlock; #size takes the mutex.
+        seen << [n, interloper.size]
+      end
+
+      interloper.inject_user_message('one')
+
+      assert_equal [[1, 1]], seen
+    end
+  end
+
   describe '#to_s' do
     it 'renders the bare class name when idle' do
       assert_equal 'Interloper', described_class.new.to_s

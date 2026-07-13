@@ -56,6 +56,25 @@ module Pikuri
       # and is the cleanest cross-provider point: no in-flight
       # subprocess, no half-applied write, no half-built response.
       #
+      # == Change notification
+      #
+      # A host that wants to render the pending count reactively
+      # (a "3 messages waiting to deliver" badge) instead of
+      # polling {#size} sets {#on_change} to a callback. It fires
+      # whenever the pending count changes — once per
+      # {#inject_user_message}, and once per {#drain!} that
+      # actually empties a non-empty queue (an empty-queue drain,
+      # the +after_tool_result+ hot path, stays silent). The
+      # callback receives the new count as its sole argument and
+      # runs *outside* the queue lock. This is a host-side hook,
+      # deliberately *not* an {Agent} listener-stream event: the
+      # count changes on whatever thread called
+      # {#inject_user_message}, so it can't ride the
+      # agent-thread-confined listener stream. It mirrors
+      # {Pikuri::Tasks::List#on_change}, but pushes the count as an
+      # argument because the interloper exposes no snapshot the
+      # callback could re-read race-free from another thread.
+      #
       # == Thread safety
       #
       # {#inject_user_message}, {#peek}, {#pending?}, and
@@ -67,6 +86,9 @@ module Pikuri
       # {#peek} is part of the surface (the host wants to render
       # "feedback received, will deliver shortly" in its UI
       # before the agent actually consumes the injection).
+      # {#on_change} fires outside the lock so a callback that
+      # re-enters the interloper (or blocks) cannot deadlock the
+      # mutating thread.
       #
       # == Sub-agent semantics
       #
@@ -84,10 +106,25 @@ module Pikuri
         def initialize
           @mutex = Mutex.new
           @items = []
+          @on_change = nil
         end
 
+        # Optional host callback invoked with the new pending count
+        # whenever the count changes — after every
+        # {#inject_user_message}, and after any {#drain!} that
+        # empties a non-empty queue. +nil+ (the default) disables
+        # notification. Runs *outside* the queue lock, on whatever
+        # thread performed the mutation (the host thread for an
+        # inject, the run thread for a drain), so a callback that
+        # feeds another thread should hand off only immutable data.
+        # See the "Change notification" section on {Interloper}.
+        #
+        # @return [Proc, nil]
+        attr_accessor :on_change
+
         # Push +content+ onto the delivery queue. Safe from any
-        # thread; the queue is +Mutex+-guarded.
+        # thread; the queue is +Mutex+-guarded. Fires {#on_change}
+        # (if set) with the new pending count, outside the lock.
         #
         # @param content [String] non-blank user-supplied text
         # @raise [ArgumentError] if +content+ is +nil+, empty, or
@@ -100,7 +137,8 @@ module Pikuri
           raise ArgumentError, "content must not be blank, got #{content.inspect}" \
             if content.nil? || content.to_s.strip.empty?
 
-          @mutex.synchronize { @items << content }
+          count = @mutex.synchronize { @items << content; @items.size }
+          @on_change&.call(count)
           nil
         end
 
@@ -137,18 +175,23 @@ module Pikuri
         # {Event::UserTurn} with +mid_loop: true+ for each.
         #
         # Returns +[]+ when the queue is empty (the hot path —
-        # every +after_tool_result+ calls this).
+        # every +after_tool_result+ calls this); an empty drain
+        # does *not* fire {#on_change} (the count did not change).
+        # A drain that empties a non-empty queue fires {#on_change}
+        # with +0+, outside the lock.
         #
         # @return [Array<String>] items in delivery order; empty
         #   when the queue is empty
         def drain!
-          @mutex.synchronize do
+          items = @mutex.synchronize do
             next [] if @items.empty?
 
-            items = @items.dup
+            taken = @items.dup
             @items.clear
-            items
+            taken
           end
+          @on_change&.call(0) unless items.empty?
+          items
         end
 
         # @return [String] short label for {Agent#to_s}; reflects
