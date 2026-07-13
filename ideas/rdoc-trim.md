@@ -108,16 +108,37 @@ one item: `Event::Tokens`' context-window math.)
   across the Servers/Verifier/Synthesizer constructors, `PROMPT_VERSION`
   history notes, and referrer-map padding. Fixed a few drifted method refs
   while trimming.
+- `pikuri-memory` — 7 files, 826→680 comment lines, −146 net. Commit 0bf8b9d.
+  Kept the Mem0Server router-relay capability model (socket-file capability,
+  rootless host-loopback rationale) + no-Postgres/pgvector-top-k patch +
+  fail-loud git apply + 127.0.0.1 bind + Qdrant image lockstep, Mem0Client
+  endpoint table + user-role-only write hygiene + errors-are-loud, Extension
+  three-tiers + read-sync/write-async + memory-context injection defense +
+  safety scope, Recorder per-turn-durability, Record field provenance +
+  created_at recency. Fixed drift: Mem0Client claimed no supervisor ships
+  yet (Mem0Server now exists).
+- `pikuri-os` — 8 files, 621→510 comment lines, −111 net. Commit 95d9c76.
+  Kept Extension's confirmation policy (confirm_all_writes + allow_git/
+  GIT_HARDENING RCE residual) + FullFsNoNet + degrade-when-no-index, the
+  Recoll/LocalSearch duck-typed backend seam + blind spots + check_binaries!/
+  available? exit-status guard + recoll config parsing, MachineMemory
+  markdown-not-mem0 + fresh-read-on-clear, SystemInfo always-present-primitives
+  + dmesg_restrict-not-spawning + read-once memoization. Fixed two drifts
+  (recoll "nothing wires it yet", pikuri-os.rb "as the surface lands").
+- `pikuri-subagents` — 6 files, 465→262 comment lines, −203 net (~44%).
+  Commit 7d590b0. Kept SubAgentTool inherited-vs-owned + no-extension-inherit/
+  recursion-impossible + confirmer trifecta gate + always-:synthesize budget +
+  cap-inherit-no-reprobe + TEMP_WORKSPACE_READABLE exclusion, Extension
+  configure/bind + ordering gotcha + add_raw_tool-late-capture + dup-name
+  fail-fast, Persona identity-source-of-truth + tool_names same-instances,
+  the personas' privilege-separation + string-name decoupling. Cut the
+  "old recursion guard is gone"/"earlier iteration" history + the eager-load
+  essay.
 
-All five: comment-only, 0 code changes, all specs green (658 + 299 + 363 +
-292 + 124).
+All: comment-only, 0 code changes, all specs green (658 + 299 + 363 +
+292 + 124 + 60 + 78 + 51).
 
 **Remaining** (comment counts, roughly biggest-impact first):
-- `pikuri-memory` — 826, 7 files (has `DESIGN.md` + threat model; mem0 client,
-  Recorder, Mem0Server socket-relay, Extension feedback-loop defenses).
-- `pikuri-os` — 621, 8 files (Extension, LocalSearch/Recoll, MachineMemory,
-  SystemInfo).
-- `pikuri-subagents` — 465, 6 files (SubAgentTool, Persona, Extension, personas).
 - `pikuri-tasks` — 320, 8 files (List + 4 tools + Extension + ListChanged event).
 - `pikuri-extractors` — 291, 2 files (Documents + DOCUMENTS; docker/CLI fallback).
 - `pikuri-skills` — 178, 4 files (Catalog, SkillTool, Extension).
@@ -125,13 +146,13 @@ All five: comment-only, 0 code changes, all specs green (658 + 299 + 363 +
 - `pikuri-assistant` — 8 (binary-only gem; likely nothing to trim).
 - `pikuri` (metagem) — 8 (require list; nothing to trim).
 
-Total remaining ≈ 3700 comment lines across ~42 files; expect a similar ~35–55%
-cut where files are bloated (some, like already-disciplined `tool/parameters.rb`
-in core, needed almost nothing; the threat-model-heavy gems settled around
-~38%: pikuri-code ~36%, pikuri-vectordb ~38%, pikuri-mcp ~38%).
+Total remaining ≈ 900 comment lines across ~24 files. Cut ratio varies with
+bloat: the threat-model-heavy gems settled ~38% (pikuri-code ~36%,
+pikuri-vectordb ~38%, pikuri-mcp ~38%); already-dense reference gems trimmed
+less (pikuri-memory/-os ~18%); padding-heavy gems more (pikuri-subagents ~44%).
 
 ## Note for the fresh session
 
 Suggested opening prompt: *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
-Next gem: pikuri-memory. Same rubric, gem by gem, comment-only, verify +
+Next gem: pikuri-tasks. Same rubric, gem by gem, comment-only, verify +
 specs + commit, pause for my review before the next gem."*
