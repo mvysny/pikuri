@@ -2,33 +2,24 @@
 
 module Pikuri
   module Skill
-    # The +skill+ tool: instantiating
-    # +Pikuri::Skill::SkillTool.new(catalog:)+ produces a tool whose
-    # +execute+ closure looks the requested name up in the bound
-    # {Catalog} and returns the skill's body wrapped in a +<skill>+
-    # block with the absolute base directory, so the LLM can resolve
-    # relative sidecar paths against it via the regular +read+ tool.
+    # The +skill+ tool: looks the requested +name+ up in the bound
+    # {Catalog} and returns the skill body wrapped in a +<skill>+ block
+    # with its base directory, so the LLM resolves relative sidecar
+    # paths against it via the +read+ tool.
     #
-    # The catalog of available skills is *not* duplicated into this
-    # tool's description. It lives in the system prompt — see
-    # {Catalog#format_for_prompt} — because skills describe what the
-    # agent is, not just what one of its tools returns. Putting the
-    # catalog in the system prompt keeps it next to the agent's persona
-    # and matches what PI and Claude Code do (opencode is the outlier
-    # here). The tool description below is therefore *static* — it
-    # explains the load mechanism, not the inventory.
+    # The available-skills inventory is *not* in this tool's
+    # description — it lives in the system prompt (see
+    # {Catalog#format_for_prompt}), next to the agent's persona, as PI
+    # and Claude Code do (opencode is the outlier). So the description
+    # is static: it explains the load mechanism, not the inventory.
     #
-    # This tool is not registered manually. {Extension#configure}
-    # auto-registers it whenever the catalog is non-empty, and skips
-    # it otherwise; sub-agents inherit it through the parent's tool
-    # snapshot. The bound catalog rides along in the +execute+
-    # closure, so any sub-agent invoking +skill+ resolves names
-    # against the same catalog the parent saw.
+    # {Extension#configure} auto-registers this (never manually) when
+    # the catalog is non-empty. The bound catalog rides in the +execute+
+    # closure, so a sub-agent inheriting the tool resolves names against
+    # the same catalog the parent saw.
     class SkillTool < Pikuri::Tool
-      # Description shown to the LLM. Follows the opencode-shape (summary
-      # + +Usage:+ bullets) prescribed by the project's tool-description
-      # convention. The list of which skills exist is not here — see
-      # the class header.
+      # Description shown to the LLM (opencode-shape; inventory omitted —
+      # see the class header).
       #
       # @return [String]
       DESCRIPTION = <<~DESC

@@ -134,14 +134,32 @@ one item: `Event::Tokens`' context-window math.)
   the personas' privilege-separation + string-name decoupling. Cut the
   "old recursion guard is gone"/"earlier iteration" history + the eager-load
   essay.
+- `pikuri-tasks` — 8 files, 320→216 comment lines, −104 net. Commit 2710223.
+  Kept List's agent-thread-confined + id-never-reused + clear-rewind-safe +
+  render example, Extension's sub-agent-no-inherit + single-owner duplicate
+  guard + ListChanged cross-thread path, both reversal regression guards
+  (Create JSON-array-not-newline, InProgress numeric-id-not-content) and
+  ListChanged's frozen-snapshot + batch-create last-wins. Cut referrer lists,
+  DESCRIPTION-restating prose, the Delete/Completed shared-shape re-narration,
+  and entry-file Zeitwerk boilerplate.
+- `pikuri-extractors` — 2 files, 291→243 comment lines, −48 net. Commit e3e2317.
+  Dense reference already, so the cut concentrated in class-header prose. Kept
+  the container-first rationale (untrusted-bytes sandbox + pinned-version
+  reproducibility) + host-CLI fallback, the explicit-registration seam, the
+  pick-one-per-wiring PDF trade-off table (CLAUDE.md points here), and the
+  format-detection gotchas.
+- `pikuri-skills` — 4 files, 178→143 comment lines, −35 net (~20%).
+  Kept Catalog's lenient-validation + first-wins-precedence + subdir-order
+  rationale + eager-load-body nugget + roots-feed-readable contract, SkillTool's
+  inventory-in-prompt-not-description (PI/Claude-Code precedent) + closure-holds-
+  same-catalog, Extension's stateless-no-bind + lstrip-avoids-double-blank gotcha.
+  Cut the legacy-skill_catalog transition-layer history, the format_for_prompt
+  "historically" note, and entry-file Zeitwerk boilerplate.
 
-All: comment-only, 0 code changes, all specs green (658 + 299 + 363 +
-292 + 124 + 60 + 78 + 51).
+All: comment-only, 0 code changes, all specs green (pikuri-skills: 30
+examples, 0 failures — every prior gem likewise green).
 
 **Remaining** (comment counts, roughly biggest-impact first):
-- `pikuri-tasks` — 320, 8 files (List + 4 tools + Extension + ListChanged event).
-- `pikuri-extractors` — 291, 2 files (Documents + DOCUMENTS; docker/CLI fallback).
-- `pikuri-skills` — 178, 4 files (Catalog, SkillTool, Extension).
 - `pikuri-pdf` — 107, 2 files (Extractors::PDF).
 - `pikuri-assistant` — 8 (binary-only gem; likely nothing to trim).
 - `pikuri` (metagem) — 8 (require list; nothing to trim).
@@ -154,5 +172,6 @@ less (pikuri-memory/-os ~18%); padding-heavy gems more (pikuri-subagents ~44%).
 ## Note for the fresh session
 
 Suggested opening prompt: *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
-Next gem: pikuri-tasks. Same rubric, gem by gem, comment-only, verify +
-specs + commit, pause for my review before the next gem."*
+Next gem: pikuri-pdf (the last with real yardoc; pikuri-assistant and the
+metagem are binary/require-only). Same rubric, gem by gem, comment-only,
+verify + specs + commit, pause for my review before the next gem."*

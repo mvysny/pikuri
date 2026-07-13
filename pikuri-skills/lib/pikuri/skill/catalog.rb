@@ -46,8 +46,8 @@ module Pikuri
         raise NotImplementedError, "#{self.class}#get must be implemented"
       end
 
-      # @return [Boolean] true when {#list} is empty. {Extension} keys
-      #   its auto-wiring off this — empty catalog ⇒ no surface change.
+      # @return [Boolean] true when {#list} is empty; an empty catalog
+      #   contributes no tool and no prompt block.
       def empty?
         list.empty?
       end
@@ -118,30 +118,25 @@ module Pikuri
       # Shared singleton for the no-skills case.
       EMPTY = Empty.new.freeze
 
-      # On-disk catalog. Constructed with a list of *search bases*
-      # (project root, home dir, …); for each base, scans
-      # +.pikuri/skills+, +.claude/skills+ and +.agents/skills+ —
-      # +.pikuri+ first (the user's own pikuri-specific skills),
-      # +.claude+ second (so Claude Code skills travel along for free),
-      # +.agents+ last (the cross-harness convention PI also honors).
-      # Missing subdirs are silently skipped.
+      # On-disk catalog over a list of *search bases* (project root,
+      # home dir, …). Under each base it scans +.pikuri/skills+ (the
+      # user's own), +.claude/skills+ (Claude Code skills ride along)
+      # and +.agents/skills+ (PI's cross-harness convention), in that
+      # order; missing subdirs are skipped.
       #
       # == Precedence
       #
-      # Bases are processed left to right; within each base the subdir
-      # order above applies. The *first* skill seen for a given name
-      # wins; later occurrences are dropped with a warning. Callers
-      # that want "project beats global" pass the project root first.
+      # Bases left to right, subdirs in the order above; the *first*
+      # skill seen for a name wins, later ones dropped with a warning.
+      # Pass the project root first for "project beats global".
       #
       # == Validation
       #
-      # The Agent Skills standard is enforced leniently. A missing
-      # +description+ is the only hard failure (the skill is skipped);
-      # name/dir mismatch, oversized name/description, invalid name
-      # characters and malformed YAML all log warnings and the skill
-      # still loads with whatever could be salvaged. Files without
-      # YAML frontmatter at all are skipped silently — they're
-      # presumably not meant as skills.
+      # The Agent Skills standard is enforced leniently: a missing
+      # +description+ is the only hard failure (skill skipped). Name/dir
+      # mismatch, oversized name/description, invalid name chars and
+      # malformed YAML log a warning and load anyway. A file with no
+      # frontmatter is skipped silently (not meant as a skill).
       class Bundled < Catalog
         # Subdirectory names scanned under each search base, in
         # precedence order.

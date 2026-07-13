@@ -1,19 +1,16 @@
 # frozen_string_literal: true
 
 module Pikuri
-  # Namespace for the Skills feature. Built around the Agent Skills
-  # standard implemented in {Pikuri::Skill::Catalog} and
-  # {Pikuri::Skill::SkillTool}; this module hosts the *Extension* class
-  # ({Extension}) that wires the two into an {Pikuri::Agent}.
+  # Namespace for the Skills feature — the Agent Skills standard, as
+  # {Catalog} (discovery) + {SkillTool} (load) + {Extension} (wiring).
   module Skill
     # An {Pikuri::Agent::Extension} that auto-wires the Agent Skills
     # standard onto an agent: appends the catalog's
     # +<available_skills>+ block to the system prompt and registers
     # the +skill+ tool so the LLM can load skill bodies on demand.
+    # Empty catalog ⇒ no-op (no snippet, no tool).
     #
     # == Usage
-    #
-    # Pass the extension via the +Agent.new+ block:
     #
     #   catalog = Pikuri::Skill::Catalog::Bundled.new(
     #     search_bases: [project_root, Dir.home]
@@ -22,18 +19,9 @@ module Pikuri
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
-    # The +configure+ hook is agent-agnostic — it appends a snippet
-    # and adds a tool, both of which sub-agents inherit verbatim
-    # through the existing snapshot mechanism. There is no per-agent
-    # state, so this extension does not implement +bind+ (inherits
-    # the empty default from {Pikuri::Agent::Extension}).
-    #
-    # == Empty catalog
-    #
-    # When the catalog is {Pikuri::Skill::Catalog#empty?}, the
-    # extension is a no-op — no snippet, no tool. Same semantics as
-    # the legacy +skill_catalog:+ kwarg on {Pikuri::Agent#initialize},
-    # which still routes through this extension as a transition layer.
+    # Stateless: +configure+ appends a snippet and a tool (both
+    # inherited verbatim by sub-agents via the tool snapshot), so there
+    # is no +bind+.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -64,12 +52,10 @@ module Pikuri
         nil
       end
 
-      # The +<available_skills>+ catalog block, or none for an empty
-      # catalog. The catalog's +format_for_prompt+ historically returns
-      # a snippet with leading blank lines (designed for the old
-      # +system_prompt + format_for_prompt+ concatenation); the Agent
-      # joins sections with +\n\n+, so +lstrip+ avoids doubling the
-      # blank lines.
+      # The +<available_skills>+ catalog block (empty array for an
+      # empty catalog). +format_for_prompt+ returns leading blank
+      # lines; the Agent joins sections with +\n\n+, so +lstrip+ avoids
+      # doubling them.
       #
       # @return [Array<String>]
       def system_prompt_snippets
