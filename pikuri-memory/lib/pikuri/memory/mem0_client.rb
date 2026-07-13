@@ -5,26 +5,20 @@ require 'json'
 
 module Pikuri
   module Memory
-    # Thin Faraday HTTP client against a self-hosted mem0 server
-    # (the v3 "token-efficient" line — see DESIGN.md). Only
-    # the handful of REST endpoints pikuri needs are wired; the client
-    # is hand-rolled rather than a dependency on a mem0 Ruby SDK
-    # (there isn't a maintained one), Faraday is already in
-    # pikuri-core's closure, and a thin first-party client keeps the
-    # wire protocol auditable in one readable file. Same shape as
-    # +pikuri-vectordb+'s +Backend::Chroma+.
+    # Thin Faraday HTTP client against a self-hosted mem0 server (the v3
+    # "token-efficient" line — see DESIGN.md). Hand-rolled rather than
+    # depending on a mem0 Ruby SDK (there isn't a maintained one), so the
+    # wire protocol stays auditable in one readable file.
     #
     # == Bring your own server
     #
     # +Mem0Client.new(endpoint:)+ points at an already-running mem0 server
-    # (a docker-compose stack, a shared deployment). This release does
-    # *not* ship a supervisor that starts one — that's the
-    # +Server::Chroma+-style follow-on. The server must be configured for
-    # the local stack pikuri assumes: a local OpenAI-compatible LLM +
-    # embedder (llama.cpp via +openai_base_url+), the **Qdrant** vector
-    # backend (the pgvector path has a top-k inversion bug — see
-    # DESIGN.md §"Root cause: the pgvector top-k inversion"), and a non-reasoning
-    # extraction model. Endpoints used:
+    # (let {Mem0Server} start one, or bring a shared deployment). The
+    # server must be configured for the stack pikuri assumes: a local
+    # OpenAI-compatible LLM + embedder (llama.cpp via +openai_base_url+),
+    # the **Qdrant** vector backend (the pgvector path has a top-k
+    # inversion bug — see DESIGN.md §"Root cause: the pgvector top-k
+    # inversion"), and a non-reasoning extraction model. Endpoints used:
     #
     # * +POST /memories+ — append. Body
     #   +{ messages:, user_id:, infer:, prompt? }+. Returns
@@ -41,44 +35,34 @@ module Pikuri
     # == User-role content only (write-side hygiene)
     #
     # {#add} takes a single +content+ String and wraps it as one
-    # +role: "user"+ message — it cannot send assistant/tool/system
-    # turns. That's deliberate: feeding only the user's own words to
-    # extraction structurally removes the dominant junk sources a
-    # production mem0 audit measured (assistant restating, recalled-
-    # memory feedback loops, involuntary secret leakage) — see
-    # DESIGN.md §"Extraction-input discipline". The rule lives
-    # in the method signature so it can't be bypassed by accident.
+    # +role: "user"+ message — it cannot send assistant/tool/system turns.
+    # Feeding only the user's own words to extraction structurally removes
+    # the dominant junk sources a production mem0 audit measured (assistant
+    # restating, recalled-memory feedback loops, involuntary secret
+    # leakage — DESIGN.md §"Extraction-input discipline"). The rule lives
+    # in the signature so it can't be bypassed by accident.
     #
     # == Errors are loud
     #
-    # Non-2xx responses and Faraday transport errors raise
-    # +RuntimeError+ with the offending detail. The client doesn't
-    # decide what's recoverable — its callers do: {Recall} turns a
-    # failure into an +"Error: ..."+ observation the LLM can react to,
-    # {Recorder} logs-and-drops so a transient mem0 blip never crashes
-    # the capture worker, and {Extension}'s prefetch rescues to "inject
-    # nothing this turn."
+    # Non-2xx responses and Faraday transport errors raise +RuntimeError+
+    # with the offending detail. The client doesn't decide what's
+    # recoverable — each caller does (observation, log-and-drop, or
+    # inject-nothing).
     class Mem0Client
       LOGGER = Pikuri.logger_for('Memory::Mem0Client')
 
-      # @return [String] default mem0 server base URL — the server's
-      #   own +:8000+ on localhost. A host running the dev
-      #   docker-compose (which publishes +8888->8000+) passes that
-      #   port explicitly; the supervisor follow-on will own the
-      #   mapping.
+      # @return [String] default mem0 server base URL — the server's own
+      #   +:8000+ on localhost. {Mem0Server} publishes +8888->8000+, so a
+      #   host using it passes that port explicitly.
       DEFAULT_ENDPOINT = 'http://localhost:8000'
 
       # @return [Integer] default per-request read timeout, in seconds.
-      #   Deliberately generous: the first +POST /memories+ (and the
-      #   first +/search+) on a fresh stack blocks on the local
-      #   llama.cpp router cold-loading the extraction / embedder model
-      #   into memory — a one-off wait that can run well past
-      #   net_http's stock ~60s before any token comes back. A short
-      #   timeout there turns a normal cold start into a dropped turn
-      #   (+Recorder+ logs-and-drops). Steady-state extraction is ~3s,
-      #   so this ceiling only ever bites on the cold path or a genuine
-      #   hang. Override with +PIKURI_MEMORY_TIMEOUT+ or the +timeout:+
-      #   kwarg.
+      #   Generous on purpose: the first +POST /memories+ / +/search+ on a
+      #   fresh stack blocks on the router cold-loading the extraction /
+      #   embedder model, a one-off wait well past net_http's stock ~60s.
+      #   Steady-state extraction is ~3s, so this ceiling only bites the
+      #   cold path or a genuine hang. Override with +PIKURI_MEMORY_TIMEOUT+
+      #   or the +timeout:+ kwarg.
       DEFAULT_TIMEOUT = 300
 
       # @param endpoint [String] mem0 server base URL. +/memories+,
@@ -242,9 +226,8 @@ module Pikuri
         rows.map { |row| Record.from(row) }
       end
 
-      # JSON-POST helper shared by add / search / reset. Centralizes
-      # the error shape and +Faraday::Error+ wrapping (same template as
-      # +Backend::Chroma#post_json+).
+      # JSON-POST helper shared by add / search / reset, centralizing the
+      # error shape and +Faraday::Error+ wrapping.
       def post_json(path, body)
         response = @connection.post(path) do |req|
           req.headers['Content-Type'] = 'application/json'

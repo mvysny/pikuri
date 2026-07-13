@@ -14,20 +14,16 @@ module Pikuri
     # == Field provenance (mem0 v3 JSON → this)
     #
     # * +id+ ← +"id"+ — the memory's UUID; the handle for +delete+.
-    # * +text+ ← +"memory"+ — the fact string. Named +text+ here
-    #   because +memory+ would shadow the enclosing module and read
-    #   oddly (+record.memory+).
-    # * +score+ ← +"score"+ — similarity on the Qdrant backend
-    #   (higher = more relevant; the v1 backend, see
-    #   DESIGN.md §"Why Qdrant, not pgvector"). +nil+ outside +search+ results.
-    # * +created_at+ ← +"created_at"+ — ISO-8601 String as mem0
-    #   emits it. Load-bearing for recall: contradiction resolution
-    #   happens in the *consuming* LLM's synthesis, and recency is
-    #   its tiebreaker, so the timestamp must travel with the recalled
-    #   text (DESIGN.md §"Supersede recall: resolution is the consumer's job").
+    # * +text+ ← +"memory"+ — the fact string. Named +text+ so it doesn't
+    #   shadow the enclosing module (+record.memory+ reads oddly).
+    # * +score+ ← +"score"+ — Qdrant similarity (higher = more relevant);
+    #   +nil+ outside +search+ results.
+    # * +created_at+ ← +"created_at"+ — ISO-8601 String. Load-bearing for
+    #   recall: recency is the consuming LLM's tiebreaker when resolving a
+    #   stale fact against its correction, so it must travel with the text.
     # * +metadata+ ← +"metadata"+ — arbitrary Hash; +{}+ when absent.
-    # * +event+ ← +"event"+ — +"ADD"+ / +"UPDATE"+ / +"DELETE"+ /
-    #   +"NONE"+ on an +add+ response; +nil+ on reads.
+    # * +event+ ← +"event"+ — +"ADD"+ / +"UPDATE"+ / +"DELETE"+ / +"NONE"+
+    #   on an +add+ response; +nil+ on reads.
     Record = Data.define(:id, :text, :score, :created_at, :metadata, :event) do
       # Build a {Record} from one mem0 result Hash (String keys, as
       # Faraday's JSON middleware deserializes them). Tolerant of
@@ -48,16 +44,11 @@ module Pikuri
         )
       end
 
-      # +created_at+ trimmed to whole-second wall-clock for the
-      # prompt: +"2026-06-01T17:04:11.884889+00:00"+ →
-      # +"2026-06-01 17:04:11"+. Recall uses the timestamp only as a
-      # recency tiebreaker (see +created_at+'s field note), so the
-      # sub-second precision and +T+/offset machinery are noise in
-      # the context window — a shorter date reads cleaner for the
-      # model and costs fewer tokens. Returns +nil+ when +created_at+
-      # is absent (+add+ / +search+ rows that omit it), and falls
-      # back to the raw String if mem0 ever emits an unparseable
-      # value (degraded display, not a pikuri bug).
+      # +created_at+ trimmed to whole-second wall-clock for the prompt:
+      # +"2026-06-01T17:04:11.884889+00:00"+ → +"2026-06-01 17:04:11"+
+      # (sub-second precision and offset machinery are token noise when the
+      # timestamp is only a recency tiebreaker). +nil+ when +created_at+ is
+      # absent; falls back to the raw String on an unparseable value.
       #
       # @return [String, nil]
       def created_label

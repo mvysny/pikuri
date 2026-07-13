@@ -4,37 +4,24 @@ module Pikuri
   module Memory
     # The off-the-interaction-path capture queue. A single background
     # worker thread drains enqueued user turns into {Mem0Client#add}, so a
-    # turn never blocks on the ~3s extraction round-trip
-    # (DESIGN.md §"Why a non-reasoning extraction model"). Reads are cheap and
-    # synchronous; writes are deferred here — the read/write asymmetry
-    # the design leans on.
+    # turn never blocks on the ~3s extraction round-trip.
     #
-    # == Why a thread, not a fork or an external job
+    #   rec = Recorder.new(client:, user_id: 'martin').start
+    #   rec.enqueue("I prefer terse test output")  # non-blocking
+    #   rec.close                                   # bounded flush, then stop
     #
-    # mem0's +add+ is one HTTP call. A thread is the smallest thing that
-    # takes it off the turn's critical path while keeping capture
-    # *per-turn* (so a kill -9 / closed tab loses at most the in-flight
-    # turn, not a whole session — the data-safety win that picked a
-    # separate extraction model in DESIGN.md §"Extraction model
-    # decision"). No external queue, no persistence — durability is
-    # "within seconds, in mem0," not "survives a crash mid-extraction."
+    # A thread (not a fork or external queue) keeps capture *per-turn*: a
+    # kill -9 / closed tab loses at most the in-flight turn, not a session.
+    # No persistence — durability is "within seconds, in mem0," not
+    # "survives a crash mid-extraction."
     #
-    # == Bounded flush on close
-    #
-    # {#close} signals the worker to stop and joins it with a timeout —
-    # so "quit" never hangs for minutes while a backlog digests
-    # (DESIGN.md §"Capture: off-path and bounded"). Anything
-    # still queued past the timeout is dropped: the worker is a plain
-    # Ruby thread, so process exit reaps it. One enqueue per turn means
-    # the queue rarely holds more than a single item, so the common case
-    # flushes in one +add+.
-    #
-    # == Failure is logged, not raised
-    #
-    # A {Mem0Client#add} that raises (mem0 down, timeout, 5xx) is caught,
-    # logged at WARN, and the item dropped — a transient capture failure
-    # must never crash the worker (which would silently end all future
-    # capture) nor surface to the user mid-conversation.
+    # {#close} signals the worker to drain the backlog, then joins with a
+    # timeout so "quit" never hangs for minutes; anything still queued is
+    # dropped and reaped at process exit. One enqueue per turn means the
+    # common case flushes in one +add+. An +add+ that raises (mem0 down,
+    # timeout, 5xx) is logged at WARN and the item dropped — a transient
+    # failure must never crash the worker (which would silently end all
+    # future capture). See DESIGN.md §"Capture: off-path and bounded".
     class Recorder
       LOGGER = Pikuri.logger_for('Memory::Recorder')
 
@@ -90,12 +77,10 @@ module Pikuri
         nil
       end
 
-      # Stop the worker and flush the backlog, bounded by
-      # +flush_timeout+. Pushes {STOP} (so items already queued drain
-      # first), then joins the worker for at most the timeout. Idempotent.
-      # If the timeout elapses with work still pending, the remaining
-      # items are abandoned to process-exit reaping — a deliberate
-      # bound so quit never hangs.
+      # Stop the worker and flush the backlog, bounded by +flush_timeout+.
+      # Pushes {STOP} (so queued items drain first), then joins for at most
+      # the timeout; anything still pending is abandoned to process-exit
+      # reaping. Idempotent.
       #
       # @return [void]
       def close

@@ -2,30 +2,23 @@
 
 module Pikuri
   module Memory
-    # The +recall+ {Pikuri::Tool}: explicit, topic-driven deepening
-    # beyond the automatic per-turn prefetch ({Extension#on_user_message}).
-    # The "mined, deep" retrieval mode — the model calls it when the
-    # prefetch slice hints there is more to find on a topic. Same
-    # two-step agentic-RAG shape as +pikuri-vectordb+'s
-    # +vectordb_search+ (cheap auto slice) + +vectordb_read+ (pull
-    # more) — here, prefetch is the slice and +recall+ is the dig.
+    # The +recall+ {Pikuri::Tool}: explicit, topic-driven deepening beyond
+    # the automatic per-turn prefetch ({Extension#on_user_message}) — the
+    # model calls it when the prefetch slice hints there is more on a
+    # topic. The dig half of the same two-step agentic-RAG shape as
+    # +pikuri-vectordb+'s +vectordb_search+/+vectordb_read+.
     #
-    # == Single-param surface
+    # +recall(topic:)+ is a deliberately minimal surface — no +top_k+, no
+    # +user_id+ (retrieval depth is host policy in {Extension}, the
+    # namespace is fixed at construction; the model shouldn't tune
+    # retrieval mid-conversation).
     #
-    # +recall(topic:)+ — no +top_k+, no +user_id+. Retrieval depth is
-    # host policy baked into the {Extension}; the namespace is fixed at
-    # construction. The model shouldn't tune retrieval mid-conversation;
-    # a minimal surface is the deliberate choice (same rationale as
-    # +vectordb_search+).
-    #
-    # == Recall does not resolve contradictions
-    #
-    # mem0 returns the relevant memories ranked by similarity, *not* by
-    # recency, and keeps a stale fact alongside its correction. So the
-    # observation carries each memory's +created_at+ timestamp and the
-    # tool description tells the model to treat newer-about-the-same-
-    # thing as current — resolution lives in the model's reasoning, not
-    # in the store (DESIGN.md §"Supersede recall: resolution is the consumer's job").
+    # mem0 ranks by similarity, *not* recency, and keeps a stale fact
+    # alongside its correction — so the observation carries each memory's
+    # +created_at+ and the description tells the model to treat
+    # newer-about-the-same-thing as current. Resolution lives in the
+    # model's reasoning, not the store (DESIGN.md §"Supersede recall:
+    # resolution is the consumer's job").
     class Recall < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Memory::Recall')
 
@@ -64,11 +57,10 @@ module Pikuri
         )
       end
 
-      # Public so specs can exercise recall without constructing a Tool
-      # wrapper. Catches {Mem0Client} failures and renders them as an
-      # +"Error: ..."+ observation the LLM can react to (a transient
-      # mem0 blip shouldn't crash the loop) — bugs in pikuri's own code
-      # still raise.
+      # Search and format the observation. Catches {Mem0Client} failures
+      # and renders them as an +"Error: ..."+ observation the LLM can react
+      # to (a transient mem0 blip shouldn't crash the loop); bugs in
+      # pikuri's own code still raise.
       #
       # @param client [Mem0Client]
       # @param user_id [String]

@@ -17,39 +17,27 @@ module Pikuri
     #
     # == What it wires (the three retrieval tiers)
     #
-    # * **configure** registers the +recall+ tool ({Recall}); the
-    #   always-in-prompt persona summary (tier 1 + tier 3) is contributed
-    #   by **system_prompt_snippets**, when +resident_persona:+ is on —
-    #   re-pulled (and so refreshed from the store) on every
-    #   {Pikuri::Agent#clear_conversation}.
-    # * **on_user_message** (the per-turn hook) does tier 2 — the
-    #   automatic prefetch — *and* the asynchronous capture: it enqueues
-    #   the user's turn for off-path extraction, then returns a small
-    #   +<memory-context>+ slice for the Agent to inject as a +:system+
-    #   message after the user turn.
+    # * **configure** registers the +recall+ tool ({Recall}).
+    # * **system_prompt_snippets** contributes the always-in-prompt
+    #   persona summary (tier 1) when +resident_persona:+ is on — re-pulled
+    #   (refreshed from the store) on every {Pikuri::Agent#clear_conversation}.
+    # * **on_user_message** does tier 2 (automatic prefetch) *and* the
+    #   asynchronous capture: enqueue the turn for off-path extraction,
+    #   then return a +<memory-context>+ slice the Agent injects as a
+    #   +:system+ message.
     # * **bind** starts the capture worker and arms its bounded flush on
     #   agent close.
     #
-    # == Read sync, write async
-    #
-    # Prefetch runs *on* the interaction path because a vector search is
-    # milliseconds; capture runs *off* it through {Recorder} because
-    # extraction is a ~3s LLM call. Recalled context is +:system+-role
-    # (provenance-tagged, excluded from the next extraction pass), and
-    # only the user's own words are captured — the two halves of the
-    # feedback-loop defense (DESIGN.md §"Retrieval").
-    #
-    # == Safety scope
+    # Read sync, write async: prefetch is on-path (a vector search is
+    # milliseconds), capture is off-path through {Recorder} (extraction is
+    # a ~3s LLM call). Recalled context is +:system+-role and only the
+    # user's own words are captured — the two halves of the feedback-loop
+    # defense (DESIGN.md §"Retrieval").
     #
     # Automatic capture + recall are safe only on a no-untrusted-ingest,
-    # no-egress agent (the +@private+ configuration). See the
-    # {Pikuri::Memory} namespace header.
-    #
-    # == Sub-agents
-    #
-    # Sub-agents do not inherit extensions, so a delegated persona's
-    # turns are never prefetched or captured by the parent's memory —
-    # consistent with the no-inherit rule.
+    # no-egress agent (the +@private+ configuration; {Pikuri::Memory}
+    # namespace header). Sub-agents don't inherit extensions, so a
+    # delegated persona's turns are never prefetched or captured.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -62,8 +50,8 @@ module Pikuri
       DEFAULT_PREFETCH_K = 5
 
       # @return [Integer] default cap on the resident-persona summary —
-      #   a few facts, not the whole store. Curated synthesis is a
-      #   follow-up; v1 takes the first {Mem0Client#get_all} rows.
+      #   a few facts, not the whole store (the first {Mem0Client#get_all}
+      #   rows).
       DEFAULT_RESIDENT_LIMIT = 20
 
       # @param client [Mem0Client] the mem0 client recall + capture use.
@@ -73,26 +61,20 @@ module Pikuri
       #   the automatic prefetch.
       # @param threshold [Float, nil] optional similarity floor for
       #   prefetch (higher = stricter; Qdrant +score+ is a similarity).
-      #   +nil+ (default) injects the top +prefetch_k+ ungated — a host
+      #   +nil+ (default) injects the top +prefetch_k+ ungated; a host
       #   should set a calibrated floor once it knows its embedder's
-      #   relevant-vs-irrelevant gap, so a bare "thanks!" recalls
-      #   nothing. Applied both server-side (passed to {Mem0Client#search})
-      #   and client-side (so the contract holds regardless of server
-      #   behavior).
+      #   relevant-vs-irrelevant gap, so a bare "thanks!" recalls nothing.
+      #   Applied both server-side (passed to {Mem0Client#search}) and
+      #   client-side, so the contract holds regardless of server behavior.
       # @param infer [Boolean] forwarded to capture; +true+ stores
       #   extracted facts.
       # @param extraction_prompt [String, nil] +custom_fact_extraction_prompt+
       #   sent with each capture. +nil+ (default) sends none, so mem0 uses
-      #   its own built-in extraction prompt — which reliably extracts
-      #   plain statements. The bundled +memory-extraction+ prompt
-      #   (+Pikuri.prompt('memory-extraction')+) is a **work in progress**:
-      #   it tightens junk rejection per the #4573 audit, but on small
-      #   extraction models it currently *under*-extracts (returns
-      #   +{"facts": []}+ for clear facts), so it is opt-in until hardened
-      #   — see DESIGN.md §"Open follow-ups". The user-only
-      #   extraction discipline does not depend on it; that is enforced in
-      #   {Mem0Client#add} (only user-role content is ever sent),
-      #   regardless of which extraction prompt mem0 runs.
+      #   its reliable built-in prompt. The bundled +memory-extraction+
+      #   prompt is a **WIP** that *under*-extracts on small models, so it
+      #   is opt-in until hardened (DESIGN.md §"Open follow-ups"). The
+      #   user-only extraction discipline is independent of it — enforced
+      #   in {Mem0Client#add}, whatever prompt mem0 runs.
       # @param resident_persona [Boolean] when +true+ (default), append
       #   a persona summary to the system prompt at construction.
       # @param flush_timeout [Integer] seconds the capture worker's
@@ -113,9 +95,6 @@ module Pikuri
         @threshold = threshold
         @resident_persona = resident_persona
         @resident_limit = resident_limit
-        # nil => mem0's built-in extraction (reliable). The bundled curated
-        # prompt is opt-in (a WIP that under-extracts on small models) — see
-        # the +extraction_prompt+ param doc.
         @extraction_prompt = extraction_prompt
         @recorder = Recorder.new(
           client: client, user_id: user_id, infer: infer,
@@ -230,19 +209,15 @@ module Pikuri
         gated.first(@prefetch_k)
       end
 
-      # Format the prefetch slice as a +:system+-framed block. The
-      # preface marks it recalled reference (not new input) and tells
-      # the model not to follow instructions embedded in it — the
-      # provenance framing that, together with system-role placement,
-      # keeps recall from becoming an injection vector. Each memory
-      # carries its +created_at+ so the model can apply recency.
-      #
-      # The slice is the output of a vector search keyed to the
-      # *current* user turn (see {#prefetch}), so the preface says
-      # "matched the latest message", not "everything about the user":
-      # it is a relevance-filtered subset, never the full profile, and
-      # mislabeling it as the latter would invite the model to treat a
-      # partial recall as exhaustive.
+      # Format the prefetch slice as a +:system+-framed block. The preface
+      # marks it recalled reference (not new input) and forbids following
+      # instructions embedded in it — provenance framing + system-role
+      # placement is what keeps recall from becoming an injection vector.
+      # It says "matched the latest message", not "everything about the
+      # user": the slice is a relevance-filtered subset (a vector search
+      # keyed to the current turn, see {#prefetch}), and mislabeling it as
+      # the full profile would invite treating a partial recall as
+      # exhaustive. Each memory carries its +created_at+ for recency.
       #
       # @param records [Array<Record>]
       # @return [String]
@@ -262,21 +237,17 @@ module Pikuri
       end
 
       # Build the always-in-prompt persona summary from the store.
-      # Best-effort: a mem0 failure (or an unreachable server at boot)
-      # logs and yields +nil+, so a memory-backed agent still
-      # constructs when the store is down — it just starts without a
-      # resident summary. Returns +nil+ for an empty store too.
+      # Best-effort: a mem0 failure (or unreachable server at boot) logs
+      # and yields +nil+, so a memory-backed agent still constructs when
+      # the store is down. +nil+ for an empty store too.
       #
-      # The affordance line tells the model whether the list is
-      # *complete*. {#get_all} returns the whole store before the
-      # +.first(@resident_limit)+ cap, so the true total is free to
-      # report. When the resident summary already holds every memory
-      # (total ≤ +resident_limit+), the model is told so explicitly and
-      # +recall+ is framed as re-focusing a known fact, not finding new
-      # ones — otherwise an open question ("what do you know about me?")
-      # sends it on redundant +recall+ round-trips that can only return
-      # what it already has. When the store is larger than the cap, the
-      # summary is a partial view and +recall+ genuinely finds more.
+      # The affordance line reports whether the list is *complete*.
+      # {Mem0Client#get_all} returns the whole store before the
+      # +.first(@resident_limit)+ cap, so the true total is free to report.
+      # When the summary already holds every memory (total ≤
+      # +resident_limit+), +recall+ is framed as re-focusing a known fact —
+      # otherwise "what do you know about me?" sends the model on redundant
+      # +recall+ round-trips that can only return what it already has.
       #
       # @return [String, nil]
       def resident_persona_snippet

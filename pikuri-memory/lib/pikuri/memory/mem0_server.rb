@@ -7,107 +7,83 @@ require 'uri'
 
 module Pikuri
   module Memory
-    # Supervisor for a self-managed mem0 + Qdrant sidecar. Pairs with
-    # {Mem0Client}: this class owns the *stack* (clone + patch the mem0
-    # source, +docker compose up --build+, heartbeat-poll, tear down);
-    # {Mem0Client} owns the HTTP client that talks to it. {#client}
-    # returns a {Mem0Client} pre-pointed at the running server.
+    # Supervisor for a self-managed mem0 + Qdrant sidecar. This class owns
+    # the *stack* (clone + patch the mem0 source, +docker compose up
+    # --build+, heartbeat-poll, tear down); {Mem0Client} owns the HTTP
+    # client, and {#client} returns one pre-pointed at the running server.
+    # A host already running mem0 elsewhere skips this class and wires
+    # {Mem0Client.new(endpoint:)} directly (the +Server::Chroma+-shaped
+    # let-pikuri-manage-it vs bring-your-own choice).
     #
-    # Same split, and the same "let pikuri manage it" vs "bring your own"
-    # choice, as +pikuri-vectordb+'s {Pikuri::VectorDb::Server::Chroma} /
-    # {Pikuri::VectorDb::Backend::Chroma}. A host already running mem0
-    # elsewhere skips this class and wires {Mem0Client.new(endpoint:)}
-    # directly.
+    #   Mem0Server.ensure_running(router_url: 'http://localhost:8080/v1',
+    #                             llm_model: 'qwen2.5-7b', embedder_model: 'nomic')
+    #             .client   # => a Mem0Client pointed at 127.0.0.1:8888
     #
     # == Why a compose stack, not a single +docker run+
     #
-    # Unlike Chroma (one clean published image), mem0's REST server has
-    # no usable published image — the one on Docker Hub is stale
-    # (pre-v3) — so it is *built from source*, and it needs Qdrant as a
-    # second container. Two interdependent services with a build step is
-    # exactly what compose models, and it is mem0 upstream's own blessed
-    # run path. So this supervisor wraps +docker compose+ (through
-    # {Pikuri::Subprocess.spawn}) over the compose file shipped in the
-    # gem's +docker/+ directory, rather than reimplementing service
-    # ordering by hand.
+    # mem0's REST server has no usable published image (the Docker Hub
+    # one is pre-v3), so it is *built from source*, and it needs Qdrant as
+    # a second container. Two interdependent services with a build step is
+    # what +docker compose+ models — driven here (through
+    # {Pikuri::Subprocess.spawn}) over the compose file in the gem's
+    # +docker/+ directory.
     #
     # == No Postgres; Qdrant, patched in at build
     #
-    # The upstream server's +DEFAULT_CONFIG+ hardcodes the **pgvector**
-    # vector store, whose mem0 provider has a top-k inversion bug (cosine
-    # *distance* ranked as a *similarity* — DESIGN.md §"Root cause: the
-    # pgvector top-k inversion"), *and* whose provider connects to
-    # Postgres eagerly at boot.
+    # Upstream's +DEFAULT_CONFIG+ hardcodes **pgvector**, whose mem0
+    # provider has a top-k inversion bug (cosine *distance* ranked as a
+    # *similarity*) *and* connects to Postgres eagerly at boot.
     # {#prepare_checkout!} applies +docker/qdrant-default-config.patch+ to
-    # the pinned checkout, swapping that default to **Qdrant** (env-driven
-    # host/port/dims). Result: correct nearest-first ranking *and* no
-    # Postgres in the stack — verified end-to-end (server boots
-    # Postgres-free; add + search through the REST API rank correctly
-    # against the local llama.cpp router).
+    # swap the default to **Qdrant** (env-driven host/port/dims) — correct
+    # ranking *and* a Postgres-free stack. See DESIGN.md §"Root cause: the
+    # pgvector top-k inversion".
     #
     # == Local LLM + embedder via the router
     #
-    # mem0's bundled provider validation accepts only +openai+ /
-    # +anthropic+ / +gemini+ for the LLM and +openai+ / +gemini+ for the
-    # embedder, so the local path keeps +provider: "openai"+ and points
-    # +OPENAI_BASE_URL+ at the llama.cpp router. The extraction model must
-    # be **non-reasoning** (e.g. +Qwen2.5-7B-Instruct+): a thinking model
-    # burns its budget on CoT and returns empty/truncated JSON
-    # (DESIGN.md §"Extraction model decision"). The vector
-    # store is not bundle-gated, so Qdrant is accepted.
+    # mem0's provider validation accepts only +openai+/+anthropic+/+gemini+
+    # (LLM) and +openai+/+gemini+ (embedder), so the local path keeps
+    # +provider: "openai"+ and points +OPENAI_BASE_URL+ at the llama.cpp
+    # router. The extraction model must be **non-reasoning** (e.g.
+    # +Qwen2.5-7B-Instruct+) — a thinking model burns its budget on CoT
+    # and returns empty/truncated JSON (DESIGN.md §"Extraction model
+    # decision"). The vector store is not bundle-gated, so Qdrant is fine.
     #
     # == The router relay (container → host loopback)
     #
-    # The extraction LLM + embedder calls originate *inside* the mem0
-    # container, but the llama.cpp router conventionally binds the host's
-    # +127.0.0.1:8080+ — an address rootless docker deliberately refuses
-    # to route containers to (+--disable-host-loopback+; re-enabling it
-    # daemon-wide would hand *every* container, including deliberately
-    # untrusted MCP containers, a path to *every* loopback-bound service
-    # on the host: CUPS, trust-auth Postgres, an unauthenticated Redis…).
-    # Instead of punching that hole, the supervisor builds a scoped one:
+    # The LLM + embedder calls originate *inside* the container, but the
+    # router conventionally binds the host's +127.0.0.1:8080+ — which
+    # rootless docker refuses to route containers to
+    # (+--disable-host-loopback+; re-enabling it daemon-wide would hand
+    # *every* container, incl. untrusted MCP ones, a path to *every*
+    # loopback-bound host service: CUPS, trust-auth Postgres, an
+    # unauthenticated Redis…). Instead the supervisor builds a scoped hole:
     #
-    # 1. The host side runs +socat UNIX-LISTEN:<sock_dir>/router.sock,…
-    #    TCP:<router host:port>+ — spawned via {Pikuri::Subprocess.spawn}
-    #    as a daemon child (never +#wait+ed; stopped with
-    #    +Subprocess#terminate+, and swept by the exit reaper as a
-    #    backstop).
-    # 2. The compose stack's +router-proxy+ sidecar (a pinned
-    #    {SOCAT_IMAGE}, ~5 MB) bind-mounts the socket *directory* and
-    #    relays it back onto the stack-internal network as
-    #    +http://router-proxy:8080+.
+    # 1. Host side: +socat UNIX-LISTEN:<sock_dir>/router.sock,… TCP:<router>+,
+    #    spawned as a daemon child (never +#wait+ed; stopped with
+    #    +Subprocess#terminate+, swept by the exit reaper as a backstop).
+    # 2. The compose stack's +router-proxy+ sidecar (pinned {SOCAT_IMAGE})
+    #    bind-mounts the socket *directory* and relays it onto the
+    #    stack-internal network as +http://router-proxy:8080+.
     # 3. mem0's +OPENAI_BASE_URL+ points at that sidecar.
     #
-    # The socket *file* is the capability: only a container that mounts
-    # it can reach the router, the host's loopback stays sealed for
-    # everything else, and the same wiring works identically on rootful
-    # and rootless daemons — so there is no daemon-flavour special case.
+    # The socket *file* is the capability: only a container that mounts it
+    # reaches the router, the host loopback stays sealed for everything
+    # else, and the wiring is identical on rootful and rootless daemons.
     # The relay speaks plain TCP, so +router_url+ must be +http://+; an
-    # +https+ router needs +container_router_url:+ (which bypasses the
-    # relay and is then the caller's routing problem).
+    # +https+ router needs +container_router_url:+ (bypasses the relay,
+    # caller's routing problem).
     #
     # == Pinned + patched checkout
     #
-    # The mem0 server is built from {MEM0_REF} (a pinned commit), cloned
-    # into the cache dir once and reused. The patch is applied with
-    # +git apply+ and is **fail-loud**: if it neither applies cleanly nor
-    # is already applied, {#prepare_checkout!} raises rather than building
-    # a wrong image (same discipline as the no-think build patch in
-    # DESIGN.md §"The no-think patch (fallback): verified live").
+    # Built from {MEM0_REF} (a pinned commit), cloned once and reused. The
+    # patch is applied with +git apply+ and is **fail-loud**: if it
+    # neither applies cleanly nor is already applied, {#prepare_checkout!}
+    # raises rather than build a wrong image.
     #
-    # == Bind 127.0.0.1
-    #
-    # The shipped compose publishes both ports on +127.0.0.1+ only — the
-    # user's memory never listens on a routable interface, same posture as
-    # {Pikuri::VectorDb::Server::Chroma}.
-    #
-    # == Subprocess seam
-    #
-    # Every +git+ / +docker+ invocation routes through
-    # {Pikuri::Subprocess.spawn} per the subprocess seam. Errors at boot
-    # (missing docker/git, build failure, healthcheck timeout) raise
-    # +RuntimeError+ with the offending output; teardown failures are
-    # logged, not raised.
+    # Both published ports bind +127.0.0.1+ only — the memory never
+    # listens on a routable interface. Boot errors (missing docker/git,
+    # build failure, healthcheck timeout) raise +RuntimeError+ with the
+    # offending output; teardown failures are logged, not raised.
     class Mem0Server
       LOGGER = Pikuri.logger_for('Memory::Mem0Server')
 
@@ -120,9 +96,8 @@ module Pikuri
       #   regenerated against the new ref if +DEFAULT_CONFIG+ moved.
       MEM0_REF = 'a3154d59e52386d4e1189c1f5f44819868f76514'
 
-      # @return [String] compose project name. Prefix +pikuri-internal-+
-      #   is the namespace pikuri squats for self-managed infra (same
-      #   convention as {Pikuri::VectorDb::Server::Chroma}).
+      # @return [String] compose project name. The +pikuri-internal-+
+      #   prefix is the namespace pikuri squats for self-managed infra.
       COMPOSE_PROJECT = 'pikuri-internal-mem0'
 
       # @return [String] absolute path to the shipped compose file.
@@ -147,25 +122,21 @@ module Pikuri
       # @return [String] default Qdrant collection name.
       DEFAULT_COLLECTION = 'pikuri_memory'
 
-      # @return [String] pinned Qdrant image. **Kept in lockstep
-      #   with +Pikuri::VectorDb::Server::Qdrant::IMAGE+** — same tag,
-      #   so a host running both stacks holds one image on disk. The
-      #   gems don't depend on each other, so the pin is a
-      #   convention, not a shared constant; bump both together. See
-      #   +pikuri-vectordb/DESIGN.md+ §"Verdict".
+      # @return [String] pinned Qdrant image. **Kept in lockstep with
+      #   +Pikuri::VectorDb::Server::Qdrant::IMAGE+** (same tag → one
+      #   image on disk for a host running both stacks). A convention,
+      #   not a shared constant (the gems don't depend on each other);
+      #   bump both together.
       DEFAULT_QDRANT_IMAGE = 'qdrant/qdrant:v1.12.4'
 
       # @return [Integer] seconds to wait for the REST API to answer after
-      #   +compose up+ returns. The first run also builds the image inside
-      #   +compose up --build+ (minutes), but that is covered by the
-      #   blocking build call, not this poll — this only covers
-      #   container-start readiness.
+      #   +compose up+ returns. Covers container-start readiness only —
+      #   the first-run image build (minutes) is inside the blocking
+      #   +--build+ call, not this poll.
       DEFAULT_HEALTHCHECK_TIMEOUT = 60
 
-      # @return [String] pinned socat image for the +router-proxy+
-      #   sidecar (see the class header's "router relay" section). A
-      #   ~5 MB single-binary image; bumped manually like
-      #   {DEFAULT_QDRANT_IMAGE}.
+      # @return [String] pinned socat image for the +router-proxy+ sidecar
+      #   (class header's "router relay"). Bumped manually.
       SOCAT_IMAGE = 'alpine/socat:1.8.0.3'
 
       # @return [String] socket filename inside {#sock_dir}; the sidecar
@@ -173,10 +144,9 @@ module Pikuri
       RELAY_SOCKET = 'router.sock'
 
       # @return [Integer] seconds to wait for the host-side socat to bind
-      #   the relay socket after spawn. Binding is immediate in practice;
-      #   the timeout exists to fail loud when socat dies on startup
-      #   (bad address, port typo) instead of surfacing minutes later as
-      #   silent extraction failures.
+      #   the relay socket. Binding is immediate in practice; the timeout
+      #   fails loud when socat dies on startup (bad address, port typo)
+      #   rather than surfacing later as silent extraction failures.
       RELAY_BIND_TIMEOUT = 5
 
       # Construct and immediately ensure the stack is running.
@@ -251,11 +221,10 @@ module Pikuri
         @cache_dir.join('temp', 'git')
       end
 
-      # @return [Pathname] host directory bind-mounted into the
-      #   containers for persistent state — +data/qdrant+ holds the
-      #   Qdrant corpus, +data/history+ the memory-history SQLite. The
-      #   containers are ephemeral; this survives them (same posture as
-      #   {Pikuri::VectorDb::Server::Chroma}).
+      # @return [Pathname] host directory bind-mounted into the containers
+      #   for persistent state — +data/qdrant+ holds the Qdrant corpus,
+      #   +data/history+ the memory-history SQLite. Survives the ephemeral
+      #   containers.
       def data_dir
         @cache_dir.join('data')
       end
@@ -330,11 +299,9 @@ module Pikuri
       end
 
       # Default cache root for this supervisor: +<Pikuri::Paths.cache>/mem0+
-      # (i.e. +$XDG_CACHE_HOME/pikuri/mem0+ or +~/.cache/pikuri/mem0+).
-      # Holds +temp/git+ (the checkout) and +data/+ (the bind-mounted
-      # corpus + history). Shares the cache root with
-      # {Pikuri::VectorDb::Server::Chroma} via {Pikuri::Paths}. Public so
-      # tests and docs reference the same path the supervisor resolves.
+      # (+$XDG_CACHE_HOME/pikuri/mem0+ or +~/.cache/pikuri/mem0+), holding
+      # +temp/git+ (the checkout) and +data/+ (the bind-mounted corpus +
+      # history).
       #
       # @return [String]
       def default_cache_dir
@@ -427,11 +394,10 @@ module Pikuri
       end
 
       # Spawn the host-side half of the router relay (class header):
-      # +socat+ listening on the unix socket, forwarding each connection
-      # to the router's TCP address. A daemon child — never +#wait+ed; a
-      # drain thread keeps its (normally silent) combined-output pipe from
-      # filling, logging anything socat does say. Fails loud if the socket
-      # doesn't appear within {RELAY_BIND_TIMEOUT}.
+      # +socat+ listening on the unix socket, forwarding to the router's
+      # TCP address. A daemon child, never +#wait+ed; a drain thread keeps
+      # its pipe from filling. Fails loud if the socket doesn't appear
+      # within {RELAY_BIND_TIMEOUT}.
       def start_relay!
         uri = URI(@router_url)
         sock = sock_dir.join(RELAY_SOCKET)
@@ -463,9 +429,8 @@ module Pikuri
         end
       end
 
-      # Poll until socat has bound the socket. Near-instant in practice;
-      # a timeout means socat died on startup — fail loud now rather than
-      # as silent extraction failures later.
+      # Poll until socat has bound the socket, failing loud on timeout
+      # (see {RELAY_BIND_TIMEOUT}).
       def wait_for_relay_socket!(sock)
         deadline = Time.now + RELAY_BIND_TIMEOUT
         until File.socket?(sock)
