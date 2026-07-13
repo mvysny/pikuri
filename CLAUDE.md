@@ -68,9 +68,13 @@ configuration with no clear start-here. Pikuri is the counter-move:
 - **Privacy-first.** Defaults wire the local llama.cpp server — no
   cloud account, no API key, no telemetry. External providers
   require explicit opt-in via ruby_llm.
-- **Educates along the way.** The code is meant to be read: per-file
-  YARD headers explain *why* each piece exists, system prompts are
-  plain text in `prompts/`, and conventions are deliberately verbose
+- **Educates along the way.** The target learner is a *fairly skilled
+  Ruby programmer* who is new to AI/LLMs and wants to learn how agents
+  work — so the teaching assumes Ruby fluency and spends its words on
+  the LLM/agent concepts (the loop, tools, context, RAG, memory,
+  privacy) rather than on the language. The code is meant to be read:
+  per-file YARD headers explain *why* each piece exists, system prompts
+  are plain text in `prompts/`, and conventions are deliberately verbose
   so the project doubles as a tour of how a small agent runtime
   actually works.
 - **Small enough to audit.** A user should be able to read pikuri's
