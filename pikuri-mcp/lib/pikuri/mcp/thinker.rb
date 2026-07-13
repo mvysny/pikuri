@@ -2,36 +2,20 @@
 
 module Pikuri
   module Mcp
-    # One-shot LLM pass for the MCP boot-time checks: {Synthesizer}
-    # (description summarization) and {Verifier} (injection check)
-    # call {#call} with a self-contained prompt and get the model's
-    # reply back as a plain String. Each call constructs a fresh
-    # tools-free {Pikuri::Agent}, runs the prompt as its single
-    # turn, and closes it — fresh per call deliberately, so
-    # per-server prompts don't accumulate in one shared chat
-    # history and cross-contaminate. The construction cost is noise
-    # next to the LLM round-trip, and {Cache} short-circuits before
-    # {#call} fires anyway.
+    # One-shot LLM pass for the MCP boot-time checks ({Synthesizer},
+    # {Verifier}): {#call} takes a self-contained prompt and returns the model's
+    # reply as a String. Each call builds a fresh tools-free {Pikuri::Agent},
+    # runs the prompt as its single turn, and closes it — fresh per call so
+    # per-server prompts don't accumulate in one chat and cross-contaminate
+    # (construction cost is noise next to the round-trip, and {Cache}
+    # short-circuits before {#call} fires anyway). No listeners, no step limit.
     #
-    # No listeners (boot passes are silent), no step limit (no
-    # tools are wired, so the model has nothing to tick).
-    #
-    # == Cancellation
-    #
-    # +cancellable+ is checked once before each call — the "gentle
-    # cancel" semantic: a flag flipped between calls raises
-    # promptly; the in-flight HTTP call itself is not interrupted.
-    # It is deliberately NOT passed into the one-shot agent:
-    # +Agent#run_loop+ resets its cancellable at the turn boundary,
-    # which would erase a pending Ctrl+C instead of honoring it
-    # (and a tools-free non-streaming turn has no check points
-    # anyway).
-    #
-    # == Failure
-    #
-    # Errors from the provider propagate to the caller verbatim —
-    # no recovery layer here. {Synthesizer} rescues at its level
-    # and falls back to a default; {Verifier} lets them bubble.
+    # +cancellable+ is checked once before each call (the gentle-cancel
+    # semantic: a flag flipped between calls raises promptly; the in-flight HTTP
+    # is not interrupted). Deliberately NOT passed into the one-shot agent —
+    # +Agent#run_loop+ resets its cancellable at the turn boundary, which would
+    # erase a pending Ctrl+C. Provider errors propagate verbatim ({Synthesizer}
+    # rescues and falls back; {Verifier} lets them bubble).
     class Thinker
       # System prompt for the one-shot agents. The real
       # instructions (synthesis framing, verification rubric) live

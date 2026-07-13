@@ -4,120 +4,63 @@ require 'set'
 
 module Pikuri
   module Mcp
-  # Runtime side of MCP support: spawns the configured servers, holds
-  # one {ClientWrapper} per live server, and orchestrates the
-  # {Verifier} / {Synthesizer} passes that turn a raw MCP surface into
-  # the +<available_mcps>+ snippet. The +mcp+ gem dependency now lives
-  # one level down in {ClientWrapper}. Constructed from a {Registry}
-  # (config) without side effects; the owner calls {#start_all} to
-  # spawn every entry and registers {#close} with {Pikuri::Finalizers}
-  # in between (or uses the {.start} convenience when it doesn't need
-  # that gap).
-  #
-  # == Transports
-  #
-  # Transport selection (stdio vs HTTP) and the +mcp+ gem's
-  # +MCP::Client::Stdio+ / +MCP::Client::HTTP+ construction live inside
-  # {ClientWrapper}. {Servers} stays transport-agnostic: it asks the
-  # wrapper for +server_info+ / +tools+ at boot and delegates
-  # per-tool calls back to the wrapper, which handles restart-on-
-  # subprocess-death retry internally (see {ClientWrapper} for the
-  # retry contract).
+  # Runtime side of MCP support: spawns the configured servers, holds one
+  # {ClientWrapper} per live server, and orchestrates the {Verifier} /
+  # {Synthesizer} passes that turn a raw MCP surface into the
+  # +<available_mcps>+ snippet. The +mcp+ gem dependency lives one level down
+  # in {ClientWrapper}, which also owns transport selection (stdio vs HTTP) and
+  # restart-on-subprocess-death retry; {Servers} stays transport-agnostic.
   #
   # == Lifecycle: two-phase, and the cleanup gap
   #
-  # {#initialize} is pure; {#start_all} does the spawning. The split
-  # exists so the owner can arm {#close} *between* them — before the
-  # failure-prone startup runs. {Mcp::Extension} does exactly that:
+  # {#initialize} is pure; {#start_all} spawns. The split lets the owner arm
+  # {#close} *between* them, before the failure-prone startup:
   #
   #   servers = Mcp::Servers.new(registry, ...)   # pure
   #   c.on_close { servers.close }                 # cleanup armed
   #   servers.start_all                            # may raise (Cancelled, injection)
   #
-  # +c.on_close+ writes straight to the agent's live handler list (see
-  # {Pikuri::Agent::Configurator}'s +on_close_sink+), so if
-  # {#start_all} raises, the agent's constructor rescue still fires
-  # this and closes any half-spawned servers — and on the happy path
-  # the same handler closes them on +agent.close+ / at process exit.
-  # That central handling is why {Servers} itself needs no
-  # {Pikuri::Finalizers} coupling.
+  # +c.on_close+ writes to the agent's live handler list (see
+  # {Pikuri::Agent::Configurator}'s +on_close_sink+), so a {#start_all} raise
+  # still closes any half-spawned servers via the constructor rescue — which is
+  # why {Servers} needs no {Pikuri::Finalizers} coupling of its own.
   #
-  # == The +Subprocess.spawn+ carve-out
+  # == The +Subprocess.spawn+ carve-out (stdio only)
   #
-  # The +Subprocess.spawn+ chokepoint carve-out applies *only* to stdio
-  # entries. The +mcp+ gem owns the subprocess lifecycle:
-  # +MCP::Client::Stdio+ calls +Process.spawn+ internally; forcing it
-  # through pikuri's {Pikuri::Subprocess.spawn} chokepoint would mean
-  # either forking the gem or threading custom IO pipes through its
-  # API — duplicating work the gem exists to do. So stdio MCP is the
-  # documented exception to the chokepoint convention in CLAUDE.md
-  # "Scope decisions": the gem spawns, we own +#close+ (via
-  # {ClientWrapper#close}). Graceful close on a stdio transport closes
-  # stdin → server's read loop hits EOF → server self-terminates, per
-  # the MCP spec.
+  # +MCP::Client::Stdio+ calls +Process.spawn+ internally; routing it through
+  # pikuri's {Pikuri::Subprocess.spawn} chokepoint would mean forking the gem
+  # or threading custom IO pipes through its API. So stdio MCP is the documented
+  # exception to the chokepoint convention (CLAUDE.md): the gem spawns, we own
+  # +#close+ (via {ClientWrapper#close}) — closing stdin → EOF → the server
+  # self-terminates per spec. HTTP entries don't spawn (plain Faraday); +#close+
+  # sends the session-termination +DELETE+.
   #
-  # HTTP entries don't spawn anything — they're plain Faraday — so the
-  # carve-out doesn't apply; +#close+ still sends the session-
-  # termination +DELETE+ per spec.
+  # == Roles
   #
-  # == What lives where
-  #
-  # * {ClientWrapper}: the per-server client/transport lifecycle plus
-  #   restart-and-retry on stdio subprocess death. {Servers} holds one
-  #   wrapper per live server in +@wrappers+.
-  # * {Servers}: two-phase startup ({.new} + {#start_all}), audit
-  #   logging, the wrappers hash,
-  #   +#close+, the +<available_mcps>+ snippet renderer, and the
-  #   shared +register_tools_with_agent+ that actually wires MCP tools
-  #   into a given agent's underlying +RubyLLM::Chat+.
-  # * {View}: thin facade for sub-agents — same public surface as
-  #   {Servers} but every method delegates to the root. Sub-agents
-  #   share the parent's live wrappers; only the root owns +#close+.
-  # * {Connect}: the +mcp_connect+ tool the LLM calls. Private inner
-  #   {Pikuri::Tool} subclass instantiated per-agent by
-  #   {Agent#initialize}. Tracks its own +Set+ of activated ids so
-  #   re-activation comes back as an LLM-actionable +"Error: ..."+
-  #   String. Each agent (parent + each sub-agent) gets its own
-  #   instance with its own set, so activation is strictly per-agent.
+  # {ClientWrapper} owns the per-server transport + retry; {Servers} owns
+  # two-phase startup, the +@wrappers+ hash, audit logging, the
+  # +<available_mcps>+ renderer, and +register_tools_with_agent+; {View} is the
+  # sub-agent facade (delegates to the root, which alone owns +#close+); and
+  # {Connect} is the per-agent +mcp_connect+ tool (its own activation +Set+, so
+  # activation is strictly per-agent — never inherited by a sub-agent).
   #
   # == Why MCP tools bypass +Pikuri::Tool+
   #
-  # MCP tools arrive with JSON Schema in their +input_schema+;
-  # +RubyLLM::Tool.params(schema)+ accepts that shape directly. We
-  # therefore synthesize +RubyLLM::Tool+ subclasses inside this class
-  # and feed them through {Pikuri::Agent::ExtensionContext#add_raw_tool}
-  # — no +Pikuri::Tool::Parameters+ in the middle. The strict-validation
-  # contract pikuri commits to for native tools is intentionally not
-  # extended to MCP tools in v1; MCP-side validation catches bad input,
-  # and the provenance prefix + audit log are the compensating
-  # transparency.
+  # MCP tools carry JSON Schema in +input_schema+, which
+  # +RubyLLM::Tool.params(schema)+ accepts directly, so we synthesize
+  # +RubyLLM::Tool+ subclasses here and feed them through
+  # {Pikuri::Agent::ExtensionContext#add_raw_tool} — no
+  # +Pikuri::Tool::Parameters+ in the middle. The strict-validation contract for
+  # native tools is deliberately not extended to MCP tools in v1; MCP-side
+  # validation catches bad input, and the provenance prefix + audit log are the
+  # compensating transparency.
   class Servers
     LOGGER = Pikuri.logger_for('Mcp::Servers')
     private_constant :LOGGER
 
-    # @param registry [Registry] configured servers to start.
-    # @param synthesizer [Synthesizer, nil] when set, invoked from
-    #   {#resolve_description} for servers whose +initialize+
-    #   handshake doesn't carry an +instructions+ or
-    #   +serverInfo.title+ field useful enough to show the LLM.
-    #   {Agent#initialize} builds and threads a {Synthesizer} (with
-    #   thinker + cache) when its +synthesize_descriptions:+ kwarg
-    #   is true. Pass +nil+ (the default) to skip synthesis and rely
-    #   on the static fallback chain.
-    # @param verifier [Verifier, nil] when set, invoked from
-    #   {#start_one} after +wrapper.tools+ but before
-    #   {#resolve_description}. A {Verifier::InjectionDetected} raise
-    #   aborts startup for that server (wrapper closed, exception
-    #   propagated). {Agent#initialize} builds + threads a real
-    #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
-    #   Pass +nil+ (the default) to skip injection-checking and
-    #   trust whatever the server emits.
-    # Construct + start in one step. Convenience for callers that
-    # don't need to slot work between construction and startup — most
-    # of them. The one caller that *does* is {Mcp::Extension}, which
-    # uses the two-phase {.new} + {#start_all} directly so it can
-    # register {#close} with {Pikuri::Finalizers} in the gap (see the
-    # "Lifecycle" section in the class header).
+    # Construct + start in one step — the convenience for callers that don't
+    # need to slot cleanup registration into the gap. {Mcp::Extension} uses the
+    # two-phase {.new} + {#start_all} directly instead (see "Lifecycle").
     #
     # @param registry [Registry]
     # @param synthesizer [Synthesizer, nil] see {#initialize}
@@ -127,30 +70,21 @@ module Pikuri
       new(registry, synthesizer: synthesizer, verifier: verifier).tap(&:start_all)
     end
 
-    # Construct *without side effects* — no subprocess spawns, no
-    # synthesizer/verifier LLM calls. Those happen in {#start_all},
-    # which the caller invokes once it has registered {#close} for
-    # cleanup. Splitting the two means a {#start_all} that raises
-    # (notably +Cancelled+ from synthesis) can't strand half-spawned
-    # servers: the owner has already registered cleanup.
+    # Construct *without side effects* — no spawns, no synthesizer/verifier LLM
+    # calls (those happen in {#start_all}, once the caller has armed {#close}).
+    # The split means a {#start_all} raise (notably +Cancelled+) can't strand
+    # half-spawned servers.
     #
     # @param registry [Registry] configured servers to start.
     # @param synthesizer [Synthesizer, nil] when set, invoked from
-    #   {#resolve_description} for servers whose +initialize+
-    #   handshake doesn't carry an +instructions+ or
-    #   +serverInfo.title+ field useful enough to show the LLM.
-    #   {Agent#initialize} builds and threads a {Synthesizer} (with
-    #   thinker + cache) when its +synthesize_descriptions:+ kwarg
-    #   is true. Pass +nil+ (the default) to skip synthesis and rely
-    #   on the static fallback chain.
-    # @param verifier [Verifier, nil] when set, invoked from
-    #   {#start_one} after +wrapper.tools+ but before
-    #   {#resolve_description}. A {Verifier::InjectionDetected} raise
-    #   aborts startup for that server (wrapper closed, exception
-    #   propagated). {Agent#initialize} builds + threads a real
-    #   {Verifier} when its +verify_mcp_servers:+ kwarg is true.
-    #   Pass +nil+ (the default) to skip injection-checking and
-    #   trust whatever the server emits.
+    #   {#resolve_description} for servers whose handshake lacks a useful
+    #   +instructions+ / +serverInfo.title+. Threaded by {Agent#initialize} when
+    #   +synthesize_descriptions:+ is true; +nil+ skips synthesis for the static
+    #   fallback chain.
+    # @param verifier [Verifier, nil] when set, invoked from {#start_one} before
+    #   {#resolve_description}; a {Verifier::InjectionDetected} raise aborts that
+    #   server's startup. Threaded by {Agent#initialize} when +verify_mcp_servers:+
+    #   is true; +nil+ trusts whatever the server emits.
     # @return [Servers] not yet started — call {#start_all}
     def initialize(registry, synthesizer: nil, verifier: nil)
       @registry     = registry
@@ -186,11 +120,8 @@ module Pikuri
       @live_ids.empty?
     end
 
-    # Build the +mcp_connect+ tool bound to the given agent, via its
-    # {Pikuri::Agent::ExtensionContext}. {Extension#bind} passes the
-    # context it received so the tool can call +ctx.add_raw_tool+
-    # without a circular constructor dance. Each call returns a fresh
-    # {Connect} with an empty activation set.
+    # Build the +mcp_connect+ tool bound to +ctx+'s agent; each call returns a
+    # fresh {Connect} with an empty activation set.
     #
     # @param ctx [Pikuri::Agent::ExtensionContext]
     # @return [Connect]
@@ -198,12 +129,10 @@ module Pikuri
       Connect.new(servers: self, ctx: ctx)
     end
 
-    # System-prompt block advertising every live MCP server to the LLM.
-    # Empty string when no servers are alive so the caller can
-    # unconditionally concatenate, same shape as
-    # {Pikuri::Skill::Catalog#format_for_prompt}. The block is *not*
-    # duplicated into the +mcp_connect+ tool description — the
-    # available-ids list lives in one semantic home.
+    # System-prompt block advertising every live MCP server. Empty string when
+    # none are alive, so callers concatenate unconditionally. The available-ids
+    # list lives here only — deliberately not duplicated into the +mcp_connect+
+    # description.
     #
     # @return [String]
     def system_prompt_snippet
@@ -227,12 +156,9 @@ module Pikuri
       lines.join("\n")
     end
 
-    # Register every tool exposed by server +id+ into an agent's
-    # underlying +RubyLLM::Chat+, through the agent's
-    # {Pikuri::Agent::ExtensionContext}. Public so
-    # {View#register_tools_with_agent} can delegate; intended caller
-    # is {Connect}. Doesn't track activation — that's {Connect}'s
-    # job (each agent's tool instance owns its own set).
+    # Register every tool exposed by server +id+ into +ctx+'s agent chat. Public
+    # so {View#register_tools_with_agent} can delegate; intended caller is
+    # {Connect}, which owns activation tracking (this doesn't).
     #
     # @param id [String] server id; must be in {#live_ids}.
     # @param ctx [Pikuri::Agent::ExtensionContext]
@@ -250,14 +176,10 @@ module Pikuri
       tools.size
     end
 
-    # Close every live transport, terminating the spawned MCP server
-    # subprocesses. Idempotent. The owner ({Mcp::Extension}) arms this
-    # via the agent's +on_close+ before calling {#start_all}, so the
-    # agent closes it — on an explicit +agent.close+, at exit via
-    # {Pikuri::Finalizers}, or from the constructor's rescue if
-    # +start_all+ raised mid-build. Tests call it explicitly.
-    # {ClientWrapper#close} catches and logs its own transport-close
-    # errors, so the loop here needs no rescue.
+    # Close every live transport, terminating the spawned subprocesses.
+    # Idempotent. Armed via the agent's +on_close+ before {#start_all} (see
+    # "Lifecycle"). {ClientWrapper#close} logs its own errors, so this loop
+    # needs no rescue.
     #
     # @return [void]
     def close
@@ -273,14 +195,10 @@ module Pikuri
       wrapper = ClientWrapper.new(entry)
       tools = wrapper.tools
 
-      # Verification, when wired, runs BEFORE the server enters
-      # @live_ids and BEFORE its description is resolved — a
-      # rejected server never gets surfaced to the LLM at all. An
-      # InjectionDetected raise propagates out through the rescue
-      # below; it is intentionally not caught as a generic
-      # StandardError because we want the user to see the
-      # rejection, not have it logged as a per-server "Failed to
-      # start" warning.
+      # Runs BEFORE the server enters @live_ids or gets a description, so a
+      # rejected server never reaches the LLM. The InjectionDetected raise is
+      # caught by the specific rescue below (not the generic StandardError one)
+      # so the user sees the rejection, not a "Failed to start" warning.
       @verifier&.call(entry: entry, client: wrapper.client, tools: tools)
 
       @wrappers[entry.id]     = wrapper
@@ -290,12 +208,9 @@ module Pikuri
 
       log_audit(entry, wrapper.client, tools)
     rescue Agent::Control::Cancellable::Cancelled, Verifier::InjectionDetected
-      # Cancellation or verifier rejection — abort startup rather
-      # than logging this as a per-server "Failed to start" warning,
-      # so the user sees the actual reason. {ClientWrapper.new}
-      # cleans up its own half-opened transport on failure, so
-      # +wrapper+ is either nil (handshake failed inside the wrapper)
-      # or a fully-initialized object that we have to close here.
+      # Abort startup and re-raise so the user sees the reason, not a "Failed to
+      # start" warning. {ClientWrapper.new} cleans up its own half-opened
+      # transport, so +wrapper+ is nil or fully built — close it either way.
       wrapper&.close
       raise
     rescue StandardError => e
@@ -303,10 +218,8 @@ module Pikuri
         "Failed to start MCP server #{entry.id.inspect} " \
         "(#{describe_entry(entry)}): #{e.class}: #{e.message}"
       )
-      # Same as above — {ClientWrapper.new}'s own rescue handles the
-      # half-opened-transport case, so +wrapper+ here is either nil
-      # or fully initialized. Closing covers the "verifier passed but
-      # resolve_description / log_audit raised" path.
+      # Covers the "verifier passed but resolve_description / log_audit raised"
+      # path; +wrapper+ is nil or fully built (see above).
       wrapper&.close
     end
 
@@ -320,31 +233,15 @@ module Pikuri
       end
     end
 
-    # Resolve the short description shown to the LLM under
-    # +<available_mcps>+. Priority chain:
-    #
-    # 1. +info['instructions']+ — the MCP spec field for "what this
-    #    server does." When the server populates it, that's the
-    #    authoritative blurb.
-    # 2. +info['serverInfo']['title']+ — human-readable name. Less
-    #    informative than instructions but usually still better
-    #    than +name+.
-    # 3. Synthesized via +@synthesizer+, when wired. This is the
-    #    path that turns a no-+instructions+, no-+title+ server
-    #    (the common case in the wild — most server authors skip
-    #    both) from a useless +serverInfo.name+ echo into a real
-    #    "this is what the server does" sentence. Errors inside
-    #    {Synthesizer#call} are logged at WARN there and surface
-    #    here as a +nil+ return; the chain continues to step 4.
-    #    +Cancellable::Cancelled+ propagates so a boot-time Ctrl+C
-    #    aborts the whole startup.
-    # 4. +info['serverInfo']['name']+ — operational identifier,
-    #    last-resort fallback when steps 1-3 produced nothing.
-    #    Non-informative (often just the package name) but better
-    #    than nothing.
-    # 5. +'(no description)'+ — sentinel string for the unreachable
-    #    case of a server whose +initialize+ response carries
-    #    neither +instructions+ nor any +serverInfo+ fields.
+    # Resolve the short +<available_mcps>+ description, priority chain:
+    # 1. +instructions+ (the MCP spec's "what this does" field);
+    # 2. +serverInfo.title+;
+    # 3. +@synthesizer+ when wired — turns the common no-instructions/no-title
+    #    server into a real sentence; its errors surface here as +nil+ (WARN
+    #    logged in {Synthesizer#call}) and fall through, but +Cancelled+
+    #    propagates so a boot-time Ctrl+C aborts;
+    # 4. +serverInfo.name+ (last-resort operational identifier);
+    # 5. +'(no description)'+ sentinel.
     def resolve_description(entry, client, tools)
       info = client.server_info || {}
       server_info = info['serverInfo'] || {}
@@ -381,29 +278,19 @@ module Pikuri
       LOGGER.info(lines.join("\n"))
     end
 
-    # Build an anonymous +RubyLLM::Tool+ subclass for one MCP-exposed
-    # tool. Name is namespaced as +"<server_id>__<tool_name>"+ to avoid
-    # collisions across servers (and with pikuri's native tools).
-    # Description is prefixed with +[From MCP server "<id>"]+ as the
-    # cheap provenance / injection-defense marker. Input-parameter
-    # descriptions from +mcp_tool.input_schema+ flow through verbatim:
-    # +RubyLLM::Tool.params(schema_hash)+ stores the JSON Schema and
-    # +instance.params_schema+ deep-dups + stringifies it on the way
-    # to the provider, so each property's +"description"+ field
-    # reaches the LLM.
+    # Build an anonymous +RubyLLM::Tool+ subclass for one MCP tool, named
+    # +"<server_id>__<tool_name>"+ (collision-free across servers + native
+    # tools) with a +[From MCP server "<id>"]+ provenance/injection-defense
+    # prefix. Input-parameter descriptions flow through verbatim via
+    # +RubyLLM::Tool.params+. The execute closure captures the {ClientWrapper},
+    # not the raw +MCP::Client+ — that's what makes restart-on-subprocess-death
+    # transparent (the wrapper handles respawn + retry, the call site stays a
+    # plain +call_tool+).
     #
-    # The execute closure captures the {ClientWrapper}, not the raw
-    # +MCP::Client+. This is what makes restart-on-subprocess-death
-    # transparent to the LLM: the wrapper handles close + respawn +
-    # retry internally, so the call site stays a plain +call_tool+.
-    #
-    # Note: +mcp_tool.output_schema+ has no destination — RubyLLM has
-    # no return-schema slot in its +Tool+ surface (no equivalent of
-    # +params+ for outputs), and providers don't accept one in the
-    # tool-call schema either. We surface output schemas in the INFO
-    # audit log (+#log_audit+) so a privacy-conscious user can still
-    # see what an MCP server claims to return, and otherwise the
-    # data simply lives in the call response.
+    # +mcp_tool.output_schema+ has no destination: RubyLLM has no return-schema
+    # slot and providers don't accept one. We surface it in the INFO audit log
+    # ({#log_audit}) so a privacy-conscious user can still see what a server
+    # claims to return.
     def synthesize_ruby_llm_tool(server_id:, wrapper:, mcp_tool:)
       namespaced_name = "#{server_id}__#{mcp_tool.name}"
       prefixed_desc = %([From MCP server "#{server_id}"]\n\n#{mcp_tool.description})
@@ -470,17 +357,11 @@ module Pikuri
          .gsub("'", '&apos;')
     end
 
-    # The +mcp_connect+ tool exposed to the LLM. Private inner class —
-    # instantiated only by {Servers#build_mcp_connect_tool} (called
-    # from {Extension#bind} with the agent's
-    # {Pikuri::Agent::ExtensionContext}), never by application code.
-    #
-    # Tracks its own activation +Set+ so re-connecting an already-active
-    # server returns a recoverable +"Error: ..."+ String (the LLM has
-    # the tools in its toolset and should just call them). Each agent
-    # owns its own {Connect} instance and therefore its own
-    # activation set — activation does not propagate between parent and
-    # sub-agent (consistent with the no-inherit rule in
+    # The +mcp_connect+ tool. Private inner class, built only by
+    # {Servers#build_mcp_connect_tool}. Tracks its own activation +Set+ so
+    # re-connecting an active server returns a recoverable +"Error: ..."+ (the
+    # tools are already in the toolset). Each agent owns its own instance and
+    # set — activation never propagates parent↔sub-agent (the no-inherit rule,
     # {Pikuri::SubAgent::SubAgentTool}).
     class Connect < Pikuri::Tool
       DESCRIPTION = <<~DESC

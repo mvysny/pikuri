@@ -2,69 +2,37 @@
 
 module Pikuri
   module Mcp
-    # One-shot LLM synthesis of a short "what does this MCP server
-    # do" description for the +<available_mcps>+ block, paired with
-    # the on-disk cache that persists the result. Owns the prompt,
-    # its version, the cleanup (whitespace collapse), and the
-    # fail-soft contract — {Servers} just calls {#call} and treats a
-    # +nil+ return as "fall back."
-    #
-    # == Cancellation
-    #
-    # +Cancellable::Cancelled+ raised from inside the thinker (the
-    # {Thinker} pre-call check) propagates up through {#call} (it's
-    # specifically *not* caught by the +StandardError+ rescue) so a
-    # user's Ctrl+C during a boot-time synthesis pass aborts
-    # startup cleanly rather than being silently logged as a
-    # "synthesis failure."
-    #
-    # == Fail-soft on errors
-    #
-    # Any other +StandardError+ — a flaky LLM, garbage JSON, a
-    # cache write failure — is logged at WARN and {#call} returns
-    # +nil+. {Servers#resolve_description} treats +nil+ as the
-    # signal to fall back to +serverInfo.name+, so a single
-    # transient blip doesn't take a server out of the +<available_mcps>+
-    # listing.
+    # One-shot LLM synthesis of a short "what does this MCP server do"
+    # description for the +<available_mcps>+ block, paired with the on-disk
+    # {Cache}. {Servers} just calls {#call} and treats +nil+ as "fall back".
+    # +Cancellable::Cancelled+ from the {Thinker} pre-call check propagates
+    # (specifically *not* caught by the +StandardError+ rescue) so a boot-time
+    # Ctrl+C aborts startup; any other +StandardError+ (flaky LLM, cache write
+    # failure) is WARN-logged and returns +nil+, so a transient blip doesn't
+    # drop a server from the listing.
     class Synthesizer
       LOGGER = Pikuri.logger_for('Mcp::Synthesizer')
       private_constant :LOGGER
 
-      # Bump when {#build_prompt} changes meaningfully. {Cache} folds
-      # this into its key fingerprint via the +prompt_version:+
-      # initializer kwarg, so a bump invalidates every cached entry
-      # from the previous prompt without anyone having to +rm+ the
-      # cache directory.
-      # Version 2: the thinker gained a generic system prompt
-      # ({Thinker::SYSTEM_PROMPT}), changing the effective prompt
-      # for every entry.
+      # Bump when {#build_prompt} changes meaningfully. {Cache} folds it into the
+      # key fingerprint so a bump invalidates the previous prompt's entries
+      # without anyone +rm+-ing the cache.
       PROMPT_VERSION = 2
 
-      # The easy path is +Synthesizer.new(transport: ...)+ — the
-      # {Thinker} and the production on-disk {Cache} are built
-      # right here, so wiring one up needs nothing beyond the
-      # transport the host agent already has. +thinker:+ exists as
-      # the explicit override (a custom callable, a test fake) and
-      # is mutually exclusive with the transport path.
+      # The easy path is +Synthesizer.new(transport: ...)+ — the {Thinker} and
+      # the production on-disk {Cache} are built here; +thinker:+ is the explicit
+      # override, mutually exclusive with +transport:+.
       #
-      # @param transport [Pikuri::Agent::ChatTransport, nil] when
-      #   set, a {Thinker} is constructed from it (and
-      #   +cancellable:+); the synthesis passes run against this
-      #   model.
-      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil]
-      #   forwarded to the constructed {Thinker} so a boot-time
-      #   Ctrl+C aborts the pass. Only meaningful on the
-      #   +transport:+ path.
-      # @param thinker [#call, nil] one-arg callable invoked as
-      #   +thinker.call(prompt)+, replacing the built-in {Thinker}.
-      # @param cache [Cache, Cache::NULL, nil] storage layer. When
-      #   +nil+ (the default): the +transport:+ path builds the
-      #   production on-disk {Cache} keyed on the transport's model
-      #   and {PROMPT_VERSION}; the +thinker:+ path falls back to
-      #   {Cache::NULL} (no persistence — the test default).
-      # @raise [ArgumentError] when neither or both of +transport:+
-      #   and +thinker:+ are given, or when +cancellable:+ is
-      #   combined with +thinker:+
+      # @param transport [Pikuri::Agent::ChatTransport, nil] builds a {Thinker}
+      #   (with +cancellable:+); the passes run against this model.
+      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil] forwarded
+      #   to the {Thinker} so a boot-time Ctrl+C aborts. Transport path only.
+      # @param thinker [#call, nil] +thinker.call(prompt)+, replacing the
+      #   built-in {Thinker}.
+      # @param cache [Cache, Cache::NULL, nil] +nil+ builds the on-disk {Cache}
+      #   on the +transport:+ path, {Cache::NULL} on the +thinker:+ path.
+      # @raise [ArgumentError] when neither or both of +transport:+/+thinker:+
+      #   are given, or +cancellable:+ is combined with +thinker:+.
       def initialize(transport: nil, cancellable: nil, thinker: nil, cache: nil)
         raise ArgumentError, 'pass exactly one of transport: or thinker:' if transport.nil? == thinker.nil?
         raise ArgumentError, 'cancellable: only applies to the transport: path' if thinker && cancellable

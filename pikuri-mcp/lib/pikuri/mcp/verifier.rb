@@ -2,69 +2,35 @@
 
 module Pikuri
   module Mcp
-    # Pre-flight check for an MCP server's textual surface — looking
-    # for prompt-injection / exfiltration / tool-chain-hijacking
-    # patterns that a malicious or compromised server could embed in
-    # its +initialize+ handshake, tool descriptions, or parameter
-    # schemas. Wired into {Servers#start_one} after +client.tools+ but
-    # before {Servers#resolve_description}, so a flagged server never
-    # gets its description synthesized and never enters {Servers#live_ids}.
+    # Pre-flight check for an MCP server's textual surface — prompt-injection /
+    # exfiltration / tool-chain-hijacking patterns a malicious server could embed
+    # in its handshake, tool descriptions, or parameter schemas. Wired into
+    # {Servers#start_one} before {Servers#resolve_description}, so a flagged
+    # server never enters {Servers#live_ids}.
     #
-    # == Two passes
+    # Two passes: (1) a **mechanical Unicode pre-pass** raising {InjectionDetected}
+    # on any {SUSPICIOUS_UNICODE} code point (zero-width, bidi overrides, tag
+    # chars, BOMs — no legitimate place in tool docs, almost always an attempt to
+    # hide text from a reader), free because it precedes any LLM call; then (2)
+    # **LLM verification** handing the structured surface to +@thinker+, where a
+    # clean response is the literal +"OK"+ and anything else raises
+    # {InjectionDetected} with the model's reasoning.
     #
-    # 1. **Mechanical Unicode pre-pass.** Walks every text field the
-    #    server emits and raises {InjectionDetected} if it finds a
-    #    code point in {SUSPICIOUS_UNICODE} — zero-width characters,
-    #    RTL/bidi overrides, Unicode tag characters in the
-    #    +U+E0000+-+U+E007F+ range, BOMs, interlinear annotation
-    #    markers. Real MCP server authors have no legitimate reason
-    #    to include any of these; if one shows up, it's almost
-    #    certainly an attempt to hide text from a human reader (and
-    #    sometimes from the model itself, depending on tokenizer).
-    #    This pass costs nothing — it runs before any LLM round-trip.
-    #
-    # 2. **LLM verification.** When the Unicode pass is clean, the
-    #    server's structured surface is handed to +@thinker+ with a
-    #    prompt describing the threat model and the patterns to flag
-    #    (instruction-override, pretend-system messages, exfiltration
-    #    instructions, tool-chain hijacking, authority impersonation,
-    #    misleading capability claims). A clean response is the
-    #    literal string +"OK"+ — anything else is treated as a flag
-    #    and raises {InjectionDetected} carrying the model's reasoning.
-    #
-    # == Cache semantics
-    #
-    # Only the LLM-pass result is cached; the Unicode pre-pass runs
-    # on every boot (it's fast). The cache stores +"OK"+ keyed on the
-    # full server surface, so an unchanged surface skips the second
-    # round-trip entirely on subsequent boots. Negative results
-    # ({InjectionDetected}) are NOT cached — a server that gets
-    # rejected today re-runs verification on the next boot, in case
-    # the operator legitimately updated it (any update changes the
-    # cache key anyway).
-    #
-    # == False-positive philosophy
-    #
-    # The verifier checks for *injection*, not for *capability*. A
-    # tool whose description honestly says "executes arbitrary
-    # JavaScript" or "runs bash commands" is not flagged — the user
-    # has chosen to wire that server into their agent, and the
-    # capability is the tool's stated purpose. The verifier's job is
-    # to spot text that tries to manipulate the calling agent into
-    # doing things *other* than what the tool claims to do.
-    #
-    # See the prompt in {#build_prompt} for the precise patterns.
+    # Only the LLM-pass +"OK"+ is cached (keyed on the full surface, so an
+    # unchanged server skips the round-trip next boot); rejections are NOT cached
+    # — a rejected server re-verifies next boot in case the operator fixed it
+    # (any change alters the key anyway). The verifier checks for *injection*,
+    # not *capability*: a tool that honestly says "runs bash commands" is not
+    # flagged — the user wired it in on purpose; the job is to catch text that
+    # manipulates the agent into doing something *other* than the tool's stated
+    # purpose. See {#build_prompt} for the precise patterns.
     class Verifier
       LOGGER = Pikuri.logger_for('Mcp::Verifier')
       private_constant :LOGGER
 
-      # Bump when {#build_prompt} changes meaningfully. {Cache}
-      # folds this into its key fingerprint so a prompt edit
-      # invalidates every cached "OK" without anyone having to
-      # +rm+ the cache directory.
-      # Version 2: the thinker gained a generic system prompt
-      # ({Thinker::SYSTEM_PROMPT}), changing the effective prompt
-      # for every entry.
+      # Bump when {#build_prompt} changes meaningfully. {Cache} folds it into the
+      # key fingerprint so a prompt edit invalidates every cached "OK" without
+      # anyone +rm+-ing the cache directory.
       PROMPT_VERSION = 2
 
       # Where the production cache lives — a sibling of
@@ -88,38 +54,27 @@ module Pikuri
       #   PUA" channel made famous by recent prompt-injection PoCs).
       SUSPICIOUS_UNICODE = /[\u{200B}-\u{200F}\u{202A}-\u{202E}\u{2060}-\u{2064}\u{2066}-\u{2069}\u{FEFF}\u{FFF9}-\u{FFFB}\u{E0000}-\u{E007F}]/.freeze
 
-      # Raised by {#call} when the server is rejected. {Servers#start_one}
-      # rescues this specifically (close transport, propagate) so the
-      # server never enters {Servers#live_ids} and the boot path
-      # surfaces the rejection to the caller. The exception message
+      # Raised by {#call} on rejection; {Servers#start_one} rescues it
+      # specifically so the server never enters {Servers#live_ids}. The message
       # describes WHAT was found and WHERE.
       class InjectionDetected < StandardError; end
 
-      # The easy path is +Verifier.new(transport: ...)+ — the
-      # {Thinker} and the production on-disk {Cache} (under
-      # {CACHE_DIR}) are built right here. +thinker:+ exists as the
-      # explicit override (a custom callable, a test fake) and is
-      # mutually exclusive with the transport path. Same
-      # constructor shape as {Synthesizer}.
+      # The easy path is +Verifier.new(transport: ...)+ — the {Thinker} and the
+      # production on-disk {Cache} (under {CACHE_DIR}) are built here; +thinker:+
+      # is the explicit override, mutually exclusive with +transport:+ (same
+      # shape as {Synthesizer}).
       #
-      # @param transport [Pikuri::Agent::ChatTransport, nil] when
-      #   set, a {Thinker} is constructed from it (and
-      #   +cancellable:+); the verification passes run against this
-      #   model.
-      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil]
-      #   forwarded to the constructed {Thinker} so a boot-time
-      #   Ctrl+C aborts the pass. Only meaningful on the
-      #   +transport:+ path.
-      # @param thinker [#call, nil] one-arg callable invoked as
-      #   +thinker.call(prompt)+, replacing the built-in {Thinker}.
-      # @param cache [Cache, Cache::NULL, nil] cache for the
-      #   LLM-pass result. When +nil+ (the default): the
-      #   +transport:+ path builds the production on-disk {Cache}
-      #   under {CACHE_DIR}; the +thinker:+ path falls back to
-      #   {Cache::NULL} (no persistence — the test default).
-      # @raise [ArgumentError] when neither or both of +transport:+
-      #   and +thinker:+ are given, or when +cancellable:+ is
-      #   combined with +thinker:+
+      # @param transport [Pikuri::Agent::ChatTransport, nil] builds a {Thinker}
+      #   (with +cancellable:+); the passes run against this model.
+      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil] forwarded
+      #   to the {Thinker} so a boot-time Ctrl+C aborts. Transport path only.
+      # @param thinker [#call, nil] +thinker.call(prompt)+, replacing the
+      #   built-in {Thinker}.
+      # @param cache [Cache, Cache::NULL, nil] LLM-pass cache; +nil+ builds the
+      #   on-disk {Cache} on the +transport:+ path, {Cache::NULL} on the
+      #   +thinker:+ path (the test default).
+      # @raise [ArgumentError] when neither or both of +transport:+/+thinker:+
+      #   are given, or +cancellable:+ is combined with +thinker:+.
       def initialize(transport: nil, cancellable: nil, thinker: nil, cache: nil)
         raise ArgumentError, 'pass exactly one of transport: or thinker:' if transport.nil? == thinker.nil?
         raise ArgumentError, 'cancellable: only applies to the transport: path' if thinker && cancellable
@@ -219,12 +174,10 @@ module Pikuri
         end
       end
 
-      # The verification prompt. Threat model + flag patterns +
-      # do-NOT-flag exceptions + strict OK-only response format. See
-      # the class header for the design rationale. The structured
-      # +<mcp-content>+ block at the bottom is what the verifier
-      # actually inspects; the prose above is the verifier's
-      # instructions.
+      # The verification prompt: threat model + flag patterns + do-NOT-flag
+      # exceptions + strict OK-only format. The prose is the verifier's
+      # instructions; the +<mcp-content>+ block at the bottom is the untrusted
+      # data it inspects.
       def build_prompt(entry, client, tools)
         info = client.server_info || {}
         server_info = info['serverInfo'] || {}

@@ -4,44 +4,25 @@ require 'mcp'
 
 module Pikuri
   module Mcp
-    # Wraps one +MCP::Client+ plus its transport with retry-and-restart
-    # semantics for stdio-subprocess death. The wrapper owns the
-    # client/transport lifecycle: on construction it builds a fresh
-    # transport and runs the +initialize+ handshake; on a
-    # subprocess-died failure during {#call_tool} it closes the dead
-    # transport, spawns a fresh one, re-handshakes, and retries — up
-    # to {MAX_CALL_ATTEMPTS} times total. After exhaustion the
-    # underlying +RequestHandlerError+ propagates and the synthesized
-    # tool's execute closure converts it to an +Error: ...+ observation
-    # like any other failure.
+    # Wraps one +MCP::Client+ + its transport with retry-and-restart on
+    # stdio-subprocess death. On construction it builds a fresh transport and
+    # runs the +initialize+ handshake; on a subprocess-died {#call_tool} it
+    # closes the dead transport, respawns, re-handshakes, and retries up to
+    # {MAX_CALL_ATTEMPTS} times, after which the +RequestHandlerError+ propagates
+    # (the synthesized tool's closure turns it into an +Error: ...+ observation).
     #
-    # == Why only subprocess-death messages
+    # Only subprocess-death messages trigger the restart: once an stdio
+    # subprocess dies, +MCP::Client::Stdio+ is irreversibly broken
+    # (+@wait_thread.alive?+ stays false, every call raises from
+    # +ensure_running!+), so restarting is the only way back. Other
+    # +RequestHandlerError+s (protocol mismatch, JSON parse, ValidationError)
+    # leave the transport usable — a restart would just retry the same mistake.
+    # {Registry::HttpEntry} is accepted but no HTTP failure matches those
+    # patterns, so the wrapper is a pass-through for HTTP.
     #
-    # Once an stdio subprocess dies, +MCP::Client::Stdio+'s state is
-    # irreversibly broken: +@wait_thread.alive?+ returns false forever
-    # and every subsequent call raises from +ensure_running!+ without
-    # ever talking to the server. Restarting is the only way back.
-    # Other +RequestHandlerError+ failures (protocol mismatch on the
-    # initialize handshake, JSON parse error, ValidationError on a
-    # malformed response) leave the transport usable; a restart there
-    # would just retry the same logical mistake and waste latency.
-    #
-    # == HTTP entries
-    #
-    # The wrapper accepts {Registry::HttpEntry} too, but no HTTP
-    # failure raises with the subprocess-death messages we match on,
-    # so the retry path naturally never triggers — the wrapper is a
-    # pass-through for HTTP. If transient HTTP retry is ever wanted,
-    # it should land here, not in {Servers}.
-    #
-    # == Lifecycle responsibility
-    #
-    # Spawning happens inside {#initialize} (via +spawn_fresh!+), and
-    # if the +initialize+ handshake fails the wrapper closes its own
-    # half-opened transport before re-raising. That means a caller
-    # who saw +ClientWrapper.new(entry)+ raise does NOT need to also
-    # close anything — the wrapper either returns a fully-initialized
-    # object or no object at all.
+    # Lifecycle: if the handshake fails, {#initialize} closes its own half-opened
+    # transport before re-raising — a caller who saw +ClientWrapper.new+ raise
+    # need not close anything (fully-initialized object, or no object at all).
     class ClientWrapper
       LOGGER = Pikuri.logger_for('Mcp::ClientWrapper')
       private_constant :LOGGER
@@ -51,17 +32,10 @@ module Pikuri
       # normal try plus up to two restart-then-retry attempts.
       MAX_CALL_ATTEMPTS = 3
 
-      # Substrings of +MCP::Client::RequestHandlerError#message+ that
-      # signal "the stdio subprocess is dead and the transport is
-      # unrecoverable." All three come from
-      # +mcp-X.Y.Z/lib/mcp/client/stdio.rb+:
-      #
-      # * +Server process has exited+ — +ensure_running!+ on a
-      #   +wait_thread+ that is no longer alive.
-      # * +Failed to write to server process+ — broken pipe on
-      #   write (+EPIPE+ / +IOError+).
-      # * +Server process closed stdout unexpectedly+ — +gets+
-      #   returned +nil+ mid-read because the pipe was closed.
+      # Substrings of +RequestHandlerError#message+ signalling "stdio subprocess
+      # dead, transport unrecoverable" — all from the +mcp+ gem's
+      # +client/stdio.rb+: exited +wait_thread+, broken write pipe (+EPIPE+), and
+      # +gets+ → +nil+ on a closed stdout.
       SUBPROCESS_DEAD_PATTERNS = [
         'Server process has exited',
         'Failed to write to server process',
@@ -109,25 +83,18 @@ module Pikuri
         @client.tools
       end
 
-      # Call an MCP tool on the underlying server. On any failure
-      # whose message matches {SUBPROCESS_DEAD_PATTERNS}, closes the
-      # dead transport, spawns a fresh one, re-runs the +initialize+
-      # handshake, and retries the call — up to {MAX_CALL_ATTEMPTS}
-      # times total. Other failures (server-returned JSON-RPC errors
-      # don't reach this method — they come back inside the response
-      # Hash; non-recoverable transport errors like protocol-version
-      # mismatch or JSON parse errors) propagate on the first attempt
-      # without restart.
+      # Call an MCP tool. On a {SUBPROCESS_DEAD_PATTERNS} failure, restart and
+      # retry up to {MAX_CALL_ATTEMPTS} times; other failures propagate on the
+      # first attempt (JSON-RPC errors don't reach here — they ride in the
+      # response Hash).
       #
-      # @param tool [MCP::Client::Tool] the tool object obtained from
-      #   {#tools} at boot. Only +name+ is used at call time, so a
-      #   reference captured before a restart keeps working as long
-      #   as the new server still exposes that tool name.
-      # @param arguments [Hash] passed verbatim to the underlying
-      #   +call_tool+.
+      # @param tool [MCP::Client::Tool] from {#tools} at boot. Only +name+ is
+      #   used at call time, so a reference captured before a restart keeps
+      #   working if the new server still exposes that name.
+      # @param arguments [Hash] passed verbatim to the underlying +call_tool+.
       # @return [Hash] the JSON-RPC response.
-      # @raise [MCP::Client::RequestHandlerError] when retries are
-      #   exhausted, or on the first non-recoverable failure.
+      # @raise [MCP::Client::RequestHandlerError] when retries exhaust, or on the
+      #   first non-recoverable failure.
       def call_tool(tool:, arguments:)
         attempt = 1
         begin
@@ -174,13 +141,9 @@ module Pikuri
           @client = MCP::Client.new(transport: @transport)
           @client.connect
         rescue StandardError
-          # The +initialize+ handshake (or the subprocess spawn it
-          # implicitly triggers for stdio) failed. Close whatever
-          # half-opened state we have so we don't leak a stdio
-          # subprocess that succeeded popen3 but failed handshake.
-          # The new transport is not retained — the wrapper either
-          # returns from initialize cleanly or raises with no live
-          # state.
+          # Handshake (or the stdio spawn it triggers) failed — close the
+          # half-opened state so a subprocess that popen3'd but failed handshake
+          # doesn't leak.
           begin
             @transport.close
           rescue StandardError

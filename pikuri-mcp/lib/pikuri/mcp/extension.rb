@@ -2,28 +2,10 @@
 
 module Pikuri
   module Mcp
-    # An {Pikuri::Agent::Extension} that wires MCP (Model Context
-    # Protocol) support onto an agent: builds an {Mcp::Servers}
-    # runtime from a {Registry}, appends the +<available_mcps>+ block
-    # to the system prompt, registers an +on_close+ handler that
-    # tears down the live MCP clients, and (in +bind+) installs a
-    # per-agent +mcp_connect+ tool so the LLM can pull MCP-exposed
-    # tools into its toolset on demand.
-    #
-    # == Configure / bind split
-    #
-    # +configure+ runs once on the parent's Configurator and creates
-    # the *shared* {Mcp::Servers} runtime — that's the resource the
-    # extension owns. +bind+ fires once on the parent agent and
-    # installs a +Connect+ tool keyed to it, registered via
-    # {Pikuri::Agent::ExtensionContext#add_raw_tool} so the tool's
-    # +execute+ closure can call back into the right chat when the
-    # LLM activates a server.
-    # Sub-agents do not inherit extensions, so they receive neither
-    # the +Connect+ tool nor any MCP-backed tools — personas own
-    # their toolset by construction.
-    #
-    # == Usage
+    # An {Pikuri::Agent::Extension} wiring MCP support onto an agent: builds an
+    # {Mcp::Servers} runtime from a {Registry}, appends +<available_mcps>+ to the
+    # system prompt, arms an +on_close+ teardown, and (in +bind+) installs a
+    # per-agent +mcp_connect+ tool so the LLM pulls MCP tools in on demand.
     #
     #   registry = Pikuri::Mcp::Registry.new(entries: [
     #     Pikuri::Mcp::Registry::StdioEntry.new(id: 'gmail', command: %w[gmail-mcp])
@@ -32,13 +14,13 @@ module Pikuri
     #     c.add_extension Pikuri::Mcp::Extension.new(registry: registry)
     #   end
     #
-    # == Empty registry
-    #
-    # When the registry is {Registry#empty?}, the extension is a
-    # no-op — no Servers, no snippet, no tool, no on_close. Same
-    # semantics as the legacy +mcp_registry:+ kwarg on
-    # {Pikuri::Agent#initialize}, which routes through this
-    # extension as a transition layer.
+    # +configure+ (once, on the parent's Configurator) builds the *shared*
+    # {Mcp::Servers} — the owned resource; +bind+ (once, on the parent agent)
+    # installs the +Connect+ tool keyed to it. Sub-agents don't inherit
+    # extensions, so they get neither — personas own their toolset. On a
+    # {Registry#empty?} registry the whole extension is a no-op (same semantics
+    # as the +mcp_registry:+ kwarg on {Pikuri::Agent#initialize}, which routes
+    # through here).
     class Extension
       include Pikuri::Agent::Extension
 
@@ -69,13 +51,10 @@ module Pikuri
       #   no-op).
       attr_reader :servers
 
-      # Build the shared {Servers} runtime, append the
-      # +<available_mcps>+ block to the system prompt, and register
-      # the close handler. The {Synthesizer} / {Verifier} are
-      # handed the Configurator's transport + cancellable and build
-      # their own {Thinker} + production {Cache} from them, so the
-      # LLM-driven boot passes run against the same model the agent
-      # itself uses and honor the same cancel flag.
+      # Build the shared {Servers} runtime and arm its teardown. The
+      # {Synthesizer} / {Verifier} get the Configurator's transport + cancellable
+      # (building their own {Thinker} + {Cache}), so the boot passes run against
+      # the agent's own model and honor the same cancel flag.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
@@ -89,25 +68,19 @@ module Pikuri
           verifier = Mcp::Verifier.new(transport: c.transport, cancellable: c.cancellable)
         end
 
-        # Two-phase on purpose: construct (pure), arm cleanup, then
-        # start. Arming +on_close+ *before* the failure-prone
-        # +start_all+ is what makes a start failure (Cancelled,
-        # injection) non-leaking: +c.on_close+ writes straight to the
-        # agent's live handler list, so if +start_all+ raises, the
-        # agent's constructor rescue closes these half-started servers.
-        # See {Mcp::Servers}' "Lifecycle: two-phase, and the cleanup
-        # gap" and {Agent#run_configure}.
+        # Two-phase: construct (pure), arm cleanup, then start. Arming
+        # +on_close+ *before* the failure-prone +start_all+ is what makes a start
+        # failure non-leaking — see {Mcp::Servers}' "Lifecycle: two-phase, and
+        # the cleanup gap".
         @servers = Mcp::Servers.new(@registry, synthesizer: synthesizer, verifier: verifier)
         c.on_close { @servers.close }
         @servers.start_all
         nil
       end
 
-      # The +<available_mcps>+ block describing the started servers.
-      # Reads the already-probed server state (no re-probe), so it's
-      # cheap to re-pull on a conversation clear — and a clear then
-      # reflects any servers connected via +mcp_connect+ since boot.
-      # +[]+ when no registry / no live servers.
+      # The +<available_mcps>+ block for the started servers, from
+      # already-probed state (no re-probe), so it's cheap to re-pull on a
+      # conversation clear. +[]+ when no registry / no live servers.
       #
       # @return [Array<String>]
       def system_prompt_snippets
@@ -116,11 +89,9 @@ module Pikuri
         [@servers.system_prompt_snippet.lstrip]
       end
 
-      # Register a per-agent +mcp_connect+ tool on the agent's chat.
-      # The tool's +execute+ closure captures the {ExtensionContext}
-      # so activations register their tools on the correct chat — see
-      # {Pikuri::Agent::ExtensionContext#add_raw_tool} for the
-      # static-vs-dynamic tool boundary.
+      # Register the per-agent +mcp_connect+ tool; its closure captures +ctx+ so
+      # activations register on the correct chat (see
+      # {Pikuri::Agent::ExtensionContext#add_raw_tool}).
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]

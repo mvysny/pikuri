@@ -98,12 +98,21 @@ one item: `Event::Tokens`' context-window math.)
   namespace squat, Qdrant↔Mem0Server image lockstep; cut per-class "two ways to
   get one" preambles, Data.define/testability boilerplate, entry-file double
   overview, and Indexer's method-summaries-concatenated header.
+- `pikuri-mcp` — 9 files, 950→587 comment lines, −364 net. Kept the
+  subprocess-seam carve-out (stdio-only) in both Servers + ClientWrapper,
+  MCP-tools-bypass-`Pikuri::Tool`, two-phase lifecycle + cleanup gap,
+  `resolve_description` priority chain, Verifier two-pass + `SUSPICIOUS_UNICODE`
+  + injection-not-capability + rejections-not-cached, ClientWrapper
+  subprocess-death restart contract, `StdioEntry#env` credential channel +
+  cache-fingerprint exclusion; cut the verbatim-duplicated `@param` blocks
+  across the Servers/Verifier/Synthesizer constructors, `PROMPT_VERSION`
+  history notes, and referrer-map padding. Fixed a few drifted method refs
+  while trimming.
 
-All four: comment-only, 0 code changes, all specs green (658 + 299 + 363 + 292).
+All five: comment-only, 0 code changes, all specs green (658 + 299 + 363 +
+292 + 124).
 
 **Remaining** (comment counts, roughly biggest-impact first):
-- `pikuri-mcp` — 950, 9 files (Registry, Servers, Verifier/Synthesizer/Thinker,
-  Cache, ClientWrapper; note the documented subprocess-seam exception comment).
 - `pikuri-memory` — 826, 7 files (has `DESIGN.md` + threat model; mem0 client,
   Recorder, Mem0Server socket-relay, Extension feedback-loop defenses).
 - `pikuri-os` — 621, 8 files (Extension, LocalSearch/Recoll, MachineMemory,
@@ -116,13 +125,13 @@ All four: comment-only, 0 code changes, all specs green (658 + 299 + 363 + 292).
 - `pikuri-assistant` — 8 (binary-only gem; likely nothing to trim).
 - `pikuri` (metagem) — 8 (require list; nothing to trim).
 
-Total remaining ≈ 4650 comment lines across ~51 files; expect a similar ~35–55%
+Total remaining ≈ 3700 comment lines across ~42 files; expect a similar ~35–55%
 cut where files are bloated (some, like already-disciplined `tool/parameters.rb`
-in core, needed almost nothing; threat-model-heavy pikuri-code came in at ~36%,
-pikuri-vectordb at ~38%).
+in core, needed almost nothing; the threat-model-heavy gems settled around
+~38%: pikuri-code ~36%, pikuri-vectordb ~38%, pikuri-mcp ~38%).
 
 ## Note for the fresh session
 
 Suggested opening prompt: *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
-Next gem: pikuri-mcp. Same rubric, gem by gem, comment-only, verify +
+Next gem: pikuri-memory. Same rubric, gem by gem, comment-only, verify +
 specs + commit, pause for my review before the next gem."*

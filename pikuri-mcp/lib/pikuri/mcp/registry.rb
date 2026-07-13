@@ -2,55 +2,29 @@
 
 module Pikuri
   module Mcp
-  # Pure configuration for MCP servers — id → transport descriptor
-  # pairs and nothing more. No I/O, no live state. {Servers}
-  # consumes a registry at construction time to start the actual
-  # clients.
+  # Pure configuration for MCP servers — id → transport descriptor pairs, no
+  # I/O, no live state. Split from {Servers} so the +mcp+ gem and
+  # subprocess/network lifecycle stay on the runtime side (registry-value tests
+  # never load the gem). Two sibling value classes, picked per server:
+  # {StdioEntry} (local subprocess) and {HttpEntry} (remote endpoint);
+  # {Servers#start_one} dispatches on type.
   #
-  # Split from {Servers} so the dependency on the +mcp+ gem and on
-  # subprocess / network lifecycle is confined to the runtime side.
-  # Tests that only need to exercise registry value semantics never
-  # have to load the gem or open a transport.
-  #
-  # == Entry types
-  #
-  # Two sibling value classes, picked per server. The registry holds
-  # a mixed array; {Servers#start_one} dispatches on the type.
-  #
-  # * {StdioEntry} — local subprocess, +command:+ argv. The +mcp+ gem
-  #   spawns it; see CLAUDE.md "Subprocess seam" carve-out.
-  # * {HttpEntry} — remote MCP endpoint, +url:+ + optional +headers:+.
-  #   Plain Faraday under the hood — no subprocess, no carve-out
-  #   needed.
-  #
-  # == EMPTY
-  #
-  # The +EMPTY+ singleton is the default for {Agent#initialize}'s
-  # +mcp_registry:+ kwarg. When the registry is empty {Agent}
-  # short-circuits — no {Servers} is built, no +mcp_connect+ tool is
-  # registered, no +<available_mcps>+ block is appended to the system
-  # prompt. The +pikuri-chat+ binary relies on this short-circuit so it
-  # can omit the kwarg entirely.
-  #
-  # Same shape as {Pikuri::Skill::Catalog::EMPTY}.
+  # The {EMPTY} singleton is the {Agent#initialize} +mcp_registry:+ default; on
+  # an empty registry {Agent} short-circuits (no {Servers}, no +mcp_connect+, no
+  # +<available_mcps>+), so +pikuri-chat+ can omit the kwarg. Same shape as
+  # {Pikuri::Skill::Catalog::EMPTY}.
   class Registry
-    # One local-subprocess MCP server's configuration: a unique id
-    # (used by the LLM to call +mcp_connect+) and the argv array used
-    # to spawn the server process.
+    # One local-subprocess MCP server's config: a unique id (the LLM's
+    # +mcp_connect+ handle) and the argv to spawn it. +command+ is an argv array
+    # (not a shell string) per {Pikuri::Subprocess.spawn} convention, even though
+    # the +mcp+ gem owns the actual spawn (the "Subprocess seam" carve-out).
     #
-    # +command+ is an argv array (not a shell string) to align with
-    # {Pikuri::Subprocess.spawn} conventions even though the +mcp+ gem
-    # owns the actual spawn — see CLAUDE.md "Subprocess seam" carve-out.
-    # First element is the executable; remaining elements are arguments.
-    #
-    # +env+ carries extra environment variables for the spawned process —
-    # the stdio counterpart of {HttpEntry}'s +headers:+, and the right
-    # place for a server's auth token (e.g. +{"GITHUB_TOKEN" => "..."}+)
-    # rather than baking secrets into the argv. The +mcp+ gem merges it
-    # over the inherited environment; an empty hash (the default) changes
-    # nothing. Like {HttpEntry}'s +headers+, +env+ is excluded from the
-    # cache fingerprint ({Cache#transport_descriptor}) so secrets never
-    # land on disk.
+    # +env+ is the stdio counterpart of {HttpEntry}'s +headers:+ — the right
+    # place for a server's auth token (+{"GITHUB_TOKEN" => "..."}+) rather than
+    # baking secrets into argv; the +mcp+ gem merges it over the inherited
+    # environment (this is the *legitimate* per-child credential channel of the
+    # "Environment is not a secret store" seam). Excluded from the cache
+    # fingerprint ({Cache#transport_descriptor}) so secrets never hit disk.
     #
     # @!attribute [r] id
     #   @return [String] short identifier the LLM uses to refer to this
@@ -68,16 +42,11 @@ module Pikuri
       end
     end
 
-    # One remote-HTTP MCP server's configuration: a unique id, the
-    # endpoint URL, and optional headers (typically auth) sent on every
-    # request.
-    #
-    # No OAuth in v1 — if the endpoint needs a bearer token, pass it
-    # via +headers:+ ({+"Authorization" => "Bearer ..."+}). Wiring the
-    # gem's +oauth:+ provider would start a browser flow and persist
-    # tokens; deferred until someone needs it. See CLAUDE.md
-    # "Subprocess seam" — HTTP entries don't fall under the carve-out
-    # because nothing is spawned.
+    # One remote-HTTP MCP server's config: a unique id, endpoint URL, and
+    # optional headers (typically auth) sent on every request. No OAuth in v1 —
+    # pass a bearer token via +headers:+ (+{"Authorization" => "Bearer ..."}+);
+    # the gem's +oauth:+ provider (browser flow + token persistence) is deferred.
+    # Not under the subprocess-seam carve-out (nothing spawned).
     #
     # @!attribute [r] id
     #   @return [String] short identifier the LLM uses to refer to this

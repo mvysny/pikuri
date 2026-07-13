@@ -5,75 +5,40 @@ require 'json'
 
 module Pikuri
   module Mcp
-    # On-disk cache for the per-server descriptions
-    # {Servers#try_synthesize_description} pays an LLM round-trip to
-    # produce. Wraps {Pikuri::UrlCache} for storage; this class owns
-    # the *key calculation* — the fingerprint of every input that
-    # could change the synthesized output, so an unchanged surface
-    # short-circuits to the stored description and a changed surface
-    # auto-invalidates.
+    # On-disk cache for the per-server descriptions {Synthesizer} pays an LLM
+    # round-trip to produce. Wraps {Pikuri::UrlCache} for storage; this class
+    # owns the *key calculation* — the fingerprint of every input that could
+    # change the output, so an unchanged surface short-circuits and a changed
+    # one auto-invalidates. The key hashes canonical JSON over: +model_id+
+    # (quality varies by model), +prompt_version+, the transport descriptor
+    # (argv or URL), server name+version, and the full tools surface (name,
+    # description, +input_schema+ including nested properties), canonicalised by
+    # recursive sort so a reordered tools array / schema keys don't blow the
+    # cache. The server's registry *id* is deliberately excluded — a rename
+    # doesn't change what the server does.
     #
-    # == What goes into the key
-    #
-    # The key hashes a canonical JSON serialization of:
-    #
-    # * +model_id+ — synthesis quality varies by model; cached output
-    #   from a different model should not be served.
-    # * +prompt_version+ — {Servers::PROMPT_VERSION}. Bumped when the
-    #   synthesizer prompt changes meaningfully so old cache entries
-    #   stop being served without having to delete the cache file.
-    # * Transport descriptor — for {Registry::StdioEntry}, the argv;
-    #   for {Registry::HttpEntry}, the URL.
-    # * Server name + version from +client.server_info['serverInfo']+.
-    # * Full tools surface: every tool's +name+, +description+, and
-    #   +input_schema+ — including nested property names, types, and
-    #   per-property descriptions. The surface is canonicalised
-    #   (recursive sort) so a server that reorders its tools array
-    #   or its schema keys doesn't blow the cache.
-    #
-    # The server's id from the registry is intentionally *not* part of
-    # the key — renaming a server entry in the registry doesn't change
-    # what the server actually does, and the id appears only as a
-    # passing reference in the synth prompt, never in the produced
-    # description.
-    #
-    # == Storage
-    #
-    # Reuses {Pikuri::UrlCache} with a +ttl: Float::INFINITY+. There is
-    # no time-based expiry — cache entries are valid forever, until
-    # the keyed surface changes. To force a rebuild of everything, +rm+
-    # the {DIR} directory (or bump {Servers::PROMPT_VERSION}).
-    #
-    # == Fail-soft contract
-    #
-    # {#fetch} mirrors {UrlCache#fetch} — yields on miss, returns the
-    # block's result, and persists it. {Servers} additionally rescues
-    # +StandardError+ around the {#fetch} call to keep startup robust
-    # against a corrupt cache file or a writer-side error.
+    # +ttl: Float::INFINITY+: no time expiry, entries valid until the keyed
+    # surface changes; force a full rebuild by +rm+-ing {DIR} or bumping the
+    # prompt version. {#fetch} mirrors {UrlCache#fetch} (yield on miss, persist
+    # the result); callers rescue around it for corrupt-file robustness.
     class Cache
-      # Bumping {Servers::PROMPT_VERSION} invalidates every cached
-      # entry; this class doesn't define one of its own.
-
-      # On-disk root. Sibling of {Pikuri::UrlCache::ROOT_DIR} so all
-      # of pikuri's caches live under one path.
+      # On-disk root. Sibling of {Pikuri::UrlCache::ROOT_DIR} so all of pikuri's
+      # caches live under one path.
       DIR = File.join(File.dirname(UrlCache::ROOT_DIR), 'mcp_descriptions').freeze
 
-      # @param model_id [String, nil] the synthesizer model id; folded
-      #   into the cache key so a model swap doesn't serve stale output
-      # @param prompt_version [Integer] {Servers::PROMPT_VERSION}; folded
-      #   into the key so a prompt edit invalidates the world
-      # @param dir [String] storage directory; defaults to {DIR}
+      # @param model_id [String, nil] model id; folded into the key so a model
+      #   swap doesn't serve stale output.
+      # @param prompt_version [Integer] the caller's +PROMPT_VERSION+; folded in
+      #   so a prompt edit invalidates the world.
+      # @param dir [String] storage directory; defaults to {DIR}.
       def initialize(model_id:, prompt_version:, dir: DIR)
         @model_id = model_id
         @prompt_version = prompt_version
         @url_cache = UrlCache.new(ttl: Float::INFINITY, dir: dir)
       end
 
-      # Return the cached description for the given +(entry, client,
-      # tools)+ triple if a fresh entry exists, otherwise yield to
-      # compute it (typically a one-shot thinker-agent run inside
-      # {Servers#try_synthesize_description}), persist the result, and
-      # return it.
+      # Return the cached description for the +(entry, client, tools)+ triple, or
+      # yield to compute + persist + return it on a miss.
       #
       # @param entry [Registry::StdioEntry, Registry::HttpEntry]
       # @param client [MCP::Client] for +server_info+ (name + version)
@@ -84,10 +49,9 @@ module Pikuri
         @url_cache.fetch(key_for(entry, client, tools), &block)
       end
 
-      # Compute the canonical fingerprint string for a +(entry, client,
-      # tools)+ triple. The fingerprint is what {Pikuri::UrlCache}
-      # SHA-256s into the on-disk filename; we don't hash here so the
-      # raw JSON is inspectable in tests.
+      # The canonical fingerprint for a +(entry, client, tools)+ triple —
+      # {Pikuri::UrlCache} SHA-256s it into the filename; we return the raw JSON
+      # (not a hash) so it's inspectable in tests.
       #
       # @return [String] canonical JSON over the keyed inputs
       def key_for(entry, client, tools)
@@ -123,10 +87,9 @@ module Pikuri
         end
       end
 
-      # Recursively normalize a Hash/Array tree so semantically-equal
-      # inputs produce byte-identical JSON: Hash keys sorted, String
-      # vs Symbol keys both stringified, Arrays left in order (order
-      # is part of the meaning in JSON Schema's +required+).
+      # Recursively normalize so semantically-equal inputs produce
+      # byte-identical JSON: Hash keys stringified + sorted, Arrays left in
+      # order (order is meaningful in JSON Schema's +required+).
       def canonicalize(obj)
         case obj
         when Hash
@@ -139,11 +102,9 @@ module Pikuri
         end
       end
 
-      # Null cache: drop-in replacement that always misses and never
-      # persists. {Servers} uses this as the default when no real cache
-      # is provided, so the body of +#try_synthesize_description+ can
-      # call +@cache.fetch(...)+ unconditionally instead of branching
-      # on +nil+. Same shape as {Pikuri::UrlCache::NULL}.
+      # Null cache: always misses, never persists — the default when no real
+      # cache is provided, so callers +@cache.fetch(...)+ unconditionally
+      # instead of branching on +nil+. Same shape as {Pikuri::UrlCache::NULL}.
       NULL = Object.new
       def NULL.fetch(entry:, client:, tools:)
         yield
