@@ -2,30 +2,19 @@
 
 module Pikuri
   module SubAgent
-    # Bundled "focused web research" persona. The first persona
-    # pikuri ships — narrow toolset (network reads only, no fs,
-    # no shell, no sub-agent recursion), short system prompt that
-    # replaces the parent's verbatim, and a step budget sized as
-    # a runaway-prevention cap rather than a tight target (web
-    # scrapes hit 404/403/CAPTCHA often enough that a tight cap
-    # would burn through on noise).
+    # Bundled "focused web research" persona: a narrow network-read
+    # toolset (no fs, shell, or recursion) and a step budget sized as a
+    # runaway cap, not a tight target — web scrapes hit 404/403/CAPTCHA
+    # often enough that a tight cap would burn through on noise. The parent
+    # delegates a focused lookup so the intermediate scraped pages don't
+    # pollute its context; the child returns one paragraph with source URLs.
     #
-    # == Use case
+    # == Privilege-separation
     #
-    # The parent agent delegates a focused web lookup so the
-    # intermediate scraped pages don't pollute its context. The
-    # child returns a one-paragraph answer with source URLs; the
-    # parent pastes that into a longer chain of reasoning.
-    #
-    # == Privacy-separation
-    #
-    # The persona's +tool_names+ list intentionally excludes the
-    # filesystem tools, shell, and the +agent+ tool itself. With
-    # only network-read tools and no recursion path, a researcher
-    # spawned from inside a coding agent cannot read the user's
-    # repo, cannot run code, and cannot delegate further. This
-    # is the persona model's privilege-separation story — see
-    # +CLAUDE.md+ §Scope decisions.
+    # +tool_names+ excludes the filesystem tools, shell, and +agent+
+    # itself, so a researcher spawned from inside a coding agent cannot
+    # read the user's repo, run code, or delegate further — the persona
+    # model's privilege-separation story (+CLAUDE.md+ §Scope decisions).
     #
     # @return [Persona]
     RESEARCHER = Persona.new(

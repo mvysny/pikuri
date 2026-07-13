@@ -26,32 +26,16 @@ module Pikuri
     # the lethal-trifecta defense for network tools — see SECURITY.md
     # §"Defense: capability boundaries via sub-agents").
     #
-    # == Configure / bind split
+    # The MCP-shape configure/bind split: +configure(c)+ validates every
+    # persona's +tool_names+ against tools already on the Configurator (a
+    # host-side bug to catch at boot, not first LLM call) and contributes
+    # the +<available_agents>+ snippet; +bind(ctx)+ constructs the
+    # {SubAgentTool} over the parent's {Pikuri::Agent::ExtensionContext}.
+    # Sub-agents don't inherit extensions, so +bind+ fires for the parent
+    # only.
     #
-    # Same MCP-shape division of labor used by {Pikuri::Mcp::Extension}:
-    #
-    # * +configure(c)+ — agent-agnostic setup. Validates that every
-    #   persona's +tool_names+ resolves against tools already
-    #   registered on the Configurator (host-side bug to catch at
-    #   boot, not at first LLM call). The +<available_agents>+ snippet
-    #   is contributed via +system_prompt_snippets+.
-    # * +bind(ctx)+ — agent-keyed setup. Constructs the
-    #   {SubAgentTool} closing over the parent agent's
-    #   {Pikuri::Agent::ExtensionContext} (for its +tools+,
-    #   +cancellable+, +context_window_cap+, +streaming+ flag, and
-    #   per-spawn listener derivation) and installs it via
-    #   {Pikuri::Agent::ExtensionContext#add_raw_tool}.
-    #
-    # Sub-agents do not inherit extensions, so +bind+ fires for the
-    # parent only.
-    #
-    # == Duplicate-persona policy
-    #
-    # The constructor raises +ArgumentError+ if two personas in the
-    # list share a +name+. Two personas with the same LLM-facing
-    # name would be indistinguishable to the model and a quiet
-    # config bug for the host — same rationale as "two Ruby classes
-    # with the same name shouldn't exist." Fail fast at construction
+    # The constructor raises on two personas sharing a +name+ (they'd be
+    # indistinguishable to the model and a quiet config bug) — fail fast
     # rather than silently shadow.
     class Extension
       include Pikuri::Agent::Extension
@@ -59,12 +43,11 @@ module Pikuri
       # @param personas [Array<Persona>] personas the LLM may spawn
       #   via the +agent+ tool. Must contain at least one entry;
       #   names must be unique across the list.
-      # @param confirmer [Pikuri::Workspace::Confirmer, nil] optional
-      #   gate threaded into {SubAgentTool}; when present, each
-      #   delegation's +task+ is confirmed before dispatch. +nil+
-      #   (default) preserves the un-gated behavior +bin/pikuri-code+ /
-      #   +bin/pikuri-minions+ rely on. Hosts wire one when a persona
-      #   reaches the network and the parent holds private data.
+      # @param confirmer [Pikuri::Workspace::Confirmer, nil] optional gate
+      #   threaded into {SubAgentTool}; when present, each delegation's
+      #   +task+ is confirmed before dispatch. +nil+ (default) delegates
+      #   un-gated. Hosts wire one when a persona reaches the network and
+      #   the parent holds private data.
       # @raise [ArgumentError] if +personas+ is empty, contains a
       #   non-{Persona}, or two entries share a +name+
       def initialize(personas:, confirmer: nil)
@@ -85,21 +68,15 @@ module Pikuri
       end
 
       # @return [Hash{String=>Persona}] personas keyed by name, in
-      #   declaration order. Exposed so tests + diagnostics can
-      #   read the resolved map.
+      #   declaration order.
       attr_reader :personas
 
-      # Validate every persona's +tool_names+ against the union of
-      # the Configurator's regular and sub-agent-only tool pools,
-      # then append the +<available_agents>+ snippet to the system
-      # prompt. The +SubAgentTool+ itself is installed in {#bind} —
-      # it needs the live parent agent's +tools+ / +listeners+ to
-      # close over.
-      #
-      # Practical implication: call +c.add_extension+ *after* the
-      # +c.add_tool+ / +c.add_sub_agent_tool+ calls the personas
-      # depend on; otherwise the tool_names validation will not find
-      # them.
+      # Validate every persona's +tool_names+ against the union of the
+      # Configurator's regular and sub-agent-only tool pools, then append
+      # the +<available_agents>+ snippet. So: call +c.add_extension+ *after*
+      # the +c.add_tool+ / +c.add_sub_agent_tool+ calls the personas depend
+      # on, or the validation won't find them. (The +SubAgentTool+ itself
+      # is installed in {#bind}, which needs the live parent to close over.)
       #
       # @param c [Pikuri::Agent::Configurator]
       # @raise [ArgumentError] if any persona references a
@@ -126,13 +103,11 @@ module Pikuri
       #   from the wired persona list (fixed for the agent's lifetime).
       def system_prompt_snippets = [SubAgentTool.available_agents_snippet(@personas)]
 
-      # Construct the {SubAgentTool} closing over the parent agent's
-      # {Pikuri::Agent::ExtensionContext} and register it on the
-      # agent's chat. Goes through
-      # {Pikuri::Agent::ExtensionContext#add_raw_tool} rather than
-      # +@tools+ because the tool's +execute+ closure captures the
-      # parent's tool list at construction — by the time +bind+
-      # runs, that list is final.
+      # Construct the {SubAgentTool} over the parent's
+      # {Pikuri::Agent::ExtensionContext} and register it. Goes through
+      # {Pikuri::Agent::ExtensionContext#add_raw_tool} because the tool's
+      # +execute+ closure captures the parent's tool list, which is final
+      # only by the time +bind+ runs.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
