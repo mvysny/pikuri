@@ -3,30 +3,22 @@
 module Pikuri
   module Os
     # The +fileindex_search+ tool — a fast, cheap keyword lookup over a
-    # desktop file index. Returns the matching file paths, each with the
-    # *single* snippet the index provides. A {Pikuri::Tool} in the
+    # desktop file index, returning matching paths each with the *single*
+    # snippet the index provides. A {Pikuri::Tool} in the
     # {Pikuri::Workspace::Grep} shape (shells out through the backend, fails
     # loud at construction if the binary is missing).
     #
-    # == Swappable backend
-    #
     # The +backend:+ is a stateless module satisfying the file-index duck
-    # type — {LocalSearch} (GNOME) or {Recoll} (DE-independent); {Extension}
-    # picks whichever is usable. The tool needs only +#search+,
-    # +#read_text+ (its companion), +#check_binaries!+, +#limitations+,
-    # +#label+, and a +CommandError+ constant. Backend-specific text — the
-    # blind-spot note and the error label — is read from the backend, so a
-    # new index arm ships its own without touching the tool.
+    # type (see {#initialize}) — {LocalSearch} or {Recoll}, whichever
+    # {Extension} finds usable. Backend-specific text (the blind-spot note,
+    # the error label) is read from the backend, so a new index arm ships
+    # its own without touching the tool.
     #
-    # == Honest, not a window
-    #
-    # The index reports at most one match per file, so this tool does not
-    # pretend to show a file's full story: it locates files and previews
-    # one match each, and tells the LLM to {FileindexRead read the file}
-    # for the complete content / any other matches. It also sees inside
-    # PDFs and office documents (indexed at extract time), unlike a
-    # plain-text search. Because it's just an index lookup it's cheap to
-    # run repeatedly.
+    # It's a locator, not a window: the index reports at most one match per
+    # file, so the tool previews one match each and tells the LLM to read
+    # the file for full content / other matches. It sees inside PDFs and
+    # office docs (indexed at extract time), and being an index lookup is
+    # cheap to run repeatedly.
     class FileindexSearch < Pikuri::Tool
       # @return [Integer] default / max matching files returned.
       DEFAULT_LIMIT = 10
@@ -96,11 +88,9 @@ module Pikuri
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
         [content.chomp, '', disclaimer(hits.size) + marker].join("\n")
       rescue backend::CommandError => e
-        # Cap the error too: the backend's stderr is normally short (it's a
-        # daemon/index query, not a filesystem walk), but a raw subprocess
-        # error returned verbatim is the shape that overflows the model's
-        # context — share the success path's ceiling. See
-        # {Pikuri::Workspace::Grep}.
+        # Cap the error too — a raw subprocess error returned verbatim is
+        # the shape that overflows the model's context; share the success
+        # path's ceiling.
         content, marker = head_truncate(e.message)
         "Error: #{backend.label}: #{content}#{marker}"
       end

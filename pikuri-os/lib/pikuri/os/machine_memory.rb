@@ -5,39 +5,23 @@ require 'pathname'
 module Pikuri
   module Os
     # Durable, cross-conversation memory for the OS helper — a single
-    # user-owned +MACHINE.md+, the +CLAUDE.md+-for-this-host. Read at boot
-    # and folded into the system prompt; the agent updates it through the
-    # ordinary (confirmed) +write+/+edit+ tools, and the user can inspect
-    # or edit it any time. See +ideas/os-assistant.md+.
+    # user-owned +MACHINE.md+, the +CLAUDE.md+-for-this-host. This class is
+    # the *read* half (resolve the XDG path, load content, size-warn,
+    # render the prompt section); the *write* half is the ordinary
+    # (confirmed) +write+/+edit+ tools plus a prompt line pointing the agent
+    # at {.default_path}. See +ideas/os-assistant.md+.
     #
-    # == Why a markdown file, not mem0
+    # A markdown file, not mem0: this agent reads untrusted local content
+    # (logs, downloads), so auto-extracted memory could be poisoned. A file
+    # makes that risk *visible + confirmed + reversible* — every write is a
+    # plain-text diff through the confirmer, the whole memory is one
+    # readable file — and needs no vector store or embedder, fitting the
+    # "small enough to audit" posture.
     #
-    # This agent reads untrusted local content (logs, downloads), so
-    # auto-extracted memory could be poisoned. A markdown file makes that
-    # risk *visible + confirmed + reversible* instead of silent: any write
-    # is a plain-text diff that goes through the confirmer, and the whole
-    # memory is one file the user can read. It also needs no infra — no
-    # vector store, no embedder — which fits the "small enough to audit"
-    # posture. Edits are picked up on the next prompt assembly (boot or a
-    # conversation clear; see "Re-read on each prompt assembly" below).
-    #
-    # == This class's job
-    #
-    # Purely the *read* half: resolve the path (XDG), load the content,
-    # warn when it grows past {OVERSIZE_BYTES}, and render the
-    # system-prompt section. The *write* half is the existing file tools
-    # plus a line in the system prompt pointing the agent at {.default_path}
-    # — nothing tool-specific lives here.
-    #
-    # == Re-read on each prompt assembly
-    #
-    # {#content} reads the file fresh on every call, and the OS extension
-    # pulls {#prompt_section} into the system prompt at construction and
-    # again on every {Pikuri::Agent#clear_conversation}. So edits to
-    # +MACHINE.md+ (by the user or the agent) surface on the next "/clear"
-    # — the durable memory stays current across a conversation reset,
-    # rather than freezing at boot. The file is small and the read happens
-    # only a handful of times (boot + clears), never per turn.
+    # {#content} reads fresh on every call and {#prompt_section} is re-pulled
+    # on every {Pikuri::Agent#clear_conversation}, so a user's or agent's
+    # edit surfaces on the next "/clear" rather than freezing at boot. Read
+    # a handful of times (boot + clears), never per turn.
     class MachineMemory
       LOGGER = Pikuri.logger_for('MachineMemory')
 

@@ -6,26 +6,19 @@ module Pikuri
   module Os
     # The +fileindex_read+ tool — read a file's full text *as stored in
     # the desktop index*, line-paged like {Pikuri::Workspace::Read}. The
-    # companion to {FileindexSearch}: that tool locates a file and previews
-    # one match, this one returns the whole text so the LLM can actually
-    # answer. Shares its swappable +backend:+ ({LocalSearch} / {Recoll});
-    # only +#read_text+ and +#check_binaries!+ are used here.
+    # companion to {FileindexSearch} (which locates + previews one match),
+    # sharing its swappable +backend:+ ({LocalSearch} / {Recoll}).
     #
-    # == Why read the index, not the file
+    # It reads the index, not the file: the index already holds every
+    # indexed file's extracted plain text — PDFs/office docs included — so
+    # this returns them in full with no extractor dependency. The cost is
+    # that it's the *indexed snapshot* (can lag very recent edits, covers
+    # only files the index knows); for a live or system text file
+    # (+/etc+, +/var/log+, a just-written file), read it directly instead.
     #
-    # The index already holds every indexed file's extracted plain text —
-    # PDFs and office documents included — so this reads them in full with
-    # no extractor dependency. The cost: it's the *indexed snapshot*, which
-    # can lag very recent edits, and it only covers files the index knows.
-    # For a live or system text file (+/etc+, +/var/log+, something just
-    # written), read it directly instead.
-    #
-    # == Paging
-    #
-    # +offset+ / +limit+ work exactly as in {Pikuri::Workspace::Read}: the
-    # text is windowed through the shared {Pikuri::Extractor.extract_paged}
-    # (a +StringIO+ over the stored text), rendered +cat -n+ with a
-    # +"Use offset=N to continue"+ trailer, same caps and markers.
+    # +offset+ / +limit+ page exactly as in {Pikuri::Workspace::Read},
+    # windowed through {Pikuri::Extractor.extract_paged} (a +StringIO+ over
+    # the stored text) with the same +cat -n+ + trailer, caps, and markers.
     class FileindexRead < Pikuri::Tool
       # @return [Integer] default +limit+ (lines per call); the shared
       #   page default, so it matches +read+.

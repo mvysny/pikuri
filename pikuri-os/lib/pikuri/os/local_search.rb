@@ -6,24 +6,20 @@ module Pikuri
   module Os
     # Backend wrapper over GNOME's +localsearch+ CLI (the desktop file
     # index, 2024 rename of tracker3 / tracker-miners). Not a
-    # {Pikuri::Tool} itself — it's the shared, stateless seam both
-    # {FileindexSearch} (the +fileindex_search+ tool) and {FileindexRead}
-    # (+fileindex_read+) are built on, so the localsearch-specific
-    # knowledge (argv, output parsing, json-ld extraction, binary probe)
-    # lives in one place.
-    #
-    # == Honest by design
+    # {Pikuri::Tool} — the shared, stateless seam behind
+    # +fileindex_search+ / +fileindex_read+, so localsearch-specific
+    # knowledge (argv, parsing, json-ld extraction, binary probe) lives in
+    # one place.
     #
     # +localsearch search+ returns at most *one* match snippet per file
-    # and reads a possibly-slightly-stale index. We don't paper over
-    # that: {.search} returns exactly those one-per-file hits, and the
-    # tools tell the LLM to {FileindexRead read the file} for the rest.
-    # Enumerating every per-file hit would need a stemmer (the index is
-    # stemmed — "mouse" matches "mice"); that's deliberately out of scope.
+    # from a possibly-stale index. {.search} returns exactly those
+    # one-per-file hits and the tools tell the LLM to read the file for the
+    # rest — enumerating every per-file hit would need a stemmer (the index
+    # is stemmed, "mouse" matches "mice"), deliberately out of scope.
     #
-    # PDFs and office documents are searchable/readable for free: the
-    # index already extracted their text at index time, so {.read_text}
-    # returns it via +info -c+ with no extractor dependency here.
+    # PDFs and office docs come for free: the index extracted their text at
+    # index time, so {.read_text} returns it via +info -c+ with no
+    # extractor dependency here.
     module LocalSearch
       # @return [String] the localsearch CLI.
       BINARY = 'localsearch'
@@ -32,28 +28,18 @@ module Pikuri
       #   fileindex tools when prefixing an +"Error: ..."+ observation.
       def self.label = 'localsearch'
 
-      # Uniform accessor mirroring {Recoll.limitations}, so the fileindex
-      # tools can read either backend's blind-spot note the same way. Here
-      # it's simply {LIMITATIONS} — this backend's blind spots are the same
-      # on every host, so unlike recoll's (which depends on the configured
-      # folders) it can be a constant.
+      # Uniform accessor mirroring {Recoll.limitations}. A constant here
+      # (unlike recoll's runtime method) because this backend's blind spots
+      # are the same on every host.
       #
       # @return [String]
       def self.limitations = LIMITATIONS
 
-      # Plain-English note of this backend's *structural* blind spots —
-      # what it will never surface no matter how the query is phrased —
-      # for the fileindex tools to append to their LLM description so the
-      # model knows when to fall back to a filesystem text/regex search.
-      #
-      # Lives on the backend, not the tool, because the blind spots are
-      # backend-specific: a different index (e.g. a future +recoll+ arm)
-      # has different ones and would ship its own text. All three below
-      # are confirmed against GNOME localsearch (see +ideas/os-assistant.md+):
-      # extraction is mime-gated so source code is name-only; any tree
-      # with a +.git+ is skipped wholesale; and there is no directory
-      # filter, so results rank across the whole home index and a common
-      # word in one project can stay buried below the result limit.
+      # Plain-English note of this backend's *structural* blind spots,
+      # appended to the fileindex tools' LLM description so the model knows
+      # when to fall back to a filesystem text/regex search. Lives on the
+      # backend (a different index ships its own). All three are confirmed
+      # against GNOME localsearch (+ideas/os-assistant.md+).
       #
       # @return [String]
       LIMITATIONS = <<~LIMITS.chomp
@@ -142,9 +128,7 @@ module Pikuri
         data && find_plain_text(data)
       end
 
-      # Verify localsearch is reachable; raise loudly otherwise (both
-      # tools call this at construction). Routed through
-      # {Pikuri::Subprocess.spawn} per the subprocess seam.
+      # Verify localsearch is reachable; raise loudly otherwise.
       #
       # @raise [RuntimeError] if the binary is missing or unusable
       def self.check_binaries!
@@ -156,10 +140,9 @@ module Pikuri
         raise install_hint
       end
 
-      # Non-raising presence probe — for callers (e.g. {Pikuri::Os::Extension})
-      # that want to wire the file-index tools only when localsearch is
-      # actually installed and degrade gracefully otherwise, rather than
-      # failing the whole agent.
+      # Non-raising presence probe — lets a caller wire the file-index
+      # tools only when localsearch is installed and degrade gracefully
+      # otherwise, rather than failing the whole agent.
       #
       # @return [Boolean]
       def self.available?

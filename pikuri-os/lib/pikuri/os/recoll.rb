@@ -7,32 +7,23 @@ module Pikuri
     # Backend wrapper over the +recoll+ full-text index, via its headless
     # +recollq+ CLI (Xapian-backed). The DE-independent sibling of
     # {LocalSearch}: same seam shape ({.search} / {.read_text} /
-    # {.available?} / {.check_binaries!}), so the two are interchangeable
-    # behind the +fileindex_search+ / +fileindex_read+ tools and a host can
-    # pick whichever is present. Nothing wires it yet — this is the backend
-    # class only.
+    # {.available?} / {.check_binaries!}), interchangeable behind the
+    # +fileindex_search+ / +fileindex_read+ tools, and {Extension} wires
+    # whichever is +available?+ first.
     #
-    # == Why recoll alongside localsearch
+    # Recall on prose ties +localsearch+, so recoll is *not* a better
+    # engine — it earns its place where +localsearch+ is structurally blind
+    # (source trees, +.git+ checkouts, non-GNOME desktops). Its blind spot
+    # is the inverse: +localsearch+ drops *content kinds* (source, git);
+    # recoll indexes exactly the *folders* the user configured (+topdirs+),
+    # source code included — everything outside them is invisible. Measured
+    # comparison: +ideas/os-assistant.md+.
     #
-    # See +ideas/os-assistant.md+ for the measured comparison. The short
-    # version: on prose both indexers reach ~identical recall, so recoll is
-    # *not* a better engine. It earns its place only where GNOME's
-    # +localsearch+ is structurally blind — source trees, +.git+ checkouts,
-    # non-GNOME desktops — and, unlike +localsearch+, it indexes exactly the
-    # folders the user configured rather than the whole home. That last
-    # point inverts the blind-spot story: {LocalSearch}'s limitation is
-    # *what kind of content* it drops (source code, git); recoll's is *which
-    # folders* it was pointed at. Everything under a configured +topdirs+ is
-    # fair game (source code included); everything outside is invisible.
-    #
-    # == Machine-readable query output
-    #
-    # {.search} asks +recollq -F 'url abstract'+ for exactly two fields,
-    # base64-encoded one result per line (recoll's own recommended shape for
-    # other programs) — so paths and snippets with spaces, brackets or
-    # newlines survive intact with no escaping guesswork. {.read_text} uses
-    # +recollq -d+, which dumps a document's stored/extracted text (PDFs and
-    # office docs included, extracted at index time) after a header line.
+    # {.search} asks +recollq -F 'url abstract'+ for two base64-encoded
+    # fields per line (recoll's own recommended machine shape) so paths and
+    # snippets with spaces/brackets/newlines survive with no escaping
+    # guesswork. {.read_text} uses +recollq -d+, which dumps a document's
+    # stored/extracted text (PDFs/office docs included) after a header line.
     module Recoll
       # @return [String] the headless recoll query CLI.
       BINARY = 'recollq'
@@ -62,16 +53,13 @@ module Pikuri
       #   fileindex tools when prefixing an +"Error: ..."+ observation.
       def self.label = 'recoll'
 
-      # Plain-English note of what this backend will *not* surface, for the
-      # fileindex tools to append to their LLM description so the model knows
-      # when to fall back to a filesystem text/regex search.
-      #
-      # Unlike {LocalSearch::LIMITATIONS}, this is a *method*, not a
-      # constant: recoll's blind spot is host-specific — it indexes exactly
-      # the folders named in the user's +topdirs+, which we can only read at
-      # runtime ({.indexed_dirs}). A file outside those folders is invisible
-      # no matter how the query is phrased. When the config can't be read we
-      # fall back to a generic caveat.
+      # Plain-English note of what this backend will *not* surface, appended
+      # to the fileindex tools' LLM description so the model knows when to
+      # fall back to a filesystem text/regex search. A *method*, not a
+      # constant like {LocalSearch::LIMITATIONS}, because the blind spot is
+      # host-specific: the user's +topdirs+, only readable at runtime
+      # ({.indexed_dirs}). Falls back to a generic caveat when the config
+      # can't be read.
       #
       # @return [String]
       def self.limitations

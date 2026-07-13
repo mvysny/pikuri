@@ -4,29 +4,16 @@ require 'pikuri-core'
 require 'pikuri-workspace'
 require 'pikuri-code'
 
-# Entry file for the pikuri-os gem. Sets up a dedicated Zeitwerk loader
-# rooted at this gem's +lib/+, contributing to the shared +Pikuri::+
-# namespace alongside pikuri-core, pikuri-workspace, and pikuri-code.
-#
-# pikuri-os is the OS-integration layer and the home of the
-# +bin/pikuri-os-assistant+ demo — a single, local, network-severed
-# agent for understanding and operating the host OS. The design notes
-# live in +ideas/os-assistant.md+; the load-bearing posture is: egress is
-# severed at the kernel (a net-isolated Bash sandbox), every mutation
-# is confirmed, and durable memory is a single user-owned +MACHINE.md+
-# rather than mem0 — so this gem depends on pikuri-code (Bash +
-# sandbox) but NOT on pikuri-mcp/-memory/-vectordb.
-#
-# As the OS-specific surface lands it will define, under
-# +Pikuri::Os+: the localsearch-backed content-search tool, the
-# +MACHINE.md+ resident memory, and the boot-time machine grounding.
-# The two cross-cutting pieces (the +FullFsNoNet+ Bash sandbox and the
-# conservative read-only auto-confirmer) live in pikuri-code with the
-# other OS-touching primitives, not here.
-#
-# The loader is per-gem (not shared with the sibling gems' loaders) so
-# each gem owns its own +lib/+ tree; cooperation between gems is via
-# the +Pikuri+ namespace alone.
+# Entry file for the pikuri-os gem: the OS-integration layer and home of
+# the +bin/pikuri-os-assistant+ demo — a single, local, network-severed
+# agent for understanding and operating the host OS ({Pikuri::Os::Extension}
+# is the one-call wiring). The load-bearing posture: egress severed at the
+# kernel (a net-isolated Bash sandbox), every mutation confirmed, durable
+# memory a user-owned +MACHINE.md+ rather than mem0 — so this gem depends
+# on pikuri-code but NOT pikuri-mcp/-memory/-vectordb. The two cross-cutting
+# pieces (+FullFsNoNet+ sandbox, read-only command approver) live in
+# pikuri-code with the other OS-touching primitives. Design notes:
+# +ideas/os-assistant.md+.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri

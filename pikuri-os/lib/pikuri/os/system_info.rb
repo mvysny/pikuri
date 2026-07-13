@@ -4,49 +4,35 @@ require 'etc'
 
 module Pikuri
   module Os
-    # Boot-time machine facts for the OS helper: the small block of facts
-    # about *this* host that gets folded into the system prompt so the
-    # model doesn't guess the distro, init system, or paths. See
-    # +ideas/os-assistant.md+.
-    #
-    # == Mandatory info, optional source
+    # Boot-time machine facts for the OS helper: a small block folded into
+    # the system prompt so the model doesn't guess the distro, init system,
+    # or paths. See +ideas/os-assistant.md+.
     #
     # The core facts (distro, kernel, init, packaging, desktop, CPU/mem,
-    # home, shell, dmesg access, date) are gathered from **always-present
-    # primitives** — Ruby's +Etc+, +/etc/os-release+, +/proc+, +ENV+, and a
-    # +$PATH+ probe for command names — so the block is deterministic, needs
-    # no external binary, and works on a headless box or in CI. The
-    # packaging line tells the model which manager command to hand the user
-    # (apt / dnf / pacman / …, plus whether flatpak and snap are present);
-    # the dmesg line tells it up front whether reading the kernel ring
-    # buffer will work as this user or fail with "operation not permitted"
-    # (read from +kernel.dmesg_restrict+, so we don't spawn +dmesg+ just to
-    # learn it). When +inxi+ is installed, its +inxi -b+
-    # output is appended as extra hardware/desktop detail (machine type,
-    # GPU, mobo, …); when it isn't, that section is simply omitted. inxi
-    # is enrichment, never a dependency — a missing or failing +inxi+ is
-    # never fatal.
+    # home, shell, dmesg access, date) come from **always-present
+    # primitives** — +Etc+, +/etc/os-release+, +/proc+, +ENV+, a +$PATH+
+    # probe — so the block is deterministic, needs no external binary, and
+    # works headless or in CI. The dmesg line is read from
+    # +kernel.dmesg_restrict+ (not by spawning +dmesg+) so the model knows
+    # up front whether the kernel log is readable. When +inxi+ is present,
+    # +inxi -b+ output is appended as extra hardware/desktop detail; it is
+    # enrichment, never a dependency — a missing or failing +inxi+ is never
+    # fatal.
     #
-    # == Read-once-at-boot
-    #
-    # This is a snapshot taken when the prompt is first built; the date
-    # in particular is "at startup". The host doesn't change distro
-    # mid-session, so that's fine — and {#prompt_section} is **memoized**,
-    # so the (subprocess-spawning) +inxi+ probe runs exactly once no
-    # matter how often the prompt is re-assembled (e.g. on every
-    # {Pikuri::Agent#clear_conversation}). Unlike {MachineMemory}, this
-    # section deliberately does *not* refresh on clear.
+    # A read-once-at-boot snapshot (the date is "at startup"). The host
+    # doesn't change distro mid-session, and {#prompt_section} is
+    # **memoized** so the +inxi+ subprocess runs once no matter how often
+    # the prompt is re-assembled. Unlike {MachineMemory}, this deliberately
+    # does *not* refresh on {Pikuri::Agent#clear_conversation}.
     class SystemInfo
       # @return [Integer] cap on the appended +inxi -b+ block, so a chatty
       #   inxi can't bloat the prompt.
       INXI_MAX_BYTES = 4 * 1024
 
       # Native package managers, in detection order: +[command, distro
-      # hint]+. The first whose command is on +$PATH+ wins and is reported
-      # as this host's primary manager, so the model hands the user the
-      # right install/remove verb instead of guessing apt on a Fedora box.
-      # flatpak and snap are detected separately (cross-distro, can coexist
-      # with any of these) — see {#packaging}.
+      # hint]+. The first on +$PATH+ wins and is reported as this host's
+      # primary manager. flatpak/snap are detected separately (cross-distro,
+      # can coexist) — see {#packaging}.
       NATIVE_PACKAGE_MANAGERS = [
         ['apt',          'Debian/Ubuntu, dpkg'],
         ['dnf',          'Fedora/RHEL, rpm'],
@@ -78,9 +64,7 @@ module Pikuri
 
       # The system-prompt grounding section: a +# This machine+ heading,
       # the core facts, and (when +inxi+ is present) an extra-detail block.
-      # Memoized — the +inxi+ subprocess runs only on the first call, so
-      # re-pulling the prompt (every {Pikuri::Agent#clear_conversation}) is
-      # free.
+      # Memoized (see class doc).
       #
       # @return [String]
       def prompt_section

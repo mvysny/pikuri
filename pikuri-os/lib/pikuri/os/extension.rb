@@ -6,66 +6,49 @@ module Pikuri
     # extension to an +Agent.new+ block gives the complete surface — the
     # five workspace file tools, +bash+ (net-severable, with the read-only
     # command approver), the file-index tools, and the machine grounding +
-    # +MACHINE.md+ memory folded into the system prompt. The +bin/+ script
-    # and the planned TUI / web clients all wire the agent through this one
-    # object rather than re-deriving the toolset and confirmation policy.
+    # +MACHINE.md+ memory folded into the system prompt.
     #
-    # == Composition
-    #
-    # It is a composite: +configure+ adds {Pikuri::Workspace::Extension}
-    # and {Pikuri::Code::Extension} as sub-extensions (the configurator runs
-    # their +configure+ immediately and still fires their +bind+ /
-    # +on_user_message+), then layers on the OS-specific tools and prompt
-    # sections. Reusing those two extensions means the file-tool and bash
-    # wiring lives in one place each, not duplicated here.
+    # A composite: +configure+ adds {Pikuri::Workspace::Extension} and
+    # {Pikuri::Code::Extension} as sub-extensions, then layers on the
+    # OS-specific tools and prompt sections.
     #
     # == Confirmation policy
     #
-    # The caller passes the *human* confirmer (e.g.
-    # {Pikuri::Workspace::Confirmer::Terminal}). The file tools get it via
+    # The caller passes the *human* confirmer. The file tools get it via
     # {Pikuri::Workspace::Extension} with +confirm_all_writes: true+: since
     # this agent roams the full disk (no containment), *every* writable
     # Write/Edit confirms with a diff and an unwritable target
-    # short-circuits to "ask the user to sudo" (see {Pikuri::Workspace::WriteGate}
-    # and the guide's ch7). +Bash+ gets that same human confirmer plus a
-    # {Pikuri::Code::Bash::ReadOnlyCommandApprover} as its +command_approver+,
-    # so provably read-only commands run without a prompt and everything else
-    # still reaches the human — the conservative half of the
-    # confirmation-fatigue answer. So bash mutations and file-tool writes are
-    # on the same page: both always confirm.
+    # short-circuits to "ask the user to sudo" (see
+    # {Pikuri::Workspace::WriteGate}, guide ch7). +Bash+ gets the same
+    # confirmer plus a {Pikuri::Code::Bash::ReadOnlyCommandApprover}, so
+    # provably read-only commands skip the prompt and everything else
+    # reaches the human — bash mutations and file-tool writes both always
+    # confirm.
     #
-    # The approver is built with +allow_git: true+, so read-only git verbs
-    # (+status+ / +diff+ / +log+ / +show+ / +blame+ / ...) also skip the
-    # prompt — there is no per-repo trust prompt. That is safe here *only because*
-    # {Pikuri::Code::Bash} hardens the git subprocess environment
-    # ({Pikuri::Code::Bash::GIT_HARDENING}): a hostile repo-local
-    # +core.fsmonitor+ is neutralized regardless of what the repo's
-    # +.git/config+ says, which is the vector that fires on a plain
-    # +git status+. The accepted residual is diff-driver execution
-    # (+diff.external+ / +.gitattributes+-selected +textconv+) on a repo
-    # whose +.git/config+ an attacker wrote — env can't disable those
-    # cleanly, and we don't rewrite the model's command to inject
-    # +--no-ext-diff+. A plain +git clone+ never copies the remote's
-    # config, so the residual is confined to non-clone-delivered repos.
-    # See {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
+    # The approver is built +allow_git: true+, so read-only git verbs skip
+    # the prompt too (no per-repo trust prompt). Safe here *only because*
+    # {Pikuri::Code::Bash::GIT_HARDENING} neutralizes the hostile
+    # +core.fsmonitor+ vector that fires on a plain +git status+; the
+    # accepted residual is diff-driver execution on an attacker-written
+    # +.git/config+ (confined to non-clone-delivered repos). Full detail:
+    # {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
     #
     # == Sandbox
     #
-    # The +sandbox+ is the caller's choice (default {NONE} — a safe library
-    # default). The OS-helper binary passes
-    # {Pikuri::Code::Bash::Sandbox::FullFsNoNet} for the net-severed,
-    # full-filesystem posture; that decision (and its fail-loud probe) lives
-    # in the binary, not here, so a TUI / web host can isolate differently.
+    # The +sandbox+ is the caller's choice (default {Pikuri::Code::Bash::Sandbox::NONE}).
+    # The OS-helper binary passes {Pikuri::Code::Bash::Sandbox::FullFsNoNet}
+    # for the net-severed, full-filesystem posture; that decision (and its
+    # fail-loud probe) lives in the binary, so a differently-hosted client
+    # can isolate differently.
     #
     # == Degradation
     #
-    # The file-index tools need a usable index backend. The extension tries
-    # each of {FILE_INDEX_BACKENDS} in order and wires the tools on the
-    # first that is {LocalSearch.available? usable} — {LocalSearch} (GNOME,
-    # zero-setup) first, then {Recoll} (DE-independent, but only when it has
-    # a built index). When none is usable it logs a warning and simply omits
-    # the tools — the agent still works (bash + file tools); it doesn't fail
-    # to construct on a host with no file index.
+    # The file-index tools need a usable index backend. The extension wires
+    # them on the first of {FILE_INDEX_BACKENDS} that is
+    # {LocalSearch.available? usable} — {LocalSearch} (GNOME, zero-setup),
+    # then {Recoll} (DE-independent, but only with a built index). When none
+    # is usable it logs and omits the tools — the agent still constructs and
+    # works (bash + file tools).
     class Extension
       include Pikuri::Agent::Extension
 
@@ -135,14 +118,11 @@ module Pikuri
         nil
       end
 
-      # Two grounding sections: the machine facts and the MACHINE.md
-      # notes (or an affordance pointing the agent at where to record
-      # them). The system-info section is memoized at its source so a
-      # re-pull on clear is free; the memory section is read **fresh**, so
-      # MACHINE.md edits surface on a "/clear" — the durable notes stay
-      # current across a conversation reset. The nested Workspace / Code
-      # extensions (added in {#configure}) contribute their own snippets
-      # independently.
+      # Two grounding sections: the machine facts and the MACHINE.md notes
+      # (or an affordance pointing at where to record them). System-info is
+      # memoized at its source (re-pull on clear is free); the memory
+      # section is read **fresh**, so MACHINE.md edits surface on a
+      # "/clear".
       #
       # @return [Array<String>]
       def system_prompt_snippets
