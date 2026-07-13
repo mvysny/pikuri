@@ -503,7 +503,8 @@ per-gem one-liners:
   `Tasks::Completed`, `Tasks::Delete`) plus `Tasks::Extension`.
   `task_create` takes a JSON array of strings; the three mutation
   tools address items by numeric id (never reused after delete;
-  rationale for both reversals in {Pikuri::Tasks::Create} and the
+  reversal rationale in {Pikuri::Tasks::Create} for the JSON array
+  and {Pikuri::Tasks::InProgress} for the numeric id, plus the
   guide ch11); state is dropped on agent close. `Extension#bind`
   arms a `Tasks::ListChanged` domain event per list mutation
   (snapshot payload — the worked example of `ctx.emit_event`; UI
