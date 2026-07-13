@@ -83,17 +83,19 @@ one item: `Event::Tokens`' context-window math.)
 **Done (committed):**
 - `pikuri-core` — 41 files, ~4800→3145 comment lines, −1670 net. Commit 19f6737.
 - `pikuri-workspace` — 13 files, −551 net. Commit 70565e5.
+- `pikuri-code` — 12 files, 1843→1180 comment lines, −663 net. Kept every
+  seam contract (Sandbox threat model incl. container-socket footgun +
+  `FullFsNoNet` no-fallback invariant, approver deny-by-default + quote-removal
+  soundness + `allow_git:`/PATH residuals, `GIT_HARDENING` RCE, GitClone CVEs +
+  4 mitigations, ToolchainPaths credential-exclusion); cut the readable-vs-
+  writable history, "same shape as X" preambles, and dmesg/journalctl doc dup.
 
-Both: comment-only, 0 code changes, all specs green (658 + 299).
+All three: comment-only, 0 code changes, all specs green (658 + 299 + 363).
 
 **Remaining** (comment counts, roughly biggest-impact first):
 - `pikuri-vectordb` — 2707 comments, 29 files (has a `DESIGN.md` + threat model;
   the `tools/` dir is its LLM surface; backends InMemory/Qdrant/Chroma, servers,
   indexer/watcher, embedder/reranker/chunker).
-- `pikuri-code` — 1843, 12 files. **Heaviest sandbox/threat-model docs** —
-  `Bash`, `Bash::Sandbox` (Bubblewrap: ephemeral overlays, container-socket
-  footgun, `FullFsNoNet`), `read_only_command_approver`, `ToolchainPaths`,
-  `GitClone`. Keep the threat model; cut the padding.
 - `pikuri-mcp` — 950, 9 files (Registry, Servers, Verifier/Synthesizer/Thinker,
   Cache, ClientWrapper; note the documented subprocess-seam exception comment).
 - `pikuri-memory` — 826, 7 files (has `DESIGN.md` + threat model; mem0 client,
@@ -108,12 +110,12 @@ Both: comment-only, 0 code changes, all specs green (658 + 299).
 - `pikuri-assistant` — 8 (binary-only gem; likely nothing to trim).
 - `pikuri` (metagem) — 8 (require list; nothing to trim).
 
-Total remaining ≈ 9200 comment lines across ~90 files; expect a similar ~45–55%
+Total remaining ≈ 7360 comment lines across ~80 files; expect a similar ~35–55%
 cut where files are bloated (some, like already-disciplined `tool/parameters.rb`
-in core, needed almost nothing).
+in core, needed almost nothing; threat-model-heavy pikuri-code came in at ~36%).
 
 ## Note for the fresh session
 
 Suggested opening prompt: *"Continue the rdoc trim from `ideas/rdoc-trim.md`.
-Next gem: pikuri-vectordb (or pikuri-code). Same rubric, gem by gem, comment-only,
-verify + specs + commit, pause for my review before the next gem."*
+Next gem: pikuri-vectordb. Same rubric, gem by gem, comment-only, verify +
+specs + commit, pause for my review before the next gem."*

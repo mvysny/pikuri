@@ -2,29 +2,21 @@
 
 module Pikuri
   module Code
-    # An {Pikuri::Agent::Extension} that wires pikuri-code's own
-    # tools: {Bash}, the plan-mode pair ({EnterPlanMode} /
-    # {ExitPlanMode}), and {GitClone} as a sub-agent-only tool.
-    #
-    # The extension owns only pikuri-code's own surface; callers are
-    # still expected to add Skill, Tasks, Mcp and SubAgent extensions
-    # themselves if they want those features.
+    # An {Pikuri::Agent::Extension} wiring pikuri-code's own tools: {Bash}, the
+    # plan-mode pair ({EnterPlanMode} / {ExitPlanMode}), and {GitClone} as a
+    # sub-agent-only tool. Owns only this surface — callers add Skill / Tasks /
+    # Mcp / SubAgent extensions themselves.
     #
     # == Plan mode is opt-in via the read-only flag
     #
-    # The plan-mode tools, the {PLAN_MODE_PROMPT} system-prompt
-    # explainer, and the per-turn read-only reminder are wired only
-    # when the host passes a {Pikuri::Workspace::ReadOnly} flag via the
-    # +read_only:+ constructor argument. That same instance must be the
-    # one the host hands the file-editing tools (through
-    # {Pikuri::Workspace::Extension}'s own +read_only:+), so their
-    # refusal and this reminder stay in lockstep on one flag. With no
-    # flag, the extension still installs {Bash} + {GitClone} but no
-    # plan-mode surface — plan mode is simply unavailable.
-    #
-    # The transition is surfaced as a {PlanModeChanged} domain event,
-    # emitted from {#bind} off the flag's +on_change+ — a pikuri-code
-    # concern, not a core agent event (the loop never reads plan mode).
+    # The plan-mode tools, {PLAN_MODE_PROMPT}, and the per-turn reminder are
+    # wired only when the host passes a {Pikuri::Workspace::ReadOnly} flag via
+    # +read_only:+ — and it must be the *same* instance handed to the
+    # file-editing tools (via {Pikuri::Workspace::Extension}'s +read_only:+), so
+    # their refusal and this reminder stay in lockstep. With no flag, {Bash} +
+    # {GitClone} still install but plan mode is unavailable. The transition is a
+    # {PlanModeChanged} domain event emitted from {#bind} — a pikuri-code
+    # concern, not a core event (the loop never reads plan mode).
     #
     # == Usage
     #
@@ -48,15 +40,11 @@ module Pikuri
       # would shadow the wiring done here.
       TOOL_CLASSES = [Bash, EnterPlanMode, ExitPlanMode].freeze
 
-      # Static plan-mode explainer, appended *once* to the system
-      # prompt (and so prefix-cached) when plan mode is wired. The
-      # mechanics and the active-behavior contract live here, paid
-      # once; the per-turn injection ({PLAN_MODE_REMINDER}) is then
-      # just a one-line state re-assertion, paid every turn at the
-      # uncached tail. Same shape as {Pikuri::Tasks::Extension}'s
-      # +PROMPT_SNIPPET+ — an extension-owned snippet that names its own
-      # tools (the persona/extension carve-out to "no tool names in a
-      # main prompt").
+      # Static plan-mode explainer, appended *once* (and so prefix-cached) when
+      # plan mode is wired: mechanics + active-behavior contract, paid once. The
+      # per-turn {PLAN_MODE_REMINDER} is then a one-line re-assertion at the
+      # uncached tail. An extension-owned snippet that names its own tools (the
+      # persona/extension carve-out to "no tool names in a main prompt").
       #
       # @return [String]
       PLAN_MODE_PROMPT = <<~PROMPT
@@ -72,26 +60,23 @@ module Pikuri
         </plan_mode>
       PROMPT
 
-      # One-line per-turn state re-assertion, injected as a +:system+
-      # message while plan mode is active (see {#on_user_message}). It
-      # lands at the uncached tail after each user message, so it is
-      # deliberately tiny — the substantive prose lives once, cached,
-      # in {PLAN_MODE_PROMPT}. Inlined rather than read from +prompts/+
-      # precisely because it is a single line.
+      # One-line per-turn re-assertion, injected as a +:system+ message while
+      # plan mode is active (see {#on_user_message}). Deliberately tiny — it
+      # lands at the uncached tail, while the substantive prose lives cached in
+      # {PLAN_MODE_PROMPT}. Inlined rather than in +prompts/+ because it's one
+      # line.
       #
       # @return [String]
       PLAN_MODE_REMINDER =
         'Reminder: you are in plan mode (read-only) — research, design, ' \
         'and brainstorm, but do not edit files.'
 
-      # Reason clause for a write/edit refusal *while plan mode is the
-      # reason the workspace is read-only*. Handed to
-      # {Pikuri::Workspace::ReadOnly} (via the host) so that a refused
-      # Write/Edit names the recovery path — +exit_plan_mode+ — instead
-      # of the generic {Pikuri::Workspace::ReadOnly::DEFAULT_MESSAGE},
-      # which can't assume plan mode is the cause. The owning words live
-      # here, in pikuri-code, beside {PLAN_MODE_PROMPT} /
-      # {PLAN_MODE_REMINDER}; the host just wires it into the flag.
+      # Reason clause for a write/edit refusal *when plan mode is why the
+      # workspace is read-only*. Handed to {Pikuri::Workspace::ReadOnly} (via
+      # the host) so a refused Write/Edit names the recovery path
+      # (+exit_plan_mode+) instead of the generic
+      # {Pikuri::Workspace::ReadOnly::DEFAULT_MESSAGE}, which can't assume plan
+      # mode is the cause.
       #
       # @return [String]
       PLAN_MODE_READONLY_MESSAGE =
@@ -101,17 +86,13 @@ module Pikuri
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Pikuri::Code::Bash::Sandbox]
-      # @param read_only [Pikuri::Workspace::ReadOnly, nil] the shared
-      #   read-only flag (the same one handed to
-      #   {Pikuri::Workspace::Extension}). When present, the plan-mode
-      #   tools + prompt + reminder + event are wired; +nil+ leaves plan
-      #   mode unavailable.
-      # @param command_approver [#approves?, nil] optional read-only
-      #   pre-approval predicate handed to {Bash}
-      #   ({Bash::ReadOnlyCommandApprover}); commands it vouches for run
-      #   without a confirmation prompt. +nil+ (default) confirms every
-      #   command. Applies to Bash only — the plan-mode +exit_plan_mode+
-      #   gate always uses the bare +confirmer+.
+      # @param read_only [Pikuri::Workspace::ReadOnly, nil] the shared read-only
+      #   flag (same instance handed to {Pikuri::Workspace::Extension}). When
+      #   present, plan-mode tools + prompt + reminder + event are wired; +nil+
+      #   leaves plan mode unavailable.
+      # @param command_approver [#approves?, nil] read-only pre-approval
+      #   predicate handed to {Bash} only ({Bash::ReadOnlyCommandApprover}); the
+      #   +exit_plan_mode+ gate always uses the bare +confirmer+.
       def initialize(filesystem:, confirmer:, sandbox: Bash::Sandbox::NONE, read_only: nil,
                      command_approver: nil)
         @filesystem       = filesystem
@@ -141,9 +122,8 @@ module Pikuri
           c.add_tool ExitPlanMode.new(read_only: @read_only, confirmer: @confirmer)
         end
 
-        # GitClone is intentionally added via +add_sub_agent_tool+ only
-        # (never visible to the parent). It exists solely for the
-        # GIT_REPO_RESEARCHER persona.
+        # Sub-agent-only (never visible to the parent) — it exists solely for
+        # the GIT_REPO_RESEARCHER persona.
         c.add_sub_agent_tool GitClone.new(filesystem: @filesystem)
         nil
       end
@@ -153,10 +133,9 @@ module Pikuri
       #   appear together); otherwise none.
       def system_prompt_snippets = @read_only ? [PLAN_MODE_PROMPT] : []
 
-      # Bridge plan-mode transitions onto the listener stream so UI
-      # chrome can render the current posture — for both model-driven
-      # ({EnterPlanMode} / {ExitPlanMode}) and host-driven (key binding /
-      # slash command) flips. No-op when plan mode isn't wired.
+      # Bridge plan-mode transitions onto the listener stream so UI chrome can
+      # render the posture — both model-driven ({EnterPlanMode} / {ExitPlanMode})
+      # and host-driven flips. No-op when plan mode isn't wired.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
@@ -167,11 +146,10 @@ module Pikuri
         nil
       end
 
-      # Inject the read-only reminder as a +:system+ message on every
-      # turn that plan mode is active — the soft half of plan mode's
-      # defense, re-asserting the posture even when the *host* engaged
-      # it and the model never saw a tool call. Returns +nil+ (inject
-      # nothing) when plan mode is off or unwired.
+      # Inject {PLAN_MODE_REMINDER} as a +:system+ message on every turn plan
+      # mode is active — the soft half of the defense, re-asserting the posture
+      # even when the *host* engaged it and the model never saw a tool call.
+      # +nil+ (inject nothing) when plan mode is off or unwired.
       #
       # @param _ctx [Pikuri::Agent::ExtensionContext]
       # @param _content [String]

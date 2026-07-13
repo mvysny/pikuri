@@ -3,91 +3,59 @@
 module Pikuri
   module Code
     # The +bash+ tool — run an arbitrary shell command in the workspace.
-    # Instantiating +Code::Bash.new(filesystem: fs, confirmer: c)+ produces
-    # a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to
-    # any bundled tool's. Same shape as {Pikuri::Workspace::Write}
-    # (filesystem + confirmer captured by the +execute+ closure at
-    # construction).
+    # +Code::Bash.new(filesystem: fs, confirmer: c)+ produces a tool whose
+    # {Pikuri::Tool#to_ruby_llm_tool} wiring is identical to any bundled tool's
+    # (filesystem + confirmer captured by the +execute+ closure).
     #
     # == Confirmation
     #
-    # Every command requires confirmation. Bash composes a semantic
-    # {Pikuri::Workspace::Confirmer::Request} — question (header line)
-    # plus detail (+$ <command>+ echo) — and hands it to the confirmer,
-    # which owns ALL presentation: color, the answer cue, answer
-    # parsing, and medium-appropriate escaping of the raw bytes (a
-    # terminal neutralizes control bytes, a web client HTML-escapes).
-    # The request deliberately carries the command verbatim so each
-    # renderer can escape for its own medium. The *observation* echo
-    # (+$ ...+ in the tool result) stays on this side of the seam and
-    # passes through {.visible}, so the model can't smuggle a
-    # +\r\033[2K rm -rf ~/+ behind the displayed text there either.
-    # Execution uses the raw command; only displays are sanitized.
+    # Every command is confirmed (unless a +command_approver+ pre-approves it).
+    # Bash composes a semantic {Pikuri::Workspace::Confirmer::Request} — a
+    # question plus +$ <command>+ detail — and hands it to the confirmer, which
+    # owns ALL presentation and medium-appropriate escaping of the raw bytes
+    # (terminal neutralizes control bytes, web client HTML-escapes). The request
+    # carries the command verbatim so each renderer escapes for its own medium.
+    # The *observation* echo (+$ ...+ in the tool result) passes through
+    # {.visible}, so the model can't smuggle a +\r\033[2K rm -rf ~/+ behind it
+    # either. Execution uses the raw command; only displays are sanitized.
     #
     # == Subprocess wiring
     #
-    # The command runs through {Pikuri::Subprocess.spawn} with argv:
-    #
     #   timeout --signal=TERM --kill-after=5s <timeout>s bash -c <command>
     #
-    # +bash -c+ (no +-l+) — no profile/rc sourcing, no inherited login
-    # environment beyond what pikuri itself runs in. +timeout(1)+ from
-    # GNU coreutils handles the SIGTERM-then-SIGKILL race; we never use
-    # Ruby's +Timeout.timeout+ (can't reliably kill subprocesses). The
-    # +--kill-after=5s+ gives the command 5 seconds to handle SIGTERM
-    # cleanly before SIGKILL is sent.
-    #
-    # The subprocess environment is "de-bundlerized" first — pikuri is
-    # usually launched under Bundler, which would otherwise leak its own
-    # +BUNDLE_GEMFILE+ / +RUBYOPT+ / ... into the command so a +bundle
-    # exec+ run against another project picks up *pikuri's* Gemfile. See
-    # {.subprocess_env} / {.bundler_clean_delta}.
+    # +bash -c+ (no +-l+) — no profile/rc sourcing. +timeout(1)+ from GNU
+    # coreutils handles the SIGTERM-then-SIGKILL race (Ruby's +Timeout.timeout+
+    # can't reliably kill subprocesses); +--kill-after=5s+ gives 5s to handle
+    # SIGTERM before SIGKILL. The environment is "de-bundlerized" first — pikuri
+    # usually runs under Bundler, which would otherwise leak +BUNDLE_GEMFILE+ /
+    # +RUBYOPT+ / … so a +bundle exec+ against another project picks up
+    # *pikuri's* Gemfile. See {.subprocess_env} / {.bundler_clean_delta}.
     #
     # == Timeout detection
     #
-    # GNU coreutils' +timeout+ exits +124+ after a successful SIGTERM,
-    # +137+ after escalating to SIGKILL. We treat both as "command timed
-    # out". A third code, +125+, is also accepted: uutils-coreutils 0.2.2
-    # (the Rust reimplementation shipped on some distros) sends the
-    # SIGTERM correctly but then mis-reports +125+ ("timeout itself
-    # failed") instead of +124+ whenever +--kill-after+ is in play. False-
-    # positive risk on real GNU coreutils is low — our argv is fixed and
-    # well-formed, so a +125+ there would indicate a misconfigured PATH
-    # rather than a routine timeout.
-    #
-    # Caveat: +137+ is ambiguous — a command killed by the OOM-killer
-    # also exits +137+. v1 accepts the mis-classification; the
-    # observation tells the user "sent SIGTERM, then SIGKILL" regardless.
+    # GNU +timeout+ exits +124+ after SIGTERM, +137+ after escalating to
+    # SIGKILL; both are treated as "timed out". +125+ is also accepted:
+    # uutils-coreutils 0.2.2 (the Rust reimplementation on some distros)
+    # mis-reports +125+ instead of +124+ when +--kill-after+ is in play.
+    # False-positive risk on real GNU coreutils is low (fixed, well-formed
+    # argv). Caveat: +137+ is ambiguous — the OOM-killer also exits +137+; v1
+    # accepts the mis-classification (the observation says "sent SIGTERM, then
+    # SIGKILL" regardless).
     #
     # == Output handling
     #
-    # Combined stdout+stderr (popen2e). Head+tail truncation at
-    # {OUTPUT_HEAD} + {OUTPUT_TAIL} bytes with a marker reporting both
-    # bytes-omitted and the original total — the model needs the scale
-    # to decide whether to re-run with +head+/+tail+/+grep+.
+    # Combined stdout+stderr (popen2e), head+tail truncated at {OUTPUT_HEAD} +
+    # {OUTPUT_TAIL} bytes with a marker reporting bytes-omitted and total — the
+    # model needs the scale to decide whether to re-run with +head+/+grep+.
     #
     # == Backgrounded subprocesses
     #
-    # Plain +cmd &+ does NOT detach — the backgrounded child inherits our
-    # combined-output pipe by default, so {Pikuri::Subprocess#wait} blocks
-    # on +io.read+ until the backgrounded process exits. The model must
-    # redirect fds away from our pipe to genuinely background:
-    # +cmd >/dev/null 2>&1 &+. Such commands stay in our pgroup and get
-    # SIGTERM on pikuri exit via {Pikuri::Subprocess.cleanup!}; +nohup+ /
-    # +setsid+ plus redirection opt out of cleanup.
-    #
-    # == Refusals
-    #
-    # All returned as +"Error: ..."+ observations:
-    #
-    # * Empty / whitespace-only +command+ → fast reject before confirming.
-    # * +timeout+ outside +[1, MAX_TIMEOUT]+ → bounds error.
-    # * User declined the confirmation → +"Error: user declined ..."+.
-    # * +timeout+ exit (+124+ / +137+) → timeout error with partial output.
+    # Plain +cmd &+ does NOT detach — the child inherits our combined-output
+    # pipe, so {Pikuri::Subprocess#wait} blocks on +io.read+ until it exits. The
+    # model must redirect fds to genuinely background: +cmd >/dev/null 2>&1 &+.
+    # Such commands stay in our pgroup and get SIGTERM on pikuri exit via
+    # {Pikuri::Subprocess.cleanup!}; +nohup+ / +setsid+ plus redirection opt out.
     class Bash < Pikuri::Tool
-      # Pikuri-convention per-module logger; the +Bash+ progname tags the
-      # construction-time warning below so it's clear in the shared
-      # +Pikuri.log_io+ stream which tool issued it.
       # @return [Logger]
       LOGGER = Pikuri.logger_for('Bash')
 
@@ -101,36 +69,27 @@ module Pikuri
       #   passed to +timeout --kill-after=...+.
       KILL_AFTER = '5s'
 
-      # Git config keys forced onto every git invocation in the bash
-      # subprocess, threaded in via {.git_hardening_delta}. These exist
-      # because even a *read-only* git command (+git status+ / +diff+ /
-      # +show+ ...) executes whatever the repo's config directs, and the
-      # +ReadOnlyCommandApprover+ approves those verbs — so on an
-      # unsandboxed or full-RW agent a hostile repo-local +.git/config+
-      # would be an unconfirmed RCE the moment the model runs +git diff+.
+      # Git config keys forced onto every git invocation, threaded in via
+      # {.git_hardening_delta}. Even a *read-only* git command executes whatever
+      # the repo's config directs, and {ReadOnlyCommandApprover} approves those
+      # verbs — so without this, a hostile repo-local +.git/config+ would be an
+      # unconfirmed RCE the moment the model runs +git diff+.
       #
-      # * +core.fsmonitor=false+ — the headline vector. A repo-local
-      #   +core.fsmonitor = <cmd>+ runs +<cmd>+ on every index refresh
-      #   (so on plain +git status+ / +diff+, no +.gitattributes+ or
-      #   matching file needed). +false+ is git's default-disabled state,
-      #   so legitimate status/diff are unaffected.
-      # * +core.pager=cat+ — belt-and-suspenders; git auto-paging is
-      #   already inert under our combined-output pipe (non-TTY), but a
-      #   forced +cat+ makes the pager a no-op vector regardless.
+      # * +core.fsmonitor=false+ — the headline vector: a repo-local
+      #   +core.fsmonitor = <cmd>+ runs +<cmd>+ on every index refresh (plain
+      #   +git status+/+diff+, no +.gitattributes+ needed). +false+ is git's
+      #   default, so legitimate status/diff are unaffected.
+      # * +core.pager=cat+ — belt-and-suspenders; auto-paging is already inert
+      #   under our non-TTY pipe, but a forced +cat+ makes it a no-op regardless.
       #
-      # Deliberately NOT here: +diff.external+ (and the +.gitattributes+-
-      # selected +diff.<driver>.command+ / +.textconv+ drivers). There is
-      # no config *value* meaning "use the internal diff" — an empty
-      # +diff.external=+ makes git try to run the empty string and aborts
-      # every diff ("external diff died"). Only the command-line
-      # +--no-ext-diff+ / +--no-textconv+ flags disable them cleanly, and
-      # we deliberately do not rewrite the model's command string to
-      # inject flags (see {.git_hardening_delta}). So diff-driver
-      # execution remains a documented residual, reachable only via a
-      # repo whose +.git/config+ an attacker wrote (a plain +git clone+
-      # never copies the remote's config) — see
-      # {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc
-      # and +ideas/os-assistant.md+.
+      # Deliberately NOT here: +diff.external+ / +.gitattributes+-selected
+      # +diff.<driver>.command+ / +.textconv+. There's no config *value* meaning
+      # "use the internal diff" (an empty +diff.external=+ aborts every diff);
+      # only the +--no-ext-diff+ / +--no-textconv+ command-line flags disable
+      # them cleanly, and we don't rewrite the model's command (see
+      # {.git_hardening_delta}). So diff-driver execution stays a documented
+      # residual, reachable only via a repo whose +.git/config+ an attacker
+      # wrote — see {ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
       #
       # @return [Array<Array(String, String)>] +[key, value]+ pairs.
       GIT_HARDENING = [
@@ -167,43 +126,29 @@ module Pikuri
         - Commit or push only when the user asks.
       DESC
 
-      # @param filesystem [Pikuri::Workspace::Filesystem] captured for
-      #   +chdir+; commands run in +filesystem.project_root+, always.
-      #   Even when the surrounding Ruby process has already chdir'd
-      #   to the project root (e.g. +bin/pikuri-code+ does this at
-      #   startup), Bash still passes the explicit +chdir:+ — so a
-      #   sub-agent, future host, or anyone embedding Bash directly
-      #   gets the same predictable cwd. Bash does NOT path-resolve
-      #   individual arguments — the +command+ string is opaque shell
-      #   syntax.
-      # @param confirmer [Pikuri::Workspace::Confirmer] consulted before
-      #   every command that +command_approver+ does not pre-approve.
-      # @param command_approver [#approves?, nil] optional predicate over
-      #   the raw command string ({ReadOnlyCommandApprover}); a +true+
-      #   verdict runs the command with no confirmation prompt, +false+
-      #   (and the +nil+ default) falls through to +confirmer+. This is the
-      #   read-only-auto-gate seam, kept separate from the confirmer so
-      #   "how to ask" ({Confirmer}) and "what may skip asking" (this
-      #   predicate) stay independent, composable axes.
-      # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam
-      #   (default {Sandbox::NONE} — identity passthrough). Pass
-      #   {Sandbox::Bubblewrap.new(filesystem: filesystem)+} for an
-      #   isolated subprocess whose filesystem view is the filesystem's
-      #   readable/writable roots plus the OS-runtime baseline. See
-      #   {Sandbox} for the rationale.
-      # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+;
-      #   fail-loud at construction rather than the first tool call.
+      # @param filesystem [Pikuri::Workspace::Filesystem] captured for +chdir+;
+      #   commands always run in +filesystem.project_root+ (explicit +chdir:+
+      #   even when the process already chdir'd there, so a sub-agent or
+      #   embedding host gets the same cwd). Bash does NOT path-resolve
+      #   arguments — the +command+ is opaque shell syntax.
+      # @param confirmer [Pikuri::Workspace::Confirmer] consulted before every
+      #   command that +command_approver+ does not pre-approve.
+      # @param command_approver [#approves?, nil] optional predicate over the
+      #   raw command string ({ReadOnlyCommandApprover}); +true+ runs with no
+      #   prompt, +false+/+nil+ falls through to +confirmer+. The
+      #   read-only-auto-gate seam, kept separate so "how to ask" ({Confirmer})
+      #   and "what may skip asking" (this) stay composable axes.
+      # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam (default
+      #   {Sandbox::NONE}). Pass {Sandbox::Bubblewrap.new(filesystem:)} for an
+      #   isolated subprocess; see {Sandbox}.
+      # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+.
       # @return [Bash]
       def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE, command_approver: nil)
         Bash.send(:check_binaries!)
-        # Capability advisory when no sandbox is in play. Without a
-        # sandbox, +bash+ runs with pikuri's own UID + filesystem view —
-        # anything readable to the user is readable to the LLM via +cat
-        # ~/.ssh/id_*+ / +aws configure list+ / etc. The per-command
-        # +Confirmer+ is the only line of defense in that mode. The
-        # bundled {Sandbox::Bubblewrap} addresses this concern with a
-        # filesystem-restricted subprocess; warn only when the host has
-        # opted out (or never opted in).
+        # Without a sandbox, bash runs with pikuri's UID + filesystem view —
+        # anything the user can read the LLM can read (+cat ~/.ssh/id_*+, +aws
+        # configure list+), with the per-command Confirmer the only defense. Warn
+        # only when the host opted out (or never opted in); Bubblewrap fixes it.
         if sandbox.equal?(Sandbox::NONE)
           LOGGER.warn(
             'Code::Bash is unsandboxed: commands run under your UID and can read ' \
@@ -239,12 +184,9 @@ module Pikuri
       #
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
-      # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv;
-      #   {Sandbox::NONE} for identity passthrough,
-      #   {Sandbox::Bubblewrap} for filesystem isolation.
-      # @param command_approver [#approves?, nil] optional read-only
-      #   pre-approval predicate; when it approves the command, execution
-      #   proceeds with no confirmation prompt. See {#initialize}.
+      # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv.
+      # @param command_approver [#approves?, nil] read-only pre-approval
+      #   predicate; a +true+ verdict skips the prompt. See {#initialize}.
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
@@ -312,56 +254,39 @@ module Pikuri
       end
       private_class_method :compose_request
 
-      # Environment for the bash subprocess: the filesystem's git-identity
-      # vars ({Pikuri::Workspace::Filesystem#env}) layered over a
-      # "de-bundlerized" base.
+      # Environment for the bash subprocess: the "de-bundlerized" base
+      # ({.bundler_clean_delta}), then git hardening ({.git_hardening_delta}),
+      # then the filesystem's git identity ({Pikuri::Workspace::Filesystem#env}).
+      # The three deltas touch disjoint keys (bundler vars / +GIT_CONFIG_*+ /
+      # +GIT_AUTHOR_*+ + +GIT_COMMITTER_*+), so merge order is immaterial.
       #
-      # pikuri is typically launched under Bundler — the +bin/pikuri-code+
-      # demo and every downstream host (e.g. pikuri-tui) pin
-      # +BUNDLE_GEMFILE+ to their *own* Gemfile and +require
-      # 'bundler/setup'+ at boot. Doing so makes Bundler rewrite
-      # +BUNDLE_GEMFILE+ / +RUBYOPT+ / +GEM_HOME+ / +GEM_PATH+ / +RUBYLIB+
-      # / +PATH+ in the *process* environment (stashing the pre-bundler
-      # values under +BUNDLER_ORIG_*+). Those vars are inherited by every
-      # subprocess we spawn — so a +bundle exec rspec+ the agent runs in
-      # *another* Ruby project would resolve against PIKURI's Gemfile and
-      # die with a baffling "the Gemfile specifies ... is missing" error.
-      #
-      # The fix is to hand bash the environment as it was *before* bundler
-      # touched it (see {.bundler_clean_delta}), with git hardening
-      # ({.git_hardening_delta}) and then the filesystem's git identity on
-      # top. The three deltas touch disjoint keys (bundler vars /
-      # +GIT_CONFIG_*+ / +GIT_AUTHOR_*+ + +GIT_COMMITTER_*+), so merge
-      # order is immaterial.
+      # De-bundlerizing matters because pikuri usually boots under Bundler,
+      # which rewrites +BUNDLE_GEMFILE+ / +RUBYOPT+ / +GEM_*+ / +PATH+ in the
+      # process env (stashing originals under +BUNDLER_ORIG_*+). Those inherit
+      # into every subprocess, so a +bundle exec rspec+ the agent runs in
+      # *another* project would resolve against PIKURI's Gemfile and die.
       #
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [Hash{String=>(String,nil)}] +env:+ delta for
-      #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key in the
-      #   child).
+      #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key).
       def self.subprocess_env(filesystem)
         bundler_clean_delta.merge(git_hardening_delta).merge(filesystem.env)
       end
       private_class_method :subprocess_env
 
-      # Emit the {GIT_HARDENING} keys as a +GIT_CONFIG_COUNT+ /
-      # +GIT_CONFIG_KEY_<n>+ / +GIT_CONFIG_VALUE_<n>+ env delta. This
-      # environment protocol overrides a repo's own +.git/config+ (it has
-      # the same top precedence as command-line +-c+), so a hostile
-      # repo-local +core.fsmonitor+ is neutralized regardless of what the
-      # repo says.
+      # Emit {GIT_HARDENING} as a +GIT_CONFIG_COUNT+ / +GIT_CONFIG_KEY_<n>+ /
+      # +GIT_CONFIG_VALUE_<n>+ env delta. This protocol has the same top
+      # precedence as command-line +-c+, so it overrides a hostile repo-local
+      # +core.fsmonitor+ regardless of what the repo says.
       #
-      # We harden via *environment* rather than by rewriting the model's
-      # command string for two reasons: the command is opaque shell syntax
-      # (+cd repo && git diff | grep x+) that we refuse to parse, and env
-      # applies uniformly to *every* git process spawned by the command —
-      # each one in a +&&+/+|+ chain, and any git a script underneath
-      # forks — with no parsing at all.
+      # Via *environment*, not by rewriting the model's command, because the
+      # command is opaque shell syntax we refuse to parse, and env applies
+      # uniformly to *every* git in the command — each link of a +&&+/+|+ chain,
+      # and any git a script underneath forks — with no parsing.
       #
-      # The indices are *offset* past any +GIT_CONFIG_COUNT+ already in the
-      # inherited environment, so our keys append to (rather than clobber)
-      # entries a host set deliberately. Appending also gives ours the
-      # higher index, so on a duplicate key git's last-wins rule keeps the
-      # hardened value.
+      # Indices are offset past any +GIT_CONFIG_COUNT+ already inherited, so our
+      # keys append rather than clobber a host's; the higher index also wins
+      # under git's last-wins rule on a duplicate key.
       #
       # @return [Hash{String=>String}]
       def self.git_hardening_delta
@@ -376,25 +301,17 @@ module Pikuri
       end
       private_class_method :git_hardening_delta
 
-      # The delta that, merged onto the current (bundler-polluted) +ENV+
-      # via {Pikuri::Subprocess.spawn}'s +env:+, reconstructs
-      # +Bundler.unbundled_env+ — the environment as it was before
-      # +bundler/setup+ ran.
+      # The delta that, merged onto the current (bundler-polluted) +ENV+,
+      # reconstructs +Bundler.unbundled_env+ — the environment before
+      # +bundler/setup+ ran. That restores each +BUNDLER_ORIG_*+ backup (so a
+      # host-level +GEM_HOME+/+GEM_PATH+ from an apt-installed Ruby passes
+      # through — not a blanket +GEM_*+ wipe) while dropping the bundler-only
+      # vars. Diffed against live +ENV+ because +spawn+'s +env:+ is additive:
+      # changed/added keys carry the clean value, bundler-injected keys absent
+      # from the clean env map to +nil+ (which +Open3.popen2e+ unsets).
       #
-      # +Bundler.unbundled_env+ restores each +BUNDLER_ORIG_*+ backup, so
-      # a host-level +GEM_HOME+/+GEM_PATH+ from a +sudo apt install ruby+
-      # install (pointing at +~/.gem+) passes straight through and the
-      # subprocess still finds the user's gems — it is *not* a blanket
-      # +GEM_*+ wipe — while the bundler-only vars (+BUNDLE_*+, the
-      # +-rbundler/setup+ +RUBYOPT+) are dropped. We diff against the live
-      # +ENV+ rather than passing the full hash because +spawn+'s +env:+
-      # is additive: changed/added keys carry their clean value, keys
-      # bundler injected that aren't in the clean env map to +nil+
-      # (+Open3.popen2e+ unsets a +nil+-valued key in the child).
-      #
-      # When pikuri runs *without* Bundler (gem-installed, or a host that
-      # never required +bundler/setup+) this is empty and the child
-      # inherits the environment unchanged.
+      # Empty when pikuri runs without Bundler (gem-installed, or a host that
+      # never required +bundler/setup+) — the child inherits env unchanged.
       #
       # @return [Hash{String=>(String,nil)}]
       def self.bundler_clean_delta
@@ -422,16 +339,12 @@ module Pikuri
       end
       private_class_method :env_delta
 
-      # Neutralize control bytes for safe display in the *observation*
-      # echo (+"$ ..."+ in the tool result) — without this, a model could
-      # craft +command: "\rrm -rf ~/"+ that visually overwrites the echo
-      # line after the user has already read it. Delegates to the shared
-      # {Pikuri::Sanitizer}, which preserves +\n+ (multi-line shell
-      # commands are normal) and visualizes the rest; the confirmation
-      # prompt routes the same command through the same primitive (see
-      # +Confirmer::Terminal+). The echo is passive, so the
-      # {Pikuri::Sanitizer::Warning}s are dropped here — they surface at
-      # the confirmation prompt, before the user approves.
+      # Neutralize control bytes for the *observation* echo (+"$ ..."+ in the
+      # tool result) — without this a model could craft +command: "\rrm -rf
+      # ~/"+ that visually overwrites the echo line after the user read it.
+      # Delegates to {Pikuri::Sanitizer} (preserves +\n+, visualizes the rest).
+      # The echo is passive, so {Pikuri::Sanitizer::Warning}s are dropped here —
+      # they surface at the confirmation prompt, before the user approves.
       #
       # @param command [String]
       # @return [String]

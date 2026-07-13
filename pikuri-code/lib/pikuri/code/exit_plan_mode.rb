@@ -2,26 +2,16 @@
 
 module Pikuri
   module Code
-    # The +exit_plan_mode+ tool: presents the finished plan to the
-    # user for approval and, on a yes, turns the shared
-    # {Pikuri::Workspace::ReadOnly} flag back off so the file-editing
-    # tools work again.
-    #
-    # == Approval rides the Confirmer seam
-    #
-    # The plan is shown — and the yes/no is collected — through the
-    # same {Pikuri::Workspace::Confirmer} the +write+ / +bash+ tools
-    # already use, so presentation, attacker-text sanitization, and
-    # the answer cue live in one place rather than in tool code. On
-    # approval the control is flipped off and the model is told to
-    # proceed; on a decline the control stays on and the observation
-    # steers the model to refine and re-present, never to edit. The
-    # plan text is LLM-authored, so it is passed as the request
-    # +detail+ — the Confirmer neutralizes it before display.
+    # The +exit_plan_mode+ tool: presents the finished plan for approval and, on
+    # a yes, turns the shared {Pikuri::Workspace::ReadOnly} flag back off. The
+    # plan is shown and the yes/no collected through the same
+    # {Pikuri::Workspace::Confirmer} the +write+/+bash+ tools use, so
+    # presentation + attacker-text sanitization live in one place. On approval
+    # the flag flips off and the model is told to proceed; on a decline it stays
+    # on and the observation steers a refine-and-re-present, never an edit. The
+    # LLM-authored plan is passed as the request +detail+, so the Confirmer
+    # neutralizes it before display.
     class ExitPlanMode < Pikuri::Tool
-      # Description shown to the LLM. opencode-shape: one-line summary,
-      # blank line, +Usage:+ bullets.
-      #
       # @return [String]
       DESCRIPTION = <<~DESC
         Exit plan mode by presenting your finished implementation plan for the user's approval.

@@ -5,69 +5,38 @@ require 'uri'
 
 module Pikuri
   module Code
-    # The +git_clone+ tool — shallow-clone a public git repository into
-    # the workspace. Instantiating +Code::GitClone.new(filesystem: fs)+
-    # produces a tool whose {Pikuri::Tool#to_ruby_llm_tool} wiring is
-    # identical to any bundled tool's; +execute+ closes over the
-    # filesystem and a lazily-minted {Bash::Sandbox::Bubblewrap}.
-    #
-    # == Why this exists
-    #
-    # The bundled +researcher+ persona can web_search / web_scrape /
-    # fetch, which is great for "look up one fact" but inefficient when
-    # the task is "dig through opencode's source for how it does X."
-    # The pattern *N pages of HTML scraping* is much worse than
-    # *one shallow clone + grep*. This tool plus
-    # {Pikuri::Code::GIT_REPO_RESEARCHER} (the persona that wires it
-    # together with workspace-scoped read/grep/glob) is the answer.
+    # The +git_clone+ tool — shallow-clone a public git repository into the
+    # workspace. +Code::GitClone.new(filesystem: fs)+ produces a tool whose
+    # +execute+ closes over the filesystem and a lazily-minted
+    # {Bash::Sandbox::Bubblewrap}. Its home is
+    # {Pikuri::Code::GIT_REPO_RESEARCHER}: *one shallow clone + grep* beats
+    # *N pages of HTML scraping* when the task is "dig through this repo's
+    # source for how it does X".
     #
     # == Threat model
     #
-    # Git clone is not "just reading files." Hostile upstream has a
-    # history of RCEs:
+    # Git clone is not "just reading files" — hostile upstream has a history of
+    # RCEs (CVE-2024-32002 submodule+symlink escape; CVE-2022-39253 +--local+
+    # arbitrary-file read; CVE-2017-1000117 +ssh://-oProxyCommand=...+ arg
+    # injection; +.gitattributes+ filter drivers and +.git/config+
+    # +core.fsmonitor+/+core.sshCommand+ code paths that run during checkout).
+    # Mitigations baked in:
     #
-    # * CVE-2024-32002 — submodule + symlink + case-insensitive FS
-    #   escape → RCE.
-    # * CVE-2022-39253 — +--local+ clone reading arbitrary host files
-    #   via symlinks.
-    # * CVE-2017-1000117 — +ssh://+ URL arg injection
-    #   (+ssh://-oProxyCommand=...+) → arbitrary command execution.
-    # * +.gitattributes+ filter drivers, +.git/config+ +core.fsmonitor+
-    #   /+core.sshCommand+ — code paths that run during clone /
-    #   checkout.
+    # 1. **HTTPS/HTTP only.** {VALID_SCHEMES}; +ssh://+/+git://+/+file://+/
+    #    +ext::+ are refused before +git+ sees the string.
+    # 2. **No submodule recursion.** +--no-recurse-submodules+ kills the
+    #    CVE-2024-32002 class.
+    # 3. **Shallow clone.** +--depth 1+ (fewer ref-parsing edge cases).
+    # 4. **Bubblewrap-sandboxed.** +git+ runs inside {Bash::Sandbox::Bubblewrap}
+    #    bound to the persona's fresh temp workspace — no host +~/.ssh+, no
+    #    +~/.gitconfig+, no other projects' source, no container sockets. A
+    #    clone-RCE's blast radius is the throwaway workspace.
     #
-    # Mitigations baked in here:
-    #
-    # 1. **HTTPS/HTTP only.** {VALID_SCHEMES} is +%w[https http]+;
-    #    +ssh://+, +git://+, +file://+, +ext::+, and anything else are
-    #    refused at the tool layer before +git+ sees the string.
-    # 2. **No submodule recursion.** +--no-recurse-submodules+ kills
-    #    the CVE-2024-32002 class.
-    # 3. **Shallow clone.** +--depth 1+ skips history (fewer ref
-    #    parsing edge cases, faster, smaller).
-    # 4. **Bubblewrap-sandboxed subprocess.** The +git+ binary runs
-    #    inside {Bash::Sandbox::Bubblewrap} bound to the persona's
-    #    fresh temp workspace — no host +~/.ssh+, no +~/.gitconfig+,
-    #    no other projects' source, no container sockets. A
-    #    clone-RCE blast radius is the persona's throwaway workspace.
-    #
-    # The Bubblewrap instance is minted lazily on first +execute+,
-    # not at construction — the boot-time GitClone wired by
-    # +bin/pikuri-code+ never runs (it lives in the sub-agent-only
-    # pool), and gets replaced by a fresh-workspace clone via
-    # {#with_workspace} the moment a +git_repo_researcher+ session
-    # starts. Eager construction would pay the ~+bwrap+ probe cost on
-    # every coding-agent boot for no reason.
-    #
-    # == Output
-    #
-    # On success: a one-line ack with the relative path inside the
-    # workspace. The persona then uses +read+ / +grep+ / +glob+ to
-    # explore the clone.
-    #
-    # On failure: +"Error: ..."+ in the usual pikuri convention.
-    # Possible causes: refused URL scheme, malformed URI, network
-    # failure, target dir already exists, +git+ non-zero exit.
+    # The Bubblewrap instance is minted lazily on first +execute+, not at
+    # construction: the boot-time GitClone wired by +bin/pikuri-code+ lives in
+    # the sub-agent-only pool and never runs — it's replaced via
+    # {#with_workspace} when a +git_repo_researcher+ session starts, so eager
+    # construction would pay the +bwrap+ probe cost on every boot for nothing.
     class GitClone < Pikuri::Tool
       # URL schemes accepted. +https+ first (TLS) and +http+ as a
       # fallback for the rare public mirror. All other schemes are
@@ -118,20 +87,13 @@ module Pikuri
         )
       end
 
-      # Produce a new {GitClone} bound to the session +workspace+'s
-      # {Pikuri::Workspace::Workspace#filesystem}.
-      #
-      # The +with_workspace+ protocol ({Pikuri::SubAgent::SubAgentTool})
-      # hands every rebuilt tool the session's {Pikuri::Workspace::Workspace}
-      # composite — the shape the file tools need (path resolution + read
-      # record). GitClone drives a {Bash::Sandbox::Bubblewrap}, which needs
-      # the bare {Filesystem}'s +readable+/+writable+/+temp+ (the composite
-      # forwards only +project_root+ / +resolve_for_*+), so it reads
-      # +workspace.filesystem+ off the composite here.
-      #
-      # The sandbox is NOT carried over — the new instance lazily mints a
-      # fresh Bubblewrap from the new filesystem, since a sandbox's bind
-      # set depends on the filesystem it constrains. See class header.
+      # Produce a new {GitClone} bound to the session +workspace+'s bare
+      # {Pikuri::Workspace::Workspace#filesystem}. The +with_workspace+ protocol
+      # ({Pikuri::SubAgent::SubAgentTool}) hands rebuilt tools the composite,
+      # but GitClone's {Bash::Sandbox::Bubblewrap} needs the bare {Filesystem}'s
+      # +readable+/+writable+/+temp+, so it reads +workspace.filesystem+ here.
+      # The sandbox is NOT carried over — a fresh Bubblewrap is minted lazily
+      # from the new filesystem (its bind set depends on that filesystem).
       #
       # @param workspace [Pikuri::Workspace::Workspace]
       # @return [GitClone]

@@ -3,23 +3,13 @@
 module Pikuri
   module Code
     # The +enter_plan_mode+ tool: turns on the shared
-    # {Pikuri::Workspace::ReadOnly} flag, putting the workspace into its
-    # read-only posture. Once active, the file-editing tools refuse to
-    # write (see +pikuri-workspace+'s +Write+ / +Edit+) and the
-    # {Extension}'s per-turn reminder tells the model to research and
-    # propose rather than implement. The model exits via {ExitPlanMode};
-    # the host can also flip the same flag from a key binding / slash
-    # command (see {Pikuri::Workspace::ReadOnly}).
-    #
-    # Self-entry is opportunistic: the model is encouraged (via the
-    # description) to enter plan mode before a non-trivial change, but
-    # entry is just as often host-initiated. Either way the flag is
-    # the single source of truth. (Note: the read-only flag gates
-    # Write/Edit, not Bash — see {Pikuri::Workspace::ReadOnly}.)
+    # {Pikuri::Workspace::ReadOnly} flag. Once active, Write/Edit refuse and the
+    # {Extension}'s per-turn reminder steers the model to research and propose;
+    # the model exits via {ExitPlanMode}, or the host flips the same flag from a
+    # key binding / slash command. Entry is just as often host-initiated as
+    # model-driven — either way the flag is the single source of truth. (It
+    # gates Write/Edit, not Bash — see {Pikuri::Workspace::ReadOnly}.)
     class EnterPlanMode < Pikuri::Tool
-      # Description shown to the LLM. opencode-shape: one-line summary,
-      # blank line, +Usage:+ bullets.
-      #
       # @return [String]
       DESCRIPTION = <<~DESC
         Enter plan mode: a read-only posture for researching and designing a change before writing any of it.
