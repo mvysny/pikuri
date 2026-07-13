@@ -6,120 +6,88 @@ module Pikuri
   module Extractors
     # Document extractor for the {Pikuri::Extractor} registry:
     # DOCX / ODT / XLSX / legacy XLS / PPTX / EPUB / RTF / PDF →
-    # Markdown, by piping the document bytes through pandoc (ODF,
-    # RTF, EPUB, DOCX), markitdown (the OOXML spreadsheet /
-    # presentation arms), or pdftotext (PDF), selected per format.
+    # Markdown, by piping the document bytes through pandoc (ODF, RTF,
+    # EPUB, DOCX), markitdown (OOXML spreadsheet / presentation), or
+    # pdftotext (PDF), selected per format.
     #
     # == Container first, host CLI second
     #
     # The preferred converter is a one-shot, locally-built docker
-    # container ({IMAGE}, built from this gem's +docker/+ directory):
-    # +docker run --rm -i --network=none --read-only --cap-drop=ALL+,
-    # bytes in via stdin, Markdown out via stdout, **no volume
-    # mounts**. Two reasons this beats running a host-installed
-    # converter directly:
+    # container ({IMAGE}): +docker run --rm -i --network=none --read-only
+    # --cap-drop=ALL+, bytes in via stdin, Markdown out via stdout, **no
+    # volume mounts**. Two reasons over a host-installed converter:
     #
     # * *Security.* These documents typically arrive via +fetch+ /
-    #   +web_scrape+ — untrusted bytes — and complex format parsers
-    #   are a classic exploitation surface. In the container the
-    #   parser sees no network and no host filesystem; the worst a
-    #   malicious document can do is produce garbage Markdown.
-    # * *Reproducibility.* The Dockerfile pins pandoc (via the base
-    #   image's apt) and markitdown (exact pip version); a host
-    #   install is whatever version the machine happens to have.
+    #   +web_scrape+ (untrusted bytes) and complex format parsers are a
+    #   classic exploitation surface; in the container a malicious
+    #   document sees no network or host fs, worst case garbage Markdown.
+    # * *Reproducibility.* The Dockerfile pins pandoc + markitdown; a host
+    #   install is whatever version the machine has.
     #
-    # When docker is unavailable (binary absent or daemon down), the
-    # extractor falls back to host-installed +pandoc+ / +markitdown+
-    # / +pdftotext+ CLIs — same stdin→stdout contract, one code path
-    # with two argv builders. Which arm was picked is logged once via
-    # +Pikuri.logger_for('Extractors')+.
+    # When docker is unavailable, it falls back to host +pandoc+ /
+    # +markitdown+ / +pdftotext+ CLIs — same stdin→stdout contract, one
+    # code path with two argv builders.
     #
     # == Registration is explicit
     #
-    # Requiring pikuri-extractors defines this class and the shared
-    # {DOCUMENTS} instance but registers nothing. A host script opts
-    # in with +Pikuri::Extractors::DOCUMENTS.register+, which inserts
-    # the instance before the registry's terminal +Passthrough+ entry
-    # (and after core's +HTML+ — and pikuri-pdf's front-inserted
-    # +PDF+, when the host registers that too — which keep winning
-    # their formats). Same opt-in philosophy as +c.add_extension+ —
-    # no behavior changes by require alone.
+    # Requiring the gem defines this class + the shared {DOCUMENTS}
+    # instance but registers nothing; a host opts in with
+    # +DOCUMENTS.register+ (same philosophy as +c.add_extension+). It
+    # inserts before the terminal +Passthrough+, after core's +HTML+ and
+    # pikuri-pdf's front-inserted +PDF+ (both keep winning their formats).
     #
     # == Format detection
     #
-    # {#matches?} claims content by normalized content-type
-    # ({CONTENT_TYPES}) or by byte sniff: PDF's +%PDF-+ prefix, RTF's
-    # +{\\rtf+ prefix; for
-    # zip-based formats, ODF and EPUB mandate an uncompressed
-    # +mimetype+ first entry (so the literal mime string sits inside
-    # the leading sample), and OOXML is recognised by the
-    # +[Content_Types].xml+ entry plus a +word/+ / +ppt/+ / +xl/+
-    # entry-name scan. {#extract} re-sniffs (the registry duck type
-    # doesn't pass +content_type+ to +extract+); when content was
-    # claimed by content-type but the sniff is blind (legacy XLS — an
-    # OLE2 container whose discriminating directory sits at the end of
-    # the file, past the sample), the bytes go to markitdown with no
-    # format hint and its own magic-byte detection takes over. The
-    # consequence: a *local* +.xls+ (no transport content-type, sniff
-    # blind) is not claimed at all and keeps today's binary refusal.
-    # One ordering edge vs pikuri-pdf: this instance sits *after*
-    # core's +HTML+ in the registry, so a PDF served under a lying
-    # +text/html+ header goes to the HTML extractor (pikuri-pdf
-    # front-inserts and wins that case). Accepted — lying-header PDFs
-    # under specifically +text/html+ are rare.
+    # {#matches?} claims content by content-type ({CONTENT_TYPES}) or byte
+    # sniff (see {#sniff}). {#extract} re-sniffs (the registry duck type
+    # doesn't pass +content_type+ to +extract+); when the sniff is blind
+    # — legacy XLS, an OLE2 container whose discriminating directory sits
+    # past the sample — bytes go to markitdown with no hint and its own
+    # detection takes over. Consequence: a *local* +.xls+ (no transport
+    # content-type, sniff blind) isn't claimed at all and keeps today's
+    # binary refusal. Ordering edge: this instance sits *after* core's
+    # +HTML+, so a PDF served under a lying +text/html+ header goes to
+    # HTML (pikuri-pdf front-inserts and wins that) — accepted, rare.
     #
     # == PDF: this gem or pikuri-pdf — pick one per wiring
     #
-    # The PDF arm (pdftotext, with {#pdf_page_lines} restoring the
-    # +"--- Page N ---"+ markers from pdftotext's +\f+ separators)
-    # makes this extractor a complete superset of pikuri-pdf's
-    # formats, so a host that registers {DOCUMENTS} does NOT also
-    # register +Extractors::PDF+ — one extractor per format keeps the
-    # registry's first-match-wins semantics legible. The trade per
-    # wiring:
+    # The PDF arm (pdftotext, {#pdf_page_lines} restoring +"--- Page N ---"+
+    # markers from pdftotext's +\f+ separators) makes this a superset of
+    # pikuri-pdf's formats, so a host registering {DOCUMENTS} does NOT
+    # also register +Extractors::PDF+ (one extractor per format keeps
+    # first-match-wins legible). The trade:
     #
-    # * *This gem* — PDF parsing happens inside the sandbox (poppler
-    #   is native code parsing attacker-controlled bytes; the
-    #   container is exactly the right place for it), one gem covers
-    #   every document format. Costs: docker (or host CLIs), no lazy
-    #   paging (each paged read re-converts the whole PDF), and the
-    #   generic +:document+ kind (the Read tools say "End of file",
-    #   not "End of PDF", and a scanned PDF reads as "(Empty file)"
-    #   rather than the scanned-image hint).
-    # * *pikuri-pdf* — in-process pure Ruby (no infrastructure), lazy
-    #   +extract_lines+ paging (a windowed read of a 500-page PDF
-    #   parses only its window), PDF-specific Read-tool wording.
-    #   Costs: pdf-reader's dependency subtree, parsing untrusted
-    #   bytes in-process (pure Ruby, so DoS at worst).
+    # * *This gem* — PDF parsing inside the sandbox (poppler is native
+    #   code on attacker bytes), one gem for every document format. Costs:
+    #   docker (or host CLIs), no lazy paging (each paged read re-converts
+    #   the whole PDF), and the generic +:document+ kind (Read tools say
+    #   "End of file" not "End of PDF"; a scanned PDF reads as "(Empty
+    #   file)", not the scanned-image hint).
+    # * *pikuri-pdf* — in-process pure Ruby (no infra), lazy paging (a
+    #   windowed read of a 500-page PDF parses only its window),
+    #   PDF-specific Read wording. Costs: pdf-reader's dep subtree,
+    #   parsing untrusted bytes in-process (pure Ruby, so DoS at worst).
     #
-    # The guide walks this as a progression: chapter 3 wires
-    # pikuri-pdf (no docker yet), chapter 13's assistant supersedes it
-    # with this extractor.
+    # Guide progression: ch3 wires pikuri-pdf (no docker yet), ch13's
+    # assistant supersedes it with this extractor.
     #
     # == Deliberately out of scope
     #
-    # * *ODS / ODP* — neither pandoc nor markitdown reads them; the
-    #   only converter that does (LibreOffice headless) costs a 2 GB+
-    #   image. Excluded rather than half-supported.
-    # * *Image OCR / audio transcription* — markitdown's optional
-    #   arms need model downloads; the converter image stays
-    #   networkless and small. A multi-modal main LLM is the pikuri
-    #   answer to images.
+    # * *ODS / ODP* — neither pandoc nor markitdown reads them; the only
+    #   converter that does (LibreOffice headless) costs a 2 GB+ image.
+    # * *Image OCR / audio transcription* — markitdown's optional arms
+    #   need model downloads; the image stays networkless and small. A
+    #   multi-modal main LLM is the pikuri answer to images.
     #
     # == Paging economics
     #
-    # A subprocess converter needs the whole document before it can
-    # emit anything, so there is no lazy parse: every
-    # +Extractor.extract_paged+ call (each +Read+ page of a long DOCX)
-    # re-runs the full conversion. Accepted — no result cache in v1.
-    # Both legs of one conversion still stream, though: the source +io+
-    # is handed to {Pikuri::Subprocess.run} and copied straight into
-    # the converter's stdin (+IO.copy_stream+ — a big local file never
-    # loads into the Ruby heap), and the converter's stdout lands in a
-    # Tempfile (also what makes the stdin/stdout pumping deadlock-free
-    # — see {Pikuri::Subprocess.run}) whose lines {#extract_lines}
-    # yields from disk — so neither the document nor the full Markdown
-    # String is ever resident during paging.
+    # A subprocess converter needs the whole document up front, so there's
+    # no lazy parse: every +Extractor.extract_paged+ call re-runs the full
+    # conversion (accepted — no result cache in v1). Both legs still
+    # stream, though: +io+ is copied into the converter's stdin
+    # (+IO.copy_stream+, never loading a big file into the heap) and stdout
+    # lands in a Tempfile {#extract_lines} yields from disk — so neither
+    # the document nor the full Markdown is ever resident during paging.
     class Documents
       # @return [Logger] gem-wide diagnostics logger.
       LOGGER = Pikuri.logger_for('Extractors')
@@ -145,14 +113,10 @@ module Pikuri
       #   claimed by content-type but the byte sniff is blind.
       AUTO = 'auto'
 
-      # @return [String] the PDF format tag. Singled out as a constant
-      #   because PDF is the one format whose converter output gets a
-      #   post-processing pass: pdftotext emits +\f+ between pages, and
-      #   {#extract} / {#extract_lines} turn those into the same
-      #   +"--- Page N ---"+ marker lines pikuri-pdf's extractor emits,
-      #   so page provenance (vectordb chunk citations, the Read tools'
-      #   page references) survives whichever PDF extractor a host
-      #   wires.
+      # @return [String] the PDF format tag. A constant because PDF is the
+      #   one format whose output gets a post-processing pass ({#pdf_page_lines}
+      #   restoring +"--- Page N ---"+ markers), so page provenance survives
+      #   whichever PDF extractor a host wires.
       PDF = 'pdf'
 
       # @return [Hash{String => String}] normalized content-type →
@@ -231,17 +195,14 @@ module Pikuri
         end
       end
 
-      # Same content as {#extract}, as a stream of +chomp+ed lines
-      # read off the converter's stdout Tempfile — the whole-document
-      # conversion still runs up front (subprocess converters can't
-      # parse lazily), but neither the document nor the Markdown ever
-      # materialises as one String: the conversion fires on first
-      # consumption, streaming +io+ into the converter. The enumerator
-      # owns the Tempfile and deletes it when iteration ends.
+      # Same content as {#extract}, as a stream of +chomp+ed lines off the
+      # converter's stdout Tempfile. The full conversion still runs up
+      # front (fired on first consumption), but neither the document nor
+      # the Markdown ever materialises as one String. The enumerator owns
+      # the Tempfile and deletes it when iteration ends.
       #
-      # @param io [IO, StringIO] seekable IO positioned at the start;
-      #   must remain open until the enumerator is consumed (same
-      #   contract as pikuri-pdf's lazy +extract_lines+).
+      # @param io [IO, StringIO] seekable IO positioned at the start; must
+      #   remain open until the enumerator is consumed.
       # @return [Enumerator<String>]
       # @raise [Pikuri::Extractor::Error] as for {#extract}, raised on
       #   first consumption.
