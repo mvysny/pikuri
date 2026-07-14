@@ -299,9 +299,12 @@ Take these one at a time in later sessions.
    **DECIDED (v1, empirical — measured on a real 700 MB / ~10-year
    mailbox, 2026-07): family A, Gloda-only** (search *and* read from the
    decoded columns), with **family B (mbox-parse) as the
-   `available?`-probed fallback** for Gloda-disabled / non-GNOME hosts —
-   the exact `localsearch → recoll` pattern from `pikuri-os`. The
-   measurements that settled it:
+   `available?`-probed fallback** for hosts where Gloda is disabled or not
+   caught up — the same probe-and-degrade *pattern* as `pikuri-os`'s
+   `localsearch → recoll` pair (the `available?` shape only; **not** its
+   GNOME-dependence — Gloda ships *inside* Thunderbird and is present on any
+   desktop TB runs on, so the fallback trigger is "Gloda off/stale," never
+   the desktop environment). The measurements that settled it:
    - **Fresh:** Gloda's newest message was minutes old, oldest 2016 —
      Thunderbird keeps it live, so we inherit freshness for free (Q12
      doesn't bite family A).
@@ -324,7 +327,11 @@ Take these one at a time in later sessions.
    we inherit it, don't build it (the mbox fallback would have to
    replicate it). (b) **searchable set ~8084 vs ~11 655 on-disk** — the
    gap is those never-indexed folders + any not-yet-downloaded IMAP
-   bodies; fine for v1.
+   bodies; fine for v1 — and benign for *recall* specifically: it's
+   Spam/Junk/Trash (which Q10 skips anyway) plus IMAP messages whose bodies
+   TB hasn't downloaded (unreadable by *any* backend, mbox included — there
+   is nothing on disk to read), **not** missing inbox mail. So the gap
+   doesn't reopen Q13's "false no-such-email" worry.
    - **Gmail label→folder dedup (implementation note).** Gmail exposes
      each label as an IMAP folder, so a message with N labels appears in
      N folders → N Gloda rows. Search must **dedup by `headerMessageID`**
@@ -634,7 +641,10 @@ Take these one at a time in later sessions.
     invisible, the human covers the visible.** The "look-alike domain" hole
     above is the *one* soft spot with a cheap, deterministic fix (a
     mechanical check, never an AI verdict — consistent with the project's
-    "code + human decide" invariant). Two layers:
+    "code + human decide" invariant). Three layers, in two behavioral tiers
+    — **hard reject** (attack signatures, no legitimate reason to appear →
+    omit + force retype) and **soft warn** (legitimate-but-suspicious →
+    keep, but raise the human's scrutiny):
     - **Everywhere (subject/body/address): route through
       {Pikuri::Sanitizer}** — neutralize/flag control bytes, bidi,
       zero-width, and mixed-script welds (`Pаypal`). The body keeps
@@ -650,20 +660,80 @@ Take these one at a time in later sessions.
       "the human types it in TB," and ASCII-only on free-text body would be
       absurd (kills emoji/accents). So the field where the blunt rule has
       tolerable false positives is exactly the field that needs it.
+    - **Address fields also reject punycode (`xn--` labels) — DECIDED.**
+      ASCII-only alone has a hole: a *pre-encoded* homoglyph domain is pure
+      ASCII and would pass. `xn--80ak6aa92e.com` is the punycode of the
+      Cyrillic-homoglyph "аррӏе.com" — all-ASCII on the wire — so an
+      attacker sidesteps the Unicode check simply by shipping the domain
+      already punycoded. **Reject any address whose domain carries an
+      `xn--` label** and force the human to type the recipient. Same
+      tolerable-false-positive logic as ASCII-only: a legitimate IDN
+      recipient is rare and degrades to "type it into TB yourself."
+    - **Correspondence-graph novelty flag (soft-warn tier) — v1 of the
+      compose guard, no longer deferred.** The two layers above are
+      *hard rejects* of byte patterns that have no honest reason to appear;
+      this one is the **data-driven layer that reaches the pure-ASCII
+      look-alike residual** those two structurally cannot see (`paypa1.com`,
+      `rnicrosoft.com`, `microsoft.net` are all well-formed ASCII). For each
+      recipient (`to`/`cc`/`bcc`/`reply-to`), extract the **domain** and ask
+      Gloda's own correspondence graph — the `contacts` / `identities`
+      tables, already in our snapshot (free, no extra egress, inbound-only)
+      — **has the user ever exchanged mail with *any* address at this
+      domain?** Both directions are covered: Gloda records every indexed
+      message's *author and recipients*, and the Sent folder is indexed
+      (it's not among Q1's 7 never-indexed folders), so mail the user *sent*
+      to a domain counts, not only mail received from it. Domain-level, not
+      exact-address: you've mailed
+      `paypal.com` a hundred times, so `paypa1.com` stands out as a
+      never-seen domain precisely when it matters.
+      - **Warn, never reject.** Emailing a genuinely new correspondent is
+        *normal* — a hard reject here would fire constantly, burn the
+        ceremony premium to fatigue, and train "just retype it" reflexes.
+        So a novel domain **stays in the `-compose` pre-fill**; the tool
+        attaches a **loud, legible observation** — "⚠ you have never
+        corresponded with anyone `@paypa1.com`; if you expected a familiar
+        contact, verify this address out-of-band before sending" — which
+        raises the human's scrutiny at exactly the recipient the ceremony
+        guards best. This is the *only* mechanical layer that touches the
+        residual, and it does so by **raising a question, not blocking** —
+        the human still authors the decision.
+      - **Degrades cleanly off Gloda.** The graph lives in
+        `global-messages-db.sqlite`, so on the family-B mbox fallback (no
+        Gloda) the flag is simply unavailable — skip it and say so in the
+        observation, never fail the compose. (One honest limit: a brand-new
+        mailbox with a thin history flags nearly everyone; acceptable — the
+        warning is advisory, and it self-attenuates as correspondence
+        accrues.)
 
     **Degrade gracefully, don't silently clear:** on a flagged recipient,
-    *omit it* from the `-compose` pre-fill (keep subject/body) and return
-    the offense as a loud observation. The human lands in Thunderbird with
-    a **blank To they must fill** — the forced-authorship seat again; the
-    spoof degrades into "type the recipient yourself."
+    *omit it* from the `-compose` pre-fill (keep subject/body) and return a
+    loud observation that (i) **names the exact offense in plain language**
+    — "recipient `pаypal.com` rejected: mixed-script welding, the `а` is
+    Cyrillic U+0430 in an otherwise-Latin domain"; "recipient `xn--…`
+    rejected: punycode-encoded internationalized domain, can't be shown
+    safely" — and (ii) **urges the human to confirm the address out-of-band
+    before sending**: look the organization up in a browser *they* open and
+    copy the real address off its site, rather than trusting the string the
+    agent proposed. The human lands in Thunderbird with a **blank To they
+    must fill** — the forced-authorship seat again; the spoof degrades into
+    "type the *verified* recipient yourself." (The browser check sits
+    wholly outside the agent's trust boundary — the human drives it — so it
+    adds no egress leg; it's the only layer that also reaches the
+    pure-ASCII residual below.)
 
-    **Honest residual — pure-ASCII look-alikes.** `rnicrosoft.com` (rn→m),
-    `microsoft.net` (TLD swap), `paypa1.com` (l→1) are all pure ASCII —
-    neither Sanitizer nor the ASCII rule catches them; they stay the
-    human's job (the ceremony guards the *visible*, which is what these
-    are). Deferred data-driven enhancement: **flag a recipient domain the
-    user has never corresponded with**, read cheaply from Gloda's
-    `contacts`/`identities` table.
+    **Honest residual — pure-ASCII look-alikes, now narrowed.**
+    `rnicrosoft.com` (rn→m), `microsoft.net` (TLD swap), `paypa1.com` (l→1)
+    are all pure ASCII with no `xn--`, so none of Sanitizer, the ASCII rule,
+    or the punycode reject catches them. The **correspondence-graph flag
+    above now reaches the common case** — a look-alike of a domain you *do*
+    use lights up as never-seen — but it's a soft warn, so an irreducible
+    remainder stays the human's job: (i) look-alikes of a domain the user
+    has genuinely never corresponded with (no baseline to differ from),
+    (ii) a thin-history mailbox where the flag fires on nearly everyone and
+    loses signal, (iii) a human who waves the warning through. That
+    remainder is exactly *why* the rejection/warning observation urges an
+    out-of-band browser check — the human's secondary channel is the last
+    line, and the only one that reaches these.
 
     Open sub-questions this raises:
     - Does compose pre-fill the body at all? Purest authorship = hand off
@@ -822,6 +892,17 @@ Take these one at a time in later sessions.
       which would neuter the journal half of the bracket — the counter
       half still works.) And the counter-bump cadence across a real mail
       poll, to size the retry/backoff policy.
+    - **Which TB operations bump Gloda's counter — RESOLVED (probed
+      2026-07-14, snap box):** read/star/tag flips **do** bump it, not just
+      new-mail arrivals. Marking one message unread advanced the counter a
+      clean +1 (`0f53`→`0f54`), because Gloda indexes read-state as a
+      first-class attribute (`attributeDefinitions`: 59 `read`,
+      60 `repliedTo`, 61 `forwarded`, 57 `tag`, 58 `star`) — flipping it is a
+      real write to `global-messages-db.sqlite`, not merely an mbox/`.msf`
+      touch. So the counter tracks *metadata* churn, not only content; the
+      per-search rebuild fires during ordinary triage, not just after a poll
+      (sharpened cadence note + the content-signal de-churn upgrade in
+      Q12/Q13).
     - **mbox compaction mid-scan:** only matters for the family-B
       mbox-parse *fallback* — deferred along with it.
 
@@ -880,9 +961,12 @@ Take these one at a time in later sessions.
     - **`message_id` handle = `headerMessageID`** (the RFC Message-ID) —
       stable across reindex and it's how we dedup; fall back to Gloda `id`
       when absent.
-    - **Ranking without FTS:** recency (`date DESC`) + field weight
-      (subject-hit > body-hit) + term coverage. Recency is the right
-      email default.
+    - **Ranking:** `bm25()` from the chosen (b) FTS5 index, with
+      **recency (`date DESC`) as the tiebreak** — recency is the right
+      email default. (Supersedes an earlier pre-decision sketch of a
+      hand-rolled recency + field-weight + term-coverage score: that
+      belonged to the rejected LIKE-only option (a), which *couldn't* rank
+      — don't reintroduce it now that (b) provides bm25.)
     - **`mail_read` returns clean text** — a Gloda-path bonus: `c0body` is
       pre-decoded + HTML-stripped, so no MIME parsing and no markup noise
       into the LLM.
@@ -1007,10 +1091,28 @@ Take these one at a time in later sessions.
       counter** (DB header bytes 24–27, big-endian) against our
       last-built value and rebuild only if it moved. A 4-byte
       `File.binread` — no SQL, no connection, no lock. Cheap enough every
-      search; since Thunderbird polls mail ~every 15 min the check almost
-      always says "unchanged," and the ~1 s rebuild is paid only right
-      after real mail activity (occasionally mid-conversation —
-      desirable, the agent then sees new mail). No daemon; the only disk
+      search; since Thunderbird polls mail ~every 15 min the check usually
+      says "unchanged," and the ~1 s rebuild is paid only after real Gloda
+      activity (occasionally mid-conversation — desirable, the agent then
+      sees new mail). **Cadence — confirmed churny (probed 2026-07-14):** the "idle → usually
+      unchanged" picture above holds only while TB is quiet. The counter
+      bumps on *any* Gloda write, and Gloda indexes read/star/tag as
+      attributes (`attributeDefinitions` id 59 `read`, 60 `repliedTo`,
+      61 `forwarded`, 57 `tag`, 58 `star`), so marking a message read/unread
+      advances it — a clean +1 (`0f53`→`0f54`) on one mark-unread, not just
+      the poll. So during active triage in TB, most agent searches find the
+      counter moved and rebuild.
+      Bounded (~1 s, self-correcting) either way — one rebuild per *search*, never per bump, and
+      correctness is untouched (a write is a write for the consistency
+      bracket too). Two consequences: (i) it **over-triggers** — a
+      read/star/tag flip changes no searchable text
+      (body/subject/author/recipients/attachmentNames) yet forces a full
+      FTS5 rebuild; (ii) the precision upgrade *if the churn ever annoys* is
+      to gate the rebuild on a **content** signal (`max(messages.id)` /
+      `count(*)` / `sum(deleted)`, below) instead of the raw counter — a
+      small `immutable=1` SELECT that ignores metadata-only flips, vs. the
+      4-byte `binread`. v1 keeps the cheap counter; the over-trigger is a
+      ~1 s papercut, not a bug. No daemon; the only disk
       footprint is Q11's snapshot file (finalizer-reaped), and reflink
       keeps even that near-zero until TB rewrites blocks.
       **Why the change counter, not mtime or `max(date)`** (settled by a
@@ -1026,11 +1128,20 @@ Take these one at a time in later sessions.
       is the more defensible load-bearing signal. And *not*
       `max(messages.date)` — Gloda's `date` is the message *Date header*
       (send time), so it silently misses **backdated/imported mail,
-      deletions, moves**; the content-level fallback is
-      `(max(id), count(*), sum(deleted))`. (Change counter is authoritative
-      per commit here because Gloda is `journal_mode=delete`; a WAL DB
-      would only bump it on checkpoint. A torn 4-byte read mid-commit → at
-      worst one harmless spurious rebuild, self-correcting next search.)
+      deletions, moves**; the content-level signal is
+      `(max(id), count(*), sum(deleted))`. That signal has a **second job,
+      promoted by the 2026-07-14 cadence probe:** because the raw counter
+      also bumps on pure-metadata flips (read/star/tag — confirmed), gating
+      the rebuild on this content triple instead *de-churns* it — a
+      read/star/tag flip leaves `max(id)`/`count(*)`/`sum(deleted)`
+      unchanged, so no wasteful FTS5 rebuild. The trade is a small
+      `immutable=1` SELECT per search vs. the counter's lock-free 4-byte
+      `binread`; v1 keeps the cheap counter and eats the occasional spurious
+      rebuild, upgrading only if the churn bites. (Change counter is
+      authoritative per commit here because Gloda is `journal_mode=delete`;
+      a WAL DB would only bump it on checkpoint. A torn 4-byte read
+      mid-commit → at worst one harmless spurious rebuild, self-correcting
+      next search.)
     - **Cost:** ~1 s for the measured 8k-msg / ~35 MB-text mailbox, paid
       once per session and only if mail is searched. *Scale caveat:* a
       100k+ msg mailbox makes the rebuild slow enough to reconsider a
@@ -1042,6 +1153,10 @@ Take these one at a time in later sessions.
       filters (`from`/`to`/date/`folder`) apply as exact predicates
       alongside the `MATCH`. Store Gloda `messages.id` / `headerMessageID`
       as the FTS5 rowid/unindexed column so a hit maps back for
-      `thunderbird_mail_read`.
+      `thunderbird_mail_read`. **Dedup by `headerMessageID` *before* the
+      top-N cap** — Gmail's label-as-folder fan-out (Q1) puts the same
+      message in the ranked list several times, and capping first would let
+      duplicates eat slots and silently shrink recall, the very failure (b)
+      was chosen to avoid.
     - Commits to the `sqlite3` gem (the Q2 follow-on: (b) is what pulls it
       in; the CLI-shell-out that (a) allowed is moot now).
