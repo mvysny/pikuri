@@ -566,10 +566,14 @@ Take these one at a time in later sessions.
 
 11. **Concurrency with a running Thunderbird — DECIDED: settled-snapshot
     copy for Gloda; live WAL reads for the calendar.** Headline
-    simplification: we **never open the live Gloda with SQL at all** —
-    the whole `immutable=1` sharp edge (no cache invalidation, fresh
-    connections, hot-journal semantics) evaporates; SQLite only ever
-    opens files *we* own (the snapshot copy + the `:memory:` FTS5).
+    simplification: we **never run queries against the live Gloda** —
+    the only live-file open is a short-lived `immutable=1` handle
+    feeding a page-level copy (the backup API below), closed
+    immediately; every actual query runs on the settled snapshot we
+    own. The `immutable=1` sharp edges (stale page cache, hot-journal
+    semantics) are neutralized by the copy-then-discard shape: fresh
+    handle per snapshot, and the bracket catches anything that slipped
+    through.
     - **Why Gloda tears but the calendar doesn't.** In rollback-journal
       mode (Gloda's confirmed `journal_mode=delete`) a writer modifies
       the *main DB file in place, mid-transaction* — the `-journal`
@@ -590,17 +594,47 @@ Take these one at a time in later sessions.
       reader pins a read mark in `-shm` → genuine snapshot isolation on
       a normal readonly open, nothing forfeited. The confirmed live
       calendar reads were the mechanism working, not luck.
-    - **Gloda snapshot mechanics — bracket the byte copy.** Read the
-      change counter (header bytes 24–27) + check `-journal` absence →
-      `IO.copy_stream` the DB into a private dir → re-check both.
-      Counter unchanged ∧ journal absent at both ends → settled; else
-      delete, short backoff, retry. Vulnerable window = the ~0.1–0.3 s
-      copy (70 MB on SSD), not ~1 s of SQL. The snapshot is
-      **self-describing**: its own header counter *is* its generation
-      stamp, so the per-search freshness check (Q12/Q13) = compare the
-      live file's counter against the snapshot's; differ → new snapshot
-      → rebuild the FTS5 from it. **One signal — the change counter —
-      now drives freshness *and* consistency.**
+    - **Gloda snapshot mechanics — bracket the copy.** Read the change
+      counter (header bytes 24–27) + check `-journal` absence → copy
+      the whole DB → re-check both. Counter unchanged ∧ journal absent
+      at both ends → settled; else discard, short backoff, retry. The
+      validated counter value is the snapshot's generation stamp, so
+      the per-search freshness check (Q12/Q13) = compare the live
+      file's counter against it; differ → new snapshot → rebuild the
+      FTS5. **One signal — the change counter — drives freshness *and*
+      consistency.**
+    - **Snapshot medium — RAM via the backup API (probed 2026-07, gem
+      2.9.5, all confirmed).** `SQLite3::Backup` from a short-lived
+      `file:…?immutable=1` readonly handle into a `:memory:` DB —
+      **zero disk artifact**. Measured on a synthetic 94 MB / 16k-row
+      DB: **~0.2–0.3 s to RAM**, then **~0.6 s** external-content FTS5
+      build (see Q13) — the whole pipeline under ~1 s. The backup is a
+      page-level copy, no B-tree walking, so tearing risk and bracket
+      semantics are identical to a byte copy; one fresh immutable
+      handle per snapshot, closed immediately (no stale-cache
+      accretion). Dead ends + alternatives, recorded against
+      re-litigation:
+      - `Database#serialize`/`#deserialize` (the `sqlite3_deserialize`
+        zero-disk route) — **not exposed by gem 2.9.5** (probed:
+        methods absent). The backup API reaches the same destination.
+      - **"A file open for reading is frozen in time" is false** — a
+        regular-file fd is a live window (reads see later writes by
+        others). The freezing intuition comes from the
+        write-temp+`rename()` pattern, where the *writer* abandons the
+        old inode; SQLite writes in place, same inode, so an open fd
+        buys nothing.
+      - **Disk fallback for huge mailboxes** (RAM copy too big):
+        `cp --reflink=auto` via the `Subprocess` chokepoint into a
+        0700 same-fs dir (reflink can't cross filesystems, so not
+        tmpfs `/tmp`; e.g. `~/.cache/pikuri/…`), degrading to
+        `IO.copy_stream` + `Dir.mktmpdir` on non-COW filesystems.
+        Reflink (`FICLONE`) is atomic w.r.t. concurrent writes — but
+        **file-atomicity ≠ DB consistency**: a clone taken
+        mid-transaction faithfully photographs a torn DB, so the
+        bracket stays load-bearing on every medium.
+      - **Debug trade-off:** a RAM snapshot can't be poked with the
+        `sqlite3` CLI; escape hatch = `VACUUM INTO '<file>'` dumps the
+        RAM copy to disk when debugging.
     - **Why whole-file copy, not bracket-the-one-bulk-read:** follow-up
       queries (`thunderbird_mail_read`'s full `c0body` fetch by id, any
       later SELECT) would each hit the live file and each need its own
@@ -613,11 +647,12 @@ Take these one at a time in later sessions.
       still, retries exhaust → keep serving the previous snapshot
       (stale-but-consistent beats torn) + loud log; no previous snapshot
       → the tool returns an `Error:` observation.
-    - **Privacy caveat (→ the gem's DESIGN.md threat model):** the copy
-      is the entire decoded mailbox landing outside the TB profile.
-      `Dir.mktmpdir` (0700) + `Pikuri::Finalizers` reaping (the
-      workspace ephemeral-umbrella pattern); a crash can strand it until
-      reboot — tmpfs mostly moots that, but it's documented, not hidden.
+    - **Privacy caveat (→ the gem's DESIGN.md threat model):** a *disk*
+      snapshot is the entire decoded mailbox landing outside the TB
+      profile — `Dir.mktmpdir`/0700 + `Pikuri::Finalizers` reaping (the
+      workspace ephemeral-umbrella pattern), and a crash can strand it
+      until reboot. **Moot on the default RAM medium** (no file ever
+      exists); applies only if the disk fallback is used.
     - **Honest residual:** a write transaction that begins *and* fully
       rolls back inside the copy window, with its journal invisible at
       both bracket edges, passes the check while the copy read dirty
@@ -802,12 +837,16 @@ Take these one at a time in later sessions.
 
     **Index mechanics (the "technical dragons," tamed):**
     - **Where:** an *ephemeral in-memory* FTS5 index in pikuri's own
-      process — **never** in Thunderbird's DB. Built from Q11's
-      **settled snapshot copy** of Gloda (we never SQL the live file —
-      Q11 superseded the earlier `immutable=1` live-read idea): bulk
-      `SELECT` the snapshot's plain `messagesText_content` + `messages`
-      join and `INSERT` into a `:memory:` FTS5. Writable index lives
-      only in our RAM; Gloda is untouched.
+      process — **never** in Thunderbird's DB. Built **inside Q11's RAM
+      snapshot itself** (probed 2026-07: the snapshot is our writable
+      copy): `CREATE VIRTUAL TABLE … USING fts5(…,
+      content=messagesText_content, …)` + `INSERT INTO fts(fts) VALUES
+      ('rebuild')` — an *external-content* FTS5 that stores only the
+      index (no second text copy in RAM), maps hits back by rowid for
+      free, and lets search + `mail_read` run on one connection.
+      ~0.6 s build on a 94 MB test DB. Gloda is untouched — never
+      queried live; the short-lived `immutable=1` handle only feeds
+      Q11's page-level backup copy.
     - **Freshness — staleness checked per search, *not* per session.**
       ("Session" in Pikuri = agent lifetime, which can be *days* — so
       "rebuild per session" would go badly stale.) Instead: **lazy first
