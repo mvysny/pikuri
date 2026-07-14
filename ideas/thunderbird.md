@@ -195,7 +195,9 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   it drifts). So TB holds a blocking lock — Gloda reads live only via a
   lock-free `immutable=1` open (torn-read risk) or with TB closed. This
   is a real strike against the "query Gloda" option (Q1), since the user
-  normally has TB open exactly when searching mail.
+  normally has TB open exactly when searching mail. (Resolved: Q11
+  sidesteps live SQL entirely — a settled *snapshot copy*, bracketed by
+  the change counter, is what gets queried.)
 - **`.parentlock`** at the profile root is Thunderbird's running-instance
   lock — a cheap "is TB open right now?" probe.
 - **Compose hand-off works** (TB 152.0, snap; command #6). `thunderbird
@@ -562,9 +564,84 @@ Take these one at a time in later sessions.
     - The residual is honest: human-gated ≠ severed. Document as a
       smoke-alarm-grade improvement, not a firewall.
 
-11. **Concurrency with a running Thunderbird.** Read-only/immutable
-    SQLite opens, mbox read-while-locked safety, and what happens if
-    Thunderbird rewrites an mbox (compaction) mid-scan.
+11. **Concurrency with a running Thunderbird — DECIDED: settled-snapshot
+    copy for Gloda; live WAL reads for the calendar.** Headline
+    simplification: we **never open the live Gloda with SQL at all** —
+    the whole `immutable=1` sharp edge (no cache invalidation, fresh
+    connections, hot-journal semantics) evaporates; SQLite only ever
+    opens files *we* own (the snapshot copy + the `:memory:` FTS5).
+    - **Why Gloda tears but the calendar doesn't.** In rollback-journal
+      mode (Gloda's confirmed `journal_mode=delete`) a writer modifies
+      the *main DB file in place, mid-transaction* — the `-journal`
+      holds the *old* pages for undo; commit = journal delete. So the
+      file is transiently inconsistent for the whole write, and only the
+      locking protocol protects readers; TB holds that lock persistently,
+      and `immutable=1` works precisely by *bypassing* locks — i.e.
+      forfeiting the one protection. Torn reads manifest as (A) loud
+      errors (`SQLITE_CORRUPT` "malformed", `SQLITE_IOERR_SHORT_READ`),
+      (B) silent snapshot skew (JOIN orphans — a `messages` row whose
+      `messagesText_content` partner is older; missing/duplicated rows
+      when a B-tree rebalances mid-scan) — plausible-looking,
+      undetectable from results, and (C) garbled long bodies
+      (overflow-page chains mixing generations; often invalid UTF-8 or a
+      corrupt error, sometimes plausible garbage). WAL inverts the
+      layout: writers *append new pages to the `-wal`* (redo, not undo),
+      the main file changes only at reader-aware checkpoints, and each
+      reader pins a read mark in `-shm` → genuine snapshot isolation on
+      a normal readonly open, nothing forfeited. The confirmed live
+      calendar reads were the mechanism working, not luck.
+    - **Gloda snapshot mechanics — bracket the byte copy.** Read the
+      change counter (header bytes 24–27) + check `-journal` absence →
+      `IO.copy_stream` the DB into a private dir → re-check both.
+      Counter unchanged ∧ journal absent at both ends → settled; else
+      delete, short backoff, retry. Vulnerable window = the ~0.1–0.3 s
+      copy (70 MB on SSD), not ~1 s of SQL. The snapshot is
+      **self-describing**: its own header counter *is* its generation
+      stamp, so the per-search freshness check (Q12/Q13) = compare the
+      live file's counter against the snapshot's; differ → new snapshot
+      → rebuild the FTS5 from it. **One signal — the change counter —
+      now drives freshness *and* consistency.**
+    - **Why whole-file copy, not bracket-the-one-bulk-read:** follow-up
+      queries (`thunderbird_mail_read`'s full `c0body` fetch by id, any
+      later SELECT) would each hit the live file and each need its own
+      bracket + retry; the copy pays the consistency cost once per
+      generation and every subsequent query is torn-proof by
+      construction. Search and read also stay coherent — the FTS5 index
+      and `mail_read` serve the *same* snapshot (refresh on *search*
+      only), so a search hit can't dangle mid-conversation.
+    - **Burst behavior:** if TB is mid-sync and the counter won't sit
+      still, retries exhaust → keep serving the previous snapshot
+      (stale-but-consistent beats torn) + loud log; no previous snapshot
+      → the tool returns an `Error:` observation.
+    - **Privacy caveat (→ the gem's DESIGN.md threat model):** the copy
+      is the entire decoded mailbox landing outside the TB profile.
+      `Dir.mktmpdir` (0700) + `Pikuri::Finalizers` reaping (the
+      workspace ephemeral-umbrella pattern); a crash can strand it until
+      reboot — tmpfs mostly moots that, but it's documented, not hidden.
+    - **Honest residual:** a write transaction that begins *and* fully
+      rolls back inside the copy window, with its journal invisible at
+      both bracket edges, passes the check while the copy read dirty
+      bytes — vanishingly rare (a Gloda rollback inside ~0.2 s), and it
+      mostly degrades into the loud class-A errors anyway.
+    - **Calendar footnotes:** (i) one-shot read transactions only — a
+      long-held WAL read txn pins an old read mark, blocking checkpoints
+      and ballooning the `-wal` (our one-shot SELECTs are naturally
+      fine; just never wrap searches in a long transaction); (ii) a
+      strictly-readonly open can fail when the `-shm` needs rebuilding
+      (TB not running after an unclean exit, `SQLITE_READONLY_RECOVERY`)
+      — we own the files, so fall back to a normal open that issues only
+      SELECTs, and log it; (iii) cross-query coherence is per-snapshot:
+      an event can change between `calendar_search` and `calendar_read`
+      — ordinary live-DB behavior, accepted (the Gloda side gets its
+      coherence *from* the file copy).
+    - **Tuning probes (pending — sizing, no longer load-bearing):** does
+      a persistent `-journal` sit beside Gloda while TB runs?
+      (`locking_mode=EXCLUSIVE` can retain it between transactions,
+      which would neuter the journal half of the bracket — the counter
+      half still works.) And the counter-bump cadence across a real mail
+      poll, to size the retry/backoff policy.
+    - **mbox compaction mid-scan:** only matters for the family-B
+      mbox-parse *fallback* — deferred along with it.
 
 12. **Freshness.** *Resolved.* Thunderbird keeps Gloda live (measured
     newest-message minutes old), so v1 inherits freshness for free — no
@@ -725,11 +802,12 @@ Take these one at a time in later sessions.
 
     **Index mechanics (the "technical dragons," tamed):**
     - **Where:** an *ephemeral in-memory* FTS5 index in pikuri's own
-      process — **never** in Thunderbird's DB. Gloda is opened
-      **read-only** (`immutable=1`, the lock-free live read); we bulk
-      `SELECT` its plain `messagesText_content` + `messages` join and
-      `INSERT` into a `:memory:` FTS5. Writable index lives only in our
-      RAM; Gloda is untouched.
+      process — **never** in Thunderbird's DB. Built from Q11's
+      **settled snapshot copy** of Gloda (we never SQL the live file —
+      Q11 superseded the earlier `immutable=1` live-read idea): bulk
+      `SELECT` the snapshot's plain `messagesText_content` + `messages`
+      join and `INSERT` into a `:memory:` FTS5. Writable index lives
+      only in our RAM; Gloda is untouched.
     - **Freshness — staleness checked per search, *not* per session.**
       ("Session" in Pikuri = agent lifetime, which can be *days* — so
       "rebuild per session" would go badly stale.) Instead: **lazy first
