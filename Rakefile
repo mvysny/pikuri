@@ -28,6 +28,7 @@ GEMS = %w[
   pikuri-subagents
   pikuri-code
   pikuri-os
+  pikuri-thunderbird
   pikuri-vectordb
   pikuri-assistant
   pikuri

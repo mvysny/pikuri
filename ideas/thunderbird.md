@@ -1,11 +1,21 @@
 # Local Thunderbird integration
 
-Status: **brainstorm, not started.** This note is the task description +
-the open-questions register. Nothing is decided yet — the open questions
-below are listed, *not* answered; we'll take them one by one. As pieces
-get settled they graduate (rationale → the gem's yardoc, narrative → the
-book, invariants → CLAUDE.md) and get trimmed from here, per the
-graduation pipeline in [`../CLAUDE.md`](../CLAUDE.md).
+Status: **v1 scaffolded (2026-07-14).** The `pikuri-thunderbird` gem now
+ships the four inbound, no-egress tools (`thunderbird_mail_search` /
+`_mail_read` / `_calendar_search` / `_calendar_read`), the
+profile-discovery / snapshot / ephemeral-FTS5 machinery behind them, a
+one-call `Thunderbird::Extension`, the `bin/pikuri-thunderbird` demo, and a
+`DESIGN.md` threat model — all under test. Every one of the 13 questions
+below is **decided**; what remains open is **v2** (the egress tools:
+compose + create-event as human-gated hand-offs to Thunderbird's UI) and a
+handful of build-time verifications marked inline.
+
+Graduation is now due: the decided rationale should be **trimmed** from
+here as it lands in the gem's yardoc / `DESIGN.md` / CLAUDE.md (per the
+pipeline in [`../CLAUDE.md`](../CLAUDE.md)). Until that trim pass runs, the
+questions below still carry the full in-flight reasoning — treat them as the
+authoritative record of *why*, and the source/`DESIGN.md` as the record of
+*what shipped*.
 
 ## Related
 

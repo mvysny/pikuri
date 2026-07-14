@@ -1,0 +1,115 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / demo entry point — runs from a source checkout only, not installed
+# by `gem install`. Demonstrates the v1 Thunderbird wiring: a single local
+# agent that searches and reads the user's Thunderbird mail + calendar and
+# nothing else. It has private data (the mailbox) + untrusted content
+# (message bodies) but NO egress leg — search and read are both
+# inbound-only — so the lethal trifecta is broken by construction, the same
+# posture as bin/pikuri-corpus. There is deliberately no compose / send /
+# create-event tool (that is a human-gated v2; see DESIGN.md).
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+
+require 'bundler/setup'
+require 'optparse'
+require 'yaml'
+require 'reline' # line editing + history for the interactive prompt
+
+require 'pikuri-thunderbird' # pulls in pikuri-core
+
+profile_dir = nil
+
+# Example-only config: LLM connection + keys live verbatim in a user-owned
+# YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
+examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
+examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
+server = examples_config['llm_server'] || 'http://localhost:8080'
+model  = examples_config['llm_model']  || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-thunderbird [options] [initial message...]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--profile-dir DIR', 'Thunderbird profile directory (overrides auto-discovery).') do |d|
+    profile_dir = d
+  end
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn e.message
+  warn parser
+  exit 2
+end
+
+system_prompt = Pikuri.prompt(:thunderbird)
+system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
+
+cancel_flag = Pikuri::Agent::Control::Cancellable.new
+
+def run_turn(agent, message)
+  prev_trap = trap('INT') { agent.cancellable&.cancel! }
+  agent.run_loop(user_message: message)
+rescue Pikuri::Agent::Control::Cancellable::Cancelled
+  # Notice already rendered by the Terminal listener.
+rescue RubyLLM::ContextLengthExceededError => e
+  warn "\nContext window exhausted: #{e.message}"
+  warn 'The conversation has grown too large for the model. Start a fresh question.'
+  exit 1
+ensure
+  trap('INT', prev_trap || 'DEFAULT')
+end
+
+begin
+  agent = Pikuri::Agent.new(
+    transport: Pikuri::Agent::ChatTransport.from_openai_server(
+      server: server,
+      model: model,
+      api_key: examples_config.fetch('llm_api_key', 'not-needed')
+    ),
+    system_prompt: system_prompt,
+    # Q&A wiring: on step exhaustion, synthesize a best-effort answer from
+    # what's gathered rather than raising (a coding agent would :raise).
+    step_limit: Pikuri::Agent::Control::StepLimit.new(max: 30, on_exhausted: :synthesize),
+    cancellable: cancel_flag
+  ) do |c|
+    c.add_listener Pikuri::Agent::Listener::Terminal.new
+    c.add_listener Pikuri::Agent::Listener::TokenLog.new
+    c.add_tool Pikuri::Tool::CALCULATOR
+    # One extension wires the whole surface: mail search+read (if Gloda is
+    # present) and calendar search+read. No egress tool is wired.
+    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir)
+  end
+rescue Pikuri::Thunderbird::Profile::DiscoveryError => e
+  warn "Thunderbird profile problem: #{e.message}"
+  exit 1
+end
+
+begin
+  puts 'Pikuri Thunderbird assistant — searches your local mail + calendar (read-only, no network). ' \
+       'Ctrl+C / Ctrl+D to quit.'
+
+  run_turn(agent, ARGV.join(' ')) unless ARGV.empty?
+
+  loop do
+    line = Reline.readline('> ', true)
+    break if line.nil? # Ctrl+D / EOF
+
+    message = line.chomp
+    next if message.strip.empty?
+
+    run_turn(agent, message)
+  end
+rescue Interrupt
+  # Ctrl+C at the prompt — clean exit.
+ensure
+  agent.close
+end
+
+puts

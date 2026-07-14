@@ -40,6 +40,11 @@ The gem inventory:
   surface (`fileindex_search` / `fileindex_read` over GNOME's
   localsearch, `MACHINE.md` resident memory, boot grounding) +
   `bin/pikuri-os-assistant`.
+- `pikuri-thunderbird` — local Thunderbird mail + calendar, read-only:
+  `thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
+  `_calendar_read` over Thunderbird's own on-disk profile (Gloda index +
+  `calendar-data/*.sqlite`), via bracketed snapshot copies + an ephemeral
+  FTS5 index; no network, no send. `bin/pikuri-thunderbird` no-egress demo.
 - `pikuri-mcp` — Model Context Protocol support +
   `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
@@ -419,6 +424,18 @@ yardoc. CLAUDE.md only records the invariant.
   `RubyLLM::Tool` subclasses inside `Mcp::Servers`, not as
   `Pikuri::Tool`s. See {Pikuri::Mcp::Servers} ("Why MCP tools
   bypass `Pikuri::Tool`").
+- **Thunderbird no-egress / no-send seam.** `pikuri-thunderbird`
+  performs no network egress and no autonomous send: it reads
+  Thunderbird's local profile only (never IMAP/POP3/SMTP/CalDAV) and
+  writes nothing to Thunderbird's stores. v1 ships only the four
+  *inbound* tools, so an agent wired with just them has no egress leg
+  (trifecta broken by construction). Any future outbound action
+  (compose, create-event) must be a *human-gated hand-off to
+  Thunderbird's own UI* (a pre-filled compose window / `.ics` import
+  wizard where the human commits) — never a DB write or a send by
+  pikuri. No send tool ever ships. Credential stores in the profile
+  (`logins.*`, `key4.db`, `openpgp.sqlite`, …) are never opened. See
+  {Pikuri::Thunderbird::Extension} and `pikuri-thunderbird/DESIGN.md`.
 
 ### Out of scope
 
@@ -551,6 +568,27 @@ per-gem one-liners:
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
   See {Pikuri::Os::Extension} and `ideas/os-assistant.md`.
+- **`pikuri-thunderbird/`** — local Thunderbird mail + calendar,
+  read-only. `Thunderbird::Extension` (one-call wiring) discovers the
+  active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,
+  `profile_dir:` override) and registers the four inbound tools:
+  `Thunderbird::MailSearch` / `MailRead` (over `Thunderbird::Gloda` —
+  Gloda's `global-messages-db.sqlite` used as a pre-decoded corpus) and
+  `Thunderbird::CalendarSearch` / `CalendarRead` (over
+  `Thunderbird::Calendar` — the `calendar-data/*.sqlite` stores). Both
+  backends never query Thunderbird's locked live DBs: `Thunderbird::Snapshot`
+  takes a bracketed `cp --reflink=auto` (change-counter + `-journal`
+  bracket) into `~/.cache/pikuri/thunderbird/`, and the mail path builds an
+  *ephemeral* FTS5 index over the decoded columns inside that copy (Gloda's
+  own fts3/`mozporter` vtable is unopenable by the sqlite3 gem). Multi-word
+  matching differs by design: mail ORs words + bm25-ranks (recall-first),
+  calendar ANDs words across title/description/location (precision-first, no
+  ranking). `bin/pikuri-thunderbird` is the no-egress demo (4 inbound tools +
+  calculator → trifecta broken by construction, same model as
+  `bin/pikuri-corpus`). Depends on `pikuri-core` + the `sqlite3` gem;
+  deliberately NOT mcp / memory / subagents (keeps the no-egress posture).
+  See {Pikuri::Thunderbird::Extension}, `pikuri-thunderbird/DESIGN.md`, and
+  `ideas/thunderbird.md`.
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
   `Mcp::Extension`, `Mcp::Synthesizer` (description
   summarization), `Mcp::Verifier` (injection check), `Mcp::Thinker`

@@ -60,6 +60,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-tasks',      "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-thunderbird', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-vectordb',   "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-workspace',  "= #{Pikuri::VERSION}"
 end
