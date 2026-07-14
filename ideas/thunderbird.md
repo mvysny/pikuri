@@ -429,8 +429,44 @@ Take these one at a time in later sessions.
     attack**, which the ceremony guards well. The corollary that resolves
     the pre-fill question below: **a fully pre-filled polished draft erodes
     the ceremony** (flips author→editor, invites "looks good, send"), so
-    the strength premium is *conditional on not fully pre-filling*. Open
-    sub-questions this raises:
+    the strength premium is *conditional on not fully pre-filling*.
+
+    **Mechanical outbound guard on the recipient — the machine covers the
+    invisible, the human covers the visible.** The "look-alike domain" hole
+    above is the *one* soft spot with a cheap, deterministic fix (a
+    mechanical check, never an AI verdict — consistent with the project's
+    "code + human decide" invariant). Two layers:
+    - **Everywhere (subject/body/address): route through
+      {Pikuri::Sanitizer}** — neutralize/flag control bytes, bidi,
+      zero-width, and mixed-script welds (`Pаypal`). The body keeps
+      legitimate Unicode (emoji, accents); Sanitizer flags only the attack
+      classes.
+    - **Address fields only (`to`/`cc`/`bcc`/`reply-to`): additionally
+      enforce ASCII-only.** This closes exactly the confusable class
+      Sanitizer *declares out of scope* — whole-script homoglyphs and
+      Latin-diacritic look-alikes like **`@mícrosoft.com`** (`í` is Latin,
+      so there's no script-mix for Sanitizer to catch). It's affordable
+      *because it's scoped to the address*: ASCII-only wrongly rejects rare
+      internationalized (EAI / RFC 6531) addresses, but the fallback is
+      "the human types it in TB," and ASCII-only on free-text body would be
+      absurd (kills emoji/accents). So the field where the blunt rule has
+      tolerable false positives is exactly the field that needs it.
+
+    **Degrade gracefully, don't silently clear:** on a flagged recipient,
+    *omit it* from the `-compose` pre-fill (keep subject/body) and return
+    the offense as a loud observation. The human lands in Thunderbird with
+    a **blank To they must fill** — the forced-authorship seat again; the
+    spoof degrades into "type the recipient yourself."
+
+    **Honest residual — pure-ASCII look-alikes.** `rnicrosoft.com` (rn→m),
+    `microsoft.net` (TLD swap), `paypa1.com` (l→1) are all pure ASCII —
+    neither Sanitizer nor the ASCII rule catches them; they stay the
+    human's job (the ceremony guards the *visible*, which is what these
+    are). Deferred data-driven enhancement: **flag a recipient domain the
+    user has never corresponded with**, read cheaply from Gloda's
+    `contacts`/`identities` table.
+
+    Open sub-questions this raises:
     - Does compose pre-fill the body at all? Purest authorship = hand off
       an empty/subject-only draft the human writes; convenience =
       pre-filled draft the human edits (rubber-stamp risk). The reasoning

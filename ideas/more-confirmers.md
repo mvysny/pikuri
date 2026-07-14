@@ -265,6 +265,19 @@ erodes the very ceremony that makes email strong** — a finished draft
 flips the human from author to editor and invites "looks good, send." So
 the strength premium is *conditional on not fully pre-filling*.
 
+**Mechanical pre-filters shore up the soft spot — machine covers the
+invisible, human covers the visible.** The caveat's blind spot (a
+look-alike recipient) partly closes with a *deterministic* check, never an
+AI verdict: {Pikuri::Sanitizer} already flags the invisible/reordering/
+mixed-script classes a human literally cannot see, and a field-scoped
+rule can close what Sanitizer punts (e.g. ASCII-only on an *address*
+catches the all-Latin `@mícrosoft.com` — affordable there because the
+false positives are rare and human-recoverable, unlike on free text).
+What stays the human's job is the *visible* look-alike the machine can't
+tell from legitimate (`rnicrosoft.com`, a `.net`-for-`.com` swap) — which
+is exactly what the ceremony is good at. Worked example:
+[`thunderbird.md`](thunderbird.md) Q10's compose recipient guard.
+
 ## Open (cross-cutting)
 
 - **Where confirmers live.** *Partly answered by the built gate.* The
