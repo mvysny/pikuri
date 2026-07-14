@@ -170,7 +170,12 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   (`cal_deleted_items`) is sync tombstones. **On the probed box all
   three hold zero events:** the one local calendar ("Home") is unused,
   and every CalDAV calendar has **`cache.enabled=false`** in prefs.js →
-  TB keeps those events **in memory only — nothing on disk to read**.
+  TB keeps those events **in memory only — nothing on disk to read**,
+  even while the TB UI shows fully-populated calendars (the trap this
+  finding names). Verified exhaustively: every table 0 rows except the
+  two version singletons; the 819 KB file is pure schema overhead
+  (Mozilla builds with **32 KB pages** — 25 × 32768 exactly, freelist
+  0); `deleted.sqlite` tombstones also 0, so no events ever lived here.
   So calendar tools are data-dependent: they need a used local calendar
   or per-calendar "Offline Support" (cache.enabled) turned on (then
   cache.sqlite presumably mirrors the local.sqlite schema — verify when
