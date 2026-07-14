@@ -532,7 +532,69 @@ Take these one at a time in later sessions.
     re-opens if the family-B mbox-parse *fallback* ever grows its own
     index (a raw scan has no freshness problem; an index would).
 
-13. **Tool surface & naming.** What tools do we expose and how are they
-    named (e.g. a search→read-full mail pair, a calendar search, a create
-    tools), and which binary/agent wires them (a demo `bin/`, the OS
-    assistant, or a new one)?
+13. **Tool surface & naming.** *Mostly settled — the shape below is
+    decided; only the search-matching approach (sub-decision 1) is open.*
+
+    Six tools, capability-paired (search→read parent-document-retrieval,
+    like `vectordb_search`/`vectordb_read`), named **`thunderbird_*`**:
+
+    | Tool | v1? | Egress | Params | Returns |
+    |---|---|---|---|---|
+    | `thunderbird_mail_search` | ✅ | inbound | `query` (free text over body/subject/author/recipients/attachment-names) + optional `from`, `to`, `subject`, `after`, `before`, `folder` | ranked hits: `message_id`, date, from, to, subject, folder, **snippet**; deduped by `Message-ID` |
+    | `thunderbird_mail_read` | ✅ | inbound | `message_id` | full decoded body (Gloda `c0body`, already HTML-stripped plain text) + headers + attachment names |
+    | `thunderbird_mail_compose` | ⛔ v2 | **egress (human-gated)** | `to`, `cc`, `bcc`, `subject`, `body` | hands off to `thunderbird -compose`; Q10 recipient guard applied; human reviews + sends |
+    | `thunderbird_calendar_search` | ✅ | inbound | `query` (title/description/location) + `after`, `before` | events: `event_id`, title, start, end, location |
+    | `thunderbird_calendar_read` | ✅ | inbound | `event_id` | full event: description, location, attendees, recurrence (from the `icalString` side-tables) |
+    | `thunderbird_calendar_create` | ⛔ v2 | **egress (human-gated)** | title, start, end, location, description, attendees | hands off `.ics` for TB import; human confirms |
+
+    **v1 no-egress demo** wires the 4 inbound tools + `calculator` → legs
+    1+2 present, leg 3 absent, trifecta broken (same as `bin/pikuri-corpus`).
+    v2 adds the two egress tools behind the human-authored CLI hand-off.
+
+    Settled sub-decisions:
+    - **Naming `thunderbird_*` (not `mail_*`/`gloda_*`)** — names the
+      *stable source*, not the *swappable backend* (Gloda-now /
+      mbox-fallback), exactly as pikuri-os's `fileindex_*` names the
+      capability over `localsearch`/`recoll`. Also keeps the trust
+      boundary legible in the name: a future `gmail_*` connector is a
+      *different* tool with *network* egress, and must not blur with
+      local Thunderbird.
+    - **`calendar_read` kept separate** — events can carry a long
+      description / (rarely) attachments; cheap to keep, nuke later if
+      unused.
+    - **No `calendar` filter param** — `cal_id` is an opaque UUID and the
+      human-readable calendar name lives in `prefs.js`
+      (`calendar.registry.<uuid>.name`), not `local.sqlite`; the LLM would
+      omit the param overwhelmingly anyway. Search all calendars. (Revisit
+      only if multi-calendar scoping is wanted — it'd ride Q3's profile
+      parsing.) *Asymmetry:* the mail `folder` filter **is** feasible in
+      v1 — Gloda's `folderLocations` stores the folder `name`.
+
+    Design details:
+    - **`message_id` handle = `headerMessageID`** (the RFC Message-ID) —
+      stable across reindex and it's how we dedup; fall back to Gloda `id`
+      when absent.
+    - **Ranking without FTS:** recency (`date DESC`) + field weight
+      (subject-hit > body-hit) + term coverage. Recency is the right
+      email default.
+    - **`mail_read` returns clean text** — a Gloda-path bonus: `c0body` is
+      pre-decoded + HTML-stripped, so no MIME parsing and no markup noise
+      into the LLM.
+    - Which binary wires them: the decided `bin/pikuri-thunderbird` demo
+      (Q2), search-only + no-egress.
+
+    **OPEN — sub-decision 1: the search-matching approach** (shapes
+    `thunderbird_mail_search`). No usable FTS (Gloda's `messagesText` is
+    locked behind the `mozporter` tokenizer a stock `sqlite3` can't load).
+    Two candidates:
+    - **(a) LIKE + structured filters + own recency ranking + agent
+      iteration** — substring over Gloda's decoded columns, no stemming;
+      structured filters (`from`/`to`/date) are exact and carry most real
+      email lookups; agent reformulates for topic search (the pikuri-os
+      `localsearch` philosophy). Lean, no new index.
+    - **(b) build our own in-memory FTS5 index from Gloda's decoded text**
+      — real stemming + `bm25()` ranking + phrase queries; ~1 s build per
+      session (Gloda is fresh, so no daemon), but adds the FTS5 build step
+      and leans harder on the `sqlite3` gem.
+    Leaning (a) for v1; (b) is the upgrade if LIKE proves weak. Deferred
+    pending the user's research material — this is the next thing to settle.
