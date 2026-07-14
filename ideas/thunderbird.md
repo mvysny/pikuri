@@ -71,7 +71,22 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   `IsRelative=1`). `IsRelative=1` means `Path` is relative to the
   `profiles.ini` directory; `[General] StartWithLastProfile=1` is the
   tiebreaker when several profiles exist. So discovery = parse
-  `profiles.ini`, resolve `Path` (relative when `IsRelative=1`).
+  `profiles.ini`, resolve `Path` (relative when `IsRelative=1`). The
+  confirmed file, verbatim — note there are **no `[Install…]` sections**
+  (Firefox's per-install default-profile mechanism), so the plain
+  `Default=1` parse suffices:
+
+  ```ini
+  [Profile0]
+  Name=default
+  IsRelative=1
+  Path=ql3rk8ye.default
+  Default=1
+
+  [General]
+  StartWithLastProfile=1
+  Version=2
+  ```
 - **Install-root layout (snap).** Everything lives under
   `~/snap/thunderbird/common/.thunderbird/`. (apt/flatpak roots differ —
   see "still recalled" below.)
@@ -352,9 +367,34 @@ Take these one at a time in later sessions.
    `pikuri-extractors`/`-pdf` only if we extract attachment bodies, Q5;
    `pikuri-subagents` only if Q10 wants a quarantined reader).
 
-3. **Profile/install discovery.** How do we robustly locate the active
-   profile across apt/snap/flatpak (parse `profiles.ini`? probe the known
-   roots?), and how do we pick among multiple profiles/accounts?
+3. **Profile/install discovery — DECIDED (v1).** One rule at every
+   level: **discovery never guesses** — it succeeds unambiguously, raises
+   with instructions, or is explicitly overridden.
+   - **Roots probed:** snap (`~/snap/thunderbird/common/.thunderbird/`,
+     confirmed) + apt (`~/.thunderbird/`, recalled). **Flatpak deferred**
+     — root recalled but unconfirmed; add when someone actually runs a
+     flatpak TB.
+   - **Both roots exist → raise**, naming both paths and telling the user
+     to delete the obsolete one. Rationale: an apt→snap migration leaves
+     a stale-but-plausibly-active `~/.thunderbird` behind, so any
+     mtime/liveness heuristic would guess wrong on exactly the common
+     case; the fix (delete the stale folder) is trivial and one-time.
+   - **No root → the tools simply aren't registered** (the
+     `available?`-probed `Os::Extension` pattern). A tool constructed
+     anyway with a nil/dummy profile path raises — errors are loud, no
+     limping.
+   - **Within a root:** parse `profiles.ini`, take the `Default=1`
+     section, resolve `Path` per `IsRelative`. Multiple profiles with no
+     `Default=1` → raise naming the candidates. The confirmed
+     `profiles.ini` (verbatim in the storage section above) has **no
+     `[Install…]` sections**, so the plain `Default=1` parse suffices —
+     revisit only if a real-world TB ini shows one.
+   - **Escape hatch: explicit `profile_dir:`** on both the Extension and
+     the tool constructors — auto-discovery stays the zero-config
+     default, and both raise cases (plus the flatpak deferral) become
+     resolvable without deleting anything. Pre-shapes Q8's
+     binary-discovery answer (same override pattern for the
+     `thunderbird` executable).
 
 4. **Mail format coverage.** mbox is the default; do we also handle
    maildir? What about `.msf` (ignore and re-scan, or read the Mork
