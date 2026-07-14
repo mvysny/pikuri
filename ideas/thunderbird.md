@@ -43,8 +43,10 @@ locally. Capabilities, roughly in priority order:
 3. **Create a calendar event** *(if feasible)*.
 4. **Compose a new email and hand it off to Thunderbird** so the user
    reviews and sends it themselves (the safe, author-not-approver path).
-5. **Send it ourselves** *(stretch / maybe)* — flagged as in tension with
-   the no-SMTP constraint; see open questions.
+5. **Send it ourselves** — **REJECTED (Q9).** No supported headless-send
+   path exists, and any agent-alone send re-arms agent-automatic egress —
+   reopening the trifecta the design breaks by construction. Collapses into
+   #4 (compose hand-off; the human sends in Thunderbird's own window).
 
 Constraints given up front:
 
@@ -267,6 +269,26 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   `Gtk-Message: … Not loading module "atk-bridge"` warning. Nothing is
   sent — the user reviews and sends. (Still untested: embedding
   **newlines** in `body` — a known `-compose` limitation; see Q8.)
+- **`.ics` calendar-import hand-off works** (TB 152.0, snap; Q7 probe
+  2026-07-14). `thunderbird <path.ics>` opens
+  TB's **"Import Calendar file" wizard** *as a new tab in the running
+  instance* (not a modal dialog) — a 4-step flow: (1) → (2) **item picker**
+  (per-event checkbox; renders title / start / end / location /
+  description — the probe's `09:00 UTC` showed as `12:00` EEST, re-confirming
+  Q6's UTC-store / local-display) → (3) **target-calendar picker** →
+  **Confirm**. **No silent import** — nothing lands until the human clicks
+  through to Confirm, and **closing the tab (Cancel) leaves nothing
+  behind**; the only terminal output was the same harmless
+  `Gtk-Message: … atk-bridge` warning as `-compose`. The exact safe analog
+  of `-compose`: TB's UI owns the commit, and the human additionally
+  **chooses the destination calendar**, so local-vs-CalDAV (i.e.
+  no-egress-vs-egress) is the human's pick, not the agent's.
+  **Staging location NOT probed here:** TB runs on a separate host and the
+  `.ics` was hand-copied to an arbitrary `~/temp/…` path, so this says
+  nothing about where a snap-confined TB can read from — *where* pikuri
+  stages the transient `.ics` is still an open Q7 implementation detail
+  (verify the snap `home`-interface dotfile restriction, recalled but
+  unconfirmed, when building — don't assume `~/.cache` is un/readable).
 - **Credential/secret stores to never touch** (they sit in the same
   profile dir): `logins.db` / `logins.json` / `logins-backup.json`,
   `key4.db`, `cert9.db`, `openpgp.sqlite`,
@@ -541,15 +563,40 @@ Take these one at a time in later sessions.
      with nothing at 07:00 (the `as_utc` reading) — UTC storage
      settled, no longer just inferred.
 
-7. **Calendar event creation.** The schema makes the *hazard* concrete: a
-   direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
-   it open** — a live write is invisible to the running TB's in-memory
-   cache and can be clobbered, and a write to a *cached-CalDAV* calendar
-   would never sync back. So the candidates are: (a) **hand TB an `.ics`
-   to import** (the safe analog of the compose hand-off — TB owns the
-   write + any sync); (b) direct DB write **only with TB closed**;
-   (c) out of scope. CalDAV write over the network stays out of scope by
-   the no-network rule. Leaning (a), but recorded as open.
+7. **Calendar event creation — DECIDED: (a) hand TB an `.ics` to import.**
+   Confirmed working (Q7 probe 2026-07-14 — see the `.ics` hand-off bullet
+   in the storage section): `thunderbird <path.ics>` opens TB's **"Import
+   Calendar file" wizard** (new tab, running-instance reuse), a 4-step flow
+   ending in **Confirm** — **no silent import**, Cancel leaves nothing, and
+   **step 3 is a target-calendar picker**. So TB owns the write + any sync,
+   and the human both **commits** *and* **chooses the destination
+   calendar**. Same posture as compose (Q9): every mutation is a
+   human-gated hand-off to TB's own UI, never a DB write by us. It also
+   makes the egress decision human-owned — a local (`storage`) calendar
+   target is no-egress, a CalDAV target egresses (sync + possibly invites),
+   and *which* is the human's pick in the wizard, not the agent's.
+   - **Rejected (b): direct DB write.** `local.sqlite` / `cache.sqlite` are
+     held open by TB (`locking_mode=EXCLUSIVE`, Q11); a live write is
+     invisible to TB's in-memory cache and can be clobbered, and a write to
+     a cached-CalDAV calendar would never sync back. "Only with TB closed"
+     is a worse UX (can't run while the user works) and pointless once (a)
+     works. CalDAV write over the network stays out of scope by the
+     no-network rule.
+   - **Staging the `.ics` (OPEN implementation detail; ties to Q3/Q8).**
+     Not settled by the probe — TB ran on a separate host and the file was
+     hand-copied to an arbitrary path, so nothing was learned about a
+     confined TB's readable paths. The file must live where the discovered
+     TB variant can read it; the snap `home` interface is *recalled* to
+     restrict dotfile dirs (`~/.cache`) and flatpak has its own
+     portal/root, but both are **to verify when building**. Likely-cleanest
+     cross-variant answer to test: stage the transient `.ics` under the
+     already-discovered install root (a path that variant can definitionally
+     read), and finalizer-reap it after hand-off (TB doesn't delete it).
+   - **Residual (deferred to the v2 build):** does importing an `.ics`
+     carrying `ATTENDEE` lines onto a CalDAV calendar mail invites? Import
+     is usually not an organize-action (unlike editing-as-organizer), so it
+     likely doesn't — but unverified; the Q13 `thunderbird_calendar_create`
+     `attendees` param waits on this.
 
 8. **Compose hand-off mechanics.** *Core mechanics confirmed* (see the
    storage section): single-quoted `key=value` values escape correctly
@@ -561,12 +608,45 @@ Take these one at a time in later sessions.
    the caller need to *find* the right binary (snap vs. apt vs. flatpak
    `thunderbird`), mirroring the profile-discovery problem (Q3)?
 
-9. **"Send it ourselves" — is it even possible without SMTP?**
-   Thunderbird's CLI only *opens* a compose window; there's no documented
-   send-without-click. So "sending ourselves" seems to require either
-   SMTP (explicitly excluded) or UI automation (fragile, out of posture).
-   Decide whether this capability survives at all, or collapses into #4
-   (compose hand-off, user sends).
+9. **"Send it ourselves" — DECIDED: REJECTED; we *always* hand over to
+   Thunderbird (after sanitizing), never send.** It collapses fully into #4
+   (compose hand-off; the human sends in TB's own window). Two independent
+   reasons, either sufficient:
+   - **No supported mechanism.** TB's CLI only *opens* a compose window
+     (`-compose`); there is no headless `-send`. The only agent-alone send
+     paths are (a) our own SMTP — excluded by the core no-SMTP constraint;
+     (b) UI automation (xdotool/AT-SPI clicking Send) — fragile,
+     non-deterministic, needs an X session, against the audit-first
+     posture; (c) inject a formatted message into TB's **Outbox**
+     ("Unsent Messages" mbox) and trigger a flush — undocumented
+     `X-Mozilla-Status` queue flags + identity/SMTP association, needs TB
+     running *and* a flush trigger, and risks the live-mbox clobber of Q7's
+     DB-write hazard. None is robust; (b)/(c) also lean on TB's SMTP anyway,
+     so "without our SMTP" is a semantic dodge.
+   - **Posture — decisive on its own.** Q10's architecture converts egress
+     from *agent-automatic* to *human-action-required* by routing every
+     send through TB's compose window. That property is what breaks the
+     trifecta and makes the feature shippable. "Send ourselves" is the
+     negation of it — it re-arms leg 3 as agent-controllable — so it's
+     rejected even if a clean mechanism existed.
+
+   **Corollary — even a human-*confirmed* send loses to the hand-off,** so
+   there's no middle ground to keep. Q10 establishes the compose window as
+   the *strongest* human barrier (rare + fully legible + ceremonial /
+   irrevocable, human as author in TB's own trusted UI). A pikuri yes/no
+   confirmer is strictly weaker on legibility and ceremony
+   (rubber-stamp-prone) and can't offer TB's edit/attachment/identity
+   affordances. No version of "send ourselves" — autonomous *or* confirmed
+   — beats the hand-off.
+
+   **Invariant this locks in (→ the gem's DESIGN.md when built):**
+   pikuri-thunderbird performs **no network egress and no autonomous
+   send**; every outbound action (mail compose, calendar create) is a
+   hand-off to Thunderbird's own UI — sanitized on the way out (Q10's
+   recipient guard + {Pikuri::Sanitizer}) — where the human commits it. No
+   send tool ever ships. Deliberate non-goal: "agent auto-sends my weekly
+   report" belongs in the user's own cron/script, not a trifecta-exposed
+   assistant.
 
 10. **Security / trifecta posture.** Email is the textbook lethal
     trifecta (see [`trifecta-detector.md`](trifecta-detector.md)). Map
