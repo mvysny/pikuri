@@ -433,8 +433,10 @@ yardoc. CLAUDE.md only records the invariant.
   (compose, create-event) must be a *human-gated hand-off to
   Thunderbird's own UI* (a pre-filled compose window / `.ics` import
   wizard where the human commits) — never a DB write or a send by
-  pikuri. No send tool ever ships. Credential stores in the profile
-  (`logins.*`, `key4.db`, `openpgp.sqlite`, …) are never opened. See
+  pikuri. No send tool ever ships. Reads are an **allowlist**: only the
+  Gloda + calendar DBs (plus `profiles.ini` for discovery) are ever
+  opened, so the profile's credential stores (`key4.db`, `logins.json`,
+  the OpenPGP key material, …) are never touched. See
   {Pikuri::Thunderbird::Extension} and `pikuri-thunderbird/DESIGN.md`.
 
 ### Out of scope

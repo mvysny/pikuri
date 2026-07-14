@@ -308,8 +308,18 @@ opens a window, the human reviews and commits.
 
 ### Files never touched
 
-Credential/secret stores in the profile — `logins.db`/`logins.json`/
-`logins-backup.json`, `key4.db`, `cert9.db`, `openpgp.sqlite`,
-`encrypted-openpgp-passphrase.txt`, `settings/data.safe.bin` — are never
-opened. Browser/telemetry cruft (`places.sqlite`, `cookies.sqlite`,
-`favicons.sqlite`, `storage/`, `crashes/`, `datareporting/`, …) is irrelevant.
+The guarantee is an **allowlist, not a blocklist**: the backends open only
+`global-messages-db.sqlite` and `calendar-data/*.sqlite` (plus their snapshot
+copies), and discovery reads `profiles.ini`. Nothing else in the profile
+directory is ever opened — so no enumeration of what-to-avoid is load-bearing,
+and a wrong name below changes nothing.
+
+For orientation, the profile dir (the same dir as the Gloda file) also holds
+the credential/secret stores pikuri stays clear of: the NSS key/cert databases
+`key4.db` + `cert9.db`, saved passwords `logins.json` + `logins-backup.json`,
+and Thunderbird's OpenPGP key material (including
+`encrypted-openpgp-passphrase.txt`). These names are **recalled from the
+Firefox/Thunderbird profile layout, not probe-confirmed and not exhaustive**
+(verify against a real profile if it ever matters — but it doesn't, given the
+allowlist). Browser/telemetry cruft (`places.sqlite`, `cookies.sqlite`,
+`favicons.sqlite`, `storage/`, `datareporting/`, …) is likewise untouched.
