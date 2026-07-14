@@ -635,9 +635,10 @@ Take these one at a time in later sessions.
       *already-loaded* C tokenizer; (ii) the only SQL-reachable trick
       (build permitting) is aliasing the built-in `porter` as `mozporter`
       — porter-only (no accent-fold/CJK), needs the gated setter, fragile.
-      *Tested and dead* (2026-07, stock distro `libsqlite3` 3.46.1, the
-      build a distro `sqlite3` CLI links): `fts3_tokenizer('mozporter',
-      fts3_tokenizer('porter'))` → **`fts3tokenize disabled`**. The
+      *Tested and dead* (2026-07, confirmed directly on the `sqlite3` CLI
+      binary 3.46.1 *and* its `libsqlite3`; `ENABLE_FTS3_TOKENIZER=0`):
+      `fts3_tokenizer('mozporter', fts3_tokenizer('porter'))` →
+      **`Error: stepping, fts3tokenize disabled`**. The
       function exists but is gated (`ENABLE_FTS3_TOKENIZER` off), and the
       gate is C-only — un-flippable from any SQL statement or CLI flag.
       So even the degraded CLI alias is closed on default builds; (c) is
