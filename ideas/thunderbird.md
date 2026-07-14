@@ -196,7 +196,9 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
     overflow to NULL), and the next-8-events cross-check reads as
     normal business hours only under UTC→local (+3h EEST) — 07:00 UTC =
     10:00 Helsinki — so times are stored UTC and **displayed via the
-    `_tz` column**, the standard Mozilla convention. Both endpoints
+    `_tz` column**, the standard Mozilla convention (**user-confirmed
+    against the live TB UI**: a real recurring daily meeting is at
+    10:00, nothing at 07:00). Both endpoints
     carry their own tzid — `event_start_tz` / `event_end_tz` — and
     **they can differ** (1/5414: a cross-zone event like a
     Helsinki→NYC flight), so treat them independently, never "one zone
@@ -454,16 +456,28 @@ Take these one at a time in later sessions.
      binary-discovery answer (same override pattern for the
      `thunderbird` executable).
 
-4. **Mail format coverage.** mbox is the default; do we also handle
-   maildir? What about `.msf` (ignore and re-scan, or read the Mork
-   index)?
+4. **Mail format coverage — DECIDED: v1 = Gloda-only.** No mbox parser,
+   no maildir, no Mork `.msf` reading ship in v1.
+   - **Maildir: out.** Not seen on the probed install (all folders are
+     mbox); add only if a real maildir host appears.
+   - **The family-B mbox parser stays a *documented design*, unbuilt.**
+     A correct one needs CRLF-aware `From `-splitting + `X-Mozilla-Status`
+     deleted-flag honoring + MIME decoding — real code, and it's exactly
+     the *untrusted-content parser* the gem's threat model worries about.
+     Building it now buys nothing (Gloda serves the probed box fully);
+     it graduates to built only when a Gloda-disabled host is a real
+     user (the `available?`-probed fallback slot from Q1).
+   - **`.msf` (Mork): ignore.** Gloda already carries decoded bodies +
+     the folder map, so we never need the Mork summary index.
 
-5. **Attachments.** Do we search/read attachment *bodies* (reusing
-   `pikuri-extractors`)? Coverage differs sharply by Q1 family: recoll
-   (C) indexes attachment bodies for free; Gloda (A) gives attachment
-   *names* only (`attachmentNames` column), not bodies; mbox-parse (B)
-   we'd have to extract them ourselves via `pikuri-extractors`. So the
-   attachment answer is partly downstream of the backend choice.
+5. **Attachments — DECIDED: names only in v1** (falls out of Q4's
+   Gloda-only). Gloda's `attachmentNames` column (already MIME-decoded)
+   is searchable + returnable for free; attachment *bodies* are
+   deferred with the mbox parser (family B would extract them via
+   `pikuri-extractors`; recoll (C) would index them for free — either
+   only if that backend is ever built). So `thunderbird_mail_search`
+   matches on attachment *names* and `thunderbird_mail_read` lists
+   them; neither opens an attachment's contents in v1.
 
 6. **Calendar read.** *Schema feasible; on-disk data availability is
    the real gate* (probe 2026-07-14). Core event fields are normalized
@@ -515,9 +529,10 @@ Take these one at a time in later sessions.
      null/empty `_tz` on this box (default defensively anyway). Bonus:
      start/end tz can differ (cross-zone events — handle independently),
      and all-day ⟺ `flags` bit 8 ⟺ `tz=floating`. **Q6 fully closed.**
-     (Only-if-refuted: if TB actually shows those events at 07:00 not
-     10:00, (i) flips to local storage — but the pattern makes UTC
-     near-certain.)
+     (i) is now **user-confirmed against the live TB UI**: a real
+     recurring daily meeting sits at 10:00 (= the `as_local` reading)
+     with nothing at 07:00 (the `as_utc` reading) — UTC storage
+     settled, no longer just inferred.
 
 7. **Calendar event creation.** The schema makes the *hazard* concrete: a
    direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
