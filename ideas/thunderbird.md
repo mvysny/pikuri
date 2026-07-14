@@ -530,8 +530,9 @@ Take these one at a time in later sessions.
     newest-message minutes old), so v1 inherits freshness for free — no
     `Watcher`-style daemon. The Q13 search decision (b) builds its own
     FTS5 index, but **ephemerally** (in-memory), rebuilt on demand: a
-    per-search Gloda-DB-**mtime** check (*not* per-session — an agent
-    lives for days) rebuilds only after real mail activity. A disposable
+    per-search check of Gloda's **file change counter** (DB header bytes
+    24–27; *not* per-session — an agent lives for days) rebuilds only
+    after real mail activity. A disposable
     derivative that carries *no* freshness obligation. Only genuinely
     re-opens if either the family-B mbox-parse *fallback* or a future
     *persistent* FTS5 cache (the deferred scale option) grows a maintained
@@ -692,20 +693,33 @@ Take these one at a time in later sessions.
     - **Freshness — staleness checked per search, *not* per session.**
       ("Session" in Pikuri = agent lifetime, which can be *days* — so
       "rebuild per session" would go badly stale.) Instead: **lazy first
-      build**, then on **every search** compare the Gloda DB file **mtime**
-      against our last-built mtime (a single `File.stat`, no SQL) and
-      rebuild only if it moved. Cheap enough to run every search; since
-      Thunderbird polls mail ~every 15 min the check almost always says
-      "unchanged," and the ~1 s rebuild is paid only right after real mail
-      activity (occasionally mid-conversation — desirable, the agent then
-      sees new mail). Still no daemon, no disk footprint, nothing to reap.
-      **Signal choice matters:** use the **file mtime** (or the content
-      tuple `(max(id), count(*), sum(deleted))`), *not* `max(messages.date)`
-      — Gloda's `date` is the message's *Date header* (send time), so
-      `max(date)` silently misses **backdated/imported mail, deletions,
-      and moves**. The asymmetry that makes mtime right: a false positive
-      is one harmless spurious ~1 s rebuild; a false negative is stale
-      results — and mtime has ~none.
+      build**, then on **every search** compare Gloda's **file change
+      counter** (DB header bytes 24–27, big-endian) against our
+      last-built value and rebuild only if it moved. A 4-byte
+      `File.binread` — no SQL, no connection, no lock. Cheap enough every
+      search; since Thunderbird polls mail ~every 15 min the check almost
+      always says "unchanged," and the ~1 s rebuild is paid only right
+      after real mail activity (occasionally mid-conversation —
+      desirable, the agent then sees new mail). No daemon, no disk
+      footprint, nothing to reap.
+      **Why the change counter, not mtime or `max(date)`** (settled by a
+      probe, 2026-07): the file-format spec increments the change counter
+      *only when the DB is unlocked after a modification* — so a **read
+      cannot move it** (a format *guarantee*, not a behavior). Measured:
+      200 `SELECT`s on both a normal *and* an `immutable=1` connection
+      left it untouched; one write bumped it +1, monotonically. mtime
+      *also* survived the read test (SQLite writes nothing to the main DB
+      on a rollback-journal read, no auto-`ANALYZE`), but it rests on
+      SQLite *behavior* + is exposed to fs-metadata quirks
+      (`relatime`, granularity, spurious touches), so the change counter
+      is the more defensible load-bearing signal. And *not*
+      `max(messages.date)` — Gloda's `date` is the message *Date header*
+      (send time), so it silently misses **backdated/imported mail,
+      deletions, moves**; the content-level fallback is
+      `(max(id), count(*), sum(deleted))`. (Change counter is authoritative
+      per commit here because Gloda is `journal_mode=delete`; a WAL DB
+      would only bump it on checkpoint. A torn 4-byte read mid-commit → at
+      worst one harmless spurious rebuild, self-correcting next search.)
     - **Cost:** ~1 s for the measured 8k-msg / ~35 MB-text mailbox, paid
       once per session and only if mail is searched. *Scale caveat:* a
       100k+ msg mailbox makes the rebuild slow enough to reconsider a
