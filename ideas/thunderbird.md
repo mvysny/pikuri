@@ -161,10 +161,26 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   `MATCH` errors *"unknown tokenizer: mozporter"*, and a
   `messagesText_content … c0body LIKE '%invoice%'` scan returned 234
   hits cleanly.
-- **Calendar store — schema confirmed** (`calendar-data/local.sqlite`,
-  command #5; classic `calStorageCalendar` backend, `+ deleted.sqlite`
-  sync tombstones). Unlike Gloda, it **is** WAL (`-wal` sibling) → reads
-  live concurrently with a running TB. Shape:
+- **Calendar store — schema confirmed, data story corrected** (probed
+  2026-07-14: schema battery via `immutable=1` with TB stopped; the
+  lock matrix re-verified with TB running). It's **three sibling
+  DBs** under `calendar-data/`, not one: `local.sqlite` holds only
+  **`storage`-type (local) calendars**; **`cache.sqlite`** is where
+  cached network calendars would land; `deleted.sqlite`
+  (`cal_deleted_items`) is sync tombstones. **On the probed box all
+  three hold zero events:** the one local calendar ("Home") is unused,
+  and every CalDAV calendar has **`cache.enabled=false`** in prefs.js →
+  TB keeps those events **in memory only — nothing on disk to read**.
+  So calendar tools are data-dependent: they need a used local calendar
+  or per-calendar "Offline Support" (cache.enabled) turned on (then
+  cache.sqlite presumably mirrors the local.sqlite schema — verify when
+  first seen). Locking matches Gloda, not the WAL hope: a plain
+  `-readonly` open fails **"database is locked (5)" while TB runs even
+  though the DB is WAL** (mozStorage opens with
+  `locking_mode=EXCLUSIVE`); `immutable=1` bypasses it fine. Version
+  anchor: **`cal_calendar_schema_version` = 23** (`user_version` is 0 —
+  unlike Gloda, gate on the table, not the pragma). Schema
+  (`local.sqlite`, classic `calStorageCalendar`):
   - **`cal_events`** — normalized columns, *not* opaque ICS: `cal_id`,
     `id` (event UID), `title`, `event_start` / `event_end` (INTEGER —
     likely PRTime µs, *verify*) with matching `event_start_tz` /
@@ -179,13 +195,18 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
     / `cal_attachments`** — the genuinely iCal-shaped parts stored as
     `icalString` fragments (RRULE, attendees, VALARM) — parse only if
     wanted (the `icalendar` gem).
-  - `cal_id` partitions multiple calendars (local + cached-CalDAV) in the
-    one DB; `cal_calendar_schema_version` is the version anchor.
+  - `cal_id` = the calendar's **registry UUID** (confirmed): prefs.js
+    `calendar.registry.<uuid>.{name,type,uri,cache.enabled}` maps it to
+    the human-readable name + `storage`/`caldav` type — name/type
+    resolution reads prefs.js, exactly as Q13 anticipated.
 - **Address book is SQLite, not Mork:** `abook.sqlite` + `abook-1/-2`
   (each with `-wal`) — modern schema; no legacy `.mab`.
 - **Most SQLite DBs run in WAL mode** (pervasive `-wal`/`-shm` siblings:
-  calendar `local.sqlite`, `abook*.sqlite`, …) — a read-only opener can
-  query *those* concurrently with a running Thunderbird (good for Q11).
+  calendar `local.sqlite`, `abook*.sqlite`, …) — but WAL does **not**
+  buy live readonly access: TB locks them anyway (probed 2026-07-14:
+  plain `-readonly` on the calendar DB → "database is locked (5)" while
+  TB runs; mozStorage opens with `locking_mode=EXCLUSIVE`, which shuts
+  out WAL readers too). `immutable=1` is the universal bypass.
   **Gloda is the exception:** `global-messages-db.sqlite` has **no**
   `-wal` sibling and a plain `sqlite3 -readonly` open **fails with
   "database is locked" while Thunderbird is running** (confirmed
@@ -409,13 +430,31 @@ Take these one at a time in later sessions.
    we'd have to extract them ourselves via `pikuri-extractors`. So the
    attachment answer is partly downstream of the backend choice.
 
-6. **Calendar read.** Largely *answered feasible* by the schema (above):
-   WAL → reads live; core event fields are normalized columns → a plain
-   `SELECT` on `cal_events`, no ICS parser for the common case
-   (`icalendar` gem only for `icalString` recurrence/attendee fragments
-   if we surface those). Residual opens: confirm the `event_start` time
-   encoding (PRTime µs?) + the `_tz` handling, and how `cal_id`
-   distinguishes local vs. cached-CalDAV calendars.
+6. **Calendar read.** *Schema feasible; on-disk data availability is
+   the real gate* (probe 2026-07-14). Core event fields are normalized
+   columns → a plain `SELECT` on `cal_events` (no ICS parser for the
+   common case; `icalendar` gem only for `icalString` fragments), and
+   reads ride Q11's snapshot path (the live-WAL-read idea is falsified
+   — see Q11 / the storage section).
+   - **Answered — `cal_id`:** it's the calendar's registry UUID;
+     prefs.js `calendar.registry.<uuid>.{name,type,uri,cache.enabled}`
+     resolves human name + `storage`(local)/`caldav` type.
+   - **New finding — the data gate:** `local.sqlite` holds only
+     local-type calendars (probed box: zero events), and non-cached
+     CalDAV calendars (`cache.enabled=false` — all five on the probed
+     box) keep events **in memory only, nothing on disk**. Cached ones
+     would land in the sibling `cache.sqlite` (0 bytes here). So the
+     calendar tools need an `available?`-style data probe: no on-disk
+     events → don't register them (or register with honest "enable
+     Offline Support in the calendar's properties in TB" guidance —
+     which of the two is a wiring decision for `bin/pikuri-thunderbird`).
+   - **Still pending (needs rows to inspect):** `event_start` encoding
+     (PRTime µs?), the `_tz` vocabulary, the all-day representation,
+     and whether `cache.sqlite` mirrors the `local.sqlite` schema.
+     Cheapest probe: create two test events in the local "Home"
+     calendar (one timed at a known time, one all-day), re-run the
+     battery on `local.sqlite`; optionally flip one CalDAV calendar to
+     Offline Support and inspect `cache.sqlite`.
 
 7. **Calendar event creation.** The schema makes the *hazard* concrete: a
    direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
@@ -564,8 +603,10 @@ Take these one at a time in later sessions.
     - The residual is honest: human-gated ≠ severed. Document as a
       smoke-alarm-grade improvement, not a firewall.
 
-11. **Concurrency with a running Thunderbird — DECIDED: settled-snapshot
-    copy for Gloda; live WAL reads for the calendar.** Headline
+11. **Concurrency with a running Thunderbird — DECIDED (amended
+    2026-07-14): settled-snapshot copies for BOTH Gloda and the
+    calendar DBs.** (The original "live WAL reads for the calendar" arm
+    is falsified — see the calendar bullet below.) Headline
     simplification: we **never run queries against the live Gloda** —
     the only live-file open is a short-lived `immutable=1` handle
     feeding a page-level copy (the backup API below), closed
@@ -592,8 +633,14 @@ Take these one at a time in later sessions.
       layout: writers *append new pages to the `-wal`* (redo, not undo),
       the main file changes only at reader-aware checkpoints, and each
       reader pins a read mark in `-shm` → genuine snapshot isolation on
-      a normal readonly open, nothing forfeited. The confirmed live
-      calendar reads were the mechanism working, not luck.
+      a normal readonly open, nothing forfeited. **But that theory is
+      moot in practice** (probed 2026-07-14): mozStorage opens its DBs
+      with `locking_mode=EXCLUSIVE`, which shuts out even WAL readers —
+      a plain `-readonly` open of the calendar DB fails "database is
+      locked (5)" while TB runs. (The earlier "confirmed live calendar
+      reads" was an inference from the WAL siblings, never an actual
+      live read — falsified.) `immutable=1` bypasses the lock here just
+      like on Gloda.
     - **Gloda snapshot mechanics — bracket the copy.** Read the change
       counter (header bytes 24–27) + check `-journal` absence → copy
       the whole DB → re-check both. Counter unchanged ∧ journal absent
@@ -658,17 +705,18 @@ Take these one at a time in later sessions.
       both bracket edges, passes the check while the copy read dirty
       bytes — vanishingly rare (a Gloda rollback inside ~0.2 s), and it
       mostly degrades into the loud class-A errors anyway.
-    - **Calendar footnotes:** (i) one-shot read transactions only — a
-      long-held WAL read txn pins an old read mark, blocking checkpoints
-      and ballooning the `-wal` (our one-shot SELECTs are naturally
-      fine; just never wrap searches in a long transaction); (ii) a
-      strictly-readonly open can fail when the `-shm` needs rebuilding
-      (TB not running after an unclean exit, `SQLITE_READONLY_RECOVERY`)
-      — we own the files, so fall back to a normal open that issues only
-      SELECTs, and log it; (iii) cross-query coherence is per-snapshot:
-      an event can change between `calendar_search` and `calendar_read`
-      — ordinary live-DB behavior, accepted (the Gloda side gets its
-      coherence *from* the file copy).
+    - **Calendar joins the snapshot path (the 2026-07-14 amendment):**
+      same backup-API copy into `:memory:`, same discard-and-retry
+      bracket — one mechanism for both stores. Two WAL-specific
+      wrinkles: (i) `immutable=1` ignores the `-wal`, so the snapshot
+      is **as-of-last-checkpoint** — un-checkpointed commits are
+      invisible (probed box: `-wal` was 0 bytes, so currently nothing
+      to miss; watch it in practice); (ii) a WAL DB's change counter
+      bumps only on **checkpoint**, not per commit, so the calendar's
+      bracket/staleness signal must pair the counter with the **`-wal`
+      file size + mtime**. Exact tuning deferred until the calendar
+      data story settles (see Q6 — on the probed box there's no on-disk
+      calendar data to read at all, so the mail path leads).
     - **Tuning probes (pending — sizing, no longer load-bearing):** does
       a persistent `-journal` sit beside Gloda while TB runs?
       (`locking_mode=EXCLUSIVE` can retain it between transactions,
