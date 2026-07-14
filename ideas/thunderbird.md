@@ -598,10 +598,13 @@ Take these one at a time in later sessions.
       dependency-free.
     - **(b) rebuild our own in-memory FTS5 index from Gloda's decoded
       text** — real Porter stemming + `bm25()` ranking + phrase queries,
-      **in-language with zero authored C** (FTS5 ships compiled into the
-      `sqlite3` gem's SQLite; only the FTS3 *tokenizer-registration* path
-      is gated, not FTS5). ~1 s rebuild per session (Gloda is fresh → no
-      daemon). Commits to the `sqlite3` gem.
+      **in-language with zero authored C**. *Empirically confirmed*
+      (2026-07, gem 2.9.5): FTS5 is compiled into the gem's SQLite and a
+      stemmed `MATCH` matched "invoice"→"invoices" out of the box.
+      ~1 s rebuild per session (Gloda is fresh → no daemon). Commits to
+      the `sqlite3` gem. (Both (a) and (b) read Gloda's *plain*
+      `messagesText_content` table — openable fine on the gem; only the
+      *virtual* `fts3` table is blocked, which neither uses.)
     - **(c) register the real `mozporter` tokenizer via a C loadable
       extension** — vendor Mozilla's `mailnews/extensions/fts3/src/fts3_porter.c`
       (Porter + Unicode accent/case folding + CJK bigramming), implement
@@ -610,8 +613,23 @@ Take these one at a time in later sessions.
       1, 0)` (off by default since SQLite 3.12) then
       `sqlite3_fts3_tokenizer(db, "mozporter", &module)`. Then `MATCH`
       against Gloda's *existing* index works, exact-parity, no rebuild.
-      Prior art: `node-sqlite3-mozporter`. **DECLINED for v1** (recorded,
-      not chosen — reasoning is load-bearing): (1) it's the project's
+      Prior art: `node-sqlite3-mozporter`. **DECLINED for v1** — and
+      **empirically a non-starter on the default stack** (probed 2026-07,
+      `sqlite3` gem 2.9.5 / SQLite 3.53.2, the precompiled
+      `x86_64-linux-gnu` build a `gem install sqlite3` yields): that
+      SQLite is compiled with **FTS5 only — no FTS3/FTS4/FTS3_TOKENIZER**.
+      So `fts3_tokenizer()` doesn't even exist (kills the (c') alias
+      outright), and — decisively — there's **no FTS3 module for a
+      mozporter `.so` to register into**: Gloda's `messagesText` is an
+      `fts3` virtual table, so the gem can't *open* it at all (`no such
+      module: fts3`), tokenizer or not. (Extension loading *is* enabled,
+      so the `.so` could load — but into nothing.) (c) would thus require
+      shipping a *bespoke SQLite build with FTS3 compiled in*, not merely
+      a loadable tokenizer — far heavier than the research implied. Note
+      the divergence: the system `sqlite3` **CLI** *has* FTS3 (its error
+      was `unknown tokenizer: mozporter`), but the **gem** lacks it
+      entirely — two different SQLite builds. Beyond the empirics, the
+      ethos reasons still hold: (1) it's the project's
       *first* native/C code + a vendored Mozilla source + a per-platform
       `.so` build + comm-central drift-tracking, landing in the very gem
       that parses untrusted content — squarely against "pure Ruby, audit
