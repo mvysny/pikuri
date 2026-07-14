@@ -635,6 +635,13 @@ Take these one at a time in later sessions.
       *already-loaded* C tokenizer; (ii) the only SQL-reachable trick
       (build permitting) is aliasing the built-in `porter` as `mozporter`
       — porter-only (no accent-fold/CJK), needs the gated setter, fragile.
+      *Tested and dead* (2026-07, stock distro `libsqlite3` 3.46.1, the
+      build a distro `sqlite3` CLI links): `fts3_tokenizer('mozporter',
+      fts3_tokenizer('porter'))` → **`fts3tokenize disabled`**. The
+      function exists but is gated (`ENABLE_FTS3_TOKENIZER` off), and the
+      gate is C-only — un-flippable from any SQL statement or CLI flag.
+      So even the degraded CLI alias is closed on default builds; (c) is
+      empirically finished.
       And **FTS5 ≠ FTS3** (separate modules, on-disk formats, tokenizer
       APIs) — so having FTS5 gives no access to Gloda's fts3 index;
       option (b) builds a *fresh* FTS5 index over `messagesText_content`,
