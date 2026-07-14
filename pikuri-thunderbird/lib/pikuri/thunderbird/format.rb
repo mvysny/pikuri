@@ -49,7 +49,36 @@ module Pikuri
       end
       private_class_method :timed_label
 
-      # Parse a user/LLM-supplied date or datetime string to a {Time}.
+      # @return [Regexp] a bare +YYYY-MM-DD+ with no time component.
+      DATE_ONLY = /\A\d{4}-\d{2}-\d{2}\z/
+
+      # Inclusive *lower* bound for a date range. A bare date means the start
+      # of that day (local midnight) — the natural "on or after this date".
+      #
+      # @param str [String, nil]
+      # @return [Time, nil]
+      # @raise [ArgumentError] on an unparseable non-blank string.
+      def self.parse_after(str) = parse_time(str)
+
+      # Inclusive *upper* bound. A bare date means the *end* of that day
+      # (23:59:59 local), so "on or before 2026-07-15" includes everything
+      # that happens ON the 15th — and a same-day +after=before=<date>+
+      # window spans the whole day, not the single midnight instant. An
+      # explicit datetime (with a time component) is used verbatim.
+      #
+      # @param str [String, nil]
+      # @return [Time, nil]
+      # @raise [ArgumentError] on an unparseable non-blank string.
+      def self.parse_before(str)
+        t = parse_time(str)
+        return nil if t.nil?
+
+        str.to_s.strip.match?(DATE_ONLY) ? t + 86_399 : t
+      end
+
+      # Parse a user/LLM-supplied date or datetime string to a {Time}. Use
+      # {.parse_after}/{.parse_before} for range bounds — they give a bare
+      # date the right inclusive edge.
       #
       # @param str [String, nil]
       # @return [Time, nil] +nil+ when +str+ is blank.

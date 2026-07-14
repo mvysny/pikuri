@@ -175,5 +175,12 @@ Need a real populated install or future work; none blocks v1.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
   CalDAV calendar mail invites?** Import usually isn't an organize-action, so
   probably not — but unverified; the `attendees` param waits on this.
+- **Calendar date-filter timezone frame.** Bounds are compared in the
+  machine-local frame — correct for timed events everywhere and for all-day
+  events in UTC/eastern zones, but an all-day event (stored *floating*
+  UTC-midnight) can slip a local-frame day boundary in a far-*western* zone. A
+  fully correct fix needs per-event-type date extraction (all-day compared in
+  its floating frame, timed in local). Deferred; low harm, and the common
+  (eastern/UTC) case is right. See the comment in {Pikuri::Thunderbird::Calendar}.
 - **`.msf` (Mork), maildir, mbox fallback** — all deferred; build only when a
   Gloda-disabled or maildir host is a real user.

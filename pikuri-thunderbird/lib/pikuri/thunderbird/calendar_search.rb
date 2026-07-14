@@ -32,6 +32,7 @@ module Pikuri
 
         Usage:
         - Free-text query plus an optional date range.
+        - To list everything on a day or in a span (e.g. "tomorrow's meetings"), pass a broad or empty query with after/before; a single day is after=before=that date.
         - Multiple words must ALL appear in the event (across its title, description, and location) — so add words to narrow, remove words to widen.
         - Reads Thunderbird's on-disk calendar store — it never connects to any calendar server.
         - Only events cached to disk are visible. A CalDAV calendar keeps events in memory unless its "Offline Support" is enabled (right-click the calendar → Properties → Offline Support); if a search comes back empty but the calendar looks full, that setting is why.
@@ -60,7 +61,7 @@ module Pikuri
       # @return [String]
       def self.run_search(backend:, query:, after:, before:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
-        hits = backend.search(query:, limit:, after: Format.parse_time(after), before: Format.parse_time(before))
+        hits = backend.search(query:, limit:, after: Format.parse_after(after), before: Format.parse_before(before))
         return offline_or_no_match(backend, query) if hits.empty?
 
         header = "#{hits.size} event#{hits.size == 1 ? '' : 's'}:"
@@ -69,11 +70,15 @@ module Pikuri
         "Error: bad date filter (#{e.message})."
       end
 
-      # Distinguish "no events cached at all" (fixable) from "no match".
+      # Distinguish "no events cached at all" (fixable) from "no match". An
+      # empty query is a date-range listing, so its no-match line names the
+      # range rather than an empty query string.
       #
       # @return [String]
       def self.offline_or_no_match(backend, query)
-        backend.event_count.zero? ? OFFLINE_HINT : "No matching events found for #{query.inspect}."
+        return OFFLINE_HINT if backend.event_count.zero?
+
+        query.to_s.strip.empty? ? 'No events found in that date range.' : "No matching events found for #{query.inspect}."
       end
       private_class_method :offline_or_no_match
 

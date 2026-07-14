@@ -138,6 +138,14 @@ module Pikuri
           COND
           binds << word << word
         end
+        # Date bounds are compared in the machine-local frame (the caller
+        # parses a bare date to local midnight; parse_before extends it to
+        # end-of-day). Correct for timed events in any zone. Caveat: all-day
+        # events are stored as *floating* UTC-midnight, so in a far-*western*
+        # zone (local midnight is hours ahead of UTC) an all-day event on day
+        # D can fall just before a local-frame "day D" lower bound. Fine for
+        # UTC/eastern zones; a fully correct fix needs per-event-type date
+        # extraction (deferred — see ideas/thunderbird.md open questions).
         if after
           clauses << 'e.event_start >= ?'
           binds << to_prtime(after)
