@@ -584,17 +584,50 @@ Take these one at a time in later sessions.
       (Q2), search-only + no-egress.
 
     **OPEN — sub-decision 1: the search-matching approach** (shapes
-    `thunderbird_mail_search`). No usable FTS (Gloda's `messagesText` is
-    locked behind the `mozporter` tokenizer a stock `sqlite3` can't load).
-    Two candidates:
+    `thunderbird_mail_search`). No *directly* usable FTS: Gloda's
+    `messagesText` is a real stemmed FTS3 index, but locked behind the
+    custom `mozporter` tokenizer, which a stock `sqlite3` can't resolve
+    (`MATCH` → "unknown tokenizer: mozporter"). Three candidates:
     - **(a) LIKE + structured filters + own recency ranking + agent
       iteration** — substring over Gloda's decoded columns, no stemming;
       structured filters (`from`/`to`/date) are exact and carry most real
       email lookups; agent reformulates for topic search (the pikuri-os
-      `localsearch` philosophy). Lean, no new index.
-    - **(b) build our own in-memory FTS5 index from Gloda's decoded text**
-      — real stemming + `bm25()` ranking + phrase queries; ~1 s build per
-      session (Gloda is fresh, so no daemon), but adds the FTS5 build step
-      and leans harder on the `sqlite3` gem.
-    Leaning (a) for v1; (b) is the upgrade if LIKE proves weak. Deferred
-    pending the user's research material — this is the next thing to settle.
+      `localsearch` "iteration ≥ stemming" philosophy). Leanest — can even
+      **shed the `sqlite3` gem** by shelling out to the `sqlite3` CLI via
+      the `Subprocess` chokepoint (the Q2 follow-on), keeping v1
+      dependency-free.
+    - **(b) rebuild our own in-memory FTS5 index from Gloda's decoded
+      text** — real Porter stemming + `bm25()` ranking + phrase queries,
+      **in-language with zero authored C** (FTS5 ships compiled into the
+      `sqlite3` gem's SQLite; only the FTS3 *tokenizer-registration* path
+      is gated, not FTS5). ~1 s rebuild per session (Gloda is fresh → no
+      daemon). Commits to the `sqlite3` gem.
+    - **(c) register the real `mozporter` tokenizer via a C loadable
+      extension** — vendor Mozilla's `mailnews/extensions/fts3/src/fts3_porter.c`
+      (Porter + Unicode accent/case folding + CJK bigramming), implement
+      the `sqlite3_tokenizer_module` vtable, and in the extension's init
+      call `sqlite3_db_config(db, SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER,
+      1, 0)` (off by default since SQLite 3.12) then
+      `sqlite3_fts3_tokenizer(db, "mozporter", &module)`. Then `MATCH`
+      against Gloda's *existing* index works, exact-parity, no rebuild.
+      Prior art: `node-sqlite3-mozporter`. **DECLINED for v1** (recorded,
+      not chosen — reasoning is load-bearing): (1) it's the project's
+      *first* native/C code + a vendored Mozilla source + a per-platform
+      `.so` build + comm-central drift-tracking, landing in the very gem
+      that parses untrusted content — squarely against "pure Ruby, audit
+      in an evening"; (2) its unique wins (reuse the prebuilt index; exact
+      CJK/folding parity) only pay off at *scale* or heavy-CJK, and the
+      measured mailbox is 8k msgs / 700 MB where LIKE (~0.5 s) and FTS5
+      rebuild (~1 s) are both fine; (3) **(b) already captures ~95%** of
+      its quality (stemming + bm25) in-language, so (c)'s marginal gain
+      doesn't justify its cost. The "cheap hack" of SQL-aliasing built-in
+      `porter` as `mozporter` is a mirage here — it needs the *same*
+      `SQLITE_ENABLE_FTS3_TOKENIZER` gate the stock gem doesn't enable,
+      and porter-only diverges from how the index was built. Keep (c) as
+      the documented exact-parity / huge-mailbox option, and a candidate
+      `available?`-probed upgrade *if* a prebuilt `libmozporter.so` ever
+      exists (mirrors the Gloda→mbox fallback).
+    **Live choice = (a) vs (b).** Leaning **(a)** for the lean v1
+    (dependency-free, shell-out), **(b)** as the first upgrade when
+    stemming/ranking is wanted. Final pick pending the user's remaining
+    research material — the one thing left to settle.
