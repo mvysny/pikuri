@@ -847,13 +847,49 @@ Take these one at a time in later sessions.
     out-of-band browser check — the human's secondary channel is the last
     line, and the only one that reaches these.
 
-    Open sub-questions this raises:
-    - Does compose pre-fill the body at all? Purest authorship = hand off
-      an empty/subject-only draft the human writes; convenience =
-      pre-filled draft the human edits (rubber-stamp risk). The reasoning
-      above *leans against* a full pre-fill (it spends email's ceremony
-      premium), but the exact middle ground — subject-only? a bullet
-      skeleton the human prose-ifies? — is the open knife-edge decision.
+    **Body pre-fill — DECIDED (2026-07-14): full, useful body.** The
+    knife-edge narrows to the *body* alone (recipient handling is decided
+    above; subject is a short, first-read *label* with near-zero exfil
+    value → safe to pre-fill). The resolution reframes where "authorship"
+    binds: **the human is the *author of the destination* and the *editor
+    of the prose*.** The forced-authorship seat applies to the
+    **recipient + intent-to-send**, not the body text — which is the right
+    division: content-drafting is the agent's job (the feature's whole
+    point), destination-authorship is the human's (the attack surface).
+    - **Why full pre-fill is safe *given the recipient guard*.** Q10's own
+      thesis is "the recipient is the attack" — exfil needs an
+      attacker-controlled destination. So a leaked *body* goes to the
+      **legitimately intended** recipient (leaking to the person you meant
+      to write to is not useful attacker-exfil), making the body a **weak
+      channel by construction**. The "ceremony premium" a full body would
+      supposedly spend is spent on the low-value field; the premium that
+      matters (recipient scrutiny) is defended *independently* (mechanical
+      guard + omit-on-flag = forced authorship of exactly that field) and
+      isn't a function of how polished the body is. The common case — a
+      **reply**, recipient inherited from the thread, correct-by-
+      construction — barely engages recipient scrutiny at all.
+    - **This refines the note's earlier lean** ("leans against a full
+      pre-fill"): that lean was right that ceremony matters, wrong to
+      defend it by degrading the *body*. Ceremony is preserved by
+      defending the *recipient*, which we already do.
+    - **Rejected — bullet skeleton (human prose-ifies).** Theater: nothing
+      enforces the prose-ification (a lazy human pastes the bullets), it
+      does **not** close body-exfil (a laundered secret rides a bullet
+      fine), and it yields a *worse* draft. Its only claimed benefit —
+      "engaged author mindset" — is unenforceable and evidence-thin.
+    - **Rejected — subject-only / empty body.** Guts the feature: an
+      assistant that hands off a blank compose window is a mail-client
+      launcher, not a drafter.
+    - **Security budget stays on** (i) recipient handling (above),
+      (ii) the mandatory TB Send-click ceremony (Q9, unbypassable), and
+      (iii) a **directed pre-send checklist observation** the compose tool
+      returns on hand-off — cheap, and it re-instills the *audit* mindset
+      at the right moment: *"Draft opened in Thunderbird. Before Send:
+      (i) confirm the recipient is who you intend; (ii) the body contains
+      nothing you wouldn't want them specifically to see."* Converts
+      "looks good, send" into a directed check without crippling the draft.
+
+    Remaining open sub-questions:
     - Is CLI-hand-off + search-only-first enough for v1, or do we also
       need the (still-unbuilt) taint/detector machinery to gate a
       combined-legs wiring? When compose *is* wired, the trifecta
@@ -1041,7 +1077,7 @@ Take these one at a time in later sessions.
     |---|---|---|---|---|
     | `thunderbird_mail_search` | ✅ | inbound | `query` (free text over body/subject/author/recipients/attachment-names) + optional `from`, `to`, `subject`, `after`, `before`, `folder` | ranked hits: `message_id`, date, from, to, subject, folder, **snippet**; deduped by `Message-ID` |
     | `thunderbird_mail_read` | ✅ | inbound | `message_id` | full decoded body (Gloda `c0body`, already HTML-stripped plain text) + headers + attachment names |
-    | `thunderbird_mail_compose` | ⛔ v2 | **egress (human-gated)** | `to`, `cc`, `bcc`, `subject`, `body` | hands off to `thunderbird -compose`; Q10 recipient guard applied; human reviews + sends |
+    | `thunderbird_mail_compose` | ⛔ v2 | **egress (human-gated)** | `to`, `cc`, `bcc`, `subject`, `body` | hands off via a percent-encoded `mailto:` URI (Q8); full useful body pre-filled (Q10); Q10 recipient guard applied; human reviews + sends |
     | `thunderbird_calendar_search` | ✅ | inbound | `query` (title/description/location) + `after`, `before` | events: `event_id`, title, start, end, location |
     | `thunderbird_calendar_read` | ✅ | inbound | `event_id` | full event: description, location, attendees, recurrence (from the `icalString` side-tables) |
     | `thunderbird_calendar_create` | ⛔ v2 | **egress (human-gated)** | title, start, end, location, description, attendees | hands off `.ics` for TB import; human confirms |
