@@ -628,7 +628,17 @@ Take these one at a time in later sessions.
       a loadable tokenizer — far heavier than the research implied. Note
       the divergence: the system `sqlite3` **CLI** *has* FTS3 (its error
       was `unknown tokenizer: mozporter`), but the **gem** lacks it
-      entirely — two different SQLite builds. Beyond the empirics, the
+      entirely — two different SQLite builds. Two re-litigation guards:
+      (i) `sqlite3_db_config(SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER)` does
+      *not* rescue it — it can't add a missing module, isn't callable from
+      SQL/CLI (C-only), and even unlocked only lets SQL point a name at an
+      *already-loaded* C tokenizer; (ii) the only SQL-reachable trick
+      (build permitting) is aliasing the built-in `porter` as `mozporter`
+      — porter-only (no accent-fold/CJK), needs the gated setter, fragile.
+      And **FTS5 ≠ FTS3** (separate modules, on-disk formats, tokenizer
+      APIs) — so having FTS5 gives no access to Gloda's fts3 index;
+      option (b) builds a *fresh* FTS5 index over `messagesText_content`,
+      it does not reuse Gloda's. Beyond the empirics, the
       ethos reasons still hold: (1) it's the project's
       *first* native/C code + a vendored Mozilla source + a per-platform
       `.so` build + comm-central drift-tracking, landing in the very gem
