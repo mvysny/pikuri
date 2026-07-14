@@ -221,6 +221,50 @@ wishlist in [`bash-confirmer.md`](bash-confirmer.md)
 §"Permission-model granularity" — sticky rules key naturally on
 structured fields, badly on raw strings.
 
+## The barrier is not uniform — its strength varies by action type
+
+A human-in-the-loop gate is only as strong as the human's attention and
+comprehension at the moment they approve — and those are **not constant
+across actions.** Three factors set where a given confirmer sits on a
+weak→strong spectrum, and they compound:
+
+- **Frequency (fatigue).** The rarer the prompt, the more attention each
+  gets. Bash fires dozens of times a task → the forty-first is
+  rubber-stamped (the whole premise of
+  [`bash-confirmer.md`](bash-confirmer.md)). A once-a-session action gets
+  real scrutiny.
+- **Legibility.** The gate is only as strong as the human's ability to
+  *understand what they're approving*. Natural-language actions
+  (an email's recipient/subject/body) are fully legible; a bash pipeline
+  is often opaque, so even an un-fatigued approval is weak — the human
+  can't occupy the author seat competently for something they can't read.
+- **Cultural weight / irrevocability.** Some actions carry a built-in
+  ceremony. Sending email is weighty and unrecallable, so people re-read
+  meticulously; a `web_search` is perceived as read-only and waved
+  through ("fan out, get more results").
+
+So the confirmers this file collects do **not** all buy the same safety.
+Rough ranking, weakest to strongest: **bash** (frequent + opaque) <
+**`fetch`/`web_search`** (frequent-ish, but perceived harmless — the
+destination-control problem is *because* the human won't scrutinize a
+search) < **email compose** (rare + fully legible + ceremonial). The
+compose gate is the strongest human barrier we have — which is partly
+*why* the Thunderbird design leans on it (see
+[`thunderbird.md`](thunderbird.md) Q10).
+
+**The sharp caveat, so this isn't oversold:** ceremony is a
+*quality-assurance* mindset, not a *security-audit* one. People re-read an
+email to make it **good** (right recipient, no typos, right tone), not to
+detect exfiltration. That catches a blatantly-wrong recipient
+(`to=attacker@evil.com`) and gross gibberish, but **not** secrets
+laundered into plausible prose, nor a subtle channel (BCC, Reply-To, a
+look-alike domain). The barrier is strong on the **recipient** and
+**gross** content, soft on **subtle body-exfil**. And the corollary that
+bites the forced-authorship contract below: **pre-filling a polished draft
+erodes the very ceremony that makes email strong** — a finished draft
+flips the human from author to editor and invites "looks good, send." So
+the strength premium is *conditional on not fully pre-filling*.
+
 ## Open (cross-cutting)
 
 - **Where confirmers live.** *Partly answered by the built gate.* The

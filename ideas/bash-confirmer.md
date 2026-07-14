@@ -51,6 +51,16 @@ concern"): a user who has clicked "yes" forty times this session has
 stopped reading, so the injected forty-first prompt gets rubber-stamped.
 The allowlist's whole job is to make prompts **rare and meaningful**.
 
+Bash sits at the **weak end** of the confirmer-strength spectrum
+([`more-confirmers.md`](more-confirmers.md) §"The barrier is not
+uniform") on *two* compounding axes at once: it's both **high-frequency**
+(the fatigue above) *and* **low-legibility** (a human often can't tell
+what a pipeline does), so even an un-fatigued bash approval is a weaker
+barrier than a rare, fully-legible one like email compose. That double
+weakness is exactly why bash needs the fatigue-cutting machinery this note
+collects, where a self-evident action like sending an email leans on the
+human gate directly.
+
 `ReadOnlyCommandApprover` handles fatigue for commands it can *prove*
 read-only, and it keeps absorbing more cases (the `journalctl` example
 the OS-helper note once used for "session grants" is now stale — it

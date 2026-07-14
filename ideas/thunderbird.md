@@ -365,14 +365,86 @@ Take these one at a time in later sessions.
    Decide whether this capability survives at all, or collapses into #4
    (compose hand-off, user sends).
 
-10. **Security / trifecta posture.** Email bodies + attachments are
-    untrusted, attacker-authorable content — reading them ingests
-    injection into context; composing/sending and event-creation are
-    egress/action legs. How does this design break the trifecta (removal
-    of egress? quarantined reader sub-agent? author-not-approver
-    confirmer on compose?), and what must a wiring guarantee before it's
-    safe? This gates whether egress-side capabilities (#3–#5 of the task)
-    can ship on an agent that also has web/other egress.
+10. **Security / trifecta posture.** Email is the textbook lethal
+    trifecta (see [`trifecta-detector.md`](trifecta-detector.md)). Map
+    the three legs onto this agent:
+    - **Private (leg 1):** the mailbox + calendar — inherently yes.
+    - **Untrusted (leg 2):** email bodies + attachments are
+      attacker-authorable — inherently yes. *Attenuation you flagged:*
+      **skip the Spam/Junk folder** — the densest attacker-controlled
+      subset (unsolicited mail from arbitrary senders). Real defense in
+      depth, but it **attenuates, doesn't sever** leg 2: a *targeted*
+      injection lands in the Inbox (a reply, a forward, a newsletter, a
+      calendar invite), not in Spam. Record it honestly as a mitigation,
+      never sold as a boundary. (Mechanically it needs per-account
+      special-folder identity — the Junk folder — tying into Q4/Q13.)
+    - **Egress (leg 3):** search + read are **inbound-only** (no egress);
+      only **compose** (send) and **create-event** (invites / CalDAV
+      sync) are egress. Note create-event *is* egress when the event has
+      attendees (TB mails invites) or lands on a synced CalDAV calendar.
+
+    **v1 = the decided posture: search-only + no-egress** (Q2's demo).
+    Legs 1+2 present, leg 3 absent → trifecta broken by construction,
+    the *exact* model as `bin/pikuri-corpus` (vectordb) and
+    `bin/pikuri-memory`. Cleanly shippable now, no new machinery.
+
+    **Adding egress later — your second insight: human-gated by
+    construction.** Never write the mbox / calendar DB ourselves; every
+    mutation is handed to **Thunderbird's own CLI** (`-compose` window;
+    `.ics` import) where TB opens a window and **the human reviews the
+    recipient + body and clicks Send/Save**. This converts egress from
+    *agent-automatic* to *human-action-required* — the agent alone cannot
+    exfiltrate. It's precisely the shipped `pikuri-os` posture (network
+    severed for the agent; the one egress path — the `RESEARCHER` task —
+    is human-confirmed and *authored*, not rubber-stamped; see the
+    `bin/pikuri-os-assistant` wiring and
+    [`private-context-taint.md`](private-context-taint.md) §"the human is
+    the only clean post-taint egress").
+
+    **Why the compose gate is a *stronger* human barrier than bash /
+    web-search** (the full principle now lives in
+    [`more-confirmers.md`](more-confirmers.md) §"The barrier is not
+    uniform"). Confirmer strength varies by action, on three compounding
+    axes, and email is at the strong end of all three: **rare** (few mails
+    sent → no fatigue, unlike bash's 40-a-session), **fully legible**
+    (natural-language recipient/subject/body the human actually
+    understands, unlike an opaque pipeline), and **ceremonial /
+    irrevocable** (sending is weighty and unrecallable, so people re-read
+    meticulously — whereas `web_search` reads as harmless and gets waved
+    through). So leaning on the compose gate is not a cop-out; it's the
+    strongest human barrier available.
+
+    **The knife-edge that keeps this open, not closed** (from
+    [`more-confirmers.md`](more-confirmers.md) /
+    [`assistant.md`](assistant.md) §"forced-authorship handoff"): the
+    strength above holds only if the human **authors**, not
+    **rubber-stamps** — and it comes with a sharp caveat. Ceremony is a
+    *quality-assurance* mindset (make the mail **good**), not a
+    *security-audit* one (detect exfil): a meticulous re-read catches a
+    blatantly-wrong recipient (`to=attacker@evil.com`) and gross gibberish,
+    but **not** secrets laundered into plausible prose, nor a subtle
+    channel (BCC, Reply-To, look-alike domain). So the barrier is strong on
+    the **recipient** + **gross** content, soft on **subtle body-exfil** —
+    and per private-context-taint's fetch analysis the **recipient is the
+    attack**, which the ceremony guards well. The corollary that resolves
+    the pre-fill question below: **a fully pre-filled polished draft erodes
+    the ceremony** (flips author→editor, invites "looks good, send"), so
+    the strength premium is *conditional on not fully pre-filling*. Open
+    sub-questions this raises:
+    - Does compose pre-fill the body at all? Purest authorship = hand off
+      an empty/subject-only draft the human writes; convenience =
+      pre-filled draft the human edits (rubber-stamp risk). The reasoning
+      above *leans against* a full pre-fill (it spends email's ceremony
+      premium), but the exact middle ground — subject-only? a bullet
+      skeleton the human prose-ifies? — is the open knife-edge decision.
+    - Is CLI-hand-off + search-only-first enough for v1, or do we also
+      need the (still-unbuilt) taint/detector machinery to gate a
+      combined-legs wiring? When compose *is* wired, the trifecta
+      detector should tag compose/create-event `:egress` and
+      mail-read `:untrusted`+`:private` — the agent would then trip the
+      all-three warning, correctly.
+    - The residual is honest: human-gated ≠ severed. Document as a
+      smoke-alarm-grade improvement, not a firewall.
 
 11. **Concurrency with a running Thunderbird.** Read-only/immutable
     SQLite opens, mbox read-while-locked safety, and what happens if
