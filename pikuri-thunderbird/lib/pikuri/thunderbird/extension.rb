@@ -36,13 +36,14 @@ module Pikuri
       # @param profile_dir [String, nil] explicit Thunderbird profile
       #   directory; +nil+ auto-discovers (snap then apt root).
       # @param cache_dir [String, nil] base dir for the snapshot copies;
-      #   defaults to +$XDG_CACHE_HOME/pikuri/thunderbird+ (or
-      #   +~/.cache/pikuri/thunderbird+). Mail and calendar snapshots live in
-      #   +mail/+ and +calendar/+ subdirs.
+      #   +nil+ mints a fresh per-process {Pikuri::Paths.new_temp} (reaped at
+      #   exit), so two concurrent pikuri-thunderbird processes never share — and
+      #   overwrite — one snapshot path. Mail and calendar snapshots live in
+      #   +mail/+ and +calendar/+ subdirs of it.
       # @return [Extension]
       def initialize(profile_dir: nil, cache_dir: nil)
         @profile_dir = profile_dir
-        @cache_base = cache_dir || default_cache_base
+        @cache_base = cache_dir || Paths.new_temp.to_s
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -82,13 +83,6 @@ module Pikuri
         c.add_tool CalendarSearch.new(backend: calendar)
         c.add_tool CalendarRead.new(backend: calendar)
         c.on_close { calendar.close }
-      end
-
-      # @return [String]
-      def default_cache_base
-        base = ENV['XDG_CACHE_HOME']
-        base = File.expand_path('~/.cache') if base.nil? || base.empty?
-        File.join(base, 'pikuri', 'thunderbird')
       end
     end
   end

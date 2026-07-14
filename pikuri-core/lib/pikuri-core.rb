@@ -131,4 +131,9 @@ module Pikuri
   )
   Loader.setup
   Loader.eager_load
+
+  # Reap +~/.cache/pikuri/temp-*+ scratch left by processes killed before their
+  # {Pikuri::Finalizers} reap could fire. Best-effort, once per process at the
+  # earliest load point (every gem requires pikuri-core). See {Paths.new_temp}.
+  Paths.sweep_stale_temps!
 end

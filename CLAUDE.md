@@ -273,13 +273,13 @@ yardoc. CLAUDE.md only records the invariant.
   unregisters so an explicitly-closed object isn't pinned until exit.
   `Subprocess` registers at *load* time, so in the LIFO sweep it runs
   LAST — the SIGTERM-the-strays reaper after every graceful close.
-  Even fire-and-forget disk cleanup routes here (the workspace's
-  ephemeral-umbrella removal, via the block form of `.register`).
+  Even fire-and-forget disk cleanup routes here (per-process temp
+  scratch removal, via the block form of `.register`).
   Grep-enforceable: `grep -rn 'at_exit {' pikuri-*/lib/` should only
   hit `pikuri-core/lib/pikuri/finalizers.rb` (the registry's own
   hook). See {Pikuri::Finalizers}, {Pikuri::Agent},
   {Pikuri::Agent::Configurator} (the `on_close_sink`), and
-  {Pikuri::Workspace::Filesystem.mint_internal_temp}.
+  {Pikuri::Paths.new_temp}.
 - **Capability seam (ExtensionContext).** A live `Agent` reference
   grants read access only — no `listeners` / `chat` readers, no
   emit method, no post-construction `on_close`. Everything that
@@ -756,6 +756,19 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   these instead of `puts` / `warn` / `$stderr.puts` for log
   lines. Listener-driven rendering of the LLM stream stays on
   stdout via `Terminal` — that's not logging.
+- **Cache & temp paths go through `Paths`.** Never read
+  `ENV['XDG_CACHE_HOME']` or hardcode `~/.cache` in a gem — route
+  through `Pikuri::Paths`, or the concept stays invisible and the next
+  writer reinvents a fixed shared path (worked example of exactly that:
+  the pre-fix `pikuri-thunderbird`). `Paths.cache` is shared across all
+  pikuri processes and persistent (URL cache, mem0 / Qdrant / Chroma
+  data); `Paths.new_temp` is a fresh per-process scratch dir, reaped at
+  exit and stale-swept at core load — use it for anything two concurrent
+  processes must not share (worked example: a Thunderbird SQLite
+  snapshot copy). Reaching for `cache` + a fixed subdir is how
+  concurrent processes clobber each other. Grep-enforceable:
+  `grep -rn "ENV\['XDG_CACHE_HOME'\]" pikuri-*/lib/` should hit only
+  `pikuri-core/lib/pikuri/paths.rb`. See {Pikuri::Paths.new_temp}.
 - **Errors are loud.** On unexpected internal state, raise with
   the offending data included. Tools split this in two: failures
   the LLM can react to (bad arguments, HTTP 4xx/5xx, network

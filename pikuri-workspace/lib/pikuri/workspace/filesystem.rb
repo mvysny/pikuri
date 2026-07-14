@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'pathname'
-require 'tmpdir'
 require 'fileutils'
 
 module Pikuri
@@ -29,16 +28,14 @@ module Pikuri
     #
     # == Session umbrella ({#internal_temp})
     #
-    # Every workspace owns a per-process umbrella dir under {Paths::cache},
-    # minted lazily (workspaces that never touch it pay nothing) and removed at
-    # exit via {Pikuri::Finalizers}. Everything ephemeral lives inside it — the
-    # {#temp} playground, the Bubblewrap sandbox's per-toolchain overlay state —
-    # so one +remove_entry+ cleans the lot. It lives under +~/.cache/pikuri+,
-    # NOT +/tmp+: the sandbox binds {#temp} at +/tmp+ inside, and an umbrella
-    # already under +/tmp+ would bind on top of itself.
-    # {.sweep_stale_internal_temps!} at gem load reaps umbrellas older than
-    # {INTERNAL_TEMP_STALE_SECONDS} (a net for sessions killed before the
-    # Finalizers sweep), leaving recent ones for concurrent sessions.
+    # Every workspace owns a per-process umbrella dir, minted lazily (workspaces
+    # that never touch it pay nothing) as a {Pikuri::Paths.new_temp} — so it
+    # lands under +~/.cache/pikuri+ (NOT +/tmp+: the sandbox binds {#temp} at
+    # +/tmp+ inside, and an umbrella already there would bind on top of itself),
+    # is removed at exit via {Pikuri::Finalizers}, and is stale-swept by
+    # {Pikuri::Paths.sweep_stale_temps!} at core load. Everything ephemeral lives
+    # inside it — the {#temp} playground, the Bubblewrap sandbox's per-toolchain
+    # overlay state — so one +remove_entry+ cleans the lot.
     #
     # == Optional temp playground / /tmp alias
     #
@@ -90,12 +87,6 @@ module Pikuri
       # tool layer (tools rescue it into +"Error: ..."+ observations). Also
       # raised at construction for a denied project root.
       class Error < StandardError; end
-
-      # Umbrella dirs older than this are reaped by
-      # {.sweep_stale_internal_temps!} at gem load — generous enough not to
-      # disturb a long-lived session in another shell, tight enough that a
-      # process killed last week doesn't leak forever.
-      INTERNAL_TEMP_STALE_SECONDS = 7 * 24 * 60 * 60
 
       # System-root project_roots the constructor refuses (exact-match, not
       # prefix — +/home/user/project+ passes; +/home/user+ is caught by the
@@ -167,47 +158,15 @@ module Pikuri
         @env ||= (@env_override || compute_git_identity_env).freeze
       end
 
-      # Per-workspace ephemeral umbrella under {Paths::cache}, minted lazily and
-      # registered with {Pikuri::Finalizers} for removal at exit — so anything
-      # placed inside (the playground, Bubblewrap overlay state) is wiped
-      # together. Put workspace-owned ephemeral state here, not in a sibling.
+      # Per-workspace ephemeral umbrella, minted lazily as a fresh
+      # {Pikuri::Paths.new_temp} (reaped at exit, stale-swept at core load) — so
+      # anything placed inside (the playground, Bubblewrap overlay state) is
+      # wiped together. Put workspace-owned ephemeral state here, not in a
+      # sibling.
       #
       # @return [Pathname]
       def internal_temp
-        @internal_temp ||= Filesystem.mint_internal_temp
-      end
-
-      # @api private — minting helper shared with {AllowAll}. Registers umbrella
-      # removal with {Pikuri::Finalizers} (block form — a dir to wipe, not a
-      # closeable) rather than its own +at_exit+; the +exist?+ guard makes
-      # removal a no-op if the dir is already gone.
-      def self.mint_internal_temp
-        FileUtils.mkdir_p(Paths.cache)
-        path = Pathname.new(Dir.mktmpdir('workspace-', Paths.cache)).realpath
-        Pikuri::Finalizers.register { FileUtils.remove_entry(path.to_s) if path.exist? }
-        path
-      end
-
-      # Reap +workspace-*+ umbrellas older than {INTERNAL_TEMP_STALE_SECONDS}.
-      # Called once at gem load so each boot inherits a tidy {Paths::cache}.
-      # Failures are swallowed — best-effort; the {Pikuri::Finalizers} removal
-      # is the load-bearing path.
-      #
-      # @return [void]
-      def self.sweep_stale_internal_temps!
-        return unless File.directory?(Paths.cache)
-
-        cutoff = Time.now - INTERNAL_TEMP_STALE_SECONDS
-        Dir.children(Paths.cache).each do |entry|
-          next unless entry.start_with?('workspace-')
-          path = File.join(Paths.cache, entry)
-          next unless File.directory?(path)
-          next if File.mtime(path) > cutoff
-
-          FileUtils.remove_entry(path)
-        rescue StandardError
-          # best-effort sweep; never block the host on dead state
-        end
+        @internal_temp ||= Paths.new_temp
       end
 
       # Resolve a user path against the read-set (readable ∪ writable). Returned

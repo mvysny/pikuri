@@ -112,60 +112,15 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
     end
 
-    it 'sits under Paths.cache with the workspace- prefix' do
+    it 'sits under Paths.cache with the temp- prefix' do
       ws = described_class.new(project_root: root)
       cache_base = Pikuri::Paths.cache.realpath
       assert ws.internal_temp.to_s.start_with?(cache_base.to_s + File::SEPARATOR),
              "expected #{ws.internal_temp} under #{cache_base}"
-      assert ws.internal_temp.basename.to_s.start_with?('workspace-'),
-             "expected basename to start with 'workspace-', got #{ws.internal_temp.basename}"
+      assert ws.internal_temp.basename.to_s.start_with?('temp-'),
+             "expected basename to start with 'temp-', got #{ws.internal_temp.basename}"
     ensure
       FileUtils.remove_entry(ws.internal_temp.to_s) if ws&.internal_temp&.exist?
-    end
-  end
-
-  describe '.sweep_stale_internal_temps!' do
-    it 'reaps a workspace-* dir whose mtime is older than the cutoff' do
-      cache_base = Pikuri::Paths.cache
-      FileUtils.mkdir_p(cache_base)
-      stale = cache_base + "workspace-stale-#{$$}-#{rand(1_000_000)}"
-      FileUtils.mkdir_p(stale)
-      ancient = Time.now - described_class::INTERNAL_TEMP_STALE_SECONDS - 60
-      FileUtils.touch(stale.to_s, mtime: ancient)
-
-      described_class.sweep_stale_internal_temps!
-
-      refute stale.exist?, "expected #{stale} to be swept"
-    ensure
-      FileUtils.remove_entry(stale.to_s) if stale&.exist?
-    end
-
-    it 'leaves a recent workspace-* dir alone' do
-      cache_base = Pikuri::Paths.cache
-      FileUtils.mkdir_p(cache_base)
-      fresh = cache_base + "workspace-fresh-#{$$}-#{rand(1_000_000)}"
-      FileUtils.mkdir_p(fresh)
-
-      described_class.sweep_stale_internal_temps!
-
-      assert fresh.exist?, "expected #{fresh} to survive the sweep"
-    ensure
-      FileUtils.remove_entry(fresh.to_s) if fresh&.exist?
-    end
-
-    it 'ignores non-workspace-* entries (does not touch unrelated dirs in Paths.cache)' do
-      cache_base = Pikuri::Paths.cache
-      FileUtils.mkdir_p(cache_base)
-      foreign = cache_base + "other-#{$$}-#{rand(1_000_000)}"
-      FileUtils.mkdir_p(foreign)
-      ancient = Time.now - described_class::INTERNAL_TEMP_STALE_SECONDS - 60
-      FileUtils.touch(foreign.to_s, mtime: ancient)
-
-      described_class.sweep_stale_internal_temps!
-
-      assert foreign.exist?, 'sweep must only touch workspace-* dirs'
-    ensure
-      FileUtils.remove_entry(foreign.to_s) if foreign&.exist?
     end
   end
 
