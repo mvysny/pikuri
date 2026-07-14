@@ -529,11 +529,13 @@ Take these one at a time in later sessions.
 12. **Freshness.** *Resolved.* Thunderbird keeps Gloda live (measured
     newest-message minutes old), so v1 inherits freshness for free — no
     `Watcher`-style daemon. The Q13 search decision (b) builds its own
-    FTS5 index, but **ephemerally** (in-memory, rebuilt per session from
-    fresh Gloda), so it's a disposable derivative that carries *no*
-    freshness obligation. Only genuinely re-opens if either the
-    family-B mbox-parse *fallback* or a future *persistent* FTS5 cache
-    (the deferred scale option) grows a maintained on-disk index.
+    FTS5 index, but **ephemerally** (in-memory), rebuilt on demand: a
+    per-search Gloda-DB-**mtime** check (*not* per-session — an agent
+    lives for days) rebuilds only after real mail activity. A disposable
+    derivative that carries *no* freshness obligation. Only genuinely
+    re-opens if either the family-B mbox-parse *fallback* or a future
+    *persistent* FTS5 cache (the deferred scale option) grows a maintained
+    on-disk index.
 
 13. **Tool surface & naming.** *Mostly settled — the shape below is
     decided; only the search-matching approach (sub-decision 1) is open.*
@@ -687,11 +689,23 @@ Take these one at a time in later sessions.
       `SELECT` its plain `messagesText_content` + `messages` join and
       `INSERT` into a `:memory:` FTS5. Writable index lives only in our
       RAM; Gloda is untouched.
-    - **Freshness stays free — Q12 does *not* reopen:** the index is a
-      *disposable derivative*, rebuilt at session start (lazily, on first
-      `thunderbird_mail_search`) from Gloda's current content. Thunderbird
-      keeps Gloda live, so session-start = fresh. No daemon, no staleness
-      logic, no cache invalidation, no disk footprint, nothing to reap.
+    - **Freshness — staleness checked per search, *not* per session.**
+      ("Session" in Pikuri = agent lifetime, which can be *days* — so
+      "rebuild per session" would go badly stale.) Instead: **lazy first
+      build**, then on **every search** compare the Gloda DB file **mtime**
+      against our last-built mtime (a single `File.stat`, no SQL) and
+      rebuild only if it moved. Cheap enough to run every search; since
+      Thunderbird polls mail ~every 15 min the check almost always says
+      "unchanged," and the ~1 s rebuild is paid only right after real mail
+      activity (occasionally mid-conversation — desirable, the agent then
+      sees new mail). Still no daemon, no disk footprint, nothing to reap.
+      **Signal choice matters:** use the **file mtime** (or the content
+      tuple `(max(id), count(*), sum(deleted))`), *not* `max(messages.date)`
+      — Gloda's `date` is the message's *Date header* (send time), so
+      `max(date)` silently misses **backdated/imported mail, deletions,
+      and moves**. The asymmetry that makes mtime right: a false positive
+      is one harmless spurious ~1 s rebuild; a false negative is stale
+      results — and mtime has ~none.
     - **Cost:** ~1 s for the measured 8k-msg / ~35 MB-text mailbox, paid
       once per session and only if mail is searched. *Scale caveat:* a
       100k+ msg mailbox makes the rebuild slow enough to reconsider a
