@@ -194,9 +194,13 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
     **PRTime µs — confirmed** on 5 414 real events: the µs reading
     gives a sane 2010→2031 histogram; ms/s interpretations go
     out-of-range NULL) with matching `event_start_tz` / `event_end_tz`
-    (**Olson IDs + `floating` + `UTC` + occasional junk like
-    `GMT+0300`** from other clients — treat as opaque, lenient
-    strings), `ical_status`, `priority`, `privacy`, `flags`,
+    — **tzid strings in several valid forms, none of it junk:**
+    Olson/IANA names (`Europe/Helsinki` dominant), the literal
+    **`floating`** (= no zone, wall-clock time — display in the
+    viewer's local zone; birthdays/all-day use it), **`UTC`**, and rare
+    **fixed-offset forms** (`GMT+0300` = EEST here, from a client that
+    lacked the Olson name — *not* corruption). All meaningful: resolve
+    them, don't discard. `ical_status`, `priority`, `privacy`, `flags`,
     `time_created`, `last_modified`, recurrence fields. So basic reads
     (title/when/status) are a plain `SELECT` — no ICS parser needed.
     `flags` decodes as calStorageCalendar's `CAL_ITEM_FLAG` bitfield
@@ -464,18 +468,44 @@ Take these one at a time in later sessions.
      CalDAV calendars (`cache.enabled=false` — all five on the probed
      box) keep events **in memory only, nothing on disk**. Cached ones
      would land in the sibling `cache.sqlite` (0 bytes here). So the
-     calendar tools need an `available?`-style data probe: no on-disk
-     events → don't register them (or register with honest "enable
-     Offline Support in the calendar's properties in TB" guidance —
-     which of the two is a wiring decision for `bin/pikuri-thunderbird`).
+     calendar tools need an `available?`-style data probe:
+     **DECIDED — actionable-empty over silent-absent:** the calendar
+     tools **register regardless**, and when the on-disk corpus is
+     empty (all calendars memory-only) they return a *helpful
+     observation* — "no calendar events are cached to disk; enable
+     Offline Support on each calendar (right-click → Properties →
+     Offline Support) so they can be searched" — rather than silently
+     returning nothing or not registering. The empty state is thus
+     self-explaining and self-fixing (the user's one-click fix,
+     confirmed to populate `cache.sqlite`). **Two layers:** the fact
+     also lives in the calendar tools' `description:` — so the LLM
+     knows it *upfront* and can guide the user proactively when they
+     merely ask "why can't you find my events?", before any empty
+     search fires; the runtime observation is the after-the-fact
+     backstop. (Description-level mechanics are fine per the tool-doc
+     convention — this is the tool's own doc, not a main prompt.)
+     Contrast the mail path:
+     it stays `available?`-gated on the Gloda file existing, because
+     mail has no equivalent one-click enable — absence there is
+     genuinely "not available," not "flip a setting."
    - **Answered (2026-07-14, real CalDAV data in cache.sqlite after
-     flipping Offline Support):** encoding = **PRTime µs**; `_tz` =
-     Olson IDs + `floating`/`UTC` + junk (lenient passthrough);
-     all-day = **`flags` bit 8**, never span heuristics;
-     `cache.sqlite` = exact schema mirror of `local.sqlite` (version
-     23). Details in the storage section. **Q6 is closed.** One
-     micro-verification deferred to implementation: whether an
-     all-day `event_end` follows iCal's exclusive-DTEND convention.
+     flipping Offline Support):** encoding = **PRTime µs** (strong: a
+     clean 2010→2031 histogram, ms/s overflow to NULL); `_tz` = valid
+     tzid strings in several forms (Olson / `floating` / `UTC` /
+     fixed-offset `GMT±HHMM`), all meaningful — see the storage
+     section; all-day = **`flags` bit 8** (correlates perfectly with
+     midnight-aligned whole-day spans in the probe), never span
+     heuristics; `cache.sqlite` = exact schema mirror of `local.sqlite`
+     (version 23).
+   - **Still to pin (a follow-up probe closes these):** (i) is
+     `event_start` the **UTC** instant (display via `_tz`) or already
+     local? — the year-histogram can't tell a few hours apart, and my
+     first ground-truth query silently failed (an int-vs-text SQLite
+     affinity bug: a number always sorts before `strftime`'s text, so
+     the predicate was always false — *not* a data finding); (ii)
+     all-day `event_end` = iCal exclusive DTEND (next-day midnight)?
+     (iii) null/empty `_tz` → need a default-zone fallback? Q6 is
+     otherwise closed.
 
 7. **Calendar event creation.** The schema makes the *hazard* concrete: a
    direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
@@ -629,13 +659,11 @@ Take these one at a time in later sessions.
     calendar DBs.** (The original "live WAL reads for the calendar" arm
     is falsified — see the calendar bullet below.) Headline
     simplification: we **never run queries against the live Gloda** —
-    the only live-file open is a short-lived `immutable=1` handle
-    feeding a page-level copy (the backup API below), closed
-    immediately; every actual query runs on the settled snapshot we
-    own. The `immutable=1` sharp edges (stale page cache, hot-journal
-    semantics) are neutralized by the copy-then-discard shape: fresh
-    handle per snapshot, and the bracket catches anything that slipped
-    through.
+    the only live-file touch is a bracketed `cp --reflink` copy (below),
+    and every actual query runs on the settled on-disk snapshot we own.
+    The `immutable=1` sharp edges are sidestepped entirely: the copy is
+    reflink/byte-level, not a SQL read, and the bracket catches any
+    torn copy.
     - **Why Gloda tears but the calendar doesn't.** In rollback-journal
       mode (Gloda's confirmed `journal_mode=delete`) a writer modifies
       the *main DB file in place, mid-transaction* — the `-journal`
@@ -671,38 +699,58 @@ Take these one at a time in later sessions.
       file's counter against it; differ → new snapshot → rebuild the
       FTS5. **One signal — the change counter — drives freshness *and*
       consistency.**
-    - **Snapshot medium — RAM via the backup API (probed 2026-07, gem
-      2.9.5, all confirmed).** `SQLite3::Backup` from a short-lived
-      `file:…?immutable=1` readonly handle into a `:memory:` DB —
-      **zero disk artifact**. Measured on a synthetic 94 MB / 16k-row
-      DB: **~0.2–0.3 s to RAM**, then **~0.6 s** external-content FTS5
-      build (see Q13) — the whole pipeline under ~1 s. The backup is a
-      page-level copy, no B-tree walking, so tearing risk and bracket
-      semantics are identical to a byte copy; one fresh immutable
-      handle per snapshot, closed immediately (no stale-cache
-      accretion). Dead ends + alternatives, recorded against
-      re-litigation:
-      - `Database#serialize`/`#deserialize` (the `sqlite3_deserialize`
-        zero-disk route) — **not exposed by gem 2.9.5** (probed:
-        methods absent). The backup API reaches the same destination.
-      - **"A file open for reading is frozen in time" is false** — a
-        regular-file fd is a live window (reads see later writes by
-        others). The freezing intuition comes from the
-        write-temp+`rename()` pattern, where the *writer* abandons the
-        old inode; SQLite writes in place, same inode, so an open fd
-        buys nothing.
-      - **Disk fallback for huge mailboxes** (RAM copy too big):
-        `cp --reflink=auto` via the `Subprocess` chokepoint into a
-        0700 same-fs dir (reflink can't cross filesystems, so not
-        tmpfs `/tmp`; e.g. `~/.cache/pikuri/…`), degrading to
-        `IO.copy_stream` + `Dir.mktmpdir` on non-COW filesystems.
-        Reflink (`FICLONE`) is atomic w.r.t. concurrent writes — but
-        **file-atomicity ≠ DB consistency**: a clone taken
-        mid-transaction faithfully photographs a torn DB, so the
+    - **Snapshot medium — DECIDED (amended 2026-07-14): an on-disk
+      snapshot file, NOT `:memory:`.** (Fable's original
+      `:memory:`-via-backup-API choice is reversed — see "why the flip"
+      below.) Mechanics: `cp --reflink=auto` the live DB (via the
+      `Subprocess` chokepoint) into a 0700 dir on the *same
+      filesystem* (reflink can't cross filesystems, so not tmpfs
+      `/tmp` — e.g. `~/.cache/pikuri/thunderbird/`), degrading to
+      `IO.copy_stream` on non-COW filesystems; build the FTS5 index
+      **into that on-disk copy** (it's our writable file); query it
+      with a **normal** connection, reopened per call. Finalizer-reaped
+      (the workspace ephemeral-umbrella pattern).
+      - **Why the flip — pinned RAM vs. a near-zero privacy gain.**
+        `:memory:` is **pinned, unreclaimable heap for the agent's
+        whole life**: the entire Gloda DB (~70–94 MB) + our FTS5
+        (~15 MB) for mail, ~62 MB for calendar → **~150 MB held while
+        the tool idles**, and a Pikuri session can run for days (Q12).
+        The privacy win Fable traded it for — "no decoded mailbox on
+        disk" — barely exists: the decoded mailbox is *already*
+        unencrypted on disk in the profile (that's exactly what Gloda +
+        `cache.sqlite` are), so a 0700 copy in `~/.cache` sits at the
+        **identical trust level**, not a new exposure class. The only
+        real delta is a second at-rest copy + crash-stranding, both
+        minor (re-derivable data; finalizer-reaped). An on-disk
+        snapshot queried normally uses the **OS page cache** —
+        reclaimable under pressure, cold-evicted while idle, re-warmed
+        on next search → **idle pinned RAM ≈ 0**. Same consistency, same
+        freshness mechanism; ~150 MB pinned → ~0.
+      - **reflink makes the copy near-free:** `FICLONE` is a
+        metadata-only extent share (~ms, ~0 extra disk until TB
+        rewrites blocks), and it's **atomic w.r.t. concurrent
+        writes** — but **file-atomicity ≠ DB consistency**: a clone
+        taken mid-transaction faithfully photographs a torn DB, so the
         bracket stays load-bearing on every medium.
-      - **Debug trade-off:** a RAM snapshot can't be poked with the
-        `sqlite3` CLI; escape hatch = `VACUUM INTO '<file>'` dumps the
-        RAM copy to disk when debugging.
+      - **`:memory:` survives as the documented zero-disk option**
+        (space-constrained / read-only FS, or a user who wants no
+        at-rest copy and can spend the RAM) — reached via
+        `SQLite3::Backup` (probed 2026-07, gem 2.9.5: backup a
+        `file:…?immutable=1` handle into `:memory:`, ~0.2–0.3 s for
+        94 MB, then ~0.6 s FTS5 build). Not the default; wire a knob
+        only when someone needs it.
+      - **Dead ends, recorded against re-litigation:**
+        `Database#serialize`/`#deserialize` (the `sqlite3_deserialize`
+        zero-disk route) is **not exposed by gem 2.9.5** (probed:
+        methods absent) — mooted anyway now that disk is the default.
+        And **"a file open for reading is frozen in time" is false** —
+        a regular-file fd is a live window (reads see others' later
+        writes); the freezing intuition is the write-temp+`rename()`
+        pattern where the *writer* abandons the old inode, but SQLite
+        writes in place (same inode), so an open fd buys nothing.
+      - **Debug bonus of disk:** the snapshot file is directly pokeable
+        with the `sqlite3` CLI (the RAM option was not — it needed a
+        `VACUUM INTO` dump).
     - **Why whole-file copy, not bracket-the-one-bulk-read:** follow-up
       queries (`thunderbird_mail_read`'s full `c0body` fetch by id, any
       later SELECT) would each hit the live file and each need its own
@@ -715,19 +763,21 @@ Take these one at a time in later sessions.
       still, retries exhaust → keep serving the previous snapshot
       (stale-but-consistent beats torn) + loud log; no previous snapshot
       → the tool returns an `Error:` observation.
-    - **Privacy caveat (→ the gem's DESIGN.md threat model):** a *disk*
-      snapshot is the entire decoded mailbox landing outside the TB
-      profile — `Dir.mktmpdir`/0700 + `Pikuri::Finalizers` reaping (the
-      workspace ephemeral-umbrella pattern), and a crash can strand it
-      until reboot. **Moot on the default RAM medium** (no file ever
-      exists); applies only if the disk fallback is used.
+    - **Privacy caveat (→ the gem's DESIGN.md threat model):** the disk
+      snapshot is the decoded mailbox/calendar landing outside the TB
+      profile — but at the *same trust level* as the source (both
+      user-owned, and the profile DBs are already unencrypted plaintext
+      at rest), so it's a second copy, not a new exposure class. 0700
+      dir + `Pikuri::Finalizers` reaping; a crash can strand it until
+      reboot (re-derivable data, low harm). The zero-disk `:memory:`
+      option removes even this second copy for anyone who wants it.
     - **Honest residual:** a write transaction that begins *and* fully
       rolls back inside the copy window, with its journal invisible at
       both bracket edges, passes the check while the copy read dirty
       bytes — vanishingly rare (a Gloda rollback inside ~0.2 s), and it
       mostly degrades into the loud class-A errors anyway.
     - **Calendar joins the snapshot path (the 2026-07-14 amendment):**
-      same backup-API copy into `:memory:`, same discard-and-retry
+      same on-disk reflink copy, same discard-and-retry
       bracket — one mechanism for both stores. Two WAL-specific
       wrinkles: (i) `immutable=1` ignores the `-wal`, so the snapshot
       is **as-of-last-checkpoint** — un-checkpointed commits are
@@ -751,14 +801,15 @@ Take these one at a time in later sessions.
 12. **Freshness.** *Resolved.* Thunderbird keeps Gloda live (measured
     newest-message minutes old), so v1 inherits freshness for free — no
     `Watcher`-style daemon. The Q13 search decision (b) builds its own
-    FTS5 index, but **ephemerally** (in-memory), rebuilt on demand: a
-    per-search check of Gloda's **file change counter** (DB header bytes
-    24–27; *not* per-session — an agent lives for days) rebuilds only
-    after real mail activity. A disposable
-    derivative that carries *no* freshness obligation. Only genuinely
-    re-opens if either the family-B mbox-parse *fallback* or a future
-    *persistent* FTS5 cache (the deferred scale option) grows a maintained
-    on-disk index.
+    FTS5 index, but **ephemerally** (a disposable index inside Q11's
+    snapshot, discarded with it), rebuilt on demand: a per-search check
+    of Gloda's **file change counter** (DB header bytes 24–27; *not*
+    per-session — an agent lives for days) rebuilds only after real mail
+    activity. A disposable derivative that carries *no* freshness
+    obligation. Only genuinely re-opens if either the family-B
+    mbox-parse *fallback* or a future *persistent* FTS5 cache (the
+    deferred scale option) grows a **maintained, long-lived** index that
+    outlives the snapshot.
 
 13. **Tool surface & naming.** *Mostly settled — the shape below is
     decided; only the search-matching approach (sub-decision 1) is open.*
@@ -824,8 +875,9 @@ Take these one at a time in later sessions.
       **shed the `sqlite3` gem** by shelling out to the `sqlite3` CLI via
       the `Subprocess` chokepoint (the Q2 follow-on), keeping v1
       dependency-free.
-    - **(b) rebuild our own in-memory FTS5 index from Gloda's decoded
-      text** — real Porter stemming + `bm25()` ranking + phrase queries,
+    - **(b) rebuild our own ephemeral FTS5 index from Gloda's decoded
+      text** (its medium — on-disk snapshot, not `:memory:` — settled
+      in Q11) — real Porter stemming + `bm25()` ranking + phrase queries,
       **in-language with zero authored C**. *Empirically confirmed*
       (2026-07, gem 2.9.5): FTS5 is compiled into the gem's SQLite and a
       stemmed `MATCH` matched "invoice"→"invoices" out of the box.
@@ -891,7 +943,9 @@ Take these one at a time in later sessions.
       the documented exact-parity / huge-mailbox option, and a candidate
       `available?`-probed upgrade *if* a prebuilt `libmozporter.so` ever
       exists (mirrors the Gloda→mbox fallback).
-    **DECIDED: (b) — in-memory FTS5 rebuilt per session.** Rationale
+    **DECIDED: (b) — our own ephemeral FTS5 index** (built into Q11's
+    on-disk snapshot, rebuilt when Gloda's change counter moves).
+    Rationale
     (recall-over-agent-discipline): (a) leans on the agent *remembering*
     to reformulate/multi-query, and — the deeper flaw — LIKE **can't
     rank**, so a generous (a) floods the agent with an *unordered* pile
@@ -906,17 +960,19 @@ Take these one at a time in later sessions.
     single-query floor.
 
     **Index mechanics (the "technical dragons," tamed):**
-    - **Where:** an *ephemeral in-memory* FTS5 index in pikuri's own
-      process — **never** in Thunderbird's DB. Built **inside Q11's RAM
-      snapshot itself** (probed 2026-07: the snapshot is our writable
+    - **Where:** an *ephemeral* FTS5 index in pikuri's own snapshot —
+      **never** in Thunderbird's DB. Built **inside Q11's on-disk
+      snapshot file** (probed 2026-07: the snapshot is our writable
       copy): `CREATE VIRTUAL TABLE … USING fts5(…,
       content=messagesText_content, …)` + `INSERT INTO fts(fts) VALUES
       ('rebuild')` — an *external-content* FTS5 that stores only the
-      index (no second text copy in RAM), maps hits back by rowid for
-      free, and lets search + `mail_read` run on one connection.
-      ~0.6 s build on a 94 MB test DB. Gloda is untouched — never
-      queried live; the short-lived `immutable=1` handle only feeds
-      Q11's page-level backup copy.
+      index (no second text copy), maps hits back by rowid for free,
+      and lets search + `mail_read` run on one connection. ~0.6 s build
+      on a 94 MB test DB. Living in the on-disk snapshot (not
+      `:memory:`) is what keeps idle RAM ≈ 0 — the index is
+      page-cached, not pinned heap (Q11's medium flip). Gloda is
+      untouched — never queried live; the only live touch is the
+      bracketed reflink copy.
     - **Freshness — staleness checked per search, *not* per session.**
       ("Session" in Pikuri = agent lifetime, which can be *days* — so
       "rebuild per session" would go badly stale.) Instead: **lazy first
@@ -927,8 +983,9 @@ Take these one at a time in later sessions.
       search; since Thunderbird polls mail ~every 15 min the check almost
       always says "unchanged," and the ~1 s rebuild is paid only right
       after real mail activity (occasionally mid-conversation —
-      desirable, the agent then sees new mail). No daemon, no disk
-      footprint, nothing to reap.
+      desirable, the agent then sees new mail). No daemon; the only disk
+      footprint is Q11's snapshot file (finalizer-reaped), and reflink
+      keeps even that near-zero until TB rewrites blocks.
       **Why the change counter, not mtime or `max(date)`** (settled by a
       probe, 2026-07): the file-format spec increments the change counter
       *only when the DB is unlocked after a modification* — so a **read
