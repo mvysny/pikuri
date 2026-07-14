@@ -13,8 +13,10 @@ graduation pipeline in [`../CLAUDE.md`](../CLAUDE.md).
   offline, Linux-desktop-specific agent that reads local files through a
   swappable, `available?`-probed backend (`localsearch`/`recoll`) and
   never egresses. Thunderbird integration has the same shape (local
-  files, no network, desktop-specific) and may even *belong* there — see
-  the placement question below.
+  files, no network, desktop-specific), so it **mirrors** that
+  backend-abstraction pattern — but lives in its own gem, not folded in
+  (Q2 decided: separate `pikuri-thunderbird`, no dependency on
+  `pikuri-os`).
 - [`trifecta-detector.md`](trifecta-detector.md) — email is the textbook
   trifecta: **private data** (your mailbox) + **untrusted content**
   (every message body/attachment is attacker-authorable) + **egress**
@@ -290,10 +292,28 @@ Take these one at a time in later sessions.
    mbox-parse fallback)? And Q12 (freshness) only bites family B's
    own-index arm — Gloda, recoll, notmuch each manage their own.
 
-2. **Placement — new `pikuri-thunderbird` gem, or fold into
-   `pikuri-os`?** It's offline, Linux-desktop-specific, reads local
-   files — the exact profile of `pikuri-os`. Sibling gem vs. an extension
-   under an existing gem vs. a new binary.
+2. **Placement — DECIDED: a new `pikuri-thunderbird` gem** shipping an
+   opt-in `Thunderbird::Extension` + tools, with its **own
+   `bin/pikuri-thunderbird` demo** (search-only + no-egress first, which
+   sidesteps Q10 until its posture is settled). Chosen over folding into
+   `pikuri-os` for four reasons: (i) mbox/MIME/SQLite parsers are attack
+   surface for *untrusted* email content, which must not land in the
+   deliberately-minimal audit-first OS gem; (ii) the new deps (SQLite
+   access, a mail parser, maybe `icalendar` — none exist in the project
+   today) don't belong in `pikuri-os` or core; (iii) different *purpose*
+   (OS diagnosis vs. personal comms/PIM) → different gem, per the
+   one-gem-per-domain precedent; (iv) email's trifecta earns its own
+   `DESIGN.md` threat model (like `pikuri-memory` / `pikuri-vectordb`).
+   **Mirror, don't depend on, `pikuri-os`:** reuse its swappable
+   `available?`-probed backend *pattern* (the `LocalSearch`/`Recoll`
+   duck type) for the Q1 search families, but take no dependency — both
+   stay independently-wireable extensions that compose on one agent.
+   Follow-on opens spun out of this: the `sqlite3` *gem* vs. shelling out
+   to the `sqlite3` CLI through the existing `Subprocess` chokepoint (a
+   Q1-implementation detail — the CLI route avoids a native-extension
+   dep); and the exact gem dep set (`pikuri-core` certainly;
+   `pikuri-extractors`/`-pdf` only if we extract attachment bodies, Q5;
+   `pikuri-subagents` only if Q10 wants a quarantined reader).
 
 3. **Profile/install discovery.** How do we robustly locate the active
    profile across apt/snap/flatpak (parse `profiles.ini`? probe the known
