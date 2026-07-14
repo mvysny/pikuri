@@ -191,26 +191,37 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   (`local.sqlite`, classic `calStorageCalendar`):
   - **`cal_events`** — normalized columns, *not* opaque ICS: `cal_id`,
     `id` (event UID), `title`, `event_start` / `event_end` (INTEGER
-    **PRTime µs — confirmed** on 5 414 real events: the µs reading
-    gives a sane 2010→2031 histogram; ms/s interpretations go
-    out-of-range NULL) with matching `event_start_tz` / `event_end_tz`
-    — **tzid strings in several valid forms, none of it junk:**
-    Olson/IANA names (`Europe/Helsinki` dominant), the literal
-    **`floating`** (= no zone, wall-clock time — display in the
-    viewer's local zone; birthdays/all-day use it), **`UTC`**, and rare
-    **fixed-offset forms** (`GMT+0300` = EEST here, from a client that
-    lacked the Olson name — *not* corruption). All meaningful: resolve
-    them, don't discard. `ical_status`, `priority`, `privacy`, `flags`,
+    **PRTime µs, stored as the UTC instant** — confirmed on 5 414 real
+    events: the µs reading gives a sane 2010→2031 histogram (ms/s
+    overflow to NULL), and the next-8-events cross-check reads as
+    normal business hours only under UTC→local (+3h EEST) — 07:00 UTC =
+    10:00 Helsinki — so times are stored UTC and **displayed via the
+    `_tz` column**, the standard Mozilla convention. Both endpoints
+    carry their own tzid — `event_start_tz` / `event_end_tz` — and
+    **they can differ** (1/5414: a cross-zone event like a
+    Helsinki→NYC flight), so treat them independently, never "one zone
+    per event." The tzid is a **string in several valid forms, none of
+    it junk:** Olson/IANA names (`Europe/Helsinki` dominant), the
+    literal **`floating`** (= no zone, wall-clock; **every all-day
+    event uses it** — the 126 `floating` rows *are* the 126 all-day
+    rows), **`UTC`**, and rare **fixed-offset forms** (`GMT+0300` =
+    EEST, from a client lacking the Olson name — *not* corruption); no
+    null/empty tz observed, but a robust reader still defaults
+    defensively. `ical_status`, `priority`, `privacy`, `flags`,
     `time_created`, `last_modified`, recurrence fields. So basic reads
     (title/when/status) are a plain `SELECT` — no ICS parser needed.
     `flags` decodes as calStorageCalendar's `CAL_ITEM_FLAG` bitfield
-    (recalled mapping, consistent with all 27 observed combos — verify
+    (recalled mapping, consistent with all observed combos — verify
     against comm-central at implementation): 2=attendees,
     4=properties, **8=all-day**, 16=recurrence, 32=exceptions,
     64=attachments, 128=relations, 256=alarms, 512=recurrence-id
-    all-day. **All-day detection = bit 8**, not span heuristics
-    (observed: 14 timed events happen to span whole days; all-day rows
-    store raw UTC-midnight starts).
+    all-day. **All-day detection = bit 8** (confirmed airtight: a clean
+    diagonal — `flags&8` set ⟺ midnight-aligned start, 126 rows, zero
+    off-diagonal), never span heuristics. All-day dates are **zoneless
+    (`floating`) UTC-midnight starts with an exclusive DTEND** (a 1-day
+    event's `event_end - event_start` = exactly 1 day, iCal-style), so
+    render an all-day span as `[start, end − 1 day]` and don't
+    zone-convert it.
   - **`cal_todos`** — VTODO tasks, same shape (`todo_entry`/`todo_due`/
     `todo_completed`).
   - **`cal_properties(item_id, key, value)`** — the per-event extras
@@ -497,15 +508,16 @@ Take these one at a time in later sessions.
      midnight-aligned whole-day spans in the probe), never span
      heuristics; `cache.sqlite` = exact schema mirror of `local.sqlite`
      (version 23).
-   - **Still to pin (a follow-up probe closes these):** (i) is
-     `event_start` the **UTC** instant (display via `_tz`) or already
-     local? — the year-histogram can't tell a few hours apart, and my
-     first ground-truth query silently failed (an int-vs-text SQLite
-     affinity bug: a number always sorts before `strftime`'s text, so
-     the predicate was always false — *not* a data finding); (ii)
-     all-day `event_end` = iCal exclusive DTEND (next-day midnight)?
-     (iii) null/empty `_tz` → need a default-zone fallback? Q6 is
-     otherwise closed.
+   - **Closed by the follow-up probe (2026-07-14):** (i) `event_start`
+     is the **UTC** instant, displayed via `_tz` (next-8 events read as
+     business hours only under UTC→local); (ii) all-day `event_end` =
+     iCal **exclusive** DTEND (1-day span = exactly 1 day); (iii) no
+     null/empty `_tz` on this box (default defensively anyway). Bonus:
+     start/end tz can differ (cross-zone events — handle independently),
+     and all-day ⟺ `flags` bit 8 ⟺ `tz=floating`. **Q6 fully closed.**
+     (Only-if-refuted: if TB actually shows those events at 07:00 not
+     10:00, (i) flips to local storage — but the pattern makes UTC
+     near-certain.)
 
 7. **Calendar event creation.** The schema makes the *hazard* concrete: a
    direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
