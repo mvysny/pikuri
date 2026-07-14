@@ -177,9 +177,12 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   (Mozilla builds with **32 KB pages** — 25 × 32768 exactly, freelist
   0); `deleted.sqlite` tombstones also 0, so no events ever lived here.
   So calendar tools are data-dependent: they need a used local calendar
-  or per-calendar "Offline Support" (cache.enabled) turned on (then
-  cache.sqlite presumably mirrors the local.sqlite schema — verify when
-  first seen). Locking matches Gloda, not the WAL hope: a plain
+  or per-calendar "Offline Support" (cache.enabled) turned on — a
+  one-click fix (confirmed 2026-07-14: enabling it on the real CalDAV
+  calendars populated cache.sqlite to 62 MB / 5 414 events within
+  minutes; it **mirrors local.sqlite's schema exactly**, same
+  `cal_calendar_schema_version=23`, all cached calendars in the one DB
+  partitioned by `cal_id`). Locking matches Gloda, not the WAL hope: a plain
   `-readonly` open fails **"database is locked (5)" while TB runs even
   though the DB is WAL** (mozStorage opens with
   `locking_mode=EXCLUSIVE`); `immutable=1` bypasses it fine. Version
@@ -187,11 +190,23 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   unlike Gloda, gate on the table, not the pragma). Schema
   (`local.sqlite`, classic `calStorageCalendar`):
   - **`cal_events`** — normalized columns, *not* opaque ICS: `cal_id`,
-    `id` (event UID), `title`, `event_start` / `event_end` (INTEGER —
-    likely PRTime µs, *verify*) with matching `event_start_tz` /
-    `event_end_tz`, `ical_status`, `priority`, `privacy`, `flags`,
+    `id` (event UID), `title`, `event_start` / `event_end` (INTEGER
+    **PRTime µs — confirmed** on 5 414 real events: the µs reading
+    gives a sane 2010→2031 histogram; ms/s interpretations go
+    out-of-range NULL) with matching `event_start_tz` / `event_end_tz`
+    (**Olson IDs + `floating` + `UTC` + occasional junk like
+    `GMT+0300`** from other clients — treat as opaque, lenient
+    strings), `ical_status`, `priority`, `privacy`, `flags`,
     `time_created`, `last_modified`, recurrence fields. So basic reads
     (title/when/status) are a plain `SELECT` — no ICS parser needed.
+    `flags` decodes as calStorageCalendar's `CAL_ITEM_FLAG` bitfield
+    (recalled mapping, consistent with all 27 observed combos — verify
+    against comm-central at implementation): 2=attendees,
+    4=properties, **8=all-day**, 16=recurrence, 32=exceptions,
+    64=attachments, 128=relations, 256=alarms, 512=recurrence-id
+    all-day. **All-day detection = bit 8**, not span heuristics
+    (observed: 14 timed events happen to span whole days; all-day rows
+    store raw UTC-midnight starts).
   - **`cal_todos`** — VTODO tasks, same shape (`todo_entry`/`todo_due`/
     `todo_completed`).
   - **`cal_properties(item_id, key, value)`** — the per-event extras
@@ -453,13 +468,14 @@ Take these one at a time in later sessions.
      events → don't register them (or register with honest "enable
      Offline Support in the calendar's properties in TB" guidance —
      which of the two is a wiring decision for `bin/pikuri-thunderbird`).
-   - **Still pending (needs rows to inspect):** `event_start` encoding
-     (PRTime µs?), the `_tz` vocabulary, the all-day representation,
-     and whether `cache.sqlite` mirrors the `local.sqlite` schema.
-     Cheapest probe: create two test events in the local "Home"
-     calendar (one timed at a known time, one all-day), re-run the
-     battery on `local.sqlite`; optionally flip one CalDAV calendar to
-     Offline Support and inspect `cache.sqlite`.
+   - **Answered (2026-07-14, real CalDAV data in cache.sqlite after
+     flipping Offline Support):** encoding = **PRTime µs**; `_tz` =
+     Olson IDs + `floating`/`UTC` + junk (lenient passthrough);
+     all-day = **`flags` bit 8**, never span heuristics;
+     `cache.sqlite` = exact schema mirror of `local.sqlite` (version
+     23). Details in the storage section. **Q6 is closed.** One
+     micro-verification deferred to implementation: whether an
+     all-day `event_end` follows iCal's exclusive-DTEND convention.
 
 7. **Calendar event creation.** The schema makes the *hazard* concrete: a
    direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
@@ -715,8 +731,9 @@ Take these one at a time in later sessions.
       bracket — one mechanism for both stores. Two WAL-specific
       wrinkles: (i) `immutable=1` ignores the `-wal`, so the snapshot
       is **as-of-last-checkpoint** — un-checkpointed commits are
-      invisible (probed box: `-wal` was 0 bytes, so currently nothing
-      to miss; watch it in practice); (ii) a WAL DB's change counter
+      invisible (looks benign in practice: right after cache.sqlite's
+      62 MB initial sync its `-wal` held only 1.1 MB and `immutable=1`
+      saw all 5 414 events — TB checkpoints aggressively); (ii) a WAL DB's change counter
       bumps only on **checkpoint**, not per commit, so the calendar's
       bracket/staleness signal must pair the counter with the **`-wal`
       file size + mtime**. Exact tuning deferred until the calendar
