@@ -290,12 +290,15 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
   of `-compose`: TB's UI owns the commit, and the human additionally
   **chooses the destination calendar**, so local-vs-CalDAV (i.e.
   no-egress-vs-egress) is the human's pick, not the agent's.
-  **Staging location NOT probed here:** TB runs on a separate host and the
-  `.ics` was hand-copied to an arbitrary `~/temp/…` path, so this says
-  nothing about where a snap-confined TB can read from — *where* pikuri
-  stages the transient `.ics` is still an open Q7 implementation detail
-  (verify the snap `home`-interface dotfile restriction, recalled but
-  unconfirmed, when building — don't assume `~/.cache` is un/readable).
+  **Staging location — CONFIRMED (probe 2026-07-14, live snap TB).** The
+  snap `home`-interface boundary was mapped by staging one probe `.ics` in
+  three spots and running `thunderbird <path>` on each: **snap-owned area
+  (`~/snap/thunderbird/common/`) → readable; hidden `~/.cache/…` → NOT
+  readable; non-hidden `~/…` → readable.** So the recalled dotfile
+  restriction is real. Sharp UX edge: a *blocked* path does **not** error —
+  the import wizard **opens anyway and reports "no events available"** (it
+  read an empty file), so staging can't lean on error detection; stage only
+  where the discovered variant definitionally reads. Decision lives in Q7.
 - **Credential/secret stores to never touch** (they sit in the same
   profile dir): `logins.db` / `logins.json` / `logins-backup.json`,
   `key4.db`, `cert9.db`, `openpgp.sqlite`,
@@ -361,13 +364,23 @@ Take these one at a time in later sessions.
    TB hasn't downloaded (unreadable by *any* backend, mbox included — there
    is nothing on disk to read), **not** missing inbox mail. So the gap
    doesn't reopen Q13's "false no-such-email" worry.
-   - **Gmail label→folder dedup (implementation note).** Gmail exposes
-     each label as an IMAP folder, so a message with N labels appears in
-     N folders → N Gloda rows. Search must **dedup by `headerMessageID`**
-     (the RFC Message-ID, which Gloda stores). Also verify `[Gmail]/All
-     Mail` isn't subscribed+indexed (it would duplicate nearly
-     everything); not among the `-1` set here, but confirm it's simply
-     absent rather than indexed at prio 20.
+   - **Gmail label→folder dedup (implementation note) — CONFIRMED
+     mandatory (probe 2026-07-14).** Gmail exposes each label as an IMAP
+     folder, so a message with N labels appears in N folders → N Gloda
+     rows. Search must **dedup by `headerMessageID`** (the RFC Message-ID,
+     which Gloda stores). **`[Gmail]/All Mail` *is* indexed** — folderID
+     18, `indexingPriority` 20, **5974 messages** (the single largest
+     folder, vs. 8239 distinct Message-IDs and 9654 total rows → ~1415
+     duplicate rows), so it duplicates nearly everything exactly as feared;
+     the dedup is a live requirement, not a precaution. Two probe
+     footnotes: (i) the `-1` never-indexed set is precisely the 7
+     Trash/Spam/Junk/Unsent folders the note predicted — **except
+     `[Gmail]/Trash` sits at prio 20** (5 msgs), so "Gloda never indexes
+     Trash" is *almost* airtight but leaks the Gmail *label* Trash; the
+     Q10 free-Spam-skip should not be sold as covering every trash folder.
+     (ii) **1571 rows carry a null/blank folderID** — irrelevant to
+     Gloda-only reads (body comes from `c0body`, not the folder), noted for
+     the mbox fallback.
 
    The families below are kept for the record (they bound the decision
    and document the dead-ends); the *decision* above supersedes them.
@@ -590,16 +603,31 @@ Take these one at a time in later sessions.
      is a worse UX (can't run while the user works) and pointless once (a)
      works. CalDAV write over the network stays out of scope by the
      no-network rule.
-   - **Staging the `.ics` (OPEN implementation detail; ties to Q3/Q8).**
-     Not settled by the probe — TB ran on a separate host and the file was
-     hand-copied to an arbitrary path, so nothing was learned about a
-     confined TB's readable paths. The file must live where the discovered
-     TB variant can read it; the snap `home` interface is *recalled* to
-     restrict dotfile dirs (`~/.cache`) and flatpak has its own
-     portal/root, but both are **to verify when building**. Likely-cleanest
-     cross-variant answer to test: stage the transient `.ics` under the
-     already-discovered install root (a path that variant can definitionally
-     read), and finalizer-reap it after hand-off (TB doesn't delete it).
+   - **Staging the `.ics` — DECIDED (Q9 probe 2026-07-14, live snap TB):**
+     stage under the discovered variant's own readable root — **not** the
+     `~/.cache` snapshot dir. The snap `home`-interface boundary is now
+     confirmed on a real install (see the `.ics` bullet in the storage
+     section): snap-owned area readable, hidden `~/.cache` **not** readable
+     (wizard opens but "no events available"), non-hidden `~/…` readable.
+     So:
+     - **snap:** `~/snap/thunderbird/common/…` (the snap's own
+       `SNAP_USER_COMMON` — we write it as the user, the confined app reads
+       it), e.g. a minted `~/snap/thunderbird/common/pikuri-outbox/`.
+     - **apt:** unconfined → any path; the hidden install root
+       `~/.thunderbird/…` is fine.
+     - **Consequence for Q11:** on snap the `.ics` staging dir ≠ the
+       snapshot dir. The snapshot lives in hidden `~/.cache` (read by
+       *pikuri*, unconfined — fine); the `.ics` is read by the *confined
+       TB*, so it must sit in the snap-owned/non-hidden set. Two dirs, two
+       readers.
+     - **`~/temp` reuse — considered, rejected.** A non-hidden `$HOME` dir
+       *is* readable (the C probe proves it) and would dodge variant
+       branching, but Q3 already knows the variant so the branch is
+       near-free; `~/temp` may not exist (creating it litters visible
+       `$HOME`) and mixes our transient files with the user's. The
+       variant-owned root is cleaner and self-scoping.
+
+     Finalizer-reap after hand-off (TB doesn't delete it).
    - **Residual (deferred to the v2 build):** does importing an `.ics`
      carrying `ATTENDEE` lines onto a CalDAV calendar mail invites? Import
      is usually not an organize-action (unlike editing-as-organizer), so it
@@ -1068,12 +1096,21 @@ Take these one at a time in later sessions.
       file size + mtime**. Exact tuning deferred until the calendar
       data story settles (see Q6 — on the probed box there's no on-disk
       calendar data to read at all, so the mail path leads).
-    - **Tuning probes (pending — sizing, no longer load-bearing):** does
-      a persistent `-journal` sit beside Gloda while TB runs?
-      (`locking_mode=EXCLUSIVE` can retain it between transactions,
-      which would neuter the journal half of the bracket — the counter
-      half still works.) And the counter-bump cadence across a real mail
-      poll, to size the retry/backoff policy.
+    - **`-journal` persistence — RESOLVED (probe 2026-07-14): transient,
+      not persistently retained → the journal-absence half of the bracket
+      is meaningful.** Sampled Gloda 3× over ~40 s: a 1.3 MB `-journal`
+      appeared in exactly *one* sample, and precisely while the change
+      counter was mid-bump (`0f5f`→`0f60`); it was absent in the two idle
+      samples (counter settled at `0f60`). So `EXCLUSIVE` locking does
+      **not** hold a journal between transactions here — a present
+      `-journal` genuinely signals a write *in flight* (discard-the-copy,
+      short backoff, retry), exactly what the bracket assumes; it is not
+      dead weight. Caveat: the prelude's `pgrep -x thunderbird` reported
+      "not running" while a write plainly occurred, so `pgrep -x` likely
+      false-negatived under snap's process naming — either way
+      transient-not-persistent holds. Still pending (sizing only, not
+      load-bearing): the counter-bump cadence across a real mail poll, to
+      tune retry/backoff.
     - **Which TB operations bump Gloda's counter — RESOLVED (probed
       2026-07-14, snap box):** read/star/tag flips **do** bump it, not just
       new-mail arrivals. Marking one message unread advanced the counter a
