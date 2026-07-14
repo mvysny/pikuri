@@ -239,14 +239,24 @@ Take these one at a time in later sessions.
    - **Gloda's exclusions align with ours:** 7 folders are `-1`
      never-indexed (Gloda's sentinel) — almost certainly Spam / Trash /
      Gmail "All Mail" (the dup folder), i.e. the folders Q10 skips anyway.
-   Two recorded caveats: (a) **confirm the 7 excluded folders are
-   benign** (needs the `folderLocations` URI dump); (b) the **searchable
-   set is ~8084, not the ~11 655 on-disk** — never-indexed folders + any
-   not-yet-downloaded IMAP bodies won't be found via Gloda (fine for v1,
-   which skips those folders regardless; the mbox fallback could cover
-   them later). Implementation-time check: the `messages` (9653) vs
-   `messagesText` (8084) gap — verify it's exactly the never-indexed
-   folders and not silent body-index misses.
+   Caveats, now resolved/refined by the `folderLocations` dump:
+   (a) **the 7 excluded folders are entirely benign** — all Trash / Spam
+   / Junk / Unsent across the three accounts (`local Trash`, `local
+   Unsent Messages`, `IMAP Deleted Messages`, `IMAP Junk`, `Gmail Trash`,
+   `Gmail [Gmail]/Spam`, `Feeds/Trash`); no real-mail folder is excluded.
+   **Synergy:** Gloda already *never indexes* Spam/Junk/Trash, so Q10's
+   "skip Spam" untrusted-leg attenuation is **free on the Gloda path** —
+   we inherit it, don't build it (the mbox fallback would have to
+   replicate it). (b) **searchable set ~8084 vs ~11 655 on-disk** — the
+   gap is those never-indexed folders + any not-yet-downloaded IMAP
+   bodies; fine for v1.
+   - **Gmail label→folder dedup (implementation note).** Gmail exposes
+     each label as an IMAP folder, so a message with N labels appears in
+     N folders → N Gloda rows. Search must **dedup by `headerMessageID`**
+     (the RFC Message-ID, which Gloda stores). Also verify `[Gmail]/All
+     Mail` isn't subscribed+indexed (it would duplicate nearly
+     everything); not among the `-1` set here, but confirm it's simply
+     absent rather than indexed at prio 20.
 
    The families below are kept for the record (they bound the decision
    and document the dead-ends); the *decision* above supersedes them.
@@ -403,8 +413,11 @@ Take these one at a time in later sessions.
       depth, but it **attenuates, doesn't sever** leg 2: a *targeted*
       injection lands in the Inbox (a reply, a forward, a newsletter, a
       calendar invite), not in Spam. Record it honestly as a mitigation,
-      never sold as a boundary. (Mechanically it needs per-account
-      special-folder identity — the Junk folder — tying into Q4/Q13.)
+      never sold as a boundary. **Free on the Q1 Gloda path:** Gloda
+      already `-1` never-indexes every Spam/Junk/Trash folder (confirmed
+      in the `folderLocations` dump), so the search backend simply can't
+      return them — no per-account Junk-folder identity to compute. The
+      mbox-parse *fallback* would have to replicate the skip explicitly.
     - **Egress (leg 3):** search + read are **inbound-only** (no egress);
       only **compose** (send) and **create-event** (invites / CalDAV
       sync) are egress. Note create-event *is* egress when the event has
