@@ -526,11 +526,14 @@ Take these one at a time in later sessions.
     SQLite opens, mbox read-while-locked safety, and what happens if
     Thunderbird rewrites an mbox (compaction) mid-scan.
 
-12. **Freshness.** *Resolved by Q1's Gloda-only decision:* Thunderbird
-    keeps Gloda live (measured newest-message minutes old), so v1
-    inherits freshness for free — no `Watcher`-style daemon. Only
-    re-opens if the family-B mbox-parse *fallback* ever grows its own
-    index (a raw scan has no freshness problem; an index would).
+12. **Freshness.** *Resolved.* Thunderbird keeps Gloda live (measured
+    newest-message minutes old), so v1 inherits freshness for free — no
+    `Watcher`-style daemon. The Q13 search decision (b) builds its own
+    FTS5 index, but **ephemerally** (in-memory, rebuilt per session from
+    fresh Gloda), so it's a disposable derivative that carries *no*
+    freshness obligation. Only genuinely re-opens if either the
+    family-B mbox-parse *fallback* or a future *persistent* FTS5 cache
+    (the deferred scale option) grows a maintained on-disk index.
 
 13. **Tool surface & naming.** *Mostly settled — the shape below is
     decided; only the search-matching approach (sub-decision 1) is open.*
@@ -663,7 +666,43 @@ Take these one at a time in later sessions.
       the documented exact-parity / huge-mailbox option, and a candidate
       `available?`-probed upgrade *if* a prebuilt `libmozporter.so` ever
       exists (mirrors the Gloda→mbox fallback).
-    **Live choice = (a) vs (b).** Leaning **(a)** for the lean v1
-    (dependency-free, shell-out), **(b)** as the first upgrade when
-    stemming/ranking is wanted. Final pick pending the user's remaining
-    research material — the one thing left to settle.
+    **DECIDED: (b) — in-memory FTS5 rebuilt per session.** Rationale
+    (recall-over-agent-discipline): (a) leans on the agent *remembering*
+    to reformulate/multi-query, and — the deeper flaw — LIKE **can't
+    rank**, so a generous (a) floods the agent with an *unordered* pile
+    while a stingy one starves it into a false "no such email" conclusion
+    (a hallucination class that matters when *every email can matter*).
+    (b)'s `bm25()` breaks that dilemma: **OR-match broadly for recall
+    *and* surface the best hits first**, then cap output — the LLM sorts a
+    *ranked* list, which is what it's good at. Honest caveat: stemming
+    closes *morphology* (`universities`↔`university`, which LIKE-substring
+    misses) but **not synonymy** (`invoice`↔`bill`); some agent
+    reformulation still helps in either option — (b) just raises the
+    single-query floor.
+
+    **Index mechanics (the "technical dragons," tamed):**
+    - **Where:** an *ephemeral in-memory* FTS5 index in pikuri's own
+      process — **never** in Thunderbird's DB. Gloda is opened
+      **read-only** (`immutable=1`, the lock-free live read); we bulk
+      `SELECT` its plain `messagesText_content` + `messages` join and
+      `INSERT` into a `:memory:` FTS5. Writable index lives only in our
+      RAM; Gloda is untouched.
+    - **Freshness stays free — Q12 does *not* reopen:** the index is a
+      *disposable derivative*, rebuilt at session start (lazily, on first
+      `thunderbird_mail_search`) from Gloda's current content. Thunderbird
+      keeps Gloda live, so session-start = fresh. No daemon, no staleness
+      logic, no cache invalidation, no disk footprint, nothing to reap.
+    - **Cost:** ~1 s for the measured 8k-msg / ~35 MB-text mailbox, paid
+      once per session and only if mail is searched. *Scale caveat:* a
+      100k+ msg mailbox makes the rebuild slow enough to reconsider a
+      persistent disk-cached index keyed on Gloda's mtime/count — but that
+      reintroduces staleness logic (the deferred dragon); wait for a real
+      complaint.
+    - **Recall-first tuning:** OR-of-terms + `bm25` rank + top-N cap
+      (bm25's idf de-weights stopwords so they don't dominate); structured
+      filters (`from`/`to`/date/`folder`) apply as exact predicates
+      alongside the `MATCH`. Store Gloda `messages.id` / `headerMessageID`
+      as the FTS5 rowid/unindexed column so a hit maps back for
+      `thunderbird_mail_read`.
+    - Commits to the `sqlite3` gem (the Q2 follow-on: (b) is what pulls it
+      in; the CLI-shell-out that (a) allowed is moot now).
