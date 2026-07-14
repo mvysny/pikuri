@@ -221,8 +221,35 @@ Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
 Take these one at a time in later sessions.
 
 1. **Search backend — parse ourselves, query Gloda, or recoll?**
-   The storage-landscape probing above turned several of these from
-   guesses into measured trade-offs; the *decision* is still open.
+   **DECIDED (v1, empirical — measured on a real 700 MB / ~10-year
+   mailbox, 2026-07): family A, Gloda-only** (search *and* read from the
+   decoded columns), with **family B (mbox-parse) as the
+   `available?`-probed fallback** for Gloda-disabled / non-GNOME hosts —
+   the exact `localsearch → recoll` pattern from `pikuri-os`. The
+   measurements that settled it:
+   - **Fresh:** Gloda's newest message was minutes old, oldest 2016 —
+     Thunderbird keeps it live, so we inherit freshness for free (Q12
+     doesn't bite family A).
+   - **Full bodies present:** `messagesText_content.c0body` had only 17
+     empty rows of 8084, max 58k / avg 4.4k chars — the decoded body is
+     really stored, so Gloda-only serves *reads*, no mbox parse needed.
+   - **Index beats scan at this size:** 700 MB on disk → a raw family-B
+     grep is ~0.5–1 s/query and worsens over time; Gloda is a prebuilt
+     index. (Small mailboxes would let B off the hook — but not this one.)
+   - **Gloda's exclusions align with ours:** 7 folders are `-1`
+     never-indexed (Gloda's sentinel) — almost certainly Spam / Trash /
+     Gmail "All Mail" (the dup folder), i.e. the folders Q10 skips anyway.
+   Two recorded caveats: (a) **confirm the 7 excluded folders are
+   benign** (needs the `folderLocations` URI dump); (b) the **searchable
+   set is ~8084, not the ~11 655 on-disk** — never-indexed folders + any
+   not-yet-downloaded IMAP bodies won't be found via Gloda (fine for v1,
+   which skips those folders regardless; the mbox fallback could cover
+   them later). Implementation-time check: the `messages` (9653) vs
+   `messagesText` (8084) gap — verify it's exactly the never-indexed
+   folders and not silent body-index misses.
+
+   The families below are kept for the record (they bound the decision
+   and document the dead-ends); the *decision* above supersedes them.
    Candidate approaches, grouped into four families (the fuller menu
    below folds in web-Claude's suggestions — several land in buckets we
    already had; two are new; two are recorded *as* dead-ends so we don't
@@ -486,9 +513,11 @@ Take these one at a time in later sessions.
     SQLite opens, mbox read-while-locked safety, and what happens if
     Thunderbird rewrites an mbox (compaction) mid-scan.
 
-12. **Freshness.** If we build our own index (approach 1 + vectordb), we
-    inherit a freshness problem (a `Watcher`-style daemon); Gloda and
-    recoll each manage their own freshness. Bears on #1.
+12. **Freshness.** *Resolved by Q1's Gloda-only decision:* Thunderbird
+    keeps Gloda live (measured newest-message minutes old), so v1
+    inherits freshness for free — no `Watcher`-style daemon. Only
+    re-opens if the family-B mbox-parse *fallback* ever grows its own
+    index (a raw scan has no freshness problem; an index would).
 
 13. **Tool surface & naming.** What tools do we expose and how are they
     named (e.g. a search→read-full mail pair, a calendar search, a create
