@@ -221,45 +221,74 @@ Take these one at a time in later sessions.
 1. **Search backend — parse ourselves, query Gloda, or recoll?**
    The storage-landscape probing above turned several of these from
    guesses into measured trade-offs; the *decision* is still open.
-   Candidate approaches:
-   - **Parse mbox ourselves** (e.g. the `mail` gem for RFC 5322 + a
-     trivial `From `-splitter, honoring CRLF + `X-Mozilla-Status`
-     deleted flags) — no lock issues, full control, but we own MIME
-     decoding *and* the search itself (grep-grade, or build/maintain our
-     own index → a freshness daemon, Q12) *and* attachment extraction is
-     on us.
-   - **Use Gloda (`global-messages-db.sqlite`)** — Thunderbird has
-     *already* decoded bodies + attachment names + author/recipients and
-     keeps them fresh for free. Now-known costs (confirmed above):
-     (i) **locked while TB runs** → live reads need `immutable=1`
-     (torn-read risk); (ii) **`mozporter` blocks external `MATCH`** →
-     we'd read the plain `messagesText_content` columns with our own
-     matcher, not the FTS; (iii) undocumented/version-fragile schema
-     (though stable in practice); (iv) depends on Gloda being enabled +
-     caught up (indexing lag), and on honoring the `deleted` flag.
-   - **recoll** — indexes mail *and attachment bodies*, but requires the
-     user to install + configure + build an index (same trade-off
-     recorded for the OS assistant's `Recoll` backend).
-   - **Hybrid: Gloda to *find*, mbox to *read*.** Use Gloda's decoded
-     columns as the search corpus (content already extracted), get back
-     `folderID` + `headerMessageID`, then pull the *authoritative* full
-     message from the mbox for display. **Read-path caveat (confirmed by
-     query (c)):** `messageKey` is *not* a universal byte offset — it's
-     the IMAP UID for `ImapMail/` folders (so no clean seek), a byte
-     offset only for local `Mail/` folders. For IMAP mail (the common
-     case) the mbox lookup is by `Message-ID` (scan or one-time index),
-     or via the Mork `.msf` UID→offset map we hoped to skip. This dulls
-     the hybrid's appeal — and note the simpler question it raises: since
-     Gloda's `c0body` is *already decoded* (that's what (b) searched), do
-     we even need the mbox for reading, unless we want raw
-     headers/attachments? A **Gloda-only** find-*and*-read is the fourth
-     option's simpler sibling (no mbox parsing at all; costs: no raw
-     message/attachments, `immutable=1` lock dance).
-   Cross-cutting: do we want a single approach or a swappable,
-   `available?`-probed backend like `pikuri-os`'s file-index pair (e.g.
-   Gloda-when-present, mbox-parse fallback)? And Q12 (freshness) only
-   bites the parse-ourselves-with-own-index arm — Gloda and recoll manage
-   their own.
+   Candidate approaches, grouped into four families (the fuller menu
+   below folds in web-Claude's suggestions — several land in buckets we
+   already had; two are new; two are recorded *as* dead-ends so we don't
+   re-litigate them):
+
+   **A. Reuse Thunderbird's own Gloda index (`global-messages-db.sqlite`).**
+   TB has *already* decoded bodies + attachment names + author/recipients
+   and keeps them fresh for free. Now-known costs (confirmed above):
+   (i) **locked while TB runs** → live reads need `immutable=1`
+   (torn-read risk); (ii) **`mozporter` blocks external `MATCH`** → we
+   read the plain `messagesText_content` columns with our own matcher,
+   not the FTS; (iii) undocumented schema, but `user_version=30`-gateable;
+   (iv) depends on Gloda being enabled + caught up (indexing lag) + honoring
+   the `deleted` flag. Two shapes:
+   - **Gloda-only** (find *and* read from the decoded columns) — no mbox
+     parsing at all; costs: no raw message/attachments, the `immutable=1`
+     lock dance.
+   - **Hybrid: Gloda to *find*, mbox to *read*.** Search the decoded
+     columns, get `folderID` + `headerMessageID`, then pull the
+     authoritative full message from the mbox. **Read-path caveat (query
+     (c)):** `messageKey` is *not* a universal byte offset — IMAP UID for
+     `ImapMail/` folders (no clean seek), byte offset only for local
+     `Mail/` folders; so IMAP lookup is by `Message-ID` (scan/one-time
+     index) or the Mork `.msf` UID→offset map we hoped to skip. Dulls the
+     appeal vs. Gloda-only unless we specifically want raw
+     headers/attachments.
+
+   **B. Scan/parse the mbox directly** (no Gloda dependency — no lock, no
+   `mozporter`, works even with Gloda disabled). Three grades:
+   - **Ruby parse** (`mail` gem for RFC 5322 + a `From `-splitter honoring
+     CRLF + `X-Mozilla-Status` deleted flags) — full control, in-process,
+     no external dep; but we own MIME decoding *and* the search (grep-grade,
+     or build/maintain our own index → a freshness daemon, Q12) *and*
+     attachment extraction.
+   - **raw `grep`/`ripgrep`** over the mbox files — zero setup, zero index,
+     but **line-oriented and structure-blind**: no message boundaries, and
+     it misses base64/quoted-printable bodies (won't decode
+     transfer-encodings) and can't do headers-aware matching. A crude
+     fallback, not a real search.
+   - **message-aware mbox CLI (`grepmail` / `mboxgrep`)** — purpose-built,
+     parse message boundaries + match headers/body per-message. Better than
+     raw grep, but still a **linear scan** (no index) and a **non-Ruby
+     system dependency** — against the self-contained/audit posture when we
+     could parse mbox in Ruby ourselves. Record as considered.
+
+   **C. Third-party mail indexer.**
+   - **recoll** — has a Thunderbird/mbox filter; indexes subject/body/
+     **attachment bodies**, CLI via `recollq` (already used by `pikuri-os`)
+     or `recoll -t`. Cost: user installs + configures + builds an index
+     (same trade-off as the OS assistant's `Recoll` backend).
+   - **notmuch** — fast Xapian indexer, but **Maildir-oriented**; mbox
+     support is poor (it wants one-file-per-message). Our storage is mbox,
+     so notmuch is a **poor fit** without converting to maildir — recorded
+     as a near-dead-end for this storage shape.
+
+   **D. Desktop file indexer — GNOME Tracker / `localsearch`** (the
+   `pikuri-os` file-index backend). **Poor fit for mail, twice over:**
+   (i) it doesn't index the snap Thunderbird path by default, and (ii)
+   even if pointed at it, Tracker has **no mbox awareness** — it'd treat a
+   folder file as one opaque text blob (or mime-gate it out), never
+   per-message. So the `pikuri-os` `localsearch`/`recoll` pair does *not*
+   transfer to mail as-is; only its *recoll* half (family C) is relevant.
+   Recorded as a dead-end to stop the "reuse pikuri-os's indexer" reflex.
+
+   Cross-cutting: single approach, or a swappable `available?`-probed
+   backend like `pikuri-os`'s file-index pair (e.g. Gloda-when-present,
+   mbox-parse fallback)? And Q12 (freshness) only bites family B's
+   own-index arm — Gloda, recoll, notmuch each manage their own.
 
 2. **Placement — new `pikuri-thunderbird` gem, or fold into
    `pikuri-os`?** It's offline, Linux-desktop-specific, reads local
@@ -274,9 +303,12 @@ Take these one at a time in later sessions.
    maildir? What about `.msf` (ignore and re-scan, or read the Mork
    index)?
 
-5. **Attachments.** Do we search/read attachment bodies (reusing
-   `pikuri-extractors`)? recoll gives this for free; the other two
-   backends don't.
+5. **Attachments.** Do we search/read attachment *bodies* (reusing
+   `pikuri-extractors`)? Coverage differs sharply by Q1 family: recoll
+   (C) indexes attachment bodies for free; Gloda (A) gives attachment
+   *names* only (`attachmentNames` column), not bodies; mbox-parse (B)
+   we'd have to extract them ourselves via `pikuri-extractors`. So the
+   attachment answer is partly downstream of the backend choice.
 
 6. **Calendar read.** Largely *answered feasible* by the schema (above):
    WAL → reads live; core event fields are normalized columns → a plain
