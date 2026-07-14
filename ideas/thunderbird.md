@@ -52,56 +52,214 @@ Constraints given up front:
 - **Both snap and apt installs** must be supported (profile lives in a
   different place for each; flatpak is a third layout worth noting).
 
-## Thunderbird storage landscape (recalled — verify on a real install)
+## Thunderbird storage landscape
 
-Grounding for the questions below. Thunderbird is **not** installed on
-the dev box these notes were written on, so every path/format claim here
-is from memory and must be confirmed against a live profile before it's
-load-bearing.
+Grounding for the questions below. This section is being confirmed
+against a live install incrementally (the user runs commands, we record
+anonymized results). Confirmed facts are the spec; pending facts are
+marked.
 
-- **Profile discovery.** A `profiles.ini` names the active profile.
-  Locations differ by install method:
-  - apt/deb: `~/.thunderbird/<hash>.default*/`
-  - snap: `~/snap/thunderbird/common/.thunderbird/<hash>.default*/`
-  - flatpak: `~/.var/app/org.mozilla.Thunderbird/.thunderbird/<hash>.default*/`
-- **Mail folders.** Classic default is **mbox** — one flat file per
-  folder (`Inbox`, `Sent`, …) under `Mail/<account>/` (local) and
-  `ImapMail/<account>/` (IMAP-synced), each shadowed by a `.msf` Mork
-  summary/index. Trivially splittable on `From ` separator lines; each
-  message is RFC 5322. **maildir** (one file per message) is an opt-in
-  alternative, not the default.
-- **Gloda full-text index.** `global-messages-db.sqlite` — Thunderbird's
-  own SQLite + FTS index of message bodies, kept fresh by Thunderbird
-  itself. Powerful (search already built, always current) but the schema
-  is undocumented and version-dependent, and it may be disabled.
-- **Calendars.** Local + cached CalDAV events live in a SQLite store
-  under the profile (`calendar-data/local.sqlite` / `cache.sqlite`);
-  events are ICS. Address book is `abook.sqlite` (or legacy Mork `.mab`).
-- **Compose hand-off.** `thunderbird -compose "to=…,subject=…,body=…"`
-  opens a pre-filled compose window; the user sends. There is no
-  CLI/documented path to *send* without a compose window and a click.
-- **Concurrency.** Thunderbird locks its profile while running; mbox
-  files are generally safe to read alongside it, but the SQLite stores
-  may need read-only/immutable open modes to avoid lock contention.
+### Confirmed on a real install (snap; TB on Linux, 2026-07)
+
+Profile probed: `~/snap/thunderbird/common/.thunderbird/ql3rk8ye.default/`.
+
+- **Profile discovery.** `~/snap/thunderbird/common/.thunderbird/profiles.ini`
+  is a small INI. The active profile is the section with `Default=1`
+  (here `[Profile0]`, `Name=default`, `Path=ql3rk8ye.default`,
+  `IsRelative=1`). `IsRelative=1` means `Path` is relative to the
+  `profiles.ini` directory; `[General] StartWithLastProfile=1` is the
+  tiebreaker when several profiles exist. So discovery = parse
+  `profiles.ini`, resolve `Path` (relative when `IsRelative=1`).
+- **Install-root layout (snap).** Everything lives under
+  `~/snap/thunderbird/common/.thunderbird/`. (apt/flatpak roots differ —
+  see "still recalled" below.)
+- **Mail folders = mbox** (confirmed: extensionless files whose
+  `file(1)` type is *"Mailbox text"*; each message opens with a
+  `From - <ctime date>` separator line — Thunderbird's dash-prefixed
+  variant, e.g. `From - Tue May 05 17:15:53 2026`, **not** the classic
+  `From <addr> <date>`). **No maildir** on this box. Two mail trees:
+  - `ImapMail/<server>/` — one dir per IMAP account
+    (`imap.gmail.com/`, `imap.mail.me.com/`). Subfolders nest via
+    `<Folder>.sbd/` directories; each folder is an extensionless mbox
+    file shadowed by a `<Folder>.msf` **Mork** summary index
+    (*"Mozilla Mork database, version 1.4, Mail Summary file"*). There's
+    also an account-root summary one level up (`ImapMail/imap.gmail.com.msf`).
+  - `Mail/` — non-IMAP accounts: `Mail/Local Folders/`, `Mail/Feeds/`.
+  Implication: the folder→file walk is `{ImapMail,Mail}/*/` then recurse
+  through `*.sbd/`, treating each extensionless (non-`.msf`) file as an
+  mbox; `.msf` (Mork) can be ignored and the mbox re-scanned instead of
+  parsing Mork.
+- **mbox parsing quirks (confirmed on `INBOX`):**
+  - **Folder file names are server-defined, not fixed** — the Gmail inbox
+    file is `INBOX` (uppercase), not `Inbox`. Never hardcode canonical
+    folder names; enumerate what's on disk. Special-folder identity
+    (which file is Sent/Drafts/Trash) is a mapping to resolve later, not
+    a name to assume.
+  - **CRLF line endings** — lines end `\r\n` (the `^M` before each break).
+    The parser/splitter must not assume `\n`-only.
+  - **Thunderbird injects `X-Mozilla-Status` / `X-Mozilla-Status2`
+    headers** at the top of each stored message (before the real RFC 5322
+    headers) — per-message flag bitfields (read/unread, and a
+    **deleted-but-not-yet-compacted** bit). A correct reader parses these
+    to skip messages flagged deleted, since Thunderbird leaves them in the
+    mbox until folder compaction. Bears on Q11.
+- **Gloda full-text index — schema confirmed** (`global-messages-db.sqlite`,
+  command #4). It's a real, complete search index:
+  - **`messagesText`** — FTS3 virtual table over five columns:
+    **`body`, `subject`, `attachmentNames`, `author`, `recipients`**.
+    Thunderbird has already MIME-decoded, HTML-stripped, and extracted
+    each — including *attachment file names*. Backing store is
+    **`messagesText_content(docid, c0body, c1subject, c2attachmentNames,
+    c3author, c4recipients)`** with the raw decoded text per column.
+  - **`messages`** — `id` (= FTS `docid`), `folderID`, `messageKey`,
+    `conversationID`, `date` (**PRTime = µs since epoch**, confirmed
+    — ÷1e6 for Unix seconds, stored at second granularity),
+    `headerMessageID` (the RFC822 `Message-ID`), **`deleted`** flag
+    (confirmed present + populated), `jsonAttributes`, `notability`.
+    Indexed on `(folderID, messageKey)`, `headerMessageID`, `date`,
+    `deleted`.
+  - **`messageKey` semantics are folder-type-dependent** (confirmed by
+    query (c): folderID 18 had keys `26449`/`26450` — *consecutive
+    integers*, impossible for mbox byte offsets). It's the nsMsgKey =
+    the **IMAP UID** for `ImapMail/` folders, and a **byte offset** only
+    for local `Mail/` mbox folders. So there's no single "seek by
+    messageKey" that works everywhere — see the hybrid caveat in Q1.
+  - **`folderLocations`** — `folderID` → `folderURI` + `name`, so a hit
+    resolves to its folder (and thence the mbox file on disk).
+  - **`conversations` / `conversationsText`** — threading (subject FTS).
+  - **`contacts` / `identities` / `contactAttributes`** — the email↔name
+    graph with popularity/frecency (could resolve "mail from Bob").
+  - **`attributeDefinitions` / `messageAttributes`** — Gloda's extensible
+    per-message attributes (tags, starred, …).
+  - Ignore: `imConversations*` (chat/IM logs), `ext_mimeTypes`.
+
+  **Sharp edge — `tokenize mozporter`.** Both FTS tables use Mozilla's
+  *custom* tokenizer, so a stock `sqlite3` (CLI **or** the Ruby `sqlite3`
+  gem) **cannot** run `… MATCH …` — it errors *"unknown tokenizer:
+  mozporter"*. (`.schema` works because it only reads `sqlite_master`.)
+  Escape: query the plain **`messagesText_content`** columns
+  (`c0body` …) directly with `LIKE`/our own matcher — no tokenizer, no
+  `MATCH`. So Gloda is usable externally as a *pre-decoded corpus*, just
+  not as a drop-in FTS engine. **Both confirmed** (commands (a)/(b)):
+  `MATCH` errors *"unknown tokenizer: mozporter"*, and a
+  `messagesText_content … c0body LIKE '%invoice%'` scan returned 234
+  hits cleanly.
+- **Calendar store — schema confirmed** (`calendar-data/local.sqlite`,
+  command #5; classic `calStorageCalendar` backend, `+ deleted.sqlite`
+  sync tombstones). Unlike Gloda, it **is** WAL (`-wal` sibling) → reads
+  live concurrently with a running TB. Shape:
+  - **`cal_events`** — normalized columns, *not* opaque ICS: `cal_id`,
+    `id` (event UID), `title`, `event_start` / `event_end` (INTEGER —
+    likely PRTime µs, *verify*) with matching `event_start_tz` /
+    `event_end_tz`, `ical_status`, `priority`, `privacy`, `flags`,
+    `time_created`, `last_modified`, recurrence fields. So basic reads
+    (title/when/status) are a plain `SELECT` — no ICS parser needed.
+  - **`cal_todos`** — VTODO tasks, same shape (`todo_entry`/`todo_due`/
+    `todo_completed`).
+  - **`cal_properties(item_id, key, value)`** — the per-event extras
+    (DESCRIPTION, LOCATION, …) as key/value.
+  - **`cal_recurrence` / `cal_attendees` / `cal_alarms` / `cal_relations`
+    / `cal_attachments`** — the genuinely iCal-shaped parts stored as
+    `icalString` fragments (RRULE, attendees, VALARM) — parse only if
+    wanted (the `icalendar` gem).
+  - `cal_id` partitions multiple calendars (local + cached-CalDAV) in the
+    one DB; `cal_calendar_schema_version` is the version anchor.
+- **Address book is SQLite, not Mork:** `abook.sqlite` + `abook-1/-2`
+  (each with `-wal`) — modern schema; no legacy `.mab`.
+- **Most SQLite DBs run in WAL mode** (pervasive `-wal`/`-shm` siblings:
+  calendar `local.sqlite`, `abook*.sqlite`, …) — a read-only opener can
+  query *those* concurrently with a running Thunderbird (good for Q11).
+  **Gloda is the exception:** `global-messages-db.sqlite` has **no**
+  `-wal` sibling and a plain `sqlite3 -readonly` open **fails with
+  "database is locked" while Thunderbird is running** (confirmed
+  2026-07). `PRAGMA journal_mode` = **`delete`** (classic rollback
+  journal, not WAL) confirms why; `PRAGMA user_version` = **`30`** (a
+  schema-version anchor Gloda-reading code can gate on and fail loud if
+  it drifts). So TB holds a blocking lock — Gloda reads live only via a
+  lock-free `immutable=1` open (torn-read risk) or with TB closed. This
+  is a real strike against the "query Gloda" option (Q1), since the user
+  normally has TB open exactly when searching mail.
+- **`.parentlock`** at the profile root is Thunderbird's running-instance
+  lock — a cheap "is TB open right now?" probe.
+- **Compose hand-off works** (TB 152.0, snap; command #6). `thunderbird
+  -compose "to='…',subject='…',body='…'"` opens a pre-filled compose
+  window and **reuses the already-running instance** (no duplicate, no
+  complaint). **Single-quoting each value** is the correct escaping: a
+  comma inside the subject survived as one field, and punctuation
+  (em-dash, period) came through intact. Only output was a harmless
+  `Gtk-Message: … Not loading module "atk-bridge"` warning. Nothing is
+  sent — the user reviews and sends. (Still untested: embedding
+  **newlines** in `body` — a known `-compose` limitation; see Q8.)
+- **Credential/secret stores to never touch** (they sit in the same
+  profile dir): `logins.db` / `logins.json` / `logins-backup.json`,
+  `key4.db`, `cert9.db`, `openpgp.sqlite`,
+  `encrypted-openpgp-passphrase.txt`, `settings/data.safe.bin`. Any
+  file-access scoping for this feature must be confined to the mail +
+  calendar + address-book stores and exclude these — bears on Q10.
+- **Ignore (browser/telemetry cruft, not mail):** `places.sqlite`,
+  `favicons.sqlite`, `cookies.sqlite`, `formhistory.sqlite`,
+  `content-prefs.sqlite`, `webappsstore.sqlite`, `storage/`, `crashes/`,
+  `minidumps/`, `datareporting/`, `saved-telemetry-pings/`.
+
+### Still recalled / pending confirmation (commands 3+)
+
+- **apt/deb root:** `~/.thunderbird/<hash>.default*/`; **flatpak root:**
+  `~/.var/app/org.mozilla.Thunderbird/.thunderbird/<hash>.default*/`
+  (only the snap root is confirmed).
+- **Calendar detail** — `event_start` time encoding (Gloda uses PRTime µs;
+  calendar very likely the same by Mozilla convention, but unverified) +
+  `_tz` handling, and how `cal_id` separates local vs. cached-CalDAV
+  calendars.
+- **`-compose` newlines** — embedding real newlines in `body` (known
+  `-compose` limitation; single-line worked). Bears on Q8.
+- **Concurrency detail** — mbox read-while-TB-compacts safety.
 
 ## Open questions (list only — do not resolve here)
 
 Take these one at a time in later sessions.
 
 1. **Search backend — parse ourselves, query Gloda, or recoll?**
-   Three candidate approaches, each with a different cost/robustness
-   profile:
-   - **Parse mbox/maildir ourselves** (e.g. the `mail` gem for RFC 5322
-     + a trivial mbox splitter) — full control, no index build, but we
-     own parsing + our own search (grep-grade, or feed pikuri-vectordb).
-   - **Query Gloda's `global-messages-db.sqlite`** — reuse Thunderbird's
-     existing FTS, always fresh, zero index build — against an
-     undocumented, version-fragile schema that may be off.
-   - **recoll** — indexes mail *and attachments*, but requires the user
-     to install + configure + build an index (same trade-off recorded
-     for the OS assistant's `Recoll` backend).
-   Do we want a single approach or a swappable, `available?`-probed
-   backend like `pikuri-os`'s file-index pair?
+   The storage-landscape probing above turned several of these from
+   guesses into measured trade-offs; the *decision* is still open.
+   Candidate approaches:
+   - **Parse mbox ourselves** (e.g. the `mail` gem for RFC 5322 + a
+     trivial `From `-splitter, honoring CRLF + `X-Mozilla-Status`
+     deleted flags) — no lock issues, full control, but we own MIME
+     decoding *and* the search itself (grep-grade, or build/maintain our
+     own index → a freshness daemon, Q12) *and* attachment extraction is
+     on us.
+   - **Use Gloda (`global-messages-db.sqlite`)** — Thunderbird has
+     *already* decoded bodies + attachment names + author/recipients and
+     keeps them fresh for free. Now-known costs (confirmed above):
+     (i) **locked while TB runs** → live reads need `immutable=1`
+     (torn-read risk); (ii) **`mozporter` blocks external `MATCH`** →
+     we'd read the plain `messagesText_content` columns with our own
+     matcher, not the FTS; (iii) undocumented/version-fragile schema
+     (though stable in practice); (iv) depends on Gloda being enabled +
+     caught up (indexing lag), and on honoring the `deleted` flag.
+   - **recoll** — indexes mail *and attachment bodies*, but requires the
+     user to install + configure + build an index (same trade-off
+     recorded for the OS assistant's `Recoll` backend).
+   - **Hybrid: Gloda to *find*, mbox to *read*.** Use Gloda's decoded
+     columns as the search corpus (content already extracted), get back
+     `folderID` + `headerMessageID`, then pull the *authoritative* full
+     message from the mbox for display. **Read-path caveat (confirmed by
+     query (c)):** `messageKey` is *not* a universal byte offset — it's
+     the IMAP UID for `ImapMail/` folders (so no clean seek), a byte
+     offset only for local `Mail/` folders. For IMAP mail (the common
+     case) the mbox lookup is by `Message-ID` (scan or one-time index),
+     or via the Mork `.msf` UID→offset map we hoped to skip. This dulls
+     the hybrid's appeal — and note the simpler question it raises: since
+     Gloda's `c0body` is *already decoded* (that's what (b) searched), do
+     we even need the mbox for reading, unless we want raw
+     headers/attachments? A **Gloda-only** find-*and*-read is the fourth
+     option's simpler sibling (no mbox parsing at all; costs: no raw
+     message/attachments, `immutable=1` lock dance).
+   Cross-cutting: do we want a single approach or a swappable,
+   `available?`-probed backend like `pikuri-os`'s file-index pair (e.g.
+   Gloda-when-present, mbox-parse fallback)? And Q12 (freshness) only
+   bites the parse-ourselves-with-own-index arm — Gloda and recoll manage
+   their own.
 
 2. **Placement — new `pikuri-thunderbird` gem, or fold into
    `pikuri-os`?** It's offline, Linux-desktop-specific, reads local
@@ -120,18 +278,33 @@ Take these one at a time in later sessions.
    `pikuri-extractors`)? recoll gives this for free; the other two
    backends don't.
 
-6. **Calendar read.** Is reading the calendar SQLite viable and stable
-   enough (schema, locking), and which ICS parser (`icalendar` gem)?
+6. **Calendar read.** Largely *answered feasible* by the schema (above):
+   WAL → reads live; core event fields are normalized columns → a plain
+   `SELECT` on `cal_events`, no ICS parser for the common case
+   (`icalendar` gem only for `icalString` recurrence/attendee fragments
+   if we surface those). Residual opens: confirm the `event_start` time
+   encoding (PRTime µs?) + the `_tz` handling, and how `cal_id`
+   distinguishes local vs. cached-CalDAV calendars.
 
-7. **Calendar event creation.** Write into Thunderbird's calendar DB
-   (fragile, undocumented) vs. hand off a `.ics` file for Thunderbird to
-   import vs. out of scope. CalDAV write is out of scope by the no-network
-   rule.
+7. **Calendar event creation.** The schema makes the *hazard* concrete: a
+   direct DB write is just SQL, but `local.sqlite` is WAL and **TB holds
+   it open** — a live write is invisible to the running TB's in-memory
+   cache and can be clobbered, and a write to a *cached-CalDAV* calendar
+   would never sync back. So the candidates are: (a) **hand TB an `.ics`
+   to import** (the safe analog of the compose hand-off — TB owns the
+   write + any sync); (b) direct DB write **only with TB closed**;
+   (c) out of scope. CalDAV write over the network stays out of scope by
+   the no-network rule. Leaning (a), but recorded as open.
 
-8. **Compose hand-off mechanics.** `thunderbird -compose` argument
-   quoting/escaping, attachments, HTML vs. plain; and invoking the binary
-   under snap/flatpak confinement (`snap run thunderbird …`, flatpak
-   equivalent) from our process.
+8. **Compose hand-off mechanics.** *Core mechanics confirmed* (see the
+   storage section): single-quoted `key=value` values escape correctly
+   (comma in subject + punctuation survive), snap TB reuses the running
+   instance, nothing is sent. Residual opens: embedding **newlines** in
+   `body` (known `-compose` limitation — needed for a real draft body);
+   **attachments** (`attachment=` URL/path field); **HTML vs. plain**
+   body; and the **flatpak** invocation (only snap confirmed). Also: does
+   the caller need to *find* the right binary (snap vs. apt vs. flatpak
+   `thunderbird`), mirroring the profile-discovery problem (Q3)?
 
 9. **"Send it ourselves" — is it even possible without SMTP?**
    Thunderbird's CLI only *opens* a compose window; there's no documented
