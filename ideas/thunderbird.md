@@ -119,21 +119,31 @@ user's *own correspondence graph* — the addresses they have actually mailed an
 received — so the answer is grounded in their history, not guessed.
 
 - **Source = Gloda `contacts` + `identities`** (same snapshot + `Gloda` backend
-  as mail search; no new machinery — this is the sibling of the confirmed
-  {Gloda#domains_seen} query). `contacts(id, name, popularity, frecency)` joined
-  to `identities(contactID, kind='email', value)`. Schema for both is confirmed
-  live (the `identities` half was verified for the novelty check; `contacts`
-  columns still want a quick real-box confirm — see Open validation questions).
-- **Match name OR address, rank by frecency.** `contacts.name LIKE '%q%'`
-  (case-insensitive) or the email `value` matches; order by Gloda's
-  `frecency`/`popularity` so the most-corresponded-with match leads (the Jon you
-  actually email, not a one-off). Accept a partial address too (reverse lookup:
-  address → who is this?).
+  as mail search; no new machinery — sibling of the confirmed {Gloda#domains_seen}
+  query). `contacts(id, directoryUUID, contactUUID, popularity, frecency, name,
+  jsonAttributes)` joined to `identities(contactID, kind='email', value)`. Schema
+  **confirmed live** — but the probe **killed two assumptions** and reshaped the
+  design:
+  - **`frecency` and `popularity` are 0 for every contact** in this build (Gloda
+    doesn't populate them). The whole "rank by frecency" plan is dead — ranking
+    must be derived (below). `jsonAttributes` is null or a useless `{"69": []}`.
+  - **`contacts.name` is unreliable** — frequently just an email address, and
+    sometimes junk (a `mvysny/GHSA-…` repo slug, a `reply+…@reply.github.com`
+    mailer string). So `name` can't be the sole match key, and a candidate whose
+    `name` is a bare address won't match a name query at all.
+- **Match name OR address; rank by a *derived* correspondence count.** Since
+  Gloda's frecency is 0, count it ourselves: how many messages the address
+  appears in as author/recipient (the decoded `messagesText_content.c3author` /
+  `c4recipients`), weighting a Sent-folder appearance (indexingPriority 60)
+  higher — "I have *mailed* this person" is the strongest real-contact signal.
+  A handful of candidates × one COUNT each is cheap. Match on `contacts.name` /
+  `identities.value` LIKE, and (pending the display-name probe below) possibly
+  straight over the decoded author/recipient strings, which sidesteps the
+  unreliable-`name` gap. Accept a partial address too (reverse lookup).
 - **Return ranked candidates, never auto-pick.** Several people/addresses come
-  back, each `Name <addr>` with a familiarity signal (corresponded-often vs.
-  seen-once — reuse the identity graph). Disambiguation is the model's/human's
-  job; silently choosing one address is exactly the mis-send the whole compose
-  guard exists to prevent.
+  back, each `Name <addr>` with the derived familiarity count (mailed-often vs.
+  seen-once). Disambiguation is the model's/human's job; silently choosing one
+  address is exactly the mis-send the whole compose guard exists to prevent.
 - **Inbound-only** — a pure read, adds no egress leg of its own. But its whole
   purpose is to feed compose. *Open:* register it always (harmless read, and
   independently useful — "what's Jon's address?") vs. only alongside `compose:`.
@@ -141,7 +151,8 @@ received — so the answer is grounded in their history, not guessed.
   gating a read behind the egress flag buys nothing.
 - **Honest residual — a spoofed contact.** The graph includes senders of
   *received* mail, so an attacker who mailed as `Jon Snow <evil@…>` can surface
-  as a candidate. Three things blunt it, none a hard block: frecency ranking
+  as a candidate. Three things blunt it, none a hard block: the derived
+  correspondence count (esp. the Sent weighting — a spoofer isn't in your Sent)
   sinks a one-off below the real Jon; the resolved address lands in the compose
   window the human reviews; and compose's novelty-warn fires if `evil@`'s domain
   is new. Same "human reviewing the To field is the last line" posture as the
@@ -213,12 +224,17 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   fired ("You have no prior mail with …"). The query still degrades gracefully
   (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
   TB versions.
-- **`contacts` schema for the address resolver.** {Gloda#domains_seen} proved
-  the `identities(kind, value)` half live; the planned `thunderbird_contact_search`
-  also reads `contacts(id, name, popularity, frecency)` — recalled, not yet
-  confirmed on a real box. A one-line `.schema contacts` +
-  `SELECT name, popularity, frecency FROM contacts LIMIT 5` settles it before
-  building the resolver.
+- **Address-resolver ranking source** — the `contacts` schema is now
+  **confirmed** (`id, directoryUUID, contactUUID, popularity, frecency, name,
+  jsonAttributes`), and the probe settled the design: `frecency`/`popularity`
+  are 0 for all contacts (unusable), `name` is unreliable — so ranking is
+  derived from message counts (see the resolver design). The remaining
+  **deciding** question: **do the decoded `messagesText_content.c3author` /
+  `c4recipients` columns carry display names** (`Jon Snow <jon@…>`) or just bare
+  addresses? If names — the resolver can match and rank straight off the corpus
+  and `contacts` becomes optional; if bare — name→address must go through
+  `contacts.name` (with its gaps). Probe:
+  `SELECT c3author, c4recipients FROM messagesText_content LIMIT 10`.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
