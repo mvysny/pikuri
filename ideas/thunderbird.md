@@ -1,10 +1,12 @@
 # Local Thunderbird integration
 
-Status: **v1 shipped; v2 (egress) in flight.** The `pikuri-thunderbird` gem
-ships the four inbound, no-egress tools (`thunderbird_mail_search` /
-`_mail_read` / `_calendar_search` / `_calendar_read`) + profile discovery +
-the snapshot / ephemeral-FTS5 machinery + a one-call `Thunderbird::Extension`
-+ `bin/pikuri-thunderbird`, all under test.
+Status: **v1 shipped and validated against a real profile; v2 (egress) in
+flight.** The `pikuri-thunderbird` gem ships the four inbound, no-egress tools
+(`thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
+`_calendar_read`) + profile discovery + the snapshot / ephemeral-FTS5 machinery
++ a one-call `Thunderbird::Extension` + `bin/pikuri-thunderbird`, all under test
+and confirmed working end-to-end against an actual Thunderbird install
+(the external-content FTS5 rebuild + column assumptions held).
 
 This note has been trimmed per the graduation pipeline
 ([`../CLAUDE.md`](../CLAUDE.md)). Where the substance now lives:
@@ -156,16 +158,16 @@ posture honestly as smoke-alarm-grade (human-gated ≠ severed), not a firewall.
 
 ## Open validation questions
 
-Need a real populated install or future work; none blocks v1.
+Need a real populated install or future work; none blocks v1. (The
+real-install smoke test — the headline question here — is now **resolved**:
+v1 ran end-to-end against an actual Thunderbird profile, working well.)
 
-- **Real-install smoke test.** v1 is tested only against synthetic fixtures
-  built to the confirmed schema (no TB on the dev box). First run against a
-  real profile is the true test of the external-content FTS5 rebuild + column
-  assumptions.
-- **Calendar WAL cadence.** A WAL DB's change counter bumps only on
-  checkpoint, so the calendar staleness signal should eventually pair the
-  counter with `-wal` size+mtime. v1 uses the bare counter; deferred until the
-  calendar path is exercised heavily.
+- **Calendar WAL cadence.** Calendar search + read are now confirmed working
+  against a real profile, but the WAL staleness path specifically is *not* yet
+  exercised: a WAL DB's change counter bumps only on checkpoint, so the
+  staleness signal should eventually pair the counter with `-wal` size+mtime.
+  v1 uses the bare counter; still deferred until the calendar path takes live
+  writes between polls.
 - **Gloda counter cadence across a real poll** — sizing only (retry/backoff);
   the read/star/tag churn is already confirmed. The content-triple de-churn
   (`max(id)`/`count(*)`/`sum(deleted)`) is the upgrade if the ~1 s spurious
