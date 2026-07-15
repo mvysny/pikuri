@@ -48,7 +48,7 @@ module Pikuri
           Subject: #{rec[:subject]}
           From: #{rec[:from]}
           To: #{rec[:to]}
-          Date: #{Format.short_datetime(rec[:date])}
+          Date: #{DateHelpers.short_datetime(rec[:date])}
           Folder: #{rec[:folder]}
           Attachments: #{attachments.empty? ? '(none)' : attachments}
 

@@ -10,7 +10,7 @@ module Pikuri
     # (+locking_mode=EXCLUSIVE+), so the only live-file touch is a *bracketed*
     # +cp --reflink=auto+; every actual query runs against the copy we own.
     #
-    #   snap = Snapshot.new(source: profile.gloda_path, dir: cache_dir)
+    #   snap = DatabaseSnapshot.new(source: profile.gloda_path, dir: cache_dir)
     #   snap.refresh          # (re)copies iff the source generation moved
     #   run_query_against(snap.path)
     #   snap.generation       # the source change-counter this copy is as-of
@@ -39,8 +39,8 @@ module Pikuri
     # strand it (re-derivable data). Only the main DB file is copied — for a
     # WAL store that yields an as-of-last-checkpoint view (Thunderbird
     # checkpoints aggressively), which callers open with +?immutable=1+.
-    class Snapshot
-      LOGGER = Pikuri.logger_for('Thunderbird::Snapshot')
+    class DatabaseSnapshot
+      LOGGER = Pikuri.logger_for('Thunderbird::DatabaseSnapshot')
 
       # Raised when a settled copy can't be taken within the attempt budget
       # (Thunderbird mid-sync, counter won't sit still). Recoverable — the
@@ -71,7 +71,7 @@ module Pikuri
       # @param source [String] path to the live Thunderbird DB.
       # @param dir [String] private dir to hold the copy (created 0700 if
       #   absent); must sit on the same filesystem as +source+ for reflink.
-      # @return [Snapshot]
+      # @return [DatabaseSnapshot]
       def initialize(source:, dir:)
         @source = source
         @dir = dir

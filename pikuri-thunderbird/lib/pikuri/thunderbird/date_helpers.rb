@@ -8,7 +8,7 @@ module Pikuri
     # LLM-facing text the tools emit. Kept out of {Gloda}/{Calendar} so those
     # stay pure data accessors (raw {Time}s + tz strings), and out of the
     # tool classes so mail/calendar render dates identically.
-    module Format
+    module DateHelpers
       # Human "when" for a calendar event. All-day events render as a date
       # (or date range, honoring the iCal exclusive DTEND); timed events
       # render in the *machine's* local zone with the event's own tzid

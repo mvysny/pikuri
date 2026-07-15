@@ -29,11 +29,11 @@ Email is the textbook lethal trifecta. The three legs:
    Inherently present.
 3. **Egress** — the ability to send data out.
 
-**The default surface removes leg 3 entirely.** The four tools
+**The default surface removes leg 3 entirely.** The five tools
 `thunderbird_mail_search`, `thunderbird_mail_read`,
-`thunderbird_calendar_search`, and `thunderbird_calendar_read` are all
-inbound-only, and they are all `Extension` gives unless a host opts into
-compose. An agent wired with just these (plus, say, a calculator) has legs 1
+`thunderbird_contact_search`, `thunderbird_calendar_search`, and
+`thunderbird_calendar_read` are all inbound-only, and they are all `Extension`
+gives unless a host opts into an outbound leg. An agent wired with just these (plus, say, a calculator) has legs 1
 and 2 but no way to send anything anywhere, so a prompt injection buried in a
 message body has no exfiltration channel. That is the "trifecta broken by
 construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
@@ -63,7 +63,7 @@ complete.
 Thunderbird holds its SQLite DBs open with `locking_mode=EXCLUSIVE`, so a
 plain read fails "database is locked" while it runs, and a lock-bypassing
 `immutable=1` read of the live file risks a torn read. pikuri never queries
-the live file. Instead {Pikuri::Thunderbird::Snapshot} takes a **bracketed
+the live file. Instead {Pikuri::Thunderbird::DatabaseSnapshot} takes a **bracketed
 `cp --reflink=auto`**: it reads the SQLite change counter (header bytes
 24–27) and checks for a rollback `-journal` before and after the copy, and
 accepts the copy only if the counter didn't move and no journal was present
@@ -125,9 +125,18 @@ closed; suspicious/non-ASCII/punycode *recipients* are dropped for the human to
 retype; a never-corresponded-with recipient domain (per
 {Pikuri::Thunderbird::Gloda#domains_seen}) is flagged, not blocked. The launch
 is detached (`setsid --fork`) so closing the agent never kills the user's
-Thunderbird. **Create-event** (`thunderbird_calendar_create`) remains designed
-but unbuilt. The full v2 rationale + open questions are in
-`ideas/thunderbird.md`.
+Thunderbird.
+
+**Create-event is shipped, opt-in.** `thunderbird_calendar_create`
+({Pikuri::Thunderbird::CalendarCreate}) is wired only when a host passes
+`Extension.new(allow_create_calendar_event: true)`. Same human-gated shape:
+it builds an event `.ics` ({Pikuri::Thunderbird::IcsEvent} RFC-5545-escapes
+every field so a description can't inject a second `VEVENT`), stages it where a
+snap-confined Thunderbird can read it ({Pikuri::Thunderbird::Profile#outbox_dir}),
+and hands it to TB's import wizard, where the human picks the destination
+calendar (local-vs-CalDAV = their no-egress-vs-egress choice) and confirms.
+Both outbound tools launch via the shared {Pikuri::Thunderbird::Launcher}. The
+full v2 rationale + open questions are in `ideas/thunderbird.md`.
 
 ## Discovery
 
@@ -291,7 +300,7 @@ WAL stores** (the calendar DBs are WAL, and WAL readers are still shut out).
 `immutable=1` is the universal lock-bypass; for a WAL store it reads
 as-of-last-checkpoint (Thunderbird checkpoints aggressively — right after the
 62 MB sync the `-wal` held ~1 MB and `immutable=1` saw all 5414 events). This
-is why {Pikuri::Thunderbird::Snapshot} works against a *copy*, not the live
+is why {Pikuri::Thunderbird::DatabaseSnapshot} works against a *copy*, not the live
 file. (WAL caveat for calendar freshness: a WAL DB's change counter bumps only
 on checkpoint, so calendar staleness should eventually pair the counter with
 `-wal` size+mtime — deferred; v1 uses the counter.)

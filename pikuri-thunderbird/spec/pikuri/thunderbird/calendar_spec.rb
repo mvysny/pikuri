@@ -95,7 +95,7 @@ describe Pikuri::Thunderbird::Calendar do
   it 'returns same-day events given an inclusive whole-day window' do
     with_calendar do |cal|
       # "tomorrow's meetings" shape: after == before == the day. The
-      # backend must see a whole-day window (via Format.parse_before's
+      # backend must see a whole-day window (via DateHelpers.parse_before's
       # end-of-day), so E3 at 10:00 that day is included, not excluded.
       ids = cal.search(query: '', limit: 10,
                        after: Time.utc(2026, 5, 15, 0, 0, 0),

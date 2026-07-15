@@ -20,24 +20,24 @@ module Pikuri
     #
     # A view queries through {#with_fresh_db}; it never caches the connection
     # (a rebuild reopens it). pikuri never touches the locked live file — it
-    # works against a {Snapshot} copy and builds its own FTS5 index into that
+    # works against a {DatabaseSnapshot} copy and builds its own FTS5 index into that
     # copy (Gloda's own +messagesText+ is an fts3 vtable behind the custom
     # +mozporter+ tokenizer, which the sqlite3 gem can't open).
     #
     # This service is *specific to Gloda's schema* — the FTS5 index it builds is
     # over Gloda's decoded columns (+c0body+ … +c4recipients+), so it is not a
     # generic SQLite handle and does not serve the calendar DBs ({Calendar} has
-    # its own {Snapshot} + backend).
+    # its own {DatabaseSnapshot} + backend).
     #
     # == Freshness & consistency (one signal)
     #
     # Each {#with_fresh_db} first compares the live Gloda change counter against
     # the generation the current copy+index were built from; if it moved, a
-    # fresh {Snapshot} is taken and the FTS5 index rebuilt (~1 s). Between
+    # fresh {DatabaseSnapshot} is taken and the FTS5 index rebuilt (~1 s). Between
     # changes it's a 4-byte read and a no-op. The counter bumps on any Gloda
     # write — including read/star/tag flips during triage — so a rebuild can
     # fire mid-conversation (desirable: the views then see new mail). See
-    # {Snapshot}.
+    # {DatabaseSnapshot}.
     #
     # Immutable (holds no external state beyond its own snapshot/connection);
     # {#close} is required for orderly teardown. Not thread-safe.
@@ -49,7 +49,7 @@ module Pikuri
       # @return [Gloda]
       def initialize(gloda_path:, cache_dir:)
         @source = gloda_path
-        @snapshot = Snapshot.new(source: gloda_path, dir: cache_dir)
+        @snapshot = DatabaseSnapshot.new(source: gloda_path, dir: cache_dir)
         @db = nil
         @indexed_generation = nil
       end
@@ -88,7 +88,7 @@ module Pikuri
       #
       # @return [void]
       def ensure_fresh
-        live = Snapshot.change_counter(@source)
+        live = DatabaseSnapshot.change_counter(@source)
         return if @db && @indexed_generation && live == @indexed_generation
 
         close # release the fd before cp overwrites the copy in place

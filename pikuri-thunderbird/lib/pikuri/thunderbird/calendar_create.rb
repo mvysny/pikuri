@@ -82,8 +82,8 @@ module Pikuri
       #
       # @return [String] the observation.
       def create(title:, start:, finish:, all_day:, location:, description:)
-        start_t = Format.parse_time(start) or return 'Error: a start date/time is required.'
-        finish_t = Format.parse_time(finish)
+        start_t = DateHelpers.parse_time(start) or return 'Error: a start date/time is required.'
+        finish_t = DateHelpers.parse_time(finish)
 
         ics = IcsEvent.build(title:, start: start_t, finish: finish_t, all_day:,
                              location:, description:)

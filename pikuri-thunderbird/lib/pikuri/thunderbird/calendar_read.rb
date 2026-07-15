@@ -39,7 +39,7 @@ module Pikuri
         desc = ev[:description].to_s.strip
         <<~EV.chomp
           Title: #{ev[:title]}
-          When: #{Format.when_label(ev)}
+          When: #{DateHelpers.when_label(ev)}
           Where: #{ev[:location].to_s.strip.empty? ? '(none)' : ev[:location].strip}
           Status: #{ev[:status] || '(none)'}
 

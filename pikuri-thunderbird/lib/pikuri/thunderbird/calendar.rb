@@ -16,7 +16,7 @@ module Pikuri
     #   cal.search(query: 'standup', limit: 10)
     #   cal.read(event_id: hit[:event_id])
     #
-    # Like {Gloda}, every query runs against {Snapshot} copies (opened
+    # Like {Gloda}, every query runs against {DatabaseSnapshot} copies (opened
     # +?immutable=1+, so a WAL store reads as-of-last-checkpoint), refreshed
     # when the source generation moves.
     #
@@ -45,7 +45,7 @@ module Pikuri
       def initialize(calendar_dbs:, cache_dir:)
         @sources = calendar_dbs
         @snapshots = @sources.to_h do |src|
-          [src, Snapshot.new(source: src, dir: File.join(cache_dir, File.basename(src, '.sqlite')))]
+          [src, DatabaseSnapshot.new(source: src, dir: File.join(cache_dir, File.basename(src, '.sqlite')))]
         end
         @conns = {}
         @generations = {}
@@ -110,7 +110,7 @@ module Pikuri
       # @return [void]
       def ensure_fresh
         @snapshots.each do |src, snap|
-          live = Snapshot.change_counter(src)
+          live = DatabaseSnapshot.change_counter(src)
           next if @conns[src] && @generations[src] && live == @generations[src]
 
           @conns[src]&.close

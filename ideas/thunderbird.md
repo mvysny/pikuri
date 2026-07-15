@@ -20,7 +20,7 @@ This note has been trimmed per the graduation pipeline
   `pikuri-thunderbird/DESIGN.md` § "Storage landscape (empirically
   confirmed)" — the durable evidence base, especially for the v2 builder.
 - **Per-symbol rationale** → the class yardocs ({Pikuri::Thunderbird::Profile},
-  {Snapshot}, {Gloda}, {Calendar}, the four tools, {Extension}).
+  {DatabaseSnapshot}, {Gloda}, {Calendar}, the four tools, {Extension}).
 - **Invariants** → CLAUDE.md (the gem inventory + the *Thunderbird
   no-egress / no-send seam*).
 
@@ -60,7 +60,7 @@ the homes above. Origin map (question → where the answer now lives):
   all-day = `flags` bit 8; empty-corpus self-explains (enable Offline
   Support). {Calendar} + DESIGN.md.
 - **Q11 concurrency** → never query the live locked DB; a bracketed on-disk
-  reflink snapshot copy (change-counter + `-journal` bracket). {Snapshot} +
+  reflink snapshot copy (change-counter + `-journal` bracket). {DatabaseSnapshot} +
   DESIGN.md. (The `:memory:` medium was considered and reversed — on-disk keeps
   idle RAM ≈ 0 via the page cache; `:memory:` stays a documented zero-disk
   knob, unbuilt.)

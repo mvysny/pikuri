@@ -2,7 +2,7 @@
 
 # Skeleton smoke test: the gem requires cleanly, defines its namespace,
 # mounts its own loader, and pulls pikuri-core. Per-component specs land
-# alongside each piece (Profile, Snapshot, Gloda, Calendar, the tools).
+# alongside each piece (Profile, DatabaseSnapshot, Gloda, Calendar, the tools).
 describe 'pikuri-thunderbird skeleton' do
   it 'defines the Pikuri::Thunderbird namespace' do
     assert defined?(Pikuri::Thunderbird), 'Pikuri::Thunderbird should be defined after require'

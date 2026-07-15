@@ -61,7 +61,7 @@ module Pikuri
       # @return [String]
       def self.run_search(backend:, query:, after:, before:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
-        hits = backend.search(query:, limit:, after: Format.parse_after(after), before: Format.parse_before(before))
+        hits = backend.search(query:, limit:, after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
         return offline_or_no_match(backend, query) if hits.empty?
 
         header = "#{hits.size} event#{hits.size == 1 ? '' : 's'}:"
@@ -87,7 +87,7 @@ module Pikuri
         loc = event[:location].to_s.strip
         <<~EV.chomp
           #{event[:title].to_s.strip.empty? ? '(untitled)' : event[:title].strip}
-            when: #{Format.when_label(event)}#{loc.empty? ? '' : "  |  where: #{loc}"}
+            when: #{DateHelpers.when_label(event)}#{loc.empty? ? '' : "  |  where: #{loc}"}
             id: #{event[:event_id]}
         EV
       end

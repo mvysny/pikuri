@@ -609,7 +609,7 @@ per-gem one-liners:
   it also carries the `domains_seen` novelty query). The calendar tools
   `Thunderbird::CalendarSearch` / `CalendarRead` run over
   `Thunderbird::Calendar` (the `calendar-data/*.sqlite` stores). Both
-  backends never query Thunderbird's locked live DBs: `Thunderbird::Snapshot`
+  backends never query Thunderbird's locked live DBs: `Thunderbird::DatabaseSnapshot`
   takes a bracketed `cp --reflink=auto` (change-counter + `-journal`
   bracket) into `~/.cache/pikuri/thunderbird/`, and the mail path builds an
   *ephemeral* FTS5 index over the decoded columns inside that copy (Gloda's

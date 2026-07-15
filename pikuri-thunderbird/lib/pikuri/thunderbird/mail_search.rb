@@ -52,8 +52,8 @@ module Pikuri
       # @return [String] formatted hits, a no-match line, or +"Error: …"+.
       def self.run_search(backend:, query:, from:, to:, subject:, after:, before:, folder:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
-        after_t = Format.parse_after(after)
-        before_t = Format.parse_before(before)
+        after_t = DateHelpers.parse_after(after)
+        before_t = DateHelpers.parse_before(before)
         hits = backend.search(query:, limit:, from:, to:, subject:,
                               after: after_t, before: before_t, folder:)
         return "No matching mail found for #{query.inspect}." if hits.empty?
@@ -69,7 +69,7 @@ module Pikuri
       def self.render(hit)
         <<~HIT.chomp
           #{hit[:subject].to_s.strip.empty? ? '(no subject)' : hit[:subject].strip}
-            from: #{hit[:from]}  |  #{Format.short_datetime(hit[:date])}  |  folder: #{hit[:folder]}
+            from: #{hit[:from]}  |  #{DateHelpers.short_datetime(hit[:date])}  |  folder: #{hit[:folder]}
             id: #{hit[:message_id]}
             #{hit[:snippet]}
         HIT
