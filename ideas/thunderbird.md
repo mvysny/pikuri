@@ -1,12 +1,16 @@
 # Local Thunderbird integration
 
-Status: **v1 shipped and validated against a real profile; v2 (egress) in
-flight.** The `pikuri-thunderbird` gem ships the four inbound, no-egress tools
-(`thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
-`_calendar_read`) + profile discovery + the snapshot / ephemeral-FTS5 machinery
-+ a one-call `Thunderbird::Extension` + `bin/pikuri-thunderbird`, all under test
-and confirmed working end-to-end against an actual Thunderbird install
-(the external-content FTS5 rebuild + column assumptions held).
+Status: **v1 + v2 both shipped and validated against a real profile.** The
+`pikuri-thunderbird` gem ships five inbound, no-egress tools
+(`thunderbird_mail_search` / `_mail_read` / `_contact_search` /
+`_calendar_search` / `_calendar_read`) and two opt-in, human-gated outbound
+tools (`thunderbird_mail_compose` / `thunderbird_calendar_create`) + profile
+discovery + the snapshot / ephemeral-FTS5 machinery + a one-call
+`Thunderbird::Extension` + `bin/pikuri-thunderbird`, all under test and confirmed
+working end-to-end against an actual Thunderbird install (the external-content
+FTS5 rebuild + column assumptions held; both outbound hand-offs open their
+window/wizard live). What remains here is the deferred-work + open-validation
+residue below (attendees, WAL cadence, timezone edge, non-Gloda fallbacks).
 
 This note has been trimmed per the graduation pipeline
 ([`../CLAUDE.md`](../CLAUDE.md)). Where the substance now lives:
@@ -255,11 +259,12 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   CalDAV calendar mail invites?** Import usually isn't an organize-action, so
   probably not — but unverified; {Pikuri::Thunderbird::CalendarCreate}'s
   `attendees` param waits on this (it ships without one).
-- **Calendar-create not yet run against a real profile.** The build is
-  spec-covered (fake profile + captured hand-off), but the actual `thunderbird
-  <path.ics>` → import-wizard round-trip, and snap staging readability for the
-  `.ics` specifically, are confirmed only by the earlier probe, not by a live
-  create-event run. First smoke test when a populated install is at hand.
+- **Calendar-create — resolved, validated live.** Run against an actual
+  Thunderbird: the `thunderbird <path.ics>` → import-wizard round-trip works
+  end-to-end (build → stage → hand-off → the wizard opens the event, human
+  confirms), and the staged `.ics` was readable by the running TB. No open
+  question remains for create-event itself; the ATTENDEE-invite residual (above)
+  still gates the `attendees` param.
 - **Calendar date-filter timezone frame.** Bounds are compared in the
   machine-local frame — correct for timed events everywhere and for all-day
   events in UTC/eastern zones, but an all-day event (stored *floating*
