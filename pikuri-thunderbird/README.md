@@ -50,10 +50,12 @@ end
 
 Mail tools register only when the Gloda index is present; calendar tools
 register whenever a profile is found (and guide you to enable Offline Support
-if nothing is cached yet). To add the compose hand-off, pass
-`Extension.new(compose: true)` — it stays off unless you ask for it, and your
-`system_prompt` should then tell the model it may draft a message for you to
-send (an inbound-only prompt that forbids sending will keep the tool unused).
+if nothing is cached yet). To add an outbound hand-off, pass
+`Extension.new(allow_compose_mail: true)` (draft a message) or
+`allow_create_calendar_event: true` (draft a calendar event) — each stays off
+unless you ask for it, and your `system_prompt` should then tell the model it
+may draft for you to send/import (an inbound-only prompt that forbids sending
+will keep the tools unused).
 
 ## How it works
 

@@ -39,10 +39,10 @@ message body has no exfiltration channel. That is the "trifecta broken by
 construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
 
 The bundled `bin/pikuri-thunderbird` deliberately goes one step further — it
-wires `compose: true` to demo the *whole* surface — so it does carry leg 3.
-But that leg is human-gated: compose can only open a Thunderbird compose window
-the user Sends themselves (below), so there is an egress leg yet no *autonomous*
-egress. A poisoned message can influence a draft, but cannot make it leave the
+wires both outbound `allow_` flags to demo the *whole* surface — so it does
+carry leg 3. But that leg is human-gated: compose can only open a Thunderbird
+compose window the user Sends themselves (below), so there is an egress leg yet
+no *autonomous* egress. A poisoned message can influence a draft, but cannot make it leave the
 machine without the user clicking Send on a window they can see. So the demo's
 trifecta is *intact-but-gated*, not severed — an honest smoke-alarm, not a
 firewall.
@@ -113,7 +113,7 @@ which is what keeps the trifecta broken even once compose exists.
 
 **Compose is shipped, opt-in.** `thunderbird_mail_compose`
 ({Pikuri::Thunderbird::MailCompose}) is wired only when a host passes
-`Extension.new(compose: true)` — off by default, so an unopted wiring has no
+`Extension.new(allow_compose_mail: true)` — off by default, so an unopted wiring has no
 egress leg *by construction*. `bin/pikuri-thunderbird` opts in (to demo the
 full surface). Turning compose on re-introduces leg 3, but only as a
 human-committed hand-off: the tool opens a

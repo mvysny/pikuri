@@ -92,7 +92,7 @@ describe Pikuri::Thunderbird::Extension do
       write_gloda(dir)
       Dir.mktmpdir do |cache|
         c = FakeConfigurator.new
-        Extension.new(profile_dir: dir, cache_dir: cache, compose: true).configure(c)
+        Extension.new(profile_dir: dir, cache_dir: cache, allow_compose_mail: true).configure(c)
         assert_includes c.tools.map(&:name), 'thunderbird_mail_compose'
       end
     end
@@ -113,7 +113,7 @@ describe Pikuri::Thunderbird::Extension do
       write_calendar(dir) # no Gloda: create needs only a profile + binary
       Dir.mktmpdir do |cache|
         c = FakeConfigurator.new
-        Extension.new(profile_dir: dir, cache_dir: cache, create_calendar_event: true).configure(c)
+        Extension.new(profile_dir: dir, cache_dir: cache, allow_create_calendar_event: true).configure(c)
         names = c.tools.map(&:name)
         assert_includes names, 'thunderbird_calendar_create'
         refute_includes names, 'thunderbird_mail_compose'
@@ -126,7 +126,7 @@ describe Pikuri::Thunderbird::Extension do
       write_calendar(dir) # no Gloda file
       Dir.mktmpdir do |cache|
         c = FakeConfigurator.new
-        Extension.new(profile_dir: dir, cache_dir: cache, compose: true).configure(c)
+        Extension.new(profile_dir: dir, cache_dir: cache, allow_compose_mail: true).configure(c)
         names = c.tools.map(&:name)
         assert_includes names, 'thunderbird_mail_compose'
         refute_includes names, 'thunderbird_mail_search'

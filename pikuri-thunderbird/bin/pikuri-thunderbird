@@ -10,8 +10,9 @@
 # *autonomous* egress — every send is a human action in Thunderbird's UI. That
 # human gate is what keeps the trifecta from closing on its own. (The
 # always-inbound, zero-egress-leg posture is still what Extension gives by
-# default, compose: false — and what bin/pikuri-corpus / bin/pikuri-memory
-# demo; this binary opts the demo into the human-gated egress on purpose.)
+# default (both allow_ flags off) — and what bin/pikuri-corpus /
+# bin/pikuri-memory demo; this binary opts the demo into the human-gated egress
+# on purpose.)
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
@@ -88,8 +89,9 @@ begin
     # One extension wires the whole surface: mail search+read (if Gloda is
     # present), calendar search+read, and both human-gated outbound hand-offs
     # (compose a message, create a calendar event).
-    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir,
-                                                       compose: true, create_calendar_event: true)
+    c.add_extension Pikuri::Thunderbird::Extension.new(
+      profile_dir: profile_dir, allow_compose_mail: true, allow_create_calendar_event: true
+    )
   end
 rescue Pikuri::Thunderbird::Profile::DiscoveryError => e
   warn "Thunderbird profile problem: #{e.message}"

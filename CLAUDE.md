@@ -436,12 +436,12 @@ yardoc. CLAUDE.md only records the invariant.
   (including `thunderbird_contact_search`, a pure read that resolves a name
   to addresses) have no egress leg, so an agent wired with just them has the
   trifecta broken by construction — and that inbound-only shape is the
-  `Extension` **default** (`compose: false`, `create_calendar_event: false`). The two
+  `Extension` **default** (both `allow_` flags off). The two
   outbound tools each add an egress leg only as a *human-gated hand-off to
   Thunderbird's own UI*, each opt-in on its own flag:
-  `thunderbird_mail_compose` (`Extension.new(compose: true)`) opens a pre-filled
+  `thunderbird_mail_compose` (`Extension.new(allow_compose_mail: true)`) opens a pre-filled
   `mailto:` compose window where the human reviews and clicks Send;
-  `thunderbird_calendar_create` (`Extension.new(create_calendar_event: true)`) stages an
+  `thunderbird_calendar_create` (`Extension.new(allow_create_calendar_event: true)`) stages an
   `.ics` and opens Thunderbird's import wizard where the human picks the
   destination calendar (local-vs-CalDAV = the human's no-egress-vs-egress
   choice) and confirms. Neither is a DB write or a send/import by pikuri, so
@@ -616,13 +616,16 @@ per-gem one-liners:
   own fts3/`mozporter` vtable is unopenable by the sqlite3 gem). Multi-word
   matching differs by design: mail ORs words + bm25-ranks (recall-first),
   calendar ANDs words across title/description/location (precision-first, no
-  ranking). The opt-in `compose: true` adds one outbound tool,
-  `Thunderbird::MailCompose` — a human-gated `mailto:` compose-window hand-off
+  ranking). Two opt-in outbound tools, each on its own `allow_` flag: `allow_compose_mail: true`
+  adds `Thunderbird::MailCompose` — a human-gated `mailto:` compose-window hand-off
   (`Thunderbird::MailtoUri` percent-encodes every field; `Thunderbird::ComposeGuard`
   fails a suspicious body closed, drops non-ASCII/punycode recipients, and warns
-  on never-corresponded-with domains via `Gloda::Contacts#domains_seen`), launched detached
-  so agent exit can't kill the user's Thunderbird; it opens a window, never sends.
-  `bin/pikuri-thunderbird` demos the full surface with `compose: true` (the
+  on never-corresponded-with domains via `Gloda::Contacts#domains_seen`); `allow_create_calendar_event: true`
+  adds `Thunderbird::CalendarCreate` — a human-gated `.ics` → import-wizard hand-off
+  (`Thunderbird::IcsEvent` RFC-5545-escapes every field; `Thunderbird::Profile#outbox_dir`
+  stages confined-readable). Both launch via the shared detached `Thunderbird::Launcher`
+  so agent exit can't kill the user's Thunderbird; each opens a window/wizard, never sends/imports.
+  `bin/pikuri-thunderbird` demos the full surface with both `allow_` flags (the
   `thunderbird-compose` prompt): the egress leg is present but human-gated
   (no autonomous send), so unlike `bin/pikuri-corpus` / `bin/pikuri-memory`
   it's trifecta-intact-but-gated, not severed. Depends on `pikuri-core` + the `sqlite3` gem;

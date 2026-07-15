@@ -77,8 +77,9 @@ send tool ever ships. Confirmed hand-off mechanics are in DESIGN.md §
 
 ### `thunderbird_mail_compose` — **shipped** (first cut)
 
-Built as opt-in (`Extension.new(compose: true)`, default off so the demo stays
-no-egress by construction). The design graduated to source and yardoc:
+Built as opt-in (`Extension.new(allow_compose_mail: true)`, default off so an
+unopted wiring stays no-egress by construction). The design graduated to source
+and yardoc:
 
 - **{Pikuri::Thunderbird::MailCompose}** — the tool: `mailto:`-URI hand-off,
   full-body pre-fill, the directed pre-send checklist, detached `setsid --fork`
@@ -105,9 +106,9 @@ Still open / deferred here:
   compose off, and it would keep the tool unused if reused with compose on. The
   compose wiring ships its own `prompts/thunderbird-compose.txt` (drafting
   stance + hardened untrusted-content paragraph). `bin/pikuri-thunderbird` now
-  wires `compose: true` with that prompt — the demo carries a *human-gated*
-  egress leg on purpose (low risk: no autonomous send). The `Extension` default
-  stays `compose: false`, so downstream inbound-only wirings are unchanged.
+  wires `allow_compose_mail: true` with that prompt — the demo carries a
+  *human-gated* egress leg on purpose (low risk: no autonomous send). The
+  `Extension` default stays off, so downstream inbound-only wirings are unchanged.
 
 ### `thunderbird_contact_search` — resolve a name → address — **shipped**
 
@@ -166,7 +167,7 @@ choice) and confirms — the same no-autonomous-egress shape as compose. Design
 graduated to source + yardoc:
 
 - **{Pikuri::Thunderbird::CalendarCreate}** — the tool: build → stage → hand off,
-  opt-in via `Extension.new(create_calendar_event: true)` (its own flag, independent of
+  opt-in via `Extension.new(allow_create_calendar_event: true)` (its own flag, independent of
   `compose:`; both default off).
 - **{Pikuri::Thunderbird::IcsEvent}** — the `.ics` builder; RFC-5545 field
   escaping + control-byte strip is the structural injection defense (a smuggled

@@ -12,7 +12,7 @@ module Pikuri
     # it ({Launcher}) so it opens its *Import Calendar file* wizard. The
     # human then picks the destination calendar and clicks Confirm — that human
     # commit is what keeps the trifecta broken even with an egress leg present,
-    # so this tool is opt-in (+create_calendar_event:+ on {Extension}).
+    # so this tool is opt-in (+allow_create_calendar_event:+ on {Extension}).
     #
     # The destination pick *is* the no-egress-vs-egress choice: importing into a
     # local calendar never leaves the machine; importing into a CalDAV calendar
