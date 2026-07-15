@@ -254,7 +254,7 @@ the `fetch` whitelist is killed.
 ### Shipped instance (partial): `pikuri-os --with-internet`
 
 The author-seat half of this primitive now has a worked example in
-`bin/pikuri-os-assistant`. Recorded here precisely, because the obvious
+`bin/pikuri-os`. Recorded here precisely, because the obvious
 one-liner — *"we cut off the egress leg by having the user confirm the
 research task"* — is wrong on both the verb and the credit, in exactly
 the ways the three bullets above predict:

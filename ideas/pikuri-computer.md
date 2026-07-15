@@ -47,10 +47,9 @@ A wiring + prompt + threat-model gem — same shape as `pikuri-assistant`
 - Optionally a one-call composed `Extension`, *only* if the binary would
   otherwise repeat wiring — don't invent lib code it doesn't need.
 
-pikuri-os keeps its own lean demo binary (the pure no-egress OS-diagnosis
-exemplar). Optional cleanup: rename `bin/pikuri-os-assistant` → `bin/pikuri-os`
-so "os" and "computer" name two clearly-distinct postures (binaries are dev/demo
-entry points, so the rename is cheap).
+pikuri-os keeps its own lean demo binary `bin/pikuri-os` (the pure no-egress
+OS-diagnosis exemplar) — so "os" and "computer" name two clearly-distinct
+postures.
 
 ## The two bounds that freeze it (why it never becomes pikuri-assistant)
 
@@ -155,7 +154,7 @@ addition is an occasion to re-examine the trifecta.** Mechanism:
   reason.
 - **Name.** `pikuri-computer` chosen. *Rejected:* `pikuri-desktop`
   (capability-bucket smell + too close to the pikuri-assistant endgame),
-  `pikuri-os-assistant` (collides with the existing binary name). `pikuri-personal`
+  `pikuri-os-assistant` (redundant with the `pikuri-os` gem it builds on). `pikuri-personal`
   / `pikuri-local` (more literal perimeter names) left on the table, not preferred.
 - **Attendees / other thunderbird deferrals** are thunderbird's, not
   pikuri-computer's — they live in [`thunderbird.md`](thunderbird.md).

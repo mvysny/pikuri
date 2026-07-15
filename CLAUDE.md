@@ -39,7 +39,7 @@ The gem inventory:
 - `pikuri-os` — offline, network-severed OS-helper agent: OS
   surface (`fileindex_search` / `fileindex_read` over GNOME's
   localsearch, `MACHINE.md` resident memory, boot grounding) +
-  `bin/pikuri-os-assistant`.
+  `bin/pikuri-os`.
 - `pikuri-thunderbird` — local Thunderbird mail + calendar: five read-only
   inbound tools `thunderbird_mail_search` / `_mail_read` / `_contact_search` /
   `_calendar_search` / `_calendar_read` over Thunderbird's own on-disk profile
@@ -588,7 +588,7 @@ per-gem one-liners:
   omitting them when none is), `Os::MachineMemory` (the
   `~/.config/pikuri/MACHINE.md` resident memory folded into the
   prompt), and `Os::SystemInfo` (boot grounding via `inxi -b` +
-  primitives) — plus `bin/pikuri-os-assistant`. The binary's
+  primitives) — plus `bin/pikuri-os`. The binary's
   load-bearing posture is `Sandbox::FullFsNoNet` (full disk,
   kernel-severed egress) + confirmed mutations + the read-only
   bash command approver with the git arm. Depends on `pikuri-core`

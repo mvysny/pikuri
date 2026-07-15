@@ -5,7 +5,7 @@ require 'pikuri-workspace'
 require 'pikuri-code'
 
 # Entry file for the pikuri-os gem: the OS-integration layer and home of
-# the +bin/pikuri-os-assistant+ demo — a single, local, network-severed
+# the +bin/pikuri-os+ demo — a single, local, network-severed
 # agent for understanding and operating the host OS ({Pikuri::Os::Extension}
 # is the one-call wiring). The load-bearing posture: egress severed at the
 # kernel (a net-isolated Bash sandbox), every mutation confirmed, durable

@@ -89,7 +89,7 @@ that ship today both answer "no" a different way —
 - **pikuri-os** keeps `fetch`/`web_scrape` *off* the parent entirely,
   quarantined in the `RESEARCHER` sub-agent (no filesystem) and reached
   through the task-prompt author seat (`c.add_sub_agent_tool` in
-  `bin/pikuri-os-assistant`). So there is no parent URL to confirm — the
+  `bin/pikuri-os`). So there is no parent URL to confirm — the
   egress question was answered by the **sub-agent hop**, the very move
   item 1 of "Why these exist" was probing whether we could *avoid*. We
   didn't avoid it; we leaned on it.

@@ -3,7 +3,7 @@
 Offline Linux/OS helper agent + OS-integration tools for the
 [pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit.
 
-`pikuri-os` is the home of `bin/pikuri-os-assistant`: a single, local,
+`pikuri-os` is the home of `bin/pikuri-os`: a single, local,
 **network-severed** agent that understands and operates the host OS —
 answer questions about the machine, find and open files, read logs and
 explain errors, advise on configuration. It is the federation's

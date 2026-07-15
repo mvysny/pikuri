@@ -92,7 +92,7 @@ assistant that combines every gem, landing once they stabilise.
    network (`--with-internet`) by quarantining all web tools in a
    privilege-separated `RESEARCHER` sub-agent with no filesystem,
    reached through a confirmed task prompt — so no single context
-   holds all three trifecta legs. Demo via `pikuri-os-assistant`.
+   holds all three trifecta legs. Demo via `pikuri-os`.
 8. **[The in-repo coding agent](08-code.md).** The same three
    seams from chapter 7 — `Workspace`, `Confirmer`, `Sandbox` —
    now in a developer's hands and grown up: where chapter 7

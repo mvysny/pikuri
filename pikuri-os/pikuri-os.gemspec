@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary     = 'Offline Linux/OS helper agent + tools for pikuri.'
   spec.description = <<~DESC
     pikuri-os is the OS-integration layer for pikuri and the home of
-    the +bin/pikuri-os-assistant+ demo: a single, local, network-severed
+    the +bin/pikuri-os+ demo: a single, local, network-severed
     agent that understands and operates the host OS (answer questions
     about the machine, find and open files, read logs and explain
     errors, advise on configuration). It is the federation's privacy-

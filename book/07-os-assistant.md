@@ -53,7 +53,7 @@ all of which **degrade rather than crash** except the first:
 
 - **`bubblewrap`** (`bwrap`) — the sandbox that severs the network
   lives in it. On Debian / Ubuntu: `sudo apt install bubblewrap`.
-  This one is load-bearing, so `pikuri-os-assistant` probes it (and
+  This one is load-bearing, so `pikuri-os` probes it (and
   the unprivileged user/network namespaces it needs) at boot and
   **raises rather than silently running with an open network**. If
   you genuinely want no sandbox, you have to pass `--no-sandbox`
@@ -73,13 +73,13 @@ it is not a toy sandbox you can be careless in. Read the confirmations.
 ## 1. Run it
 
 ```sh
-./bin/pikuri-os-assistant "what's eating my disk in my home directory?"
+./bin/pikuri-os "what's eating my disk in my home directory?"
 ```
 
 or with no argument for an interactive REPL:
 
 ```sh
-./bin/pikuri-os-assistant
+./bin/pikuri-os
 > find the budget spreadsheet I was editing last week
 > Any kernel errors or warnings in the log?
 ```

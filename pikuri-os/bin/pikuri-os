@@ -40,7 +40,7 @@ server = examples_config['llm_server'] || 'http://localhost:8080'
 model  = examples_config['llm_model']  || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
 
 parser = OptionParser.new do |opts|
-  opts.banner = 'Usage: pikuri-os-assistant [options] [initial message...]'
+  opts.banner = 'Usage: pikuri-os [options] [initial message...]'
   opts.separator ''
   opts.separator 'Options:'
   opts.on('--no-sandbox', 'Disable the network sandbox around bash. WARNING: bash can then ' \

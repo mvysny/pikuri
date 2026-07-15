@@ -1,6 +1,6 @@
 # OS/Linux Assistant
 
-Status: **shipped** as the `pikuri-os` gem + `bin/pikuri-os-assistant`
+Status: **shipped** as the `pikuri-os` gem + `bin/pikuri-os`
 (built; the local-model-fit question is provisionally settled — initial
 testing confirms the recommended 35B-A3B model can diagnose a real
 issue, see below — so what's left is the deferred work list). The design
