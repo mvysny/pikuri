@@ -37,6 +37,9 @@ its rationale, read:
 - [`trifecta-detector.md`](trifecta-detector.md) — the three legs. This
   design breaks the trifecta by **enforced removal of the egress leg**,
   not by trusting its inputs.
+- [`pikuri-computer.md`](pikuri-computer.md) — app integrations (thunderbird,
+  …) compose *on top* of pikuri-os in a separate gem; pikuri-os stays
+  substrate-only and keeps its no-egress posture unchanged.
 
 ## Settled by initial testing
 

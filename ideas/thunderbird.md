@@ -275,5 +275,8 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
 - **`.msf` (Mork), maildir, mbox fallback** — all deferred; build only when a
   Gloda-disabled or maildir host is a real user.
 - Mention in the book
-- Integrate into pikuri-os
+- **Compose with pikuri-os — resolved: not by merging.** The os+thunderbird
+  agent lives in a new `pikuri-computer` gem (deps both, wires both); pikuri-os
+  and pikuri-thunderbird each stay as-is. See
+  [`pikuri-computer.md`](pikuri-computer.md).
 
