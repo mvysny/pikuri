@@ -118,28 +118,33 @@ to ask the user to paste one (friction on the common case). Resolve against the
 user's *own correspondence graph* — the addresses they have actually mailed and
 received — so the answer is grounded in their history, not guessed.
 
-- **Source = Gloda `contacts` + `identities`** (same snapshot + `Gloda` backend
-  as mail search; no new machinery — sibling of the confirmed {Gloda#domains_seen}
-  query). `contacts(id, directoryUUID, contactUUID, popularity, frecency, name,
-  jsonAttributes)` joined to `identities(contactID, kind='email', value)`. Schema
-  **confirmed live** — but the probe **killed two assumptions** and reshaped the
-  design:
-  - **`frecency` and `popularity` are 0 for every contact** in this build (Gloda
-    doesn't populate them). The whole "rank by frecency" plan is dead — ranking
-    must be derived (below). `jsonAttributes` is null or a useless `{"69": []}`.
-  - **`contacts.name` is unreliable** — frequently just an email address, and
-    sometimes junk (a `mvysny/GHSA-…` repo slug, a `reply+…@reply.github.com`
-    mailer string). So `name` can't be the sole match key, and a candidate whose
-    `name` is a bare address won't match a name query at all.
-- **Match name OR address; rank by a *derived* correspondence count.** Since
-  Gloda's frecency is 0, count it ourselves: how many messages the address
-  appears in as author/recipient (the decoded `messagesText_content.c3author` /
-  `c4recipients`), weighting a Sent-folder appearance (indexingPriority 60)
-  higher — "I have *mailed* this person" is the strongest real-contact signal.
-  A handful of candidates × one COUNT each is cheap. Match on `contacts.name` /
-  `identities.value` LIKE, and (pending the display-name probe below) possibly
-  straight over the decoded author/recipient strings, which sidesteps the
-  unreliable-`name` gap. Accept a partial address too (reverse lookup).
+- **Source = the decoded corpus, not the `contacts` table** — decided by two
+  real-box probes. The `contacts` table looked like the obvious source but
+  **failed twice**: `frecency`/`popularity` are 0 for every contact (Gloda
+  doesn't populate them — dead as a ranking key; `jsonAttributes` is null or a
+  useless `{"69": []}`), and `contacts.name` is unreliable (often a bare
+  address, sometimes junk — a `mvysny/GHSA-…` repo slug, a `reply+…@github`
+  mailer). Meanwhile the decoded `messagesText_content.c3author` / `c4recipients`
+  columns carry exactly what's needed: `Name <addr>` pairs, with extra name
+  variants often appended, e.g. `Martin Vysny <martin@vysny.me> Martin Vyšný`
+  and `Lubica Lubi Vysna <lulu.vysna@gmail.com> Lubica "Lubi" Vysna` — display
+  name and address together, in one place, with a natural per-message frequency.
+  So the resolver reads the *corpus*; `contacts`/`identities` are demoted to
+  optional (identities still backs the separate novelty check).
+- **Match the name, extract the `<addr>`, rank by frequency.** Find rows whose
+  author/recipient text contains the query — **reuse the ephemeral FTS5 index
+  already built for mail search**, restricting the MATCH to the `c3author` /
+  `c4recipients` columns, so no extra scan — then scan each `Name <addr>` pair
+  out of the matched cells, group by lower-cased address, and rank by appearance
+  count across author+recipient, weighting a Sent appearance (indexingPriority
+  60) higher: "I have *mailed* this person" is the strongest real-contact
+  signal. Reverse lookup (address → who is this?) is the same path with the
+  address as the query.
+- **Parsing caveats (from the real data):** a recipients cell holds *several*
+  `Name <addr>` entries — extract all with a scan, not one match. Tolerate noise
+  — a literal `undefined` display name, quoted nicknames (`"Lubi"`), repeated
+  unicode name variants — since the match is forgiving substring and the
+  extracted address is the key. Dedup candidates by lower-cased address.
 - **Return ranked candidates, never auto-pick.** Several people/addresses come
   back, each `Name <addr>` with the derived familiarity count (mailed-often vs.
   seen-once). Disambiguation is the model's/human's job; silently choosing one
@@ -224,17 +229,13 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   fired ("You have no prior mail with …"). The query still degrades gracefully
   (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
   TB versions.
-- **Address-resolver ranking source** — the `contacts` schema is now
-  **confirmed** (`id, directoryUUID, contactUUID, popularity, frecency, name,
-  jsonAttributes`), and the probe settled the design: `frecency`/`popularity`
-  are 0 for all contacts (unusable), `name` is unreliable — so ranking is
-  derived from message counts (see the resolver design). The remaining
-  **deciding** question: **do the decoded `messagesText_content.c3author` /
-  `c4recipients` columns carry display names** (`Jon Snow <jon@…>`) or just bare
-  addresses? If names — the resolver can match and rank straight off the corpus
-  and `contacts` becomes optional; if bare — name→address must go through
-  `contacts.name` (with its gaps). Probe:
-  `SELECT c3author, c4recipients FROM messagesText_content LIMIT 10`.
+- **Address-resolver source — resolved.** Both probes are in: `contacts` schema
+  confirmed but its `frecency`/`popularity` are 0 and `name` unreliable, while
+  the decoded `c3author`/`c4recipients` columns *do* carry `Name <addr>` pairs
+  (`Martin Vysny <martin@vysny.me> Martin Vyšný`). Decision locked: the resolver
+  is **corpus-based** (match names + extract addresses + derive frequency off the
+  decoded columns), `contacts` demoted to optional — see the resolver design
+  above. No open question remains for the source; what's left is building it.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
