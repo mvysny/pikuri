@@ -64,8 +64,7 @@ module Pikuri
         # would dump every cached event. "What's on my calendar" should name a
         # span — steer the model to add after/before (e.g. this week).
         if [query, after, before].all? { |v| v.to_s.strip.empty? }
-          return 'Error: give a query and/or a date range (after/before) to search for — ' \
-                 'e.g. this week is after/before spanning Mon–Sun.'
+          return 'Error: give a query and/or a date range (after/before) to search for'
         end
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
