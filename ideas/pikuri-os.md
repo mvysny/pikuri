@@ -37,9 +37,11 @@ its rationale, read:
 - [`trifecta-detector.md`](trifecta-detector.md) — the three legs. This
   design breaks the trifecta by **enforced removal of the egress leg**,
   not by trusting its inputs.
-- [`pikuri-computer.md`](pikuri-computer.md) — app integrations (thunderbird,
-  …) compose *on top* of pikuri-os in a separate gem; pikuri-os stays
-  substrate-only and keeps its no-egress posture unchanged.
+- **`bin/pikuri-computer`** — app integrations (thunderbird, …) compose *on
+  top* of pikuri-os as a **demo binary** (thunderbird as a dev-dep; not a gem,
+  not a merge); pikuri-os stays substrate-only and keeps its no-egress posture
+  unchanged. Landed + live-verified — see CLAUDE.md's pikuri-os entry + the
+  "grow by bounded gems" convention, and book ch7 Part 3.
 
 ## Settled by initial testing
 

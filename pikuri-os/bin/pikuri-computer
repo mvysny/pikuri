@@ -7,8 +7,8 @@
 # assistant that understands this machine AND can search/read the user's
 # Thunderbird mail + calendar and draft a reply or event for them to send.
 #
-# This is the "reassembled trifecta" demo (see ideas/pikuri-computer.md and
-# the pikuri-os book chapter). By default it runs `os --with-internet`
+# This is the "reassembled trifecta" demo (see book ch7 Part 3 and the
+# pikuri-os entry in CLAUDE.md). By default it runs `os --with-internet`
 # (web research via the isolated RESEARCHER) *plus* thunderbird's outbound
 # compose / calendar-create hand-offs — so all three trifecta legs are live
 # (whole-disk private pool + attacker-authorable email as an untrusted

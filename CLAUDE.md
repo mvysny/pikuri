@@ -598,7 +598,14 @@ per-gem one-liners:
   bash command approver with the git arm. Depends on `pikuri-core`
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
-  See {Pikuri::Os::Extension} and `ideas/pikuri-os.md`.
+  Also hosts `bin/pikuri-computer` — a **demo composition, not an os
+  feature**: the same agent wired `os --with-internet` +
+  pikuri-thunderbird (a dev/demo dep of the binary only, both outbound
+  flags on), the reassembled-trifecta demo taught in book ch7 Part 3.
+  pikuri-os's gemspec / `lib/` / extension surface stay
+  substrate-only — thunderbird rides purely as the binary's dev-dep,
+  never joining os's runtime deps. See {Pikuri::Os::Extension} and
+  `ideas/pikuri-os.md`.
 - **`pikuri-thunderbird/`** — local Thunderbird mail + calendar.
   `Thunderbird::Extension` (one-call wiring) discovers the
   active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,
@@ -958,6 +965,25 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   each with their own specs. Neither `Pikuri::Tool`, the
   `Pikuri::Agent`, nor ruby_llm's loop should need to know about
   them.
+- **Grow by adding *bounded gems*, not by fattening one — and each
+  addition re-examines the trifecta.** A bounded gem has a
+  *closeable* threat model (freeze the surface, enumerate the legs,
+  write the DESIGN.md); fattening one gem makes every new tool
+  interact with every existing leg → a threat model that never
+  closes. Horizontal growth preserves "small enough to audit";
+  vertical growth destroys it. But a bounded *concept* doesn't
+  automatically earn a gem — it needs a *novel* threat model **or**
+  cohesive lib code that needs a home, not merely a nameable posture.
+  Worked example: `bin/pikuri-computer`'s composed threat model
+  turned out ≈ `os --with-internet`'s (whole-disk private +
+  attacker-authorable email + human-gated egress — no new leg), so it
+  shipped as a demo binary + book ch7 Part 3, **not** a gem; it earns
+  one only if in-perimeter lib code accretes. Its *local-perimeter*
+  bound — on-device programs with local data only, cloud connectors
+  permanently out — is the wall against drifting into
+  `pikuri-assistant`, the one gem that deliberately accepts the
+  un-closeable surface. Name a gem after what it *refuses to become*,
+  never a capability bucket.
 
 ## CI
 
