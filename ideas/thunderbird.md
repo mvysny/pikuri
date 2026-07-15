@@ -148,7 +148,7 @@ received — so the answer is grounded in their history, not guessed.
   undefined` lead with the bare address, name trailing — so extraction is the
   email-token regex above, **never** a `<…>` split. A cell holds *several*
   entries (multiple recipients) — scan all tokens, not one match. Tolerate noise
-  (a literal `undefined` name, quoted nicknames like `"Lubi"`, repeated unicode
+  (a literal `undefined` name, quoted nicknames like `"Nick"`, repeated unicode
   name variants); the extracted address is the key. Dedup by lower-cased address.
 - **Return ranked candidates, never auto-pick.** Several people/addresses come
   back, each `Name <addr>` with the derived familiarity count (mailed-often vs.
