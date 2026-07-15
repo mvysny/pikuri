@@ -17,8 +17,9 @@ module Pikuri
         Search the user's local Thunderbird mail (subject, body, sender, recipients, attachment names) and return ranked matches.
 
         Usage:
-        - Free-text query plus optional exact filters (sender, recipient, subject, date range, folder).
+        - Free-text query and/or exact filters (sender, recipient, subject, date range, folder) — both optional; supply at least one.
         - Multiple words match broadly (any of them), and the best-matching messages rank first — so extra words widen the net and improve ranking rather than requiring all to appear.
+        - With no query, the filters alone list matches newest-first — e.g. the latest mail from a sender is from="alice@acme.com" with no query.
         - Reads Thunderbird's own local index — local folders only; it never connects to any mail server.
         - Returns the best matches with a snippet and a stable id; read a match in full with thunderbird_mail_read.
         - Spam/Junk/Trash are not searched.
@@ -32,7 +33,7 @@ module Pikuri
           name: 'thunderbird_mail_search',
           description: DESCRIPTION,
           parameters: Parameters.build { |p|
-            p.required_string :query, 'Words or a phrase to find, e.g. "invoice from acme".'
+            p.optional_string :query, 'Words or a phrase to find, e.g. "invoice from acme". Omit to list by the filters alone (newest first).'
             p.optional_string :from, 'Only mail whose sender contains this, e.g. "alice@acme.com".'
             p.optional_string :to, 'Only mail whose recipients contain this, e.g. "me@example.com".'
             p.optional_string :subject, 'Only mail whose subject contains this, e.g. "receipt".'
@@ -41,7 +42,7 @@ module Pikuri
             p.optional_string :folder, 'Restrict to one folder by its exact name, e.g. "INBOX".'
             p.optional_integer :limit, "Max matches (default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 10."
           },
-          execute: lambda { |query:, from: nil, to: nil, subject: nil,
+          execute: lambda { |query: nil, from: nil, to: nil, subject: nil,
                              after: nil, before: nil, folder: nil, limit: DEFAULT_LIMIT|
             MailSearch.run_search(backend: @backend, query:, from:, to:, subject:,
                                   after:, before:, folder:, limit:)
@@ -56,7 +57,10 @@ module Pikuri
         before_t = DateHelpers.parse_before(before)
         hits = backend.search(query:, limit:, from:, to:, subject:,
                               after: after_t, before: before_t, folder:)
-        return "No matching mail found for #{query.inspect}." if hits.empty?
+        if hits.empty?
+          return query.to_s.strip.empty? ? 'No mail matched those filters.' \
+                                         : "No matching mail found for #{query.inspect}."
+        end
 
         header = "#{hits.size} match#{hits.size == 1 ? '' : 'es'} (best first):"
         [header, *hits.map { |h| render(h) }].join("\n\n")

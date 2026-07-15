@@ -31,7 +31,7 @@ module Pikuri
         Search the user's local and cached Thunderbird calendars by title, description or location.
 
         Usage:
-        - Free-text query plus an optional date range.
+        - Free-text query and/or a date range — both optional; supply at least one.
         - To list everything on a day or in a span (e.g. "tomorrow's meetings"), pass a broad or empty query with after/before; a single day is after=before=that date.
         - Multiple words must ALL appear in the event (across its title, description, and location) — so add words to narrow, remove words to widen.
         - Reads Thunderbird's on-disk calendar store — it never connects to any calendar server.
@@ -47,12 +47,12 @@ module Pikuri
           name: 'thunderbird_calendar_search',
           description: DESCRIPTION,
           parameters: Parameters.build { |p|
-            p.required_string :query, 'Words to find in event title/description/location, e.g. "standup".'
+            p.optional_string :query, 'Words to find in event title/description/location, e.g. "standup". Omit to list everything in the date range.'
             p.optional_string :after, 'Only events on/after this date, e.g. "2026-01-01".'
             p.optional_string :before, 'Only events on/before this date, e.g. "2026-12-31".'
             p.optional_integer :limit, "Max events (default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 15."
           },
-          execute: lambda { |query:, after: nil, before: nil, limit: DEFAULT_LIMIT|
+          execute: lambda { |query: nil, after: nil, before: nil, limit: DEFAULT_LIMIT|
             CalendarSearch.run_search(backend: @backend, query:, after:, before:, limit:)
           }
         )

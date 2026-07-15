@@ -54,6 +54,18 @@ describe 'pikuri-thunderbird tools' do
         g.close
       end
     end
+
+    it 'searches by filters alone with no query (newest-first listing)' do
+      Dir.mktmpdir do |dir|
+        g = gloda(dir)
+        tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
+        out = tool.run('from' => 'acme.com')
+        assert_match(/1 match/, out)
+        assert_match(/Invoice 2024/, out)
+        assert_match(/No mail matched those filters/, tool.run('from' => 'nobody@nowhere'))
+        g.close
+      end
+    end
   end
 
   describe 'thunderbird_mail_read' do
@@ -80,6 +92,18 @@ describe 'pikuri-thunderbird tools' do
         assert_match(/Team standup/, out)
         assert_match(/id: e1/, out)
         assert_match(/where: Zoom/, out)
+        c.close
+      end
+    end
+
+    it 'lists events by date range alone with no query' do
+      Dir.mktmpdir do |dir|
+        c = calendar(dir)
+        tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
+        out = tool.run('after' => '2026-05-01', 'before' => '2026-05-01')
+        assert_match(/Team standup/, out)
+        assert_match(/No events found in that date range/,
+                     tool.run('after' => '2030-01-01', 'before' => '2030-01-01'))
         c.close
       end
     end
