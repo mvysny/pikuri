@@ -215,14 +215,15 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   fired ("You have no prior mail with …"). The query still degrades gracefully
   (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
   TB versions.
-- **Address-resolver — resolved and shipped.** Both probes confirmed the
-  source (`contacts` dead: `frecency`/`popularity` 0, `name` unreliable; decoded
-  `c3author`/`c4recipients` carry `Name <addr>` pairs), and the corpus-based
-  resolver is now built ({Pikuri::Thunderbird::Gloda::Contacts}) and under test.
-  What's *not* yet exercised: a run against a **real** populated profile (the
-  fixtures cover the tricky cell shapes, but the frequency ranking on a real
-  correspondence graph — does the intended contact reliably outrank noise? — is
-  unvalidated live).
+- **Address-resolver — resolved, shipped, and validated live.** Both probes
+  confirmed the source (`contacts` dead: `frecency`/`popularity` 0, `name`
+  unreliable; decoded `c3author`/`c4recipients` carry `Name <addr>` pairs), the
+  corpus-based resolver is built ({Pikuri::Thunderbird::Gloda::Contacts}), and
+  it has now been **run against a real populated Thunderbird profile and works
+  as intended** — the frequency ranking (the one thing fixtures couldn't prove)
+  surfaces the right contact on a real correspondence graph. No open question
+  remains for the resolver itself; the honest spoofed-contact residual (above)
+  stands unchanged.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
