@@ -66,6 +66,16 @@ describe 'pikuri-thunderbird tools' do
         g.close
       end
     end
+
+    it 'refuses a match-everything call with no query and no filter' do
+      Dir.mktmpdir do |dir|
+        g = gloda(dir)
+        tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
+        assert_match(/Error: give at least one/, tool.run({}))
+        assert_match(/Error: give at least one/, tool.run('query' => '  ', 'from' => ''))
+        g.close
+      end
+    end
   end
 
   describe 'thunderbird_mail_read' do

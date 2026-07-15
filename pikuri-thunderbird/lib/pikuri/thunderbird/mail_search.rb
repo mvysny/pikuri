@@ -52,6 +52,13 @@ module Pikuri
 
       # @return [String] formatted hits, a no-match line, or +"Error: …"+.
       def self.run_search(backend:, query:, from:, to:, subject:, after:, before:, folder:, limit:)
+        # Refuse a match-everything call: with no query and no filter this
+        # would dump the whole mailbox newest-first. Every real request has at
+        # least one criterion — steer the model to name one.
+        if [query, from, to, subject, after, before, folder].all? { |v| v.to_s.strip.empty? }
+          return 'Error: give at least one of query, from, to, subject, after, before, or folder to search for.'
+        end
+
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         after_t = DateHelpers.parse_after(after)
         before_t = DateHelpers.parse_before(before)
