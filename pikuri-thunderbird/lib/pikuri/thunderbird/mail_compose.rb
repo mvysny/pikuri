@@ -21,10 +21,6 @@ module Pikuri
     class MailCompose < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Thunderbird::MailCompose')
 
-      # Raised for a recoverable hand-off failure (binary missing, launch
-      # error); {#compose} turns it into an +"Error: …"+ observation.
-      class HandoffError < StandardError; end
-
       # @return [String] the directed pre-send checklist appended to every
       #   successful hand-off — it re-instills the audit mindset the compose
       #   window relies on without crippling the draft.
@@ -49,13 +45,12 @@ module Pikuri
       #   (default +"thunderbird"+) or an absolute path.
       # @param backend [Gloda::Contacts, nil] contact resolver for the
       #   recipient-novelty check; +nil+ degrades it to a "couldn't check" note.
-      # @param launcher [#call, nil] test seam — a callable given the +mailto:+
-      #   URI that performs the hand-off. +nil+ uses the real detached spawn.
+      # @param launcher [Launcher, nil] test seam — the {Launcher} that opens the
+      #   compose window; +nil+ builds the real one.
       # @return [MailCompose]
       def initialize(thunderbird_bin: 'thunderbird', backend: nil, launcher: nil)
-        @thunderbird_bin = thunderbird_bin
         @guard = ComposeGuard.new(backend: backend)
-        @launcher = launcher || method(:launch)
+        @launcher = launcher || Launcher.new(thunderbird_bin: thunderbird_bin)
         super(
           name: 'thunderbird_mail_compose',
           description: DESCRIPTION,
@@ -83,45 +78,10 @@ module Pikuri
 
         uri = MailtoUri.build(to: verdict.to, cc: verdict.cc, bcc: verdict.bcc,
                               subject: verdict.subject, body: verdict.body)
-        @launcher.call(uri)
+        @launcher.launch(uri)
         [CHECKLIST, *verdict.notes].join("\n\n")
-      rescue HandoffError => e
+      rescue Launcher::Error => e
         "Error: #{e.message}"
-      end
-
-      private
-
-      # Detached hand-off: +setsid --fork thunderbird '<uri>'+. The +--fork+ puts
-      # Thunderbird in its own session, which is load-bearing two ways, both
-      # silent under test: (1) closing the agent must never SIGTERM the user's
-      # running Thunderbird — the {Pikuri::Subprocess} exit-sweep would, but the
-      # detached grandchild is out of our process group; (2) when Thunderbird
-      # isn't already running, a foreground launch would block this tool on the
-      # GUI. Don't drop the detach.
-      #
-      # @param uri [String] the +mailto:+ URI.
-      # @return [void]
-      # @raise [HandoffError] if the binary is missing or the launch fails.
-      def launch(uri)
-        unless resolvable?(@thunderbird_bin)
-          raise HandoffError, "Thunderbird executable #{@thunderbird_bin.inspect} not found — " \
-                              'set thunderbird_bin: to its path.'
-        end
-
-        result = Pikuri::Subprocess.spawn('setsid', '--fork', @thunderbird_bin, uri, chdir: Dir.home).wait
-        return if result.status.success?
-
-        raise HandoffError, "couldn't open the compose window (#{result.output.strip.slice(0, 200)})."
-      end
-
-      # @param bin [String] a PATH name or absolute path.
-      # @return [Boolean] whether it resolves to an executable.
-      def resolvable?(bin)
-        return File.executable?(bin) if bin.include?(File::SEPARATOR)
-
-        ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).any? do |dir|
-          File.executable?(File.join(dir, bin))
-        end
       end
     end
   end

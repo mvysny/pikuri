@@ -49,7 +49,7 @@ module Pikuri
       attr_reader :dir
 
       # @return [Symbol] +:snap+, +:apt+, or +:override+ — which root this
-      #   came from. Bears on where a v2 hand-off may stage files.
+      #   came from. Drives {#outbox_dir} (snap confinement differs).
       attr_reader :variant
 
       # Discover the active profile, or return +nil+ when Thunderbird is not
@@ -108,6 +108,22 @@ module Pikuri
       #   calendar-data dir has neither.
       def calendar_dbs
         [calendar_cache_db, calendar_local_db].select { |p| File.file?(p) }
+      end
+
+      # A directory a *snap-confined* Thunderbird can read a hand-off file from,
+      # for the +.ics+ import hand-off ({CalendarCreate}). Snap's +home+
+      # interface blocks hidden +$HOME+ dirs (so the +~/.cache+ snapshot dir is
+      # unreadable by the confined app — see +DESIGN.md+ § "Platform
+      # confinement"); we stage instead in the variant's own readable root: the
+      # snap-owned data area for +:snap+ (readable regardless of the dotfile
+      # rule), the unconfined profile dir for +:apt+/+:override+. The caller
+      # creates the dir and reaps the file.
+      #
+      # @return [String] +…/snap/thunderbird/common/pikuri-outbox+ or
+      #   +<profile>/pikuri-outbox+.
+      def outbox_dir
+        base = @variant == :snap ? File.dirname(SNAP_ROOT) : @dir
+        File.join(base, 'pikuri-outbox')
       end
 
       # @param profile_dir [String]

@@ -26,14 +26,20 @@ module Pikuri
     # install (profiles under two roots) raises from {Profile.discover} —
     # loud, with the fix — rather than guessing.
     #
-    # By default this is the v1 (search-only, no-egress) surface. The v2
-    # +thunderbird_mail_compose+ tool is *opt-in* via +compose: true+: it is an
-    # egress leg (a hand-off to a compose window the human can Send from), so
-    # leaving it off by default is what keeps the bundled
-    # +bin/pikuri-thunderbird+ demo's trifecta broken by construction. Compose
-    # is still a human-gated hand-off — pikuri writes nothing and sends nothing
-    # itself (see {MailCompose}, +DESIGN.md+, +ideas/thunderbird.md+).
-    # Create-event remains unbuilt.
+    # By default this is the v1 (search-only, no-egress) surface. The two v2
+    # outbound tools are each *opt-in* because each adds an egress leg, so
+    # leaving them off by default is what keeps a bundled inbound-only wiring's
+    # trifecta broken by construction:
+    #
+    # * +compose: true+ wires +thunderbird_mail_compose+ (a hand-off to a
+    #   compose window the human Sends from — see {MailCompose}).
+    # * +create_calendar_event: true+ wires +thunderbird_calendar_create+ (a
+    #   hand-off to Thunderbird's import wizard the human confirms — see
+    #   {CalendarCreate}).
+    #
+    # Both are human-gated hand-offs — pikuri writes nothing to Thunderbird's
+    # stores and sends/imports nothing itself (+DESIGN.md+,
+    # +ideas/thunderbird.md+).
     class Extension
       include Pikuri::Agent::Extension
 
@@ -49,14 +55,21 @@ module Pikuri
       # @param compose [Boolean] wire the outbound +thunderbird_mail_compose+
       #   tool (default +false+). Opt-in because it adds an egress leg; the draft
       #   is still human-committed in Thunderbird's compose window.
+      # @param create_calendar_event [Boolean] wire the outbound
+      #   +thunderbird_calendar_create+ tool (default +false+). Opt-in for the
+      #   same reason; the event is still human-committed in Thunderbird's
+      #   import wizard.
       # @param thunderbird_bin [String] the Thunderbird executable for the
-      #   compose hand-off (PATH name or absolute path); ignored unless
-      #   +compose:+ is on. Mirrors +profile_dir:+'s override role.
+      #   outbound hand-offs (PATH name or absolute path); ignored unless
+      #   +compose:+ or +create_calendar_event:+ is on. Mirrors +profile_dir:+'s
+      #   override role.
       # @return [Extension]
-      def initialize(profile_dir: nil, cache_dir: nil, compose: false, thunderbird_bin: 'thunderbird')
+      def initialize(profile_dir: nil, cache_dir: nil, compose: false, create_calendar_event: false,
+                     thunderbird_bin: 'thunderbird')
         @profile_dir = profile_dir
         @cache_base = cache_dir || Paths.new_temp.to_s
         @compose = compose
+        @create_calendar_event = create_calendar_event
         @thunderbird_bin = thunderbird_bin
       end
 
@@ -72,10 +85,13 @@ module Pikuri
 
         contacts = wire_mail(c, profile)
         wire_calendar(c, profile)
-        # Compose needs no Gloda (only a Thunderbird binary); the contacts
-        # resolver, when present, powers the recipient-novelty warn and is nil
-        # otherwise.
+        # Neither outbound tool needs Gloda (only a Thunderbird binary); the
+        # contacts resolver, when present, powers compose's recipient-novelty
+        # warn and is nil otherwise.
         c.add_tool MailCompose.new(thunderbird_bin: @thunderbird_bin, backend: contacts) if @compose
+        if @create_calendar_event
+          c.add_tool CalendarCreate.new(profile: profile, thunderbird_bin: @thunderbird_bin)
+        end
         nil
       end
 

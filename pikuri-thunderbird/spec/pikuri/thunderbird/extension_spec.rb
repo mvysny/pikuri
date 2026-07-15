@@ -98,6 +98,29 @@ describe Pikuri::Thunderbird::Extension do
     end
   end
 
+  it 'does not wire calendar_create by default' do
+    Dir.mktmpdir do |dir|
+      write_calendar(dir)
+      Dir.mktmpdir do |cache|
+        _, names = tool_names(dir, cache)
+        refute_includes names, 'thunderbird_calendar_create'
+      end
+    end
+  end
+
+  it 'wires calendar_create only when opted in (independently of compose)' do
+    Dir.mktmpdir do |dir|
+      write_calendar(dir) # no Gloda: create needs only a profile + binary
+      Dir.mktmpdir do |cache|
+        c = FakeConfigurator.new
+        Extension.new(profile_dir: dir, cache_dir: cache, create_calendar_event: true).configure(c)
+        names = c.tools.map(&:name)
+        assert_includes names, 'thunderbird_calendar_create'
+        refute_includes names, 'thunderbird_mail_compose'
+      end
+    end
+  end
+
   it 'wires compose even when Gloda is absent (novelty warn just degrades)' do
     Dir.mktmpdir do |dir|
       write_calendar(dir) # no Gloda file

@@ -44,10 +44,12 @@ The gem inventory:
   inbound tools `thunderbird_mail_search` / `_mail_read` / `_contact_search` /
   `_calendar_search` / `_calendar_read` over Thunderbird's own on-disk profile
   (Gloda index + `calendar-data/*.sqlite`), via bracketed snapshot copies + an
-  ephemeral FTS5 index, plus one opt-in outbound `thunderbird_mail_compose` (a
-  human-gated `mailto:` compose-window hand-off, guarded; never sends). No
-  network. `bin/pikuri-thunderbird` demos the full surface (compose on —
-  egress present but human-gated, no autonomous send).
+  ephemeral FTS5 index, plus two opt-in outbound tools:
+  `thunderbird_mail_compose` (a human-gated `mailto:` compose-window hand-off,
+  guarded; never sends) and `thunderbird_calendar_create` (a human-gated `.ics`
+  → import-wizard hand-off; never imports). No network. `bin/pikuri-thunderbird`
+  demos the full surface (both outbound legs on — egress present but
+  human-gated, no autonomous send/import).
 - `pikuri-mcp` — Model Context Protocol support +
   `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
@@ -434,24 +436,28 @@ yardoc. CLAUDE.md only records the invariant.
   (including `thunderbird_contact_search`, a pure read that resolves a name
   to addresses) have no egress leg, so an agent wired with just them has the
   trifecta broken by construction — and that inbound-only shape is the
-  `Extension` **default** (`compose: false`). The one outbound tool,
-  `thunderbird_mail_compose` (`Extension.new(compose: true)`), adds an
-  egress leg but only as a *human-gated hand-off to Thunderbird's own
-  UI*: it opens a pre-filled `mailto:` compose window where the human
-  reviews and clicks Send — never a DB write or a send by pikuri, so
-  there is no *autonomous* egress. Every outbound action (this, and the
-  still-unbuilt create-event) must keep that shape (`.ics` import wizard
-  where the human commits for create-event). **No send tool ever
-  ships.** Compose's guards — `mailto:` field encoding, plain-text-only
-  body, the fail-closed body / drop-recipient / novelty-warn
-  `ComposeGuard`, detached `setsid --fork` launch — live in
-  {Pikuri::Thunderbird::MailCompose} / {MailtoUri} / {ComposeGuard}. A
-  binary that wires `compose: true` needs a prompt that permits
-  drafting-for-review (the inbound-only `thunderbird` prompt says the
-  agent can't send; the compose wiring uses `thunderbird-compose`).
-  `bin/pikuri-thunderbird` wires `compose: true` — it's the full-surface
-  demo, so its trifecta is intact-but-human-gated, not severed; the
-  severed-by-construction exemplars are `bin/pikuri-corpus` /
+  `Extension` **default** (`compose: false`, `create_calendar_event: false`). The two
+  outbound tools each add an egress leg only as a *human-gated hand-off to
+  Thunderbird's own UI*, each opt-in on its own flag:
+  `thunderbird_mail_compose` (`Extension.new(compose: true)`) opens a pre-filled
+  `mailto:` compose window where the human reviews and clicks Send;
+  `thunderbird_calendar_create` (`Extension.new(create_calendar_event: true)`) stages an
+  `.ics` and opens Thunderbird's import wizard where the human picks the
+  destination calendar (local-vs-CalDAV = the human's no-egress-vs-egress
+  choice) and confirms. Neither is a DB write or a send/import by pikuri, so
+  there is no *autonomous* egress. Every outbound action must keep that
+  hand-off shape. **No send tool ever ships.** The outbound guards — compose's
+  `mailto:` field encoding + plain-text-only body + fail-closed body /
+  drop-recipient / novelty-warn `ComposeGuard`; create-event's RFC-5545 field
+  escaping (`IcsEvent`) + confinement-aware staging (`Profile#outbox_dir`, never
+  the hidden `~/.cache` snapshot dir); and the shared detached `setsid --fork`
+  `Launcher` — live in {Pikuri::Thunderbird::MailCompose} / {MailtoUri} /
+  {ComposeGuard} / {CalendarCreate} / {IcsEvent} / {Launcher}. A binary that
+  wires either outbound tool needs a prompt that permits drafting-for-review
+  (the inbound-only `thunderbird` prompt says the agent can't send; the outbound
+  wiring uses `thunderbird-compose`). `bin/pikuri-thunderbird` wires both flags
+  — it's the full-surface demo, so its trifecta is intact-but-human-gated, not
+  severed; the severed-by-construction exemplars are `bin/pikuri-corpus` /
   `bin/pikuri-memory`. Reads are an **allowlist**: only the
   Gloda + calendar DBs (plus `profiles.ini` for discovery) are ever
   opened, so the profile's credential stores (`key4.db`, `logins.json`,

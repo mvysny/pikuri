@@ -86,8 +86,10 @@ begin
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
     c.add_tool Pikuri::Tool::CALCULATOR
     # One extension wires the whole surface: mail search+read (if Gloda is
-    # present), calendar search+read, and the human-gated compose hand-off.
-    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir, compose: true)
+    # present), calendar search+read, and both human-gated outbound hand-offs
+    # (compose a message, create a calendar event).
+    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir,
+                                                       compose: true, create_calendar_event: true)
   end
 rescue Pikuri::Thunderbird::Profile::DiscoveryError => e
   warn "Thunderbird profile problem: #{e.message}"

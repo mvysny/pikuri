@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
 describe Pikuri::Thunderbird::MailCompose do
-  # Capture the hand-off instead of spawning Thunderbird.
+  # Capture the launch instead of spawning Thunderbird.
   def tool(seen: nil)
     @launched = []
+    launched = @launched
     backend = seen && Class.new { define_method(:domains_seen) { |d| d & seen } }.new
-    Pikuri::Thunderbird::MailCompose.new(backend: backend, launcher: ->(uri) { @launched << uri })
+    launcher = Object.new
+    launcher.define_singleton_method(:launch) { |uri| launched << uri }
+    Pikuri::Thunderbird::MailCompose.new(backend: backend, launcher: launcher)
   end
 
   it 'hands off a mailto URI and returns the pre-send checklist' do

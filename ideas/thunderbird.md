@@ -67,7 +67,7 @@ the homes above. Origin map (question → where the answer now lives):
   words + bm25-ranks (recall-first), calendar ANDs words across
   title/description/location (precision-first, no ranker). The shipped tools.
 
-## v2 — outbound, human-gated (compose + address-resolver shipped; calendar-create designed)
+## v2 — outbound, human-gated (compose + address-resolver + calendar-create shipped)
 
 The egress half. The load-bearing invariant (now also the CLAUDE.md seam):
 **pikuri performs no network egress and no autonomous send; every outbound
@@ -158,17 +158,39 @@ Still open / deferred:
   Gloda + calendar (a deliberate seam decision), so build it only if the derived
   participant graph proves too thin in practice.
 
-### `thunderbird_calendar_create` — hand off an `.ics` to import (designed, not built)
+### `thunderbird_calendar_create` — hand off an `.ics` to import — **shipped**
 
-- **Decided: hand TB an `.ics`** (`thunderbird <path.ics>` → the human-gated
-  import wizard; TB owns the commit *and* the human picks the destination
-  calendar, i.e. local-vs-CalDAV = no-egress-vs-egress is the human's choice).
-  *Rejected:* direct DB write (TB holds the DBs `EXCLUSIVE`; a live write is
-  invisible/clobberable and never syncs).
-- **Staging the `.ics`** (decided by the snap-confinement probe, DESIGN.md):
-  stage under the discovered variant's own readable root — snap →
-  `~/snap/thunderbird/common/…`, apt → the (unconfined) profile root; **not**
-  the hidden `~/.cache` snapshot dir. Finalizer-reap after hand-off.
+Builds an event `.ics` and opens Thunderbird's import wizard, where the human
+picks the destination calendar (local-vs-CalDAV = no-egress-vs-egress is *their*
+choice) and confirms — the same no-autonomous-egress shape as compose. Design
+graduated to source + yardoc:
+
+- **{Pikuri::Thunderbird::CalendarCreate}** — the tool: build → stage → hand off,
+  opt-in via `Extension.new(create_calendar_event: true)` (its own flag, independent of
+  `compose:`; both default off).
+- **{Pikuri::Thunderbird::IcsEvent}** — the `.ics` builder; RFC-5545 field
+  escaping + control-byte strip is the structural injection defense (a smuggled
+  newline can't inject a second property/`VEVENT`), the `MailtoUri` analog. UTC
+  for timed events, `VALUE=DATE` + exclusive `DTEND` for all-day.
+- **{Pikuri::Thunderbird::Profile#outbox_dir}** — confinement-aware staging: the
+  snap-owned data area for snap (the hidden `~/.cache` snapshot dir is
+  unreadable by a confined TB — DESIGN.md § "Platform confinement"), the
+  unconfined profile dir otherwise. The staged file is finalizer-reaped.
+- **{Pikuri::Thunderbird::Launcher}** — the detached `setsid --fork` launch,
+  extracted from `MailCompose` and now shared by both outbound tools.
+
+*Rejected (kept for the reasoning):* direct DB write (TB holds the DBs
+`EXCLUSIVE`; a live write is invisible/clobberable and never syncs).
+
+Still open / deferred:
+- **Attendees** — no `attendees` param yet; an imported `ATTENDEE` line *might*
+  trigger CalDAV meeting invites (an autonomous send), which is unverified. The
+  param waits on the validation question below.
+- **Reap-vs-cold-boot residual.** The staged `.ics` is reaped at process exit,
+  which for the interactive assistant is well after TB read the file (the wizard
+  reads it on open, seconds after hand-off). A fire-and-forget one-shot that
+  exits instantly *could* out-race a cold TB boot; acceptable, same
+  best-effort class as compose's detached launch.
 
 ### The recipient guard (Q10) — **shipped**
 
@@ -225,10 +247,18 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   remains for the resolver itself; the honest spoofed-contact residual (above)
   stands unchanged.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
-  bit 8) against comm-central at v2-calendar-create implementation.
+  bit 8) against comm-central. Now a *read-path* nicety only: create writes an
+  `.ics` and lets TB set its own flags on import, so it no longer blocks
+  create-event.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
   CalDAV calendar mail invites?** Import usually isn't an organize-action, so
-  probably not — but unverified; the `attendees` param waits on this.
+  probably not — but unverified; {Pikuri::Thunderbird::CalendarCreate}'s
+  `attendees` param waits on this (it ships without one).
+- **Calendar-create not yet run against a real profile.** The build is
+  spec-covered (fake profile + captured hand-off), but the actual `thunderbird
+  <path.ics>` → import-wizard round-trip, and snap staging readability for the
+  `.ics` specifically, are confirmed only by the earlier probe, not by a live
+  create-event run. First smoke test when a populated install is at hand.
 - **Calendar date-filter timezone frame.** Bounds are compared in the
   machine-local frame — correct for timed events everywhere and for all-day
   events in UTC/eastern zones, but an all-day event (stored *floating*

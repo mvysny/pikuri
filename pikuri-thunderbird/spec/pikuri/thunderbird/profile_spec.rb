@@ -41,6 +41,22 @@ describe Pikuri::Thunderbird::Profile do
     end
   end
 
+  describe '#outbox_dir' do
+    it 'stages under the profile dir for an override (unconfined)' do
+      Dir.mktmpdir do |dir|
+        profile = Profile.discover(profile_dir: dir)
+        assert_equal File.join(dir, 'pikuri-outbox'), profile.outbox_dir
+      end
+    end
+
+    it 'stages in the snap-owned data area for a snap profile (dotfile-safe)' do
+      profile = Profile.new(dir: '/home/x/snap/thunderbird/common/.thunderbird/p', variant: :snap)
+      # The snap `home` interface can't read hidden ~/.cache, but the snap's own
+      # common area is always readable — so we stage one level up from SNAP_ROOT.
+      assert_equal File.join(File.dirname(Profile::SNAP_ROOT), 'pikuri-outbox'), profile.outbox_dir
+    end
+  end
+
   describe 'profiles.ini resolution' do
     def write_ini(root, body)
       File.write(File.join(root, 'profiles.ini'), body)

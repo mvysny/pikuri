@@ -328,11 +328,16 @@ can't be shared on snap.
   detached (`setsid --fork`) so the agent's exit-sweep can't SIGTERM the user's
   Thunderbird, and so a not-yet-running Thunderbird doesn't block the tool on
   the GUI.
-- **Create event → `.ics` import.** `thunderbird <path.ics>` opens TB's
+- **Create event → `.ics` import (built).** `thunderbird <path.ics>` opens TB's
   "Import Calendar file" wizard as a new tab (running-instance reuse): a 4-step
   flow ending in **Confirm**, with a **target-calendar picker** at step 3.
   **No silent import** — Cancel leaves nothing behind. So TB's UI owns the
-  commit *and* the human picks local-vs-CalDAV (i.e. no-egress-vs-egress).
+  commit *and* the human picks local-vs-CalDAV (i.e. no-egress-vs-egress). The
+  `.ics` is built by {Pikuri::Thunderbird::IcsEvent} (RFC-5545 field escaping is
+  the injection defense), staged in {Pikuri::Thunderbird::Profile#outbox_dir}
+  (confined-readable, **not** the hidden `~/.cache` snapshot dir — see § "Platform
+  confinement"), and handed off by the shared {Pikuri::Thunderbird::Launcher}
+  (the same detached `setsid --fork` launch compose uses).
 
 Both are the human-gated hand-off shape the no-send seam requires: pikuri
 opens a window, the human reviews and commits.
