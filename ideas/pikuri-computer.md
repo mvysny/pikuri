@@ -50,15 +50,16 @@ gem — only a demo on top.)
   the `RESEARCHER` sub-agent). Reuses os's `FullFsNoNet` + confirmed-mutation +
   plan-mode posture; adds thunderbird's two outbound flags.
 - **Prompt: composed, not a new monolith.** `os-assistant` + `os-network-online`
-  (reused as-is) + a lean new `computer-mail-calendar.txt` fragment. The fragment
-  carries only what the thunderbird tool descriptions do *not* — the
-  untrusted-email policy, the draft/hand-off posture, and a grounding nudge — so
-  the per-tool mechanics (plain-text body, dropped recipients, network-calendar
-  warning) stay in the tools (the "no per-tool mechanics in a main prompt" rule).
-  This is why `thunderbird-compose.txt` was *not* reused wholesale: most of it is
-  already tool-owned; only the cross-cutting policy is prompt-level, and
-  `os-assistant` had none of it (its inputs were the user's own files), so
-  composing thunderbird in genuinely *requires* adding the untrusted block.
+  (reused as-is); the mail/calendar guidance rides `Thunderbird::Extension`'s
+  `system_prompt_snippets` (untrusted-email policy + grounding discipline always,
+  draft/hand-off paragraph when an `allow_` flag is on), so the binary appends no
+  thunderbird fragment of its own and the per-tool mechanics (plain-text body,
+  dropped recipients, network-calendar warning) stay in the tools. The
+  cross-cutting untrusted block that `os-assistant` lacks (its inputs were the
+  user's own files) now arrives *automatically with the extension*, so wiring
+  thunderbird in can't forget it. (Superseded the earlier plan of a hand-written
+  `computer-mail-calendar.txt` fragment — same content, but owned once by the
+  extension instead of copied per binary.)
 - **ch7 addendum** (pending) owns the reassembled-trifecta teaching. No
   `DESIGN.md` without a gem — the book is the legitimate home for a cross-cutting
   threat model (doc-kinds table, [`../CLAUDE.md`](../CLAUDE.md)).

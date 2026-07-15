@@ -452,10 +452,14 @@ yardoc. CLAUDE.md only records the invariant.
   escaping (`IcsEvent`) + confinement-aware staging (`Profile#outbox_dir`, never
   the hidden `~/.cache` snapshot dir); and the shared detached `setsid --fork`
   `Launcher` — live in {Pikuri::Thunderbird::MailCompose} / {MailtoUri} /
-  {ComposeGuard} / {CalendarCreate} / {IcsEvent} / {Launcher}. A binary that
-  wires either outbound tool needs a prompt that permits drafting-for-review
-  (the inbound-only `thunderbird` prompt says the agent can't send; the outbound
-  wiring uses `thunderbird-compose`). `bin/pikuri-thunderbird` wires both flags
+  {ComposeGuard} / {CalendarCreate} / {IcsEvent} / {Launcher}. The surface's
+  prompt guidance is contributed by `Extension#system_prompt_snippets` (the
+  Os/Code precedent), not baked into each binary prompt: the untrusted-content
+  policy + search/grounding discipline whenever any tool is wired, plus a
+  draft-hand-off paragraph only when an `allow_` flag is on — so a host prompt
+  stays a thin identity base and can't drift or omit the injection guard, and
+  the drafting stance rides the outbound flags rather than a separate prompt
+  file. `bin/pikuri-thunderbird` wires both flags
   — it's the full-surface demo, so its trifecta is intact-but-human-gated, not
   severed; the severed-by-construction exemplars are `bin/pikuri-corpus` /
   `bin/pikuri-memory`. Reads are an **allowlist**: only the
@@ -625,8 +629,9 @@ per-gem one-liners:
   (`Thunderbird::IcsEvent` RFC-5545-escapes every field; `Thunderbird::Profile#outbox_dir`
   stages confined-readable). Both launch via the shared detached `Thunderbird::Launcher`
   so agent exit can't kill the user's Thunderbird; each opens a window/wizard, never sends/imports.
-  `bin/pikuri-thunderbird` demos the full surface with both `allow_` flags (the
-  `thunderbird-compose` prompt): the egress leg is present but human-gated
+  `bin/pikuri-thunderbird` demos the full surface with both `allow_` flags (a
+  thin identity-only prompt; the usage + drafting guidance rides the extension
+  snippet): the egress leg is present but human-gated
   (no autonomous send), so unlike `bin/pikuri-corpus` / `bin/pikuri-memory`
   it's trifecta-intact-but-gated, not severed. Depends on `pikuri-core` + the `sqlite3` gem;
   deliberately NOT mcp / memory / subagents (keeps the local, no-network posture).

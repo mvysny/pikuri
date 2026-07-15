@@ -52,7 +52,10 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-system_prompt = Pikuri.prompt(:'thunderbird-compose')
+# Thin identity base only — the mail/calendar usage guidance, untrusted-content
+# policy, and draft-hand-off stance are contributed by Thunderbird::Extension's
+# system_prompt_snippets (in lockstep with the allow_ flags wired below).
+system_prompt = Pikuri.prompt(:thunderbird)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new

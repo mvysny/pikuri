@@ -156,6 +156,41 @@ describe Pikuri::Thunderbird::Extension do
     end
   end
 
+  it 'contributes the usage snippet (untrusted policy always, no draft stance inbound-only)' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      write_calendar(dir)
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache) # both allow_ off
+        ext.configure(FakeConfigurator.new)
+        snippet = ext.system_prompt_snippets.first
+        assert_match(/<thunderbird_usage>/, snippet)
+        assert_match(/untrusted/, snippet)
+        refute_match(/hand it off to Thunderbird/, snippet) # no draft stance yet
+      end
+    end
+  end
+
+  it 'adds the draft-hand-off paragraph only when an outbound flag is wired' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, allow_compose_mail: true)
+        ext.configure(FakeConfigurator.new)
+        assert_match(/hand it off to Thunderbird/, ext.system_prompt_snippets.first)
+      end
+    end
+  end
+
+  it 'contributes no snippet when Thunderbird is not installed' do
+    skip 'a real Thunderbird root exists on this host' if Pikuri::Thunderbird::Profile.discover
+    Dir.mktmpdir do |cache|
+      ext = Extension.new(cache_dir: cache)
+      ext.configure(FakeConfigurator.new)
+      assert_empty ext.system_prompt_snippets
+    end
+  end
+
   it 'registers nothing when Thunderbird is not installed' do
     skip 'a real Thunderbird root exists on this host' if Pikuri::Thunderbird::Profile.discover
     Dir.mktmpdir do |cache|

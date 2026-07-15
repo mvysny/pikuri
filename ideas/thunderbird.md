@@ -105,14 +105,13 @@ Still open / deferred here:
 - **Plain-text-only** is enforced by never emitting an HTML body — no HTML knob
   exists, so the two HTML-only exfil vectors (hidden content, remote beacons)
   can't arise. (Rationale in the {MailCompose} yardoc.)
-- **A compose wiring needs a drafting-for-review prompt.** The inbound-only
-  `prompts/thunderbird.txt` says the agent "cannot send mail" — true with
-  compose off, and it would keep the tool unused if reused with compose on. The
-  compose wiring ships its own `prompts/thunderbird-compose.txt` (drafting
-  stance + hardened untrusted-content paragraph). `bin/pikuri-thunderbird` now
-  wires `allow_compose_mail: true` with that prompt — the demo carries a
-  *human-gated* egress leg on purpose (low risk: no autonomous send). The
-  `Extension` default stays off, so downstream inbound-only wirings are unchanged.
+- **The drafting-for-review stance rides the wiring, not a prompt file.**
+  Graduated: `Extension#system_prompt_snippets` contributes the usage guidance
+  (untrusted-content policy + grounding discipline always; a draft-hand-off
+  paragraph only when an `allow_` flag is on), so a host prompt is a thin
+  identity base and the stance can't drift or be omitted. This replaced the
+  earlier two-prompt-file scheme (`thunderbird.txt` vs `thunderbird-compose.txt`),
+  where a compose wiring had to remember to swap in the drafting prompt.
 
 ### `thunderbird_contact_search` — resolve a name → address — **shipped**
 

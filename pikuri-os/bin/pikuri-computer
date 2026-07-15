@@ -102,15 +102,12 @@ sandbox = if sandbox_enabled
           end
 
 # Base OS prompt + the online network-posture block (default; --no-internet
-# swaps in the offline block) + the mail/calendar addon. The addon carries
-# only what the thunderbird tool descriptions do NOT: the untrusted-email
-# policy, the draft-hand-off posture, and a grounding nudge — the per-tool
-# mechanics (plain-text body, dropped recipients, network-calendar warning)
-# live in the tools. The "# This machine" facts + MACHINE.md are appended by
-# Os::Extension.
+# swaps in the offline block). The mail/calendar usage guidance — untrusted
+# -email policy, grounding discipline, draft-hand-off stance — is contributed
+# by Thunderbird::Extension's system_prompt_snippets (in lockstep with the
+# allow_ flags), and the "# This machine" facts + MACHINE.md by Os::Extension.
 system_prompt = Pikuri.prompt(:'os-assistant')
 system_prompt += "\n\n" + Pikuri.prompt(internet_enabled ? :'os-network-online' : :'os-network-offline')
-system_prompt += "\n\n" + Pikuri.prompt(:'computer-mail-calendar')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
