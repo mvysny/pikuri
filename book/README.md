@@ -92,7 +92,13 @@ assistant that combines every gem, landing once they stabilise.
    network (`--with-internet`) by quarantining all web tools in a
    privilege-separated `RESEARCHER` sub-agent with no filesystem,
    reached through a confirmed task prompt — so no single context
-   holds all three trifecta legs. Demo via `pikuri-os`.
+   holds all three trifecta legs. **Part 3 — a second app:** composes
+   local Thunderbird mail + calendar onto that agent (`pikuri-computer`)
+   to sharpen the trifecta itself — it's **binary in presence** (all
+   three legs live = assembled) yet **graded in severity** (by the size
+   of the private pool beside the egress leg), and the human gate is
+   *editable approval of a prefill*, not author-vs-approver. Demo via
+   `pikuri-os` / `pikuri-computer`.
 8. **[The in-repo coding agent](08-code.md).** The same three
    seams from chapter 7 — `Workspace`, `Confirmer`, `Sandbox` —
    now in a developer's hands and grown up: where chapter 7

@@ -1,15 +1,15 @@
 # pikuri-computer
 
-Status: **binary + prompt built; ch7 addendum + live verification pending.**
+Status: **fully landed — binary + prompt + ch7 addendum built and live-verified.**
 Realized as `pikuri-os/bin/pikuri-computer` — a demo binary, *not* a gem (see
-below) — plus (not yet written) an addendum to the pikuri-os book chapter (ch7).
+below) — plus the addendum to the pikuri-os book chapter (ch7 Part 3, landed).
 The binary wires `os --with-internet` (default; `--no-internet` drops the
 `RESEARCHER`) + thunderbird (both outbound flags) into one desktop assistant; the
-ch7 addendum will own the reassembled-trifecta teaching. A gem is *deferred* —
-earned later only if in-perimeter lib code accretes (below), not now. Staging
-area — drain into `bin/` + ch7 as it lands (graduation pipeline,
-[`../CLAUDE.md`](../CLAUDE.md)). Not yet run against a live model + real
-Thunderbird profile.
+ch7 addendum owns the reassembled-trifecta teaching. A gem is *deferred* —
+earned later only if in-perimeter lib code accretes (below), not now. Verified
+end-to-end against a live model + a real Thunderbird profile. What remains in this
+note is only the origin map + the deferred-gem trigger (graduation pipeline,
+[`../CLAUDE.md`](../CLAUDE.md)).
 
 ## Why a bin, not a gem
 
@@ -60,9 +60,9 @@ gem — only a demo on top.)
   thunderbird in can't forget it. (Superseded the earlier plan of a hand-written
   `computer-mail-calendar.txt` fragment — same content, but owned once by the
   extension instead of copied per binary.)
-- **ch7 addendum** (pending) owns the reassembled-trifecta teaching. No
-  `DESIGN.md` without a gem — the book is the legitimate home for a cross-cutting
-  threat model (doc-kinds table, [`../CLAUDE.md`](../CLAUDE.md)).
+- **ch7 addendum** (landed as ch7 Part 3) owns the reassembled-trifecta teaching.
+  No `DESIGN.md` without a gem — the book is the legitimate home for a
+  cross-cutting threat model (doc-kinds table, [`../CLAUDE.md`](../CLAUDE.md)).
 
 ## The two bounds that freeze the concept (why it never becomes pikuri-assistant)
 
@@ -86,65 +86,26 @@ Together: no cloud (Bound 1) + one example is enough (Bound 2) = an honestly
 frozen concept with a *closeable* threat model — small enough that a binary +
 chapter addendum carries it.
 
-## The lesson it teaches (the ch7-addendum spine)
+## The lesson it teaches — graduated to ch7 Part 3
 
-Two lessons ride here, running in *opposite directions* along the composition.
-Keep them apart — an earlier draft fused them, which picked the wrong hero and
-overstated the gate.
+The reassembled-trifecta teaching — the presence-vs-severity spine, the pool
+amplification contrast, and the "what the gate is / isn't" laundering-surface
+correction — has **landed in the book** (`book/07-os-assistant.md`, Part 3),
+which is now its source of truth. Origin summary, kept for the map:
 
-**Lesson 1 — the os direction: presence-flip.** On the *default* `bin/pikuri-os`
-— whose whole identity is the *removed* egress leg (`FullFsNoNet`, no
-`RESEARCHER`) — the agent is trifecta-**broken by construction**, and adding
-thunderbird outbound would flip it **broken → assembled** (the whole-disk
-`:private` pool and the attacker-authorable `:untrusted` email channel were
-already present; the compose leg is the third wire). That flip is categorical —
-the biggest move in the model, *leg presence*, nothing to do with pool size. But
-ch7 already teaches this exact flip via `RESEARCHER`, so in the `--with-internet`
-demo it's a *thought-experiment contrast*, not a new lesson.
-
-**Lesson 2 — the thunderbird direction: pool amplification (the genuinely new
-one).** `bin/pikuri-thunderbird` teaches human-gated egress next to a
-*mailbox-sized* pool. Move that *same, unchanged* compose leg next to os's disk
-and it becomes a review-gated exfil path for the whole filesystem. The leg's
-severity scaled with the pool beside it; nothing about the leg changed.
-
-**Core lesson, both directions in one line: the trifecta is binary in *presence*
-(all three legs live → assembled) and graded in *severity* (by the size of the
-private pool beside the egress leg).** A leg that's low-risk in one wiring is
-serious in another, unchanged.
-
-**What the gate is — and isn't.** Not "author vs approver." Both the `RESEARCHER`
-task string (`--with-internet`) and the compose window are *editable approval of a
-model-authored prefill* — the human sees a payload, edits or rejects. Against a
-blatant blob (`base64` of `id_rsa`) the two gates are equally strong: the human
-sees the blob and the foreign destination either way. The real difference is the
-**laundering surface** — a research task is query-shaped and short, forcing a
-high-entropy secret to ride as a conspicuous blob; an email body is unconstrained
-prose, offering a low-conspicuousness path (fluent text, a fake reference number)
-the research URL structurally can't. So compose is *marginally* weaker, and only
-against *laundered* exfil — not the wholesale "weaker gate" an earlier draft
-claimed.
-
-## The ch7 addendum's arc
-
-The reader arrives at `os --with-internet` (ch7 Part 2: `RESEARCHER` reattached
-the network, trifecta already assembled, human-gated). The addendum adds
-thunderbird and asks *what actually changes* — teaching presence-vs-severity
-concretely:
-
-1. **Presence: nothing flips here** — `RESEARCHER` already assembled it. (The
-   thought experiment: on the *default* no-egress os, thunderbird's compose leg
-   *would* be the presence-flip, the sole egress reassembling the trifecta. That
-   contrast is how the reader feels "binary in presence.")
-2. **Severity: three things sharpen.** (a) a *stronger untrusted source* — email
-   is addressed at the user and looks legitimate, a better injection vector than
-   a scraped page; (b) a *second egress channel*, same human-gated mechanic but a
-   *richer laundering surface* (email prose vs a query-shaped URL); (c) *pool
-   amplification*, made legible by contrasting the identical compose leg in
-   standalone `bin/pikuri-thunderbird` (mailbox) with here (whole disk).
-
-The *contrast between baselines and between wirings* is the content — which is
-what makes this a teaching addendum rather than two things bolted together.
+- **Presence (binary).** All three legs live → assembled, full stop; the biggest
+  move in the model is leg *presence*, not pool size. ch7 already teaches the
+  flip via `RESEARCHER`, so on `--with-internet` it's a *thought-experiment
+  contrast* (the default no-egress os is where thunderbird's compose leg *would*
+  be the presence-flip).
+- **Severity (graded).** Same compose leg, bigger pool: standalone
+  `bin/pikuri-thunderbird` (mailbox) vs here (whole disk) = pool amplification;
+  plus a stronger untrusted source (aimed email) and a richer laundering surface
+  (prose vs query-shaped URL).
+- **The gate.** Not "author vs approver" — both `RESEARCHER` task and compose
+  window are *editable approval of a model-authored prefill*; the only real gap
+  is the laundering surface, so compose is *marginally* weaker and only against
+  *laundered* exfil.
 
 ## The meta-principle this establishes
 
@@ -197,9 +158,10 @@ thing.
 - [`thunderbird.md`](thunderbird.md) — supplies the inbound + human-gated-outbound
   tools the os binary wires. (Resolves that note's deferred "Integrate into
   pikuri-os" item: *don't* integrate — compose in a demo binary instead.)
-- [`trifecta-detector.md`](trifecta-detector.md) — paused. The outbound wiring is
-  still the detector's headline example (a full `{private, egress, untrusted}`
-  agent, human-gated). Un-pause once the binary exists.
+- [`trifecta-detector.md`](trifecta-detector.md) — the outbound wiring is the
+  detector's headline example (a full `{private, egress, untrusted}` agent,
+  human-gated), and it now exists + is live-verified — so the "un-pause once the
+  binary exists" condition is met; resuming is that note's own call.
 - [`assistant.md`](assistant.md) — the "do anything" endgame pikuri-computer is
   deliberately *not*; the perimeter bound is the wall between them, and it's where
   weather / online maps / any cloud connector belong.
@@ -213,12 +175,14 @@ thing.
 - **Gem vs binary — resolved: binary in pikuri-os, gem deferred.** Reverses the
   earlier "committed to a new gem" call; the reason is the threat-model-≈-`--with-internet`
   analysis above. Revisit only on accreted in-perimeter lib code.
-- **Book placement.** ch7 addendum, appended after Part 2 (`--with-internet`),
-  teaching from that baseline. Chapter length is not a constraint. Exact sequence
-  TBD when written.
-- **Trifecta detector** — paused by decision; resume once the binary exists (its
-  concrete example). Until then, document the outbound posture honestly as
-  smoke-alarm-grade (human-gated ≠ severed).
+- **Book placement — resolved.** Landed as **ch7 Part 3**, appended after Part 2
+  (`--with-internet`) and teaching from that baseline; the two-part chapter intro
+  and the `book/README.md` TOC entry were updated to three parts.
+- **Trifecta detector** — its stated blocker is now cleared: the binary exists
+  and is live-verified, so the detector's headline `{private, egress, untrusted}`
+  human-gated example is concrete. Resuming the detector is now its own note's
+  call ([`trifecta-detector.md`](trifecta-detector.md)); the outbound posture
+  stays documented honestly as smoke-alarm-grade (human-gated ≠ severed).
 - **Name.** `pikuri-computer` for the binary. A *gem* name is deferred with the
   gem. *Rejected* earlier for the gem: `pikuri-desktop` (capability-bucket smell),
   `pikuri-os-assistant` (redundant); `pikuri-personal` / `pikuri-local` left on

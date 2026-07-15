@@ -35,11 +35,14 @@ project-root containment algorithm) wait for chapter 8, where a
 developer audience needs them. Reading order isn't dependency order:
 the relatable agent comes first, then we peel back a layer.
 
-The chapter runs in two parts. **Part 1** builds the agent as described
+The chapter runs in three parts. **Part 1** builds the agent as described
 above — full disk, network severed. **Part 2** does the harder thing:
 it puts the network *back*, carefully, without handing the trifecta its
 third leg — and it's where [chapter 2](02-subagents.md)'s sub-agents
-earn their keep for privacy, not just parallelism.
+earn their keep for privacy, not just parallelism. **Part 3** adds a
+*second* app — your local mail and calendar — and uses it to sharpen the
+trifecta itself: the difference between a leg being *present* and a leg
+being *severe*.
 
 ---
 
@@ -565,6 +568,149 @@ Part 2 *weakens* the third leg; it does not delete it. What remains:
 Everything sharper — the editable-task author seat, richer confirmers, an
 ingest-side gate on what the researcher returns — is future work in
 [`ideas/more-confirmers.md`](../ideas/more-confirmers.md).
+
+---
+
+## Part 3 — A second app: local mail and calendar
+
+Part 2 left you with a complete, trifecta-assembled agent whose third leg
+is human-gated: `os --with-internet` reads your whole disk, reads
+untrusted logs, and can reach the network — but only by handing a task
+you approved to the quarantined researcher. That is the finished shape.
+This part bolts a *second* app onto it — your local Thunderbird mail and
+calendar — and the whole lesson is in one question: **what actually
+changes when you do?**
+
+The wiring is a demo binary, `bin/pikuri-computer`, that composes the
+Part 2 agent with the `pikuri-thunderbird` surface:
+
+```sh
+./bin/pikuri-computer "reply to the landlord's email about the leak, and put the inspection on my calendar"
+```
+
+It *is* the Part 2 agent — `FullFsNoNet`, confirmed writes, plan mode, the
+researcher on by default — plus one more extension's worth of mail and
+calendar tools:
+
+```ruby
+c.add_extension Pikuri::Thunderbird::Extension.new(
+  profile_dir: profile_dir, allow_compose_mail: true, allow_create_calendar_event: true
+)
+```
+
+Five of those tools are read-only (search and read your mail, resolve a
+contact, search and read your calendar) and touch nothing but
+Thunderbird's own on-disk profile — no IMAP, no SMTP, no CalDAV. Two are
+outbound and *opt-in on their own flag*: `allow_compose_mail` opens a
+pre-filled compose window, `allow_create_calendar_event` stages an `.ics`
+and opens Thunderbird's import wizard. Neither sends nor imports — each is
+a hand-off to Thunderbird's own UI, where *you* click Send or pick the
+calendar and confirm. (The mail/calendar usage guidance — the
+untrusted-email policy, the "search before you assert" grounding
+discipline, the draft-hand-off stance — isn't written into the binary's
+prompt; it rides along *with the extension*, so wiring the surface in
+can't forget to bring its own rules. That's why `pikuri-computer` appends
+no mail fragment of its own.)
+
+Now the question.
+
+## Presence: nothing flips here
+
+Line the new agent up against [chapter 6](06-security.md)'s trifecta and
+all three legs are live — and *every one of them was already live in
+Part 2*. The private pool (your disk) was there. The untrusted content
+(logs, downloads) was there. The egress (the researcher's confirmed web
+reach) was there. Adding mail and calendar changes none of that: the
+trifecta was *already assembled* the moment Part 2 reattached the network.
+So here, adding an outbound mail tool does **not** flip the agent from
+safe to dangerous — there was no safe baseline to flip from.
+
+To feel why that matters, run the thought experiment on the *other*
+baseline. Take the **Part 1** agent — the default `pikuri-os`, no
+researcher, egress severed by the kernel — and wire *only* thunderbird's
+compose leg onto it. That agent had two legs and no way out; the compose
+window is now the sole exit. Adding it flips the agent **broken →
+assembled** in a single move. Same tool, opposite consequence — decided
+entirely by whether an egress leg was already present.
+
+That's the first half of the lesson, and it's *categorical*: **the
+trifecta is binary in presence.** Either all three legs are live or they
+aren't; a wiring is assembled or it isn't. The biggest move in the whole
+model — two legs to three — has nothing to do with how much data is at
+stake. It's a yes/no about leg *presence*.
+
+## Severity: three things sharpen
+
+If presence didn't move, why wire `pikuri-computer` carefully at all?
+Because the *other* axis moved a lot. Three things get sharper when you
+add mail to the disk-holding agent, and none of them is a new leg:
+
+- **A stronger untrusted source.** Part 2's untrusted content was mostly
+  logs and scraped pages — bytes the agent stumbled onto. An email is
+  *addressed at you*, arrives looking legitimate, and can be written by
+  anyone who knows your address. "Per our agreement, please send the
+  signed lease to legal@…" reads like a task, not an attack. Mail is a
+  better injection vector than a random page precisely because it's
+  *aimed*.
+- **A second egress channel — same mechanic, richer laundering surface.**
+  The compose window is human-gated exactly like the researcher's task
+  prompt: a model-authored draft you read and approve. But an email
+  *body* is unconstrained prose, where a search *query* is short and
+  query-shaped. A secret smuggled into a research task has to ride as a
+  conspicuous high-entropy blob; the same secret in an email can hide
+  inside fluent text — a fake reference number, a plausible sentence. The
+  channel is no less gated; it's just a place where laundered exfil can
+  look more innocent.
+- **Pool amplification.** This is the one to hold onto. Take that *same,
+  unchanged* compose leg and look at it in two homes. In standalone
+  `bin/pikuri-thunderbird`, it sits next to a *mailbox* — the worst a
+  poisoned draft carries out is your mail. In `bin/pikuri-computer`, the
+  identical leg sits next to your *whole disk* — it's now a review-gated
+  path for `~/.ssh/id_rsa`. Nothing about the tool changed. Its severity
+  scaled with the size of the private pool beside it.
+
+## The lesson, both axes in one line
+
+> The trifecta is **binary in presence** — all three legs live means
+> assembled, full stop — and **graded in severity** by the size of the
+> private pool sitting beside the egress leg.
+
+A leg that's low-risk in one wiring is serious in another, completely
+unchanged. Presence tells you *whether* you have a problem; the pool
+beside the egress tells you *how bad*. Part 1 → Part 2 was a presence move
+(a leg returned). Part 2 → `pikuri-computer` is a severity move (the same
+legs, a bigger pool, a richer channel). Reading a wiring means asking both
+questions, never just one.
+
+## What the gate is — and isn't
+
+It's tempting to rank the two egress gates as "the researcher makes you
+the *author*, the compose window only makes you an *approver*." That's
+wrong, and the correction is worth stating because the sloppy version
+overstates the difference.
+
+Both gates are the *same shape*: a model-authored prefill you read, then
+approve or reject. The research task string is authored by the model; you
+approve it. The compose window is a draft the model filled in; you Send it
+or don't. Against a *blatant* exfil attempt — `base64` of your private key
+dropped into either one — the two gates are equally strong: you see the
+foreign recipient and the obvious blob either way, and you refuse.
+
+The real difference is the **laundering surface** — the severity point
+above, sharpened. A research query is structurally short and query-shaped,
+which *forces* a high-entropy secret to surface as a conspicuous blob. An
+email body is free prose, which offers a low-conspicuousness path the
+query can't. So the compose gate is *marginally* weaker — and only against
+*laundered* exfil, the case where the secret is disguised as ordinary
+text. That's a real but narrow gap, not the wholesale "weaker gate" the
+author-vs-approver framing implies.
+
+The practical upshot is the discipline Part 2 and `MACHINE.md` already
+taught: the break rests on you *reading* what you approve. A rubber-stamped
+Send is the same failure as a rubber-stamped delegation or a
+rubber-stamped memory edit — which is exactly why the draft is shown to
+you in full, and why cutting confirmation fatigue (Part 1) is security
+work, not convenience.
 
 ## What's next
 
