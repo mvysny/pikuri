@@ -67,7 +67,7 @@ the homes above. Origin map (question → where the answer now lives):
   words + bm25-ranks (recall-first), calendar ANDs words across
   title/description/location (precision-first, no ranker). The shipped tools.
 
-## v2 — outbound, human-gated (compose shipped; calendar-create designed)
+## v2 — outbound, human-gated (compose shipped; address-resolver + calendar-create designed)
 
 The egress half. The load-bearing invariant (now also the CLAUDE.md seam):
 **pikuri performs no network egress and no autonomous send; every outbound
@@ -108,6 +108,53 @@ Still open / deferred here:
   wires `compose: true` with that prompt — the demo carries a *human-gated*
   egress leg on purpose (low risk: no autonomous send). The `Extension` default
   stays `compose: false`, so downstream inbound-only wirings are unchanged.
+
+### `thunderbird_contact_search` — resolve a name → address (designed, not built)
+
+**Why compose needs it.** The user says "email Jon Snow a summary of the
+release thread." The model has a *name*; compose needs an *address*. Without a
+resolver the model either invents an address (a mis-send / exfil risk) or stops
+to ask the user to paste one (friction on the common case). Resolve against the
+user's *own correspondence graph* — the addresses they have actually mailed and
+received — so the answer is grounded in their history, not guessed.
+
+- **Source = Gloda `contacts` + `identities`** (same snapshot + `Gloda` backend
+  as mail search; no new machinery — this is the sibling of the confirmed
+  {Gloda#domains_seen} query). `contacts(id, name, popularity, frecency)` joined
+  to `identities(contactID, kind='email', value)`. Schema for both is confirmed
+  live (the `identities` half was verified for the novelty check; `contacts`
+  columns still want a quick real-box confirm — see Open validation questions).
+- **Match name OR address, rank by frecency.** `contacts.name LIKE '%q%'`
+  (case-insensitive) or the email `value` matches; order by Gloda's
+  `frecency`/`popularity` so the most-corresponded-with match leads (the Jon you
+  actually email, not a one-off). Accept a partial address too (reverse lookup:
+  address → who is this?).
+- **Return ranked candidates, never auto-pick.** Several people/addresses come
+  back, each `Name <addr>` with a familiarity signal (corresponded-often vs.
+  seen-once — reuse the identity graph). Disambiguation is the model's/human's
+  job; silently choosing one address is exactly the mis-send the whole compose
+  guard exists to prevent.
+- **Inbound-only** — a pure read, adds no egress leg of its own. But its whole
+  purpose is to feed compose. *Open:* register it always (harmless read, and
+  independently useful — "what's Jon's address?") vs. only alongside `compose:`.
+  Lean: register whenever Gloda is present, like mail search — it's a read, and
+  gating a read behind the egress flag buys nothing.
+- **Honest residual — a spoofed contact.** The graph includes senders of
+  *received* mail, so an attacker who mailed as `Jon Snow <evil@…>` can surface
+  as a candidate. Three things blunt it, none a hard block: frecency ranking
+  sinks a one-off below the real Jon; the resolved address lands in the compose
+  window the human reviews; and compose's novelty-warn fires if `evil@`'s domain
+  is new. Same "human reviewing the To field is the last line" posture as the
+  rest of compose — record it, don't pretend resolution is trustworthy on its
+  own.
+
+Deferred: fuzzy/nickname matching (`Jon` ↔ `Jonathan`); group/alias expansion;
+and reading Thunderbird's *address book* proper (recalled `abook.sqlite` /
+collected-addresses store — a source **separate** from Gloda's derived graph,
+holding manually-curated contacts the user may never have mailed). The address
+book would **extend the read allowlist** beyond Gloda + calendar (a deliberate
+seam decision), so build it only if the derived participant graph proves too
+thin in practice.
 
 ### `thunderbird_calendar_create` — hand off an `.ics` to import (designed, not built)
 
@@ -166,6 +213,12 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   fired ("You have no prior mail with …"). The query still degrades gracefully
   (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
   TB versions.
+- **`contacts` schema for the address resolver.** {Gloda#domains_seen} proved
+  the `identities(kind, value)` half live; the planned `thunderbird_contact_search`
+  also reads `contacts(id, name, popularity, frecency)` — recalled, not yet
+  confirmed on a real box. A one-line `.schema contacts` +
+  `SELECT name, popularity, frecency FROM contacts LIMIT 5` settles it before
+  building the resolver.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
