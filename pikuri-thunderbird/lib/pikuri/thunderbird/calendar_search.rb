@@ -60,6 +60,14 @@ module Pikuri
 
       # @return [String]
       def self.run_search(backend:, query:, after:, before:, limit:)
+        # Refuse a match-everything call: with no query and no date bound this
+        # would dump every cached event. "What's on my calendar" should name a
+        # span — steer the model to add after/before (e.g. this week).
+        if [query, after, before].all? { |v| v.to_s.strip.empty? }
+          return 'Error: give a query and/or a date range (after/before) to search for — ' \
+                 'e.g. this week is after/before spanning Mon–Sun.'
+        end
+
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         hits = backend.search(query:, limit:, after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
         return offline_or_no_match(backend, query) if hits.empty?

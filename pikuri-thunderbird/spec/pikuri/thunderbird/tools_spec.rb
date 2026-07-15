@@ -118,6 +118,15 @@ describe 'pikuri-thunderbird tools' do
       end
     end
 
+    it 'refuses a match-everything call with no query and no date range' do
+      Dir.mktmpdir do |dir|
+        c = calendar(dir)
+        tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
+        assert_match(/Error: give a query and\/or a date range/, tool.run({}))
+        c.close
+      end
+    end
+
     it 'guides the user to enable Offline Support when nothing is cached' do
       Dir.mktmpdir do |dir|
         c = calendar(dir, []) # no calendar stores on disk
