@@ -125,26 +125,31 @@ received — so the answer is grounded in their history, not guessed.
   useless `{"69": []}`), and `contacts.name` is unreliable (often a bare
   address, sometimes junk — a `mvysny/GHSA-…` repo slug, a `reply+…@github`
   mailer). Meanwhile the decoded `messagesText_content.c3author` / `c4recipients`
-  columns carry exactly what's needed: `Name <addr>` pairs, with extra name
-  variants often appended, e.g. `Martin Vysny <martin@vysny.me> Martin Vyšný`
-  and `Lubica Lubi Vysna <lulu.vysna@gmail.com> Lubica "Lubi" Vysna` — display
-  name and address together, in one place, with a natural per-message frequency.
+  columns carry exactly what's needed: display name and address together, in one
+  place, with a natural per-message frequency — e.g. `Martin Vysny
+  <martin@vysny.me> Martin Vyšný` (bracketed) but also `martin@vysny.me Martin
+  Vyšný` and `support@synergi.so undefined` (bare address, no brackets — hence
+  the bracket-agnostic parse below).
   So the resolver reads the *corpus*; `contacts`/`identities` are demoted to
   optional (identities still backs the separate novelty check).
-- **Match the name, extract the `<addr>`, rank by frequency.** Find rows whose
-  author/recipient text contains the query — **reuse the ephemeral FTS5 index
-  already built for mail search**, restricting the MATCH to the `c3author` /
-  `c4recipients` columns, so no extra scan — then scan each `Name <addr>` pair
-  out of the matched cells, group by lower-cased address, and rank by appearance
-  count across author+recipient, weighting a Sent appearance (indexingPriority
-  60) higher: "I have *mailed* this person" is the strongest real-contact
-  signal. Reverse lookup (address → who is this?) is the same path with the
-  address as the query.
-- **Parsing caveats (from the real data):** a recipients cell holds *several*
-  `Name <addr>` entries — extract all with a scan, not one match. Tolerate noise
-  — a literal `undefined` display name, quoted nicknames (`"Lubi"`), repeated
-  unicode name variants — since the match is forgiving substring and the
-  extracted address is the key. Dedup candidates by lower-cased address.
+- **Match the whole cell, extract addresses by regex, rank by frequency.** The
+  query (a name or a partial address) is matched as a substring of the *entire*
+  author/recipient text — **reuse the ephemeral FTS5 index already built for
+  mail search**, restricting the MATCH to the `c3author` / `c4recipients`
+  columns, so no extra scan. Then pull every email token out of the matched
+  cells with a **bracket-agnostic** regex (`[^\s<>,;]+@[^\s<>,;]+` — angle
+  brackets, when present, fall outside the class, and a bare address matches the
+  same way), group by lower-cased address, and rank by appearance count across
+  author+recipient, weighting a Sent appearance (indexingPriority 60) higher:
+  "I have *mailed* this person" is the strongest real-contact signal. Reverse
+  lookup (address → who is this?) is the same path with the address as the query.
+- **Parsing caveats (from the real data):** the `<addr>` brackets are **often
+  missing** — cells like `martin@vysny.me Martin Vyšný` and `support@synergi.so
+  undefined` lead with the bare address, name trailing — so extraction is the
+  email-token regex above, **never** a `<…>` split. A cell holds *several*
+  entries (multiple recipients) — scan all tokens, not one match. Tolerate noise
+  (a literal `undefined` name, quoted nicknames like `"Lubi"`, repeated unicode
+  name variants); the extracted address is the key. Dedup by lower-cased address.
 - **Return ranked candidates, never auto-pick.** Several people/addresses come
   back, each `Name <addr>` with the derived familiarity count (mailed-often vs.
   seen-once). Disambiguation is the model's/human's job; silently choosing one
