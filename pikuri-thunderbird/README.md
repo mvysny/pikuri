@@ -32,9 +32,10 @@ corresponded with. See [`DESIGN.md`](DESIGN.md).
 ```
 
 It auto-discovers your active Thunderbird profile. Point it elsewhere with
-`--profile-dir /path/to/profile`. The demo talks to a local llama.cpp server
-by default; put your LLM connection in `~/.pikuri-examples-config.yaml`
-(`llm_server`, `llm_model`, `llm_api_key`).
+`--profile-dir /path/to/profile`. Add `--compose` to also enable the draft
+hand-off (off by default, so the plain demo stays egress-free). The demo talks
+to a local llama.cpp server by default; put your LLM connection in
+`~/.pikuri-examples-config.yaml` (`llm_server`, `llm_model`, `llm_api_key`).
 
 ## Wire it into your own agent
 

@@ -7,10 +7,12 @@
 # nothing else. It has private data (the mailbox) + untrusted content
 # (message bodies) but NO egress leg — search and read are both
 # inbound-only — so the lethal trifecta is broken by construction, the same
-# posture as bin/pikuri-corpus. The opt-in outbound compose tool is
-# deliberately left off here (Extension defaults compose: false), so this demo
-# has no egress leg; enabling it would need a prompt that permits drafting for
-# review (see DESIGN.md / ideas/thunderbird.md).
+# posture as bin/pikuri-corpus. The outbound compose tool is off by default
+# (this stays a no-egress demo); pass --compose to wire it, which also swaps in
+# the compose-capable prompt (the default read-only prompt tells the model it
+# can't send). With --compose the agent gains an egress leg, kept human-gated:
+# compose only opens a Thunderbird window the user sends from themselves (see
+# DESIGN.md / ideas/thunderbird.md).
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
@@ -21,6 +23,7 @@ require 'reline' # line editing + history for the interactive prompt
 require 'pikuri-thunderbird' # pulls in pikuri-core
 
 profile_dir = nil
+compose = false
 
 # Example-only config: LLM connection + keys live verbatim in a user-owned
 # YAML file (see CLAUDE.md "Environment is not a secret store"). chmod 600.
@@ -36,6 +39,10 @@ parser = OptionParser.new do |opts|
   opts.on('--profile-dir DIR', 'Thunderbird profile directory (overrides auto-discovery).') do |d|
     profile_dir = d
   end
+  opts.on('--compose', 'Enable the outbound compose tool (opens a Thunderbird compose ' \
+                       'window the user sends from; off by default).') do
+    compose = true
+  end
   opts.on('-h', '--help', 'Print this help and exit') do
     puts opts
     exit
@@ -50,7 +57,7 @@ rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
   exit 2
 end
 
-system_prompt = Pikuri.prompt(:thunderbird)
+system_prompt = Pikuri.prompt(compose ? :'thunderbird-compose' : :thunderbird)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
@@ -85,8 +92,9 @@ begin
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
     c.add_tool Pikuri::Tool::CALCULATOR
     # One extension wires the whole surface: mail search+read (if Gloda is
-    # present) and calendar search+read. No egress tool is wired.
-    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir)
+    # present) and calendar search+read. Compose (an egress leg) only when
+    # --compose is passed; default off keeps this a no-egress demo.
+    c.add_extension Pikuri::Thunderbird::Extension.new(profile_dir: profile_dir, compose: compose)
   end
 rescue Pikuri::Thunderbird::Profile::DiscoveryError => e
   warn "Thunderbird profile problem: #{e.message}"
