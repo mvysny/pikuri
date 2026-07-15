@@ -72,16 +72,48 @@ frozen gem with a *closeable* threat model.
 
 ## The lesson it teaches (the DESIGN.md + book-chapter spine)
 
-`bin/pikuri-thunderbird` already teaches human-gated egress — but next to a
-*mailbox-sized* private pool. Compose with pikuri-os and the private pool
-becomes the *entire filesystem*: the same compose window is now a review-gated
-exfil path for the whole disk, behind the *weaker* approve-a-prefill gate
-(contrast pikuri-os's `--with-internet` author-seat gate on the RESEARCHER task
-string — structurally separated, researcher holds no fs).
+Two lessons ride here, running in *opposite directions* along the composition.
+Keep them apart — an earlier draft fused them, which picked the wrong hero and
+overstated the gate.
 
-**Core lesson: the trifecta's severity scales with the size of the private pool
-sitting next to the egress leg, not merely with the presence of the legs.** A
-leg that's low-risk in one wiring is serious in another, unchanged.
+**Lesson 1 — the os direction: presence-flip (load-bearing).** pikuri-computer
+composes the *default* `bin/pikuri-os`, whose whole identity is the *removed*
+egress leg (`FullFsNoNet`, no `RESEARCHER`) — so it is trifecta-**broken by
+construction**. Adding thunderbird outbound flips it **broken → assembled**: the
+whole-disk `:private` pool and the attacker-authorable `:untrusted` email channel
+were already present; the compose leg is the third wire. This is categorical —
+the biggest move in the trifecta model — and has nothing to do with pool size.
+It's *leg presence*: an agent that provably could not egress now can (human-gated).
+That is what makes "add email to the OS helper" a big deal.
+
+**Lesson 2 — the thunderbird direction: pool amplification.**
+`bin/pikuri-thunderbird` already teaches human-gated egress — but next to a
+*mailbox-sized* pool. Move that *same, unchanged* compose leg next to os's disk
+and it becomes a review-gated exfil path for the whole filesystem. The leg's
+severity scaled with the pool beside it; nothing about the leg changed.
+
+**Core lesson, both directions in one line: the trifecta is binary in *presence*
+(all three legs live → assembled) and graded in *severity* (by the size of the
+private pool beside the egress leg).** A leg that's low-risk in one wiring is
+serious in another, unchanged.
+
+**What the gate is — and isn't.** Not "author vs approver." Both the `RESEARCHER`
+task string (`--with-internet`) and the compose window are *editable approval of a
+model-authored prefill* — the human sees a payload, edits or rejects. Against a
+blatant blob (`base64` of `id_rsa`) the two gates are equally strong: the human
+sees the blob and the foreign destination either way. The real difference is the
+**laundering surface** — a research task is query-shaped and short, forcing a
+high-entropy secret to ride as a conspicuous blob; an email body is unconstrained
+prose, offering a low-conspicuousness path (fluent text, a fake reference number)
+the research URL structurally can't. So compose is *marginally* weaker, and only
+against *laundered* exfil — not the wholesale "weaker gate" an earlier draft
+claimed.
+
+**The `--with-internet` caveat.** Against `os --with-internet` — which *already*
+has whole-disk human-gated exfil via the `RESEARCHER`'s `fetch` — adding
+thunderbird is a *second channel with the same mechanic*: marginal, save for that
+richer laundering surface. Lesson 1's presence-flip bites only against the
+*default* no-egress os, the honest baseline pikuri-computer builds on.
 
 ## Teach it in two parts
 
@@ -94,10 +126,13 @@ The book chapter (and the build) split cleanly along the egress leg:
    untrusted + private without egress is *safe*, and *why* (two legs is fine;
    the wire needs all three).
 2. **Add thunderbird *outbound* (compose / calendar-create).** The human-gated
-   egress leg returns. Analyze the shift: the trifecta reassembles (human-gated,
-   not autonomous), the private pool is the whole disk, the gate is
-   approve-a-prefill (weaker than the author seat). The lesson: **pool-size
-   amplification** + why the same leg's danger changed.
+   egress leg returns → the trifecta **reassembles** (human-gated, not
+   autonomous). This is Lesson 1's presence-flip: the default os could not egress,
+   now it can. Analyze two beats: (a) the compose leg is the *third wire*, not a
+   bigger pool — the pool was already the whole disk; (b) the gate is editable
+   approval of a prefill, *comparable* to `--with-internet`'s `RESEARCHER` task
+   gate, weaker only against laundered (not blatant) exfil. Then contrast with
+   `bin/pikuri-thunderbird`'s mailbox to land Lesson 2 (pool amplification).
 
 The *contrast between the two wirings* is the content — which is exactly why the
 gem is a good teaching artifact rather than just two things bolted together.
