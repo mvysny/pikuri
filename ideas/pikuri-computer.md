@@ -1,12 +1,15 @@
 # pikuri-computer
 
-Status: **designed, not built.** Realized as `bin/pikuri-computer` **in
-pikuri-os** — a demo binary, *not* a gem (see below) — plus an addendum to the
-pikuri-os book chapter (ch7). The binary wires `os --with-internet` + thunderbird
-(both outbound flags) into one desktop assistant; the ch7 addendum owns the
-reassembled-trifecta teaching. A gem is *deferred* — earned later only if
-in-perimeter lib code accretes (below), not now. Staging area — drain into
-`bin/` + ch7 as it lands (graduation pipeline, [`../CLAUDE.md`](../CLAUDE.md)).
+Status: **binary + prompt built; ch7 addendum + live verification pending.**
+Realized as `pikuri-os/bin/pikuri-computer` — a demo binary, *not* a gem (see
+below) — plus (not yet written) an addendum to the pikuri-os book chapter (ch7).
+The binary wires `os --with-internet` (default; `--no-internet` drops the
+`RESEARCHER`) + thunderbird (both outbound flags) into one desktop assistant; the
+ch7 addendum will own the reassembled-trifecta teaching. A gem is *deferred* —
+earned later only if in-perimeter lib code accretes (below), not now. Staging
+area — drain into `bin/` + ch7 as it lands (graduation pipeline,
+[`../CLAUDE.md`](../CLAUDE.md)). Not yet run against a live model + real
+Thunderbird profile.
 
 ## Why a bin, not a gem
 
@@ -43,11 +46,22 @@ gem — only a demo on top.)
 
 ## What ships
 
-- `bin/pikuri-computer` + `prompts/` — the `thunderbird-compose`
-  drafting-for-review prompt shape (outbound present, human-gated).
-- **ch7 addendum** owns the reassembled-trifecta teaching. No `DESIGN.md`
-  without a gem — the book is the legitimate home for a cross-cutting threat
-  model (doc-kinds table, [`../CLAUDE.md`](../CLAUDE.md)).
+- `pikuri-os/bin/pikuri-computer` — the wiring (both extensions +, by default,
+  the `RESEARCHER` sub-agent). Reuses os's `FullFsNoNet` + confirmed-mutation +
+  plan-mode posture; adds thunderbird's two outbound flags.
+- **Prompt: composed, not a new monolith.** `os-assistant` + `os-network-online`
+  (reused as-is) + a lean new `computer-mail-calendar.txt` fragment. The fragment
+  carries only what the thunderbird tool descriptions do *not* — the
+  untrusted-email policy, the draft/hand-off posture, and a grounding nudge — so
+  the per-tool mechanics (plain-text body, dropped recipients, network-calendar
+  warning) stay in the tools (the "no per-tool mechanics in a main prompt" rule).
+  This is why `thunderbird-compose.txt` was *not* reused wholesale: most of it is
+  already tool-owned; only the cross-cutting policy is prompt-level, and
+  `os-assistant` had none of it (its inputs were the user's own files), so
+  composing thunderbird in genuinely *requires* adding the untrusted block.
+- **ch7 addendum** (pending) owns the reassembled-trifecta teaching. No
+  `DESIGN.md` without a gem — the book is the legitimate home for a cross-cutting
+  threat model (doc-kinds table, [`../CLAUDE.md`](../CLAUDE.md)).
 
 ## The two bounds that freeze the concept (why it never becomes pikuri-assistant)
 
