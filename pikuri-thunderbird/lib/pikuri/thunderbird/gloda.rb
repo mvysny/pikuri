@@ -123,6 +123,33 @@ module Pikuri
         }
       end
 
+      # Which of +domains+ the user has correspondence history with, per
+      # Gloda's identity graph (+identities+ collects the email of every author
+      # *and* recipient across all indexed messages, Sent included — so it
+      # answers "have I ever exchanged mail with this domain?" in both
+      # directions). Powers {ComposeGuard}'s recipient-novelty warn.
+      #
+      #   gloda.domains_seen(['acme.com', 'paypa1.com'])  # => ['acme.com']
+      #
+      # @param domains [Array<String>] lowercased bare domains.
+      # @return [Array<String>] the subset present in the identity graph.
+      # @raise [SQLite3::SQLException] if the +identities+ schema differs from
+      #   the probed shape — the caller degrades (the schema is unverified
+      #   across Thunderbird versions).
+      def domains_seen(domains)
+        return [] if domains.empty?
+
+        ensure_fresh
+        domains.select do |domain|
+          @db.get_first_value(<<~SQL, [domain])
+            SELECT 1 FROM identities
+            WHERE kind = 'email'
+              AND lower(substr(value, instr(value, '@') + 1)) = ?
+            LIMIT 1
+          SQL
+        end
+      end
+
       # Close the snapshot connection (the snapshot dir itself is
       # finalizer-reaped). Idempotent.
       #

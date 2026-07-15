@@ -24,10 +24,14 @@ module Pikuri
     # install (profiles under two roots) raises from {Profile.discover} —
     # loud, with the fix — rather than guessing.
     #
-    # This is the v1 (search-only, no-egress) surface. Compose /
-    # create-event are deliberately absent: they are egress and belong to a
-    # future v2 as human-gated hand-offs to Thunderbird's own UI (see
-    # +DESIGN.md+ / +ideas/thunderbird.md+).
+    # By default this is the v1 (search-only, no-egress) surface. The v2
+    # +thunderbird_mail_compose+ tool is *opt-in* via +compose: true+: it is an
+    # egress leg (a hand-off to a compose window the human can Send from), so
+    # leaving it off by default is what keeps the bundled
+    # +bin/pikuri-thunderbird+ demo's trifecta broken by construction. Compose
+    # is still a human-gated hand-off — pikuri writes nothing and sends nothing
+    # itself (see {MailCompose}, +DESIGN.md+, +ideas/thunderbird.md+).
+    # Create-event remains unbuilt.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -40,10 +44,18 @@ module Pikuri
       #   exit), so two concurrent pikuri-thunderbird processes never share — and
       #   overwrite — one snapshot path. Mail and calendar snapshots live in
       #   +mail/+ and +calendar/+ subdirs of it.
+      # @param compose [Boolean] wire the outbound +thunderbird_mail_compose+
+      #   tool (default +false+). Opt-in because it adds an egress leg; the draft
+      #   is still human-committed in Thunderbird's compose window.
+      # @param thunderbird_bin [String] the Thunderbird executable for the
+      #   compose hand-off (PATH name or absolute path); ignored unless
+      #   +compose:+ is on. Mirrors +profile_dir:+'s override role.
       # @return [Extension]
-      def initialize(profile_dir: nil, cache_dir: nil)
+      def initialize(profile_dir: nil, cache_dir: nil, compose: false, thunderbird_bin: 'thunderbird')
         @profile_dir = profile_dir
         @cache_base = cache_dir || Paths.new_temp.to_s
+        @compose = compose
+        @thunderbird_bin = thunderbird_bin
       end
 
       # @param c [Pikuri::Agent::Configurator]
@@ -56,24 +68,29 @@ module Pikuri
           return
         end
 
-        wire_mail(c, profile)
+        gloda = wire_mail(c, profile)
         wire_calendar(c, profile)
+        # Compose needs no Gloda (only a Thunderbird binary); the backend, when
+        # present, powers the recipient-novelty warn and is nil otherwise.
+        c.add_tool MailCompose.new(thunderbird_bin: @thunderbird_bin, backend: gloda) if @compose
         nil
       end
 
       private
 
-      # @return [void]
+      # @return [Gloda, nil] the wired Gloda backend, or +nil+ when the index is
+      #   absent (mail tools then omitted).
       def wire_mail(c, profile)
         gloda = Gloda.new(gloda_path: profile.gloda_path, cache_dir: File.join(@cache_base, 'mail'))
         unless gloda.available?
           LOGGER.info("Gloda index absent (#{profile.gloda_path}); mail tools disabled.")
-          return
+          return nil
         end
 
         c.add_tool MailSearch.new(backend: gloda)
         c.add_tool MailRead.new(backend: gloda)
         c.on_close { gloda.close }
+        gloda
       end
 
       # @return [void]

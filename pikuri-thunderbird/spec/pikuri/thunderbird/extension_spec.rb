@@ -56,6 +56,40 @@ describe Pikuri::Thunderbird::Extension do
     end
   end
 
+  it 'does not wire compose by default (no-egress by construction)' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        _, names = tool_names(dir, cache)
+        refute_includes names, 'thunderbird_mail_compose'
+      end
+    end
+  end
+
+  it 'wires compose only when opted in' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        c = FakeConfigurator.new
+        Extension.new(profile_dir: dir, cache_dir: cache, compose: true).configure(c)
+        assert_includes c.tools.map(&:name), 'thunderbird_mail_compose'
+      end
+    end
+  end
+
+  it 'wires compose even when Gloda is absent (novelty warn just degrades)' do
+    Dir.mktmpdir do |dir|
+      write_calendar(dir) # no Gloda file
+      Dir.mktmpdir do |cache|
+        c = FakeConfigurator.new
+        Extension.new(profile_dir: dir, cache_dir: cache, compose: true).configure(c)
+        names = c.tools.map(&:name)
+        assert_includes names, 'thunderbird_mail_compose'
+        refute_includes names, 'thunderbird_mail_search'
+      end
+    end
+  end
+
   it 'omits mail tools when Gloda is absent but still wires calendar' do
     Dir.mktmpdir do |dir|
       write_calendar(dir) # no Gloda file

@@ -100,10 +100,24 @@ a CalDAV sync). The design invariant, locked in before any of it ships:
 > and sends nothing itself. No send tool ever ships.
 
 This converts egress from *agent-automatic* to *human-action-required*,
-which is what keeps the trifecta broken even once compose exists. v2 adds the
-two hand-off tools behind that gate, with a mechanical recipient guard
-(Unicode/punycode/homoglyph rejection + a correspondence-graph novelty warn)
-sanitizing what reaches the compose window. The full v2 rationale is in
+which is what keeps the trifecta broken even once compose exists.
+
+**Compose is shipped, opt-in.** `thunderbird_mail_compose`
+({Pikuri::Thunderbird::MailCompose}) is wired only when a host passes
+`Extension.new(compose: true)` — default off, so the bundled
+`bin/pikuri-thunderbird` demo has no egress leg *by construction* and its
+"trifecta broken" claim above stays literally true. Turning compose on
+re-introduces leg 3, but only as a human-committed hand-off: the tool opens a
+`mailto:` compose window ({Pikuri::Thunderbird::MailtoUri} percent-encodes every
+field so a body can't smuggle `&bcc=`), the body is plain-text-only (no hidden
+content, no remote beacons), and a mechanical recipient guard
+({Pikuri::Thunderbird::ComposeGuard}) runs first: a suspicious *body* fails
+closed; suspicious/non-ASCII/punycode *recipients* are dropped for the human to
+retype; a never-corresponded-with recipient domain (per
+{Pikuri::Thunderbird::Gloda#domains_seen}) is flagged, not blocked. The launch
+is detached (`setsid --fork`) so closing the agent never kills the user's
+Thunderbird. **Create-event** (`thunderbird_calendar_create`) remains designed
+but unbuilt. The full v2 rationale + open questions are in
 `ideas/thunderbird.md`.
 
 ## Discovery
@@ -288,15 +302,18 @@ detection. Consequence: the v1 snapshot lives in hidden `~/.cache` (read by
 confined TB reads (snap-owned area, or a non-hidden `$HOME` dir); the two dirs
 can't be shared on snap.
 
-### Hand-off mechanics — for the v2 egress tools (confirmed, not built)
+### Hand-off mechanics — for the v2 egress tools
 
-- **Compose → `mailto:` URI.** `thunderbird 'mailto:to@…?cc=…&bcc=…&subject=…&body=First%0ASecond'`
+- **Compose → `mailto:` URI (built).** `thunderbird 'mailto:to@…?cc=…&bcc=…&subject=…&body=First%0ASecond'`
   opens a pre-filled compose window, percent-decoding cleanly (`%0A`→newline,
   `%20`→space), populating subject + cc + **bcc**, reusing the running
   instance. Chosen over `-compose`, which **cannot do multiline** (`body='A%0AB'`
   rendered the literal `A%0AB`). Because the transport is a URI, every field
   value must be percent-encoded so an attacker-authored body can't smuggle a
-  hidden `&bcc=`.
+  hidden `&bcc=` — see {Pikuri::Thunderbird::MailtoUri}. pikuri launches it
+  detached (`setsid --fork`) so the agent's exit-sweep can't SIGTERM the user's
+  Thunderbird, and so a not-yet-running Thunderbird doesn't block the tool on
+  the GUI.
 - **Create event → `.ics` import.** `thunderbird <path.ics>` opens TB's
   "Import Calendar file" wizard as a new tab (running-instance reuse): a 4-step
   flow ending in **Confirm**, with a **target-calendar picker** at step 3.

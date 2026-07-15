@@ -7,8 +7,10 @@
 # nothing else. It has private data (the mailbox) + untrusted content
 # (message bodies) but NO egress leg — search and read are both
 # inbound-only — so the lethal trifecta is broken by construction, the same
-# posture as bin/pikuri-corpus. There is deliberately no compose / send /
-# create-event tool (that is a human-gated v2; see DESIGN.md).
+# posture as bin/pikuri-corpus. The opt-in outbound compose tool is
+# deliberately left off here (Extension defaults compose: false), so this demo
+# has no egress leg; enabling it would need a prompt that permits drafting for
+# review (see DESIGN.md / ideas/thunderbird.md).
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'

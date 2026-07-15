@@ -4,13 +4,19 @@ Search and read your **local** Thunderbird mail and calendars from a pikuri
 agent — reading Thunderbird's own on-disk profile, never touching the
 network. Part of the [pikuri](https://codeberg.org/mvysny/pikuri) family.
 
-The v1 surface is read-only and egress-free: four inbound tools
+The default surface is read-only and egress-free: four inbound tools
 (`thunderbird_mail_search` / `thunderbird_mail_read` /
 `thunderbird_calendar_search` / `thunderbird_calendar_read`). An agent wired
 with only these has your private mailbox and untrusted message content but no
 way to send anything out — the lethal trifecta is broken by construction.
-Composing or sending mail is a deliberate non-goal here; that belongs to a
-future human-gated hand-off to Thunderbird itself (see `DESIGN.md`).
+
+pikuri never sends mail on its own. If you turn on the opt-in
+`thunderbird_mail_compose` tool, the most it can do is **open a pre-filled
+Thunderbird compose window** — you read it, and *you* click Send. It draws the
+draft in plain text (no hidden HTML, no tracking images), refuses a body laced
+with invisible characters, drops look-alike recipient addresses for you to
+retype, and warns you when you're about to mail a domain you've never
+corresponded with. See [`DESIGN.md`](DESIGN.md).
 
 ## Requirements
 
@@ -42,7 +48,8 @@ end
 
 Mail tools register only when the Gloda index is present; calendar tools
 register whenever a profile is found (and guide you to enable Offline Support
-if nothing is cached yet).
+if nothing is cached yet). To add the compose hand-off, pass
+`Extension.new(compose: true)` — it stays off unless you ask for it.
 
 ## How it works
 

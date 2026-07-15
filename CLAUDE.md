@@ -40,11 +40,13 @@ The gem inventory:
   surface (`fileindex_search` / `fileindex_read` over GNOME's
   localsearch, `MACHINE.md` resident memory, boot grounding) +
   `bin/pikuri-os-assistant`.
-- `pikuri-thunderbird` — local Thunderbird mail + calendar, read-only:
-  `thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
+- `pikuri-thunderbird` — local Thunderbird mail + calendar: four read-only
+  inbound tools `thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
   `_calendar_read` over Thunderbird's own on-disk profile (Gloda index +
   `calendar-data/*.sqlite`), via bracketed snapshot copies + an ephemeral
-  FTS5 index; no network, no send. `bin/pikuri-thunderbird` no-egress demo.
+  FTS5 index, plus one opt-in outbound `thunderbird_mail_compose` (a
+  human-gated `mailto:` compose-window hand-off, guarded; never sends). No
+  network. `bin/pikuri-thunderbird` no-egress demo (compose off).
 - `pikuri-mcp` — Model Context Protocol support +
   `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
@@ -427,13 +429,23 @@ yardoc. CLAUDE.md only records the invariant.
 - **Thunderbird no-egress / no-send seam.** `pikuri-thunderbird`
   performs no network egress and no autonomous send: it reads
   Thunderbird's local profile only (never IMAP/POP3/SMTP/CalDAV) and
-  writes nothing to Thunderbird's stores. v1 ships only the four
-  *inbound* tools, so an agent wired with just them has no egress leg
-  (trifecta broken by construction). Any future outbound action
-  (compose, create-event) must be a *human-gated hand-off to
-  Thunderbird's own UI* (a pre-filled compose window / `.ics` import
-  wizard where the human commits) — never a DB write or a send by
-  pikuri. No send tool ever ships. Reads are an **allowlist**: only the
+  writes nothing to Thunderbird's stores. The four *inbound* tools have
+  no egress leg, so an agent wired with just them has the trifecta
+  broken by construction — and `bin/pikuri-thunderbird` is exactly that
+  wiring. The one outbound tool, `thunderbird_mail_compose`, is **opt-in**
+  (`Extension.new(compose: true)`, default off — so the demo's no-egress
+  claim stays literally true) and is a *human-gated hand-off to
+  Thunderbird's own UI*: it opens a pre-filled `mailto:` compose window
+  where the human reviews and clicks Send — never a DB write or a send by
+  pikuri. Every outbound action (this, and the still-unbuilt
+  create-event) must keep that shape (`.ics` import wizard where the
+  human commits for create-event). **No send tool ever ships.** Compose's
+  guards — `mailto:` field encoding, plain-text-only body, the
+  fail-closed body / drop-recipient / novelty-warn `ComposeGuard`,
+  detached `setsid --fork` launch — live in {Pikuri::Thunderbird::MailCompose}
+  / {MailtoUri} / {ComposeGuard}. A binary that wires `compose: true`
+  needs its own prompt (the demo's says the agent can't send).
+  Reads are an **allowlist**: only the
   Gloda + calendar DBs (plus `profiles.ini` for discovery) are ever
   opened, so the profile's credential stores (`key4.db`, `logins.json`,
   the OpenPGP key material, …) are never touched. See
@@ -570,10 +582,10 @@ per-gem one-liners:
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
   See {Pikuri::Os::Extension} and `ideas/os-assistant.md`.
-- **`pikuri-thunderbird/`** — local Thunderbird mail + calendar,
-  read-only. `Thunderbird::Extension` (one-call wiring) discovers the
+- **`pikuri-thunderbird/`** — local Thunderbird mail + calendar.
+  `Thunderbird::Extension` (one-call wiring) discovers the
   active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,
-  `profile_dir:` override) and registers the four inbound tools:
+  `profile_dir:` override) and registers the four read-only inbound tools:
   `Thunderbird::MailSearch` / `MailRead` (over `Thunderbird::Gloda` —
   Gloda's `global-messages-db.sqlite` used as a pre-decoded corpus) and
   `Thunderbird::CalendarSearch` / `CalendarRead` (over
@@ -585,8 +597,14 @@ per-gem one-liners:
   own fts3/`mozporter` vtable is unopenable by the sqlite3 gem). Multi-word
   matching differs by design: mail ORs words + bm25-ranks (recall-first),
   calendar ANDs words across title/description/location (precision-first, no
-  ranking). `bin/pikuri-thunderbird` is the no-egress demo (4 inbound tools +
-  calculator → trifecta broken by construction, same model as
+  ranking). The opt-in `compose: true` adds one outbound tool,
+  `Thunderbird::MailCompose` — a human-gated `mailto:` compose-window hand-off
+  (`Thunderbird::MailtoUri` percent-encodes every field; `Thunderbird::ComposeGuard`
+  fails a suspicious body closed, drops non-ASCII/punycode recipients, and warns
+  on never-corresponded-with domains via `Gloda#domains_seen`), launched detached
+  so agent exit can't kill the user's Thunderbird; it opens a window, never sends.
+  `bin/pikuri-thunderbird` is the no-egress demo (4 inbound tools +
+  calculator, compose off → trifecta broken by construction, same model as
   `bin/pikuri-corpus`). Depends on `pikuri-core` + the `sqlite3` gem;
   deliberately NOT mcp / memory / subagents (keeps the no-egress posture).
   See {Pikuri::Thunderbird::Extension}, `pikuri-thunderbird/DESIGN.md`, and

