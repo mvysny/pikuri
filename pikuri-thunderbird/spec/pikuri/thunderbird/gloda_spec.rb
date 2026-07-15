@@ -3,62 +3,32 @@
 require 'tmpdir'
 require 'sqlite3'
 
+# The Gloda *service*: snapshot + FTS5 index + freshness + a current
+# connection. Query behaviour lives in the view specs (gloda/mail_spec,
+# contact_search_spec); here we test only the access the service provides.
 describe Pikuri::Thunderbird::Gloda do
-  Gloda = Pikuri::Thunderbird::Gloda
+  Gloda = Pikuri::Thunderbird::Gloda unless defined?(Gloda)
 
-  D1 = Time.at(1_600_000_000)
-  D2 = Time.at(1_600_100_000)
-  D3 = Time.at(1_600_200_000)
-  D4 = Time.at(1_600_300_000)
-
-  # Build a fixture Gloda DB mirroring the real schema: messagesText_content
-  # (decoded columns, docid PK), messages (id/folderID/date/headerMessageID/
-  # deleted), folderLocations. Includes a Gmail-style duplicate (same
-  # Message-ID in INBOX + All Mail), a deleted row, and a header-less row.
-  def make_gloda(dir)
+  def make_gloda(dir, rows: 1)
     path = File.join(dir, 'global-messages-db.sqlite')
     db = SQLite3::Database.new(path)
     db.execute_batch(<<~SQL)
-      CREATE TABLE messagesText_content(
-        docid INTEGER PRIMARY KEY,
-        c0body, c1subject, c2attachmentNames, c3author, c4recipients);
-      CREATE TABLE messages(
-        id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER,
-        headerMessageID TEXT, deleted INTEGER);
-      CREATE TABLE folderLocations(
-        id INTEGER PRIMARY KEY, folderURI TEXT, dirtyStatus INTEGER,
-        name TEXT, indexingPriority INTEGER);
-      INSERT INTO folderLocations VALUES (1,'imap://x/INBOX',0,'INBOX',50);
-      INSERT INTO folderLocations VALUES (2,'imap://x/All',0,'All Mail',20);
+      CREATE TABLE messagesText_content(docid INTEGER PRIMARY KEY, c0body, c1subject, c2attachmentNames, c3author, c4recipients);
+      CREATE TABLE messages(id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER, headerMessageID TEXT, deleted INTEGER);
+      CREATE TABLE folderLocations(id INTEGER PRIMARY KEY, folderURI TEXT, dirtyStatus INTEGER, name TEXT, indexingPriority INTEGER);
     SQL
-    text = db.prepare('INSERT INTO messagesText_content VALUES (?,?,?,?,?,?)')
-    msg  = db.prepare('INSERT INTO messages VALUES (?,?,?,?,?)')
-
-    # docid 1 + its All-Mail duplicate (docid 2), same Message-ID <a@x>
-    text.execute(1, 'Please find the invoice attached', 'Invoice 2024', 'invoice.pdf',
-                 'Alice <alice@example.com>', 'me@example.com')
-    msg.execute(1, 1, D1.to_i * 1_000_000, '<a@x>', 0)
-    text.execute(2, 'Please find the invoice attached', 'Invoice 2024', 'invoice.pdf',
-                 'Alice <alice@example.com>', 'me@example.com')
-    msg.execute(2, 2, D1.to_i * 1_000_000, '<a@x>', 0)
-    # docid 3: unrelated
-    text.execute(3, 'lunch plans tomorrow', 'Lunch', '', 'Bob <bob@example.com>', 'me@example.com')
-    msg.execute(3, 1, D2.to_i * 1_000_000, '<b@x>', 0)
-    # docid 4: deleted (must never surface)
-    text.execute(4, 'secret invoice deleted stuff', 'Old', '', 'Carol', 'me@example.com')
-    msg.execute(4, 1, D3.to_i * 1_000_000, '<c@x>', 1)
-    # docid 5: header-less → gloda:5 handle
-    text.execute(5, 'another invoice with no header id', 'NoID', '', 'Dave', 'me@example.com')
-    msg.execute(5, 1, D4.to_i * 1_000_000, '', 0)
-
-    [text, msg].each(&:close)
+    rows.times do |i|
+      db.execute('INSERT INTO messagesText_content VALUES (?,?,?,?,?,?)',
+                 [i + 1, "body #{i}", 'subj', '', 'a@x', 'me@x'])
+      db.execute('INSERT INTO messages VALUES (?,?,?,?,?)', [i + 1, 1, 1_600_000_000_000_000, "<#{i}@x>", 0])
+    end
     db.close
     path
   end
 
-  def with_gloda
+  def with_gloda(**kw)
     Dir.mktmpdir do |dir|
-      gloda = Gloda.new(gloda_path: make_gloda(dir), cache_dir: File.join(dir, 'cache'))
+      gloda = Gloda.new(gloda_path: make_gloda(dir, **kw), cache_dir: File.join(dir, 'cache'))
       begin
         yield gloda, dir
       ensure
@@ -67,73 +37,37 @@ describe Pikuri::Thunderbird::Gloda do
     end
   end
 
-  it 'dedups Gmail label duplicates by Message-ID' do
-    with_gloda do |gloda|
-      hits = gloda.search(query: 'invoice', limit: 10)
-      ids = hits.map { |h| h[:message_id] }
-      assert_equal 1, ids.count('<a@x>'), 'the All-Mail duplicate is collapsed'
-      assert_includes ids, 'gloda:5', 'header-less message gets a gloda: handle'
+  it 'reports availability by the index file existing' do
+    with_gloda { |gloda| assert gloda.available? }
+    Dir.mktmpdir do |dir|
+      absent = Gloda.new(gloda_path: File.join(dir, 'nope.sqlite'), cache_dir: File.join(dir, 'c'))
+      refute absent.available?
     end
   end
 
-  it 'ORs query words (recall-first): any word can match' do
-    with_gloda do |gloda|
-      ids = gloda.search(query: 'invoice lunch', limit: 10).map { |h| h[:message_id] }
-      # "invoice" hits <a@x>/gloda:5, "lunch" hits <b@x> — OR returns all.
-      assert_includes ids, '<a@x>'
-      assert_includes ids, '<b@x>', 'a message matching only the second word still appears'
+  it 'yields a queryable, FTS-indexed connection through with_fresh_db' do
+    with_gloda(rows: 3) do |gloda|
+      count = gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
+      assert_equal 3, count
+      # the service built the FTS5 index the views rely on
+      hits = gloda.with_fresh_db { |db| db.get_first_value("SELECT count(*) FROM fts WHERE fts MATCH 'body'") }
+      assert_equal 3, hits
     end
   end
 
-  it 'excludes deleted messages' do
-    with_gloda do |gloda|
-      assert_empty gloda.search(query: 'secret', limit: 10)
-    end
-  end
+  it 'rebuilds when the live Gloda generation moves (freshness)' do
+    with_gloda(rows: 1) do |gloda, dir|
+      assert_equal 1, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
 
-  it 'ranks the strongest match first' do
-    with_gloda do |gloda|
-      hits = gloda.search(query: 'invoice', limit: 1)
-      assert_equal '<a@x>', hits.first[:message_id]
-      assert_equal 'Invoice 2024', hits.first[:subject]
-    end
-  end
-
-  it 'applies structured filters' do
-    with_gloda do |gloda|
-      assert_equal ['<b@x>'], gloda.search(query: 'lunch', limit: 10, from: 'bob').map { |h| h[:message_id] }
-      # date filter: only the D4 invoice survives after: D2
-      assert_equal ['gloda:5'], gloda.search(query: 'invoice', limit: 10, after: D2).map { |h| h[:message_id] }
-      # folder filter narrows to the All-Mail copy
-      folders = gloda.search(query: 'invoice', limit: 10, folder: 'All Mail').map { |h| h[:folder] }
-      assert_equal ['All Mail'], folders
-    end
-  end
-
-  it 'reads a full message by Message-ID and by gloda: handle' do
-    with_gloda do |gloda|
-      rec = gloda.read(message_id: '<a@x>')
-      assert_includes rec[:body], 'invoice attached'
-      assert_equal 'invoice.pdf', rec[:attachment_names]
-      assert_equal 'INBOX', rec[:folder]
-      assert_kind_of Time, rec[:date]
-
-      assert_includes gloda.read(message_id: 'gloda:5')[:body], 'no header id'
-      assert_nil gloda.read(message_id: '<does-not-exist@x>')
-    end
-  end
-
-  it 'rebuilds the index when the Gloda generation moves' do
-    with_gloda do |gloda, dir|
-      assert_empty gloda.search(query: 'zebra', limit: 10)
-      # simulate Thunderbird indexing a new message
+      # simulate Thunderbird indexing a new message into the live file
       src = SQLite3::Database.new(File.join(dir, 'global-messages-db.sqlite'))
-      src.execute("INSERT INTO messagesText_content VALUES (6,'a zebra appeared','Zebra','','Eve','me')")
-      src.execute("INSERT INTO messages VALUES (6,1,#{D4.to_i * 1_000_000},'<z@x>',0)")
+      src.execute("INSERT INTO messagesText_content VALUES (99,'a zebra appeared','Z','','Eve','me')")
+      src.execute('INSERT INTO messages VALUES (99,1,1600000000000000,\'<z@x>\',0)')
       src.close
 
-      hits = gloda.search(query: 'zebra', limit: 10)
-      assert_equal ['<z@x>'], hits.map { |h| h[:message_id] }
+      # a fresh with_fresh_db sees it (re-snapshot + reindex fired)
+      assert_equal 2, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
+      assert_equal 1, gloda.with_fresh_db { |db| db.get_first_value("SELECT count(*) FROM fts WHERE fts MATCH 'zebra'") }
     end
   end
 end

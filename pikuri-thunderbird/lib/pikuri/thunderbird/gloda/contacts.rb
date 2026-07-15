@@ -5,10 +5,10 @@ require 'sqlite3'
 module Pikuri
   module Thunderbird
     class Gloda
-      # The *people* half of the Gloda corpus, split out of {Gloda} (which
-      # stays the mail store): resolve a name to an address, and check
-      # recipient novelty. Both read the user's own correspondence graph, so
-      # they belong together and away from mail search/read.
+      # The *people* half of the Gloda corpus (its mail counterpart is
+      # {Gloda::Mail}): resolve a name to an address, and check recipient
+      # novelty. Both read the user's own correspondence graph, so they belong
+      # together and away from mail search/read.
       #
       #   contacts = Gloda::Contacts.new(gloda: gloda)
       #   contacts.resolve(query: 'jon', limit: 5)  # name → ranked addresses

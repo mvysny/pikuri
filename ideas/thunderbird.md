@@ -116,14 +116,15 @@ correspondence graph*, so compose can turn "email Jon Snow" into an address
 without inventing one or stopping to ask. The design graduated to source +
 yardoc:
 
-- **{Pikuri::Thunderbird::Gloda::Contacts}** — the resolver, split out of
-  `Gloda` (which stays the mail store): `#resolve` (corpus-based name→address)
-  + `#domains_seen` (the identity-graph novelty query, moved here alongside it).
-  Owns the source decision (decoded `c3author`/`c4recipients`, not the dead
-  `contacts` table), the shared-FTS5 column-restricted match, bracket-agnostic
-  extraction, the per-entry all-terms precision filter, Sent-weighted ranking,
-  and the before-else-after name heuristic. Queries `Gloda`'s snapshot through
-  `Gloda#with_fresh_db`.
+- **{Pikuri::Thunderbird::Gloda::Contacts}** — the resolver, one of two query
+  views over the `Gloda` *service* (the other is `Gloda::Mail`; the service
+  itself does snapshot + FTS5 index + freshness + connection, no queries):
+  `#resolve` (corpus-based name→address) + `#domains_seen` (the identity-graph
+  novelty query, grouped here alongside it). Owns the source decision (decoded
+  `c3author`/`c4recipients`, not the dead `contacts` table), the shared-FTS5
+  column-restricted match, bracket-agnostic extraction, the per-entry all-terms
+  precision filter, Sent-weighted ranking, and the before-else-after name
+  heuristic. Queries the service's snapshot through `Gloda#with_fresh_db`.
 - **{Pikuri::Thunderbird::ContactSearch}** — the `thunderbird_contact_search`
   tool: renders ranked `Name <addr>` candidates with a familiarity signal,
   never auto-picks. Registered whenever Gloda is present (a pure read; the

@@ -592,14 +592,17 @@ per-gem one-liners:
 - **`pikuri-thunderbird/`** — local Thunderbird mail + calendar.
   `Thunderbird::Extension` (one-call wiring) discovers the
   active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,
-  `profile_dir:` override) and registers the five read-only inbound tools:
-  `Thunderbird::MailSearch` / `MailRead` (over `Thunderbird::Gloda` —
-  Gloda's `global-messages-db.sqlite` used as a pre-decoded corpus),
-  `Thunderbird::ContactSearch` (resolve a name → ranked addresses over
-  `Thunderbird::Gloda::Contacts` — the derived correspondence graph in Gloda's
-  decoded author/recipient columns, the dead `contacts` table demoted), and
-  `Thunderbird::CalendarSearch` / `CalendarRead` (over
-  `Thunderbird::Calendar` — the `calendar-data/*.sqlite` stores). Both
+  `profile_dir:` override) and registers the five read-only inbound tools.
+  `Thunderbird::Gloda` is the *service* over `global-messages-db.sqlite`
+  (snapshot + ephemeral FTS5 index + freshness + a current connection; no
+  queries itself), with two query views on it:
+  `Thunderbird::Gloda::Mail` backing `Thunderbird::MailSearch` / `MailRead`,
+  and `Thunderbird::Gloda::Contacts` backing `Thunderbird::ContactSearch`
+  (resolve a name → ranked addresses over the derived correspondence graph in
+  Gloda's decoded author/recipient columns, the dead `contacts` table demoted;
+  it also carries the `domains_seen` novelty query). The calendar tools
+  `Thunderbird::CalendarSearch` / `CalendarRead` run over
+  `Thunderbird::Calendar` (the `calendar-data/*.sqlite` stores). Both
   backends never query Thunderbird's locked live DBs: `Thunderbird::Snapshot`
   takes a bracketed `cp --reflink=auto` (change-counter + `-journal`
   bracket) into `~/.cache/pikuri/thunderbird/`, and the mail path builds an

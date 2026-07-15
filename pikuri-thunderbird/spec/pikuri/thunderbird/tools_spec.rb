@@ -34,6 +34,7 @@ describe 'pikuri-thunderbird tools' do
   end
 
   def gloda(dir) = Pikuri::Thunderbird::Gloda.new(gloda_path: make_gloda(dir), cache_dir: File.join(dir, 'gc'))
+  def mail(g) = Pikuri::Thunderbird::Gloda::Mail.new(gloda: g)
   def calendar(dir, dbs = nil)
     Pikuri::Thunderbird::Calendar.new(calendar_dbs: dbs || [make_calendar(dir)], cache_dir: File.join(dir, 'cc'))
   end
@@ -42,7 +43,7 @@ describe 'pikuri-thunderbird tools' do
     it 'renders ranked hits with a usable id, and Errors on a bad date' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
-        tool = Pikuri::Thunderbird::MailSearch.new(backend: g)
+        tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
         out = tool.run('query' => 'invoice')
         assert_match(/1 match/, out)
         assert_match(/id: <a@x>/, out)
@@ -59,7 +60,7 @@ describe 'pikuri-thunderbird tools' do
     it 'returns the full message and Errors on unknown id' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
-        tool = Pikuri::Thunderbird::MailRead.new(backend: g)
+        tool = Pikuri::Thunderbird::MailRead.new(backend: mail(g))
         out = tool.run('message_id' => '<a@x>')
         assert_match(/Subject: Invoice 2024/, out)
         assert_match(/invoice attached/, out)

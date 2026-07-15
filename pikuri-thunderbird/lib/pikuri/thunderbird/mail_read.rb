@@ -21,7 +21,7 @@ module Pikuri
         - Returns the full text; attachment contents are not opened, only their names are listed.
       DESC
 
-      # @param backend [Gloda] the mail backend.
+      # @param backend [Gloda::Mail] the mail backend.
       # @return [MailRead]
       def initialize(backend:)
         @backend = backend

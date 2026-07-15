@@ -91,9 +91,10 @@ module Pikuri
           return nil
         end
 
+        mail = Gloda::Mail.new(gloda: gloda)
         contacts = Gloda::Contacts.new(gloda: gloda)
-        c.add_tool MailSearch.new(backend: gloda)
-        c.add_tool MailRead.new(backend: gloda)
+        c.add_tool MailSearch.new(backend: mail)
+        c.add_tool MailRead.new(backend: mail)
         # A pure read, and useful on its own ("what's Jon's address?"), so it
         # rides Gloda's presence rather than the egress-gated compose flag.
         c.add_tool ContactSearch.new(backend: contacts)

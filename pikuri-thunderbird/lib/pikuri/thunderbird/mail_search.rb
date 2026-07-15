@@ -24,7 +24,7 @@ module Pikuri
         - Spam/Junk/Trash are not searched.
       DESC
 
-      # @param backend [Gloda] the mail backend.
+      # @param backend [Gloda::Mail] the mail backend.
       # @return [MailSearch]
       def initialize(backend:)
         @backend = backend
