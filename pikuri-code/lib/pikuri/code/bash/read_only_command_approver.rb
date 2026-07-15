@@ -12,7 +12,7 @@ module Pikuri
       # to Bash's human {Confirmer}. The conservative half of the OS-helper's
       # answer to confirmation fatigue: the frequent harmless commands (+ls+,
       # +cat+, +grep+, +df+ …) stop prompting while every mutation still reaches
-      # the human. See +ideas/os-assistant.md+.
+      # the human. See +ideas/pikuri-os.md+.
       #
       # It is NOT a {Pikuri::Workspace::Confirmer}: it renders nothing and only
       # ever *approves or abstains* — +false+ is not a rejection, just "ask the

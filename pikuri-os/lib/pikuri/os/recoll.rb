@@ -17,7 +17,7 @@ module Pikuri
     # is the inverse: +localsearch+ drops *content kinds* (source, git);
     # recoll indexes exactly the *folders* the user configured (+topdirs+),
     # source code included — everything outside them is invisible. Measured
-    # comparison: +ideas/os-assistant.md+.
+    # comparison: +ideas/pikuri-os.md+.
     #
     # {.search} asks +recollq -F 'url abstract'+ for two base64-encoded
     # fields per line (recoll's own recommended machine shape) so paths and

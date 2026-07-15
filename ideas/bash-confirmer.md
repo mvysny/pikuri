@@ -2,7 +2,7 @@
 
 Status: **deferred brainstorm** — design space mapped, not scheduled.
 This note collects the deferred bash-confirmation-gate ideas pulled out
-of [`os-assistant.md`](os-assistant.md)'s fatigue list so each has room
+of [`pikuri-os.md`](pikuri-os.md)'s fatigue list so each has room
 to breathe. Four so far — three on the **volume** axis (fewer, more
 meaningful prompts), one on the **comprehension** axis (understand the
 prompts that remain):
@@ -26,7 +26,7 @@ obey the same governing invariant (stated in "The invariant" below):
 
 ## Related
 
-- [`os-assistant.md`](os-assistant.md) §"Deferred / not yet built" —
+- [`pikuri-os.md`](pikuri-os.md) §"Deferred / not yet built" —
   where this was born; the OS-helper is one of the two agents that would
   use it (the coding agent is the other, and the likelier winner — see
   below).
@@ -105,7 +105,7 @@ whether that is survivable:
 
 Two documented positions look like they collide:
 
-- [`os-assistant.md`](os-assistant.md) contemplates session grants in
+- [`pikuri-os.md`](pikuri-os.md) contemplates session grants in
   "Claude Code's shape: **deterministic rules + user-granted session
   approvals, no LLM in the yes/no**."
 - {Pikuri::Workspace::Confirmer} **rejected** the `:once/:always` scope
@@ -124,7 +124,7 @@ category as the static allowlist, just runtime-populated, and it cannot
 touch the confirmer protocol even in principle. Not a smarter approval
 mode.
 
-So the governing invariant (inherited from `os-assistant.md`): **AI may
+So the governing invariant (inherited from `pikuri-os.md`): **AI may
 *translate* a command, but code and the human *decide* — never an AI
 ✓/⚠ verdict.** The grant must originate from a *human keystroke*; an LLM
 proposing "add this to the allowlist" would be exactly the AI-approver

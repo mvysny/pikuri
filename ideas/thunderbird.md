@@ -30,7 +30,7 @@ same way and this note shrinks again.
 
 ## Related
 
-- [`os-assistant.md`](os-assistant.md) — the shipped analog: an offline,
+- [`pikuri-os.md`](pikuri-os.md) — the shipped analog: an offline,
   desktop-specific agent over an `available?`-probed backend that never
   egresses. pikuri-thunderbird mirrors the *pattern* (not the
   GNOME-dependence) but is its own gem.

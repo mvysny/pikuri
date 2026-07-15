@@ -422,7 +422,7 @@ module Pikuri
         # (+--unshare-net+).
         #
         # This is the sandbox for the offline OS-helper agent (+pikuri-os+;
-        # design in +ideas/os-assistant.md+). That agent's job is to operate
+        # design in +ideas/pikuri-os.md+). That agent's job is to operate
         # the real host, so filesystem *containment* is the wrong tool — there
         # is deliberately no fs sandbox. The one isolation that matters is
         # egress: with the network namespace unshared, an injection in a file

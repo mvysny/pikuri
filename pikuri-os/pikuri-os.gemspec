@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
     pikuri-mcp/-memory/-vectordb: severing those keeps the no-egress,
     "small enough to audit" posture honest.
 
-    See +ideas/os-assistant.md+ in the repo for the full design.
+    See +ideas/pikuri-os.md+ in the repo for the full design.
   DESC
 
   spec.homepage = 'https://codeberg.org/mvysny/pikuri'

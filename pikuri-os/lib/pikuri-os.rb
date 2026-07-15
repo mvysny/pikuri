@@ -13,7 +13,7 @@ require 'pikuri-code'
 # on pikuri-code but NOT pikuri-mcp/-memory/-vectordb. The two cross-cutting
 # pieces (+FullFsNoNet+ sandbox, read-only command approver) live in
 # pikuri-code with the other OS-touching primitives. Design notes:
-# +ideas/os-assistant.md+.
+# +ideas/pikuri-os.md+.
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri

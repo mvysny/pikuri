@@ -196,7 +196,7 @@ substance has moved to its final homes:
   there too, marked as such with its reason — see the `ideas/*.md`
   rule above).
 
-The worked example is the OS helper: designed in `ideas/os-assistant.md`,
+The worked example is the OS helper: designed in `ideas/pikuri-os.md`,
 then on shipping its narrative graduated into book chapter 7, its
 rationale into {Pikuri::Os::Extension} and the tool yardocs, and its
 must-not-break half into the **Sandbox seam** below
@@ -594,7 +594,7 @@ per-gem one-liners:
   bash command approver with the git arm. Depends on `pikuri-core`
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
-  See {Pikuri::Os::Extension} and `ideas/os-assistant.md`.
+  See {Pikuri::Os::Extension} and `ideas/pikuri-os.md`.
 - **`pikuri-thunderbird/`** — local Thunderbird mail + calendar.
   `Thunderbird::Extension` (one-call wiring) discovers the
   active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,

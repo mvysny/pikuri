@@ -124,7 +124,7 @@ addition is an occasion to re-examine the trifecta.** Mechanism:
 
 ## Related
 
-- [`os-assistant.md`](os-assistant.md) — pikuri-os stays as-is: the no-egress
+- [`pikuri-os.md`](pikuri-os.md) — pikuri-os stays as-is: the no-egress
   OS-substrate exemplar. pikuri-computer composes *on top* without changing it.
 - [`thunderbird.md`](thunderbird.md) — pikuri-thunderbird stays as-is: supplies
   the inbound + human-gated-outbound tools pikuri-computer wires. (Resolves that
