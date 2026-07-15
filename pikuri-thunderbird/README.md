@@ -32,8 +32,9 @@ corresponded with. See [`DESIGN.md`](DESIGN.md).
 ```
 
 It auto-discovers your active Thunderbird profile. Point it elsewhere with
-`--profile-dir /path/to/profile`. Add `--compose` to also enable the draft
-hand-off (off by default, so the plain demo stays egress-free). The demo talks
+`--profile-dir /path/to/profile`. This demo wires the full surface, including
+the compose hand-off — ask it to reply to a message and it opens a pre-filled
+Thunderbird window for you to send (it never sends by itself). The demo talks
 to a local llama.cpp server by default; put your LLM connection in
 `~/.pikuri-examples-config.yaml` (`llm_server`, `llm_model`, `llm_api_key`).
 
@@ -50,7 +51,9 @@ end
 Mail tools register only when the Gloda index is present; calendar tools
 register whenever a profile is found (and guide you to enable Offline Support
 if nothing is cached yet). To add the compose hand-off, pass
-`Extension.new(compose: true)` — it stays off unless you ask for it.
+`Extension.new(compose: true)` — it stays off unless you ask for it, and your
+`system_prompt` should then tell the model it may draft a message for you to
+send (an inbound-only prompt that forbids sending will keep the tool unused).
 
 ## How it works
 

@@ -29,14 +29,23 @@ Email is the textbook lethal trifecta. The three legs:
    Inherently present.
 3. **Egress** — the ability to send data out.
 
-**v1 removes leg 3 entirely.** The only tools are `thunderbird_mail_search`,
-`thunderbird_mail_read`, `thunderbird_calendar_search`, and
-`thunderbird_calendar_read` — all inbound-only. An agent wired with just
-these (plus, say, a calculator) has legs 1 and 2 but no way to send anything
-anywhere, so a prompt injection buried in a message body has no exfiltration
-channel. This is the same "trifecta broken by construction" posture as
-`bin/pikuri-corpus` and `bin/pikuri-memory`. The bundled
-`bin/pikuri-thunderbird` demo is exactly this wiring.
+**The default surface removes leg 3 entirely.** The four tools
+`thunderbird_mail_search`, `thunderbird_mail_read`,
+`thunderbird_calendar_search`, and `thunderbird_calendar_read` are all
+inbound-only, and they are all `Extension` gives unless a host opts into
+compose. An agent wired with just these (plus, say, a calculator) has legs 1
+and 2 but no way to send anything anywhere, so a prompt injection buried in a
+message body has no exfiltration channel. That is the "trifecta broken by
+construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
+
+The bundled `bin/pikuri-thunderbird` deliberately goes one step further — it
+wires `compose: true` to demo the *whole* surface — so it does carry leg 3.
+But that leg is human-gated: compose can only open a Thunderbird compose window
+the user Sends themselves (below), so there is an egress leg yet no *autonomous*
+egress. A poisoned message can influence a draft, but cannot make it leave the
+machine without the user clicking Send on a window they can see. So the demo's
+trifecta is *intact-but-gated*, not severed — an honest smoke-alarm, not a
+firewall.
 
 Defense in depth on leg 2: **Spam/Junk/Trash are not searched.** On the
 Gloda path this is *free* — Gloda already assigns those folders indexing
@@ -104,10 +113,10 @@ which is what keeps the trifecta broken even once compose exists.
 
 **Compose is shipped, opt-in.** `thunderbird_mail_compose`
 ({Pikuri::Thunderbird::MailCompose}) is wired only when a host passes
-`Extension.new(compose: true)` — default off, so the bundled
-`bin/pikuri-thunderbird` demo has no egress leg *by construction* and its
-"trifecta broken" claim above stays literally true. Turning compose on
-re-introduces leg 3, but only as a human-committed hand-off: the tool opens a
+`Extension.new(compose: true)` — off by default, so an unopted wiring has no
+egress leg *by construction*. `bin/pikuri-thunderbird` opts in (to demo the
+full surface). Turning compose on re-introduces leg 3, but only as a
+human-committed hand-off: the tool opens a
 `mailto:` compose window ({Pikuri::Thunderbird::MailtoUri} percent-encodes every
 field so a body can't smuggle `&bcc=`), the body is plain-text-only (no hidden
 content, no remote beacons), and a mechanical recipient guard

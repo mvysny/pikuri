@@ -100,11 +100,14 @@ Still open / deferred here:
 - **Plain-text-only** is enforced by never emitting an HTML body — no HTML knob
   exists, so the two HTML-only exfil vectors (hidden content, remote beacons)
   can't arise. (Rationale in the {MailCompose} yardoc.)
-- **A compose-enabled binary needs its own prompt.** `bin/pikuri-thunderbird`'s
-  prompt says the agent "cannot send mail" — true while compose is off, wrong
-  once it's on. A compose wiring (e.g. a future `pikuri-assistant` shape) must
-  supply a prompt that permits drafting-for-review; not built (no binary wires
-  `compose: true` yet).
+- **A compose wiring needs a drafting-for-review prompt.** The inbound-only
+  `prompts/thunderbird.txt` says the agent "cannot send mail" — true with
+  compose off, and it would keep the tool unused if reused with compose on. The
+  compose wiring ships its own `prompts/thunderbird-compose.txt` (drafting
+  stance + hardened untrusted-content paragraph). `bin/pikuri-thunderbird` now
+  wires `compose: true` with that prompt — the demo carries a *human-gated*
+  egress leg on purpose (low risk: no autonomous send). The `Extension` default
+  stays `compose: false`, so downstream inbound-only wirings are unchanged.
 
 ### `thunderbird_calendar_create` — hand off an `.ics` to import (designed, not built)
 

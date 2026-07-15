@@ -46,7 +46,8 @@ The gem inventory:
   `calendar-data/*.sqlite`), via bracketed snapshot copies + an ephemeral
   FTS5 index, plus one opt-in outbound `thunderbird_mail_compose` (a
   human-gated `mailto:` compose-window hand-off, guarded; never sends). No
-  network. `bin/pikuri-thunderbird` no-egress demo (compose off).
+  network. `bin/pikuri-thunderbird` demos the full surface (compose on —
+  egress present but human-gated, no autonomous send).
 - `pikuri-mcp` — Model Context Protocol support +
   `bin/pikuri-openlibrary` one-MCP demo.
 - `pikuri-subagents` — the `agent` tool + `Persona` record +
@@ -427,25 +428,30 @@ yardoc. CLAUDE.md only records the invariant.
   `Pikuri::Tool`s. See {Pikuri::Mcp::Servers} ("Why MCP tools
   bypass `Pikuri::Tool`").
 - **Thunderbird no-egress / no-send seam.** `pikuri-thunderbird`
-  performs no network egress and no autonomous send: it reads
+  performs no network egress and no *autonomous* send: it reads
   Thunderbird's local profile only (never IMAP/POP3/SMTP/CalDAV) and
   writes nothing to Thunderbird's stores. The four *inbound* tools have
   no egress leg, so an agent wired with just them has the trifecta
-  broken by construction — and `bin/pikuri-thunderbird` is exactly that
-  wiring. The one outbound tool, `thunderbird_mail_compose`, is **opt-in**
-  (`Extension.new(compose: true)`, default off — so the demo's no-egress
-  claim stays literally true) and is a *human-gated hand-off to
-  Thunderbird's own UI*: it opens a pre-filled `mailto:` compose window
-  where the human reviews and clicks Send — never a DB write or a send by
-  pikuri. Every outbound action (this, and the still-unbuilt
-  create-event) must keep that shape (`.ics` import wizard where the
-  human commits for create-event). **No send tool ever ships.** Compose's
-  guards — `mailto:` field encoding, plain-text-only body, the
-  fail-closed body / drop-recipient / novelty-warn `ComposeGuard`,
-  detached `setsid --fork` launch — live in {Pikuri::Thunderbird::MailCompose}
-  / {MailtoUri} / {ComposeGuard}. A binary that wires `compose: true`
-  needs its own prompt (the demo's says the agent can't send).
-  Reads are an **allowlist**: only the
+  broken by construction — and that inbound-only shape is the
+  `Extension` **default** (`compose: false`). The one outbound tool,
+  `thunderbird_mail_compose` (`Extension.new(compose: true)`), adds an
+  egress leg but only as a *human-gated hand-off to Thunderbird's own
+  UI*: it opens a pre-filled `mailto:` compose window where the human
+  reviews and clicks Send — never a DB write or a send by pikuri, so
+  there is no *autonomous* egress. Every outbound action (this, and the
+  still-unbuilt create-event) must keep that shape (`.ics` import wizard
+  where the human commits for create-event). **No send tool ever
+  ships.** Compose's guards — `mailto:` field encoding, plain-text-only
+  body, the fail-closed body / drop-recipient / novelty-warn
+  `ComposeGuard`, detached `setsid --fork` launch — live in
+  {Pikuri::Thunderbird::MailCompose} / {MailtoUri} / {ComposeGuard}. A
+  binary that wires `compose: true` needs a prompt that permits
+  drafting-for-review (the inbound-only `thunderbird` prompt says the
+  agent can't send; the compose wiring uses `thunderbird-compose`).
+  `bin/pikuri-thunderbird` wires `compose: true` — it's the full-surface
+  demo, so its trifecta is intact-but-human-gated, not severed; the
+  severed-by-construction exemplars are `bin/pikuri-corpus` /
+  `bin/pikuri-memory`. Reads are an **allowlist**: only the
   Gloda + calendar DBs (plus `profiles.ini` for discovery) are ever
   opened, so the profile's credential stores (`key4.db`, `logins.json`,
   the OpenPGP key material, …) are never touched. See
@@ -603,10 +609,11 @@ per-gem one-liners:
   fails a suspicious body closed, drops non-ASCII/punycode recipients, and warns
   on never-corresponded-with domains via `Gloda#domains_seen`), launched detached
   so agent exit can't kill the user's Thunderbird; it opens a window, never sends.
-  `bin/pikuri-thunderbird` is the no-egress demo (4 inbound tools +
-  calculator, compose off → trifecta broken by construction, same model as
-  `bin/pikuri-corpus`). Depends on `pikuri-core` + the `sqlite3` gem;
-  deliberately NOT mcp / memory / subagents (keeps the no-egress posture).
+  `bin/pikuri-thunderbird` demos the full surface with `compose: true` (the
+  `thunderbird-compose` prompt): the egress leg is present but human-gated
+  (no autonomous send), so unlike `bin/pikuri-corpus` / `bin/pikuri-memory`
+  it's trifecta-intact-but-gated, not severed. Depends on `pikuri-core` + the `sqlite3` gem;
+  deliberately NOT mcp / memory / subagents (keeps the local, no-network posture).
   See {Pikuri::Thunderbird::Extension}, `pikuri-thunderbird/DESIGN.md`, and
   `ideas/thunderbird.md`.
 - **`pikuri-mcp/`** — `Mcp::Registry`, `Mcp::Servers`,
