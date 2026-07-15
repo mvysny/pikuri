@@ -132,8 +132,8 @@ novelty) graduated to {Pikuri::Thunderbird::ComposeGuard}, backed by the new
   domain you've *never* used, thin-history mailboxes, and a human who waves the
   warning through. That's why the observation urges a human-driven out-of-band
   check — the last line, outside the agent's trust boundary (adds no egress leg).
-- **Novelty-check schema is unverified against a real box** — see Open
-  validation questions.
+- **Novelty check verified end-to-end** against a real profile (schema + a
+  live warn on a made-up recipient); see Open validation questions.
 
 ### `thunderbird_*` trifecta detector wiring (when compose is added)
 
@@ -158,13 +158,14 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   the read/star/tag churn is already confirmed. The content-triple de-churn
   (`max(id)`/`count(*)`/`sum(deleted)`) is the upgrade if the ~1 s spurious
   rebuild ever bites.
-- **Compose recipient-novelty identity schema.** {Gloda#domains_seen} reads
-  `identities(kind, value)` — the shape recalled from Gloda, **not** probed on a
-  real box (DESIGN.md marks `contacts`/`identities` "unused in v1"). The query
-  degrades gracefully (any `SQLite3::SQLException` → "couldn't check" note), so a
-  wrong column name is a silent no-op, not a crash — but the *feature* is unproven
-  until a real profile confirms the domains are actually found. First real-box
-  compose is the test.
+- **Compose recipient-novelty identity schema** — **resolved.**
+  {Gloda#domains_seen} reads `identities(kind, value)`; the schema was confirmed
+  on a real box (`kind` holds `'email'`, `value` the bare address) and the whole
+  path was exercised end-to-end: `bin/pikuri-thunderbird` drafted to a made-up
+  address, the compose window opened with it in the To field, and the soft-warn
+  fired ("You have no prior mail with …"). The query still degrades gracefully
+  (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
+  TB versions.
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a
