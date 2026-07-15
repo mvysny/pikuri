@@ -19,6 +19,10 @@ module Pikuri
     #   gloda.read(message_id: hit[:message_id])   # full decoded body
     #   gloda.close                            # closes the snapshot connection
     #
+    # Mail is this class's job; the *people* in that corpus (name → address
+    # resolution, recipient-novelty) are {Gloda::Contacts}, a collaborator
+    # that queries the same snapshot through {#with_fresh_db}.
+    #
     # == Freshness & consistency (one signal)
     #
     # Each call to {#search}/{#read} first compares the live Gloda change
@@ -123,31 +127,18 @@ module Pikuri
         }
       end
 
-      # Which of +domains+ the user has correspondence history with, per
-      # Gloda's identity graph (+identities+ collects the email of every author
-      # *and* recipient across all indexed messages, Sent included — so it
-      # answers "have I ever exchanged mail with this domain?" in both
-      # directions). Powers {ComposeGuard}'s recipient-novelty warn.
+      # Yield the snapshot connection, guaranteed current — a stale index is
+      # rebuilt first. The controlled seam a {Gloda::Contacts} collaborator uses
+      # to query the shared FTS5 index / +identities+ table directly, without
+      # duplicating the snapshot the mail methods already keep fresh.
       #
-      #   gloda.domains_seen(['acme.com', 'paypa1.com'])  # => ['acme.com']
+      #   contacts = Gloda::Contacts.new(gloda: gloda)  # calls this internally
       #
-      # @param domains [Array<String>] lowercased bare domains.
-      # @return [Array<String>] the subset present in the identity graph.
-      # @raise [SQLite3::SQLException] if the +identities+ schema differs from
-      #   the probed shape — the caller degrades (the schema is unverified
-      #   across Thunderbird versions).
-      def domains_seen(domains)
-        return [] if domains.empty?
-
+      # @yield [SQLite3::Database] the fresh snapshot connection.
+      # @return [Object] the block's value.
+      def with_fresh_db
         ensure_fresh
-        domains.select do |domain|
-          @db.get_first_value(<<~SQL, [domain])
-            SELECT 1 FROM identities
-            WHERE kind = 'email'
-              AND lower(substr(value, instr(value, '@') + 1)) = ?
-            LIMIT 1
-          SQL
-        end
+        yield @db
       end
 
       # Close the snapshot connection (the snapshot dir itself is

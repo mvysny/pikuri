@@ -67,7 +67,7 @@ the homes above. Origin map (question → where the answer now lives):
   words + bm25-ranks (recall-first), calendar ANDs words across
   title/description/location (precision-first, no ranker). The shipped tools.
 
-## v2 — outbound, human-gated (compose shipped; address-resolver + calendar-create designed)
+## v2 — outbound, human-gated (compose + address-resolver shipped; calendar-create designed)
 
 The egress half. The load-bearing invariant (now also the CLAUDE.md seam):
 **pikuri performs no network egress and no autonomous send; every outbound
@@ -109,73 +109,53 @@ Still open / deferred here:
   egress leg on purpose (low risk: no autonomous send). The `Extension` default
   stays `compose: false`, so downstream inbound-only wirings are unchanged.
 
-### `thunderbird_contact_search` — resolve a name → address (designed, not built)
+### `thunderbird_contact_search` — resolve a name → address — **shipped**
 
-**Why compose needs it.** The user says "email Jon Snow a summary of the
-release thread." The model has a *name*; compose needs an *address*. Without a
-resolver the model either invents an address (a mis-send / exfil risk) or stops
-to ask the user to paste one (friction on the common case). Resolve against the
-user's *own correspondence graph* — the addresses they have actually mailed and
-received — so the answer is grounded in their history, not guessed.
+Resolves a name (or partial address) to ranked addresses off the user's *own
+correspondence graph*, so compose can turn "email Jon Snow" into an address
+without inventing one or stopping to ask. The design graduated to source +
+yardoc:
 
-- **Source = the decoded corpus, not the `contacts` table** — decided by two
-  real-box probes. The `contacts` table looked like the obvious source but
-  **failed twice**: `frecency`/`popularity` are 0 for every contact (Gloda
-  doesn't populate them — dead as a ranking key; `jsonAttributes` is null or a
-  useless `{"69": []}`), and `contacts.name` is unreliable (often a bare
-  address, sometimes junk — a `mvysny/GHSA-…` repo slug, a `reply+…@github`
-  mailer). Meanwhile the decoded `messagesText_content.c3author` / `c4recipients`
-  columns carry exactly what's needed: display name and address together, in one
-  place, with a natural per-message frequency — e.g. `Martin Vysny
-  <martin@vysny.me> Martin Vyšný` (bracketed) but also `martin@vysny.me Martin
-  Vyšný` and `support@synergi.so undefined` (bare address, no brackets — hence
-  the bracket-agnostic parse below).
-  So the resolver reads the *corpus*; `contacts`/`identities` are demoted to
-  optional (identities still backs the separate novelty check).
-- **Match the whole cell, extract addresses by regex, rank by frequency.** The
-  query (a name or a partial address) is matched as a substring of the *entire*
-  author/recipient text — **reuse the ephemeral FTS5 index already built for
-  mail search**, restricting the MATCH to the `c3author` / `c4recipients`
-  columns, so no extra scan. Then pull every email token out of the matched
-  cells with a **bracket-agnostic** regex (`[^\s<>,;]+@[^\s<>,;]+` — angle
-  brackets, when present, fall outside the class, and a bare address matches the
-  same way), group by lower-cased address, and rank by appearance count across
-  author+recipient, weighting a Sent appearance (indexingPriority 60) higher:
-  "I have *mailed* this person" is the strongest real-contact signal. Reverse
-  lookup (address → who is this?) is the same path with the address as the query.
-- **Parsing caveats (from the real data):** the `<addr>` brackets are **often
-  missing** — cells like `martin@vysny.me Martin Vyšný` and `support@synergi.so
-  undefined` lead with the bare address, name trailing — so extraction is the
-  email-token regex above, **never** a `<…>` split. A cell holds *several*
-  entries (multiple recipients) — scan all tokens, not one match. Tolerate noise
-  (a literal `undefined` name, quoted nicknames like `"Nick"`, repeated unicode
-  name variants); the extracted address is the key. Dedup by lower-cased address.
-- **Return ranked candidates, never auto-pick.** Several people/addresses come
-  back, each `Name <addr>` with the derived familiarity count (mailed-often vs.
-  seen-once). Disambiguation is the model's/human's job; silently choosing one
-  address is exactly the mis-send the whole compose guard exists to prevent.
-- **Inbound-only** — a pure read, adds no egress leg of its own. But its whole
-  purpose is to feed compose. *Open:* register it always (harmless read, and
-  independently useful — "what's Jon's address?") vs. only alongside `compose:`.
-  Lean: register whenever Gloda is present, like mail search — it's a read, and
-  gating a read behind the egress flag buys nothing.
+- **{Pikuri::Thunderbird::Gloda::Contacts}** — the resolver, split out of
+  `Gloda` (which stays the mail store): `#resolve` (corpus-based name→address)
+  + `#domains_seen` (the identity-graph novelty query, moved here alongside it).
+  Owns the source decision (decoded `c3author`/`c4recipients`, not the dead
+  `contacts` table), the shared-FTS5 column-restricted match, bracket-agnostic
+  extraction, the per-entry all-terms precision filter, Sent-weighted ranking,
+  and the before-else-after name heuristic. Queries `Gloda`'s snapshot through
+  `Gloda#with_fresh_db`.
+- **{Pikuri::Thunderbird::ContactSearch}** — the `thunderbird_contact_search`
+  tool: renders ranked `Name <addr>` candidates with a familiarity signal,
+  never auto-picks. Registered whenever Gloda is present (a pure read; the
+  once-open "always vs. only-with-compose" question settled to *always* — gating
+  a read behind the egress flag buys nothing).
+
+Refinements made while building (worth remembering, all in the yardoc): the
+shared FTS5 index is token-based, so "substring match" became FTS recall +
+a **per-entry all-terms** precision filter — which is what stops a co-recipient,
+my own address on a Sent message, or a mailbox that merely shares a domain token
+with a full-address query from polluting the result; and the name comes from the
+text *before* the address (dominant `Name <addr>` form), falling back to after,
+so a tri-part cell like `Martin Vysny <m@x> Martin Vyšný` doesn't yield doubled
+junk.
+
+Still open / deferred:
 - **Honest residual — a spoofed contact.** The graph includes senders of
   *received* mail, so an attacker who mailed as `Jon Snow <evil@…>` can surface
-  as a candidate. Three things blunt it, none a hard block: the derived
-  correspondence count (esp. the Sent weighting — a spoofer isn't in your Sent)
-  sinks a one-off below the real Jon; the resolved address lands in the compose
-  window the human reviews; and compose's novelty-warn fires if `evil@`'s domain
-  is new. Same "human reviewing the To field is the last line" posture as the
-  rest of compose — record it, don't pretend resolution is trustworthy on its
-  own.
-
-Deferred: fuzzy/nickname matching (`Jon` ↔ `Jonathan`); group/alias expansion;
-and reading Thunderbird's *address book* proper (recalled `abook.sqlite` /
-collected-addresses store — a source **separate** from Gloda's derived graph,
-holding manually-curated contacts the user may never have mailed). The address
-book would **extend the read allowlist** beyond Gloda + calendar (a deliberate
-seam decision), so build it only if the derived participant graph proves too
-thin in practice.
+  as a candidate. Three things blunt it, none a hard block: the Sent weighting
+  (a spoofer isn't in your Sent) sinks a one-off below the real Jon; the resolved
+  address lands in the compose window the human reviews; and compose's
+  novelty-warn fires if `evil@`'s domain is new. Same "human reviewing the To
+  field is the last line" posture as the rest of compose — not trustworthy on
+  its own.
+- **Deferred:** fuzzy/nickname matching (`Jon` ↔ `Jonathan` — the all-terms
+  substring filter already partially covers prefix cases); group/alias
+  expansion; and reading Thunderbird's *address book* proper (recalled
+  `abook.sqlite` / collected-addresses store — a source **separate** from
+  Gloda's derived graph, holding manually-curated contacts the user may never
+  have mailed). The address book would **extend the read allowlist** beyond
+  Gloda + calendar (a deliberate seam decision), so build it only if the derived
+  participant graph proves too thin in practice.
 
 ### `thunderbird_calendar_create` — hand off an `.ics` to import (designed, not built)
 
@@ -234,13 +214,14 @@ v1 ran end-to-end against an actual Thunderbird profile, working well.)
   fired ("You have no prior mail with …"). The query still degrades gracefully
   (any `SQLite3::SQLException` → "couldn't check" note) for schema drift across
   TB versions.
-- **Address-resolver source — resolved.** Both probes are in: `contacts` schema
-  confirmed but its `frecency`/`popularity` are 0 and `name` unreliable, while
-  the decoded `c3author`/`c4recipients` columns *do* carry `Name <addr>` pairs
-  (`Martin Vysny <martin@vysny.me> Martin Vyšný`). Decision locked: the resolver
-  is **corpus-based** (match names + extract addresses + derive frequency off the
-  decoded columns), `contacts` demoted to optional — see the resolver design
-  above. No open question remains for the source; what's left is building it.
+- **Address-resolver — resolved and shipped.** Both probes confirmed the
+  source (`contacts` dead: `frecency`/`popularity` 0, `name` unreliable; decoded
+  `c3author`/`c4recipients` carry `Name <addr>` pairs), and the corpus-based
+  resolver is now built ({Pikuri::Thunderbird::Gloda::Contacts}) and under test.
+  What's *not* yet exercised: a run against a **real** populated profile (the
+  fixtures cover the tricky cell shapes, but the frequency ranking on a real
+  correspondence graph — does the intended contact reliably outrank noise? — is
+  unvalidated live).
 - **`CAL_ITEM_FLAG` mapping** — verify the recalled bitfield (esp. beyond
   bit 8) against comm-central at v2-calendar-create implementation.
 - **v2 residual — does importing an `.ics` with `ATTENDEE` lines onto a

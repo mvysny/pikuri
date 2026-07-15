@@ -42,16 +42,37 @@ describe Pikuri::Thunderbird::Extension do
     [c, c.tools.map(&:name)]
   end
 
-  it 'wires all four tools when Gloda + a calendar store are present' do
+  it 'wires all inbound tools when Gloda + a calendar store are present' do
     Dir.mktmpdir do |dir|
       write_gloda(dir)
       write_calendar(dir)
       Dir.mktmpdir do |cache|
         c, names = tool_names(dir, cache)
         assert_equal %w[thunderbird_mail_search thunderbird_mail_read
+                        thunderbird_contact_search
                         thunderbird_calendar_search thunderbird_calendar_read].sort,
                      names.sort
         assert_equal 2, c.closers.size, 'mail + calendar each register a closer'
+      end
+    end
+  end
+
+  it 'wires contact search on Gloda presence, not the compose flag' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        _, names = tool_names(dir, cache) # compose off
+        assert_includes names, 'thunderbird_contact_search'
+      end
+    end
+  end
+
+  it 'omits contact search when Gloda is absent' do
+    Dir.mktmpdir do |dir|
+      write_calendar(dir) # no Gloda file
+      Dir.mktmpdir do |cache|
+        _, names = tool_names(dir, cache)
+        refute_includes names, 'thunderbird_contact_search'
       end
     end
   end

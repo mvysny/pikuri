@@ -40,11 +40,11 @@ The gem inventory:
   surface (`fileindex_search` / `fileindex_read` over GNOME's
   localsearch, `MACHINE.md` resident memory, boot grounding) +
   `bin/pikuri-os-assistant`.
-- `pikuri-thunderbird` — local Thunderbird mail + calendar: four read-only
-  inbound tools `thunderbird_mail_search` / `_mail_read` / `_calendar_search` /
-  `_calendar_read` over Thunderbird's own on-disk profile (Gloda index +
-  `calendar-data/*.sqlite`), via bracketed snapshot copies + an ephemeral
-  FTS5 index, plus one opt-in outbound `thunderbird_mail_compose` (a
+- `pikuri-thunderbird` — local Thunderbird mail + calendar: five read-only
+  inbound tools `thunderbird_mail_search` / `_mail_read` / `_contact_search` /
+  `_calendar_search` / `_calendar_read` over Thunderbird's own on-disk profile
+  (Gloda index + `calendar-data/*.sqlite`), via bracketed snapshot copies + an
+  ephemeral FTS5 index, plus one opt-in outbound `thunderbird_mail_compose` (a
   human-gated `mailto:` compose-window hand-off, guarded; never sends). No
   network. `bin/pikuri-thunderbird` demos the full surface (compose on —
   egress present but human-gated, no autonomous send).
@@ -430,9 +430,10 @@ yardoc. CLAUDE.md only records the invariant.
 - **Thunderbird no-egress / no-send seam.** `pikuri-thunderbird`
   performs no network egress and no *autonomous* send: it reads
   Thunderbird's local profile only (never IMAP/POP3/SMTP/CalDAV) and
-  writes nothing to Thunderbird's stores. The four *inbound* tools have
-  no egress leg, so an agent wired with just them has the trifecta
-  broken by construction — and that inbound-only shape is the
+  writes nothing to Thunderbird's stores. The five *inbound* tools
+  (including `thunderbird_contact_search`, a pure read that resolves a name
+  to addresses) have no egress leg, so an agent wired with just them has the
+  trifecta broken by construction — and that inbound-only shape is the
   `Extension` **default** (`compose: false`). The one outbound tool,
   `thunderbird_mail_compose` (`Extension.new(compose: true)`), adds an
   egress leg but only as a *human-gated hand-off to Thunderbird's own
@@ -591,9 +592,12 @@ per-gem one-liners:
 - **`pikuri-thunderbird/`** — local Thunderbird mail + calendar.
   `Thunderbird::Extension` (one-call wiring) discovers the
   active profile (`Thunderbird::Profile` — snap/apt roots, never-guess,
-  `profile_dir:` override) and registers the four read-only inbound tools:
+  `profile_dir:` override) and registers the five read-only inbound tools:
   `Thunderbird::MailSearch` / `MailRead` (over `Thunderbird::Gloda` —
-  Gloda's `global-messages-db.sqlite` used as a pre-decoded corpus) and
+  Gloda's `global-messages-db.sqlite` used as a pre-decoded corpus),
+  `Thunderbird::ContactSearch` (resolve a name → ranked addresses over
+  `Thunderbird::Gloda::Contacts` — the derived correspondence graph in Gloda's
+  decoded author/recipient columns, the dead `contacts` table demoted), and
   `Thunderbird::CalendarSearch` / `CalendarRead` (over
   `Thunderbird::Calendar` — the `calendar-data/*.sqlite` stores). Both
   backends never query Thunderbird's locked live DBs: `Thunderbird::Snapshot`
@@ -607,7 +611,7 @@ per-gem one-liners:
   `Thunderbird::MailCompose` — a human-gated `mailto:` compose-window hand-off
   (`Thunderbird::MailtoUri` percent-encodes every field; `Thunderbird::ComposeGuard`
   fails a suspicious body closed, drops non-ASCII/punycode recipients, and warns
-  on never-corresponded-with domains via `Gloda#domains_seen`), launched detached
+  on never-corresponded-with domains via `Gloda::Contacts#domains_seen`), launched detached
   so agent exit can't kill the user's Thunderbird; it opens a window, never sends.
   `bin/pikuri-thunderbird` demos the full surface with `compose: true` (the
   `thunderbird-compose` prompt): the egress leg is present but human-gated

@@ -12,8 +12,10 @@ module Pikuri
     #     c.add_extension Pikuri::Thunderbird::Extension.new
     #   end
     #
-    # * mail search + read — registered only when the Gloda index exists
-    #   (the +available?+-probed gate, like +pikuri-os+'s file-index tools).
+    # * mail search + read + contact search — registered only when the Gloda
+    #   index exists (the +available?+-probed gate, like +pikuri-os+'s
+    #   file-index tools). Contact search is a pure read that resolves a name
+    #   to addresses; it rides Gloda's presence, not the +compose:+ flag.
     # * calendar search + read — registered *whenever a profile is found*,
     #   even with nothing cached: the empty state is self-explaining (the
     #   tool tells the user to enable Offline Support — Q6), which a bare
@@ -68,18 +70,20 @@ module Pikuri
           return
         end
 
-        gloda = wire_mail(c, profile)
+        contacts = wire_mail(c, profile)
         wire_calendar(c, profile)
-        # Compose needs no Gloda (only a Thunderbird binary); the backend, when
-        # present, powers the recipient-novelty warn and is nil otherwise.
-        c.add_tool MailCompose.new(thunderbird_bin: @thunderbird_bin, backend: gloda) if @compose
+        # Compose needs no Gloda (only a Thunderbird binary); the contacts
+        # resolver, when present, powers the recipient-novelty warn and is nil
+        # otherwise.
+        c.add_tool MailCompose.new(thunderbird_bin: @thunderbird_bin, backend: contacts) if @compose
         nil
       end
 
       private
 
-      # @return [Gloda, nil] the wired Gloda backend, or +nil+ when the index is
-      #   absent (mail tools then omitted).
+      # @return [Gloda::Contacts, nil] the contact resolver over the wired
+      #   Gloda backend, or +nil+ when the index is absent (mail tools then
+      #   omitted). Compose's novelty warn rides this same resolver.
       def wire_mail(c, profile)
         gloda = Gloda.new(gloda_path: profile.gloda_path, cache_dir: File.join(@cache_base, 'mail'))
         unless gloda.available?
@@ -87,10 +91,14 @@ module Pikuri
           return nil
         end
 
+        contacts = Gloda::Contacts.new(gloda: gloda)
         c.add_tool MailSearch.new(backend: gloda)
         c.add_tool MailRead.new(backend: gloda)
+        # A pure read, and useful on its own ("what's Jon's address?"), so it
+        # rides Gloda's presence rather than the egress-gated compose flag.
+        c.add_tool ContactSearch.new(backend: contacts)
         c.on_close { gloda.close }
-        gloda
+        contacts
       end
 
       # @return [void]

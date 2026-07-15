@@ -180,8 +180,13 @@ A complete, pre-decoded search index. Tables that matter:
   **`indexingPriority`**: `-1` = never indexed (Gloda's sentinel), else `20`
   (normal) / `50` (INBOX) / `60` (Sent). Resolves a hit's `folderID` → folder.
 - **`contacts` / `identities` / `contactAttributes`** — the email↔name
-  correspondence graph (frecency/popularity). *Unused in v1;* the v2
-  recipient-novelty warn will read it.
+  correspondence graph. `contacts` is **dead for resolution** — `frecency` /
+  `popularity` are 0 for every row and `name` is unreliable (often a bare
+  address or junk), so {Pikuri::Thunderbird::Gloda::Contacts#resolve} reads the
+  *decoded* `c3author` / `c4recipients` columns instead (name + address
+  together, with a natural per-message frequency). `identities(kind, value)` —
+  where `kind='email'`, `value` the bare address — *is* used, by
+  {Gloda::Contacts#domains_seen} for the recipient-novelty warn.
 - **`attributeDefinitions` / `messageAttributes`** — extensible per-message
   attributes; ids seen: 57 `tag`, 58 `star`, 59 `read`, 60 `repliedTo`,
   61 `forwarded`. (Relevant to churn — see the change counter below.)

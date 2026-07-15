@@ -10,7 +10,7 @@ module Pikuri
     # bytes, look-alike domains, subtle body-exfil), so the machine covers what
     # the eye can't. It runs *before* {MailtoUri} encodes anything.
     #
-    #   ComposeGuard.new(backend: gloda).check(to: 'a@acme.com', body: 'Hi')
+    #   ComposeGuard.new(backend: contacts).check(to: 'a@acme.com', body: 'Hi')
     #   # => #<Verdict ok=true, to=["a@acme.com"], notes=[...]>
     #
     # Two tiers:
@@ -24,7 +24,7 @@ module Pikuri
     #   homoglyph that would otherwise pass {Pikuri::Sanitizer}'s mixed-script
     #   check as pure ASCII).
     # * *Soft warn* — the correspondence-graph novelty check: a recipient domain
-    #   the user has never exchanged mail with (per {Gloda#domains_seen}) stays
+    #   the user has never exchanged mail with (per {Gloda::Contacts#domains_seen}) stays
     #   in the draft but earns a loud note urging out-of-band verification. A
     #   hard reject here would fire on every genuinely-new correspondent.
     #
@@ -51,8 +51,9 @@ module Pikuri
       #   novelty) for the observation.
       Verdict = Data.define(:ok, :error, :to, :cc, :bcc, :subject, :body, :notes)
 
-      # @param backend [Gloda, nil] mail backend for the novelty check; +nil+
-      #   disables it (the verdict then carries a "couldn't check" note).
+      # @param backend [Gloda::Contacts, nil] contact resolver for the novelty
+      #   check; +nil+ disables it (the verdict then carries a "couldn't check"
+      #   note).
       # @return [ComposeGuard]
       def initialize(backend: nil)
         @backend = backend

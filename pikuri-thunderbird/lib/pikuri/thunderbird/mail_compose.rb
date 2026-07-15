@@ -47,8 +47,8 @@ module Pikuri
 
       # @param thunderbird_bin [String] the Thunderbird executable — a PATH name
       #   (default +"thunderbird"+) or an absolute path.
-      # @param backend [Gloda, nil] mail backend for the recipient-novelty check;
-      #   +nil+ degrades that check to a "couldn't check" note.
+      # @param backend [Gloda::Contacts, nil] contact resolver for the
+      #   recipient-novelty check; +nil+ degrades it to a "couldn't check" note.
       # @param launcher [#call, nil] test seam — a callable given the +mailto:+
       #   URI that performs the hand-off. +nil+ uses the real detached spawn.
       # @return [MailCompose]
