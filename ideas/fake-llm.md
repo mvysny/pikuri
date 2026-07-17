@@ -60,30 +60,52 @@ worth a shared helper, and definitely not an exported one. The real-loop
 coverage `agent_spec`'s callback tests approximate is already carried
 end-to-end by `pikuri-core/spec/pikuri/testing_spec.rb`.
 
-## Deferred work (not yet done)
+## Consumer: pikuri-tui (chat + code DONE, computer deferred)
 
-- **Consumer: pikuri-tui.** Delete all three `*StubAgent`s (`ChatStubAgent` /
-  `CodeStubAgent` / `ComputerStubAgent`, which fake the whole agent and bypass
-  the App's *real* listener wiring in `default_build_agent`). Build the real
-  agent, run turns against a `fake_transport`, assert on rendered output. Needs:
-  the fake transport (its explicit `context_window` skips the `/props` probe) +
-  no MCP registered.
+The App test seam changed from a whole-agent `&build_agent` override to a
+`transport:` injection: App always builds its *real* agent via
+`default_build_agent`, and a spec passes `Pikuri::Testing.fake_transport` so the
+real listener/tool/extension wiring runs against scripted HTTP. Done for
+**chat** and **code** (including code's full extension stack — workspace,
+sandbox, MCP, sub-agents, tasks, skills); `ChatStubAgent` / `CodeStubAgent`
+deleted; each shell gained a net-new "a real streamed turn renders in the
+conversation pane" test — the motivating gap. The fake impersonates a config
+connection via `api_base:`; mid-turn Ctrl+C uses the `Gate`; the model-picker
+test spies `run_loop` for the picked (real) transport without dialing it.
+
+**Computer shell — deferred (needs test-isolation seams, not a mechanical
+port).** `Computer::App#default_build_agent` wires `Os::Extension` +
+`Thunderbird::Extension`, which probe the host at build:
+- **Thunderbird profile.** `Profile.discover(profile_dir: nil)` finds the dev
+  machine's *real* profile (opens real mail) and raises on an ambiguous
+  install. A test must pass `profile_dir:` → an empty temp dir (deterministic:
+  Gloda absent → inbound tools omitted, outbound tools harmlessly wired).
+- **Machine facts.** `Os::SystemInfo#prompt_section` spawns `inxi -b`
+  synchronously at *every* agent build (confirmed) — ~30 builds ⇒ ~30 spawns,
+  slow + machine-coupled. Needs a spec-level stub of `Os::SystemInfo.new`
+  (define_singleton_method, the pikuri convention) returning a fast fake.
+- **Sandbox.** `config.sandbox: true` builds `FullFsNoNet`, whose bwrap probe
+  may raise; the computer spec should boot with `sandbox: false` (confirm no
+  test asserts the sandbox wiring).
+Once those three are handled, the port mirrors chat/code (swap `&build_agent`
+→ `transport:`, delete `ComputerStubAgent`, add the render test).
+
+## Remaining fake_transport work (not yet done)
+
 - **Sub-agent scripting.** Propagation is free (`Data#with` preserves the
   adapter down the tree), but one fake transport feeds **one ordered response
   list** shared by the whole tree — fine for a linear script, wrong for
   targeting a specific sub-agent's replies. Upgrade path: adapter dispatches by
   model id or a distinct fake `api_base` per sub-agent.
 - **Tool-call streaming.** `Script#stream` streams *text* only; fragmented
-  `tool_calls` deltas over SSE aren't modelled (v1 doesn't need them —
+  `tool_calls` deltas over SSE aren't modelled (v1 didn't need them —
   pikuri-tui's delta rendering is text).
-- **Mid-turn gating.** A `llm.block!` / `llm.release!` shape so `complete`
-  parks (adapter blocks on a latch before serving the next body) — the
-  real-backend equivalent of the old stubs' `block_turns!`/`finish_turn!`, to
-  observe spinner / queued-injection / Ctrl+C paths through the real turn
-  lifecycle. Design TBD.
 - **MCP offline.** `Mcp::Servers#start_all` reaches real MCP servers; a
-  fake-backed spec leaves MCP unregistered. A fake-MCP concern is out of scope
-  here.
+  fake-backed spec leaves MCP unregistered (an empty registry is a no-op). A
+  fake-MCP concern is out of scope here.
+
+*(Mid-turn gating shipped — `Pikuri::Testing::Gate`, `block!`/`release!`; used
+by the chat/code Ctrl+C tests.)*
 
 ## Why not the two-phase `new`/`configure` split (rejected sibling)
 
