@@ -125,6 +125,10 @@ module Pikuri
   # +Pikuri::Version+ as Zeitwerk expects — so skip it (it's +require_relative+'d
   # above and by the gemspec, so the constant is already defined).
   Loader.ignore(File.expand_path('pikuri/version.rb', __dir__))
+  # +pikuri/testing.rb+ is opt-in test scaffolding (+require 'pikuri/testing'+
+  # from a spec), kept off the production load path — so don't autoload or
+  # eager-load it. See {Pikuri::Testing}.
+  Loader.ignore(File.expand_path('pikuri/testing.rb', __dir__))
   Loader.inflector.inflect(
     'html'       => 'HTML',
     'duckduckgo' => 'DuckDuckGo'

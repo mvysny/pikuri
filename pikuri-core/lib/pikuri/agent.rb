@@ -485,6 +485,12 @@ module Pikuri
     # {#apply_transport!} to reset a prior override). +ChatTransport+
     # guarantees a non-+nil+ +provider+ whenever an override is set.
     #
+    # A transport's +faraday_adapter+ (if any) is installed here too: the
+    # adapter rides *this* context's config, not the process-global
+    # +RubyLLM.config+, so it stays per-agent — the seam
+    # {Pikuri::Testing.fake_transport} uses to run the real ruby_llm loop
+    # against a scripted HTTP backend.
+    #
     # @param transport [ChatTransport]
     # @return [RubyLLM::Context]
     def build_context(transport)
@@ -492,6 +498,7 @@ module Pikuri
       RubyLLM.context do |c|
         c.public_send("#{slug}_api_base=", transport.api_base) unless transport.api_base.nil?
         c.public_send("#{slug}_api_key=", transport.api_key) unless transport.api_key.nil?
+        c.faraday_adapter = transport.faraday_adapter if transport.faraday_adapter
       end
     end
 

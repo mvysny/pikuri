@@ -51,7 +51,18 @@ module Pikuri
     #     a spawned agent gets +parent.transport.with(context_window:
     #     parent.context_window_cap)+ so the resolved cap rides along without a
     #     re-probe.
-    class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key, :context_window)
+    # @!attribute [r] faraday_adapter
+    #   @return [Class, Symbol, nil] a custom Faraday adapter to install on this
+    #     agent's per-chat +RubyLLM::Context+ (via +config.faraday_adapter=+),
+    #     or +nil+ for ruby_llm's default (+:net_http+). A generic HTTP seam —
+    #     inject a VCR / logging / *scripted-fake* adapter without touching the
+    #     global +RubyLLM.config+. Its worked use is
+    #     {Pikuri::Testing.fake_transport}, which bakes an anonymous scripted
+    #     adapter here so the real ruby_llm loop runs against canned HTTP. Only
+    #     honoured on the connection-override path ({#connection_overrides?}),
+    #     which any adapter-carrying transport is on (it also sets +api_base+).
+    class ChatTransport < Data.define(:model, :provider, :assume_model_exists, :api_base, :api_key,
+                                      :context_window, :faraday_adapter)
       # Build an +:openai+-provider transport for an OpenAI-compatible server
       # (local llama.cpp, cloud endpoint, ...), carrying its connection so the
       # agent rides a per-chat +RubyLLM::Context+ instead of the global config.
@@ -89,11 +100,12 @@ module Pikuri
       # @param api_base [String, nil]
       # @param api_key [String, nil]
       # @param context_window [Integer, nil]
+      # @param faraday_adapter [Class, Symbol, nil]
       # @raise [ArgumentError] if +api_base+ or +api_key+ is set without
       #   a +provider+ (the provider names the config slots the
       #   connection overrides map onto)
       def initialize(model:, provider: nil, assume_model_exists: false,
-                     api_base: nil, api_key: nil, context_window: nil)
+                     api_base: nil, api_key: nil, context_window: nil, faraday_adapter: nil)
         if (api_base || api_key) && provider.nil?
           raise ArgumentError, "api_base/api_key require a provider, got #{provider.inspect}"
         end
@@ -125,7 +137,8 @@ module Pikuri
       def inspect
         "#<#{self.class} model=#{model.inspect} provider=#{provider.inspect} " \
           "assume_model_exists=#{assume_model_exists} api_base=#{api_base.inspect} " \
-          "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'} context_window=#{context_window.inspect}>"
+          "api_key=#{api_key.nil? ? 'nil' : '[REDACTED]'} context_window=#{context_window.inspect} " \
+          "faraday_adapter=#{faraday_adapter.inspect}>"
       end
       alias to_s inspect
     end
