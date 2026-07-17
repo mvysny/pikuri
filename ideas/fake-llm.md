@@ -29,12 +29,39 @@ transport = Pikuri::Testing.fake_transport do |llm|
 end
 ```
 
+## Not exported: the white-box `fake_chat` (decided 2026-07-18)
+
+pikuri-core `agent_spec` (and the mcp/skills/subagents specs) hand-roll a
+`fake_chat_class` — a **white-box callback-capture stub**: tests fire individual
+chat callbacks by hand (`fire(:before_tool_call, …)`, `fire_chunk(…)`) and
+inspect chat internals (`model_switches`, `contexts`, `added_messages`,
+`instructions`). That harness tests **pikuri's own `Agent` ↔ `RubyLLM::Chat`
+adapter seam** — an internal contract.
+
+It is **not** a `fake_transport` job and must **not** move into the exported
+`Pikuri::Testing`:
+
+- It's the opposite of `fake_transport`. `fake_transport` runs the *real*
+  ruby_llm loop black-box; `fake_chat` is a passive stub the test drives
+  manually (so it is *not* the rejected backend (1), which reimplemented the
+  loop). Most of `agent_spec` can't move to `fake_transport` without losing
+  coverage (you can't fire a lone `after_tool_result`, or read `model_switches`,
+  off a real chat).
+- **Only pikuri itself can use it.** A downstream consumer — pikuri-tui, or any
+  project on pikuri — tests *their* tools/listeners/extensions and wants
+  `fake_transport`; none ever pokes pikuri's Agent↔Chat callback wiring.
+  Exporting `fake_chat` would ship a helper no external caller can use and leak
+  the internal adapter contract into the public API.
+
+So `Pikuri::Testing` stays just `fake_transport`. The white-box fakes stay
+test-internal, per gem. The 5× duplication is an accepted internal DRY smell
+(the copies genuinely diverge; cross-gem spec-support sharing is awkward) — not
+worth a shared helper, and definitely not an exported one. The real-loop
+coverage `agent_spec`'s callback tests approximate is already carried
+end-to-end by `pikuri-core/spec/pikuri/testing_spec.rb`.
+
 ## Deferred work (not yet done)
 
-- **Consumer: pikuri-core `agent_spec`.** Still hand-rolls `fake_chat_class`
-  (global `RubyLLM.chat` monkeypatch + imperative callback firing; doesn't even
-  cover the connection-override path). Port its tests onto `fake_transport`
-  where they map; some are low-level callback-edge pins that may stay as-is.
 - **Consumer: pikuri-tui.** Delete all three `*StubAgent`s (`ChatStubAgent` /
   `CodeStubAgent` / `ComputerStubAgent`, which fake the whole agent and bypass
   the App's *real* listener wiring in `default_build_agent`). Build the real
