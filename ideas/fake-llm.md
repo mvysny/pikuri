@@ -168,8 +168,19 @@ vs. drift" open question below:
   Adapter shape that worked (the two gotchas): override `call` must invoke
   `super` first (the base builds `env.response`; skipping it → `undefined method
   'finish' for nil`), and `save_response` needs an explicit `nil` reason_phrase
-  to dodge a kwargs clash. Streaming (L2) still needs an SSE-shaped variant
-  (`text/event-stream`, `data:` chunks) — known-doable, not yet spiked.
+  to dodge a kwargs clash.
+
+  **Streaming spike (2026-07-17): PASS.** The same adapter, on a streaming
+  request (`env.request.stream_response?` — ruby_llm set `req.options.on_data`),
+  fed SSE chunks through the real streaming path: set `env.status = 200` *first*
+  (v2's `on_data` routes to the chunk handler only when status is 200), then
+  `on_data.call(chunk, size, env)` per `data: {json}\n\n` line, ending with
+  `data: [DONE]\n\n`. A `streaming: true` agent produced four `AssistantDelta`
+  events (`"The ", "answer ", "is ", "4."`) via the real `EventStreamParser` +
+  `StreamAccumulator`, then a final assembled `Assistant("The answer is 4.")`.
+  So L2 rides the same seam — no separate mechanism, just an SSE body variant.
+  (Tool-call *streaming* — `tool_calls` deltas with fragmented arguments — is
+  not yet spiked; text streaming, what pikuri-tui's delta rendering needs, is.)
 
 Trade-off, at a glance:
 
@@ -229,7 +240,9 @@ the `/props` probe; the `faraday_adapter` field is the new generic seam.
   (that was backend (1)'s burden; backend (2) is free of it).
 - **L2 — streaming.** An SSE-shaped variant (`text/event-stream`, `data:`
   chunks) so streaming/delta rendering is testable through the real streaming
-  path. **Not yet spiked** — the one remaining unknown.
+  path. **Spiked, PASS** (see the streaming spike above) — text streaming
+  produces real `AssistantDelta`s + an assembled final `Assistant`. Builder
+  verb TBD (e.g. `llm.stream('The ', 'answer ', 'is ', '4.')`).
 - **Mid-turn gating.** A `llm.block!` / `llm.release!` shape so `complete` parks
   (adapter blocks on a latch before serving the next body) — the real-backend
   equivalent of the old stubs' `block_turns!`/`finish_turn!`, letting a host
@@ -284,8 +297,9 @@ Don't re-open the two-phase split as a testing enabler.
   `.with`. No global install to tear down.
 - **Probe neutralization** — **resolved: explicit `context_window` on the fake
   transport** (the honest option; short-circuits agent.rb:427 with no HTTP).
-- **L2 streaming** — the one open unknown: an SSE-shaped adapter variant.
-  Known-doable, not yet spiked.
+- **L2 streaming** — **resolved: PASS.** SSE-shaped adapter variant rides the
+  same seam; real deltas + assembled final (spike v3). Only tool-call *streaming*
+  (fragmented `tool_calls` deltas) remains unspiked — not needed for v1.
 - **Mid-turn gating shape** — `llm.block!`/`release!` via an adapter latch;
   design TBD.
 - **Does fake mode touch tools/extensions at all?** Default: leave them real
