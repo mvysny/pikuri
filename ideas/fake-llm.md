@@ -75,6 +75,80 @@ their own neutralization in "fake mode":
   leaves MCP unregistered (or a separate fake-MCP concern, out of scope
   here).
 
+## Two backends behind that seam (the fork that resolves L1-drift)
+
+`build_chat` is *where* we inject; it does not decide *what* the injected chat
+is. Two candidates, and the choice is the whole ballgame for the "L1 fidelity
+vs. drift" open question below:
+
+- **(1) Hand-rolled `FakeChat`.** A `RubyLLM::Chat` stand-in that satisfies the
+  `build_chat` surface and *reimplements ruby_llm's tool loop* to fire the
+  Agent's callbacks (`after_message` / `before_tool_call` / `after_tool_result`)
+  in the right order. Ergonomic to script (pikuri Event/tool vocabulary), but it
+  is a **second agent loop that drifts against ruby_llm upgrades** — and for a
+  project whose selling point is "small enough to audit / teaches how agents
+  actually work," a fake loop that can silently diverge from the real one is the
+  wrong direction.
+
+- **(2) Faraday-adapter stub — inject a *real* `RubyLLM::Chat` backed by a fake
+  HTTP transport.** ruby_llm builds its Faraday connection with a **configurable
+  adapter** (`ruby_llm/connection.rb:120`):
+
+  ```ruby
+  adapter = @config.respond_to?(:faraday_adapter) ? @config.faraday_adapter : :net_http
+  faraday.adapter(adapter || :net_http)
+  ```
+
+  So a custom adapter serving scripted, OpenAI-wire-shaped JSON lets the **real
+  ruby_llm loop run** — real tool-call parsing, real tool dispatch, real
+  result-append-and-re-request, real SSE streaming. The fake only serves N
+  sequential HTTP responses; **zero loop reimplementation, zero drift, streaming
+  for free.** Cost: the script speaks provider-wire JSON, not pikuri terms.
+
+  Caveat found while reading: `faraday.adapter(adapter || :net_http)` is called
+  **without a block**, so plain `:test` yields an empty stub set (every request
+  raises "no stubbed request"). The route is to register a small custom adapter
+  class fed from a thread-local response queue and set
+  `config.faraday_adapter = ThatClass`.
+
+  **Spike result (2026-07-17): PASS — this route is clean.** A ~40-line
+  `ScriptedAdapter < Faraday::Adapter` (thread-local response queue; `call`
+  does `super` then `save_response(env, 200, json, {...}, nil)`) drove a **real
+  `Pikuri::Agent`** through a **real two-turn tool round-trip** with zero
+  RubyLLM monkeypatch and zero hand-rolled loop:
+  - transport was `from_openai_server` (connection **override** path — the exact
+    one the old `RubyLLM.chat` swap misses); 2 HTTP requests reached the adapter,
+    confirming the loop re-requested after the tool result.
+  - the **real** `calculator` tool executed (`ToolResult "4"`); the real Event
+    stream emitted `ContextCap, UserTurn, Tokens, ToolCall, ToolResult,
+    Assistant, Tokens`.
+  - explicit `context_window: 8192` on the transport short-circuited the
+    `/props` probe (agent.rb:427) — no HTTP leak there.
+
+  Adapter shape that worked (the two gotchas): override `call` must invoke
+  `super` first (the base builds `env.response`; skipping it → `undefined method
+  'finish' for nil`), and `save_response` needs an explicit `nil` reason_phrase
+  to dodge a kwargs clash. Streaming (L2) still needs an SSE-shaped variant
+  (`text/event-stream`, `data:` chunks) — known-doable, not yet spiked.
+
+Trade-off, at a glance:
+
+| | (1) `FakeChat` | (2) Faraday stub |
+|---|---|---|
+| loop fidelity | reimplemented, drifts | **real ruby_llm loop, no drift** |
+| streaming (L2) | re-faked chunks | **real SSE path for free** |
+| script vocabulary | pikuri Event/tool terms (nice) | provider-wire JSON (uglier) |
+| coverage | Agent callbacks only | Agent callbacks **+ real loop** |
+
+The scripting DSL below (`reply` / scripted tool turns / gating) layers on
+*either* backend — it just emits wire JSON instead of firing callbacks by hand.
+
+**Decided (2026-07-17): backend (2), fake Faraday.** The spike passed and the
+drift risk that motivated (1)'s nicer vocabulary is gone — there's no second
+loop to drift. The DSL emits OpenAI-wire JSON under the hood, so the ergonomics
+(2)'s "uglier vocabulary" con worried about are hidden behind
+`ScriptedAdapter.script!` helpers (`tool_call(...)` / `text(...)`).
+
 ## API options
 
 - **(A) Global install (Screen.fake-style).**
@@ -110,7 +184,9 @@ The fake must satisfy the `build_chat` surface above. Layer the ergonomics:
   the real turn lifecycle*.
 
 Open: how faithfully to mimic ruby_llm's loop (L1). More fidelity = more real
-coverage but more drift risk against ruby_llm upgrades.
+coverage but more drift risk against ruby_llm upgrades. **This only bites
+backend (1); backend (2) sidesteps it entirely by running ruby_llm's real
+loop** (see "Two backends behind that seam").
 
 ## Packaging
 
@@ -141,7 +217,9 @@ Don't re-open the two-phase split as a testing enabler.
 
 ## Open questions
 
-- **L1 fidelity vs drift** (above).
+- **L1 fidelity vs drift** — **resolved: backend (2)** (Faraday stub → real
+  ruby_llm loop). Spike passed (see "Two backends behind that seam"); the
+  drift risk is gone because there's no second loop to drift.
 - **Global vs per-agent default** — start with (A), add (B) if a core spec
   needs isolation.
 - **Probe neutralization mechanism** — fake-mode flag on the detector, vs
