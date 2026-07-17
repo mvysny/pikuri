@@ -92,6 +92,36 @@ RSpec.describe Pikuri::Testing do
     agent&.close
   end
 
+  it 'honours an api_base override so a fake can impersonate a configured connection' do
+    transport = Pikuri::Testing.fake_transport(model: 'qwen3', api_base: 'http://mavi-fw:8080/v1') do |llm|
+      llm.reply('x')
+    end
+    assert_equal 'http://mavi-fw:8080/v1', transport.api_base
+    assert_equal 'qwen3', transport.model
+  end
+
+  it 'holds a turn open via a Gate until released (mid-turn gating)' do
+    gate = Pikuri::Testing::Gate.new
+    listener = capture_class.new
+    transport = Pikuri::Testing.fake_transport(gate: gate) { |llm| llm.reply('done') }
+    agent = build_agent(transport, listener)
+
+    gate.block!
+    worker = Thread.new { agent.run_loop(user_message: 'work') }
+    # The turn parks inside the adapter: no assistant answer yet.
+    sleep 0.05
+    assert_nil listener.events.grep(Pikuri::Agent::Event::Assistant).last, 'turn should be parked'
+    assert worker.alive?, 'worker should be blocked on the gate'
+
+    gate.release!
+    worker.join(2)
+    assert_equal 'done', listener.events.grep(Pikuri::Agent::Event::Assistant).last&.content
+  ensure
+    gate.release!
+    worker&.join(2)
+    agent&.close
+  end
+
   it 'raises a clear error when the script runs dry' do
     listener = capture_class.new
     # Only one turn scripted, but a tool_call forces a second request.

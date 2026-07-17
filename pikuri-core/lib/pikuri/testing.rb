@@ -61,22 +61,30 @@ module Pikuri
     #   server "knows" it)
     # @param context_window [Integer] baked onto the transport so
     #   {Agent#detect_and_emit_context_cap!} skips the real +/props+ HTTP probe
+    # @param api_base [String] the transport's base URL. Never dialed (the
+    #   adapter answers), but a host may key display/config off it — pass the
+    #   base of the connection this fake impersonates so a UI resolves its name.
+    # @param gate [Gate, nil] a latch to hold turns open mid-flight. When
+    #   engaged ({Gate#block!}), the adapter parks before serving each response
+    #   until {Gate#release!} — so a test can observe spinner / queued-injection
+    #   / Ctrl+C paths through the real turn lifecycle. Default +nil+ (no gating).
     # @yieldparam script [Script] the conversation builder
     # @return [Agent::ChatTransport] carrying the scripted adapter; pass it as
     #   +Agent.new(transport:)+
-    def self.fake_transport(model: 'fake-model', context_window: 8192)
+    def self.fake_transport(model: 'fake-model', context_window: 8192,
+                            api_base: 'http://fake.invalid/v1', gate: nil)
       script = Script.new
       yield script if block_given?
       Agent::ChatTransport.new(
         model: model,
         provider: :openai,
         assume_model_exists: true,
-        # A fake base forces the connection-override path (Context#chat), the
+        # An api_base forces the connection-override path (Context#chat), the
         # only branch that honours faraday_adapter; the host is never dialed.
-        api_base: 'http://fake.invalid/v1',
+        api_base: api_base,
         api_key: 'not-needed',
         context_window: context_window,
-        faraday_adapter: build_adapter(script.responses)
+        faraday_adapter: build_adapter(script.responses, gate)
       )
     end
 
@@ -87,14 +95,17 @@ module Pikuri
     #
     # @param responses [Array<Hash>] entries shaped +{json: Hash}+ (non-stream)
     #   or +{sse: Array<String>}+ (stream), as {Script} produces
+    # @param gate [Gate, nil] awaited before each response when non-nil
     # @return [Class] a +Faraday::Adapter+ subclass
-    def self.build_adapter(responses)
+    def self.build_adapter(responses, gate = nil)
       queue = responses # captured by reference; #call shifts from it
       Class.new(Faraday::Adapter) do
-        # +define_method+ (not +def+) so the body closes over +queue+; +super+
-        # must be explicit here (implicit super is illegal in a define_method).
+        # +define_method+ (not +def+) so the body closes over +queue+/+gate+;
+        # +super+ must be explicit here (implicit super is illegal in a
+        # define_method).
         define_method(:call) do |env|
           super(env) # base builds env.response; skipping it → "finish for nil"
+          gate&.await # park here while the test holds the turn open
           entry = queue.shift or raise "Pikuri::Testing: no scripted response left for #{env.url}"
 
           if env.request.stream_response? # ruby_llm set req.options.on_data
@@ -209,6 +220,60 @@ module Pikuri
       # @return [Hash{String => Integer}]
       def usage
         { 'prompt_tokens' => 10, 'completion_tokens' => 5, 'total_tokens' => 15 }
+      end
+    end
+
+    # A latch that holds a fake turn open mid-flight. Pass one to
+    # {Testing.fake_transport}; the adapter parks (inside the HTTP call, on the
+    # agent's worker thread) at every response while the gate is engaged, so a
+    # test can observe the turn-in-progress state — spinner, queued injections,
+    # a Ctrl+C landing mid-turn — then let it finish.
+    #
+    #   gate = Pikuri::Testing::Gate.new
+    #   transport = Pikuri::Testing.fake_transport(gate:) { |llm| llm.stream('done') }
+    #   gate.block!
+    #   session.submit('work')          # the real turn parks in the adapter
+    #   # ... assert spinner / press Ctrl+C ...
+    #   gate.release!                    # the turn proceeds and completes
+    #
+    # A test that engages the gate is responsible for releasing it —
+    # {#await} blocks with no timeout, mirroring the old stubs' +Queue#pop+.
+    #
+    # Thread-safe.
+    class Gate
+      def initialize
+        @mutex = Mutex.new
+        @cv = ConditionVariable.new
+        @blocked = false
+      end
+
+      # Engage the latch: the *next* (and every subsequent) response parks in
+      # {#await} until {#release!}.
+      #
+      # @return [void]
+      def block!
+        @mutex.synchronize { @blocked = true }
+        nil
+      end
+
+      # Disengage the latch and wake every parked response.
+      #
+      # @return [void]
+      def release!
+        @mutex.synchronize do
+          @blocked = false
+          @cv.broadcast
+        end
+        nil
+      end
+
+      # Block the calling thread while the latch is engaged. Called by the
+      # adapter before serving each response; a no-op when not blocked.
+      #
+      # @return [void]
+      def await
+        @mutex.synchronize { @cv.wait(@mutex) while @blocked }
+        nil
       end
     end
   end
