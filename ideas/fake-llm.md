@@ -53,27 +53,67 @@ Limits to fix in a real feature:
 
 ## The seam (key design decision)
 
-Fake at the **`Agent#build_chat` chokepoint**, not at `RubyLLM.chat`. That one
-private method is where *every* agent — main, sub-agents, synthesizer, MCP
-thinker (all are `Agent`s) — obtains its chat, and it already unifies both
-ruby_llm entry points (`RubyLLM.chat` and `Context#chat`). Route it through an
-injectable factory:
+**Decided (2026-07-17): fake via a polymorphic transport, not a factory swap.**
+The fake rides the **`ChatTransport` itself** — a fake transport carries its own
+Faraday adapter, and the agent installs it through the connection machinery it
+*already has*. No `Pikuri.chat_factory` global, no `RubyLLM.chat` monkeypatch,
+no new chokepoint. Two facts (both spike-verified) make this the cleanest seam:
+
+1. **The adapter can live on the per-chat `Context`, not the global config.**
+   `Chat#initialize` does `@config = context&.config || RubyLLM.config`, and the
+   connection is built from *that* config — so `faraday_adapter` set inside
+   `RubyLLM.context { |c| … }` (exactly where `Agent#build_context` already
+   builds one) is per-agent and thread-safe. Spike v2 confirmed: the global
+   `RubyLLM.config.faraday_adapter` stayed `:net_http` while the fake chat used
+   the scripted adapter. **The "config is global" worry is a non-issue.**
+2. **`Data#with` preserves the subclass**, so `parent.transport.with(…)` (how
+   both sub-agents and the synthesizer derive their transport) carries a fake
+   transport down the whole tree for free — the sub-agent coverage that a global
+   install was wanted for, with no global. *(Sub-agent scripting is deferred —
+   see "Sub-agents (deferred)" — but the propagation comes for free.)*
+
+**Shape B — one generic field on `ChatTransport` (chosen over a subclass).**
+`ChatTransport` gains a `faraday_adapter:` member, defaulting `nil` (→ ruby_llm's
+normal `:net_http`). `Agent#build_context` consults it in one line:
 
 ```ruby
-# default (production): current behaviour
-# test: Pikuri::Testing.fake_llm! swaps this
-Pikuri.chat_factory  # ->(transport) { real build_chat body }
+def build_context(transport)
+  RubyLLM.context do |c|
+    c.public_send("#{transport.provider}_api_base=", transport.api_base) unless transport.api_base.nil?
+    c.public_send("#{transport.provider}_api_key=", transport.api_key)  unless transport.api_key.nil?
+    c.faraday_adapter = transport.faraday_adapter if transport.faraday_adapter   # <- the whole change
+  end
+end
 ```
 
-Covers override + non-override transports, and the whole agent tree, with no
-RubyLLM monkeypatch. Two orthogonal I/O legs still bypass the chat and need
-their own neutralization in "fake mode":
-- **Context-window probe** — `ContextWindowDetector.detect` hits `/props`
-  over HTTP directly. Fake mode must short-circuit it (return a fixed cap, or
-  honour an explicit `ChatTransport#context_window`).
-- **MCP** — `Mcp::Servers#start_all` reaches real MCP servers. Fake mode
-  leaves MCP unregistered (or a separate fake-MCP concern, out of scope
-  here).
+That is the *entire* Agent-side change. Agent never names a fake type — it just
+reads a field. The field is framed generically ("inject a custom HTTP adapter"):
+a VCR or logging adapter would use the same door, so it isn't a test hack
+smuggled into production.
+
+**Why not a `FakeTransport < ChatTransport` subclass** (the first instinct — a
+`faraday()` method the subclass overrides): `ChatTransport` is a frozen `Data`,
+so a subclass instance **can't add members or ivars** (spike: `ivar set FAILS:
+FrozenError`) — the overridden method would have nowhere to read the scripted
+response list from, forcing a module-level registry keyed on some existing
+member (`api_base`). Shape B sidesteps that entirely: the adapter is an
+**anonymous class closing over the response list**, and it lives *in* the
+`faraday_adapter` field, which `.with` preserves. No registry, no frozen-Data
+gymnastics.
+
+Two orthogonal I/O legs still bypass the chat and need neutralization; a fake
+transport handles both by construction:
+- **Context-window probe** — `ContextWindowDetector.detect` hits `/props` over
+  HTTP directly. A fake transport carries an explicit
+  `ChatTransport#context_window`, which short-circuits the probe (agent.rb:427)
+  — no HTTP leak.
+- **MCP** — `Mcp::Servers#start_all` reaches real MCP servers. Out of scope
+  here; a fake-backed spec leaves MCP unregistered.
+
+A fake transport must also set an `api_base` so `connection_overrides?` is true
+and `build_chat` takes the `Context#chat` branch (the `RubyLLM.chat` else-branch
+uses the global config and would miss the per-context adapter). The builder does
+this automatically.
 
 ## Two backends behind that seam (the fork that resolves L1-drift)
 
@@ -140,53 +180,70 @@ Trade-off, at a glance:
 | script vocabulary | pikuri Event/tool terms (nice) | provider-wire JSON (uglier) |
 | coverage | Agent callbacks only | Agent callbacks **+ real loop** |
 
-The scripting DSL below (`reply` / scripted tool turns / gating) layers on
-*either* backend — it just emits wire JSON instead of firing callbacks by hand.
+The scripting DSL below layers on *either* backend — it just emits wire JSON
+instead of firing callbacks by hand.
 
 **Decided (2026-07-17): backend (2), fake Faraday.** The spike passed and the
 drift risk that motivated (1)'s nicer vocabulary is gone — there's no second
-loop to drift. The DSL emits OpenAI-wire JSON under the hood, so the ergonomics
-(2)'s "uglier vocabulary" con worried about are hidden behind
-`ScriptedAdapter.script!` helpers (`tool_call(...)` / `text(...)`).
+loop to drift. The DSL emits OpenAI-wire JSON under the hood, so (2)'s "uglier
+vocabulary" con is hidden behind builder helpers (`tool_call(...)` / `reply(...)`).
 
-## API options
+## Public API: `Pikuri::Testing.fake_transport`
 
-- **(A) Global install (Screen.fake-style).**
-  `Pikuri::Testing.fake_llm! { |llm| ... }` swaps the factory + neutralizes
-  the probe process-wide; `Pikuri::Testing.restore!` (or an RSpec `around`)
-  undoes it. Pro: mirrors `Screen.fake`, covers sub-agents automatically, one
-  call. Con: global mutable state (needs disciplined teardown).
-- **(B) Per-agent injection.** `Agent.new(..., chat_factory:)` (default the
-  real one). Pro: no globals, thread-safe. Con: doesn't reach internally
-  spawned sub-agents/synthesizer (they build their own) — shallower.
-- **(C) Both.** Global for host/integration specs (pikuri-tui App, sub-agent
-  trees), per-agent for focused core specs. Likely the answer; (A) is the
-  headline feature, (B) a lower-level escape hatch.
+The whole feature is one builder that returns a plain `ChatTransport` carrying a
+fake adapter (Shape B). No global install, no `Agent.new` signature change — you
+just pass the transport you always pass:
 
-## FakeChat contract + scripting model
+```ruby
+transport = Pikuri::Testing.fake_transport do |llm|
+  llm.tool_call('calculator', expression: '2 + 2')   # turn 1: model calls a real tool
+  llm.reply('The answer is 4.')                        # turn 2: final answer
+end
 
-The fake must satisfy the `build_chat` surface above. Layer the ergonomics:
+agent = Pikuri::Agent.new(transport:, system_prompt: '…') do |c|
+  c.add_tool Pikuri::Tool::CALCULATOR
+end
+agent.run_loop(user_message: 'What is 2 + 2?')   # real loop runs the real calculator
+```
 
-- **L0 — canned reply.** `llm.reply("hi")` → next `complete` fires
-  `after_message` with an assistant message + a `Tokens` event. Covers "does
-  the pane render the answer?".
-- **L1 — scripted turns (tool loop).** A queue where a turn can be a
-  tool-call sequence: fire `before_tool_call` → let the *real* registered
-  tool execute → fire `after_tool_result` → … → final `after_message`. This
-  is the intricate part (it re-implements ruby_llm's tool loop), but it's
-  what exercises the Agent's tool path for real.
-- **L2 — streaming.** Split a reply into chunks fed through the streaming
-  block `Agent` passes to `complete`, so streaming/delta rendering is
-  testable (`fire_chunk` today).
-- **Mid-turn gating.** `llm.block!` / `llm.release!` so `complete` parks —
-  the real-backend equivalent of the stubs' `block_turns!`/`finish_turn!`,
-  letting a host observe spinner / queued-injection / Ctrl+C paths *through
-  the real turn lifecycle*.
+Under the hood `fake_transport`:
+- collects the block's calls into an ordered list of OpenAI-wire response bodies;
+- builds an **anonymous `Faraday::Adapter` subclass closing over that list** (each
+  request pops the next body; `call` does `super` then `save_response(env, 200,
+  json, {...}, nil)` — the two spike gotchas);
+- returns `ChatTransport.new(model: 'fake', provider: :openai,
+  assume_model_exists: true, api_base: 'http://fake.invalid/v1', api_key:
+  'not-needed', context_window: <default>, faraday_adapter: <that class>)`.
 
-Open: how faithfully to mimic ruby_llm's loop (L1). More fidelity = more real
-coverage but more drift risk against ruby_llm upgrades. **This only bites
-backend (1); backend (2) sidesteps it entirely by running ruby_llm's real
-loop** (see "Two backends behind that seam").
+The fake `api_base` forces the `Context#chat` branch; the `context_window` skips
+the `/props` probe; the `faraday_adapter` field is the new generic seam.
+
+## Scripting model (the builder's `llm.*` verbs)
+
+- **L0 — canned reply.** `llm.reply("hi")` appends a plain assistant-text body.
+  Covers "does the pane render the answer?".
+- **L1 — scripted tool turn.** `llm.tool_call(name, **args)` appends an
+  assistant body with a `tool_calls` entry; the **real** ruby_llm loop parses
+  it, runs the **real** registered tool, appends the observation, and re-requests
+  — so the next scripted body is the model's follow-up. No loop reimplementation
+  (that was backend (1)'s burden; backend (2) is free of it).
+- **L2 — streaming.** An SSE-shaped variant (`text/event-stream`, `data:`
+  chunks) so streaming/delta rendering is testable through the real streaming
+  path. **Not yet spiked** — the one remaining unknown.
+- **Mid-turn gating.** A `llm.block!` / `llm.release!` shape so `complete` parks
+  (adapter blocks on a latch before serving the next body) — the real-backend
+  equivalent of the old stubs' `block_turns!`/`finish_turn!`, letting a host
+  observe spinner / queued-injection / Ctrl+C paths through the real turn
+  lifecycle. Design TBD.
+
+## Sub-agents (deferred)
+
+Propagation is free (`.with` preserves the fake transport down the tree), but a
+single fake transport feeds **one ordered response list** shared by the whole
+tree — fine for a linear script, wrong for targeting a *specific* sub-agent's
+replies. Deferring until the single-agent feature proves itself; the upgrade
+path is to have the adapter dispatch by model id or a distinct fake `api_base`
+per sub-agent. Not a v1 blocker.
 
 ## Packaging
 
@@ -198,12 +255,13 @@ loop** (see "Two backends behind that seam").
 ## Consumers (the payoff)
 
 - **pikuri-core** `agent_spec` (+ mcp/subagents/skills integration specs)
-  replace their ad-hoc `fake_chat_class` with the shared helper.
+  replace their ad-hoc `fake_chat_class` with `Pikuri::Testing.fake_transport`.
 - **pikuri-tui** deletes all three `*StubAgent`s: App builds its *real* agent
-  via `default_build_agent` (drop the `&build_agent` override), runs real
-  turns under `Pikuri::Testing.fake_llm!`, and finally asserts on rendered
-  output. Needs: test config with explicit `context_window` (or fake-mode
-  probe short-circuit) + no MCP registered.
+  via `default_build_agent` (drop the `&build_agent` override), runs real turns
+  against a `fake_transport`, and finally asserts on rendered output. Needs: the
+  fake transport (its explicit `context_window` skips the probe) + no MCP
+  registered. (Single-agent shells first; sub-agent trees ride the deferred
+  work above.)
 
 ## Why not the two-phase `new`/`configure` split (rejected sibling)
 
@@ -220,10 +278,15 @@ Don't re-open the two-phase split as a testing enabler.
 - **L1 fidelity vs drift** — **resolved: backend (2)** (Faraday stub → real
   ruby_llm loop). Spike passed (see "Two backends behind that seam"); the
   drift risk is gone because there's no second loop to drift.
-- **Global vs per-agent default** — start with (A), add (B) if a core spec
-  needs isolation.
-- **Probe neutralization mechanism** — fake-mode flag on the detector, vs
-  requiring explicit `context_window` on test transports. The flag is more
-  ergonomic; the explicit window is more honest.
+- **Global vs per-agent** — **resolved: neither, polymorphic transport** (Shape
+  B). Per-agent by construction (adapter rides the transport's `Context`, global
+  config untouched — spike-verified), and sub-agent propagation is free via
+  `.with`. No global install to tear down.
+- **Probe neutralization** — **resolved: explicit `context_window` on the fake
+  transport** (the honest option; short-circuits agent.rb:427 with no HTTP).
+- **L2 streaming** — the one open unknown: an SSE-shaped adapter variant.
+  Known-doable, not yet spiked.
+- **Mid-turn gating shape** — `llm.block!`/`release!` via an adapter latch;
+  design TBD.
 - **Does fake mode touch tools/extensions at all?** Default: leave them real
   (that's the point). MCP is the one that can't stay real offline.
