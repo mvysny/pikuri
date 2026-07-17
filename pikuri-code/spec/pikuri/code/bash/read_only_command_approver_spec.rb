@@ -53,6 +53,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       journalctl\ --no-pager
       journalctl\ --since\ -1h\ --until\ now
       journalctl\ -k\ --level=err,warn
+      man\ smartctl
+      man\ 5\ crontab
+      man\ -a\ ls
+      man\ -k\ disk
+      man\ -w\ ls
+      apropos\ disk
+      whatis\ ls
     ].each do |cmd|
       it "approves: #{cmd.inspect}" do
         assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
@@ -101,6 +108,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'dmesg -T | grep -i error',             # dmesg piped into a read-only filter
       'journalctl -k --level=err,warn 2>&1 | head -100', # the reported journalctl shape
       'journalctl -u sshd --since -1h 2>/dev/null', # journalctl query + safe redirect
+      "man smartctl 2>&1 | grep -A 20 'self-test\\|--test'", # the reported man shape
       'dpkg --get-selections | grep -w install | wc -l', # the reported shape, unquoted
       # The reported batch verbatim: a comment line then many
       # `dpkg -S <unit> 2>&1 || true` probes, newline-separated.
@@ -150,6 +158,12 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'dmesg --console-off'  => 'dmesg --console-off',    # toggles console printing
       'dmesg --console-level'=> 'dmesg --console-level=1',# sets console level (=value)
       'dmesg -n spaced'      => 'dmesg -n 1',             # set-level, spaced argument
+      'man --html (browser)' => 'man --html ls',       # renders HTML, launches $BROWSER
+      'man -H (browser)'     => 'man -H ls',           # short spelling
+      'man -H attached arg'  => 'man -Hfirefox ls',    # -H with attached browser
+      'man bundled -H'       => 'man -aH ls',          # exec flag hidden in a short cluster
+      'man --pager (exec)'   => 'man --pager=less ls', # arbitrary pager (=value)
+      'man -P (exec)'        => 'man -P less ls',       # arbitrary pager, spaced arg
       'dpkg install'         => 'dpkg -i pkg.deb',
       'dpkg remove'          => 'dpkg -r ruby',
       'dpkg purge'           => 'dpkg --purge ruby',

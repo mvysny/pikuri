@@ -40,8 +40,8 @@ module Pikuri
       #    +bin/ls+ are paths that could point at a planted binary; only
       #    PATH-resolved bare names (+ls+, +cat+, …) qualify.
       # 2. That bare name is on {READ_ONLY_BINARIES} (or the segment is a
-      #    read-only +dpkg+/+apt+/+systemctl+/+dmesg+/+journalctl+ query, or —
-      #    under +allow_git:+ — a read-only git invocation).
+      #    read-only +dpkg+/+apt+/+systemctl+/+dmesg+/+journalctl+/+man+ query,
+      #    or — under +allow_git:+ — a read-only git invocation).
       #
       # The lexing half lives in {Tokenizer}. The consequence here: it hands the
       # classifiers below the *true* de-quoted word (+--clear+, not +--_clear+),
@@ -81,23 +81,28 @@ module Pikuri
       # is not. The pure-query companions +dpkg-query+ and +apt-cache+ have no
       # mutating form at all and sit directly in {READ_ONLY_BINARIES}.
       #
-      # == Read-only dmesg / journalctl (flag denylist), unconditional
+      # == Read-only dmesg / journalctl / man (flag denylist), unconditional
       #
       # +dmesg+ and +journalctl+ read by default; a handful of *flags* mutate
       # (dmesg: buffer wipe +-C+/+-c+, console toggles; journalctl: the
       # +--vacuum-*+ trimmers, +--rotate+/+--flush+, the FSS/catalog writers).
-      # The read/mutate split is by flag, not a leading subcommand, so
-      # {#read_only_dmesg?}/{#read_only_journalctl?} recover it with a
-      # *denylist* ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG} /
-      # {JOURNALCTL_MUTATING_LONG}): approve iff no argument is a mutating flag.
-      # Bundled dmesg short options are scanned per character (+-xC+ trips on
-      # +C+); a long option's +=value+ tail is stripped before lookup. journalctl
-      # has no mutating short option, so a short cluster is read-only data.
+      # +man+ likewise reads by default but +-H+/+--html+ launches +$BROWSER+
+      # (exec *and* egress) and +-P+/+--pager+ runs an arbitrary pager. The
+      # read/{mutate,exec} split is by flag, not a leading subcommand, so
+      # {#read_only_dmesg?}/{#read_only_journalctl?}/{#read_only_man?} recover
+      # it with a *denylist* ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG} /
+      # {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT} / {MAN_EXEC_LONG}):
+      # approve iff no argument is a denied flag. Bundled short options are
+      # scanned per character (dmesg +-xC+ trips on +C+, man +-aH+ on +H+); a
+      # long option's +=value+ tail is stripped before lookup. journalctl has
+      # no mutating short option, so a short cluster is read-only data. man's
+      # pure-read siblings +apropos+/+whatis+ have no exec flag and sit
+      # directly in {READ_ONLY_BINARIES}.
       #
       # This is the one deviation from "never auto-approve a destructive
-      # command": a denylist's residual is a *future* mutating flag this set
-      # doesn't yet name. Accepted because both mutating surfaces are small and
-      # stable (util-linux / systemd); an allowlist of read-only flags would
+      # command": a denylist's residual is a *future* mutating/exec flag this
+      # set doesn't yet name. Accepted because the surfaces are small and stable
+      # (util-linux / systemd / man-db); an allowlist of read-only flags would
       # close it at the cost of not approving every new read flag — the inferior
       # trade. Same residual shape as the git +--output+ check.
       #
@@ -167,6 +172,7 @@ module Pikuri
           'whoami', 'id', 'groups',
           'which', 'type',
           'locale', 'getconf',
+          'apropos', 'whatis',
           'dpkg-query', 'apt-cache'
         ].freeze
 
@@ -237,6 +243,17 @@ module Pikuri
           '--setup-keys', '--update-catalog'
         ].freeze
 
+        # +man+ short-option *letters* that spawn a program — +-H+ (render to
+        # HTML and launch +$BROWSER+: exec *and* egress) and +-P+ (run an
+        # arbitrary pager). {#read_only_man?} scans each cluster char-by-char,
+        # so a bundled +-aH+ trips on +H+.
+        MAN_EXEC_SHORT = Set['H', 'P'].freeze
+
+        # +man+ long options that spawn a program — the long spellings of
+        # {MAN_EXEC_SHORT}. {#read_only_man?} strips a +=value+ tail before
+        # lookup (+--pager=less+ matches +--pager+).
+        MAN_EXEC_LONG = Set['--html', '--pager'].freeze
+
         # @param allow_git [Boolean] when +true+, additionally approve read-only
         #   git invocations ({#read_only_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
@@ -269,7 +286,7 @@ module Pikuri
         #   (+[]+ for a comment no-op).
         # @return [Boolean] whether the segment is a single bare invocation of a
         #   {READ_ONLY_BINARIES} entry (or a read-only dpkg/apt/systemctl/dmesg/
-        #   journalctl query, or under +allow_git:+ a read-only git invocation),
+        #   journalctl/man query, or under +allow_git:+ a read-only git invocation),
         #   or an empty (comment) segment. A first word containing +/+ is a path
         #   that could point at a planted binary ⇒ not approved.
         def segment_read_only?(words)
@@ -283,6 +300,7 @@ module Pikuri
           return true if read_only_systemctl?(words)
           return true if read_only_dmesg?(words)
           return true if read_only_journalctl?(words)
+          return true if read_only_man?(words)
 
           @allow_git && read_only_git?(words)
         end
@@ -359,6 +377,34 @@ module Pikuri
           return false unless token.start_with?('--')
 
           JOURNALCTL_MUTATING_LONG.include?(token.split('=', 2).first)
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +man+ with no program-spawning flag
+        #   among its arguments ({MAN_EXEC_SHORT} / {MAN_EXEC_LONG}). Same
+        #   flag-denylist shape as {#read_only_dmesg?}, but the residual it
+        #   guards is *exec/egress*, not mutation. The pure-read man-suite
+        #   siblings +apropos+/+whatis+ have no such flag and sit directly in
+        #   {READ_ONLY_BINARIES}.
+        def read_only_man?(words)
+          return false unless words[0] == 'man'
+
+          words.drop(1).none? { |t| man_exec_arg?(t) }
+        end
+
+        # @param token [String] one +man+ argument.
+        # @return [Boolean] whether it names a program-spawning +man+ flag — a
+        #   long option in {MAN_EXEC_LONG} (ignoring any +=value+ tail) or a
+        #   short cluster containing a {MAN_EXEC_SHORT} letter. A bare value
+        #   token (no leading +-+) is read-only data ⇒ +false+.
+        def man_exec_arg?(token)
+          if token.start_with?('--')
+            MAN_EXEC_LONG.include?(token.split('=', 2).first)
+          elsif token.start_with?('-')
+            token[1..].chars.any? { |c| MAN_EXEC_SHORT.include?(c) }
+          else
+            false
+          end
         end
 
         # @param words [Array<String>] one segment's words.
