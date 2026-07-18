@@ -16,6 +16,9 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       free\ -m
       uname\ -a
       stat\ /etc/fstab
+      file\ /etc/fstab
+      file\ -i\ /bin/ls
+      file\ -s\ /dev/sda
       head\ -n20\ /var/log/dmesg
       printenv\ HOME
       grep\ --color=never\ foo\ /tmp/x
@@ -33,6 +36,10 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       apt\ list\ --installed
       apt\ policy\ nginx
       apt-cache\ search\ ruby
+      apt-cache\ showpkg\ ruby
+      apt-cache\ stats
+      apt-cache\ policy\ nginx
+      apt-cache\ depends\ ruby
       systemctl\ list-units
       systemctl\ list-unit-files
       systemctl\ status\ sshd
@@ -171,6 +178,15 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'rg --hostname-bin'    => 'rg --hostname-bin=/bin/sh pat .', # arbitrary hostname cmd
       'rg --pre mid-args'    => 'rg pat . --pre=/bin/sh',    # exec flag not first arg
       'rg --pre quote-smuggle' => "rg --''pre=/bin/sh pat .", # → --pre after quote-removal
+      'file -C (compiles)'   => 'file -C -m /tmp/m',    # writes /tmp/m.mgc
+      'file --compile'       => 'file --compile -m /tmp/m',
+      'file bundled -C'      => 'file -zC -m /tmp/m',   # write flag in a short cluster
+      'apt-cache gencaches'  => 'apt-cache gencaches',  # builds (writes) the cache
+      'apt-cache -o before'  => 'apt-cache -o Dir::Cache=/x search foo', # global opt before verb
+      'apt-cache unknown sub'=> 'apt-cache frobnicate',  # not a known query verb
+      'xxd outfile (writes)' => 'xxd /etc/hostname /tmp/leak', # 2nd positional is an output file
+      'xxd -r outfile'       => 'xxd -r dump.hex /tmp/out',    # reverse, writes binary to a file
+      'xxd bare (dropped)'   => 'xxd /etc/hostname',     # xxd left the allowlist entirely
       'dpkg install'         => 'dpkg -i pkg.deb',
       'dpkg remove'          => 'dpkg -r ruby',
       'dpkg purge'           => 'dpkg --purge ruby',

@@ -59,29 +59,35 @@ module Pikuri
       # with **no mutating form in any argument** — independent of privilege, so
       # the guarantee doesn't rely on running non-root. That excludes +find+
       # (+-delete+/+-exec+), +env+/+command+ (run other programs),
-      # +date+/+hostname+ (set-forms), and +journalctl+ (recovered by flag
-      # denylist below — its read/mutate split is by flag, not subcommand).
+      # +date+/+hostname+ (set-forms), +xxd+ (a second positional operand is an
+      # *output file*: +xxd in out+ writes +out+ — a write with no flag to
+      # deny, so it can't be recovered like the others; +od+/+hexdump+ cover
+      # read-only hex dumps), and +journalctl+ (recovered by flag denylist
+      # below — its read/mutate split is by flag, not subcommand).
       #
-      # == Read-only subcommand queries (+dpkg+ / +apt+ / +systemctl+), unconditional
+      # == Read-only subcommand queries (+dpkg+ / +apt+ / +apt-cache+ / +systemctl+), unconditional
       #
       # These are mixed binaries whose query forms read-only but whose mutating
-      # forms (+dpkg -i+/+-r+, +apt install+/+remove+, +systemctl start+/+stop+)
-      # aren't, so they can't join {READ_ONLY_BINARIES} wholesale.
-      # {#read_only_dpkg?}/{#read_only_apt?}/{#read_only_systemctl?} recover the
-      # query subset by requiring a known verb *immediately* after the binary
+      # forms (+dpkg -i+/+-r+, +apt install+/+remove+, +apt-cache gencaches+,
+      # +systemctl start+/+stop+) aren't, so they can't join
+      # {READ_ONLY_BINARIES} wholesale. {#read_only_dpkg?}/{#read_only_apt?}/
+      # {#read_only_apt_cache?}/{#read_only_systemctl?} recover the query subset
+      # by requiring a known verb *immediately* after the binary
       # ({READ_ONLY_DPKG_ACTIONS} / {READ_ONLY_APT_SUBCOMMANDS} /
-      # {READ_ONLY_SYSTEMCTL_SUBCOMMANDS}) — which refuses a leading redirection
-      # or global option (+dpkg --admindir=/x+, +apt -o APT::Foo=bar+,
+      # {READ_ONLY_APT_CACHE_SUBCOMMANDS} / {READ_ONLY_SYSTEMCTL_SUBCOMMANDS}) —
+      # which refuses a leading redirection or global option (+dpkg
+      # --admindir=/x+, +apt -o APT::Foo=bar+, +apt-cache -o Dir::Cache=/x+,
       # +systemctl --root=/x+) since the second token then isn't a query verb.
       #
       # Unlike git these are *unconditional* (no +allow_git:+-style gate): the
       # query forms read state with no command-execution vector — apt's
       # pre/post-invoke hooks fire only on install/update, and +systemctl+
       # spawns its pager only on a tty, which {Bash}'s captured (piped) stdout
-      # is not. The pure-query companions +dpkg-query+ and +apt-cache+ have no
-      # mutating form at all and sit directly in {READ_ONLY_BINARIES}.
+      # is not. The pure-query companion +dpkg-query+ has no mutating form at
+      # all and sits directly in {READ_ONLY_BINARIES} (its +apt-cache+ analogue
+      # does not: +gencaches+ writes the cache, hence the subcommand gate).
       #
-      # == Read-only dmesg / journalctl / man / rg (flag denylist), unconditional
+      # == Read-only dmesg / journalctl / man / rg / file (flag denylist), unconditional
       #
       # These read by default; a handful of *flags* mutate or exec. dmesg:
       # buffer wipe +-C+/+-c+, console toggles. journalctl: the +--vacuum-*+
@@ -90,19 +96,21 @@ module Pikuri
       # arbitrary pager. +rg+ (ripgrep): +--pre+ runs an arbitrary preprocessor
       # command per searched file, +--hostname-bin+ one for hyperlink hostnames
       # — both pure exec, so +rg+ can't sit beside +grep+ in
-      # {READ_ONLY_BINARIES}. The read/{mutate,exec} split is by flag, not a
-      # leading subcommand, so {#read_only_dmesg?}/{#read_only_journalctl?}/
-      # {#read_only_man?}/{#read_only_rg?} recover it with a *denylist*
-      # ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG} /
-      # {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT} / {MAN_EXEC_LONG} /
-      # {RG_EXEC_LONG}): approve iff no argument is a denied flag. Bundled short
-      # options are scanned per character (dmesg +-xC+ trips on +C+, man +-aH+
-      # on +H+); a long option's +=value+ tail is stripped before lookup.
-      # journalctl and rg have no mutating/exec short option, so a short cluster
-      # is read-only data (+rg -z+ shells only to fixed-name decompressors, the
-      # PATH-hijack residual already covers those). man's and rg's pure-read
-      # siblings +apropos+/+whatis+/+grep+ have no such flag and sit directly
-      # in {READ_ONLY_BINARIES}.
+      # {READ_ONLY_BINARIES}. +file+: +-C+/+--compile+ writes a +.mgc+ magic
+      # file to disk (its lone write form). The read/{mutate,exec} split is by
+      # flag, not a leading subcommand, so {#read_only_dmesg?}/
+      # {#read_only_journalctl?}/{#read_only_man?}/{#read_only_rg?}/
+      # {#read_only_file?} recover it with a *denylist* ({DMESG_MUTATING_SHORT}
+      # / {DMESG_MUTATING_LONG} / {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT}
+      # / {MAN_EXEC_LONG} / {RG_EXEC_LONG} / {FILE_WRITE_SHORT} /
+      # {FILE_WRITE_LONG}): approve iff no argument is a denied flag. Bundled
+      # short options are scanned per character (dmesg +-xC+ trips on +C+, man
+      # +-aH+ on +H+, file +-zC+ on +C+); a long option's +=value+ tail is
+      # stripped before lookup. journalctl and rg have no mutating/exec short
+      # option, so a short cluster is read-only data (+rg -z+ shells only to
+      # fixed-name decompressors, the PATH-hijack residual already covers
+      # those). man's and rg's pure-read siblings +apropos+/+whatis+/+grep+
+      # have no such flag and sit directly in {READ_ONLY_BINARIES}.
       #
       # This is the one deviation from "never auto-approve a destructive
       # command": a denylist's residual is a *future* mutating/exec flag this
@@ -168,8 +176,8 @@ module Pikuri
           'ls', 'cat', 'tac', 'nl', 'head', 'tail', 'wc',
           'grep', 'egrep', 'fgrep',
           'pwd', 'basename', 'dirname', 'realpath', 'readlink',
-          'stat', 'file',
-          'od', 'hexdump', 'xxd', 'strings',
+          'stat',
+          'od', 'hexdump', 'strings',
           'cal',
           'uname', 'arch', 'nproc', 'lscpu', 'lsblk', 'lsusb', 'lspci',
           'df', 'du', 'free', 'vmstat', 'uptime', 'ps',
@@ -178,7 +186,7 @@ module Pikuri
           'which', 'type',
           'locale', 'getconf',
           'apropos', 'whatis',
-          'dpkg-query', 'apt-cache'
+          'dpkg-query'
         ].freeze
 
         # +systemctl+ subcommands with no mutating form — the only invocations
@@ -209,6 +217,18 @@ module Pikuri
         # excluded mutating verbs +install+/+remove+/+update+/+upgrade+/…).
         READ_ONLY_APT_SUBCOMMANDS = Set[
           'search', 'show', 'list', 'policy', 'depends', 'rdepends'
+        ].freeze
+
+        # +apt-cache+ subcommands that only read the package cache — must appear
+        # immediately after +apt-cache+ (so a leading +-o Dir::Cache=/x+ / +-c
+        # file+ config injection is not approved). Excludes +gencaches+, which
+        # *builds* (writes) the cache — the one reason +apt-cache+ can't sit in
+        # {READ_ONLY_BINARIES} wholesale like its pure-query sibling
+        # +dpkg-query+.
+        READ_ONLY_APT_CACHE_SUBCOMMANDS = Set[
+          'showpkg', 'showsrc', 'stats', 'dump', 'dumpavail', 'unmet',
+          'search', 'show', 'depends', 'rdepends', 'pkgnames', 'policy',
+          'madison', 'xvcg', 'dotty'
         ].freeze
 
         # git verbs with no mutating form — the only commands {#read_only_git?}
@@ -270,6 +290,18 @@ module Pikuri
         # covered by the PATH-hijack residual, so it stays read-only).
         RG_EXEC_LONG = Set['--pre', '--hostname-bin'].freeze
 
+        # +file+ short-option *letters* that write — +-C+ compiles the magic
+        # file to a +.mgc+ on disk. {#read_only_file?} scans each cluster
+        # char-by-char, so a bundled +-zC+ trips on +C+. This is +file+'s only
+        # mutating form; every other flag (+-i+, +-L+, +-s+, +-m magicfile+ …)
+        # reads.
+        FILE_WRITE_SHORT = Set['C'].freeze
+
+        # +file+ long options that write — the long spelling of
+        # {FILE_WRITE_SHORT}. {#read_only_file?} strips a +=value+ tail before
+        # lookup.
+        FILE_WRITE_LONG = Set['--compile'].freeze
+
         # @param allow_git [Boolean] when +true+, additionally approve read-only
         #   git invocations ({#read_only_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
@@ -301,8 +333,9 @@ module Pikuri
         # @param words [Array<String>] one segment's words from {Tokenizer}
         #   (+[]+ for a comment no-op).
         # @return [Boolean] whether the segment is a single bare invocation of a
-        #   {READ_ONLY_BINARIES} entry (or a read-only dpkg/apt/systemctl/dmesg/
-        #   journalctl/man/rg query, or under +allow_git:+ a read-only git invocation),
+        #   {READ_ONLY_BINARIES} entry (or a read-only dpkg/apt/apt-cache/systemctl/
+        #   file/dmesg/journalctl/man/rg query, or under +allow_git:+ a read-only
+        #   git invocation),
         #   or an empty (comment) segment. A first word containing +/+ is a path
         #   that could point at a planted binary ⇒ not approved.
         def segment_read_only?(words)
@@ -313,7 +346,9 @@ module Pikuri
           return true if READ_ONLY_BINARIES.include?(first)
           return true if read_only_dpkg?(words)
           return true if read_only_apt?(words)
+          return true if read_only_apt_cache?(words)
           return true if read_only_systemctl?(words)
+          return true if read_only_file?(words)
           return true if read_only_dmesg?(words)
           return true if read_only_journalctl?(words)
           return true if read_only_man?(words)
@@ -340,6 +375,16 @@ module Pikuri
           return false unless words[0] == 'apt'
 
           READ_ONLY_APT_SUBCOMMANDS.include?(words[1])
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +apt-cache+ followed *immediately* by a
+        #   {READ_ONLY_APT_CACHE_SUBCOMMANDS} verb (so a leading +-o Dir::Cache=/x+
+        #   config injection, and the cache-building +gencaches+, are refused).
+        def read_only_apt_cache?(words)
+          return false unless words[0] == 'apt-cache'
+
+          READ_ONLY_APT_CACHE_SUBCOMMANDS.include?(words[1])
         end
 
         # @param words [Array<String>] one segment's words.
@@ -446,6 +491,31 @@ module Pikuri
           return false unless token.start_with?('--')
 
           RG_EXEC_LONG.include?(token.split('=', 2).first)
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +file+ with no writing flag among its
+        #   arguments ({FILE_WRITE_SHORT} / {FILE_WRITE_LONG}). Same flag-denylist
+        #   shape as {#read_only_man?}.
+        def read_only_file?(words)
+          return false unless words[0] == 'file'
+
+          words.drop(1).none? { |t| file_write_arg?(t) }
+        end
+
+        # @param token [String] one +file+ argument.
+        # @return [Boolean] whether it names a writing +file+ flag — a long
+        #   option in {FILE_WRITE_LONG} (ignoring any +=value+ tail) or a short
+        #   cluster containing a {FILE_WRITE_SHORT} letter. A bare value token
+        #   (no leading +-+) is read-only data ⇒ +false+.
+        def file_write_arg?(token)
+          if token.start_with?('--')
+            FILE_WRITE_LONG.include?(token.split('=', 2).first)
+          elsif token.start_with?('-')
+            token[1..].chars.any? { |c| FILE_WRITE_SHORT.include?(c) }
+          else
+            false
+          end
         end
 
         # @param words [Array<String>] one segment's words.
