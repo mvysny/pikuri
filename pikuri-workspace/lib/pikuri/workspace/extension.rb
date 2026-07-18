@@ -3,7 +3,7 @@
 module Pikuri
   module Workspace
     # An {Pikuri::Agent::Extension} that wires the five file tools ({Read},
-    # {Grep}, {Glob}, {Edit}, {Write}) onto an agent, sharing a single
+    # {Search::Grep}, {Search::Glob}, {Edit}, {Write}) onto an agent, sharing a single
     # {Workspace} composite — which is what makes the read-before-edit gate
     # work: {Read} marks a path read in the same record {Edit} and
     # overwrite-{Write} consult. One registration point removes the per-host
@@ -36,7 +36,7 @@ module Pikuri
       # list: it must be the single owner of the shared {Workspace}, so a
       # pre-registered file tool (on a different composite) would defeat the
       # read-ledger sharing.
-      TOOL_CLASSES = [Read, Grep, Glob, Edit, Write].freeze
+      TOOL_CLASSES = [Read, Search::Grep, Search::Glob, Edit, Write].freeze
 
       # @return [Workspace] the composite shared across the five tools;
       #   exposed for tests / introspection.
@@ -74,8 +74,8 @@ module Pikuri
         # The read-only flag (when supplied) is threaded into the two mutators;
         # the read-only tools take no gate. +nil+ disables it.
         c.add_tool Read.new(workspace: @workspace)
-        c.add_tool Grep.new(workspace: @workspace)
-        c.add_tool Glob.new(workspace: @workspace)
+        c.add_tool Search::Grep.new(workspace: @workspace)
+        c.add_tool Search::Glob.new(workspace: @workspace)
         # Edit takes no posture flag: a non-nil confirmer *is* its
         # confirm-all-writes posture (see {Edit}), so +confirm_all_writes+
         # reaches Edit as confirmer-or-nil.

@@ -5,8 +5,8 @@ module Pikuri
     # The +fileindex_search+ tool — a fast, cheap keyword lookup over a
     # desktop file index, returning matching paths each with the *single*
     # snippet the index provides. A {Pikuri::Tool} in the
-    # {Pikuri::Workspace::Grep} shape (shells out through the backend, fails
-    # loud at construction if the binary is missing).
+    # {Pikuri::Workspace::Search::Grep} shape (shells out through the backend,
+    # fails loud at construction if the binary is missing).
     #
     # The +backend:+ is a stateless module satisfying the file-index duck
     # type (see {#initialize}) — {LocalSearch} or {Recoll}, whichever
@@ -25,7 +25,7 @@ module Pikuri
       MAX_LIMIT     = 25
 
       # @return [Integer] hard byte cap on combined output (matches
-      #   {Pikuri::Workspace::Grep::MAX_BYTES}).
+      #   {Pikuri::Workspace::Search::Grep::MAX_BYTES}).
       MAX_BYTES = 50 * 1024
 
       # @return [String] human-readable form of {MAX_BYTES}.

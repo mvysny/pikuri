@@ -263,8 +263,8 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
 
   # File/shell stack
   c.add_tool Pikuri::Workspace::Read.new(workspace: workspace)
-  c.add_tool Pikuri::Workspace::Grep.new(workspace: workspace)
-  c.add_tool Pikuri::Workspace::Glob.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Search::Grep.new(workspace: workspace)
+  c.add_tool Pikuri::Workspace::Search::Glob.new(workspace: workspace)
   c.add_tool Pikuri::Workspace::Edit.new(workspace: workspace)
   c.add_tool Pikuri::Workspace::Write.new(
     workspace: workspace, confirmer: confirmer

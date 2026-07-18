@@ -3,7 +3,7 @@
 require 'tmpdir'
 require 'fileutils'
 
-RSpec.describe Pikuri::Workspace::Grep do
+RSpec.describe Pikuri::Workspace::Search::Grep do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-grep-root-')).realpath }
   let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
@@ -239,6 +239,8 @@ RSpec.describe Pikuri::Workspace::Grep do
         )
         assert result.start_with?('Error: refusing to search'), "got #{result[0, 80].inspect}"
         assert_includes result, 'too broad'
+        # The refusal hands back a listing to narrow into, not a dead-end.
+        assert_includes result, 'Pick one of its entries'
       end
     end
   end
@@ -309,6 +311,18 @@ RSpec.describe Pikuri::Workspace::Grep do
 
       assert_includes result, 'visible.txt:1:alpha visible'
       refute_includes result, 'ignored.txt'
+    end
+
+    it 'searches .gitignore\'d files when include_gitignored is true' do
+      Pikuri::Subprocess.spawn('git', 'init', '-q', chdir: root.to_s).wait
+      write_file('.gitignore', "ignored.txt\n")
+      write_file('ignored.txt', "alpha ignored\n")
+      write_file('visible.txt', "alpha visible\n")
+
+      result = described_class.search(**search_args(include_gitignored: true))
+
+      assert_includes result, 'ignored.txt:1:alpha ignored'
+      assert_includes result, 'visible.txt:1:alpha visible'
     end
   end
 

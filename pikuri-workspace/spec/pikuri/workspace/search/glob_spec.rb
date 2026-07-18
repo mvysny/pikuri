@@ -3,7 +3,7 @@
 require 'tmpdir'
 require 'fileutils'
 
-RSpec.describe Pikuri::Workspace::Glob do
+RSpec.describe Pikuri::Workspace::Search::Glob do
   let(:root)      { Pathname.new(Dir.mktmpdir('pikuri-glob-root-')).realpath }
   let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
   let(:workspace)  { Pikuri::Workspace::Workspace.new(filesystem: filesystem) }
@@ -116,6 +116,8 @@ RSpec.describe Pikuri::Workspace::Glob do
         result = described_class.search(workspace: ws, pattern: '**/*', path: danger)
         assert result.start_with?('Error: refusing to list'), "got #{result[0, 80].inspect}"
         assert_includes result, 'too broad'
+        # The refusal hands back a listing to narrow into, not a dead-end.
+        assert_includes result, 'Pick one of its entries'
       end
     end
 
@@ -184,6 +186,28 @@ RSpec.describe Pikuri::Workspace::Glob do
 
       assert_includes result, 'visible.rb'
       refute_includes result, 'ignored.rb'
+    end
+
+    it 'lists .gitignore\'d files when include_gitignored is true' do
+      Pikuri::Subprocess.spawn('git', 'init', '-q', chdir: root.to_s).wait
+      write_file('.gitignore', "ignored.rb\n")
+      write_file('ignored.rb')
+      write_file('visible.rb')
+
+      result = described_class.search(**search_args(pattern: '**/*.rb', include_gitignored: true))
+
+      assert_includes result, 'ignored.rb'
+      assert_includes result, 'visible.rb'
+    end
+
+    it 'still excludes .git/ even with include_gitignored (explicit glob survives --no-ignore)' do
+      Pikuri::Subprocess.spawn('git', 'init', '-q', chdir: root.to_s).wait
+      write_file('visible.rb')
+
+      result = described_class.search(**search_args(pattern: '**/*', include_gitignored: true))
+
+      assert_includes result, 'visible.rb'
+      refute_match(%r{\.git/}, result)
     end
   end
 

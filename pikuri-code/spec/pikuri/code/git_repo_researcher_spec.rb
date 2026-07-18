@@ -36,8 +36,8 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
       [
         Pikuri::Code::GitClone.new(filesystem: filesystem, sandbox: Pikuri::Code::Bash::Sandbox::NONE),
         Pikuri::Workspace::Read.new(workspace: workspace),
-        Pikuri::Workspace::Grep.new(workspace: workspace),
-        Pikuri::Workspace::Glob.new(workspace: workspace),
+        Pikuri::Workspace::Search::Grep.new(workspace: workspace),
+        Pikuri::Workspace::Search::Glob.new(workspace: workspace),
         Pikuri::Tool::WebSearch.build,
         Pikuri::Tool::WEB_SCRAPE,
         Pikuri::Tool::FETCH
