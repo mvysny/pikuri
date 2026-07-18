@@ -48,7 +48,10 @@ module Pikuri
       #
       # Empty +pattern+; +path+ is a regular file (→ read tool); +path+ not found;
       # +path+ outside the workspace ({Filesystem::Error}); an oversized root (+/+
-      # or the whole home dir — {Utils.oversized_root_refusal}).
+      # or the whole home dir). The oversized-root refusal doesn't dead-end: it
+      # hands back a one-level listing of the root's entries so the model can
+      # pick a subdir as +path+ and retry with no extra call (see
+      # {Utils.oversized_root_refusal}).
       class Glob < Pikuri::Tool
         # @return [Integer] hard byte cap on combined rg output. Same value as
         #   {Grep::MAX_BYTES}; re-declared rather than cross-referenced because
