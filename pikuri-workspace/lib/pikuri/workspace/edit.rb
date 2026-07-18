@@ -60,7 +60,6 @@ module Pikuri
         Usage:
         - You must Read the file in this conversation before editing, or the call will fail.
         - Use for partial changes to an existing file.
-        - `old_string` must match the file byte-for-byte (whitespace and indentation count). Strip the Read line prefix (line number + tab) before matching.
         - `old_string` and `new_string` must differ.
         - If `old_string` matches multiple times the call fails — add surrounding context to make the match unique, or set `replace_all: true`.
         - Cannot create files (rejects empty `old_string` and missing files).
@@ -90,12 +89,12 @@ module Pikuri
                               '"lib/foo.rb".'
             p.required_string :old_string,
                               'Exact text to find in the file. Must match ' \
-                              'byte-for-byte (whitespace counts); must be ' \
-                              'unique unless replace_all is true. Example: ' \
-                              '"def foo\n  bar\nend".'
+                              'byte-for-byte (whitespace counts); strip the ' \
+                              'Read line prefix (line number + tab) before ' \
+                              'matching; must be unique unless replace_all is ' \
+                              'true. Example: "def foo\n  bar\nend".'
             p.required_string :new_string,
-                              'Replacement text. Must differ from ' \
-                              'old_string. Example: "def foo\n  baz\nend".'
+                              'Replacement text. Example: "def foo\n  baz\nend".'
             p.optional_boolean :replace_all,
                                'Replace every occurrence of old_string ' \
                                'instead of failing on multiple matches. ' \
