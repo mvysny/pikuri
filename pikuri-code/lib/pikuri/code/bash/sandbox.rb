@@ -25,6 +25,31 @@ module Pikuri
       # overlay/concurrency reasoning, and which to pick — is in
       # +pikuri-code/DESIGN.md+.
       module Sandbox
+        # The +bwrap+(1) binary, resolved on +PATH+.
+        BWRAP_BINARY = 'bwrap'
+
+        # Run a one-shot +bwrap+ probe and return the finished process: spawns
+        # +bwrap <flags> --die-with-parent /bin/true+ at +/+ and waits.
+        #
+        #   Sandbox.probe('--bind', '/', '/', '--unshare-net').status.success?
+        #
+        # +flags+ are the isolation each sandbox promises (+--unshare-net+, an
+        # overlay mount, …) — deliberately *not* defaulted, because the probe's
+        # whole job is to prove *that exact* isolation works on this host (see
+        # +pikuri-code/DESIGN.md+ on why the two probes aren't interchangeable).
+        # Propagates +Errno::ENOENT+ when +bwrap+ is absent; each caller rescues
+        # it to raise its own install hint.
+        #
+        # @param flags [Array<String>] isolation flags under test.
+        # @return [Pikuri::Subprocess::Result] query +.status.success?+ /
+        #   +.status.exitstatus+.
+        # @raise [Errno::ENOENT] if +bwrap+ isn't on +PATH+.
+        def self.probe(*flags)
+          Pikuri::Subprocess.spawn(
+            BWRAP_BINARY, *flags, '--die-with-parent', '/bin/true', chdir: '/'
+          ).wait
+        end
+
         # Identity sandbox — passthrough. The {Bash.new} default and the
         # +--no-sandbox+ / +--yolo+ opt-out.
         module NONE
@@ -80,8 +105,6 @@ module Pikuri
         # (project source, poisoned deps, network exfil) and the container-as-
         # outer-boundary escape hatch are in +pikuri-code/DESIGN.md+.
         class Bubblewrap
-          BWRAP_BINARY = 'bwrap'
-
           LOGGER = Pikuri.logger_for('Sandbox')
 
           # System-root dirs the subprocess needs that aren't in
@@ -232,14 +255,7 @@ module Pikuri
           # dir would actually be overlaid (a +readable+ entry not already a
           # +writable+ +--bind+), so a project-root-only workspace skips it.
           def check_bwrap!
-            result = Pikuri::Subprocess.spawn(
-              BWRAP_BINARY,
-              '--unshare-all', '--share-net',
-              '--ro-bind', '/', '/',
-              '--die-with-parent',
-              '/bin/true',
-              chdir: '/'
-            ).wait
+            result = Sandbox.probe('--unshare-all', '--share-net', '--ro-bind', '/', '/')
             unless result.status.success?
               raise "Code::Bash::Sandbox::Bubblewrap: bwrap probe failed " \
                     "(exit #{result.status.exitstatus}). Is user-namespace " \
@@ -267,16 +283,10 @@ module Pikuri
           #
           # @return [Boolean] whether overlayfs-in-userns works here.
           def probe_overlay_support?
-            result = Pikuri::Subprocess.spawn(
-              BWRAP_BINARY,
-              '--unshare-all', '--share-net',
-              '--ro-bind', '/', '/',
-              '--overlay-src', '/usr',
-              '--tmp-overlay', '/tmp',
-              '--die-with-parent',
-              '/bin/true',
-              chdir: '/'
-            ).wait
+            result = Sandbox.probe(
+              '--unshare-all', '--share-net', '--ro-bind', '/', '/',
+              '--overlay-src', '/usr', '--tmp-overlay', '/tmp'
+            )
             return true if result.status.success?
 
             LOGGER.warn(
@@ -417,8 +427,6 @@ module Pikuri
         # the non-defenses are in +pikuri-code/DESIGN.md+. A hard boundary means
         # running the whole agent inside a container / VM.
         class FullFsNoNet
-          BWRAP_BINARY = 'bwrap'
-
           # @param filesystem [Pikuri::Workspace::Filesystem] used only for its
           #   +project_root+ (the +--chdir+ target); the bind set is the whole
           #   real root regardless, so the readable/writable lists are ignored.
@@ -460,14 +468,7 @@ module Pikuri
           #
           # @raise [RuntimeError] on probe failure or missing +bwrap+.
           def check_bwrap!
-            result = Pikuri::Subprocess.spawn(
-              BWRAP_BINARY,
-              '--bind', '/', '/',
-              '--unshare-net',
-              '--die-with-parent',
-              '/bin/true',
-              chdir: '/'
-            ).wait
+            result = Sandbox.probe('--bind', '/', '/', '--unshare-net')
             return if result.status.success?
 
             raise 'Code::Bash::Sandbox::FullFsNoNet: bwrap probe failed ' \
