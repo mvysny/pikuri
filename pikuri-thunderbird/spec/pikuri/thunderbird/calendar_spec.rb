@@ -111,6 +111,8 @@ describe Pikuri::Thunderbird::Calendar do
     Dir.mktmpdir do |dir|
       path = File.join(dir, 'cache.sqlite')
       db = SQLite3::Database.new(path)
+      # Fallback (OR) ranking: neither title has "kickoff meeting" *adjacent*,
+      # so the phrase gate finds nothing and both events fall back to OR recall.
       # 'both' is the OLDER event but matches two words; 'one' is NEWER but
       # matches a single word. Score must win over recency ⇒ 'both' first.
       db.execute_batch(<<~SQL)
@@ -118,7 +120,7 @@ describe Pikuri::Thunderbird::Calendar do
           event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
         INSERT INTO cal_events VALUES
-          ('c1','both','Project kickoff meeting',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
+          ('c1','both','Kickoff for the big meeting',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
            'UTC','UTC',262,'CONFIRMED',NULL),
           ('c1','one','Weekly meeting',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
            'UTC','UTC',262,'CONFIRMED',NULL);
@@ -128,6 +130,70 @@ describe Pikuri::Thunderbird::Calendar do
       begin
         # 'kickoff' hits only 'both'; 'meeting' hits both events.
         assert_equal %w[both one], cal.search(query: 'kickoff meeting', limit: 10).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
+    end
+  end
+
+  it 'prefers an adjacent-phrase match and suppresses single-common-word noise' do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      # The reported bug: query "hang around" flooded with events whose only
+      # link is the common word "around" in a description. 'phrase' has the
+      # words adjacent (in the title); 'noise' matches only "around" (in its
+      # description). Once a phrase hit exists, the noise must be dropped.
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        INSERT INTO cal_events VALUES
+          ('c1','phrase','Hammer Dröp hang around',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
+           'UTC','UTC',262,'CONFIRMED',NULL),
+          ('c1','noise','Quarterly Product Release',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
+           'UTC','UTC',262,'CONFIRMED',NULL);
+        INSERT INTO cal_properties VALUES ('noise','DESCRIPTION','This time around we review the results');
+      SQL
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        # phrase-first: only the adjacent match survives.
+        assert_equal ['phrase'], cal.search(query: 'hang around', limit: 10).map { |h| h[:event_id] }
+        # a scattered query (no adjacency anywhere) falls back to OR recall,
+        # returning both — 'noise' (both words) ranked above 'phrase' (one word).
+        assert_equal %w[noise phrase], cal.search(query: 'around review', limit: 10).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
+    end
+  end
+
+  it 'folds a recurring series split across UID_R<datetime> masters into one hit' do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      # Google stores a "this-and-following" edit as a new master whose UID
+      # carries an _R<ical-datetime> suffix. All are one logical series and
+      # must fold to a single hit — not one per split (the 22-dupe bug).
+      base = 'abc123@google.com'
+      split = 'abc123_R20200227T113000@google.com'
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        INSERT INTO cal_events VALUES
+          ('c1','#{base}','Weekly hangout',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
+           'UTC','UTC',278,'CONFIRMED',NULL),
+          ('c1','#{split}','Weekly hangout',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
+           'UTC','UTC',278,'CONFIRMED',NULL);
+      SQL
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        hits = cal.search(query: 'hangout', limit: 10)
+        assert_equal 1, hits.size, 'the base + _R split fold into one series'
+        assert hits.first[:recurring]
       ensure
         cal.close
       end

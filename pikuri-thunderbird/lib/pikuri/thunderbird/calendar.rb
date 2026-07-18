@@ -69,13 +69,25 @@ module Pikuri
         @conns.values.sum { |db| db.get_first_value('SELECT count(*) FROM cal_events').to_i }
       end
 
-      # Search events by title / description / location; best match first (most
-      # query words matched), newest breaks ties. Recall-first — a partial
-      # match still surfaces (see {#search_db}).
+      # Search events by title / description / location.
       #
-      # A recurring series stores a master row plus one row per modified
-      # occurrence, all sharing the event UID; {#fold_series} collapses them to
-      # one hit so a weekly meeting surfaces once, not once per occurrence.
+      #   cal.search(query: 'hang around', recurring: false, limit: 15)
+      #   # the one-off events titled "…hang around" — not the 50 whose
+      #   # description merely contains the common word "around"
+      #
+      # **Phrase-first, OR-fallback** ranking: when the query's words appear
+      # *adjacently* in some event ({#search_db}'s +:phrase+), only those hits
+      # are kept; the loose OR-any-word recall runs only as a fallback when no
+      # event matches the phrase (so a scattered-word query like "vaadin party"
+      # still hits). Within the kept set, most-words-matched ranks first,
+      # newest breaks ties. A single-word query has no adjacency to enforce, so
+      # it stays pure substring recall.
+      #
+      # A recurring series is stored as a master row plus one row per modified
+      # occurrence; Google additionally splits a "this-and-following" edit into
+      # separate masters +UID_R<ical-datetime>@google.com+. {#base_uid} strips
+      # that suffix and {#fold_series} collapses the whole lot to one hit, so a
+      # weekly meeting surfaces once — not once per occurrence *or* per split.
       #
       # @param query [String] substring over title + DESCRIPTION + LOCATION.
       # @param limit [Integer] max events.
@@ -89,16 +101,23 @@ module Pikuri
         ensure_fresh
         words = query.to_s.scan(/[[:alnum:]]+/).map { |w| fold(w) }
         rows = @conns.values.flat_map { |db| search_db(db, words:, after:, before:) }
-        series = rows.group_by { |h| h[:event_id] }.map { |_uid, group| fold_series(group) }
+        # Group on the *base* UID (see #base_uid), not the raw id, so Google's
+        # this-and-following splits fold into one series instead of 20+ hits.
+        series = rows.group_by { |h| base_uid(h[:event_id]) }.map { |_uid, group| fold_series(group) }
+        # Phrase-first: once any event matches the words adjacently, drop the
+        # OR-any-word matches — else a two-word query floods with events sharing
+        # only a common word (e.g. "around") in a description. The OR set is the
+        # fallback when no event matches the phrase.
+        series.select! { |h| h[:phrase] } if series.any? { |h| h[:phrase] }
         # Recurrence filter runs *after* folding: an occurrence row lacks the
         # master's HAS_RECURRENCE flag, so filtering per-row in SQL mislabeled
         # every occurrence "single" and leaked the whole series under
         # recurrence:single. Folding classifies the series as a whole first.
         series.select! { |h| h[:recurring] == recurring } unless recurring.nil?
-        # Rank across stores by matched-word count, then recency. :score is an
-        # internal ranking key (see #search_db), dropped from the returned shape.
+        # Rank across stores by matched-word count, then recency. :score/:phrase
+        # are internal ranking keys (see #search_db), dropped from the shape.
         series.sort_by { |h| [-h[:score], -(h[:start]&.to_i || 0)] }
-              .first(limit).map { |h| h.except(:score) }
+              .first(limit).map { |h| h.except(:score, :phrase) }
       end
 
       # Full event detail for one event UID.
@@ -168,13 +187,15 @@ module Pikuri
       # bm25-ranks): a word matches if the folded query term is a substring of
       # the folded title/description/location, and a hit's +:score+ is how many
       # of the words matched — the calendar analogue of bm25 (no corpus stats
-      # to rank with). Keeping the two tools aligned is the point: an LLM that
-      # has seen forgiving mail search assumes the same here, so a stricter AND
-      # would make it misread "fewer hits" as "no such event exists".
+      # to rank with). Each hit also carries +:phrase+ ({#phrase_match?}), which
+      # {#search} uses to prefer adjacent-word matches; the OR score is the
+      # fallback ranking, never a stricter AND gate here — an LLM that has seen
+      # forgiving mail search would misread a bare AND's "fewer hits" as "no
+      # such event exists".
       #
       # @param words [Array<String>] pre-folded query terms (empty ⇒ list all).
-      # @return [Array<Hash>] hits carrying an extra +:score+ (for {#search})
-      #   and +:occurrence+ (for {#fold_series}); both dropped from the shape.
+      # @return [Array<Hash>] hits carrying +:score+/+:phrase+ (for {#search})
+      #   and +:occurrence+ (for {#fold_series}); all dropped from the shape.
       def search_db(db, words:, after:, before:)
         filters = []
         binds = []
@@ -210,28 +231,62 @@ module Pikuri
           # occurrence itself lacks the master's HAS_RECURRENCE flag.
           hit = build_event(row).merge(location: loc, occurrence: !row[7].nil? && row[7].to_i != 0)
           # Empty query → list everything (score 0, date-ordered by #search).
-          next hit.merge(score: 0) if words.empty?
+          next hit.merge(score: 0, phrase: false) if words.empty?
 
           haystack = fold("#{row[1]} #{loc} #{desc}")
           score = words.count { |w| haystack.include?(w) }
-          score.zero? ? nil : hit.merge(score: score)
+          next nil if score.zero?
+
+          hit.merge(score: score, phrase: phrase_match?(haystack, words))
         end
       end
 
-      # Collapse the stored rows of one event UID — a single event is one row;
-      # a recurring series is a master plus one row per modified occurrence — into
-      # a single hit, so a weekly meeting surfaces once instead of once per
-      # occurrence. The series counts as recurring if any row is a master
-      # (HAS_RECURRENCE) or an occurrence (recurrence_id set); the earliest
-      # in-range row represents it, and the group's best word-count is its score.
+      # Whether the query's words appear *adjacently* in +folded_haystack+
+      # (token-separated by any non-alnum run). Collapsing punctuation to single
+      # spaces makes the joined needle a plain substring test:
       #
-      # @param group [Array<Hash>] rows sharing an +event_id+ (from {#search_db}).
-      # @return [Hash] one merged hit (search shape + +:score+).
+      #   phrase_match?("hammer drop hang around", %w[hang around])  # => true
+      #   phrase_match?("hangaround event",        %w[hang around])  # => false
+      #   phrase_match?("hangout notes",           %w[hang])         # => true  (single word ⇒ substring)
+      #
+      # A single-word needle has no interior space, so it degrades to today's
+      # substring recall — the phrase gate only bites multi-word queries.
+      #
+      # @param folded_haystack [String] already {#fold}ed title+location+desc.
+      # @param words [Array<String>] pre-folded query terms.
+      # @return [Boolean]
+      def phrase_match?(folded_haystack, words)
+        folded_haystack.gsub(/[^[:alnum:]]+/, ' ').include?(words.join(' '))
+      end
+
+      # The recurring-series UID shared by Google's this-and-following splits:
+      # strip the +_R<ical-datetime>+ suffix Thunderbird stores on each split
+      # master, so they fold into one series (see {#search}).
+      #
+      #   base_uid("6soj…_R20191024T103000@google.com")  # => "6soj…@google.com"
+      #   base_uid("0k6drt…@google.com")                 # => "0k6drt…@google.com" (unchanged)
+      #
+      # @param id [String] a +cal_events.id+.
+      # @return [String] the id with any split suffix removed.
+      def base_uid(id) = id.to_s.sub(/_R\d{8}T\d{6}(?=@|\z)/, '')
+
+      # Collapse the stored rows of one series — a single event is one row; a
+      # recurring series is a master plus one row per modified occurrence, plus
+      # (for Google) one master per this-and-following split — into a single
+      # hit, so a weekly meeting surfaces once instead of once per occurrence or
+      # split. The series counts as recurring if any row is a master
+      # (HAS_RECURRENCE) or an occurrence (recurrence_id set), a phrase hit if
+      # any row matched the phrase; the earliest in-range row represents it (its
+      # real id stays the read handle), and the group's best word-count is its
+      # score.
+      #
+      # @param group [Array<Hash>] rows sharing a {#base_uid} (from {#search_db}).
+      # @return [Hash] one merged hit (search shape + +:score+ + +:phrase+).
       def fold_series(group)
         recurring = group.any? { |h| h[:recurring] || h[:occurrence] }
-        best = group.map { |h| h[:score] }.max
         rep = group.min_by { |h| h[:start]&.to_i || 0 }
-        rep.merge(recurring: recurring, score: best).except(:occurrence)
+        rep.merge(recurring: recurring, score: group.map { |h| h[:score] }.max,
+                  phrase: group.any? { |h| h[:phrase] }).except(:occurrence)
       end
 
       # One flat scan of the LOCATION/DESCRIPTION properties (vs. a correlated
