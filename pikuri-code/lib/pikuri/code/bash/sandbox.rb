@@ -20,6 +20,10 @@ module Pikuri
       # DNS, tz, hosts): the LLM has no need to {Read} +/etc/resolv.conf+, the
       # +curl+ subprocess does. Separate objects keep each allowlist with its
       # owner.
+      #
+      # The full two-sandbox design — each posture's threat model, the
+      # overlay/concurrency reasoning, and which to pick — is in
+      # +pikuri-code/DESIGN.md+.
       module Sandbox
         # Identity sandbox — passthrough. The {Bash.new} default and the
         # +--no-sandbox+ / +--yolo+ opt-out.
@@ -31,77 +35,38 @@ module Pikuri
           end
         end
 
-        # Bubblewrap (+bwrap+(1)) sandbox: composes a +bwrap+ argv from the
-        # supplied {Workspace} plus a curated OS-runtime baseline, so the bash
-        # subprocess sees only project + toolchain + ephemeral temp + the few
-        # +/etc+ files needed for TLS/DNS/timezone/name-resolution.
+        # Bubblewrap (+bwrap+(1)) filesystem sandbox for the bash subprocess:
+        # composes a +bwrap+ argv from the supplied {Workspace} plus a curated
+        # OS-runtime baseline, so the subprocess sees only project + toolchain +
+        # ephemeral temp + the few +/etc+ files needed for TLS/DNS/tz/hostname.
+        # Keeps the network (+--share-net+); contains the filesystem. Its
+        # inverse is {FullFsNoNet}. Full posture comparison + threat model in
+        # +pikuri-code/DESIGN.md+.
         #
         # == What's bound
         #
         # * {SYSTEM_ROOTS} (+/lib+ +/lib64+ +/bin+ +/sbin+) and {ETC_BASELINE}
         #   — +--ro-bind+. Not in {Workspace#readable} (the LLM has no business
         #   grepping +/sbin+), but the subprocess needs them for the dynamic
-        #   linker, standard utilities, and a TLS/DNS/tz/hostname handshake.
+        #   linker, standard utilities, and the TLS/DNS/tz/hostname handshake.
         #   +/usr+ and +/opt+ arrive via {Workspace#readable} instead (added by
         #   {Pikuri::Code::ToolchainPaths.readable}).
         # * +/tmp+ — bound to {Workspace::Filesystem#temp} when set (so the
         #   LLM's reflexive +/tmp+ writes persist across bash calls), else
-        #   +--tmpfs+ (per-call ephemeral). The host's +/tmp+ is never exposed.
-        #   +/proc+ (synthetic, +--unshare-pid+) and +/dev+ (null/zero/random/
-        #   tty) round out the synthetic mounts.
+        #   +--tmpfs+. The host's +/tmp+ is never exposed. Synthetic +/proc+
+        #   (+--unshare-pid+) and +/dev+ (null/zero/random/tty) round it out.
         # * +workspace.writable+ — +--bind+ (read+write, *persistent*).
-        # * +workspace.readable+ — read-write *ephemeral overlay* (host dir is
-        #   the read-through lower; a per-session upper under
+        # * +workspace.readable+ — read-write *ephemeral overlay* (host dir the
+        #   read-through lower, a per-session upper under
         #   +<internal_temp>/overlay-<slug>/+ absorbs writes), so +gem install+
-        #   / +bundle+ / +mvn+ / +gradle+ / +cargo+ / +pip+ succeed against
-        #   +/usr+, +~/.rbenv+, +~/.gradle/caches+, … while the host's real
-        #   toolchain is untouched. Writes survive across bash calls within one
-        #   session (warm cache — the upper is a persistent dir, re-mounted each
-        #   call, not a tmpfs that dies with the bwrap process) but not across
-        #   sessions (a poisoned session can't propagate into the host's normal
-        #   +gradle+ or a future session). The cache entries in {ToolchainPaths}
-        #   are deliberately narrow subdirs (+~/.gradle/caches+, not
-        #   +~/.gradle+) so +gradle.properties+ / +init.d+ / +.credentials+
-        #   never reach the sandbox — the lower is the host's real file, so the
-        #   narrow *mount*, not the write's ephemerality, keeps secrets out.
-        #
-        # == Overlay support
-        #
-        # overlayfs-in-userns needs Linux ≥ 5.11; the constructor probes once.
-        # Unsupported → +--ro-bind+ fallback: the sandbox still works, but a
-        # write into a read-only toolchain dir (+gem install+ into +~/.rbenv+)
-        # fails with +EROFS+, surfaced as the bash observation. This degrades
-        # with a logged warning, never raises — a working sandbox on an old
-        # kernel beats none. {SYSTEM_ROOTS} / {ETC_BASELINE} stay +--ro-bind+
-        # regardless (nothing writes there, and overlayfs is directory-only so
-        # the single-file +/etc+ entries can't be overlays anyway).
-        #
-        # == Concurrency
-        #
-        # Each instance must own its upper/workdir exclusively — overlayfs
-        # returns +EBUSY+ on a shared upper. The bundled wiring guarantees it:
-        # one {Workspace::Filesystem} mints one umbrella
-        # ({Workspace::Filesystem#internal_temp}) feeding one {Bubblewrap}, and
-        # {Bash} runs +bash -c+ synchronously ({Pikuri::Subprocess#wait}) while
-        # sub-agents block their parent's loop — so two +bwrap+ invocations
-        # from one pikuri process never overlap in time. Two pikuri-code
-        # *processes* are independent (each its own umbrella; the shared
-        # read-only lower may be shared across mounts per kernel docs). A host
-        # that reuses one {Bubblewrap} across parallel bash tasks would collide
-        # on its own; pikuri doesn't.
-        #
-        # == What the overlay does NOT defend
-        #
-        # Blast-radius containment for the subprocess, not a malware boundary.
-        # Prompt injection reaching the LLM can still modify project source
-        # under +project_root+ (the LLM legitimately needs Write there), inject
-        # a malicious dependency the next build executes, or exfiltrate over the
-        # network (+--share-net+ is intentional so +git pull+/+mvn+/+curl+
-        # work). The overlay specifically prevents *cross-project* contamination
-        # via shared $HOME caches. Users needing adversarial isolation run
-        # pikuri-code inside a container — the container is the outer boundary,
-        # bwrap the inner. See CLAUDE.md's "Workspace seam" and the matching
-        # note on +Filesystem::AllowAll+.
+        #   / +bundle+ / +mvn+ / +gradle+ / +cargo+ / +pip+ succeed while the
+        #   host toolchain stays untouched. Falls back to +--ro-bind+ without
+        #   overlayfs-in-userns (Linux < 5.11), in which case a write into a
+        #   read-only toolchain dir fails +EROFS+ (surfaced as the bash
+        #   observation); this degrades with a logged warning, never raises.
+        #   Why the mounts are narrow cache subdirs (secrets stay out of the
+        #   sandbox's *view*): {Pikuri::Code::ToolchainPaths}. Warm-cache
+        #   lifetime + the +EBUSY+ concurrency argument: +pikuri-code/DESIGN.md+.
         #
         # == Isolation
         #
@@ -111,20 +76,9 @@ module Pikuri
         # install+/+curl+. +--die-with-parent --new-session+: dies with pikuri,
         # own session group (no terminal-control bleed).
         #
-        # == Failures at construction (loud, not on the first tool call)
-        #
-        # Three cases raise; the overlay probe does NOT (see above):
-        #
-        # * workspace lists +/+ as writable (typically {Filesystem::AllowAll})
-        #   — containment is structurally moot when the whole filesystem is the
-        #   workspace; the host should pass {NONE}.
-        # * workspace has +temp+ but +alias_tmp_to_temp+ off — this binds
-        #   +workspace.temp+ at +/tmp+ inside the subprocess, but the host-side
-        #   file tools would still reject +/tmp/foo+ as outside the workspace,
-        #   so the LLM would write via bash then fail to read via the tools;
-        #   fail now rather than mid-conversation.
-        # * +bwrap+ missing (+Errno::ENOENT+) or its basic probe exits non-zero
-        #   (kernel without user-namespace support).
+        # Blast-radius containment, *not* a malware boundary — the non-defenses
+        # (project source, poisoned deps, network exfil) and the container-as-
+        # outer-boundary escape hatch are in +pikuri-code/DESIGN.md+.
         class Bubblewrap
           BWRAP_BINARY = 'bwrap'
 
@@ -415,49 +369,32 @@ module Pikuri
           end
         end
 
-        # Full-filesystem, network-severed sandbox: the inverse of {Bubblewrap}.
-        # Where Bubblewrap contains the subprocess to a curated subset while
-        # keeping the network, {FullFsNoNet} binds the entire real root
-        # read-write (+--bind / /+) and unshares *only* the network
-        # (+--unshare-net+).
-        #
-        # This is the sandbox for the offline OS-helper agent (+pikuri-os+;
-        # design in +ideas/pikuri-os.md+). That agent's job is to operate
-        # the real host, so filesystem *containment* is the wrong tool — there
-        # is deliberately no fs sandbox. The one isolation that matters is
-        # egress: with the network namespace unshared, an injection in a file
-        # the agent reads has nowhere to exfiltrate to. The trifecta's egress
-        # leg is cut by the kernel, not by a prompt — the load-bearing invariant
-        # of that design.
+        # Full-filesystem, network-severed sandbox — the inverse of
+        # {Bubblewrap}. Binds the entire real root read-write (+--bind / /+) and
+        # unshares *only* the network (+--unshare-net+). This is the sandbox for
+        # the offline OS-helper agent (+bin/pikuri-os+): its job is to operate
+        # the real host, so filesystem containment is the wrong tool and egress
+        # is the whole risk. With the network namespace unshared, an injection
+        # in a file the agent reads has nowhere to exfiltrate to — the
+        # trifecta's egress leg is cut by the kernel, not a prompt. Full design
+        # + threat model in +pikuri-code/DESIGN.md+.
         #
         # == What's bound
         #
         # * +--bind / /+ — the entire real root, read-write, no overlays.
-        #   Running unprivileged, +bwrap+'s user namespace maps the caller's
-        #   uid to itself, so root-owned files (+/etc/*+, another user's
-        #   +$HOME+) appear owned by an unmapped id and are *not* writable (and
-        #   +/etc/shadow+ stays unreadable) — matching the OS-helper's "advise,
-        #   don't execute anything privileged" rule: privileged edits need
-        #   +sudo+, unavailable in the namespace, so they go to the user.
+        #   Unprivileged, so +bwrap+'s user namespace maps the caller's uid to
+        #   itself: root-owned files (+/etc/*+, another user's +$HOME+) stay
+        #   *not* writable and +/etc/shadow+ unreadable — privileged edits need
+        #   +sudo+, unavailable in the namespace, so they route to the human.
         # * +--bind /dev /dev+ — the *real* device tree, not bwrap's synthetic
-        #   +--dev+. It's redundant with +--bind / /+ but stated explicitly so
-        #   it survives someone narrowing the root bind. A synthetic +/dev+
-        #   (correct for {Bubblewrap}, whose job is containment) would omit the
-        #   block-device nodes (+/dev/nvme0n1+, +/dev/sda+), and *that omission
-        #   corrupts the agent's error signal*: +smartctl -a /dev/nvme0n1+ then
-        #   fails +ENOENT+ ("No such device") while +lsblk+/+/sys+ still show a
-        #   healthy disk — an incoherent machine the model can't reason about,
-        #   so it retry-loops instead of escalating. With the real node present
-        #   the unprivileged open fails +EACCES+ ("Permission denied"), the
-        #   honest error that says "escalate" — and here escalation *is* the
-        #   answer: +sudo+ is unavailable in the namespace, so a privileged read
-        #   becomes advice to the human, matching the "advise, don't execute
-        #   privileged" rule. This isn't a security regression — the root is
-        #   already bound read-write, so the synthetic +/dev+ was hiding nothing
-        #   an attacker couldn't otherwise reach; it only mangled the error.
-        # * +--proc /proc+ over the bound root. Because the PID namespace is
-        #   *not* unshared (see "Isolation"), the fresh +/proc+ still shows host
-        #   processes — essential for +ps+/+top+/+systemctl status+.
+        #   +--dev+. Redundant with +--bind / /+ but stated so it survives
+        #   someone narrowing the root bind: a synthetic +/dev+ omits the block
+        #   nodes (+/dev/nvme0n1+) and turns +smartctl+'s honest +EACCES+ into a
+        #   confusing +ENOENT+, corrupting the model's error signal (full
+        #   argument in +pikuri-code/DESIGN.md+).
+        # * +--proc /proc+ over the bound root. PID is *not* unshared (see
+        #   Isolation), so +/proc+ still shows host processes — essential for
+        #   +ps+/+top+/+systemctl status+.
         #
         # == Isolation: network only, deliberately
         #
@@ -467,26 +404,18 @@ module Pikuri
         # blind +ps+/+systemctl+). +--die-with-parent --new-session+ for the
         # same hygiene as Bubblewrap.
         #
-        # == No fallback if the network can't be severed
+        # == No fallback
         #
-        # If +bwrap+ is missing, or the kernel forbids unprivileged user /
-        # network namespaces, the constructor *raises* — it does NOT degrade to
-        # a networked sandbox (the opposite of {Bubblewrap}'s overlay probe).
-        # Here the severed network IS the security property, so a silent
-        # networked run would void the no-egress invariant. A host that can't
-        # unshare the network must fix the kernel setting (e.g.
-        # +kernel.unprivileged_userns_clone+) or not run this agent there.
+        # If +bwrap+ is missing or the kernel forbids unprivileged user/network
+        # namespaces, the constructor *raises* — it does NOT degrade to a
+        # networked run (the opposite of {Bubblewrap}'s overlay probe). Here the
+        # severed network IS the security property. Fix the kernel setting (e.g.
+        # +kernel.unprivileged_userns_clone+) or don't run this agent there.
         #
-        # == What this does NOT defend
-        #
-        # +--bind / /+ exposes everything, including container/VM control
-        # sockets. Unsharing the *bash process's* own network namespace does
-        # not constrain a container the agent asks the *host daemon* to spawn —
-        # a confirmed +docker run --network=host+ would have full connectivity.
-        # So this is NOT a malware boundary; it severs the agent's own egress,
-        # and the guard against socket abuse is the confirmer (+docker+/+nc+/
-        # +curl+ are mutating, non-allowlisted, so they reach the human). A hard
-        # boundary means running the whole agent inside a container / VM.
+        # +--bind / /+ exposes everything incl. container/VM control sockets, so
+        # this is not a malware boundary — it severs the agent's *own* egress;
+        # the non-defenses are in +pikuri-code/DESIGN.md+. A hard boundary means
+        # running the whole agent inside a container / VM.
         class FullFsNoNet
           BWRAP_BINARY = 'bwrap'
 

@@ -376,10 +376,12 @@ yardoc. CLAUDE.md only records the invariant.
   Workspace: Workspace governs what the LLM observes; Sandbox
   governs the filesystem view of the bash subprocess. See
   {Pikuri::Code::Bash::Sandbox} and `Sandbox::Bubblewrap`
-  (threat model, ephemeral overlays, container-socket footgun).
+  (ephemeral overlays, container-socket footgun).
   `Sandbox::FullFsNoNet` is its inverse — full-fs read-write but
   `--unshare-net` (the OS-helper's kernel-severed egress; raises
-  rather than degrading if the network can't be unshared).
+  rather than degrading if the network can't be unshared). Both
+  sandboxes' cross-cutting threat model + posture comparison live
+  in `pikuri-code/DESIGN.md`.
 - **Environment is not a secret store.** `ENV` is ambient process
   state, not a credential channel — pikuri never *filters* it before
   spawning a subprocess (no env-scrubbing primitive; a prototype
