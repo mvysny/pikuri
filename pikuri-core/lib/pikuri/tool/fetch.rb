@@ -127,7 +127,7 @@ module Pikuri
         p.optional_integer :max_chars,
                            'Maximum number of characters of the body to ' \
                            'return. Defaults to 5000; hard-capped at ' \
-                           '100000, e.g. 2000. When the body is longer than this, ' \
+                           '100000. When the body is longer than this, ' \
                            'output is cut and a marker reports the full ' \
                            'length.'
       },

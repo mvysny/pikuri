@@ -869,10 +869,15 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   not per-tool. Add an example value
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
-  measurably better with one. The one exception: a parameter whose
-  allowed values are computed at runtime (a dynamic enum) needs no
-  example — the injected value list is itself the example, and a
-  hardcoded one would drift against the wiring.
+  measurably better with one. Two exceptions, both where a hardcoded
+  example would add nothing: (1) a parameter whose allowed values are
+  computed at runtime (a dynamic enum) — the injected value list is
+  itself the example, and a hardcoded one would drift against the
+  wiring; (2) a bounded numeric parameter whose description already
+  states a default and/or cap — those literal numbers already serve
+  as examples, and a number is hard to mis-shape, so a tacked-on
+  `e.g. 5` only reads as noise (worse, dangling after a cap it reads
+  as modifying the cap).
 - **No tool names in a main/binary system prompt.** The system
   prompt for a *main* agent (the per-binary `prompts/<bin>.txt`)
   names no specific pikuri tool — so it can never go stale against
@@ -900,6 +905,24 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   also a shell command) are off-limits only when they name the *pikuri
   tool* or restate its mechanics; the same word as a concrete
   shell-command tip ("`grep` the logs for the error") is fine.
+  The distinction is sharper than that tip example: **naming the
+  wired tool or its mechanics** (drifts → forbidden) vs. **stating
+  a capability the agent observes** (stable → fine), even when the
+  words collide. Worked example — the network line in
+  `os-assistant.txt`: "the shell and the programs you run cannot
+  reach the internet" states an observable capability and stays
+  true whichever sandbox enforces it (that's fine); "the `bash`
+  *tool* runs under `--unshare-net`" names the wired tool and
+  restates its sandbox mechanics, so it goes stale the moment the
+  sandbox implementation changes (that's the violation). Watch the
+  trap this invites: reaching for a vague "*your tools* can't reach
+  the net" to dodge the grep tripwire yields a *worse* prompt than
+  the concrete, already-allowed phrasing — the model reasons better
+  from "the commands you run," and "your tools" both under-informs
+  (the file tools and calculator never could reach out) and
+  misdescribes (where a web-lookup hatch exists, the delegated
+  lookup is deliberately *not* severed). The tripwire is blunt;
+  the capability-vs-mechanics line is the real rule.
 
   The main prompt keeps only general engineering norms, phrased so they
   survive being re-wired onto a different toolset: "search for its

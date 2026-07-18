@@ -42,7 +42,7 @@ module Pikuri
                               'The search query, e.g. "BigDecimal precision Ruby".'
             p.optional_integer :max_results,
                                'Maximum number of result entries to return. ' \
-                               'Defaults to 10; most providers cap this at 20, e.g. 5.'
+                               'Defaults to 10; most providers cap this at 20.'
           },
           execute: ->(query:, max_results: 10) { engines.search(query, max_results: max_results) }
         )
