@@ -38,6 +38,11 @@ module Pikuri
       # @return [Integer] all-day bit in +cal_events.flags+.
       ALL_DAY_FLAG = 8
 
+      # @return [Integer] +HAS_RECURRENCE+ bit in +cal_events.flags+ — set on
+      #   the master row of any event with an RRULE/RDATE (Thunderbird's
+      #   +CAL_ITEM_FLAG+). Airtight for the master, same as {ALL_DAY_FLAG}.
+      RECURRENCE_FLAG = 16
+
       # @param calendar_dbs [Array<String>] existing calendar store paths
       #   (see {Profile#calendar_dbs}); may be empty.
       # @param cache_dir [String] private 0700 dir for the snapshot copies.
@@ -70,11 +75,13 @@ module Pikuri
       # @param limit [Integer] max events.
       # @param after [Time, nil] only events starting on/after this instant.
       # @param before [Time, nil] only events starting on/before this instant.
+      # @param recurring [Boolean, nil] +true+ → only recurring events, +false+
+      #   → only single (non-recurring) events, +nil+ → both.
       # @return [Array<Hash>] +[{event_id:, title:, start: Time, end: Time,
-      #   all_day: Boolean, start_tz:, end_tz:, location:}, …]+
-      def search(query:, limit:, after: nil, before: nil)
+      #   all_day: Boolean, recurring: Boolean, start_tz:, end_tz:, location:}, …]+
+      def search(query:, limit:, after: nil, before: nil, recurring: nil)
         ensure_fresh
-        hits = @conns.values.flat_map { |db| search_db(db, query:, after:, before:, limit:) }
+        hits = @conns.values.flat_map { |db| search_db(db, query:, after:, before:, recurring:, limit:) }
         hits.sort_by { |h| -(h[:start]&.to_i || 0) }.first(limit)
       end
 
@@ -122,7 +129,7 @@ module Pikuri
       end
 
       # @return [Array<Hash>]
-      def search_db(db, query:, after:, before:, limit:)
+      def search_db(db, query:, after:, before:, recurring:, limit:)
         clauses = []
         binds = []
         # Multi-word rule: AND across words — every word must appear in the
@@ -154,6 +161,9 @@ module Pikuri
           clauses << 'e.event_start <= ?'
           binds << to_prtime(before)
         end
+        # Recurrence filter off the master's HAS_RECURRENCE bit (constant, no
+        # bind). nil leaves it unfiltered.
+        clauses << "(e.flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
         where = clauses.empty? ? '1' : clauses.join(' AND ')
         rows = db.execute(<<~SQL, binds + [limit])
           SELECT e.id, e.title, e.event_start, e.event_end, e.event_start_tz, e.event_end_tz, e.flags,
@@ -167,13 +177,14 @@ module Pikuri
       end
 
       # @param row [Array] +[id, title, start_us, end_us, start_tz, end_tz, flags]+
-      # @return [Hash]
+      # @return [Hash] see {#search} for the shape (incl. +all_day+/+recurring+).
       def build_event(row)
         id, title, start_us, end_us, start_tz, end_tz, flags = row
         {
           event_id: id, title: title,
           start: to_time(start_us), end: to_time(end_us),
           all_day: (flags.to_i & ALL_DAY_FLAG) != 0,
+          recurring: (flags.to_i & RECURRENCE_FLAG) != 0,
           start_tz: start_tz, end_tz: end_tz
         }
       end

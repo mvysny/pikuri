@@ -34,6 +34,7 @@ module Pikuri
         - Free-text query and/or a date range — both optional; supply at least one.
         - To list everything on a day or in a span (e.g. "tomorrow's meetings"), pass a broad or empty query with after/before; a single day is after=before=that date.
         - Multiple words must ALL appear in the event (across its title, description, and location) — so add words to narrow, remove words to widen.
+        - Optionally restrict to recurring events (a repeating series) or single one-off events with the recurrence filter; omit it to get both.
         - Reads Thunderbird's on-disk calendar store — it never connects to any calendar server.
         - Only events cached to disk are visible. A CalDAV calendar keeps events in memory unless its "Offline Support" is enabled (right-click the calendar → Properties → Offline Support); if a search comes back empty but the calendar looks full, that setting is why.
         - Read an event in full with thunderbird_calendar_read.
@@ -50,25 +51,31 @@ module Pikuri
             p.optional_string :query, 'Words to find in event title/description/location, e.g. "standup". Omit to list everything in the date range.'
             p.optional_string :after, 'Only events on/after this date, e.g. "2026-01-01".'
             p.optional_string :before, 'Only events on/before this date, e.g. "2026-12-31".'
+            p.optional_enum :recurrence, 'Restrict by repetition: "recurring" for repeating series only, "single" for one-off events only. Omit for both.', values: %w[recurring single]
             p.optional_integer :limit, "Max events (default #{DEFAULT_LIMIT}, max #{MAX_LIMIT}), e.g. 15."
           },
-          execute: lambda { |query: nil, after: nil, before: nil, limit: DEFAULT_LIMIT|
-            CalendarSearch.run_search(backend: @backend, query:, after:, before:, limit:)
+          execute: lambda { |query: nil, after: nil, before: nil, recurrence: nil, limit: DEFAULT_LIMIT|
+            CalendarSearch.run_search(backend: @backend, query:, after:, before:, recurrence:, limit:)
           }
         )
       end
 
+      # @param recurrence [String, nil] +"recurring"+, +"single"+, or +nil+ for
+      #   both (mapped to the backend's tri-state +recurring:+ flag).
       # @return [String]
-      def self.run_search(backend:, query:, after:, before:, limit:)
+      def self.run_search(backend:, query:, after:, before:, recurrence: nil, limit:)
         # Refuse a match-everything call: with no query and no date bound this
         # would dump every cached event. "What's on my calendar" should name a
-        # span — steer the model to add after/before (e.g. this week).
+        # span — steer the model to add after/before (e.g. this week). A lone
+        # recurrence filter is still too broad to stand in for a span.
         if [query, after, before].all? { |v| v.to_s.strip.empty? }
           return 'Error: give a query and/or a date range (after/before) to search for'
         end
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
-        hits = backend.search(query:, limit:, after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
+        recurring = { 'recurring' => true, 'single' => false }[recurrence]
+        hits = backend.search(query:, limit:, recurring:,
+                              after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
         return offline_or_no_match(backend, query) if hits.empty?
 
         header = "#{hits.size} event#{hits.size == 1 ? '' : 's'}:"
@@ -92,9 +99,12 @@ module Pikuri
       # @return [String]
       def self.render(event)
         loc = event[:location].to_s.strip
+        tail = +''
+        tail << "  |  where: #{loc}" unless loc.empty?
+        tail << '  |  recurring' if event[:recurring]
         <<~EV.chomp
           #{event[:title].to_s.strip.empty? ? '(untitled)' : event[:title].strip}
-            when: #{DateHelpers.when_label(event)}#{loc.empty? ? '' : "  |  where: #{loc}"}
+            when: #{DateHelpers.when_label(event)}#{tail}
             id: #{event[:event_id]}
         EV
       end

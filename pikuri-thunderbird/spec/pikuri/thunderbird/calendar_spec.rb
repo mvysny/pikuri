@@ -9,6 +9,7 @@ describe Pikuri::Thunderbird::Calendar do
   E1 = Time.utc(2026, 5, 1, 7, 0, 0)      # timed, Helsinki
   E2 = Time.utc(2026, 6, 1, 0, 0, 0)      # all-day (flags bit 8), floating
   E3 = Time.utc(2026, 5, 15, 10, 0, 0)    # timed, UTC
+  E4 = Time.utc(2026, 5, 8, 9, 0, 0)      # timed, recurring (flags bit 16)
 
   def make_calendar(dir, name = 'cache.sqlite')
     path = File.join(dir, name)
@@ -28,6 +29,8 @@ describe Pikuri::Thunderbird::Calendar do
                'floating', 'floating', 8, 'CONFIRMED')
     ev.execute('c1', 'e3', 'Lunch with Bob', E3.to_i * 1_000_000, (E3.to_i + 3600) * 1_000_000,
                'UTC', 'UTC', 262, 'CONFIRMED')
+    ev.execute('c1', 'e4', 'Weekly sync', E4.to_i * 1_000_000, (E4.to_i + 1800) * 1_000_000,
+               'UTC', 'UTC', 278, 'CONFIRMED') # 278 = 262 | 16 (HAS_RECURRENCE)
     ev.close
     db.execute("INSERT INTO cal_properties VALUES ('e1','LOCATION','Zoom room A')")
     db.execute("INSERT INTO cal_properties VALUES ('e1','DESCRIPTION','daily engineering standup')")
@@ -47,7 +50,7 @@ describe Pikuri::Thunderbird::Calendar do
   end
 
   it 'counts cached events' do
-    with_calendar { |cal| assert_equal 3, cal.event_count }
+    with_calendar { |cal| assert_equal 4, cal.event_count }
     Dir.mktmpdir do |dir|
       empty = Calendar.new(calendar_dbs: [], cache_dir: dir)
       refute empty.available?
@@ -73,15 +76,28 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
-  it 'decodes the all-day flag and UTC instants' do
+  it 'decodes the all-day and recurrence flags and UTC instants' do
     with_calendar do |cal|
       all = cal.search(query: '', limit: 10)
       by_id = all.to_h { |h| [h[:event_id], h] }
       assert by_id['e2'][:all_day], 'flags bit 8 → all-day'
       refute by_id['e1'][:all_day]
+      assert by_id['e4'][:recurring], 'flags bit 16 → recurring'
+      refute by_id['e1'][:recurring]
       assert_equal E1, by_id['e1'][:start]
       assert_equal 'Europe/Helsinki', by_id['e1'][:start_tz]
       assert_equal 'floating', by_id['e2'][:start_tz]
+    end
+  end
+
+  it 'filters by recurrence (recurring-only, single-only, or both)' do
+    with_calendar do |cal|
+      recurring = cal.search(query: '', limit: 10, recurring: true).map { |h| h[:event_id] }
+      assert_equal ['e4'], recurring
+      single = cal.search(query: '', limit: 10, recurring: false).map { |h| h[:event_id] }.sort
+      assert_equal %w[e1 e2 e3], single
+      both = cal.search(query: '', limit: 10, recurring: nil).map { |h| h[:event_id] }.sort
+      assert_equal %w[e1 e2 e3 e4], both
     end
   end
 
