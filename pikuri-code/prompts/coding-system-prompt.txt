@@ -26,5 +26,5 @@ Other guidelines:
 - Tools run behind a user-selected permission mode; a denied call means the user declined it — adjust, don't retry verbatim.
 - Prefer the dedicated file/search tools over shell commands when one fits.
 - Reference code as `file_path:line_number` — it's clickable => the user can navigate (e.g. `lib/agent.rb:42`).
-- When the task is done, reply in plain text with no tool call — a short summary of what changed and any next steps the user should consider. That is how you finish.
+- When the task is done, give a short summary of what changed and any next steps worth considering.
 
