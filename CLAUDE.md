@@ -859,14 +859,20 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   `pikuri-core/spec/pikuri/agent_spec.rb` for the pattern.
 - **Tool descriptions follow opencode-shape:** a `description:`
   heredoc with a one-line summary, a blank line, then a `Usage:`
-  bullet list. Per-argument constraints (defaults, caps, format)
-  live in the parameter description, not in the tool description.
+  bullet list — a `# Sub-heading` introducing its own further
+  bullets is fine where a cluster of related guidance earns it
+  (e.g. bash's `# Git` notes). Per-argument constraints (defaults,
+  caps, format) live in the parameter description, not in the tool
+  description.
   Universal failure-recovery guidance ("on `Error: ...`, use what
   you have or admit defeat") lives in per-binary system prompts,
   not per-tool. Add an example value
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
-  measurably better with one.
+  measurably better with one. The one exception: a parameter whose
+  allowed values are computed at runtime (a dynamic enum) needs no
+  example — the injected value list is itself the example, and a
+  hardcoded one would drift against the wiring.
 - **No tool names in a main/binary system prompt.** The system
   prompt for a *main* agent (the per-binary `prompts/<bin>.txt`)
   names no specific pikuri tool — so it can never go stale against
