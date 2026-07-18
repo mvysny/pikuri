@@ -61,8 +61,8 @@ module Pikuri
           description: DESCRIPTION,
           parameters: Parameters.build { |p|
             p.required_string :title, 'Event title, e.g. "Dentist".'
-            p.required_string :start, 'Start date-time (local), e.g. "2026-07-20 14:00"; a bare date for all-day.'
-            p.optional_string :end, 'End date-time (local), e.g. "2026-07-20 15:00"; defaults to +1h. For an all-day event it is the last day, inclusive, and defaults to the same day.'
+            p.required_string :start, 'Start date-time in the host local zone, e.g. "2026-07-20 14:00"; append an offset like "+0900" to fix a different zone, or give a bare date for all-day.'
+            p.optional_string :end, 'End date-time, e.g. "2026-07-20 15:00" (same local-zone / "+0900"-offset rules as start, so it may sit in another zone); a bare date for all-day. Omit to default to one hour after the start (timed) or the same single day (all-day, where this date is the inclusive last day).'
             p.optional_boolean :all_day, 'Whole-day event — give dates, not times. e.g. true.'
             p.optional_string :location, 'Where, e.g. "Room 3" or "https://meet.example.com/abc".'
             p.optional_string :description, 'Longer notes for the event body, e.g. "bring the Q2 figures".'

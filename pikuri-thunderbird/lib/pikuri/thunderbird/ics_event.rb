@@ -25,7 +25,10 @@ module Pikuri
     # Timed events emit +DTSTART+/+DTEND+ as UTC (+…Z+): the caller's {Time} is
     # taken at face value and converted with +#utc+, so a bare "2pm" the user
     # typed is 2pm in the *host* zone — the same "host zone == user zone"
-    # heuristic {Calendar}/{DateHelpers} already read events back with. All-day events
+    # heuristic {Calendar}/{DateHelpers} already read events back with. An
+    # explicit offset in the input (e.g. "15:00 +0900") is honored too —
+    # {DateHelpers.parse_time} keeps it and +#utc+ maps it to the right instant,
+    # so +start+ and +finish+ may legitimately sit in different zones. All-day events
     # emit +VALUE=DATE+ with an iCal *exclusive* +DTEND+ (a single-day event's
     # DTEND is the next day), so +finish+ is the user-intuitive *last* day.
     #
