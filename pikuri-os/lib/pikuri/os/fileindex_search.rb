@@ -32,8 +32,13 @@ module Pikuri
       MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
 
       # @return [String] opencode-shape description (summary + Usage),
-      #   backend-neutral; the backend's blind-spot note is appended at
-      #   construction (see {#initialize}).
+      #   backend-neutral. The *runtime* tool description is this constant
+      #   plus the backend's +#limitations+, appended at construction (see
+      #   {#initialize}) — and it is that appended text, not this constant,
+      #   that states *which folders the index actually covers* and what it
+      #   misses (recoll lists its +topdirs+; localsearch notes it ranks
+      #   across the whole home). So keep coverage claims out of here; they
+      #   belong with the backend that knows them.
       DESCRIPTION = <<~DESC
         Find files whose contents contain your words or phrase, using the desktop search index.
 
