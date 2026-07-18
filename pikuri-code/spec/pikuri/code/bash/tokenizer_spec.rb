@@ -108,6 +108,37 @@ RSpec.describe Pikuri::Code::Bash::Tokenizer do
     end
   end
 
+  describe 'allow_glob: keeps unquoted glob/brace/tilde bytes literal' do
+    def gtok(command)
+      described_class.tokenize(command, allow_glob: true)
+    end
+
+    it 'keeps an unquoted glob byte as a literal word byte' do
+      assert_equal [%w[ls *.txt]], gtok('ls *.txt')
+      assert_equal [%w[ls *]], gtok('ls *')
+      assert_equal [['cat', '~/notes/*.md']], gtok('cat ~/notes/*.md')
+      assert_equal [['ls', 'a{1,2}b']], gtok('ls a{1,2}b')
+      assert_equal [['cat', '[a-z]*.txt', 'file?.txt']], gtok('cat [a-z]*.txt file?.txt')
+    end
+
+    it 'still splits, de-quotes and drops safe redirects around globs' do
+      assert_equal [%w[ls *], %w[wc -l]], gtok('ls * | wc -l')
+      assert_equal [%w[ls *.log]], gtok('ls *.log 2>/dev/null')
+    end
+
+    it 'still rejects every non-glob complication' do
+      assert_nil gtok('ls $(rm)*')       # command substitution
+      assert_nil gtok('ls * > out')      # real redirect
+      assert_nil gtok('ls `rm`*')        # backtick
+      assert_nil gtok('ls * && ')        # dangling sequencer
+    end
+
+    it 'is off by default (a glob still rejects)' do
+      assert_nil tok('ls *.txt')
+      assert_nil tok('ls ~/secret')
+    end
+  end
+
   describe 'redirects' do
     it 'consumes and drops write-nothing redirects' do
       assert_equal [%w[dpkg -S /bin/ls]], tok('dpkg -S /bin/ls 2>&1')

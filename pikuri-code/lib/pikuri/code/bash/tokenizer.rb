@@ -19,6 +19,14 @@ module Pikuri
       # Conservative by contract: when in doubt it returns +nil+ so the caller
       # delegates to a human; it never silently drops a dangerous byte.
       #
+      # +allow_glob:+ is the one knob: off (default) an unquoted glob/brace/
+      # tilde ({GLOB_CHARS}) rejects like any metacharacter; on, it is kept as
+      # a literal word byte and the *authorization* layer decides. This is
+      # sound because those chars only ever expand to *words*, never to an
+      # operator or a new command — so keeping them literal can't smuggle a
+      # +;+/+|+/+$()+ past the lexer. The approver flips it on only for the
+      # pure-allowlist glob fast path; see {ReadOnlyCommandApprover}.
+      #
       # == Why splitting on the sequencers is faithful
       #
       # {.split_segments} cuts only on a genuine control operator, never one
@@ -71,16 +79,30 @@ module Pikuri
         # Any shell metacharacter or ASCII control byte that, *outside* a quoted
         # span, means the segment is more than a single simple invocation ⇒
         # +nil+. {.scan_segment} consults this per character only after handling
-        # quotes, whitespace and the {SAFE_REDIRECT} forms, so a safe
-        # redirect's +>+/+&+ and every quoted-argument byte never reach it.
+        # quotes, whitespace, the {SAFE_REDIRECT} forms and {GLOB_CHARS}, so a
+        # safe redirect's +>+/+&+ and every quoted-argument byte never reach it.
         #
         # The backslash +\+ stays here (still forbidden): decoding it would
         # reopen the parsing surface the quote handling avoids. The double quote
         # is *not* listed — like +'+ it is handled by {.scan_segment}'s quote
-        # branches first. Note +=+ is *not* here (+--color=never+); a leading
-        # +VAR=val+ is caught because the first word then isn't a bare allowed
-        # binary.
-        SHELL_METACHARACTERS = /[;&|<>$`()\\!#*?\[\]{}~\x00-\x1f]/
+        # branches first. The glob/brace/tilde chars are *not* here either —
+        # they live in {GLOB_CHARS}, which {.scan_segment} rejects by default
+        # but keeps as literal word bytes under +allow_glob:+. Note +=+ is *not*
+        # here (+--color=never+); a leading +VAR=val+ is caught because the
+        # first word then isn't a bare allowed binary.
+        SHELL_METACHARACTERS = /[;&|<>$`()\\!#\x00-\x1f]/
+
+        # The shell *expansion* characters — pathname globbing (+*+ +?+
+        # +[...]+), brace expansion (+{a,b}+), tilde expansion (+~+). Split out
+        # of {SHELL_METACHARACTERS} because they are the one metacharacter class
+        # that only ever expands to *words* (filenames/paths), never to an
+        # operator or a new command (bash tokenizes operators *before*
+        # expansion and never re-scans the result). {.scan_segment} rejects
+        # them by default (⇒ +nil+, as before), but under +allow_glob: true+
+        # keeps them as literal word bytes so the caller can approve them where
+        # sound — see {.tokenize}'s +allow_glob:+ and the
+        # {ReadOnlyCommandApprover} glob fast path.
+        GLOB_CHARS = /[*?\[\]{}~]/
 
         # The three characters POSIX keeps live inside +"..."+ — +$+
         # (expansion), the backtick (command substitution), +\+ (escaping,
@@ -125,16 +147,24 @@ module Pikuri
           #
           # @param command [String] the command (a +bin/pikuri-*+ caller should
           #   strip any +"$ "+ echo prefix first).
+          # @param allow_glob [Boolean] when +true+, an unquoted {GLOB_CHARS}
+          #   byte is kept as a literal word byte instead of rejecting the
+          #   segment. Default +false+ (a glob ⇒ +nil+, the strict behavior).
+          #   A quoted glob char is literal either way — this flag only affects
+          #   *unquoted* ones. The caller opts in only where a post-expansion
+          #   glob is provably harmless (see the {ReadOnlyCommandApprover} glob
+          #   fast path).
           # @return [Array<Array<String>>, nil] one de-redirected, de-quoted
           #   word list per segment (empty list = pure-comment no-op), or +nil+
           #   — more than {MAX_CHAIN} segments, an unbalanced quote, a
-          #   {DQUOTE_LIVE} byte inside double quotes, or any segment empty (a
-          #   dangling sequencer) or not a simple invocation.
-          def tokenize(command)
+          #   {DQUOTE_LIVE} byte inside double quotes, an unquoted {GLOB_CHARS}
+          #   byte (unless +allow_glob:+), or any segment empty (a dangling
+          #   sequencer) or not a simple invocation.
+          def tokenize(command, allow_glob: false)
             segments = split_segments(command)
             return nil if segments.nil?
 
-            words_per_segment = segments.map { |segment| scan_segment(segment) }
+            words_per_segment = segments.map { |s| scan_segment(s, allow_glob) }
             return nil if words_per_segment.any?(&:nil?)
 
             words_per_segment
@@ -189,15 +219,19 @@ module Pikuri
           # quote-removal (the word handed back is the true argument, +--clear+
           # not +--_clear+ — see the class header). Outside quotes: whitespace
           # ends a word, a {SAFE_REDIRECT} fragment is consumed and dropped, a
-          # {SHELL_METACHARACTERS} byte rejects.
+          # {SHELL_METACHARACTERS} byte rejects, and a {GLOB_CHARS} byte rejects
+          # unless +allow_glob+ (then it is kept literal, like any other byte).
           #
           # @param segment [String] one {SEQUENCERS} segment, not yet stripped.
+          # @param allow_glob [Boolean] keep an unquoted {GLOB_CHARS} byte as a
+          #   literal word byte instead of rejecting (see {.tokenize}).
           # @return [Array<String>, nil] the segment's de-quoted words with any
           #   {SAFE_REDIRECT} fragments removed; +[]+ for a pure-comment
           #   segment; or +nil+ — an empty segment, an unbalanced quote, a
           #   {DQUOTE_LIVE} byte inside double quotes, a {SHELL_METACHARACTERS}
-          #   byte, or a redirect that is not write-nothing.
-          def scan_segment(segment)
+          #   byte, an unquoted {GLOB_CHARS} byte (unless +allow_glob+), or a
+          #   redirect that is not write-nothing.
+          def scan_segment(segment, allow_glob = false)
             command = segment.strip
             return nil if command.empty?
 
@@ -253,6 +287,14 @@ module Pikuri
                 words << word unless word.nil?
                 word = nil
                 i = redirect.end(0)
+              elsif GLOB_CHARS.match?(char)
+                # An unquoted glob/brace/tilde byte. bash would *expand* it;
+                # reject unless the caller opted into keeping it literal (then
+                # it is treated exactly like any ordinary word byte below).
+                return nil unless allow_glob
+
+                word = (word || +'') << char
+                i += 1
               elsif SHELL_METACHARACTERS.match?(char)
                 return nil
               else

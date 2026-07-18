@@ -133,6 +133,55 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
     end
   end
 
+  describe 'glob fast path: unquoted globs on pure-allowlist binaries' do
+    # A READ_ONLY_BINARIES command has no teeth in ANY argument, so a glob
+    # that bash expands (even to a "-flag"-looking filename) can't grow one.
+    [
+      'ls *.txt',                  # the motivating case
+      'ls *',
+      'ls -d */',                  # trailing-slash dir glob
+      'cat *.conf',
+      'cat /etc/*.conf',           # glob in a path
+      'grep foo *',                # glob as a bare operand
+      'head -n5 *.log',
+      'cat ~/notes',               # tilde expansion (→ a path, never a flag)
+      'cat ~/notes/*.md',
+      'ls a{1,2}b',                # brace expansion
+      'cat file?.txt',             # single-char glob
+      'cat [abc]*.txt',            # character-class glob
+      'ls * | wc -l',              # pure-allowlist chain, each segment globbed/ok
+      'cat *.txt | grep foo | wc -l',
+      'ls * && pwd'
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      end
+    end
+
+    # The fast path is pure-allowlist ONLY. Flag-classified families and
+    # non-allowlisted binaries never get glob approval, because a glob could
+    # expand into a planted flag the denylist never saw.
+    {
+      'dmesg glob'          => 'dmesg *',            # could expand to a planted -C
+      'journalctl glob'     => 'journalctl *',       # could expand to --vacuum-time=…
+      'man glob'            => 'man *',              # could expand to -H / --pager
+      'rg glob'             => 'rg pat *',           # could expand to --pre=…
+      'file glob'           => 'file *',             # could expand to -C
+      'dpkg glob'           => 'dpkg -l *',          # recovered family, not eligible
+      'git glob'            => 'git diff *',         # even with allow_git below
+      'rm glob'             => 'rm *',               # not allowlisted at all
+      'globbed binary name' => '*.sh',               # first word is itself a glob
+      'glob binary in path' => '/bin/l* -la',        # first word has a /
+      'mixed pure+family'   => 'dpkg -l && ls *',    # family segment blocks the chain
+      'glob + real redirect'=> 'ls * > out.txt',     # redirect still rejected
+      'glob + substitution' => 'ls $(rm -rf ~)*'     # $() still rejected
+    }.each do |label, cmd|
+      it "does not approve: #{label} (#{cmd.inspect})" do
+        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
+      end
+    end
+  end
+
   describe 'does not approve anything not provably read-only' do
     {
       'pipe'                 => 'ls | rm -rf /',
@@ -142,9 +191,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'backtick'             => 'echo `rm -rf ~`',
       'output redirect'      => 'echo pwned > /etc/passwd',
       'append redirect'      => 'echo x >> ~/.bashrc',
-      'glob'                 => 'ls *.txt',
-      'tilde expansion'      => 'ls ~/secret',
-      'brace expansion'      => 'rm -rf {a,b}',
+      'brace expansion (rm)' => 'rm -rf {a,b}',   # brace ok, but rm isn't allowlisted
       'leading env assign'   => 'FOO=bar ls',
       'relative path binary' => './ls',
       'absolute path binary' => '/bin/ls -la',

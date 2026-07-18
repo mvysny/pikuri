@@ -40,8 +40,14 @@ module Pikuri
       #    +bin/ls+ are paths that could point at a planted binary; only
       #    PATH-resolved bare names (+ls+, +cat+, …) qualify.
       # 2. That bare name is on {READ_ONLY_BINARIES} (or the segment is a
-      #    read-only +dpkg+/+apt+/+systemctl+/+dmesg+/+journalctl+/+man+ query,
-      #    or — under +allow_git:+ — a read-only git invocation).
+      #    read-only +dpkg+/+apt+/+apt-cache+/+systemctl+/+file+/+dmesg+/
+      #    +journalctl+/+man+/+rg+ query, or — under +allow_git:+ — a read-only
+      #    git invocation).
+      #
+      # A command the strict parse rejects *solely* because of an unquoted glob
+      # gets a second look through the {#glob_read_only?} fast path (see there):
+      # globs are approved, but *only* on pure {READ_ONLY_BINARIES} binaries,
+      # never the flag-classified families above.
       #
       # The lexing half lives in {Tokenizer}. The consequence here: it hands the
       # classifiers below the *true* de-quoted word (+--clear+, not +--_clear+),
@@ -323,12 +329,58 @@ module Pikuri
           return false if command.empty?
 
           segments = Tokenizer.tokenize(command)
-          return false if segments.nil?
+          return segments.all? { |words| segment_read_only?(words) } unless segments.nil?
 
-          segments.all? { |words| segment_read_only?(words) }
+          # The strict parse rejected it. If its *only* complication is an
+          # unquoted glob, the glob fast path may still approve it.
+          glob_read_only?(command)
         end
 
         private
+
+        # The pure-allowlist glob fast path: re-parse with globs kept literal
+        # ({Tokenizer.tokenize} +allow_glob:+) and approve iff every segment is
+        # a bare {READ_ONLY_BINARIES} invocation.
+        #
+        #   ls *.txt | wc -l      # approved: every binary read-only in any arg
+        #   dmesg *               # NOT approved: dmesg isn't pure-allowlist
+        #
+        # Sound because a glob is expanded by bash *after* this check, and a
+        # {READ_ONLY_BINARIES} command has no mutating/exec/output-file form in
+        # *any* argument — so a glob that expands to a +-flag+-looking filename
+        # (or any filename) can't grow teeth. The recovered families
+        # (dpkg/apt/dmesg/journalctl/man/rg/file/git) are deliberately *not*
+        # eligible: they classify by flag *spelling*, which a post-expansion
+        # glob would defeat (a planted +-C+/+--pre+ file smuggled past the
+        # denylist) — so any glob on them keeps delegating to the human. The
+        # +allow_glob+ re-parse still rejects every non-glob complication ($()
+        # substitution, a real redirect, an unbalanced quote …), so only a
+        # command whose sole sin was an unquoted glob reaches the check.
+        #
+        # @param command [String] the stripped command (strict parse already
+        #   returned +nil+).
+        # @return [Boolean] whether every glob-tolerant segment is a bare
+        #   pure-allowlist invocation.
+        def glob_read_only?(command)
+          segments = Tokenizer.tokenize(command, allow_glob: true)
+          return false if segments.nil?
+
+          segments.all? { |words| glob_safe_binary?(words) }
+        end
+
+        # @param words [Array<String>] one glob-tolerant segment's words.
+        # @return [Boolean] whether it is a single bare {READ_ONLY_BINARIES}
+        #   invocation (or an empty comment segment). Unlike {#segment_read_only?}
+        #   this admits *only* the pure allowlist — no dpkg/dmesg/git recovery —
+        #   because those can't be classified once a glob may expand into their
+        #   flags. A first word with +/+ or one that is itself a glob is not in
+        #   {READ_ONLY_BINARIES} ⇒ not approved.
+        def glob_safe_binary?(words)
+          return true if words.empty?
+
+          first = words.first
+          !first.include?('/') && READ_ONLY_BINARIES.include?(first)
+        end
 
         # @param words [Array<String>] one segment's words from {Tokenizer}
         #   (+[]+ for a comment no-op).
