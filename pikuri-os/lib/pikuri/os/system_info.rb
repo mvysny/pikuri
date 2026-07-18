@@ -63,13 +63,16 @@ module Pikuri
       ].freeze
 
       # The system-prompt grounding section: a +# This machine+ heading,
-      # the core facts, and (when +inxi+ is present) an extra-detail block.
+      # a one-line "trust these over your guesses" nudge, the core facts,
+      # and (when +inxi+ is present) an extra-detail block.
       # Memoized (see class doc).
       #
       # @return [String]
       def prompt_section
         @prompt_section ||= begin
-          parts = ['# This machine', '', self.class.render(facts)]
+          parts = ['# This machine', '',
+                   'Rely on these facts rather than guessing the distro, paths, or init system.',
+                   '', self.class.render(facts)]
           detail = inxi_detail
           parts += ['', 'Further hardware/desktop detail (from `inxi -b`):', detail] if detail
           parts.join("\n")
