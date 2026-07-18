@@ -75,6 +75,28 @@ the homes above. Origin map (question → where the answer now lives):
   stricter "fewer hits" as "no such event"; aligned to mail's shape. The
   shipped tools.
 
+  - **Truncation signal (the inverse misread)** → both search tools return a
+    full page as `size == limit`, which the model read as "that's everything"
+    → silently incomplete answers. Shipped fix: the tool fetches `limit + 1`
+    and the header states the state — `… more exist. To see them, raise limit
+    (up to MAX) or narrow with <filters>. Adding query words … won't narrow.`
+    when truncated, `… all shown` otherwise; the recall-first principle rides
+    the extension prompt snippet once. Mail `MAX_LIMIT` 25→50 (parity with
+    calendar). {MailSearch.header}/{CalendarSearch.header}.
+    - **Fuzzy over exact.** We ship "more exist", not an exact total, even
+      though calendar computes the total for free (full scan) and mail could
+      via one `COUNT(DISTINCT)`. An exact number on an OR-recall corpus invites
+      false-precision counting ("you have 47 emails about X" — where 47 is a
+      loose any-word count); the boolean discourages treating search as an
+      aggregate. Revisit only if wrong-count harm (vs. incomplete-answer harm)
+      shows up in real use.
+    - **Offset/pagination — REJECTED (for now).** A `page`/`offset` param needs
+      stable ordering across snapshot refreshes (mail's `bm25, date DESC` and
+      calendar's `-score, -start` aren't offset-stable), and it invites the
+      model to paginate forever instead of refining. The raise-limit + narrow
+      steer is the recall-first-native recovery. Reconsider only if a genuine
+      "walk all N" use appears that narrowing can't serve.
+
 ## v2 — outbound, human-gated (compose + address-resolver + calendar-create shipped)
 
 The egress half. The load-bearing invariant (now also the CLAUDE.md seam):

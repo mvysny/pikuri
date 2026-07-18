@@ -76,6 +76,33 @@ describe 'pikuri-thunderbird tools' do
         g.close
       end
     end
+
+    it 'flags a full page as having more, and affirms completeness otherwise' do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, 'global-messages-db.sqlite')
+        db = SQLite3::Database.new(path)
+        db.execute_batch(<<~SQL)
+          CREATE TABLE messagesText_content(docid INTEGER PRIMARY KEY, c0body, c1subject, c2attachmentNames, c3author, c4recipients);
+          CREATE TABLE messages(id INTEGER PRIMARY KEY, folderID INTEGER, date INTEGER, headerMessageID TEXT, deleted INTEGER);
+          CREATE TABLE folderLocations(id INTEGER PRIMARY KEY, folderURI TEXT, dirtyStatus INTEGER, name TEXT, indexingPriority INTEGER);
+          INSERT INTO folderLocations VALUES (1,'imap://x/INBOX',0,'INBOX',50);
+          INSERT INTO messagesText_content VALUES (1,'invoice one','Invoice 1','','a@x','me@x');
+          INSERT INTO messages VALUES (1,1,#{Time.utc(2026, 3, 1).to_i * 1_000_000},'<m1@x>',0);
+          INSERT INTO messagesText_content VALUES (2,'invoice two','Invoice 2','','b@x','me@x');
+          INSERT INTO messages VALUES (2,1,#{Time.utc(2026, 3, 2).to_i * 1_000_000},'<m2@x>',0);
+        SQL
+        db.close
+        g = Pikuri::Thunderbird::Gloda.new(gloda_path: path, cache_dir: File.join(dir, 'gc'))
+        tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
+
+        capped = tool.run('query' => 'invoice', 'limit' => 1)
+        assert_match(/more exist/, capped)
+        assert_match(/raise limit/, capped)
+
+        assert_match(/all shown/, tool.run('query' => 'invoice', 'limit' => 10))
+        g.close
+      end
+    end
   end
 
   describe 'thunderbird_mail_read' do
@@ -123,6 +150,31 @@ describe 'pikuri-thunderbird tools' do
         c = calendar(dir)
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
         assert_match(/Error: give a query and\/or a date range/, tool.run({}))
+        c.close
+      end
+    end
+
+    it 'flags a full page as having more, and affirms completeness otherwise' do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, 'cache.sqlite')
+        db = SQLite3::Database.new(path)
+        s1 = Time.utc(2026, 5, 1, 7, 0).to_i * 1_000_000
+        s2 = Time.utc(2026, 5, 2, 7, 0).to_i * 1_000_000
+        db.execute_batch(<<~SQL)
+          CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT);
+          CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+          INSERT INTO cal_events VALUES ('c','e1','Team standup',#{s1},#{s1 + 1_800_000_000},'UTC','UTC',0,'CONFIRMED');
+          INSERT INTO cal_events VALUES ('c','e2','Daily standup',#{s2},#{s2 + 1_800_000_000},'UTC','UTC',0,'CONFIRMED');
+        SQL
+        db.close
+        c = Pikuri::Thunderbird::Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'cc'))
+        tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
+
+        capped = tool.run('query' => 'standup', 'limit' => 1)
+        assert_match(/more exist/, capped)
+        assert_match(/raise limit/, capped)
+
+        assert_match(/all shown/, tool.run('query' => 'standup', 'limit' => 10))
         c.close
       end
     end

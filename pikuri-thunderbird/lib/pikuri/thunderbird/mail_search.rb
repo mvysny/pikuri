@@ -8,9 +8,12 @@ module Pikuri
     # body by the +id:+ handle this tool returns (parent-document retrieval,
     # like corpus search→read).
     class MailSearch < Pikuri::Tool
-      # @return [Integer] default / max hits returned.
-      DEFAULT_LIMIT = 10
-      MAX_LIMIT = 25
+      # @return [Integer] default / max hits returned. The cap protects the
+      #   host's context budget (a snippet-laden page is dear on a small local
+      #   model); past it, ranking is moot and narrowing is the right move —
+      #   which is what {header} steers the model toward.
+      DEFAULT_LIMIT = 15
+      MAX_LIMIT = 50
 
       # @return [String] opencode-shape description.
       DESCRIPTION = <<~DESC
@@ -62,18 +65,44 @@ module Pikuri
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         after_t = DateHelpers.parse_after(after)
         before_t = DateHelpers.parse_before(before)
-        hits = backend.search(query:, limit:, from:, to:, subject:,
+        # Fetch one past the cap so a full page is distinguishable from an
+        # exhausted mailbox: getting limit+1 back means more exist, and the
+        # header must say so — an LLM reads a full page as "that's everything"
+        # and gives a silently incomplete answer. (Heavy Gmail label-dup can
+        # false-negative if the (limit+1)th distinct match falls outside the
+        # backend's over-fetch window; rare, accepted.)
+        hits = backend.search(query:, limit: limit + 1, from:, to:, subject:,
                               after: after_t, before: before_t, folder:)
         if hits.empty?
           return query.to_s.strip.empty? ? 'No mail matched those filters.' \
                                          : "No matching mail found for #{query.inspect}."
         end
 
-        header = "#{hits.size} match#{hits.size == 1 ? '' : 'es'} (best first):"
-        [header, *hits.map { |h| render(h) }].join("\n\n")
+        has_more = hits.size > limit
+        hits = hits.first(limit)
+        [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n")
       rescue ArgumentError => e
         "Error: bad date filter (#{e.message})."
       end
+
+      # The leading line: affirm completeness when every match fit ("all
+      # shown", so the model can trust the set), or — when capped — name the
+      # two levers that get the rest. Adding query words is deliberately *not*
+      # one: the search ORs its terms, so more words widen the net. The
+      # recall-first principle itself rides the prompt snippet
+      # ({Extension::INBOUND_USAGE}); this is the terse per-search reminder.
+      #
+      # @param shown [Integer] hits actually rendered.
+      # @param has_more [Boolean] whether more matched than fit.
+      # @return [String]
+      def self.header(shown:, has_more:)
+        return "#{shown} match#{shown == 1 ? '' : 'es'} (best first, all shown):" unless has_more
+
+        "Top #{shown} matches (best first) — more exist. To see them, raise limit " \
+          "(up to #{MAX_LIMIT}) or narrow with from/to/subject/date/folder. Adding " \
+          'query words matches more mail (any word), so it will not narrow.'
+      end
+      private_class_method :header
 
       # @param hit [Hash]
       # @return [String]

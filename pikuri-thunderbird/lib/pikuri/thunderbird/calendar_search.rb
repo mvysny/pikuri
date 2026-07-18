@@ -74,15 +74,38 @@ module Pikuri
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         recurring = { 'recurring' => true, 'single' => false }[recurrence]
-        hits = backend.search(query:, limit:, recurring:,
+        # Fetch one past the cap so a full page is distinguishable from an
+        # exhausted calendar (see {MailSearch.run_search}); limit+1 back means
+        # more exist and {header} says so, rather than let the model read a
+        # full page as the whole calendar.
+        hits = backend.search(query:, limit: limit + 1, recurring:,
                               after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
         return offline_or_no_match(backend, query) if hits.empty?
 
-        header = "#{hits.size} event#{hits.size == 1 ? '' : 's'}:"
-        [header, *hits.map { |h| render(h) }].join("\n\n")
+        has_more = hits.size > limit
+        hits = hits.first(limit)
+        [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n")
       rescue ArgumentError => e
         "Error: bad date filter (#{e.message})."
       end
+
+      # The leading line: affirm completeness when every event fit ("all
+      # shown"), or — when capped — name the two levers that get the rest.
+      # Adding query words is *not* one (words are OR-matched, so they widen);
+      # mirrors {MailSearch.header}, the recall-first principle riding the
+      # prompt snippet ({Extension::INBOUND_USAGE}).
+      #
+      # @param shown [Integer] events actually rendered.
+      # @param has_more [Boolean] whether more matched than fit.
+      # @return [String]
+      def self.header(shown:, has_more:)
+        return "#{shown} event#{shown == 1 ? '' : 's'} (all shown):" unless has_more
+
+        "Top #{shown} events — more exist. To see them, raise limit (up to " \
+          "#{MAX_LIMIT}) or add an after/before date range. Adding query words " \
+          'matches more events (any word), so it will not narrow.'
+      end
+      private_class_method :header
 
       # Distinguish "no events cached at all" (fixable) from "no match". An
       # empty query is a date-range listing, so its no-match line names the
