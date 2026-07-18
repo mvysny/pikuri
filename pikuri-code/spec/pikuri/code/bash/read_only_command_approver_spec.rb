@@ -8,6 +8,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       cat\ /etc/hostname
       grep\ -i\ error\ /var/log/syslog
       rg\ --hidden\ pattern\ /home/u/notes
+      rg\ -z\ pattern\ /var/log
+      rg\ --search-zip\ pattern\ /var/log
       df\ -h
       du\ -sh\ /home/u/Music
       ps\ aux
@@ -164,6 +166,11 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'man bundled -H'       => 'man -aH ls',          # exec flag hidden in a short cluster
       'man --pager (exec)'   => 'man --pager=less ls', # arbitrary pager (=value)
       'man -P (exec)'        => 'man -P less ls',       # arbitrary pager, spaced arg
+      'rg --pre (exec)'      => 'rg --pre=/bin/sh pat .',    # arbitrary preprocessor (=value)
+      'rg --pre spaced'      => 'rg --pre /bin/sh pat .',    # preprocessor, spaced arg
+      'rg --hostname-bin'    => 'rg --hostname-bin=/bin/sh pat .', # arbitrary hostname cmd
+      'rg --pre mid-args'    => 'rg pat . --pre=/bin/sh',    # exec flag not first arg
+      'rg --pre quote-smuggle' => "rg --''pre=/bin/sh pat .", # → --pre after quote-removal
       'dpkg install'         => 'dpkg -i pkg.deb',
       'dpkg remove'          => 'dpkg -r ruby',
       'dpkg purge'           => 'dpkg --purge ruby',

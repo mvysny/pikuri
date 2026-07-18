@@ -81,23 +81,28 @@ module Pikuri
       # is not. The pure-query companions +dpkg-query+ and +apt-cache+ have no
       # mutating form at all and sit directly in {READ_ONLY_BINARIES}.
       #
-      # == Read-only dmesg / journalctl / man (flag denylist), unconditional
+      # == Read-only dmesg / journalctl / man / rg (flag denylist), unconditional
       #
-      # +dmesg+ and +journalctl+ read by default; a handful of *flags* mutate
-      # (dmesg: buffer wipe +-C+/+-c+, console toggles; journalctl: the
-      # +--vacuum-*+ trimmers, +--rotate+/+--flush+, the FSS/catalog writers).
-      # +man+ likewise reads by default but +-H+/+--html+ launches +$BROWSER+
-      # (exec *and* egress) and +-P+/+--pager+ runs an arbitrary pager. The
-      # read/{mutate,exec} split is by flag, not a leading subcommand, so
-      # {#read_only_dmesg?}/{#read_only_journalctl?}/{#read_only_man?} recover
-      # it with a *denylist* ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG} /
-      # {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT} / {MAN_EXEC_LONG}):
-      # approve iff no argument is a denied flag. Bundled short options are
-      # scanned per character (dmesg +-xC+ trips on +C+, man +-aH+ on +H+); a
-      # long option's +=value+ tail is stripped before lookup. journalctl has
-      # no mutating short option, so a short cluster is read-only data. man's
-      # pure-read siblings +apropos+/+whatis+ have no exec flag and sit
-      # directly in {READ_ONLY_BINARIES}.
+      # These read by default; a handful of *flags* mutate or exec. dmesg:
+      # buffer wipe +-C+/+-c+, console toggles. journalctl: the +--vacuum-*+
+      # trimmers, +--rotate+/+--flush+, the FSS/catalog writers. +man+: +-H+/
+      # +--html+ launches +$BROWSER+ (exec *and* egress), +-P+/+--pager+ runs an
+      # arbitrary pager. +rg+ (ripgrep): +--pre+ runs an arbitrary preprocessor
+      # command per searched file, +--hostname-bin+ one for hyperlink hostnames
+      # — both pure exec, so +rg+ can't sit beside +grep+ in
+      # {READ_ONLY_BINARIES}. The read/{mutate,exec} split is by flag, not a
+      # leading subcommand, so {#read_only_dmesg?}/{#read_only_journalctl?}/
+      # {#read_only_man?}/{#read_only_rg?} recover it with a *denylist*
+      # ({DMESG_MUTATING_SHORT} / {DMESG_MUTATING_LONG} /
+      # {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT} / {MAN_EXEC_LONG} /
+      # {RG_EXEC_LONG}): approve iff no argument is a denied flag. Bundled short
+      # options are scanned per character (dmesg +-xC+ trips on +C+, man +-aH+
+      # on +H+); a long option's +=value+ tail is stripped before lookup.
+      # journalctl and rg have no mutating/exec short option, so a short cluster
+      # is read-only data (+rg -z+ shells only to fixed-name decompressors, the
+      # PATH-hijack residual already covers those). man's and rg's pure-read
+      # siblings +apropos+/+whatis+/+grep+ have no such flag and sit directly
+      # in {READ_ONLY_BINARIES}.
       #
       # This is the one deviation from "never auto-approve a destructive
       # command": a denylist's residual is a *future* mutating/exec flag this
@@ -161,7 +166,7 @@ module Pikuri
         READ_ONLY_BINARIES = Set[
           'cd', 'true', 'false',
           'ls', 'cat', 'tac', 'nl', 'head', 'tail', 'wc',
-          'grep', 'egrep', 'fgrep', 'rg',
+          'grep', 'egrep', 'fgrep',
           'pwd', 'basename', 'dirname', 'realpath', 'readlink',
           'stat', 'file',
           'od', 'hexdump', 'xxd', 'strings',
@@ -254,6 +259,17 @@ module Pikuri
         # lookup (+--pager=less+ matches +--pager+).
         MAN_EXEC_LONG = Set['--html', '--pager'].freeze
 
+        # +rg+ (ripgrep) long options that run an arbitrary command — +--pre+
+        # (a preprocessor executed per searched file) and +--hostname-bin+ (run
+        # to resolve the hostname for hyperlinks). Both are pure exec vectors,
+        # which is why +rg+ can't sit beside +grep+ in {READ_ONLY_BINARIES}.
+        # {#read_only_rg?} strips a +=value+ tail before lookup
+        # (+--pre=/bin/sh+ matches +--pre+). rg has no *short* exec option, so
+        # a short cluster is read-only data — no per-character scan needed
+        # (+-z+/+--search-zip+ shells only to fixed-name decompressors, already
+        # covered by the PATH-hijack residual, so it stays read-only).
+        RG_EXEC_LONG = Set['--pre', '--hostname-bin'].freeze
+
         # @param allow_git [Boolean] when +true+, additionally approve read-only
         #   git invocations ({#read_only_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
@@ -286,7 +302,7 @@ module Pikuri
         #   (+[]+ for a comment no-op).
         # @return [Boolean] whether the segment is a single bare invocation of a
         #   {READ_ONLY_BINARIES} entry (or a read-only dpkg/apt/systemctl/dmesg/
-        #   journalctl/man query, or under +allow_git:+ a read-only git invocation),
+        #   journalctl/man/rg query, or under +allow_git:+ a read-only git invocation),
         #   or an empty (comment) segment. A first word containing +/+ is a path
         #   that could point at a planted binary ⇒ not approved.
         def segment_read_only?(words)
@@ -301,6 +317,7 @@ module Pikuri
           return true if read_only_dmesg?(words)
           return true if read_only_journalctl?(words)
           return true if read_only_man?(words)
+          return true if read_only_rg?(words)
 
           @allow_git && read_only_git?(words)
         end
@@ -405,6 +422,30 @@ module Pikuri
           else
             false
           end
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +rg+ with no arbitrary-command flag
+        #   among its arguments ({RG_EXEC_LONG}). Same flag-denylist shape as
+        #   {#read_only_man?}, but rg's exec flags are long-only so there's no
+        #   short-cluster scan. Residual: rg also reads +--pre+ from a config
+        #   file named by +$RIPGREP_CONFIG_PATH+, which this can't see — but
+        #   setting that env already presupposes control of the agent's
+        #   environment, the same class as the PATH-hijack residual.
+        def read_only_rg?(words)
+          return false unless words[0] == 'rg'
+
+          words.drop(1).none? { |t| rg_exec_arg?(t) }
+        end
+
+        # @param token [String] one +rg+ argument.
+        # @return [Boolean] whether it names a {RG_EXEC_LONG} flag (ignoring any
+        #   +=value+ tail). A short cluster or bare value token never execs ⇒
+        #   +false+.
+        def rg_exec_arg?(token)
+          return false unless token.start_with?('--')
+
+          RG_EXEC_LONG.include?(token.split('=', 2).first)
         end
 
         # @param words [Array<String>] one segment's words.
