@@ -75,8 +75,7 @@ Pikuri::Extractors::DOCUMENTS.register
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
-system_prompt = Pikuri.prompt(:'pikuri-assistant')
-system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
+system_prompt = Pikuri.prompts(:'pikuri-assistant', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 # MCP servers available to the assistant. Hand-edit this array to add

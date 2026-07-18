@@ -103,9 +103,9 @@ sandbox = if sandbox_enabled
 # and the user approves what leaves the machine." The "# This machine"
 # facts and the MACHINE.md memory section are appended by Os::Extension
 # (via append_system_prompt), so the binary doesn't assemble them.
-system_prompt = Pikuri.prompt(:'os-assistant')
-system_prompt += "\n\n" + Pikuri.prompt(internet_enabled ? :'os-network-online' : :'os-network-offline')
-system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
+system_prompt = Pikuri.prompts(:'os-assistant',
+                               internet_enabled ? :'os-network-online' : :'os-network-offline',
+                               :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new

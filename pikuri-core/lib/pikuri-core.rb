@@ -110,6 +110,25 @@ module Pikuri
       available = PROMPT_DIRS.flat_map { |dir| Dir.exist?(dir) ? Dir.children(dir) : [] }.sort.uniq
       raise ArgumentError, "Unknown pikuri prompt #{name.inspect}; available: #{available.join(', ')}"
     end
+
+    # Read several bundled prompts and join them into one system prompt —
+    # the way a binary assembles a base prompt plus shared fragments (e.g.
+    # the tool-loop hygiene in +agent-loop.txt+).
+    #
+    #   system_prompt = Pikuri.prompts(:'pikuri-chat', :'agent-loop')
+    #   system_prompt += "\n\nCurrent date: #{...}"   # dynamic tail, still one blank line
+    #
+    # Each fragment is right-stripped before joining with a single blank
+    # line, and the result carries no trailing newline — so neither the
+    # fragment seams nor a later +"\n\n"+-prefixed append double-blanks,
+    # regardless of the +.txt+ files' own trailing newlines.
+    #
+    # @param names [Array<String, Symbol>] prompt basenames, in order
+    # @return [String] the fragments joined by a blank line
+    # @raise [ArgumentError] if any name has no matching file
+    def prompts(*names)
+      names.map { |name| prompt(name).rstrip }.join("\n\n")
+    end
   end
 
   # Zeitwerk loader for every constant under +pikuri-core/lib/pikuri/+. A

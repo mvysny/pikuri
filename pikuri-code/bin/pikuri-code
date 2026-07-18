@@ -241,8 +241,7 @@ sandbox = if sandbox_enabled
 # Build the system prompt: static base + optional project context + footer.
 # AGENTS.md wins over CLAUDE.md when both exist; lookup is at the
 # project root.
-system_prompt = Pikuri.prompt(:'coding-system-prompt')
-system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
+system_prompt = Pikuri.prompts(:'coding-system-prompt', :'agent-loop')
 md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| filesystem.project_root.join(f) }.find(&:file?)
 system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
