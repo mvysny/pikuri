@@ -67,12 +67,70 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
-  it 'ANDs query words across title/description/location' do
+  it 'matches accent- and case-blind (folds diacritics on both sides)' do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(
+          cal_id TEXT, id TEXT, title TEXT,
+          event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT,
+          flags INTEGER, ical_status TEXT);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        INSERT INTO cal_events VALUES
+          ('c1','a1','Hammer Dröp on a boat',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
+           'UTC','UTC',262,'CONFIRMED');
+        INSERT INTO cal_properties VALUES ('a1','LOCATION','Café Zürich');
+      SQL
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'cache'))
+      begin
+        # the reported bug: accented title found by an un-accented query.
+        assert_equal ['a1'], cal.search(query: 'Hammer Drop', limit: 10).map { |h| h[:event_id] }
+        # and the reverse: un-accented query text against an accented location.
+        assert_equal ['a1'], cal.search(query: 'cafe zurich', limit: 10).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
+    end
+  end
+
+  it 'ORs query words (recall-first, like the mail path)' do
     with_calendar do |cal|
-      # "engineering" is in the description, "standup" in the title — both present ⇒ match.
+      # "engineering" is in the description, "standup" in the title — e1 matches both.
       assert_equal ['e1'], cal.search(query: 'engineering standup', limit: 10).map { |h| h[:event_id] }
-      # a word that appears nowhere in the event drops it.
-      assert_empty cal.search(query: 'standup missingword', limit: 10)
+      # recall-first: a word matching nothing does NOT drop an event that
+      # matched the other word (an AND would have returned nothing here —
+      # that stricter behavior is exactly what made the model give up).
+      assert_equal ['e1'], cal.search(query: 'standup missingword', limit: 10).map { |h| h[:event_id] }
+    end
+  end
+
+  it 'ranks an event matching more query words above one matching fewer (beats recency)' do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      # 'both' is the OLDER event but matches two words; 'one' is NEWER but
+      # matches a single word. Score must win over recency ⇒ 'both' first.
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        INSERT INTO cal_events VALUES
+          ('c1','both','Project kickoff meeting',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
+           'UTC','UTC',262,'CONFIRMED'),
+          ('c1','one','Weekly meeting',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
+           'UTC','UTC',262,'CONFIRMED');
+      SQL
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        # 'kickoff' hits only 'both'; 'meeting' hits both events.
+        assert_equal %w[both one], cal.search(query: 'kickoff meeting', limit: 10).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
     end
   end
 

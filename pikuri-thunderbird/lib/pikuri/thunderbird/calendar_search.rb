@@ -33,7 +33,7 @@ module Pikuri
         Usage:
         - Free-text query and/or a date range — both optional; supply at least one.
         - To list everything on a day or in a span (e.g. "tomorrow's meetings"), pass a broad or empty query with after/before; a single day is after=before=that date.
-        - Multiple words must ALL appear in the event (across its title, description, and location) — so add words to narrow, remove words to widen.
+        - Each query word is matched independently (across title, description, and location) and events matching more of the words rank first — so extra words broaden the search and surface partial matches, they don't require every word. Matching ignores accents and case. To narrow, add a date range rather than more words.
         - Optionally restrict to recurring events (a repeating series) or single one-off events with the recurrence filter; omit it to get both.
         - Reads Thunderbird's on-disk calendar store — it never connects to any calendar server.
         - Only events cached to disk are visible. A CalDAV calendar keeps events in memory unless its "Offline Support" is enabled (right-click the calendar → Properties → Offline Support); if a search comes back empty but the calendar looks full, that setting is why.

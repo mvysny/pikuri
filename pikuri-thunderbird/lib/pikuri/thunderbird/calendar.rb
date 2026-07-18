@@ -69,7 +69,9 @@ module Pikuri
         @conns.values.sum { |db| db.get_first_value('SELECT count(*) FROM cal_events').to_i }
       end
 
-      # Search events by title / description / location, newest first.
+      # Search events by title / description / location; best match first (most
+      # query words matched), newest breaks ties. Recall-first — a partial
+      # match still surfaces (see {#search_db}).
       #
       # @param query [String] substring over title + DESCRIPTION + LOCATION.
       # @param limit [Integer] max events.
@@ -82,7 +84,10 @@ module Pikuri
       def search(query:, limit:, after: nil, before: nil, recurring: nil)
         ensure_fresh
         hits = @conns.values.flat_map { |db| search_db(db, query:, after:, before:, recurring:, limit:) }
-        hits.sort_by { |h| -(h[:start]&.to_i || 0) }.first(limit)
+        # Rank across stores by matched-word count, then recency. :score is an
+        # internal ranking key (see #search_db), dropped from the returned shape.
+        hits.sort_by { |h| [-h[:score].to_i, -(h[:start]&.to_i || 0)] }
+            .first(limit).map { |h| h.except(:score) }
       end
 
       # Full event detail for one event UID.
@@ -122,29 +127,56 @@ module Pikuri
 
           @conns[src]&.close
           snap.refresh
-          @conns[src] = SQLite3::Database.new("file:#{snap.path}?immutable=1",
-                                              flags: SQLite3::Constants::Open::READONLY | SQLite3::Constants::Open::URI)
+          db = SQLite3::Database.new("file:#{snap.path}?immutable=1",
+                                     flags: SQLite3::Constants::Open::READONLY | SQLite3::Constants::Open::URI)
+          # Diacritic-fold both sides of every text LIKE (see #search_db), so
+          # "Drop" finds "Dröp" — matching the mail path, whose FTS5 unicode61
+          # tokenizer already strips diacritics for free.
+          db.create_function('pk_fold', 1) { |func, value| func.result = fold(value) }
+          @conns[src] = db
           @generations[src] = snap.generation
         end
       end
 
-      # @return [Array<Hash>]
+      # Casefold + strip diacritics (NFD-decompose, drop the combining marks),
+      # so a folded needle substring-matches a folded haystack accent-blind.
+      # +nil+-safe: SQLite passes +NULL+ columns through as +nil+.
+      #
+      #   fold("Dröp")   # => "drop"
+      #
+      # @param str [String, nil]
+      # @return [String, nil]
+      def fold(str)
+        return nil if str.nil?
+
+        str.unicode_normalize(:nfd).gsub(/\p{Mn}/, '').downcase
+      end
+
+      # @return [Array<Hash>] hits carrying an extra +:score+ (matched-word
+      #   count) for the cross-store rank in {#search}.
       def search_db(db, query:, after:, before:, recurring:, limit:)
-        clauses = []
-        binds = []
-        # Multi-word rule: AND across words — every word must appear in the
-        # event's title, description, or location (possibly different
-        # fields). Precision-first, since the calendar path has no ranking
-        # to separate strong from weak matches (contrast the mail path, which
-        # ORs words and lets bm25 rank).
-        query.to_s.scan(/[[:alnum:]]+/).each do |word|
-          clauses << <<~COND.chomp
-            (e.title LIKE '%' || ? || '%'
-             OR EXISTS (SELECT 1 FROM cal_properties p WHERE p.item_id = e.id
-                        AND p.key IN ('DESCRIPTION','LOCATION') AND p.value LIKE '%' || ? || '%'))
-          COND
-          binds << word << word
+        # Word matching is recall-first, mirroring the mail path (which ORs
+        # words + bm25-ranks): OR the words and rank a hit by how many it
+        # contains, across title / DESCRIPTION / LOCATION (accent- and
+        # case-folded on both sides via pk_fold — see #ensure_fresh). The
+        # matched-word count is the calendar analogue of bm25 (no corpus
+        # stats to rank with); ties break on recency. Keeping the two tools
+        # aligned is the point: an LLM that has seen forgiving mail search
+        # assumes the same here, so a stricter AND would make it misread
+        # "fewer hits" as "no such event exists".
+        score_binds = []
+        score = query.to_s.scan(/[[:alnum:]]+/).map do |word|
+          score_binds << fold(word) << fold(word)
+          <<~EXPR.chomp
+            (CASE WHEN pk_fold(e.title) LIKE '%' || ? || '%'
+                    OR EXISTS (SELECT 1 FROM cal_properties p WHERE p.item_id = e.id
+                               AND p.key IN ('DESCRIPTION','LOCATION') AND pk_fold(p.value) LIKE '%' || ? || '%')
+                  THEN 1 ELSE 0 END)
+          EXPR
         end
+
+        filters = []
+        filter_binds = []
         # Date bounds are compared in the machine-local frame (the caller
         # parses a bare date to local midnight; parse_before extends it to
         # end-of-day). Correct for timed events in any zone. Caveat: all-day
@@ -154,26 +186,34 @@ module Pikuri
         # UTC/eastern zones; a fully correct fix needs per-event-type date
         # extraction (deferred — see ideas/thunderbird.md open questions).
         if after
-          clauses << 'e.event_start >= ?'
-          binds << to_prtime(after)
+          filters << 'e.event_start >= ?'
+          filter_binds << to_prtime(after)
         end
         if before
-          clauses << 'e.event_start <= ?'
-          binds << to_prtime(before)
+          filters << 'e.event_start <= ?'
+          filter_binds << to_prtime(before)
         end
         # Recurrence filter off the master's HAS_RECURRENCE bit (constant, no
         # bind). nil leaves it unfiltered.
-        clauses << "(e.flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
-        where = clauses.empty? ? '1' : clauses.join(' AND ')
-        rows = db.execute(<<~SQL, binds + [limit])
-          SELECT e.id, e.title, e.event_start, e.event_end, e.event_start_tz, e.event_end_tz, e.flags,
-                 (SELECT value FROM cal_properties p WHERE p.item_id = e.id AND p.key = 'LOCATION' LIMIT 1)
-          FROM cal_events e
-          WHERE #{where}
-          ORDER BY e.event_start DESC
+        filters << "(e.flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
+        where = filters.empty? ? '1' : filters.join(' AND ')
+        # An empty query scores every event 0 and lists the whole range; a
+        # non-empty query keeps only events that matched at least one word.
+        match_gate = score.empty? ? '1' : 'score > 0'
+
+        rows = db.execute(<<~SQL, score_binds + filter_binds + [limit])
+          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, location, score FROM (
+            SELECT e.id, e.title, e.event_start, e.event_end, e.event_start_tz, e.event_end_tz, e.flags,
+                   (SELECT value FROM cal_properties p WHERE p.item_id = e.id AND p.key = 'LOCATION' LIMIT 1) AS location,
+                   (#{score.empty? ? '0' : score.join(' + ')}) AS score
+            FROM cal_events e
+            WHERE #{where}
+          )
+          WHERE #{match_gate}
+          ORDER BY score DESC, event_start DESC
           LIMIT ?
         SQL
-        rows.map { |row| build_event(row[0..6]).merge(location: row[7]) }
+        rows.map { |row| build_event(row[0..6]).merge(location: row[7], score: row[8]) }
       end
 
       # @param row [Array] +[id, title, start_us, end_us, start_tz, end_tz, flags]+

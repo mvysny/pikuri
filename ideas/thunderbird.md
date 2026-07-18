@@ -67,9 +67,13 @@ the homes above. Origin map (question → where the answer now lives):
 - **Q12 freshness** → inherit Gloda's (TB keeps it live); per-search
   change-counter check triggers the ~1 s FTS5 rebuild, no daemon. {Gloda} +
   DESIGN.md.
-- **Q13 tool surface** → four inbound tools named `thunderbird_*`; mail ORs
-  words + bm25-ranks (recall-first), calendar ANDs words across
-  title/description/location (precision-first, no ranker). The shipped tools.
+- **Q13 tool surface** → four inbound tools named `thunderbird_*`; both mail
+  and calendar are recall-first + rank best-first (mail ORs words + bm25;
+  calendar ORs accent/case-folded `LIKE` over title/description/location and
+  ranks by matched-word count). Calendar was AND/precision-first at first, but
+  that made the model — primed by forgiving mail search — misread calendar's
+  stricter "fewer hits" as "no such event"; aligned to mail's shape. The
+  shipped tools.
 
 ## v2 — outbound, human-gated (compose + address-resolver + calendar-create shipped)
 

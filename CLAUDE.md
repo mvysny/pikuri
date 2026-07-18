@@ -626,10 +626,11 @@ per-gem one-liners:
   takes a bracketed `cp --reflink=auto` (change-counter + `-journal`
   bracket) into `~/.cache/pikuri/thunderbird/`, and the mail path builds an
   *ephemeral* FTS5 index over the decoded columns inside that copy (Gloda's
-  own fts3/`mozporter` vtable is unopenable by the sqlite3 gem). Multi-word
-  matching differs by design: mail ORs words + bm25-ranks (recall-first),
-  calendar ANDs words across title/description/location (precision-first, no
-  ranking). Two opt-in outbound tools, each on its own `allow_` flag: `allow_compose_mail: true`
+  own fts3/`mozporter` vtable is unopenable by the sqlite3 gem). Both paths
+  are recall-first and rank best-match-first, so the model can't misread
+  calendar's "fewer hits" as "none exist": mail ORs words + bm25-ranks;
+  calendar ORs words over title/description/location (accent/case-folded
+  `LIKE`) and ranks by matched-word count, recency breaking ties. Two opt-in outbound tools, each on its own `allow_` flag: `allow_compose_mail: true`
   adds `Thunderbird::MailCompose` — a human-gated `mailto:` compose-window hand-off
   (`Thunderbird::MailtoUri` percent-encodes every field; `Thunderbird::ComposeGuard`
   fails a suspicious body closed, drops non-ASCII/punycode recipients, and warns
