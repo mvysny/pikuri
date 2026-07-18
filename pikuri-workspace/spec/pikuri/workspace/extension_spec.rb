@@ -26,6 +26,11 @@ RSpec.describe Pikuri::Workspace::Extension do
     assert_kind_of Pikuri::Agent::Extension, ext
   end
 
+  it 'contributes the confirmation guidance snippet' do
+    ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
+    assert_equal [described_class::PROMPT_SNIPPET], ext.system_prompt_snippets
+  end
+
   describe '#configure' do
     it 'registers all five file tools' do
       described_class.new(filesystem: filesystem, confirmer: confirmer).configure(configurator)

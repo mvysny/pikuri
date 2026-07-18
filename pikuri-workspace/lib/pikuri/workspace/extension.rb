@@ -15,6 +15,10 @@ module Pikuri
     # {Filesystem} (it governs the subprocess's fs view, not the read record).
     # It lives in {Pikuri::Code::Extension}.
     #
+    # Contributes {PROMPT_SNIPPET} — the "a decline is final" confirmation
+    # guidance — so it rides the wiring of the mutating tools instead of
+    # being restated in each host prompt.
+    #
     # == Read-only gate
     #
     # A {ReadOnly} flag (when the host passes one) is threaded into {Edit}/{Write}
@@ -37,6 +41,16 @@ module Pikuri
       # pre-registered file tool (on a different composite) would defeat the
       # read-ledger sharing.
       TOOL_CLASSES = [Read, Search::Grep, Search::Glob, Edit, Write].freeze
+
+      # @return [String] system-prompt guidance wired alongside the mutating
+      #   tools: the confirmer may pause a write/edit (and a co-wired Bash)
+      #   for the user's OK, and a decline is final. Contributed as a snippet
+      #   so it tracks the wiring rather than each host prompt (the Os/Code
+      #   precedent), and emitted unconditionally — an auto-approve ("yolo")
+      #   confirmer is the rare exception, and the guidance is harmless there.
+      PROMPT_SNIPPET = <<~SNIPPET.chomp
+        A tool may ask you to confirm before it makes a change. If the user declines, stop rather than trying another route to the same end — a decline means they want to re-steer you, so hand back and wait for their guidance.
+      SNIPPET
 
       # @return [Workspace] the composite shared across the five tools;
       #   exposed for tests / introspection.
@@ -98,6 +112,10 @@ module Pikuri
         @workspace.clear_reads
         nil
       end
+
+      # @return [Array<String>] the confirmation guidance ({PROMPT_SNIPPET}),
+      #   always — the confirmer is wired on every non-yolo host.
+      def system_prompt_snippets = [PROMPT_SNIPPET]
     end
   end
 end
