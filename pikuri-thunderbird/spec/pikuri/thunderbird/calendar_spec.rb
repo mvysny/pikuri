@@ -21,6 +21,7 @@ describe Pikuri::Thunderbird::Calendar do
         event_start_tz TEXT, event_end_tz TEXT,
         flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
       CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+      CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
     SQL
     ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
     ev.execute('c1', 'e1', 'Team standup', E1.to_i * 1_000_000, (E1.to_i + 1800) * 1_000_000,
@@ -34,6 +35,14 @@ describe Pikuri::Thunderbird::Calendar do
     ev.close
     db.execute("INSERT INTO cal_properties VALUES ('e1','LOCATION','Zoom room A')")
     db.execute("INSERT INTO cal_properties VALUES ('e1','DESCRIPTION','daily engineering standup')")
+    # e1 attendees exercise the parser: an organizer (CN + EMAIL param), a
+    # quoted CN with an interior comma, an OPT-PARTICIPANT, and a plain row
+    # whose address lives only in the mailto: value (no CN/EMAIL param).
+    att = db.prepare('INSERT INTO cal_attendees VALUES (?,NULL,NULL,?,?)')
+    att.execute('e1', 'c1', 'ORGANIZER;CN=Ann Boss;EMAIL=ann@example.com:mailto:ann@example.com')
+    att.execute('e1', 'c1', 'ATTENDEE;CN="Vysny, Martin";PARTSTAT=ACCEPTED;ROLE=REQ-PARTICIPANT:mailto:martin@example.com')
+    att.execute('e1', 'c1', 'ATTENDEE;PARTSTAT=TENTATIVE;ROLE=OPT-PARTICIPANT;CUTYPE=INDIVIDUAL:mailto:bob@example.com')
+    att.close
     db.close
     path
   end
@@ -299,6 +308,65 @@ describe Pikuri::Thunderbird::Calendar do
       assert_equal 'daily engineering standup', rec[:description]
       assert_equal 'CONFIRMED', rec[:status]
       assert_nil cal.read(event_id: 'nope')
+    end
+  end
+
+  it 'parses attendees from the raw ATTENDEE/ORGANIZER iCal lines' do
+    with_calendar do |cal|
+      people = cal.read(event_id: 'e1')[:attendees]
+      # organizer sorts first.
+      org = people.first
+      assert org[:organizer]
+      assert_equal 'Ann Boss', org[:name]
+      assert_equal 'ann@example.com', org[:email]
+      # quoted CN keeps its interior comma; the mailto: value gives the email.
+      martin = people.find { |p| p[:email] == 'martin@example.com' }
+      assert_equal 'Vysny, Martin', martin[:name]
+      assert_equal 'ACCEPTED', martin[:status]
+      refute martin[:organizer]
+      # no CN/EMAIL param ⇒ name falls back to the mailto: address.
+      bob = people.find { |p| p[:email] == 'bob@example.com' }
+      assert_equal 'bob@example.com', bob[:name]
+      assert_equal 'OPT-PARTICIPANT', bob[:role]
+    end
+  end
+
+  it 'renders the organizer + attendees block with RSVP words' do
+    with_calendar do |cal|
+      out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'e1')
+      assert_includes out, 'Organizer: Ann Boss <ann@example.com>'
+      assert_includes out, 'Attendees (2):'
+      assert_includes out, '- Vysny, Martin <martin@example.com> — accepted'
+      # OPT-PARTICIPANT marked; missing PARTSTAT would read as "no reply".
+      assert_includes out, '- bob@example.com — tentative (optional)'
+    end
+  end
+
+  it 'truncates a large attendee list to a per-status tally' do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+        CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
+        INSERT INTO cal_events VALUES
+          ('c1','big','All Hands',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},'UTC','UTC',262,'CONFIRMED',NULL);
+      SQL
+      ins = db.prepare('INSERT INTO cal_attendees VALUES (?,NULL,NULL,?,?)')
+      50.times { |i| ins.execute('big', 'c1', "ATTENDEE;PARTSTAT=ACCEPTED:mailto:u#{i}@example.com") }
+      ins.close
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'big')
+        assert_includes out, 'Attendees (50):'
+        assert_equal 40, out.lines.count { |l| l.start_with?('  - ') }
+        assert_includes out, '… and 10 more (50 accepted)'
+      ensure
+        cal.close
+      end
     end
   end
 end

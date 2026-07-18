@@ -8,7 +8,8 @@ module Pikuri
     # (+cache.sqlite+ for cached network/CalDAV calendars, +local.sqlite+ for
     # local "storage" calendars). Event fields are *normalized columns*, not
     # opaque ICS, so basic reads are a plain +SELECT+ — no ICS parser for the
-    # common case.
+    # common case. The one exception is the guest list ({#attendees}), which
+    # Thunderbird keeps as raw +ATTENDEE+/+ORGANIZER+ content lines.
     #
     #   cal = Calendar.new(calendar_dbs: profile.calendar_dbs, cache_dir: dir)
     #   cal.available?      # any calendar store on disk?
@@ -123,8 +124,8 @@ module Pikuri
       # Full event detail for one event UID.
       #
       # @param event_id [String] the {#search} handle (the event UID).
-      # @return [Hash, nil] the search shape plus +:description+ and
-      #   +:status+, or +nil+ if not found.
+      # @return [Hash, nil] the search shape plus +:description+, +:status+,
+      #   and +:attendees+ (see {#attendees}), or +nil+ if not found.
       def read(event_id:)
         ensure_fresh
         @conns.each_value do |db|
@@ -137,7 +138,7 @@ module Pikuri
           SQL
           next unless row
 
-          return build_event(row).merge(properties(db, event_id))
+          return build_event(row).merge(properties(db, event_id), attendees: attendees(db, event_id))
         end
         nil
       end
@@ -312,6 +313,39 @@ module Pikuri
           recurring: (flags.to_i & RECURRENCE_FLAG) != 0,
           start_tz: start_tz, end_tz: end_tz
         }
+      end
+
+      # The event's attendees + organizer, parsed from the raw
+      # +ATTENDEE+/+ORGANIZER+ lines in +cal_attendees+ (the one field
+      # Thunderbird leaves as opaque ICS). Master row only (recurrence_id
+      # NULL) — the canonical guest list, not per-occurrence RSVP overrides.
+      # Organizer(s) sort first, attendees keep file order.
+      #
+      # @return [Array<Hash>] +[{name:, email:, status:, role:, cutype:,
+      #   organizer: Boolean}, …]+; +[]+ for an event with no guests.
+      def attendees(db, event_id)
+        rows = db.execute('SELECT icalString FROM cal_attendees WHERE item_id = ? AND recurrence_id IS NULL', [event_id])
+        people = rows.filter_map { |(ical)| parse_attendee(ical) unless ical.to_s.strip.empty? }
+        orgs, guests = people.partition { |p| p[:organizer] }
+        orgs + guests
+      end
+
+      # Turn one +ATTENDEE+/+ORGANIZER+ content line into a person hash: the
+      # email falls back from the +EMAIL+ param to the +mailto:+ value, the name
+      # from +CN+ to the email. {IcalLine} does the quote-aware tokenizing.
+      #
+      #   parse_attendee('ATTENDEE;CN=Bo;PARTSTAT=ACCEPTED:mailto:bo@x.com')
+      #   # => {name: "Bo", email: "bo@x.com", status: "ACCEPTED",
+      #   #     role: nil, cutype: nil, organizer: false}
+      #
+      # @param ical [String] one raw +cal_attendees.icalString+.
+      # @return [Hash] see {#attendees} for the shape.
+      def parse_attendee(ical)
+        line = IcalLine.parse(ical)
+        email = (line.params['EMAIL'].to_s.empty? ? line.value.sub(/\Amailto:/i, '') : line.params['EMAIL']).strip
+        name = line.params['CN'].to_s.strip
+        { name: name.empty? ? email : name, email: email, status: line.params['PARTSTAT'],
+          role: line.params['ROLE'], cutype: line.params['CUTYPE'], organizer: line.name == 'ORGANIZER' }
       end
 
       # @return [Hash] +{location:, description:, status:}+ from cal_properties.

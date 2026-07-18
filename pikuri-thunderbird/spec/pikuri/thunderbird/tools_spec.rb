@@ -25,9 +25,11 @@ describe 'pikuri-thunderbird tools' do
     db.execute_batch(<<~SQL)
       CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
       CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+      CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
       INSERT INTO cal_events VALUES ('c','e1','Team standup',#{Time.utc(2026, 5, 1, 7, 0).to_i * 1_000_000},#{(Time.utc(2026, 5, 1, 7, 0).to_i + 1800) * 1_000_000},'Europe/Helsinki','Europe/Helsinki',262,'CONFIRMED',NULL);
       INSERT INTO cal_properties VALUES ('e1','LOCATION','Zoom');
       INSERT INTO cal_properties VALUES ('e1','DESCRIPTION','daily sync');
+      INSERT INTO cal_attendees VALUES ('e1',NULL,NULL,'c','ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED:mailto:bob@example.com');
     SQL
     db.close
     path
@@ -163,6 +165,7 @@ describe 'pikuri-thunderbird tools' do
         db.execute_batch(<<~SQL)
           CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
           CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+          CREATE TABLE cal_attendees(item_id TEXT, recurrence_id INTEGER, recurrence_id_tz TEXT, cal_id TEXT, icalString TEXT);
           INSERT INTO cal_events VALUES ('c','e1','Team standup',#{s1},#{s1 + 1_800_000_000},'UTC','UTC',0,'CONFIRMED',NULL);
           INSERT INTO cal_events VALUES ('c','e2','Daily standup',#{s2},#{s2 + 1_800_000_000},'UTC','UTC',0,'CONFIRMED',NULL);
         SQL

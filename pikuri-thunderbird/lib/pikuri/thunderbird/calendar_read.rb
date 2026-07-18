@@ -5,11 +5,22 @@ module Pikuri
     # The +thunderbird_calendar_read+ tool — the read half of the calendar
     # search→read pair. Given an +event_id+ from
     # +thunderbird_calendar_search+, returns the full event: when, where,
-    # status, and description. Inbound-only.
+    # status, attendees (with RSVP), and description. Inbound-only.
     class CalendarRead < Pikuri::Tool
+      # @return [Integer] max attendees listed individually; beyond it the list
+      #   truncates to a per-status tally so a 169-guest all-hands can't flood
+      #   the observation.
+      ATTENDEE_CAP = 40
+
+      # @return [Hash{String=>String}] PARTSTAT → human RSVP word.
+      STATUS_LABELS = {
+        'ACCEPTED' => 'accepted', 'DECLINED' => 'declined',
+        'TENTATIVE' => 'tentative', 'NEEDS-ACTION' => 'no reply'
+      }.freeze
+
       # @return [String] opencode-shape description.
       DESCRIPTION = <<~DESC
-        Read one Thunderbird calendar event in full (title, when, where, status, description).
+        Read one Thunderbird calendar event in full (title, when, where, status, attendees with their RSVP, and description).
 
         Usage:
         - Pass the id from a thunderbird_calendar_search result.
@@ -37,15 +48,76 @@ module Pikuri
         return "Error: no event found with id #{event_id.inspect}." unless ev
 
         desc = ev[:description].to_s.strip
-        <<~EV.chomp
-          Title: #{ev[:title]}
-          When: #{DateHelpers.when_label(ev)}
-          Where: #{ev[:location].to_s.strip.empty? ? '(none)' : ev[:location].strip}
-          Status: #{ev[:status] || '(none)'}
-
-          #{desc.empty? ? '(no description)' : desc}
-        EV
+        [
+          "Title: #{ev[:title]}",
+          "When: #{DateHelpers.when_label(ev)}",
+          "Where: #{ev[:location].to_s.strip.empty? ? '(none)' : ev[:location].strip}",
+          "Status: #{ev[:status] || '(none)'}",
+          *attendee_lines(ev[:attendees]),
+          '',
+          desc.empty? ? '(no description)' : desc
+        ].join("\n")
       end
+
+      # The +Organizer:+ + +Attendees:+ block, or +[]+ when the event has no
+      # guests. Individual guests list up to {ATTENDEE_CAP}; past it the tail
+      # collapses to a per-status tally.
+      #
+      #   Organizer: Artur Signell <artur@vaadin.com>
+      #   Attendees (4):
+      #     - Mikael Grankvist <mgrankvi@vaadin.com> — no reply
+      #     - Artur Signell <artur@vaadin.com> — accepted
+      #     - mavi@vaadin.com — tentative (optional)
+      #
+      # @param people [Array<Hash>, nil] +Calendar#read+'s +:attendees+.
+      # @return [Array<String>]
+      def self.attendee_lines(people)
+        people = Array(people)
+        return [] if people.empty?
+
+        lines = []
+        org = people.find { |p| p[:organizer] }
+        lines << "Organizer: #{who(org)}" if org
+        guests = people.reject { |p| p[:organizer] }
+        return lines if guests.empty?
+
+        lines << "Attendees (#{guests.size}):"
+        guests.first(ATTENDEE_CAP).each { |g| lines << "  - #{guest_line(g)}" }
+        lines << "  … and #{guests.size - ATTENDEE_CAP} more (#{tally(guests)})" if guests.size > ATTENDEE_CAP
+        lines
+      end
+      private_class_method :attendee_lines
+
+      # @return [String] +"Name <email>"+, or bare email when there's no
+      #   distinct display name.
+      def self.who(person)
+        name = person[:name].to_s.strip
+        email = person[:email].to_s.strip
+        name.empty? || name == email ? email : "#{name} <#{email}>"
+      end
+      private_class_method :who
+
+      # @return [String] one attendee: who + RSVP + optional/resource markers.
+      def self.guest_line(guest)
+        line = +"#{who(guest)} — #{status_label(guest)}"
+        line << ' (optional)' if guest[:role] == 'OPT-PARTICIPANT'
+        line << ' [resource]' if guest[:cutype] == 'RESOURCE'
+        line
+      end
+      private_class_method :guest_line
+
+      # @return [String] human RSVP word (unknown PARTSTAT downcased; a missing
+      #   one is Google's implicit "no reply").
+      def self.status_label(guest)
+        STATUS_LABELS[guest[:status]] || guest[:status]&.downcase || 'no reply'
+      end
+      private_class_method :status_label
+
+      # @return [String] +"12 accepted, 3 declined, 40 no reply"+ over all guests.
+      def self.tally(guests)
+        guests.group_by { |g| status_label(g) }.map { |label, gs| "#{gs.size} #{label}" }.join(', ')
+      end
+      private_class_method :tally
     end
   end
 end
