@@ -23,7 +23,6 @@ module Pikuri
 
         Usage:
         - Use at the start of a multi-step task to capture the plan.
-        - `items` is a JSON array of strings — one task per element.
         - A blank element, a duplicate (within the batch or already on the list), or an empty array aborts the whole call with `Error: ...` and adds nothing — resend a corrected batch.
         - On success the full current list is returned, with each task's `#id` — use that id with `task_in_progress` / `task_completed` / `task_delete`.
       DESC
