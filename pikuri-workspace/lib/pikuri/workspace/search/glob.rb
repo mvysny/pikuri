@@ -93,9 +93,10 @@ module Pikuri
                                 '"src/**/*.{ts,tsx}" finds every TS/TSX file ' \
                                 'anywhere under src/.'
               p.optional_string :path,
-                                'Directory to search in. Relative paths resolve ' \
-                                'against the workspace root. Defaults to the ' \
-                'workspace root if missing.'
+                                'Directory to search in (e.g. "lib" or ' \
+                                '"spec/pikuri"). Relative paths resolve against ' \
+                                'the workspace root. Defaults to the workspace ' \
+                                'root if missing.'
               p.optional_boolean :include_gitignored,
                                  'Also list files excluded by .gitignore. ' \
                                  'Defaults to false, e.g. true.'
