@@ -439,11 +439,25 @@ module Pikuri
         #   +/etc/shadow+ stays unreadable) — matching the OS-helper's "advise,
         #   don't execute anything privileged" rule: privileged edits need
         #   +sudo+, unavailable in the namespace, so they go to the user.
-        # * +--proc /proc+ + +--dev /dev+ over the bound root. Because the PID
-        #   namespace is *not* unshared (see "Isolation"), the fresh +/proc+
-        #   still shows host processes — essential for +ps+/+top+/+systemctl
-        #   status+. Raw block devices aren't in the synthetic +/dev+, but
-        #   reading them needs root anyway.
+        # * +--bind /dev /dev+ — the *real* device tree, not bwrap's synthetic
+        #   +--dev+. It's redundant with +--bind / /+ but stated explicitly so
+        #   it survives someone narrowing the root bind. A synthetic +/dev+
+        #   (correct for {Bubblewrap}, whose job is containment) would omit the
+        #   block-device nodes (+/dev/nvme0n1+, +/dev/sda+), and *that omission
+        #   corrupts the agent's error signal*: +smartctl -a /dev/nvme0n1+ then
+        #   fails +ENOENT+ ("No such device") while +lsblk+/+/sys+ still show a
+        #   healthy disk — an incoherent machine the model can't reason about,
+        #   so it retry-loops instead of escalating. With the real node present
+        #   the unprivileged open fails +EACCES+ ("Permission denied"), the
+        #   honest error that says "escalate" — and here escalation *is* the
+        #   answer: +sudo+ is unavailable in the namespace, so a privileged read
+        #   becomes advice to the human, matching the "advise, don't execute
+        #   privileged" rule. This isn't a security regression — the root is
+        #   already bound read-write, so the synthetic +/dev+ was hiding nothing
+        #   an attacker couldn't otherwise reach; it only mangled the error.
+        # * +--proc /proc+ over the bound root. Because the PID namespace is
+        #   *not* unshared (see "Isolation"), the fresh +/proc+ still shows host
+        #   processes — essential for +ps+/+top+/+systemctl status+.
         #
         # == Isolation: network only, deliberately
         #
@@ -491,14 +505,14 @@ module Pikuri
 
           # @param argv [Array<String>] the +timeout … bash -c <cmd>+ argv
           #   {Bash.run} would have spawned unmediated.
-          # @return [Array<String>] +bwrap+ + full-root bind + fresh /proc +
-          #   /dev + +--unshare-net+ + isolation + +argv+, ready for
+          # @return [Array<String>] +bwrap+ + full-root bind + the real /dev +
+          #   fresh /proc + +--unshare-net+ + isolation + +argv+, ready for
           #   {Pikuri::Subprocess.spawn}.
           def wrap(argv)
             [
               BWRAP_BINARY,
               '--bind', '/', '/',
-              '--dev', '/dev',
+              '--bind', '/dev', '/dev',
               '--proc', '/proc',
               '--unshare-net',
               '--die-with-parent', '--new-session',

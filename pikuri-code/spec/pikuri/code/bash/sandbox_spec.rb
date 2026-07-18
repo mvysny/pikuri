@@ -496,8 +496,13 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert_includes argv, '--new-session'
         assert argv.each_cons(2).any? { |a, b| a == '--proc' && b == '/proc' },
                "expected --proc /proc in #{argv.inspect}"
-        assert argv.each_cons(2).any? { |a, b| a == '--dev' && b == '/dev' },
-               "expected --dev /dev in #{argv.inspect}"
+        # The real device tree, NOT bwrap's synthetic --dev: a synthetic /dev
+        # omits block-device nodes, turning smartctl's honest EACCES into a
+        # confusing ENOENT while lsblk/sysfs still show the disk. Guard against
+        # a "cleanup" reintroducing --dev.
+        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/dev' && c == '/dev' },
+               "expected --bind /dev /dev in #{argv.inspect}"
+        refute_includes argv, '--dev'
         assert argv.each_cons(2).any? { |a, b| a == '--chdir' && b == root.to_s },
                "expected --chdir #{root} in #{argv.inspect}"
         # User argv preserved at the tail.
