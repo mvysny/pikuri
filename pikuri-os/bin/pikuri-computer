@@ -101,14 +101,17 @@ sandbox = if sandbox_enabled
             Pikuri::Code::Bash::Sandbox::NONE
           end
 
-# Base OS prompt + the online network-posture block (default; --no-internet
-# swaps in the offline block). The mail/calendar usage guidance — untrusted
-# -email policy, grounding discipline, draft-hand-off stance — is contributed
-# by Thunderbird::Extension's system_prompt_snippets (in lockstep with the
-# allow_ flags), and the "# This machine" facts + MACHINE.md by Os::Extension.
-system_prompt = Pikuri.prompts(:'os-assistant',
-                               internet_enabled ? :'os-network-online' : :'os-network-offline',
-                               :'agent-loop')
+# Base OS prompt (+ the constant no-network posture) + the online
+# network-posture block by default (--no-internet drops it — offline mode adds
+# nothing, the exception is what's stated). The mail/calendar usage guidance —
+# untrusted-email policy, grounding discipline, draft-hand-off stance — is
+# contributed by Thunderbird::Extension's system_prompt_snippets (in lockstep
+# with the allow_ flags), and the "# This machine" facts + MACHINE.md by
+# Os::Extension.
+prompt_names = [:'os-assistant']
+prompt_names << :'os-network-online' if internet_enabled
+prompt_names << :'agent-loop'
+system_prompt = Pikuri.prompts(*prompt_names)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new

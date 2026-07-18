@@ -96,16 +96,16 @@ sandbox = if sandbox_enabled
             Pikuri::Code::Bash::Sandbox::NONE
           end
 
-# Base prompt + a network-posture block chosen by --with-internet + date.
-# The network block is mode-specific: offline says "your tools can't reach
-# the net, hand networked commands to the user"; online adds "your shell is
-# still severed, but you may delegate a web lookup to the research agent,
-# and the user approves what leaves the machine." The "# This machine"
-# facts and the MACHINE.md memory section are appended by Os::Extension
-# (via append_system_prompt), so the binary doesn't assemble them.
-system_prompt = Pikuri.prompts(:'os-assistant',
-                               internet_enabled ? :'os-network-online' : :'os-network-offline',
-                               :'agent-loop')
+# Base prompt (+ the network-severance reality) + an optional online block +
+# date. os-assistant.txt states the constant no-network posture; only
+# --with-internet adds a block, granting the delegate-a-web-lookup exception
+# (offline mode adds nothing — there's no exception to state). The "# This
+# machine" facts and the MACHINE.md memory section are appended by
+# Os::Extension (via append_system_prompt), so the binary doesn't assemble them.
+prompt_names = [:'os-assistant']
+prompt_names << :'os-network-online' if internet_enabled
+prompt_names << :'agent-loop'
+system_prompt = Pikuri.prompts(*prompt_names)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
