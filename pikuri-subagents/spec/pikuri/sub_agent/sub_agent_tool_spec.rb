@@ -166,6 +166,18 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       assert_equal 'string', schema[:properties][:task][:type]
     end
 
+    it "seeds the `name` example from the first wired persona (can't drift)" do
+      tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
+
+      assert_includes tool.parameters.to_openai[:properties][:name][:description], 'e.g. "researcher"'
+    end
+
+    it 'raises if constructed with no personas — the tool would be useless' do
+      assert_raises(ArgumentError) do
+        described_class.new(build_parent, personas: {})
+      end
+    end
+
     it "exposes every registered persona's name in the `name:` parameter enum" do
       other = Pikuri::SubAgent::Persona.new(
         name: 'file_miner',

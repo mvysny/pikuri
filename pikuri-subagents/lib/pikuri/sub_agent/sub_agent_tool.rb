@@ -78,8 +78,12 @@ module Pikuri
       #   asking. A host wires one when a persona can reach the network
       #   and the parent holds private data, so the human — not an
       #   injection-driven parent — approves what leaves the machine.
+      # @raise [ArgumentError] if +personas+ is empty — the tool is useless
+      #   with nothing to delegate to, so it must not be registered.
       # @return [SubAgentTool]
       def initialize(ctx, personas:, confirmer: nil)
+        raise ArgumentError, 'personas must not be empty: the agent tool ' \
+                             'is useless with nothing to delegate to' if personas.empty?
         parent            = ctx.agent
         # Bake the parent's resolved cap onto the sub-agent's transport so
         # it inherits the window without re-running the +/props+ probe.
@@ -90,13 +94,18 @@ module Pikuri
         # Per-persona monotonic counter (default 0 auto-inits each slot),
         # so ids like "researcher 0" survive interleaved spawns.
         counters          = Hash.new(0)
+        # Seed the picker example from the first wired persona, so it stays
+        # in lockstep with the actual set instead of a hardcoded name that
+        # could outlive the persona it named.
+        name_hint         = %{, e.g. "#{personas.keys.first}"}
 
         super(
           name: 'agent',
           description: DESCRIPTION,
           parameters: Pikuri::Tool::Parameters.build { |p|
             p.required_enum :name,
-                            'Agent name. See <available_agents> in the system prompt for what each one does.',
+                            "Agent name#{name_hint}. See <available_agents> " \
+                            'in the system prompt for what each one does.',
                             values: personas.keys
             p.required_string :task,
                               'Self-contained instructions for the agent, ' \

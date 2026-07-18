@@ -869,15 +869,16 @@ pikuri (notably the planned `pikuri-tui`) live in downstream gems.
   not per-tool. Add an example value
   (`'..., e.g. "https://example.com"'`) to every parameter
   description — the LLM's argument-filling reliability is
-  measurably better with one. Two exceptions, both where a hardcoded
-  example would add nothing: (1) a parameter whose allowed values are
-  computed at runtime (a dynamic enum) — the injected value list is
-  itself the example, and a hardcoded one would drift against the
-  wiring; (2) a bounded numeric parameter whose description already
-  states a default and/or cap — those literal numbers already serve
-  as examples, and a number is hard to mis-shape, so a tacked-on
-  `e.g. 5` only reads as noise (worse, dangling after a cap it reads
-  as modifying the cap).
+  measurably better with one. Where a param's values are computed at
+  runtime, derive the example from those live values rather than
+  hardcoding — a dynamic enum takes its example from the first of its
+  injected values (never a hardcoded name, which drifts against the
+  wiring, silently: no test goes red when the named persona is
+  removed). The one true exception is a bounded numeric parameter
+  whose description already states a default and/or cap — those
+  literal numbers already serve as examples, and a number is hard to
+  mis-shape, so a tacked-on `e.g. 5` only reads as noise (worse,
+  dangling after a cap it reads as modifying the cap).
 - **No tool names in a main/binary system prompt.** The system
   prompt for a *main* agent (the per-binary `prompts/<bin>.txt`)
   names no specific pikuri tool — so it can never go stale against
