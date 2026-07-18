@@ -83,7 +83,6 @@ module Pikuri
           - Wraps `ripgrep` — regex syntax is rg's Rust-regex dialect (mostly PCRE-compatible; no lookbehind).
           - Default search root is the workspace root; pass `path` to narrow to a file or subdirectory.
           - Respects `.gitignore` by default; set `include_gitignored: true` to also search ignored files.
-          - `output_mode` controls verbosity: `content` (default, file:line:text), `files_with_matches` (paths only), `count` (matches per file).
           - Use `files_with_matches` first to scope a broad search, then `content` (or `read`) to investigate — saves tokens.
           - Output is truncated to #{MAX_BYTES_LABEL}; refine the pattern or narrow `path` if the response ends in a truncation marker.
           - Long lines are truncated to #{MAX_LINE_LENGTH} chars with a preview marker; use `read` to see full lines.
@@ -103,9 +102,9 @@ module Pikuri
                                 'Regex pattern to search for (rg Rust-regex ' \
                                 'dialect), e.g. "def\s+\w+" or "TODO".'
               p.optional_string :path,
-                                'File or directory to search. Relative paths ' \
-                                'resolve against the workspace root. Defaults ' \
-  'to the workspace root.'
+                                'File or directory to search (e.g. "lib" or ' \
+                                '"src/app.rb"). Relative paths resolve against ' \
+                                'the workspace root. Defaults to the workspace root.'
               p.optional_string :glob,
                                 'Filename glob restricting which files are ' \
                                 'searched: ** matches any number of ' \
