@@ -219,14 +219,14 @@ module Pikuri
 
         Usage:
         - Use this for any arithmetic beyond simple mental math — do not eyeball multi-digit work.
-        - Python expression syntax: +, -, *, / (true division), // (floor division), % (modulo), ** (exponentiation), unary minus, parentheses, decimal numbers.
         - Decimal results are rounded to 3 places; integer results are exact.
-        - Failures (parse error, division by zero) come back as "Error: ..." — read the message and re-call with a corrected expression.
       DESC
       parameters: Parameters.build { |p|
         p.required_string :expression,
-                          'Arithmetic expression to evaluate, e.g. ' \
-                          '"155 / (58 * 1000.0 / 3600)" or "2**10".'
+                          'Arithmetic expression in Python syntax: + - * ' \
+                          '/ (true division), // (floor division), % (modulo), ' \
+                          '** (exponentiation), unary minus, parentheses, ' \
+                          'decimals. E.g. "155 / (58 * 1000.0 / 3600)" or "2**10".'
       },
       execute: ->(expression:) { Calculator.calculate(expression) }
     )
