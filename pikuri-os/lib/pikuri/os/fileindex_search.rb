@@ -46,7 +46,7 @@ module Pikuri
         - Searches inside PDFs, Word/ODT/spreadsheet documents and plain text — reach for this when the answer may live in a file's contents.
         - Keyword match (and word stems); type the actual words that would appear in the file.
         - The index returns at most ONE match per file and may be slightly stale — this is a locator, not the full story. To read a file's full, current text, read it (see fileindex_read).
-        - Cheap and fast: fine to run many times to narrow down.
+        - Cheap: it queries a prebuilt index rather than walking the filesystem, so it barely touches the disk of the machine the user is on — fine to run many times to narrow down.
         - Only indexed folders are covered; system paths like /etc or /var are not — search those with a text/regex tool instead.
         - Output is truncated to #{MAX_BYTES_LABEL}; narrow the query if it ends in a truncation marker.
       DESC
