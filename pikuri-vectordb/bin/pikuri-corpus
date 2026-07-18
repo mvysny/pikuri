@@ -121,6 +121,7 @@ Pikuri::Extractors::PDF.register
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 system_prompt = Pikuri.prompt(:'pikuri-corpus')
+system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nIndexed corpus root: #{source}"
 

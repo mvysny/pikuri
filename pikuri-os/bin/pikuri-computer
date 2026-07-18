@@ -108,6 +108,7 @@ sandbox = if sandbox_enabled
 # allow_ flags), and the "# This machine" facts + MACHINE.md by Os::Extension.
 system_prompt = Pikuri.prompt(:'os-assistant')
 system_prompt += "\n\n" + Pikuri.prompt(internet_enabled ? :'os-network-online' : :'os-network-offline')
+system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new

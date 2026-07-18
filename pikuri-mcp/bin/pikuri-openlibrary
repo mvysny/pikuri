@@ -73,6 +73,7 @@ end
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 system_prompt = Pikuri.prompt(:'pikuri-openlibrary')
+system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 # The one hardcoded MCP server. The argv is the exact `docker run`

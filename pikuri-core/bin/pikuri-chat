@@ -54,6 +54,7 @@ end
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
 system_prompt = Pikuri.prompt(:'pikuri-chat')
+system_prompt += "\n\n" + Pikuri.prompt(:'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
