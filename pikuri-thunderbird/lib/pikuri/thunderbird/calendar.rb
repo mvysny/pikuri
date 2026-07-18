@@ -73,6 +73,10 @@ module Pikuri
       # query words matched), newest breaks ties. Recall-first — a partial
       # match still surfaces (see {#search_db}).
       #
+      # A recurring series stores a master row plus one row per modified
+      # occurrence, all sharing the event UID; {#fold_series} collapses them to
+      # one hit so a weekly meeting surfaces once, not once per occurrence.
+      #
       # @param query [String] substring over title + DESCRIPTION + LOCATION.
       # @param limit [Integer] max events.
       # @param after [Time, nil] only events starting on/after this instant.
@@ -84,11 +88,17 @@ module Pikuri
       def search(query:, limit:, after: nil, before: nil, recurring: nil)
         ensure_fresh
         words = query.to_s.scan(/[[:alnum:]]+/).map { |w| fold(w) }
-        hits = @conns.values.flat_map { |db| search_db(db, words:, after:, before:, recurring:) }
+        rows = @conns.values.flat_map { |db| search_db(db, words:, after:, before:) }
+        series = rows.group_by { |h| h[:event_id] }.map { |_uid, group| fold_series(group) }
+        # Recurrence filter runs *after* folding: an occurrence row lacks the
+        # master's HAS_RECURRENCE flag, so filtering per-row in SQL mislabeled
+        # every occurrence "single" and leaked the whole series under
+        # recurrence:single. Folding classifies the series as a whole first.
+        series.select! { |h| h[:recurring] == recurring } unless recurring.nil?
         # Rank across stores by matched-word count, then recency. :score is an
         # internal ranking key (see #search_db), dropped from the returned shape.
-        hits.sort_by { |h| [-h[:score], -(h[:start]&.to_i || 0)] }
-            .first(limit).map { |h| h.except(:score) }
+        series.sort_by { |h| [-h[:score], -(h[:start]&.to_i || 0)] }
+              .first(limit).map { |h| h.except(:score) }
       end
 
       # Full event detail for one event UID.
@@ -99,9 +109,12 @@ module Pikuri
       def read(event_id:)
         ensure_fresh
         @conns.each_value do |db|
+          # A recurring UID has several rows (master + occurrence exceptions);
+          # prefer the master (recurrence_id NULL sorts first) for a stable read.
           row = db.execute(<<~SQL, [event_id]).first
             SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, ical_status
-            FROM cal_events WHERE id = ? LIMIT 1
+            FROM cal_events WHERE id = ?
+            ORDER BY (recurrence_id IS NOT NULL) LIMIT 1
           SQL
           next unless row
 
@@ -143,8 +156,9 @@ module Pikuri
       # @return [String] the folded text ("" for +nil+/blank).
       def fold(str) = str.to_s.unicode_normalize(:nfd).gsub(/\p{Mn}/, '').downcase
 
-      # Fetch the date/recurrence-filtered events (native SQL), then fold +
-      # match + score in Ruby — never in SQL. Folding is a Ruby-side
+      # Fetch the date-filtered events (native SQL), then fold + match + score
+      # in Ruby — never in SQL (the recurrence filter also runs in Ruby, after
+      # {#fold_series}, since it's a per-*series* not per-row decision). Folding is a Ruby-side
       # +unicode_normalize+; as a per-row SQLite callback inside a correlated
       # subquery it pegged a core for tens of seconds, so the two SQL reads
       # here (events + their LOCATION/DESCRIPTION) are flat single scans and
@@ -159,8 +173,9 @@ module Pikuri
       # would make it misread "fewer hits" as "no such event exists".
       #
       # @param words [Array<String>] pre-folded query terms (empty ⇒ list all).
-      # @return [Array<Hash>] hits carrying an extra +:score+ for {#search}.
-      def search_db(db, words:, after:, before:, recurring:)
+      # @return [Array<Hash>] hits carrying an extra +:score+ (for {#search})
+      #   and +:occurrence+ (for {#fold_series}); both dropped from the shape.
+      def search_db(db, words:, after:, before:)
         filters = []
         binds = []
         # Date bounds are compared in the machine-local frame (the caller
@@ -179,20 +194,21 @@ module Pikuri
           filters << 'event_start <= ?'
           binds << to_prtime(before)
         end
-        # Recurrence filter off the master's HAS_RECURRENCE bit (constant, no
-        # bind). nil leaves it unfiltered.
-        filters << "(flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
         where = filters.empty? ? '1' : filters.join(' AND ')
 
         events = db.execute(<<~SQL, binds)
-          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags
+          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, recurrence_id
           FROM cal_events WHERE #{where}
         SQL
         text = searchable_text(db)
 
         events.filter_map do |row|
           loc, desc = text[row[0]]
-          hit = build_event(row).merge(location: loc)
+          # recurrence_id is set only on a recurring series' occurrence rows
+          # (NULL on a master or a single event); it's what marks the flood
+          # rows so #fold_series can class the series recurring even though the
+          # occurrence itself lacks the master's HAS_RECURRENCE flag.
+          hit = build_event(row).merge(location: loc, occurrence: !row[7].nil? && row[7].to_i != 0)
           # Empty query → list everything (score 0, date-ordered by #search).
           next hit.merge(score: 0) if words.empty?
 
@@ -200,6 +216,22 @@ module Pikuri
           score = words.count { |w| haystack.include?(w) }
           score.zero? ? nil : hit.merge(score: score)
         end
+      end
+
+      # Collapse the stored rows of one event UID — a single event is one row;
+      # a recurring series is a master plus one row per modified occurrence — into
+      # a single hit, so a weekly meeting surfaces once instead of once per
+      # occurrence. The series counts as recurring if any row is a master
+      # (HAS_RECURRENCE) or an occurrence (recurrence_id set); the earliest
+      # in-range row represents it, and the group's best word-count is its score.
+      #
+      # @param group [Array<Hash>] rows sharing an +event_id+ (from {#search_db}).
+      # @return [Hash] one merged hit (search shape + +:score+).
+      def fold_series(group)
+        recurring = group.any? { |h| h[:recurring] || h[:occurrence] }
+        best = group.map { |h| h[:score] }.max
+        rep = group.min_by { |h| h[:start]&.to_i || 0 }
+        rep.merge(recurring: recurring, score: best).except(:occurrence)
       end
 
       # One flat scan of the LOCATION/DESCRIPTION properties (vs. a correlated

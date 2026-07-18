@@ -19,18 +19,18 @@ describe Pikuri::Thunderbird::Calendar do
         cal_id TEXT, id TEXT, title TEXT,
         event_start INTEGER, event_end INTEGER,
         event_start_tz TEXT, event_end_tz TEXT,
-        flags INTEGER, ical_status TEXT);
+        flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
       CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
     SQL
-    ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?)')
+    ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
     ev.execute('c1', 'e1', 'Team standup', E1.to_i * 1_000_000, (E1.to_i + 1800) * 1_000_000,
-               'Europe/Helsinki', 'Europe/Helsinki', 262, 'CONFIRMED')
+               'Europe/Helsinki', 'Europe/Helsinki', 262, 'CONFIRMED', nil)
     ev.execute('c1', 'e2', 'Company Holiday', E2.to_i * 1_000_000, (E2.to_i + 86_400) * 1_000_000,
-               'floating', 'floating', 8, 'CONFIRMED')
+               'floating', 'floating', 8, 'CONFIRMED', nil)
     ev.execute('c1', 'e3', 'Lunch with Bob', E3.to_i * 1_000_000, (E3.to_i + 3600) * 1_000_000,
-               'UTC', 'UTC', 262, 'CONFIRMED')
+               'UTC', 'UTC', 262, 'CONFIRMED', nil)
     ev.execute('c1', 'e4', 'Weekly sync', E4.to_i * 1_000_000, (E4.to_i + 1800) * 1_000_000,
-               'UTC', 'UTC', 278, 'CONFIRMED') # 278 = 262 | 16 (HAS_RECURRENCE)
+               'UTC', 'UTC', 278, 'CONFIRMED', nil) # 278 = 262 | 16 (HAS_RECURRENCE); master row
     ev.close
     db.execute("INSERT INTO cal_properties VALUES ('e1','LOCATION','Zoom room A')")
     db.execute("INSERT INTO cal_properties VALUES ('e1','DESCRIPTION','daily engineering standup')")
@@ -76,11 +76,11 @@ describe Pikuri::Thunderbird::Calendar do
           cal_id TEXT, id TEXT, title TEXT,
           event_start INTEGER, event_end INTEGER,
           event_start_tz TEXT, event_end_tz TEXT,
-          flags INTEGER, ical_status TEXT);
+          flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
         INSERT INTO cal_events VALUES
           ('c1','a1','Hammer Dröp on a boat',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
-           'UTC','UTC',262,'CONFIRMED');
+           'UTC','UTC',262,'CONFIRMED',NULL);
         INSERT INTO cal_properties VALUES ('a1','LOCATION','Café Zürich');
       SQL
       db.close
@@ -115,13 +115,13 @@ describe Pikuri::Thunderbird::Calendar do
       # matches a single word. Score must win over recency ⇒ 'both' first.
       db.execute_batch(<<~SQL)
         CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
-          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT);
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
         CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
         INSERT INTO cal_events VALUES
           ('c1','both','Project kickoff meeting',#{E1.to_i * 1_000_000},#{(E1.to_i + 3600) * 1_000_000},
-           'UTC','UTC',262,'CONFIRMED'),
+           'UTC','UTC',262,'CONFIRMED',NULL),
           ('c1','one','Weekly meeting',#{E3.to_i * 1_000_000},#{(E3.to_i + 3600) * 1_000_000},
-           'UTC','UTC',262,'CONFIRMED');
+           'UTC','UTC',262,'CONFIRMED',NULL);
       SQL
       db.close
       cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
@@ -156,6 +156,53 @@ describe Pikuri::Thunderbird::Calendar do
       assert_equal %w[e1 e2 e3], single
       both = cal.search(query: '', limit: 10, recurring: nil).map { |h| h[:event_id] }.sort
       assert_equal %w[e1 e2 e3 e4], both
+    end
+  end
+
+  it 'folds a recurring series (master + occurrence rows) into one hit' do
+    # The reported bug: a recurring Google event is stored as a master row plus
+    # one row per modified occurrence — all sharing the UID, each with its own
+    # recurrence_id, and (crucially) NONE of the occurrence rows carry the
+    # master's HAS_RECURRENCE flag. The old per-row SQL recurrence filter then
+    # leaked every occurrence under recurrence:single and flooded plain search.
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'cache.sqlite')
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE cal_events(cal_id TEXT, id TEXT, title TEXT, event_start INTEGER, event_end INTEGER,
+          event_start_tz TEXT, event_end_tz TEXT, flags INTEGER, ical_status TEXT, recurrence_id INTEGER);
+        CREATE TABLE cal_properties(item_id TEXT, key TEXT, value TEXT);
+      SQL
+      uid = 'series@google.com'
+      master = Time.utc(2026, 2, 6, 11, 30, 0)
+      ev = db.prepare('INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?,?)')
+      # Master (recurrence_id NULL, flag 16); then 5 weekly occurrence rows
+      # (recurrence_id set, flag 262 = no HAS_RECURRENCE bit).
+      ev.execute('c1', uid, 'Weekly standup', master.to_i * 1_000_000, (master.to_i + 1800) * 1_000_000,
+                 'UTC', 'UTC', 278, 'CONFIRMED', nil)
+      5.times do |i|
+        occ = master + ((i + 1) * 7 * 86_400)
+        ev.execute('c1', uid, 'Weekly standup', occ.to_i * 1_000_000, (occ.to_i + 1800) * 1_000_000,
+                   'UTC', 'UTC', 262, 'CONFIRMED', occ.to_i * 1_000_000)
+      end
+      # A genuinely single event, for the recurrence filter checks.
+      ev.execute('c1', 'solo', 'Standup retro', Time.utc(2026, 3, 1).to_i * 1_000_000,
+                 (Time.utc(2026, 3, 1).to_i + 1800) * 1_000_000, 'UTC', 'UTC', 262, 'CONFIRMED', nil)
+      ev.close
+      db.close
+      cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
+      begin
+        # Plain search: the series collapses to ONE hit (not six), marked recurring.
+        hits = cal.search(query: 'standup', limit: 50)
+        assert_equal [uid, 'solo'], hits.map { |h| h[:event_id] }.sort
+        assert hits.find { |h| h[:event_id] == uid }[:recurring], 'folded series is recurring'
+        # recurrence:single must NOT leak the occurrence rows — only the real single.
+        assert_equal ['solo'], cal.search(query: 'standup', limit: 50, recurring: false).map { |h| h[:event_id] }
+        # recurrence:recurring surfaces the series exactly once.
+        assert_equal [uid], cal.search(query: 'standup', limit: 50, recurring: true).map { |h| h[:event_id] }
+      ensure
+        cal.close
+      end
     end
   end
 

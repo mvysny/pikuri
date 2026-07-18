@@ -285,7 +285,15 @@ calendar tools register regardless and self-explain the empty state.
   126 rows, `flags&8` ⟺ midnight-aligned start ⟺ `tz=floating`, zero
   off-diagonal). All-day DTEND is iCal **exclusive** (1-day event spans exactly
   1 day), so render `[start, end − 1 day]` and don't zone-convert.
-- `ical_status`, `priority`, `privacy`, recurrence fields.
+- `ical_status`, `priority`, `privacy`, recurrence fields. **`recurrence_id`**
+  is the fold key: a recurring series is stored as a *master* row
+  (`recurrence_id` NULL, `flags & 16` set, RRULE in `cal_recurrence`) **plus one
+  row per modified occurrence** ("exception") — same event UID, distinct
+  `recurrence_id` (the occurrence's PRTime), and *no* `flags & 16` bit. So a
+  per-row recurrence filter on `flags & 16 = 0` leaks every occurrence under
+  "single" and floods plain search with the same event; `Calendar#search` folds
+  rows by UID (`#fold_series`) and classifies the *series* recurring if any row
+  is a master or an occurrence.
 
 Companions: `cal_todos` (VTODO, same shape); `cal_properties(item_id, key,
 value)` (DESCRIPTION, LOCATION, …); `cal_recurrence`/`cal_attendees`/
