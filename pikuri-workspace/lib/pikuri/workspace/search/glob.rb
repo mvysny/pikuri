@@ -67,7 +67,6 @@ module Pikuri
 
           Usage:
           - Respects `.gitignore` by default; set `include_gitignored: true` to also list ignored files.
-          - Glob syntax: `**` matches any number of directories, `*` matches any filename chars (not `/`), `{a,b}` is alternation — e.g. `src/**/*.{ts,tsx}` finds every TS/TSX file anywhere under `src/`.
           - Default search root is the workspace root; pass `path` to narrow to a subdirectory.
           - Use `glob` to find files by name; use `grep` to find files by content.
           - Output is sorted by mtime descending — recently-touched files come first, so broad patterns still surface relevant files near the top.
@@ -85,9 +84,11 @@ module Pikuri
             description: DESCRIPTION,
             parameters: Parameters.build { |p|
               p.required_string :pattern,
-                                'Glob pattern (** matches any number of ' \
-                                'directories; {a,b} alternation), e.g. ' \
-                                '"**/*.rb" or "lib/**/*_spec.rb".'
+                                'Glob pattern: ** matches any number of ' \
+                                'directories, * matches any filename chars ' \
+                                '(not /), {a,b} is alternation. E.g. ' \
+                                '"src/**/*.{ts,tsx}" finds every TS/TSX file ' \
+                                'anywhere under src/.'
               p.optional_string :path,
                                 'Directory to search in. Relative paths resolve ' \
                                 'against the workspace root. Defaults to the ' \
