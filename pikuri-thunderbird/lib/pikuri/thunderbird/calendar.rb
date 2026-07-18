@@ -83,10 +83,11 @@ module Pikuri
       #   all_day: Boolean, recurring: Boolean, start_tz:, end_tz:, location:}, …]+
       def search(query:, limit:, after: nil, before: nil, recurring: nil)
         ensure_fresh
-        hits = @conns.values.flat_map { |db| search_db(db, query:, after:, before:, recurring:, limit:) }
+        words = query.to_s.scan(/[[:alnum:]]+/).map { |w| fold(w) }
+        hits = @conns.values.flat_map { |db| search_db(db, words:, after:, before:, recurring:) }
         # Rank across stores by matched-word count, then recency. :score is an
         # internal ranking key (see #search_db), dropped from the returned shape.
-        hits.sort_by { |h| [-h[:score].to_i, -(h[:start]&.to_i || 0)] }
+        hits.sort_by { |h| [-h[:score], -(h[:start]&.to_i || 0)] }
             .first(limit).map { |h| h.except(:score) }
       end
 
@@ -127,56 +128,41 @@ module Pikuri
 
           @conns[src]&.close
           snap.refresh
-          db = SQLite3::Database.new("file:#{snap.path}?immutable=1",
-                                     flags: SQLite3::Constants::Open::READONLY | SQLite3::Constants::Open::URI)
-          # Diacritic-fold both sides of every text LIKE (see #search_db), so
-          # "Drop" finds "Dröp" — matching the mail path, whose FTS5 unicode61
-          # tokenizer already strips diacritics for free.
-          db.create_function('pk_fold', 1) { |func, value| func.result = fold(value) }
-          @conns[src] = db
+          @conns[src] = SQLite3::Database.new("file:#{snap.path}?immutable=1",
+                                              flags: SQLite3::Constants::Open::READONLY | SQLite3::Constants::Open::URI)
           @generations[src] = snap.generation
         end
       end
 
       # Casefold + strip diacritics (NFD-decompose, drop the combining marks),
       # so a folded needle substring-matches a folded haystack accent-blind.
-      # +nil+-safe: SQLite passes +NULL+ columns through as +nil+.
       #
       #   fold("Dröp")   # => "drop"
       #
       # @param str [String, nil]
-      # @return [String, nil]
-      def fold(str)
-        return nil if str.nil?
+      # @return [String] the folded text ("" for +nil+/blank).
+      def fold(str) = str.to_s.unicode_normalize(:nfd).gsub(/\p{Mn}/, '').downcase
 
-        str.unicode_normalize(:nfd).gsub(/\p{Mn}/, '').downcase
-      end
-
-      # @return [Array<Hash>] hits carrying an extra +:score+ (matched-word
-      #   count) for the cross-store rank in {#search}.
-      def search_db(db, query:, after:, before:, recurring:, limit:)
-        # Word matching is recall-first, mirroring the mail path (which ORs
-        # words + bm25-ranks): OR the words and rank a hit by how many it
-        # contains, across title / DESCRIPTION / LOCATION (accent- and
-        # case-folded on both sides via pk_fold — see #ensure_fresh). The
-        # matched-word count is the calendar analogue of bm25 (no corpus
-        # stats to rank with); ties break on recency. Keeping the two tools
-        # aligned is the point: an LLM that has seen forgiving mail search
-        # assumes the same here, so a stricter AND would make it misread
-        # "fewer hits" as "no such event exists".
-        score_binds = []
-        score = query.to_s.scan(/[[:alnum:]]+/).map do |word|
-          score_binds << fold(word) << fold(word)
-          <<~EXPR.chomp
-            (CASE WHEN pk_fold(e.title) LIKE '%' || ? || '%'
-                    OR EXISTS (SELECT 1 FROM cal_properties p WHERE p.item_id = e.id
-                               AND p.key IN ('DESCRIPTION','LOCATION') AND pk_fold(p.value) LIKE '%' || ? || '%')
-                  THEN 1 ELSE 0 END)
-          EXPR
-        end
-
+      # Fetch the date/recurrence-filtered events (native SQL), then fold +
+      # match + score in Ruby — never in SQL. Folding is a Ruby-side
+      # +unicode_normalize+; as a per-row SQLite callback inside a correlated
+      # subquery it pegged a core for tens of seconds, so the two SQL reads
+      # here (events + their LOCATION/DESCRIPTION) are flat single scans and
+      # all the folding runs once per field in-process.
+      #
+      # Matching is recall-first, mirroring the mail path (which ORs words +
+      # bm25-ranks): a word matches if the folded query term is a substring of
+      # the folded title/description/location, and a hit's +:score+ is how many
+      # of the words matched — the calendar analogue of bm25 (no corpus stats
+      # to rank with). Keeping the two tools aligned is the point: an LLM that
+      # has seen forgiving mail search assumes the same here, so a stricter AND
+      # would make it misread "fewer hits" as "no such event exists".
+      #
+      # @param words [Array<String>] pre-folded query terms (empty ⇒ list all).
+      # @return [Array<Hash>] hits carrying an extra +:score+ for {#search}.
+      def search_db(db, words:, after:, before:, recurring:)
         filters = []
-        filter_binds = []
+        binds = []
         # Date bounds are compared in the machine-local frame (the caller
         # parses a bare date to local midnight; parse_before extends it to
         # end-of-day). Correct for timed events in any zone. Caveat: all-day
@@ -186,34 +172,46 @@ module Pikuri
         # UTC/eastern zones; a fully correct fix needs per-event-type date
         # extraction (deferred — see ideas/thunderbird.md open questions).
         if after
-          filters << 'e.event_start >= ?'
-          filter_binds << to_prtime(after)
+          filters << 'event_start >= ?'
+          binds << to_prtime(after)
         end
         if before
-          filters << 'e.event_start <= ?'
-          filter_binds << to_prtime(before)
+          filters << 'event_start <= ?'
+          binds << to_prtime(before)
         end
         # Recurrence filter off the master's HAS_RECURRENCE bit (constant, no
         # bind). nil leaves it unfiltered.
-        filters << "(e.flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
+        filters << "(flags & #{RECURRENCE_FLAG}) #{recurring ? '!= 0' : '= 0'}" unless recurring.nil?
         where = filters.empty? ? '1' : filters.join(' AND ')
-        # An empty query scores every event 0 and lists the whole range; a
-        # non-empty query keeps only events that matched at least one word.
-        match_gate = score.empty? ? '1' : 'score > 0'
 
-        rows = db.execute(<<~SQL, score_binds + filter_binds + [limit])
-          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, location, score FROM (
-            SELECT e.id, e.title, e.event_start, e.event_end, e.event_start_tz, e.event_end_tz, e.flags,
-                   (SELECT value FROM cal_properties p WHERE p.item_id = e.id AND p.key = 'LOCATION' LIMIT 1) AS location,
-                   (#{score.empty? ? '0' : score.join(' + ')}) AS score
-            FROM cal_events e
-            WHERE #{where}
-          )
-          WHERE #{match_gate}
-          ORDER BY score DESC, event_start DESC
-          LIMIT ?
+        events = db.execute(<<~SQL, binds)
+          SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags
+          FROM cal_events WHERE #{where}
         SQL
-        rows.map { |row| build_event(row[0..6]).merge(location: row[7], score: row[8]) }
+        text = searchable_text(db)
+
+        events.filter_map do |row|
+          loc, desc = text[row[0]]
+          hit = build_event(row).merge(location: loc)
+          # Empty query → list everything (score 0, date-ordered by #search).
+          next hit.merge(score: 0) if words.empty?
+
+          haystack = fold("#{row[1]} #{loc} #{desc}")
+          score = words.count { |w| haystack.include?(w) }
+          score.zero? ? nil : hit.merge(score: score)
+        end
+      end
+
+      # One flat scan of the LOCATION/DESCRIPTION properties (vs. a correlated
+      # subquery per event), indexed by event id for the Ruby-side match.
+      #
+      # @return [Hash{String => Array(String, String)}] +id => [location, description]+.
+      def searchable_text(db)
+        by_id = Hash.new { |h, k| h[k] = [nil, nil] }
+        db.execute("SELECT item_id, key, value FROM cal_properties WHERE key IN ('LOCATION','DESCRIPTION')") do |item_id, key, value|
+          by_id[item_id][key == 'LOCATION' ? 0 : 1] = value
+        end
+        by_id
       end
 
       # @param row [Array] +[id, title, start_us, end_us, start_tz, end_tz, flags]+
