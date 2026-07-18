@@ -92,6 +92,30 @@ its rationale, read:
   it" caveat, though the 35B default itself is now provisionally
   confirmed (above).
 
+- **The permission-wall hand-off needs no explicit read-vs-mutate
+  guidance — an honest `EACCES` is enough.** Two things had to be true
+  together, and testing (2026-07-18, "Is my SSD healthy?") confirmed
+  both. (1) `FullFsNoNet` must bind the *real* `/dev`: the earlier
+  synthetic `--dev /dev` hid block-device nodes, so `smartctl` failed
+  `ENOENT` ("No such device") while `lsblk`/`/sys` showed a healthy
+  disk — an incoherent machine that made the model retry-loop instead
+  of escalate (fixed; the why-not note lives in
+  {Pikuri::Code::Bash::Sandbox::FullFsNoNet}'s yardoc). (2) *Given* that
+  honest `EACCES`, the `os-assistant.txt` prompt does **not** need the
+  read-vs-mutate sub-bullets that once spelled out the escalation
+  strategy: the model ran the probe, read "Permission denied",
+  recognized root was required, and handed over the exact
+  `sudo nvme smart-log` / `sudo smartctl -a` commands with an
+  explanation and a paste-back ask — unprompted, and even reaching for
+  the NVMe-specific tool first. So the sub-bullets were trimmed (commit
+  `f917226`); **don't re-add them** thinking they're load-bearing.
+  *Caveat still open:* the model escalated *straight* to `sudo` without
+  first gathering the partial non-root picture. Fine when root is
+  genuinely required (SMART data is), but on a case with real partial
+  value (a root-only log where `/sys` gives half the story) the leaner
+  prompt may leave that on the table — watch for it before calling the
+  "gather partial first" nudge fully unnecessary.
+
 ## Open questions (empirical — settle by using it)
 
 - **Does keyword recall suffice, or is semantic search needed?**
