@@ -14,10 +14,10 @@ module Pikuri
     # Recall on prose ties +localsearch+, so recoll is *not* a better
     # engine — it earns its place where +localsearch+ is structurally blind
     # (source trees, +.git+ checkouts, non-GNOME desktops). Its blind spot
-    # is the inverse: +localsearch+ drops *content kinds* (source, git);
-    # recoll indexes exactly the *folders* the user configured (+topdirs+),
-    # source code included — everything outside them is invisible. Measured
-    # comparison: +ideas/pikuri-os.md+.
+    # is the inverse: recoll indexes exactly the *folders* the user
+    # configured (+topdirs+), source code included — everything outside them
+    # is invisible. The measured survey behind the pick-one-per-host order
+    # is in +pikuri-os/DESIGN.md+.
     #
     # {.search} asks +recollq -F 'url abstract'+ for two base64-encoded
     # fields per line (recoll's own recommended machine shape) so paths and

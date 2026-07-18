@@ -39,7 +39,7 @@ module Pikuri
       # appended to the fileindex tools' LLM description so the model knows
       # when to fall back to a filesystem text/regex search. Lives on the
       # backend (a different index ships its own). All three are confirmed
-      # against GNOME localsearch (+ideas/pikuri-os.md+).
+      # against GNOME localsearch (measured; see +pikuri-os/DESIGN.md+).
       #
       # @return [String]
       LIMITATIONS = <<~LIMITS.chomp

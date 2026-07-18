@@ -6,7 +6,7 @@ module Pikuri
   module Os
     # Boot-time machine facts for the OS helper: a small block folded into
     # the system prompt so the model doesn't guess the distro, init system,
-    # or paths. See +ideas/pikuri-os.md+.
+    # or paths. Narrative in the guide's ch7.
     #
     # The core facts (distro, kernel, init, packaging, desktop, CPU/mem,
     # home, shell, dmesg access, date) come from **always-present

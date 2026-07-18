@@ -28,6 +28,9 @@ its rationale, read:
   `Pikuri::Code::Bash::GIT_HARDENING` (the command approver + git arm).
 - **[`../CLAUDE.md`](../CLAUDE.md)** — the `pikuri-os` gem entry and the
   Sandbox / Confirmer / Workspace seam invariants.
+- **[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md)** — the file-index
+  engine survey (`localsearch` vs `recoll`, measured) and the
+  keyword-recall-vs-semantic decision.
 
 ## Related
 
@@ -116,118 +119,17 @@ its rationale, read:
   prompt may leave that on the table — watch for it before calling the
   "gather partial first" nudge fully unnecessary.
 
-## Open questions (empirical — settle by using it)
+## File search: keyword recall vs semantic — settled, graduated
 
-- **Does keyword recall suffice, or is semantic search needed?**
-  `fileindex_search` is only as good as `localsearch`'s lexical match.
-  When it whiffs, the cause is one of *three*, and they have different
-  answers — only the third is a genuine "nothing we can do":
-
-  1. **Content not indexed / not reachable** — confirmed the dominant
-     real limit, and it's *structural*, not a quality problem.
-     `localsearch` **mime-gates** extraction: `text/plain` / Markdown /
-     PDF / office get full body text, but **source code is
-     filename-only** (`text/x-java` etc. store zero content — a 90 KB
-     `.java` indexes 0 chars), and any tree containing `.git` is skipped
-     wholesale. On top of that it has **no directory scoping** — it
-     ranks globally over the whole `$HOME` index, so a small target
-     corpus is buried below the default result limit even when fully
-     indexed. So on a dev box the code is invisible and the target
-     folder is drowned. The fix is grep (cause 2 already wires it) or a
-     *different indexer* (`recoll`; comparison below) — not embeddings.
-  2. **Phrasing / synonym miss** — the doc is indexed but the user's
-     words differ ("the doc about our refund policy" vs. a file that
-     says "returns & cancellations"). This is **already ours and
-     already in posture**: we already ship the RAG/agentic search — the
-     agent reformulates (synonyms, narrower terms) and, because
-     `pikuri-os` runs `FullFsNoNet` with full-disk *read* and wires
-     `grep`/`glob`/`bash`, falls back to grepping likely directories
-     when the index misses. No sub-agent wrapper needed — that framing
-     is a technicality; the iteration is the substance.
-     `localsearch`'s index is also already stemmed ("mouse"↔"mice",
-     see {Pikuri::Os::LocalSearch}), so inflectional variants come free;
-     the residue is true synonymy, which query iteration handles better
-     than any lexical index would.
-  3. **Genuine semantic / conceptual gap** — cross-lingual, or "that
-     thing about being frugal" → an unlabelled budget spreadsheet. The
-     only cause embeddings actually address, and the rarest on a
-     personal machine. We decline it deliberately — **not** because
-     `pikuri-vectordb` "would re-index what `localsearch` already holds"
-     (that conflates *indexing cost* with retrieval *modality*; the
-     point of vectordb would be a **different modality** over the same
-     bytes), but because owning a live `$HOME` embedding index means
-     reinventing the freshness daemon `localsearch` hands us for free
-     (the `Watcher`), plus embedding VRAM and a large new surface —
-     straight against the offline, "small enough to audit" posture.
-     Semantic *re-ranking* of `localsearch` hits doesn't rescue this
-     either: it fixes precision, not recall — a doc the keyword miss
-     kept out of the candidate set can't be re-ranked back in.
-
-  **Actionable for pikuri.** (2) is the primary answer and needs no new
-  infra — at most a prompt nudge to reformulate / grep on a weak hit,
-  *especially* for code and git repos, which `fileindex_search` cannot
-  see at all (cause 1). (1)'s only outward lever is `recoll`, but the
-  measurement below shows it's a thin slice: on content `localsearch`
-  indexes, recoll's recall is *identical*, and the cases where recoll
-  wins (source, `.git`, scoped search) are already covered by the wired
-  grep. The `Recoll` (`recollq`) backend parallel to
-  {Pikuri::Os::LocalSearch}, `available?`-probed, is now **shipped and
-  wired** (see "Deferred / not yet built" below for its shape); it earns
-  its keep only for *non-GNOME hosts* or *large non-code corpora* outside
-  GNOME's indexed set. (3) stays declined.
-
-### `recoll` vs `localsearch` — is recoll actually better?
-
-Qualified yes — but for *coverage and scoping*, **not for search
-quality** and not for the semantic gap. Both are **lexical** (stemmed
-keyword) indexers; neither does embeddings, so neither closes cause (3).
-
-**Measured (2026-07; `localsearch` vs `recoll` vs `rg` over a 59-file
-pikuri Markdown corpus and `~/flowsrc`, ~825 Java files; harness +
-numbers were a throwaway bench).** On content `localsearch` actually
-indexes (the Markdown), `localsearch` and `recoll` are **equivalent** —
-both reach ~100% recall against a ripgrep oracle across distinctive,
-common, morphological, and multi-word/concept queries, returning
-near-identical file sets; `localsearch` stems and does stemmed-AND
-multiword just like `recoll`. recoll is *not* a better engine here. The
-tempting "recoll wins 100%→single-digits" on the Java corpus was an
-**artifact** — `localsearch` doesn't content-index source at all, so
-those `localsearch` "hits" were *filename* matches; the fair corpus is
-prose. `localsearch`'s real limits are structural, not quality:
-**(a) no source code** (mime-gated; `.java` etc. filename-only, `.git`
-trees skipped); **(b) no directory scoping** — global ranking over the
-whole `$HOME` index, so a small target corpus is buried below the
-default limit (everything is *in* the index — ~100% at a high limit —
-but the LLM, capped at ten hits, sees none of it for a common word).
-
-| | `localsearch` (tracker3) | `recoll` |
-|---|---|---|
-| Backend | GNOME knowledge graph (SPARQL) | Xapian |
-| Setup | **zero** — already running on GNOME | install + build index + pick dirs |
-| Freshness | continuous daemon (GNOME-managed) | cron *or* inotify daemon (`recollindex -m`) |
-| Recall on indexed prose | ~100% (**= recoll**, measured) | ~100% |
-| Source code | **filename-only** (mime-gated); `.git` trees skipped | full-text (all text mimes) |
-| Directory scope | **none** — global ranking only | `dir:` filter + per-config `topdirs` |
-| Query ops | stemmed AND / OR | + phrase / proximity / wildcard / field filters |
-| Desktop tie-in | **GNOME-only** | DE-independent (KDE, Xfce, headless) |
-| Headless CLI | `localsearch search` / `info` | `recollq` |
-
-Reading the table: on a GNOME box `localsearch` is the right default
-for whole-`$HOME` *document* discovery — already indexing, always
-fresh, zero-config, and (measured) as good as recoll at it. recoll only
-pulls ahead where `localsearch` is structurally blind — **source trees,
-`.git` repos, scoped in-folder search, non-GNOME hosts** — and those
-cases are *already* covered by the wired `grep`/`glob` (scoped, exact,
-zero-setup, blind to none of it). So recoll's marginal value over the
-shipped `localsearch` + grep pairing is a thin slice: fast indexed,
-stemmed, ranked search over *large non-code corpora* outside GNOME's
-indexed set. What recoll does *not* buy, anywhere, is a fix for a fuzzy
-conceptual ask — that's cause (2)/(3): agent iteration or declined.
-
-Sources: local measurement (above);
-[recoll.org](https://www.recoll.org/),
-[Recoll (Wikipedia)](https://en.wikipedia.org/wiki/Recoll),
-[Tracker SupportedFormats](https://wiki.gnome.org/Projects/Tracker/SupportedFormats).
+The three-causes analysis of *why* a keyword search whiffs (content not
+indexed, phrasing miss, genuine semantic gap) and the measured
+`localsearch` vs `recoll` engine survey have **graduated** to
+[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md) (§"File search" and
+§"Backend engine"). Settled outcome: cause (2) is the primary answer and
+needs no new infra (agent reformulation + the wired grep fallback);
+cause (1)'s only lever is `recoll`, a thin slice since grep already
+covers its wins; cause (3) (embeddings / `pikuri-vectordb`) stays
+declined against the offline, small-enough-to-audit posture.
 
 ## Deferred / not yet built
 
@@ -254,28 +156,11 @@ when an injection is crafted to look benign.
 
 **A `Recoll` file-index backend** — **shipped** as
 {Pikuri::Os::Recoll}, a stateless module parallel to
-{Pikuri::Os::LocalSearch} behind the same `#search` / `#read_text` /
-`#available?` / `#limitations` / `#label` + `CommandError` duck type.
-{Pikuri::Os::Extension} wires the `fileindex_*` pair on the first
-backend in `FILE_INDEX_BACKENDS` whose `available?` is true —
-`localsearch` first (GNOME, zero-setup), then `recoll` (but only with a
-*built* index: recoll's `available?` requires `<confdir>/xapiandb`, so
-an installed-but-unindexed recoll doesn't win selection and then error
-on every query). The measurement in the open question above bounds the
-payoff: on content `localsearch` indexes, recoll's recall is
-*identical*, and recoll's genuine wins (source code, `.git` trees,
-scoped in-folder search) are already served by the wired grep — so its
-live niche is the **non-GNOME host** (no `localsearch` at all) *or* a
-large non-code corpus wanting fast indexed ranking grep would scan too
-slowly. That thinness is why it's a *fallback*, not a co-equal: the
-selection order encodes "localsearch if you have it." Two things worth
-noting on the shape: recoll's blind spot is the **inverse** of
-localsearch's — it indexes exactly the configured `topdirs` (source
-code included) rather than all of `$HOME` minus source, so its
-`limitations` is a *method* reading the live `topdirs` (parsed from
-`$RECOLL_CONFDIR`/`~/.recoll`), not a constant; and pikuri never
-*builds* or *configures* a recoll index — it only queries an index the
-user already maintains.
+{Pikuri::Os::LocalSearch} behind the same duck type;
+{Pikuri::Os::Extension} wires the first `available?` backend
+(`localsearch`, then `recoll`). Its shape, selection order, and the
+payoff bound have graduated to the yardoc +
+[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md) (§"Backend engine").
 
 ## File confirmations: allowlist-safe auto-allow
 

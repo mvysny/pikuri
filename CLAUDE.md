@@ -122,7 +122,7 @@ a line.
 |---|---|---|---|
 | `ideas/*.md` | you + the author | dense, technical, provisional | design rationale *in flight* **and** each topic's list of *considered-then-deferred* work still on the table — all transient (trimmed as pieces graduate, removed once rejected; see graduation), so a present entry is genuinely open and an absence reads as a choice, not an oversight |
 | `COMPARISON.md` | an evaluator / contributor | long, comparative | external prior art + "ideas to borrow" (the outward-sourced counterpart to the `ideas/*.md` deferral registries) |
-| per-gem `DESIGN.md` | someone extending that one gem | dense, gem-scoped | that gem's design rationale + threat model (only where a gem earns one: `pikuri-memory`, `pikuri-vectordb`) |
+| per-gem `DESIGN.md` | someone extending that one gem | dense, gem-scoped | that gem's design rationale + threat model — the settled, gem-scoped *why* that fits neither the book nor per-class YARD: a cross-cutting survey spanning several classes, or a closeable threat model. Only where a gem earns one; most keep all rationale in YARD (`ls pikuri-*/DESIGN.md` for the current set) |
 | **book** (`book/`, cover-to-cover) | a learner, reading in order | verbose, narrative, order-dependent | *concepts, the teaching narrative, the cross-cutting why* |
 | **YARD** (source headers) | someone at the API | dense, per-symbol, standalone | the precise technical workings **and the design rationale** of each class/method — the source of truth |
 | **README** | a prospective user at the front door | thin: positioning + quickstart + a couple of examples + pointers | luring the reader in and routing them onward |
