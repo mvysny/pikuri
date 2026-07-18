@@ -2,26 +2,58 @@
 
 module Pikuri
   module Thunderbird
-    # Splits one iCalendar *content line* (RFC 5545 §3.1) —
-    # +NAME;PARAM=value;PARAM="quoted":value+ — into its name, parameters, and
-    # value. The inbound counterpart to {IcsEvent}'s outbound line *building*;
-    # pikuri needs it only for +cal_attendees+, the single field Thunderbird
-    # leaves as opaque ICS ({Calendar#attendees} turns the parts into people).
+    # Parses the little iCalendar that Thunderbird leaves opaque — pikuri needs
+    # it only for +cal_attendees+, whose rows are raw +ATTENDEE+/+ORGANIZER+
+    # content lines (everything else is already in normalized columns). The
+    # inbound counterpart to {IcsEvent}'s outbound line *building*. Two entry
+    # points:
     #
-    #   line = IcalLine.parse('ATTENDEE;CN="Last, First";PARTSTAT=ACCEPTED:mailto:x@y.com')
-    #   line.name           # => "ATTENDEE"
-    #   line.params["CN"]   # => "Last, First"   (surrounding quotes stripped)
-    #   line.value          # => "mailto:x@y.com"
+    #   # domain: an attendee line → a typed {Attendee}
+    #   who = IcalLine.attendee('ATTENDEE;CN="Last, First";PARTSTAT=ACCEPTED:mailto:x@y.com')
+    #   who.name        # => "Last, First"
+    #   who.email       # => "x@y.com"
+    #   who.optional?   # => false
     #
-    # Quote-aware: a +;+ or +:+ inside a double-quoted param value doesn't
-    # split. Param names are upcased (RFC 5545 §3.2 says they're
-    # case-insensitive); +TEXT+-value backslash *unescaping* is deliberately
-    # not done — the addresses and names +cal_attendees+ carries arrive quoted,
-    # not +\,+/+\;+-escaped, so it would be dead code here.
+    #   # generic: any content line → its name/params/value
+    #   line = IcalLine.parse('ATTENDEE;PARTSTAT=ACCEPTED:mailto:x@y.com')
+    #   line.params["PARTSTAT"]   # => "ACCEPTED"
+    #
+    # Both are quote-aware — a +;+/+:+ inside a double-quoted param value
+    # doesn't split — and upcase param names (RFC 5545 §3.2: case-insensitive).
+    # +TEXT+-value backslash *unescaping* is deliberately not done: the names
+    # and addresses +cal_attendees+ carries arrive quoted, not +\,+/+\;+-escaped,
+    # so it would be dead code.
     #
     # Immutable.
     module IcalLine
-      # One parsed content line.
+      # One attendee or organizer, parsed from an +ATTENDEE+/+ORGANIZER+ line.
+      # +email+ falls back from the +EMAIL+ param to the +mailto:+ value,
+      # +name+ from +CN+ to the email — so both are always present.
+      #
+      # @!attribute [r] name
+      #   @return [String] display name (+CN+), or the email when there's no CN.
+      # @!attribute [r] email
+      #   @return [String] the address, sans +mailto:+.
+      # @!attribute [r] status
+      #   @return [String, nil] raw +PARTSTAT+ (+"ACCEPTED"+, +"NEEDS-ACTION"+…).
+      # @!attribute [r] role
+      #   @return [String, nil] raw +ROLE+ (+"REQ-PARTICIPANT"+, +"OPT-PARTICIPANT"+).
+      # @!attribute [r] cutype
+      #   @return [String, nil] raw +CUTYPE+ (+"INDIVIDUAL"+, +"RESOURCE"+…).
+      # @!attribute [r] organizer
+      #   @return [Boolean] whether the line was an +ORGANIZER+, not an +ATTENDEE+.
+      Attendee = Data.define(:name, :email, :status, :role, :cutype, :organizer) do
+        # @return [Boolean] the ORGANIZER (vs a plain attendee).
+        def organizer? = organizer
+
+        # @return [Boolean] an optional invitee (+ROLE=OPT-PARTICIPANT+).
+        def optional? = role == 'OPT-PARTICIPANT'
+
+        # @return [Boolean] a room/equipment, not a person (+CUTYPE=RESOURCE+).
+        def resource? = cutype == 'RESOURCE'
+      end
+
+      # One generic parsed content line.
       #
       # @!attribute [r] name
       #   @return [String] the property name, upcased (e.g. +"ATTENDEE"+).
@@ -30,6 +62,21 @@ module Pikuri
       # @!attribute [r] value
       #   @return [String] the text after the first unquoted +:+ (+""+ if none).
       Parsed = Data.define(:name, :params, :value)
+
+      # Parse one +ATTENDEE+/+ORGANIZER+ content line into an {Attendee}.
+      #
+      # @param line [String] one raw +cal_attendees.icalString+.
+      # @return [Attendee]
+      def self.attendee(line)
+        parsed = parse(line)
+        email = (parsed.params['EMAIL'].to_s.empty? ? parsed.value.sub(/\Amailto:/i, '') : parsed.params['EMAIL']).strip
+        name = parsed.params['CN'].to_s.strip
+        Attendee.new(
+          name: name.empty? ? email : name, email: email,
+          status: parsed.params['PARTSTAT'], role: parsed.params['ROLE'],
+          cutype: parsed.params['CUTYPE'], organizer: parsed.name == 'ORGANIZER'
+        )
+      end
 
       # Parse one content line into its {Parsed} parts. Never raises — a line
       # with no +:+ yields an empty value, a token with no +=+ is skipped.

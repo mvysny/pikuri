@@ -35,4 +35,28 @@ describe Pikuri::Thunderbird::IcalLine do
     refute l.params.key?('RSVP')
     assert_equal 'DECLINED', l.params['PARTSTAT']
   end
+
+  describe '.attendee' do
+    it 'builds an Attendee; email from the mailto value, name from CN' do
+      a = IcalLine.attendee('ATTENDEE;CN="Vysny, Martin";PARTSTAT=ACCEPTED;ROLE=OPT-PARTICIPANT:mailto:m@x.com')
+      assert_equal 'Vysny, Martin', a.name
+      assert_equal 'm@x.com', a.email
+      assert_equal 'ACCEPTED', a.status
+      assert a.optional?
+      refute a.organizer?
+      refute a.resource?
+    end
+
+    it 'prefers the EMAIL param and flags the organizer' do
+      a = IcalLine.attendee('ORGANIZER;CN=Ann;EMAIL=ann@x.com:mailto:other@x.com')
+      assert a.organizer?
+      assert_equal 'ann@x.com', a.email
+    end
+
+    it 'flags a resource and falls the name back to the email' do
+      r = IcalLine.attendee('ATTENDEE;CUTYPE=RESOURCE:mailto:room@x.com')
+      assert r.resource?
+      assert_equal 'room@x.com', r.name
+    end
+  end
 end

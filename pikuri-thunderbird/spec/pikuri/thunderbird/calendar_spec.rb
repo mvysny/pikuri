@@ -311,23 +311,23 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
-  it 'parses attendees from the raw ATTENDEE/ORGANIZER iCal lines' do
+  it 'reads attendees as typed IcalLine::Attendee values' do
     with_calendar do |cal|
       people = cal.read(event_id: 'e1')[:attendees]
       # organizer sorts first.
       org = people.first
-      assert org[:organizer]
-      assert_equal 'Ann Boss', org[:name]
-      assert_equal 'ann@example.com', org[:email]
+      assert org.organizer?
+      assert_equal 'Ann Boss', org.name
+      assert_equal 'ann@example.com', org.email
       # quoted CN keeps its interior comma; the mailto: value gives the email.
-      martin = people.find { |p| p[:email] == 'martin@example.com' }
-      assert_equal 'Vysny, Martin', martin[:name]
-      assert_equal 'ACCEPTED', martin[:status]
-      refute martin[:organizer]
+      martin = people.find { |p| p.email == 'martin@example.com' }
+      assert_equal 'Vysny, Martin', martin.name
+      assert_equal 'ACCEPTED', martin.status
+      refute martin.organizer?
       # no CN/EMAIL param ⇒ name falls back to the mailto: address.
-      bob = people.find { |p| p[:email] == 'bob@example.com' }
-      assert_equal 'bob@example.com', bob[:name]
-      assert_equal 'OPT-PARTICIPANT', bob[:role]
+      bob = people.find { |p| p.email == 'bob@example.com' }
+      assert_equal 'bob@example.com', bob.name
+      assert bob.optional?
     end
   end
 

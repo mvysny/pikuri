@@ -315,37 +315,18 @@ module Pikuri
         }
       end
 
-      # The event's attendees + organizer, parsed from the raw
-      # +ATTENDEE+/+ORGANIZER+ lines in +cal_attendees+ (the one field
-      # Thunderbird leaves as opaque ICS). Master row only (recurrence_id
-      # NULL) — the canonical guest list, not per-occurrence RSVP overrides.
-      # Organizer(s) sort first, attendees keep file order.
+      # The event's attendees + organizer, over the raw +ATTENDEE+/+ORGANIZER+
+      # lines in +cal_attendees+ (the one field Thunderbird leaves as opaque
+      # ICS — {IcalLine.attendee} does the parsing). Master row only
+      # (recurrence_id NULL) — the canonical guest list, not per-occurrence RSVP
+      # overrides. Organizer(s) sort first, attendees keep file order.
       #
-      # @return [Array<Hash>] +[{name:, email:, status:, role:, cutype:,
-      #   organizer: Boolean}, …]+; +[]+ for an event with no guests.
+      # @return [Array<IcalLine::Attendee>] +[]+ for an event with no guests.
       def attendees(db, event_id)
         rows = db.execute('SELECT icalString FROM cal_attendees WHERE item_id = ? AND recurrence_id IS NULL', [event_id])
-        people = rows.filter_map { |(ical)| parse_attendee(ical) unless ical.to_s.strip.empty? }
-        orgs, guests = people.partition { |p| p[:organizer] }
+        people = rows.filter_map { |(ical)| IcalLine.attendee(ical) unless ical.to_s.strip.empty? }
+        orgs, guests = people.partition(&:organizer?)
         orgs + guests
-      end
-
-      # Turn one +ATTENDEE+/+ORGANIZER+ content line into a person hash: the
-      # email falls back from the +EMAIL+ param to the +mailto:+ value, the name
-      # from +CN+ to the email. {IcalLine} does the quote-aware tokenizing.
-      #
-      #   parse_attendee('ATTENDEE;CN=Bo;PARTSTAT=ACCEPTED:mailto:bo@x.com')
-      #   # => {name: "Bo", email: "bo@x.com", status: "ACCEPTED",
-      #   #     role: nil, cutype: nil, organizer: false}
-      #
-      # @param ical [String] one raw +cal_attendees.icalString+.
-      # @return [Hash] see {#attendees} for the shape.
-      def parse_attendee(ical)
-        line = IcalLine.parse(ical)
-        email = (line.params['EMAIL'].to_s.empty? ? line.value.sub(/\Amailto:/i, '') : line.params['EMAIL']).strip
-        name = line.params['CN'].to_s.strip
-        { name: name.empty? ? email : name, email: email, status: line.params['PARTSTAT'],
-          role: line.params['ROLE'], cutype: line.params['CUTYPE'], organizer: line.name == 'ORGANIZER' }
       end
 
       # @return [Hash] +{location:, description:, status:}+ from cal_properties.

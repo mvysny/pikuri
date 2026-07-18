@@ -63,22 +63,22 @@ module Pikuri
       # guests. Individual guests list up to {ATTENDEE_CAP}; past it the tail
       # collapses to a per-status tally.
       #
-      #   Organizer: Artur Signell <artur@vaadin.com>
-      #   Attendees (4):
-      #     - Mikael Grankvist <mgrankvi@vaadin.com> — no reply
-      #     - Artur Signell <artur@vaadin.com> — accepted
-      #     - mavi@vaadin.com — tentative (optional)
+      #   Organizer: Alice Organizer <alice@example.com>
+      #   Attendees (3):
+      #     - Bob Guest <bob@example.com> — no reply
+      #     - Alice Organizer <alice@example.com> — accepted
+      #     - carol@example.com — tentative (optional)
       #
-      # @param people [Array<Hash>, nil] +Calendar#read+'s +:attendees+.
+      # @param people [Array<IcalLine::Attendee>, nil] +Calendar#read+'s +:attendees+.
       # @return [Array<String>]
       def self.attendee_lines(people)
         people = Array(people)
         return [] if people.empty?
 
         lines = []
-        org = people.find { |p| p[:organizer] }
+        org = people.find(&:organizer?)
         lines << "Organizer: #{who(org)}" if org
-        guests = people.reject { |p| p[:organizer] }
+        guests = people.reject(&:organizer?)
         return lines if guests.empty?
 
         lines << "Attendees (#{guests.size}):"
@@ -88,28 +88,31 @@ module Pikuri
       end
       private_class_method :attendee_lines
 
+      # @param person [IcalLine::Attendee]
       # @return [String] +"Name <email>"+, or bare email when there's no
       #   distinct display name.
       def self.who(person)
-        name = person[:name].to_s.strip
-        email = person[:email].to_s.strip
+        name = person.name.to_s.strip
+        email = person.email.to_s.strip
         name.empty? || name == email ? email : "#{name} <#{email}>"
       end
       private_class_method :who
 
+      # @param guest [IcalLine::Attendee]
       # @return [String] one attendee: who + RSVP + optional/resource markers.
       def self.guest_line(guest)
         line = +"#{who(guest)} — #{status_label(guest)}"
-        line << ' (optional)' if guest[:role] == 'OPT-PARTICIPANT'
-        line << ' [resource]' if guest[:cutype] == 'RESOURCE'
+        line << ' (optional)' if guest.optional?
+        line << ' [resource]' if guest.resource?
         line
       end
       private_class_method :guest_line
 
+      # @param guest [IcalLine::Attendee]
       # @return [String] human RSVP word (unknown PARTSTAT downcased; a missing
       #   one is Google's implicit "no reply").
       def self.status_label(guest)
-        STATUS_LABELS[guest[:status]] || guest[:status]&.downcase || 'no reply'
+        STATUS_LABELS[guest.status] || guest.status&.downcase || 'no reply'
       end
       private_class_method :status_label
 
