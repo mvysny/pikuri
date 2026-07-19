@@ -6,12 +6,15 @@ module Pikuri
       # Shared helpers for the two search tools ({Grep} and {Glob}), which
       # otherwise duplicate their oversized-root guard verbatim.
       module Utils
-        # Guard against a search/list rooted at +/+ or the user's whole home
-        # dir — either walks an enormous tree and, under an +AllowAll+
-        # workspace, floods rg with unreadable-path diagnostics the model pays
-        # context for. Refused regardless of any glob: rg traverses the tree
-        # *before* the glob narrows which files it searches. Lesser roots (a
-        # project dir, +~/work+) return +nil+ and proceed.
+        # Guard against a search/list rooted at +/+, the user's whole home dir,
+        # or any parent of home (+/home+, which holds *every* user's home) —
+        # each walks an enormous tree and, under an +AllowAll+ workspace, floods
+        # rg with unreadable-path diagnostics the model pays context for. The
+        # refused set is home and everything at-or-above it: blocking +~+ while
+        # waving through its strictly-broader parent +/home+ would be no guard
+        # at all. Refused regardless of any glob: rg traverses the tree *before*
+        # the glob narrows which files it searches. Lesser roots (a project dir,
+        # +~/work+) return +nil+ and proceed.
         #
         # Rather than dead-end at "narrow it", the refusal hands back a
         # one-level listing of the root's own entries, so the model can pick a
@@ -34,11 +37,17 @@ module Pikuri
         # @return [String, nil] the +"Error: ..."+ refusal, or +nil+ to proceed
         def self.oversized_root_refusal(resolved, verb:)
           normalized = normalize_root(resolved)
+          home = normalize_root(Pathname.new(Dir.home))
           root_kind =
             if normalized == normalize_root(Pathname.new('/'))
               'the whole filesystem root'
-            elsif normalized == normalize_root(Pathname.new(Dir.home))
+            elsif normalized == home
               'the whole home directory'
+            elsif home.start_with?(normalized + File::SEPARATOR)
+              # e.g. /home — a parent of ~ is strictly broader than ~ itself.
+              # (+/+ is a parent too, but its "//"-prefix test never matches,
+              # so it stays owned by the first branch and its clearer message.)
+              'a parent of your home directory'
             end
           return nil unless root_kind
 

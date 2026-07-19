@@ -58,6 +58,18 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
       assert result.start_with?('Error: refusing to search from /'), result[0, 80].inspect
       assert_includes result, 'the whole filesystem root'
     end
+
+    it 'refuses a parent of home (broader than home itself) and lists it' do
+      parent = @home.parent
+      result = described_class.oversized_root_refusal(parent, verb: 'search')
+
+      assert result.start_with?("Error: refusing to search from #{parent}"), result[0, 120].inspect
+      assert_includes result, 'a parent of your home directory'
+      assert_includes result, 'too broad'
+      # non-dead-ending: hands back the parent's children so the model can
+      # pick the actual home dir and retry.
+      assert_includes result, "#{@home.basename}/"
+    end
   end
 
   describe '.child_listing' do
