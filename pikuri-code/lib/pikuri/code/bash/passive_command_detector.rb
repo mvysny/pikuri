@@ -13,12 +13,13 @@ module Pikuri
       # a +curl+ GET escape the machine, +smartctl -t+ perturbs the device —
       # none are passive.
       #
-      # This is a *classifier*, not a decider. {Bash} consults it as its
-      # +passive_detector:+ and supplies the meaning: a passive verdict skips the
-      # confirmation prompt, everything else falls through to Bash's human
-      # {Confirmer}. So +false+ is not a rejection — just "not provably passive,
-      # ask the human". It is deliberately NOT a {Pikuri::Workspace::Confirmer}:
-      # it renders nothing and parses a command where a confirmer must not.
+      # The verdict is a one-way proof: +true+ means "provably passive", +false+
+      # only "not proven" — so the sole failure mode is asking the human when it
+      # needn't, never waving through something active. +false+ is therefore not
+      # a rejection; the caller reads it as "ask a human" (see Wiring below).
+      #
+      # Deliberately NOT a {Pikuri::Workspace::Confirmer}: it renders nothing and
+      # parses a command, where a confirmer must do neither.
       #
       # The design rationale — why cutting pointless prompts is a *security*
       # feature, what "passive" excludes vs. merely can't prove, the four
@@ -54,8 +55,7 @@ module Pikuri
       # {Tokenizer} hands the classifiers the *true* de-quoted word (+--clear+,
       # not a +--_clear+ placeholder), which is what makes the denylist / prefix
       # checks sound — a placeholder rewrite would let a quote-smuggled
-      # +--''clear+ slip past them. The failure mode is always "asks the human
-      # too often", never "called something active passive".
+      # +--''clear+ slip past them.
       #
       # == Wiring
       #
