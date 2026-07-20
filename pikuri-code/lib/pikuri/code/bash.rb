@@ -70,10 +70,7 @@ module Pikuri
       KILL_AFTER = '5s'
 
       # Git config keys forced onto every git invocation, threaded in via
-      # {.git_hardening_delta}. Even a *passive* git command executes whatever
-      # the repo's config directs, and {PassiveCommandDetector} deems those
-      # verbs passive — so without this, a hostile repo-local +.git/config+ would be an
-      # unconfirmed RCE the moment the model runs +git diff+.
+      # {.git_hardening_delta}. What each key does:
       #
       # * +core.fsmonitor=false+ — the headline vector: a repo-local
       #   +core.fsmonitor = <cmd>+ runs +<cmd>+ on every index refresh (plain
@@ -82,14 +79,12 @@ module Pikuri
       # * +core.pager=cat+ — belt-and-suspenders; auto-paging is already inert
       #   under our non-TTY pipe, but a forced +cat+ makes it a no-op regardless.
       #
-      # Deliberately NOT here: +diff.external+ / +.gitattributes+-selected
-      # +diff.<driver>.command+ / +.textconv+. There's no config *value* meaning
-      # "use the internal diff" (an empty +diff.external=+ aborts every diff);
-      # only the +--no-ext-diff+ / +--no-textconv+ command-line flags disable
-      # them cleanly, and we don't rewrite the model's command (see
-      # {.git_hardening_delta}). So diff-driver execution stays a documented
-      # residual, reachable only via a repo whose +.git/config+ an attacker
-      # wrote — see {PassiveCommandDetector}'s +allow_git:+ yardoc.
+      # Why this exists — the config-execution vector that makes even a *passive*
+      # git command an unconfirmed RCE without it, the narrow diff-driver
+      # residual it deliberately does NOT close (+diff.external+ /
+      # +.gitattributes+ +.textconv+, uncloseable via environment), and the tie
+      # to {PassiveCommandDetector}'s +allow_git:+ — lives in
+      # +pikuri-code/DESIGN.md+ (*Passive git needs Bash's hardening*).
       #
       # @return [Array<Array(String, String)>] +[key, value]+ pairs.
       GIT_HARDENING = [

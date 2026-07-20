@@ -39,7 +39,7 @@ module Pikuri
       # ({SAFE_REDIRECT}: +2>&1+, +2>/dev/null+ …), consumed and dropped — fd
       # duplication and +/dev/null+ discards add no capability.
       #
-      # == Quote removal, and why a placeholder rewrite would be unsafe
+      # == Quote removal
       #
       # {.scan_segment} performs genuine shell quote-removal: the marks are
       # dropped and the interior kept *verbatim* and *literal*, so a quoted +|+
@@ -53,15 +53,11 @@ module Pikuri
       # This admits the common LLM shape +grep "foo bar" f+ while keeping the
       # failure mode "asks the human too often". An unbalanced quote → +nil+.
       #
-      # The subtlety: a caller that matches flags by *spelling* must see the
-      # genuinely de-quoted word. A cheap +gsub+ blanking +'...'+ to a
-      # placeholder (+--''clear+ → +--_clear+) diverges from real quote-removal
-      # and smuggles an analyzer-only byte into a flag, so a +dmesg+ denylist /
-      # git +--output+ check would miss the mutating flag the shell still runs.
-      # An *exact-match allowlist* (a binary name, a verb) fails *safe* under
-      # quote injection — the match just breaks; a *denylist / prefix* check
-      # fails *open* unless it sees the de-quoted word. Real quote-removal
-      # collapses +--''clear+ to +--clear+, so both kinds are sound.
+      # Genuine quote-removal (not a placeholder rewrite) is what makes the
+      # spelling-based classifiers in {PassiveCommandDetector} sound — the
+      # cross-cutting "why the de-quoted word must be the *true* word, and why an
+      # allowlist tolerates a shortcut a denylist doesn't" argument lives in
+      # +pikuri-code/DESIGN.md+ (*The soundness hinge: true de-quoted words*).
       #
       # The classic mis-parse — +echo "a\"b; rm x"+, where a naive lexer closes
       # the span at the escaped quote and exposes the +;+ — cannot happen: the

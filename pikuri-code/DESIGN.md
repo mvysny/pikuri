@@ -284,9 +284,29 @@ wholesale; `nvme`'s read-verb set started deliberately minimal.
 
 {Pikuri::Code::Bash::Tokenizer} hands the classifiers the *true* de-quoted word
 (`--clear`, not a `--_clear` placeholder), which is what makes the denylist /
-prefix checks sound — a placeholder rewrite would let a quote-smuggled
-`--''clear` slip past them. The failure mode is always "asks the human too
-often," never "called something active passive."
+prefix checks sound. The lexer does genuine shell quote-removal — the marks are
+dropped and the interior kept verbatim — rather than the cheap shortcut of
+`gsub`-blanking `'...'` to a placeholder (`--''clear` → `--_clear`). That
+shortcut diverges from real quote-removal and smuggles an analyzer-only byte
+into a flag, so a `dmesg` denylist or a git `--output` check would miss the
+mutating flag the shell still runs. Real quote-removal collapses `--''clear` to
+`--clear`, so the spelling the classifier sees is the spelling bash runs.
+
+Why the two classifier shapes need this to *different* degrees:
+
+- An **exact-match allowlist** (a binary name, a subcommand verb) fails *safe*
+  under quote injection even with a naive placeholder — the smuggled byte just
+  breaks the match, so the command abstains toward the human.
+- A **denylist / prefix** check fails *open* unless it sees the de-quoted word —
+  the smuggled byte makes a mutating flag *not* match the denylist, and the
+  command is wrongly called passive.
+
+Real quote-removal makes both kinds sound. The failure mode is always "asks the
+human too often," never "called something active passive." The lexer's own
+mechanics — which double-quote interiors it will decode vs. abstain on
+({Tokenizer::DQUOTE_LIVE}), why the escape-blind segment splitter can't
+mis-approve, why `!` isn't gated inside `bash -c` — live in the
+{Pikuri::Code::Bash::Tokenizer} YARD.
 
 ### Residuals the allowlist does NOT close
 
