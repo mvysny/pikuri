@@ -9,7 +9,7 @@ module Pikuri
     #
     # == Confirmation
     #
-    # Every command is confirmed (unless a +command_approver+ pre-approves it).
+    # Every command is confirmed (unless a +passive_detector+ pre-approves it).
     # Bash composes a semantic {Pikuri::Workspace::Confirmer::Request} — a
     # question plus +$ <command>+ detail — and hands it to the confirmer, which
     # owns ALL presentation and medium-appropriate escaping of the raw bytes
@@ -70,9 +70,9 @@ module Pikuri
       KILL_AFTER = '5s'
 
       # Git config keys forced onto every git invocation, threaded in via
-      # {.git_hardening_delta}. Even a *read-only* git command executes whatever
-      # the repo's config directs, and {ReadOnlyCommandApprover} approves those
-      # verbs — so without this, a hostile repo-local +.git/config+ would be an
+      # {.git_hardening_delta}. Even a *passive* git command executes whatever
+      # the repo's config directs, and {PassiveCommandDetector} deems those
+      # verbs passive — so without this, a hostile repo-local +.git/config+ would be an
       # unconfirmed RCE the moment the model runs +git diff+.
       #
       # * +core.fsmonitor=false+ — the headline vector: a repo-local
@@ -89,7 +89,7 @@ module Pikuri
       # them cleanly, and we don't rewrite the model's command (see
       # {.git_hardening_delta}). So diff-driver execution stays a documented
       # residual, reachable only via a repo whose +.git/config+ an attacker
-      # wrote — see {ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
+      # wrote — see {PassiveCommandDetector}'s +allow_git:+ yardoc.
       #
       # @return [Array<Array(String, String)>] +[key, value]+ pairs.
       GIT_HARDENING = [
@@ -132,18 +132,18 @@ module Pikuri
       #   embedding host gets the same cwd). Bash does NOT path-resolve
       #   arguments — the +command+ is opaque shell syntax.
       # @param confirmer [Pikuri::Workspace::Confirmer] consulted before every
-      #   command that +command_approver+ does not pre-approve.
-      # @param command_approver [#approves?, nil] optional predicate over the
-      #   raw command string ({ReadOnlyCommandApprover}); +true+ runs with no
+      #   command that +passive_detector+ does not pre-approve.
+      # @param passive_detector [#passive?, nil] optional predicate over the
+      #   raw command string ({PassiveCommandDetector}); +true+ runs with no
       #   prompt, +false+/+nil+ falls through to +confirmer+. The
-      #   read-only-auto-gate seam, kept separate so "how to ask" ({Confirmer})
+      #   passive-auto-gate seam, kept separate so "how to ask" ({Confirmer})
       #   and "what may skip asking" (this) stay composable axes.
       # @param sandbox [Code::Bash::Sandbox] filesystem-sandbox seam (default
       #   {Sandbox::NONE}). Pass {Sandbox::Bubblewrap.new(filesystem:)} for an
       #   isolated subprocess; see {Sandbox}.
       # @raise [RuntimeError] if +bash+ or +timeout+ aren't on +PATH+.
       # @return [Bash]
-      def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE, command_approver: nil)
+      def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE, passive_detector: nil)
         Bash.send(:check_binaries!)
         # Without a sandbox, bash runs with pikuri's UID + filesystem view —
         # anything the user can read the LLM can read (+cat ~/.ssh/id_*+, +aws
@@ -172,7 +172,7 @@ module Pikuri
           },
           execute: ->(command:, description: nil, timeout: DEFAULT_TIMEOUT) {
             Bash.run(filesystem: filesystem, confirmer: confirmer, sandbox: sandbox,
-                     command_approver: command_approver,
+                     passive_detector: passive_detector,
                      command: command, description: description, timeout: timeout)
           }
         )
@@ -185,21 +185,21 @@ module Pikuri
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param sandbox [Code::Bash::Sandbox] wraps the spawned argv.
-      # @param command_approver [#approves?, nil] read-only pre-approval
+      # @param passive_detector [#passive?, nil] passive-command pre-approval
       #   predicate; a +true+ verdict skips the prompt. See {#initialize}.
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
       # @return [String]
       def self.run(filesystem:, confirmer:, command:, description:, timeout:,
-                   sandbox: Sandbox::NONE, command_approver: nil)
+                   sandbox: Sandbox::NONE, passive_detector: nil)
         return 'Error: empty bash command.' if command.strip.empty?
         return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
         return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
 
-        # A command the approver vouches for (provably read-only) runs
+        # A command the detector deems passive (provably observe-only) runs
         # without a prompt; everything else is confirmed by the human.
-        unless command_approver&.approves?(command)
+        unless passive_detector&.passive?(command)
           request = compose_request(command: command, description: description, timeout: timeout)
           case confirmer.ask(request: request)
           in Pikuri::Workspace::Confirmer::Rejected(reason:)

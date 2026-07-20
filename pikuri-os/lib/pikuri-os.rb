@@ -11,7 +11,7 @@ require 'pikuri-code'
 # kernel (a net-isolated Bash sandbox), every mutation confirmed, durable
 # memory a user-owned +MACHINE.md+ rather than mem0 — so this gem depends
 # on pikuri-code but NOT pikuri-mcp/-memory/-vectordb. The two cross-cutting
-# pieces (+FullFsNoNet+ sandbox, read-only command approver) live in
+# pieces (+FullFsNoNet+ sandbox, passive-command detector) live in
 # pikuri-code with the other OS-touching primitives. Design notes:
 # +pikuri-os/DESIGN.md+ (the file-index engine survey) and the guide's
 # ch7 (the security narrative).

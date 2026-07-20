@@ -11,7 +11,7 @@ module Pikuri
     # A Confirmer takes a semantic {Request} and returns {Approved} or
     # {Rejected}. That is *all*: it carries **no tool policy** and never
     # classifies the request's *content* (no filesystem reads, no command
-    # parsing, no notion of "read-only"). Two shipped implementations:
+    # parsing, no notion of "passive"). Two shipped implementations:
     #
     # * {Terminal} — the human *chrome*: shows the request and reads the answer.
     #   In +confirmer/terminal.rb+ so this seam file stays free of rendering deps.
@@ -19,9 +19,9 @@ module Pikuri
     #   blanket-approves (+--yolo+ / dev-container). Request-independent, so it
     #   encodes no policy either.
     #
-    # Content classification ("is this bash command provably read-only, skip the
+    # Content classification ("is this bash command provably passive, skip the
     # prompt?") deliberately does *not* live here — it's a tool concern
-    # ({Pikuri::Code::Bash} takes a separate +command_approver:+ predicate,
+    # ({Pikuri::Code::Bash} takes a separate +passive_detector:+ predicate,
     # falling through to this confirmer only for commands it can't pre-approve).
     # Keeping them apart lets one stateless chrome serve every tool.
     #
@@ -49,7 +49,7 @@ module Pikuri
     #
     # A +:once+/+:always+ scope knob was *rejected*: it manages decision
     # *fatigue*, a distinct axis, and the long-term answer to fatigue is making
-    # confirmations rare (sandboxing, +--yolo+, the +command_approver+ skip),
+    # confirmations rare (sandboxing, +--yolo+, the +passive_detector+ skip),
     # not smarter approval modes. (An agentic destructive-or-not classifier is a
     # deferred v2.)
     #

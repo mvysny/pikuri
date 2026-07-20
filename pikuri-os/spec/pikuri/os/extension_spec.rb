@@ -95,21 +95,21 @@ RSpec.describe Pikuri::Os::Extension do
       assert_includes additions, '/cfg/pikuri/MACHINE.md'
     end
 
-    it 'gives Bash the human confirmer plus a ReadOnlyCommandApprover with allow_git on (Write keeps the human one)' do
+    it 'gives Bash the human confirmer plus a PassiveCommandDetector with allow_git on (Write keeps the human one)' do
       with_singleton(Pikuri::Code::Bash, :new) do |orig|
         captured_confirmer = nil
         captured_approver = nil
         Pikuri::Code::Bash.define_singleton_method(:new) do |**kwargs|
           captured_confirmer = kwargs[:confirmer]
-          captured_approver  = kwargs[:command_approver]
+          captured_approver  = kwargs[:passive_detector]
           orig.call(**kwargs)
         end
 
         configure!(build_configurator)
         assert_same human, captured_confirmer,
                     'Bash should get the bare human confirmer, not a wrapper'
-        assert_instance_of Pikuri::Code::Bash::ReadOnlyCommandApprover, captured_approver
-        assert captured_approver.approves?('git status'),
+        assert_instance_of Pikuri::Code::Bash::PassiveCommandDetector, captured_approver
+        assert captured_approver.passive?('git status'),
                'pikuri-os enables allow_git: true, so read-only git skips the prompt ' \
                '(backed by Bash env hardening)'
       end

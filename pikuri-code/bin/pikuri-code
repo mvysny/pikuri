@@ -192,7 +192,7 @@ confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::Terminal.new : Pikur
 # shared network: no allowlisted binary can write or exfiltrate, so this
 # grants nothing the agent's own non-confirming Read/Grep/Glob don't.
 # The gate is asymmetric — only Code::Extension (Bash) gets a
-# command_approver; Write/Edit (Workspace::Extension below) keep the bare
+# passive_detector; Write/Edit (Workspace::Extension below) keep the bare
 # human confirmer, so every overwrite confirms. Under --yolo/--no-confirm
 # there is nothing to skip, so no approver is built.
 #
@@ -220,7 +220,7 @@ trusted_repo =
               'code — and with the sandbox network shared, exfiltrate. Default is no.'
     )
   )
-code_command_approver = confirm_enabled ? Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: trusted_repo) : nil
+code_passive_detector = confirm_enabled ? Pikuri::Code::Bash::PassiveCommandDetector.new(allow_git: trusted_repo) : nil
 
 # Bubblewrap sandbox wraps every Bash subprocess with a filesystem view
 # constrained to workspace.readable / workspace.writable plus a curated
@@ -392,7 +392,7 @@ begin
     c.add_extension Pikuri::Code::Extension.new(
       filesystem: filesystem,
       confirmer: confirmer,
-      command_approver: code_command_approver,
+      passive_detector: code_passive_detector,
       sandbox: sandbox,
       read_only: read_only
     )

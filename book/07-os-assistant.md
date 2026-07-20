@@ -151,8 +151,8 @@ filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, 
 `AllowAll` normally keeps a credential floor: the file tools refuse
 `~/.ssh`, `~/.aws`, `/etc/shadow` and friends. This agent passes
 `denylist: []` to drop it. That looks alarming until you notice `bash`,
-running as you, could already `cat ~/.ssh/id_rsa` — and the read-only
-command approver below even waves `cat` through with no prompt. A
+running as you, could already `cat ~/.ssh/id_rsa` — and the passive-command
+detector below even waves `cat` through with no prompt. A
 read-block on the file tools that `bash` sidesteps for free isn't a
 boundary; it's theatre, and it also blinds the agent to the very config
 files it's here to help you fix. So the honest move is to make the tools
@@ -211,7 +211,7 @@ throwaway-box only.)
 You'll see this fire first not on a destructive command but on the
 agent editing its own memory file, which is the next section.
 
-## Confirmation fatigue — the read-only command approver
+## Confirmation fatigue — the passive-command detector
 
 "Confirm every command" is right for changes and *miserable* for the
 constant harmless reads (`ls`, `cat`, `journalctl`, `df`). And the
@@ -225,7 +225,7 @@ approver* — a predicate answering one question, "is this command
 provably read-only?":
 
 ```ruby
-Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: true)
+Pikuri::Code::Bash::PassiveCommandDetector.new(allow_git: true)
 ```
 
 This is deliberately **not** a `Confirmer`. A confirmer's one job is to
@@ -381,7 +381,7 @@ end
 
 `Os::Extension` is a composite: it adds `Workspace::Extension` (the
 five file tools) and `Code::Extension` (`bash`, with the
-read-only command approver), then layers on the `fileindex_*` tools, the
+passive-command detector), then layers on the `fileindex_*` tools, the
 grounding block, and the `MACHINE.md` section. The binary doesn't
 re-derive any of that — and neither will the TUI or web client that
 wire the same object later.
@@ -721,7 +721,7 @@ quarantined researcher — the coding agent keeps the network in the
 parent's own hands (a build needs it) and confines the disk instead:
 `Bubblewrap` in place of `FullFsNoNet`, a project-rooted `Workspace`
 in place of `AllowAll`. Same `Confirmer`, same `bash`, same
-read-only command approver (now with the git hardening unpacked). Same
+passive-command detector (now with the git hardening unpacked). Same
 adversary, opposite trifecta leg — and now in a developer's hands,
 with read-only recon sub-agents on top. The threat-model accounting
 for both shapes is [chapter 9 — security

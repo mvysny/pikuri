@@ -4,8 +4,8 @@ module Pikuri
   module Os
     # One-call wiring for the offline OS-helper agent. Adding this single
     # extension to an +Agent.new+ block gives the complete surface — the
-    # five workspace file tools, +bash+ (net-severable, with the read-only
-    # command approver), the file-index tools, and the machine grounding +
+    # five workspace file tools, +bash+ (net-severable, with the
+    # passive-command detector), the file-index tools, and the machine grounding +
     # +MACHINE.md+ memory folded into the system prompt.
     #
     # A composite: +configure+ adds {Pikuri::Workspace::Extension} and
@@ -20,18 +20,18 @@ module Pikuri
     # Write/Edit confirms with a diff and an unwritable target
     # short-circuits to "ask the user to sudo" (see
     # {Pikuri::Workspace::WriteGate}, guide ch7). +Bash+ gets the same
-    # confirmer plus a {Pikuri::Code::Bash::ReadOnlyCommandApprover}, so
-    # provably read-only commands skip the prompt and everything else
+    # confirmer plus a {Pikuri::Code::Bash::PassiveCommandDetector}, so
+    # provably passive commands skip the prompt and everything else
     # reaches the human — bash mutations and file-tool writes both always
     # confirm.
     #
-    # The approver is built +allow_git: true+, so read-only git verbs skip
+    # The detector is built +allow_git: true+, so passive git verbs skip
     # the prompt too (no per-repo trust prompt). Safe here *only because*
     # {Pikuri::Code::Bash::GIT_HARDENING} neutralizes the hostile
     # +core.fsmonitor+ vector that fires on a plain +git status+; the
     # accepted residual is diff-driver execution on an attacker-written
     # +.git/config+ (confined to non-clone-delivered repos). Full detail:
-    # {Pikuri::Code::Bash::ReadOnlyCommandApprover}'s +allow_git:+ yardoc.
+    # {Pikuri::Code::Bash::PassiveCommandDetector}'s +allow_git:+ yardoc.
     #
     # == Sandbox
     #
@@ -100,7 +100,7 @@ module Pikuri
         c.add_extension(Pikuri::Code::Extension.new(
                           filesystem: @filesystem,
                           confirmer: @confirmer,
-                          command_approver: Pikuri::Code::Bash::ReadOnlyCommandApprover.new(allow_git: true),
+                          passive_detector: Pikuri::Code::Bash::PassiveCommandDetector.new(allow_git: true),
                           sandbox: @sandbox,
                           read_only: @read_only
                         ))

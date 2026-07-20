@@ -11,8 +11,8 @@ its rationale, read:
 
 - **Guide [chapter 7](../book/07-os-assistant.md)** — the
   narrative walkthrough. Part 1: the severed-network sandbox, the
-  read-before-edit fence, confirmed mutations, the read-only
-  command approver, the file-index pair, `MACHINE.md`, boot grounding,
+  read-before-edit fence, confirmed mutations, the passive-command
+  detector, the file-index pair, `MACHINE.md`, boot grounding,
   and why egress is the trifecta leg this agent removes. Part 2 ("the
   third leg returns"): reattaching the network via the quarantined
   `RESEARCHER` sub-agent + the confirmed task prompt + the two
@@ -24,8 +24,8 @@ its rationale, read:
   file-index backend), {Pikuri::Os::MachineMemory} (`MACHINE.md`),
   {Pikuri::Os::SystemInfo} (grounding),
   {Pikuri::Code::Bash::Sandbox::FullFsNoNet} (the kernel-severed
-  network) and {Pikuri::Code::Bash::ReadOnlyCommandApprover} +
-  `Pikuri::Code::Bash::GIT_HARDENING` (the command approver + git arm).
+  network) and {Pikuri::Code::Bash::PassiveCommandDetector} +
+  `Pikuri::Code::Bash::GIT_HARDENING` (the passive detector + git arm).
 - **[`../CLAUDE.md`](../CLAUDE.md)** — the `pikuri-os` gem entry and the
   Sandbox / Confirmer / Workspace seam invariants.
 - **[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md)** — the file-index
@@ -133,9 +133,9 @@ declined against the offline, small-enough-to-audit posture.
 
 ## Deferred / not yet built
 
-**Confirmation-fatigue work beyond the shipped read-only command approver**
+**Confirmation-fatigue work beyond the shipped passive-command detector**
 (the sequencer/pipe composition and the `git` arm are shipped — see
-{Pikuri::Code::Bash::ReadOnlyCommandApprover}). The governing invariant
+{Pikuri::Code::Bash::PassiveCommandDetector}). The governing invariant
 for everything below: **AI may *translate* a command ("this deletes
 `~/tmp` recursively"), but code and the human *decide* — never an AI
 ✓/⚠ verdict.** An AI approver is talked into "yes" by the same laundered
@@ -170,7 +170,7 @@ there's little fatigue to cut and no "sensitive path" list to maintain —
 see book ch7 and {Pikuri::Workspace::WriteGate}. The considered-and-punted
 generalization: an **allowlist of auto-allowed (safe) write paths**,
 deny-by-default = confirm. It's the inverse of a sensitive-path denylist
-(and the winning side of the enumeration game, like `READ_ONLY_BINARIES`),
+(and the winning side of the enumeration game, like `PASSIVE_BINARIES`),
 for a *hypothetical frequent-writing full-disk agent* that would want some
 writes — a scratch dir, `/tmp` — to skip the prompt. No such agent ships,
 so building the allowlist plumbing now would be speculative. Revisit when

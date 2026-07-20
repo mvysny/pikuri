@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
-  describe 'approves provably read-only commands' do
+RSpec.describe Pikuri::Code::Bash::PassiveCommandDetector do
+  describe 'deems provably passive commands passive' do
     %w[
       ls
       ls\ -la\ /etc
@@ -70,15 +70,15 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       apropos\ disk
       whatis\ ls
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'approves sequencer-joined chains of read-only commands' do
-    # Every segment is independently a provably read-only invocation, so
-    # the composition (&&, ||, ;, |) is read-only too.
+  describe 'deems passive sequencer-joined chains passive' do
+    # Every segment is independently a provably passive invocation, so
+    # the composition (&&, ||, ;, |) is passive too.
     [
       'ls && pwd',
       'df -h && free -m',
@@ -94,13 +94,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'ls || pwd',                 # logical-or
       'cd /etc && cat hostname | wc -l' # mixed operators
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'approves write-nothing redirects, comments, and newline batches' do
+  describe 'deems write-nothing redirects, comments, and newline batches passive' do
     [
       'dpkg -S /bin/ls 2>&1',                 # stderr merged to stdout
       'dpkg -S /bin/ls 2>/dev/null',          # stderr discarded
@@ -127,14 +127,14 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
          "dpkg -S /usr/lib/systemd/system/#{u}.service 2>&1 || true"
        end).join("\n")
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
   end
 
   describe 'glob fast path: unquoted globs on pure-allowlist binaries' do
-    # A READ_ONLY_BINARIES command has no teeth in ANY argument, so a glob
+    # A PASSIVE_BINARIES command has no teeth in ANY argument, so a glob
     # that bash expands (even to a "-flag"-looking filename) can't grow one.
     [
       'ls *.txt',                  # the motivating case
@@ -153,8 +153,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'cat *.txt | grep foo | wc -l',
       'ls * && pwd'
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -178,13 +178,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'glob + real redirect'=> 'ls * > out.txt',     # redirect still rejected
       'glob + substitution' => 'ls $(rm -rf ~)*'     # $() still rejected
     }.each do |label, cmd|
-      it "does not approve: #{label} (#{cmd.inspect})" do
-        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
+      it "not passive: #{label} (#{cmd.inspect})" do
+        refute described_class.new(allow_git: true).passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'does not approve anything not provably read-only' do
+  describe 'abstains on anything not provably passive' do
     {
       'pipe'                 => 'ls | rm -rf /',
       'semicolon chain'      => 'ls; rm -rf ~',
@@ -264,7 +264,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'dd'                   => 'dd if=/dev/zero of=/dev/sda',
       'tee (writes)'         => 'tee /etc/hosts',
       'env (runs program)'   => 'env FOO=bar ls',
-      # Sequencer segments that are not all provably read-only.
+      # Sequencer segments that are not all provably passive.
       'chain with mutation'  => 'ls && rm -rf ~',
       'chain hides git'      => 'cd notes && git diff', # git stays not-approved without allow_git
       'chain hides write'    => 'cd x && tee out',
@@ -282,16 +282,16 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'background not seq'    => 'ls & pwd',            # single & not a sequencer; trips metachar
       'pipe-amp (stderr)'    => 'ls |& grep x'         # |& leaves a stray & → metachar
     }.each do |label, cmd|
-      it "does not approve: #{label} (#{cmd.inspect})" do
-        refute described_class.new.approves?(cmd), "expected no approval for #{cmd.inspect}"
+      it "not passive: #{label} (#{cmd.inspect})" do
+        refute described_class.new.passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
 
   describe 'SMART disk diagnostics (nvme / smartctl)' do
     # These need root, so under Bash's unprivileged view they fail EACCES —
-    # but the approver classifies content (does it mutate?), not outcome
-    # (will it succeed?), so the read forms approve and drop a pointless
+    # but the detector classifies content (does it mutate?), not outcome
+    # (will it succeed?), so the read forms are passive and drop a pointless
     # prompt on the way to that honest failure. See ideas/bash-confirmer.md.
     [
       # nvme: subcommand-allowlist, verb immediately after `nvme`.
@@ -319,8 +319,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'nvme list && smartctl -a /dev/nvme0', # composes across the sequencer split
       'smartctl -a /dev/sda | grep -i temperature' # composes with a read-only pipe
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -354,13 +354,13 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'smartctl bundled mutator'=> 'smartctl -at short /dev/sda',  # -t hidden in a cluster
       'smartctl -d then mutate' => 'smartctl -d sat -t short /dev/sda' # modifier doesn't launder -t
     }.each do |label, cmd|
-      it "does not approve: #{label} (#{cmd.inspect})" do
-        refute described_class.new.approves?(cmd), "expected no approval for #{cmd.inspect}"
+      it "not passive: #{label} (#{cmd.inspect})" do
+        refute described_class.new.passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
 
-  describe 'with allow_git: true (trusted-repo read-only git)' do
+  describe 'with allow_git: true (trusted-repo passive git)' do
     # Approved only because the caller asserted repo-config trust.
     [
       'git diff',
@@ -374,8 +374,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'cd repo && git diff --cached', # composes with the sequencer split
       'git status | wc -l'            # composes with a read-only pipe
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new(allow_git: true).approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new(allow_git: true).passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -398,20 +398,20 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'diff redirect'         => 'git diff > out',               # metachar, refused first
       'bare git'              => 'git'
     }.each do |label, cmd|
-      it "does not approve even with allow_git: #{label} (#{cmd.inspect})" do
-        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
+      it "not passive even with allow_git: #{label} (#{cmd.inspect})" do
+        refute described_class.new(allow_git: true).passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
 
-    it 'still approves the plain read-only binaries (git is additive)' do
-      assert described_class.new(allow_git: true).approves?('ls -la && cat foo')
+    it 'still deems the plain passive binaries passive (git is additive)' do
+      assert described_class.new(allow_git: true).passive?('ls -la && cat foo')
     end
   end
 
-  describe 'with allow_git default (false) — git stays not approved' do
+  describe 'with allow_git default (false) — git stays non-passive' do
     %w[git\ diff git\ status git\ log].each do |cmd|
-      it "does not approve: #{cmd.inspect}" do
-        refute described_class.new.approves?(cmd) # allow_git omitted
+      it "not passive: #{cmd.inspect}" do
+        refute described_class.new.passive?(cmd) # allow_git omitted
       end
     end
   end
@@ -419,7 +419,7 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
   describe 'single-quoted arguments' do
     # A single-quoted span is decoded by real shell quote-removal: the
     # marks drop and the interior is kept verbatim as one literal word,
-    # so a read-only command with a quoted argument approves.
+    # so a passive command with a quoted argument is passive.
     [
       "grep -w 'install'",
       "grep 'foo bar' /etc/hosts",             # quoted whitespace = one word
@@ -430,8 +430,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       "grep ''",                               # empty quoted arg
       "dpkg --get-selections | grep -w 'install' | wc -l" # the reported shape
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -451,9 +451,9 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       "quoted sequencer word"   => "ls' ; 'rm",            # one literal word "ls ; rm"
       "backslash forbidden"     => 'echo a\\;b'            # \\ stays forbidden
     }.each do |label, cmd|
-      it "does not approve: #{label} (#{cmd.inspect})" do
+      it "not passive: #{label} (#{cmd.inspect})" do
         # allow_git so the git guard is actually exercised, not gated off.
-        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
+        refute described_class.new(allow_git: true).passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
@@ -471,8 +471,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       %q(grep "it's" /tmp/x),                  # single quote literal inside "..."
       'dpkg --get-selections | grep -w "install" | wc -l'
     ].each do |cmd|
-      it "approves: #{cmd.inspect}" do
-        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      it "passive: #{cmd.inspect}" do
+        assert described_class.new.passive?(cmd), "expected approval for #{cmd.inspect}"
       end
     end
 
@@ -490,21 +490,21 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'quoted command name'      => '"rm" -rf ~',             # → rm, not allowlisted
       'unbalanced double quote'  => 'grep "foo'               # never closes → not approved
     }.each do |label, cmd|
-      it "does not approve: #{label} (#{cmd.inspect})" do
+      it "not passive: #{label} (#{cmd.inspect})" do
         # allow_git so the git guard is actually exercised, not gated off.
-        refute described_class.new(allow_git: true).approves?(cmd), "expected no approval for #{cmd.inspect}"
+        refute described_class.new(allow_git: true).passive?(cmd), "expected no approval for #{cmd.inspect}"
       end
     end
   end
 
   describe 'edge cases' do
-    it 'does not approve a nil command' do
-      refute described_class.new.approves?(nil)
+    it 'is not passive for a nil command' do
+      refute described_class.new.passive?(nil)
     end
 
-    it 'does not approve an empty / whitespace command' do
-      refute described_class.new.approves?('   ')
-      refute described_class.new.approves?('')
+    it 'is not passive for an empty / whitespace command' do
+      refute described_class.new.passive?('   ')
+      refute described_class.new.passive?('')
     end
   end
 end

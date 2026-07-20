@@ -596,8 +596,8 @@ per-gem one-liners:
   prompt), and `Os::SystemInfo` (boot grounding via `inxi -b` +
   primitives) — plus `bin/pikuri-os`. The binary's
   load-bearing posture is `Sandbox::FullFsNoNet` (full disk,
-  kernel-severed egress) + confirmed mutations + the read-only
-  bash command approver with the git arm. Depends on `pikuri-core`
+  kernel-severed egress) + confirmed mutations + the passive-command
+  detector (bash) with the git arm. Depends on `pikuri-core`
   + `pikuri-workspace` + `pikuri-code`; deliberately NOT mcp /
   memory / vectordb (keeps the no-egress, audit-first posture).
   Also hosts `bin/pikuri-computer` — a **demo composition, not an os

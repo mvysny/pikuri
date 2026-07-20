@@ -7,9 +7,9 @@ module Pikuri
     class Bash
       # A deliberately narrow shell tokenizer: turns a command string into one
       # word list per *sequencer segment*, or +nil+ when it can't prove the
-      # command is such a simple chain. It makes **no read-only judgement** —
-      # that policy lives in {ReadOnlyCommandApprover}, which classifies these
-      # word lists. Lexing (here) is split from authorization (the approver) so
+      # command is such a simple chain. It makes **no passivity judgement** —
+      # that policy lives in {PassiveCommandDetector}, which classifies these
+      # word lists. Lexing (here) is split from classification (the passive detector) so
       # a second consumer could reuse the parse.
       #
       # {.tokenize} returns +Array<Array<String>>+ — segments (cut on
@@ -24,8 +24,8 @@ module Pikuri
       # a literal word byte and the *authorization* layer decides. This is
       # sound because those chars only ever expand to *words*, never to an
       # operator or a new command — so keeping them literal can't smuggle a
-      # +;+/+|+/+$()+ past the lexer. The approver flips it on only for the
-      # pure-allowlist glob fast path; see {ReadOnlyCommandApprover}.
+      # +;+/+|+/+$()+ past the lexer. The detector flips it on only for the
+      # pure-allowlist glob fast path; see {PassiveCommandDetector}.
       #
       # == Why splitting on the sequencers is faithful
       #
@@ -99,9 +99,9 @@ module Pikuri
         # operator or a new command (bash tokenizes operators *before*
         # expansion and never re-scans the result). {.scan_segment} rejects
         # them by default (⇒ +nil+, as before), but under +allow_glob: true+
-        # keeps them as literal word bytes so the caller can approve them where
+        # keeps them as literal word bytes so the caller can classify them where
         # sound — see {.tokenize}'s +allow_glob:+ and the
-        # {ReadOnlyCommandApprover} glob fast path.
+        # {PassiveCommandDetector} glob fast path.
         GLOB_CHARS = /[*?\[\]{}~]/
 
         # The three characters POSIX keeps live inside +"..."+ — +$+
@@ -152,7 +152,7 @@ module Pikuri
           #   segment. Default +false+ (a glob ⇒ +nil+, the strict behavior).
           #   A quoted glob char is literal either way — this flag only affects
           #   *unquoted* ones. The caller opts in only where a post-expansion
-          #   glob is provably harmless (see the {ReadOnlyCommandApprover} glob
+          #   glob is provably harmless (see the {PassiveCommandDetector} glob
           #   fast path).
           # @return [Array<Array<String>>, nil] one de-redirected, de-quoted
           #   word list per segment (empty list = pure-comment no-op), or +nil+

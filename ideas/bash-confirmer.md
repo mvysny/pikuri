@@ -1,4 +1,4 @@
-# Bash confirmer: deferred work beyond the read-only command approver
+# Bash confirmer: deferred work beyond the passive-command detector
 
 Status: **deferred brainstorm** — design space mapped, not scheduled.
 This note collects the deferred bash-confirmation-gate ideas pulled out
@@ -19,8 +19,8 @@ prompts that remain):
 4. **AI translation aid** (comprehension) — explain a command in plain
    language beside it. The final section.
 
-All build on {Pikuri::Code::Bash::ReadOnlyCommandApprover} — the
-predicate {Pikuri::Code::Bash} consults as its `command_approver:`, which
+All build on {Pikuri::Code::Bash::PassiveCommandDetector} — the
+predicate {Pikuri::Code::Bash} consults as its `passive_detector:`, which
 already handles fatigue for commands it can *prove* read-only — and all
 obey the same governing invariant (stated in "The invariant" below):
 **code and the human decide — an LLM may *translate*, never render the
@@ -38,9 +38,9 @@ obey the same governing invariant (stated in "The invariant" below):
   axis (*who* authors the payload); this note is the **fatigue +
   comprehension** axis (*how often* we ask, and *how well* the human
   understands what they're approving). Kept distinct on purpose.
-- {Pikuri::Code::Bash::ReadOnlyCommandApprover} — the static allowlist
+- {Pikuri::Code::Bash::PassiveCommandDetector} — the static allowlist
   this extends; the design below reuses its `Tokenizer` +
-  `segment_read_only?` discipline wholesale.
+  `segment_passive?` discipline wholesale.
 - {Pikuri::Workspace::Confirmer} — records the **rejected**
   `:once/:always` scope knob; the "invariant" section below is why
   session grants are a different animal, not that knob resurrected.
@@ -48,7 +48,7 @@ obey the same governing invariant (stated in "The invariant" below):
 ## The problem
 
 Fatigue is a **security** concern, not UX (see
-{Pikuri::Code::Bash::ReadOnlyCommandApprover}'s "why fatigue is a security
+{Pikuri::Code::Bash::PassiveCommandDetector}'s "why fatigue is a security
 concern"): a user who has clicked "yes" forty times this session has
 stopped reading, so the injected forty-first prompt gets rubber-stamped.
 The allowlist's whole job is to make prompts **rare and meaningful**.
@@ -63,13 +63,13 @@ weakness is exactly why bash needs the fatigue-cutting machinery this note
 collects, where a self-evident action like sending an email leans on the
 human gate directly.
 
-`ReadOnlyCommandApprover` handles fatigue for commands it can *prove*
+`PassiveCommandDetector` handles fatigue for commands it can *prove*
 read-only, and it keeps absorbing more cases (the `journalctl` example
 the OS-helper note once used for "session grants" is now stale — it
 shipped in the flag denylist). But one residue can **never** join a
 static allowlist, by construction: **commands that execute arbitrary
 project code** — `pytest`, `cargo build`, `npm test`, `make`, `./run.sh`,
-`bundle exec rspec`. None can join `READ_ONLY_BINARIES` (whose curation
+`bundle exec rspec`. None can join `PASSIVE_BINARIES` (whose curation
 rule is "no mutating form in *any* argument"), yet a real coding /
 diagnosis loop runs them dozens of times a session and each one prompts.
 
@@ -119,8 +119,8 @@ predicate/confirmer split makes the reconciliation *structural*, not just
 rhetorical. What the yardoc killed was a *scope knob baked into the
 confirmer's return* — making the `Confirmer` protocol cleverer about
 saying yes. What this note wants is a **deterministic rule layer inside
-{Pikuri::Code::Bash::ReadOnlyCommandApprover}**: the human authors a rule,
-*code* matches it. That layer lives in the `command_approver` predicate —
+{Pikuri::Code::Bash::PassiveCommandDetector}**: the human authors a rule,
+*code* matches it. That layer lives in the `passive_detector` predicate —
 a different object from the `Confirmer` entirely — so it is the same
 category as the static allowlist, just runtime-populated, and it cannot
 touch the confirmer protocol even in principle. Not a smarter approval
@@ -137,7 +137,7 @@ of the rejected knob:
    keystroke, never inferred.
 2. **No widening past the simple-invocation gate** — a grant is honored
    only for a metacharacter-free, bare-name simple segment (reuse
-   `segment_read_only?`), so it can never be composed.
+   `segment_passive?`), so it can never be composed.
 3. **Session-only, in-memory, never persisted** — a persisted grant
    outlives the human's attention and becomes a config-file attack
    surface; the OS-helper is "start fresh each session" anyway.
@@ -153,11 +153,11 @@ building on its own.
 
 **B — Binary-scoped grants, gated by the existing `Tokenizer`
 (recommended if ever built).** The human grants `pytest`; it joins a
-**session grant-set** that the same `segment_read_only?` discipline
+**session grant-set** that the same `segment_passive?` discipline
 consults, so it is honored only for a metacharacter-free, bare-name
 simple invocation — `pytest && rm -rf` still delegates. Reuses all the
 machinery already there; the only new thing is a user-populated set
-beside the static one. Honest difference from `READ_ONLY_BINARIES`: a
+beside the static one. Honest difference from `PASSIVE_BINARIES`: a
 granted binary carries **no "no mutating form" guarantee** — it is a
 capability grant (Claude Code's `Bash(pytest:*)` model), and the human
 must understand they are handing that binary its full power for the
@@ -176,7 +176,7 @@ no return type:
 
 - A **shared, in-memory, session-scoped grant-set**.
 - The **matcher** is a small addition *inside*
-  {Pikuri::Code::Bash::ReadOnlyCommandApprover}: `segment_read_only?`
+  {Pikuri::Code::Bash::PassiveCommandDetector}: `segment_passive?`
   additionally consults the grant-set, so a granted bare name approves a
   simple segment. It must live *inside* the approver, **not** as a
   sibling predicate OR'd beside it — the whole-line safety (the
@@ -190,12 +190,12 @@ no return type:
   [n] no` — and on `a` **mutates the shared grant-set directly**.
 
 `Bash` already orchestrates the two in the right order:
-`command_approver` first (now reading the grant-set), and only on a miss
+`passive_detector` first (now reading the grant-set), and only on a miss
 the human `Confirmer` — whose `[a]` keystroke feeds the grant-set the
 approver reads next time. Because approver and chrome hold a reference to
 the *same* object, the "always" keystroke needs **no new `Approved` case
 and no `remember:` flag** — the confirmer return type stays exactly
-as-is. Better still, the grant now lives in the `command_approver`
+as-is. Better still, the grant now lives in the `passive_detector`
 predicate, a different object from the `Confirmer` altogether, so this
 can't resurrect `:once/:always` *by construction* — not merely by the
 discipline of "it's a side-effect, not a return value."
@@ -205,7 +205,7 @@ discipline of "it's a side-effect, not a return value."
 If built: **Option B**, under the five constraints above
 (human-authored · simple-invocation-gated · session-only · in-memory ·
 shared-object side-effect). It is a small add given the `Tokenizer` and
-`segment_read_only?` gate already exist inside the approver.
+`segment_passive?` gate already exist inside the detector.
 
 Deferred anyway, because:
 
@@ -224,13 +224,13 @@ Deferred anyway, because:
 ## Subcommand-aware read rules
 
 Extend the allowlist's existing subcommand recovery — the way
-{Pikuri::Code::Bash::ReadOnlyCommandApprover} already carves the read-only
+{Pikuri::Code::Bash::PassiveCommandDetector} already carves the read-only
 query subset out of mixed binaries (`dpkg`/`apt`/`systemctl` by leading
 subcommand, `dmesg`/`journalctl` by flag denylist, `git` under
 `allow_git:`) — to further binaries still delegated whole.
 
 The examples the OS-helper note originally cited have since **shipped**:
-`systemctl status` is in `READ_ONLY_SYSTEMCTL_SUBCOMMANDS`, and plain
+`systemctl status` is in `PASSIVE_SYSTEMCTL_SUBCOMMANDS`, and plain
 (read) `journalctl` passes the flag denylist. What remains is the
 general direction — each new mixed binary is a hand-audited entry, added
 only when a real session shows it prompting often enough to matter.
@@ -267,7 +267,7 @@ still gets the honest `EACCES`, reads "Permission denied", and escalates
 to advising `sudo` — the exact good path that run already exhibited.
 Prompting first buys nothing but a rubber-stamp on the way to the same
 failure. This also keeps the approver's **privilege-independent** curation
-principle intact ({Pikuri::Code::Bash::ReadOnlyCommandApprover}'s "the
+principle intact ({Pikuri::Code::Bash::PassiveCommandDetector}'s "the
 guarantee doesn't rely on running non-root"): `smartctl -a` is read-only
 whether it runs as the user (fails `EACCES`) or as root (succeeds, still
 only reads). Needing root to *succeed* is orthogonal to whether it
@@ -275,7 +275,7 @@ only reads). Needing root to *succeed* is orthogonal to whether it
 
 **Allowlist, not denylist — and that's the better shape.** Both are
 *mixed* binaries (`smartctl -t` starts a self-test; `nvme format` wipes a
-namespace), so neither joins `READ_ONLY_BINARIES`. But unlike the
+namespace), so neither joins `PASSIVE_BINARIES`. But unlike the
 `dmesg`/`journalctl` flag-*denylists* — the yardoc's "one deviation from
 never auto-approve a destructive command", whose residual is a future
 mutating flag nobody named — SMART reads go in as a strict *allowlist*:
@@ -285,7 +285,7 @@ this *tightens* deny-by-default rather than deviating from it.
 
 **`nvme` — subcommand-allowlist (the clean fit, and the bigger win).**
 `nvme` is subcommand-structured like `apt`/`systemctl`, so it slots
-straight into the existing `read_only_X?` shape. Read subcommands in —
+straight into the existing `passive_X?` shape. Read subcommands in —
 `smart-log`, `id-ctrl`, `id-ns`, `list`, `error-log`, `get-feature`,
 `get-log`; mutators out — `format`, `sanitize`, `set-feature`,
 `fw-download`, `fw-commit`, `reset`, the `write*` family. The verb must
@@ -318,13 +318,13 @@ anyway). To be re-confirmed on the implementing audit, but no git-style
 hardening looks needed.
 
 **Same universal caveats.** Keep both families out of the glob fast path
-(`glob_safe_binary?` stays `READ_ONLY_BINARIES`-only), exactly as the
+(`glob_safe_binary?` stays `PASSIVE_BINARIES`-only), exactly as the
 other classified families are.
 
 ## Batching
 
 Collapse several queued confirmations into a single prompt — when the
-agent emits a run of mutations (or the read-only command approver passes
+agent emits a run of mutations (or the passive-command detector passes
 some and leaves three that need a human), present them together rather
 than one modal at a time. Pure prompt-*volume* reduction; the decision
 stays per-command.
@@ -335,7 +335,7 @@ command's raw bytes stay individually visible and individually sanitized
 (the human may approve a subset). The open part is UI-shaped — how a
 terminal renders a multi-item approve/reject without losing the
 sanitizer's per-item warning gating — a `Confirmer`-chrome concern, not
-one for the command approver's pure-code predicate.
+one for the passive detector's pure-code predicate.
 
 ## Permission-model granularity — the broader wishlist
 
@@ -412,7 +412,7 @@ translation and reintroduce the manipulability the "no verdict" rule
 fought. That is an LLM call + latency on *every* mutating prompt, not a
 free decoration. So **deterministic-first**:
 
-- **Rules-based translator** — reuse the command approver's `Tokenizer` to
+- **Rules-based translator** — reuse the passive detector's `Tokenizer` to
   recognize the high-value destructive shapes (`rm -rf <path>`,
   `dd of=<dev>`, `find … -delete`, `> <file>` truncation, `chmod -R`)
   and print a canned plain-language line. No LLM, no manipulation
