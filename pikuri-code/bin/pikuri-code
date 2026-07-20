@@ -238,12 +238,22 @@ sandbox = if sandbox_enabled
             Pikuri::Code::Bash::Sandbox::NONE
           end
 
-# Build the system prompt: static base + optional project context + footer.
-# AGENTS.md wins over CLAUDE.md when both exist; lookup is at the
-# project root.
+# Build the system prompt: static base + optional context files + footer.
+# Two instruction layers are prepended when present, global first so a
+# project's file refines the user-wide one rather than overriding it
+# wholesale:
+#   * global  — ~/.claude/CLAUDE.md (mirrors the skill catalog's Dir.home base)
+#   * project — AGENTS.md, else CLAUDE.md, at the project root (AGENTS.md wins)
+# Each is injected verbatim under a header naming its source path, so the
+# LLM can tell user-wide preferences from this project's rules.
 system_prompt = Pikuri.prompts(:'coding-system-prompt', :'agent-loop')
-md_path = ['AGENTS.md', 'CLAUDE.md'].map { |f| filesystem.project_root.join(f) }.find(&:file?)
-system_prompt += "\n\n# Project Context\n\n#{File.read(md_path)}" if md_path
+context_paths = [
+  Pathname.new(Dir.home).join('.claude', 'CLAUDE.md'),
+  ['AGENTS.md', 'CLAUDE.md'].map { |f| filesystem.project_root.join(f) }.find(&:file?)
+].compact.select(&:file?).uniq
+context_paths.each do |path|
+  system_prompt += "\n\n# Context: #{path}\n\n#{File.read(path)}"
+end
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nProject root: #{filesystem.project_root}"
 # Advertise --writable extras: that the agent may edit outside the
@@ -441,7 +451,7 @@ begin
   puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
   puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
   puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo
-  puts "Loaded project context from #{md_path}." if md_path
+  context_paths.each { |path| puts "Loaded context from #{path}." }
   unless skill_catalog.empty?
     names = skill_catalog.list.map(&:name).sort.join(', ')
     puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."

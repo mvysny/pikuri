@@ -57,9 +57,11 @@ can also pass an initial message on the command line:
 
 The first time the agent wants to write a file or run a shell
 command, it prompts you on the terminal (`(y/n)?`). Read what
-it's about to do before you say yes. If an `AGENTS.md` or
-`CLAUDE.md` exists at the workspace root, it's prepended to the
-system prompt as project context.
+it's about to do before you say yes. Two instruction files are
+prepended to the system prompt as context when present: your
+user-wide `~/.claude/CLAUDE.md` first, then a project `AGENTS.md`
+or `CLAUDE.md` at the workspace root (`AGENTS.md` wins when both
+exist) — so a project's rules refine your user-wide ones.
 
 ## Security: this is a tech demo, treat it accordingly
 
