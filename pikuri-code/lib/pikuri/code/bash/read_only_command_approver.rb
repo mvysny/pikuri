@@ -41,8 +41,8 @@ module Pikuri
       #    PATH-resolved bare names (+ls+, +cat+, …) qualify.
       # 2. That bare name is on {READ_ONLY_BINARIES} (or the segment is a
       #    read-only +dpkg+/+apt+/+apt-cache+/+systemctl+/+file+/+dmesg+/
-      #    +journalctl+/+man+/+rg+ query, or — under +allow_git:+ — a read-only
-      #    git invocation).
+      #    +journalctl+/+man+/+rg+/+nvme+/+smartctl+ query, or — under
+      #    +allow_git:+ — a read-only git invocation).
       #
       # A command the strict parse rejects *solely* because of an unquoted glob
       # gets a second look through the {#glob_read_only?} fast path (see there):
@@ -124,6 +124,38 @@ module Pikuri
       # (util-linux / systemd / man-db); an allowlist of read-only flags would
       # close it at the cost of not approving every new read flag — the inferior
       # trade. Same residual shape as the git +--output+ check.
+      #
+      # == Read-only SMART disk diagnostics (+nvme+ / +smartctl+), unconditional
+      #
+      # Disk-health tools split read/mutate like the families above, and a health
+      # check runs their read forms repeatedly (+nvme smart-log+, +smartctl -a+),
+      # each otherwise prompting. These need root, so under {Bash}'s unprivileged
+      # view they fail +EACCES+ and the model escalates to advising +sudo+ — but
+      # the approver classifies *content* (does it mutate?), not *outcome* (will
+      # it succeed?), and +smartctl -a+ is read-only at every privilege, so it
+      # qualifies regardless; auto-approving it just drops a pointless prompt on
+      # the way to that honest +EACCES+. See +ideas/bash-confirmer.md+.
+      #
+      # +nvme+ is subcommand-shaped like +apt+: {#read_only_nvme?} accepts a
+      # {READ_ONLY_NVME_SUBCOMMANDS} verb *immediately* after +nvme+, which
+      # refuses the mutators (+format+/+sanitize+/+set-feature+/+fw-download+/
+      # +fw-commit+/+reset+) and the +nvme <plugin> <verb>+ form (whose second
+      # word is a plugin name, not a known verb). Started deliberately minimal;
+      # grow the verb set as real sessions surface further reads.
+      #
+      # +smartctl+ is flag-shaped, but recovered by a flag *allowlist*, not the
+      # denylist the +dmesg+/+man+/+file+ family uses: {#read_only_smartctl?}
+      # approves iff *every* +-+-leading argument is a known read flag
+      # ({SMARTCTL_READ_SHORT} / {SMARTCTL_READ_LONG}) — a non-flag token is a
+      # device path or a flag value, and +smartctl+ only ever mutates via a flag.
+      # The allowlist has no residual (an unrecognized flag abstains), so unlike
+      # the denylist families this does *not* deviate from "never auto-approve a
+      # destructive command": +-t+ (self-test), +-s+/+-o+/+-S+/+--set+ (device
+      # settings) and +-X+ (abort test) all fall outside the read set. So does
+      # *every* +-l+/+--log+ — it is value-sensitive (+-l selective,S-E+ *sets* a
+      # test span), so it's lumped out wholesale rather than parsed by value
+      # (+-a+/+-x+ already inline the standard error/self-test logs); revisit only
+      # if that friction bites.
       #
       # == Read-only git (+allow_git:+, opt-in, default off)
       #
@@ -237,6 +269,18 @@ module Pikuri
           'madison', 'xvcg', 'dotty'
         ].freeze
 
+        # +nvme+ (nvme-cli) subcommands with no mutating form — the only
+        # invocations {#read_only_nvme?} accepts, and the verb must appear
+        # immediately after +nvme+ (so the +nvme <plugin> <verb>+ form, whose
+        # second word is a plugin name, is not approved). Excludes every mutator
+        # (+format+/+sanitize+/+set-feature+/+fw-download+/+fw-commit+/+reset+/
+        # the +write*+ family). Deliberately minimal — grow as real sessions
+        # surface further read verbs.
+        READ_ONLY_NVME_SUBCOMMANDS = Set[
+          'smart-log', 'list', 'id-ctrl', 'id-ns', 'error-log',
+          'fw-log', 'get-log', 'get-feature'
+        ].freeze
+
         # git verbs with no mutating form — the only commands {#read_only_git?}
         # accepts (and only under +allow_git:+). Excludes +tag+/+branch+/
         # +remote+/+stash+/+reflog+ (each has a delete/create/expire form) and
@@ -308,6 +352,24 @@ module Pikuri
         # lookup.
         FILE_WRITE_LONG = Set['--compile'].freeze
 
+        # +smartctl+ short-option *letters* that only read — SMART data (+-a+
+        # all, +-x+ xall, +-A+ attributes), device info (+-i+), health (+-H+),
+        # capabilities (+-c+), plus the device-type modifier +-d+ (its +TYPE+
+        # value is a separate token). {#read_only_smartctl?} approves iff every
+        # letter in a +-+-cluster is here — an allowlist, so a mutating letter
+        # (+-t+/+-s+/+-o+/+-S+/+-X+) or the value-sensitive +-l+ simply isn't
+        # listed and abstains.
+        SMARTCTL_READ_SHORT = Set['a', 'x', 'i', 'H', 'c', 'A', 'd'].freeze
+
+        # +smartctl+ long options that only read — the long spellings of
+        # {SMARTCTL_READ_SHORT} (+--device+ carries the +-d+ modifier).
+        # {#read_only_smartctl?} strips a +=value+ tail before lookup
+        # (+--device=sat+ matches +--device+).
+        SMARTCTL_READ_LONG = Set[
+          '--all', '--xall', '--info', '--health',
+          '--capabilities', '--attributes', '--device'
+        ].freeze
+
         # @param allow_git [Boolean] when +true+, additionally approve read-only
         #   git invocations ({#read_only_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
@@ -349,7 +411,8 @@ module Pikuri
         # {READ_ONLY_BINARIES} command has no mutating/exec/output-file form in
         # *any* argument — so a glob that expands to a +-flag+-looking filename
         # (or any filename) can't grow teeth. The recovered families
-        # (dpkg/apt/dmesg/journalctl/man/rg/file/git) are deliberately *not*
+        # (dpkg/apt/dmesg/journalctl/man/rg/file/nvme/smartctl/git) are
+        # deliberately *not*
         # eligible: they classify by flag *spelling*, which a post-expansion
         # glob would defeat (a planted +-C+/+--pre+ file smuggled past the
         # denylist) — so any glob on them keeps delegating to the human. The
@@ -386,8 +449,8 @@ module Pikuri
         #   (+[]+ for a comment no-op).
         # @return [Boolean] whether the segment is a single bare invocation of a
         #   {READ_ONLY_BINARIES} entry (or a read-only dpkg/apt/apt-cache/systemctl/
-        #   file/dmesg/journalctl/man/rg query, or under +allow_git:+ a read-only
-        #   git invocation),
+        #   file/dmesg/journalctl/man/rg/nvme/smartctl query, or under +allow_git:+
+        #   a read-only git invocation),
         #   or an empty (comment) segment. A first word containing +/+ is a path
         #   that could point at a planted binary ⇒ not approved.
         def segment_read_only?(words)
@@ -405,6 +468,8 @@ module Pikuri
           return true if read_only_journalctl?(words)
           return true if read_only_man?(words)
           return true if read_only_rg?(words)
+          return true if read_only_nvme?(words)
+          return true if read_only_smartctl?(words)
 
           @allow_git && read_only_git?(words)
         end
@@ -567,6 +632,46 @@ module Pikuri
             token[1..].chars.any? { |c| FILE_WRITE_SHORT.include?(c) }
           else
             false
+          end
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +nvme+ followed *immediately* by a
+        #   {READ_ONLY_NVME_SUBCOMMANDS} verb (so the +nvme <plugin> <verb>+ form
+        #   and every mutating verb are refused).
+        def read_only_nvme?(words)
+          return false unless words[0] == 'nvme'
+
+          READ_ONLY_NVME_SUBCOMMANDS.include?(words[1])
+        end
+
+        # @param words [Array<String>] one segment's words.
+        # @return [Boolean] whether it is +smartctl+ with *every* +-+-leading
+        #   argument a known read flag ({SMARTCTL_READ_SHORT} /
+        #   {SMARTCTL_READ_LONG}). A flag *allowlist* (inverse polarity of the
+        #   dmesg/man/file denylists): an unrecognized flag ⇒ not approved, so
+        #   the mutating and value-sensitive forms abstain with no enumeration.
+        #   A non-flag token is a device path or a flag value (+-d sat+) and is
+        #   always safe — +smartctl+ mutates only via a flag.
+        def read_only_smartctl?(words)
+          return false unless words[0] == 'smartctl'
+
+          words.drop(1).all? { |t| smartctl_read_arg?(t) }
+        end
+
+        # @param token [String] one +smartctl+ argument.
+        # @return [Boolean] whether it is a read-only argument — a long option in
+        #   {SMARTCTL_READ_LONG} (ignoring any +=value+ tail), a short cluster
+        #   whose every letter is in {SMARTCTL_READ_SHORT}, or a bare non-flag
+        #   token (device path / flag value). A bundled cluster mixing in an
+        #   unlisted letter (+-at+) ⇒ +false+ ⇒ abstain — the safe direction.
+        def smartctl_read_arg?(token)
+          if token.start_with?('--')
+            SMARTCTL_READ_LONG.include?(token.split('=', 2).first)
+          elsif token.start_with?('-')
+            token[1..].chars.all? { |c| SMARTCTL_READ_SHORT.include?(c) }
+          else
+            true
           end
         end
 

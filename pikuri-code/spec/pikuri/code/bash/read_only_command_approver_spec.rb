@@ -173,6 +173,8 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'globbed binary name' => '*.sh',               # first word is itself a glob
       'glob binary in path' => '/bin/l* -la',        # first word has a /
       'mixed pure+family'   => 'dpkg -l && ls *',    # family segment blocks the chain
+      'nvme glob'           => 'nvme smart-log /dev/nvme*', # recovered family, not eligible
+      'smartctl glob'       => 'smartctl -a /dev/sd*',      # recovered family, not eligible
       'glob + real redirect'=> 'ls * > out.txt',     # redirect still rejected
       'glob + substitution' => 'ls $(rm -rf ~)*'     # $() still rejected
     }.each do |label, cmd|
@@ -279,6 +281,78 @@ RSpec.describe Pikuri::Code::Bash::ReadOnlyCommandApprover do
       'double-semicolon'     => 'ls ;; pwd',           # empty middle segment
       'background not seq'    => 'ls & pwd',            # single & not a sequencer; trips metachar
       'pipe-amp (stderr)'    => 'ls |& grep x'         # |& leaves a stray & → metachar
+    }.each do |label, cmd|
+      it "does not approve: #{label} (#{cmd.inspect})" do
+        refute described_class.new.approves?(cmd), "expected no approval for #{cmd.inspect}"
+      end
+    end
+  end
+
+  describe 'SMART disk diagnostics (nvme / smartctl)' do
+    # These need root, so under Bash's unprivileged view they fail EACCES —
+    # but the approver classifies content (does it mutate?), not outcome
+    # (will it succeed?), so the read forms approve and drop a pointless
+    # prompt on the way to that honest failure. See ideas/bash-confirmer.md.
+    [
+      # nvme: subcommand-allowlist, verb immediately after `nvme`.
+      'nvme list',
+      'nvme smart-log /dev/nvme0',        # the observed command
+      'nvme id-ctrl /dev/nvme0',
+      'nvme id-ns /dev/nvme0n1',
+      'nvme error-log /dev/nvme0',
+      'nvme fw-log /dev/nvme0',
+      'nvme get-log /dev/nvme0 --log-id=2', # trailing flags on a read verb are fine
+      'nvme get-feature /dev/nvme0 -f 6',   # get- reads (set-feature is excluded)
+      # smartctl: flag-allowlist, every `-`-leading arg a known read flag.
+      'smartctl -a /dev/nvme0',           # the observed command
+      'smartctl -x /dev/sda',
+      'smartctl -i /dev/sda',
+      'smartctl -H /dev/sda',
+      'smartctl -A /dev/sda',
+      'smartctl -c /dev/sda',
+      'smartctl -a -d sat /dev/sda',      # device-type modifier, spaced value
+      'smartctl -d nvme /dev/nvme0',
+      'smartctl --all /dev/sda',          # long spelling
+      'smartctl --device=sat --health /dev/sda', # long with =value
+      'smartctl -aH /dev/sda',            # bundled read-only cluster
+      'smartctl',                         # bare (prints version) — no arg to fault
+      'nvme list && smartctl -a /dev/nvme0', # composes across the sequencer split
+      'smartctl -a /dev/sda | grep -i temperature' # composes with a read-only pipe
+    ].each do |cmd|
+      it "approves: #{cmd.inspect}" do
+        assert described_class.new.approves?(cmd), "expected approval for #{cmd.inspect}"
+      end
+    end
+
+    # The mutating forms abstain (fall through to the human). nvme excludes
+    # them by verb; smartctl by the allowlist (an unrecognized flag → abstain),
+    # which also covers the value-sensitive `-l` lumped out wholesale.
+    {
+      'nvme format (wipes)'    => 'nvme format /dev/nvme0',
+      'nvme sanitize (wipes)'  => 'nvme sanitize /dev/nvme0',
+      'nvme set-feature'       => 'nvme set-feature /dev/nvme0 -f 6 -v 0',
+      'nvme fw-download'       => 'nvme fw-download /dev/nvme0 -f fw.bin',
+      'nvme fw-commit'         => 'nvme fw-commit /dev/nvme0 -s 1 -a 3',
+      'nvme reset'             => 'nvme reset /dev/nvme0',
+      'nvme delete-ns'         => 'nvme delete-ns /dev/nvme0 -n 1',
+      'nvme write'             => 'nvme write /dev/nvme0n1 -s 0 -c 0 -d d',
+      'nvme plugin form'       => 'nvme intel smart-log-add /dev/nvme0', # 2nd word is a plugin
+      'nvme unknown verb'      => 'nvme frobnicate /dev/nvme0',
+      'nvme bare (no verb)'    => 'nvme',
+      'smartctl -t (self-test)' => 'smartctl -t short /dev/sda',
+      'smartctl -t long'        => 'smartctl -t long /dev/sda',
+      'smartctl --test='        => 'smartctl --test=short /dev/sda',
+      'smartctl -s on (enable)' => 'smartctl -s on /dev/sda',
+      'smartctl --smart=on'     => 'smartctl --smart=on /dev/sda',
+      'smartctl -o on (offline)'=> 'smartctl -o on /dev/sda',
+      'smartctl -S on (save)'   => 'smartctl -S on /dev/sda',
+      'smartctl --set='         => 'smartctl --set=standby /dev/sda',
+      'smartctl -X (abort)'     => 'smartctl -X /dev/sda',
+      'smartctl -l (lumped out)'=> 'smartctl -l error /dev/sda',   # -l value-sensitive → abstain
+      'smartctl -l selective'   => 'smartctl -l selective,0-100 /dev/sda', # actually sets a span
+      'smartctl --log='         => 'smartctl --log=error /dev/sda',
+      'smartctl bundled mutator'=> 'smartctl -at short /dev/sda',  # -t hidden in a cluster
+      'smartctl -d then mutate' => 'smartctl -d sat -t short /dev/sda' # modifier doesn't launder -t
     }.each do |label, cmd|
       it "does not approve: #{label} (#{cmd.inspect})" do
         refute described_class.new.approves?(cmd), "expected no approval for #{cmd.inspect}"
