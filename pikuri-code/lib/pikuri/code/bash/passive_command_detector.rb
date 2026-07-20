@@ -17,36 +17,15 @@ module Pikuri
       # +passive_detector:+ and supplies the meaning: a passive verdict skips the
       # confirmation prompt, everything else falls through to Bash's human
       # {Confirmer}. So +false+ is not a rejection — just "not provably passive,
-      # ask the human". The conservative half of the OS-helper's answer to
-      # confirmation fatigue: frequent harmless commands (+ls+, +cat+, +grep+,
-      # +df+ …) stop prompting while every non-passive command still reaches the
-      # human. See +ideas/pikuri-os.md+.
+      # ask the human". It is deliberately NOT a {Pikuri::Workspace::Confirmer}:
+      # it renders nothing and parses a command where a confirmer must not.
       #
-      # It is NOT a {Pikuri::Workspace::Confirmer}: it renders nothing and never
-      # resolves a request. Keeping content classification out of the confirmer
-      # is deliberate — a Confirmer's one job is to resolve a request, and it
-      # must never parse a command. That split also makes +--yolo+ (blanket
-      # {Confirmer::AutoApprove}) and passive auto-gating (this predicate)
-      # independent, composable axes rather than one tangled decorator.
-      #
-      # == What "passive" excludes, and what it merely can't prove
-      #
-      # Two things stay out of the passive set for *different* reasons, and the
-      # distinction matters. **Mutation and egress are not passive by
-      # definition** — they fail a clause above. **Process execution and
-      # privilege escalation are abstained because the prover can't clear them**,
-      # not because they are effects: an +exec+ (a spawned +$BROWSER+, +rg
-      # --pre+) makes the child's effects *undecidable*, and +sudo+ changes the
-      # process's *authority*, not the world. So +sudo dmesg+ is genuinely
-      # passive — it only reads; pikuri-os still routes it to the human, but via
-      # a *separate* sudo policy, not because this classifier calls it active.
-      # Were a vetted sudo-read path ever to exist, it would reuse this verdict
-      # unchanged.
-      #
-      # Why fatigue is a *security* concern: a user who has clicked "yes" forty
-      # times has stopped reading; the injected forty-first gets rubber-stamped.
-      # Cutting pointless prompts is what keeps attention on the ones that
-      # matter.
+      # The design rationale — why cutting pointless prompts is a *security*
+      # feature, what "passive" excludes vs. merely can't prove, the four
+      # recovery strategies and the residual each accepts, PATH-hijack, and the
+      # git-hardening containment behind +allow_git:+ — lives in
+      # +pikuri-code/DESIGN.md+ (*Passive-command auto-approval*). See also
+      # +ideas/pikuri-os.md+ and +ideas/bash-confirmer.md+.
       #
       # == The decision rule (deny-by-default)
       #
@@ -63,157 +42,20 @@ module Pikuri
       # 2. That bare name is on {PASSIVE_BINARIES} (or the segment is a
       #    passive +dpkg+/+apt+/+apt-cache+/+systemctl+/+file+/+dmesg+/
       #    +journalctl+/+man+/+rg+/+nvme+/+smartctl+ query, or — under
-      #    +allow_git:+ — a passive git invocation).
+      #    +allow_git:+ — a passive git invocation). The four recovery strategies
+      #    (subcommand gate / flag denylist / flag allowlist / glob fast path)
+      #    are surveyed in DESIGN.md; each predicate below states its own.
       #
       # A command the strict parse rejects *solely* because of an unquoted glob
       # gets a second look through the {#glob_passive?} fast path (see there):
       # globs are passive, but *only* on pure {PASSIVE_BINARIES} binaries,
       # never the flag-classified families above.
       #
-      # The lexing half lives in {Tokenizer}. The consequence here: it hands the
-      # classifiers below the *true* de-quoted word (+--clear+, not +--_clear+),
-      # which is what makes the denylist / prefix checks sound — a placeholder
-      # rewrite would let a quote-smuggled +--''clear+ slip past them. The
-      # failure mode is always "asks the human too often", never "called
-      # something active passive".
-      #
-      # == Why a binary allowlist, and why it's short
-      #
-      # Metacharacter-free is *necessary but not sufficient*: +find . -delete+,
-      # +sort -o f+, +systemctl stop x+, +git reset --hard+, +dd+, +tee+,
-      # +truncate+, +shred+, +date -s+ are all single, metacharacter-free,
-      # *destructive* invocations. So {PASSIVE_BINARIES} holds only binaries
-      # with **no mutating or escaping form in any argument** — independent of
-      # privilege, so the guarantee doesn't rely on running non-root. That
-      # excludes +find+
-      # (+-delete+/+-exec+), +env+/+command+ (run other programs),
-      # +date+/+hostname+ (set-forms), +xxd+ (a second positional operand is an
-      # *output file*: +xxd in out+ writes +out+ — a write with no flag to
-      # deny, so it can't be recovered like the others; +od+/+hexdump+ cover
-      # read-only hex dumps), and +journalctl+ (recovered by flag denylist
-      # below — its read/mutate split is by flag, not subcommand).
-      #
-      # == Passive subcommand queries (+dpkg+ / +apt+ / +apt-cache+ / +systemctl+), unconditional
-      #
-      # These are mixed binaries whose query forms are passive but whose mutating
-      # forms (+dpkg -i+/+-r+, +apt install+/+remove+, +apt-cache gencaches+,
-      # +systemctl start+/+stop+) aren't, so they can't join
-      # {PASSIVE_BINARIES} wholesale. {#passive_dpkg?}/{#passive_apt?}/
-      # {#passive_apt_cache?}/{#passive_systemctl?} recover the query subset
-      # by requiring a known verb *immediately* after the binary
-      # ({PASSIVE_DPKG_ACTIONS} / {PASSIVE_APT_SUBCOMMANDS} /
-      # {PASSIVE_APT_CACHE_SUBCOMMANDS} / {PASSIVE_SYSTEMCTL_SUBCOMMANDS}) —
-      # which refuses a leading redirection or global option (+dpkg
-      # --admindir=/x+, +apt -o APT::Foo=bar+, +apt-cache -o Dir::Cache=/x+,
-      # +systemctl --root=/x+) since the second token then isn't a query verb.
-      #
-      # Unlike git these are *unconditional* (no +allow_git:+-style gate): the
-      # query forms read state with no command-execution vector — apt's
-      # pre/post-invoke hooks fire only on install/update, and +systemctl+
-      # spawns its pager only on a tty, which {Bash}'s captured (piped) stdout
-      # is not. The pure-query companion +dpkg-query+ has no mutating form at
-      # all and sits directly in {PASSIVE_BINARIES} (its +apt-cache+ analogue
-      # does not: +gencaches+ writes the cache, hence the subcommand gate).
-      #
-      # == Passive dmesg / journalctl / man / rg / file (flag denylist), unconditional
-      #
-      # These read by default; a handful of *flags* mutate or exec. dmesg:
-      # buffer wipe +-C+/+-c+, console toggles. journalctl: the +--vacuum-*+
-      # trimmers, +--rotate+/+--flush+, the FSS/catalog writers. +man+: +-H+/
-      # +--html+ launches +$BROWSER+ (exec *and* egress), +-P+/+--pager+ runs an
-      # arbitrary pager. +rg+ (ripgrep): +--pre+ runs an arbitrary preprocessor
-      # command per searched file, +--hostname-bin+ one for hyperlink hostnames
-      # — both pure exec, so +rg+ can't sit beside +grep+ in
-      # {PASSIVE_BINARIES}. +file+: +-C+/+--compile+ writes a +.mgc+ magic
-      # file to disk (its lone write form). The read/{mutate,exec} split is by
-      # flag, not a leading subcommand, so {#passive_dmesg?}/
-      # {#passive_journalctl?}/{#passive_man?}/{#passive_rg?}/
-      # {#passive_file?} recover it with a *denylist* ({DMESG_MUTATING_SHORT}
-      # / {DMESG_MUTATING_LONG} / {JOURNALCTL_MUTATING_LONG} / {MAN_EXEC_SHORT}
-      # / {MAN_EXEC_LONG} / {RG_EXEC_LONG} / {FILE_WRITE_SHORT} /
-      # {FILE_WRITE_LONG}): passive iff no argument is a denied flag. Bundled
-      # short options are scanned per character (dmesg +-xC+ trips on +C+, man
-      # +-aH+ on +H+, file +-zC+ on +C+); a long option's +=value+ tail is
-      # stripped before lookup. journalctl and rg have no mutating/exec short
-      # option, so a short cluster is passive data (+rg -z+ shells only to
-      # fixed-name decompressors, the PATH-hijack residual already covers
-      # those). man's and rg's pure-read siblings +apropos+/+whatis+/+grep+
-      # have no such flag and sit directly in {PASSIVE_BINARIES}.
-      #
-      # This is the one deviation from "never call an active command passive":
-      # a denylist's residual is a *future* mutating/exec flag this set doesn't
-      # yet name. Accepted because the surfaces are small and stable
-      # (util-linux / systemd / man-db); an allowlist of passive flags would
-      # close it at the cost of not admitting every new read flag — the inferior
-      # trade. Same residual shape as the git +--output+ check.
-      #
-      # == Passive SMART disk diagnostics (+nvme+ / +smartctl+), unconditional
-      #
-      # Disk-health tools split read/mutate like the families above, and a health
-      # check runs their read forms repeatedly (+nvme smart-log+, +smartctl -a+),
-      # each otherwise prompting. These need root, so under {Bash}'s unprivileged
-      # view they fail +EACCES+ and the model escalates to advising +sudo+ — but
-      # the detector classifies *content* (does it mutate?), not *outcome* (will
-      # it succeed?), and +smartctl -a+ is passive at every privilege, so it
-      # qualifies regardless; auto-approving it just drops a pointless prompt on
-      # the way to that honest +EACCES+. See +ideas/bash-confirmer.md+.
-      #
-      # +nvme+ is subcommand-shaped like +apt+: {#passive_nvme?} accepts a
-      # {PASSIVE_NVME_SUBCOMMANDS} verb *immediately* after +nvme+, which
-      # refuses the mutators (+format+/+sanitize+/+set-feature+/+fw-download+/
-      # +fw-commit+/+reset+) and the +nvme <plugin> <verb>+ form (whose second
-      # word is a plugin name, not a known verb). Started deliberately minimal;
-      # grow the verb set as real sessions surface further reads.
-      #
-      # +smartctl+ is flag-shaped, but recovered by a flag *allowlist*, not the
-      # denylist the +dmesg+/+man+/+file+ family uses: {#passive_smartctl?}
-      # is passive iff *every* +-+-leading argument is a known read flag
-      # ({SMARTCTL_READ_SHORT} / {SMARTCTL_READ_LONG}) — a non-flag token is a
-      # device path or a flag value, and +smartctl+ only ever mutates via a flag.
-      # The allowlist has no residual (an unrecognized flag abstains), so unlike
-      # the denylist families this does *not* deviate from "never call an active
-      # command passive": +-t+ (self-test), +-s+/+-o+/+-S+/+--set+ (device
-      # settings) and +-X+ (abort test) all fall outside the read set. So does
-      # *every* +-l+/+--log+ — it is value-sensitive (+-l selective,S-E+ *sets* a
-      # test span), so it's lumped out wholesale rather than parsed by value
-      # (+-a+/+-x+ already inline the standard error/self-test logs); revisit only
-      # if that friction bites.
-      #
-      # == Passive git (+allow_git:+, opt-in, default off)
-      #
-      # Everything above is unconditional. +allow_git: true+ additionally treats
-      # the passive git verbs ({PASSIVE_GIT_SUBCOMMANDS} —
-      # +status+/+diff+/+log+/+show+ …, with +--cached+ and friends free, see
-      # {#passive_git?}) as passive. Even a bare +git diff+ executes whatever the
-      # repo config directs (+core.fsmonitor+, +diff.*.textconv+) — an *active*
-      # vector — so calling it passive is sound only when that config-execution
-      # vector is contained.
-      #
-      # Containment lives in {Pikuri::Code::Bash}, not here:
-      # {Pikuri::Code::Bash::GIT_HARDENING} forces +core.fsmonitor=false+ (and
-      # +core.pager=cat+) via the +GIT_CONFIG_*+ environment, overriding a
-      # hostile repo-local +.git/config+ — closing the headline vector
-      # (+core.fsmonitor = rm -rf ~+, which fires on a plain +git status+). The
-      # residual the caller accepts is narrow: diff-driver execution
-      # (+diff.external+, a +.gitattributes+-selected +diff.<driver>.command+ /
-      # +.textconv+), which the environment can't disable cleanly and we don't
-      # rewrite the command to suppress. A plain +git clone+ never copies the
-      # remote's config, so that residual is confined to a repo whose
-      # +.git/config+ an attacker wrote. +bin/pikuri-code+ gates +allow_git:+
-      # behind a startup "trust this repo?" prompt; +pikuri-os+ enables it
-      # unconditionally (its agent roams the whole disk — no single repo to
-      # vouch for; see +Pikuri::Os::Extension+). Hardening does NOT license
-      # *destructive* git, so the verb set excludes every mutating form and
-      # {#passive_git?} additionally refuses inline config / repo-redirection
-      # / +--output+.
-      #
-      # == Residual the allowlist does NOT close
-      #
-      # PATH hijacking: a bare +ls+ resolves via +$PATH+, so a planted
-      # +~/bin/ls+ earlier in +PATH+ runs instead. Planting requires a prior
-      # *confirmed* write, and altering +PATH+ in the same command needs
-      # +export+/+;+ (metacharacters → not passive), so this is not a
-      # one-command bypass. Documented, accepted for v1.
+      # {Tokenizer} hands the classifiers the *true* de-quoted word (+--clear+,
+      # not a +--_clear+ placeholder), which is what makes the denylist / prefix
+      # checks sound — a placeholder rewrite would let a quote-smuggled
+      # +--''clear+ slip past them. The failure mode is always "asks the human
+      # too often", never "called something active passive".
       #
       # == Wiring
       #
@@ -223,8 +65,9 @@ module Pikuri
       # cross-tool coupling.
       class PassiveCommandDetector
         # Binaries passive in *every* argument form (no mutating mode
-        # reachable, with or without root). See the class header for the
-        # curation principle and exclusions.
+        # reachable, with or without root). See +pikuri-code/DESIGN.md+
+        # (*Passive-command auto-approval*) for the curation principle and
+        # exclusions.
         #
         # +cd+, +true+, +false+ are shell builtins, not PATH binaries; the
         # classifier only string-matches the first token, so they slot in. +cd+
@@ -397,7 +240,7 @@ module Pikuri
         #   git invocations ({#passive_git?}). Default +false+. Sound only
         #   paired with {Pikuri::Code::Bash::GIT_HARDENING}, which closes the
         #   +core.fsmonitor+ vector; the caller accepts the narrow diff-driver
-        #   residual (see the class header).
+        #   residual (see +pikuri-code/DESIGN.md+).
         def initialize(allow_git: false)
           @allow_git = allow_git
         end
