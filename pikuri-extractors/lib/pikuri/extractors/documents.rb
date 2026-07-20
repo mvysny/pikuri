@@ -10,31 +10,18 @@ module Pikuri
     # EPUB, DOCX), markitdown (OOXML spreadsheet / presentation), or
     # pdftotext (PDF), selected per format.
     #
-    # == Container first, host CLI second
+    # Prefers a one-shot, networkless docker container ({IMAGE}) — bytes
+    # in via stdin, Markdown out via stdout, no volume mounts — and falls
+    # back to host +pandoc+ / +markitdown+ / +pdftotext+ CLIs on the same
+    # stdin→stdout contract when docker is absent. Requiring the gem
+    # defines this class + the shared {DOCUMENTS} instance but registers
+    # nothing; a host opts in with +DOCUMENTS.register+.
     #
-    # The preferred converter is a one-shot, locally-built docker
-    # container ({IMAGE}): +docker run --rm -i --network=none --read-only
-    # --cap-drop=ALL+, bytes in via stdin, Markdown out via stdout, **no
-    # volume mounts**. Two reasons over a host-installed converter:
-    #
-    # * *Security.* These documents typically arrive via +fetch+ /
-    #   +web_scrape+ (untrusted bytes) and complex format parsers are a
-    #   classic exploitation surface; in the container a malicious
-    #   document sees no network or host fs, worst case garbage Markdown.
-    # * *Reproducibility.* The Dockerfile pins pandoc + markitdown; a host
-    #   install is whatever version the machine has.
-    #
-    # When docker is unavailable, it falls back to host +pandoc+ /
-    # +markitdown+ / +pdftotext+ CLIs — same stdin→stdout contract, one
-    # code path with two argv builders.
-    #
-    # == Registration is explicit
-    #
-    # Requiring the gem defines this class + the shared {DOCUMENTS}
-    # instance but registers nothing; a host opts in with
-    # +DOCUMENTS.register+ (same philosophy as +c.add_extension+). It
-    # inserts before the terminal +Passthrough+, after core's +HTML+ and
-    # pikuri-pdf's front-inserted +PDF+ (both keep winning their formats).
+    # The cross-cutting *why* — the container's security + reproducibility
+    # rationale, the PDF-arm trade-off against pikuri-pdf, the
+    # deliberately-unsupported formats (ODS/ODP, OCR/audio), and why
+    # paging re-converts each time — lives in
+    # +pikuri-extractors/DESIGN.md+.
     #
     # == Format detection
     #
@@ -48,46 +35,6 @@ module Pikuri
     # binary refusal. Ordering edge: this instance sits *after* core's
     # +HTML+, so a PDF served under a lying +text/html+ header goes to
     # HTML (pikuri-pdf front-inserts and wins that) — accepted, rare.
-    #
-    # == PDF: this gem or pikuri-pdf — pick one per wiring
-    #
-    # The PDF arm (pdftotext, {#pdf_page_lines} restoring +"--- Page N ---"+
-    # markers from pdftotext's +\f+ separators) makes this a superset of
-    # pikuri-pdf's formats, so a host registering {DOCUMENTS} does NOT
-    # also register +Extractors::PDF+ (one extractor per format keeps
-    # first-match-wins legible). The trade:
-    #
-    # * *This gem* — PDF parsing inside the sandbox (poppler is native
-    #   code on attacker bytes), one gem for every document format. Costs:
-    #   docker (or host CLIs), no lazy paging (each paged read re-converts
-    #   the whole PDF), and the generic +:document+ kind (Read tools say
-    #   "End of file" not "End of PDF"; a scanned PDF reads as "(Empty
-    #   file)", not the scanned-image hint).
-    # * *pikuri-pdf* — in-process pure Ruby (no infra), lazy paging (a
-    #   windowed read of a 500-page PDF parses only its window),
-    #   PDF-specific Read wording. Costs: pdf-reader's dep subtree,
-    #   parsing untrusted bytes in-process (pure Ruby, so DoS at worst).
-    #
-    # Guide progression: ch3 wires pikuri-pdf (no docker yet), ch13's
-    # assistant supersedes it with this extractor.
-    #
-    # == Deliberately out of scope
-    #
-    # * *ODS / ODP* — neither pandoc nor markitdown reads them; the only
-    #   converter that does (LibreOffice headless) costs a 2 GB+ image.
-    # * *Image OCR / audio transcription* — markitdown's optional arms
-    #   need model downloads; the image stays networkless and small. A
-    #   multi-modal main LLM is the pikuri answer to images.
-    #
-    # == Paging economics
-    #
-    # A subprocess converter needs the whole document up front, so there's
-    # no lazy parse: every +Extractor.extract_paged+ call re-runs the full
-    # conversion (accepted — no result cache in v1). Both legs still
-    # stream, though: +io+ is copied into the converter's stdin
-    # (+IO.copy_stream+, never loading a big file into the heap) and stdout
-    # lands in a Tempfile {#extract_lines} yields from disk — so neither
-    # the document nor the full Markdown is ever resident during paging.
     class Documents
       # @return [Logger] gem-wide diagnostics logger.
       LOGGER = Pikuri.logger_for('Extractors')
@@ -218,9 +165,10 @@ module Pikuri
         end
       end
 
-      # Plug this extractor into {Pikuri::Extractor.registry}, before
-      # the terminal +Passthrough+ entry. Idempotent — a second call
-      # is a no-op.
+      # Plug this extractor into {Pikuri::Extractor.registry}, before the
+      # terminal +Passthrough+ entry but after core's +HTML+ and
+      # pikuri-pdf's front-inserted +PDF+ (both keep winning their
+      # formats). Idempotent — a second call is a no-op.
       #
       # @return [Documents] self, for chaining.
       def register

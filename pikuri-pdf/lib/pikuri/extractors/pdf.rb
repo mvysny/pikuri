@@ -18,10 +18,11 @@ module Pikuri
     # Split from pikuri-core to keep pdf-reader's five-gem dependency
     # tail (Ascii85, afm, hashery, ruby-rc4, ttfunk) out of the core
     # audit tree — five gems for one format nothing else in core uses.
-    # Hosts opt in with one {.register} call. Unlike pikuri-extractors'
-    # sandboxed subprocess converters, this is in-process and *lazy*
-    # ({.extract_lines} parses pages on demand) — a property a
-    # subprocess converter structurally cannot have.
+    # Hosts opt in with one {.register} call. Being in-process, it pages
+    # *lazily* ({.extract_lines} parses pages on demand) — a property a
+    # subprocess converter structurally cannot have. (The full
+    # this-gem-vs-pikuri-extractors PDF trade-off is in
+    # +pikuri-extractors/DESIGN.md+.)
     #
     # == Registration is explicit
     #

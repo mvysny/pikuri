@@ -5,11 +5,11 @@ module Pikuri
     # One-shot LLM synthesis of a short "what does this MCP server do"
     # description for the +<available_mcps>+ block, paired with the on-disk
     # {Cache}. {Servers} just calls {#call} and treats +nil+ as "fall back".
-    # +Cancellable::Cancelled+ from the {Thinker} pre-call check propagates
-    # (specifically *not* caught by the +StandardError+ rescue) so a boot-time
-    # Ctrl+C aborts startup; any other +StandardError+ (flaky LLM, cache write
-    # failure) is WARN-logged and returns +nil+, so a transient blip doesn't
-    # drop a server from the listing.
+    # Follows the boot-pass cancel/degrade policy: +Cancellable::Cancelled+ from
+    # the {Thinker} pre-call check propagates (not caught by the +StandardError+
+    # rescue) to abort startup; any other +StandardError+ (flaky LLM, cache
+    # write failure) is WARN-logged and returns +nil+, so a transient blip
+    # doesn't drop a server from the listing. See +pikuri-mcp/DESIGN.md+.
     class Synthesizer
       LOGGER = Pikuri.logger_for('Mcp::Synthesizer')
       private_constant :LOGGER

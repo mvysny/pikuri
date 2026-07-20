@@ -238,8 +238,7 @@ module Pikuri
     # 2. +serverInfo.title+;
     # 3. +@synthesizer+ when wired — turns the common no-instructions/no-title
     #    server into a real sentence; its errors surface here as +nil+ (WARN
-    #    logged in {Synthesizer#call}) and fall through, but +Cancelled+
-    #    propagates so a boot-time Ctrl+C aborts;
+    #    logged in {Synthesizer#call}) and fall through to (4);
     # 4. +serverInfo.name+ (last-resort operational identifier);
     # 5. +'(no description)'+ sentinel.
     def resolve_description(entry, client, tools)

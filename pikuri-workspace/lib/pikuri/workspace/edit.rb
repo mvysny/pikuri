@@ -14,9 +14,8 @@ module Pikuri
     # refuses a path the {Workspace}'s read record doesn't show read this
     # conversation. Second, +old_string+ is itself an implicit read-check — the
     # model can't supply correct bytes it hasn't seen — so even within a read
-    # file the change is pinned to content the model has. ({Write} *always*
-    # takes a confirmer because a hallucinated +content+ could clobber unread
-    # bytes.)
+    # file the change is pinned to content the model has. ({Write} differs — it
+    # always takes a confirmer; see +pikuri-workspace/DESIGN.md+.)
     #
     # Handing Edit a +confirmer:+ opts it into the confirm-all-writes posture
     # (the OS-helper wiring): every writable edit confirms with a diff via

@@ -35,13 +35,10 @@ module Pikuri
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #
-    # Both share the read-before-edit gate (an overwrite is refused unless the
-    # {Workspace}'s read record shows a read this conversation). But Edit has a
-    # *second*, content-level guard: its +old_string+ must match current bytes,
-    # so a read file can only change where the model demonstrably knows the
-    # content. Write has no per-change check — a hallucinated +content+ would
-    # clobber the file — so it asks for confirmation on top of the gate. New-file
-    # writes hit neither (nothing to read or clobber).
+    # Write confirms an overwrite where {Edit} stays promptless — the two-guard
+    # asymmetry (the shared read-before-edit gate plus Edit's +old_string+
+    # content-check, which Write lacks so a hallucinated +content+ could clobber
+    # the file) is in +pikuri-workspace/DESIGN.md+.
     #
     # == Side effects
     #
