@@ -123,9 +123,21 @@ content, no remote beacons), and a mechanical recipient guard
 ({Pikuri::Thunderbird::ComposeGuard}) runs first: a suspicious *body* fails
 closed; suspicious/non-ASCII/punycode *recipients* are dropped for the human to
 retype; a never-corresponded-with recipient domain (per
-{Pikuri::Thunderbird::Gloda#domains_seen}) is flagged, not blocked. The launch
+{Pikuri::Thunderbird::Gloda#domains_seen}) is flagged, not blocked; and a body
+carrying a long base64 *blob* earns a located soft-warn (see
+{Pikuri::Thunderbird::ComposeGuard#body_blob_note}). The launch
 is detached (`setsid --fork`) so closing the agent never kills the user's
 Thunderbird.
+
+**What the body guards do *not* close.** They raise attention on the lazy exfil
+— a control-byte/homoglyph body fails closed, a base64 dump earns a note — but
+they are not a barrier against an *adaptive* injector, who splits the blob with
+whitespace or spells it in prose for free (the same injection payload carries
+the evasion). The sharpest surviving channel is **reply-to-injector**: the
+poisoning message's From-domain is already in Gloda's identities graph (which
+counts received mail, both directions), so a reply to the attacker draws no
+novelty flag. The human-gated, irreversible-send compose window — not the guard
+— is the backstop these lean on.
 
 **Create-event is shipped, opt-in.** `thunderbird_calendar_create`
 ({Pikuri::Thunderbird::CalendarCreate}) is wired only when a host passes
