@@ -16,9 +16,13 @@ shrinking. Parked threads, none pursued yet:
 5. Graded egress axis (`egress_human_author < egress_human_approver <
    egress`) + a 2-D untrusted×egress verdict grid — the load-bearing route
    to a *trifecta-soft* pikuri-computer (`--no-internet` → soft, not loud).
-   Confirmer scanners (recipient allowlist / plaintext / base64) harden the
-   approver seat but are bound-not-closed (residual: reply-to-injector +
-   linguistic stego) and must not promote approver → author.
+   The approver-seat scanners are mostly **shipped** (`ComposeGuard` +
+   `Sanitizer`: recipient novelty + fail-closed body); base64 blob spotter
+   is spun out to [`base64-body-spotter.md`](base64-body-spotter.md). All
+   bound-not-closed (residual: reply-to-injector + linguistic stego) and
+   must not promote approver → author. Sub-question: is strict author-mode
+   even reachable in a real chrome, or is `soft` the best any built seat
+   gets?
 6. How/where to surface all of this in docs + example scripts.
 
 This file is the staging area — as pieces land in source or in `book/`,
@@ -606,13 +610,24 @@ softens; the correction is soft, not safe.
 
 #### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
 
-Proposed confirmer hardening for the Thunderbird approver gate, each a real
-red flag that raises the human's attention: **recipient allowlist** (warn
-if we've never mailed this address), **plaintext-only + Unicode
-normalization** (strip zero-width / variation-selector / RTL-override
-stego; warn on funny Unicode), **base64/high-entropy scan** (warn on
-machine-encoded blobs). Build these — they're good defense-in-depth. Two
-things they do **not** do:
+Most of this confirmer hardening is **already shipped** in
+`Pikuri::Thunderbird::ComposeGuard` + `Pikuri::Sanitizer` (verified, not
+assumed):
+
+- **recipient novelty** — `ComposeGuard#novelty_note` via
+  `Gloda::Contacts#domains_seen`. A soft warn (keep-in-draft) on a
+  recipient *domain* the user has no prior mail with — soft because a
+  hard reject would fire on every genuinely-new correspondent.
+- **plaintext body + Unicode/control/bidi/zero-width/homoglyph** — the
+  body **fail-closes** on any `Sanitizer` warning (stronger than a warn:
+  nothing is handed off, the human retypes in Thunderbird); addresses are
+  hard-dropped if non-ASCII or punycode.
+- **base64 / high-entropy blob** — the one piece **not** shipped; spun
+  out to [`base64-body-spotter.md`](base64-body-spotter.md) (a
+  `ComposeGuard` soft-warn, deliberately *not* in the finite-codepoint
+  `Sanitizer`).
+
+Good defense-in-depth. Two things they still do **not** do:
 
 1. **They don't close the channel.** They force the attacker down the
    ladder exactly as the note's patient-approval bound predicts: past
@@ -620,12 +635,16 @@ things they do **not** do:
    **linguistic steganography the scanners and the human both read as
    benign prose** — the user's acrostic ("I think dogs are super cute" →
    `itdasc`), word-choice, sentence count. Low-bandwidth, but enough for a
-   password/key over a few messages. And the **recipient allowlist is
-   *bypassed*, not just weakened**, in the sharpest case: the injecting
-   email's own `From` is now a known correspondent, so *reply to the
-   injector* passes the allowlist with **no warning at all** — and the
-   attacker receives the reply. So the surviving exfil is: linguistic-stego
-   body + reply-to-injector — zero red flags, no warning to ignore.
+   password/key over a few messages. And the **recipient novelty check is
+   *bypassed*, not just weakened**, in the sharpest case (verified in
+   `Gloda::Contacts#domains_seen`: it reads the `identities` table, which
+   collects authors *and* recipients — so received mail counts): the
+   injecting email's own `From`-domain is already "seen", so *reply to the
+   injector* draws **no warning at all** — and the attacker receives the
+   reply. So the surviving exfil is: linguistic-stego body +
+   reply-to-injector — zero red flags, no warning to ignore. (It's also
+   per-*domain*, so a fresh address at an already-seen domain is silent
+   too.)
 2. **They must not promote `human_approver` → `human_author` in the
    detector.** Scanner *effectiveness* ("does it catch the acrostic?") is
    precisely the data-flow question the detector refuses to answer;
@@ -636,6 +655,24 @@ things they do **not** do:
    the **confirmer** as runtime hardening, documented as bound-not-closed.
    Author-mode is the only thing that reaches `info`, because clean-by-
    construction is a *proof*, not a mitigation-of-degree.
+
+#### Still to brainstorm: is strict author-mode even reachable?
+
+The grid rests `info` entirely on `egress_human_author` = "the human
+types the outbound bytes from scratch, no pre-fill." But **every real UX
+wants to pre-fill something** — a blank compose window when the LLM
+already knows the recipient and gist is hostile ergonomics, so the
+product pressure is always toward pre-fill, and the moment it pre-fills we
+are back at `human_approver`. So the clean-by-construction proof may name
+a seat that no shippable chrome actually offers. Open questions for the
+revisit: is there a *partial* author-mode that keeps the proof (e.g.
+pre-fill the recipient + subject — the parts the human can verify at a
+glance — but force the human to type the **body** blind, since the body is
+the exfil channel)? Or is "author-mode" honest only as a spec-level ideal,
+and every real Thunderbird/terminal seat is `human_approver` with the
+scanners doing what they can? If the latter, the grid's `info` cells are
+aspirational and `soft` is the best any *built* thing gets — worth saying
+plainly rather than implying a wiring exists that reaches `info`.
 
 ## Open: propagating this to docs + example scripts
 
