@@ -13,9 +13,12 @@ shrinking. Parked threads, none pursued yet:
    deferred; inert until a search-only persona exists.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
-5. `:egress_human_gated` — reopened as *load-bearing* (the only route to a
-   "trifecta-safe" pikuri-computer); likely author-vs-approver two-strength,
-   not one tag.
+5. Graded egress axis (`egress_human_author < egress_human_approver <
+   egress`) + a 2-D untrusted×egress verdict grid — the load-bearing route
+   to a *trifecta-soft* pikuri-computer (`--no-internet` → soft, not loud).
+   Confirmer scanners (recipient allowlist / plaintext / base64) harden the
+   approver seat but are bound-not-closed (residual: reply-to-injector +
+   linguistic stego) and must not promote approver → author.
 6. How/where to surface all of this in docs + example scripts.
 
 This file is the staging area — as pieces land in source or in `book/`,
@@ -428,8 +431,10 @@ Per-node detail (the max-over-tree the report would attribute):
    which tools are nominally "network tools."
 
 2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
-   demo — trips the loudest alarm, in *both* modes.** That's correct, not
-   a bug: it *is* a full trifecta; the safety is the human commit in
+   demo — trips the loudest alarm, in *both* modes** *(under the settled
+   flat-egress algorithm; the graded-egress axis in "More open questions
+   (b)" revises `--no-internet` down to **soft**).* That's correct, not a
+   bug: it *is* a full trifecta; the safety is the human commit in
    Thunderbird's UI + the kernel-severed bash + the approved researcher
    task, none of which is leg-*absence*. This is the single best teaching
    case for "smoke alarm, not firewall": the most carefully-defended demo
@@ -552,39 +557,85 @@ redundant. Unverified — the job for future-me is to check whether that
 mapping holds in every case or whether there's a scenario the strength
 lattice can't express. Only add the flag if the mapping breaks.
 
-### (b) `:egress_human_gated` — reopened as load-bearing
+### (b) A graded egress axis — the load-bearing route to a "trifecta-soft" pikuri-computer
 
-Earlier draft leaned *against* a human-gated egress marker (it looked like
-the "trust the approver" mistake). **Reopened**: the user considers it
-load-bearing precisely *because* it softens pikuri-computer — without some
-such distinction, pikuri-computer is permanently a full hard trifecta and
-there is **no wiring that makes it "trifecta-safe."** The book already
-presents the human gate as the thing that makes the reassembled trifecta
-safe, so the detector calling it a flat loud trifecta contradicts the
-teaching.
+Reopened from the earlier lean-against: a flat "human-gated ⇒ soft" would
+repeat the trust-the-approver mistake, but a *graded* egress axis does not,
+and it's the only honest way to classify pikuri-computer as anything better
+than a full hard trifecta. Folded in as the working design (still
+design-stage — no code):
 
-Both positions, kept for the revisit:
+**Egress strength lattice** (danger order, union = max, most-dangerous
+wins):
 
-- **For the marker:** a demo whose entire safety story is the human gate
-  should be classifiable as *mitigated*, not lumped with an autonomous-exfil
-  agent. A verdict that can never improve no matter how you wire it is a
-  verdict people mute.
-- **Against (the earlier concern):** a blanket "human-gated ⇒ soft" repeats
-  the rejected trust-the-approver reasoning — a laundered/encoded email a
-  human rubber-stamps still exfiltrates.
+```
+egress_human_author  <  egress_human_approver  <  egress   (autonomous)
+```
 
-The reconciling lead (do not build, just recorded): the note **already**
-splits human-in-the-loop into **author** (rewrites → clean by construction)
-vs **approver** (inspects a pre-fill → leaky), and shows patient approval
-closes only the easy channel, not the covert/drip one. So any
-`:egress_human_gated` softening is only as strong as the *author* reading —
-it must not soften an approve-by-default pre-fill. And pikuri-computer's
-Thunderbird compose is exactly the knife-edge case: the LLM drafts, the
-human reviews a **pre-filled** compose window and hits Send — author-*capable*
-but approve-*by-default*, the same residual hole as the pikuri-os task gate.
-So the honest shape of the marker is probably not one tag but two strengths
-(author-gated vs approver-gated), mirroring the untrusted lattice — and
-that's the thing to work out when this is picked up.
+- **`:egress_human_author`** — the human *authors* the outbound bytes from
+  scratch (no pre-fill). Clean by construction: an injection can influence
+  the parent's proposal, but the bytes that leave are the ones a
+  not-leaking human typed, so no covert channel survives. Treat it as
+  **breaking the egress leg for exfil** — effectively `none` for trifecta
+  purposes → info, not a warning. *Strict:* any pre-fill demotes it to
+  approver.
+- **`:egress_human_approver`** — the LLM drafts, the human inspects a
+  pre-fill and commits. Raises the bar (kills silent, high-bandwidth exfil)
+  but leaves the covert/drip channel — the "large reduction, not 'any'"
+  bound. One notch below autonomous.
+- **`:egress`** — autonomous send, no human in the path.
+
+**2-D verdict grid** (`:private` assumed present; else nothing fires):
+
+| egress ↓ / untrusted → | hard | weakened |
+|---|---|---|
+| autonomous | **loud** | soft |
+| human_approver | **soft** | soft/info |
+| human_author | info | info |
+
+The grid is monotone in *both* legs — the earlier "must attenuate the leg
+that actually carries the exploit" claim, made concrete. It revises last
+turn's "pikuri-computer stays loud": with the `human_approver` level
+introduced, **pikuri-computer `--no-internet` = `{private,
+untrusted(hard), egress_human_approver}` → soft, not loud** — genuinely
+safer than an autonomous-egress build, but **not silent** (hard untrusted =
+live injection vector; the pre-filled compose is rubber-stampable). Silent
+needs *either* author-mode compose (no pre-fill) *or* privilege-separating
+the mail read so untrusted drops to weakened. So the user is right that it
+softens; the correction is soft, not safe.
+
+#### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
+
+Proposed confirmer hardening for the Thunderbird approver gate, each a real
+red flag that raises the human's attention: **recipient allowlist** (warn
+if we've never mailed this address), **plaintext-only + Unicode
+normalization** (strip zero-width / variation-selector / RTL-override
+stego; warn on funny Unicode), **base64/high-entropy scan** (warn on
+machine-encoded blobs). Build these — they're good defense-in-depth. Two
+things they do **not** do:
+
+1. **They don't close the channel.** They force the attacker down the
+   ladder exactly as the note's patient-approval bound predicts: past
+   base64 (→ base32/hex/spelled-out), past Unicode stego (→ ASCII), down to
+   **linguistic steganography the scanners and the human both read as
+   benign prose** — the user's acrostic ("I think dogs are super cute" →
+   `itdasc`), word-choice, sentence count. Low-bandwidth, but enough for a
+   password/key over a few messages. And the **recipient allowlist is
+   *bypassed*, not just weakened**, in the sharpest case: the injecting
+   email's own `From` is now a known correspondent, so *reply to the
+   injector* passes the allowlist with **no warning at all** — and the
+   attacker receives the reply. So the surviving exfil is: linguistic-stego
+   body + reply-to-injector — zero red flags, no warning to ignore.
+2. **They must not promote `human_approver` → `human_author` in the
+   detector.** Scanner *effectiveness* ("does it catch the acrostic?") is
+   precisely the data-flow question the detector refuses to answer;
+   grading approver-quality by scanner strength relaunches trust-the-
+   approver at finer grain and would lull users into trusting a screen that
+   demonstrably misses linguistic stego. The detector grades the
+   **structural** egress class (who authors the bytes); scanners live on
+   the **confirmer** as runtime hardening, documented as bound-not-closed.
+   Author-mode is the only thing that reaches `info`, because clean-by-
+   construction is a *proof*, not a mitigation-of-degree.
 
 ## Open: propagating this to docs + example scripts
 
