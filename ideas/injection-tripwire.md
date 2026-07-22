@@ -42,7 +42,11 @@ in-context.
 2. **Route the signal to the human, loudly.** Emit a distinct event
    (`ctx.emit_event`, per the capability seam) that a listener renders as
    an unmistakable security alert — not a tool-error string the LLM reads.
-   This is the core fix: the audience is currently wrong.
+   This is the core fix: the audience is currently wrong. The general
+   mechanism (and *why* it must bypass the LLM — an untrusted narrator for
+   its own compromise) is spun out to
+   [`warn-human-directly.md`](warn-human-directly.md); the tripwire is its
+   first producer.
 3. **Frame it as compromise, in plain words.** "The assistant tried to put
    hidden/deceptive characters into an outgoing email. A normal assistant
    never does this — it has very likely been manipulated by content it
