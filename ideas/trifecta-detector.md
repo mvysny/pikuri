@@ -23,7 +23,12 @@ shrinking. Parked threads, none pursued yet:
    must not promote approver → author. Sub-question: is strict author-mode
    even reachable in a real chrome, or is `soft` the best any built seat
    gets?
-6. How/where to surface all of this in docs + example scripts.
+6. Injection tripwire: a `Sanitizer` fail-close on LLM-*authored* content
+   is a runtime "this agent is poisoned *now*" signal (today misrouted to
+   the LLM, not the human) → advise dropping the poisoned context, don't
+   auto-teardown. Spun out to
+   [`injection-tripwire.md`](injection-tripwire.md).
+7. How/where to surface all of this in docs + example scripts.
 
 This file is the staging area — as pieces land in source or in `book/`,
 cut them from here so what remains is always "not yet done."
@@ -560,6 +565,12 @@ encodes poisoned-vs-pristine and a separate `poisoned` flag would be
 redundant. Unverified — the job for future-me is to check whether that
 mapping holds in every case or whether there's a scenario the strength
 lattice can't express. Only add the flag if the mapping breaks.
+
+There's also a **runtime** side to "poisoned": a `Sanitizer` fail-close on
+LLM-*authored* outbound content (`ComposeGuard`'s body reject) is a live
+signal the agent *is* poisoned right now, not just poisoned-capable — and
+today that signal is misrouted to the LLM instead of the human. Spun out
+to [`injection-tripwire.md`](injection-tripwire.md).
 
 ### (b) A graded egress axis — the load-bearing route to a "trifecta-soft" pikuri-computer
 
