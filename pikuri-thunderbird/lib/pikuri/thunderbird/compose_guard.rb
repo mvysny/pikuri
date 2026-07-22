@@ -199,10 +199,13 @@ module Pikuri
       #
       # A chunk is >= {BLOB_TOKEN_MIN} chars of pure {BLOB_ALPHABET} with upper
       # *and* lower *and* a digit — encoder churn no prose word (one script),
-      # Capitalized word (two), or +invoice20260722+ slug (two) shows. Summing
-      # chunks body-wide rather than over one contiguous run is deliberate: it
-      # folds space-split and word-interleaved payloads back together for free,
-      # since cover words fail the three-class gate and drop out.
+      # Capitalized word (two), or +invoice20260722+ slug (two) shows; hex and
+      # base32 stay out for the same reason base64url does — a 2-class alphabet
+      # can't clear that gate, and widening it to 2 classes would flag legit hex
+      # (SHA-256, UUIDs) for pure FP. Summing chunks body-wide rather than over
+      # one contiguous run is deliberate: it folds space-split and
+      # word-interleaved payloads back together for free, since cover words fail
+      # the three-class gate and drop out.
       #
       # A paste / dumb-attack guard, *not* an exfil control — a prompt-injected
       # model can add "split it with spaces" for free and walk under it. Hence
