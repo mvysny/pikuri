@@ -180,34 +180,35 @@ module Pikuri
                  'double-check the address is correct.'
       end
 
-      # Append a soft warning if the body's encoded-looking tokens sum past
-      # {BLOB_JOIN_MIN} — the easiest high-bandwidth exfil is a base64 dump of a
-      # secret pasted into the plaintext body, which is all-printable-ASCII and
-      # so sails through the {Pikuri::Sanitizer} gate while the human skims past
-      # a wall of gibberish.
+      # Soft-warn when the body carries an encoded-looking blob: a base64 dump of
+      # a secret is the easiest high-bandwidth exfil, all-printable-ASCII so it
+      # passes the {Pikuri::Sanitizer} gate while the human skims past the
+      # gibberish. A flagged body still composes — the note only aims the eye:
       #
-      # This is a *paste / dumb-attack* guard, deliberately **not** an exfil
-      # control: the threat model is a prompt-injected model, and the injection
-      # that says "base64 the key and mail it" can add "split it with spaces" for
-      # free, so an adaptive attacker evades trivially. Its worth is attention on
-      # the laziest attack and on the honest-but-forgetful paste (a cert, a token
-      # to a colleague); the human-gated, irreversible-send compose window is the
-      # real backstop. Hence *soft warn, never fail-closed*, and *err toward not
-      # warning* ({BLOB_TOKEN_MIN} kept high so the body-wide sum stays quiet on
-      # ordinary engineering mail).
-      #
-      # A token is a blob chunk iff it is >= {BLOB_TOKEN_MIN} chars of pure
-      # {BLOB_ALPHABET} carrying all three of upper / lower / digit — the
-      # mixed-case-plus-digit churn only an encoder produces, which no prose word
-      # (one class), Capitalized word or acronym (two), or digit-suffixed slug
-      # (+invoice20260722+, two) has. Summing all chunks (not requiring one
-      # contiguous run) folds space-split and innocent-word-interleaved payloads
-      # back together *for free*: the cover words fail the three-class gate and
-      # are skipped, so the filter is its own de-interleaver.
+      #   body_blob_note("ship it:\naGVsbG8gd29ybGQgT3BlbkFJc2VjcmV0", notes)
+      #   # appends: "Line 2 onward contains encoded-looking content
+      #   #           (aGVsbG8gd29ybGQgT3BlbkFJ…, 32 chars total) — verify you
+      #   #           meant to send this; a base64 blob is how a secret leaks
+      #   #           past a skim."
       #
       # @param body [String] the plain-text body (already {Pikuri::Sanitizer}-clean).
       # @param notes [Array<String>] accumulator, appended to in place.
       # @return [void]
+      #
+      # == Implementation details
+      #
+      # A chunk is >= {BLOB_TOKEN_MIN} chars of pure {BLOB_ALPHABET} with upper
+      # *and* lower *and* a digit — encoder churn no prose word (one script),
+      # Capitalized word (two), or +invoice20260722+ slug (two) shows. Summing
+      # chunks body-wide rather than over one contiguous run is deliberate: it
+      # folds space-split and word-interleaved payloads back together for free,
+      # since cover words fail the three-class gate and drop out.
+      #
+      # A paste / dumb-attack guard, *not* an exfil control — a prompt-injected
+      # model can add "split it with spaces" for free and walk under it. Hence
+      # soft-warn, and {BLOB_TOKEN_MIN} kept high to stay quiet on engineering
+      # mail; the irreversible-send compose window is the real backstop, so err
+      # toward not warning. Don't recast this as "closes the base64 channel."
       def body_blob_note(body, notes)
         hits = body.split("\n").each_with_index.flat_map do |line, i|
           line.split(/\s+/).filter_map do |raw|
