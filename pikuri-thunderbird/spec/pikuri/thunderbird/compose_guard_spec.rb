@@ -68,4 +68,49 @@ describe Pikuri::Thunderbird::ComposeGuard do
     v = guard.check(to: 'a@acme.com', body: 'ok')
     assert(v.notes.any? { |n| n.match?(/Couldn't check/) })
   end
+
+  # Encoded-blob spotter. A ~40-char run stands in for a 32-byte key's base64. It
+  # is all-printable-ASCII, so it must *warn but keep composing*, never fail closed.
+  BLOB = 'aGVsbG8gd29ybGQgT3BlbkFJc2VjcmV0S2V5MTIzNA'
+
+  it 'warns (does not block) on an unwrapped base64 dump in the body' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: "here it is:\n#{BLOB}")
+    assert v.ok
+    assert_equal "here it is:\n#{BLOB}", v.body # kept, not failed-closed
+    assert(v.notes.any? { |n| n.match?(/encoded-looking content/) })
+    assert(v.notes.any? { |n| n.match?(/Line 2 onward/) }) # located
+  end
+
+  it 'folds a space-split blob back together via the join' do
+    split = BLOB.scan(/.{1,18}/).join(' ') # 18-char chunks, each >= floor
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: split)
+    assert v.ok
+    assert(v.notes.any? { |n| n.match?(/encoded-looking content/) })
+  end
+
+  it 'skips innocent cover words interleaved with the payload' do
+    parts = BLOB.scan(/.{1,18}/)
+    body = "the #{parts[0]} quick #{parts[1]} brown #{parts[2]} fox"
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: body)
+    assert(v.notes.any? { |n| n.match?(/encoded-looking content/) })
+  end
+
+  it 'stays quiet on ordinary prose' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com',
+                                        body: 'The sophistication of this approach is genuinely remarkable.')
+    assert_empty v.notes
+  end
+
+  it 'stays quiet on a dev email full of short mixed identifiers (floor-16 guard)' do
+    v = guard(seen: ['acme.com']).check(
+      to: 'a@acme.com',
+      body: 'commit abc123Def456 broke build 7Gh8Ij9Kl0 on runner X2y3Z4a5b6'
+    )
+    assert_empty v.notes
+  end
+
+  it 'stays quiet when the blob-token sum stays under the threshold' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: 'token aGVsbG8gd29ybGQxYVo1 ok') # 20 chars, < 32
+    assert_empty v.notes
+  end
 end

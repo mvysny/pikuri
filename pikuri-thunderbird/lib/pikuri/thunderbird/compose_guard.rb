@@ -26,7 +26,9 @@ module Pikuri
     # * *Soft warn* — the correspondence-graph novelty check: a recipient domain
     #   the user has never exchanged mail with (per {Gloda::Contacts#domains_seen}) stays
     #   in the draft but earns a loud note urging out-of-band verification. A
-    #   hard reject here would fire on every genuinely-new correspondent.
+    #   hard reject here would fire on every genuinely-new correspondent. A body
+    #   carrying an *encoded-looking blob* (a long base64 run — see
+    #   {#body_blob_note}) likewise stays but earns a located note.
     #
     # == Why per-field address omission
     #
@@ -38,6 +40,22 @@ module Pikuri
     # Immutable.
     class ComposeGuard
       LOGGER = Pikuri.logger_for('Thunderbird::ComposeGuard')
+
+      # Shortest token the blob spotter sums toward a body warning. Below 16 the
+      # three-class test gets flaky and honest engineering tokens (short SHAs,
+      # build IDs) creep in — and since the sum is body-wide, that means alarm
+      # fatigue. See {#body_blob_note}.
+      BLOB_TOKEN_MIN = 16
+
+      # Joined blob-token length at/above which the body earns the encoded-blob
+      # note. A 32-byte key is 44 base64 chars, comfortably over. See {#body_blob_note}.
+      BLOB_JOIN_MIN = 32
+
+      # The standard base64 alphabet. Excludes base64url's +-+/+_+ on purpose:
+      # those collide with hyphenated labels and +snake_case+ identifiers common
+      # in honest mail, whereas +++ +/+ +=+ never appear in prose tokens. Cost:
+      # base64url/JWT-shaped payloads slip by — accepted, per {#body_blob_note}.
+      BLOB_ALPHABET = %r{\A[A-Za-z0-9+/=]+\z}
 
       # The outcome of checking one compose request.
       #
@@ -79,6 +97,7 @@ module Pikuri
         kept_cc  = check_addresses('Cc', cc, notes)
         kept_bcc = check_addresses('Bcc', bcc, notes)
         novelty_note(kept_to + kept_cc + kept_bcc, notes)
+        body_blob_note(body.to_s, notes)
 
         Verdict.new(ok: true, error: nil, to: kept_to, cc: kept_cc, bcc: kept_bcc,
                     subject: check_subject(subject, notes),
@@ -159,6 +178,57 @@ module Pikuri
         LOGGER.warn("recipient-novelty check unavailable: #{e.message}")
         notes << "Couldn't check whether you've mailed these recipients before — " \
                  'double-check the address is correct.'
+      end
+
+      # Append a soft warning if the body's encoded-looking tokens sum past
+      # {BLOB_JOIN_MIN} — the easiest high-bandwidth exfil is a base64 dump of a
+      # secret pasted into the plaintext body, which is all-printable-ASCII and
+      # so sails through the {Pikuri::Sanitizer} gate while the human skims past
+      # a wall of gibberish.
+      #
+      # This is a *paste / dumb-attack* guard, deliberately **not** an exfil
+      # control: the threat model is a prompt-injected model, and the injection
+      # that says "base64 the key and mail it" can add "split it with spaces" for
+      # free, so an adaptive attacker evades trivially. Its worth is attention on
+      # the laziest attack and on the honest-but-forgetful paste (a cert, a token
+      # to a colleague); the human-gated, irreversible-send compose window is the
+      # real backstop. Hence *soft warn, never fail-closed*, and *err toward not
+      # warning* ({BLOB_TOKEN_MIN} kept high so the body-wide sum stays quiet on
+      # ordinary engineering mail).
+      #
+      # A token is a blob chunk iff it is >= {BLOB_TOKEN_MIN} chars of pure
+      # {BLOB_ALPHABET} carrying all three of upper / lower / digit — the
+      # mixed-case-plus-digit churn only an encoder produces, which no prose word
+      # (one class), Capitalized word or acronym (two), or digit-suffixed slug
+      # (+invoice20260722+, two) has. Summing all chunks (not requiring one
+      # contiguous run) folds space-split and innocent-word-interleaved payloads
+      # back together *for free*: the cover words fail the three-class gate and
+      # are skipped, so the filter is its own de-interleaver.
+      #
+      # @param body [String] the plain-text body (already {Pikuri::Sanitizer}-clean).
+      # @param notes [Array<String>] accumulator, appended to in place.
+      # @return [void]
+      def body_blob_note(body, notes)
+        hits = body.split("\n").each_with_index.flat_map do |line, i|
+          line.split(/\s+/).filter_map do |raw|
+            tok = raw.gsub(%r{\A[^A-Za-z0-9+/=]+|[^A-Za-z0-9+/=]+\z}, '')
+            [i + 1, tok] if blob_chunk?(tok)
+          end
+        end
+        total = hits.sum { |(_line, tok)| tok.length }
+        return if total < BLOB_JOIN_MIN
+
+        line, sample = hits.first
+        notes << "Line #{line} onward contains encoded-looking content " \
+                 "(#{sample[0, 24]}…, #{total} chars total) — verify you meant to " \
+                 'send this; a base64 blob is how a secret leaks past a skim.'
+      end
+
+      # @param tok [String] a whitespace-delimited token, sentence-punctuation stripped.
+      # @return [Boolean] whether +tok+ counts as an encoded-blob chunk (see {#body_blob_note}).
+      def blob_chunk?(tok)
+        tok.length >= BLOB_TOKEN_MIN && tok.match?(BLOB_ALPHABET) &&
+          tok.match?(/[A-Z]/) && tok.match?(/[a-z]/) && tok.match?(/[0-9]/)
       end
     end
   end
