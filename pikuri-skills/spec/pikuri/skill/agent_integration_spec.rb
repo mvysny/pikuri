@@ -113,6 +113,24 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
     assert result.include?('do the thing'), result
   end
 
+  it 'binds the real agent interloper so a host can schedule a skill load' do
+    interloper = Pikuri::Agent::Control::Interloper.new
+    ext = Pikuri::Skill::Extension.new(catalog: non_empty_catalog)
+    Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                      system_prompt: 'base',
+                      interloper: interloper) do |c|
+      c.add_listeners(listeners)
+      c.add_extension(ext)
+    end
+
+    ext.schedule_load_skill('sample')
+
+    pending = interloper.peek
+    assert_equal 1, pending.size
+    assert_equal :system, pending.first.kind
+    assert pending.first.content.include?('<skill name="sample"'), pending.first.content
+  end
+
   # The "manual SkillTool added alongside the extension" conflict is
   # intentionally not validated by Skill::Extension: detecting it
   # would require the extension to read the agent's full @tools list,

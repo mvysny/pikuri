@@ -19,9 +19,12 @@ module Pikuri
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
-    # Stateless: +configure+ appends a snippet and a tool (both
-    # inherited verbatim by sub-agents via the tool snapshot), so there
-    # is no +bind+.
+    # +configure+ appends the prompt snippet + +skill+ tool (both inherited
+    # verbatim by sub-agents via the tool snapshot); +bind+ additionally
+    # captures the parent agent's interloper so a host can load a skill on
+    # its *own* initiative via {#schedule_load_skill} — the UI-driven
+    # counterpart of the +skill+ tool. Main-agent-only: sub-agents don't
+    # inherit extensions.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -50,6 +53,65 @@ module Pikuri
 
         c.add_tool(Pikuri::Skill::SkillTool.new(catalog: @catalog))
         nil
+      end
+
+      # Capture the live agent's interloper so {#schedule_load_skill} can
+      # enqueue onto it from any (UI) thread. +nil+ when the agent was built
+      # without an +interloper:+ — {#schedule_load_skill} then raises.
+      #
+      # @param ctx [Pikuri::Agent::ExtensionContext]
+      # @return [void]
+      def bind(ctx)
+        @interloper = ctx.agent.interloper
+        nil
+      end
+
+      # Schedule a skill for injection into the conversation on the host's
+      # own initiative — the UI-driven counterpart of the +skill+ tool. Looks
+      # +name+ up in the catalog, renders its body identically to the tool,
+      # and *enqueues* it on the interloper as a +:system+ block.
+      #
+      #   ext   = Pikuri::Skill::Extension.new(catalog: catalog)
+      #   agent = Pikuri::Agent.new(..., interloper: interloper) { |c| c.add_extension ext }
+      #   ext.schedule_load_skill('pdf-tools')    # enqueue only — nothing runs yet
+      #   agent.run_loop(user_message: nil)        # bare turn: the agent reacts to the skill
+      #
+      # IMPORTANT: this only *enqueues*. Nothing happens until the host runs
+      # the loop — {Pikuri::Agent#run_loop} drains the injection at turn
+      # start, before the first completion. Enqueue-only keeps the call
+      # non-blocking and thread-safe (the interloper is +Mutex+-guarded); it
+      # never touches the loop or a worker thread. Two host choices, by how
+      # the loop is then run:
+      #
+      # * bare load — +run_loop(user_message: nil)+: the agent reacts to the
+      #   skill alone and says something.
+      # * load + message — +run_loop(user_message: text)+: the skill block
+      #   and the message both land before the model responds.
+      #
+      # Provider note: injected as +:system+, so on the default (llama.cpp /
+      # OpenAI-family) the block sits positionally where it was loaded — a
+      # one-shot, like the tool. On Anthropic every +:system+ message is
+      # hoisted into the top-level system param, so a host-loaded skill is
+      # *sticky*: it stays in force for the rest of the conversation, unlike
+      # the tool's one-shot observation. Intended (a deliberately loaded
+      # skill is session guidance), but an honest divergence between the two
+      # load paths.
+      #
+      # @param name [String] a skill name from +catalog.list+; the UI
+      #   enumerates the catalog, so a miss is a host bug
+      # @raise [KeyError] if +name+ is not in the catalog
+      # @raise [RuntimeError] if the agent was built without an +interloper:+
+      #   (nowhere to enqueue)
+      # @return [Pikuri::Skill::Catalog::Skill] the scheduled skill
+      def schedule_load_skill(name)
+        skill = @catalog.get(name)
+        raise KeyError, "no skill named #{name.inspect} in the catalog" if skill.nil?
+
+        raise 'schedule_load_skill needs an interloper — construct the Agent with `interloper:`' \
+          if @interloper.nil?
+
+        @interloper.inject_system_message(Pikuri::Skill::Renderer.format_skill(skill))
+        skill
       end
 
       # The +<available_skills>+ catalog block (empty array for an

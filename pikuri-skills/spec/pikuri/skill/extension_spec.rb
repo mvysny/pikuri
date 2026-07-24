@@ -85,10 +85,44 @@ RSpec.describe Pikuri::Skill::Extension do
     end
   end
 
-  describe '#bind' do
-    it 'is the inherited no-op default — Skills has no per-agent state' do
+  describe '#bind / #schedule_load_skill' do
+    let(:interloper) { Pikuri::Agent::Control::Interloper.new }
+
+    # Minimal ExtensionContext stand-in: schedule_load_skill only reaches
+    # ctx.agent.interloper.
+    def ctx_reaching(interloper)
+      agent = Struct.new(:interloper).new(interloper)
+      Struct.new(:agent).new(agent)
+    end
+
+    it 'captures the agent interloper on bind, then enqueues a :system skill block' do
       ext = described_class.new(catalog: non_empty_catalog)
-      assert_nil ext.bind(:any_agent)
+      ext.bind(ctx_reaching(interloper))
+
+      returned = ext.schedule_load_skill('sample')
+
+      assert_same sample_skill, returned
+      pending = interloper.peek
+      assert_equal 1, pending.size
+      assert_equal :system, pending.first.kind
+      assert pending.first.content.include?('<skill name="sample"'), pending.first.content
+      assert pending.first.content.include?('do the thing.'), pending.first.content
+    end
+
+    it 'raises KeyError for a name absent from the catalog, enqueuing nothing' do
+      ext = described_class.new(catalog: non_empty_catalog)
+      ext.bind(ctx_reaching(interloper))
+
+      assert_raises(KeyError) { ext.schedule_load_skill('no-such-skill') }
+      assert_equal [], interloper.peek
+    end
+
+    it 'raises when the agent was built without an interloper' do
+      ext = described_class.new(catalog: non_empty_catalog)
+      ext.bind(ctx_reaching(nil))
+
+      err = assert_raises(RuntimeError) { ext.schedule_load_skill('sample') }
+      assert_match(/interloper/, err.message)
     end
   end
 
