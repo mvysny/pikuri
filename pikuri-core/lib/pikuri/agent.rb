@@ -195,10 +195,21 @@ module Pikuri
       last&.content
     end
 
-    # Run the agent loop for one user turn: emit an {Event::UserTurn}
-    # (+mid_loop: false+), reset the step/cancellation controls, then
-    # +complete+ the chat. Returns nil — output is the listeners' job.
-    # Subsequent calls build on the same history.
+    # Run the agent loop for one turn. With a +user_message+, emits an
+    # {Event::UserTurn} (+mid_loop: false+) and appends it; with none, runs a
+    # *bare* turn against whatever the conversation + drained injections
+    # already hold — the case a host uses after loading a skill on its own
+    # initiative, so the agent reacts to it. Resets the step/cancellation
+    # controls, drains any pending {Control::Interloper} injections, then
+    # +complete+s the chat. Output is the listeners' job; subsequent calls
+    # build on the same history.
+    #
+    # Returns +false+ (a no-op) when there is nothing to complete against: a
+    # blank +user_message+ whose conversation still holds only +:system+
+    # messages — a fresh chat, or a skill-only bare-load. Completing that
+    # would send an empty +messages+ array (a 400 on Anthropic) and burn a
+    # step on nothing. A blank turn *mid-conversation* proceeds — real turns
+    # remain to answer.
     #
     # Step-limit and cancellation trips are handled per the class header's
     # "Step-exhaustion policy" / "Cancellation rescue".
@@ -214,32 +225,45 @@ module Pikuri
     # *not* re-baselined: same conversation, new model, so message count and
     # running context size carry over. +nil+ keeps the current model.
     #
-    # @param user_message [String] the turn's request; not +nil+/blank
+    # @param user_message [String, nil] the turn's request; +nil+/blank runs a
+    #   bare turn (see above)
     # @param transport [ChatTransport, nil] when non-+nil+ and structurally
     #   different, switch to it before the turn; +nil+ keeps the model
-    # @raise [ArgumentError] if +user_message+ is +nil+ or blank — an empty
-    #   turn poisons history and burns a step on nothing
     # @raise [Control::Cancellable::Cancelled] if cancelled mid-turn (an
     #   {Event::Cancelled} is emitted first)
     # @raise [Control::StepLimit::Exceeded] if the budget tripped under the
     #   +:raise+ policy
-    # @return [nil]
-    def run_loop(user_message:, transport: nil)
-      raise ArgumentError, "user_message must not be blank, got #{user_message.inspect}" \
-        if user_message.nil? || user_message.to_s.strip.empty?
-
+    # @return [nil, false] +nil+ after a turn runs; +false+ when the call was
+    #   a no-op (see above)
+    def run_loop(user_message: nil, transport: nil)
       apply_transport!(transport) if transport
       @synth_answer = nil
       @step_limit&.reset!
       @cancellable&.reset!
-      # Append the user turn, emit it, then run the memory dispatch — so any
-      # <memory-context> the dispatch injects lands as a :system message
-      # *after* the user turn it annotates. +ask+ bundles append+complete
-      # atomically, leaving no seam to inject between; so the halves run
-      # explicitly: add_message + complete (what +ask+ is sugar for).
-      @chat.add_message(role: :user, content: user_message)
-      @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
-      dispatch_ext_on_user_message(user_message)
+
+      # Deliver host-scheduled injections (e.g. a UI-loaded skill) before the
+      # first complete, so a freshly-scheduled block lands this turn rather
+      # than only at the next after_tool_result — ordered ahead of the user
+      # message appended below.
+      drain_interloper if @interloper
+
+      blank = user_message.nil? || user_message.to_s.strip.empty?
+      # Nothing to complete against: an all-:system chat (fresh, or a
+      # skill-only bare-load) would 400 on Anthropic and burn a step on
+      # nothing. Mid-conversation blanks fall through — real turns remain.
+      return false if blank && @chat.messages.all? { |m| m.role == :system }
+
+      unless blank
+        # Append the user turn, emit it, then run the memory dispatch — so any
+        # <memory-context> the dispatch injects lands as a :system message
+        # *after* the user turn it annotates. (+ask+ bundles append+complete
+        # atomically, leaving no seam to inject between; the halves run
+        # explicitly instead.)
+        @chat.add_message(role: :user, content: user_message)
+        @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
+        dispatch_ext_on_user_message(user_message)
+      end
+
       if @streaming
         @chat.complete(&streaming_block)
       else

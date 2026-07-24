@@ -506,7 +506,13 @@ RSpec.describe Pikuri::Agent do
       refute cancel.cancelled?
     end
 
-    describe 'blank input rejection' do
+    describe 'blank input on a fresh conversation is a no-op' do
+      # A blank message with nothing but :system messages to complete
+      # against returns false without touching the chat or listeners —
+      # completing an all-:system array would 400 on Anthropic and burn a
+      # step on nothing. (Mid-conversation bare turns proceed; covered
+      # under the host-driven-load specs.)
+      #
       # Force eager construction so the ContextCap event emitted at
       # construction time doesn't get attributed to run_loop's
       # observable behaviour.
@@ -515,25 +521,67 @@ RSpec.describe Pikuri::Agent do
                           system_prompt: 's') { |c| c.add_listener recorder }
       end
 
-      it 'raises ArgumentError on nil and never reaches the chat or listeners' do
+      it 'returns false on nil and never reaches the chat or listeners' do
         before_events = recorder.events.size
 
-        err = assert_raises(ArgumentError) { agent.run_loop(user_message: nil) }
-        assert_match(/blank/, err.message)
-        assert_equal [], fake_chat.asks
+        assert_equal false, agent.run_loop(user_message: nil)
+        assert_nil fake_chat.completes
+        assert_equal [], fake_chat.added_messages
         assert_equal before_events, recorder.events.size
       end
 
-      it 'raises ArgumentError on an empty string' do
-        err = assert_raises(ArgumentError) { agent.run_loop(user_message: '') }
-        assert_match(/blank/, err.message)
-        assert_equal [], fake_chat.asks
+      it 'returns false on an empty string' do
+        assert_equal false, agent.run_loop(user_message: '')
+        assert_nil fake_chat.completes
       end
 
-      it 'raises ArgumentError on a whitespace-only string' do
-        err = assert_raises(ArgumentError) { agent.run_loop(user_message: "  \n\t ") }
-        assert_match(/blank/, err.message)
-        assert_equal [], fake_chat.asks
+      it 'returns false on a whitespace-only string' do
+        assert_equal false, agent.run_loop(user_message: "  \n\t ")
+        assert_nil fake_chat.completes
+      end
+    end
+
+    describe 'turn-start interloper drain + bare turns' do
+      let(:interloper) { Pikuri::Agent::Control::Interloper.new }
+      let!(:agent) do
+        Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                          system_prompt: 's',
+                          interloper: interloper) { |c| c.add_listener recorder }
+      end
+
+      it 'delivers a pending :system injection before the user message, then completes' do
+        interloper.inject_system_message('<skill>load</skill>')
+
+        agent.run_loop(user_message: 'use it')
+
+        assert_equal(
+          [
+            { role: :system, content: '<skill>load</skill>' },
+            { role: :user, content: 'use it' }
+          ],
+          fake_chat.added_messages
+        )
+        assert_equal 1, fake_chat.completes
+        injected = recorder.events.select { |e| e.is_a?(Pikuri::Agent::Event::SystemInjected) }
+        assert_equal ['<skill>load</skill>'], injected.map(&:content)
+      end
+
+      it 'runs a blank bare turn when real turns already exist (mid-conversation)' do
+        fake_chat.add_assistant('a prior answer') # a non-:system message in history
+
+        assert_nil agent.run_loop(user_message: nil)
+        assert_equal 1, fake_chat.completes
+        assert_equal [], fake_chat.added_messages # nothing appended; completes against history
+      end
+
+      it 'no-ops a skill-only bare load: the block is delivered but nothing completes' do
+        interloper.inject_system_message('<skill>load</skill>')
+
+        # Blank message + an all-:system chat (only the injected block, no real
+        # turn) → false; the skill persists in the log for the next real turn.
+        assert_equal false, agent.run_loop(user_message: nil)
+        assert_equal [{ role: :system, content: '<skill>load</skill>' }], fake_chat.added_messages
+        assert_nil fake_chat.completes
       end
     end
   end
