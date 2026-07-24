@@ -21,8 +21,8 @@ ext   = Pikuri::Skill::Extension.new(catalog: catalog)
 agent = Pikuri::Agent.new(..., interloper: interloper) { |c| c.add_extension(ext) }
 
 ext.schedule_load_skill('how-to-bake-a-cookie')   # enqueue only — nothing runs yet
-agent.<run>(user_message)                          # host drives the loop; skill lands here
-agent.<run>(nil)                                   # or: no user message → bare skill turn
+agent.run_loop(user_message: text)                 # host drives the loop; skill lands here
+agent.run_loop(user_message: nil)                  # or: no user message → bare skill turn (contract change, below)
 ```
 
 - **The name + rdoc *are* the contract.** `schedule_load_skill` screams
@@ -95,15 +95,27 @@ turn start**, before the first `complete`:
   (ordered before the user message, if any), then `complete`. Bare-load
   turn = no user message appended, just the drained skill + `complete`.
 
-**Run entry with no user message — the guard (MV's instinct, made
-provider-safe).** `run(message = nil)`:
-1. drain pending injections;
-2. if `message` is `nil` **and** the conversation still has **no
+**Run entry with no user message — a contract change to the existing
+`run_loop`, not a new method (MV's instinct, made provider-safe).** The
+entry is `Agent#run_loop(user_message:, transport: nil)` (`agent.rb:227`).
+Today it **rejects** a nil/blank message up front — `ArgumentError`, "an
+empty turn poisons history and burns a step on nothing" (`agent.rb:228`,
+documented in its yardoc). Bare-load needs that unconditional guard
+*relaxed*, not a parallel `run`:
+1. drain pending injections first (turn-start drain, below);
+2. if `user_message` is nil/blank **and** the conversation still has **no
    non-system message** to complete against → **return `false`** (nothing
-   done). This covers both "nil message + empty interloper" *and* the
-   fresh-conversation skill-only case that would otherwise 400 on
-   Anthropic (see findings). Bare-load mid-conversation proceeds normally
-   — there are real turns in the array.
+   done) instead of raising. This covers both "nil message + empty
+   interloper" *and* the fresh-conversation skill-only case that would
+   otherwise 400 on Anthropic (see findings);
+3. otherwise proceed — append the user turn only if non-blank, then
+   `complete`. Bare-load mid-conversation falls here: real turns already
+   in the array, just the drained skill + `complete`.
+
+The append/dispatch/complete sequence already lives inline in `run_loop`
+(`agent.rb:240-247`, deliberately not `ask`) so the drain + conditional
+append slot in there; the `ArgumentError` contract + yardoc `@raise` must
+be rewritten to the return-`false` semantics.
 
 ## How the extension reaches the interloper
 
