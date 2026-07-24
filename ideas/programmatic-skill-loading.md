@@ -7,8 +7,9 @@ command), not by the LLM deciding to call the tool. The UX MV wants (and
 misses from Claude CLI): load a skill and have the agent *say something*.
 
 Status: **brainstorm, converged; ready to build.** No code yet. The
-load-bearing ruby_llm question is resolved (see *ruby_llm findings*); only
-a minor role residual remains, noted-not-blocking.
+load-bearing ruby_llm question is resolved (see *ruby_llm findings*); the
+role residual is resolved too — go with `:system` (see *Residual decision*
+below and [[anthropic-skill-stickiness]]).
 
 ## The design
 
@@ -151,11 +152,18 @@ loaded skill sticky, and the one hard edge (fresh-convo skill-only) is
 the same no-op the guard already returns. No synthetic user turn, no ugly
 fallback needed.
 
-Residual decision (minor): the Anthropic stickiness means a
-programmatically-loaded skill persists in the system prompt for the rest
-of the conversation. If that ever proves wrong, the lever is the role —
-`:user` would keep it positional + non-sticky everywhere but frames
-trusted-but-not-user skill text as user input. Not worth it now; noted.
+Residual decision (**resolved** — go with the default `:system`): on the
+default provider (llama.cpp / OpenAI-family) `:system` is **not hoisted**
+— the skill body lands positionally right after the load invocation, the
+wanted behavior. Anthropic is the only backend that hoists `:system` into
+the top-level system param, making the loaded skill *sticky*; that
+divergence was researched and accepted (one-time, cache-cost-free today,
+and it reuses the `:system`-injection pattern pikuri already ships for
+recalled memory). Full analysis + the one open semantic call (sticky vs
+one-shot) live in [[anthropic-skill-stickiness]]. The lever if it ever
+proves wrong is the role (`:user` = positional + non-sticky everywhere,
+at the cost of framing trusted skill text as user input) — not worth it
+now.
 
 ## Settled forks (kept for the record)
 
