@@ -42,23 +42,56 @@ agent.run_loop(user_message: nil)                  # or: no user message → bar
 
 ```
 schedule_load_skill(name):
-  skill = catalog.get(name) or raise KeyError   # UI enumerates catalog ⇒ miss is a host bug
-  interloper.inject_skill(render(skill))         # typed :system item; returns nothing runnable
+  skill = catalog.get(name) or raise KeyError        # UI enumerates catalog ⇒ miss is a host bug
+  interloper.inject_skill(Renderer.format_skill(skill))  # typed :system item; returns nothing runnable
   skill
 ```
 
 - **Miss → raise `KeyError`.** Loud-errors ethos; the UI only offers
   names from `catalog.list`.
-- **Fidelity: exactly as if `skill` was called.** `render(skill)` is
-  **byte-identical** to `SkillTool`'s output (`<skill name= location=>`
-  wrapper + "sidecar paths are relative to …" note + body). That string
-  is inline today in `SkillTool#execute` (`skill_tool.rb:58-64`); extract
-  it to a shared formatter both call — `Skill#to_context_block` /
-  `Catalog#render(skill)`. (COP: one box owns the render; neither caller
-  clones it.) Injected as `role: :system` — faking a synthetic
-  tool_use/tool_result pair to match the *role* literally is brittle
-  (providers validate the pairing) and the framing carries the meaning,
-  not the role.
+- **Fidelity: exactly as if `skill` was called.**
+  `Renderer.format_skill(skill)` is **byte-identical** to `SkillTool`'s
+  output (`<skill name= location=>` wrapper + "sidecar paths are relative
+  to …" note + body). That string is inline today in `SkillTool#execute`
+  (`skill_tool.rb:57-64`); extract it to a shared formatter both call —
+  see *Render home* below. Injected as `role: :system` — faking a
+  synthetic tool_use/tool_result pair to match the *role* literally is
+  brittle (providers validate the pairing) and the framing carries the
+  meaning, not the role.
+
+### Render home — `Skill::Renderer` (stateless module)
+
+Both the LLM-facing renders move out of `Catalog` (pure discovery /
+validation / holding) into a new stateless module, so presentation lives
+in one box and `Catalog` stays a data class:
+
+```ruby
+module Pikuri::Skill::Renderer
+  module_function
+  def format_catalog(catalog) # the <available_skills> inventory
+  def format_skill(skill)     # the <skill …>body</skill> load block
+end
+```
+
+- **Why a module, not `SkillTool` or `Catalog`.** The body render has two
+  callers — `SkillTool#execute` *and* `Extension#schedule_load_skill` —
+  living in different classes whose only shared handle is the `Catalog`
+  (the tool captures it in its closure; the Extension stores `@catalog`;
+  neither holds the other). A `module_function` taking the data is
+  reachable from both with no handle-passing, and keeps rendering off both
+  the callable tool and the data class. (Rejected: `format_for_prompt` on
+  `Catalog` — mixes presentation into data; on `SkillTool` — its real
+  caller is `Extension#system_prompt_snippets`, not the tool, and the
+  Extension doesn't retain the tool it builds in `configure`.)
+- **Callers after the move:** `Extension#system_prompt_snippets` →
+  `Renderer.format_catalog(@catalog)` (was `@catalog.format_for_prompt`,
+  `extension.rb:64`); `SkillTool#execute` and `schedule_load_skill` →
+  `Renderer.format_skill(skill)`.
+- **Bonus fix the extraction carries:** the current inline body wrapper
+  interpolates `name=`/`location=` **unescaped** (`skill_tool.rb:59`),
+  unlike `format_for_prompt`'s escaped inventory. Fold the one `escape_xml`
+  into `Renderer` and both renders escape consistently — closes a latent
+  break on a skill name containing `<`/`"`.
 
 ## Interloper grows a message *kind*
 
