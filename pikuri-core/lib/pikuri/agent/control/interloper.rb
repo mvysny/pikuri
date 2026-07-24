@@ -3,13 +3,26 @@
 module Pikuri
   class Agent
     module Control
-      # Mid-loop user-input queue. A host (TUI, web client) constructs an
-      # +Interloper+, passes it to {Agent#initialize} via +interloper:+, and
-      # calls {#inject_user_message} from any thread while the agent runs. The
+      # Mid-loop host→agent injection queue. A host (TUI, web client)
+      # constructs an +Interloper+, passes it to {Agent#initialize} via
+      # +interloper:+, and enqueues from any thread while the agent runs. The
       # +Agent+ drains it at the next +after_tool_result+ boundary — the only
-      # point in ruby_llm's loop where conversation state is consistent —
-      # appending each item as a +role: :user+ message and emitting
-      # +Event::UserTurn(mid_loop: true)+; the next round-trip reacts to it.
+      # point in ruby_llm's loop where conversation state is consistent — and
+      # the next round-trip reacts to what was injected.
+      #
+      # == Two kinds
+      #
+      # Each item carries a {Item#kind}, driving how {Agent#drain_interloper}
+      # lands it:
+      #
+      # - +:user+ ({#inject_user_message}) — a mid-loop user turn: appended as
+      #   +role: :user+, emits +Event::UserTurn(mid_loop: true)+, and runs the
+      #   {Extension#on_user_message} dispatch (prefetch/record like an initial
+      #   turn).
+      # - +:system+ ({#inject_system_message}) — host-supplied reference text
+      #   (a loaded skill, retrieved context): appended as +role: :system+,
+      #   emits +Event::SystemInjected+, and runs *no* +on_user_message+
+      #   dispatch and no +UserTurn+ (it's not a user turn).
       #
       # Groundwork for downstream TUI/web hosts: the bundled +bin/pikuri-*+ do
       # not wire one (stdin is synchronous). A host running the agent on a
@@ -45,11 +58,17 @@ module Pikuri
       # parent's stop propagates to the whole tree — cancellation is global,
       # injection is directed at the main agent.
       #
-      # Thread-safe: {#inject_user_message}, {#peek}, {#pending?}, {#size}, and
-      # {#drain!} are a +Mutex+-guarded +Array+ (chosen over +Thread::Queue+,
-      # which exposes no snapshot for {#peek}). {#on_change} fires outside the
-      # lock so a re-entrant or blocking callback can't deadlock.
+      # Thread-safe: {#inject_user_message}, {#inject_system_message}, {#peek},
+      # {#pending?}, {#size}, and {#drain!} are a +Mutex+-guarded +Array+
+      # (chosen over +Thread::Queue+, which exposes no snapshot for {#peek}).
+      # {#on_change} fires outside the lock so a re-entrant or blocking callback
+      # can't deadlock.
       class Interloper
+        # A queued injection: +kind+ (+:user+ or +:system+) selects the drain
+        # path; +content+ is the message text. Producers are the two
+        # +inject_*+ methods; the consumer is {Agent#drain_interloper}.
+        Item = Data.define(:kind, :content)
+
         def initialize
           @mutex = Mutex.new
           @items = []
@@ -65,26 +84,33 @@ module Pikuri
         # @return [Proc, nil]
         attr_accessor :on_change
 
-        # Push +content+ onto the delivery queue (any thread; +Mutex+-guarded).
-        # Fires {#on_change} with the new count, outside the lock.
+        # Enqueue a +:user+ mid-loop turn (any thread; +Mutex+-guarded). Fires
+        # {#on_change} with the new count, outside the lock.
         #
         # @param content [String] non-blank user-supplied text
         # @raise [ArgumentError] if +content+ is +nil+/blank — a blank
         #   injection would poison the chat history like a blank turn
         # @return [void]
         def inject_user_message(content)
-          raise ArgumentError, "content must not be blank, got #{content.inspect}" \
-            if content.nil? || content.to_s.strip.empty?
+          enqueue(:user, content)
+        end
 
-          count = @mutex.synchronize { @items << content; @items.size }
-          @on_change&.call(count)
-          nil
+        # Enqueue a +:system+ reference block — host-loaded skill text or
+        # other retrieved context injected on the host's own initiative, not a
+        # user turn (any thread; +Mutex+-guarded). Fires {#on_change}.
+        #
+        # @param content [String] non-blank system-role text (e.g. a rendered
+        #   skill block)
+        # @raise [ArgumentError] if +content+ is +nil+/blank
+        # @return [void]
+        def inject_system_message(content)
+          enqueue(:system, content)
         end
 
         # Non-destructive snapshot of the queue in delivery order, for a host
         # rendering a "pending" affordance. Safe from any thread.
         #
-        # @return [Array<String>] copy of the pending items; never shares state
+        # @return [Array<Item>] copy of the pending items; never shares state
         #   with the internal buffer
         def peek
           @mutex.synchronize { @items.dup }
@@ -107,7 +133,7 @@ module Pikuri
         # an empty drain does *not* fire {#on_change}; a drain that empties a
         # non-empty queue fires it with +0+, outside the lock.
         #
-        # @return [Array<String>] items in delivery order; empty when the queue
+        # @return [Array<Item>] items in delivery order; empty when the queue
         #   is empty
         def drain!
           items = @mutex.synchronize do
@@ -126,6 +152,24 @@ module Pikuri
         def to_s
           pending = size
           pending.zero? ? 'Interloper' : "Interloper(#{pending} pending)"
+        end
+
+        private
+
+        # Shared enqueue for both +inject_*+ methods: validate, push a typed
+        # {Item}, fire {#on_change} outside the lock.
+        #
+        # @param kind [Symbol] +:user+ or +:system+
+        # @param content [String]
+        # @raise [ArgumentError] if +content+ is +nil+/blank
+        # @return [void]
+        def enqueue(kind, content)
+          raise ArgumentError, "content must not be blank, got #{content.inspect}" \
+            if content.nil? || content.to_s.strip.empty?
+
+          count = @mutex.synchronize { @items << Item.new(kind: kind, content: content); @items.size }
+          @on_change&.call(count)
+          nil
         end
       end
     end

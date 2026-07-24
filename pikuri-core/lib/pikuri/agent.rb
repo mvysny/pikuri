@@ -592,19 +592,35 @@ module Pikuri
       @listeners.emit(Event::AssistantDelta.new(content: content)) if content.is_a?(String) && !content.empty?
     end
 
-    # Drain the interloper queue: for each pending item append a +role: :user+
-    # message, emit an {Event::UserTurn} with +mid_loop: true+, then run the
-    # {Extension#on_user_message} dispatch (so mid-loop injections are
-    # prefetched + recorded like initial turns). The dispatch runs *after* the
-    # +:user+ append so an injected +<memory-context>+ lands as +:system+ right
-    # behind the turn it annotates.
+    # Drain the interloper queue, landing each item per its
+    # {Control::Interloper::Item#kind}:
+    #
+    # - +:user+ — append +role: :user+, emit {Event::UserTurn} (+mid_loop:
+    #   true+), then run the {Extension#on_user_message} dispatch (so mid-loop
+    #   injections are prefetched + recorded like initial turns). The dispatch
+    #   runs *after* the +:user+ append so an injected +<memory-context>+ lands
+    #   as +:system+ right behind the turn it annotates.
+    # - +:system+ — append +role: :system+ and emit {Event::SystemInjected};
+    #   no +on_user_message+ dispatch, no +UserTurn+ (reference text, not a
+    #   user turn) — the same shape as {#dispatch_ext_on_user_message}'s own
+    #   memory injection.
     #
     # @return [void]
+    # @raise [RuntimeError] on an unknown item kind (a bug — only the two
+    #   +inject_*+ producers exist)
     def drain_interloper
-      @interloper.drain!.each do |content|
-        @chat.add_message(role: :user, content: content)
-        @listeners.emit(Event::UserTurn.new(content: content, mid_loop: true))
-        dispatch_ext_on_user_message(content)
+      @interloper.drain!.each do |item|
+        case item.kind
+        when :user
+          @chat.add_message(role: :user, content: item.content)
+          @listeners.emit(Event::UserTurn.new(content: item.content, mid_loop: true))
+          dispatch_ext_on_user_message(item.content)
+        when :system
+          @chat.add_message(role: :system, content: item.content)
+          @listeners.emit(Event::SystemInjected.new(content: item.content))
+        else
+          raise "unknown interloper item kind: #{item.kind.inspect}"
+        end
       end
     end
   end

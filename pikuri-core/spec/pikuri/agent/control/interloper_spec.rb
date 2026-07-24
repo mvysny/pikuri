@@ -24,11 +24,12 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       assert_raises(ArgumentError) { described_class.new.inject_user_message("   \t\n") }
     end
 
-    it 'pushes onto the queue, observable via #peek and #pending?' do
+    it 'pushes a :user item onto the queue, observable via #peek and #pending?' do
       interloper = described_class.new
       interloper.inject_user_message('hi')
 
-      assert_equal ['hi'], interloper.peek
+      assert_equal [:user], interloper.peek.map(&:kind)
+      assert_equal ['hi'], interloper.peek.map(&:content)
       assert interloper.pending?
     end
 
@@ -38,11 +39,40 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       interloper.inject_user_message('two')
       interloper.inject_user_message('three')
 
-      assert_equal %w[one two three], interloper.peek
+      assert_equal %w[one two three], interloper.peek.map(&:content)
     end
 
     it 'returns nil' do
       assert_nil described_class.new.inject_user_message('x')
+    end
+  end
+
+  describe '#inject_system_message' do
+    it 'rejects blank content like #inject_user_message' do
+      assert_raises(ArgumentError) { described_class.new.inject_system_message(nil) }
+      assert_raises(ArgumentError) { described_class.new.inject_system_message('') }
+      assert_raises(ArgumentError) { described_class.new.inject_system_message("  \n") }
+    end
+
+    it 'pushes a :system item, returning nil' do
+      interloper = described_class.new
+      assert_nil interloper.inject_system_message('<skill>…</skill>')
+
+      assert_equal [:system], interloper.peek.map(&:kind)
+      assert_equal ['<skill>…</skill>'], interloper.peek.map(&:content)
+    end
+  end
+
+  describe 'mixed kinds' do
+    it 'preserves injection order and per-item kind across both inject_* methods' do
+      interloper = described_class.new
+      interloper.inject_user_message('u1')
+      interloper.inject_system_message('s1')
+      interloper.inject_user_message('u2')
+
+      drained = interloper.drain!
+      assert_equal %i[user system user], drained.map(&:kind)
+      assert_equal %w[u1 s1 u2], drained.map(&:content)
     end
   end
 
@@ -54,7 +84,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       snapshot = interloper.peek
       snapshot << 'b'
 
-      assert_equal ['a'], interloper.peek
+      assert_equal ['a'], interloper.peek.map(&:content)
     end
   end
 
@@ -83,7 +113,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
       interloper.inject_user_message('one')
       interloper.inject_user_message('two')
 
-      assert_equal %w[one two], interloper.drain!
+      assert_equal %w[one two], interloper.drain!.map(&:content)
 
       refute interloper.pending?
       assert_equal [], interloper.peek
@@ -93,10 +123,10 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     it 'items injected between drains are returned on the subsequent drain' do
       interloper = described_class.new
       interloper.inject_user_message('a')
-      assert_equal ['a'], interloper.drain!
+      assert_equal ['a'], interloper.drain!.map(&:content)
 
       interloper.inject_user_message('b')
-      assert_equal ['b'], interloper.drain!
+      assert_equal ['b'], interloper.drain!.map(&:content)
     end
   end
 
@@ -106,7 +136,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
 
       Thread.new { interloper.inject_user_message('from another thread') }.join
 
-      assert_equal ['from another thread'], interloper.drain!
+      assert_equal ['from another thread'], interloper.drain!.map(&:content)
     end
   end
 
@@ -146,7 +176,7 @@ RSpec.describe Pikuri::Agent::Control::Interloper do
     it 'does nothing when unset (default nil)' do
       interloper = described_class.new
       interloper.inject_user_message('one')
-      assert_equal ['one'], interloper.drain!
+      assert_equal ['one'], interloper.drain!.map(&:content)
     end
 
     it 'fires outside the queue lock — the callback may re-enter the interloper' do
