@@ -62,43 +62,6 @@ module Pikuri
         raise NotImplementedError, "#{self.class}#roots must be implemented"
       end
 
-      # System-prompt block advertising every loaded skill to the LLM,
-      # in the Agent Skills standard's XML shape. Returns +""+ for an
-      # empty catalog so callers can unconditionally concatenate.
-      #
-      # @return [String]
-      def format_for_prompt
-        return '' if empty?
-
-        lines = [
-          '',
-          '',
-          'The following skills provide specialized instructions for specific tasks.',
-          "When a skill matches the task, load it with the `skill` tool *before* answering from your own knowledge — the skill's instructions take precedence over your training. If none matches, just proceed normally.",
-          '',
-          '<available_skills>'
-        ]
-        list.each do |skill|
-          lines << '  <skill>'
-          lines << "    <name>#{escape_xml(skill.name)}</name>"
-          lines << "    <description>#{escape_xml(skill.description)}</description>"
-          lines << "    <location>#{escape_xml(skill.location)}</location>"
-          lines << '  </skill>'
-        end
-        lines << '</available_skills>'
-        lines.join("\n")
-      end
-
-      private
-
-      def escape_xml(str)
-        str.gsub('&', '&amp;')
-           .gsub('<', '&lt;')
-           .gsub('>', '&gt;')
-           .gsub('"', '&quot;')
-           .gsub("'", '&apos;')
-      end
-
       # Null-object catalog. The +EMPTY+ constant is the singleton used
       # as the default when no skills are wired in.
       class Empty < Catalog

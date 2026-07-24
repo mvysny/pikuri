@@ -9,7 +9,7 @@ module Pikuri
     #
     # The available-skills inventory is *not* in this tool's
     # description — it lives in the system prompt (see
-    # {Catalog#format_for_prompt}), next to the agent's persona, as PI
+    # {Renderer.format_catalog}), next to the agent's persona, as PI
     # and Claude Code do (opencode is the outlier). So the description
     # is static: it explains the load mechanism, not the inventory.
     #
@@ -54,14 +54,7 @@ module Pikuri
               next "Error: skill '#{name}' not found. Available skills: #{list}."
             end
 
-            base_dir = File.dirname(loaded.location)
-            <<~OUT
-              <skill name="#{loaded.name}" location="#{loaded.location}">
-              Sidecar paths in this skill (e.g. scripts/, references/) are relative to #{base_dir}.
-
-              #{loaded.body}
-              </skill>
-            OUT
+            Pikuri::Skill::Renderer.format_skill(loaded)
           }
         )
       end

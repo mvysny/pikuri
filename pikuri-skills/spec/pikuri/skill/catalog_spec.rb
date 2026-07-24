@@ -26,7 +26,6 @@ RSpec.describe Pikuri::Skill::Catalog do
       assert described_class.empty?
       assert_equal [], described_class.list
       assert_nil described_class.get('anything')
-      assert_equal '', described_class.format_for_prompt
       assert_equal [], described_class.roots
     end
 
@@ -153,43 +152,5 @@ RSpec.describe Pikuri::Skill::Catalog do
       end
     end
 
-    describe '#format_for_prompt' do
-      it 'returns an empty string for an empty catalog' do
-        catalog = described_class.new(search_bases: [])
-        assert_equal '', catalog.format_for_prompt
-      end
-
-      it 'emits an <available_skills> block with name/description/location' do
-        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'valid-tree')])
-        out = catalog.format_for_prompt
-
-        assert out.include?('<available_skills>'), out
-        assert out.include?('</available_skills>'), out
-        assert out.include?('<name>pdf-tools</name>'), out
-        assert out.include?('<name>data-viz</name>'), out
-        assert out.include?('<description>Extracts text from PDF'), out
-        assert out.include?("<location>#{File.join(FIXTURE_ROOT, 'valid-tree/.pikuri/skills/pdf-tools/SKILL.md')}</location>"), out
-      end
-
-      it 'escapes XML metacharacters in name/description/location' do
-        Dir.mktmpdir do |base|
-          dir = File.join(base, '.pikuri/skills/xml-skill')
-          FileUtils.mkdir_p(dir)
-          File.write(File.join(dir, 'SKILL.md'), <<~MD)
-            ---
-            name: xml-skill
-            description: Watch <out> for "quotes" & ampersands.
-            ---
-            body
-          MD
-
-          catalog = described_class.new(search_bases: [base])
-          out = catalog.format_for_prompt
-          assert out.include?('&lt;out&gt;'), out
-          assert out.include?('&quot;quotes&quot;'), out
-          assert out.include?('&amp;'), out
-        end
-      end
-    end
   end
 end

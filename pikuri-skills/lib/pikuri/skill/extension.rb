@@ -53,7 +53,7 @@ module Pikuri
       end
 
       # The +<available_skills>+ catalog block (empty array for an
-      # empty catalog). +format_for_prompt+ returns leading blank
+      # empty catalog). {Renderer.format_catalog} returns leading blank
       # lines; the Agent joins sections with +\n\n+, so +lstrip+ avoids
       # doubling them.
       #
@@ -61,7 +61,7 @@ module Pikuri
       def system_prompt_snippets
         return [] if @catalog.empty?
 
-        [@catalog.format_for_prompt.lstrip]
+        [Pikuri::Skill::Renderer.format_catalog(@catalog).lstrip]
       end
     end
   end
