@@ -112,6 +112,12 @@ end
     (that's user-turn semantics), no `UserTurn`.
 - Class doc widens from "mid-loop user-input queue" to "mid-loop host→agent
   **injection** queue" — one mechanism, one responsibility, two kinds.
+- **Return-type ripple:** typing the buffer flips `#peek` from
+  `Array<String>` to `Array<Item>` and `#drain!` likewise (its yardoc +
+  the interloper specs move with it). No in-repo consumer breaks — the
+  bundled `bin/pikuri-*` wire no interloper — but a downstream host
+  rendering `#peek` now sees `Item`s, so the change is contract-visible.
+  `#size`/`#pending?`/`#on_change` (count-only) are unaffected.
 
 ## Two drain points, so a scheduled skill always lands before `complete`
 
@@ -150,14 +156,28 @@ The append/dispatch/complete sequence already lives inline in `run_loop`
 append slot in there; the `ArgumentError` contract + yardoc `@raise` must
 be rewritten to the return-`false` semantics.
 
+**Don't confuse the two drains.** `reset` (the "/clear" path) already calls
+`@interloper&.drain!` (`agent.rb:286`) to **discard** stale injections when
+clearing the conversation. The turn-start drain added here **delivers**.
+Different method, opposite intent — the new turn-start drain goes in
+`run_loop`, never in `reset`, so a scheduled skill is never silently thrown
+away by a clear.
+
 ## How the extension reaches the interloper
 
-Lean **C1-lite**: `ExtensionContext` exposes the (already thread-safe)
-`interloper`; `Skill::Extension#bind(ctx)` captures the handle;
-`schedule_load_skill` enqueues on it from any thread. Single owner (the
-Agent, via its constructor arg), no double-wiring footgun, and no *new*
-thread-safety concept — the interloper is already `Mutex`-guarded. If the
-agent was built without an interloper, `bind` sees `nil` and
+The interloper handle is **already public**: `Agent#interloper` is a plain
+`attr_reader` (`agent.rb:161`) and `ExtensionContext` already exposes
+`#agent`. So `Skill::Extension#bind(ctx)` just captures
+`ctx.agent.interloper` and `schedule_load_skill` enqueues on it from any
+thread. No new `ExtensionContext` method — the interloper is
+constructor-given config, so per the `ExtensionContext` boundary rule it
+stays a reader on `Agent`, not a capability method, and the capability-seam
+roster (`emit_event|add_raw_tool|sub_agent_listeners`) is untouched.
+(Supersedes the earlier "C1-lite: ExtensionContext exposes the interloper"
+— the reader already exists, so exposing it again is redundant.) Single
+owner (the Agent, via its constructor arg), no double-wiring footgun, no
+*new* thread-safety concept — the interloper is already `Mutex`-guarded. If
+the agent was built without an interloper, `bind` captures `nil` and
 `schedule_load_skill` raises "no interloper wired — construct the Agent
 with `interloper:`". (Alt C2: host passes the same `Interloper` to both
 `Agent.new` and the extension ctor — simpler surface, but wires one object
