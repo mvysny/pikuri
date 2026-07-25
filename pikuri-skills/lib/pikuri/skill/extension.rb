@@ -84,7 +84,9 @@ module Pikuri
       # the loop is then run:
       #
       # * bare load — +run_loop(user_message: nil)+: the agent reacts to the
-      #   skill alone and says something.
+      #   skill alone and says something — except on a system-hoisting provider,
+      #   where a +:system+-only turn raises {Pikuri::Agent::EmptyTurnError} (the
+      #   skill is still enqueued, so the host just prompts for a message).
       # * load + message — +run_loop(user_message: text)+: the skill block
       #   and the message both land before the model responds.
       #

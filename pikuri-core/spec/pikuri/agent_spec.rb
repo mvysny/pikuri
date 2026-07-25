@@ -11,13 +11,13 @@ RSpec.describe Pikuri::Agent do
   # Minimal +RubyLLM::Chat#model+ stand-in. Cap detection no longer
   # reads it (the probe keys off the transport + global config — see
   # {Pikuri::Agent::ContextWindowDetector}), but a real Chat exposes
-  # +#model+, so the fake mirrors that.
-  fake_model = Struct.new(:context_window, :id).new(nil, 'm')
-
+  # +#model+ (carrying a +provider+ slug +run_loop+'s empty-turn split
+  # keys off), so the fake mirrors that. Built per-instance so a spec can
+  # flip +fake_chat.model.provider+ without leaking across examples;
+  # defaults to +'openai'+ (a non-system-hoisting provider).
   let(:fake_chat_class) do
-    captured_model = fake_model
     Class.new do
-      attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages, :stream_block
+      attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages, :stream_block, :model
 
       define_method(:initialize) do
         @tools = []
@@ -25,12 +25,8 @@ RSpec.describe Pikuri::Agent do
         @messages = []
         @added_messages = []
         @hooks = Hash.new { |h, k| h[k] = [] }
-        @model_info = captured_model
+        @model = Struct.new(:context_window, :id, :provider).new(nil, 'm', 'openai')
         @stream_block = nil
-      end
-
-      def model
-        @model_info
       end
 
       def with_instructions(text)
@@ -506,12 +502,13 @@ RSpec.describe Pikuri::Agent do
       refute cancel.cancelled?
     end
 
-    describe 'blank input on a fresh conversation is a no-op' do
-      # A blank message with nothing but :system messages to complete
-      # against returns false without touching the chat or listeners —
-      # completing an all-:system array would 400 on Anthropic and burn a
-      # step on nothing. (Mid-conversation bare turns proceed; covered
-      # under the host-driven-load specs.)
+    describe 'blank input against a :system-only conversation is provider-split' do
+      # A blank message with nothing but :system messages to complete against
+      # (a fresh chat, or a skill-only bare-load) can't run on a provider that
+      # hoists :system out of the messages array — it would send messages: []
+      # and 400 — so run_loop raises EmptyTurnError there. Providers that keep
+      # :system in the array complete the turn instead. (Mid-conversation bare
+      # turns proceed everywhere; covered under the host-driven-load specs.)
       #
       # Force eager construction so the ContextCap event emitted at
       # construction time doesn't get attributed to run_loop's
@@ -521,23 +518,37 @@ RSpec.describe Pikuri::Agent do
                           system_prompt: 's') { |c| c.add_listener recorder }
       end
 
-      it 'returns false on nil and never reaches the chat or listeners' do
-        before_events = recorder.events.size
+      describe 'on a system-hoisting provider (Anthropic/Bedrock)' do
+        before { fake_chat.model.provider = 'anthropic' }
 
-        assert_equal false, agent.run_loop(user_message: nil)
-        assert_nil fake_chat.completes
-        assert_equal [], fake_chat.added_messages
-        assert_equal before_events, recorder.events.size
+        it 'raises EmptyTurnError on nil and never reaches the chat or listeners' do
+          before_events = recorder.events.size
+
+          err = assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: nil) }
+          assert_equal 'anthropic', err.provider
+          assert_nil fake_chat.completes
+          assert_equal [], fake_chat.added_messages
+          assert_equal before_events, recorder.events.size
+        end
+
+        it 'raises on an empty string' do
+          assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: '') }
+          assert_nil fake_chat.completes
+        end
+
+        it 'raises on a whitespace-only string' do
+          assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: "  \n\t ") }
+          assert_nil fake_chat.completes
+        end
       end
 
-      it 'returns false on an empty string' do
-        assert_equal false, agent.run_loop(user_message: '')
-        assert_nil fake_chat.completes
-      end
-
-      it 'returns false on a whitespace-only string' do
-        assert_equal false, agent.run_loop(user_message: "  \n\t ")
-        assert_nil fake_chat.completes
+      describe 'on a provider that keeps :system in the messages array (OpenAI/Gemini)' do
+        # fake_chat defaults to the non-hoisting 'openai' provider.
+        it 'runs the bare turn against the :system-only history, appending nothing' do
+          assert_nil agent.run_loop(user_message: nil)
+          assert_equal 1, fake_chat.completes
+          assert_equal [], fake_chat.added_messages
+        end
       end
     end
 
@@ -574,12 +585,25 @@ RSpec.describe Pikuri::Agent do
         assert_equal [], fake_chat.added_messages # nothing appended; completes against history
       end
 
-      it 'no-ops a skill-only bare load: the block is delivered but nothing completes' do
+      it 'bare-loads a skill then runs the turn on a non-hoisting provider' do
         interloper.inject_system_message('<skill>load</skill>')
 
-        # Blank message + an all-:system chat (only the injected block, no real
-        # turn) → false; the skill persists in the log for the next real turn.
-        assert_equal false, agent.run_loop(user_message: nil)
+        # Blank message + a skill-only chat: the skill drains first, then the
+        # turn completes against it (OpenAI/Gemini keep :system in the array).
+        assert_nil agent.run_loop(user_message: nil)
+        assert_equal [{ role: :system, content: '<skill>load</skill>' }], fake_chat.added_messages
+        assert_equal 1, fake_chat.completes
+        injected = recorder.events.select { |e| e.is_a?(Pikuri::Agent::Event::SystemInjected) }
+        assert_equal ['<skill>load</skill>'], injected.map(&:content)
+      end
+
+      it 'delivers the skill but raises EmptyTurnError on a system-hoisting provider' do
+        fake_chat.model.provider = 'anthropic'
+        interloper.inject_system_message('<skill>load</skill>')
+
+        # The skill still drains (the host can then prompt for a message), but
+        # an all-:system turn can't complete on Anthropic.
+        assert_raises(Pikuri::Agent::EmptyTurnError) { agent.run_loop(user_message: nil) }
         assert_equal [{ role: :system, content: '<skill>load</skill>' }], fake_chat.added_messages
         assert_nil fake_chat.completes
       end

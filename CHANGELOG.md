@@ -113,6 +113,22 @@ uses semver as documented in `lib/pikuri/version.rb`.
 
 ### Changed
 
+- **`Agent#run_loop` no longer silently no-ops a blank turn against a
+  `:system`-only conversation — it's provider-aware.** A blank
+  `user_message` whose conversation holds only `:system` messages (a fresh
+  chat, or a skill-only bare-load via `Skill::Extension#schedule_load_skill`)
+  used to `return false` for every provider. Now it splits on the resolved
+  `@chat.model.provider`: providers that keep `:system` inside the messages
+  array (OpenAI, Gemini) complete the turn against the `:system`-only history,
+  so a host-loaded skill gets its chance to act; providers that hoist every
+  `:system` block into a separate top-level field (Anthropic, Bedrock —
+  `Agent::SYSTEM_HOISTING_PROVIDERS`) would send an empty `messages` array and
+  400, so `run_loop` raises the new `Pikuri::Agent::EmptyTurnError` (carrying
+  the offending `provider`) instead. The error is fail-loud by design (a
+  silent `false` reproduced the very 400 it meant to prevent) and
+  content-neutral (the host owns any skill-flavored wording). No existing
+  caller consumes the old `false` return — `thinker` / `synthesizer` /
+  `sub_agent_tool` / the bin REPLs all pass a real `user_message`.
 - **`calculator` evaluates Python expression syntax natively** via a
   hand-rolled recursive-descent parser in `Pikuri::Tool::Calculator`,
   replacing dentaku. Drops four gems from pikuri-core's dependency

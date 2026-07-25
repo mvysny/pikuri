@@ -50,6 +50,38 @@ module Pikuri
     LOGGER = Pikuri.logger_for('Agent')
     private_constant :LOGGER
 
+    # Provider slugs (matched against +@chat.model.provider+) that hoist every
+    # +:system+ message out of the request's +messages+ array into a separate
+    # top-level field — Anthropic's +system+ param, Bedrock's +system+ blocks.
+    # For them an all-+:system+ conversation renders +messages: []+ and the API
+    # 400s, so {#run_loop} raises {EmptyTurnError}; every other provider keeps
+    # +:system+ inside the array (OpenAI, Gemini) and completes the turn.
+    SYSTEM_HOISTING_PROVIDERS = %w[anthropic bedrock].freeze
+    private_constant :SYSTEM_HOISTING_PROVIDERS
+
+    # A blank turn was requested against a conversation holding only +:system+
+    # messages, on a provider that can't send one (see
+    # {SYSTEM_HOISTING_PROVIDERS}):
+    #
+    #   agent.run_loop(user_message: nil)   # a skill-only chat, backend Anthropic
+    #   # => EmptyTurnError; the host catches it and prompts for a real message
+    #
+    # Content-neutral by design: the +:system+-only block may be a host-loaded
+    # skill, injected memory, or retrieved docs, so {#provider} is all it
+    # carries — the host owns any user-facing wording.
+    class EmptyTurnError < StandardError
+      # @return [String] the resolved provider slug that can't complete the turn
+      attr_reader :provider
+
+      # @param provider [String] the resolved provider slug (e.g. +"anthropic"+)
+      def initialize(provider)
+        @provider = provider
+        super("#{provider} cannot complete a turn whose conversation holds only " \
+              ':system content (no user or assistant message): it would send an ' \
+              'empty messages array. Add a user message.')
+      end
+    end
+
     # @param transport [ChatTransport] model-resolution bundle (+model+ /
     #   +provider+ / +assume_model_exists+ and, off the global server,
     #   +api_base+ / +api_key+). A +nil+ +transport.model+ is filled from
@@ -204,12 +236,11 @@ module Pikuri
     # +complete+s the chat. Output is the listeners' job; subsequent calls
     # build on the same history.
     #
-    # Returns +false+ (a no-op) when there is nothing to complete against: a
-    # blank +user_message+ whose conversation still holds only +:system+
-    # messages — a fresh chat, or a skill-only bare-load. Completing that
-    # would send an empty +messages+ array (a 400 on Anthropic) and burn a
-    # step on nothing. A blank turn *mid-conversation* proceeds — real turns
-    # remain to answer.
+    # A blank +user_message+ whose conversation still holds only +:system+
+    # messages (a fresh chat, or a skill-only bare-load) is provider-split:
+    # providers that can't complete it raise {EmptyTurnError}, the rest run the
+    # turn against that +:system+-only history. A blank turn *mid-conversation*
+    # always proceeds — real turns remain to answer.
     #
     # Step-limit and cancellation trips are handled per the class header's
     # "Step-exhaustion policy" / "Cancellation rescue".
@@ -233,8 +264,9 @@ module Pikuri
     #   {Event::Cancelled} is emitted first)
     # @raise [Control::StepLimit::Exceeded] if the budget tripped under the
     #   +:raise+ policy
-    # @return [nil, false] +nil+ after a turn runs; +false+ when the call was
-    #   a no-op (see above)
+    # @raise [EmptyTurnError] on a blank turn against a +:system+-only
+    #   conversation when the provider hoists +:system+ (see above)
+    # @return [nil] after a turn runs
     def run_loop(user_message: nil, transport: nil)
       apply_transport!(transport) if transport
       @synth_answer = nil
@@ -248,10 +280,15 @@ module Pikuri
       drain_interloper if @interloper
 
       blank = user_message.nil? || user_message.to_s.strip.empty?
-      # Nothing to complete against: an all-:system chat (fresh, or a
-      # skill-only bare-load) would 400 on Anthropic and burn a step on
-      # nothing. Mid-conversation blanks fall through — real turns remain.
-      return false if blank && @chat.messages.all? { |m| m.role == :system }
+      # A blank turn against a :system-only conversation (fresh, or a
+      # skill-only bare-load) can't run on a system-hoisting provider (see
+      # EmptyTurnError); elsewhere it completes against that history, so a
+      # host-loaded skill gets its chance to act. Mid-conversation blanks fall
+      # through everywhere — real turns remain to answer.
+      if blank && @chat.messages.all? { |m| m.role == :system } &&
+         SYSTEM_HOISTING_PROVIDERS.include?(@chat.model.provider.to_s)
+        raise EmptyTurnError, @chat.model.provider
+      end
 
       unless blank
         # Append the user turn, emit it, then run the memory dispatch — so any
