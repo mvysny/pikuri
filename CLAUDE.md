@@ -62,6 +62,7 @@ own*. Match the kind before writing.
 | Kind | Audience | Owns |
 |---|---|---|
 | `ideas/*.md` | you + the author | design rationale *in flight* + each topic's *considered-then-deferred* list; transient (trimmed as pieces graduate) |
+| `DECISIONS.md` | a contributor asking "why this way?" | the *why-we-chose*, incl. the **roads not taken**; one mutable entry per live decision |
 | `COMPARISON.md` | evaluator / contributor | external prior art + "ideas to borrow" |
 | per-gem `DESIGN.md` | someone extending that gem | that gem's cross-cutting rationale + closeable threat model (only where earned; `ls pikuri-*/DESIGN.md` for the set) |
 | **book** (`book/`) | a learner, reading in order | concepts, teaching narrative, the cross-cutting why |
@@ -72,11 +73,12 @@ own*. Match the kind before writing.
 
 Rules:
 
-- **Single source of truth per fact.** One home; others link. Yardoc owns per-symbol truth + rationale; the book owns concepts + teaching order; CLAUDE.md owns invariants and points (`see {ClassName}`). Tempted to explain twice → link instead. A tiny load-bearing restatement is fine when it saves a jump (repeat the *one-line fact*, defer the *explanation*).
+- **Single source of truth per fact.** One home; others link. Yardoc owns per-symbol truth + rationale; the book owns concepts + teaching order; DECISIONS.md owns the rejected alternative; CLAUDE.md owns invariants and points (`see {ClassName}`). Tempted to explain twice → link instead. A tiny load-bearing restatement is fine when it saves a jump (repeat the *one-line fact*, defer the *explanation*).
 - **YARD is browsed standalone** on rubydoc.info, so it carries the complete *local* what + why of the symbol; it may defer only the book-wide *narrative*, never the local truth.
 - **README stays a front door.** Concepts migrate to the book; per-symbol API + rationale to yardoc.
 - **The book grows organically** (chapters `00`–`13`, `book/README.md`). Add a chapter when a concept earns one.
-- **`ideas/*.md` is transient** — a scratchpad where rationale is born. As pieces land in source / book / CLAUDE.md, cut them from the note. On full graduation the note keeps only its origin map + open questions + deferred work. A *deferred* idea lives in its topic's note; a *rejected* one stays inline, marked `REJECTED`/`Killed`, beside the live design its reasoning bounds. Graduation homes: reader-half → book, per-symbol rationale → yardoc, invariant → CLAUDE.md (a Seam/Convention entry), deferred residue → the topic's `ideas/*.md`. (See the `ideas-folder` skill.)
+- **`ideas/*.md` is transient** — a scratchpad where rationale is born. As pieces land in source / book / CLAUDE.md / DECISIONS.md, cut them from the note; a fully-graduated note is *deleted*, not left as a stub. Graduation homes: reader-half → book, per-symbol rationale → yardoc, invariant → CLAUDE.md (a Seam/Convention entry), **the choice made + the alternatives rejected → DECISIONS.md**, work deferred *as a consequence of a logged decision* → that entry's *Consequences*. Only a standalone open topic with no decision yet keeps a note alive. (See the `ideas-folder` skill.)
+- **`DECISIONS.md` is the home for roads not taken**, and the *only* doc that is never context-loaded — that's why rejection rationale goes there instead of into yardoc (browsed standalone at the API) or here (loaded every session, 40 KB cap). Cite entries by slug (`D-per-process-temp`); `grep '^## D-' DECISIONS.md` is the index, so no ToC. Entries are mutable — a refined decision is edited in place, a *shipped-then-reversed* one gets a tombstone + a fresh entry. **No entry without a real fork** (no rejected alternative → it's just how it works → yardoc). Boundaries: per-gem `DESIGN.md` / `SECURITY.md` keep the system-as-it-is and the shipped defenses, `COMPARISON.md` keeps what *others* do. Grep tripwire: every `D-<slug>` cited in the repo exists as a `^## D-` heading in `DECISIONS.md`.
 
 ## Seams (invariants)
 
