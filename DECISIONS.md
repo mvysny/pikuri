@@ -72,6 +72,40 @@ design.
 
 ---
 
+## D-context-window-sources — The `/props` probe, never ruby_llm's model registry (2026-08-04)
+
+**Status:** Accepted; the behaviour has always shipped this way
+({Pikuri::Agent::ContextWindowDetector}). Logged 2026-08-04 when the
+argument moved out of that class's yardoc.
+
+**Context.** A context-window cap is only worth emitting if a host can *act*
+on it — warn, compact, or switch models before
+`RubyLLM::ContextLengthExceededError`. So the number has to be trustworthy
+without a caveat attached.
+
+**Decision.** Two sources only: llama.cpp's non-standard `/props` probe (the
+server's *launched* `n_ctx`, i.e. the real window) and an explicit
+{Pikuri::Agent::ChatTransport#context_window}. Anything else resolves to
+`nil` — an honest "we don't know."
+
+**Alternatives rejected.**
+
+- **`RubyLLM::Model::Info#context_window`** (the obvious source, and free) —
+  it's a static `models.json` lookup, so it returns `nil` for every
+  `assume_exists` local id, `nil` for anything past the snapshot, and —
+  worst — a **frozen** value for models it *does* know: a window bumped
+  256k → 1M still reports the old number. A cap you must caveat defeats its
+  only job, and a confidently-wrong number is worse than `nil`. Not
+  consulted at all, rather than consulted as a last resort, because a
+  fallback that lies is indistinguishable from one that works until it
+  silently truncates.
+
+**Consequences.** Non-llama.cpp servers get no cap unless the host passes
+`context_window:` on the transport — deliberate, and why the detector's
+failure path is a debug log rather than a raise.
+
+---
+
 ## D-per-process-temp — Two named `Paths` methods, not `cache(session:)` (2026-07-14)
 
 **Status:** Accepted; implemented 2026-07-14 (`Paths.new_temp` +

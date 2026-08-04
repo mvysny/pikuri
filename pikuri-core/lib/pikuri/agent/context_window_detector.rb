@@ -15,15 +15,9 @@ module Pikuri
     # anything else. {Agent#detect_and_emit_context_cap!} calls it only when
     # the transport carries no explicit {ChatTransport#context_window}.
     #
-    # == Why no ruby_llm registry source
-    #
-    # +RubyLLM::Model::Info#context_window+ is a static +models.json+ lookup:
-    # +nil+ for every +assume_exists+ local id, +nil+ past the snapshot, and —
-    # worst — a *frozen* value for known models (a window bumped 256k → 1M
-    # still reports the old number). A cap you must caveat defeats its only job
-    # (a number trustworthy enough to act on before
-    # +RubyLLM::ContextLengthExceededError+), so pikuri doesn't consult it. The
-    # probe and an explicit {ChatTransport#context_window} are the only sources.
+    # This probe and an explicit {ChatTransport#context_window} are the *only*
+    # sources: +RubyLLM::Model::Info#context_window+ is deliberately never
+    # consulted (why: +DECISIONS.md+ +D-context-window-sources+).
     #
     # == The openai-provider gate + auto-derived URL
     #
