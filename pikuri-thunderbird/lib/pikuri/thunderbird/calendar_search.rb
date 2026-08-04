@@ -6,6 +6,10 @@ module Pikuri
     # Thunderbird calendars by title/description/location. Inbound-only; its
     # read half is +thunderbird_calendar_read+.
     #
+    # Recall-first (words OR-matched, ranked by matched-word count) on purpose,
+    # mirroring {MailSearch}: tighten it to AND and the model — primed by the
+    # forgiving mail search — reads the sparser hits as "no such event".
+    #
     # == Empty-corpus guidance (Q6)
     #
     # Thunderbird keeps a CalDAV calendar's events *in memory only* unless

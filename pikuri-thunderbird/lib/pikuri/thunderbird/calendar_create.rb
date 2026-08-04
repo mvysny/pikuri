@@ -14,6 +14,10 @@ module Pikuri
     # commit is what keeps the trifecta broken even with an egress leg present,
     # so this tool is opt-in (+allow_create_calendar_event:+ on {Extension}).
     #
+    # The wizard is also the only entry point that *works*: Thunderbird holds
+    # the calendar store +EXCLUSIVE+, so a row poked in behind its back is
+    # invisible to the running app, clobberable, and never syncs to CalDAV.
+    #
     # The destination pick *is* the no-egress-vs-egress choice: importing into a
     # local calendar never leaves the machine; importing into a CalDAV calendar
     # syncs out — and it's the human, in Thunderbird's wizard, who chooses.
@@ -100,7 +104,9 @@ module Pikuri
       # Write the +.ics+ into the confined-readable outbox and register it for
       # reap at process exit. Reap-at-exit (not immediately) is what lets the
       # human take their time in the wizard while the interactive session lives;
-      # the wizard reads the file when it opens, seconds after the hand-off.
+      # the wizard reads the file when it opens, seconds after the hand-off. A
+      # fire-and-forget one-shot that exits immediately can therefore out-race a
+      # *cold* Thunderbird start — best-effort, as with the detached launch.
       #
       # @param ics [String] the +.ics+ document.
       # @return [String] the staged file's absolute path.

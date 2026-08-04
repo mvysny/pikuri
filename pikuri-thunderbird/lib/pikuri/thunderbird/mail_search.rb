@@ -92,6 +92,13 @@ module Pikuri
       # recall-first principle itself rides the prompt snippet
       # ({Extension::INBOUND_USAGE}); this is the terse per-search reminder.
       #
+      # Fuzzy on purpose ("more exist", not the total one +COUNT(DISTINCT)+
+      # would give): an exact number over an OR-recall corpus reads as
+      # false precision — "you have 47 emails about X", where 47 is a loose
+      # any-word tally. For the same reason there is no +page+ param:
+      # +bm25, date DESC+ isn't offset-stable across snapshot refreshes, and
+      # paging tempts the model to walk on instead of narrowing.
+      #
       # @param shown [Integer] hits actually rendered.
       # @param has_more [Boolean] whether more matched than fit.
       # @return [String]

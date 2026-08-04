@@ -32,6 +32,10 @@ module Pikuri
     #
     # == Implementation details
     #
+    # On-disk rather than an +:memory:+ load: the page cache keeps idle RAM ≈ 0
+    # for a multi-hundred-MB Gloda, which a memory copy would pin for the life
+    # of the process.
+    #
     # The copy lands in a caller-owned 0700 dir on the *same filesystem* as
     # the source (so reflink's copy-on-write extent share is available;
     # +--reflink=auto+ degrades to a full copy elsewhere). It is
