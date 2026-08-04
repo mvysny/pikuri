@@ -43,7 +43,14 @@ it's *made*; implementation can lag (the `Status:` line says which).
 
 **No entry without a real fork.** If nothing was seriously considered and
 rejected, it isn't a decision — it's how the thing works, and that's
-yardoc. This is the guard against a diary.
+yardoc. This is the guard against a diary. Nor is an entry warranted when
+the fork is already argued somewhere durable — a rejected alternative with
+real teaching value belongs to the **book** (worked example: the
+MoE-vs-dense-model argument, book ch1), and this file would only duplicate
+it.
+
+**Newest first.** Entries run reverse-chronologically by decided date, so a
+scan hits recent decisions first.
 
 **Never read wholesale.** `grep '^## D-' DECISIONS.md` is the index; there
 is no ToC (same discipline as `ls ideas/`). Cite an entry by slug. Grep
@@ -103,6 +110,102 @@ server's *launched* `n_ctx`, i.e. the real window) and an explicit
 **Consequences.** Non-llama.cpp servers get no cap unless the host passes
 `context_window:` on the transport — deliberate, and why the detector's
 failure path is a debug log rather than a raise.
+
+---
+
+## D-permission-wall-handoff — An honest `EACCES` beats prompt guidance (2026-07-18)
+
+**Status:** Accepted; the read-vs-mutate sub-bullets were removed in
+`f917226`. Validated live 2026-07-18 ("Is my SSD healthy?").
+
+**Context.** `pikuri-os` runs unprivileged inside a bwrap user namespace
+where `sudo` doesn't work, so anything genuinely needing root must be handed
+to the human. The question was how much of that escalation *strategy* the
+system prompt has to spell out.
+
+**Decision.** One line in `prompts/os-assistant.txt` states the hand-off (a
+`Permission denied` means the real answer needs root → give the exact
+`sudo …` command, explain it, ask for the output pasted back). No
+elaboration beyond that. On the live test the model ran the probe, read
+"Permission denied", recognized root was required, and handed back exact
+`sudo nvme smart-log` / `sudo smartctl -a` with an explanation and a
+paste-back ask — unprompted, and reaching for the NVMe-specific tool first.
+
+**Alternatives rejected.**
+
+- **Read-vs-mutate escalation sub-bullets in the prompt** — they existed and
+  were trimmed as dead weight once the behaviour proved emergent.
+  **Don't re-add them thinking they're load-bearing.** Prompt text is not
+  free: every line competes for attention with the ones that *are* doing
+  work, and this one was buying behaviour the model already had.
+
+**Consequences.**
+
+- **The precondition is the load-bearing half, and it's in the sandbox, not
+  the prompt.** This only works because `FullFsNoNet` binds the *real*
+  `/dev`. The earlier synthetic `--dev /dev` hid block-device nodes, so
+  `smartctl` failed `ENOENT` ("No such device") while `lsblk` / `/sys`
+  showed a healthy disk — an incoherent machine, and the model retry-looped
+  instead of escalating. A prompt cannot fix an environment that lies. See
+  {Pikuri::Code::Bash::Sandbox::FullFsNoNet} + `pikuri-code/DESIGN.md`.
+- **Open caveat.** The model escalated *straight* to `sudo` without first
+  gathering the partial non-root picture. Fine when root is genuinely
+  required (SMART data is), but on a case with real partial value (a
+  root-only log where `/sys` gives half the story) the leaner prompt may
+  leave that on the table. Watch for it before calling a "gather partial
+  first" nudge permanently unnecessary.
+
+---
+
+## D-fake-transport — Fake the HTTP backend, not the agent (2026-07-18)
+
+**Status:** Accepted; shipped for single-agent 2026-07-17
+({Pikuri::Testing}), export boundary settled 2026-07-18. Graduated from
+`ideas/fake-llm.md`.
+
+**Context.** Unit-testing agent behaviour needs no server and no network,
+but mocking the *agent* tests nothing — the value is in the real `run_loop`,
+real listeners, real tools/extensions, real `Event` stream, real ruby_llm
+loop.
+
+**Decision.** A fake is a plain {Pikuri::Agent::ChatTransport} carrying an
+anonymous `Faraday::Adapter` (a generic `faraday_adapter:` field, no
+subclass), installed on the agent's *per-chat* `RubyLLM::Context` so the
+global `RubyLLM.config` is untouched. Only `fake_transport` is exported.
+Mechanics + limitations: {Pikuri::Testing}.
+
+**Alternatives rejected.**
+
+- **A fake backend that reimplements the ruby_llm loop** — it would drift
+  against every ruby_llm upgrade, and the whole point is that the *real*
+  loop parses the tool calls and invokes the real registered tools.
+- **The two-phase `new` / `configure` split** — splitting `Agent.new` (pure)
+  from a public `Agent#configure` (block + network) to make offline
+  construction testable. Tried, then **reverted: it bought nothing.**
+  pikuri-tui's stubs fake `run_loop` (turn *execution*), not construction,
+  and pikuri-core already tests real agents by faking the backend — which
+  needs no construction change and works with the existing ctor block. The
+  lever was always the backend seam. **Don't re-open the two-phase split as
+  a testing enabler.**
+- **Exporting the white-box `fake_chat`** — the callback-capture stub that
+  `agent_spec` (and the mcp / skills / subagents specs) hand-roll, which
+  fires individual chat callbacks by hand and inspects chat internals. It
+  tests pikuri's own `Agent` ↔ `RubyLLM::Chat` adapter seam — an *internal*
+  contract. No downstream consumer ever pokes that wiring (they test their
+  own tools/listeners/extensions, which is `fake_transport`'s job), so
+  exporting it would ship a helper no external caller can use and leak the
+  internal adapter contract into the public API.
+
+**Consequences.**
+
+- The white-box fake stays test-internal, per gem, and its ~5×
+  duplication is an **accepted** internal DRY smell: the copies genuinely
+  diverge, cross-gem spec-support sharing is awkward, and the real-loop
+  coverage those callback tests approximate is carried end-to-end by
+  `pikuri-core/spec/pikuri/testing_spec.rb`.
+- Most of `agent_spec` can't move to `fake_transport` without losing
+  coverage — you can't fire a lone `after_tool_result`, or read
+  `model_switches`, off a real chat.
 
 ---
 

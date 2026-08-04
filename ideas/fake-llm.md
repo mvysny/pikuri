@@ -9,6 +9,9 @@ this installs a headless chat.
 ## Status: shipped for single-agent (2026-07-17)
 
 Implemented in **pikuri-core**; this note now holds only the *deferred* work.
+The choices made — fake the HTTP backend not the agent, the reverted two-phase
+`new`/`configure` split, and why the white-box `fake_chat` is never exported —
+are [`DECISIONS.md`](../DECISIONS.md) `D-fake-transport`.
 Design rationale + usage live at their final homes — see {Pikuri::Testing}
 (the builder + scripting model + limitations), {Pikuri::Agent::ChatTransport}'s
 `faraday_adapter` attribute (the generic HTTP seam), and
@@ -28,37 +31,6 @@ transport = Pikuri::Testing.fake_transport do |llm|
   llm.reply('The answer is 4.')
 end
 ```
-
-## Not exported: the white-box `fake_chat` (decided 2026-07-18)
-
-pikuri-core `agent_spec` (and the mcp/skills/subagents specs) hand-roll a
-`fake_chat_class` — a **white-box callback-capture stub**: tests fire individual
-chat callbacks by hand (`fire(:before_tool_call, …)`, `fire_chunk(…)`) and
-inspect chat internals (`model_switches`, `contexts`, `added_messages`,
-`instructions`). That harness tests **pikuri's own `Agent` ↔ `RubyLLM::Chat`
-adapter seam** — an internal contract.
-
-It is **not** a `fake_transport` job and must **not** move into the exported
-`Pikuri::Testing`:
-
-- It's the opposite of `fake_transport`. `fake_transport` runs the *real*
-  ruby_llm loop black-box; `fake_chat` is a passive stub the test drives
-  manually (so it is *not* the rejected backend (1), which reimplemented the
-  loop). Most of `agent_spec` can't move to `fake_transport` without losing
-  coverage (you can't fire a lone `after_tool_result`, or read `model_switches`,
-  off a real chat).
-- **Only pikuri itself can use it.** A downstream consumer — pikuri-tui, or any
-  project on pikuri — tests *their* tools/listeners/extensions and wants
-  `fake_transport`; none ever pokes pikuri's Agent↔Chat callback wiring.
-  Exporting `fake_chat` would ship a helper no external caller can use and leak
-  the internal adapter contract into the public API.
-
-So `Pikuri::Testing` stays just `fake_transport`. The white-box fakes stay
-test-internal, per gem. The 5× duplication is an accepted internal DRY smell
-(the copies genuinely diverge; cross-gem spec-support sharing is awkward) — not
-worth a shared helper, and definitely not an exported one. The real-loop
-coverage `agent_spec`'s callback tests approximate is already carried
-end-to-end by `pikuri-core/spec/pikuri/testing_spec.rb`.
 
 ## Consumer: pikuri-tui (chat + code DONE, computer deferred)
 
@@ -106,13 +78,3 @@ Once those three are handled, the port mirrors chat/code (swap `&build_agent`
 
 *(Mid-turn gating shipped — `Pikuri::Testing::Gate`, `block!`/`release!`; used
 by the chat/code Ctrl+C tests.)*
-
-## Why not the two-phase `new`/`configure` split (rejected sibling)
-
-We tried splitting `Agent.new` (pure) from a public `Agent#configure`
-(block + network) to make offline construction testable. **Reverted — it
-bought nothing**: pikuri-tui's stubs fake `run_loop` (turn execution), not
-construction, and pikuri-core already tests real agents by faking the
-backend, which needs no construction change and works with the *old* ctor
-block. The lever was always the backend seam (this note), not construction.
-Don't re-open the two-phase split as a testing enabler.

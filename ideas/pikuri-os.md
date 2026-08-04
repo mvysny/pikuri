@@ -49,75 +49,27 @@ its rationale, read:
 ## Settled by initial testing
 
 - **A 35B-A3B model knows Linux deeply enough — the recommended
-  default.** Target model: `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` — MoE,
-  ~3 B active params per token. Factual recall scales with *total*
-  params (35 B — ample for FHS / man pages / apt); the open worry was
-  that multi-step *reasoning* depth scales with the ~3 B active budget,
-  so deep causal diagnosis ("service failed → log says Y → therefore Z")
-  might be shallow. Initial testing confirms it isn't: the model carries
-  a real diagnosis end to end, not just flag recall. The design hedge
-  holds up in practice — the agent iterates with tools rather than
-  one-shotting, and verifies recall by *reading* (a man-page `read`
-  beats a remembered flag). So this stays the **recommended** model; if
-  further experience shows the ~3 B active reasoning budget falling short
-  on deeper causal chains, we'll revisit.
-
-  **Why MoE, not a bigger dense model:** a dense model needs its full
-  parameter count resident in fast memory *and* run through the matmul
-  on every token, so matching a MoE's quality densely means the whole
-  thing must fit in VRAM on a strong discrete GPU — expensive, and
-  against the no-cloud, no-strong-GPU-required posture this gem targets.
-  A MoE activates only ~3-4 B params worth of experts per token, so the
-  *inactive* experts can sit in ordinary system RAM while only the
-  active path needs to be fast — the iGPU/CPU-RAM machine this project
-  is shooting for. So "bigger total params, same 3-4 B active" is the
-  only upgrade axis that keeps that target machine viable; a bigger
-  dense model would instead demand a stronger GPU.
-
-  **Bigger-box escalation, if not laptop-bound:** the ~3 B active-param
-  budget is an inference-cost floor, not a total-param ceiling — a user
-  running from an LLM-dedicated machine (still iGPU/CPU-RAM-class, just
-  more RAM) can trade up in *total* params while keeping the same active
-  budget and roughly the same tokens/sec. `Qwen/Qwen3-Coder-Next`
-  (80B-A3B, ~3 B active, Feb 2026) is the candidate: same inference-cost
-  class as the 35B default, 80B total params, and — unlike the
-  general-purpose 35B model — agentically trained on long-horizon tool
-  use and *recovery from execution failures*, which speaks more directly
-  to the causal-diagnosis worry above. Needs ~50GB combined VRAM+RAM at
-  Q4_K_M — comfortably a CPU-RAM box (e.g. 64GB system RAM) with little
-  or no discrete GPU, not a jump to data-center hardware — so it's
-  explicitly the dedicated-machine tier, not the laptop default. Also
-  worth an empirical try at the *same* cost tier as the 35B default:
-  `GLM-4.7-Flash` (30B-A3B) — same ~3 B active budget, benchmarks lower
-  on general reasoning but ahead on agentic tool-use (τ²-Bench 79.5% vs.
-  Qwen3.6-35B-A3B), which is most of what this assistant actually does.
-  Neither swap is validated here — both ride the same "settle by using
-  it" caveat, though the 35B default itself is now provisionally
-  confirmed (above).
+  default** (`unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`). Factual recall
+  scales with *total* params (35 B — ample for FHS / man pages / apt);
+  the open worry was that multi-step *reasoning* depth scales with the
+  ~3 B active budget, so deep causal diagnosis ("service failed → log
+  says Y → therefore Z") might be shallow. Initial testing confirms it
+  isn't: the model carries a real diagnosis end to end, not just flag
+  recall. The design hedge holds up too — the agent iterates with tools
+  rather than one-shotting, and verifies recall by *reading* (a man-page
+  `read` beats a remembered flag). Revisit if deeper causal chains show
+  the active budget falling short. (The model *shape* argument — why MoE
+  and not a bigger dense model, the same-tier and dedicated-box swaps —
+  is book [ch1](../book/01-chat.md) §"Why a mixture-of-experts model" +
+  §"Picking a different model". Don't restate it here.)
 
 - **The permission-wall hand-off needs no explicit read-vs-mutate
-  guidance — an honest `EACCES` is enough.** Two things had to be true
-  together, and testing (2026-07-18, "Is my SSD healthy?") confirmed
-  both. (1) `FullFsNoNet` must bind the *real* `/dev`: the earlier
-  synthetic `--dev /dev` hid block-device nodes, so `smartctl` failed
-  `ENOENT` ("No such device") while `lsblk`/`/sys` showed a healthy
-  disk — an incoherent machine that made the model retry-loop instead
-  of escalate (fixed; the why-not note lives in
-  {Pikuri::Code::Bash::Sandbox::FullFsNoNet}'s yardoc). (2) *Given* that
-  honest `EACCES`, the `os-assistant.txt` prompt does **not** need the
-  read-vs-mutate sub-bullets that once spelled out the escalation
-  strategy: the model ran the probe, read "Permission denied",
-  recognized root was required, and handed over the exact
-  `sudo nvme smart-log` / `sudo smartctl -a` commands with an
-  explanation and a paste-back ask — unprompted, and even reaching for
-  the NVMe-specific tool first. So the sub-bullets were trimmed (commit
-  `f917226`); **don't re-add them** thinking they're load-bearing.
-  *Caveat still open:* the model escalated *straight* to `sudo` without
-  first gathering the partial non-root picture. Fine when root is
-  genuinely required (SMART data is), but on a case with real partial
-  value (a root-only log where `/sys` gives half the story) the leaner
-  prompt may leave that on the table — watch for it before calling the
-  "gather partial first" nudge fully unnecessary.
+  guidance — an honest `EACCES` is enough.** Settled; validated
+  2026-07-18. See [`DECISIONS.md`](../DECISIONS.md)
+  `D-permission-wall-handoff`, which carries the trimmed sub-bullets
+  (**don't re-add them**), the real-`/dev` precondition that makes it
+  work, and the one caveat still open (the model escalates straight to
+  `sudo` without gathering the partial non-root picture first).
 
 ## File search: keyword recall vs semantic — settled, graduated
 
