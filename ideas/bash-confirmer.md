@@ -107,9 +107,9 @@ whether that is survivable:
 
 Two documented positions look like they collide:
 
-- [`pikuri-os.md`](pikuri-os.md) contemplates session grants in
-  "Claude Code's shape: **deterministic rules + user-granted session
-  approvals, no LLM in the yes/no**."
+- This note wants session grants in Claude Code's shape:
+  **deterministic rules + user-granted session approvals, no LLM in the
+  yes/no.**
 - {Pikuri::Workspace::Confirmer} **rejected** the `:once/:always` scope
   knob — "the long-term answer to fatigue is making confirmations rare
   (sandboxing, `--yolo`), not smarter approval modes."
@@ -126,7 +126,8 @@ category as the static allowlist, just runtime-populated, and it cannot
 touch the confirmer protocol even in principle. Not a smarter approval
 mode.
 
-So the governing invariant (inherited from `pikuri-os.md`): **AI may
+So the governing invariant, which this note owns for every item in it
+(`pikuri-os.md` points here for it): **AI may
 *translate* a command, but code and the human *decide* — never an AI
 ✓/⚠ verdict.** The grant must originate from a *human keystroke*; an LLM
 proposing "add this to the allowlist" would be exactly the AI-approver

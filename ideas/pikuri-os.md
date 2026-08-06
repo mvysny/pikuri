@@ -85,34 +85,18 @@ declined against the offline, small-enough-to-audit posture.
 
 ## Deferred / not yet built
 
-**Confirmation-fatigue work beyond the shipped passive-command detector**
-(the sequencer/pipe composition and the `git` arm are shipped — see
-{Pikuri::Code::Bash::PassiveCommandDetector}). The governing invariant
-for everything below: **AI may *translate* a command ("this deletes
-`~/tmp` recursively"), but code and the human *decide* — never an AI
-✓/⚠ verdict.** An AI approver is talked into "yes" by the same laundered
-content that fooled the agent; a usually-silent AI warner is worse, as
-it trains the user to read "no warning" as "safe" and goes quiet exactly
-when an injection is crafted to look benign.
-
-- **`Write`/`Edit` full read + confirmed writes** — **shipped**: full
-  read to match bash (`denylist: []`), and every *writable* write
-  confirmed with a diff, unwritable writes short-circuited to "sudo it
-  yourself" (`confirm_all_writes`). Narrative in the guide's ch7
-  (Workspace + Confirmer seam sections); mechanism in
-  {Pikuri::Workspace::WriteGate}. Deferred residue (allowlist-safe
-  auto-allow) in §"File confirmations: allowlist-safe auto-allow" below.
-- **The rest of the confirmer-gate fatigue work** — session-sticky
-  grants, subcommand-aware read rules, batching, and the AI translation
-  aid — is collected in [`bash-confirmer.md`](bash-confirmer.md).
-
-**A `Recoll` file-index backend** — **shipped** as
-{Pikuri::Os::Recoll}, a stateless module parallel to
-{Pikuri::Os::LocalSearch} behind the same duck type;
-{Pikuri::Os::Extension} wires the first `available?` backend
-(`localsearch`, then `recoll`). Its shape, selection order, and the
-payoff bound have graduated to the yardoc +
-[`../pikuri-os/DESIGN.md`](../pikuri-os/DESIGN.md) (§"Backend engine").
+- **Confirmation-fatigue work beyond the shipped passive-command
+  detector** — collected in [`bash-confirmer.md`](bash-confirmer.md)
+  (session-sticky grants, subcommand-aware read rules, batching, the AI
+  translation aid), together with the governing invariant they all obey:
+  **AI may *translate* a command, but code and the human *decide* —
+  never an AI ✓/⚠ verdict.** Read it there; don't restate it here. The
+  one *file*-shaped residue is §"File confirmations: allowlist-safe
+  auto-allow" below.
+- **GUI-config *application*, app launching, package *installation*.**
+  The agent advises (prints the exact `gsettings` / `apt` command) but
+  doesn't run these: installs need root + egress (barred by the severed
+  network anyway), and the rest are post-v1.
 
 ## File confirmations: allowlist-safe auto-allow
 
@@ -127,10 +111,3 @@ for a *hypothetical frequent-writing full-disk agent* that would want some
 writes — a scratch dir, `/tmp` — to skip the prompt. No such agent ships,
 so building the allowlist plumbing now would be speculative. Revisit when
 one exists; `confirm_all_writes` is `[]`-safe-paths as a special case.
-
-**Larger pieces:**
-
-- **GUI-config *application*, app launching, package *installation*.**
-  The agent advises (prints the exact `gsettings` / `apt` command) but
-  doesn't run these: installs need root + egress (barred by the severed
-  network anyway), and the rest are post-v1.
