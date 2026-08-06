@@ -546,11 +546,8 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
 
       it 'end-to-end: the pseudo-devices an ordinary user may open are openable' do
-        # The regression this exists for: --bind (as shipped before 2026-08-06)
-        # applies MS_NODEV, so every node stayed visible to ls/stat but failed
-        # open() with EACCES — `2>/dev/null`, which an LLM emits constantly,
-        # was refused on a crw-rw-rw- file. The argv assertions above are a
-        # proxy for this; only executing it proves the mount flags.
+        # Guards the flag, not the argv: plain --bind adds MS_NODEV, and only
+        # executing the argv catches that — the assertions above pass either way.
         sandbox = described_class.new(filesystem: filesystem)
         argv = sandbox.wrap(['bash', '-c',
                              'echo x > /dev/null && head -c1 /dev/zero > /dev/null && ' \
@@ -562,10 +559,9 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       end
 
       it 'end-to-end: a root-owned device stays EACCES (--dev-bind grants no authority)' do
-        # The other half: --dev-bind restores device *access*, it does not
-        # bypass node permissions or the uid map. A brw-rw---- root:disk node
-        # is as unopenable inside as it is in an unsandboxed shell — which is
-        # what keeps smartctl's escalation hand-off honest.
+        # --dev-bind restores device *access*, not authority: a root:disk node
+        # stays as unopenable inside as out, which is what keeps smartctl's
+        # escalation hand-off honest.
         node = Dir.glob('/dev/loop*').find { |p| File.blockdev?(p) && !File.readable?(p) }
         skip 'no unreadable block device to probe on this host' unless node
 

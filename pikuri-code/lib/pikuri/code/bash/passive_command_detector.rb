@@ -224,21 +224,12 @@ module Pikuri
         # value is a separate token). {#passive_smartctl?} is passive iff every
         # letter in a +-+-cluster is here — an allowlist, so a mutating letter
         # (+-t+/+-s+/+-o+/+-S+/+-X+) or the value-sensitive +-l+ simply isn't
-        # listed and abstains.
+        # listed and abstains (+-l selective,START-END+ *sets* a self-test span,
+        # which is why no +-l+ is classified).
         #
-        # +-l+ is excluded on purpose and is *not* a mere oversight to correct:
-        # +smartctl -l TYPE+ mostly reads, but +-l selective,START-END+ *defines*
-        # a self-test span — a write. Classifying it would mean analysing the
-        # +TYPE+ value, so any +-l+ abstains instead. Cheap, because +-a+/+-x+
-        # already dump the error and self-test logs inline; only a *targeted*
-        # +-l error+-style read still prompts.
-        #
-        # Audited against this section's config-directed-code bar (the +git
-        # core.fsmonitor+ lesson — a "read" verb that runs a configured
-        # command): the allowlisted forms consult no such config, so no
-        # git-style hardening is needed. +smartd.conf+ belongs to the *daemon*,
-        # not +smartctl+, and +-B+/+--drivedb+ loads a data file and isn't
-        # allowlisted anyway.
+        # No +GIT_HARDENING+-style companion is needed, unlike +git+: audited,
+        # the allowlisted forms run no configured command (+smartd.conf+ is the
+        # *daemon's*; +-B+/+--drivedb+ loads a data file and isn't allowlisted).
         SMARTCTL_READ_SHORT = Set['a', 'x', 'i', 'H', 'c', 'A', 'd'].freeze
 
         # +smartctl+ long options that only read — the long spellings of

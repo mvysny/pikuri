@@ -403,16 +403,11 @@ module Pikuri
         #   into a confusing +ENOENT+, corrupting the model's error signal (full
         #   argument in +pikuri-code/DESIGN.md+).
         #
-        #   *Both* must be +--dev-bind+, not +--bind+: +bwrap+'s plain +--bind+
-        #   applies +MS_NODEV+, which leaves every node *visible* to +ls+/+stat+
-        #   but unopenable — so +echo x > /dev/null+ failed +EACCES+ on a
-        #   +crw-rw-rw-+ file. That's the error-signal bug this section exists
-        #   to prevent, in its worst form: a *lying* environment (the file says
-        #   world-writable, the write is refused) rather than merely a missing
-        #   one. +--dev-bind+ grants no authority the user lacks outside the
-        #   sandbox — node permissions and the uid map still apply, so
-        #   +/dev/loop0+ (+brw-rw---- root disk+) stays +EACCES+, byte-identical
-        #   to the unsandboxed shell.
+        #   +--dev-bind+, never plain +--bind+, for both: +--bind+ applies
+        #   +MS_NODEV+, which leaves nodes visible to +ls+/+stat+ but unopenable
+        #   (+echo x > /dev/null+ ⇒ +EACCES+ on a +crw-rw-rw-+ file). It grants
+        #   no authority the caller lacks unsandboxed — node permissions and the
+        #   uid map still apply.
         # * +--proc /proc+ over the bound root. PID is *not* unshared (see
         #   Isolation), so +/proc+ still shows host processes — essential for
         #   +ps+/+top+/+systemctl status+.
@@ -475,10 +470,9 @@ module Pikuri
           # *network-unshared* namespace. Unlike {Bubblewrap}'s probe (which
           # keeps +--share-net+), this MUST exercise +--unshare-net+ so a
           # kernel forbidding unprivileged net namespaces fails here, loudly —
-          # never degrading to a networked run. +--dev-bind+ rather than
-          # +--bind+ to match {#wrap} flag-for-flag (see the class header on
-          # +MS_NODEV+) — a probe that proves a mount shape the real argv
-          # doesn't use proves nothing.
+          # never degrading to a networked run. +--dev-bind+ to match {#wrap}
+          # flag-for-flag: a probe of a mount shape the real argv doesn't use
+          # proves nothing.
           #
           # @raise [RuntimeError] on probe failure or missing +bwrap+.
           def check_bwrap!
