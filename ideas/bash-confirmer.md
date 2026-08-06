@@ -11,9 +11,9 @@ prompts that remain):
    vouch for a command this session. The bulk of this note (through
    "Recommendation").
 2. **Subcommand-aware read rules** (volume) — extend the allowlist's
-   subcommand recovery to more mixed read/mutate binaries. First
-   concrete candidate now spelled out: hardware-SMART reads
-   (`nvme`/`smartctl`).
+   subcommand recovery to more mixed read/mutate binaries. A direction
+   only; the concrete candidate this note once carried (hardware-SMART
+   reads) has shipped.
 3. **Batching** (volume) — collapse several queued confirmations into
    one prompt.
 4. **AI translation aid** (comprehension) — explain a command in plain
@@ -226,15 +226,18 @@ Deferred anyway, because:
 
 Extend the allowlist's existing subcommand recovery — the way
 {Pikuri::Code::Bash::PassiveCommandDetector} already carves the read-only
-query subset out of mixed binaries (`dpkg`/`apt`/`systemctl` by leading
-subcommand, `dmesg`/`journalctl` by flag denylist, `git` under
-`allow_git:`) — to further binaries still delegated whole.
+query subset out of mixed binaries (`dpkg`/`apt`/`systemctl`/`nvme` by
+leading subcommand, `dmesg`/`journalctl` by flag denylist, `smartctl` by
+flag *allowlist*, `git` under `allow_git:`) — to further binaries still
+delegated whole.
 
-The examples the OS-helper note originally cited have since **shipped**:
-`systemctl status` is in `PASSIVE_SYSTEMCTL_SUBCOMMANDS`, and plain
-(read) `journalctl` passes the flag denylist. What remains is the
-general direction — each new mixed binary is a hand-audited entry, added
-only when a real session shows it prompting often enough to matter.
+Every concrete candidate this note has ever named has since **shipped**
+(`systemctl status`, read `journalctl`, and the `nvme`/`smartctl` SMART
+reads — that last one built as spec'd: verb immediately after `nvme`,
+`smartctl` classified by a flag allowlist so `-l` and the mutators
+abstain, both kept off the glob fast path). What remains is the general
+direction — each new mixed binary is a hand-audited entry, added only
+when a real session shows it prompting often enough to matter.
 
 The hard part, and why it stays deferred rather than "just add more
 verbs": a "read" verb can still **execute config-directed code** — the
@@ -243,84 +246,6 @@ only by `Bash::GIT_HARDENING`). So a candidate binary earns an entry
 only after its read verbs are shown to have no such vector, or the
 vector is hardened the way git's was. Deny-by-default holds throughout:
 an un-audited binary keeps delegating to the human.
-
-### First concrete candidate: hardware-SMART reads (`nvme` / `smartctl`)
-
-The direction above stayed abstract for want of a *specific* binary that
-both prompts often enough to matter and has been *shown* to. The
-OS-helper's disk-health path is the first to clear both bars — so this is
-the first entry ready to build, not just brainstorm.
-
-**The friction, observed.** On the 2026-07-18 "is my SSD healthy?" run
-([`pikuri-os.md`](pikuri-os.md) §"Settled by initial testing") the model
-reached for `nvme smart-log` first, then `sudo smartctl -a`. Each such
-read prompts the human today — a pointless modal on an obvious diagnostic
-read — and the reads *repeat* across a diagnosis session.
-
-**Why "it fails `EACCES` anyway" is not a reason to skip it.** The
-tempting objection: these need root, `bash` runs as the user, the command
-can't succeed — so why auto-approve it? Because the approver classifies
-*content* (does this mutate?), not *outcome* (will it succeed?) — outcome
-is filesystem/permission state a sandboxed content-predicate can't see and
-has no business modelling. Auto-approving a doomed read is *strictly
-better* than prompting for it: it drops the friction prompt, and the model
-still gets the honest `EACCES`, reads "Permission denied", and escalates
-to advising `sudo` — the exact good path that run already exhibited.
-Prompting first buys nothing but a rubber-stamp on the way to the same
-failure. This also keeps the approver's **privilege-independent** curation
-principle intact ({Pikuri::Code::Bash::PassiveCommandDetector}'s "the
-guarantee doesn't rely on running non-root"): `smartctl -a` is read-only
-whether it runs as the user (fails `EACCES`) or as root (succeeds, still
-only reads). Needing root to *succeed* is orthogonal to whether it
-*mutates* — the same distinction seen from the other side.
-
-**Allowlist, not denylist — and that's the better shape.** Both are
-*mixed* binaries (`smartctl -t` starts a self-test; `nvme format` wipes a
-namespace), so neither joins `PASSIVE_BINARIES`. But unlike the
-`dmesg`/`journalctl` flag-*denylists* — the yardoc's "one deviation from
-never auto-approve a destructive command", whose residual is a future
-mutating flag nobody named — SMART reads go in as a strict *allowlist*:
-approve only the recognized read forms, abstain on everything else. No
-residual — a new mutating subcommand simply isn't on the allow set — so
-this *tightens* deny-by-default rather than deviating from it.
-
-**`nvme` — subcommand-allowlist (the clean fit, and the bigger win).**
-`nvme` is subcommand-structured like `apt`/`systemctl`, so it slots
-straight into the existing `passive_X?` shape. Read subcommands in —
-`smart-log`, `id-ctrl`, `id-ns`, `list`, `error-log`, `get-feature`,
-`get-log`; mutators out — `format`, `sanitize`, `set-feature`,
-`fw-download`, `fw-commit`, `reset`, the `write*` family. The verb must
-sit immediately after `nvme` (the same leading-global-option refusal
-`git`/`apt` already enforce). The model reached for this one first, so
-it's the larger friction win.
-
-**`smartctl` — flag-allowlist (fiddlier).** No subcommands; classify by
-flags. Allow the read flags — `-a`/`--all`, `-x`/`--xall`, `-i`/`--info`,
-`-H`/`--health`, `-c`/`--capabilities`, `-A`/`--attributes` — plus
-`-d TYPE` (a benign device-type modifier some devices need, e.g. `-d sat`)
-and a device-path positional. Abstain on everything else, which excludes
-the mutators by construction (`-t`, `-s on|off`, `-o`, `-S`, `--set`,
-`-C`, `-X`).
-
-**`-l` is lumped as not-allowed, deliberately.** `smartctl -l TYPE` is
-value-sensitive — most TYPEs read, but `-l selective,START-END` *defines*
-a self-test span (a set). Rather than analyse log-type values now, treat
-*any* `-l` as outside the allowlist → it abstains → it prompts. Cheap:
-`-a`/`-x` already dump the standard error and self-test logs inline, so
-the only thing left prompting is a *targeted* `-l error`-style read, which
-is rare. Revisit the value-analysis only if it bites.
-
-**Clears the config-directed-code gate.** The section's standing bar — a
-"read" verb must not execute config-directed code (the `git
-core.fsmonitor` lesson) — appears satisfied: the allowlisted forms consult
-no config that runs a command (`smartd.conf` belongs to the *daemon*, not
-`smartctl`; `-B`/`--drivedb` loads a data file and isn't allowlisted
-anyway). To be re-confirmed on the implementing audit, but no git-style
-hardening looks needed.
-
-**Same universal caveats.** Keep both families out of the glob fast path
-(`glob_safe_binary?` stays `PASSIVE_BINARIES`-only), exactly as the
-other classified families are.
 
 ## Batching
 
