@@ -145,10 +145,18 @@ legitimate wants those sockets.
   such binary is non-passive today, so the human *does* see the command —
   which is necessary but too thin a thread to hang the gem's premise on.
 - **Mask the rootful container sockets too** (`/run/docker.sock` &c., reusing
-  `Bubblewrap::DENIED_CONTAINER_SOCKETS`, now mechanically possible —
-  `--ro-bind /dev/null <socket>` masks one cleanly). Deferred, not rejected:
-  it costs `docker ps` for the common rootful setup, which is a real
-  diagnostic capability, and it needs its own decision.
+  `Bubblewrap::DENIED_CONTAINER_SOCKETS`; mechanically easy — `--ro-bind
+  /dev/null <socket>` masks one cleanly). Rejected on the **error-signal**
+  argument that already decided the real `/dev` and
+  `D-permission-wall-handoff`: a user outside the `docker` group — the common
+  case, and the reason rootless docker exists — gets an honest `EACCES` from
+  the untouched socket, which tells the model *and* the human exactly what is
+  true. Masking it trades that for a confusing `ENOENT`, and then both waste
+  turns wondering where the daemon went. It would also cost `docker ps` as a
+  diagnostic. For a user who *is* in the `docker` group the socket is a live
+  root-equivalent escape — but that user holds root-equivalent power outside
+  the agent anyway, and the guard there stays the confirmer (`docker` is
+  non-passive, so it reaches the human).
 
 **Consequences.**
 
@@ -166,7 +174,8 @@ legitimate wants those sockets.
   (observed; it is loud, and consistent with `D-no-agent-sudo`); **deferred
   execution** via a confirmed write (`~/.bashrc`, `~/.config/autostart/*`,
   `crontab`), which the write confirmer shows as a diff; and **rootful**
-  container sockets per the deferred item above.
+  container sockets, left visible on purpose so the denial is honest — see
+  the rejected alternative above.
 - The mask must stay *after* `--dev-bind / /` in the argv or the root bind
   covers it — invisible in review and silent under every other test, so
   there's an ordering assertion in the spec.

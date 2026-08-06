@@ -253,7 +253,12 @@ a container the agent asks the *host daemon* to spawn — a confirmed
 `docker run --network=host` would have full connectivity. The session-IPC
 mask closes the *rootless* variants (their sockets live in
 `$XDG_RUNTIME_DIR`) as a side effect of being structural, but the rootful
-sockets under `/run` stay reachable. So this is not a malware boundary; it
+sockets under `/run` stay reachable — and stay *visible* on purpose. A user
+outside the `docker` group gets an honest `EACCES` from the untouched
+socket; masking it would trade that for a confusing `ENOENT` and leave the
+model retry-looping over a daemon that appears to have vanished, exactly
+the error-signal argument of §"Why the real /dev, not bwrap's synthetic
+--dev". So this is not a malware boundary; it
 severs the agent's own egress, and the guard against socket abuse is the
 confirmer (`docker` / `nc` / `curl` are mutating and non-allowlisted, so
 they reach the human). A hard boundary means running the whole agent

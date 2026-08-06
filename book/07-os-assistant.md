@@ -136,6 +136,31 @@ mundane danger: the model's own honest mistake can't phone home
 either. Chapter 8 will keep the network and cut disk-reach instead —
 the opposite leg, forced by the opposite need.
 
+**One subtlety, and it's the kind that bites anyone building this
+themselves.** A network namespace binds *your process tree*. It says
+nothing about what that tree can ask *someone else* to do — and on a
+desktop, someone else is always listening. Your session bus is a
+socket sitting in `/run/user/1000/`, and unix sockets don't care about
+network namespaces, so binding `/` handed it to the sandbox intact.
+That socket is a general-purpose "run this for me" service: a shell
+inside the severed namespace can't fetch a URL, but `systemd-run
+--user curl …` asks `systemd` to fetch it *outside* the namespace and
+gets back a clean HTTP 200. Opening a file works the same way —
+`xdg-open report.png` doesn't run the image viewer, it asks the bus to
+run it, and the viewer starts as a child of `systemd`, with a network,
+outliving the sandbox that asked for it.
+
+So `FullFsNoNet` hides the session's sockets too: a fresh empty tmpfs
+over `/run/user/<uid>` and `/tmp/.X11-unix`. That's what makes this
+agent *headless* — it can diagnose your machine but it cannot open a
+window, and that's a decision rather than a missing feature. Notice
+the shape of the fix, because it generalizes well past this gem: the
+answer was *not* a blocklist of `xdg-open`, `gio`, `gdbus`,
+`systemd-run` — five lines of Python talk to that socket too, and you
+would never finish the list. The answer was removing the *authority*.
+Any time you catch yourself enumerating the names of bad commands, go
+looking for the socket instead.
+
 ## The Workspace seam — the whole disk, one gate
 
 `Workspace` is the *other* filesystem seam — not what the shell
