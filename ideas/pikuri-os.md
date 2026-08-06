@@ -93,10 +93,11 @@ declined against the offline, small-enough-to-audit posture.
   never an AI ✓/⚠ verdict.** Read it there; don't restate it here. The
   one *file*-shaped residue is §"File confirmations: allowlist-safe
   auto-allow" below.
-- **GUI-config *application*, app launching, package *installation*.**
-  The agent advises (prints the exact `gsettings` / `apt` command) but
-  doesn't run these: installs need root + egress (barred by the severed
-  network anyway), and the rest are post-v1.
+- **GUI-config *application* and app launching.** The agent advises
+  (prints the exact `gsettings` command) but doesn't apply it; post-v1.
+  Package *installation* is no longer on this list — it's decided, see
+  [`DECISIONS.md`](../DECISIONS.md) `D-no-agent-sudo` (privileged actions
+  are always a human hand-off; the hand-off already ships).
 
 ## File confirmations: allowlist-safe auto-allow
 

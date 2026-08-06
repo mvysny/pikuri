@@ -79,6 +79,92 @@ design.
 
 ---
 
+## D-no-agent-sudo — Privileged actions are a human hand-off, never agent-held root (2026-08-06)
+
+**Status:** Accepted. Already the shipped behaviour on both legs (the
+`EACCES` read hand-off of `D-permission-wall-handoff`, and
+{Pikuri::Workspace::WriteGate}'s "sudo it yourself" short-circuit for an
+unwritable write). The 2026-08-06 addition is one prompt clause splitting
+*read* hand-offs (paste the output back) from *state-change* hand-offs
+(say when it's done, the agent verifies itself).
+
+**Context.** `pikuri-os` operates the real host but runs unprivileged, so
+anything needing root — installing a package, editing `/etc`, restarting a
+service — is out of reach. The recurring question is whether the agent
+should ever *acquire* root, most concretely for package installation. Three
+barriers stack up today, and it's worth keeping them straight:
+
+- Inside either bwrap sandbox, `sudo` cannot work at all: `bwrap` sets
+  `PR_SET_NO_NEW_PRIVS`, which neuters the setuid bit (`sudo: The "no new
+  privileges" flag is set`). No sudoers or password arrangement gets around
+  it.
+- Under `FullFsNoNet` the network is severed too, so an install's download
+  leg fails independently of privilege.
+- Under `Bubblewrap` the target is also wrong: toolchain dirs are ephemeral
+  overlays, so an install would vanish at session exit.
+
+So installation is reachable only under `Sandbox::NONE` (`--no-sandbox` /
+`--yolo`) — which for `pikuri-os` re-opens the network and reassembles the
+trifecta the gem exists to break. The fork therefore isn't "sandbox or
+not"; it's what the *host* does when root is genuinely required.
+
+**Decision.** The agent never holds root. It advises: hand the human the
+exact `sudo …` command with an explanation, and let them run it in their
+own terminal. A downstream host (`pikuri-tui`, a web UI) must not add a
+privilege-acquisition path either. This costs no new mechanism — the
+hand-off is the shipped `EACCES` path, and the human's "done" is an
+ordinary next user turn.
+
+**Alternatives rejected.**
+
+- **Agent-held sudo via `sudo -S` on stdin, or `SUDO_ASKPASS` / `sudo -A`.**
+  Mechanically possible under `Sandbox::NONE`. Rejected because it
+  **collapses the confirmation posture the file tools are built on**:
+  {Pikuri::Workspace::WriteGate} short-circuits an unwritable write instead
+  of prompting, and that is precisely why there is no sensitive-path
+  denylist to maintain — "the files worth confirming are simply the ones
+  you can actually write." Grant root and *every* file becomes writable,
+  the argument evaporates, and the denylist we deliberately avoided has to
+  be built. `D-permission-wall-handoff` rests on the same precondition:
+  root turns its wall into a suggestion.
+- **polkit / `run0` / `pkexec`** — the strongest form, since the auth prompt
+  renders in the desktop's trusted UI and pikuri never touches the
+  password. Rejected anyway: it solves password *handling* and leaves the
+  posture problem untouched, still granting root to an LLM-authored command.
+- **A per-install password prompt** ("just ask each time"). Rejected: with
+  `--new-session`, sudo's timestamp cache is per-tty, so the password is
+  re-fed on every call — making it a **standing root capability** for the
+  session rather than one authorized act, which is
+  `ideas/bash-confirmer.md` §"The danger" at maximum privilege. A web UI is
+  strictly worse: password over a transport, held server-side, no local
+  trusted tty.
+
+**Consequences.**
+
+- **The two hand-off legs are asymmetric, and the prompt now says so.** A
+  privileged *read* needs its output pasted back; a privileged *change*
+  does not — verification is available to the agent locally, needing
+  neither root nor network (`dpkg -l`, `apt-cache policy`, and friends are
+  already in the passive allowlist, so it self-verifies without even a
+  confirmation prompt). Observed on a live 2026-08-06 "install openjdk-21"
+  run: the model handed back the correct `sudo apt-get install …` from the
+  grounding block's `Packaging:` fact, then asked for apt's progress bars
+  to be pasted back. That misfire is what the clause fixes.
+- **Probing with a doomed command first is fine.** The same run spent two
+  steps discovering the dpkg lock was unwritable before escalating. Left
+  as-is deliberately: it's the honest-`EACCES` path working, and the
+  opposite of `D-permission-wall-handoff`'s open caveat (escalating *too*
+  fast, before gathering the partial picture).
+- **Package availability works offline.** apt's package lists are local, so
+  `apt-cache policy` names the exact candidate version with the network
+  severed. The agent can confirm a package exists and what it would install
+  before handing off — the network barrier never fires on that leg.
+- **This closes the "package installation" item** that sat in
+  `ideas/pikuri-os.md`'s deferred list as "post-v1". It is not deferred
+  work; it is declined by posture, and the hand-off already ships.
+
+---
+
 ## D-context-window-sources — The `/props` probe, never ruby_llm's model registry (2026-08-04)
 
 **Status:** Accepted; the behaviour has always shipped this way
