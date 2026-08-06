@@ -462,8 +462,11 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert probe, 'expected a bwrap probe'
         assert_includes probe, '--unshare-net'
         refute_includes probe, '--share-net'
-        assert probe.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' },
-               "expected --bind / / in the probe: #{probe.inspect}"
+        # --dev-bind, matching #wrap flag-for-flag: a probe of a mount shape
+        # the real argv doesn't use proves nothing.
+        assert probe.each_cons(3).any? { |a, b, c| a == '--dev-bind' && b == '/' && c == '/' },
+               "expected --dev-bind / / in the probe: #{probe.inspect}"
+        refute_includes probe, '--bind'
       end
 
       it 'raises (no networked fallback) when the netns probe fails' do
@@ -484,8 +487,8 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         argv = build_with_stubbed_probe(filesystem).wrap(['bash', '-c', 'echo hi'])
 
         assert_equal 'bwrap', argv.first
-        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' },
-               "expected --bind / / in #{argv.inspect}"
+        assert argv.each_cons(3).any? { |a, b, c| a == '--dev-bind' && b == '/' && c == '/' },
+               "expected --dev-bind / / in #{argv.inspect}"
         assert_includes argv, '--unshare-net'
         # The inverse of Bubblewrap: no shared-net, and PID/IPC/UTS stay
         # shared so the agent can see host processes/services.
@@ -500,9 +503,14 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         # omits block-device nodes, turning smartctl's honest EACCES into a
         # confusing ENOENT while lsblk/sysfs still show the disk. Guard against
         # a "cleanup" reintroducing --dev.
-        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/dev' && c == '/dev' },
-               "expected --bind /dev /dev in #{argv.inspect}"
+        assert argv.each_cons(3).any? { |a, b, c| a == '--dev-bind' && b == '/dev' && c == '/dev' },
+               "expected --dev-bind /dev /dev in #{argv.inspect}"
         refute_includes argv, '--dev'
+        # And never plain --bind: it applies MS_NODEV, which leaves every node
+        # visible to ls/stat but unopenable — `echo x > /dev/null` refused
+        # EACCES on a crw-rw-rw- file. A lying environment, worse than a
+        # missing one; see pikuri-code/DESIGN.md.
+        refute_includes argv, '--bind'
         assert argv.each_cons(2).any? { |a, b| a == '--chdir' && b == root.to_s },
                "expected --chdir #{root} in #{argv.inspect}"
         # User argv preserved at the tail.
@@ -515,7 +523,7 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         sandbox = build_with_stubbed_probe(ws)
         assert_kind_of described_class, sandbox
         argv = sandbox.wrap(['true'])
-        assert argv.each_cons(3).any? { |a, b, c| a == '--bind' && b == '/' && c == '/' }
+        assert argv.each_cons(3).any? { |a, b, c| a == '--dev-bind' && b == '/' && c == '/' }
       end
     end
 
@@ -535,6 +543,39 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
         assert result.status.success?, "spawn failed: #{result.output}"
         assert_includes result.output, 'REALFS'
+      end
+
+      it 'end-to-end: the pseudo-devices an ordinary user may open are openable' do
+        # The regression this exists for: --bind (as shipped before 2026-08-06)
+        # applies MS_NODEV, so every node stayed visible to ls/stat but failed
+        # open() with EACCES — `2>/dev/null`, which an LLM emits constantly,
+        # was refused on a crw-rw-rw- file. The argv assertions above are a
+        # proxy for this; only executing it proves the mount flags.
+        sandbox = described_class.new(filesystem: filesystem)
+        argv = sandbox.wrap(['bash', '-c',
+                             'echo x > /dev/null && head -c1 /dev/zero > /dev/null && ' \
+                             'head -c1 /dev/urandom > /dev/null && echo DEVOK'])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: '/').wait
+
+        assert result.status.success?, "device nodes unopenable: #{result.output}"
+        assert_includes result.output, 'DEVOK'
+      end
+
+      it 'end-to-end: a root-owned device stays EACCES (--dev-bind grants no authority)' do
+        # The other half: --dev-bind restores device *access*, it does not
+        # bypass node permissions or the uid map. A brw-rw---- root:disk node
+        # is as unopenable inside as it is in an unsandboxed shell — which is
+        # what keeps smartctl's escalation hand-off honest.
+        node = Dir.glob('/dev/loop*').find { |p| File.blockdev?(p) && !File.readable?(p) }
+        skip 'no unreadable block device to probe on this host' unless node
+
+        sandbox = described_class.new(filesystem: filesystem)
+        argv = sandbox.wrap(['bash', '-c', "head -c1 #{node} 2>&1"])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: '/').wait
+
+        refute result.status.success?, "expected #{node} to stay unopenable: #{result.output}"
+        assert_match(/permission denied/i, result.output,
+                     "expected an honest EACCES, got: #{result.output.inspect}")
       end
 
       it 'end-to-end: the network is severed (fresh netns has only loopback)' do

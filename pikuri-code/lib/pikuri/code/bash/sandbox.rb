@@ -391,17 +391,28 @@ module Pikuri
         #
         # == What's bound
         #
-        # * +--bind / /+ — the entire real root, read-write, no overlays.
+        # * +--dev-bind / /+ — the entire real root, read-write, no overlays.
         #   Unprivileged, so +bwrap+'s user namespace maps the caller's uid to
         #   itself: root-owned files (+/etc/*+, another user's +$HOME+) stay
         #   *not* writable and +/etc/shadow+ unreadable — privileged edits need
         #   +sudo+, unavailable in the namespace, so they route to the human.
-        # * +--bind /dev /dev+ — the *real* device tree, not bwrap's synthetic
-        #   +--dev+. Redundant with +--bind / /+ but stated so it survives
-        #   someone narrowing the root bind: a synthetic +/dev+ omits the block
-        #   nodes (+/dev/nvme0n1+) and turns +smartctl+'s honest +EACCES+ into a
-        #   confusing +ENOENT+, corrupting the model's error signal (full
+        # * +--dev-bind /dev /dev+ — the *real* device tree, not bwrap's
+        #   synthetic +--dev+. Redundant with the root bind but stated so it
+        #   survives someone narrowing that bind: a synthetic +/dev+ omits the
+        #   block nodes (+/dev/nvme0n1+) and turns +smartctl+'s honest +EACCES+
+        #   into a confusing +ENOENT+, corrupting the model's error signal (full
         #   argument in +pikuri-code/DESIGN.md+).
+        #
+        #   *Both* must be +--dev-bind+, not +--bind+: +bwrap+'s plain +--bind+
+        #   applies +MS_NODEV+, which leaves every node *visible* to +ls+/+stat+
+        #   but unopenable — so +echo x > /dev/null+ failed +EACCES+ on a
+        #   +crw-rw-rw-+ file. That's the error-signal bug this section exists
+        #   to prevent, in its worst form: a *lying* environment (the file says
+        #   world-writable, the write is refused) rather than merely a missing
+        #   one. +--dev-bind+ grants no authority the user lacks outside the
+        #   sandbox — node permissions and the uid map still apply, so
+        #   +/dev/loop0+ (+brw-rw---- root disk+) stays +EACCES+, byte-identical
+        #   to the unsandboxed shell.
         # * +--proc /proc+ over the bound root. PID is *not* unshared (see
         #   Isolation), so +/proc+ still shows host processes — essential for
         #   +ps+/+top+/+systemctl status+.
@@ -442,14 +453,14 @@ module Pikuri
 
           # @param argv [Array<String>] the +timeout … bash -c <cmd>+ argv
           #   {Bash.run} would have spawned unmediated.
-          # @return [Array<String>] +bwrap+ + full-root bind + the real /dev +
-          #   fresh /proc + +--unshare-net+ + isolation + +argv+, ready for
+          # @return [Array<String>] +bwrap+ + full-root dev-bind + the real /dev
+          #   + fresh /proc + +--unshare-net+ + isolation + +argv+, ready for
           #   {Pikuri::Subprocess.spawn}.
           def wrap(argv)
             [
               BWRAP_BINARY,
-              '--bind', '/', '/',
-              '--bind', '/dev', '/dev',
+              '--dev-bind', '/', '/',
+              '--dev-bind', '/dev', '/dev',
               '--proc', '/proc',
               '--unshare-net',
               '--die-with-parent', '--new-session',
@@ -460,15 +471,18 @@ module Pikuri
 
           private
 
-          # Probe the exact isolation we rely on: a full-root bind in a
+          # Probe the exact isolation we rely on: a full-root dev-bind in a
           # *network-unshared* namespace. Unlike {Bubblewrap}'s probe (which
           # keeps +--share-net+), this MUST exercise +--unshare-net+ so a
           # kernel forbidding unprivileged net namespaces fails here, loudly —
-          # never degrading to a networked run.
+          # never degrading to a networked run. +--dev-bind+ rather than
+          # +--bind+ to match {#wrap} flag-for-flag (see the class header on
+          # +MS_NODEV+) — a probe that proves a mount shape the real argv
+          # doesn't use proves nothing.
           #
           # @raise [RuntimeError] on probe failure or missing +bwrap+.
           def check_bwrap!
-            result = Sandbox.probe('--bind', '/', '/', '--unshare-net')
+            result = Sandbox.probe('--dev-bind', '/', '/', '--unshare-net')
             return if result.status.success?
 
             raise 'Code::Bash::Sandbox::FullFsNoNet: bwrap probe failed ' \

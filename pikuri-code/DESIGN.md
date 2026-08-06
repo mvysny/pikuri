@@ -116,7 +116,7 @@ wiring never does.
 
 ## FullFsNoNet: sever the egress, not the filesystem
 
-The inverse of Bubblewrap: `--bind / /` binds the entire real root
+The inverse of Bubblewrap: `--dev-bind / /` binds the entire real root
 read-write, and *only* the network is unshared (`--unshare-net`). This
 is the sandbox for the offline OS helper (`bin/pikuri-os`). That agent's
 job is to operate the real host, so filesystem *containment* is the
@@ -135,10 +135,10 @@ namespace, so they route to the human.
 
 ### Why the real /dev, not bwrap's synthetic --dev
 
-FullFsNoNet binds `--bind /dev /dev` (the real device tree) where
+FullFsNoNet binds `--dev-bind /dev /dev` (the real device tree) where
 Bubblewrap uses a synthetic `--dev` (null/zero/random/tty only). It's
-redundant with `--bind / /` but stated explicitly so it survives someone
-narrowing the root bind — and the reason is an **error-signal**
+redundant with `--dev-bind / /` but stated explicitly so it survives
+someone narrowing the root bind — and the reason is an **error-signal**
 argument, not access:
 
 A synthetic `/dev` omits the block-device nodes (`/dev/nvme0n1`,
@@ -155,6 +155,32 @@ This is not a security regression: the root is already bound read-write,
 so the synthetic `/dev` was hiding nothing an attacker couldn't
 otherwise reach — it only mangled the error. (Regression-guarded by the
 `refute_includes argv, '--dev'` assertion in the sandbox spec.)
+
+**`--dev-bind`, never plain `--bind` (fixed 2026-08-06).** Both binds
+above shipped as `--bind` for months, and `--bind` applies `MS_NODEV`.
+The nodes stayed *visible* — `ls -l /dev/null` printed `crw-rw-rw-` —
+but every `open()` failed `EACCES`, so `echo x > /dev/null` was refused
+on a world-writable file. That is this section's own error-signal bug in
+its worst form: not a *missing* environment but a **lying** one, where
+the permission bits and the kernel's answer disagree. It surfaced on a
+live "install openjdk-21" run, where the model emitted the reflexive
+`2>/dev/null`, got "Permission denied", and reasoned "that's odd" —
+exactly the incoherent-machine confusion the real `/dev` was chosen to
+avoid. `2>/dev/null` is among the most common idioms an LLM emits, so
+this was a constant tax.
+
+`--dev-bind` grants no authority the user lacks outside the sandbox:
+node permissions and the uid map still apply, so `/dev/loop0`
+(`brw-rw---- root disk`) fails `EACCES` under `--dev-bind`, under
+`--bind`, and in an unsandboxed shell alike — byte-identical messages.
+The block-device escalation path this section rests on was therefore
+*accidentally* intact before the fix (`nodev` produced the same
+`EACCES` the file mode does); afterwards it holds for the stated
+reason. What was actually broken was the world-accessible pseudo-device
+set — `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`,
+`/dev/tty` — all of which an ordinary user is *supposed* to open.
+Bubblewrap is unaffected: its synthetic `--dev` mounts each node with
+device access.
 
 Note the PID namespace is *not* unshared, unlike Bubblewrap's
 `--unshare-all`: an OS helper must see and reason about host processes
@@ -174,7 +200,7 @@ A host that can't unshare the network must fix the kernel setting (e.g.
 
 ### What FullFsNoNet does NOT defend
 
-`--bind / /` exposes everything, including container/VM control sockets.
+`--dev-bind / /` exposes everything, including container/VM control sockets.
 Unsharing the *bash process's own* network namespace does not constrain
 a container the agent asks the *host daemon* to spawn — a confirmed
 `docker run --network=host` would have full connectivity. So this is not
