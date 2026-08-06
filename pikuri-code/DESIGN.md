@@ -121,10 +121,12 @@ read-write, and *only* the network is unshared (`--unshare-net`). This
 is the sandbox for the offline OS helper (`bin/pikuri-os`). That agent's
 job is to operate the real host, so filesystem *containment* is the
 wrong tool — there is deliberately no fs sandbox. The one isolation that
-matters is egress: with the network namespace unshared, an injection in
-a file the agent reads has nowhere to exfiltrate to. **The trifecta's
-egress leg is cut by the kernel, not by a prompt** — the load-bearing
-invariant of the OS-helper design.
+matters is egress: with the network namespace unshared *and the live
+session's IPC sockets masked*, an injection in a file the agent reads has
+nowhere to exfiltrate to. **The trifecta's egress leg is cut by the
+kernel, not by a prompt** — the load-bearing invariant of the OS-helper
+design. Both halves are required, and the second is the non-obvious one:
+see §"The session-IPC mask" below.
 
 Running unprivileged, `bwrap`'s user namespace maps the caller's uid to
 itself, so root-owned files (`/etc/*`, another user's `$HOME`) appear
@@ -188,6 +190,51 @@ and services, so `--proc /proc` over the bound root still shows them —
 essential for `ps` / `top` / `systemctl status`. Unsharing PID would
 blind them.
 
+### The session-IPC mask
+
+`--unshare-net` alone is **not** an egress cut on a desktop. A network
+namespace binds this process tree; it says nothing about what the tree can
+*ask someone else* to do — and one unix socket in `$XDG_RUNTIME_DIR` is a
+general-purpose "run this outside my namespace" service. Unix sockets don't
+care about network namespaces, so `--dev-bind / /` handed it over intact.
+Measured on GNOME/Wayland, all three from inside the sandbox:
+
+| Attempt | Result |
+|---|---|
+| `curl https://…` | `000` — severed, loopback-only netns |
+| the same `curl` via `systemd-run --user` | **HTTP 200** — spawned by `systemd --user` in the host netns |
+| `xdg-open x.png` (`DBusActivatable` handler) | app runs in the **host netns**, cgroup `dbus.service`, outliving `--die-with-parent` (it was never a child) |
+
+A plain `Exec=` handler forks *inside* the sandbox instead, and is
+contained — **until the app is already running**, when the
+remote-instance handoff passes the URL out (cold browser: "Unable to
+connect"; warm browser: the GET arrived). Containment conditional on
+whether the user has their browser open is not a property to rely on.
+
+So `SESSION_IPC_MASKS` subtracts the surface: a tmpfs over
+`$XDG_RUNTIME_DIR` and `/tmp/.X11-unix`, plus a `/dev/null` mask over a
+`DBUS_SESSION_BUS_ADDRESS` pointing outside both. Three notes on why it's
+shaped this way:
+
+- **Structural, not a denylist.** Blocking `xdg-open` by name would be the
+  losing side of the enumeration game (`gio`, `gdbus`, `systemd-run`, five
+  lines of Python on the socket are one channel) and would manufacture
+  false comfort. Removing the *authority* needs no list. See
+  `DECISIONS.md` `D-headless-os-agent`, which also records what this costs
+  (`systemctl --user`, rootless `docker`) and what survives (the system
+  bus, `journalctl`, `gsettings get`).
+- **Abstract sockets need no mask.** `@/tmp/.X11-unix/X0` and friends are
+  scoped *by the network namespace*, already unshared — measured
+  reachable from the host and `ECONNREFUSED` inside. That's what makes
+  masking the filesystem paths sufficient rather than a patch.
+- **Order matters.** The masks must follow `--dev-bind / /`; placed before
+  it, the root bind covers them and the bus comes back. Invisible in
+  review, silent under every other test, so the spec asserts the order.
+
+The mask rides the boot probe too, so a host that refuses it (`bwrap`
+cannot `mkdir` a missing runtime dir under root-owned `/run/user`) fails
+at construction rather than on the first command.
+
 ### No fallback if the network can't be severed
 
 If `bwrap` is missing, or the kernel forbids unprivileged user / network
@@ -203,11 +250,25 @@ A host that can't unshare the network must fix the kernel setting (e.g.
 `--dev-bind / /` exposes everything, including container/VM control sockets.
 Unsharing the *bash process's own* network namespace does not constrain
 a container the agent asks the *host daemon* to spawn — a confirmed
-`docker run --network=host` would have full connectivity. So this is not
-a malware boundary; it severs the agent's own egress, and the guard
-against socket abuse is the confirmer (`docker` / `nc` / `curl` are
-mutating and non-allowlisted, so they reach the human). A hard boundary
-means running the whole agent inside a container / VM.
+`docker run --network=host` would have full connectivity. The session-IPC
+mask closes the *rootless* variants (their sockets live in
+`$XDG_RUNTIME_DIR`) as a side effect of being structural, but the rootful
+sockets under `/run` stay reachable. So this is not a malware boundary; it
+severs the agent's own egress, and the guard against socket abuse is the
+confirmer (`docker` / `nc` / `curl` are mutating and non-allowlisted, so
+they reach the human). A hard boundary means running the whole agent
+inside a container / VM.
+
+Two further residuals, both human-gated and neither silent:
+
+- **The system bus stays bound** — `systemctl status` needs it. A transient
+  unit there is polkit-gated, and polkit raises an *authentication dialog
+  on the user's desktop* (observed while testing this). That's the
+  `D-no-agent-sudo` hand-off working, not a bypass: loud, and it needs the
+  user's password.
+- **Deferred execution via a confirmed write** — `~/.bashrc`,
+  `~/.config/autostart/*.desktop`, `crontab` — runs later, outside the
+  sandbox. The write confirmer shows it as a diff, which is the guard.
 
 ## Construction-time probing (loud, not on first tool call)
 

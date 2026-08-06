@@ -380,14 +380,15 @@ module Pikuri
         end
 
         # Full-filesystem, network-severed sandbox — the inverse of
-        # {Bubblewrap}. Binds the entire real root read-write (+--bind / /+) and
-        # unshares *only* the network (+--unshare-net+). This is the sandbox for
-        # the offline OS-helper agent (+bin/pikuri-os+): its job is to operate
+        # {Bubblewrap}. Binds the entire real root read-write (+--dev-bind / /+)
+        # and unshares *only* the network (+--unshare-net+). This is the sandbox
+        # for the offline OS-helper agent (+bin/pikuri-os+): its job is to operate
         # the real host, so filesystem containment is the wrong tool and egress
-        # is the whole risk. With the network namespace unshared, an injection
-        # in a file the agent reads has nowhere to exfiltrate to — the
-        # trifecta's egress leg is cut by the kernel, not a prompt. Full design
-        # + threat model in +pikuri-code/DESIGN.md+.
+        # is the whole risk. With the network namespace unshared *and* the live
+        # session's IPC surface masked ({SESSION_IPC_MASKS} — both halves are
+        # load-bearing), an injection in a file the agent reads has nowhere to
+        # exfiltrate to — the trifecta's egress leg is cut by the kernel, not a
+        # prompt. Full design + threat model in +pikuri-code/DESIGN.md+.
         #
         # == What's bound
         #
@@ -412,6 +413,12 @@ module Pikuri
         #   Isolation), so +/proc+ still shows host processes — essential for
         #   +ps+/+top+/+systemctl status+.
         #
+        # == What's masked
+        #
+        # {SESSION_IPC_MASKS} — the user's live session sockets, the one hole
+        # punched back out of that full-root bind. It's what makes this agent
+        # *headless*: no GUI launching, by design.
+        #
         # == Isolation: network only, deliberately
         #
         # +--unshare-net+ and nothing else. PID, IPC and UTS are *kept shared*
@@ -428,11 +435,42 @@ module Pikuri
         # severed network IS the security property. Fix the kernel setting (e.g.
         # +kernel.unprivileged_userns_clone+) or don't run this agent there.
         #
-        # +--bind / /+ exposes everything incl. container/VM control sockets, so
-        # this is not a malware boundary — it severs the agent's *own* egress;
-        # the non-defenses are in +pikuri-code/DESIGN.md+. A hard boundary means
-        # running the whole agent inside a container / VM.
+        # The full-root bind still exposes the *rootful* container/VM control
+        # sockets under +/run+ (a confirmed +docker run --network=host+ has full
+        # connectivity; only the rootless variants vanish with the runtime-dir
+        # mask), so this is not a malware boundary — it severs the agent's *own*
+        # egress; the non-defenses are in +pikuri-code/DESIGN.md+. A hard
+        # boundary means running the whole agent inside a container / VM.
         class FullFsNoNet
+          # Directory holding the X11 display sockets.
+          X11_SOCKET_DIR = '/tmp/.X11-unix'
+
+          # +bwrap+ flags hiding the user's live session sockets (bus, Wayland,
+          # X11, keyring, ssh-agent, a rootless container daemon) from the
+          # sandbox. On a desktop host:
+          #
+          #   ["--tmpfs", "/run/user/1000", "--tmpfs", "/tmp/.X11-unix"]
+          #
+          # Empty where there's no session — a CI container, a bare tty. A stray
+          # +DBUS_SESSION_BUS_ADDRESS+ outside both dirs gets its own
+          # +/dev/null+ mask.
+          #
+          # Load-bearing for the egress cut, not hygiene: a reachable session bus
+          # spawns commands *outside* every namespace, so +--unshare-net+ without
+          # this isn't a cut. Abstract-namespace sockets (+@/tmp/.X11-unix/X0+)
+          # need no mask — the unshared netns already scopes them. Measurements and
+          # the residual paths in +pikuri-code/DESIGN.md+; the capability trade in
+          # +DECISIONS.md+ +D-headless-os-agent+.
+          SESSION_IPC_MASKS = begin
+            dirs = [ENV['XDG_RUNTIME_DIR'], "/run/user/#{Process.uid}", X11_SOCKET_DIR].compact.uniq
+            masks = dirs.select { |d| File.directory?(d) }.flat_map { |d| ['--tmpfs', d] }
+            bus = ENV['DBUS_SESSION_BUS_ADDRESS']&.slice(/unix:path=([^,;]+)/, 1)
+            if bus && File.exist?(bus) && dirs.none? { |d| bus.start_with?("#{d}/") }
+              masks.concat(['--ro-bind', '/dev/null', bus])
+            end
+            masks.freeze
+          end
+
           # @param filesystem [Pikuri::Workspace::Filesystem] used only for its
           #   +project_root+ (the +--chdir+ target); the bind set is the whole
           #   real root regardless, so the readable/writable lists are ignored.
@@ -449,14 +487,15 @@ module Pikuri
           # @param argv [Array<String>] the +timeout … bash -c <cmd>+ argv
           #   {Bash.run} would have spawned unmediated.
           # @return [Array<String>] +bwrap+ + full-root dev-bind + the real /dev
-          #   + fresh /proc + +--unshare-net+ + isolation + +argv+, ready for
-          #   {Pikuri::Subprocess.spawn}.
+          #   + fresh /proc + {SESSION_IPC_MASKS} + +--unshare-net+ + isolation +
+          #   +argv+, ready for {Pikuri::Subprocess.spawn}.
           def wrap(argv)
             [
               BWRAP_BINARY,
               '--dev-bind', '/', '/',
               '--dev-bind', '/dev', '/dev',
               '--proc', '/proc',
+              *SESSION_IPC_MASKS,
               '--unshare-net',
               '--die-with-parent', '--new-session',
               '--chdir', @filesystem.project_root.to_s,
@@ -466,17 +505,18 @@ module Pikuri
 
           private
 
-          # Probe the exact isolation we rely on: a full-root dev-bind in a
-          # *network-unshared* namespace. Unlike {Bubblewrap}'s probe (which
-          # keeps +--share-net+), this MUST exercise +--unshare-net+ so a
-          # kernel forbidding unprivileged net namespaces fails here, loudly —
-          # never degrading to a networked run. +--dev-bind+ to match {#wrap}
-          # flag-for-flag: a probe of a mount shape the real argv doesn't use
-          # proves nothing.
+          # Probe the exact isolation we rely on: a full-root dev-bind, the
+          # session-IPC masks, and a *network-unshared* namespace. Unlike
+          # {Bubblewrap}'s probe (which keeps +--share-net+), this MUST exercise
+          # +--unshare-net+ so a kernel forbidding unprivileged net namespaces
+          # fails here, loudly — never degrading to a networked run. +--dev-bind+
+          # and {SESSION_IPC_MASKS} to match {#wrap} flag-for-flag: a probe of a
+          # mount shape the real argv doesn't use proves nothing, and a mask this
+          # host refuses must fail at boot, not on the first command.
           #
           # @raise [RuntimeError] on probe failure or missing +bwrap+.
           def check_bwrap!
-            result = Sandbox.probe('--dev-bind', '/', '/', '--unshare-net')
+            result = Sandbox.probe('--dev-bind', '/', '/', *SESSION_IPC_MASKS, '--unshare-net')
             return if result.status.success?
 
             raise 'Code::Bash::Sandbox::FullFsNoNet: bwrap probe failed ' \

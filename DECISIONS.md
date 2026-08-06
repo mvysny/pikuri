@@ -79,6 +79,100 @@ design.
 
 ---
 
+## D-headless-os-agent — No app launching, and the sandbox masks the session's IPC surface (2026-08-06)
+
+**Status:** Accepted. The mask ships in
+{Pikuri::Code::Bash::Sandbox::FullFsNoNet::SESSION_IPC_MASKS}; app launching
+was never built and now won't be.
+
+**Context.** `pikuri-os` advises on GUI config (it prints the `gsettings`
+command rather than applying it), and "let it launch apps / `xdg-open` a
+file" sat on the deferred list as a post-v1 nicety. Measuring what
+`FullFsNoNet` actually permits killed the nicety and exposed a hole in the
+egress cut, on this host, GNOME/Wayland:
+
+- A sandboxed `curl` gets nothing (`000`, loopback-only netns). The same
+  `curl` handed to `systemd-run --user` returns **HTTP 200** — `systemd
+  --user` spawns it in the *host* netns, parented outside the sandbox.
+- `xdg-open file.png` on a `DBusActivatable=true` handler (loupe) is spawned
+  by the session bus: host netns, full network, cgroup `dbus.service`, and it
+  survives `--die-with-parent` because it was never a child.
+- A plain `Exec=` handler (librewolf) forks *inside* the sandbox and is
+  contained — **unless an instance is already running**, in which case the
+  remote-instance handoff delivers the URL to the outside process. Measured
+  both ways: cold browser → "Unable to connect"; warm browser → the GET
+  landed in the listener's log. Containment that depends on whether the user
+  happens to have their browser open is not a security property.
+
+So the trifecta's egress leg reopened through the session, and the enabling
+authority is one unauthenticated socket: the session bus is the user's own
+bus, with the user's full authority and no polkit in front of it.
+
+**Decision.** The OS agent is **headless**. Two halves, one decision:
+
+1. **No launcher.** No `open`/`launch` tool, and no GUI-application arm to
+   the config advice. The human is at the keyboard; opening a file or
+   starting an app is a double-click, so the capability buys ~nothing while
+   costing an egress channel.
+2. **The sandbox subtracts the session's live IPC surface** — a tmpfs over
+   `$XDG_RUNTIME_DIR` (session bus, Wayland socket, keyring / ssh-agent /
+   at-spi, a rootless container daemon) and over `/tmp/.X11-unix`, plus a
+   `/dev/null` mask over a `DBUS_SESSION_BUS_ADDRESS` pointing elsewhere.
+   Abstract-namespace sockets need no mask: `--unshare-net` already scopes
+   them (measured — reachable from the host, `ECONNREFUSED` inside).
+
+Being headless is what *permits* half 2: with launching declined, nothing
+legitimate wants those sockets.
+
+**Alternatives rejected.**
+
+- **Ship the launcher anyway, confirmer-gated.** Rejected on value, not just
+  risk: it's an egress-capable tool in a deliberately offline agent, bought
+  for a double-click. It would also have to pick a broken semantics —
+  direct-exec keeps the egress cut but ships crippled apps (a browser with no
+  network), `xdg-open` works properly *by* escaping the cut.
+- **Deny `xdg-open` (a bash denylist).** The tempting one-liner, and the
+  losing side of the enumeration game that `PASSIVE_BINARIES` is deliberately
+  the winning side of: `gio open`, `gdbus call`, `dbus-send`, `systemd-run
+  --user`, `setsid librewolf URL`, five lines of Python on the bus socket are
+  all the same channel. Worse, a partial denylist manufactures false comfort
+  — "no deny hit ⇒ contained" is exactly the wrong lesson. Remove the
+  authority, not the names.
+- **Accept and document it** (the status quo, with the confirmer as the only
+  guard). Rejected because the innocuous *look* of the trigger is the whole
+  problem: a human who has read "bash here is network-severed" approves
+  `xdg-open ~/report.png` on that understanding, and it is not true. Every
+  such binary is non-passive today, so the human *does* see the command —
+  which is necessary but too thin a thread to hang the gem's premise on.
+- **Mask the rootful container sockets too** (`/run/docker.sock` &c., reusing
+  `Bubblewrap::DENIED_CONTAINER_SOCKETS`, now mechanically possible —
+  `--ro-bind /dev/null <socket>` masks one cleanly). Deferred, not rejected:
+  it costs `docker ps` for the common rootful setup, which is a real
+  diagnostic capability, and it needs its own decision.
+
+**Consequences.**
+
+- Lost, and worth stating plainly: `systemctl --user` (session-bus state
+  queries), a *rootless* `docker`/`podman` socket, `ssh-add -l`, and audio
+  tooling. Still fine, measured: `systemctl`/`hostnamectl`/`loginctl` on the
+  system bus, `journalctl` (including `--user`, it reads files), `gsettings
+  get` / `dconf read` (dconf reads the file; only *writes* need the bus),
+  `ps`/`lsblk`/`smartctl` and every file read. The masked runtime dir is
+  user-owned and writable, so a program wanting its own socket there still
+  works.
+- Residual paths out, all human-gated and none silent: the **system** bus
+  stays bound (`systemctl status` needs it) — a transient unit there is
+  polkit-gated and pops an *authentication dialog on the user's desktop*
+  (observed; it is loud, and consistent with `D-no-agent-sudo`); **deferred
+  execution** via a confirmed write (`~/.bashrc`, `~/.config/autostart/*`,
+  `crontab`), which the write confirmer shows as a diff; and **rootful**
+  container sockets per the deferred item above.
+- The mask must stay *after* `--dev-bind / /` in the argv or the root bind
+  covers it — invisible in review and silent under every other test, so
+  there's an ordering assertion in the spec.
+- `Bubblewrap` needs no change: it binds an allowlist that never included
+  `/run/user`, so the coding agent never had the channel.
+
 ## D-no-agent-sudo — Privileged actions are a human hand-off, never agent-held root (2026-08-06)
 
 **Status:** Accepted. Already the shipped behaviour on both legs (the

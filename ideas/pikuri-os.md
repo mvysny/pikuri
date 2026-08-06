@@ -93,11 +93,18 @@ declined against the offline, small-enough-to-audit posture.
   never an AI ✓/⚠ verdict.** Read it there; don't restate it here. The
   one *file*-shaped residue is §"File confirmations: allowlist-safe
   auto-allow" below.
-- **GUI-config *application* and app launching.** The agent advises
-  (prints the exact `gsettings` command) but doesn't apply it; post-v1.
-  Package *installation* is no longer on this list — it's decided, see
-  [`DECISIONS.md`](../DECISIONS.md) `D-no-agent-sudo` (privileged actions
-  are always a human hand-off; the hand-off already ships).
+- **GUI-config *application*.** The agent advises (prints the exact
+  `gsettings` command) but doesn't apply it; post-v1. Reading current
+  values still works under the session-IPC mask below (`dconf` reads the
+  file), so this stays a pure UX question.
+  Two neighbours are no longer on this list, both decided in
+  [`DECISIONS.md`](../DECISIONS.md): package *installation* →
+  `D-no-agent-sudo` (privileged actions are always a human hand-off; the
+  hand-off already ships), and **app launching** → `D-headless-os-agent`
+  (declined as an exfil channel — the session bus spawns outside every
+  namespace, so launching defeated `--unshare-net`; the sandbox now masks
+  the session's IPC surface, which is *why* nothing legitimate wants those
+  sockets). Don't re-add either; the measurements live in that entry.
 
 ## File confirmations: allowlist-safe auto-allow
 

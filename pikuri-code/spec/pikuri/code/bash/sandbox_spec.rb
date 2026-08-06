@@ -462,6 +462,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert probe, 'expected a bwrap probe'
         assert_includes probe, '--unshare-net'
         refute_includes probe, '--share-net'
+        # Flag-for-flag with #wrap: a host that refuses a mask must fail at boot.
+        masks = described_class::SESSION_IPC_MASKS
+        unless masks.empty?
+          assert probe.each_cons(masks.size).any? { |w| w == masks },
+                 "masks missing from the probe: #{probe.inspect}"
+        end
         # --dev-bind, matching #wrap flag-for-flag: a probe of a mount shape
         # the real argv doesn't use proves nothing.
         assert probe.each_cons(3).any? { |a, b, c| a == '--dev-bind' && b == '/' && c == '/' },
@@ -518,6 +524,36 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
         assert_equal 'echo hi', argv[-1]
       end
 
+      it 'masks the live session IPC surface, after the full-root bind' do
+        masks = described_class::SESSION_IPC_MASKS
+        skip 'host has no session runtime dir and no X11 socket dir' if masks.empty?
+
+        argv = build_with_stubbed_probe(filesystem).wrap(['bash', '-c', 'echo hi'])
+
+        assert argv.each_cons(masks.size).any? { |window| window == masks },
+               "expected #{masks.inspect} spliced into #{argv.inspect}"
+        # Order is load-bearing and silent under every other test: a mask placed
+        # *before* --dev-bind / / would be covered by that bind, handing the
+        # session bus — hence egress — straight back.
+        assert argv.index(masks.first) > argv.index('--dev-bind'),
+               "masks must follow the full-root bind: #{argv.inspect}"
+      end
+
+      it 'masks only directories that exist (bwrap cannot mkdir under /run/user)' do
+        masks = described_class::SESSION_IPC_MASKS
+
+        masks.each_cons(2) do |flag, path|
+          next unless flag == '--tmpfs'
+
+          assert File.directory?(path), "masked a nonexistent dir: #{path}"
+        end
+        runtime = ENV['XDG_RUNTIME_DIR'] || "/run/user/#{Process.uid}"
+        if File.directory?(runtime)
+          assert masks.each_cons(2).any? { |a, b| a == '--tmpfs' && b == runtime },
+                 "expected the session runtime dir masked: #{masks.inspect}"
+        end
+      end
+
       it 'does NOT reject a Filesystem::AllowAll workspace (unlike Bubblewrap)' do
         ws = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
         sandbox = build_with_stubbed_probe(ws)
@@ -543,6 +579,21 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
 
         assert result.status.success?, "spawn failed: #{result.output}"
         assert_includes result.output, 'REALFS'
+      end
+
+      it 'end-to-end: the session bus is unreachable (egress cannot be delegated out)' do
+        bus = ENV['DBUS_SESSION_BUS_ADDRESS']&.slice(/unix:path=([^,;]+)/, 1)
+        skip 'no session bus on this host' unless bus && File.exist?(bus)
+
+        # Guards the mount, not the argv: reaching this socket lets the sandboxed
+        # command have systemd --user spawn a networked process outside every
+        # namespace, so --unshare-net alone proves nothing.
+        sandbox = described_class.new(filesystem: filesystem)
+        argv = sandbox.wrap(['bash', '-c', "test -S #{bus} && echo REACHABLE || echo MASKED"])
+        result = Pikuri::Subprocess.spawn(*argv, chdir: '/').wait
+
+        assert result.status.success?, "spawn failed: #{result.output}"
+        assert_includes result.output, 'MASKED'
       end
 
       it 'end-to-end: the pseudo-devices an ordinary user may open are openable' do
