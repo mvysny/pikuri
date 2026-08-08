@@ -108,8 +108,24 @@ a CalDAV sync). The design invariant, locked in before any of it ships:
 > *human* reviews and commits. pikuri writes nothing to Thunderbird's stores
 > and sends nothing itself. No send tool ever ships.
 
-This converts egress from *agent-automatic* to *human-action-required*,
-which is what keeps the trifecta broken even once compose exists.
+This converts egress from *agent-automatic* to *human-action-required*. Note
+what that does and does not buy — the leg is **downgraded, not removed**, and
+the threat-model section above is the authority: once an `allow_` flag is on,
+leg 3 is present. Only the default surface (both flags off) severs it.
+
+What the downgrade rests on is narrow and worth naming, because it's the one
+property a rubber-stamping human can't destroy: **the human sees the exact
+bytes that leave.** The compose window shows the literal recipient, subject
+and body that will be sent; the `.ics` wizard shows the event that will be
+imported. Contrast a shell agent that asks "run `curl …`?" — there the human
+approves a *program*, and what it actually uploads was never on screen. So a
+poisoned message can influence a draft, but every byte of that draft was
+displayed to someone before it moved.
+
+That is a real reduction and not a boundary: it kills silent, high-bandwidth
+exfil, and leaves the covert channel — a secret spelled into prose the reader
+skims past, sent as a reply to the injector (see "What the body guards do
+*not* close" below).
 
 **Compose is shipped, opt-in.** `thunderbird_mail_compose`
 ({Pikuri::Thunderbird::MailCompose}) is wired only when a host passes
