@@ -1,15 +1,22 @@
 # Trifecta detector
 
-Status: **designed, not built.** Core algorithm is settled (this file);
-a paper dry-run on the demos (see "Paper dry-run" below) validated the
-verdicts, and the graded egress axis closed in 2026-08 — but the
-open-questions pile is still growing faster than it shrinks. Parked
-threads:
+Status: **designed, not built.** The shape is settled — three legs, two
+strength lattices, per-node max over the tree — and a paper dry-run on the
+demos validated the verdicts. But a 2026-08-08 review pass against the
+actual wiring found **five holes that block implementation**, collected in
+"Open items from the 2026-08-08 review pass" and marked ⛔ inline in the v1
+scope list. Until those close, "core algorithm is settled" is an
+overstatement: the graded egress axis was folded in at the bottom of this
+file and the normative sections above it still describe flat egress (each
+now carries a superseded marker).
+
+Parked threads, older than that review:
 
 1. The human-gated-egress primitive (author-seat half shipped; taint half
    designed-not-built).
 2. Does a *local file read* carry `:untrusted`? — the tag table and the
-   narrative disagree (a genuine gap in the "settled" rules).
+   narrative disagree (a genuine gap in the "settled" rules). **Elevated
+   to ship-blocking: review item 4.**
 3. `:egress_writeonly` (the `web_search` write-only insight as a tag) —
    deferred; inert until a search-only persona exists.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
@@ -20,10 +27,14 @@ threads:
    superseded. See (b). What stays parked: `egress_human_author` (the
    `info` cell) is unreachable in every built seat, so it ships as a
    spec-level ideal only — is strict author-mode reachable in a real
-   chrome at all, or is `soft` the best any built thing gets? The
+   chrome at all, or is `soft` the best any built thing gets?
+   **Sharpened by review item 7: the blocker is *drafting*, not pre-fill,
+   so the answer is per-seat — never for compose, plausibly for a
+   researcher prompt.** The
    approver-seat scanners are mostly **shipped** (`ComposeGuard` +
-   `Sanitizer`: recipient novelty + fail-closed body); base64 blob spotter
-   is spun out to [`base64-body-spotter.md`](base64-body-spotter.md). All
+   `Sanitizer`: recipient novelty + fail-closed body; the blob spotter
+   shipped too — `D-blob-spotter-alphabets` +
+   {Pikuri::Thunderbird::ComposeGuard#body_blob_note}). All
    bound-not-closed (residual: reply-to-injector + linguistic stego) and
    must not promote approver → author.
 6. Injection tripwire: a `Sanitizer` fail-close on LLM-*authored* content
@@ -96,6 +107,14 @@ Consequences, load-bearing:
   untrusted-reading step — and fire once.
 
 ## The tags
+
+> **Partly superseded (2026-08-08).** This table is the *flat-egress*
+> vocabulary. The graded egress axis adds `:egress_human_approver` below
+> `:egress` (see "More open questions (b)"), and Thunderbird's
+> mail/calendar tools carry `:private` by default despite the
+> user-declares rule below. **"v1 scope, in one place" is the current
+> vocabulary**; this section is kept for the derivation of *why* the split
+> is asymmetric, which is unchanged.
 
 Three real legs plus one propagation-only marker:
 
@@ -205,6 +224,12 @@ with the same rule, and take the **max over all nodes**; the report
 names the **path** to the offending node.
 
 Severity at a node, from its final tag set:
+
+> **Superseded (2026-08-08)** — these three bullets are the flat-egress
+> severity rule, kept because the *per-node, max-over-tree* framing around
+> them still stands. The current rule is the 2-D grid in "v1 scope, in one
+> place": the first bullet is loud only when the egress leg is
+> **autonomous**; a `human_approver` egress leg makes it soft.
 
 - `{private, egress, untrusted}` → **loud warning.**
 - `{private, egress, untrusted_weakened}` with no hard `:untrusted`
@@ -430,7 +455,8 @@ from "More open questions (b)", the verdicts become:
 
 | binary / mode | egress leg, classified | verdict |
 |---|---|---|
-| **pikuri-computer**, both modes | compose + `agent(editable:)` → **approver**; bash kernel-severed → none | flat **loud** → **soft** |
+| **pikuri-computer**, `--no-internet` | compose → **approver**; bash kernel-severed → none | flat **loud** → **soft** |
+| **pikuri-computer**, default (internet ON) | compose → **approver**; `agent(editable:)` → approver, *but* `RESEARCHER` holds `fetch` = hard | **loud** — see open item 1 |
 | **pikuri-thunderbird** (both `allow_` flags on) | compose + `.ics` wizard → **approver** | flat **loud** → **soft** |
 | **pikuri-thunderbird** default `Extension` (flags off) | *no egress leg at all* | **silent** (2 legs, severed by construction) |
 | **pikuri-code**, private repo | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
@@ -438,8 +464,9 @@ from "More open questions (b)", the verdicts become:
 Two notes this run added:
 
 - The demo binaries stop being uniformly loud, so "loud" carries
-  information again — and the surviving loud one is the agent that really
-  can egress bytes nobody read.
+  information again — and the surviving loud ones are the agents that
+  really can egress bytes nobody read (pikuri-code's bash; the researcher's
+  `fetch` behind pikuri-computer's gated task string, pending open item 1).
 - **Thunderbird is the one place `:private` is framework-knowable.** The
   asymmetry rule says sensitivity is a property of the data, so the user
   declares it — but a *mailbox* is private by domain, not by configuration,
@@ -458,7 +485,11 @@ Per-node detail (the max-over-tree the report would attribute):
   `egress` (propagated full) + `untrusted_weakened` — both already
   dominated. Verdict **loud, attributed to the parent node**. The
   internet toggle is **verdict-neutral**: dropping the researcher
-  removes only redundant legs.
+  removes only redundant legs. *(Flat-egress reading. Under the graded
+  axis the toggle stops being neutral — compose alone is `approver` →
+  soft, while the researcher's `fetch` is the one hard-egress leg left,
+  so the toggle becomes the soft/loud lever. Exactly what open item 1
+  has to settle.)*
 - **pikuri-code** — the parent holds **direct** egress via bash, because
   Bubblewrap keeps `--share-net` (needed for `gem`/`bundle`/`mvn`/`pip`).
   So the sub-agent quarantine of the web tools does **not** remove the
@@ -504,8 +535,10 @@ Per-node detail (the max-over-tree the report would attribute):
 2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
    demo — trips the loudest alarm, in *both* modes** *(under the
    flat-egress algorithm only; the graded axis in "More open questions (b)"
-   revises **both** modes down to **soft**, since compose and the editable
-   researcher task both pass the payload-visibility test).* That's correct, not a
+   revises `--no-internet` down to **soft**, since compose passes the
+   payload-visibility test. The default mode stays **loud** unless a gated
+   delegation also caps the sub-agent's own hard `fetch` — open item 1.)*
+   That's correct, not a
    bug: it *is* a full trifecta; the safety is the human commit in
    Thunderbird's UI + the kernel-severed bash + the approved researcher
    task, none of which is leg-*absence*. This is the single best teaching
@@ -683,7 +716,10 @@ safer than an autonomous-egress build, but **not silent** (hard untrusted =
 live injection vector; the pre-filled compose is rubber-stampable). Silent
 needs *either* author-mode compose (no pre-fill) *or* privilege-separating
 the mail read so untrusted drops to weakened. So the user is right that it
-softens; the correction is soft, not safe.
+softens; the correction is soft, not safe. *(Note the scope: this is the
+`--no-internet` wiring. The **default** mode adds `RESEARCHER`'s hard
+`fetch`, which under the identity relabel propagates up hard and keeps the
+parent loud — open item 1.)*
 
 #### What separates `human_approver` from autonomous: payload visibility
 
@@ -741,26 +777,17 @@ unreachable for want of a search-only persona.
 
 #### The attachment corollary: constrain the surface, not just the seat
 
-The attachment bullet above is the reason the rule has to bind the
-**compose surface**, not only the confirmer. "The human sees the exact
-bytes" is a property a tool can *lose by gaining a feature* — one
-`attach=` parameter and an `egress_human_approver` seat silently becomes
-autonomous-class, with no change to the gate, the scanners, or the prompt.
+*Graduated 2026-08-08 — the invariant ("the outbound surface may contain
+only fields whose rendering is their content") and its derivation live in
+`pikuri-thunderbird/DESIGN.md` §"Why no attachments", the CLAUDE.md
+Thunderbird seam, and the grep tripwire there. Enforced by construction:
+`MailtoUri`'s five-parameter allowlist, no `ATTACH` in `IcsEvent`.*
 
-Stated positively: **the outbound surface may contain only fields whose
-rendering is their content.** Plain text passes; HTML fails
-(`<span style="display:none">`); attachments fail; base64 in the body is
-the interesting middle (it *is* the bytes, just unreadable ones — hence a
-scanner's job, not a class demotion). pikuri-thunderbird satisfies this by
-construction — `MailtoUri` builds a five-parameter allowlist, `IcsEvent`
-emits no `ATTACH` — and the invariant is now written into
-`pikuri-thunderbird/DESIGN.md` + the CLAUDE.md seam, because
-enforced-by-absence is one well-meaning patch from gone.
-
-Detector-side consequence: an egress tool's level is not a fixed property
-of the tool, it's a property of its **current field set**. Whatever
-eventually implements this should read the level from the tool, not from a
-table keyed on tool name.
+What stays here is the detector-side consequence, still unbuilt: an egress
+tool's level is not a fixed property of the tool, it's a property of its
+**current field set** — so read the level from the tool, never from a table
+keyed on tool name. Open item 2 adds the other half (it also depends on the
+tool's runtime gate).
 
 #### Bandwidth is not a safety property (the entropy table)
 
@@ -812,8 +839,9 @@ assumed):
   hard-dropped if non-ASCII or punycode.
 - **encoded / high-entropy blob** — **shipped** after all
   (`ComposeGuard#body_blob_note`, a soft-warn, deliberately *not* in the
-  finite-codepoint `Sanitizer`); see
-  [`base64-body-spotter.md`](base64-body-spotter.md) for the design. It
+  finite-codepoint `Sanitizer`); the design graduated to
+  `D-blob-spotter-alphabets` +
+  {Pikuri::Thunderbird::ComposeGuard#body_blob_note}. It
   now covers base64 (3-class) plus single-case hex and base32 at longer
   thresholds. Still a *note*, not a fail-close, and still walked under by
   splitting the payload into sub-threshold chunks — a paste guard, not an
@@ -866,9 +894,144 @@ scanners doing what they can? If the latter, the grid's `info` cells are
 aspirational and `soft` is the best any *built* thing gets — worth saying
 plainly rather than implying a wiring exists that reaches `info`.
 
+*Continued in review item 7 below, which argues the framing here blames the
+wrong thing: pre-fill is a symptom, **drafting** is the blocker, and the
+answer is therefore per-seat rather than global.*
+
+## Open items from the 2026-08-08 review pass
+
+Raised by reading the note against the actual wiring after the graded-egress
+fold-in. Items 1–5 are **ship-blocking for v1** — each is a rule the
+implementer would otherwise have to invent; 6–7 are sharpenings that change
+what we claim, not what we build.
+
+### 1. Does a gated delegation *cap* the propagated egress leg? (series vs parallel)
+
+The contradiction that forced this list. v1 says the boundary relabel is
+identity for egress ("an egress level survives the boundary at its own
+strength"), so `RESEARCHER`'s hard `fetch` propagates up hard and
+**pikuri-computer's default mode is loud**, not soft. But the revised
+dry-run table wanted soft, on the grounds that the only parent→outside
+channel is the *editable task string* the human authored — i.e. it silently
+let the gate attenuate the propagated leg, which is exactly the propagation
+exception v1's last bullet forbids.
+
+Both readings are defensible and they disagree on the flagship demo, so it
+has to be decided, not left implicit. The proposal worth testing:
+
+> **Union at a node is `max` (parallel legs). Propagation through a gated
+> channel is `min` (series — the weakest link bounds what can cross).**
+
+The direction asymmetry then falls out instead of being stipulated: the
+**outbound** path (parent → child, gated by the confirmer on the task
+string) takes the min-cap, so a `human_approver` delegation caps a hard-
+egress child at approver; the **inbound** path (the child's return value,
+ungated) is where `untrusted` attenuates by the instruction/content
+argument. One rule, both relabels, and it re-hardens automatically when the
+delegation isn't gated (item 2).
+
+What to check before adopting it: does min-cap ever *under*-warn? The child
+is bounded by the task string only if it holds no private data of its own
+and cannot be steered by what it reads mid-task into egressing more than
+the task carried — the second half is not obviously true for a researcher
+that `fetch`es attacker-authored pages and then `fetch`es again.
+
+### 2. The egress *level* is a property of the wiring, not just the field set
+
+"Read the level from the tool, not from a table keyed on tool name" (the
+attachment corollary's field-set half) is
+right but not sufficient: `agent(editable: true)` reaches
+`egress_human_approver` only if its injected `Confirmer` can actually ask a
+human, and `--no-confirm` swaps in `Confirmer::AUTO_APPROVE`
+(`pikuri-os/bin/pikuri-computer:92`, `pikuri-os/bin/pikuri-os:85`). Same
+shape twice more: `--no-sandbox` un-severs the bash leg the revised table
+scores as "none", and `Code::Bash`'s `passive_detector` seam can pre-approve
+before any human is asked.
+
+So the demo's soft verdict would survive `--no-confirm` unchanged — the
+precise flavour of false reassurance this whole note exists to refuse.
+Needed rule, roughly: *a gate contributes a level only if it can block on a
+human; an auto-approving or pre-approving gate contributes none, and the
+tool falls back to autonomous.* Which means the level is computed from the
+tool **plus its runtime collaborators**, at wiring time.
+
+### 3. MCP tools are invisible to the detector — and they arrive mid-session
+
+Per the MCP-tool bypass seam, MCP tools are raw `RubyLLM::Tool` subclasses
+with no pikuri tag surface, yet an MCP server is the archetypal
+untrusted+egress leg. Worse for the "once per process at boot" plan:
+`mcp_connect` (`Mcp::Servers#build_mcp_connect_tool`) adds them *after* the
+Configurator block has run. v1 currently says nothing, and silence reads as
+"no legs" — the one reading we know is wrong.
+
+Cheapest answer consistent with tag-generously: **an untagged / foreign
+tool defaults to `{untrusted, egress}`**, and a runtime `mcp_connect`
+re-evaluates the tree (which also settles what "once per process" keys on —
+per verdict-change, not per process). Alternative: declare MCP out of scope
+and say so *in the warning text*, since an unstated exclusion is worse than
+a loud one.
+
+### 4. Local-file-read `:untrusted` must land in the v1 vocabulary (elevates parked thread 2)
+
+Not a new question — it's the tag-table-vs-narrative gap already parked at
+the top — but the review makes it **ship-blocking** rather than merely
+open: every dry-run verdict depends on the *yes*, and the v1 list never
+mentions the untrusted default for file tools or the all-trusted-workspace
+opt-out. Under the tag table as literally written, pikuri-code over a
+private repo is `{private, egress}` → **silent**, contradicting its own
+dry-run row. Whatever the answer, v1 has to state it in the vocabulary
+bullet next to `private:`.
+
+### 5. No implementation seam is named
+
+For "ready to build" the note still owes: where the tags live on
+`Pikuri::Tool` (a method? a `Data` record? how does a tool whose level
+depends on collaborators expose it — item 2); `Sandbox#egress?`, which
+**does not exist yet** (nothing in `pikuri-code/lib/pikuri/code/bash/sandbox.rb`
+answers posture, so the "ask the object" rule has no receiver);
+`Filesystem(private:, trusted:)`; when the tree walk runs (Configurator
+close, after the user block, so `add_tool`/`add_extension` have all fired);
+how personas resolve `tool_names` → tools for the sub-agent nodes; and
+where the report is emitted. None of these is hard; all of them are
+decisions someone will otherwise make silently and differently.
+
+### 6. v1 buys exactly one bit per lattice — say so
+
+With `info` out of scope, the two lattices collapse to a single rule:
+**loud iff `private` ∧ hard-`untrusted` ∧ autonomous-`egress`; soft iff all
+three legs present at any strength; silent otherwise.** The lattices still
+earn their keep for union *at* a node, but the verdict function is a 2×2 —
+worth one line in the v1 section so nobody builds a general lattice engine
+for it, and worth knowing when a third level is proposed later.
+
+### 7. Author-mode's real blocker is *drafting*, not pre-fill
+
+Sharpens "is strict author-mode even reachable?" above. The note blames
+pre-fill UX; the deeper obstacle is that **if the agent displays a proposed
+body, a human who retypes it is a pre-fill with extra steps** — the
+clean-by-construction proof needs the human to *ignore* the proposal, which
+no drafting UX will ever produce (removing the pre-fill just moves the
+transcription through the terminal, or the clipboard).
+
+That makes the answer per-seat rather than global, which is more useful
+than either horn of the original question:
+
+- **A seat whose job is to draft the payload** (Thunderbird compose)
+  **cannot reach `egress_human_author`.** The `info` cell is aspirational
+  there, permanently — not for want of the right chrome.
+- **A seat where the human's own intent originates the bytes** *can*. A
+  researcher prompt that asks "what should I look up?" with a **blank**
+  field is genuine author-mode; pikuri-os is one pre-fill removal from it,
+  at a real ergonomic cost worth pricing rather than assuming.
+
+If that holds, the "partial author-mode" idea (pre-fill recipient +
+subject, blind-typed body) is *not* a rescue for compose — the human still
+types a body they were just shown.
+
 ## Open: propagating this to docs + example scripts
 
-The algorithm is settled; how it shows up to a *reader* is not. To
+Independent of the five open items above (this is about presentation, not
+the rule set): how it shows up to a *reader* is unsettled. To
 brainstorm next (the *what*, not yet the technical *how*):
 
 - Which `bin/pikuri-*` and `book/` examples deliberately *should*
@@ -889,9 +1052,16 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
+**Five holes, marked inline as ⛔ — this list is not yet buildable.** See
+"Open items from the 2026-08-08 review pass"; each ⛔ names the item that
+has to close first.
+
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
-  `:egress_human_approver` (declared by the tool).
+  `:egress_human_approver` (declared by the tool). ⛔ **item 4** — the
+  vocabulary still owes the `:untrusted` default for *file-read* tools +
+  the all-trusted-workspace opt-out; ⛔ **item 3** — and the default for a
+  foreign/untagged tool (MCP), which arrives at runtime.
 - `:private` declared on the workspace/corpus; file tools inherit it.
   Exception: domain-inherently-private tools (Thunderbird mail/calendar)
   carry it by default.
@@ -901,9 +1071,14 @@ earlier flat-`:egress` version of this list is superseded.*
 - Egress level is set by **payload visibility** — the human sees the
   literal outbound bytes (compose window, editable task string) →
   `egress_human_approver`; the human sees a proxy (a bash command line) →
-  hard `:egress`.
+  hard `:egress`. ⛔ **item 2** — visibility is necessary, not sufficient:
+  the level also depends on whether the tool's *gate* can block on a human
+  at all (`AUTO_APPROVE`, `passive_detector`, `--no-sandbox`).
 - Boundary relabel: `untrusted→untrusted_weakened`, everything else
   identity (an egress level survives the boundary at its own strength).
+  ⛔ **item 1** — this is what makes pikuri-computer's default mode loud;
+  if a gated delegation caps the propagated leg instead (series = min), it
+  is soft. The flagship verdict hangs on this bullet.
 - Evaluate every node; verdict = max over tree; report the path.
 - Verdict grid, `:private` present:
 
@@ -912,9 +1087,19 @@ earlier flat-`:egress` version of this list is superseded.*
   | autonomous | **loud** | soft |
   | human_approver | **soft** | soft |
 
+  Equivalently, and this is all v1 needs (item 6): **loud** iff `private` ∧
+  hard-`untrusted` ∧ autonomous-`egress`; **soft** iff all three legs are
+  present at any strength; **silent** otherwise.
+
 - **Not** in v1: `egress_human_author` / the `info` cell (unreachable in
   every built seat — pre-fill demotes it; keep it a spec-level ideal) and
   `:egress_writeonly` (changes no current verdict).
-- Warn-only, once per process, message names the leg to break.
+- Warn-only, once per process, message names the leg to break. ⛔ **item 3**
+  — "once per process" is wrong if `mcp_connect` can add legs mid-session;
+  key the dedup on the verdict, not the process.
 - No custom legs, no per-persona knobs, no propagation exceptions, and no
   grading of approver *quality* (scanner strength, attention, frequency).
+- ⛔ **item 5** — no implementation seam is named yet: tag storage on
+  `Pikuri::Tool`, the missing `Sandbox#egress?` receiver,
+  `Filesystem(private:, trusted:)`, when the tree walk runs, where the
+  report goes.

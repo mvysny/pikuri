@@ -92,7 +92,8 @@ never a silent context wipe that lets the user walk straight back in.
 - **Higher confidence than the base64 spotter.** The hidden-byte classes
   have ~zero honest *authored* use, so the tripwire justifies a
   teardown-advice response. A base64 blob
-  ([`base64-body-spotter.md`](base64-body-spotter.md)) *does* have honest
+  ({Pikuri::Thunderbird::ComposeGuard#body_blob_note},
+  `D-blob-spotter-alphabets`) *does* have honest
   uses (a pasted cert/token), so it's only a soft warn — different tier,
   different response. Don't conflate them.
 
