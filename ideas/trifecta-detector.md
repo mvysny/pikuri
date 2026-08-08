@@ -717,6 +717,10 @@ The admissible test is structural:
   *command* — a **program**, not a payload. Behind a pipe, a heredoc, a
   script file, `$(…)`, the egressing bytes are computed at runtime and were
   never on screen. Approving `curl` approves an *intent*.
+- **A mail attachment → hard `:egress`** (hypothetical — pikuri-thunderbird
+  ships none, see below). A key in a `.png`'s low bits is invisible to any
+  reader; the human approves a *filename* and a thumbnail. Structurally
+  identical to `curl`: an approved **reference** to bytes nobody saw.
 
 This is derived from structure, not from trusting anyone's diligence, and
 it is the rule a tool author can actually apply to self-tag — which the
@@ -735,6 +739,63 @@ blind autonomous one are different animals. The 2-D (untrusted × egress)
 grid stays 2-D; nobody builds the third axis while write-only is still
 unreachable for want of a search-only persona.
 
+#### The attachment corollary: constrain the surface, not just the seat
+
+The attachment bullet above is the reason the rule has to bind the
+**compose surface**, not only the confirmer. "The human sees the exact
+bytes" is a property a tool can *lose by gaining a feature* — one
+`attach=` parameter and an `egress_human_approver` seat silently becomes
+autonomous-class, with no change to the gate, the scanners, or the prompt.
+
+Stated positively: **the outbound surface may contain only fields whose
+rendering is their content.** Plain text passes; HTML fails
+(`<span style="display:none">`); attachments fail; base64 in the body is
+the interesting middle (it *is* the bytes, just unreadable ones — hence a
+scanner's job, not a class demotion). pikuri-thunderbird satisfies this by
+construction — `MailtoUri` builds a five-parameter allowlist, `IcsEvent`
+emits no `ATTACH` — and the invariant is now written into
+`pikuri-thunderbird/DESIGN.md` + the CLAUDE.md seam, because
+enforced-by-absence is one well-meaning patch from gone.
+
+Detector-side consequence: an egress tool's level is not a fixed property
+of the tool, it's a property of its **current field set**. Whatever
+eventually implements this should read the level from the tool, not from a
+table keyed on tool name.
+
+#### Bandwidth is not a safety property (the entropy table)
+
+The intuition to kill: *"a password is low-bandwidth so stego reaches it,
+but an ssh key is high-bandwidth so it's out of reach."* It anchors on the
+**file** rather than the **entropy**. Nobody needs to exfiltrate a PEM;
+they need the 32 bytes inside it. At ~4.7 bits/word for a first-letter
+acrostic:
+
+| secret | entropy | acrostic cost |
+|---|---|---|
+| password | 40–80 bits | 9–17 words |
+| TOTP seed | 160 bits | ~34 words |
+| **ed25519 private key** | **256 bits** | **~55 words — one paragraph** |
+| AWS secret access key | ~240 bits | ~51 words |
+| BIP-39 wallet seed | 128–256 bits | 27–55 words |
+| RSA-2048 (minimal: p, q) | 2048 bits | ~436 words — one long email |
+
+Even RSA — the one case that looks out of reach — is a single plausible
+project update, and the 1.7 KB PEM is mostly derived material the attacker
+regenerates from `p` and `q`. The drip across a thread removes what little
+ceiling remains. So there is no cliff on this axis, only "how odd does the
+prose have to look," and modern secrets got *smaller*, which cuts against
+us.
+
+Two consequences:
+
+1. **Don't encode bandwidth in the detector.** It's a degree, like scanner
+   strength — same reason, same answer. Attachments are in scope because
+   they're *structural*; stego capacity is not.
+2. **Don't offer it as reassurance in prose either.** A sentence like
+   "the gate kills high-bandwidth exfil" reads as a boundary and isn't one.
+   The defensible claim is narrower and better: it kills **silent** exfil —
+   every byte was on a screen.
+
 #### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
 
 Most of this confirmer hardening is **already shipped** in
@@ -749,10 +810,14 @@ assumed):
   body **fail-closes** on any `Sanitizer` warning (stronger than a warn:
   nothing is handed off, the human retypes in Thunderbird); addresses are
   hard-dropped if non-ASCII or punycode.
-- **base64 / high-entropy blob** — the one piece **not** shipped; spun
-  out to [`base64-body-spotter.md`](base64-body-spotter.md) (a
-  `ComposeGuard` soft-warn, deliberately *not* in the finite-codepoint
-  `Sanitizer`).
+- **encoded / high-entropy blob** — **shipped** after all
+  (`ComposeGuard#body_blob_note`, a soft-warn, deliberately *not* in the
+  finite-codepoint `Sanitizer`); see
+  [`base64-body-spotter.md`](base64-body-spotter.md) for the design. It
+  now covers base64 (3-class) plus single-case hex and base32 at longer
+  thresholds. Still a *note*, not a fail-close, and still walked under by
+  splitting the payload into sub-threshold chunks — a paste guard, not an
+  exfil control.
 
 Good defense-in-depth. Two things they still do **not** do:
 

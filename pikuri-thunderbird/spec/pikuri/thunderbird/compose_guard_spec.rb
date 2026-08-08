@@ -113,4 +113,39 @@ describe Pikuri::Thunderbird::ComposeGuard do
     v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: 'token aGVsbG8gd29ybGQxYVo1 ok') # 20 chars, < 32
     assert_empty v.notes
   end
+
+  # Single-alphabet encodings. These clear no three-class gate, so they get their
+  # own longer thresholds — the point being that hex/base32 are what a payload
+  # wears *without* trying to evade anything (a key is already hex on disk).
+  HEX_KEY = 'a3f97b2e5c1d40886e77b9042fa1cc35d80e6b1749a3f5c20d8e7b64a190f3c2' # 64, 32-byte key
+  B32_KEY = 'JBSWY3DPEHPK3PXP7A2QVBLM4ZTGO5DFNRSXG5DJN5XA2LTQ' # 48, single-case + digits
+
+  it 'warns on a lowercase-hex key dump that clears no three-class gate' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: "key:\n#{HEX_KEY}")
+    assert v.ok
+    assert(v.notes.any? { |n| n.match?(/encoded-looking content/) })
+    assert(v.notes.any? { |n| n.match?(/Line 2 onward/) })
+  end
+
+  it 'warns on a base32 key dump' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: B32_KEY)
+    assert(v.notes.any? { |n| n.match?(/encoded-looking content/) })
+  end
+
+  it 'stays quiet on a full git SHA-1, which sits under the single-class join' do
+    v = guard(seen: ['acme.com']).check(
+      to: 'a@acme.com', body: 'fixed in 0e5f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b, please pull'
+    ) # 40 chars, < 48
+    assert_empty v.notes
+  end
+
+  it 'stays quiet on a dashed UUID, whose interior hyphen matches no alphabet' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: 'run 550e8400-e29b-41d4-a716-446655440000 failed')
+    assert_empty v.notes
+  end
+
+  it 'stays quiet on an ALL-CAPS sentence (base32 needs a digit)' do
+    v = guard(seen: ['acme.com']).check(to: 'a@acme.com', body: 'PLEASE REVIEW THE ATTACHED QUARTERLY FORECAST')
+    assert_empty v.notes
+  end
 end

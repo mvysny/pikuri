@@ -27,8 +27,8 @@ module Pikuri
     #   the user has never exchanged mail with (per {Gloda::Contacts#domains_seen}) stays
     #   in the draft but earns a loud note urging out-of-band verification. A
     #   hard reject here would fire on every genuinely-new correspondent. A body
-    #   carrying an *encoded-looking blob* (a long base64 run — see
-    #   {#body_blob_note}) likewise stays but earns a located note.
+    #   carrying an *encoded-looking blob* (a long base64, hex or base32 run —
+    #   see {#body_blob_note}) likewise stays but earns a located note.
     #
     # == Why per-field address omission
     #
@@ -56,6 +56,24 @@ module Pikuri
       # in honest mail, whereas +++ +/+ +=+ never appear in prose tokens. Cost:
       # base64url/JWT-shaped payloads slip by — accepted, per {#body_blob_note}.
       BLOB_ALPHABET = %r{\A[A-Za-z0-9+/=]+\z}
+
+      # Single-case hex and RFC-4648 base32 — the one-alphabet encodings, which
+      # clear no three-class gate and so need their own, longer thresholds
+      # ({SINGLE_CLASS_TOKEN_MIN} / {SINGLE_CLASS_JOIN_MIN}). Mixed-case hex is
+      # deliberately absent: it is three-class already, so {BLOB_ALPHABET} has
+      # it. Neither admits an interior +-+, so a dashed UUID never matches.
+      HEX_ALPHABET = /\A(?:[a-f0-9]+|[A-F0-9]+)\z/
+      BASE32_ALPHABET = /\A[A-Z2-7]+=*\z/
+
+      # {BLOB_TOKEN_MIN}'s twin for {HEX_ALPHABET} / {BASE32_ALPHABET}, doubled:
+      # a one-alphabet run is far likelier to be an honest identifier than a
+      # base64 run is, so it must be twice as long before it counts.
+      SINGLE_CLASS_TOKEN_MIN = 32
+
+      # {BLOB_JOIN_MIN}'s twin, placed in the one gap that exists: above a full
+      # git SHA-1 (40) and below a 32-byte key in base32 (52) or hex (64). See
+      # {#body_blob_note} for the false positive this accepts.
+      SINGLE_CLASS_JOIN_MIN = 48
 
       # The outcome of checking one compose request.
       #
@@ -180,15 +198,15 @@ module Pikuri
                  'double-check the address is correct.'
       end
 
-      # Soft-warn when the body carries an encoded-looking blob: a base64 dump of
-      # a secret is the easiest high-bandwidth exfil, all-printable-ASCII so it
-      # passes the {Pikuri::Sanitizer} gate while the human skims past the
+      # Soft-warn when the body carries an encoded-looking blob: an encoded dump
+      # of a secret is the easiest high-bandwidth exfil, all-printable-ASCII so
+      # it passes the {Pikuri::Sanitizer} gate while the human skims past the
       # gibberish. A flagged body still composes — the note only aims the eye:
       #
       #   body_blob_note("ship it:\naGVsbG8gd29ybGQgT3BlbkFJc2VjcmV0", notes)
       #   # appends: "Line 2 onward contains encoded-looking content
       #   #           (aGVsbG8gd29ybGQgT3BlbkFJ…, 32 chars total) — verify you
-      #   #           meant to send this; a base64 blob is how a secret leaks
+      #   #           meant to send this; an encoded blob is how a secret leaks
       #   #           past a skim."
       #
       # @param body [String] the plain-text body (already {Pikuri::Sanitizer}-clean).
@@ -197,42 +215,84 @@ module Pikuri
       #
       # == Implementation details
       #
-      # A chunk is >= {BLOB_TOKEN_MIN} chars of pure {BLOB_ALPHABET} with upper
-      # *and* lower *and* a digit — encoder churn no prose word (one script),
-      # Capitalized word (two), or +invoice20260722+ slug (two) shows; hex and
-      # base32 stay out for the same reason base64url does — a 2-class alphabet
-      # can't clear that gate, and widening it to 2 classes would flag legit hex
-      # (SHA-256, UUIDs) for pure FP. Summing chunks body-wide rather than over
-      # one contiguous run is deliberate: it folds space-split and
-      # word-interleaved payloads back together for free, since cover words fail
-      # the three-class gate and drop out.
+      # Two chunk shapes, each with its own pair of thresholds, whichever trips
+      # first:
+      #
+      # * *mixed* — >= {BLOB_TOKEN_MIN} chars of pure {BLOB_ALPHABET} with upper
+      #   *and* lower *and* a digit: encoder churn no prose word (one script),
+      #   Capitalized word (two), or +invoice20260722+ slug (two) shows. Warns at
+      #   {BLOB_JOIN_MIN} summed.
+      # * *single-class* — >= {SINGLE_CLASS_TOKEN_MIN} chars of {HEX_ALPHABET} or
+      #   {BASE32_ALPHABET}, warning at {SINGLE_CLASS_JOIN_MIN} summed.
+      #
+      # The second shape reverses an earlier "hex and base32 stay out" call. The
+      # reasoning that excluded them was sound about the *mechanism* (a 2-class
+      # alphabet can't clear the 3-class gate) but drew the wrong conclusion,
+      # because it weighed only false positives: single-case hex and base32 were
+      # the two encodings a payload could wear to draw **no flag at all**, and
+      # they are the natural, non-evasive choice — a key is *already* hex on
+      # disk. Separate longer thresholds answer the original FP objection without
+      # widening the 3-class gate: a dashed UUID has an interior +-+ and matches
+      # neither alphabet, an undashed one (32) and a git SHA-1 (40) both fall
+      # under {SINGLE_CLASS_JOIN_MIN}. The accepted residue is a **lone SHA-256
+      # checksum** (64 hex chars), which warns — irreducibly, since a 256-bit
+      # hash and a 256-bit key are the same string. Err toward the note there:
+      # checksums are rare in mail, keys are what we're looking for.
+      #
+      # Summing chunks body-wide rather than over one contiguous run is
+      # deliberate: it folds space-split and word-interleaved payloads back
+      # together for free, since cover words fail both gates and drop out.
       #
       # A paste / dumb-attack guard, *not* an exfil control — a prompt-injected
-      # model can add "split it with spaces" for free and walk under it. Hence
-      # soft-warn, and {BLOB_TOKEN_MIN} kept high to stay quiet on engineering
-      # mail; the irreversible-send compose window is the real backstop, so err
-      # toward not warning. Don't recast this as "closes the base64 channel."
+      # model can add "split it into 15-char pieces" for free and walk under
+      # every threshold here. Hence soft-warn, and the minimums kept high to stay
+      # quiet on engineering mail; the irreversible-send compose window is the
+      # real backstop, so err toward not warning. Don't recast this as "closes
+      # the encoded-blob channel" — widening the alphabets raises the attacker's
+      # cost by one token of prompt, nothing more.
       def body_blob_note(body, notes)
-        hits = body.split("\n").each_with_index.flat_map do |line, i|
+        hits = blob_hits(body)
+        [[:mixed, BLOB_JOIN_MIN], [:single, SINGLE_CLASS_JOIN_MIN]].each do |kind, join_min|
+          matched = hits.select { |hit| hit[:kind] == kind }
+          total = matched.sum { |hit| hit[:token].length }
+          next if total < join_min
+
+          first = matched.first
+          notes << "Line #{first[:line]} onward contains encoded-looking content " \
+                   "(#{first[:token][0, 24]}…, #{total} chars total) — verify you meant " \
+                   'to send this; an encoded blob is how a secret leaks past a skim.'
+          break
+        end
+      end
+
+      # @param body [String] the plain-text body.
+      # @return [Array<Hash>] +{line: Integer, token: String, kind: Symbol}+ per
+      #   blob-shaped token, in reading order.
+      def blob_hits(body)
+        body.split("\n").each_with_index.flat_map do |line, i|
           line.split(/\s+/).filter_map do |raw|
             tok = raw.gsub(%r{\A[^A-Za-z0-9+/=]+|[^A-Za-z0-9+/=]+\z}, '')
-            [i + 1, tok] if blob_chunk?(tok)
+            kind = blob_kind(tok)
+            { line: i + 1, token: tok, kind: kind } if kind
           end
         end
-        total = hits.sum { |(_line, tok)| tok.length }
-        return if total < BLOB_JOIN_MIN
-
-        line, sample = hits.first
-        notes << "Line #{line} onward contains encoded-looking content " \
-                 "(#{sample[0, 24]}…, #{total} chars total) — verify you meant to " \
-                 'send this; a base64 blob is how a secret leaks past a skim.'
       end
 
       # @param tok [String] a whitespace-delimited token, sentence-punctuation stripped.
-      # @return [Boolean] whether +tok+ counts as an encoded-blob chunk (see {#body_blob_note}).
-      def blob_chunk?(tok)
-        tok.length >= BLOB_TOKEN_MIN && tok.match?(BLOB_ALPHABET) &&
-          tok.match?(/[A-Z]/) && tok.match?(/[a-z]/) && tok.match?(/[0-9]/)
+      # @return [Symbol, nil] +:mixed+ or +:single+ per the two chunk shapes in
+      #   {#body_blob_note}, or +nil+ when +tok+ is not blob-shaped. A digit is
+      #   required either way — it is what keeps an ALL-CAPS run out of
+      #   {BASE32_ALPHABET} and a +deadbeef+-ish word out of {HEX_ALPHABET}.
+      def blob_kind(tok)
+        return nil unless tok.match?(/[0-9]/)
+
+        if tok.length >= BLOB_TOKEN_MIN && tok.match?(BLOB_ALPHABET) &&
+           tok.match?(/[A-Z]/) && tok.match?(/[a-z]/)
+          :mixed
+        elsif tok.length >= SINGLE_CLASS_TOKEN_MIN &&
+              (tok.match?(HEX_ALPHABET) || tok.match?(BASE32_ALPHABET))
+          :single
+        end
       end
     end
   end

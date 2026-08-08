@@ -107,6 +107,11 @@ a CalDAV sync). The design invariant, locked in before any of it ships:
 > compose window (via a `mailto:` URI) or an `.ics` import wizard — where the
 > *human* reviews and commits. pikuri writes nothing to Thunderbird's stores
 > and sends nothing itself. No send tool ever ships.
+>
+> **And no attachment ever ships.** The outbound surface carries only fields
+> that *render literally*: a plain-text body, a subject, addresses. No
+> attachment of any kind (`.png`, `.zip`, `.txt` — the extension is
+> irrelevant), no HTML body, no iCalendar `ATTACH` property.
 
 This converts egress from *agent-automatic* to *human-action-required*. Note
 what that does and does not buy — the leg is **downgraded, not removed**, and
@@ -122,10 +127,40 @@ approves a *program*, and what it actually uploads was never on screen. So a
 poisoned message can influence a draft, but every byte of that draft was
 displayed to someone before it moved.
 
-That is a real reduction and not a boundary: it kills silent, high-bandwidth
-exfil, and leaves the covert channel — a secret spelled into prose the reader
-skims past, sent as a reply to the injector (see "What the body guards do
-*not* close" below).
+That is a real reduction and not a boundary: it kills *silent* exfil — every
+byte was on a screen — and leaves the covert channel, a secret spelled into
+prose the reader skims past, sent as a reply to the injector (see "What the
+body guards do *not* close" below).
+
+**Resist the temptation to call the survivors low-bandwidth.** They aren't.
+What matters is the entropy of the secret, not the size of its file: nobody
+needs to exfiltrate a PEM, only the 32 bytes inside it. At roughly one letter
+per word, a first-letter acrostic carries a 256-bit ed25519 key in about 55
+words — one paragraph — and even RSA-2048's minimal form (its two primes) in
+about 436, i.e. one plausible project update. Modern secrets got *smaller*,
+which cuts against us here. The bytes-visible property is worth stating
+because it is structural; "the payload is too big to hide" is not, and
+shouldn't be offered as reassurance.
+
+### Why no attachments — it's the same invariant as plain-text-only
+
+An attachment is the cleanest way to defeat the whole gate. A key encoded in
+the low bits of a `.png` is invisible to any reader: the human approves a
+*filename* and a thumbnail, never the bytes. That is exactly the shape of a
+shell agent asking "run `curl …`?" — an approved *reference* to content
+nobody saw — and it would demote this hand-off from "human sees the payload"
+to the same class as an autonomous send, no matter how careful the human is.
+
+So "plain text only" and "no attachments" are not two policies but one:
+**the outbound surface may contain only fields whose rendering is their
+content.** HTML fails it (`<span style="display:none">`), attachments fail it,
+and so would any richer field added later. Today this is enforced by
+construction rather than by filtering — {Pikuri::Thunderbird::MailtoUri}
+*builds* an allowlist of five parameters (`to`/`cc`/`bcc`/`subject`/`body`),
+so there is no `attach=` to strip, and {Pikuri::Thunderbird::IcsEvent} emits
+no `ATTACH` property. Enforced-by-absence is fragile against a future
+"improvement" — `mailto:?attach=` was a real Thunderbird feature — which is
+why the invariant is written down rather than left implied by the code.
 
 **Compose is shipped, opt-in.** `thunderbird_mail_compose`
 ({Pikuri::Thunderbird::MailCompose}) is wired only when a host passes
@@ -146,7 +181,8 @@ is detached (`setsid --fork`) so closing the agent never kills the user's
 Thunderbird.
 
 **What the body guards do *not* close.** They raise attention on the lazy exfil
-— a control-byte/homoglyph body fails closed, a base64 dump earns a note — but
+— a control-byte/homoglyph body fails closed, a base64/hex/base32 dump earns a
+note — but
 they are not a barrier against an *adaptive* injector, who splits the blob with
 whitespace or spells it in prose for free (the same injection payload carries
 the evasion). The sharpest surviving channel is **reply-to-injector**: the
