@@ -1,16 +1,19 @@
 # Trifecta detector
 
-Status: **designed, not built.** The shape is settled — three legs, two
-strength lattices, per-node max over the tree, `min` across a delegation —
-and a paper dry-run on the demos validated the verdicts. A 2026-08-08 review
-pass against the actual wiring found five holes that block implementation,
-collected in "Open items from the 2026-08-08 review pass" and marked ⛔
-inline in the v1 scope list; **items 1 (propagation), 3 (MCP) and 4 (file-read
-`:untrusted`) are closed, two remain**.
-Until they do, "core algorithm is settled" is an overstatement — and note
-that the graded egress axis was folded in at the bottom of this file, so the
-normative sections above it still describe flat egress (each carries a
-superseded marker).
+Status: **designed, not built — the vocabulary is closed, the plumbing
+isn't.** The shape is settled: three legs, two strength lattices, per-node
+`max` over the tree, `min` across a delegation. A 2026-08-08 review pass
+against the actual wiring found five holes that blocked implementation
+("Open items from the 2026-08-08 review pass"); **items 1–4 are now closed
+and only item 5 — the implementation seam — remains**, marked ⛔ in the v1
+scope list.
+
+So the *tag set* is decided end to end and the next session is about where
+the tags live, not what they are. Two caveats for a reader: the graded
+egress axis was folded in at the bottom of this file, so the normative
+sections above it still describe flat egress (each carries a superseded
+marker); and the resolved items below are kept as their derivations, which
+is why they read as argument rather than spec.
 
 Parked threads, older than that review:
 
@@ -916,9 +919,9 @@ answer is therefore per-seat rather than global.*
 ## Open items from the 2026-08-08 review pass
 
 Raised by reading the note against the actual wiring after the graded-egress
-fold-in. Items 2 and 5 are **ship-blocking for v1** — each is a rule the
+fold-in. Item 5 is **ship-blocking for v1** — the one rule set the
 implementer would otherwise have to invent; 6–7 are sharpenings that change
-what we claim, not what we build. **Items 1, 3 and 4 are closed** (2026-08-08)
+what we claim, not what we build. **Items 1–4 are closed** (2026-08-08)
 and kept below as their derivations.
 
 ### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
@@ -974,24 +977,48 @@ should read loud.
 - The one hole the cap leaves is the rubber-stamped `y` on a clean laundered
   task, which is what re-prices `:egress_searchengine` (see that section).
 
-### 2. The egress *level* is a property of the wiring, not just the field set
+### 2. The egress *level* is a property of the wiring — RESOLVED: four clauses, all required
 
 "Read the level from the tool, not from a table keyed on tool name" (the
-attachment corollary's field-set half) is
-right but not sufficient: `agent(editable: true)` reaches
-`egress_human_approver` only if its injected `Confirmer` can actually ask a
-human, and `--no-confirm` swaps in `Confirmer::AUTO_APPROVE`
-(`pikuri-os/bin/pikuri-computer:92`, `pikuri-os/bin/pikuri-os:85`). Same
-shape twice more: `--no-sandbox` un-severs the bash leg the revised table
-scores as "none", and `Code::Bash`'s `passive_detector` seam can pre-approve
-before any human is asked.
+attachment corollary's field-set half) is right but not sufficient:
+`agent(editable: true)` reaches `egress_human_approver` only if its injected
+`Confirmer` can actually ask a human, and `--no-confirm` swaps in
+`Confirmer::AUTO_APPROVE` (`pikuri-os/bin/pikuri-computer:92`,
+`pikuri-os/bin/pikuri-os:85`). Same shape twice more: `--no-sandbox`
+un-severs the bash leg the revised table scores as "none", and
+`Code::Bash`'s `passive_detector` seam can pre-approve before any human is
+asked. Left unfixed, the demos' soft verdicts would survive `--no-confirm`
+unchanged — the precise flavour of false reassurance this note exists to
+refuse.
 
-So the demo's soft verdict would survive `--no-confirm` unchanged — the
-precise flavour of false reassurance this whole note exists to refuse.
-Needed rule, roughly: *a gate contributes a level only if it can block on a
-human; an auto-approving or pre-approving gate contributes none, and the
-tool falls back to autonomous.* Which means the level is computed from the
-tool **plus its runtime collaborators**, at wiring time.
+**Resolution: a tool's egress leg is `egress_human_approver` iff all four
+hold. Fail any one → hard `:egress`.** Each clause is a distinct failure
+this review hit; dropping any of them re-opens a hole.
+
+1. **A gate that can block on a human.** A `Confirmer` that asks, or a
+   hand-off where a separate human action commits (Thunderbird's Send).
+   `AUTO_APPROVE`, a pre-approving `passive_detector`, or no confirmer at
+   all → no level. *(This item.)*
+2. **Payload visibility.** What is on screen *is* what leaves, byte for
+   byte — not a program, not a filename, not a reference. *(Bash stays
+   hard: approving `curl` approves an intent.)*
+3. **Field-set closure.** Every field of the outbound surface renders
+   literally, so the level is read from the tool's current fields and a tool
+   can lose it by gaining a feature. *(The attachment corollary.)*
+4. **Unconditional.** The property holds when nothing fires — the detector
+   reads a seat's *floor*. Scanner-conditional strengthening (the
+   warning-gated forced retype) is runtime hardening the docs may credit and
+   the classifier may not. *(Item 7; "Scanners must not promote the approver
+   seat".)*
+
+So the level is computed from the tool **plus its runtime collaborators**,
+at wiring time — the same shape as `:untrusted` for `Bash` (item 4: ask the
+sandbox, not the workspace).
+
+**Also record the rejected third rung.** "Gated but only proxy-visible" —
+bash-behind-a-confirmer as its own middle level — is the first thing anyone
+will propose. It changes no verdict and re-opens trust-the-approver at a
+finer grain, so: two levels, no more.
 
 ### 3. MCP tools — RESOLVED: `{untrusted, egress}` + an opt-in `private:` per registry entry
 
@@ -1201,11 +1228,11 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
-**Two holes, marked inline as ⛔ — this list is not yet buildable.** See
+**One hole, marked inline as ⛔ — this list is not yet buildable.** See
 "Open items from the 2026-08-08 review pass"; each ⛔ names the item that
-has to close first. (Items 1, 3 and 4 closed 2026-08-08 — the series cap,
-the MCP defaults and the file-read `:untrusted` default, all folded into the
-bullets below.)
+has to close first. (Items 1–4 closed 2026-08-08 — the series cap, the four
+gate/level clauses, the MCP defaults and the file-read `:untrusted` default,
+all folded into the bullets below.)
 
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
@@ -1225,12 +1252,13 @@ bullets below.)
 - Two lattices, union = max on each:
   `none < untrusted_weakened < untrusted` and
   `none < egress_human_approver < egress`.
-- Egress level is set by **payload visibility** — the human sees the
-  literal outbound bytes (compose window, editable task string) →
-  `egress_human_approver`; the human sees a proxy (a bash command line) →
-  hard `:egress`. ⛔ **item 2** — visibility is necessary, not sufficient:
-  the level also depends on whether the tool's *gate* can block on a human
-  at all (`AUTO_APPROVE`, `passive_detector`, `--no-sandbox`).
+- Egress level is `egress_human_approver` iff **all four** clauses hold
+  (item 2), else hard `:egress`: (1) a gate that can block on a human —
+  not `AUTO_APPROVE`, not a pre-approving `passive_detector`; (2) **payload
+  visibility** — the human sees the literal outbound bytes (compose window,
+  editable task string), not a proxy (a bash command line); (3) field-set
+  closure — every outbound field renders literally; (4) unconditional — the
+  floor of the seat, never a scanner-conditional strengthening.
 - Boundary relabel, **settled by item 1**: `max` in parallel (legs at one
   node), `min` in series (through a delegation channel). Outbound, the
   parent's propagated egress = `min(channel level, child's level)` **iff the
