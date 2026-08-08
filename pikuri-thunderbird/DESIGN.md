@@ -133,14 +133,18 @@ prose the reader skims past, sent as a reply to the injector (see "What the
 body guards do *not* close" below).
 
 **Resist the temptation to call the survivors low-bandwidth.** They aren't.
-What matters is the entropy of the secret, not the size of its file: nobody
-needs to exfiltrate a PEM, only the 32 bytes inside it. At roughly one letter
-per word, a first-letter acrostic carries a 256-bit ed25519 key in about 55
-words — one paragraph — and even RSA-2048's minimal form (its two primes) in
-about 436, i.e. one plausible project update. Modern secrets got *smaller*,
-which cuts against us here. The bytes-visible property is worth stating
-because it is structural; "the payload is too big to hide" is not, and
-shouldn't be offered as reassurance.
+A first-letter acrostic carries roughly one letter per word, and a secret is
+already text — so an agent *transcribes* it rather than computing anything.
+Price the channel that way, since this gem wires no shell and no calculator:
+a pasted `id_ed25519` is its ~400 base64 characters, so ~400 words; a whole
+RSA PEM ~1600. A thread, not a wall — and the mailbox is exactly where
+someone pasted the key "just to have it" five years ago. (An agent that
+*does* hold local compute prices it lower still, by the secret's entropy —
+~55 words for that ed25519 key; a network-severed sandbox cuts egress, never
+arithmetic. See `book/07-os-assistant.md` §"Why 'too big to hide' is not a
+defense".) The bytes-visible property is worth stating because it is
+structural; "the payload is too big to hide" is not, and shouldn't be
+offered as reassurance.
 
 ### Why no attachments — it's the same invariant as plain-text-only
 

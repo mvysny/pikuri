@@ -740,17 +740,38 @@ time.* It's the most natural reassurance in this whole chapter, and it's
 wrong. Worth taking apart, because the same mistake shows up wherever
 people reason about gates.
 
-It anchors on the **file** when the thing being stolen is the **entropy**.
-Nobody needs to exfiltrate your PEM: almost all of it is derived material
-an attacker regenerates from the two primes inside. What has to cross is
-the secret part, and modern secrets are small. Take a first-letter
-acrostic — a sentence whose words spell out the payload, roughly 4.7 bits
-per word. A password is nine to seventeen words. A TOTP seed is about
-thirty-four. A 256-bit ed25519 private key — the whole key, not a hint of
-it — is about fifty-five words. **One paragraph.** Even RSA-2048's minimal
-form runs to some 436 words: one long, plausible project update. There's
-no cliff on this axis, only "how odd does the prose have to look," and
-secrets got *smaller* over the last decade, which cuts against you.
+It anchors on the **file** when what's being stolen is the **entropy**.
+Almost all of a PEM is derived material an attacker regenerates from the
+two primes stored inside it, so the floor — the bits that genuinely have to
+cross — sits far below the file size. Take a first-letter acrostic, a
+sentence whose words spell out the payload at roughly 4.7 bits per word. A
+password is nine to seventeen words. A TOTP seed is about thirty-four. A
+256-bit ed25519 private key — the whole key, not a hint of it — is about
+fifty-five words. **One paragraph.**
+
+But a floor is a floor, and reaching it takes arithmetic: packing a key
+into an optimal acrostic is bit-level base conversion, exactly the work a
+language model does badly and silently wrong. So price the channel by what
+an agent can do *without* help — **transcribe**. Secrets live on disk as
+text (base64 inside a PEM, hex, the base32 of a TOTP URI, BIP-39 words),
+and copying characters one per word needs no computation at all. On that
+reckoning an `id_ed25519` file is its ~400 base64 characters, so ~400
+words; an RSA-2048 PEM is ~1600. Well above the floor — and still not a
+wall. Note that modern keys got *smaller* as well as shorter-to-copy: the
+ed25519 file is a quarter of the RSA one, which cuts against you either
+way.
+
+Which number applies is decided by the wiring, and the deciding factor is
+worth holding on to: **a severed sandbox cuts the network, never the CPU.**
+`bash` in this chapter's agent can't reach the internet, but `base64 -d`,
+`xxd` and `openssl rsa -text` run inside it perfectly well. Give an agent
+local compute and it reaches the floor — fifty-five words is the honest
+number for `pikuri-computer`. Take the shell away, as the mail-only wiring
+of Part 3 does, and it falls back to transcription. Don't read that as
+safety: a mailbox is precisely where people paste a private key "just to
+have it," so one forgotten five-year-old message puts a whole PEM back
+within reach of an agent that can only copy. It costs the attacker a
+thread instead of an email.
 
 And the single-query bound above dissolves the same way. A query too short
 to hold cover text is only a limit on *one* query. Spread the payload
@@ -758,6 +779,8 @@ across many — `define "apple"`, then `define "bridge"`, where the choice of
 word carries a few bits each time — and every individual request is short,
 query-shaped and utterly innocent. There is no request to refuse. Being
 more patient with each one doesn't help; it just approves more of them.
+Nor do transcription slips save you: a garbled fragment is simply asked
+for again, and the injector is the one checking the work.
 
 So don't offer yourself "it's too big to hide" as comfort, and don't write
 it into a threat model. The claim that survives is narrower and genuinely

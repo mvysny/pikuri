@@ -791,13 +791,22 @@ tool's runtime gate).
 
 #### Bandwidth is not a safety property (the entropy table)
 
-*Graduated 2026-08-08. The argument — entropy not file size, ~55 acrostic
-words for an ed25519 key, the drip across many short queries, and the
-"don't offer it as reassurance" consequence — is now taught in
-`book/07-os-assistant.md` §"Why 'too big to hide' is not a defense" and
-stated for the mail seat in `pikuri-thunderbird/DESIGN.md`. The same pass
-softened ch7's two "forces a conspicuous blob" claims, which were the
-reassurance this section forbids.*
+*Graduated 2026-08-08. The argument — the entropy floor, the transcription
+price that a tool-less agent actually pays, the drip across many short
+queries, and the "don't offer it as reassurance" consequence — is now
+taught in `book/07-os-assistant.md` §"Why 'too big to hide' is not a
+defense" and stated for the mail seat in `pikuri-thunderbird/DESIGN.md`.
+The same pass softened ch7's two "forces a conspicuous blob" claims, which
+were the reassurance this section forbids.*
+
+*Corrected while graduating: the original table priced every secret at its
+**entropy**, which assumes the agent can pack a key into an optimal
+acrostic — bit-level base conversion, which an LLM does badly. The price an
+agent can actually pay is **transcription** of the secret's on-disk
+characters (~400 words for an `id_ed25519`, ~1600 for an RSA PEM). Which
+one applies is a property of the wiring: local compute reaches the floor,
+and a network-severed sandbox still computes. The conclusion is unchanged —
+the drip removes the ceiling either way.*
 
 What stays here is the detector-side consequence, still unbuilt: **don't
 encode bandwidth in the detector.** It's a degree, like scanner strength —
