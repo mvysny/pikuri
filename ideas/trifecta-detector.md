@@ -1,9 +1,10 @@
 # Trifecta detector
 
-Status: **designed, not built.** Core algorithm is essentially settled
-(this file); a paper dry-run on the demos (see "Paper dry-run" below)
-validated the verdicts but the open-questions pile is *growing*, not
-shrinking. Parked threads, none pursued yet:
+Status: **designed, not built.** Core algorithm is settled (this file);
+a paper dry-run on the demos (see "Paper dry-run" below) validated the
+verdicts, and the graded egress axis closed in 2026-08 — but the
+open-questions pile is still growing faster than it shrinks. Parked
+threads:
 
 1. The human-gated-egress primitive (author-seat half shipped; taint half
    designed-not-built).
@@ -13,16 +14,18 @@ shrinking. Parked threads, none pursued yet:
    deferred; inert until a search-only persona exists.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
-5. Graded egress axis (`egress_human_author < egress_human_approver <
-   egress`) + a 2-D untrusted×egress verdict grid — the load-bearing route
-   to a *trifecta-soft* pikuri-computer (`--no-internet` → soft, not loud).
-   The approver-seat scanners are mostly **shipped** (`ComposeGuard` +
+5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
+   levels `egress_human_approver < egress`, split by the
+   **payload-visibility** test, and the earlier flat-egress scope list is
+   superseded. See (b). What stays parked: `egress_human_author` (the
+   `info` cell) is unreachable in every built seat, so it ships as a
+   spec-level ideal only — is strict author-mode reachable in a real
+   chrome at all, or is `soft` the best any built thing gets? The
+   approver-seat scanners are mostly **shipped** (`ComposeGuard` +
    `Sanitizer`: recipient novelty + fail-closed body); base64 blob spotter
    is spun out to [`base64-body-spotter.md`](base64-body-spotter.md). All
    bound-not-closed (residual: reply-to-injector + linguistic stego) and
-   must not promote approver → author. Sub-question: is strict author-mode
-   even reachable in a real chrome, or is `soft` the best any built seat
-   gets?
+   must not promote approver → author.
 6. Injection tripwire: a `Sanitizer` fail-close on LLM-*authored* content
    is a runtime "this agent is poisoned *now*" signal (today misrouted to
    the LLM, not the human) → advise dropping the poisoned context, don't
@@ -406,6 +409,9 @@ question below, not settled fact):
   compose / calendar-create stage bytes bound for an attacker-readable
   sink (the recipient's inbox); the human *Send* is a runtime
   mitigation the capability check can't see. Capability present → tag it.
+  **Superseded 2026-08-08** — compose is `egress_human_approver`, because
+  the human sees the exact bytes; see (b). The assumption survives only
+  for gates that show a *proxy* for the payload (bash's command line).
 
 ### Results
 
@@ -415,6 +421,33 @@ question below, not settled fact):
 | **pikuri-computer**, `--no-internet` | `{private, untrusted(hard), egress}` | **loud** | *unchanged* — egress is Thunderbird compose, not the web tools |
 | **pikuri-code**, default, **public** repo (no `:private`) | `{untrusted(hard), egress}` | **silent** | private leg never declared → two legs only |
 | **pikuri-code**, default, **private** repo (`:private` declared) | `{private, untrusted(hard), egress}` | **loud** | bash (Bubblewrap `--share-net`) = direct egress; repo = private + untrusted |
+
+#### Revised under the graded egress axis (2026-08-08)
+
+The table above is the *flat-egress* run, kept as the record of what that
+algorithm says. With `egress_human_approver` + the payload-visibility test
+from "More open questions (b)", the verdicts become:
+
+| binary / mode | egress leg, classified | verdict |
+|---|---|---|
+| **pikuri-computer**, both modes | compose + `agent(editable:)` → **approver**; bash kernel-severed → none | flat **loud** → **soft** |
+| **pikuri-thunderbird** (both `allow_` flags on) | compose + `.ics` wizard → **approver** | flat **loud** → **soft** |
+| **pikuri-thunderbird** default `Extension` (flags off) | *no egress leg at all* | **silent** (2 legs, severed by construction) |
+| **pikuri-code**, private repo | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
+
+Two notes this run added:
+
+- The demo binaries stop being uniformly loud, so "loud" carries
+  information again — and the surviving loud one is the agent that really
+  can egress bytes nobody read.
+- **Thunderbird is the one place `:private` is framework-knowable.** The
+  asymmetry rule says sensitivity is a property of the data, so the user
+  declares it — but a *mailbox* is private by domain, not by configuration,
+  and the same goes for a calendar. So the Thunderbird tools should carry
+  `:private` by default rather than waiting on a workspace declaration.
+  Narrow exception, worth stating explicitly so it isn't read as a breach
+  of the split: the framework knows because the **tool's domain** is
+  inherently sensitive, not because it inspected the data.
 
 Per-node detail (the max-over-tree the report would attribute):
 
@@ -469,9 +502,10 @@ Per-node detail (the max-over-tree the report would attribute):
    claims the framework *can* determine.
 
 2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
-   demo — trips the loudest alarm, in *both* modes** *(under the settled
-   flat-egress algorithm; the graded-egress axis in "More open questions
-   (b)" revises `--no-internet` down to **soft**).* That's correct, not a
+   demo — trips the loudest alarm, in *both* modes** *(under the
+   flat-egress algorithm only; the graded axis in "More open questions (b)"
+   revises **both** modes down to **soft**, since compose and the editable
+   researcher task both pass the payload-visibility test).* That's correct, not a
    bug: it *is* a full trifecta; the safety is the human commit in
    Thunderbird's UI + the kernel-severed bash + the approved researcher
    task, none of which is leg-*absence*. This is the single best teaching
@@ -501,11 +535,14 @@ Per-node detail (the max-over-tree the report would attribute):
   the workspace is declared all-trusted** — the untrusted-leg twin of
   "tag egress generously." (An all-trusted-workspace opt-out is the
   symmetric knob to `private: true`.)
-- **Does a human-gated hand-off deserve its own marker?** This is now a
-  live open question, not a lean — see "More open questions (b)" below,
-  where it's reopened as *load-bearing* (the user's position: without it
-  pikuri-computer can never be classified as anything but a full
-  trifecta, and the book leans on the softer framing).
+- **Does a human-gated hand-off deserve its own marker?** ~~Live open
+  question~~ — **resolved yes** (2026-08-08). It gets
+  `egress_human_approver`, gated on payload visibility; see "More open
+  questions (b)". Without it pikuri-computer can never be classified as
+  anything but a full trifecta, and the book leans on the softer framing.
+  The dry-run's working assumption above ("a human-gated hand-off is still
+  hard `:egress`") is therefore **superseded** — it holds only for a gate
+  the human sees a *proxy* through, which is bash, not compose.
 
 ## Proposed tag `:egress_writeonly` (the `:egress_untargeted` idea)
 
@@ -648,6 +685,56 @@ needs *either* author-mode compose (no pre-fill) *or* privilege-separating
 the mail read so untrusted drops to weakened. So the user is right that it
 softens; the correction is soft, not safe.
 
+#### What separates `human_approver` from autonomous: payload visibility
+
+The axis above says *who authors the bytes*, which is enough to place
+compose but **not** enough to place a confirmer-gated tool — and getting
+that wrong deletes the alarm. `Code::Bash` consults its `Confirmer` before
+every command (`bash.rb:199`), and there is a `passive_detector` auto-gate
+seam that can answer before the human is asked at all. So the naive reading
+— *a human is in the path ⇒ `human_approver` ⇒ soft* — makes bash soft too,
+and with it **every loud verdict in the repo**: pikuri-code over a private
+repo, pikuri-computer in both modes. A detector whose top level is
+unreachable is exactly as useless as one that always fires.
+
+The tempting rescue is frequency/salience: bash confirmations come by the
+dozen and get rubber-stamped, a compose window is rare and irreversible.
+**Inadmissible** — that is attention quality, i.e. the same
+effectiveness question that bars scanners from promoting the seat
+(next sub-section). Grade attention and trust-the-approver is back at a
+finer grain.
+
+The admissible test is structural:
+
+> **Does the human see the bytes that leave, or only a proxy for them?**
+
+- **Compose window → `egress_human_approver`.** The payload *is* the
+  reviewed artifact: what is on screen is what egresses, byte for byte.
+- **`agent` with `editable: true` → `egress_human_approver`** (author if
+  actually retyped). The task string *is* the bytes crossing into the
+  egress-holder's reach.
+- **Bash behind a confirmer → stays hard `:egress`.** The human approves a
+  *command* — a **program**, not a payload. Behind a pipe, a heredoc, a
+  script file, `$(…)`, the egressing bytes are computed at runtime and were
+  never on screen. Approving `curl` approves an *intent*.
+
+This is derived from structure, not from trusting anyone's diligence, and
+it is the rule a tool author can actually apply to self-tag — which the
+lattice otherwise lacks (`Sandbox#egress?`'s "ask the object for its
+posture" needs a question the object can answer).
+
+Consequence for the dry-run: pikuri-code **stays loud** (bash is genuine
+autonomous-payload egress with a human blessing the wrapper) while the
+Thunderbird/researcher seats drop to **soft**. That is the contrast
+finding #2 was asking for — see the revised table under "Results".
+
+**Do not merge this with `:egress_writeonly`.** Write-only grades
+*attacker readability of the response*; payload visibility grades *what
+the human saw*. Genuinely orthogonal — a readable human-gated egress and a
+blind autonomous one are different animals. The 2-D (untrusted × egress)
+grid stays 2-D; nobody builds the third axis while write-only is still
+unreachable for want of a search-only persona.
+
 #### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
 
 Most of this confirmer hardening is **already shipped** in
@@ -734,13 +821,35 @@ brainstorm next (the *what*, not yet the technical *how*):
 
 ## v1 scope, in one place
 
+*Revised 2026-08-08: the graded egress axis is in, at two levels. The
+earlier flat-`:egress` version of this list is superseded.*
+
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
-  (framework, default on) / `:untrusted_weakened` (computed).
+  (framework, default on) / `:untrusted_weakened` (computed) /
+  `:egress_human_approver` (declared by the tool).
 - `:private` declared on the workspace/corpus; file tools inherit it.
-- Boundary relabel `untrusted→untrusted_weakened`; union = max on
-  `none < weakened < hard`.
+  Exception: domain-inherently-private tools (Thunderbird mail/calendar)
+  carry it by default.
+- Two lattices, union = max on each:
+  `none < untrusted_weakened < untrusted` and
+  `none < egress_human_approver < egress`.
+- Egress level is set by **payload visibility** — the human sees the
+  literal outbound bytes (compose window, editable task string) →
+  `egress_human_approver`; the human sees a proxy (a bash command line) →
+  hard `:egress`.
+- Boundary relabel: `untrusted→untrusted_weakened`, everything else
+  identity (an egress level survives the boundary at its own strength).
 - Evaluate every node; verdict = max over tree; report the path.
-- `{private,egress,untrusted}` → loud; `{private,egress,weakened}`
-  → soft.
+- Verdict grid, `:private` present:
+
+  | egress ↓ / untrusted → | hard | weakened |
+  |---|---|---|
+  | autonomous | **loud** | soft |
+  | human_approver | **soft** | soft |
+
+- **Not** in v1: `egress_human_author` / the `info` cell (unreachable in
+  every built seat — pre-fill demotes it; keep it a spec-level ideal) and
+  `:egress_writeonly` (changes no current verdict).
 - Warn-only, once per process, message names the leg to break.
-- No custom legs, no per-persona knobs, no propagation exceptions.
+- No custom legs, no per-persona knobs, no propagation exceptions, and no
+  grading of approver *quality* (scanner strength, attention, frequency).
