@@ -5,7 +5,8 @@ strength lattices, per-node max over the tree, `min` across a delegation —
 and a paper dry-run on the demos validated the verdicts. A 2026-08-08 review
 pass against the actual wiring found five holes that block implementation,
 collected in "Open items from the 2026-08-08 review pass" and marked ⛔
-inline in the v1 scope list; **item 1 (propagation) is closed, four remain**.
+inline in the v1 scope list; **items 1 (propagation) and 4 (file-read
+`:untrusted`) are closed, three remain**.
 Until they do, "core algorithm is settled" is an overstatement — and note
 that the graded egress axis was folded in at the bottom of this file, so the
 normative sections above it still describe flat egress (each carries a
@@ -15,9 +16,9 @@ Parked threads, older than that review:
 
 1. The human-gated-egress primitive (author-seat half shipped; taint half
    designed-not-built).
-2. Does a *local file read* carry `:untrusted`? — the tag table and the
-   narrative disagree (a genuine gap in the "settled" rules). **Elevated
-   to ship-blocking: review item 4.**
+2. ~~Does a *local file read* carry `:untrusted`?~~ **Closed** — yes by
+   default, opt out with `trusted:` on a *scoped* workspace root (rejected
+   on `AllowAll`). See review item 4.
 3. `:egress_searchengine` (was `:egress_writeonly`) — still deferred, but no
    longer *inert*: a search-only persona is the cheapest fix for the one
    hole the series cap leaves open. Ship the tag and the persona together.
@@ -363,13 +364,14 @@ moment it reads a hard-`:untrusted` local file (bash / `Read` over a hostile
 file on disk). Separation only raised the bar; the gate on the task string is
 what is meant to hold the line there.
 
-*Half of that reading is now settled and half is still open. The propagated
-`RESEARCHER` egress **is** capped at `approver` by the gated delegation
-(**item 1**, series cap — the persona holds no `:private`), so the parent's
-egress leg is `egress_human_approver`, not hard. Whether a local file read
-carries hard `:untrusted` is still open — asserted here, denied by the tag
-table (**item 4**) — and it is the only thing standing between this wiring's
-soft and a silent two-leg reading.*
+*Both halves of that reading are now settled, and the verdict stands as
+written. The propagated `RESEARCHER` egress **is** capped at `approver` by
+the gated delegation (**item 1**, series cap — the persona holds no
+`:private`), so the parent's egress leg is `egress_human_approver`, not
+hard. And a local file read **does** carry hard `:untrusted` (**item 4**),
+which this wiring cannot opt out of: `pikuri-os` runs on
+`Filesystem::AllowAll`, where `trusted:` is rejected by construction. Soft,
+not silent.*
 
 ### Does a patient human approver stop egress? (No — only a rewriter)
 
@@ -437,14 +439,15 @@ obviously sensitive and **undeclared** where it isn't — the whole point
 of the user-supplied leg — and both readings are shown where it flips
 the verdict.
 
-Working assumptions the dry-run had to pin down (each is an open design
-question below, not settled fact):
+Working assumptions the dry-run had to pin down (each was an open design
+question at the time, not settled fact — both have since been decided):
 
 - **Local file reads carry hard `:untrusted`** on any workspace that can
   hold non-user-authored bytes (a cloned dep, a saved attachment, a PR
   branch). Every workspace here qualifies. This is the "tag generously"
   rule applied to the *untrusted* leg, mirroring how `:egress` is
-  tagged.
+  tagged. **Confirmed 2026-08-08** — this is now the default, with a
+  `trusted:` opt-out on a scoped root only (item 4).
 - **A human-gated hand-off is still hard `:egress`.** Thunderbird's
   compose / calendar-create stage bytes bound for an attacker-readable
   sink (the recipient's inbox); the human *Send* is a runtime
@@ -474,14 +477,17 @@ from "More open questions (b)", the verdicts become:
 | **pikuri-computer**, default (internet ON) | compose → **approver**; `RESEARCHER`'s hard `fetch` capped at **approver** by the gated delegation (series cap, item 1 — the researcher holds no `:private`) | flat **loud** → **soft** |
 | **pikuri-thunderbird** (both `allow_` flags on) | compose + `.ics` wizard → **approver** | flat **loud** → **soft** |
 | **pikuri-thunderbird** default `Extension` (flags off) | *no egress leg at all* | **silent** (2 legs, severed by construction) |
-| **pikuri-code**, private repo | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
+| **pikuri-code**, private repo, **untrusted** workspace | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
+| **pikuri-code**, private repo, `trusted: true` | same hard bash egress, but the parent's untrusted drops to **weakened** (web tools are sub-agent-only) | **soft** |
 
 Two notes this run added:
 
 - The demo binaries stop being uniformly loud, so "loud" carries
-  information again — and the one surviving loud verdict is **pikuri-code**,
-  the agent that really can egress bytes nobody read (bash computes its
-  payload at runtime). Everything human-gated drops to soft.
+  information again — and the one surviving loud verdict is **pikuri-code
+  over an untrusted private repo**, the agent that really can egress bytes
+  nobody read (bash computes its payload at runtime). Everything human-gated
+  drops to soft, and so does pikuri-code once the workspace is declared
+  trusted.
 - **Thunderbird is the one place `:private` is framework-knowable.** The
   asymmetry rule says sensitivity is a property of the data, so the user
   declares it — but a *mailbox* is private by domain, not by configuration,
@@ -573,16 +579,18 @@ Per-node detail (the max-over-tree the report would attribute):
    unbuilt `Filesystem(private: true)` plumbing: without it the coding
    agent can never *earn* the warning it should get over a secret repo.
 
+   *Amended 2026-08-08 (item 4): there are now **two** levers, and together
+   they give one binary three verdicts — public repo → **silent**, trusted
+   private repo → **soft**, untrusted private repo → **loud**. Both flags
+   ride the same constructor, so the plumbing is one change, not two.*
+
 ### Open design questions this exposed
 
-- **Is a local file read `:untrusted`, and who defaults it?** The tag
-  table (only web + web-sourced vectordb) says *no*; the pikuri-os
-  narrative ("the moment it reads a hard-`:untrusted` local file") says
-  *yes*. The dry-run needs it to be *yes* to get the right verdicts.
-  Resolve the table toward: **file-read tools default `:untrusted` unless
-  the workspace is declared all-trusted** — the untrusted-leg twin of
-  "tag egress generously." (An all-trusted-workspace opt-out is the
-  symmetric knob to `private: true`.)
+- **Is a local file read `:untrusted`, and who defaults it?** ~~Live open
+  question~~ — **resolved yes** (2026-08-08), with the opt-out narrowed to
+  a *scoped* workspace root. The tag table (web + web-sourced vectordb
+  only) said no; the pikuri-os narrative said yes; the dry-run needed yes.
+  Full resolution in review item 4.
 - **Does a human-gated hand-off deserve its own marker?** ~~Live open
   question~~ — **resolved yes** (2026-08-08). It gets
   `egress_human_approver`, gated on payload visibility; see "More open
@@ -908,10 +916,10 @@ answer is therefore per-seat rather than global.*
 ## Open items from the 2026-08-08 review pass
 
 Raised by reading the note against the actual wiring after the graded-egress
-fold-in. Items 2–5 are **ship-blocking for v1** — each is a rule the
+fold-in. Items 2, 3 and 5 are **ship-blocking for v1** — each is a rule the
 implementer would otherwise have to invent; 6–7 are sharpenings that change
-what we claim, not what we build. **Item 1 is closed** (2026-08-08) and kept
-below as the derivation.
+what we claim, not what we build. **Items 1 and 4 are closed** (2026-08-08)
+and kept below as their derivations.
 
 ### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
 
@@ -1001,25 +1009,84 @@ per verdict-change, not per process). Alternative: declare MCP out of scope
 and say so *in the warning text*, since an unstated exclusion is worse than
 a loud one.
 
-### 4. Local-file-read `:untrusted` must land in the v1 vocabulary (elevates parked thread 2)
+### 4. Local-file-read `:untrusted` — RESOLVED: on by default, opt out per scoped root
 
-Not a new question — it's the tag-table-vs-narrative gap already parked at
-the top — but the review makes it **ship-blocking** rather than merely
-open: every dry-run verdict depends on the *yes*, and the v1 list never
-mentions the untrusted default for file tools or the all-trusted-workspace
-opt-out. Under the tag table as literally written, pikuri-code over a
-private repo is `{private, egress}` → **silent**, contradicting its own
-dry-run row. Whatever the answer, v1 has to state it in the vocabulary
-bullet next to `private:`.
+The tag-table-vs-narrative gap parked at the top of this file, and
+ship-blocking because every dry-run verdict depended on the answer. Under
+the tag table as literally written, pikuri-code over a private repo is
+`{private, egress}` → silent, contradicting its own dry-run row.
+
+**Resolution (2026-08-08): file reads carry hard `:untrusted` by default.**
+Broad disk access means Downloads, browser and package caches, cloned
+dependencies, fetched PR branches — attacker-authored bytes are the norm,
+not the exception, and a hostile README is read into the model's context
+verbatim. This is the untrusted-leg twin of tag-egress-generously.
+
+**The opt-out is a property of the workspace *root*, not of paths.** The
+tempting version — mark trusted islands inside a broad workspace — buys
+nothing here, because the detector reasons about capability presence: if
+`Read` can reach `~/Downloads` **at all**, `Read` is untrusted, however many
+subfolders were vouched for. Trust only lowers the tag when the trusted area
+is the tool's *entire reachable set*. So an island **is** a scoped
+workspace, and pikuri already has the distinction in the type system:
+
+- `Filesystem.new(project_root:, readable:, writable:)` — scoped;
+  `trusted: true` is meaningful.
+- `Filesystem::AllowAll` — whole host minus a denylist; `trusted:` must be
+  **rejected in the constructor** (`ArgumentError`, per errors-are-loud).
+  Not merely inadvisable — unrepresentable, because the flag cannot be
+  honest there.
+
+No path-matching machinery, no precedence rules, no symlink-escape
+question. If a redesign is ever needed it is local to one constructor
+argument.
+
+**Bash follows the *sandbox's* fs view, not the workspace's.** Otherwise the
+rule fails silently: scope the workspace to a trusted repo, declare it, and
+`bash` still `cat`s `~/Downloads`, because `FullFsNoNet` hands the
+subprocess the whole filesystem — the workspace governs what the *LLM
+observes*, the sandbox governs what *bash sees*. Same "ask the object for
+its posture" rule as `Sandbox#egress?`, second axis (item 5 now owes two
+predicates, not one).
+
+**Two things this settles that were open elsewhere.**
+
+- **The weakened column is reachable after all.** Earlier worry: with file
+  reads untrusted, `untrusted_weakened` survives only for agents with no
+  file tools, so the untrusted lattice earns nothing. The opt-out is what
+  rescues it — pikuri-code quarantines its web tools in sub-agents, so over
+  a **trusted** private repo the parent is
+  `{private, egress(hard), untrusted_weakened}` → **soft**. One binary, three
+  verdicts: public repo → silent, trusted private repo → soft, untrusted
+  private repo → loud. That is the teaching contrast finding 3 was reaching
+  for.
+- **`trusted:` is not exotic.** pikuri-code's default wiring is already
+  scoped (`AllowAll` only under `--yolo`), so the flag is available exactly
+  where it is honest and unavailable exactly where claiming it would be a
+  lie. The binary also sets the UX precedent: it already asks a *scoped*
+  trust question at boot (`pikuri-code:211` — "Trust this directory's git
+  config?", default no, with a concrete account of what goes wrong).
+
+  Keep the two questions **separate** if `trusted:` ever gets a prompt. That
+  one asks whether a hostile `.gitattributes` diff driver can **execute
+  code**; ours asks whether the repo's **bytes** are attacker-authored. A
+  repo routinely passes the first and fails the second (you control
+  `.git/config`; `vendor/` is someone else's). Merging them would let a
+  `yes` about git config silently declare all content trusted — the
+  mis-declaration this design otherwise makes impossible.
 
 ### 5. No implementation seam is named
 
 For "ready to build" the note still owes: where the tags live on
 `Pikuri::Tool` (a method? a `Data` record? how does a tool whose level
-depends on collaborators expose it — item 2); `Sandbox#egress?`, which
-**does not exist yet** (nothing in `pikuri-code/lib/pikuri/code/bash/sandbox.rb`
-answers posture, so the "ask the object" rule has no receiver);
-`Filesystem(private:, trusted:)`; when the tree walk runs (Configurator
+depends on collaborators expose it — item 2); **two** sandbox predicates,
+neither of which exists yet (nothing in
+`pikuri-code/lib/pikuri/code/bash/sandbox.rb` answers posture, so the "ask
+the object" rule has no receiver) — `Sandbox#egress?` for the net view and
+its twin for the **fs** view, which is what gives `Bash` its `:untrusted`
+reach (item 4); `Filesystem(private:, trusted:)` — one constructor change
+covering both flags, with `trusted:` raising on `AllowAll`; when the tree
+walk runs (Configurator
 close, after the user block, so `add_tool`/`add_extension` have all fired);
 how personas resolve `tool_names` → tools for the sub-agent nodes; and
 where the report is emitted. None of these is hard; all of them are
@@ -1109,17 +1176,20 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
-**Four holes, marked inline as ⛔ — this list is not yet buildable.** See
+**Three holes, marked inline as ⛔ — this list is not yet buildable.** See
 "Open items from the 2026-08-08 review pass"; each ⛔ names the item that
-has to close first. (Item 1 closed 2026-08-08 — the series cap, folded into
-the boundary-relabel bullet below.)
+has to close first. (Items 1 and 4 closed 2026-08-08 — the series cap and
+the file-read `:untrusted` default, both folded into the bullets below.)
 
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
-  `:egress_human_approver` (declared by the tool). ⛔ **item 4** — the
-  vocabulary still owes the `:untrusted` default for *file-read* tools +
-  the all-trusted-workspace opt-out; ⛔ **item 3** — and the default for a
-  foreign/untagged tool (MCP), which arrives at runtime.
+  `:egress_human_approver` (declared by the tool). ⛔ **item 3** — still
+  owes the default for a foreign/untagged tool (MCP), which arrives at
+  runtime.
+- **File reads carry `:untrusted` by default** (item 4). Opt out with
+  `trusted: true` on a *scoped* `Filesystem`; rejected on `AllowAll`, where
+  it could not be honest. `Bash` takes its untrusted reach from the
+  **sandbox's** fs view, not the workspace's.
 - `:private` declared on the workspace/corpus; file tools inherit it.
   Exception: domain-inherently-private tools (Thunderbird mail/calendar)
   carry it by default.
