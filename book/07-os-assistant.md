@@ -508,7 +508,7 @@ the networked side — stops for you:
 Delegate this task to the 'researcher' sub-agent? It reaches the
 network — you approve what leaves this machine.
   the current stable kernel version for Ubuntu 26.04
-(y/n)?
+[y] approve  [e] edit  [n] reject
 ```
 
 This is the same `Confirmer` from Part 1, reused unchanged. The point is
@@ -528,11 +528,26 @@ fetched page reaches the parent as a reported fact ("the page also said
 to…"), not a live instruction. Confirm what goes *out*; let what comes
 *in* be data, as it always was.
 
-(The gate today is a plain yes/no on the shown task. Two sharper shapes —
-letting you *edit* the task in place before it goes, and typing a reason
-on a rejection to steer the agent — are sketched in
-[`ideas/more-confirmers.md`](../ideas/more-confirmers.md) and deferred
-to their own pass.)
+Note the third option. `e` opens the task in your editor and sends
+**what you type**, not what the model proposed — the difference between
+approving a payload and authoring one. And if the task tripped a
+`Sanitizer` warning, the prompt changes shape entirely:
+
+```
+⚠ retype required — [e] edit  [n] reject
+```
+
+Bare approval is gone, and the editor opens *empty*: a flagged task can
+only proceed as bytes you wrote yourself. That is as close to a forced
+author seat as a terminal gets — see "What the gate is — and isn't" at
+the end of this chapter for why "as close as a terminal gets" is not the
+same as "closed", and why the `y` on a *clean* task is where the residual
+risk lives.
+
+(Rejecting with `n` also prompts for an optional reason, which comes back
+to the agent as the observation — a decline that steers instead of just
+failing. Richer confirmer shapes still on the list are in
+[`ideas/more-confirmers.md`](../ideas/more-confirmers.md).)
 
 ## Two network boundaries, not one
 
@@ -587,11 +602,14 @@ Part 2 *weakens* the third leg; it does not delete it. What remains:
 - **Your attention on the gate.** The whole break rests on you *reading*
   the task you approve. A rubber-stamped delegation is the same failure as
   a rubber-stamped `MACHINE.md` edit — which is why the prompt shows you
-  the exact task, and why Part 1's fewer-but-meaningful-prompts argument
-  matters here too.
+  the exact task, why a *flagged* task won't let you bare-approve at all,
+  and why Part 1's fewer-but-meaningful-prompts argument matters here too.
+  A **clean** task still takes a one-key `y`, and that is the hole: the
+  laundering this gate exists to stop is precisely the kind that arrives
+  looking clean.
 
-Everything sharper — the editable-task author seat, richer confirmers, an
-ingest-side gate on what the researcher returns — is future work in
+Sharper still — richer confirmers, an ingest-side gate on what the
+researcher returns — is future work in
 [`ideas/more-confirmers.md`](../ideas/more-confirmers.md).
 
 ---
