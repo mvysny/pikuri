@@ -736,9 +736,9 @@ unreachable is exactly as useless as one that always fires.
 The tempting rescue is frequency/salience: bash confirmations come by the
 dozen and get rubber-stamped, a compose window is rare and irreversible.
 **Inadmissible** — that is attention quality, i.e. the same
-effectiveness question that bars scanners from promoting the seat
-(next sub-section). Grade attention and trust-the-approver is back at a
-finer grain.
+effectiveness question that bars scanners from promoting the seat (see
+"Scanners must not promote the approver seat" below). Grade attention and
+trust-the-approver is back at a finer grain.
 
 The admissible test is structural:
 
@@ -813,58 +813,34 @@ encode bandwidth in the detector.** It's a degree, like scanner strength —
 same reason, same answer. Attachments are in scope because they're
 *structural*; stego capacity is not.
 
-#### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
+#### Scanners must not promote the approver seat
 
-Most of this confirmer hardening is **already shipped** in
-`Pikuri::Thunderbird::ComposeGuard` + `Pikuri::Sanitizer` (verified, not
-assumed):
+*Graduated 2026-08-08. The three shipped scanners — `ComposeGuard`'s
+recipient-novelty warn, the `Sanitizer` body fail-close, and
+`#body_blob_note` — are documented at their own yardoc (plus
+`D-blob-spotter-alphabets` for the alphabet fork), and what they fail to
+close lives in `pikuri-thunderbird/DESIGN.md` §"What the body guards do
+**not** close": the **ladder** an adaptive injector walks down (control
+bytes → plain ASCII → hex/base32 → sub-threshold chunks → linguistic
+stego), and the reply-to-injector bypass (the poisoning message's
+From-domain is already in Gloda's identity graph, which counts received
+mail).*
 
-- **recipient novelty** — `ComposeGuard#novelty_note` via
-  `Gloda::Contacts#domains_seen`. A soft warn (keep-in-draft) on a
-  recipient *domain* the user has no prior mail with — soft because a
-  hard reject would fire on every genuinely-new correspondent.
-- **plaintext body + Unicode/control/bidi/zero-width/homoglyph** — the
-  body **fail-closes** on any `Sanitizer` warning (stronger than a warn:
-  nothing is handed off, the human retypes in Thunderbird); addresses are
-  hard-dropped if non-ASCII or punycode.
-- **encoded / high-entropy blob** — **shipped** after all
-  (`ComposeGuard#body_blob_note`, a soft-warn, deliberately *not* in the
-  finite-codepoint `Sanitizer`); the design graduated to
-  `D-blob-spotter-alphabets` +
-  {Pikuri::Thunderbird::ComposeGuard#body_blob_note}. It
-  now covers base64 (3-class) plus single-case hex and base32 at longer
-  thresholds. Still a *note*, not a fail-close, and still walked under by
-  splitting the payload into sub-threshold chunks — a paste guard, not an
-  exfil control.
+What stays here is the detector rule, still unbuilt:
 
-Good defense-in-depth. Two things they still do **not** do:
+> **Scanners must never promote `human_approver` → `human_author`.**
 
-1. **They don't close the channel.** They force the attacker down the
-   ladder exactly as the note's patient-approval bound predicts: past
-   base64 (→ base32/hex/spelled-out), past Unicode stego (→ ASCII), down to
-   **linguistic steganography the scanners and the human both read as
-   benign prose** — the user's acrostic ("I think dogs are super cute" →
-   `itdasc`), word-choice, sentence count. Low-bandwidth, but enough for a
-   password/key over a few messages. And the **recipient novelty check is
-   *bypassed*, not just weakened**, in the sharpest case (verified in
-   `Gloda::Contacts#domains_seen`: it reads the `identities` table, which
-   collects authors *and* recipients — so received mail counts): the
-   injecting email's own `From`-domain is already "seen", so *reply to the
-   injector* draws **no warning at all** — and the attacker receives the
-   reply. So the surviving exfil is: linguistic-stego body +
-   reply-to-injector — zero red flags, no warning to ignore. (It's also
-   per-*domain*, so a fresh address at an already-seen domain is silent
-   too.)
-2. **They must not promote `human_approver` → `human_author` in the
-   detector.** Scanner *effectiveness* ("does it catch the acrostic?") is
-   precisely the data-flow question the detector refuses to answer;
-   grading approver-quality by scanner strength relaunches trust-the-
-   approver at finer grain and would lull users into trusting a screen that
-   demonstrably misses linguistic stego. The detector grades the
-   **structural** egress class (who authors the bytes); scanners live on
-   the **confirmer** as runtime hardening, documented as bound-not-closed.
-   Author-mode is the only thing that reaches `info`, because clean-by-
-   construction is a *proof*, not a mitigation-of-degree.
+Scanner *effectiveness* ("does it catch the acrostic?") is precisely the
+data-flow question the detector refuses to answer; grading approver-quality
+by scanner strength relaunches trust-the-approver at a finer grain, and
+would lull users into trusting a screen that demonstrably misses linguistic
+stego. The detector grades the **structural** egress class (who authors the
+bytes); scanners live on the **confirmer** as runtime hardening, documented
+as bound-not-closed. Author-mode is the only thing that reaches `info`,
+because clean-by-construction is a *proof*, not a mitigation-of-degree.
+(Same argument as the frequency/salience rejection under "payload
+visibility" — attention quality and scanner strength are one axis, and the
+detector declines to grade it.)
 
 #### Still to brainstorm: is strict author-mode even reachable?
 

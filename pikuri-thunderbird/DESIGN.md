@@ -192,8 +192,22 @@ whitespace or spells it in prose for free (the same injection payload carries
 the evasion). The sharpest surviving channel is **reply-to-injector**: the
 poisoning message's From-domain is already in Gloda's identities graph (which
 counts received mail, both directions), so a reply to the attacker draws no
-novelty flag. The human-gated, irreversible-send compose window — not the guard
-— is the backstop these lean on.
+novelty flag. The check is also per-*domain*, so a never-seen address at a
+domain you have mailed before is silent as well.
+
+**What each guard really buys is a rung, not a wall.** Every check here
+narrows the *form* the payload may take, never the payload itself, so an
+adaptive injector simply steps down: fail the body on control bytes,
+zero-width joiners and homoglyphs, and it drops to plain ASCII; note a
+base64 dump and it moves to hex, then base32, then splits the run below the
+threshold; catch those and what remains is **linguistic steganography** — the
+secret spelled out by the first letters of an innocuous sentence ("I think
+dogs are super cute"), by word choice, by sentence count. That bottom rung
+reads as ordinary prose to the guards *and* to the human, which is where an
+injector who has read this file starts. It is slower, and slow is not a
+barrier: `book/07-os-assistant.md` §"Why 'too big to hide' is not a defense"
+prices what fits. The human-gated, irreversible-send compose window — not the
+guard — is the backstop all of this leans on.
 
 **Create-event is shipped, opt-in.** `thunderbird_calendar_create`
 ({Pikuri::Thunderbird::CalendarCreate}) is wired only when a host passes
