@@ -114,8 +114,16 @@ can determine; make the user supply the one it can't.**
 
 - `:egress` — the framework *knows* a tool reaches a network sink.
   Default on for `web_search` / `web_scrape` / `fetch`, and for `Bash`
-  whenever its sandbox permits network. Tag generously: egress is
-  broader than the obvious senders (see
+  whenever its sandbox permits network — where "permits" means
+  *effectively*, not "lacks `--unshare-net`": a netns-severed bash that
+  can still reach the user's session bus egresses fine, because the bus
+  spawns the fetch outside every namespace (`D-headless-os-agent`,
+  measured 2026-08-06 — `systemd-run --user curl` → HTTP 200 from inside
+  the severed sandbox). Implementation consequence: ask the **sandbox
+  object** for its posture (a `Sandbox#egress?`-shaped predicate that a
+  sandbox answers for itself), never read a flag out of the argv — the
+  argv-level reading is exactly the wrong answer here. Tag generously:
+  egress is broader than the obvious senders (see
   [`security-open-questions.md`](security-open-questions.md)
   §"Egress is broader than `web_search`" — a *search query string* is
   already an outbound channel; DNS, error echoes, writes into a synced
@@ -287,7 +295,9 @@ research task"* — is wrong on both the verb and the credit, in exactly
 the ways the three bullets above predict:
 
 - **Egress is severed structurally *first*, not by the gate.** bash is
-  kernel-severed (`Sandbox::FullFsNoNet`, `--unshare-net`) and the web
+  kernel-severed (`Sandbox::FullFsNoNet`: `--unshare-net` **plus**
+  `SESSION_IPC_MASKS` — both halves load-bearing, see the tag section)
+  and the web
   tools live only on the `RESEARCHER` sub-agent, which has **no
   filesystem** (`add_sub_agent_tool`) — so the parent holds zero direct
   egress and the researcher holds no private data. The one private→egress
@@ -429,15 +439,34 @@ Per-node detail (the max-over-tree the report would attribute):
 ### Three findings the dry-run forces
 
 1. **The two agents differ on *where* egress lives, and it matters.**
-   pikuri-os/computer sever bash at the kernel (`--unshare-net`), so the
-   parent's only machine-egress is the *propagated* researcher leg — which
-   is why privilege separation is load-bearing there. pikuri-code shares
+   pikuri-os/computer sever bash at the kernel, so the parent's only
+   machine-egress is the *propagated* researcher leg — which is why
+   privilege separation is load-bearing there. pikuri-code shares
    the network in bash, so the parent egresses directly and separation
    buys context-hygiene, not an egress break. A reader could easily
    believe "web tools live on the sub-agent ⇒ the parent can't egress";
    for pikuri-code that's **false**. The detector surfaces this because it
    tags bash's egress from the sandbox's actual net posture, not from
    which tools are nominally "network tools."
+
+   *Sharpened 2026-08-06 (`D-headless-os-agent`, after this dry-run was
+   taken):* "actual net posture" is a stronger requirement than it looks.
+   The dry-run read `--unshare-net` and wrote down "no egress" — and for
+   every week between that reading and the session-IPC mask shipping, the
+   verdict was **wrong**: bash could hand the fetch to the session bus
+   (`systemd-run
+   --user curl` → 200; `xdg-open` starting a viewer parented to `systemd`,
+   outside the namespace and outliving `--die-with-parent`). A network
+   namespace binds *your process tree*, not what that tree can ask someone
+   else to do. Both directions of the lesson are detector-relevant:
+   *conservatism* — a severed netns is not evidence of a severed leg, so
+   an unmodelled IPC surface (session bus, a live container socket, an
+   ssh-agent, a broker on any unix socket) leaves `:egress` **on**; and
+   *humility about the dry-run itself* — the one leg the paper run treated
+   as objectively framework-knowable is the one it got wrong by reading a
+   flag instead of asking the sandbox. Same shape as the under-warn
+   admission in "smoke alarm, not firewall", but on the leg the note
+   claims the framework *can* determine.
 
 2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
    demo — trips the loudest alarm, in *both* modes** *(under the settled
