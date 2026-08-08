@@ -5,8 +5,8 @@ strength lattices, per-node max over the tree, `min` across a delegation —
 and a paper dry-run on the demos validated the verdicts. A 2026-08-08 review
 pass against the actual wiring found five holes that block implementation,
 collected in "Open items from the 2026-08-08 review pass" and marked ⛔
-inline in the v1 scope list; **items 1 (propagation) and 4 (file-read
-`:untrusted`) are closed, three remain**.
+inline in the v1 scope list; **items 1 (propagation), 3 (MCP) and 4 (file-read
+`:untrusted`) are closed, two remain**.
 Until they do, "core algorithm is settled" is an overstatement — and note
 that the graded egress axis was folded in at the bottom of this file, so the
 normative sections above it still describe flat egress (each carries a
@@ -916,9 +916,9 @@ answer is therefore per-seat rather than global.*
 ## Open items from the 2026-08-08 review pass
 
 Raised by reading the note against the actual wiring after the graded-egress
-fold-in. Items 2, 3 and 5 are **ship-blocking for v1** — each is a rule the
+fold-in. Items 2 and 5 are **ship-blocking for v1** — each is a rule the
 implementer would otherwise have to invent; 6–7 are sharpenings that change
-what we claim, not what we build. **Items 1 and 4 are closed** (2026-08-08)
+what we claim, not what we build. **Items 1, 3 and 4 are closed** (2026-08-08)
 and kept below as their derivations.
 
 ### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
@@ -993,21 +993,46 @@ human; an auto-approving or pre-approving gate contributes none, and the
 tool falls back to autonomous.* Which means the level is computed from the
 tool **plus its runtime collaborators**, at wiring time.
 
-### 3. MCP tools are invisible to the detector — and they arrive mid-session
+### 3. MCP tools — RESOLVED: `{untrusted, egress}` + an opt-in `private:` per registry entry
 
 Per the MCP-tool bypass seam, MCP tools are raw `RubyLLM::Tool` subclasses
 with no pikuri tag surface, yet an MCP server is the archetypal
-untrusted+egress leg. Worse for the "once per process at boot" plan:
-`mcp_connect` (`Mcp::Servers#build_mcp_connect_tool`) adds them *after* the
-Configurator block has run. v1 currently says nothing, and silence reads as
-"no legs" — the one reading we know is wrong.
+untrusted+egress leg. v1 said nothing, and silence reads as "no legs" — the
+one reading we know is wrong.
 
-Cheapest answer consistent with tag-generously: **an untagged / foreign
-tool defaults to `{untrusted, egress}`**, and a runtime `mcp_connect`
-re-evaluates the tree (which also settles what "once per process" keys on —
-per verdict-change, not per process). Alternative: declare MCP out of scope
-and say so *in the warning text*, since an unstated exclusion is worse than
-a loud one.
+**The MCP surface carries `{untrusted, egress}` unconditionally**, by the
+same principle item 4 settled: a tool's untrusted tag follows the breadth of
+what it can reach, and a trust claim is only allowed where the reachable set
+is small enough to vouch for. An MCP server's reachable set is unknown by
+construction — the tool list arrives at runtime from a server you didn't
+write. That is the `AllowAll` case, not the scoped case.
+
+**`:private` is opt-in, declared per registry entry** (`Registry::StdioEntry`
+/ `HttpEntry` gain a `private:` boolean, default false). Sensitivity is as
+unknowable to the framework here as it is for a workspace, so the same
+asymmetry rule applies: the human registering a Notion server knows; the one
+registering OpenLibrary knows too.
+
+**The union is over *registered* servers, not activated ones** — and this is
+the non-obvious part, so state it where someone will try to narrow it. An
+agent holding the MCP surface can reach **every** registered server, because
+`mcp_connect` activates any of them at will. Registration is the capability
+boundary; activation is just when the tools show up. So one private server
+makes the whole MCP surface private, and the agent is a full trifecta — as
+it should be.
+
+**Mid-session arrival is a non-problem** *(verified, and it reverses this
+item's original worry)*. `Registry` is **frozen at construction**
+(`registry.rb:77–78`), and `mcp_connect` only activates already-registered
+entries. So the *tools* arrive after the Configurator block, but the *legs*
+cannot: the capability set is fully knowable at boot. "Warn once per
+process" survives unchanged — no re-evaluation, no verdict-change keying.
+
+**Worked example, and it is the one in the book.**
+`bin/pikuri-openlibrary` wires `CALCULATOR` plus the MCP extension and no
+filesystem at all → `{untrusted, egress}`, two legs → **silent**. Correct,
+and a useful contrast to keep: the same MCP surface next to a private pool
+would be loud, and nothing about the MCP wiring would have changed.
 
 ### 4. Local-file-read `:untrusted` — RESOLVED: on by default, opt out per scoped root
 
@@ -1176,16 +1201,20 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
-**Three holes, marked inline as ⛔ — this list is not yet buildable.** See
+**Two holes, marked inline as ⛔ — this list is not yet buildable.** See
 "Open items from the 2026-08-08 review pass"; each ⛔ names the item that
-has to close first. (Items 1 and 4 closed 2026-08-08 — the series cap and
-the file-read `:untrusted` default, both folded into the bullets below.)
+has to close first. (Items 1, 3 and 4 closed 2026-08-08 — the series cap,
+the MCP defaults and the file-read `:untrusted` default, all folded into the
+bullets below.)
 
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
-  `:egress_human_approver` (declared by the tool). ⛔ **item 3** — still
-  owes the default for a foreign/untagged tool (MCP), which arrives at
-  runtime.
+  `:egress_human_approver` (declared by the tool).
+- **Foreign tools (MCP) carry `{untrusted, egress}`** (item 3), plus
+  `:private` if **any registered** `Registry` entry declares
+  `private: true` — registration is the capability boundary, since
+  `mcp_connect` can activate any registered server. The registry is frozen
+  at construction, so this is knowable at boot.
 - **File reads carry `:untrusted` by default** (item 4). Opt out with
   `trusted: true` on a *scoped* `Filesystem`; rejected on `AllowAll`, where
   it could not be honest. `Bash` takes its untrusted reach from the
@@ -1224,12 +1253,12 @@ the file-read `:untrusted` default, both folded into the bullets below.)
   `:egress_searchengine` (changes no current verdict — but it is the
   cheapest hardening of the rubber-stamp hole, so it ships the day a
   search-only persona does).
-- Warn-only, once per process, message names the leg to break. ⛔ **item 3**
-  — "once per process" is wrong if `mcp_connect` can add legs mid-session;
-  key the dedup on the verdict, not the process.
+- Warn-only, once per process, message names the leg to break. (Safe as
+  stated — item 3 verified that no leg can appear after boot: `mcp_connect`
+  activates only already-registered servers and the registry is frozen.)
 - No custom legs, no per-persona knobs, no propagation exceptions, and no
   grading of approver *quality* (scanner strength, attention, frequency).
 - ⛔ **item 5** — no implementation seam is named yet: tag storage on
-  `Pikuri::Tool`, the missing `Sandbox#egress?` receiver,
-  `Filesystem(private:, trusted:)`, when the tree walk runs, where the
-  report goes.
+  `Pikuri::Tool`, the two missing sandbox predicates (net + fs),
+  `Filesystem(private:, trusted:)`, `Registry` entries' `private:`, when the
+  tree walk runs, where the report goes.
