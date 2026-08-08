@@ -681,11 +681,11 @@ add mail to the disk-holding agent, and none of them is a new leg:
   The compose window is human-gated exactly like the researcher's task
   prompt: a model-authored draft you read and approve. But an email
   *body* is unconstrained prose, where a search *query* is short and
-  query-shaped. A secret smuggled into a research task has to ride as a
-  conspicuous high-entropy blob; the same secret in an email can hide
-  inside fluent text — a fake reference number, a plausible sentence. The
-  channel is no less gated; it's just a place where laundered exfil can
-  look more innocent.
+  query-shaped. A secret crossing in a single research task has nowhere
+  to hide and surfaces as a blob you can see; the same secret in an email
+  can hide inside fluent text — a fake reference number, a plausible
+  sentence. The channel is no less gated; it's just a place where
+  laundered exfil can look more innocent.
 - **Pool amplification.** This is the one to hold onto. Take that *same,
   unchanged* compose leg and look at it in two homes. In standalone
   `bin/pikuri-thunderbird`, it sits next to a *mailbox* — the worst a
@@ -722,13 +722,49 @@ dropped into either one — the two gates are equally strong: you see the
 foreign recipient and the obvious blob either way, and you refuse.
 
 The real difference is the **laundering surface** — the severity point
-above, sharpened. A research query is structurally short and query-shaped,
-which *forces* a high-entropy secret to surface as a conspicuous blob. An
-email body is free prose, which offers a low-conspicuousness path the
-query can't. So the compose gate is *marginally* weaker — and only against
-*laundered* exfil, the case where the secret is disguised as ordinary
-text. That's a real but narrow gap, not the wholesale "weaker gate" the
-author-vs-approver framing implies.
+above, sharpened. A research query is structurally short and query-shaped:
+there's no room in it for fluent cover text, so a secret riding in a
+*single* query surfaces as a blob you can see. An email body is free
+prose, which offers a low-conspicuousness path the query can't. So the
+compose gate is *marginally* weaker — and only against *laundered* exfil,
+the case where the secret is disguised as ordinary text. That's a real but
+narrow gap, not the wholesale "weaker gate" the author-vs-approver framing
+implies.
+
+## Why "too big to hide" is not a defense
+
+Read that last paragraph carefully and a comfortable thought suggests
+itself: *a password might slip through disguised as prose, but my SSH key
+is 1.7 KB — far too much to smuggle past me one plausible sentence at a
+time.* It's the most natural reassurance in this whole chapter, and it's
+wrong. Worth taking apart, because the same mistake shows up wherever
+people reason about gates.
+
+It anchors on the **file** when the thing being stolen is the **entropy**.
+Nobody needs to exfiltrate your PEM: almost all of it is derived material
+an attacker regenerates from the two primes inside. What has to cross is
+the secret part, and modern secrets are small. Take a first-letter
+acrostic — a sentence whose words spell out the payload, roughly 4.7 bits
+per word. A password is nine to seventeen words. A TOTP seed is about
+thirty-four. A 256-bit ed25519 private key — the whole key, not a hint of
+it — is about fifty-five words. **One paragraph.** Even RSA-2048's minimal
+form runs to some 436 words: one long, plausible project update. There's
+no cliff on this axis, only "how odd does the prose have to look," and
+secrets got *smaller* over the last decade, which cuts against you.
+
+And the single-query bound above dissolves the same way. A query too short
+to hold cover text is only a limit on *one* query. Spread the payload
+across many — `define "apple"`, then `define "bridge"`, where the choice of
+word carries a few bits each time — and every individual request is short,
+query-shaped and utterly innocent. There is no request to refuse. Being
+more patient with each one doesn't help; it just approves more of them.
+
+So don't offer yourself "it's too big to hide" as comfort, and don't write
+it into a threat model. The claim that survives is narrower and genuinely
+worth having: **the gate kills *silent* exfil.** Every byte that left was
+on a screen in front of you. That's a property of the wiring, which no
+amount of attacker cleverness changes — unlike a size limit, which the
+attacker simply routes around.
 
 The practical upshot is the discipline Part 2 and `MACHINE.md` already
 taught: the break rests on you *reading* what you approve. A rubber-stamped

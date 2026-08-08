@@ -791,37 +791,18 @@ tool's runtime gate).
 
 #### Bandwidth is not a safety property (the entropy table)
 
-The intuition to kill: *"a password is low-bandwidth so stego reaches it,
-but an ssh key is high-bandwidth so it's out of reach."* It anchors on the
-**file** rather than the **entropy**. Nobody needs to exfiltrate a PEM;
-they need the 32 bytes inside it. At ~4.7 bits/word for a first-letter
-acrostic:
+*Graduated 2026-08-08. The argument — entropy not file size, ~55 acrostic
+words for an ed25519 key, the drip across many short queries, and the
+"don't offer it as reassurance" consequence — is now taught in
+`book/07-os-assistant.md` §"Why 'too big to hide' is not a defense" and
+stated for the mail seat in `pikuri-thunderbird/DESIGN.md`. The same pass
+softened ch7's two "forces a conspicuous blob" claims, which were the
+reassurance this section forbids.*
 
-| secret | entropy | acrostic cost |
-|---|---|---|
-| password | 40–80 bits | 9–17 words |
-| TOTP seed | 160 bits | ~34 words |
-| **ed25519 private key** | **256 bits** | **~55 words — one paragraph** |
-| AWS secret access key | ~240 bits | ~51 words |
-| BIP-39 wallet seed | 128–256 bits | 27–55 words |
-| RSA-2048 (minimal: p, q) | 2048 bits | ~436 words — one long email |
-
-Even RSA — the one case that looks out of reach — is a single plausible
-project update, and the 1.7 KB PEM is mostly derived material the attacker
-regenerates from `p` and `q`. The drip across a thread removes what little
-ceiling remains. So there is no cliff on this axis, only "how odd does the
-prose have to look," and modern secrets got *smaller*, which cuts against
-us.
-
-Two consequences:
-
-1. **Don't encode bandwidth in the detector.** It's a degree, like scanner
-   strength — same reason, same answer. Attachments are in scope because
-   they're *structural*; stego capacity is not.
-2. **Don't offer it as reassurance in prose either.** A sentence like
-   "the gate kills high-bandwidth exfil" reads as a boundary and isn't one.
-   The defensible claim is narrower and better: it kills **silent** exfil —
-   every byte was on a screen.
+What stays here is the detector-side consequence, still unbuilt: **don't
+encode bandwidth in the detector.** It's a degree, like scanner strength —
+same reason, same answer. Attachments are in scope because they're
+*structural*; stego capacity is not.
 
 #### Scanners harden the approver seat — but bound, they don't close (and must not promote it)
 

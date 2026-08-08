@@ -97,7 +97,9 @@ assistant that combines every gem, landing once they stabilise.
    to sharpen the trifecta itself — it's **binary in presence** (all
    three legs live = assembled) yet **graded in severity** (by the size
    of the private pool beside the egress leg), and the human gate is
-   *editable approval of a prefill*, not author-vs-approver. Demo via
+   *editable approval of a prefill*, not author-vs-approver — which is
+   also why "the secret is too big to hide" is never a defense (a
+   256-bit key is one paragraph of acrostic). Demo via
    `pikuri-os` / `pikuri-computer`.
 8. **[The in-repo coding agent](08-code.md).** The same three
    seams from chapter 7 — `Workspace`, `Confirmer`, `Sandbox` —
