@@ -492,7 +492,7 @@ No single context holds all three legs. That's the structural break — the
 same "remove a leg" move as Part 1, but made *per-agent* instead of
 *per-machine*.
 
-## The gate — you author what leaves the machine
+## The gate — what leaves the machine stops for you
 
 Privilege separation alone raises the bar without quite breaking the
 trifecta: the parent can still *ask* the researcher to look up "the drug
@@ -513,12 +513,28 @@ network — you approve what leaves this machine.
 
 This is the same `Confirmer` from Part 1, reused unchanged. The point is
 subtle, and it's the lesson from `MACHINE.md`'s confirmed writes again:
-you are **not** being asked to approve the agent's *judgement* — you
-can't reliably spot a secret laundered into a plausible query (chapter
-6's "no NX flag for content"). You are being asked to **author the
-egress** — to read what's about to leave, and let it go. A human
-approving the outbound payload is clean by construction in a way an
-injection-driven LLM composing it is not.
+you are **not** being asked to approve the agent's *judgement*. You can't
+reliably spot a secret laundered into a plausible query (chapter 6's "no
+NX flag for content") — *look up the definition of "hunter2waterfall"* is
+a perfectly ordinary-looking request, and you'd have to already know the
+password to catch it.
+
+Which is why the two keys are two different jobs, and only one of them is
+airtight. Press `y` and you're an **approver**: you read the model's
+string and let it go. That stops the blatant attempt and nothing subtler,
+for the reason just given. Press `e`, type your own query, and you're an
+**author**: the only bytes that leave are ones you chose, so no encoding
+survives the retype — an attacker can influence what the model
+*proposes*, never what you *write*. The author seat is clean by
+construction; the approver seat is a judgement call you've just been told
+you can't reliably make.
+
+So the honest claim for this gate is narrower than "you author what
+leaves the machine," and still worth a lot: **nothing crosses unread, and
+the means to make it something you wrote is one keystroke away.** Which of
+the two you actually get is decided by which key you press. Part 3 puts
+this under real pressure, once there's a second gate to compare it
+against.
 
 The reply comes back *without* a second confirmation, and that asymmetry
 is deliberate. The untrusted-content leg was already accepted in Part 1
@@ -733,10 +749,13 @@ wrong, and the correction is worth stating because the sloppy version
 overstates the difference.
 
 Both gates are the *same shape*: a model-authored prefill you read, then
-approve or reject. The research task string is authored by the model; you
-approve it. The compose window is a draft the model filled in; you Send it
-or don't. Against a *blatant* exfil attempt — `base64` of your private key
-dropped into either one — the two gates are equally strong: you see the
+approve, edit or discard. Part 2 made much of the `e` key, and it earns
+that — but Thunderbird's compose window is an editable draft too. You can
+retype the body before you Send it, exactly as you can retype a task
+before you delegate it. Neither gate *makes* you an author; both offer the
+seat and pre-fill their way out of it, because a blank window would be
+useless ergonomics. Against a *blatant* exfil attempt — `base64` of your
+private key dropped into either one — they're equally strong: you see the
 foreign recipient and the obvious blob either way, and you refuse.
 
 The real difference is the **laundering surface** — the severity point
