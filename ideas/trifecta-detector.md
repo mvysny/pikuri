@@ -316,45 +316,58 @@ the `fetch` whitelist is killed.
 
 ### Shipped instance (partial): `pikuri-os --with-internet`
 
-The author-seat half of this primitive now has a worked example in
-`bin/pikuri-os`. Recorded here precisely, because the obvious
-one-liner — *"we cut off the egress leg by having the user confirm the
-research task"* — is wrong on both the verb and the credit, in exactly
-the ways the three bullets above predict:
+*Graduated 2026-08-08. The wiring and its reasoning are taught in
+`book/07-os-assistant.md` Part 2 (§"Quarantine, don't grant" — kernel-severed
+bash plus a no-filesystem `RESEARCHER`, so the parent holds zero direct
+egress and the one surviving channel is the task string; §"The gate — what
+leaves the machine stops for you" — the `y`-approves / `e`-authors split and
+why only the second is clean by construction; §"The residual, honestly"),
+with the mechanism at {Pikuri::Workspace::Confirmer} + CLAUDE.md's Confirmer
+seam and the egress-wiring choice in [`more-confirmers.md`](more-confirmers.md)
+§"Egress axis". The same pass de-staled ch7, which still called the editable
+seat future work.*
 
-- **Egress is severed structurally *first*, not by the gate.** bash is
-  kernel-severed (`Sandbox::FullFsNoNet`: `--unshare-net` **plus**
-  `SESSION_IPC_MASKS` — both halves load-bearing, see the tag section)
-  and the web
-  tools live only on the `RESEARCHER` sub-agent, which has **no
-  filesystem** (`add_sub_agent_tool`) — so the parent holds zero direct
-  egress and the researcher holds no private data. The one private→egress
-  channel left open is the parent laundering a secret into the
-  sub-agent's **task string**. That single channel is all the human gate
-  governs; privilege-separation + kernel-sever did the rest.
-- **It's the author seat, not approval.** The `agent` tool asks with
-  `editable: true` (`SubAgent::SubAgentTool`), so the human *rewrites*
-  the task an injection-driven parent proposed rather than judging it —
-  the "author, not approver" role, made real exactly once. (Mechanism +
-  rationale graduated to {Pikuri::Workspace::Confirmer} and CLAUDE.md's
-  Confirmer seam; the egress-wiring reasoning lives in
-  [`more-confirmers.md`](more-confirmers.md) §"Egress axis.")
-- **Two gaps from the designed model.** (a) *No taint tracking* — the
-  gate fires on **every** delegation, not just post-`:private`, so it's
-  coarser than the sibling note's monotonic taint but strictly never
-  misses. (b) The terminal **pre-fills** the proposed task, so the human
-  is author-*capable* but approve-*by-default*; the clean-by-construction
-  property only fully holds when they actually rewrite. A rubber-stamp of
-  a laundered task is the residual hole (the `more-confirmers.md`
-  forced-authorship knife-edge).
+Two things stay here, because they are detector inputs rather than
+descriptions of the shipped agent:
 
-In detector terms: the `--with-internet` parent is
+- **No taint tracking.** The gate fires on **every** delegation, not just
+  post-`:private`, so it is coarser than the sibling note's monotonic taint
+  but strictly never misses. The taint half of this primitive is still
+  **designed, not built** — see
+  [`private-context-taint.md`](private-context-taint.md).
+- **The pre-fill gap is warning-gated, not unconditional** *(corrected
+  2026-08-08 — the earlier text here said the terminal simply pre-fills,
+  making the human author-capable but approve-by-default)*. Per
+  {Pikuri::Workspace::Confirmer::Terminal}, a *clean* task offers
+  `[y] approve [e] edit [n] reject`, but a task that trips a `Sanitizer`
+  warning **loses bare approval** and opens an *empty* editor
+  (`prefill: clean`) — so forced authorship is shipped, conditionally. The
+  residual hole is the clean task, which is precisely the shape laundered
+  egress arrives in.
+
+  Detector consequence, and it is an uncomfortable one: **that shipped
+  mechanism must not promote the seat.** Reaching author-mode here is
+  conditional on a scanner firing, so crediting it would grade the seat by
+  scanner strength — exactly what "Scanners must not promote the approver
+  seat" forbids, and the scanners' known blind spot (linguistic stego) is
+  the case that matters. So `pikuri-os` stays `egress_human_approver` in the
+  detector *while being better than that at runtime*. Live input to open
+  item 7.
+
+In detector terms the `--with-internet` parent reads
 `{private, egress (propagated from RESEARCHER), untrusted_weakened}` — a
-**soft notice** — promoted to a full **loud** `{private, egress,
-untrusted}` the moment it reads a hard-`:untrusted` local file (bash /
-`Read` over a hostile file on disk). Separation only raised the bar; the
-author gate on the task string is what is meant to hold the line there.
-The taint half of this primitive is still **designed, not built**.
+**soft notice** — promoted to **loud** `{private, egress, untrusted}` the
+moment it reads a hard-`:untrusted` local file (bash / `Read` over a hostile
+file on disk). Separation only raised the bar; the gate on the task string is
+what is meant to hold the line there.
+
+*Both halves of that reading are now contested by the review items, and the
+same two decide it for `pikuri-computer` too: whether the propagated
+`RESEARCHER` egress is capped at approver by the gated delegation or arrives
+hard (**item 1**), and whether a local file read carries hard `:untrusted` at
+all — here it is asserted, while the tag table says no (**item 4**). Left as
+written, since it is exactly the pair of assumptions the dry-run made
+visible.*
 
 ### Does a patient human approver stop egress? (No — only a rewriter)
 
@@ -993,6 +1006,21 @@ than either horn of the original question:
 If that holds, the "partial author-mode" idea (pre-fill recipient +
 subject, blind-typed body) is *not* a rescue for compose — the human still
 types a body they were just shown.
+
+**And there is already a shipped data point, which cuts the other way and
+has to be reckoned with.** `Confirmer::Terminal` does reach forced
+authorship — a task that trips a `Sanitizer` warning loses bare approval and
+opens an *empty* editor. So the seat is not merely aspirational in a
+terminal; it exists, gated on a scanner firing. That is precisely what makes
+it unusable *to the detector*: crediting it grades the seat by scanner
+strength (see "Scanners must not promote the approver seat"), and the blind
+spot is linguistic stego — the case the promotion would be claiming to
+cover. The shape of the resolution is probably: the detector reads the
+**unconditional** floor of a seat (what the human faces when nothing fires),
+while the conditional retype is runtime hardening the docs may credit and
+the detector may not. Worth stating explicitly if item 7 is ever closed,
+because "we ship forced authorship but classify it as approver" reads as an
+inconsistency until the reason is written down.
 
 ## Open: propagating this to docs + example scripts
 
