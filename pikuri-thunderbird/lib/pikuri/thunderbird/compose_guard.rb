@@ -57,22 +57,24 @@ module Pikuri
       # base64url/JWT-shaped payloads slip by — accepted, per {#body_blob_note}.
       BLOB_ALPHABET = %r{\A[A-Za-z0-9+/=]+\z}
 
-      # Single-case hex and RFC-4648 base32 — the one-alphabet encodings, which
-      # clear no three-class gate and so need their own, longer thresholds
-      # ({SINGLE_CLASS_TOKEN_MIN} / {SINGLE_CLASS_JOIN_MIN}). Mixed-case hex is
-      # deliberately absent: it is three-class already, so {BLOB_ALPHABET} has
-      # it. Neither admits an interior +-+, so a dashed UUID never matches.
+      # Single-case hex — what a key already wears on disk. Mixed case is absent
+      # on purpose: that is three-class, so {BLOB_ALPHABET} has it. No interior
+      # +-+, so a dashed UUID matches nothing here.
       HEX_ALPHABET = /\A(?:[a-f0-9]+|[A-F0-9]+)\z/
+
+      # RFC-4648 base32; single-case like {HEX_ALPHABET}, so it shares the
+      # longer thresholds below.
       BASE32_ALPHABET = /\A[A-Z2-7]+=*\z/
 
-      # {BLOB_TOKEN_MIN}'s twin for {HEX_ALPHABET} / {BASE32_ALPHABET}, doubled:
-      # a one-alphabet run is far likelier to be an honest identifier than a
-      # base64 run is, so it must be twice as long before it counts.
+      # {BLOB_TOKEN_MIN}'s twin for the single-alphabet encodings, doubled: a
+      # one-alphabet run is likelier to be an honest identifier than a base64
+      # run is, so it must be twice as long to count.
       SINGLE_CLASS_TOKEN_MIN = 32
 
-      # {BLOB_JOIN_MIN}'s twin, placed in the one gap that exists: above a full
-      # git SHA-1 (40) and below a 32-byte key in base32 (52) or hex (64). See
-      # {#body_blob_note} for the false positive this accepts.
+      # {BLOB_JOIN_MIN}'s twin, in the only gap available: above a full git
+      # SHA-1 (40), below a 32-byte key in base32 (52) or hex (64). Accepts one
+      # irreducible false positive — a lone SHA-256 checksum warns, since a
+      # 256-bit hash and a 256-bit key are the same string (+D-blob-spotter-alphabets+).
       SINGLE_CLASS_JOIN_MIN = 48
 
       # The outcome of checking one compose request.
@@ -215,41 +217,17 @@ module Pikuri
       #
       # == Implementation details
       #
-      # Two chunk shapes, each with its own pair of thresholds, whichever trips
-      # first:
-      #
-      # * *mixed* — >= {BLOB_TOKEN_MIN} chars of pure {BLOB_ALPHABET} with upper
-      #   *and* lower *and* a digit: encoder churn no prose word (one script),
-      #   Capitalized word (two), or +invoice20260722+ slug (two) shows. Warns at
-      #   {BLOB_JOIN_MIN} summed.
-      # * *single-class* — >= {SINGLE_CLASS_TOKEN_MIN} chars of {HEX_ALPHABET} or
-      #   {BASE32_ALPHABET}, warning at {SINGLE_CLASS_JOIN_MIN} summed.
-      #
-      # The second shape reverses an earlier "hex and base32 stay out" call. The
-      # reasoning that excluded them was sound about the *mechanism* (a 2-class
-      # alphabet can't clear the 3-class gate) but drew the wrong conclusion,
-      # because it weighed only false positives: single-case hex and base32 were
-      # the two encodings a payload could wear to draw **no flag at all**, and
-      # they are the natural, non-evasive choice — a key is *already* hex on
-      # disk. Separate longer thresholds answer the original FP objection without
-      # widening the 3-class gate: a dashed UUID has an interior +-+ and matches
-      # neither alphabet, an undashed one (32) and a git SHA-1 (40) both fall
-      # under {SINGLE_CLASS_JOIN_MIN}. The accepted residue is a **lone SHA-256
-      # checksum** (64 hex chars), which warns — irreducibly, since a 256-bit
-      # hash and a 256-bit key are the same string. Err toward the note there:
-      # checksums are rare in mail, keys are what we're looking for.
-      #
-      # Summing chunks body-wide rather than over one contiguous run is
-      # deliberate: it folds space-split and word-interleaved payloads back
-      # together for free, since cover words fail both gates and drop out.
+      # The two chunk shapes ({#blob_kind}) carry independent thresholds and the
+      # body warns on whichever trips first. Summing body-wide rather than over
+      # one contiguous run folds space-split and word-interleaved payloads back
+      # together for free: cover words fail both gates and drop out.
       #
       # A paste / dumb-attack guard, *not* an exfil control — a prompt-injected
       # model can add "split it into 15-char pieces" for free and walk under
       # every threshold here. Hence soft-warn, and the minimums kept high to stay
       # quiet on engineering mail; the irreversible-send compose window is the
       # real backstop, so err toward not warning. Don't recast this as "closes
-      # the encoded-blob channel" — widening the alphabets raises the attacker's
-      # cost by one token of prompt, nothing more.
+      # the encoded-blob channel."
       def body_blob_note(body, notes)
         hits = blob_hits(body)
         [[:mixed, BLOB_JOIN_MIN], [:single, SINGLE_CLASS_JOIN_MIN]].each do |kind, join_min|
@@ -279,9 +257,13 @@ module Pikuri
       end
 
       # @param tok [String] a whitespace-delimited token, sentence-punctuation stripped.
-      # @return [Symbol, nil] +:mixed+ or +:single+ per the two chunk shapes in
-      #   {#body_blob_note}, or +nil+ when +tok+ is not blob-shaped. A digit is
-      #   required either way — it is what keeps an ALL-CAPS run out of
+      # @return [Symbol, nil] +:mixed+ for >= {BLOB_TOKEN_MIN} chars of
+      #   {BLOB_ALPHABET} carrying upper *and* lower *and* a digit — encoder
+      #   churn no prose word (one script), Capitalized word (two), or
+      #   +invoice20260722+ slug (two) shows; +:single+ for >=
+      #   {SINGLE_CLASS_TOKEN_MIN} chars of {HEX_ALPHABET} or
+      #   {BASE32_ALPHABET}; +nil+ when neither fits. The digit is required
+      #   either way — it is what keeps an ALL-CAPS sentence out of
       #   {BASE32_ALPHABET} and a +deadbeef+-ish word out of {HEX_ALPHABET}.
       def blob_kind(tok)
         return nil unless tok.match?(/[0-9]/)

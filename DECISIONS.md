@@ -79,6 +79,58 @@ design.
 
 ---
 
+## D-blob-spotter-alphabets — Single-alphabet encodings count, at their own longer thresholds (2026-08-08)
+
+**Status:** Accepted; implemented 2026-08-08 in
+{Pikuri::Thunderbird::ComposeGuard}. Supersedes an inline "hex and base32
+stay out" note that lived in `#body_blob_note`'s yardoc, moved here under
+the pre-2026-08-04 relocation rule above.
+
+**Context.** The blob spotter soft-warns when a compose body carries an
+encoded dump — the lazy way to walk a secret past a skimming human. Its
+original gate was three-class (upper *and* lower *and* a digit) over the
+base64 alphabet, which by construction can match neither single-case hex
+nor base32. Stress-testing the egress axis surfaced the hole: those two are
+not evasion, they are the *natural* dress for a key — it is already hex on
+disk — and they drew **no flag at all**. 64 lowercase hex chars is an
+entire 256-bit ed25519 seed, silent.
+
+**Decision.** Two chunk shapes with independent thresholds, whichever trips
+first: the existing three-class shape at 16/32, and a single-alphabet shape
+({Pikuri::Thunderbird::ComposeGuard::HEX_ALPHABET} /
+`BASE32_ALPHABET`) at 32/48. 48 is not a round number — it is the only gap
+available, above a full git SHA-1 (40) and below a 32-byte key in base32
+(52) or hex (64).
+
+**Alternatives rejected.**
+
+- **Keep hex and base32 out** (the original call). Its reasoning was right
+  about the *mechanism* — a two-class alphabet cannot clear a three-class
+  gate — but weighed only false positives and never counted the zero-flag
+  hole on the other side. A guard that catches the encoding an attacker
+  picks *when trying to look normal*, and misses the one they pick by
+  default, has its priorities inverted.
+- **Widen the three-class gate to two classes.** This is what the original
+  note actually rejected, and rightly: it applies the *base64* thresholds
+  (16/32) to hex, so every UUID and every short SHA in an engineering mail
+  warns. Alarm fatigue, and the note is body-wide, so one dev thread would
+  train the user to ignore it. Separate longer thresholds get the coverage
+  without touching that gate.
+- **Raise the single-class join to 64** to dodge the SHA-256 false
+  positive. Buys FP relief by surrendering half the coverage: a 32-byte key
+  in base32 is 52 chars, so the threshold *must* sit below 52 to see it.
+- **Fail closed on a blob** instead of warning. Same answer as everywhere
+  else in this guard: it is trivially walked under by splitting the payload
+  into sub-threshold pieces, so a hard reject would block honest mail while
+  stopping no motivated attacker.
+
+**Consequences.** A lone SHA-256 checksum (64 hex chars) now warns, and
+this is irreducible — a 256-bit hash and a 256-bit key are the same string,
+so no threshold separates them. Accepted: checksums are rare in mail, keys
+are the thing being looked for. The guard's character is unchanged — a
+paste / dumb-attack guard, not an exfil control; widening the alphabets
+raises the attacker's cost by one token of prompt.
+
 ## D-headless-os-agent — No app launching, and the sandbox masks the session's IPC surface (2026-08-06)
 
 **Status:** Accepted. The mask ships in
