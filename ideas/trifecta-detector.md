@@ -1,15 +1,15 @@
 # Trifecta detector
 
-Status: **designed, not built — the vocabulary is closed, the plumbing
-isn't.** The shape is settled: three legs, two strength lattices, per-node
-`max` over the tree, `min` across a delegation. A 2026-08-08 review pass
-against the actual wiring found five holes that blocked implementation
-("Open items from the 2026-08-08 review pass"); **items 1–4 are now closed
-and only item 5 — the implementation seam — remains**, marked ⛔ in the v1
-scope list.
+Status: **designed, not built — but nothing blocks the build.** The shape is
+settled: three legs, two strength lattices, per-node `max` over the tree,
+`min` across a delegation. A 2026-08-08 review pass against the actual
+wiring found five holes that blocked implementation ("Open items from the
+2026-08-08 review pass"); **all five are now closed**, item 5 (the
+implementation seam) last, and "v1 scope, in one place" carries no ⛔.
 
-So the *tag set* is decided end to end and the next session is about where
-the tags live, not what they are. Two caveats for a reader: the graded
+So both the *tag set* and *where the tags live* are decided, and the next
+session is writing code against §5's order-of-work. Two caveats for a
+reader: the graded
 egress axis was folded in at the bottom of this file, so the normative
 sections above it still describe flat egress (each carries a superseded
 marker); and the resolved items below are kept as their derivations, which
@@ -1127,22 +1127,247 @@ predicates, not one).
   `yes` about git config silently declare all content trusted — the
   mis-declaration this design otherwise makes impossible.
 
-### 5. No implementation seam is named
+### 5. The implementation seam — RESOLVED: legs on the tool, computed at construction
 
-For "ready to build" the note still owes: where the tags live on
-`Pikuri::Tool` (a method? a `Data` record? how does a tool whose level
-depends on collaborators expose it — item 2); **two** sandbox predicates,
-neither of which exists yet (nothing in
-`pikuri-code/lib/pikuri/code/bash/sandbox.rb` answers posture, so the "ask
-the object" rule has no receiver) — `Sandbox#egress?` for the net view and
-its twin for the **fs** view, which is what gives `Bash` its `:untrusted`
-reach (item 4); `Filesystem(private:, trusted:)` — one constructor change
-covering both flags, with `trusted:` raising on `AllowAll`; when the tree
-walk runs (Configurator
-close, after the user block, so `add_tool`/`add_extension` have all fired);
-how personas resolve `tool_names` → tools for the sub-agent nodes; and
-where the report is emitted. None of these is hard; all of them are
-decisions someone will otherwise make silently and differently.
+What the note owed: where the tags live on `Pikuri::Tool`; how a tool whose
+level depends on collaborators exposes it (item 2); two sandbox predicates
+that don't exist (nothing in `pikuri-code/lib/pikuri/code/bash/sandbox.rb`
+answers posture, so "ask the object" had no receiver); the
+`Filesystem(private:, trusted:)` constructor change; when the tree walk
+runs; how personas resolve `tool_names` → tools for the sub-agent nodes;
+and where the report goes.
+
+**The load-bearing observation that makes the rest fall out: in pikuri,
+construction *is* wiring time.** Every collaborator that item 2 says the
+level depends on — the `Workspace`, the `Sandbox`, the `Confirmer` — is a
+constructor kwarg of the tool that uses it (`Bash.new(filesystem:,
+confirmer:, sandbox:, passive_detector:)`, `Read.new(workspace:)`,
+`SubAgent::Extension.new(personas:, confirmer:)`). So there is **no separate
+resolution pass**: a tool computes its own legs in its constructor and hands
+them to `super`. That is what "computed from the tool plus its runtime
+collaborators, at wiring time" cashes out to, and it is why the seam is
+smaller than item 2 made it sound.
+
+#### (a) Tag storage: a `TrifectaLegs` record on `Pikuri::Tool`
+
+Not a `Set` of symbols. Two of the three axes are graded, so a symbol set
+makes `max` awkward and lets a typo (`:egresss`) pass as "no leg" — the
+silent-underwarn failure this detector exists to refuse.
+
+```ruby
+# pikuri-core/lib/pikuri/tool/trifecta_legs.rb
+Pikuri::Tool::TrifectaLegs = Data.define(:private, :untrusted, :egress)
+#   private   => true | false
+#   untrusted => :none | :weakened | :hard
+#   egress    => :none | :human_approver | :autonomous
+```
+
+Named in full because the accessor is read at call sites far from this
+file: `tool.trifecta_legs` says what it is, `tool.legs` reads as anatomy.
+(Inside the tree the field stays `node.legs` — unambiguous in the
+`Trifecta::` namespace.)
+
+Three constants, `#|(other)` (per-axis `max` — union at a node), and the
+two boundary operations item 1 named: `#relabel_inbound` (`:hard →
+:weakened`, private and egress identity) and `#cap_egress(channel_level)`.
+The lattices live here and nowhere else, so item 6's "v1 buys one bit per
+lattice" stays true of the *verdict* without the union code duplicating an
+ordering.
+
+`Tool#initialize` gains `trifecta_legs: TrifectaLegs::ASSUMED`, plus
+`attr_reader :trifecta_legs`. Every existing constructor keeps working
+(loudly, see below); the bundled tools declare at their own definition site:
+
+```ruby
+class Workspace::Read < Pikuri::Tool
+  def initialize(workspace:)
+    fs = workspace.filesystem
+    super(name: 'read', ..., trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
+      private:   fs.private?,
+      untrusted: fs.trusted? ? :none : :hard,   # item 4
+      egress:    :none))
+```
+
+```ruby
+class Code::Bash < Pikuri::Tool
+  def initialize(filesystem:, confirmer:, sandbox: Sandbox::NONE, passive_detector: nil)
+    super(..., trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
+      private:   filesystem.private?,
+      untrusted: (sandbox.confined_to_workspace? && filesystem.trusted?) ? :none : :hard,
+      egress:    sandbox.egress? ? :autonomous : :none))
+```
+
+Note what `Bash` does **not** do: it never claims `:human_approver`, even
+though it holds a `Confirmer`. Clause 2 (payload visibility) fails — the
+human approves a program, not a payload — so the confirmer is invisible to
+the classifier. That is the single most important line of the whole
+implementation, because it is what keeps pikuri-code loud, and it is
+enforced by the tool author writing one literal rather than by a rule
+engine.
+
+**The default is `ASSUMED`, not `NONE` — an undeclared tool is presumed
+hostile on every axis the framework could have determined.** Silence from a
+tool author is not evidence of safety, and the fix belongs with the vendor
+who knows. So:
+
+```ruby
+NONE    = new(private: false, untrusted: :none,     egress: :none)
+ASSUMED = new(private: false, untrusted: :hard,     egress: :autonomous)
+```
+
+**`ASSUMED` stops short of `private: true`, and that boundary is the
+asymmetry rule, not a compromise.** `untrusted` and `egress` are the axes
+the framework *can* determine, so an undeclared tool means it determined
+nothing and worst-case is the honest reading. `private` is the axis where
+only the user can know — assuming it makes *every* wiring loud, which kills
+"why the default is quiet", strips "loud" of the information the revised
+dry-run table just bought it, and gets a warn-only detector muted. That is
+not fail-safe, it is fail-to-noise.
+
+The convergence worth noticing: **`ASSUMED` is exactly item 3's MCP
+surface** — `{untrusted, egress}` hard with `private:` opt-in per registry
+entry — arrived at independently, from the same argument. So item 3 stops
+being a special case for foreign tools and becomes the first instance of the
+general rule, and `bin/pikuri-openlibrary` stays **silent** as that item
+requires rather than firing loud on a calculator.
+
+Consequence for the rollout: every bundled tool must declare, or the demos
+go loud for want of a line on `calculator` / `task_*` / `skill`. That is a
+**spec** obligation, not a default-value one — each gem's spec asserts its
+tools' `trifecta_legs` by value, alongside the step that tags them, and the
+detector isn't wired until step 5 anyway.
+
+#### (b) The two sandbox predicates
+
+On `Code::Bash::Sandbox`, alongside `#wrap`, both answered by each sandbox
+for itself (module method on `NONE`, instance methods on the two classes):
+
+- **`#egress?`** — can the wrapped command reach a network sink? `NONE` →
+  `true`, `Bubblewrap` → `true` (it keeps `--share-net`), `FullFsNoNet` →
+  `false`. The `false` is earned by `--unshare-net` **plus**
+  `SESSION_IPC_MASKS`; a netns alone would not be evidence (finding 1's
+  session-bus correction). A sandbox that ever degrades instead of raising
+  must answer `true`.
+- **`#confined_to_workspace?`** — does the wrapped command see only the
+  workspace? `NONE` → `false`, `Bubblewrap` → `true` (its constructor
+  already rejects an unbounded workspace), `FullFsNoNet` → `false`
+  (`--dev-bind / /`). This is the fs-view twin item 4 demanded, and the
+  name says what the untrusted rule actually needs: not "is it safe" but
+  "is the reachable set the one the workspace's `trusted:` claim covers".
+
+Both are conservative at the identity element: the do-nothing sandbox
+answers *egresses* and *sees everything*. A downstream host subclassing
+`Bubblewrap` (its header invites this) inherits `egress? == true` — wrong in
+the safe direction.
+
+#### (c) `Filesystem(private:, trusted:)`, one constructor change
+
+Both flags ride the existing ctor (`private: false, trusted: false`),
+exposed as `#private?` / `#trusted?` predicates only — no `attr_reader
+:private`, which would read as a visibility call at every call site.
+`AllowAll` (already a `Filesystem` subclass) raises `ArgumentError` on
+`trusted: true`: unrepresentable, not merely inadvisable. `private:` is
+accepted there, since a whole-host workspace is exactly where someone means
+it.
+
+MCP is the same shape one level up: `Registry::StdioEntry` / `HttpEntry`
+gain `private: false`, and `Registry#private?` is `entries.any?(&:private?)`
+— the union over *registered* entries, per item 3.
+
+#### (d) The tree: one node type, one hook
+
+```ruby
+Pikuri::Trifecta::Node = Data.define(:label, :legs, :children, :channel_egress)
+```
+
+`channel_egress` is a property of the *edge* to the parent, stored on the
+child because every child has exactly one parent edge; it is
+`:human_approver` when the delegation is gated and `:autonomous` otherwise,
+and it is the `min` argument of item 1's series cap.
+
+Sub-agent nodes and the MCP surface both need something no tool can supply,
+so extensions get **one optional hook**:
+
+```ruby
+# @param tools [Array<Tool>] agent.tools + agent.sub_agent_tools
+# @return [Trifecta::Contribution, nil]  legs this extension adds to *this*
+#   node, plus the child nodes it introduces
+def trifecta_contribution(tools) = nil
+```
+
+- `SubAgent::Extension` answers with one child per persona, resolving
+  `tool_names` **the same way `SubAgentTool#execute` does** — `tools.select
+  { |t| persona.tool_names.include?(t.name) }`, legs unioned — and sets
+  `channel_egress` from its own `@confirmer`. That answers "how do personas
+  resolve to tools": they don't, separately; the extension that owns the
+  resolution owns the node.
+- `Mcp::Extension` answers with no children and
+  `legs: TrifectaLegs::ASSUMED.with(private: registry.private?)` — item 3's
+  defaults *are* the undeclared-tool default (see (a)), attached at the
+  extension because MCP tools are raw `RubyLLM::Tool`s with no leg surface
+  (the MCP-tool bypass seam).
+
+Two notes on the hook. It needs a **`respond_to?` guard**, unlike every
+other Extension hook — the protocol documents that a class defining all
+hooks without including the module is legal, so an unguarded fifth hook
+breaks those. Guarded-plus-a-`nil`-default in the module is the honest
+version; say so in the protocol doc rather than quietly weakening "the
+Agent calls them by name with no guard".
+
+And the gate predicate the hook reads is the confirmer's own: **`Confirmer#blocks_on_human?`**, `true` on the base class, overridden `false`
+on `AutoApprove`. Same "ask the object for its posture" rule as the sandbox,
+third receiver — and it is what makes `--no-confirm` re-harden the demos'
+verdicts automatically, which is the whole point of item 2 clause 1.
+
+#### (e) When the walk runs, and where the report goes
+
+**At the end of `Agent#run_configure`, after the bind sweep** — not at
+Configurator close. `bind` is where `ExtensionContext#add_raw_tool` fires
+(the `agent` tool itself, MCP's tools), so a Configurator-close walk would
+miss exactly the extensions that contribute children. Guarded twice: main
+agent only (`@id.empty?`) and once per process (a flag on `Pikuri::Trifecta`
+— a host that builds several agents gets one line, per "actionable + once
+per process").
+
+`Pikuri::Trifecta.walk(node)` is a **pure function of the node tree**:
+fold each child in (private identity, untrusted `relabel_inbound`, egress
+`min(channel_egress, child.egress)` unless the child holds `:private`),
+union in parallel, evaluate item 6's 2×2 at every node, return the max plus
+the path. Purity is the testing seam: the paper dry-run's whole results
+table becomes a spec over hand-built nodes, with no agent, no LLM and no
+sandbox probe — which is the only way the `--no-confirm` and `--no-sandbox`
+regressions item 2 worries about get covered.
+
+Emission: `Pikuri.logger_for('Trifecta')` — `warn` for loud, `info` for
+soft, nothing for silent. Attribution ("which tool gave you this leg", so
+the message can name the leg to break) is recomputed by the **renderer** by
+scanning the offending node's tools for a non-`:none` value on the deciding
+axis; `Node` stays slim rather than carrying a provenance map that only the
+message uses.
+
+**One decision deliberately left to the docs pass** (it is listed under
+"Open: propagating this to docs + example scripts", not here): whether the
+walk's result is *also* an `Agent#trifecta` reader a host can render. The
+walk produces the record either way, so exposing it is a one-line
+`attr_reader` — but it is a public API surface, and whether hosts should
+have it is a presentation question, not an implementation one.
+
+#### Order of work
+
+Each step ships standalone and the detector stays silent until the last.
+
+1. `Tool::TrifectaLegs` + `Tool(trifecta_legs:)` + `Trifecta::Node` /
+   `walk` / verdict —
+   pikuri-core, fully testable from hand-built nodes.
+2. `Filesystem(private:, trusted:)` + the `AllowAll` raise; legs on the five
+   file tools.
+3. `Sandbox#egress?` / `#confined_to_workspace?`; legs on `Bash`.
+4. `Confirmer#blocks_on_human?`; the extension hook; `SubAgent` / `Mcp`
+   contributions; `Registry` entries' `private:`. Static legs on the
+   Thunderbird tools (`private: true` by domain; inbound `:hard`; the two
+   outbound hand-offs `:human_approver`).
+5. Wire `Trifecta.report_once` into `run_configure`, and port the dry-run
+   table to a spec.
 
 ### 6. v1 buys exactly one bit per lattice — say so
 
@@ -1228,11 +1453,10 @@ brainstorm next (the *what*, not yet the technical *how*):
 *Revised 2026-08-08: the graded egress axis is in, at two levels. The
 earlier flat-`:egress` version of this list is superseded.*
 
-**One hole, marked inline as ⛔ — this list is not yet buildable.** See
-"Open items from the 2026-08-08 review pass"; each ⛔ names the item that
-has to close first. (Items 1–4 closed 2026-08-08 — the series cap, the four
-gate/level clauses, the MCP defaults and the file-read `:untrusted` default,
-all folded into the bullets below.)
+**No holes left — this list is buildable.** All five review items closed
+2026-08-08: the series cap, the four gate/level clauses, the MCP defaults,
+the file-read `:untrusted` default and the implementation seam, all folded
+into the bullets below.
 
 - Tags `:private` (user, default off) / `:untrusted` / `:egress`
   (framework, default on) / `:untrusted_weakened` (computed) /
@@ -1286,7 +1510,16 @@ all folded into the bullets below.)
   activates only already-registered servers and the registry is frozen.)
 - No custom legs, no per-persona knobs, no propagation exceptions, and no
   grading of approver *quality* (scanner strength, attention, frequency).
-- ⛔ **item 5** — no implementation seam is named yet: tag storage on
-  `Pikuri::Tool`, the two missing sandbox predicates (net + fs),
-  `Filesystem(private:, trusted:)`, `Registry` entries' `private:`, when the
-  tree walk runs, where the report goes.
+- Implementation seam (item 5): a `Tool::TrifectaLegs` record computed in
+  each tool's **constructor** (which is wiring time — every collaborator is
+  a ctor kwarg), defaulting to `ASSUMED` (`untrusted`+`egress` hard,
+  `private` still user-declared) so an undeclared tool is presumed hostile
+  on every axis the framework could have known; three posture predicates on
+  the collaborators
+  (`Sandbox#egress?`, `Sandbox#confined_to_workspace?`,
+  `Confirmer#blocks_on_human?`), `Filesystem(private:, trusted:)` +
+  `Registry` entries' `private:`, one optional `Extension#trifecta_contribution(tools)`
+  hook for sub-agent children and the MCP surface, and a pure
+  `Trifecta.walk` run at the end of `run_configure` (after the bind sweep),
+  main-agent-only and once per process, logging through
+  `Pikuri.logger_for('Trifecta')`.
