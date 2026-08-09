@@ -52,6 +52,10 @@ module Pikuri
     #   the right image/document blocks.
     attr_reader :execute
 
+    # @return [Tool::TrifectaLegs] which lethal-trifecta legs this tool
+    #   contributes, for {Pikuri::Trifecta}
+    attr_reader :trifecta_legs
+
     # @param name [String] function name advertised to the LLM
     # @param description [String] human-readable description used by the LLM
     #   to decide when to call the tool
@@ -59,12 +63,19 @@ module Pikuri
     # @param execute [Proc] callable invoked with validated keyword arguments,
     #   returning a +String+ or +RubyLLM::Content+ (see {#execute}). Recoverable
     #   failures return +"Error: <message>"+ rather than raise.
+    # @param trifecta_legs [Tool::TrifectaLegs] legs this tool contributes.
+    #   Compute them here rather than at a later resolution pass: construction
+    #   *is* wiring time, since every collaborator that decides a leg (the
+    #   workspace, the sandbox, the confirmer) is already a kwarg of the tool
+    #   that uses it. Defaults to {TrifectaLegs::ASSUMED} — an undeclared tool is
+    #   presumed hostile on both axes the framework could have determined.
     # @return [Tool]
-    def initialize(name:, description:, parameters:, execute:)
+    def initialize(name:, description:, parameters:, execute:, trifecta_legs: TrifectaLegs::ASSUMED)
       @name = name
       @description = description
       @parameters = parameters
       @execute = execute
+      @trifecta_legs = trifecta_legs
     end
 
     # Validate +args+ against {#parameters} and forward them as kwargs to
