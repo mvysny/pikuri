@@ -54,6 +54,10 @@ Parked threads, older than that review:
    auto-teardown. Spun out to
    [`injection-tripwire.md`](injection-tripwire.md).
 7. How/where to surface all of this in docs + example scripts.
+8. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
+   step 2. Mostly answered on paper (custody, not readability, is the test;
+   probably no new level, at most a declaration), not built. See the
+   brainstorm section below.
 
 This file is the staging area — as pieces land in source or in `book/`,
 cut them from here so what remains is always "not yet done."
@@ -691,6 +695,58 @@ Notes on doing it well:
   is much weaker — snippets only. So this is probably a **second persona**
   (`SEARCHER` alongside `RESEARCHER`) and a host choosing between them per
   wiring, not a crippled `RESEARCHER`. Pricing that trade is the open part.
+
+## Brainstorm: is a synced folder an egress sink? (the `Write` gap)
+
+Raised 2026-08-09 while tagging the file tools (step 2), where `Write` and
+`Edit` shipped as `NONE` with the gap documented at the declaration. The
+question is whether a workspace pointed at `~/Dropbox` turns a write into
+egress, and if so at what level — the intuition being that it looks like
+`:egress_searchengine`, since the destination is a party the attacker
+doesn't control, but *safer than that somehow*.
+
+**The "somehow" has a name: custody.** `egress_searchengine` grades whether
+the attacker can *read* what left. That is the wrong axis here, and it is why
+the intuition wouldn't resolve. The property that separates these is:
+
+> **Does the recipient differ from the data's owner?**
+
+- A **search query** changes custody. The bytes land in a third party's logs,
+  with no relationship to the user, and cannot be retracted. Unreadable to the
+  attacker, but genuinely *out*.
+- A **personal cloud sync** does not. The bytes land in the *user's own
+  account* — same owner, different hardware. An attacker gains nothing without
+  also compromising that account, which the agent never granted. So this is
+  not a weaker egress leg; it is **not a leg at all**, and "one step safer" is
+  really "off the axis".
+- A **shared** folder (a team Drive, a public link) *does* change custody —
+  and it is not a middle rung either. The recipients are humans, the bytes
+  persist, and a public link is readable by anyone. That is plain hard
+  `:egress`, arguably worse than a search query.
+
+**So the likely answer is no new lattice level**: the two ends collapse onto
+values that already exist, and the middle is empty. What might be earned is a
+*declaration* — and note that the four values first floated (local / private
+cloud / shared cloud / git) collapse to a binary once custody is the test.
+
+**Git does not belong on this axis.** A write into a working tree egresses
+nothing; a `push` does, and a push is `bash`, already tagged from the
+sandbox. The distinguishing property of the Dropbox case is that replication
+is **ambient** — it happens with no further agent action. A sink that needs a
+deliberate second capability is already covered by that capability.
+
+**If it is ever built, it needs no new machinery** — item 4's reachable-set
+rule applies unchanged. `~/Dropbox` routinely holds both private and shared
+subfolders, and a declaration may only lower the tag when the vouched-for
+area is the tool's *entire* reachable set. So "there is a shared folder
+somewhere under this root" means the leg is present, exactly as a trusted
+island inside a broad root buys nothing.
+
+Deliberately not built: no wiring in the repo points a workspace at a synced
+folder, so like `:egress_searchengine` it would change no verdict today.
+Unlike that tag, it is *user-declared* rather than persona-gated, so it is
+reachable the day someone declares it — which makes it cheaper to add later
+and even less urgent now.
 
 ## More open questions (documented, NOT pursued — revisit later)
 
