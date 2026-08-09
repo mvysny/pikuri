@@ -26,9 +26,11 @@ Parked threads, older than that review:
 2. ~~Does a *local file read* carry `:untrusted`?~~ **Closed** — yes by
    default, opt out with `trusted:` on a *scoped* workspace root (rejected
    on `AllowAll`). See review item 4.
-3. `:egress_searchengine` (was `:egress_writeonly`) — still deferred, but no
-   longer *inert*: a search-only persona is the cheapest fix for the one
-   hole the series cap leaves open. Ship the tag and the persona together.
+3. `:egress_searchengine` (was `:egress_writeonly`) — deferred but
+   **scheduled as step 6** of §5's order-of-work (2026-08-09), after v1's
+   algorithm lands: a search-only persona is the cheapest fix for the one
+   hole the series cap leaves open, and the tag, the axis and the persona
+   ship together or not at all.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
@@ -655,7 +657,9 @@ Notes on doing it well:
   only safe as the **sole** egress leg — the moment a second readable
   action exists, results-that-depend-on-the-secret become a targeting
   stage and it's hard again.
-- **It changes no current verdict, so defer the tag.** Every persona that
+- **It changes no current verdict, so defer the tag** — now with a slot:
+  **step 6** of §5's order-of-work, after v1's algorithm has settled. Every
+  persona that
   holds `web_search` (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds
   `fetch` + `web_scrape` → hard egress dominates; there is no search-only
   agent in the tree today. The tag only earns its keep paired with a
@@ -1545,6 +1549,39 @@ Each step ships standalone and the detector stays silent until the last.
    port the dry-run table to a spec — both as verdicts and as expected
    `#render` output.
 
+**Step 6 — `:egress_searchengine`, after v1 has settled.** Deliberately
+*after*, not folded in: the algorithm groundwork lands first and this is
+designed as an addition on top of it. Not a sixth item of v1 — a separate
+increment with its own design pass, listed here so it has a slot and a
+definition of done instead of floating as an open thread.
+
+- **What ships, and it is all three together or none:** the `SEARCHER`
+  persona (`web_search` only), the readability axis on the egress leg, and
+  the verdict clauses that read it. The tag alone is decoration — verified
+  2026-08-09 that every persona holding `web_search` (`RESEARCHER`,
+  `GIT_REPO_RESEARCHER`) also holds `fetch`/`web_scrape`, so hard readable
+  egress dominates at the same node and no wiring can reach the new level.
+  Shipping an unreachable level is the exact defect `egress_human_author` was
+  dropped for (item 7), one increment later.
+- **Prerequisite, and it is not a detector question:** price the
+  `RESEARCHER` / `SEARCHER` fork per wiring. A search-only persona cannot
+  open the pages it finds — snippets only — so either `pikuri-computer` keeps
+  `RESEARCHER` (and the level stays unreachable in practice) or the flagship
+  demo trades away page-reading. That is a capability decision about the
+  demo; the detector must not be what forces it.
+- **The cost inside the algorithm:** this is a **third axis**, not a third
+  rung. Readability grades what the *attacker* can read back; payload
+  visibility grades what the *human* saw — orthogonal, so the egress leg
+  becomes a pair and item 6's verdict grows from 4 exhaustive clauses to 8
+  (untrusted 2 × visibility 2 × readability 2). Budget that, and re-read
+  "Do not merge this with `:egress_searchengine`" before trying to flatten it
+  into the existing lattice.
+- **Why deferring is safe rather than merely cheap:** item 6's exhaustive
+  `case/in` means the first wiring that reaches an unplaced level raises
+  `NoMatchingPatternError` instead of being silently absorbed into `soft`.
+  That property was chosen for exactly this deferral; it is what makes "later"
+  a decision rather than a rot.
+
 ### 6. v1 buys exactly one bit per lattice — RESOLVED: the verdict is derived, never stored
 
 With `info` out of scope, the two lattices collapse to a single rule:
@@ -1856,10 +1893,12 @@ into the bullets below.
   grade, so it declares `egress: :none`. Clean-by-construction is
   leg-absence. Consequence worth teaching: the only thing better than an
   approver gate is not holding the leg.
-- **Not** in v1, but still a real rung:
-  `:egress_searchengine` (changes no current verdict — but it is the
-  cheapest hardening of the rubber-stamp hole, so it ships the day a
-  search-only persona does).
+- **Not** in v1, but scheduled: `:egress_searchengine` is **step 6** of the
+  order-of-work — a separate increment on top of the settled algorithm,
+  shipping the tag, the readability axis and a `SEARCHER` persona together or
+  not at all. It changes no current verdict, and it is a third *axis* rather
+  than a third rung, so folding it into v1 would double the verdict function
+  to buy a level no wiring can reach.
 - Warn-only, once per process, message names the leg to break. (Safe as
   stated — item 3 verified that no leg can appear after boot: `mcp_connect`
   activates only already-registered servers and the registry is frozen.)
