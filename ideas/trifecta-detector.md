@@ -1,23 +1,37 @@
 # Trifecta detector
 
-Status: **designed, not built — but nothing blocks the build.** The shape is
-settled: three legs, two strength lattices, per-node `max` over the tree,
-`min` across a delegation. A 2026-08-08 review pass against the actual
-wiring found five holes that blocked implementation ("Open items from the
-2026-08-08 review pass"); **all five are now closed**, item 5 (the
-implementation seam) last, and "v1 scope, in one place" carries no ⛔. The
-two follow-ups closed 2026-08-09: item 6 (the verdict is derived on
-`Report`, never stored) and item 7 (`egress_human_author` **dropped** — the
-egress axis is `none < human_approver < egress`, and clean-by-construction
-is leg-absence, not a weak leg). **The review list is empty.**
+Status (2026-08-09): **v1 is BUILT and shipped.** All five steps of §5's
+order-of-work are in `lib/`, plus a sixth the note never numbered (tagging the
+remaining bundled tools — see below). The design half is settled and closed:
+three legs, two strength lattices, per-node `max` over the tree, `min` across
+a delegation; the 2026-08-08 review list is empty, and so are its two
+follow-ups (item 6 — the verdict is derived on `Report`, never stored; item 7
+— `egress_human_author` **dropped**, so the egress axis is
+`none < human_approver < egress` and clean-by-construction is leg-absence
+rather than a weak leg).
 
-So both the *tag set* and *where the tags live* are decided, and the next
-session is writing code against §5's order-of-work. Two caveats for a
-reader: the graded
-egress axis was folded in at the bottom of this file, so the normative
-sections above it still describe flat egress (each carries a superseded
-marker); and the resolved items below are kept as their derivations, which
-is why they read as argument rather than spec.
+**What a reader of this file must know, because the code now disagrees with
+parts of it.** Source is the authority from here on; these are the three
+places the note is stale, each marked in place:
+
+1. **§5(f)'s owner split is reversed.** Core does *not* log an advisory. See
+   the amendment there.
+2. **One dry-run row is conditional.** A trusted private repo reads `soft`
+   only under Bubblewrap; see the footnote under "Revised under the graded
+   egress axis".
+3. **The `Report` shape moved on** — `#advisory` lives on `Report`, `#render`
+   leads with it, and `Trifecta.report_once` never shipped. §5(e) is amended.
+
+Two older caveats still apply: the graded egress axis was folded in at the
+bottom of this file, so the normative sections above it still describe flat
+egress (each carries a superseded marker); and resolved items are kept as
+their derivations, which is why they read as argument rather than spec.
+
+**Where to pick up.** Nothing in v1 is outstanding. The live work is the
+parked list below — step 6 (`:egress_searchengine` + a `SEARCHER` persona) is
+the only one with a defined slot; the docs pass is the only one that v1 has
+made *due* rather than optional, since the detector now prints at every
+`bin/` boot and no chapter explains it.
 
 Parked threads, older than that review:
 
@@ -54,7 +68,23 @@ Parked threads, older than that review:
    auto-teardown. Spun out to
    [`injection-tripwire.md`](injection-tripwire.md).
 7. How/where to surface all of this in docs + example scripts.
-8. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
+8. **Should the map name orphaned sub-agent tools?** Found 2026-08-09 by
+   reading `bin/pikuri-computer`'s output: `git_clone` appears nowhere, and
+   that is correct — `Code::Extension` registers it unconditionally "solely
+   for the `GIT_REPO_RESEARCHER` persona", which `pikuri-computer` does not
+   wire, so no persona's `tool_names` names it and no agent in the tree can
+   invoke it. A tool nothing can call is not a present capability, and
+   crediting it would be the mirror of the bug that credited parents with
+   sub-agent-only tools. So: no bug, and silence is defensible.
+   The open question is whether silence is *best*. The map doubles as a
+   wiring audit — here it revealed a shipped-but-unreachable capability — and
+   the same signal would catch a real slip, a typo'd `tool_names` entry
+   silently orphaning a tool you meant to grant. A trailing
+   `(registered, unreachable: git_clone)` line would be a *fact*, so it fits
+   the map's no-prose rule. Weigh against: it puts a line on every
+   `pikuri-code` boot for a deliberate, harmless registration. Cheap either
+   way; nobody has been bitten yet.
+9. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
    step 2. Mostly answered on paper (custody, not readability, is the test;
    probably no new level, at most a declaration), not built. See the
    brainstorm section below.
@@ -491,6 +521,17 @@ from "More open questions (b)", the verdicts become:
 | **pikuri-thunderbird** default `Extension` (flags off) | *no egress leg at all* | **silent** (2 legs, severed by construction) |
 | **pikuri-code**, private repo, **untrusted** workspace | bash behind a confirmer → **hard** (command ≠ payload) | **loud**, unchanged |
 | **pikuri-code**, private repo, `trusted: true` | same hard bash egress, but the parent's untrusted drops to **weakened** (web tools are sub-agent-only) | **soft** |
+
+> **Amended by the shipped code (2026-08-09): the `trusted: true` row is
+> conditional on the sandbox.** It reads **soft** only under `Bubblewrap`,
+> `bin/pikuri-code`'s default, whose `#confined_to_workspace?` is `true`.
+> Under `Sandbox::NONE` (`--no-sandbox` / `--yolo`) bash sees the whole host
+> however narrowly the workspace was scoped, so the `trusted:` claim stops
+> being honest, the untrusted leg comes back **hard**, and the verdict is
+> **loud**. That is item 4's ask-the-sandbox rule working, not a regression —
+> the row simply predates it. Both cases are pinned in
+> `pikuri-code/spec/pikuri/code/dry_run_spec.rb`, which is now the live
+> version of this table.
 
 Two notes this run added:
 
@@ -1457,6 +1498,20 @@ Report = Data.define(:label, :legs, :tool_legs, :children, :channel_egress)
   can render leaves and edges (§(f)).
 - `#verdict` is per node; `#worst` walks the tree for the max plus its path.
 
+*Shipped with three differences, all small: the walker is named `#worst_path`
+(it returns the root-first `Array<Report>`, whose last element carries both
+the verdict and the deciding cell) with `#tree_verdict` beside it, because a
+bare `#verdict` at the root would silently miss a loud sub-agent; `#advisory`
+lives here too rather than on `Trifecta` (§(f)); and `Trifecta.build` takes
+the root's `tool_legs` from `agent.tools` **only** — `sub_agent_tools` go to
+the extension hook, which resolves personas against both lists. That last one
+shipped wrong and was fixed the same day: crediting the parent with
+sub-agent-only tools reported the quarantine as broken, i.e. a false alarm on
+the exact wiring built to avoid one. It is pinned in
+`pikuri-core/spec/pikuri/trifecta_build_spec.rb`, the only spec that drives a
+live `Agent` — every other one hand-builds `Node`s, which is why assembly was
+where the bug hid.*
+
 *An `own_legs` field was specified here and then dropped: its sole
 justification was making a propagated leg attributable
 (`legs - own_legs`), and printing the tools as leaves does that better. A
@@ -1470,6 +1525,31 @@ table can be asserted as expected *output*, not just as three verdict
 symbols.
 
 #### (f) Presentation: the advisory is core's, the map is the host's
+
+> **REVERSED IN THE SHIPPED CODE (2026-08-09).** Core does **not** log. It
+> computes the picture and stops; `Agent#trifecta` is the reader, and every
+> host surfaces it — the ten `bin/` scripts print `Report#render` at boot.
+> `Trifecta.report_once`, the once-per-process latch and
+> `Trifecta::LOGGER` never shipped.
+>
+> Two reasons, and the second is the one that decided it. A library writing to
+> a log its embedder never asked for is noise. And the once-per-process guard
+> was **worse than silence** in a host that builds two differently-wired
+> agents: it would report the first and stay quiet about the second, which
+> reads as coverage. Host-side reporting dissolves that — each surface reports
+> its own agent.
+>
+> What this gives up, stated plainly because the section below argues the
+> opposite: a downstream host that never calls `agent.trifecta` gets nothing.
+> Acceptable, since the detector never blocked anything — an unreported host
+> is uninformed, not unsafe — but the "nobody can forget to wire it" property
+> is genuinely gone.
+>
+> Also moved: `#advisory` lives on `Report`, not on `Trifecta`, and `#render`
+> **leads** with it (the old header and static footer duplicated the verdict
+> and the book pointer that the advisory already carried). Everything below
+> about *what the two artifacts say* — the descriptive silent line, the
+> per-cell advice, the map's four content rules — shipped as written.
 
 Two different artifacts, and fusing them was a mistake worth recording
 because it is the obvious design:
@@ -1587,6 +1667,17 @@ true after the chapter lands; `book/` is a repo folder, so a reader who has
 the repo can find it and one who doesn't would only get a broken link.
 
 #### Order of work
+
+*All five **shipped** 2026-08-09, in this order, each landing green and
+observably inert until the last. Kept as the record of the plan; source is
+now the authority on every detail.*
+
+*One step the plan missed, discovered when the first real render printed
+`calculator [:untrusted_hard, :egress]`: **every bundled tool must declare**,
+or `ASSUMED` makes each demo loud over arithmetic. Fourteen tools across seven
+gems, each asserted by value in its own gem's spec. The note called this a
+"spec obligation" under §(a) but never numbered it, so it read as optional —
+it is not, and a step-6-shaped task should assume the same for any new gem.*
 
 Each step ships standalone and the detector stays silent until the last.
 
@@ -1853,8 +1944,13 @@ ignoring — the same split, with nothing left to justify.*
 
 ## Open: propagating this to docs + example scripts
 
-Independent of the five open items above (this is about presentation, not
-the rule set): how it shows up to a *reader* is unsettled. To
+**Now due, not optional (2026-08-09).** v1 shipped, so every `bin/pikuri-*`
+prints a trifecta map at boot and the closing line says "see the book in this
+repo" — while no chapter explains what any of it means. That is the one piece
+of v1 whose absence a user actually hits. It is also the *last* thing this
+note owes: everything else here is either shipped or deliberately parked.
+
+Independent of the rule set (this is about presentation). To
 brainstorm next (the *what*, not yet the technical *how*):
 
 - **Reconcile ch7's "binary in presence" with the graded legs.**
