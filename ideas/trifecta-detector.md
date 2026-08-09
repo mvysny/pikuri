@@ -6,6 +6,7 @@ settled: three legs, two strength lattices, per-node `max` over the tree,
 wiring found five holes that blocked implementation ("Open items from the
 2026-08-08 review pass"); **all five are now closed**, item 5 (the
 implementation seam) last, and "v1 scope, in one place" carries no ⛔.
+Item 6 closed 2026-08-09 (the verdict is derived on `Report`, never stored).
 
 So both the *tag set* and *where the tags live* are decided, and the next
 session is writing code against §5's order-of-work. Two caveats for a
@@ -919,10 +920,13 @@ answer is therefore per-seat rather than global.*
 ## Open items from the 2026-08-08 review pass
 
 Raised by reading the note against the actual wiring after the graded-egress
-fold-in. Item 5 is **ship-blocking for v1** — the one rule set the
-implementer would otherwise have to invent; 6–7 are sharpenings that change
-what we claim, not what we build. **Items 1–4 are closed** (2026-08-08)
-and kept below as their derivations.
+fold-in. Item 5 was **ship-blocking for v1** — the one rule set the
+implementer would otherwise have to invent. **Items 1–6 are closed**
+(2026-08-08 / 2026-08-09) and kept below as their derivations; only **item 7**
+is open, and it is a sharpening that changes what we claim, not what we build.
+(That was said of item 6 too, and it turned out false: closing it added the
+`relabel_inbound` saturation rule, the exhaustive-match verdict and the
+`Report` shape. Amendments folded back into item 5.)
 
 ### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
 
@@ -1169,10 +1173,11 @@ file: `tool.trifecta_legs` says what it is, `tool.legs` reads as anatomy.
 
 Three constants, `#|(other)` (per-axis `max` — union at a node), and the
 two boundary operations item 1 named: `#relabel_inbound` (`:hard →
-:weakened`, private and egress identity) and `#cap_egress(channel_level)`.
-The lattices live here and nowhere else, so item 6's "v1 buys one bit per
-lattice" stays true of the *verdict* without the union code duplicating an
-ordering.
+:weakened`, **saturating** — see item 6 — private and egress identity) and
+`#cap_egress(channel_level)`. The lattices live here and nowhere else, and
+`TrifectaLegs` carries no *evaluation*: the verdict lives on
+`Trifecta::Report`, because a single tool's legs having a verdict is a
+category error (item 6).
 
 `Tool#initialize` gains `trifecta_legs: TrifectaLegs::ASSUMED`, plus
 `attr_reader :trifecta_legs`. Every existing constructor keeps working
@@ -1332,18 +1337,21 @@ per process").
 `Pikuri::Trifecta.walk(node)` is a **pure function of the node tree**:
 fold each child in (private identity, untrusted `relabel_inbound`, egress
 `min(channel_egress, child.egress)` unless the child holds `:private`),
-union in parallel, evaluate item 6's 2×2 at every node, return the max plus
-the path. Purity is the testing seam: the paper dry-run's whole results
+union in parallel, build a `Report` per node and return the **max** one —
+`Report = Data.define(:path, :legs)` with `#verdict` derived, so the record
+carries the offending node's *cell* and not just its severity (item 6).
+Purity is the testing seam: the paper dry-run's whole results
 table becomes a spec over hand-built nodes, with no agent, no LLM and no
 sandbox probe — which is the only way the `--no-confirm` and `--no-sandbox`
 regressions item 2 worries about get covered.
 
 Emission: `Pikuri.logger_for('Trifecta')` — `warn` for loud, `info` for
-soft, nothing for silent. Attribution ("which tool gave you this leg", so
-the message can name the leg to break) is recomputed by the **renderer** by
-scanning the offending node's tools for a non-`:none` value on the deciding
-axis; `Node` stays slim rather than carrying a provenance map that only the
-message uses.
+soft, nothing for silent. The renderer reads the **cell** (`report.legs`),
+not the verdict symbol, because the three `soft` cells want three different
+fixes (item 6). Attribution ("which tool gave you this leg", so the message
+can name the leg to break) is recomputed by the renderer by scanning the
+offending node's tools for a non-`:none` value on the deciding axis; `Node`
+stays slim rather than carrying a provenance map that only the message uses.
 
 **One decision deliberately left to the docs pass** (it is listed under
 "Open: propagating this to docs + example scripts", not here): whether the
@@ -1369,14 +1377,112 @@ Each step ships standalone and the detector stays silent until the last.
 5. Wire `Trifecta.report_once` into `run_configure`, and port the dry-run
    table to a spec.
 
-### 6. v1 buys exactly one bit per lattice — say so
+### 6. v1 buys exactly one bit per lattice — RESOLVED: the verdict is derived, never stored
 
 With `info` out of scope, the two lattices collapse to a single rule:
 **loud iff `private` ∧ hard-`untrusted` ∧ autonomous-`egress`; soft iff all
-three legs present at any strength; silent otherwise.** The lattices still
-earn their keep for union *at* a node, but the verdict function is a 2×2 —
-worth one line in the v1 section so nobody builds a general lattice engine
-for it, and worth knowing when a third level is proposed later.
+three legs present at any strength; silent otherwise.** The literal "say so"
+was discharged when that line landed in the v1 list. What was left is the
+design question underneath: if the verdict reads only presence-plus-topness,
+what keeps the three-valued representation honest — and what happens when a
+third level lands?
+
+**Audit first: the ordering has exactly two consumers.**
+
+- `TrifectaLegs#|` — union in parallel at a node → `max`, needs the ordering.
+- `#cap_egress(channel_level)` — the series cap (item 1) → `min`, needs it.
+- `#relabel_inbound` — the boundary relabel → a **table**, not an ordering.
+- the verdict → presence + topness, needs **nothing**.
+
+So the lattices do earn their keep, and nothing outside `TrifectaLegs` may
+consult the ordering. The audit also turns up a rule the note never stated:
+
+**`relabel_inbound` saturates at `:weakened` — it is not "one rung down."**
+`:hard → :weakened`, `:weakened → :weakened`, `:none → :none`. The
+lattice-decrement reading is the natural generalisation and it is wrong: a
+grandchild's untrusted content would launder to `:none` at depth three,
+which is exactly the structural claim
+[`quarantined-handles.md`](quarantined-handles.md) makes and this note
+refuses to make. Two summarizers are no more instruction-resistant than one.
+(`min` in series composes across hops for free — associativity — so the
+hazard is untrusted-only.)
+
+#### Presence is future-proof; strength is not, and the code must say which
+
+```ruby
+Pikuri::Trifecta::Report = Data.define(:path, :legs)   # verdict is derived
+
+def verdict
+  return :silent unless legs.private && legs.untrusted != :none && legs.egress != :none
+  case [legs.untrusted, legs.egress]
+  in [:hard,     :autonomous]     then :loud
+  in [:hard,     :human_approver] then :soft
+  in [:weakened, :autonomous]     then :soft
+  in [:weakened, :human_approver] then :soft
+  end
+end
+```
+
+- **Presence** is `!= :none`, correct for *any* future rung by definition.
+- **Strength** is matched exhaustively, so `case/in` raises
+  `NoMatchingPatternError` on a fall-through. Adding `:egress_searchengine`
+  to the lattice without placing it in the grid then blows up on the first
+  wiring that reaches it, instead of being silently absorbed into `soft` (by
+  `egress != :autonomous`) or into `loud` (by the same test written the other
+  way round). Either absorption destroys the property the revised dry-run
+  table just bought — that **loud carries information**. Raise, and don't
+  rescue: the only way to reach it is an in-repo edit to a lattice, step 1's
+  specs cover the whole grid from hand-built nodes, and a rescue would
+  reintroduce precisely the silence this detector exists to refuse.
+
+The max-over-tree needs a third, trivial ordering — a fixed
+`%i[silent soft loud]` index lookup. That is the only comparison outside
+`TrifectaLegs`, and a fourth verdict (`info`) would go at the bottom of it.
+
+#### Why the verdict is derived, and why it lives on `Report`
+
+**Derived, not stored, because `Data.define` hands you `#with` for free.** A
+stored `verdict:` field makes `report.with(legs: other)` return a record whose
+severity contradicts its own legs — an inconsistency the type would then
+carry around silently. Deriving makes it unrepresentable instead of merely
+unlikely. The cost is a pattern match per read, on a frozen two-field record;
+what "no re-calculation" is guarding against is a caller re-**walking** the
+tree, which this doesn't ask for (`walk` itself calls `#verdict` during the
+fold to take the max, so the raise above fires at walk time, not lazily at
+render time).
+
+**On `Report`, not on `TrifectaLegs`,** even though the verdict is a pure
+function of legs alone and "lowest level that fits" would argue otherwise. A
+single *tool's* legs having a verdict is a category error: `Read` over a
+private untrusted workspace is `{private, hard, none}`, whose `.verdict`
+answers `:silent` — true, meaningless, and inviting. "Is this a trifecta?" is
+only a question about a **node**. So `TrifectaLegs` stays purely structural
+(two lattices, two boundary ops, no evaluation) and `Report` owns the grid.
+
+#### The verdict collapses; the advice does not
+
+One bit per lattice must not cost the "name the leg to break" requirement,
+and it doesn't — because the **renderer reads the cell, not the verdict**.
+Three cells map to `soft` and each wants a different fix:
+
+| cell | the leg to break |
+|---|---|
+| `{hard, approver}` | privilege-separate the untrusted read, or declare the root `trusted:` |
+| `{weakened, autonomous}` | sever egress (sandbox net-off) — untrusted is already as attenuated as it gets short of quarantined handles |
+| `{weakened, approver}` | both legs already attenuated; narrow `:private` or remove a leg outright |
+
+That is why `Report` carries `legs` (§5(e)), and why a slimmer
+`Data.define(:verdict, :path)` would have been a false economy.
+
+#### `:private` stays a boolean — a deliberate divergence from ch7
+
+Two lattices *plus one bool*; union on private is `||`. Worth stating,
+because `book/07-os-assistant.md` teaches severity as graded by the **size of
+the private pool**, and the docs bullet below already owes that
+reconciliation. The answer: pool size is a *human* severity axis; the
+detector declines to measure it, for the same reason it declines to grade
+scanner strength, attention or frequency. **Presence is binary, strength is
+structural, quantity is neither.**
 
 ### 7. Author-mode's real blocker is *drafting*, not pre-fill
 
@@ -1522,4 +1628,8 @@ into the bullets below.
   hook for sub-agent children and the MCP surface, and a pure
   `Trifecta.walk` run at the end of `run_configure` (after the bind sweep),
   main-agent-only and once per process, logging through
-  `Pikuri.logger_for('Trifecta')`.
+  `Pikuri.logger_for('Trifecta')`. The walk returns the max
+  `Trifecta::Report(path:, legs:)` with `#verdict` **derived** — never a
+  stored field, since `Data#with` would let severity contradict legs (item
+  6) — and the verdict matches `[untrusted, egress]` exhaustively so a third
+  level raises instead of being silently absorbed.
