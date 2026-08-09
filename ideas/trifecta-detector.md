@@ -672,6 +672,17 @@ Notes on doing it well:
   verdict would rest on two independent grounds rather than leaning entirely
   on the gate plus the researcher's missing filesystem.
 
+- **Third input, 2026-08-09: the map makes it a *visible* wart.** The
+  host-rendered tree (§5(f)) prints `web_search` and `fetch` on adjacent
+  lines with byte-identical tags. The first reader of the first draft of that
+  example — the person who wrote these tags — stopped at exactly that line to
+  say "web_search is probably `egress_searchengine`". If the author's eye
+  catches it in a four-line demo tree, every user's will. The two earlier
+  prices were about what the tag *buys* (nothing, then: the cheapest fix for
+  the rubber-stamp hole); this one is about what its absence *costs* — a map
+  whose whole job is legibility, printing a distinction-free line about the
+  one distinction the note argues hardest for.
+
   The fork, not a free win: a researcher that cannot open the pages it finds
   is much weaker — snippets only. So this is probably a **second persona**
   (`SEARCHER` alongside `RESEARCHER`) and a host choosing between them per
@@ -1503,6 +1514,10 @@ pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
 
 See the book in this repo for what the lethal trifecta is and how to break a leg.
 ```
+
+Note `web_search` and `fetch` carrying **identical** tags: correct for v1,
+where `:egress_searchengine` does not exist and both are hard `:egress`. Read
+that line as a live argument for shipping the tag — see below.
 
 The closing line is **static text with no chapter name** — the owning chapter
 is deliberately still open (revisit once the detector is built and has
