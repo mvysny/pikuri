@@ -93,7 +93,17 @@ module Pikuri
             Write.write(workspace: workspace, confirmer: confirmer,
                         read_only: read_only, confirm_all_writes: confirm_all_writes,
                         path: path, content: content)
-          }
+          },
+          # No legs. Writing is outbound-only into the local filesystem: no file
+          # bytes enter the model's context (the observation is a summary), and a
+          # local write is not an external sink.
+          #
+          # The gap this leaves, stated because it is real: a workspace that
+          # happens to sync to cloud storage *does* turn a write into egress. The
+          # framework cannot see that — it is the same unknowable-to-us property
+          # as {Filesystem#private?} — and v1 has no declaration for it, so such
+          # a wiring is under-warned. Smoke alarm, not firewall.
+          trifecta_legs: Tool::TrifectaLegs::NONE
         )
       end
 

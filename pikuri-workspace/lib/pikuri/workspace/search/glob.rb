@@ -104,7 +104,15 @@ module Pikuri
             execute: lambda { |pattern:, path: nil, include_gitignored: false|
               Glob.search(workspace: workspace, pattern: pattern, path: path,
                           include_gitignored: include_gitignored)
-            }
+            },
+            # Filenames, not contents — but a path can be as sensitive as a file
+            # (+~/medical/2026-diagnosis.pdf+) and is as attacker-authorable
+            # (a cloned dep names its own files), so this reads the same as Read.
+            trifecta_legs: Tool::TrifectaLegs.new(
+              private: workspace.filesystem.private?,
+              untrusted: workspace.filesystem.trusted? ? :none : :hard,
+              egress: :none
+            )
           )
         end
 

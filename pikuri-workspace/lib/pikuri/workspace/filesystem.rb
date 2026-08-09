@@ -110,6 +110,38 @@ module Pikuri
       #   {#project_root} and, with +temp: true+, {#temp}. Post-realpath, deduped.
       attr_reader :writable
 
+      # Whether these roots may hold data worth exfiltrating — the lethal
+      # trifecta's private leg, which the file tools inherit from here.
+      #
+      # The framework cannot answer this for you: sensitivity is a property of
+      # the *data*, not of the tool, and +~/work/scratch+ and +~/work/payroll+
+      # are indistinguishable from the outside. Declaring it is what lets
+      # {Pikuri::Trifecta} stay quiet over a public checkout and speak up over
+      # your real one.
+      #
+      # @return [Boolean] default +false+
+      def private? = @private
+
+      # Whether every byte reachable here is user-authored — the opt-out from
+      # the file tools' default +:hard+ untrusted leg.
+      #
+      # Default +false+, because broad disk access means cloned dependencies,
+      # fetched PR branches, saved downloads and package caches: attacker-authored
+      # bytes are the norm, and a hostile README reaches the model verbatim.
+      # Claim it only when the trusted area is the tool's *entire* reachable set
+      # — a vouched-for island inside a broad root buys nothing, since the tool
+      # can still reach everything else. That is why {AllowAll} refuses the flag
+      # outright rather than merely discouraging it.
+      #
+      # Distinct from the trust-this-directory question a host may ask at boot:
+      # that one asks whether a hostile +.gitattributes+ can *execute code*, this
+      # one whether the repo's *bytes* are attacker-authored. A repo routinely
+      # passes the first and fails the second — you control +.git/config+;
+      # +vendor/+ is someone else's.
+      #
+      # @return [Boolean] default +false+
+      def trusted? = @trusted
+
       # @return [Pathname, nil] the LLM-visible scratch playground (writable, at
       #   +<internal_temp>/playground+) when +temp: true+, else +nil+; wiped with
       #   the umbrella at exit.
@@ -127,12 +159,20 @@ module Pikuri
       # @param env [Hash{String=>String}, nil] subprocess env via {#env}; +nil+
       #   lazy-derives host git identity from {#project_root}, an explicit hash
       #   is used verbatim (see §"Subprocess environment").
+      # @param private [Boolean] these roots may hold sensitive data; see
+      #   {#private?}.
+      # @param trusted [Boolean] every byte under these roots is user-authored;
+      #   see {#trusted?}.
       # @raise [Errno::ENOENT] if any of +project_root+/+readable+/+writable+
       #   doesn't exist.
       # @raise [Error] if +project_root+ is denied (system root or +/home/*+).
-      def initialize(project_root:, readable: [], writable: [], temp: false, alias_tmp_to_temp: false, env: nil)
+      def initialize(project_root:, readable: [], writable: [], temp: false, alias_tmp_to_temp: false, env: nil,
+                     private: false, trusted: false)
         @project_root = Pathname.new(project_root).realpath
         validate_project_root!(@project_root)
+
+        @private = private
+        @trusted = trusted
 
         @internal_temp = nil
         @temp = temp ? mint_playground : nil
@@ -315,9 +355,23 @@ module Pikuri
         #   {DEFAULT_CREDENTIAL_DENYLIST}. Reduce — or +[]+ — ONLY behind an
         #   outer boundary (kernel-severed/confirmed egress, or a container);
         #   emptying it without one re-opens credential exfiltration.
+        # @param private [Boolean] as in {Filesystem#private?}. Accepted, and
+        #   usually right: a whole-host workspace is exactly where someone means
+        #   it.
+        # @param trusted [Boolean] must be +false+; see {Filesystem#trusted?}.
+        # @raise [ArgumentError] if +trusted: true+ — the flag cannot be honest
+        #   when the reachable set is the whole host.
         def initialize(project_root: Dir.pwd, temp: false, alias_tmp_to_temp: false,
-                       env: nil, denylist: DEFAULT_CREDENTIAL_DENYLIST)
+                       env: nil, denylist: DEFAULT_CREDENTIAL_DENYLIST,
+                       private: false, trusted: false)
+          # Unrepresentable rather than merely inadvisable: the reachable set is
+          # the whole host, so no human can vouch for every byte in it.
+          raise ArgumentError, 'trusted: is not representable on AllowAll — scope the workspace instead' if trusted
+
           @project_root = Pathname.new(project_root).realpath
+
+          @private = private
+          @trusted = false
 
           @internal_temp = nil
           @temp = temp ? mint_playground : nil

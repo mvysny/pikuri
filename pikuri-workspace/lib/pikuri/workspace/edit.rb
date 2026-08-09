@@ -103,7 +103,12 @@ module Pikuri
             Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
                       path: path, old_string: old_string, new_string: new_string,
                       replace_all: replace_all)
-          }
+          },
+          # No legs, for the same reason as {Write}: the observation reports the
+          # outcome, never the file's bytes, so nothing enters the model's
+          # context here. The read-before-edit gate makes that concrete — the
+          # bytes arrived through {Read}, which is where the leg is tagged.
+          trifecta_legs: Tool::TrifectaLegs::NONE
         )
       end
 

@@ -124,7 +124,12 @@ module Pikuri
               Grep.search(workspace: workspace, pattern: pattern, path: path,
                           glob: glob, case_insensitive: case_insensitive,
                           output_mode: output_mode, include_gitignored: include_gitignored)
-            }
+            },
+            trifecta_legs: Tool::TrifectaLegs.new(
+              private: workspace.filesystem.private?,
+              untrusted: workspace.filesystem.trusted? ? :none : :hard,
+              egress: :none
+            )
           )
         end
 

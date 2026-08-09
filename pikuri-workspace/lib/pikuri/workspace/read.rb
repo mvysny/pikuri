@@ -125,7 +125,12 @@ module Pikuri
           },
           execute: ->(path:, offset: 1, limit: DEFAULT_LIMIT) {
             Read.read(workspace: workspace, path: path, offset: offset, limit: limit)
-          }
+          },
+          trifecta_legs: Tool::TrifectaLegs.new(
+            private: workspace.filesystem.private?,
+            untrusted: workspace.filesystem.trusted? ? :none : :hard,
+            egress: :none
+          )
         )
       end
 
