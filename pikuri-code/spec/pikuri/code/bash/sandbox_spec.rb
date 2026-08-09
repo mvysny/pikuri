@@ -37,6 +37,11 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
       argv = ['bash', '-c', 'true']
       assert_same argv, described_class.wrap(argv)
     end
+
+    it 'answers the posture predicates conservatively — the identity element hides nothing' do
+      assert described_class.egress?
+      refute described_class.confined_to_workspace?
+    end
   end
 
   describe described_class::Bubblewrap do
@@ -312,6 +317,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
     end
 
     if BWRAP_AVAILABLE
+      it 'keeps the network and contains the filesystem' do
+        sandbox = described_class.new(filesystem: filesystem)
+        assert sandbox.egress?, 'gem/bundle/mvn/pip need --share-net'
+        assert sandbox.confined_to_workspace?, 'the constructor already refuses an unbounded workspace'
+      end
+
       it 'constructs successfully when bwrap is available' do
         sandbox = described_class.new(filesystem: filesystem)
         assert_kind_of described_class, sandbox
@@ -564,6 +575,12 @@ RSpec.describe Pikuri::Code::Bash::Sandbox do
     end
 
     if BWRAP_AVAILABLE
+      it 'severs the network and admits the whole filesystem — Bubblewrap inverted' do
+        sandbox = described_class.new(filesystem: filesystem)
+        refute sandbox.egress?, '--unshare-net plus the session-IPC masks'
+        refute sandbox.confined_to_workspace?, '--dev-bind / / is the whole real root'
+      end
+
       it 'constructs when bwrap + unprivileged netns are available' do
         # Also requires unprivileged user+net namespaces; if the host has
         # bwrap but disables those, this (correctly) raises.

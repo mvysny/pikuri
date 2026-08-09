@@ -169,7 +169,25 @@ module Pikuri
             Bash.run(filesystem: filesystem, confirmer: confirmer, sandbox: sandbox,
                      passive_detector: passive_detector,
                      command: command, description: description, timeout: timeout)
-          }
+          },
+          # Both inbound axes come from the *sandbox*, not the workspace: the
+          # workspace governs what the LLM observes through the file tools, the
+          # sandbox governs what bash sees. Scope the workspace to a vouched-for
+          # repo and +cat ~/Downloads/*+ still works under a full-root bind.
+          #
+          # Note what this does *not* claim: +:human_approver+, though a
+          # +Confirmer+ is right there. The human approves a *command* — a
+          # program, not a payload. Behind a pipe, a heredoc, +$(…)+ or a script
+          # file, the bytes that egress are computed at runtime and were never on
+          # screen, so approving +curl+ approves an intent. That failure of the
+          # payload-visibility clause is what keeps a coding agent over a private
+          # repo loud, and it is deliberately a literal here rather than
+          # something a rule engine could talk itself out of.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
+            private: filesystem.private?,
+            untrusted: sandbox.confined_to_workspace? && filesystem.trusted? ? :none : :hard,
+            egress: sandbox.egress? ? :autonomous : :none
+          )
         )
       end
 

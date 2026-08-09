@@ -24,6 +24,25 @@ module Pikuri
       # The full two-sandbox design — each posture's threat model, the
       # overlay/concurrency reasoning, and which to pick — is in
       # +pikuri-code/DESIGN.md+.
+      #
+      # == Posture predicates
+      #
+      # A sandbox also answers two questions about itself, which is how {Bash}
+      # computes its {Pikuri::Tool::TrifectaLegs} — asking the object rather
+      # than reading a flag out of the argv, because the argv is exactly where
+      # that reading goes wrong:
+      #
+      # * +#egress?+ — can the wrapped command reach a network sink?
+      # * +#confined_to_workspace?+ — does it see only the workspace?
+      #
+      # Both are **conservative at the identity element**: {NONE} answers
+      # +true+/+false+ respectively, so a host that subclasses one of these
+      # (the {Bubblewrap} header invites it) inherits an answer that is wrong
+      # only in the safe direction. A sandbox that could ever *degrade* to a
+      # networked run rather than raising must answer +egress? == true+, and a
+      # severed network namespace alone is not evidence of a severed leg — a
+      # reachable session bus spawns the fetch outside every namespace (see
+      # {FullFsNoNet::SESSION_IPC_MASKS}).
       module Sandbox
         # The +bwrap+(1) binary, resolved on +PATH+.
         BWRAP_BINARY = 'bwrap'
@@ -58,6 +77,14 @@ module Pikuri
           def self.wrap(argv)
             argv
           end
+
+          # @return [Boolean] +true+ — an unwrapped command has the host's
+          #   network
+          def self.egress? = true
+
+          # @return [Boolean] +false+ — an unwrapped command has the host's
+          #   whole filesystem, whatever the workspace was scoped to
+          def self.confined_to_workspace? = false
         end
 
         # Bubblewrap (+bwrap+(1)) filesystem sandbox for the bash subprocess:
@@ -191,6 +218,14 @@ module Pikuri
           def wrap(argv)
             [BWRAP_BINARY, *bwrap_args, *argv]
           end
+
+          # @return [Boolean] +true+ — this sandbox contains the filesystem but
+          #   keeps +--share-net+, which +gem+/+bundle+/+mvn+/+pip+ need
+          def egress? = true
+
+          # @return [Boolean] +true+ — {#initialize} refuses a workspace listing
+          #   +/+ as writable, so the bind set really is a subset of the host
+          def confined_to_workspace? = true
 
           private
 
@@ -502,6 +537,21 @@ module Pikuri
               *argv
             ]
           end
+
+          # +false+ — and the +false+ is earned by {SESSION_IPC_MASKS} as much
+          # as by +--unshare-net+. A network namespace binds *your process
+          # tree*, not what that tree can ask someone else to do: with the
+          # session bus reachable, +systemd-run --user curl+ returns HTTP 200
+          # from inside this sandbox. Both halves must hold, and {#initialize}
+          # raises rather than degrade if the kernel refuses the namespace, so
+          # there is no path where this answers +false+ without the severance.
+          #
+          # @return [Boolean]
+          def egress? = false
+
+          # @return [Boolean] +false+ — +--dev-bind / /+ hands the subprocess
+          #   the whole real root, whatever the workspace was scoped to
+          def confined_to_workspace? = false
 
           private
 
