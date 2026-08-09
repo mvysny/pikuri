@@ -5,8 +5,11 @@ settled: three legs, two strength lattices, per-node `max` over the tree,
 `min` across a delegation. A 2026-08-08 review pass against the actual
 wiring found five holes that blocked implementation ("Open items from the
 2026-08-08 review pass"); **all five are now closed**, item 5 (the
-implementation seam) last, and "v1 scope, in one place" carries no ⛔.
-Item 6 closed 2026-08-09 (the verdict is derived on `Report`, never stored).
+implementation seam) last, and "v1 scope, in one place" carries no ⛔. The
+two follow-ups closed 2026-08-09: item 6 (the verdict is derived on
+`Report`, never stored) and item 7 (`egress_human_author` **dropped** — the
+egress axis is `none < human_approver < egress`, and clean-by-construction
+is leg-absence, not a weak leg). **The review list is empty.**
 
 So both the *tag set* and *where the tags live* are decided, and the next
 session is writing code against §5's order-of-work. Two caveats for a
@@ -31,13 +34,12 @@ Parked threads, older than that review:
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
    levels `egress_human_approver < egress`, split by the
    **payload-visibility** test, and the earlier flat-egress scope list is
-   superseded. See (b). What stays parked: `egress_human_author` (the
-   `info` cell) is unreachable in every built seat, so it ships as a
-   spec-level ideal only — is strict author-mode reachable in a real
-   chrome at all, or is `soft` the best any built thing gets?
-   **Sharpened by review item 7: the blocker is *drafting*, not pre-fill,
-   so the answer is per-seat — never for compose, plausibly for a
-   researcher prompt.** The
+   superseded. See (b). `egress_human_author` and the `info` cell were
+   **dropped**, not parked (review item 7, 2026-08-09): the blocker is
+   *drafting* rather than pre-fill, so the seat is unreachable for compose —
+   and where it *is* reachable the agent holds no leg to grade, making it
+   `:none` rather than a third rung. `soft` is the best any egress-holding
+   wiring gets; better means severing. The
    approver-seat scanners are mostly **shipped** (`ComposeGuard` +
    `Sanitizer`: recipient novelty + fail-closed body; the blob spotter
    shipped too — `D-blob-spotter-alphabets` +
@@ -735,16 +737,16 @@ design-stage — no code):
 wins):
 
 ```
-egress_human_author  <  egress_human_approver  <  egress   (autonomous)
+none  <  egress_human_approver  <  egress   (autonomous)
 ```
 
-- **`:egress_human_author`** — the human *authors* the outbound bytes from
-  scratch (no pre-fill). Clean by construction: an injection can influence
-  the parent's proposal, but the bytes that leave are the ones a
-  not-leaking human typed, so no covert channel survives. Treat it as
-  **breaking the egress leg for exfil** — effectively `none` for trifecta
-  purposes → info, not a warning. *Strict:* any pre-fill demotes it to
-  approver.
+> **Amended 2026-08-09 (item 7).** This lattice was first written with a
+> third rung, `egress_human_author < egress_human_approver`, for a seat where
+> the human types the outbound bytes from scratch. **Dropped** — not
+> deferred: the bullet defining it already conceded it "breaks the egress leg
+> for exfil, effectively `none`", and a rung definitionally equal to the
+> bottom rung is not a rung. Such a seat declares `egress: :none`. See item 7.
+
 - **`:egress_human_approver`** — the LLM drafts, the human inspects a
   pre-fill and commits. Raises the bar (kills silent, high-bandwidth exfil)
   but leaves the covert/drip channel — the "large reduction, not 'any'"
@@ -756,8 +758,7 @@ egress_human_author  <  egress_human_approver  <  egress   (autonomous)
 | egress ↓ / untrusted → | hard | weakened |
 |---|---|---|
 | autonomous | **loud** | soft |
-| human_approver | **soft** | soft/info |
-| human_author | info | info |
+| human_approver | **soft** | soft |
 
 The grid is monotone in *both* legs — the earlier "must attenuate the leg
 that actually carries the exploit" claim, made concrete. It revises last
@@ -765,10 +766,14 @@ turn's "pikuri-computer stays loud": with the `human_approver` level
 introduced, **pikuri-computer `--no-internet` = `{private,
 untrusted(hard), egress_human_approver}` → soft, not loud** — genuinely
 safer than an autonomous-egress build, but **not silent** (hard untrusted =
-live injection vector; the pre-filled compose is rubber-stampable). Silent
-needs *either* author-mode compose (no pre-fill) *or* privilege-separating
-the mail read so untrusted drops to weakened. So the user is right that it
-softens; the correction is soft, not safe. *(Scope note, settled by item 1:
+live injection vector; the pre-filled compose is rubber-stampable). So the
+user is right that it softens; the correction is soft, not safe. *(Both
+routes to silent this paragraph originally named are wrong, and item 7
+retired them: author-mode compose is unreachable for a drafting seat, and
+privilege-separating the mail read lands on `{weakened, approver}` — still
+soft. **Silent needs a leg gone**, which is exactly the default Thunderbird
+`Extension` row of the revised table: `allow_` flags off, no egress leg at
+all.)* *(Scope note, settled by item 1:
 the **default** mode reads the same. `RESEARCHER`'s hard `fetch` is capped
 at `approver` by the gated delegation, because that persona holds no
 `:private` of its own — so the internet toggle changes how many
@@ -881,7 +886,7 @@ mail).*
 
 What stays here is the detector rule, still unbuilt:
 
-> **Scanners must never promote `human_approver` → `human_author`.**
+> **Scanners must never promote the approver seat.**
 
 Scanner *effectiveness* ("does it catch the acrostic?") is precisely the
 data-flow question the detector refuses to answer; grading approver-quality
@@ -889,13 +894,24 @@ by scanner strength relaunches trust-the-approver at a finer grain, and
 would lull users into trusting a screen that demonstrably misses linguistic
 stego. The detector grades the **structural** egress class (who authors the
 bytes); scanners live on the **confirmer** as runtime hardening, documented
-as bound-not-closed. Author-mode is the only thing that reaches `info`,
-because clean-by-construction is a *proof*, not a mitigation-of-degree.
-(Same argument as the frequency/salience rejection under "payload
-visibility" — attention quality and scanner strength are one axis, and the
-detector declines to grade it.)
+as bound-not-closed. (Same argument as the frequency/salience rejection
+under "payload visibility" — attention quality and scanner strength are one
+axis, and the detector declines to grade it.)
 
-#### Still to brainstorm: is strict author-mode even reachable?
+*Simplified 2026-08-09 by item 7. This rule was originally "never promote
+`human_approver` → `human_author`", and needed a sentence explaining why
+author-mode alone may reach `info` — clean-by-construction being a proof
+rather than a mitigation-of-degree. With `egress_human_author` dropped, the
+rule loses its exception: there is nowhere to promote the seat **to**.
+`human_approver` is the best an egress leg gets, and the only thing better
+is not holding the leg.*
+
+#### Was: is strict author-mode even reachable? — ANSWERED (no, and it isn't a level)
+
+*Kept as the derivation. Item 7 answers the question this section poses, and
+then dissolves it: the seat is unreachable for any drafting chrome, and where
+it **is** reachable it is leg-absence rather than a weak leg. The `info` cells
+below are gone with the row that held them.*
 
 The grid rests `info` entirely on `egress_human_author` = "the human
 types the outbound bytes from scratch, no pre-fill." But **every real UX
@@ -921,12 +937,14 @@ answer is therefore per-seat rather than global.*
 
 Raised by reading the note against the actual wiring after the graded-egress
 fold-in. Item 5 was **ship-blocking for v1** — the one rule set the
-implementer would otherwise have to invent. **Items 1–6 are closed**
-(2026-08-08 / 2026-08-09) and kept below as their derivations; only **item 7**
-is open, and it is a sharpening that changes what we claim, not what we build.
-(That was said of item 6 too, and it turned out false: closing it added the
+implementer would otherwise have to invent. **All seven are now closed**
+(2026-08-08 / 2026-08-09) and kept below as their derivations.
+
+Both of the last two were filed as "sharpenings that change what we claim,
+not what we build", and both turned out to change the build: item 6 added the
 `relabel_inbound` saturation rule, the exhaustive-match verdict and the
-`Report` shape. Amendments folded back into item 5.)
+`Report` shape; item 7 removed a rung from the egress lattice. Amendments
+folded back into item 5 and into (b).
 
 ### 1. Does a gated delegation *cap* the propagated egress leg? — RESOLVED: yes, in series
 
@@ -1508,6 +1526,63 @@ If that holds, the "partial author-mode" idea (pre-fill recipient +
 subject, blind-typed body) is *not* a rescue for compose — the human still
 types a body they were just shown.
 
+#### RESOLVED (2026-08-09): drop `egress_human_author` — it was never a rung
+
+The per-seat split above is right and it is also the end of the level. Take
+the second bullet seriously — a seat where the human's own intent originates
+the bytes — and ask what the *agent* holds there. Nothing: no proposal of
+its own crosses, so no private byte it holds can ride out. The lattice's own
+defining bullet conceded this in its first draft ("breaks the egress leg for
+exfil — effectively `none` for trifecta purposes"), and **a rung
+definitionally equal to the bottom rung is not a rung.** So this is a
+dissolution, not a deferral:
+
+> **The egress axis is `none < egress_human_approver < egress`.** A seat
+> whose outbound bytes originate in the human's own intent declares
+> `egress: :none`, with the reason at the declaration site. Clean-by-
+> construction is **leg-absence**, not a weak leg.
+
+Recorded as a *drop* rather than a YAGNI-defer on purpose: "we might want it
+later" invites re-proposal the day a blank-field seat ships, and the answer
+then is still `:none`, not a third rung.
+
+**Corroboration from the sibling note, reached independently.**
+[`private-context-taint.md`](private-context-taint.md) §"The human is the
+only clean post-taint egress" puts the human-authored payload *after*
+monotonic taint has already severed automatic egress — so in detector terms
+the agent's leg is already `:none` and the human's typing is a channel the
+agent does not hold. Two notes, two routes, same conclusion.
+
+**What it costs, and what it buys.**
+
+- **Costs:** a wiring that genuinely achieves author-mode gets no *credit* in
+  the log — it just doesn't ring. Acceptable: the detector warns, it never
+  credits, and there was no `info` verdict in v1 to earn anyway.
+- **Verdict-neutral:** the `human_author` row was all `info`, v1 ships no
+  `info`, so such a seat scored `silent` before and scores `silent` now. No
+  dry-run row moves.
+- **Buys, and this is the teaching gain:** the egress axis floor is `:none`,
+  so **the only thing better than an approver gate is not holding the leg.**
+  Severing beats gating and there is no third option — sharper than a phantom
+  rung nobody could reach, and it points every "can we do better than soft?"
+  question at leg-removal, which is the only thing that works.
+- **Dissolves the inconsistency below** rather than explaining it (see the
+  shipped data point).
+
+**Guard: this is not precedent for `:egress_searchengine`.** That deferral is
+a different kind. A search-only egress is a *real* rung — bytes genuinely
+leave, they are merely unreadable to the attacker — on the orthogonal
+attacker-readability axis, and it is unreachable only for want of a
+search-only persona, not by definition. `human_author` collapses into
+`:none`; `egress_searchengine` does not collapse into anything. Ship it the
+day a `SEARCHER` persona does, per its own section.
+
+**Graduation note for whoever builds v1:** when the detector lands in source,
+this drop plus the rejected proxy-visible middle rung (item 2) are one
+`DECISIONS.md` entry about the shape of the egress axis — the roads not
+taken, which is what that file is for. Not yet: nothing has landed in `lib/`,
+so the note still owns it.
+
 **And there is already a shipped data point, which cuts the other way and
 has to be reckoned with.** `Confirmer::Terminal` does reach forced
 authorship — a task that trips a `Sanitizer` warning loses bare approval and
@@ -1522,6 +1597,15 @@ while the conditional retype is runtime hardening the docs may credit and
 the detector may not. Worth stating explicitly if item 7 is ever closed,
 because "we ship forced authorship but classify it as approver" reads as an
 inconsistency until the reason is written down.
+
+*That floor rule stands — it is item 2 clause 4, and it is why the scanner-
+gated empty editor stays uncredited. But the drop above means it no longer
+has to carry the explanation on its own: with `egress_human_author` gone
+there is no higher class the shipped forced-retype is being **denied**, so
+"we ship forced authorship but classify it as approver" stops reading as an
+inconsistency. The terminal's `[e] edit` seat is runtime hardening that the
+book and `DESIGN.md` should keep crediting, and the classifier keeps
+ignoring — the same split, with nothing left to justify.*
 
 ## Open: propagating this to docs + example scripts
 
@@ -1606,8 +1690,13 @@ into the bullets below.
   hard-`untrusted` ∧ autonomous-`egress`; **soft** iff all three legs are
   present at any strength; **silent** otherwise.
 
-- **Not** in v1: `egress_human_author` / the `info` cell (unreachable in
-  every built seat — pre-fill demotes it; keep it a spec-level ideal) and
+- **Dropped from the vocabulary entirely** (item 7, 2026-08-09):
+  `egress_human_author` and the `info` cell. Not deferred — a seat whose
+  outbound bytes originate in the human's own intent holds no egress leg to
+  grade, so it declares `egress: :none`. Clean-by-construction is
+  leg-absence. Consequence worth teaching: the only thing better than an
+  approver gate is not holding the leg.
+- **Not** in v1, but still a real rung:
   `:egress_searchengine` (changes no current verdict — but it is the
   cheapest hardening of the rubber-stamp hole, so it ships the day a
   search-only persona does).
