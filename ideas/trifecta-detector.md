@@ -1355,35 +1355,121 @@ per process").
 `Pikuri::Trifecta.walk(node)` is a **pure function of the node tree**:
 fold each child in (private identity, untrusted `relabel_inbound`, egress
 `min(channel_egress, child.egress)` unless the child holds `:private`),
-union in parallel, build a `Report` per node and return the **max** one —
-`Report = Data.define(:path, :legs)` with `#verdict` derived, so the record
-carries the offending node's *cell* and not just its severity (item 6).
-Purity is the testing seam: the paper dry-run's whole results
-table becomes a spec over hand-built nodes, with no agent, no LLM and no
-sandbox probe — which is the only way the `--no-confirm` and `--no-sandbox`
-regressions item 2 worries about get covered.
+union in parallel, and return the **root `Report`, carrying the whole tree**:
 
-Emission: `Pikuri.logger_for('Trifecta')` — `warn` for loud, `info` for
-soft, nothing for silent. The renderer reads the **cell** (`report.legs`),
-not the verdict symbol, because the three `soft` cells want three different
-fixes (item 6). Attribution ("which tool gave you this leg", so the message
-can name the leg to break) is recomputed by the renderer by scanning the
-offending node's tools for a non-`:none` value on the deciding axis; `Node`
-stays slim rather than carrying a provenance map that only the message uses.
+```ruby
+Report = Data.define(:label, :legs, :own_legs, :children)   # #verdict derived (item 6)
+```
 
-**One decision deliberately left to the docs pass** (it is listed under
-"Open: propagating this to docs + example scripts", not here): whether the
-walk's result is *also* an `Agent#trifecta` reader a host can render. The
-walk produces the record either way, so exposing it is a one-line
-`attr_reader` — but it is a public API surface, and whether hosts should
-have it is a presentation question, not an implementation one.
+- `legs` — folded: own legs unioned with everything propagated up. What the
+  verdict reads.
+- `own_legs` — what this node's *own* tools contribute, before any child
+  folds in. `legs` minus `own_legs` is exactly the propagated part, which is
+  what lets the renderer show *where a leg came from* instead of a bare total.
+- `#verdict` is per node; `#worst` walks the tree for the max plus its path.
+
+Purity is the testing seam: the paper dry-run's whole results table becomes a
+spec over hand-built nodes, with no agent, no LLM and no sandbox probe —
+which is the only way the `--no-confirm` and `--no-sandbox` regressions item
+2 worries about get covered. With `#render` (below) pure too, the dry-run
+table can be asserted as expected *output*, not just as three verdict
+symbols.
+
+#### (f) Presentation: the advisory is core's, the map is the host's
+
+Two different artifacts, and fusing them was a mistake worth recording
+because it is the obvious design:
+
+- **The advisory** — one line, emitted by core from `run_configure`, **once
+  per process, never optional**. It is the safety-critical half: no host may
+  forget to wire it, and no host needs to opt in.
+- **The map** — the full tree, rendered by whoever has a screen: each
+  `bin/pikuri-*` prints it for its educational value, and a future
+  `pikuri-tui` puts it behind `/trifecta`. Optional, repeatable, verbose.
+
+Consequences of the split:
+
+- **The once-per-process guard belongs to the advisory only.** Putting it on
+  the reader would make `/trifecta` work exactly once per session. The reader
+  is pure and re-callable.
+- **`Agent#trifecta` is required after all** — the reader question parked
+  below is answered *yes*, because bin scripts and the TUI cannot render what
+  they cannot reach. (Answering it "no, log-only" was the first instinct and
+  it is wrong: it forces core to own presentation.)
+- **Core logs, hosts print.** The advisory is a diagnostic and goes through
+  `Pikuri.logger_for('Trifecta')`; the map is chrome deliberately shown to a
+  human, so a bin script prints it like any other boot banner rather than
+  routing it through the logger.
+
+**The advisory line.** `warn` for loud, `info` for soft *and for silent* —
+deliberately not `error`, which this note reserves for pikuri's own bugs
+("this isn't an error, it's an advisory"); a wiring that is loud **by
+design**, like `pikuri-code` over a private repo, must not teach users that
+ERROR is normal. The severity contrast lives in the text
+(`[TRIFECTA: HARD]` / `[TRIFECTA: soft]`), and the renderer reads the **cell**
+(`report.legs`), not the verdict symbol, because the three `soft` cells want
+three different fixes (item 6).
+
+**The silent line is descriptive, never reassuring** — and this is a rule,
+not a wording preference. "No trifecta detected" is a safety claim the
+detector is constitutionally unable to make ("smoke alarm, not firewall": it
+under-warns on a single tool that is all three internally, and on private
+data staged to a file by one tool and read by another). Report the *finding*
+instead, which also names what would tip the wiring over:
+
+```
+Trifecta: 2 of 3 legs — private, untrusted. No egress leg found.
+```
+
+**The map's formatter lives on `Report#render`**, returning a plain
+newline-separated String — **zero-arg, no chrome**. No `color:`, no `width:`,
+no `indent:`; those knobs are what would turn an acceptable taint (a value
+object describing itself) into core knowing a terminal exists. A TUI wanting
+Tuile widgets or Rainbow walks the `Report` tree itself — it is `Data` all
+the way down — which keeps "dependencies point toward data, never toward UI"
+literally true. Named `#render`, **not `to_s`**: `Data` already interpolates
+usefully, and a multi-line tree in `to_s` means some future
+`logger.info "… #{report}"` silently dumps the whole tree into a one-line log.
+
+Because the map is host-side and asked for, it is free to be verbose. Four
+content rules (the glyphs are not load-bearing; these are):
+
+1. One block per node; each axis on its own line, **value + the tools that
+   contributed it**.
+2. A propagated leg is always shown *with the operation that produced it* —
+   never as a bare total, or the parent's `egress approver` materialises from
+   nowhere when no parent tool holds egress.
+3. The gate level annotates the **edge**, since that is the `min` argument of
+   the series cap.
+4. **Absent legs are printed too** (`egress none`) — the missing leg is the
+   actionable one, for the same reason the silent advisory names it.
+
+```
+Trifecta: soft — all three legs are present; the way out is human-gated.
+
+pikuri-computer
+  private    yes         filesystem (AllowAll), thunderbird mail + calendar
+  untrusted  hard        read, bash, thunderbird_search
+  egress     approver    mail_compose (human commits in Thunderbird's own UI)
+                         + propagated from RESEARCHER (capped by the gate below)
+  └─ RESEARCHER                        [delegation gate: human-approved task string]
+       private    no
+       untrusted  hard         fetch, web_search  → relabelled to weakened for the parent
+       egress     autonomous   fetch, web_search  → capped to approver (series cap:
+                               this persona holds no private data of its own)
+```
+
+Both artifacts point at the book for the concept — vaguely and by name, not
+by path or URL: the chapter that owns this is still unwritten (see the docs
+section below), and `book/` is a repo folder, so a reader who has the repo
+can find it and one who doesn't would only get a broken link.
 
 #### Order of work
 
 Each step ships standalone and the detector stays silent until the last.
 
 1. `Tool::TrifectaLegs` + `Tool(trifecta_legs:)` + `Trifecta::Node` /
-   `walk` / verdict —
+   `walk` / `Report#verdict` / `Report#render` —
    pikuri-core, fully testable from hand-built nodes.
 2. `Filesystem(private:, trusted:)` + the `AllowAll` raise; legs on the five
    file tools.
@@ -1392,8 +1478,10 @@ Each step ships standalone and the detector stays silent until the last.
    contributions; `Registry` entries' `private:`. Static legs on the
    Thunderbird tools (`private: true` by domain; inbound `:hard`; the two
    outbound hand-offs `:human_approver`).
-5. Wire `Trifecta.report_once` into `run_configure`, and port the dry-run
-   table to a spec.
+5. Wire `Trifecta.report_once` into `run_configure` (the advisory) and
+   `Agent#trifecta` (the reader); print `#render` from the `bin/` scripts;
+   port the dry-run table to a spec — both as verdicts and as expected
+   `#render` output.
 
 ### 6. v1 buys exactly one bit per lattice — RESOLVED: the verdict is derived, never stored
 
@@ -1428,7 +1516,8 @@ hazard is untrusted-only.)
 #### Presence is future-proof; strength is not, and the code must say which
 
 ```ruby
-Pikuri::Trifecta::Report = Data.define(:path, :legs)   # verdict is derived
+# verdict is derived, never stored; see §5(e) for the full field set
+Pikuri::Trifecta::Report = Data.define(:label, :legs, :own_legs, :children)
 
 def verdict
   return :silent unless legs.private && legs.untrusted != :none && legs.egress != :none
@@ -1463,7 +1552,7 @@ The max-over-tree needs a third, trivial ordering — a fixed
 stored `verdict:` field makes `report.with(legs: other)` return a record whose
 severity contradicts its own legs — an inconsistency the type would then
 carry around silently. Deriving makes it unrepresentable instead of merely
-unlikely. The cost is a pattern match per read, on a frozen two-field record;
+unlikely. The cost is a pattern match per read, on a frozen record;
 what "no re-calculation" is guarding against is a caller re-**walking** the
 tree, which this doesn't ask for (`walk` itself calls `#verdict` during the
 fold to take the max, so the raise above fires at walk time, not lazily at
@@ -1632,8 +1721,14 @@ brainstorm next (the *what*, not yet the technical *how*):
   loud vs soft, "separation raises the bar but doesn't break it") get a
   guide chapter — likely alongside `06-security.md` /
   `09-security-revisited.md`.
-- Whether the detector's output is purely a log line or also a
-  documented `Agent`-level query a host can render.
+- ~~Whether the detector's output is purely a log line or also a
+  documented `Agent`-level query a host can render.~~ **Answered
+  2026-08-09: both, split by owner.** Core logs a one-line advisory (once
+  per process, mandatory); `Agent#trifecta` exposes the `Report` tree and
+  hosts render it with `#render` — `bin/` scripts as an educational boot
+  banner, a future `pikuri-tui` behind `/trifecta`. See §5(f). What is left
+  here is genuinely presentational: *which* bins print it, and whether the
+  banner is on by default or behind a flag.
 - How it reads next to the typed-transport-classes idea so the two
   privacy stories (endpoint-private vs agent-holds-the-legs) don't
   confuse.
@@ -1703,6 +1798,15 @@ into the bullets below.
 - Warn-only, once per process, message names the leg to break. (Safe as
   stated — item 3 verified that no leg can appear after boot: `mcp_connect`
   activates only already-registered servers and the registry is frozen.)
+- **Two artifacts, split by owner** (§5(f)): core logs a one-line **advisory**
+  from `run_configure` — `warn` for loud, `info` for soft *and* silent, never
+  `error` — where the silent line is descriptive (`2 of 3 legs — …; no egress
+  leg found`) and never says "no trifecta detected", a safety claim this
+  detector cannot make. Hosts render the **map**: `Agent#trifecta` exposes the
+  `Report` tree, `Report#render` formats it as plain multi-line text
+  (zero-arg, no chrome — a TUI wanting color walks the tree itself). The
+  once-per-process guard belongs to the advisory only, or `/trifecta` would
+  work once per session.
 - No custom legs, no per-persona knobs, no propagation exceptions, and no
   grading of approver *quality* (scanner strength, attention, frequency).
 - Implementation seam (item 5): a `Tool::TrifectaLegs` record computed in
@@ -1717,8 +1821,10 @@ into the bullets below.
   hook for sub-agent children and the MCP surface, and a pure
   `Trifecta.walk` run at the end of `run_configure` (after the bind sweep),
   main-agent-only and once per process, logging through
-  `Pikuri.logger_for('Trifecta')`. The walk returns the max
-  `Trifecta::Report(path:, legs:)` with `#verdict` **derived** — never a
+  `Pikuri.logger_for('Trifecta')`. The walk returns the root
+  `Trifecta::Report(label:, legs:, own_legs:, children:)` — the **whole
+  tree**, since the host-rendered map needs it and `legs - own_legs` is what
+  makes a propagated leg attributable — with `#verdict` **derived**, never a
   stored field, since `Data#with` would let severity contradict legs (item
-  6) — and the verdict matches `[untrusted, egress]` exhaustively so a third
-  level raises instead of being silently absorbed.
+  6), and matching `[untrusted, egress]` exhaustively so a third level raises
+  instead of being silently absorbed.
