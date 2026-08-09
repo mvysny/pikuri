@@ -44,7 +44,17 @@ module Pikuri
                                'Maximum number of result entries to return. ' \
                                'Defaults to 10; most providers cap this at 20.'
           },
-          execute: ->(query:, max_results: 10) { engines.search(query, max_results: max_results) }
+          execute: ->(query:, max_results: 10) { engines.search(query, max_results: max_results) },
+          # Snippets are written by whoever ranks for the query, and the query
+          # string itself leaves the machine — a search is an outbound channel
+          # even though nothing is "sent".
+          #
+          # It reaches a *pinned* sink (an engine pikuri picked, not a host the
+          # attacker chose), which is a real difference from {FETCH} and the
+          # reason a softer +:egress_searchengine+ level is on the roadmap. It
+          # is not in the vocabulary yet, and grading this leg lower without it
+          # would be a lie, so: hard egress.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs::ASSUMED
         )
       end
     end

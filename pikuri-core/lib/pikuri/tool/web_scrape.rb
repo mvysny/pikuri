@@ -91,7 +91,11 @@ module Pikuri
       },
       execute: ->(url:, max_chars: WebScrape::DEFAULT_MAX_CHARS) {
         WebScrape.visit(url, max_chars: max_chars)
-      }
+      },
+      # Exactly {TrifectaLegs::ASSUMED}, and the archetype it was named for: the
+      # page is authored by whoever runs the site, and the model picks the URL,
+      # so the request is itself an outbound channel.
+      trifecta_legs: Pikuri::Tool::TrifectaLegs::ASSUMED
     )
   end
 end

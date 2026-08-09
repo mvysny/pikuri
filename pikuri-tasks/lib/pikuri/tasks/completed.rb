@@ -32,7 +32,9 @@ module Pikuri
           },
           execute: lambda { |id:|
             Completed.execute(list: list, id: id)
-          }
+          },
+          # No legs; see {Create}.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
         )
       end
 

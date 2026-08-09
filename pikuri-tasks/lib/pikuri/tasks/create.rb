@@ -41,7 +41,9 @@ module Pikuri
           },
           execute: lambda { |items:|
             Create.execute(list: list, items: items)
-          }
+          },
+          # No legs: an in-memory, per-agent list. Nothing read from disk, nothing sent.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
         )
       end
 

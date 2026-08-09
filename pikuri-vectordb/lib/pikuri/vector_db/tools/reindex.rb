@@ -45,7 +45,10 @@ module Pikuri
             parameters: Pikuri::Tool::Parameters.build { |_p| }, # zero params
             execute: lambda {
               Reindex.execute(indexer: indexer)
-            }
+            },
+            # Hard untrusted: the observation reports what was indexed, and filenames
+            # are corpus-authored. No egress — indexing is local.
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
           )
         end
 

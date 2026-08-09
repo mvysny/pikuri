@@ -53,7 +53,15 @@ module Pikuri
           },
           execute: lambda { |topic:|
             Recall.execute(client: client, user_id: user_id, topic: topic)
-          }
+          },
+          # Private by domain, like a mailbox: durable memories about the user are
+          # sensitive by what they are, not by how anything was configured.
+          #
+          # Hard untrusted too, which is the less obvious half. Memories are captured
+          # from earlier turns, so anything an injection got the agent to believe
+          # *last week* comes back as trusted-looking recall today — a stored
+          # injection with a delay fuse.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress: :none)
         )
       end
 

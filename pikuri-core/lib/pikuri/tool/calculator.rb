@@ -228,7 +228,9 @@ module Pikuri
                           '** (exponentiation), unary minus, parentheses, ' \
                           'decimals. E.g. "155 / (58 * 1000.0 / 3600)" or "2**10".'
       },
-      execute: ->(expression:) { Calculator.calculate(expression) }
+      execute: ->(expression:) { Calculator.calculate(expression) },
+      # No legs: pure arithmetic over the argument, no I/O of any kind.
+      trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
     )
   end
 end

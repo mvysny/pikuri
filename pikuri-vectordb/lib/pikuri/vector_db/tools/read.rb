@@ -82,7 +82,9 @@ module Pikuri
             },
             execute: lambda { |source:, offset: 1, limit: DEFAULT_LIMIT|
               Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
-            }
+            },
+            # As {Search}: corpus bytes into the context, nothing outbound.
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
           )
         end
 

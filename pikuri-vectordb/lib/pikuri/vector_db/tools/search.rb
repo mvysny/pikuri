@@ -83,7 +83,17 @@ module Pikuri
                 embedder: embedder, backend: backend, reranker: reranker,
                 query: query
               )
-            }
+            },
+            # Hard untrusted: a corpus is a pile of documents pikuri did not
+            # write, and web-sourced corpora are the common case. No egress —
+            # the query never leaves the machine, which is the whole point of
+            # local retrieval.
+            #
+            # No private leg: there is no per-corpus declaration yet, so this
+            # stays the quiet default rather than guessing. A private corpus is
+            # under-warned; see +private:+ on {Pikuri::Workspace::Filesystem}
+            # for the shape it would take.
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
           )
         end
 

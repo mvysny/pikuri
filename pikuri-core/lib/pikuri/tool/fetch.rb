@@ -133,7 +133,9 @@ module Pikuri
       },
       execute: ->(url:, max_chars: Fetch::DEFAULT_MAX_CHARS) {
         Fetch.fetch(url, max_chars: max_chars)
-      }
+      },
+      # As {WEB_SCRAPE}: attacker-choosable host, attacker-authored response.
+      trifecta_legs: Pikuri::Tool::TrifectaLegs::ASSUMED
     )
   end
 end

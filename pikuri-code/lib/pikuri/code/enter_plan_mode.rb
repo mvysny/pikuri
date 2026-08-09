@@ -29,7 +29,9 @@ module Pikuri
           name: 'enter_plan_mode',
           description: DESCRIPTION,
           parameters: Parameters::EMPTY,
-          execute: -> { EnterPlanMode.run(read_only: read_only) }
+          execute: -> { EnterPlanMode.run(read_only: read_only) },
+          # No legs: flips a local mode flag.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
         )
       end
 

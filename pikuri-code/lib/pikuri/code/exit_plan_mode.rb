@@ -41,7 +41,10 @@ module Pikuri
           },
           execute: ->(plan:) {
             ExitPlanMode.run(read_only: read_only, confirmer: confirmer, plan: plan)
-          }
+          },
+          # No legs: flips a local mode flag (behind a confirmer, which grades
+          # nothing here — there is no leg to gate).
+          trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
         )
       end
 

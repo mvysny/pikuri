@@ -55,7 +55,13 @@ module Pikuri
             end
 
             Pikuri::Skill::Renderer.format_skill(loaded)
-          }
+          },
+          # Hard untrusted, no egress. A skill is a file someone else wrote — the
+          # Agent Skills standard exists precisely so bundles travel between harnesses
+          # — and loading one drops its text into the model's context verbatim. The
+          # host may well trust its own catalogue, but the tool cannot tell a
+          # hand-written skill from a downloaded +.agents/+ bundle.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
         )
       end
     end
