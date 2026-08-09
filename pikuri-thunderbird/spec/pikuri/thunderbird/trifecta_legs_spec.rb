@@ -82,3 +82,65 @@ RSpec.describe 'Thunderbird trifecta legs' do
     end
   end
 end
+
+# The pikuri-computer rows of the paper dry-run table. This gem is where the
+# Thunderbird tools live, so it is the only place that can assemble them
+# alongside a broad workspace.
+RSpec.describe 'trifecta dry run: pikuri-computer' do
+  def legs(private: false, untrusted: :none, egress: :none)
+    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress: egress)
+  end
+
+  # Whole-host disk (AllowAll, declared private) + mail/calendar reads +
+  # kernel-severed bash. Egress is Thunderbird compose, not the web tools.
+  def computer_node(internet:)
+    tools = {
+      'read' => legs(private: true, untrusted: :hard),           # AllowAll: no trusted: possible
+      'bash' => legs(private: true, untrusted: :hard),           # FullFsNoNet: egress severed
+      'thunderbird_mail_search' => Pikuri::Thunderbird::INBOUND_LEGS,
+      'thunderbird_mail_compose' => Pikuri::Thunderbird::OUTBOUND_LEGS
+    }
+    children = if internet
+                 [Pikuri::Trifecta::Node.new(
+                   label: 'RESEARCHER',
+                   tool_legs: { 'fetch' => legs(untrusted: :hard, egress: :autonomous) },
+                   channel_egress: :human_approver
+                 )]
+               else
+                 []
+               end
+    Pikuri::Trifecta::Node.new(label: 'pikuri-computer', tool_legs: tools, children: children)
+  end
+
+  it 'is soft with the internet off — assembled, but the way out is human-gated' do
+    report = Pikuri::Trifecta.walk(computer_node(internet: false))
+    assert_equal :soft, report.tree_verdict
+    assert_equal %i[private untrusted_hard egress_human_approver], report.legs.to_tags
+  end
+
+  it 'stays soft with the internet on — the series cap holds the researcher at approver' do
+    # The persona holds no private data of its own, so its hard fetch cannot
+    # exceed the approved task string that feeds it.
+    report = Pikuri::Trifecta.walk(computer_node(internet: true))
+    assert_equal :soft, report.tree_verdict
+    assert_equal :human_approver, report.legs.egress
+  end
+
+  it 'makes the internet toggle verdict-neutral, as the note predicted' do
+    assert_equal Pikuri::Trifecta.walk(computer_node(internet: false)).tree_verdict,
+                 Pikuri::Trifecta.walk(computer_node(internet: true)).tree_verdict
+  end
+
+  it 'goes loud if the delegation gate is auto-approved away' do
+    node = Pikuri::Trifecta::Node.new(
+      label: 'pikuri-computer',
+      tool_legs: { 'read' => legs(private: true, untrusted: :hard) },
+      children: [Pikuri::Trifecta::Node.new(
+        label: 'RESEARCHER',
+        tool_legs: { 'fetch' => legs(untrusted: :hard, egress: :autonomous) },
+        channel_egress: :autonomous
+      )]
+    )
+    assert_equal :loud, Pikuri::Trifecta.walk(node).tree_verdict
+  end
+end

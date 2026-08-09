@@ -191,6 +191,11 @@ agent = Pikuri::Agent.new(
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts "Pikuri OS Assistant for this machine. Working from #{filesystem.project_root}. Ctrl+C / Ctrl+D to quit."
   puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
   warnings = []

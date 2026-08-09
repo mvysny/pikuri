@@ -102,6 +102,11 @@ rescue Pikuri::Thunderbird::Profile::DiscoveryError => e
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Thunderbird assistant — searches your local mail + calendar and can draft a ' \
     'reply for you to send (opens the draft in Thunderbird; you need to press Send to actually send the e-mail). ' \
        'Ctrl+C / Ctrl+D to quit.'

@@ -102,6 +102,11 @@ agent = Pikuri::Agent.new(
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Minions: a boss agent delegates focused research to minions.'
   puts 'Try: "plan a 2-day trip to Reykjavik — weather, three sights, two restaurants."'
   puts 'Press Ctrl+C or Ctrl+D to quit.'

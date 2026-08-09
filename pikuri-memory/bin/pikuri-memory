@@ -170,6 +170,11 @@ agent = Pikuri::Agent.new(
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Memory: a private assistant that remembers you across conversations (no internet access).'
   puts "Memory: #{mem0_url ? "mem0 @ #{mem0_url}" : 'self-managed mem0 + Qdrant sidecar'}  •  user: #{user_id}"
   puts 'Tell me things about yourself, then quit and come back — I will remember.'

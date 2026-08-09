@@ -105,6 +105,11 @@ agent = Pikuri::Agent.new(
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Chatbot. Press Ctrl+C or Ctrl+D to quit.'
 
   run_turn(agent, ARGV.join(' ')) unless ARGV.empty?

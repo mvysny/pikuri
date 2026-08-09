@@ -12,6 +12,13 @@ module Pikuri
   #   report.tree_verdict   # => :loud
   #   puts report.render    # the map a bin script prints
   #
+  # Nothing here reports itself. Core computes the picture and stops; surfacing
+  # it belongs to whoever has a screen ({Pikuri::Agent#trifecta} is the reader).
+  # A library writing to a log its embedder never asked for is noise, and a
+  # once-per-process guard would be worse than silence in a host that builds
+  # two differently-wired agents: it would report the first and stay quiet
+  # about the second, which reads as coverage.
+  #
   # == This is a smoke alarm, not a firewall
   #
   # It reasons about *capability presence*, never data flow, so it both
@@ -36,6 +43,29 @@ module Pikuri
   # of smearing a sub-agent's danger across its parent.
   module Trifecta
     class << self
+      # Assemble the tree for a wired agent: its own tools, plus whatever each
+      # extension contributes ({Pikuri::Agent::Extension#trifecta_contribution}
+      # — legs no tool can declare, and a child per sub-agent persona).
+      #
+      # @param agent [Pikuri::Agent] a *wired* agent (after the bind sweep, so
+      #   dynamically-added tools are present)
+      # @param label [String] name for the root node; defaults to the running
+      #   program, which is what a host wants in a boot banner
+      # @return [Node]
+      def build(agent, label: File.basename($PROGRAM_NAME))
+        tools = agent.tools + agent.sub_agent_tools
+        contributions = agent.extensions.filter_map do |ext|
+          ext.trifecta_contribution(tools) if ext.respond_to?(:trifecta_contribution)
+        end
+
+        extra = contributions.map(&:legs).reduce(Tool::TrifectaLegs::NONE) { |acc, l| acc | l }
+        tool_legs = tools.to_h { |t| [t.name, t.trifecta_legs] }
+        tool_legs['(mcp)'] = extra unless extra == Tool::TrifectaLegs::NONE
+
+        Node.new(label: label, tool_legs: tool_legs,
+                 children: contributions.flat_map(&:children))
+      end
+
       # Fold a {Node} tree into a {Report} tree: each node's own tools unioned,
       # then every sub-agent's legs propagated up.
       #

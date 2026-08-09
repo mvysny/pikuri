@@ -448,6 +448,11 @@ end
 cancel_flag.reset!
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts "Pikuri Coding Agent. Working in #{filesystem.project_root}. Press Ctrl+C or Ctrl+D to quit."
   puts 'Type /plan to enter plan mode (read-only research + design), /impl to leave.'
   puts 'Trusted repo: read-only git (status/diff/log/show/…) runs without confirmation.' if trusted_repo

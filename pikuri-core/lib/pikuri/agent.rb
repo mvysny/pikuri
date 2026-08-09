@@ -383,6 +383,26 @@ module Pikuri
       "Agent(id=#{@id}, model=#{model}, tools=#{@tools.size}, listeners=#{@listeners})"
     end
 
+    # This agent's lethal-trifecta picture: which legs it holds, which its
+    # sub-agents hold, the verdict at every node.
+    #
+    #   puts agent.trifecta.render        # the map a bin script prints
+    #   agent.trifecta.tree_verdict       # => :soft
+    #
+    # Memoized and pure, so a UI may call it as often as it likes. Nothing
+    # reports this for you: an Agent computes the picture and stops, because a
+    # library writing to a log its embedder never asked for is noise. Surfacing
+    # it is the host's job — the bundled +bin/pikuri-*+ scripts print
+    # {Trifecta::Report#render} at boot.
+    #
+    # Valid only after construction (it reads the wired tool list), and it
+    # reflects the tools present *then*.
+    #
+    # @return [Trifecta::Report] root of the walked tree
+    def trifecta
+      @trifecta ||= Trifecta.walk(Trifecta.build(self))
+    end
+
     private
 
     # The failure-prone build phase, split out of {#initialize} so the

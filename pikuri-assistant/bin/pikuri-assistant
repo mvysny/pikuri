@@ -182,6 +182,11 @@ end
 cancel_flag.reset!
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Assistant. Press Ctrl+C or Ctrl+D to quit.'
   if mcp_ext.servers && !mcp_ext.servers.empty?
     puts "MCP servers connected: #{mcp_ext.servers.live_ids.join(', ')}"

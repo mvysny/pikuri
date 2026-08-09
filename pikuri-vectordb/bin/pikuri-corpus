@@ -241,6 +241,11 @@ if watch
 end
 
 begin
+  # Capability + trifecta map, printed unconditionally. These are teaching
+  # binaries and the map is half the lesson; a production host puts it behind
+  # an explicit ask instead.
+  puts agent.trifecta.render
+  puts
   puts 'Pikuri Corpus: chat agent with semantic recall over an indexed corpus (no internet access).'
   puts "Corpus: #{source}"
   backend_label =

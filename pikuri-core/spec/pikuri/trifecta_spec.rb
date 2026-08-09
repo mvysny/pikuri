@@ -168,7 +168,11 @@ RSpec.describe Pikuri::Trifecta do
                   children: [researcher])
 
       expected = <<~TREE.chomp
-        Trifecta: soft
+        [TRIFECTA: soft] pikuri-computer — private(fileindex_read, mail_compose) + \
+        untrusted(fileindex_read) + egress(mail_compose). An injection in what this agent \
+        reads can drive an exfiltration. Break a leg: privilege-separate the step that reads \
+        untrusted content, or declare the workspace trusted if you vouch for every byte it \
+        can reach. See the book in this repo.
 
         pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
           fileindex_read [:private, :untrusted_hard]
@@ -177,8 +181,6 @@ RSpec.describe Pikuri::Trifecta do
           RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
             web_search [:untrusted_hard, :egress]
             fetch [:untrusted_hard, :egress]
-
-        See the book in this repo for what the lethal trifecta is and how to break a leg.
       TREE
 
       assert_equal expected, described_class.walk(root).render
@@ -217,5 +219,58 @@ RSpec.describe Pikuri::Agent::Extension do
       def system_prompt_snippets = []
     end.new
     refute_respond_to duck, :trifecta_contribution
+  end
+end
+
+RSpec.describe 'Trifecta::Report#advisory' do
+  def legs(private: false, untrusted: :none, egress: :none)
+    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress: egress)
+  end
+
+  def report_for(**axes)
+    Pikuri::Trifecta.walk(
+      Pikuri::Trifecta::Node.new(label: 'demo', tool_legs: { 'tool' => legs(**axes) })
+    )
+  end
+
+  it 'never claims safety when nothing fires — it reports the finding' do
+    line = report_for(private: true, untrusted: :hard).advisory
+    refute_includes line, 'No trifecta'
+    refute_includes line, 'secure'
+    assert_includes line, '2 of 3 legs (private, untrusted)'
+    assert_includes line, 'no egress leg found'
+  end
+
+  it 'names every missing leg, so the reader sees what would tip it over' do
+    assert_includes report_for(private: true).advisory,
+                    'no untrusted/egress leg found'
+  end
+
+  it 'marks a full trifecta HARD and names the tool that gave each leg' do
+    line = report_for(private: true, untrusted: :hard, egress: :autonomous).advisory
+    assert_includes line, '[TRIFECTA: HARD]'
+    assert_includes line, 'private(tool) + untrusted(tool) + egress(tool)'
+  end
+
+  it 'gives the three soft cells three different fixes' do
+    approver = report_for(private: true, untrusted: :hard, egress: :human_approver).advisory
+    weakened = report_for(private: true, untrusted: :weakened, egress: :autonomous).advisory
+    both     = report_for(private: true, untrusted: :weakened,
+                          egress: :human_approver).advisory
+
+    assert_includes approver, 'privilege-separate'
+    assert_includes weakened, 'sever egress'
+    assert_includes both, 'already attenuated'
+    assert_equal 3, [approver, weakened, both].uniq.size
+  end
+
+  it 'attributes to the path when the worst node is a sub-agent' do
+    child = Pikuri::Trifecta::Node.new(
+      label: 'RESEARCHER',
+      tool_legs: { 'fetch' => legs(private: true, untrusted: :hard, egress: :autonomous) },
+      channel_egress: :autonomous
+    )
+    report = Pikuri::Trifecta.walk(Pikuri::Trifecta::Node.new(label: 'boss', children: [child]))
+    assert_includes report.advisory, 'boss -> RESEARCHER'
   end
 end
