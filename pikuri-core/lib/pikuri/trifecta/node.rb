@@ -3,9 +3,11 @@
 module Pikuri
   module Trifecta
     # One agent in the tree the detector walks: the main agent at the root, a
-    # persona per sub-agent below it. Built by {Pikuri::Trifecta.build} from a
-    # wired +Agent+, and hand-built in specs — which is the point of carrying
-    # plain data rather than live objects:
+    # persona per sub-agent below it. Assembled from a wired +Agent+ (its tools
+    # plus every extension's
+    # {Pikuri::Agent::Extension#trifecta_contribution}), and hand-built in
+    # specs — which is the point of carrying plain data rather than live
+    # objects:
     #
     #   Node.new(label: 'demo',
     #            tool_legs: { 'read' => read_legs },

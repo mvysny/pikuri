@@ -45,7 +45,8 @@ module Pikuri
           },
           execute: lambda { |query:, limit: DEFAULT_LIMIT|
             ContactSearch.run_search(backend: @backend, query:, limit:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::INBOUND_LEGS
         )
       end
 

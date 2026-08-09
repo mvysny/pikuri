@@ -63,7 +63,8 @@ module Pikuri
           },
           execute: lambda { |to:, body:, subject: nil, cc: nil, bcc: nil|
             compose(to:, body:, subject:, cc:, bcc:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::OUTBOUND_LEGS
         )
       end
 

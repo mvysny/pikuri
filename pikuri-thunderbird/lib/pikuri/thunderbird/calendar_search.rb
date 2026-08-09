@@ -60,7 +60,8 @@ module Pikuri
           },
           execute: lambda { |query: nil, after: nil, before: nil, recurrence: nil, limit: DEFAULT_LIMIT|
             CalendarSearch.run_search(backend: @backend, query:, after:, before:, recurrence:, limit:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::INBOUND_LEGS
         )
       end
 

@@ -108,6 +108,33 @@ module Pikuri
         nil
       end
 
+      # The MCP surface's legs, attached here because MCP tools synthesize as
+      # raw +RubyLLM::Tool+ subclasses with no leg surface of their own (the
+      # MCP-tool bypass seam) — so nothing downstream can declare them.
+      #
+      # Hard +:untrusted+ and +:autonomous+ egress, unconditionally. A server's
+      # reachable set is unknown by construction: the tool list arrives at
+      # runtime from a server you didn't write, which is the whole-host case
+      # rather than the scoped one, and no trust claim can be honest about it.
+      # That is exactly {Pikuri::Tool::TrifectaLegs::ASSUMED}, reached
+      # independently — a foreign tool surface and an undeclared local tool are
+      # the same problem.
+      #
+      # +:private+ rides {Registry#private?}, so an open-data server next to a
+      # calculator stays silent and the same wiring beside a mail server does
+      # not.
+      #
+      # @param tools [Array<Pikuri::Tool>] unused; MCP contributes no children
+      # @return [Pikuri::Trifecta::Contribution, nil] +nil+ when no servers are
+      #   registered, so an unused extension adds nothing
+      def trifecta_contribution(tools)
+        return nil if @registry.empty?
+
+        Pikuri::Trifecta::Contribution.new(
+          legs: Pikuri::Tool::TrifectaLegs::ASSUMED.with(private: @registry.private?)
+        )
+      end
+
     end
   end
 end

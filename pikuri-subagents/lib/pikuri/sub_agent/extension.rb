@@ -116,6 +116,35 @@ module Pikuri
         ctx.add_raw_tool(sub_tool.to_ruby_llm_tool)
         nil
       end
+
+      # One child node per persona, resolving +tool_names+ against +tools+
+      # exactly as {SubAgentTool} does at dispatch — the extension that owns
+      # the resolution owns the node, so the tree can never disagree with the
+      # toolset a sub-agent actually receives.
+      #
+      # The gate on each edge is read from the injected confirmer's own
+      # posture, not from whether one was supplied: a +--no-confirm+ wiring
+      # passes {Pikuri::Workspace::Confirmer::AUTO_APPROVE}, which answers
+      # +blocks_on_human? == false+, so the delegation channel scores
+      # +:autonomous+ and the parent's propagated egress re-hardens with
+      # nothing in the detector special-casing the flag.
+      #
+      # @param tools [Array<Pikuri::Tool>]
+      # @return [Pikuri::Trifecta::Contribution]
+      def trifecta_contribution(tools)
+        channel = @confirmer&.blocks_on_human? ? :human_approver : :autonomous
+
+        children = @personas.each_value.map do |persona|
+          persona_tools = tools.select { |t| persona.tool_names.include?(t.name) }
+          Pikuri::Trifecta::Node.new(
+            label: persona.name,
+            tool_legs: persona_tools.to_h { |t| [t.name, t.trifecta_legs] },
+            channel_egress: channel
+          )
+        end
+
+        Pikuri::Trifecta::Contribution.new(children: children)
+      end
     end
   end
 end

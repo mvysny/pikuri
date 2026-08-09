@@ -38,7 +38,8 @@ module Pikuri
           },
           execute: lambda { |event_id:|
             CalendarRead.run_read(backend: @backend, event_id:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::INBOUND_LEGS
         )
       end
 

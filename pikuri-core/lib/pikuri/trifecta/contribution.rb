@@ -1,0 +1,35 @@
+# frozen_string_literal: true
+
+module Pikuri
+  module Trifecta
+    # What an extension adds to the tree, returned from
+    # {Pikuri::Agent::Extension#trifecta_contribution}. Two independent things,
+    # either of which may be empty:
+    #
+    #   # a sub-agent extension: one child per persona, nothing of its own
+    #   Contribution.new(legs: Pikuri::Tool::TrifectaLegs::NONE, children: nodes)
+    #
+    #   # an MCP extension: legs no tool can declare, no children
+    #   Contribution.new(legs: assumed_with_private, children: [])
+    #
+    # Needed because two things in the tree are invisible to per-tool tagging:
+    # a sub-agent is a whole node the tools cannot describe, and a foreign tool
+    # surface (MCP) arrives as raw +RubyLLM::Tool+ subclasses with no leg
+    # surface at all.
+    #
+    # Immutable.
+    #
+    # @!attribute [r] legs
+    #   @return [Pikuri::Tool::TrifectaLegs] legs this extension adds to the
+    #     node it is wired into, over and above that node's own tools
+    # @!attribute [r] children
+    #   @return [Array<Node>] child nodes this extension introduces
+    class Contribution < Data.define(:legs, :children)
+      # @param legs [Pikuri::Tool::TrifectaLegs]
+      # @param children [Array<Node>]
+      def initialize(legs: Pikuri::Tool::TrifectaLegs::NONE, children: [])
+        super
+      end
+    end
+  end
+end

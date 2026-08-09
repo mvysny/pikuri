@@ -36,9 +36,16 @@ module Pikuri
     #   @return [Hash{String => String}] extra environment variables for
     #     the spawned process, merged over the inherited environment.
     #     Frozen. Defaults to an empty hash.
-    StdioEntry = Data.define(:id, :command, :env) do
-      def initialize(id:, command:, env: {})
-        super(id: id, command: command, env: env.freeze)
+    # @!attribute [r] private
+    #   @return [Boolean] this server reaches data worth exfiltrating — a Notion
+    #     workspace, a mail account, an internal wiki. Declared per entry
+    #     because sensitivity is as unknowable to the framework here as it is
+    #     for a filesystem: the person registering the server knows, and the one
+    #     registering an open-data server knows too. Defaults to +false+, and
+    #     feeds {Registry#private?}.
+    StdioEntry = Data.define(:id, :command, :env, :private) do
+      def initialize(id:, command:, env: {}, private: false)
+        super(id: id, command: command, env: env.freeze, private: private)
       end
     end
 
@@ -57,9 +64,11 @@ module Pikuri
     # @!attribute [r] headers
     #   @return [Hash{String => String}] headers sent on every request.
     #     Frozen. Defaults to an empty hash.
-    HttpEntry = Data.define(:id, :url, :headers) do
-      def initialize(id:, url:, headers: {})
-        super(id: id, url: url, headers: headers.freeze)
+    # @!attribute [r] private
+    #   @return [Boolean] as in {StdioEntry}; defaults to +false+.
+    HttpEntry = Data.define(:id, :url, :headers, :private) do
+      def initialize(id:, url:, headers: {}, private: false)
+        super(id: id, url: url, headers: headers.freeze, private: private)
       end
     end
 
@@ -87,6 +96,24 @@ module Pikuri
     #   change, same pattern as {Pikuri::Skill::Catalog#empty?}.
     def empty?
       @entries.empty?
+    end
+
+    # Whether the MCP surface reaches private data — true if *any* registered
+    # entry declares it.
+    #
+    # The union is over **registered** servers, not connected ones, and that is
+    # the non-obvious part: an agent holding the MCP surface can reach every
+    # entry here, because +mcp_connect+ activates any of them at will.
+    # Registration is the capability boundary; activation is merely when the
+    # tools show up. So one private server makes the whole surface private.
+    #
+    # Knowable at boot, which is what lets the trifecta advisory fire once per
+    # process: this registry is frozen at construction, so the *tools* may
+    # arrive after the Configurator block but the *legs* cannot.
+    #
+    # @return [Boolean]
+    def private?
+      @entries.any?(&:private)
     end
 
     # @param id [String]

@@ -191,3 +191,31 @@ RSpec.describe Pikuri::Trifecta do
     end
   end
 end
+
+RSpec.describe Pikuri::Trifecta::Contribution do
+  it 'defaults to nothing on both axes — an extension opts in to each' do
+    contribution = described_class.new
+    assert_equal Pikuri::Tool::TrifectaLegs::NONE, contribution.legs
+    assert_empty contribution.children
+  end
+end
+
+RSpec.describe Pikuri::Agent::Extension do
+  it 'defaults #trifecta_contribution to nil, so most extensions owe nothing' do
+    plain = Class.new { include Pikuri::Agent::Extension }.new
+    assert_nil plain.trifecta_contribution([])
+  end
+
+  it 'stays optional for a class that implements the protocol without including it' do
+    # The protocol permits this, which is why the Agent must call the hook
+    # guarded by respond_to? rather than by name like every other hook.
+    duck = Class.new do
+      def configure(c); end
+      def bind(ctx); end
+      def on_user_message(ctx, content); end
+      def on_conversation_reset(ctx); end
+      def system_prompt_snippets = []
+    end.new
+    refute_respond_to duck, :trifecta_contribution
+  end
+end

@@ -116,6 +116,29 @@ module Pikuri
       #
       # @return [Array<String>] zero or more prompt sections; +[]+ for none
       def system_prompt_snippets = []
+
+      # What this extension adds to the lethal-trifecta tree
+      # ({Pikuri::Trifecta}): legs the wired agent holds beyond its own tools,
+      # and child nodes for any sub-agents it introduces. Default none.
+      #
+      # Only two kinds of extension owe an answer, and both are things per-tool
+      # tagging structurally cannot see: one that introduces **sub-agents** (a
+      # whole node, plus the gate on the delegation edge) and one that mounts a
+      # **foreign tool surface** whose tools carry no legs of their own.
+      #
+      # +tools+ is the wired agent's tools plus its sub-agent tools, so an
+      # extension resolving a persona's +tool_names+ can select the same
+      # objects the sub-agent will actually receive — the resolution and the
+      # node it produces stay with whoever owns them.
+      #
+      # Unlike every other hook here, the Agent calls this **guarded by
+      # +respond_to?+**: this protocol permits a class that defines all hooks
+      # without including the module, and an unguarded new hook would break
+      # those. So a non-including extension may simply not have it.
+      #
+      # @param tools [Array<Pikuri::Tool>] the agent's tools + sub-agent tools
+      # @return [Pikuri::Trifecta::Contribution, nil] +nil+ for none
+      def trifecta_contribution(tools) = nil
     end
   end
 end

@@ -107,3 +107,16 @@ RSpec.describe 'Workspace trifecta legs' do
     end
   end
 end
+
+RSpec.describe 'Confirmer#blocks_on_human?' do
+  it 'is true on the base class — a confirmer exists to ask' do
+    asking = Class.new(Pikuri::Workspace::Confirmer) do
+      def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
+    end
+    assert asking.new.blocks_on_human?
+  end
+
+  it 'is false on AutoApprove — nobody is asked, so no gate exists to credit' do
+    refute Pikuri::Workspace::Confirmer::AUTO_APPROVE.blocks_on_human?
+  end
+end

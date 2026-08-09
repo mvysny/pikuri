@@ -76,7 +76,8 @@ module Pikuri
           execute: lambda { |title:, start:, **opts|
             create(title:, start:, finish: opts[:end], all_day: opts[:all_day] || false,
                    location: opts[:location], description: opts[:description])
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::OUTBOUND_LEGS
         )
       end
 

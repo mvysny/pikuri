@@ -124,6 +124,21 @@ module Pikuri
         ask(request:).is_a?(Approved)
       end
 
+      # Whether {#ask} can actually stop and wait for a person — the posture
+      # {Pikuri::Trifecta} reads when deciding whether a gated tool reaches the
+      # approver seat rather than counting as autonomous egress.
+      #
+      # +true+ on the base class: a confirmer exists to ask, so a subclass that
+      # doesn't must say so, and one that forgets is credited with a gate it
+      # does not have only if it also forgets to be {AutoApprove}. Override to
+      # +false+ for any request-independent auto-answer.
+      #
+      # This is what makes +--no-confirm+ re-harden a wiring's verdict on its
+      # own, with nothing in the detector special-casing the flag.
+      #
+      # @return [Boolean]
+      def blocks_on_human? = true
+
       # Approves everything unedited — the headless "opted out of dialogs"
       # stance. Request-independent, so it classifies nothing and stays a
       # legitimate Confirmer. Used by +bin/pikuri-code --yolo+, downstream hosts'
@@ -134,6 +149,11 @@ module Pikuri
         def ask(request:)
           Approved.new(new_request_detail: request.detail)
         end
+
+        # @return [Boolean] +false+ — nobody is asked, so a tool gated by this
+        #   confirmer holds autonomous egress however human-gated its wiring
+        #   looks on paper
+        def blocks_on_human? = false
       end
 
       # Shared stateless {AutoApprove} singleton, reusable across tools,

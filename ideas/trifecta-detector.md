@@ -1914,8 +1914,20 @@ into the bullets below.
   it could not be honest. `Bash` takes its untrusted reach from the
   **sandbox's** fs view, not the workspace's.
 - `:private` declared on the workspace/corpus; file tools inherit it.
-  Exception: domain-inherently-private tools (Thunderbird mail/calendar)
-  carry it by default.
+  Exception: domain-inherently-private tools carry it by default — narrowed
+  while building step 4 to the **inbound** Thunderbird tools, since compose
+  and calendar-create *send* rather than read.
+- **The private leg grades what a tool lets an attacker _query_ over the
+  pool, not whether any bit at all flows back** (settled 2026-08-09, while
+  tagging `Write` / `Edit` / `Glob` / `mail_compose`). Every write-ish tool
+  leaks *something*: `Write` reveals that a path existed, `mail_compose`
+  relays a recipient-novelty note. Counting those would make the leg
+  universal and the alarm useless. What separates `Glob` — which *does* carry
+  it — is that the attacker chooses the query and gets bulk results
+  (`**/*.pdf` over a home directory *is* the payload), where the others
+  return one incidental bit about an operation the model itself initiated,
+  worth ~0 under attack. Deliberately lenient; revisit on a concrete attack
+  vector, not on a symmetry argument.
 - Two lattices, union = max on each:
   `none < untrusted_weakened < untrusted` and
   `none < egress_human_approver < egress`.

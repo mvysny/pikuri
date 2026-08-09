@@ -49,7 +49,8 @@ module Pikuri
                              after: nil, before: nil, folder: nil, limit: DEFAULT_LIMIT|
             MailSearch.run_search(backend: @backend, query:, from:, to:, subject:,
                                   after:, before:, folder:, limit:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::INBOUND_LEGS
         )
       end
 

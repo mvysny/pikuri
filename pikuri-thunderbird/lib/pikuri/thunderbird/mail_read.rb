@@ -34,7 +34,8 @@ module Pikuri
           },
           execute: lambda { |message_id:|
             MailRead.run_read(backend: @backend, message_id:)
-          }
+          },
+          trifecta_legs: Pikuri::Thunderbird::INBOUND_LEGS
         )
       end
 
