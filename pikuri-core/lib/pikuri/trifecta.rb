@@ -53,13 +53,22 @@ module Pikuri
       #   program, which is what a host wants in a boot banner
       # @return [Node]
       def build(agent, label: File.basename($PROGRAM_NAME))
-        tools = agent.tools + agent.sub_agent_tools
+        # The root node holds +tools+ ONLY. +sub_agent_tools+ are registered for
+        # personas and never reach the parent's LLM — crediting the parent with
+        # them reports the sub-agent quarantine as broken, which is the one
+        # false alarm guaranteed to get this advisory muted, since that
+        # quarantine is the defense the loudest wirings are built around.
+        #
+        # The *hook* gets both, because a persona resolves its +tool_names+
+        # against either list.
         contributions = agent.extensions.filter_map do |ext|
-          ext.trifecta_contribution(tools) if ext.respond_to?(:trifecta_contribution)
+          if ext.respond_to?(:trifecta_contribution)
+            ext.trifecta_contribution(agent.tools + agent.sub_agent_tools)
+          end
         end
 
         extra = contributions.map(&:legs).reduce(Tool::TrifectaLegs::NONE) { |acc, l| acc | l }
-        tool_legs = tools.to_h { |t| [t.name, t.trifecta_legs] }
+        tool_legs = agent.tools.to_h { |t| [t.name, t.trifecta_legs] }
         tool_legs['(mcp)'] = extra unless extra == Tool::TrifectaLegs::NONE
 
         Node.new(label: label, tool_legs: tool_legs,
