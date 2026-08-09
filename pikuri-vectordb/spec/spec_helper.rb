@@ -26,5 +26,14 @@ RSpec.configure do |config|
     def assertions
       @assertions ||= 0
     end
+
+    # Minitest::Assertions#skip shadows rspec's own and raises an
+    # exception rspec reports as a *failure* — so an environment guard
+    # (`skip 'git not on PATH'`) reddens the build on precisely the
+    # hosts it means to excuse. Delegate back to rspec's pending
+    # machinery; the trailing backtrace arg is minitest's signature.
+    def skip(message = nil, _backtrace = nil)
+      RSpec::Core::Pending.instance_method(:skip).bind_call(self, message)
+    end
   end)
 end
