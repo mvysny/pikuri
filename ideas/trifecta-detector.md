@@ -1300,13 +1300,31 @@ gain `private: false`, and `Registry#private?` is `entries.any?(&:private?)`
 #### (d) The tree: one node type, one hook
 
 ```ruby
-Pikuri::Trifecta::Node = Data.define(:label, :legs, :children, :channel_egress)
+Pikuri::Trifecta::Node = Data.define(:label, :tool_legs, :children, :channel_egress)
+#   tool_legs => ordered { String tool name => TrifectaLegs }, this node's own tools
 ```
 
 `channel_egress` is a property of the *edge* to the parent, stored on the
 child because every child has exactly one parent edge; it is
 `:human_approver` when the delegation is gated and `:autonomous` otherwise,
 and it is the `min` argument of item 1's series cap.
+
+**`tool_legs` is a name→legs map, not the live `Tool` objects** — and it
+replaces an earlier `legs:` field that held only the union. Two reasons, one
+of which was a hole:
+
+- **Attribution needs a receiver.** §5(e) originally said the renderer
+  recovers "which tool gave you this leg" by *scanning the node's tools* — but
+  `Node` had no tools, so as specified that was unimplementable. Keeping the
+  per-tool breakdown makes attribution structural rather than computed: the
+  map (§(f)) prints the tools as leaves and the reader sees it.
+- **Purity stays hand-buildable.** Carrying real `Tool` instances would mean
+  constructing tools — with their workspaces, sandboxes and confirmers — to
+  write a spec, which defeats the testing seam. A name and a legs record is
+  all either consumer needs.
+
+The node's own union is `tool_legs.values.reduce(:|)`, computed rather than
+stored.
 
 Sub-agent nodes and the MCP surface both need something no tool can supply,
 so extensions get **one optional hook**:
@@ -1358,15 +1376,20 @@ fold each child in (private identity, untrusted `relabel_inbound`, egress
 union in parallel, and return the **root `Report`, carrying the whole tree**:
 
 ```ruby
-Report = Data.define(:label, :legs, :own_legs, :children)   # #verdict derived (item 6)
+Report = Data.define(:label, :legs, :tool_legs, :children, :channel_egress)
+#   #verdict derived (item 6)
 ```
 
-- `legs` — folded: own legs unioned with everything propagated up. What the
-  verdict reads.
-- `own_legs` — what this node's *own* tools contribute, before any child
-  folds in. `legs` minus `own_legs` is exactly the propagated part, which is
-  what lets the renderer show *where a leg came from* instead of a bare total.
+- `legs` — folded: this node's own tools unioned with everything propagated
+  up from children. What the verdict reads.
+- `tool_legs`, `channel_egress` — carried through from the `Node` so the map
+  can render leaves and edges (§(f)).
 - `#verdict` is per node; `#worst` walks the tree for the max plus its path.
+
+*An `own_legs` field was specified here and then dropped: its sole
+justification was making a propagated leg attributable
+(`legs - own_legs`), and printing the tools as leaves does that better. A
+field whose only consumer found a better route stops earning its place.*
 
 Purity is the testing seam: the paper dry-run's whole results table becomes a
 spec over hand-built nodes, with no agent, no LLM and no sandbox probe —
@@ -1383,9 +1406,13 @@ because it is the obvious design:
 - **The advisory** — one line, emitted by core from `run_configure`, **once
   per process, never optional**. It is the safety-critical half: no host may
   forget to wire it, and no host needs to opt in.
-- **The map** — the full tree, rendered by whoever has a screen: each
-  `bin/pikuri-*` prints it for its educational value, and a future
-  `pikuri-tui` puts it behind `/trifecta`. Optional, repeatable, verbose.
+- **The map** — the full tree, rendered by whoever has a screen. **Every
+  `bin/pikuri-*` prints it, always, with no flag**: the bins exist for
+  education (CLAUDE.md already scopes them as "dev / demo entry points only,
+  not gem executables"), and anyone doing real work is expected to move to a
+  downstream production host, where the same tree sits behind an explicit
+  ask — `/trifecta` in a TUI. So "always on" costs a demo user four lines and
+  costs a real user nothing.
 
 Consequences of the split:
 
@@ -1431,38 +1458,58 @@ literally true. Named `#render`, **not `to_s`**: `Data` already interpolates
 usefully, and a multi-line tree in `to_s` means some future
 `logger.info "… #{report}"` silently dumps the whole tree into a one-line log.
 
-Because the map is host-side and asked for, it is free to be verbose. Four
-content rules (the glyphs are not load-bearing; these are):
+**The map is a pure tree dump — no prose, no explanations.** An earlier draft
+annotated each leg with sentences ("mail_compose — human commits in
+Thunderbird's own UI", "capped by the gate below"). Two things killed it, and
+the second is the reason this paragraph exists rather than a style note:
+prose in a boot banner is unreadable at a glance, and — the real objection —
+**the renderer had no data to build those sentences from.** `Node` carried
+only a leg union, so every annotation in that draft was English no data
+structure could produce. Structure replaced it: put the **tools in the tree
+as leaves** and attribution is something you *read*, not something the
+renderer computes. That is what `tool_legs` on the node is for (§(d)).
 
-1. One block per node; each axis on its own line, **value + the tools that
-   contributed it**.
-2. A propagated leg is always shown *with the operation that produced it* —
-   never as a bare total, or the parent's `egress approver` materialises from
-   nowhere when no parent tool holds egress.
-3. The gate level annotates the **edge**, since that is the `min` argument of
-   the series cap.
-4. **Absent legs are printed too** (`egress none`) — the missing leg is the
-   actionable one, for the same reason the silent advisory names it.
+Four rules (the glyphs are not load-bearing; these are):
+
+1. **One line per entry**, indented by depth. An **agent** node prints its
+   **folded** legs; a **tool** leaf prints its **own**. One rule, and
+   propagation becomes visible by layout — the parent shows `:egress` while
+   no parent tool does, and the sub-agent below it does.
+2. **No explanation of any kind.** Not why a leg is there, not what the
+   verdict means. The advisory line carries the meaning; the map carries the
+   facts.
+3. **The delegation gate prints on the sub-agent line** — `[gate:
+   human_approver]`. Not an annotation: it is `channel_egress`, a literal
+   Node field, and the `min` argument of the series cap. Without it,
+   `--no-confirm` changes the parent's verdict while every visible tag stays
+   identical, and the map would show an effect with no visible cause — which
+   is exactly the regression item 2 clause 1 exists to keep legible.
+4. **Empty renders as `[]`**, not blank, so a leg-free tool reads as *checked
+   and clear* rather than as an unrendered line. (The "print absent legs too"
+   rule stays with the **advisory**, where the missing leg is the actionable
+   one; across a dozen tool leaves it is noise.)
 
 ```
-Trifecta: soft — all three legs are present; the way out is human-gated.
+Trifecta: soft
 
-pikuri-computer
-  private    yes         filesystem (AllowAll), thunderbird mail + calendar
-  untrusted  hard        read, bash, thunderbird_search
-  egress     approver    mail_compose (human commits in Thunderbird's own UI)
-                         + propagated from RESEARCHER (capped by the gate below)
-  └─ RESEARCHER                        [delegation gate: human-approved task string]
-       private    no
-       untrusted  hard         fetch, web_search  → relabelled to weakened for the parent
-       egress     autonomous   fetch, web_search  → capped to approver (series cap:
-                               this persona holds no private data of its own)
+pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
+  fileindex_read [:private, :untrusted_hard]
+  bash [:private, :untrusted_hard]
+  mail_compose [:private, :egress_human_approver]
+  calculator []
+  RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
+    web_search [:untrusted_hard, :egress]
+    fetch [:untrusted_hard, :egress]
+
+See the book in this repo for what the lethal trifecta is and how to break a leg.
 ```
 
-Both artifacts point at the book for the concept — vaguely and by name, not
-by path or URL: the chapter that owns this is still unwritten (see the docs
-section below), and `book/` is a repo folder, so a reader who has the repo
-can find it and one who doesn't would only get a broken link.
+The closing line is **static text with no chapter name** — the owning chapter
+is deliberately still open (revisit once the detector is built and has
+settled), and a placeholder `TODO` shipped in user-facing output survives
+three releases. A sentence that needs no chapter number is true now and stays
+true after the chapter lands; `book/` is a repo folder, so a reader who has
+the repo can find it and one who doesn't would only get a broken link.
 
 #### Order of work
 
@@ -1517,7 +1564,7 @@ hazard is untrusted-only.)
 
 ```ruby
 # verdict is derived, never stored; see §5(e) for the full field set
-Pikuri::Trifecta::Report = Data.define(:label, :legs, :own_legs, :children)
+Pikuri::Trifecta::Report = Data.define(:label, :legs, :tool_legs, :children, :channel_egress)
 
 def verdict
   return :silent unless legs.private && legs.untrusted != :none && legs.egress != :none
@@ -1720,15 +1767,18 @@ brainstorm next (the *what*, not yet the technical *how*):
 - Where the named concepts (`:private` as a user-declared property,
   loud vs soft, "separation raises the bar but doesn't break it") get a
   guide chapter — likely alongside `06-security.md` /
-  `09-security-revisited.md`.
+  `09-security-revisited.md`. **Deliberately deferred until the detector is
+  built and has settled** (2026-08-09): writing the chapter against a
+  design that has moved twice in two days would teach a shape that then
+  changes. Both output artifacts are written to need no chapter *name*, so
+  this blocks nothing — see §5(f)'s closing line.
 - ~~Whether the detector's output is purely a log line or also a
   documented `Agent`-level query a host can render.~~ **Answered
   2026-08-09: both, split by owner.** Core logs a one-line advisory (once
   per process, mandatory); `Agent#trifecta` exposes the `Report` tree and
-  hosts render it with `#render` — `bin/` scripts as an educational boot
-  banner, a future `pikuri-tui` behind `/trifecta`. See §5(f). What is left
-  here is genuinely presentational: *which* bins print it, and whether the
-  banner is on by default or behind a flag.
+  hosts render it with `#render` — **every** `bin/` script as an educational
+  boot banner, always and with no flag; a future `pikuri-tui` behind
+  `/trifecta`. See §5(f).
 - How it reads next to the typed-transport-classes idea so the two
   privacy stories (endpoint-private vs agent-holds-the-legs) don't
   confuse.
@@ -1822,9 +1872,10 @@ into the bullets below.
   `Trifecta.walk` run at the end of `run_configure` (after the bind sweep),
   main-agent-only and once per process, logging through
   `Pikuri.logger_for('Trifecta')`. The walk returns the root
-  `Trifecta::Report(label:, legs:, own_legs:, children:)` — the **whole
-  tree**, since the host-rendered map needs it and `legs - own_legs` is what
-  makes a propagated leg attributable — with `#verdict` **derived**, never a
-  stored field, since `Data#with` would let severity contradict legs (item
-  6), and matching `[untrusted, egress]` exhaustively so a third level raises
-  instead of being silently absorbed.
+  `Trifecta::Report(label:, legs:, tool_legs:, children:, channel_egress:)` —
+  the **whole tree, down to the individual tools**, since the host-rendered
+  map prints them as leaves and that is what makes a propagated leg
+  attributable — with `#verdict` **derived**, never a stored field, since
+  `Data#with` would let severity contradict legs (item 6), and matching
+  `[untrusted, egress]` exhaustively so a third level raises instead of being
+  silently absorbed.
