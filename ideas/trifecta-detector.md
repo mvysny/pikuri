@@ -54,7 +54,23 @@ Parked threads, older than that review:
    auto-teardown. Spun out to
    [`injection-tripwire.md`](injection-tripwire.md).
 7. How/where to surface all of this in docs + example scripts.
-8. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
+8. **BUG, next to tackle: `Trifecta.build` credits the parent with
+   sub-agent-only tools.** It builds the root node's `tool_legs` from
+   `agent.tools + agent.sub_agent_tools`; the *hook* needs both (personas
+   resolve `tool_names` against either list), but the root's own tools are
+   `agent.tools` alone. Found 2026-08-09 by reading `bin/pikuri-computer`'s
+   real output, which listed `git_clone` / `web_search` / `web_scrape` /
+   `fetch` as parent tools and so reported a full hard trifecta. All four are
+   registered via `add_sub_agent_tool` (`bin/pikuri-computer:183–188`;
+   `code/extension.rb:127`), so the parent holds none of them and the verdict
+   should be **soft** — egress reaching it only as the gate-capped
+   `RESEARCHER` propagation, exactly as the dry-run table says. Worth fixing
+   before anything else: it misreports the sub-agent quarantine, which is the
+   headline safety property of both `pikuri-computer` and `pikuri-code`, and
+   a false alarm on the one wiring built to avoid the alarm is precisely what
+   gets a warn-only advisory muted. (Add a regression spec asserting a
+   sub-agent-only tool never appears in the root's `tool_legs`.)
+9. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
    step 2. Mostly answered on paper (custody, not readability, is the test;
    probably no new level, at most a declaration), not built. See the
    brainstorm section below.
