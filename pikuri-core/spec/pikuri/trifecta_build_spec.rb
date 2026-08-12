@@ -79,6 +79,19 @@ RSpec.describe 'Pikuri::Trifecta.build' do
     assert_equal :silent, report.tree_verdict, 'two legs only — the quarantine holds'
   end
 
+  it 'leaves a tool nothing can call off the map entirely' do
+    # An orphan: registered on the sub-agent pool, named by no persona, so no
+    # node claims it. The silence is the decision (D-trifecta-map-orphans) —
+    # pinned here so a later reader does not mistake it for a gap and "fix" it.
+    agent = agent_with do |c|
+      c.add_tool reading('read')
+      c.add_sub_agent_tool egressing('git_clone')
+    end
+
+    map = Pikuri::Trifecta.walk(Pikuri::Trifecta.build(agent, label: 'demo')).render
+    refute_includes map, 'git_clone'
+  end
+
   it 'still credits the parent with an egress tool it holds directly' do
     agent = agent_with do |c|
       c.add_tool reading('read')

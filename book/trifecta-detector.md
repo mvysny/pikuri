@@ -618,7 +618,7 @@ a table keyed on tool name.
 
 ## The edges, stated plainly
 
-Two things are deliberately not built, so you know where the map
+Three things are deliberately absent, so you know where the map
 goes quiet:
 
 - **A soft verdict no shipped wiring reaches.** The destination
@@ -634,6 +634,16 @@ goes quiet:
   synced folder turns a write into egress is answered on paper —
   the test is custody, not readability — and unbuilt, because no
   wiring in the repo points a workspace at one.
+- **No line for a tool nothing can call.** Boot `pikuri-computer`
+  and no line mentions `git_clone`, though the binary registers it:
+  it composes the coding extension, which offers that tool to a
+  persona this wiring doesn't include. So the tool exists and no
+  agent in the tree can invoke it. It gets no line, because the map
+  lists legs someone *holds* and an unreachable tool is the absence
+  of one.
+  Don't read the omission as a miss. The opposite direction, a
+  persona naming a tool nobody registered, is a real bug and stops
+  the binary at boot rather than showing up here.
 
 And the caveat from the top, restated because it's the one to
 carry out of here: a silent map means *the detector found no

@@ -79,6 +79,67 @@ design.
 
 ---
 
+## D-trifecta-map-orphans — A tool nothing can call gets no line on the map (2026-08-12)
+
+**Status:** Accepted; no code change — the silence is what
+{Pikuri::Trifecta.build} already produces, now pinned by
+`pikuri-core/spec/pikuri/trifecta_build_spec.rb`.
+
+**Context.** {Pikuri::Code::Extension} registers `git_clone` on the
+sub-agent-only pool unconditionally, solely for the `GIT_REPO_RESEARCHER`
+persona. {Pikuri::Os::Extension} composes that extension but wires no such
+persona, so in both OS binaries the tool is registered and named by nobody:
+the root node takes `agent.tools` only, each sub-agent node takes its
+persona's `tool_names`, and `git_clone` lands in neither. It appears nowhere
+on the map. The question that raised: the map doubles as a wiring audit, and
+here it had surfaced a shipped-but-unreachable capability — should it *say*
+so, with a trailing `(registered, unreachable: git_clone)` line? Such a line
+would be a bare fact, so it fits the map's no-prose rule.
+
+**Decision.** No line, and no data field either. The map lists capabilities
+some agent in the tree holds; an orphan is the *absence* of one.
+
+Two things settle it. First, **the direction that is a bug already fails
+louder.** The slip the line was meant to catch — a typo'd `tool_names` entry
+silently orphaning a tool you meant to grant — cannot happen:
+{Pikuri::SubAgent::Extension#configure} raises `ArgumentError` at boot when a
+persona names an unregistered tool. What survives is the reverse — registered,
+named by nobody — which can only ever *subtract* a capability, i.e. a
+functionality gap, and this is not a functionality linter. Second, **an orphan
+can never change a verdict, so it can never explain one.** Every other line on
+the map earns its place by making a verdict attributable. A line no verdict
+can depend on, printing on every `pikuri-os` and `pikuri-computer` boot for a
+deliberate registration, is exactly the noise that gets a warn-only detector
+muted.
+
+**Alternatives rejected.**
+
+- **The trailing `(registered, unreachable: …)` line.** The proposal above.
+  Rejected on both counts: the audit value it reaches for is already delivered,
+  more loudly, by the boot-time raise, and it spends permanent screen space on
+  two shipped binaries to report a non-capability.
+- **Exposing it as data (`Report#unreachable_tools`) for a host to render on
+  demand.** Rejected as a field with no consumer. The day a host wants it, it
+  is `agent.sub_agent_tools` minus the names in the walked tree — three lines
+  at the call site, needing nothing from core.
+- **Removing the orphan instead: make `Code::Extension`'s `git_clone`
+  registration opt-in.** Rejected: a config knob added to silence a question
+  the map answers by staying quiet, and it buys nothing — `pikuri-code` names
+  the tool, and the OS binaries pay one unused constructor whose Bubblewrap
+  sandbox is minted lazily and never is.
+
+**Consequences.**
+
+- **The map is a capability map, not a wiring linter.** Reading a tool's
+  absence from it as a detector miss is the mistake to guard against, so
+  `book/trifecta-detector.md` §"The edges, stated plainly" names this silence
+  alongside the two unbuilt axes.
+- **The orphan direction has no automated guard at all**, and that is
+  accepted. It can only remove a capability, and a persona that actually needs
+  the tool fails at boot rather than at the first delegation.
+
+---
+
 ## D-egress-axis-shape — Two orthogonal egress axes, no invented persona (2026-08-12)
 
 **Status:** Accepted; implemented 2026-08-12 in

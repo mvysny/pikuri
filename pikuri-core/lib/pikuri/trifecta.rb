@@ -61,6 +61,14 @@ module Pikuri
         #
         # The *hook* gets both, because a persona resolves its +tool_names+
         # against either list.
+        #
+        # A tool neither list places — registered on the sub-agent pool and
+        # named by no persona — therefore appears nowhere in the tree, and gets
+        # no line of its own. Deliberate: nothing here can call it, so it is the
+        # absence of a capability rather than one, and it can never explain a
+        # verdict. The reverse direction *is* a bug and fails loudly elsewhere —
+        # {Pikuri::SubAgent::Extension#configure} raises on a persona naming an
+        # unregistered tool. See +D-trifecta-map-orphans+.
         contributions = agent.extensions.filter_map do |ext|
           if ext.respond_to?(:trifecta_contribution)
             ext.trifecta_contribution(agent.tools + agent.sub_agent_tools)

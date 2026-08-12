@@ -43,8 +43,10 @@ Parked threads, older than that review:
 3. ~~`:egress_searchengine` (was `:egress_writeonly`)~~ — **shipped
    2026-08-12** as the `egress_destination` axis, without a persona. See "The
    second egress axis — GRADUATED".
-4. `git_clone` as a readable egress verb + the per-agent **poisoned**
-   assumption question (may already be the untrusted-strength lattice).
+4. The per-agent **poisoned** assumption question (may already be the
+   untrusted-strength lattice). *(The `git_clone`-is-a-readable-egress-verb
+   half is shipped: the tool declares `TrifectaLegs::ASSUMED` with that
+   reasoning at its declaration site.)*
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
    levels `egress_human_approver < egress`, split by the
    **payload-visibility** test, and the earlier flat-egress scope list is
@@ -69,22 +71,18 @@ Parked threads, older than that review:
    **Done 2026-08-12** — `book/trifecta-detector.md`. See "Docs —
    GRADUATED" below; one thread (the contrast with typed transport
    classes) survives there, owned by that note rather than this one.
-8. **Should the map name orphaned sub-agent tools?** Found 2026-08-09 by
-   reading `bin/pikuri-computer`'s output: `git_clone` appears nowhere, and
-   that is correct — `Code::Extension` registers it unconditionally "solely
-   for the `GIT_REPO_RESEARCHER` persona", which `pikuri-computer` does not
-   wire, so no persona's `tool_names` names it and no agent in the tree can
-   invoke it. A tool nothing can call is not a present capability, and
-   crediting it would be the mirror of the bug that credited parents with
-   sub-agent-only tools. So: no bug, and silence is defensible.
-   The open question is whether silence is *best*. The map doubles as a
-   wiring audit — here it revealed a shipped-but-unreachable capability — and
-   the same signal would catch a real slip, a typo'd `tool_names` entry
-   silently orphaning a tool you meant to grant. A trailing
-   `(registered, unreachable: git_clone)` line would be a *fact*, so it fits
-   the map's no-prose rule. Weigh against: it puts a line on every
-   `pikuri-code` boot for a deliberate, harmless registration. Cheap either
-   way; nobody has been bitten yet.
+8. ~~Should the map name orphaned sub-agent tools?~~ **Closed
+   2026-08-12 — no line, no field.** Silence is not merely defensible, it is
+   right: the slip the line was meant to catch (a typo'd `tool_names` entry)
+   already raises at boot in `SubAgent::Extension#configure`, so the surviving
+   direction can only *subtract* a capability, and an orphan can never change
+   a verdict — hence never explain one. Rationale + the two rejected
+   alternatives in `D-trifecta-map-orphans`; the silence is named for readers
+   in `book/trifecta-detector.md` §"The edges, stated plainly" and pinned in
+   `pikuri-core/spec/pikuri/trifecta_build_spec.rb`. (One correction to the
+   finding as first written: `pikuri-computer` reaches `git_clone` through
+   `Os::Extension` composing `Code::Extension`, not by wiring the latter
+   itself.)
 9. Is a synced folder an egress sink? — the `Write`/`Edit` gap left open by
    step 2. Mostly answered on paper (custody, not readability, is the test;
    probably no new level, at most a declaration), not built. See the
