@@ -213,7 +213,7 @@ Before the prompt appears, four lines scroll past:
 Trifecta: pikuri-chat — 2 of 3 legs (untrusted, egress); no private leg found.
 
 pikuri-chat [:untrusted_hard, :egress]
-  web_search [:untrusted_hard, :egress]
+  web_search [:untrusted_hard, :egress_vouched]
   calculator []
   web_scrape [:untrusted_hard, :egress]
   fetch [:untrusted_hard, :egress]

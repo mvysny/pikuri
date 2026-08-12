@@ -79,6 +79,102 @@ design.
 
 ---
 
+## D-egress-axis-shape — Two orthogonal egress axes, no invented persona (2026-08-12)
+
+**Status:** Accepted; implemented 2026-08-12 in
+{Pikuri::Tool::TrifectaLegs}. Folds in two earlier forks that never had a
+home: the `egress_human_author` drop (2026-08-09) and the rejected
+proxy-visible middle rung.
+
+**Context.** The detector's egress leg started as one graded axis
+(`none < human_approver < autonomous`) reading *payload visibility* — did a
+human see the bytes, or only a proxy for them? A second property kept
+recurring in the notes without a place to live: `web_search` reaches an
+engine this repo picked, while `fetch` reaches a host the model chose, and
+an attacker can read back the second but not the first. The two were
+repeatedly mistaken for rungs of one scale.
+
+**Decision.** The egress leg is **two orthogonal axes**, both carrying
+`:no_egress` at the bottom and kept coherent by the constructor:
+`egress_payload_review` (`:human_reviewed` / `:unreviewed`) and
+`egress_destination` (`:tool_vouched` / `:attacker_reachable`). The verdict
+grid becomes eight exhaustive clauses; exactly one cell moved, and no
+shipped wiring's verdict changed.
+
+**Alternatives rejected.**
+
+- **A third rung on the visibility axis (`egress_human_author`).** Dropped
+  2026-08-09, not deferred: a seat whose outbound bytes originate in the
+  human's own intent holds no egress leg to grade, so it declares
+  `:no_egress`. A rung definitionally equal to the bottom rung is not a
+  rung, and clean-by-construction is leg-*absence*. The teaching gain is
+  sharper too: **the only thing better than a reviewed gate is not holding
+  the leg.**
+- **A middle rung for a gate showing a *proxy* for the payload** (bash
+  behind a confirmer). Rejected: it would make `Code::Bash` soft and with it
+  every loud verdict in the repo. The admissible test is structural —
+  payload or proxy — and grading the human's attention instead relaunches
+  trust-the-approver at a finer grain.
+- **Naming the visibility axis for the seat** (`egress_confirmer`,
+  `egress_gatekeeper`), i.e. "who can stop it". Rejected on the same
+  example, one level up: `Code::Bash` *has* a confirmer and still grades
+  top-rung, so a seat-named field invites a confirmer-holding tool to
+  declare the softer rung and silently deletes the alarm. Naming the
+  payload makes `:unreviewed` cover both "no human" and "a human who saw
+  only a proxy" without a gloss.
+- **Grading the destination by who chose it** (`:tool_pinned` vs
+  `:llm_chosen`). The natural framing, killed by one counter-example: a
+  tool hard-coding a POST to `github.com` picks its own destination and
+  still hands the bytes over, because a gist is world-readable. Pinning is
+  necessary, not sufficient — so the axis asks whether a hijacked model can
+  *reach the attacker*, and `:attacker_reachable` covers a model-chosen host
+  and a republishing fixed sink with one rung.
+- **`:safe_vetted_set` for the softer rung.** Rejected: this detector never
+  claims safety. Bytes genuinely leave a vouched destination; they merely
+  cannot be read back.
+- **`egress_target_server`.** Rejected: a mail recipient is not a server,
+  and the parked custody question (`ideas/trifecta-detector.md`) has synced
+  folders as candidate sinks.
+- **Folding both axes into one lattice.** Rejected: neither dominates the
+  other. A reviewed send to an attacker's inbox and an unreviewed query to a
+  vouched engine are different animals, and a single scale would have to
+  order them.
+- **Nesting the pair in an `EgressLeg` value that is `nil` when absent.**
+  Genuinely deletes the both-or-neither invariant, but costs a nested
+  `Data`, `nil`-handling at ~10 read sites and churn at every declaration
+  site. The invariant is three lines in a constructor; that was the cheaper
+  trade.
+- **Shipping a `SEARCHER` persona alongside the axis.** The plan of record
+  bundled them ("all three together or none") on the grounds that the tag
+  alone is decoration. Rejected: that conflates two reachabilities. The
+  *verdict* cell needs a search-only wiring, but the **map** shows the
+  distinction the day `web_search` declares it, which is where the teaching
+  value lives. Inventing a persona so a verdict could fire would have traded
+  away page-reading in a demo to satisfy the detector — and the detector must
+  not be what forces a capability decision.
+
+**Consequences.**
+
+- **The detector now has two declared axes and one determined.**
+  `:tool_vouched` is a claim the framework inherits from the tool's author,
+  exactly as `private:` is inherited from the user; only `untrusted` is
+  determined. The vocabulary says which is which, and the book says the tag
+  is worth precisely the care that went into declaring it.
+- **A vouched destination survives only as the sole egress leg.** No special
+  case: `max` at a node hardens it the moment one attacker-reachable tool
+  joins. The advisory for that cell says so, so a soft verdict does not read
+  as settled.
+- **A soft cell no shipped wiring reaches.** Every persona holding
+  `web_search` also holds `fetch`. It is tested from hand-built nodes and
+  waits for the first host that wants a search-only agent; the unplaced-level
+  tripwire in `Report#verdict` was re-pointed at a hypothetical fourth level
+  so it survives its own graduation.
+- **The delegation cap applies to one axis.** A gate bounds what leaves and
+  who saw it, never who can read it back, so `#cap_payload_review` leaves the
+  destination alone — the name says the scope.
+
+---
+
 ## D-blob-spotter-alphabets — Single-alphabet encodings count, at their own longer thresholds (2026-08-08)
 
 **Status:** Accepted; implemented 2026-08-08 in

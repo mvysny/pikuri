@@ -9,7 +9,7 @@ chapter](chat.md):
 Trifecta: pikuri-chat — 2 of 3 legs (untrusted, egress); no private leg found.
 
 pikuri-chat [:untrusted_hard, :egress]
-  web_search [:untrusted_hard, :egress]
+  web_search [:untrusted_hard, :egress_vouched]
   calculator []
   web_scrape [:untrusted_hard, :egress]
   fetch [:untrusted_hard, :egress]
@@ -109,20 +109,20 @@ it turns propagation into something you can *see*. Here is
 `pikuri-computer`, the fullest wiring in the book:
 
 ```
-pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
+pikuri-computer [:private, :untrusted_hard, :egress_reviewed]
   calculator []
   read [:private, :untrusted_hard]
   bash [:private, :untrusted_hard]
   fileindex_search [:private, :untrusted_hard]
   thunderbird_mail_search [:private, :untrusted_hard]
-  thunderbird_mail_compose [:egress_human_approver]
-  RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
-    web_search [:untrusted_hard, :egress]
+  thunderbird_mail_compose [:egress_reviewed]
+  RESEARCHER [gate: human_reviewed] [:untrusted_hard, :egress]
+    web_search [:untrusted_hard, :egress_vouched]
     fetch [:untrusted_hard, :egress]
 ```
 
 `RESEARCHER` holds hard `:egress`, but the parent above it reads
-`:egress_human_approver` — weaker than its own child's. No tool of
+`:egress_reviewed` — weaker than its own child's. No tool of
 the parent's contributes that level; it arrived from below and got
 capped on the way. The layout shows you the discrepancy without a
 word of explanation. (Why it capped is the series rule further
@@ -183,6 +183,10 @@ what it can't.**
 | `:egress` — sends bytes to an external sink | framework | **on** |
 | `:private` — reads data that may be sensitive | **you** | **off** |
 
+(One nuance, deferred to its own section below: *whether* a tool
+reaches a sink is determined, but *where that sink can be* is a
+claim its author makes. Two axes are declared, not one.)
+
 The asymmetry is not an oversight. Whether a tool reaches a
 network sink is a property *of the tool*, and pikuri knows it.
 Whether `~/work/my/pikuri` holds secrets or public scratch is a
@@ -203,9 +207,9 @@ never completes a trifecta. The alarm stays silent until you point
 it at something that matters — which is the moment it's worth
 hearing.
 
-**Undeclared is presumed hostile — on the framework's two axes
-only.** A tool that declares nothing is treated as hard untrusted
-*and* autonomous egress. Silence from a tool author is not
+**Undeclared is presumed hostile — on the axes the framework can
+determine.** A tool that declares nothing is treated as hard
+untrusted, with an unreviewed egress leg that reaches anywhere. Silence from a tool author is not
 evidence of safety. But the default deliberately stops short of
 `private: true`: assuming that would make every wiring loud, and a
 detector that always fires is exactly as useless as one that never
@@ -250,30 +254,38 @@ severity half is now sharper than pool size alone, because **two
 of the three legs come in strengths**:
 
 ```
-untrusted:   none  <  weakened  <  hard
-egress:      none  <  human_approver  <  autonomous
+untrusted:               none       <  weakened        <  hard
+egress_payload_review:   no_egress  <  human_reviewed  <  unreviewed
+egress_destination:      no_egress  <  tool_vouched    <  attacker_reachable
 ```
 
-So severity grades on two independent things: how big the private
-pool is, *and* how strong each leg is. An approver-gated egress leg
-is still a leg — assembled, warned, not silent.
+Two of them belong to the same leg, because "how strong is the
+egress leg" turns out to be two questions that don't answer each
+other — the next two sections are one each. A gated egress leg is
+still a leg: assembled, warned, not silent.
 
-That gives a four-cell grid, with `:private` present (without it,
-nothing fires at all):
+That gives a grid, with `:private` present (without it, nothing
+fires at all):
 
-| egress ↓ / untrusted → | hard | weakened |
+| review ↓ / untrusted → | hard | weakened |
 |---|---|---|
-| **autonomous** | **loud** | soft |
-| **human_approver** | **soft** | soft |
+| **unreviewed** | **loud** | soft |
+| **human_reviewed** | **soft** | soft |
+
+— and one qualifier on the loud cell: it also needs the
+destination to be `attacker_reachable`. An agent whose only way
+out is a vouched destination is **soft** even at full strength on
+the other two axes, because bytes leave but nobody can read them
+back.
 
 Or in one sentence: **loud** iff all three legs are at full
-strength; **soft** iff all three are present at any strength;
-**silent** otherwise.
+strength *and* what leaves can be read back; **soft** iff all
+three are present at any strength; **silent** otherwise.
 
-Note what the grid refuses to do. It is monotone in both legs, and
-there is no cell for "two legs but they're scary". Attenuating a
-leg buys you exactly one step, and only the leg that actually
-carries the exploit.
+Note what the grid refuses to do. It is monotone in every axis,
+and there is no cell for "two legs but they're scary".
+Attenuating an axis buys you exactly one step, and only on the
+axis that actually carries the exploit.
 
 ## What makes a human gate count: payload visibility
 
@@ -281,7 +293,7 @@ Here is the question that decides the egress row, and it is the
 most portable idea in this chapter.
 
 A naive reading says: a human is in the path, therefore
-`human_approver`, therefore soft. Follow that and `Code::Bash`
+`human_reviewed`, therefore soft. Follow that and `Code::Bash`
 becomes soft too — it consults its confirmer before every command
 — and with it *every* loud verdict in the repo. A detector whose
 top severity is unreachable is as useless as one that always
@@ -299,10 +311,10 @@ The admissible test is structural:
 > **Does the human see the bytes that leave, or only a proxy for
 > them?**
 
-- **A compose window → `human_approver`.** The payload *is* the
+- **A compose window → `human_reviewed`.** The payload *is* the
   reviewed artifact. What is on screen is what egresses, byte for
   byte.
-- **An editable delegation task → `human_approver`.** The task
+- **An editable delegation task → `human_reviewed`.** The task
   string *is* the bytes crossing into the egress-holder's reach.
 - **Bash behind a confirmer → stays hard `:egress`.** You approve
   a *command* — a program, not a payload. Behind a pipe, a
@@ -320,6 +332,72 @@ The admissible test is structural:
 The test is derived from structure, not from anyone's diligence,
 and — the practical part — it's a question a tool author can
 actually answer about their own tool.
+
+## What makes a destination safe: can they read it back?
+
+The second egress question is not about the human at all. It is:
+
+> **If an injection hijacks the model, can it reach the
+> attacker?**
+
+Note what that does *not* ask. The tempting version is "who picked
+the destination — your code or the model?", and it fails on one
+example. A tool that hard-codes a POST to `github.com` picks its
+own destination and still hands the bytes over, because a gist is
+world-readable. Pinning is *necessary, not sufficient*. So the two
+values name the answer to the real question:
+
+- **`:attacker_reachable`** — yes. One rung for both shapes,
+  because both answer yes: the model picks the host (`fetch`,
+  `bash`, `git_clone`, a compose tool with a free recipient
+  field), *or* the destination is fixed but republishes what it
+  receives (that gist, a public status page, a DNS lookup whose
+  hostname lands in the attacker's nameserver log).
+- **`:tool_vouched`** — no. The tool's code fixes the destination
+  set and its author vouches that nothing in it hands the bytes to
+  a third party.
+
+`web_search` is the one bundled tool that declares it, and it's
+why its line differs from `fetch`'s in every map in this chapter.
+A search query does leave your machine — but it reaches an engine
+this repo picked, not a host an injection chose, so a secret can
+be pushed out and not read back. That is a real, large reduction
+and it is emphatically not safety.
+
+Declare `:tool_vouched` only when all three clauses hold: the
+caller cannot choose the destination, that destination does not
+republish what it receives, and the request is not
+attacker-readable in flight or at rest.
+
+**It only holds while it is the sole egress leg.** Add one
+attacker-reachable tool beside it and `max` hardens the whole
+node — which is not a special case but the union rule doing its
+job, since results that depend on the secret become a targeting
+stage the moment anything readable exists. The advisory for this
+cell says so out loud rather than letting a soft verdict read as
+settled.
+
+**Keep the two egress questions apart.** Payload visibility grades
+what the *human* saw; the destination grades what the *attacker*
+can read. Genuinely orthogonal — a reviewed send to an attacker's
+inbox and an unreviewed query to a vouched engine are different
+animals, and neither dominates the other. That's why the map has
+four egress tags rather than one scale:
+
+```
+:egress                    nobody reviewed it, it can reach anywhere
+:egress_reviewed           a human saw the exact bytes
+:egress_vouched            it can only reach a destination the author vouched for
+:egress_reviewed_vouched   both
+```
+
+One last thing worth saying plainly, because it changes how much
+the tag is worth: **`:tool_vouched` is a claim, not a measurement.**
+The framework cannot verify that a sink doesn't republish — it
+inherits the tool author's judgement, exactly as it inherits your
+judgement on `private:`. Two of the detector's axes are
+declarations and only one is determined; a vouched destination is
+worth precisely as much as the care that went into declaring it.
 
 ## What the detector refuses to grade
 
@@ -340,7 +418,7 @@ gap:
 
 And the corollary that falls out of all three: **the only thing
 better than an approver gate is not holding the leg.** There is no
-rung above `human_approver` for a seat where the human types the
+rung above `human_reviewed` for a seat where the human types the
 bytes from scratch, because such a seat holds no egress leg to
 grade — it declares `:none`. Clean-by-construction is leg
 *absence*, not a strong leg.
@@ -382,13 +460,17 @@ with the strongest value on each axis. A hard untrusted leg
 absorbs a weakened one.
 
 **A delegation channel is `min`.** This is the series rule, and
-it's what capped `RESEARCHER`'s hard egress to `human_approver` in
+it's what capped `RESEARCHER`'s hard egress to `human_reviewed` in
 the map earlier. The child's egress cannot exceed the channel
 feeding it: if the only bytes crossing into the child are a task
 string a human approved, then even a fully poisoned child can send
 nothing else. The precondition is that **the child holds no
 private data of its own** — otherwise it has something to leak
 that never came through the gate, and the cap doesn't apply.
+
+The cap touches the review axis only. A gate bounds *what* leaves
+and *who saw it*; it says nothing about who can read it back, so
+the child's destination arrives at the parent unchanged.
 
 Finally, severity is evaluated **at every node**, and the tree's
 verdict is the max, reported with the path to the offending node.
@@ -427,8 +509,8 @@ pikuri-code [:untrusted_hard, :egress]
   glob [:untrusted_hard]
   edit []
   bash [:untrusted_hard, :egress]
-  researcher [gate: autonomous] [:untrusted_hard, :egress]
-    web_search [:untrusted_hard, :egress]
+  researcher [gate: unreviewed] [:untrusted_hard, :egress]
+    web_search [:untrusted_hard, :egress_vouched]
     web_scrape [:untrusted_hard, :egress]
     fetch [:untrusted_hard, :egress]
 ```
@@ -460,7 +542,7 @@ pikuri-code [:private, :untrusted_weakened, :egress]
   read [:private]
   grep [:private]
   ...
-  researcher [gate: autonomous] [:untrusted_hard, :egress]
+  researcher [gate: unreviewed] [:untrusted_hard, :egress]
 ```
 
 The file tools drop their untrusted leg, so the only untrusted
@@ -488,7 +570,7 @@ super(name: 'read', ...,
       trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
         private:   fs.private?,
         untrusted: fs.trusted? ? :none : :hard,
-        egress:    :none))
+        egress_payload_review: :no_egress))
 ```
 
 Three rules that are easy to get wrong:
@@ -515,26 +597,27 @@ either — the first real render of this feature printed
 `calculator [:untrusted_hard, :egress]`, and every bundled tool
 across the gems had to declare before the output meant anything.
 
-**A tool's egress level is a property of its current field set,**
+**A tool's egress grade is a property of its current field set,**
 not a fixed attribute of its name. Add an attachment parameter to
-a compose tool and it stops being `human_approver`, because the
-human no longer sees the bytes. Read the level from the tool, not
-from a table keyed on tool name.
+a compose tool and it stops being `human_reviewed`, because the
+human no longer sees the bytes. Pin a recipient and it would stop
+being `attacker_reachable`. Read both axes from the tool, not from
+a table keyed on tool name.
 
 ## The edges, stated plainly
 
 Two things are deliberately not built, so you know where the map
 goes quiet:
 
-- **No readability axis on egress.** `web_search` and `fetch`
-  print identical tags today, and they are not identical: a search
-  query reaches a pikuri-picked engine the attacker can't read
-  back, while a `fetch` host is attacker-chosen. The distinction is
-  real and is discussed in the [OS-assistant
-  chapter](os-assistant.md); it isn't a tag yet, because no wiring
-  can currently reach it (every persona holding `web_search` also
-  holds `fetch`, so hard egress dominates at the same node).
-  Shipping an unreachable severity level is a defect, not caution.
+- **A soft verdict no shipped wiring reaches.** The destination
+  axis exists and `web_search` declares it, so you can *see* the
+  distinction on any map. But no wiring in this repo is
+  search-only: every persona holding `web_search` also holds
+  `fetch`, so `max` hardens the node and the soft-by-vouched-
+  destination cell never fires here. It is tested from hand-built
+  nodes and waits for the first host that wants a search-only
+  agent. Naming an axis you can see is worth it; inventing a
+  persona so a verdict could fire was not.
 - **No custody axis on writes.** Whether a workspace pointed at a
   synced folder turns a write into egress is answered on paper —
   the test is custody, not readability — and unbuilt, because no

