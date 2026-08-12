@@ -37,9 +37,11 @@ Related, already worked out:
   **forced-authorship handoff knife-edge**: a pre-filled draft the human
   *edits* is convenience; one the human *rubber-stamps* is approver-mode.
   Every idea here lands on one side of that edge or the other.
-- [`trifecta-detector.md`](trifecta-detector.md) — the three legs and the
-  destination-control distinction (`web_search` pikuri-picks-destination
-  vs `fetch` LLM-picks-destination) that motivates the whole file.
+- `book/trifecta-detector.md` — the three legs, the payload-visibility test
+  that decides whether a gate counts, and the destination distinction
+  (`web_search` reaches an engine pikuri picked, `fetch` a host the model
+  chose) that motivates the whole file. Both shipped as
+  {Pikuri::Tool::TrifectaLegs}' two egress axes.
 - [`pikuri-os.md`](pikuri-os.md) §"Internet access" — "the third
   leg returns," the deferred chapter these feed.
 

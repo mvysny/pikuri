@@ -20,10 +20,10 @@ Prior art:
 
 Siblings already in the repo:
 
-- [`trifecta-detector.md`](trifecta-detector.md) — the **static** audit
-  ("this wiring *could* hold all three legs"). This note is the
-  structural mechanism behind its `:untrusted → :untrusted_weakened`
-  attenuation (see "The integrity dual" below).
+- `book/trifecta-detector.md` + {Pikuri::Trifecta} — the **static** audit
+  ("this wiring *could* hold all three legs"), shipped. This note is the
+  structural mechanism behind its `:untrusted → :weakened` attenuation
+  (see "The integrity dual" below).
 - [`private-context-taint.md`](private-context-taint.md) — the
   **dynamic confidentiality** enforcement (private in → sever egress).
   This note is its **integrity** counterpart (untrusted in → sever
@@ -48,11 +48,11 @@ out of the parent. That's a meaningful narrowing to state up front.
 
 ## The integrity dual
 
-`trifecta-detector.md` attenuates the untrusted leg across a sub-agent
-boundary (`:untrusted → :untrusted_weakened`) but admits the weakening
-is *soft*: "a captured summarizer can author a re-injection payload,
-hence soft, not gone." The handle pattern is the structural version of
-that attenuation. A captured child's re-injection payload lives **in
+The detector attenuates the untrusted leg across a sub-agent boundary
+(`:hard → :weakened`, {Pikuri::Tool::TrifectaLegs#relabel_inbound}) but
+admits the weakening is *soft*: the parent is itself an LLM, and a captured
+summarizer can author a re-injection payload — hence soft, not gone. The
+handle pattern is the structural version of that attenuation. A captured child's re-injection payload lives **in
 the variable**, and the variable's bytes never enter the parent's token
 stream — so for the parent the leg is *severed*, not merely weakened.
 

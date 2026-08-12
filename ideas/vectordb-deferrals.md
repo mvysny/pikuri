@@ -13,7 +13,9 @@ privilege-separated `LIBRARIAN`) are documented in
 {Pikuri::VectorDb::LIBRARIAN} and [`../SECURITY.md`](../SECURITY.md); the
 reason `LIBRARIAN` isn't wired into a binary yet (sub-agent tools are a
 subset of the parent's, so corpus-behind-the-sub-agent needs
-persona-owned tools) is in [`trifecta-detector.md`](trifecta-detector.md).
+persona-owned tools) is in
+[`subagent-deferrals.md`](subagent-deferrals.md) §"Persona-owned tools",
+which also disputes that framing.
 Only the deferrals stay here.
 
 ## Deferred

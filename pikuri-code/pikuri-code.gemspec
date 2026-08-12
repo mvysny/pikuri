@@ -58,6 +58,6 @@ Gem::Specification.new do |spec|
   # +Pikuri::Tasks::Extension+ — in-memory task list + four
   # +task_*+ tools the LLM uses to externalize its plan on
   # multi-step work — is wired into +bin/pikuri-code+ by default.
-  # See book/11-tasks.md for the rationale.
+  # See book/tasks.md for the rationale.
   spec.add_dependency 'pikuri-tasks',     "= #{Pikuri::VERSION}"
 end

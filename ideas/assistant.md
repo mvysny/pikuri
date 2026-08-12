@@ -10,11 +10,10 @@ that decides whether this idea lives.
 
 Related, already worked out:
 
-- [`trifecta-detector.md`](trifecta-detector.md) — the static check, and
-  crucially the **LLM auto-router** propagation rule (a parent that
-  dispatches to sub-agents with no human in between unions all three legs
-  upward). This note is the inverse topology, and that rule is *why* it
-  works.
+- `book/trifecta-detector.md` — the static check (shipped), and crucially
+  the **LLM auto-router** propagation rule (a parent that dispatches to
+  sub-agents with no human in between unions all three legs upward). This
+  note is the inverse topology, and that rule is *why* it works.
 - [`private-context-taint.md`](private-context-taint.md) — establishes the
   human as **author, not approver** of a post-taint egress payload: clean
   by construction. The federation generalizes that one primitive from
@@ -61,7 +60,7 @@ across by typing it. That hand-carry is the whole security model.
 
 ## Why it works: the human router is the air gap
 
-The trifecta-detector note's load-bearing failure mode is the **LLM
+The trifecta model's load-bearing failure mode is the **LLM
 auto-router**: under a parent that dispatches without a human in between,
 every leg a child holds is within the parent's reach, so privilege
 separation *raises the bar but doesn't break the trifecta*. The federation

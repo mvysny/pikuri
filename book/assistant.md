@@ -111,7 +111,7 @@ sub-agent's tools are a strict subset of the parent's
 (`SubAgent::SubAgentTool` filters `parent.tools` by
 `persona.tool_names`), so a persona can only narrow, never add. The
 fix is **persona-owned tools** — letting a `Persona` carry its own
-tool instances — tracked in `ideas/trifecta-detector.md`. Until it
+tool instances — tracked in `ideas/subagent-deferrals.md`. Until it
 lands, `pikuri-assistant` declares its `pikuri-vectordb` dependency
 (the intent) but does not register the corpus tools; the chapter
 stays a stub partly for this reason.

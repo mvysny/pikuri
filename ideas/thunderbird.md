@@ -12,8 +12,6 @@ answered, it graduates the same way and this note shrinks again.
 
 ## Related
 
-- [`trifecta-detector.md`](trifecta-detector.md) — the unbuilt detector the
-  last item below waits on.
 - [`private-context-taint.md`](private-context-taint.md) +
   [`more-confirmers.md`](more-confirmers.md) — the "human as *author*, not
   *approver*" seat compose relies on.
@@ -62,7 +60,3 @@ Each needs a live install or a comm-central read; none blocks what ships.
 - **Zero-disk snapshot medium.** An `:memory:` DB instead of the on-disk copy,
   for a host that must leave nothing on disk — a knob, not a default (see
   {Pikuri::Thunderbird::DatabaseSnapshot} for why on-disk wins otherwise).
-- **Trifecta-detector wiring.** When the detector exists, it should tag
-  compose/create-event `:egress` and mail-read `:untrusted` + `:private`, so a
-  combined-legs wiring trips the all-three warning. Document the posture as
-  smoke-alarm-grade (human-gated ≠ severed), not a firewall.

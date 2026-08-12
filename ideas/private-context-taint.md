@@ -5,13 +5,13 @@ One part deliberately left open: *where the mechanism lives* (Q3 —
 core listener/control vs coupling egress tools to the taint state).
 Staging area — drain into source + `book/` as it lands.
 
-Sibling: [`trifecta-detector.md`](trifecta-detector.md). That note is
-the **static, design-time** check ("this wiring *could* hold all three
-legs" → warn at boot). This note is the **dynamic, runtime**
-enforcement ("all three are live in this context *right now* → sever
-the egress leg"). Same tag model (`:private` / `:untrusted` /
-`:egress`); the detector *audits*, the taint *enforces*. Both evaluate
-per-node (each agent context tracks its own taint).
+Sibling: the trifecta detector, **shipped** ({Pikuri::Trifecta},
+`book/trifecta-detector.md`). That is the **static, design-time** check
+("this wiring *could* hold all three legs" → report at boot). This note is
+the **dynamic, runtime** enforcement ("all three are live in this context
+*right now* → sever the egress leg"). Same tag model (`:private` /
+`:untrusted` / `:egress`); the detector *audits*, the taint *enforces*. Both
+evaluate per-node (each agent context tracks its own taint).
 
 Integrity counterpart: [`quarantined-handles.md`](quarantined-handles.md).
 This note is the **confidentiality** enforcement (private in → sever
@@ -161,10 +161,10 @@ typing "book flight LHR→JFK" is the air gap.
 
 This also kills the tempting "spawn a fresh, untainted sub-agent to do
 the egress" escape: the tainted parent would write the sub-agent's
-task prompt, leaking the secret into it (the transcriber problem from
-[`trifecta-detector.md`](trifecta-detector.md)). Only a
-*human-authored* payload breaks the chain. This is where the
-"human-gated egress" idea from the detector note finally lives —
+task prompt, leaking the secret into it (the transcriber problem — see
+`book/trifecta-detector.md` §"Propagation", which is why egress
+propagates up at full strength). Only a *human-authored* payload breaks
+the chain. This is where the "human-gated egress" idea finally lives —
 correctly placed, as **author**, not **approver**.
 
 ## Open (Q3): where the mechanism lives

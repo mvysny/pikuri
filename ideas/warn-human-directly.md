@@ -3,7 +3,8 @@
 Status: **idea, not built.** The delivery mechanism the injection
 tripwire needs, but broader — see
 [`injection-tripwire.md`](injection-tripwire.md) (its step 2) and
-[`trifecta-detector.md`](trifecta-detector.md) §"(b)" (`ComposeGuard`).
+{Pikuri::Thunderbird::ComposeGuard}, whose warnings reach the human
+only because the confirmer prints them.
 
 ## The principle
 

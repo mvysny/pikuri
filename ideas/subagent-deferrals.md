@@ -16,8 +16,9 @@ Related:
   `Persona` wholesale but human-routes siblings instead of LLM-routing
   children; the "which extensions a child wires" question below is the
   federation's inverse.
-- [`trifecta-detector.md`](trifecta-detector.md) — the per-persona
-  toolset is the privilege-separation unit the detector measures.
+- `book/trifecta-detector.md` — the per-persona toolset is the
+  privilege-separation unit the shipped detector measures (one map node per
+  persona, via `Extension#trifecta_contribution`).
 
 ## Workspace modes
 
@@ -50,6 +51,29 @@ every command still flows through `Event::ToolCall` for audit).
 fs-readonly doesn't stop network exfil or fork bombs, so a
 `sandbox:` frontmatter key composing with `Code::Bash::Sandbox::Bubblewrap`
 is the eventual follow-up.
+
+## Persona-owned tools (and the mediated-recall wiring it's blamed for)
+
+The motivating want: hand the corpus to a `LIBRARIAN` child while the boss
+holds no `vectordb_*` tool of its own — the quarantine `pikuri-assistant`
+needs, and the reason `book/assistant.md` stays a stub.
+
+**Check the premise before building anything.** That chapter says it is
+impossible because "a sub-agent's tools are a strict subset of the parent's",
+and that is **not** what the code does: `SubAgentTool#execute` filters
+`parent.tools + parent.sub_agent_tools` (`sub_agent_tool.rb:91`), and
+`Configurator#add_sub_agent_tool` registers a tool the parent's LLM never
+sees. `pikuri-code` already ships exactly this shape for the web tools.
+
+The real blocker is narrower and lives in the *other* gem:
+`VectorDb::Extension#configure` hardcodes `c.add_tool` for all three tools
+(`extension.rb:103–105`), so a host cannot ask for the mediated wiring. Two
+candidate fixes, and the cheap one may be enough — a pool choice on that
+extension (`mediated:`-shaped), versus the general "a `Persona` carries its
+own tool *instances*", which is only earned if a child needs a tool
+configured *differently* from the parent's, not merely hidden from it.
+
+Either way `book/assistant.md`'s prerequisite paragraph needs correcting.
 
 ## Catalog / `.md` discovery
 

@@ -13,6 +13,14 @@ Related, already in the repo:
   egress-leg story. Typed transports are about *which provider* bytes
   go to (private vs public endpoint); taint is about *whether* a given
   context is allowed to egress at all. Adjacent, not the same axis.
+- `book/trifecta-detector.md` — the shipped detector, the third privacy
+  story and the one closest to being confused with this. **Whoever writes
+  the transport-classes material owns that contrast**, and it is one
+  sentence: the detector asks "does this *agent* hold all three legs?",
+  transport classes ask "is the *LLM endpoint* private?". A wiring can pass
+  either and fail the other — a local-model agent with `fetch` holds egress;
+  a leg-free agent still ships every prompt to OpenAI. Two privacy stories
+  the book must not let a reader merge.
 
 **Staleness note (recorded 2026-05, while shipping `pikuri-vectordb`):**
 the sketch below assumed a `Pikuri::Transport::Reranker::*` location.

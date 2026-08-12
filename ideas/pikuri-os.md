@@ -37,9 +37,9 @@ its rationale, read:
 - [`assistant.md`](assistant.md) — the federation. This agent is the
   federation's `@private`/`@os` member, shipped standalone: one agent,
   no inter-agent routing. If the federation lands, it becomes a sibling.
-- [`trifecta-detector.md`](trifecta-detector.md) — the three legs. This
-  design breaks the trifecta by **enforced removal of the egress leg**,
-  not by trusting its inputs.
+- `book/trifecta-detector.md` — the three legs, and the shipped detector
+  that measures them. This design breaks the trifecta by **enforced
+  removal of the egress leg**, not by trusting its inputs.
 - **`bin/pikuri-computer`** — app integrations (thunderbird, …) compose *on
   top* of pikuri-os as a **demo binary** (thunderbird as a dev-dep; not a gem,
   not a merge); pikuri-os stays substrate-only and keeps its no-egress posture
