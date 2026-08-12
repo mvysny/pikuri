@@ -87,7 +87,16 @@ end
 # Thunderbird. Every writable write is confirmed with a diff, unwritable
 # ones short-circuit to "sudo it yourself". project_root is the
 # relative-path base and the bash chdir target.
-filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: [])
+#
+# private: true for the same reason as bin/pikuri-os — the disk this reaches
+# is your actual machine, so the leg is a property of the binary rather than
+# a user declaration. No verdict moves (soft either way); what it buys is an
+# honest attribution list. Without it the trifecta advisory credits the
+# private leg to the mailbox and the file index while read and bash — the
+# tools that actually hand the whole disk to the model — look leg-free,
+# which undersells the pool-amplification point this demo exists to make.
+filesystem = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: [],
+                                                         private: true)
 
 confirmer = confirm_enabled ? Pikuri::Workspace::Confirmer::Terminal.new : Pikuri::Workspace::Confirmer::AUTO_APPROVE
 

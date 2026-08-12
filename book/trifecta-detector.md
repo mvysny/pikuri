@@ -105,15 +105,15 @@ the shape; sub-agents nest under their parent.
 
 **An agent line shows its *folded* legs; a tool line shows its
 own.** This is the rule that makes the map worth printing, because
-it turns propagation into something you can *see*. Look again at
-the `pikuri-computer` tree:
+it turns propagation into something you can *see*. Here is
+`pikuri-computer`, the fullest wiring in the book:
 
 ```
 pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
-  fileindex_read [:private, :untrusted_hard]
+  calculator []
   read [:private, :untrusted_hard]
   bash [:private, :untrusted_hard]
-  calculator []
+  fileindex_search [:private, :untrusted_hard]
   thunderbird_mail_search [:private, :untrusted_hard]
   thunderbird_mail_compose [:egress_human_approver]
   RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
@@ -123,9 +123,15 @@ pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
 
 `RESEARCHER` holds hard `:egress`, but the parent above it reads
 `:egress_human_approver` — weaker than its own child's. No tool of
-the parent's contributes that; it arrived from below and got
+the parent's contributes that level; it arrived from below and got
 capped on the way. The layout shows you the discrepancy without a
-word of prose. (Why it capped is the series rule further down.)
+word of explanation. (Why it capped is the series rule further
+down.)
+
+Also worth noting what the egress line *doesn't* say. Exactly one
+tool carries the outbound leg, and the map names it. Two dozen
+words of threat model about this demo reduce to: the only way
+bytes leave is a compose window you look at.
 
 **`[gate: …]` on a sub-agent line is the delegation channel.** Not
 an annotation — it's what the parent's inherited egress gets capped
@@ -397,6 +403,18 @@ The clearest way to feel the whole model is `pikuri-code`, whose
 verdict moves on **two declarations** and nothing else. Here is
 the real output, in order.
 
+One thing to be straight about before you try to reproduce it:
+those two declarations are constructor kwargs on the workspace,
+and `bin/pikuri-code` **does not expose them** — it wires
+`Filesystem.new` without either and offers no flag for them, so
+the demo you can actually run always reads the first case below.
+The other three are what *your* host gets when it declares them.
+That's a gap in the demo binary rather than a property of the
+detector, and it isn't universal: the OS assistants do declare
+theirs, because a binary whose premise is "your machine" can
+answer the question that a coding agent pointed at an arbitrary
+checkout genuinely cannot.
+
 **A public checkout.** No declarations. Genuine untrusted content,
 genuine egress, no private leg — two legs, silent:
 
@@ -416,7 +434,7 @@ pikuri-code [:untrusted_hard, :egress]
 ```
 
 **Your real work repo** — `private: true`. Now loud, and this is
-the one loud verdict in the whole repo:
+the only loud reading anywhere in the book:
 
 ```
 pikuri-code [:private, :untrusted_hard, :egress]
@@ -449,9 +467,9 @@ The file tools drop their untrusted leg, so the only untrusted
 content reaching the parent comes via the sub-agents — weakened by
 the boundary. Still assembled, still warned, one notch down.
 
-Three verdicts, one binary, two flags. And a fourth reading that
-shows the flags aren't independent of the rest of the wiring: run
-that same trusted repo with `--no-sandbox` and it goes **loud
+Three verdicts, one binary, two declarations. And a fourth reading
+that shows they aren't independent of the rest of the wiring: take
+that same trusted repo with the sandbox off and it goes **loud
 again**. The `trusted:` declaration vouches for what the
 *workspace* can reach; an unsandboxed bash reads `~/Downloads`
 regardless, so the claim stops being honest and the untrusted leg

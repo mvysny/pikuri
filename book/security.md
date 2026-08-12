@@ -255,8 +255,10 @@ Three verdicts:
   attenuated: untrusted content that only arrives via a sub-agent,
   or egress that stops at a human who sees the actual outbound
   bytes.
-- **loud** — all three at full strength. Exactly one wiring in
-  this repo earns it, and it earns it by design.
+- **loud** — all three at full strength. One shape in this book
+  earns it: a coding agent over a private repo it can't vouch
+  for. That's by design, not a defect — you cannot take a leg off
+  a coding agent without breaking the job.
 
 Two things to hold onto, because they're what keeps the check
 honest. It reasons about **capability presence, not data flow** —
@@ -266,14 +268,17 @@ never blocks**: if a clean result ever gated execution, people
 would read it as a safety certificate, which is precisely the
 claim it cannot make.
 
-Why the demos are mostly quiet is the asymmetry in who declares
-what. Pikuri can tell that `fetch` reaches the network and that a
+Why the demos are quiet is the asymmetry in who declares what.
+Pikuri can tell that `fetch` reaches the network and that a
 scraped page isn't yours; it *cannot* tell whether the directory
 you pointed it at holds secrets or scratch. So the private leg is
-yours to declare — `Filesystem.new(..., private: true)` — and
-defaults off. Point an agent at a public checkout and it stays
-silent; point the same agent at your real work repo and it speaks
-up, which is the moment worth hearing about.
+yours to declare — `Filesystem.new(..., private: true)` — and it
+defaults off. A harness that declares it over your real work repo
+gets the warning; one that doesn't stays silent over the same
+files. The OS assistants declare it — a binary whose whole premise
+is operating *your machine* can answer the question — while
+`pikuri-code`, pointed at whatever directory you launched it in,
+leaves it to you. Your own harness is where that call belongs.
 
 [Measuring the trifecta](trifecta-detector.md) is the full
 treatment: reading the map, the strength lattices behind soft

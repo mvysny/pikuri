@@ -1956,7 +1956,7 @@ lattices and the verdict grid, the payload-visibility test, what the
 detector refuses to grade, propagation (max parallel / min series), the
 one-binary-three-verdicts walkthrough, and how to tag your own tool.*
 
-*The same pass did the three things this section asked for. The
+*The same pass did three of this section's four live bullets. The
 `os-assistant.md` reconciliation shipped — presence binary, strength not,
 severity grading on pool size **and** leg strength. `security.md` gained
 §"Counting the legs by machine" as the automation of its own step 1, and
@@ -1965,8 +1965,38 @@ now names the chapter (`book/trifecta-detector.md`), which it could not do
 while chapters were numbered — the book was de-numbered in the same session
 precisely so a shipped pointer could name a chapter without rotting.*
 
-One docs thread stays open, because it is about a *different* note:
+Two threads stay open. The first is a *wiring* question the chapter can
+only describe, not fix; the second belongs to a different note.
 
+- **`pikuri-code` cannot declare `:private`, so no shipped demo reaches
+  `loud`** (found 2026-08-12 while checking the chapter's claims against
+  real rendered output — the unfinished half of the old "which examples
+  should trip the detector" bullet). `Filesystem(private:, trusted:)`
+  ships and works, but `bin/pikuri-code` calls the constructor without
+  either kwarg and exposes no flag for them, so the demo always renders
+  the silent row; the loud and soft rows live only in `dry_run_spec.rb`.
+  Finding #3 of the dry run ("the `:private` declaration is the sole
+  lever between silent and loud") is therefore still live: the plumbing
+  landed, the *lever* was never surfaced. The fork is a demo-design
+  question, not a detector one — a `--private` flag, or deliberately
+  nothing on the grounds that a demo pointed at a throwaway playground
+  should not cry wolf. The chapter states the gap plainly rather than
+  papering over it.
+
+  *The `pikuri-os` half of this is fixed (2026-08-12): both OS bins now
+  pass `private: true`. Recorded because the first analysis of it was
+  wrong and the error is instructive — reconstructing a map by hand with
+  stubbed legs "showed" that `--with-internet` reported **silent**,
+  contradicting the chapter, which would have made this a severity bug.
+  Rebuilt from real constructors, `Os::FileindexSearch` already hardcodes
+  `private: true` (whole-machine reach by construction), so the leg was
+  present all along and **no verdict moved** — silent for Part 1, soft
+  for Part 2, before and after. The real defect was narrower and still
+  worth fixing: `read`/`bash` disagreed with `fileindex_*` about whether
+  the same disk is sensitive, so the advisory's attribution list omitted
+  the two tools that actually hand the whole disk to the model. Moral
+  for anyone else validating this detector on paper: stub a leg and you
+  will invent a finding — render the real wiring.*
 - How this reads next to the typed-transport-classes idea, so the two
   privacy stories (endpoint-private vs agent-holds-the-legs) don't
   confuse. Neither is taught yet; whoever writes the transport-classes
