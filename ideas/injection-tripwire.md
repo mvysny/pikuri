@@ -1,11 +1,13 @@
 # Injection tripwire — a Sanitizer flag on LLM-*authored* content is a compromise signal
 
 Status: **idea, not built.** Runtime counterpart to the (static,
-boot-time) trifecta detector, which shipped —
-`book/trifecta-detector.md` for what it measures, and
-[`trifecta-detector.md`](trifecta-detector.md) for the still-open
-poisoned-*capable* question this note is the poisoned-*now* half of.
-`ComposeGuard` and the graded egress axis are both shipped; see
+boot-time) trifecta detector, which shipped — `book/trifecta-detector.md`
+for what it measures. This note is the poisoned-*now* half; the
+poisoned-*capable* half is the detector's untrusted leg, and a declared
+per-node flag was rejected (`D-no-static-poisoned-flag`). The *has-read*
+badge between them rides
+[`private-context-taint.md`](private-context-taint.md). `ComposeGuard` and
+the graded egress axis are both shipped; see
 {Pikuri::Thunderbird::ComposeGuard} and {Pikuri::Tool::TrifectaLegs}.
 
 ## The insight

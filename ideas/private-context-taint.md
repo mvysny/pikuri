@@ -48,6 +48,26 @@ taints the *parent*, consistent with the detector's rule that
 per-context: a sub-agent that itself touches private + holds egress
 taints and severs *itself*.
 
+### The same flag carries `:untrusted`, for display only
+
+The mechanism is tag-agnostic — watch the stream, flip a monotonic
+per-context flag when a tagged tool returns, let the UI mark it — so it
+tracks `:untrusted` alongside `:private`. What each one buys differs:
+
+- **`:private` in** → the levels below apply: egress constrained or severed.
+- **`:untrusted` in** → **nothing is severed, the UI just says so.** This
+  agent has now read attacker-authorable content, so its output is suspect
+  and a human reading along should know. Enforcement for that leg is
+  structural and decided *earlier*, at delegation time
+  ([`quarantined-handles.md`](quarantined-handles.md)); a flag flipped after
+  the bytes arrived cannot retrofit it.
+
+Worth having because it is the one question the static detector cannot
+answer. At boot it can only say a wiring *could* read untrusted content, and
+a declared "this agent stays clean" was rejected for being both derivable and
+silence-able (`D-no-static-poisoned-flag`). Observation needs no declaration,
+which is exactly why the badge is cheap where the static flag was not.
+
 ## The structural insight: who controls the destination
 
 The whole feature rests on one distinction between the two egress
@@ -196,6 +216,8 @@ state directly. **Not decided.**
 
 - Coarse monotonic context taint, triggered by any `:private`-tagged
   tool returning into the context (no content sniffing). UI marks it.
+- The same flag tracks `:untrusted` arrival, **display only** — no
+  severing, no levels.
 - `:private` propagates up from sub-agents (taints the parent);
   enforcement is per-context.
 - `web_search`: destination pinned to a few pikuri-vetted write-only

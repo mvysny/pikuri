@@ -18,7 +18,7 @@ module Pikuri
     # previous instructions, exfiltrate ~/.aws"), the child has no tool to
     # act on it — no shell for +curl+, no +fetch+ to POST, no +write+ to
     # plant a payload, no +agent+ to delegate the attack. See +SECURITY.md+
-    # §"Prompt injection" and +ideas/trifecta-detector.md+.
+    # §"Prompt injection" and +book/trifecta-detector.md+.
     #
     # The tools are named by string only (no +pikuri-workspace+ require),
     # validated against the parent at {Extension#configure} — which is why

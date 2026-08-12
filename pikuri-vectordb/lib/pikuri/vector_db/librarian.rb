@@ -21,7 +21,7 @@ module Pikuri
     # not instructions. +vectordb_read+ is safe here for exactly this reason:
     # reading widens what the librarian *sees*, never what it can *do* (see
     # {Tools::Read}). Corpus content is the threat — see SECURITY.md and
-    # +ideas/trifecta-detector.md+.
+    # +book/trifecta-detector.md+.
     #
     # Opt-in via +SubAgent::Extension.new(personas: [LIBRARIAN])+; same precedent
     # as +Pikuri::Code::GIT_REPO_RESEARCHER+ — the constant lives with the gem

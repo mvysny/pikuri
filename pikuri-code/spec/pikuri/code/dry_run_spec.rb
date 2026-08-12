@@ -2,10 +2,14 @@
 
 require 'tmpdir'
 
-# The paper dry-run table from ideas/trifecta-detector.md, checked against real
+# The detector's verdict table for this gem's wirings, checked against real
 # tool objects rather than by hand. Nodes are assembled from actual
 # constructors and the real SubAgent::Extension contribution, so a wiring
 # change that moves a verdict fails here.
+#
+# Don't simplify that to stubbed legs: hand-graded rows are how the by-hand
+# version of this table produced a bug that wasn't there, and a stub agrees
+# with whatever you assumed.
 #
 # The pikuri-computer rows need pikuri-thunderbird, which this gem does not
 # depend on; they live in pikuri-thunderbird's own spec.

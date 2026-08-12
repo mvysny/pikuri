@@ -79,6 +79,67 @@ design.
 
 ---
 
+## D-no-static-poisoned-flag — No declared `poisoned:` on a node (2026-08-12)
+
+**Status:** Accepted (won't build); no code change. Closes the last open
+question in `ideas/trifecta-detector.md`, which is deleted with this entry —
+the detector's homes are {Pikuri::Trifecta} and `book/trifecta-detector.md`.
+
+**Context.** Propagation grades every parent as drivable: whatever it is
+told, it will faithfully relay or launder. Right for `pikuri-computer`, whose
+root reads attacker-authored mail on day one; pessimistic for a topology
+built to keep the root pristine, where untrusted content reaches it only as
+sub-agent summaries (the federation sketched in `ideas/assistant.md`). A
+per-node `poisoned: true|false` was floated so the two analyses could differ.
+
+**Decision.** No such field. It is redundant, and the direction it exists to
+enable is the harmful one.
+
+**It is already computed.** A node's untrusted *strength* is the
+poisoned-capable answer: hard `:untrusted` means the node reads attacker
+content directly, `:weakened` means it arrives through a summarizing
+delegation boundary — which is exactly what
+{Pikuri::Tool::TrifectaLegs#relabel_inbound} encodes as content crosses that
+boundary. A declared flag would restate a derived value, and the two would
+drift the first time a
+wiring changed without the declaration being revisited.
+
+**And `poisoned: false` would silence a true alarm.** Egress propagates up at
+full strength *because* a parent is assumed drivable — the laundering
+channel: a poisoned parent needs no egress tool of its own, it puts the
+secret into a sub-agent's task string and asks the egress-holder to send it.
+A human asserting a parent stays clean turns that assumption off by hand, and
+that is precisely the assertion that outlives the refactor which falsifies
+it. A detector whose alarms can be declared away is a detector nobody trusts.
+
+**Alternatives rejected.**
+
+- **A raise-only flag (`poisoned: true` permitted, `false` not).** Safe by
+  construction, and therefore pointless: hard `:untrusted` already raises,
+  and the one thing left to express — a node poisoned through a channel the
+  detector cannot see — is the unknowable input the detector already declines
+  to grade.
+- **Keeping the question open pending a scenario hunt.** The open note asked
+  for a topology the lattice cannot express. The only candidate it ever named,
+  the pristine-parent federation, maps cleanly onto `:weakened`; no second
+  candidate was produced in the time the question sat open. Leaving it parked
+  would keep inviting a rediscovery of the same redundancy.
+
+**Consequences.**
+
+- **The soft/loud untrusted split *is* the poisoned-vs-pristine answer**, so
+  the way to make a parent read pristine is structural — put a summarizing
+  boundary in front of it — never declarative. Same shape as the trusted
+  island rule: change the wiring, not the label.
+- **The runtime question is a different one, and stays open elsewhere.**
+  Whether an agent has *now* read untrusted content is observed rather than
+  declared, needs no declaration to be trustworthy, and is worth showing in
+  the UI. It rides `ideas/private-context-taint.md`'s per-context flag as the
+  display half of that mechanism. The narrower "poisoned *right now*" alarm
+  on LLM-*authored* bytes remains `ideas/injection-tripwire.md`'s.
+
+---
+
 ## D-write-custody-axis — No synced-folder egress axis on writes (2026-08-12)
 
 **Status:** Accepted (won't build); no code change. The gap it leaves is

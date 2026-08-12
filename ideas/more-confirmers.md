@@ -172,7 +172,7 @@ Why it's the strongest of the batch:
 
 - **It composes with the existing attenuation.** The summary already
   crosses the sub-agent boundary as `:untrusted → :untrusted_weakened`
-  (instruction → reported-fact, per `trifecta-detector.md`); the human is
+  (instruction → reported-fact, per `book/trifecta-detector.md`); the human is
   a *second* filter on top, not the only one.
 - **It gives the human a bounded, reviewable artifact.** One short
   summary to eyeball — a world apart from asking them to adjudicate a raw
