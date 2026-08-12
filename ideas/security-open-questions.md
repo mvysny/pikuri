@@ -25,8 +25,8 @@ Related long-form notes (the entries below that already grew one):
 
 - `book/trifecta-detector.md` + {Pikuri::Trifecta} — the static
   capability-presence check, **shipped**;
-  [`trifecta-detector.md`](trifecta-detector.md) keeps only its two
-  unanswered questions.
+  [`trifecta-detector.md`](trifecta-detector.md) keeps only its one
+  unanswered question.
 - [`private-context-taint.md`](private-context-taint.md) — the runtime
   private-in → sever-egress enforcement (and the long-form home of the
   egress-allowlist idea below).

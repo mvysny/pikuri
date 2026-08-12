@@ -79,6 +79,105 @@ design.
 
 ---
 
+## D-write-custody-axis — No synced-folder egress axis on writes (2026-08-12)
+
+**Status:** Accepted (won't build); no code change. The gap it leaves is
+stated at {Pikuri::Workspace::Write}'s `trifecta_legs:` declaration site and
+named in `book/trifecta-detector.md` §"The edges, stated plainly" — neither
+is a to-do any more.
+
+**Context.** `Write` and `Edit` ship {Pikuri::Tool::TrifectaLegs::NONE}: a
+local write is not an external sink, and the observation reports an outcome
+rather than the file's bytes. But a workspace root that *replicates* — a
+`~/Dropbox`, a Nextcloud folder, a team Drive — plausibly turns a write into
+egress, and nothing declares it. The gap sat parked as the "custody
+question" through `D-egress-axis-shape`, which cited it as a reason not to
+name the destination axis `egress_target_server`. Two findings close it.
+
+**Decision.** No custody axis, no synced-folder declaration. Writes keep
+`NONE`, and the under-warn is documented rather than fixed.
+
+First, **the design space collapsed**. The intuition that a synced write
+looked like `:tool_vouched` — the destination is a party the attacker
+doesn't control — *but somehow safer* was real, and mislocated:
+`egress_destination` grades whether the attacker can read the bytes back,
+while the property separating these cases is custody — **does the recipient
+differ from the data's owner?** A personal cloud sync doesn't change
+custody: same account, different hardware, and an attacker gains nothing
+without separately compromising that account. So it is not a weaker egress
+leg, it is **no leg at all**. A shared folder or public link changes custody
+exactly as a mail recipient does — humans read it, the bytes persist — so it
+is plain `:attacker_reachable`. Both ends land on values that already exist
+and the middle is empty, so no new lattice level was ever at stake.
+
+And **the sync this project's users actually run is the off-axis one.** A
+privacy-conscious user replicates with self-hosted Syncthing or Nextcloud —
+between machines *they* own, one owner end to end, no third party in the
+path at all. The shape that would need a leg is a corporate or public share,
+i.e. precisely what that audience deliberately doesn't run. So the axis
+would be built for a population inverse to the actual one.
+
+Second, **what was left is a knob that mostly echoes its own input.** The
+property is invisible to the framework, exactly as
+{Pikuri::Workspace::Filesystem#private?} is, so it could only be
+user-declared — and the reachable-set rule bites: a vouch counts only for a
+tool's *entire* reachable set, so "a shared folder somewhere under this root"
+means the leg is present. Since `~/Dropbox` routinely holds private and shared
+subtrees at once, the honest tag for the realistic layout is leg-present
+regardless of what the user knows about any one subfolder.
+
+And it isn't a dead end, which is what makes won't-build cheap: a host that
+knows its workspace replicates to someone other than its owner can add the
+leg **today**, with a five-line
+{Pikuri::Agent::Extension#trifecta_contribution} returning a
+{Pikuri::Trifecta::Contribution} carrying egress legs. Contribution legs are
+additive, so that can only ever harden a verdict.
+
+**Alternatives rejected.**
+
+- **A four-value declaration** (local / private cloud / shared cloud / git),
+  the shape first floated. Collapses to a binary the moment custody is the
+  test, and then to nothing once each end lands on an existing value.
+- **A new rung between `:tool_vouched` and `:attacker_reachable`** for the
+  "one step safer" feeling. Rejected: the feeling was custody, not
+  readability, and grading it on the readability axis would put a
+  *not-a-leg* case above the bottom rung — the same error
+  `D-egress-axis-shape` rejected for `egress_human_author`.
+- **Putting git on the axis.** A write into a working tree egresses nothing;
+  a `push` does, and a push is `bash`, already tagged from the sandbox. What
+  makes the Dropbox case interesting is that replication is **ambient** — no
+  further agent action. A sink needing a deliberate second capability is
+  already covered by that capability.
+- **Auto-detecting the sink** — probing for a `.dropbox` marker,
+  `~/.config/syncthing`, or reading the mount table / `st_dev`. Rejected as
+  unsound in the direction that decides the verdict: no marker distinguishes
+  a private subfolder from a team share, which is the only distinction that
+  matters here. A heuristic that mislabels is worse than a documented
+  silence in a detector whose whole credibility rests on a tag meaning what
+  it says.
+- **Shipping the knob anyway, since it's cheap.** Rejected on the
+  axis-with-no-consumer rule `D-trifecta-map-orphans` applied to
+  `Report#unreachable_tools`: no wiring in this repo points a workspace at a
+  synced folder, so it would change no verdict today, and the day one does,
+  the contribution hook already covers it without a core axis.
+
+**Consequences.**
+
+- **A synced-workspace wiring reads clean, permanently and on purpose.**
+  This is one of the named under-warns, alongside a single tool that is all
+  three legs internally and private data staged through a file. Smoke alarm,
+  not firewall.
+- **Custody survives as teaching, not machinery.** It is why a search query
+  and a Dropbox write get opposite answers despite both being "bytes to a
+  third party", and it is the argument that keeps the empty middle rung from
+  being relitigated.
+- **The reversal trigger is a shipped wiring, not a report that one is
+  possible** — and even then it starts host-side as a
+  `trifecta_contribution`, becoming a core axis only if several hosts write
+  the same five lines.
+
+---
+
 ## D-trifecta-map-orphans — A tool nothing can call gets no line on the map (2026-08-12)
 
 **Status:** Accepted; no code change — the silence is what
@@ -194,8 +293,8 @@ shipped wiring's verdict changed.
   claims safety. Bytes genuinely leave a vouched destination; they merely
   cannot be read back.
 - **`egress_target_server`.** Rejected: a mail recipient is not a server,
-  and the parked custody question (`ideas/trifecta-detector.md`) has synced
-  folders as candidate sinks.
+  and the then-open custody question had synced folders as candidate sinks
+  (settled since, as `D-write-custody-axis`).
 - **Folding both axes into one lattice.** Rejected: neither dominates the
   other. A reviewed send to an attacker's inbox and an unreviewed query to a
   vouched engine are different animals, and a single scale would have to

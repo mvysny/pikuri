@@ -631,9 +631,16 @@ goes quiet:
   agent. Naming an axis you can see is worth it; inventing a
   persona so a verdict could fire was not.
 - **No custody axis on writes.** Whether a workspace pointed at a
-  synced folder turns a write into egress is answered on paper —
-  the test is custody, not readability — and unbuilt, because no
-  wiring in the repo points a workspace at one.
+  synced folder turns a write into egress is answered on paper and
+  deliberately unbuilt. The test is custody, not readability: *does
+  the recipient differ from the data's owner?* A personal cloud
+  sync — your own Syncthing between your own machines — keeps one
+  owner throughout, so it is no leg at all; a team Drive or a public
+  link changes owner exactly as a mail recipient does, so it is
+  plain `attacker_reachable`. Both ends land on answers that already
+  exist, and no probe can tell which one *your* folder is. So the
+  framework stays quiet, and a host that knows its workspace
+  replicates off-owner adds the leg itself from its extension.
 - **No line for a tool nothing can call.** Boot `pikuri-computer`
   and no line mentions `git_clone`, though the binary registers it:
   it composes the coding extension, which offers that tool to a

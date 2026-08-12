@@ -3,7 +3,7 @@
 Status: **idea, not built.** Runtime counterpart to the (static,
 boot-time) trifecta detector, which shipped —
 `book/trifecta-detector.md` for what it measures, and
-[`trifecta-detector.md`](trifecta-detector.md) §2 for the still-open
+[`trifecta-detector.md`](trifecta-detector.md) for the still-open
 poisoned-*capable* question this note is the poisoned-*now* half of.
 `ComposeGuard` and the graded egress axis are both shipped; see
 {Pikuri::Thunderbird::ComposeGuard} and {Pikuri::Tool::TrifectaLegs}.
