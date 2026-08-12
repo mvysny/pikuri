@@ -10,15 +10,35 @@ and [`../pikuri-vectordb/DESIGN.md`](../pikuri-vectordb/DESIGN.md); the
 three-model ops guidance graduated into the `book/` chapters. Both
 trifecta defenses (the no-egress `pikuri-corpus` posture and the
 privilege-separated `LIBRARIAN`) are documented in
-{Pikuri::VectorDb::LIBRARIAN} and [`../SECURITY.md`](../SECURITY.md); the
-reason `LIBRARIAN` isn't wired into a binary yet (sub-agent tools are a
-subset of the parent's, so corpus-behind-the-sub-agent needs
-persona-owned tools) is in
-[`subagent-deferrals.md`](subagent-deferrals.md) §"Persona-owned tools",
-which also disputes that framing.
+{Pikuri::VectorDb::LIBRARIAN} and [`../SECURITY.md`](../SECURITY.md).
 Only the deferrals stay here.
 
 ## Deferred
+
+- **A per-tool pool choice on `Extension`** — what the quarantined
+  `LIBRARIAN` wiring actually waits on, and the reason no binary wires that
+  persona yet. `#configure` registers all three tools with `c.add_tool`
+  (`extension.rb:103–105`), so the boss always sees `vectordb_search`, which
+  is the leg `book/assistant.md`'s design note wants gone.
+
+  **Not blocked on the sub-agent side, despite what that chapter used to
+  say.** `Configurator#add_sub_agent_tool` hides a tool from the parent's
+  LLM and a persona's `tool_names` resolves against both pools
+  (`sub_agent_tool.rb:91`) — the shape `RESEARCHER`'s web tools already
+  ship in. A host can build the quarantined wiring *today* by
+  hand-constructing backend + embedder + chunker + `Indexer` + the three
+  tools, which is only unpleasant, not impossible; the extension exists to
+  spare exactly that.
+
+  Make it **per tool**, not a blanket switch: `vectordb_search` /
+  `vectordb_read` return corpus content and belong behind the librarian,
+  while `vectordb_reindex` returns a count and is fine on the boss. The
+  pre-registration guard needs to learn about the second pool at the same
+  time, or it fires on the very wiring this enables. (The broader
+  "a `Persona` carries its own tool *instances*" idea is
+  [`subagent-deferrals.md`](subagent-deferrals.md)'s, and this case does
+  **not** need it — hiding a shared instance is enough; owning one is only
+  earned when a child needs it *configured differently*.)
 
 - **Classic-RAG-as-listener.** Auto-inject relevant chunks at the
   start of each turn (no tool call) — hermes' prefetch shape (see

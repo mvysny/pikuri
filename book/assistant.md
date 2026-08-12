@@ -86,10 +86,11 @@ The intended shape, therefore:
 
 - **The boss does not hold `vectordb_search` directly.** Corpus
   recall is reachable only by delegating to the bundled
-  `LIBRARIAN` sub-agent (the vector-DB chapter), which has `vectordb_search`
-  as its *only* tool and no egress of its own. A poisoned chunk it
-  retrieves has no hand to act with, and the boss sees a distilled
-  paragraph rather than raw chunks.
+  `LIBRARIAN` sub-agent (the vector-DB chapter), whose two tools are
+  `vectordb_search` and `vectordb_read` — corpus lookup and nothing
+  else, no egress of its own. A poisoned chunk it retrieves has no
+  hand to act with, and the boss sees a distilled paragraph rather
+  than raw chunks.
 - **Honest caveat, to be made in full here:** this *raises the
   bar*, it does not by itself *break* the trifecta. The librarian
   faithfully pipes corpus content up to a boss that still has
@@ -104,23 +105,34 @@ The intended shape, therefore:
   trifecta](trifecta-detector.md), which is also where the limits
   of a human in that seat are argued.
 
-**Prerequisite, not yet built.** Wiring the boss *without*
-`vectordb_search` while still handing it to the `LIBRARIAN`
-sub-agent is impossible under today's persona mechanism: a
-sub-agent's tools are a strict subset of the parent's
-(`SubAgent::SubAgentTool` filters `parent.tools` by
-`persona.tool_names`), so a persona can only narrow, never add. The
-fix is **persona-owned tools** — letting a `Persona` carry its own
-tool instances — tracked in `ideas/subagent-deferrals.md`. Until it
-lands, `pikuri-assistant` declares its `pikuri-vectordb` dependency
-(the intent) but does not register the corpus tools; the chapter
+**What's missing, precisely.** Not the mechanism.
+`add_sub_agent_tool` registers a tool the parent's LLM never sees,
+and a persona's `tool_names` resolves against *both* pools, so a
+child can hold a tool its parent doesn't. That is exactly how
+`RESEARCHER` gets the web tools in the OS-assistant and coding-agent
+chapters — the same shape, only there the leg being kept off the
+parent is egress, and here it's the private pool.
+
+What's missing is a route to it through `VectorDb::Extension`,
+which registers all three tools with `add_tool` — parent-visible —
+and refuses to run if you pre-register them yourself. So the
+quarantined wiring today means hand-building the backend, embedder,
+chunker, `Indexer` and the three tools in the binary, duplicating
+what the extension exists to assemble. A host-facing choice on the
+extension is the smaller fix, and it has to be **per tool** rather
+than a blanket switch: `vectordb_search` and `vectordb_read` are the
+ones that return corpus content and belong behind the librarian,
+while `vectordb_reindex` returns a count and is fine on the boss.
+
+Until that lands, `pikuri-assistant` declares its `pikuri-vectordb`
+dependency (the intent) but registers no corpus tools; the chapter
 stays a stub partly for this reason.
 
 ## Why this chapter is a stub
 
 The honest reason: memories (the memories chapter) aren't shipped yet, and
-the corpus-recall integration is blocked on the persona-owned-tools
-prerequisite above — so writing the assistant chapter now would
+the corpus-recall integration waits on the extension-side wiring
+above — so writing the assistant chapter now would
 either ship inventions or skip the parts that make
 `pikuri-assistant` worth a chapter at all. (`pikuri-vectordb`
 itself *is* shipped — the vector-DB chapter demos it as `pikuri-corpus` — it's
@@ -157,8 +169,8 @@ coding-agent chapters, the trifecta
 calculus from [the security chapter](security.md), corpus recall from
 [the vector-DB chapter](vectordb.md), memories from
 [the memories chapter](memories.md), and MCP from [the MCP chapter](mcp.md).
-What's missing is the gem stability and the persona-owned-tools
-prerequisite above; once they land, this stub becomes the end-to-end
+What's missing is the gem stability and the quarantined-corpus wiring
+above; once they land, this stub becomes the end-to-end
 walkthrough. A further chapter — the OS assistant *with* internet,
 where the trifecta's third leg returns — waits on the same taint
 machinery this chapter's quarantine needs.

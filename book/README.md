@@ -171,7 +171,7 @@ gem, landing once they stabilise.
   recall, persistent memories, MCP, and the four bundled tools
   in one binary, the one agent that reaches for all three
   trifecta legs. Stub until the gems it integrates stabilise and
-  the quarantined corpus wiring (persona-owned tools) lands.
+  the quarantined corpus wiring lands.
 
 Further chapters — a deeper `pikuri-assistant` walkthrough and more
 advanced coding-agent recipes — will land as those surfaces stabilise.

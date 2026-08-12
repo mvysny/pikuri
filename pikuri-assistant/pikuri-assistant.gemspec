@@ -42,18 +42,18 @@ Gem::Specification.new do |spec|
   # (pikuri-skills) + Mcp::Extension (pikuri-mcp) +
   # Tool::SubAgent::RESEARCHER (pikuri-subagents) together, plus the
   # sandboxed document extractor (pikuri-extractors — its PDF arm
-  # supersedes chapter 3's pikuri-pdf here, so that gem is
-  # deliberately NOT a dependency), VectorDb::Extension + the
-  # LIBRARIAN persona (pikuri-vectordb) and Memory::Extension
-  # (pikuri-memory). All runtime deps, lockstep-pinned to the
-  # matching versions.
+  # supersedes pikuri-pdf here, so that gem is deliberately NOT a
+  # dependency), VectorDb::Extension + the LIBRARIAN persona
+  # (pikuri-vectordb) and Memory::Extension (pikuri-memory). All
+  # runtime deps, lockstep-pinned to the matching versions.
   #
-  # NOTE: the vectordb and memory deps are forward-prep for the ch7
-  # assistant shape (egress + private-corpus recall with the corpus
-  # quarantined in the LIBRARIAN sub-agent, plus durable memories).
-  # The correct vectordb wiring is gated on the persona-owned-tools
-  # change — see ideas/trifecta-detector.md — so the binary does not
-  # register either yet; the dependencies declare intent.
+  # NOTE: the vectordb and memory deps are forward-prep for the
+  # assistant shape of book/assistant.md (egress + private-corpus
+  # recall with the corpus quarantined in the LIBRARIAN sub-agent,
+  # plus durable memories). The quarantined wiring wants a per-tool
+  # pool choice on VectorDb::Extension, which registers all three
+  # tools parent-visibly today — see ideas/vectordb-deferrals.md — so
+  # the binary registers neither yet; the deps declare intent.
   spec.add_dependency 'pikuri-core',       "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-extractors', "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-mcp',        "= #{Pikuri::VERSION}"

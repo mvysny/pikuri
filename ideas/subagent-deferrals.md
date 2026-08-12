@@ -52,28 +52,20 @@ fs-readonly doesn't stop network exfil or fork bombs, so a
 `sandbox:` frontmatter key composing with `Code::Bash::Sandbox::Bubblewrap`
 is the eventual follow-up.
 
-## Persona-owned tools (and the mediated-recall wiring it's blamed for)
+## Persona-owned tools
 
-The motivating want: hand the corpus to a `LIBRARIAN` child while the boss
-holds no `vectordb_*` tool of its own — the quarantine `pikuri-assistant`
-needs, and the reason `book/assistant.md` stays a stub.
+Letting a `Persona` carry its own tool *instances*, rather than naming ones
+the host registered. Deferred, and **not** the fix for the quarantined-corpus
+wiring it was long blamed for: `add_sub_agent_tool` already hides a tool from
+the parent's LLM while a persona's `tool_names` still reaches it
+(`sub_agent_tool.rb:91`), which is all that case needs — see
+[`vectordb-deferrals.md`](vectordb-deferrals.md).
 
-**Check the premise before building anything.** That chapter says it is
-impossible because "a sub-agent's tools are a strict subset of the parent's",
-and that is **not** what the code does: `SubAgentTool#execute` filters
-`parent.tools + parent.sub_agent_tools` (`sub_agent_tool.rb:91`), and
-`Configurator#add_sub_agent_tool` registers a tool the parent's LLM never
-sees. `pikuri-code` already ships exactly this shape for the web tools.
-
-The real blocker is narrower and lives in the *other* gem:
-`VectorDb::Extension#configure` hardcodes `c.add_tool` for all three tools
-(`extension.rb:103–105`), so a host cannot ask for the mediated wiring. Two
-candidate fixes, and the cheap one may be enough — a pool choice on that
-extension (`mediated:`-shaped), versus the general "a `Persona` carries its
-own tool *instances*", which is only earned if a child needs a tool
-configured *differently* from the parent's, not merely hidden from it.
-
-Either way `book/assistant.md`'s prerequisite paragraph needs correcting.
+What would earn this is a child needing a tool **configured differently**
+from the parent's, not merely hidden from it: a `Read` over a narrower
+`Filesystem`, a `Bash` with a tighter sandbox. That is the workspace-modes
+item above wanting per-persona reconstruction, so the two land together or
+not at all.
 
 ## Catalog / `.md` discovery
 
