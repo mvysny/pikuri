@@ -150,7 +150,7 @@ meaning:
 
 ```
 [TRIFECTA: HARD] pikuri-code — private(read, grep, glob, bash) +
-untrusted(read, grep, glob, bash) + egress(bash). An injection in
+untrusted(read, grep, glob, bash, skill) + egress(bash). An injection in
 what this agent reads can drive an exfiltration. Break a leg:
 sever egress (a network-off sandbox), or privilege-separate the
 step that reads untrusted content. See book/trifecta-detector.md in this repo.
@@ -485,20 +485,29 @@ The clearest way to feel the whole model is `pikuri-code`, whose
 verdict moves on **two declarations** and nothing else. Here is
 the real output, in order.
 
-One thing to be straight about before you try to reproduce it:
-those two declarations are constructor kwargs on the workspace,
-and `bin/pikuri-code` **does not expose them** — it wires
-`Filesystem.new` without either and offers no flag for them, so
-the demo you can actually run always reads the first case below.
-The other three are what *your* host gets when it declares them.
-That's a gap in the demo binary rather than a property of the
-detector, and it isn't universal: the OS assistants do declare
-theirs, because a binary whose premise is "your machine" can
-answer the question that a coding agent pointed at an arbitrary
-checkout genuinely cannot.
+One thing to be straight about before you try to reproduce it.
+`bin/pikuri-code` **asks you the private question at startup** — on
+a TTY, every session, remembered nowhere — so the first two
+readings below are the ones you actually get, depending on how you
+answer. A question rather than a flag on purpose: a forgotten flag
+fails *silent*, and silent is the reading you least want over a
+repo full of secrets.
 
-**A public checkout.** No declarations. Genuine untrusted content,
-genuine egress, no private leg — two legs, silent:
+`trusted:` it does **not** expose, and that gap is deliberate too.
+The flag covers everything the workspace can *read*, and this
+binary's read set is wider than your project — it carries the
+toolchain paths (`/usr`, `~/.gem`, `~/.cargo/registry`, …) so the
+model can grep a dependency's source. Vouching for your own repo is
+a reasonable claim; vouching for every gem and crate you have ever
+downloaded is not, and a flag that quietly bundled the second into
+the first would be a lie you can type. So the last two readings are
+what *your* host gets when it scopes its workspace and declares
+them.
+
+**A public checkout — answer no.** Genuine untrusted content,
+genuine egress, no private leg. Two legs, silent (tools elided;
+the real map lists all of them, plus the `file_miner` and
+`git_repo_researcher` personas):
 
 ```
 Trifecta: pikuri-code — 2 of 3 legs (untrusted, egress); no private leg found.
@@ -508,15 +517,17 @@ pikuri-code [:untrusted_hard, :egress]
   grep [:untrusted_hard]
   glob [:untrusted_hard]
   edit []
+  ...
   bash [:untrusted_hard, :egress]
+  ...
   researcher [gate: unreviewed] [:untrusted_hard, :egress]
     web_search [:untrusted_hard, :egress_vouched]
     web_scrape [:untrusted_hard, :egress]
     fetch [:untrusted_hard, :egress]
 ```
 
-**Your real work repo** — `private: true`. Now loud, and this is
-the only loud reading anywhere in the book:
+**Your real work repo — answer yes.** Now loud, and this is the
+only loud reading anywhere in the book:
 
 ```
 pikuri-code [:private, :untrusted_hard, :egress]
@@ -535,7 +546,8 @@ the kind of belief the detector exists to check, and it's why
 egress is read from the sandbox's actual posture rather than from
 which tools are nominally "network tools".
 
-**A repo you vouch for** — `private: true, trusted: true`. Soft:
+**A repo you vouch for** — `private: true, trusted: true`, which
+takes a host that scopes its own workspace. Soft:
 
 ```
 pikuri-code [:private, :untrusted_weakened, :egress]
