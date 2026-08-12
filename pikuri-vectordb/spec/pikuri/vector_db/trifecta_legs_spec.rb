@@ -7,7 +7,7 @@ RSpec.describe 'vectordb tool trifecta legs' do
              Pikuri::VectorDb::Tools::Reindex.new(indexer: nil)]
     tools.each do |tool|
       assert_equal :hard, tool.trifecta_legs.untrusted, tool.name
-      assert_equal :none, tool.trifecta_legs.egress, tool.name
+      assert_equal :no_egress, tool.trifecta_legs.egress_payload_review, tool.name
     end
   end
 

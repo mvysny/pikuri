@@ -126,13 +126,13 @@ module Pikuri
       # posture, not from whether one was supplied: a +--no-confirm+ wiring
       # passes {Pikuri::Workspace::Confirmer::AUTO_APPROVE}, which answers
       # +blocks_on_human? == false+, so the delegation channel scores
-      # +:autonomous+ and the parent's propagated egress re-hardens with
+      # +:unreviewed+ and the parent's propagated egress re-hardens with
       # nothing in the detector special-casing the flag.
       #
       # @param tools [Array<Pikuri::Tool>]
       # @return [Pikuri::Trifecta::Contribution]
       def trifecta_contribution(tools)
-        channel = @confirmer&.blocks_on_human? ? :human_approver : :autonomous
+        channel = @confirmer&.blocks_on_human? ? :human_reviewed : :unreviewed
 
         children = @personas.each_value.map do |persona|
           persona_tools = tools.select { |t| persona.tool_names.include?(t.name) }

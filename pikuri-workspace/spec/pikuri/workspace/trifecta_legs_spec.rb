@@ -58,7 +58,7 @@ RSpec.describe 'Workspace trifecta legs' do
           legs = build(tool_name, workspace).trifecta_legs
           assert_equal :hard, legs.untrusted
           refute legs.private
-          assert_equal :none, legs.egress
+          assert_equal :no_egress, legs.egress_payload_review
         end
 
         it 'inherits the declared private leg' do
@@ -70,7 +70,7 @@ RSpec.describe 'Workspace trifecta legs' do
         end
 
         it 'never contributes egress' do
-          assert_equal :none, build(tool_name, workspace(private: true)).trifecta_legs.egress
+          assert_equal :no_egress, build(tool_name, workspace(private: true)).trifecta_legs.egress_payload_review
         end
       end
     end

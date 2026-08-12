@@ -31,17 +31,22 @@ module Pikuri
     #
     # @return [Pikuri::Tool::TrifectaLegs]
     INBOUND_LEGS = Pikuri::Tool::TrifectaLegs.new(
-      private: true, untrusted: :hard, egress: :none
+      private: true, untrusted: :hard, egress_payload_review: :no_egress
     ).freeze
 
     # Legs of the two opt-in outbound hand-offs.
     #
-    # +:human_approver+ rather than +:autonomous+ because all four clauses of
+    # +:human_reviewed+ rather than +:unreviewed+ because all four clauses of
     # the approver seat hold, and the load-bearing one is payload visibility:
     # the human commits in Thunderbird's own compose window / import wizard, so
     # what is on screen *is* what leaves, byte for byte. That is why these are
     # graded differently from a confirmer-gated shell command, where the human
     # approves a program whose output was never shown.
+    #
+    # The destination stays +:attacker_reachable+, and the pair is the clearest
+    # proof the two egress axes are orthogonal: the recipient is a drafted
+    # field, so an injection can address the mail to itself and a reviewed
+    # payload still lands in an inbox the attacker reads.
     #
     # It stays true only while the outbound surface carries nothing but fields
     # that render literally — no attachments, no HTML body. A tool that gained
@@ -57,7 +62,8 @@ module Pikuri
     #
     # @return [Pikuri::Tool::TrifectaLegs]
     OUTBOUND_LEGS = Pikuri::Tool::TrifectaLegs.new(
-      private: false, untrusted: :none, egress: :human_approver
+      private: false, untrusted: :none,
+      egress_payload_review: :human_reviewed, egress_destination: :attacker_reachable
     ).freeze
 
     LOADER = Zeitwerk::Loader.new

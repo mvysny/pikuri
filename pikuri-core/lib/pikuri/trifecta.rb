@@ -37,7 +37,7 @@ module Pikuri
   # Two operations move legs between nodes, and their asymmetry is the design:
   # +max+ in *parallel* (legs meeting at one node, {Pikuri::Tool::TrifectaLegs#|})
   # and +min+ in *series* (a leg squeezed through a delegation channel,
-  # {Pikuri::Tool::TrifectaLegs#cap_egress}). Severity is evaluated at every node
+  # {Pikuri::Tool::TrifectaLegs#cap_payload_review}). Severity is evaluated at every node
   # rather than only at the root, and the tree's verdict is the max over all of
   # them — which localizes a finding to the agent that actually holds it instead
   # of smearing a sub-agent's danger across its parent.
@@ -108,7 +108,7 @@ module Pikuri
 
         # A child with no recorded edge is treated as ungated: absent evidence
         # of a gate is not evidence of one.
-        contribution.cap_egress(child.channel_egress || :autonomous)
+        contribution.cap_payload_review(child.channel_egress || :unreviewed)
       end
     end
   end

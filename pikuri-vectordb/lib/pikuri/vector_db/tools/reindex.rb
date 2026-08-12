@@ -48,7 +48,7 @@ module Pikuri
             },
             # Hard untrusted: the observation reports what was indexed, and filenames
             # are corpus-authored. No egress — indexing is local.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
           )
         end
 

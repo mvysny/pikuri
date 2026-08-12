@@ -13,7 +13,7 @@ module Pikuri
     #            tool_legs: { 'read' => read_legs },
     #            children: [Node.new(label: 'RESEARCHER',
     #                                tool_legs: { 'fetch' => fetch_legs },
-    #                                channel_egress: :human_approver)])
+    #                                channel_egress: :human_reviewed)])
     #
     # Immutable.
     #
@@ -29,8 +29,9 @@ module Pikuri
     #   @return [Array<Node>] sub-agents this agent can dispatch to
     # @!attribute [r] channel_egress
     #   @return [Symbol, nil] how much egress the delegation channel *from the
-    #     parent* permits — +:human_approver+ when a human gates the hand-off,
-    #     +:autonomous+ otherwise. A property of the edge, stored on the child
+    #     parent* permits, on the {Pikuri::Tool::TrifectaLegs} review axis —
+    #     +:human_reviewed+ when a human gates the hand-off, +:unreviewed+
+    #     otherwise. A property of the edge, stored on the child
     #     because every child has exactly one parent edge; +nil+ at the root,
     #     which has none.
     class Node < Data.define(:label, :tool_legs, :children, :channel_egress)

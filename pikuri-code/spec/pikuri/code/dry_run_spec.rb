@@ -45,7 +45,7 @@ RSpec.describe 'trifecta dry run: pikuri-code' do
 
   # RESEARCHER and FILE_MINER, quarantined behind the sub-agent boundary.
   def web_tools
-    hard = Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :autonomous)
+    hard = Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :unreviewed)
     %w[web_search web_scrape fetch].map do |name|
       Pikuri::Tool.new(name: name, description: 'x',
                        parameters: Pikuri::Tool::Parameters.build { |_p| },

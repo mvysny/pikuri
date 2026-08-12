@@ -14,13 +14,22 @@ RSpec.describe 'bundled pikuri-core tool legs' do
     assert_equal Pikuri::Tool::TrifectaLegs::ASSUMED, Pikuri::Tool::FETCH.trifecta_legs
   end
 
-  it 'gives web_search hard egress while :egress_searchengine does not exist' do
-    # A search reaches a *pinned* sink, which is genuinely softer than an
-    # attacker-chosen host — but grading it lower without the level in the
-    # vocabulary would be a lie.
+  it 'gives web_search a tool-vouched destination — the one bundled tool that has one' do
+    # Nobody reviews the query, so the leg is unreviewed like fetch's; the whole
+    # difference is where it can land. The engine set is this repo's own, so an
+    # injection cannot steer the query at a host it can read back.
     tool = Pikuri::Tool::WebSearch.build(brave_key: nil, exa_key: nil)
-    assert_equal :autonomous, tool.trifecta_legs.egress
     assert_equal :hard, tool.trifecta_legs.untrusted
+    assert_equal :unreviewed, tool.trifecta_legs.egress_payload_review
+    assert_equal :tool_vouched, tool.trifecta_legs.egress_destination
+    assert_equal :attacker_reachable, Pikuri::Tool::FETCH.trifecta_legs.egress_destination
+  end
+
+  it 'keeps the vouched destination when a host key adds a paid engine' do
+    # The key picks *which* vouched engine, never a new destination — the claim
+    # would be a lie if a host could point the search at an arbitrary host.
+    tool = Pikuri::Tool::WebSearch.build(brave_key: 'k', exa_key: 'k')
+    assert_equal :tool_vouched, tool.trifecta_legs.egress_destination
   end
 
   it 'keeps a calculator-only agent silent' do

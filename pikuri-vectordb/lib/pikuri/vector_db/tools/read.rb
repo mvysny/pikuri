@@ -84,7 +84,7 @@ module Pikuri
               Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
             },
             # As {Search}: corpus bytes into the context, nothing outbound.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
           )
         end
 

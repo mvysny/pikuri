@@ -78,7 +78,7 @@ module Pikuri
           # the *whole machine's* file index, which is the AllowAll case by
           # construction — a reachable set nobody can vouch for, holding whatever the
           # user keeps on disk.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress: :none)
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress)
         )
       end
 

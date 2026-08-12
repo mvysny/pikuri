@@ -46,7 +46,7 @@ RSpec.describe 'Pikuri::Trifecta.build' do
   def egressing(name) = tool(name, Pikuri::Tool::TrifectaLegs::ASSUMED)
 
   def reading(name)
-    tool(name, Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress: :none))
+    tool(name, Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress))
   end
 
   def agent_with(&block)
@@ -75,7 +75,7 @@ RSpec.describe 'Pikuri::Trifecta.build' do
     end
 
     report = Pikuri::Trifecta.walk(Pikuri::Trifecta.build(agent, label: 'demo'))
-    assert_equal :none, report.legs.egress
+    assert_equal :no_egress, report.legs.egress_payload_review
     assert_equal :silent, report.tree_verdict, 'two legs only — the quarantine holds'
   end
 
@@ -86,7 +86,7 @@ RSpec.describe 'Pikuri::Trifecta.build' do
     end
 
     report = Pikuri::Trifecta.walk(Pikuri::Trifecta.build(agent, label: 'demo'))
-    assert_equal :autonomous, report.legs.egress
+    assert_equal :unreviewed, report.legs.egress_payload_review
     assert_equal :loud, report.tree_verdict
   end
 

@@ -18,7 +18,7 @@ RSpec.describe 'Thunderbird trifecta legs' do
     end
 
     it 'has no egress leg, which is the gem default posture' do
-      assert_equal :none, legs.egress
+      assert_equal :no_egress, legs.egress_payload_review
     end
   end
 
@@ -28,7 +28,7 @@ RSpec.describe 'Thunderbird trifecta legs' do
     it 'reaches the approver seat rather than autonomous egress' do
       # Payload visibility: the human commits in Thunderbird's own compose
       # window, so what is on screen is what leaves, byte for byte.
-      assert_equal :human_approver, legs.egress
+      assert_equal :human_reviewed, legs.egress_payload_review
     end
 
     it 'brings nothing untrusted back in' do
@@ -78,7 +78,7 @@ RSpec.describe 'Thunderbird trifecta legs' do
       )
       report = Pikuri::Trifecta.walk(node)
       assert_equal :soft, report.verdict
-      assert_equal %i[private untrusted_hard egress_human_approver], report.legs.to_tags
+      assert_equal %i[private untrusted_hard egress_reviewed], report.legs.to_tags
     end
   end
 end
@@ -87,8 +87,8 @@ end
 # Thunderbird tools live, so it is the only place that can assemble them
 # alongside a broad workspace.
 RSpec.describe 'trifecta dry run: pikuri-computer' do
-  def legs(private: false, untrusted: :none, egress: :none)
-    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress: egress)
+  def legs(private: false, untrusted: :no_egress, egress_payload_review: :no_egress)
+    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress_payload_review: egress_payload_review)
   end
 
   # Whole-host disk (AllowAll, declared private) + mail/calendar reads +
@@ -103,8 +103,8 @@ RSpec.describe 'trifecta dry run: pikuri-computer' do
     children = if internet
                  [Pikuri::Trifecta::Node.new(
                    label: 'RESEARCHER',
-                   tool_legs: { 'fetch' => legs(untrusted: :hard, egress: :autonomous) },
-                   channel_egress: :human_approver
+                   tool_legs: { 'fetch' => legs(untrusted: :hard, egress_payload_review: :unreviewed) },
+                   channel_egress: :human_reviewed
                  )]
                else
                  []
@@ -115,7 +115,7 @@ RSpec.describe 'trifecta dry run: pikuri-computer' do
   it 'is soft with the internet off — assembled, but the way out is human-gated' do
     report = Pikuri::Trifecta.walk(computer_node(internet: false))
     assert_equal :soft, report.tree_verdict
-    assert_equal %i[private untrusted_hard egress_human_approver], report.legs.to_tags
+    assert_equal %i[private untrusted_hard egress_reviewed], report.legs.to_tags
   end
 
   it 'stays soft with the internet on — the series cap holds the researcher at approver' do
@@ -123,7 +123,7 @@ RSpec.describe 'trifecta dry run: pikuri-computer' do
     # exceed the approved task string that feeds it.
     report = Pikuri::Trifecta.walk(computer_node(internet: true))
     assert_equal :soft, report.tree_verdict
-    assert_equal :human_approver, report.legs.egress
+    assert_equal :human_reviewed, report.legs.egress_payload_review
   end
 
   it 'makes the internet toggle verdict-neutral, as the note predicted' do
@@ -137,8 +137,8 @@ RSpec.describe 'trifecta dry run: pikuri-computer' do
       tool_legs: { 'read' => legs(private: true, untrusted: :hard) },
       children: [Pikuri::Trifecta::Node.new(
         label: 'RESEARCHER',
-        tool_legs: { 'fetch' => legs(untrusted: :hard, egress: :autonomous) },
-        channel_egress: :autonomous
+        tool_legs: { 'fetch' => legs(untrusted: :hard, egress_payload_review: :unreviewed) },
+        channel_egress: :unreviewed
       )]
     )
     assert_equal :loud, Pikuri::Trifecta.walk(node).tree_verdict

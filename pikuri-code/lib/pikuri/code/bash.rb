@@ -175,7 +175,7 @@ module Pikuri
           # sandbox governs what bash sees. Scope the workspace to a vouched-for
           # repo and +cat ~/Downloads/*+ still works under a full-root bind.
           #
-          # Note what this does *not* claim: +:human_approver+, though a
+          # Note what this does *not* claim: +:human_reviewed+, though a
           # +Confirmer+ is right there. The human approves a *command* — a
           # program, not a payload. Behind a pipe, a heredoc, +$(…)+ or a script
           # file, the bytes that egress are computed at runtime and were never on
@@ -183,10 +183,13 @@ module Pikuri
           # payload-visibility clause is what keeps a coding agent over a private
           # repo loud, and it is deliberately a literal here rather than
           # something a rule engine could talk itself out of.
+          #
+          # The destination axis is left to derive: a shell picks its own host,
+          # so a live leg here is always +:attacker_reachable+.
           trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
             private: filesystem.private?,
             untrusted: sandbox.confined_to_workspace? && filesystem.trusted? ? :none : :hard,
-            egress: sandbox.egress? ? :autonomous : :none
+            egress_payload_review: sandbox.egress? ? :unreviewed : :no_egress
           )
         )
       end

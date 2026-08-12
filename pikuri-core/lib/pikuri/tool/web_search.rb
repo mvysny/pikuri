@@ -47,16 +47,23 @@ module Pikuri
           execute: ->(query:, max_results: 10) { engines.search(query, max_results: max_results) },
           # Snippets are written by whoever ranks for the query, and the query
           # string itself leaves the machine — a search is an outbound channel
-          # even though nothing is "sent".
+          # even though nothing is "sent". Nobody reviews that query, hence
+          # +:unreviewed+; the whole difference from {FETCH} is the destination.
           #
-          # It reaches a *pinned* sink (an engine pikuri picked, not a host the
-          # attacker chose), which is a real difference from {FETCH} and the
-          # reason +:egress_searchengine+ is on the roadmap — as a second,
-          # orthogonal axis (can the attacker read the response back?), never a
-          # rung on {TrifectaLegs::EGRESS_ORDER}, which grades what the *human*
-          # saw. That axis is not in the vocabulary yet, and grading this leg
-          # lower without it would be a lie, so: hard egress.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs::ASSUMED
+          # +:tool_vouched+ against the three clauses: the caller supplies a
+          # query, never a host, and the engine set is this file's own
+          # ({Search::Engines}); a search engine does not republish the queries
+          # it receives; and the request rides TLS to a party with no
+          # relationship to the attacker. A host key adds Brave or Exa to that
+          # set, which is still *this code* choosing, not the model.
+          #
+          # It is not a claim that the leg is harmless. A secret can still be
+          # pushed out inside a query — it just cannot be read back, and only
+          # while this stays the agent's sole egress leg.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(
+            private: false, untrusted: :hard,
+            egress_payload_review: :unreviewed, egress_destination: :tool_vouched
+          )
         )
       end
     end

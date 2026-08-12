@@ -112,7 +112,8 @@ module Pikuri
       # raw +RubyLLM::Tool+ subclasses with no leg surface of their own (the
       # MCP-tool bypass seam) — so nothing downstream can declare them.
       #
-      # Hard +:untrusted+ and +:autonomous+ egress, unconditionally. A server's
+      # Hard +:untrusted+ and unreviewed, attacker-reachable egress, both
+      # unconditionally. A server's
       # reachable set is unknown by construction: the tool list arrives at
       # runtime from a server you didn't write, which is the whole-host case
       # rather than the scoped one, and no trust claim can be honest about it.

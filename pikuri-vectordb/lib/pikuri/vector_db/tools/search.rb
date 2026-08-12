@@ -93,7 +93,7 @@ module Pikuri
             # stays the quiet default rather than guessing. A private corpus is
             # under-warned; see +private:+ on {Pikuri::Workspace::Filesystem}
             # for the shape it would take.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
+            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
           )
         end
 

@@ -61,7 +61,7 @@ module Pikuri
           # — and loading one drops its text into the model's context verbatim. The
           # host may well trust its own catalogue, but the tool cannot tell a
           # hand-written skill from a downloaded +.agents/+ bundle.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress: :none)
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
         )
       end
     end

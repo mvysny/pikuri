@@ -61,7 +61,7 @@ module Pikuri
           # from earlier turns, so anything an injection got the agent to believe
           # *last week* comes back as trusted-looking recall today — a stored
           # injection with a delay fuse.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress: :none)
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress)
         )
       end
 

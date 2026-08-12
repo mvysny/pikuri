@@ -45,7 +45,7 @@ RSpec.describe 'Mcp trifecta contribution' do
       # arrives at runtime from a server you did not write.
       legs = contribution_for(stdio('openlibrary')).legs
       assert_equal :hard, legs.untrusted
-      assert_equal :autonomous, legs.egress
+      assert_equal :unreviewed, legs.egress_payload_review
     end
 
     it 'reaches exactly ASSUMED for a non-private surface' do

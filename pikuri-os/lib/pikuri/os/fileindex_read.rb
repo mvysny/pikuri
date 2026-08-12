@@ -63,7 +63,7 @@ module Pikuri
             FileindexRead.read(path: path, offset: offset, limit: limit, backend: backend)
           },
           # As {FileindexSearch}: whole-machine reach, so both inbound legs are fixed.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress: :none)
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: true, untrusted: :hard, egress_payload_review: :no_egress)
         )
       end
 

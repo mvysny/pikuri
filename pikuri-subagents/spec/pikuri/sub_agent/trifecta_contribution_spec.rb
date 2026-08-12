@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
-  def legs(private: false, untrusted: :none, egress: :none)
-    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress: egress)
+  def legs(private: false, untrusted: :none, egress_payload_review: :no_egress)
+    Pikuri::Tool::TrifectaLegs.new(private: private, untrusted: untrusted, egress_payload_review: egress_payload_review)
   end
 
   def tool(name, tool_legs)
@@ -12,8 +12,8 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
   end
 
   let(:web_tools) do
-    [tool('web_search', legs(untrusted: :hard, egress: :autonomous)),
-     tool('fetch', legs(untrusted: :hard, egress: :autonomous)),
+    [tool('web_search', legs(untrusted: :hard, egress_payload_review: :unreviewed)),
+     tool('fetch', legs(untrusted: :hard, egress_payload_review: :unreviewed)),
      tool('read', legs(private: true, untrusted: :hard))]
   end
 
@@ -46,18 +46,18 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
       def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
     end
     child = extension(confirmer: asking.new).trifecta_contribution(web_tools).children.first
-    assert_equal :human_approver, child.channel_egress
+    assert_equal :human_reviewed, child.channel_egress
   end
 
   it 'marks it autonomous under AUTO_APPROVE, so --no-confirm re-hardens the verdict' do
     child = extension(confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE)
             .trifecta_contribution(web_tools).children.first
-    assert_equal :autonomous, child.channel_egress
+    assert_equal :unreviewed, child.channel_egress
   end
 
   it 'marks it autonomous when no confirmer was wired at all' do
     child = extension(confirmer: nil).trifecta_contribution(web_tools).children.first
-    assert_equal :autonomous, child.channel_egress
+    assert_equal :unreviewed, child.channel_egress
   end
 
   describe 'walked into a parent' do
@@ -76,13 +76,13 @@ RSpec.describe 'SubAgent::Extension#trifecta_contribution' do
         def ask(request:) = Pikuri::Workspace::Confirmer::Approved.new(new_request_detail: request.detail)
       end
       report = parent_report(confirmer: asking.new)
-      assert_equal :human_approver, report.legs.egress
+      assert_equal :human_reviewed, report.legs.egress_payload_review
       assert_equal :soft, report.verdict
     end
 
     it 'goes loud once the gate is auto-approved' do
       report = parent_report(confirmer: Pikuri::Workspace::Confirmer::AUTO_APPROVE)
-      assert_equal :autonomous, report.legs.egress
+      assert_equal :unreviewed, report.legs.egress_payload_review
       assert_equal :loud, report.verdict
     end
   end

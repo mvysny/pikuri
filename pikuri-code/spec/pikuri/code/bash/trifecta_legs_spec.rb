@@ -22,7 +22,7 @@ RSpec.describe 'Bash trifecta legs' do
     let(:none) { Pikuri::Code::Bash::Sandbox::NONE }
 
     it 'takes egress from the sandbox posture, not from the tool name' do
-      assert_equal :autonomous, bash(sandbox: none).trifecta_legs.egress
+      assert_equal :unreviewed, bash(sandbox: none).trifecta_legs.egress_payload_review
     end
 
     it 'severs the egress leg when the sandbox answers no' do
@@ -31,7 +31,7 @@ RSpec.describe 'Bash trifecta legs' do
         def self.egress? = false
         def self.confined_to_workspace? = true
       end
-      assert_equal :none, bash(sandbox: severed).trifecta_legs.egress
+      assert_equal :no_egress, bash(sandbox: severed).trifecta_legs.egress_payload_review
     end
 
     it 'inherits the private leg from the workspace declaration' do
@@ -60,8 +60,8 @@ RSpec.describe 'Bash trifecta legs' do
       # Payload visibility fails: the human approves a program, not a payload.
       # This is what keeps a coding agent over a private repo loud.
       legs = bash(sandbox: none, private: true).trifecta_legs
-      assert_equal :autonomous, legs.egress
-      refute_equal :human_approver, legs.egress
+      assert_equal :unreviewed, legs.egress_payload_review
+      refute_equal :human_reviewed, legs.egress_payload_review
     end
 
     it 'is a full hard trifecta over a private repo — the one loud verdict in the repo' do

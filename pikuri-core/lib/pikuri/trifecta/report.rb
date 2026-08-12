@@ -16,10 +16,10 @@ module Pikuri
     #
     # {#verdict} is *derived, never stored*: +Data#with+ would otherwise let a
     # copy carry a severity that contradicts its own legs. It reads presence
-    # (+!= :none+, correct for any level ever added) and matches strength
-    # exhaustively, so introducing a lattice level without placing it in the
-    # grid raises on the first wiring that reaches it rather than being silently
-    # absorbed into +:soft+.
+    # (leg-absence, correct for any level ever added) and matches strength
+    # exhaustively across all three graded axes, so introducing a lattice level
+    # without placing it in the grid raises on the first wiring that reaches it
+    # rather than being silently absorbed into +:soft+.
     #
     # Immutable.
     #
@@ -61,13 +61,17 @@ module Pikuri
       # @raise [NoMatchingPatternError] if a lattice level exists that this grid
       #   does not place — deliberate, so a new level cannot be absorbed silently
       def verdict
-        return :silent unless legs.private && legs.untrusted != :none && legs.egress != :none
+        return :silent unless legs.private && legs.untrusted != :none && legs.egress?
 
-        case [legs.untrusted, legs.egress]
-        in [:hard, :autonomous]     then :loud
-        in [:hard, :human_approver] then :soft
-        in [:weakened, :autonomous] then :soft
-        in [:weakened, :human_approver] then :soft
+        case [legs.untrusted, legs.egress_payload_review, legs.egress_destination]
+        in [:hard,     :unreviewed,      :attacker_reachable] then :loud
+        in [:hard,     :unreviewed,      :tool_vouched]       then :soft
+        in [:hard,     :human_reviewed,  :attacker_reachable] then :soft
+        in [:hard,     :human_reviewed,  :tool_vouched]       then :soft
+        in [:weakened, :unreviewed,      :attacker_reachable] then :soft
+        in [:weakened, :unreviewed,      :tool_vouched]       then :soft
+        in [:weakened, :human_reviewed,  :attacker_reachable] then :soft
+        in [:weakened, :human_reviewed,  :tool_vouched]       then :soft
         end
       end
 
@@ -99,10 +103,10 @@ module Pikuri
       #
       #   Trifecta: soft
       #
-      #   pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
-      #     mail_compose [:private, :egress_human_approver]
+      #   pikuri-computer [:private, :untrusted_hard, :egress_reviewed]
+      #     mail_compose [:private, :egress_reviewed]
       #     calculator []
-      #     RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
+      #     RESEARCHER [gate: human_reviewed] [:untrusted_hard, :egress]
       #       fetch [:untrusted_hard, :egress]
       #
       #   See book/trifecta-detector.md in this repo for ...
@@ -166,7 +170,7 @@ module Pikuri
       # @return [String] e.g. +"2 of 3 legs (private, untrusted); no egress leg found"+
       def presence(legs)
         held = { 'private' => legs.private, 'untrusted' => legs.untrusted != :none,
-                 'egress' => legs.egress != :none }
+                 'egress' => legs.egress? }
         "#{held.count { |_, v| v }} of 3 legs (#{held.select { |_, v| v }.keys.join(', ')}); " \
           "no #{held.reject { |_, v| v }.keys.join('/')} leg found"
       end
@@ -184,26 +188,38 @@ module Pikuri
       end
 
       # @param legs [Pikuri::Tool::TrifectaLegs]
-      # @param axis [Symbol]
+      # @param axis [Symbol] +:private+, +:untrusted+ or +:egress+
       # @return [Boolean]
       def leg_present?(legs, axis)
-        axis == :private ? legs.private : legs.public_send(axis) != :none
+        case axis
+        in :private then legs.private
+        in :untrusted then legs.untrusted != :none
+        in :egress then legs.egress?
+        end
       end
 
-      # The fix, per cell of the verdict grid — the three +soft+ cells want
-      # three different answers, which is why this reads the legs rather than
-      # the verdict symbol.
+      # The fix, per cell of the verdict grid — the soft cells want different
+      # answers, which is why this reads the legs rather than the verdict symbol.
       #
       # @param legs [Pikuri::Tool::TrifectaLegs]
       # @return [String]
       def advice(legs)
-        case [legs.untrusted, legs.egress]
-        in [:hard, :autonomous]
+        # A vouched destination is fragile in a way the other attenuations are
+        # not: it survives only while it is the *sole* egress leg, since the
+        # union hardens the whole node the moment one attacker-reachable tool
+        # joins it. Say so, rather than let the soft verdict read as settled.
+        if legs.egress_destination == :tool_vouched
+          return 'sever egress outright — bytes still leave, they merely reach a destination the ' \
+                 'attacker cannot read back, and one attacker-reachable tool re-hardens this node'
+        end
+
+        case [legs.untrusted, legs.egress_payload_review]
+        in [:hard, :unreviewed]
           'sever egress (a network-off sandbox), or privilege-separate the step that reads untrusted content'
         in [:hard, _]
           'privilege-separate the step that reads untrusted content, or declare the workspace trusted ' \
             'if you vouch for every byte it can reach'
-        in [:weakened, :autonomous]
+        in [:weakened, :unreviewed]
           'sever egress — the untrusted leg is already attenuated by delegation'
         in [:weakened, _]
           'both legs are already attenuated; narrow what counts as private, or drop a leg outright'

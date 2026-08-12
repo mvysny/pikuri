@@ -129,7 +129,7 @@ module Pikuri
           trifecta_legs: Tool::TrifectaLegs.new(
             private: workspace.filesystem.private?,
             untrusted: workspace.filesystem.trusted? ? :none : :hard,
-            egress: :none
+            egress_payload_review: :no_egress
           )
         )
       end

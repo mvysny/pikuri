@@ -14,6 +14,6 @@ RSpec.describe 'recall trifecta legs' do
   end
 
   it 'has no egress leg' do
-    assert_equal :none, tool.trifecta_legs.egress
+    assert_equal :no_egress, tool.trifecta_legs.egress_payload_review
   end
 end
