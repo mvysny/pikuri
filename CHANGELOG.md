@@ -32,7 +32,7 @@ boot.
 - Add `Skill::Extension#schedule_load_skill` — enqueue-only, main-agent-only host-driven skill loading; the host then runs the loop.
 - Add a `kind` to `Control::Interloper` items — `:user` (a mid-loop turn) or `:system` (reference text landing as `add_message(:system)`) — delivered at turn start, plus an `on_change` hook that fires when the pending count moves.
 - Add `Paths.new_temp` / `Paths.config` / `Paths.state` — per-process ephemeral scratch reaped at exit, alongside the shared `Paths.cache` that `UrlCache` now uses. See `DECISIONS.md` `D-per-process-temp`.
-- Add `Agent::EmptyTurnError` — a blank turn against a `:system`-only conversation now completes on providers that keep `:system` in the messages array and raises on the ones that hoist it (`Agent::SYSTEM_HOISTING_PROVIDERS`), instead of silently returning `false`.
+- Add `Agent::EmptyTurnError` — a blank turn against a `:system`-only conversation now completes on providers that keep `:system` in the messages array and raises on the ones that hoist it into a top-level field (Anthropic, Bedrock), instead of silently returning `false`.
 - Add startup trust prompts to `bin/pikuri-code` — it asks whether the project is private (feeding the trifecta map) and whether the repo is trusted (gating read-only `git` auto-approval), and prepends the user's `~/.claude/CLAUDE.md` to the system prompt.
 - Add an `include_gitignored` parameter to `Grep` / `Glob`, replacing a hint that told the model to shell out to `rg --no-ignore`.
 - Add `Pikuri::Code::Extension` — one-call wiring for the pikuri-code-only pieces.
