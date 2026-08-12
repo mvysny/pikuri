@@ -126,10 +126,16 @@ chapter by name ("the security chapter") — never by ordinal.
 why inserting a chapter costs one file plus one ToC line instead of
 renaming fourteen files and rewriting ~500 references. Named refs also
 can't rot: a name survives a reordering that silently falsifies an
-ordinal. Grep tripwire, and keep this file free of the pattern too:
-`grep -rniE 'chapters? ?[0-9]+|\bch\.? ?[0-9]+\b' --include='*.md' --include='*.txt' .`
-and `grep -rnoE '[0-9]{2}-[a-z-]+\.md' .` both hit nothing (outside
-`ideas/`, which is transient).
+ordinal. **The rule covers yardoc, gemspec comments and `bin/` scripts,
+not just prose** — a header saying "the guide's ch&lt;N&gt;" rots exactly like a
+chapter does, and outlives it, since nobody rereads a comment. Point at
+the file (`book/os-assistant.md`), the form `Report::FOOTER` uses.
+Grep tripwire — unfiltered, so extensionless `bin/` scripts count — and
+keep this file free of the pattern too:
+`grep -rniE 'chapters? ?[0-9]+|\bch\.? ?[0-9]+\b' --exclude-dir=.git .`
+and `grep -rnoE '[0-9]{2}-[a-z-]+\.md' .` both hit nothing (`ideas/`
+included — it is transient, so it may carry the pattern in flight, but
+today it does not).
 
 Everything pikuri ships lives under `Pikuri::`, contributed by each gem's
 own Zeitwerk loader. `Pikuri::PROMPT_DIRS` is likewise cooperative: each

@@ -9,7 +9,7 @@ module Pikuri
     # the *read* half (resolve the XDG path, load content, size-warn,
     # render the prompt section); the *write* half is the ordinary
     # (confirmed) +write+/+edit+ tools plus a prompt line pointing the agent
-    # at {.default_path}. Narrative in the guide's ch7.
+    # at {.default_path}. Narrative in book/os-assistant.md.
     #
     # A markdown file, not mem0: this agent reads untrusted local content
     # (logs, downloads), so auto-extracted memory could be poisoned. A file

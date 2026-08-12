@@ -44,8 +44,8 @@ module Pikuri
       SEVERITY = %i[silent soft loud].freeze
 
       # Closing pointer of {#advisory}. Names the chapter by *slug*, not by
-      # number: book chapters are ordered only by `book/README.md`, so this
-      # path survives a reordering that would silently falsify "chapter 10".
+      # ordinal: book chapters are ordered only by `book/README.md`, so this
+      # path survives a reordering that would silently falsify a number.
       #
       # @return [String]
       FOOTER = 'See book/trifecta-detector.md in this repo.'

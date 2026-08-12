@@ -19,7 +19,7 @@ module Pikuri
     # this agent roams the full disk (no containment), *every* writable
     # Write/Edit confirms with a diff and an unwritable target
     # short-circuits to "ask the user to sudo" (see
-    # {Pikuri::Workspace::WriteGate}, guide ch7). +Bash+ gets the same
+    # {Pikuri::Workspace::WriteGate}, book/os-assistant.md). +Bash+ gets the same
     # confirmer plus a {Pikuri::Code::Bash::PassiveCommandDetector}, so
     # provably passive commands skip the prompt and everything else
     # reaches the human — bash mutations and file-tool writes both always

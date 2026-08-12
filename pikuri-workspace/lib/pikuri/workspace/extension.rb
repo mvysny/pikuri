@@ -66,7 +66,7 @@ module Pikuri
       #   short-circuits unwritable targets; +false+ (default) keeps the classic
       #   policy. {Write} takes it directly; {Edit} infers the posture from
       #   whether a confirmer was passed, so this reaches Edit as
-      #   +confirmer+-or-+nil+. See the guide's ch7.
+      #   +confirmer+-or-+nil+. See book/os-assistant.md.
       def initialize(filesystem:, confirmer:, read_only: nil, confirm_all_writes: false)
         @workspace = Workspace.new(filesystem: filesystem)
         @confirmer = confirmer

@@ -31,7 +31,7 @@ module Pikuri
     # use {WriteGate} regardless). +true+ (the OS-helper posture) also confirms
     # the *new-file* branch via {WriteGate} — every writable write confirms, an
     # unwritable target short-circuits without prompting. +false+ (default) writes
-    # new files silently; only overwrites confirm. See the guide's ch7.
+    # new files silently; only overwrites confirm. See book/os-assistant.md.
     #
     # == Why ask-on-overwrite (Edit doesn't)
     #

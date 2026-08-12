@@ -13,8 +13,8 @@ require 'pikuri-code'
 # on pikuri-code but NOT pikuri-mcp/-memory/-vectordb. The two cross-cutting
 # pieces (+FullFsNoNet+ sandbox, passive-command detector) live in
 # pikuri-code with the other OS-touching primitives. Design notes:
-# +pikuri-os/DESIGN.md+ (the file-index engine survey) and the guide's
-# ch7 (the security narrative).
+# +pikuri-os/DESIGN.md+ (the file-index engine survey) and
+# book/os-assistant.md (the security narrative).
 Pikuri::PROMPT_DIRS << File.expand_path('../prompts', __dir__)
 
 module Pikuri
