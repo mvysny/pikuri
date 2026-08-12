@@ -51,9 +51,11 @@ module Pikuri
           #
           # It reaches a *pinned* sink (an engine pikuri picked, not a host the
           # attacker chose), which is a real difference from {FETCH} and the
-          # reason a softer +:egress_searchengine+ level is on the roadmap. It
-          # is not in the vocabulary yet, and grading this leg lower without it
-          # would be a lie, so: hard egress.
+          # reason +:egress_searchengine+ is on the roadmap — as a second,
+          # orthogonal axis (can the attacker read the response back?), never a
+          # rung on {TrifectaLegs::EGRESS_ORDER}, which grades what the *human*
+          # saw. That axis is not in the vocabulary yet, and grading this leg
+          # lower without it would be a lie, so: hard egress.
           trifecta_legs: Pikuri::Tool::TrifectaLegs::ASSUMED
         )
       end

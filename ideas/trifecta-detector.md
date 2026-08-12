@@ -31,8 +31,10 @@ their derivations, which is why they read as argument rather than spec.
 **done** (2026-08-12 — the chapter is `book/trifecta-detector.md`; see
 "Docs — GRADUATED" below for what moved and what one thread stayed). The
 live work is now entirely the parked list below, of which step 6
-(`:egress_searchengine` + a `SEARCHER` persona) is the only item with a
-defined slot.
+(`:egress_searchengine` — the attacker-readability axis, the tag on
+`web_search`, and the verdict clauses that place it) is the only item with a
+defined slot. **Rescoped 2026-08-12:** it no longer carries a persona — see
+step 6 for why the search-only persona was dropped rather than deferred.
 
 Parked threads, older than that review:
 
@@ -43,9 +45,10 @@ Parked threads, older than that review:
    on `AllowAll`). See review item 4.
 3. `:egress_searchengine` (was `:egress_writeonly`) — deferred but
    **scheduled as step 6** of §5's order-of-work (2026-08-09), after v1's
-   algorithm lands: a search-only persona is the cheapest fix for the one
-   hole the series cap leaves open, and the tag, the axis and the persona
-   ship together or not at all.
+   algorithm lands. **Rescoped 2026-08-12** from "tag + axis + persona,
+   together or not at all" to tag + axis + grid, *no persona*: the tag is
+   reachable on the **map** the day it ships, which is where its teaching
+   value lives.
 4. `git_clone` as a readable egress verb + the per-agent **poisoned**
    assumption question (may already be the untrusted-strength lattice).
 5. Graded egress axis — **resolved into v1** (2026-08-08): two reachable
@@ -696,7 +699,12 @@ Notes on doing it well:
   the destination host nor can read the response body, **and** the
   request is not attacker-readable in flight or at rest (excludes DNS;
   excludes a search whose engine the attacker chose/compromised).
-- **Lattice + union.** Treat it as a *soft* egress, twin of
+- **Lattice + union.** *(Superseded on the placement, kept for the union
+  reasoning: this bullet reads the tag as a rung on the single egress
+  lattice. It is a separate **axis** — see "Do not merge this with
+  `:egress_searchengine`" and step 6. Everything below about `max`, the
+  sole-leg guard and the drip channel survives the move unchanged.)*
+  Treat it as a *soft* egress, twin of
   `untrusted_weakened`: `none < egress_searchengine < egress`, union = max.
   `{private, untrusted, egress_searchengine}` → **soft notice** (secret can
   be pushed out but not retrieved — a real, large reduction, matching the
@@ -706,24 +714,21 @@ Notes on doing it well:
   only safe as the **sole** egress leg — the moment a second readable
   action exists, results-that-depend-on-the-secret become a targeting
   stage and it's hard again.
-- **It changes no current verdict, so defer the tag** — now with a slot:
-  **step 6** of §5's order-of-work, after v1's algorithm has settled. Every
-  persona that
-  holds `web_search` (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds
-  `fetch` + `web_scrape` → hard egress dominates; there is no search-only
-  agent in the tree today. The tag only earns its keep paired with a
-  **search-only persona** (no `fetch`, no `web_scrape`), at which point the
-  soft verdict becomes reachable and meaningful. Ship them together or not
-  at all. Filed as a deferred idea, not v1.
-- **Re-priced 2026-08-08: the pairing now has a concrete motivation.** The
-  deferral above reads as "inert until someone happens to want a search-only
-  persona." It is better than that: a search-only persona is the **cheapest
-  available fix for the one hole the series cap leaves open** in
-  `pikuri-computer` — the rubber-stamped `y` on a clean laundered task
-  ("Reassembled trifecta" below). Pin the destination and a rubber-stamp
+- **It changes no current *verdict*** — and that was long read as a reason
+  to defer the whole thing. Every persona that holds `web_search`
+  (`RESEARCHER`, `GIT_REPO_RESEARCHER`) *also* holds `fetch` + `web_scrape`
+  → hard readable egress dominates at the same node (verified 2026-08-09);
+  there is no search-only agent in the tree, so no node's *max* egress is
+  ever the new level. Still true, and still the reason this is step 6 rather
+  than part of v1.
+- **Re-priced 2026-08-08: a search-only wiring has a concrete motivation.**
+  It is the **cheapest available fix for the one hole the series cap leaves
+  open** in `pikuri-computer` — the rubber-stamped `y` on a clean laundered
+  task ("Reassembled trifecta" below). Pin the destination and a rubber-stamp
   leaks to a pikuri-picked engine instead of to the attacker, so the soft
   verdict would rest on two independent grounds rather than leaning entirely
-  on the gate plus the researcher's missing filesystem.
+  on the gate plus the researcher's missing filesystem. This is what such a
+  wiring would *buy*; it is not what makes the tag shippable.
 
 - **Third input, 2026-08-09: the map makes it a *visible* wart.** The
   host-rendered tree (§5(f)) prints `web_search` and `fetch` on adjacent
@@ -736,10 +741,19 @@ Notes on doing it well:
   whose whole job is legibility, printing a distinction-free line about the
   one distinction the note argues hardest for.
 
-  The fork, not a free win: a researcher that cannot open the pages it finds
-  is much weaker — snippets only. So this is probably a **second persona**
-  (`SEARCHER` alongside `RESEARCHER`) and a host choosing between them per
-  wiring, not a crippled `RESEARCHER`. Pricing that trade is the open part.
+- **Fourth input, 2026-08-12, and it dissolves the "ship together" rule:
+  there are two reachabilities, and only one of them needs a persona.**
+  *Verdict-reachable* — a node whose max egress is search-only — needs a
+  search-only wiring. *Render-reachable* — a **leaf** line in the map — is
+  reachable the day the tag ships, in `pikuri-computer`'s existing tree, with
+  no persona at all. The teaching value the third input names lives entirely
+  in the second: a reader who sees `web_search [… :egress_searchengine]`
+  above `fetch [… :egress]` has to ask what separates them, which is the
+  whole lesson about who chose the destination. So the tag is not decoration
+  without a persona — it is *inert in the verdict* and *live in the map*.
+  (This is also the distinction that keeps item 7's precedent off:
+  `egress_human_author` was unreachable in **both** senses and forever;
+  see the guard under item 7.)
 
 ## Brainstorm: is a synced folder an egress sink? (the `Write` gap)
 
@@ -946,8 +960,10 @@ finding #2 was asking for — see the revised table under "Results".
 *attacker readability of the response*; payload visibility grades *what
 the human saw*. Genuinely orthogonal — a readable human-gated egress and a
 blind autonomous one are different animals. The 2-D (untrusted × egress)
-grid stays 2-D; nobody builds the third axis while write-only is still
-unreachable for want of a search-only persona.
+grid stayed 2-D through v1, when write-only was unreachable in every sense.
+*Amended 2026-08-12:* step 6 does build the third axis — the trigger is the
+**map**, not a verdict, and the axis stays orthogonal there too. Merging is
+still wrong; what changed is only that "nobody builds it yet" expired.
 
 #### The attachment corollary: constrain the surface, not just the seat
 
@@ -1706,32 +1722,63 @@ designed as an addition on top of it. Not a sixth item of v1 — a separate
 increment with its own design pass, listed here so it has a slot and a
 definition of done instead of floating as an open thread.
 
-- **What ships, and it is all three together or none:** the `SEARCHER`
-  persona (`web_search` only), the readability axis on the egress leg, and
-  the verdict clauses that read it. The tag alone is decoration — verified
-  2026-08-09 that every persona holding `web_search` (`RESEARCHER`,
-  `GIT_REPO_RESEARCHER`) also holds `fetch`/`web_scrape`, so hard readable
-  egress dominates at the same node and no wiring can reach the new level.
-  Shipping an unreachable level is the exact defect `egress_human_author` was
-  dropped for (item 7), one increment later.
-- **Prerequisite, and it is not a detector question:** price the
-  `RESEARCHER` / `SEARCHER` fork per wiring. A search-only persona cannot
-  open the pages it finds — snippets only — so either `pikuri-computer` keeps
-  `RESEARCHER` (and the level stays unreachable in practice) or the flagship
-  demo trades away page-reading. That is a capability decision about the
-  demo; the detector must not be what forces it.
+*Rescoped 2026-08-12.* This step used to read "the tag, the axis and a
+`SEARCHER` persona ship together or not at all", on the grounds that the tag
+alone is decoration. That was written before the fourth input above, and it
+is wrong in both directions: the tag is *not* decoration (it is live in the
+map on day one), and the piece it was bundled with is the piece that should
+not ship at all yet.
+
+- **What ships, and it is these three together:** the attacker-readability
+  axis on the egress leg, the tag on `web_search`, and the verdict clauses
+  that place it. Not two of the three — see the next bullet for why the grid
+  is not deferrable once the tag exists.
+- **The grid clauses are not optional, and this is the part the old plan
+  under-priced.** Item 6 defends "raise, don't rescue" on the grounds that
+  *"the only way to reach it is an in-repo edit to a lattice."* That
+  justification expires the moment `web_search` carries the tag: any host
+  wiring `web_search` over a private workspace with no `fetch`/`web_scrape`
+  lands `{private, :hard, searchengine}`, falls through the four-clause
+  `case/in` and gets `NoMatchingPatternError` at boot. A tripwire designed to
+  catch *us* becomes a stranger's crash. Placing the level in the grid is the
+  cheap half of this step anyway; do it in the same commit as the tag.
 - **The cost inside the algorithm:** this is a **third axis**, not a third
-  rung. Readability grades what the *attacker* can read back; payload
-  visibility grades what the *human* saw — orthogonal, so the egress leg
-  becomes a pair and item 6's verdict grows from 4 exhaustive clauses to 8
-  (untrusted 2 × visibility 2 × readability 2). Budget that, and re-read
-  "Do not merge this with `:egress_searchengine`" before trying to flatten it
-  into the existing lattice.
-- **Why deferring is safe rather than merely cheap:** item 6's exhaustive
-  `case/in` means the first wiring that reaches an unplaced level raises
-  `NoMatchingPatternError` instead of being silently absorbed into `soft`.
-  That property was chosen for exactly this deferral; it is what makes "later"
-  a decision rather than a rot.
+  rung — and prose in two places used to say otherwise. `TrifectaLegs` has a
+  single `EGRESS_ORDER`, `web_search.rb`'s declaration comment called
+  searchengine "a softer level" (corrected 2026-08-12), and this section's
+  own "Lattice + union" bullet still places it as a rung (marked superseded).
+  Readability grades what the *attacker* can read back; payload
+  visibility grades what the *human* saw. Orthogonal, so the egress leg
+  becomes a pair: a fourth field, componentwise `max` in `#|`, a rule for the
+  new component in `#cap_egress` and `#relabel_inbound`, and item 6's verdict
+  grows from 4 exhaustive clauses to 8 (untrusted 2 × visibility 2 ×
+  readability 2). Budget that, and re-read "Do not merge this with
+  `:egress_searchengine`" before trying to flatten it into the existing
+  lattice. One design question the pair raises: componentwise `max` over a
+  node holding *both* `web_search` (autonomous, pinned) and a compose tool
+  (approver, readable) yields (autonomous, readable) — a pair no single tool
+  has. That over-warns, which is the declared bias, but say so at the seam.
+- **The map must make the absorption legible, or the tag mis-teaches.** A
+  leaf reading `pinned` under a node reading `readable` invites "search is
+  the safe one here" when at that node it buys nothing. Rendered so the union
+  is visible, the same lines teach the second half — `max` at a node, and
+  *pinned-sink egress is only soft as the **sole** egress leg*. That guard is
+  already argued in this section; the render is where a reader meets it.
+- **Dropped, not deferred: the `SEARCHER` persona.** Earlier drafts of this
+  step invented a `web_search`-only persona to sit alongside `RESEARCHER` so
+  the soft verdict would be reachable. Don't build synthetic personas ahead of
+  a wiring that wants one — a search-only researcher cannot open the pages it
+  finds (snippets only), so the fork is a real capability trade for whichever
+  demo adopts it, and **the detector must not be what forces that trade**.
+  Nothing is lost by waiting: the day a host wants a search-only agent, the
+  persona is a `Persona` record and a prompt file, and this section's
+  definition of the level is what it plugs into. Until then the level is
+  verdict-unreachable *by wiring* rather than by definition — the state item
+  7's guard explicitly blesses.
+- **Consequence of that drop, stated plainly so it isn't re-litigated:** step
+  6 changes **no dry-run row**. Its whole return is the map, the vocabulary,
+  and a grid that is ready for the first search-only wiring instead of
+  raising at it.
 
 ### 6. v1 buys exactly one bit per lattice — RESOLVED: the verdict is derived, never stored
 
@@ -1912,9 +1959,17 @@ agent does not hold. Two notes, two routes, same conclusion.
 a different kind. A search-only egress is a *real* rung — bytes genuinely
 leave, they are merely unreadable to the attacker — on the orthogonal
 attacker-readability axis, and it is unreachable only for want of a
-search-only persona, not by definition. `human_author` collapses into
-`:none`; `egress_searchengine` does not collapse into anything. Ship it the
-day a `SEARCHER` persona does, per its own section.
+search-only wiring, not by definition. `human_author` collapses into
+`:none`; `egress_searchengine` does not collapse into anything.
+
+*Sharpened 2026-08-12.* The two are unreachable in different senses, and the
+distinction is now the load-bearing one: `human_author` is unreachable in the
+**verdict** and on the **map** and always will be (there is nothing for a
+tool to declare). `egress_searchengine` is unreachable only in the verdict,
+and only until someone wires a search-only agent — on the map it is live the
+day `web_search` declares it. So it ships on its own schedule (step 6), and
+the persona that would make it verdict-reachable is not being invented in
+advance.
 
 **Graduation note for whoever builds v1:** when the detector lands in source,
 this drop plus the rejected proxy-visible middle rung (item 2) are one
@@ -2074,10 +2129,13 @@ into the bullets below.
   approver gate is not holding the leg.
 - **Not** in v1, but scheduled: `:egress_searchengine` is **step 6** of the
   order-of-work — a separate increment on top of the settled algorithm,
-  shipping the tag, the readability axis and a `SEARCHER` persona together or
-  not at all. It changes no current verdict, and it is a third *axis* rather
-  than a third rung, so folding it into v1 would double the verdict function
-  to buy a level no wiring can reach.
+  shipping the attacker-readability axis, the tag on `web_search`, and the
+  verdict clauses that place it. **No persona** (rescoped 2026-08-12): it
+  changes no current verdict and none is invented to make it do so; what it
+  buys on day one is the **map**, where `web_search` and `fetch` stop
+  printing identical tags. It is a third *axis* rather than a third rung, so
+  folding it into v1 would have doubled the verdict function before the
+  algorithm settled.
 - Warn-only, once per process, message names the leg to break. (Safe as
   stated — item 3 verified that no leg can appear after boot: `mcp_connect`
   activates only already-registered servers and the registry is frozen.)
