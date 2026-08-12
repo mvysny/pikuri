@@ -54,6 +54,15 @@ everywhere, the soft/loud split already encodes poisoned-vs-pristine and a
 separate flag is redundant. Unverified — the job is to hunt for a scenario the
 lattice can't express, and to add the flag only if one exists.
 
+**The argument to beat, from the runtime side:**
+[`private-context-taint.md`](private-context-taint.md) refuses exactly this
+kind of nuance for its own taint — coarse-and-honest, because a model blends
+everything, so *a private source was called* is the entire rule. A static
+grader knows strictly less than a runtime one, so if per-node nuance is
+unsound there it needs a very good reason to be sound here. (Different leg —
+that note tracks `:private`, this asks about `:untrusted` — which is why the
+question lives here and not there.)
+
 Three parts of this are settled and shouldn't be relitigated:
 
 - **The laundering channel is modelled.** A poisoned parent putting a secret
