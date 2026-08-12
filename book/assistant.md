@@ -96,9 +96,13 @@ The intended shape, therefore:
   egress, so a boss compromised by a poisoned web page could still
   be steered to exfiltrate what the librarian returned. The
   genuine break is a non-LLM decision point between the
-  untrusted-input step and the egress step — human-gated egress —
-  which is itself unbuilt. See `ideas/trifecta-detector.md` and
-  [the security chapter](security.md).
+  untrusted-input step and the egress step. A human-gated egress
+  leg *is* built — it's what the OS assistant's approved research
+  task and Thunderbird's compose window are — but it only softens
+  the verdict, never silences it: see [the security
+  chapter](security.md) and [Measuring the
+  trifecta](trifecta-detector.md), which is also where the limits
+  of a human in that seat are argued.
 
 **Prerequisite, not yet built.** Wiring the boss *without*
 `vectordb_search` while still handing it to the `LIBRARIAN`

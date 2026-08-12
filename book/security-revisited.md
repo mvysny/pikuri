@@ -236,7 +236,16 @@ out of it.
 
 ## What's next
 
-[MCPs revisited](mcp-revisited.md) picks the MCP
+[Measuring the trifecta](trifecta-detector.md) closes the security
+arc by turning it into a check you can run. Everything so far has
+been you counting legs by hand; that chapter is the machine doing
+it over your actual wiring at boot — and it's where the map every
+binary has been printing since the first chapter finally gets
+explained. It also settles the question this chapter leaves
+hanging: `pikuri-code` over a private repo is the *one* loud
+verdict in the repo, and the two declarations that move it.
+
+Then [MCPs revisited](mcp-revisited.md) picks the MCP
 thread back up at the harder end of the spectrum: the official
 GitHub MCP server in Docker, npx and pip packages of unknown
 provenance, Playwright with its open-web surface, and the full

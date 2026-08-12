@@ -43,12 +43,12 @@ module Pikuri
       # @return [Array<Symbol>]
       SEVERITY = %i[silent soft loud].freeze
 
-      # Closing pointer of {#advisory}. Deliberately names no chapter: the
-      # owning book chapter is still unwritten, and a placeholder would outlive
-      # it.
+      # Closing pointer of {#advisory}. Names the chapter by *slug*, not by
+      # number: book chapters are ordered only by `book/README.md`, so this
+      # path survives a reordering that would silently falsify "chapter 10".
       #
       # @return [String]
-      FOOTER = 'See the book in this repo.'
+      FOOTER = 'See book/trifecta-detector.md in this repo.'
 
       # How dangerous *this node* is — the tree's verdict is {#tree_verdict}.
       #
@@ -105,7 +105,7 @@ module Pikuri
       #     RESEARCHER [gate: human_approver] [:untrusted_hard, :egress]
       #       fetch [:untrusted_hard, :egress]
       #
-      #   See the book in this repo for ...
+      #   See book/trifecta-detector.md in this repo for ...
       #
       # An agent line carries its *folded* legs and a tool line its own, so
       # propagation shows up as layout: the parent above holds egress that no
@@ -125,8 +125,8 @@ module Pikuri
       #   [TRIFECTA: HARD] pikuri-code — private(read, bash) + untrusted(read,
       #   bash) + egress(bash). An injection in what this agent reads can drive
       #   an exfiltration. Break a leg: sever egress (a network-off sandbox), or
-      #   privilege-separate the step that reads untrusted content. See the book
-      #   in this repo.
+      #   privilege-separate the step that reads untrusted content.
+      #   See book/trifecta-detector.md in this repo.
       #
       # A clean verdict never says "no trifecta detected". This reasons about
       # capability presence, so a quiet result is not a clean bill of health —

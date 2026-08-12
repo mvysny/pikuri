@@ -120,13 +120,14 @@ out `rake test` and orchestrates `rake release VERSION=x.y.z` in lockstep.
 `docs/guide/` in July 2026.)
 
 **Chapters are named, not numbered** (August 2026). Files are
-`security.md` / `code.md`, H1s carry no number, and prose refers to
-"the security chapter" — never "chapter 6". `book/README.md` is the
-**single source of truth for order**, which is why inserting a chapter
-costs one file plus one ToC line instead of renaming fourteen files and
-rewriting ~500 references. Named refs also can't rot: "the security
-chapter" survives a reordering that silently falsifies "chapter 6".
-Grep tripwire: `grep -rniE 'chapters? ?[0-9]+|\bch\.? ?[0-9]+\b' --include='*.md' --include='*.txt' .`
+`security.md` / `code.md`, H1s carry no number, and prose refers to a
+chapter by name ("the security chapter") — never by ordinal.
+`book/README.md` is the **single source of truth for order**, which is
+why inserting a chapter costs one file plus one ToC line instead of
+renaming fourteen files and rewriting ~500 references. Named refs also
+can't rot: a name survives a reordering that silently falsifies an
+ordinal. Grep tripwire, and keep this file free of the pattern too:
+`grep -rniE 'chapters? ?[0-9]+|\bch\.? ?[0-9]+\b' --include='*.md' --include='*.txt' .`
 and `grep -rnoE '[0-9]{2}-[a-z-]+\.md' .` both hit nothing (outside
 `ideas/`, which is transient).
 

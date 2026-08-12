@@ -135,6 +135,16 @@ gem, landing once they stabilise.
   What `pikuri-code`'s defaults actually protect and where they
   stop, plus wrapping the whole pikuri process in Docker for
   when the in-process defenses aren't enough.
+- **[Measuring the trifecta](trifecta-detector.md).** Closes the
+  security arc across both tracks: the map every binary has been
+  printing at boot since the first chapter, finally explained.
+  Capability presence versus data flow and why it only ever warns,
+  who declares each leg, the two strength lattices behind
+  loud/soft/silent, the structural test for whether a human gate
+  counts (**does the human see the bytes, or a proxy for them?**),
+  how legs propagate across a delegation, and how to tag a tool you
+  write yourself. Worked example: one binary, three verdicts, two
+  declarations.
 - **[MCPs revisited: containerised servers](mcp-revisited.md).**
   The harder MCP shapes: the official GitHub MCP in Docker as
   the worked example, plus npx- and pip-based community MCPs,

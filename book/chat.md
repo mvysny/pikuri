@@ -207,6 +207,27 @@ In a second terminal, leaving `llama-server` running:
 ./pikuri-core/bin/pikuri-chat
 ```
 
+Before the prompt appears, four lines scroll past:
+
+```
+Trifecta: pikuri-chat — 2 of 3 legs (untrusted, egress); no private leg found.
+
+pikuri-chat [:untrusted_hard, :egress]
+  web_search [:untrusted_hard, :egress]
+  calculator []
+  web_scrape [:untrusted_hard, :egress]
+  fetch [:untrusted_hard, :egress]
+```
+
+That's pikuri auditing the agent it just wired, and every demo
+binary prints it. The one-sentence version: this agent can read
+web pages someone else wrote and can send bytes out, but nothing
+of yours is wired in for it to leak — two of the three
+capabilities that make prompt injection dangerous, so the set is
+incomplete. The [security chapter](security.md) explains why those
+three, and [Measuring the trifecta](trifecta-detector.md) explains
+how to read the map in full. For now you can scroll past it.
+
 You'll get a `>` prompt. Try something the model can't answer from
 memory alone — that's where the tools come in:
 

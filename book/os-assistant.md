@@ -742,6 +742,17 @@ beside the egress tells you *how bad*. Part 1 → Part 2 was a presence move
 legs, a bigger pool, a richer channel). Reading a wiring means asking both
 questions, never just one.
 
+One refinement, which [Measuring the trifecta](trifecta-detector.md)
+makes precise: **a leg's *presence* is binary, but its *strength* is
+not.** The compose gate below is the case in point — it's a genuine
+egress leg (assembled, no partial credit) that is nonetheless weaker
+than an autonomous one, because you see the exact bytes before they
+leave. So severity grades on two independent things: the size of the
+private pool, *and* how strong each leg is. That's why
+`pikuri-computer` reports **soft** rather than the loudest verdict —
+assembled and warned, but not the same animal as an agent that can
+send bytes nobody read.
+
 ## What the gate is — and isn't
 
 It's tempting to rank the two egress gates as "the researcher makes you

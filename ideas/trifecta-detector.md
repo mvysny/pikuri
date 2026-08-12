@@ -27,11 +27,12 @@ bottom of this file, so the normative sections above it still describe flat
 egress (each carries a superseded marker); and resolved items are kept as
 their derivations, which is why they read as argument rather than spec.
 
-**Where to pick up.** Nothing in v1 is outstanding. The live work is the
-parked list below — step 6 (`:egress_searchengine` + a `SEARCHER` persona) is
-the only one with a defined slot; the docs pass is the only one that v1 has
-made *due* rather than optional, since the detector now prints at every
-`bin/` boot and no chapter explains it.
+**Where to pick up.** Nothing in v1 is outstanding, and the docs pass is
+**done** (2026-08-12 — the chapter is `book/trifecta-detector.md`; see
+"Docs — GRADUATED" below for what moved and what one thread stayed). The
+live work is now entirely the parked list below, of which step 6
+(`:egress_searchengine` + a `SEARCHER` persona) is the only item with a
+defined slot.
 
 Parked threads, older than that review:
 
@@ -67,7 +68,10 @@ Parked threads, older than that review:
    the LLM, not the human) → advise dropping the poisoned context, don't
    auto-teardown. Spun out to
    [`injection-tripwire.md`](injection-tripwire.md).
-7. How/where to surface all of this in docs + example scripts.
+7. ~~How/where to surface all of this in docs + example scripts.~~
+   **Done 2026-08-12** — `book/trifecta-detector.md`. See "Docs —
+   GRADUATED" below; one thread (the contrast with typed transport
+   classes) survives there, owned by that note rather than this one.
 8. **Should the map name orphaned sub-agent tools?** Found 2026-08-09 by
    reading `bin/pikuri-computer`'s output: `git_clone` appears nowhere, and
    that is correct — `Code::Extension` registers it unconditionally "solely
@@ -1942,50 +1946,31 @@ inconsistency. The terminal's `[e] edit` seat is runtime hardening that the
 book and `DESIGN.md` should keep crediting, and the classifier keeps
 ignoring — the same split, with nothing left to justify.*
 
-## Open: propagating this to docs + example scripts
+## Docs — GRADUATED 2026-08-12
 
-**Now due, not optional (2026-08-09).** v1 shipped, so every `bin/pikuri-*`
-prints a trifecta map at boot and the closing line says "see the book in this
-repo" — while no chapter explains what any of it means. That is the one piece
-of v1 whose absence a user actually hits. It is also the *last* thing this
-note owes: everything else here is either shipped or deliberately parked.
+*The reader half of this note now lives in `book/trifecta-detector.md`
+("Measuring the trifecta"), placed after `security-revisited.md`: reading
+the map and the advisory, capability-presence-not-data-flow and the two
+under-warns, warn-never-block, the declaration asymmetry, the two strength
+lattices and the verdict grid, the payload-visibility test, what the
+detector refuses to grade, propagation (max parallel / min series), the
+one-binary-three-verdicts walkthrough, and how to tag your own tool.*
 
-Independent of the rule set (this is about presentation). To
-brainstorm next (the *what*, not yet the technical *how*):
+*The same pass did the three things this section asked for. The
+`os-assistant.md` reconciliation shipped — presence binary, strength not,
+severity grading on pool size **and** leg strength. `security.md` gained
+§"Counting the legs by machine" as the automation of its own step 1, and
+`chat.md` explains the boot banner at first sight of it. And `Report::FOOTER`
+now names the chapter (`book/trifecta-detector.md`), which it could not do
+while chapters were numbered — the book was de-numbered in the same session
+precisely so a shipped pointer could name a chapter without rotting.*
 
-- **Reconcile ch7's "binary in presence" with the graded legs.**
-  `book/os-assistant.md` §"The lesson, both axes in one line" teaches
-  that the trifecta is *binary in presence* and *graded in severity by the
-  size of the private pool*. That is not wrong, but it is now incomplete:
-  the egress leg is tri-state (none / approver-gated / autonomous) and the
-  untrusted leg two-state. The fix keeps ch7's actual teaching point — no
-  partial credit for 2.5 legs, which is what kills "we're probably fine" —
-  and adds that a leg's **presence** is binary while its **strength** is
-  not, so severity grades on two independent things: pool size *and* leg
-  strength. An approver-gated egress leg is still a leg: assembled, warned,
-  not silent. Batch this with whatever else ch7 needs when the detector
-  lands, rather than piecemeal.
-- Which `bin/pikuri-*` and `book/` examples deliberately *should*
-  trip the detector as a teaching moment, and which should be wired to
-  stay quiet so the contrast is legible.
-- Where the named concepts (`:private` as a user-declared property,
-  loud vs soft, "separation raises the bar but doesn't break it") get a
-  guide chapter — likely alongside `security.md` /
-  `security-revisited.md`. **Deliberately deferred until the detector is
-  built and has settled** (2026-08-09): writing the chapter against a
-  design that has moved twice in two days would teach a shape that then
-  changes. Both output artifacts are written to need no chapter *name*, so
-  this blocks nothing — see §5(f)'s closing line.
-- ~~Whether the detector's output is purely a log line or also a
-  documented `Agent`-level query a host can render.~~ **Answered
-  2026-08-09: both, split by owner.** Core logs a one-line advisory (once
-  per process, mandatory); `Agent#trifecta` exposes the `Report` tree and
-  hosts render it with `#render` — **every** `bin/` script as an educational
-  boot banner, always and with no flag; a future `pikuri-tui` behind
-  `/trifecta`. See §5(f).
-- How it reads next to the typed-transport-classes idea so the two
+One docs thread stays open, because it is about a *different* note:
+
+- How this reads next to the typed-transport-classes idea, so the two
   privacy stories (endpoint-private vs agent-holds-the-legs) don't
-  confuse.
+  confuse. Neither is taught yet; whoever writes the transport-classes
+  material owns the contrast.
 
 ## v1 scope, in one place
 

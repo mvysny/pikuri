@@ -172,7 +172,7 @@ RSpec.describe Pikuri::Trifecta do
         untrusted(fileindex_read) + egress(mail_compose). An injection in what this agent \
         reads can drive an exfiltration. Break a leg: privilege-separate the step that reads \
         untrusted content, or declare the workspace trusted if you vouch for every byte it \
-        can reach. See the book in this repo.
+        can reach. See book/trifecta-detector.md in this repo.
 
         pikuri-computer [:private, :untrusted_hard, :egress_human_approver]
           fileindex_read [:private, :untrusted_hard]

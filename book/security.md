@@ -236,6 +236,50 @@ heart of this chapter:
    [The security-revisited chapter](security-revisited.md#wrapping-pikuri-in-docker)
    walks the trade-offs end to end.
 
+### Counting the legs by machine
+
+Step 1 above — *count the legs on each agent* — is the one step
+you shouldn't do by hand, and pikuri doesn't. Every `bin/pikuri-*`
+walks the agent it just wired, tags each tool with the legs it
+contributes, folds in what reaches the agent through its
+sub-agents, and prints the result at boot. It's the map you've
+been scrolling past since [your first
+conversation](chat.md).
+
+Three verdicts:
+
+- **silent** — a leg is missing. The line still reports what it
+  found (`2 of 3 legs (untrusted, egress); no private leg found`)
+  and never says "no trifecta detected".
+- **soft** — all three legs present, but at least one is
+  attenuated: untrusted content that only arrives via a sub-agent,
+  or egress that stops at a human who sees the actual outbound
+  bytes.
+- **loud** — all three at full strength. Exactly one wiring in
+  this repo earns it, and it earns it by design.
+
+Two things to hold onto, because they're what keeps the check
+honest. It reasons about **capability presence, not data flow** —
+so it can prove you have the ingredients, and can prove neither
+that you're exploitable nor that you're safe. And it **warns,
+never blocks**: if a clean result ever gated execution, people
+would read it as a safety certificate, which is precisely the
+claim it cannot make.
+
+Why the demos are mostly quiet is the asymmetry in who declares
+what. Pikuri can tell that `fetch` reaches the network and that a
+scraped page isn't yours; it *cannot* tell whether the directory
+you pointed it at holds secrets or scratch. So the private leg is
+yours to declare — `Filesystem.new(..., private: true)` — and
+defaults off. Point an agent at a public checkout and it stays
+silent; point the same agent at your real work repo and it speaks
+up, which is the moment worth hearing about.
+
+[Measuring the trifecta](trifecta-detector.md) is the full
+treatment: reading the map, the strength lattices behind soft
+versus loud, the structural test for whether a human gate counts,
+and how to tag a tool you write yourself.
+
 ## Code trust: the short axis
 
 Everything above is about untrusted *content*. There's a quieter,
