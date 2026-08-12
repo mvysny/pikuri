@@ -57,7 +57,7 @@ writable playground via `Dir.mktmpdir` — its path is exposed as
 
 - **Narrative walkthrough:** the "Workspace seam" and "Confirmer
   seam" sections of
-  [chapter 8 of the pikuri guide](../book/08-code.md) — what
+  [the coding-agent chapter of the pikuri guide](../book/code.md) — what
   each kwarg of `Filesystem.new` controls, when to use the
   `AllowAll` variant, and how the seams fit alongside `Sandbox`.
 - **API reference:** browse the YARD docs at

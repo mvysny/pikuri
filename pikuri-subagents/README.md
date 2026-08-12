@@ -65,8 +65,7 @@ fan-out-biased system prompt.
 
 ## Further reading
 
-- **Narrative walkthrough:** [chapter 2 of the pikuri
-  guide](../book/02-subagents.md) — the `Persona` record,
+- **Narrative walkthrough:** [the sub-agents chapter of the pikuri guide](../book/subagents.md) — the `Persona` record,
   the `configure` + `bind` Extension protocol, what gets inherited
   vs. owned when a parent spawns a child, and the
   privilege-separation story.

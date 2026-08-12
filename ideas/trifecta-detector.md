@@ -362,7 +362,7 @@ the `fetch` whitelist is killed.
 ### Shipped instance (partial): `pikuri-os --with-internet`
 
 *Graduated 2026-08-08. The wiring and its reasoning are taught in
-`book/07-os-assistant.md` Part 2 (§"Quarantine, don't grant" — kernel-severed
+`book/os-assistant.md` Part 2 (§"Quarantine, don't grant" — kernel-severed
 bash plus a no-filesystem `RESEARCHER`, so the parent holds zero direct
 egress and the one surviving channel is the task string; §"The gate — what
 leaves the machine stops for you" — the `y`-approves / `e`-authors split and
@@ -964,7 +964,7 @@ tool's runtime gate).
 *Graduated 2026-08-08. The argument — the entropy floor, the transcription
 price that a tool-less agent actually pays, the drip across many short
 queries, and the "don't offer it as reassurance" consequence — is now
-taught in `book/07-os-assistant.md` §"Why 'too big to hide' is not a
+taught in `book/os-assistant.md` §"Why 'too big to hide' is not a
 defense" and stated for the mail seat in `pikuri-thunderbird/DESIGN.md`.
 The same pass softened ch7's two "forces a conspicuous blob" claims, which
 were the reassurance this section forbids.*
@@ -1830,7 +1830,7 @@ That is why `Report` carries `legs` (§5(e)), and why a slimmer
 #### `:private` stays a boolean — a deliberate divergence from ch7
 
 Two lattices *plus one bool*; union on private is `||`. Worth stating,
-because `book/07-os-assistant.md` teaches severity as graded by the **size of
+because `book/os-assistant.md` teaches severity as graded by the **size of
 the private pool**, and the docs bullet below already owes that
 reconciliation. The answer: pool size is a *human* severity axis; the
 detector declines to measure it, for the same reason it declines to grade
@@ -1954,7 +1954,7 @@ Independent of the rule set (this is about presentation). To
 brainstorm next (the *what*, not yet the technical *how*):
 
 - **Reconcile ch7's "binary in presence" with the graded legs.**
-  `book/07-os-assistant.md` §"The lesson, both axes in one line" teaches
+  `book/os-assistant.md` §"The lesson, both axes in one line" teaches
   that the trifecta is *binary in presence* and *graded in severity by the
   size of the private pool*. That is not wrong, but it is now incomplete:
   the egress leg is tri-state (none / approver-gated / autonomous) and the
@@ -1970,8 +1970,8 @@ brainstorm next (the *what*, not yet the technical *how*):
   stay quiet so the contrast is legible.
 - Where the named concepts (`:private` as a user-declared property,
   loud vs soft, "separation raises the bar but doesn't break it") get a
-  guide chapter — likely alongside `06-security.md` /
-  `09-security-revisited.md`. **Deliberately deferred until the detector is
+  guide chapter — likely alongside `security.md` /
+  `security-revisited.md`. **Deliberately deferred until the detector is
   built and has settled** (2026-08-09): writing the chapter against a
   design that has moved twice in two days would teach a shape that then
   changes. Both output artifacts are written to need no chapter *name*, so

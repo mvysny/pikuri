@@ -13,7 +13,7 @@ already homed and does **not** live here:
 - The **reader-level posture** — reads-are-safe / writes-need-a-human,
   confirm-every-writable-write, the unwritable short-circuit, no
   sensitive-path list, `AllowAll` + empty denylist behind a container —
-  is book ch7 and ch8.
+  is the book's OS-assistant chapter and the coding-agent chapter.
 - Every **per-symbol contract** (the containment walk, the `AllowAll`
   credential denylist, ripgrep argv + truncation, strict-match Edit,
   `ReadOnly`'s thread-safety) is the owning class's YARD header.
@@ -62,4 +62,4 @@ Edit has:
 - A **new-file** write hits neither guard — nothing to have read,
   nothing to clobber — so it writes silently (until the confirm-all-writes
   posture opts even new files into a prompt; that posture is a separate
-  axis, taught in book ch7).
+  axis, taught in the book's OS-assistant chapter).

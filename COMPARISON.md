@@ -499,7 +499,7 @@ operational one takes over — exactly Claude Code's territory. And
 Claude Code's visible investment in reducing confirmation fatigue
 (smarter triage so the human is interrupted less, and better when they
 are) is the same conclusion driving pikuri's confirmer-as-last-line-of-defense
-framing (book [chapter 6](book/06-security.md) §"The human gate, and why
+framing (book [the security chapter](book/security.md) §"The human gate, and why
 fatigue is the enemy"; the not-yet-shipped seam residue in
 `ideas/more-confirmers.md`): for an *attended*
 coding agent the human gate is the load-bearing control, and its whole

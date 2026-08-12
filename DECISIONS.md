@@ -46,7 +46,7 @@ rejected, it isn't a decision — it's how the thing works, and that's
 yardoc. This is the guard against a diary. Nor is an entry warranted when
 the fork is already argued somewhere durable — a rejected alternative with
 real teaching value belongs to the **book** (worked example: the
-MoE-vs-dense-model argument, book ch1), and this file would only duplicate
+MoE-vs-dense-model argument, the book's first-conversation chapter), and this file would only duplicate
 it.
 
 **Newest first.** Entries run reverse-chronologically by decided date, so a

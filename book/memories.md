@@ -1,10 +1,10 @@
-# Chapter 4 — Memories
+# Memories
 
 By the end of this chapter you'll have a chat agent that **remembers
 you across conversations** — tell it you're vegetarian and that your
 main project is a Ruby agent toolkit, quit, come back tomorrow, ask
 "what do you know about me?", and it answers from what you told it
-yesterday. Where chapter 3's vector DB gave the agent recall *over a
+yesterday. Where the vector-DB chapter's vector DB gave the agent recall *over a
 corpus you handed it*, memories are recall *of notes the agent took
 itself* — facts it extracted from your side of the conversation,
 stored, and surfaced back when they're relevant. You'll also have a
@@ -15,13 +15,13 @@ internet.
 
 The defaults — local llama, no tools that could send your data out,
 verified MCPs — are designed to be safe even with real data;
-[chapter 6](06-security.md) explains why. Every earlier chapter
+[the security chapter](security.md) explains why. Every earlier chapter
 carried that reassurance as a forward promise. This is the chapter
 where it stops being abstract: you are about to give the assistant a
 durable place to keep facts about you, accumulated passively, and
 recalled automatically. A memory store *is* private data by
 definition — and a private store plus an outbound leg is exactly the
-exfiltration risk [chapter 6](06-security.md) names. So the demo
+exfiltration risk [the security chapter](security.md) names. So the demo
 agent is wired with no outbound leg at all: its only tools are
 `recall` and a calculator, and it has no `web_search`, no `fetch`, no
 `bash`. Why that single absence is what makes *automatic* capture and
@@ -63,10 +63,10 @@ nothing and injects nothing.
 slice hints there's more on a topic than the few facts it surfaced,
 the model calls `recall(topic: …)` to dig. This is the "mined, deep"
 mode — the model's own decision, the same Thought → Tool-call →
-Observation loop from chapter 1, with memory sitting alongside
+Observation loop from the first-conversation chapter, with memory sitting alongside
 `calculator` as a capability it reaches for when warranted.
 
-If that two-step shape feels familiar, it's the one chapter 3 already
+If that two-step shape feels familiar, it's the one the vector-DB chapter already
 ships: prefetch is to `recall` what `vectordb_search` (a cheap ranked
 slice) is to `vectordb_read` (pull the hit in full). Memory reuses the
 pattern, just with a different source — the agent's own notes — and a
@@ -97,7 +97,7 @@ needs a second model, which the next section sets up.
 
 ## Prerequisites: a non-reasoning extractor and the mem0 sidecar
 
-Two new pieces on top of chapter 3's setup: one more model in your
+Two new pieces on top of the vector-DB chapter's setup: one more model in your
 llama.cpp router, and a small Docker stack for the store.
 
 ### 1. A non-reasoning extraction model
@@ -121,13 +121,13 @@ llama-server -hf bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M
 ```
 
 It's a chat model, so it needs the chat template — the router's
-global `--jinja` from chapter 1 already covers that. One preset entry
+global `--jinja` from the first-conversation chapter already covers that. One preset entry
 is worth adding, because mem0 sends only an output-length cap and
 never a context size, and the default can be too small for mem0's
 update-decision step:
 
 ```ini
-# ~/.config/llama.cpp/presets.ini  (alongside chapter 3's entries)
+# ~/.config/llama.cpp/presets.ini  (alongside the vector-DB chapter's entries)
 
 [bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M]
 hf-repo  = bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M
@@ -135,7 +135,7 @@ ctx-size = 16384
 ```
 
 This is the **fourth** model your router knows about (chat + embedder
-+ reranker from chapter 3, now + extractor). The memory demo doesn't
++ reranker from the vector-DB chapter, now + extractor). The memory demo doesn't
 use the reranker, so its resident set is chat + extractor + embedder
 — the extractor is bigger than the reranker it replaces in the
 working set, so on a tight 32 GB card watch the router evict; on 48 GB
@@ -161,7 +161,7 @@ oldest and most-adopted open-source agent-memory library — with
 install either by hand; pikuri runs them as a self-managed Docker
 sidecar, the same "let pikuri supervise the container" pattern —
 and the same Qdrant engine, pinned to the same image tag —
-chapter 3 used. `Pikuri::Memory::Mem0Server` clones mem0 at
+the vector-DB chapter used. `Pikuri::Memory::Mem0Server` clones mem0 at
 a pinned commit, builds the image, and brings up a `docker compose`
 stack of mem0 + Qdrant (**no Postgres**, see
 ["Storage"](#storage-mem0--qdrant-no-postgres) below) plus a ~5 MB
@@ -171,7 +171,7 @@ interface.
 
 That needs **`docker` (with the compose plugin), `git`, and
 `socat`** on `PATH` — all four are part of
-[chapter 0](00-prerequisites.md)'s rootless setup. The first run
+[the prerequisites chapter](prerequisites.md)'s rootless setup. The first run
 builds the mem0 image and takes a few minutes;
 the clone lives under `~/.cache/pikuri/mem0/temp/git` and the data
 under `~/.cache/pikuri/mem0/data/` (bind-mounted into the containers),
@@ -183,9 +183,9 @@ and the supervisor is skipped entirely.
 
 There's a wrinkle worth thirty seconds, because it's a small
 security lesson in its own right. The extractor and embedder run
-*inside* the mem0 container, but chapter 1's `llama-server` binds
+*inside* the mem0 container, but the first-conversation chapter's `llama-server` binds
 the host's `127.0.0.1:8080` — and with
-[chapter 0](00-prerequisites.md)'s rootless Docker, a container
+[the prerequisites chapter](prerequisites.md)'s rootless Docker, a container
 **cannot reach services bound to your host's `127.0.0.1` at all**.
 That's not a bug to work around; it's rootless networking shipping
 `--disable-host-loopback` on purpose. Loopback-only services tend
@@ -196,7 +196,7 @@ them expect a container on the other end of the line.
 The first fix a search engine will offer is
 `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false`.
 **Don't.** It's daemon-wide: *every* container — including the
-deliberately untrusted MCP servers chapters 5 and 10 put in
+deliberately untrusted MCP servers the two MCP chapters put in
 containers precisely so they can't touch your machine — would gain
 a network path to *every* loopback service on the host. You'd be
 drilling through the exact wall those chapters build.
@@ -287,7 +287,7 @@ toolset:
   by `Pikuri::Memory::Extension.new(client:, user_id:)`, the same
   `c.add_extension` opt-in shape as `pikuri-tasks` and
   `pikuri-vectordb`.
-- The `calculator` from chapter 1, so non-memory arithmetic still
+- The `calculator` from the first-conversation chapter, so non-memory arithmetic still
   works.
 
 That's the whole list. **No `web_search`, no `web_scrape`, no
@@ -306,7 +306,7 @@ mem0 owns the parts pikuri deliberately doesn't reimplement:
 embedding your text, running the extraction LLM, and storing the
 resulting facts. pikuri talks to it over a thin Faraday HTTP client
 (`Mem0Client`) and supervises its containers (`Mem0Server`) — the
-exact split chapter 3 used for Qdrant.
+exact split the vector-DB chapter used for Qdrant.
 
 Two non-obvious choices are baked into the sidecar:
 
@@ -393,7 +393,7 @@ about the *same* attribute invokes the recency rule.
 
 Everything above describes a feature that, on the wrong agent, would
 be a liability. A memory store is private data (one leg of the
-*lethal trifecta* [chapter 6](06-security.md) names in full), and the
+*lethal trifecta* [the security chapter](security.md) names in full), and the
 worse problem is the **write** side: auto-extraction feeds a turn to
 an LLM and asks what to save — and a turn can include tool
 observations. If this agent could fetch a web page, that page could
@@ -432,17 +432,17 @@ private agent, both visible in the transcript:
   invisible to the extractor*.
 
 This is the same "give the agent no dangerous tools" privilege
-boundary chapter 3 used for the corpus, applied to memory: you verify
+boundary the vector-DB chapter used for the corpus, applied to memory: you verify
 it by reading the tool list, not by trusting a filter. And it has the
 same limit. The moment you want *one* agent that remembers you, reads
 your notes, *and* browses the web, the private store has to be
 quarantined behind a sub-agent with no egress — the privilege
-separation from [chapter 2](02-subagents.md). The safety scope here is
+separation from [the sub-agents chapter](subagents.md). The safety scope here is
 a **hard boundary, not advice**: porting memory onto an egress-capable
 agent re-opens recall-poisoning, and you'd have to re-derive the
 mitigations (cap recall size, frame recalled text as untrusted, log
-every recall) before doing it. [Chapter 6](06-security.md) makes the
-full argument; [chapter 13](13-assistant.md) is where memory, vector
+every recall) before doing it. [The security chapter](security.md) makes the
+full argument; [the universal-assistant chapter](assistant.md) is where memory, vector
 search, and MCP finally share one agent and the cuts have to be made.
 
 ## The forget story
@@ -477,20 +477,20 @@ for readers who want the full design journey rather than the tour.
 
 ## What's next
 
-Chapters 3 and 4 are the two halves of recall: vector search *over a
+This chapter and the vector-DB one are the two halves of recall: vector search *over a
 corpus you indexed*, and memory *of facts the agent learned about
 you*. They pair naturally inside `pikuri-assistant`
-([chapter 13](13-assistant.md)) — but that's still a few chapters off,
+([the universal-assistant chapter](assistant.md)) — but that's still a few chapters off,
 and it's the chapter where these private capabilities first share an
 agent that *also* has egress, so it leans hardest on the security kit.
 
-Before that, [chapter 5 — Your first MCP server](05-mcp.md) adds the
+Before that, [Your first MCP server](mcp.md) adds the
 last capability the assistant needs: external tool servers that give
 the agent integrations pikuri itself doesn't ship. It goes one step
 gentler than this chapter — the server you wire in reads only a public
 book catalogue, so nothing of yours is at stake while you learn the
-mechanics. Then [chapter 6 — Security](06-security.md) is the chapter
-every "chapter 6 explains why" reassurance has been pointing at: read
+mechanics. Then [Security](security.md) is the chapter
+every "the security chapter explains why" reassurance has been pointing at: read
 it before pointing a memory-equipped agent at anything you care about.
 
-→ Continue to [chapter 5 — Your first MCP server](05-mcp.md).
+→ Continue to [Your first MCP server](mcp.md).

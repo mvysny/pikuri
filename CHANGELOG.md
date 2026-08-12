@@ -19,10 +19,10 @@ uses semver as documented in `lib/pikuri/version.rb`.
   magic sniff keeps beating HTML's content-type match under lying
   headers. Wired by `bin/pikuri-corpus` (PDF corpora, no docker
   needed); deliberately NOT by `bin/pikuri-chat`, which stays pure
-  pikuri-core (guide ch1) — scraping a PDF there now surfaces
-  `Error: ...` until ch3 plugs the extractor in. Pick-one-per-wiring
+  pikuri-core (the guide's first-conversation chapter) — scraping a PDF there now surfaces
+  `Error: ...` until the vector-DB chapter plugs the extractor in. Pick-one-per-wiring
   with pikuri-extractors' new PDF arm: `bin/pikuri-assistant`
-  registers `DOCUMENTS` instead, superseding this gem in the ch13
+  registers `DOCUMENTS` instead, superseding this gem in the universal-assistant chapter
   shape (untrusted documents on an egress-capable agent parse in the
   sandbox); this gem is the no-infrastructure wiring with lazy
   paging and PDF-specific Read-tool wording.

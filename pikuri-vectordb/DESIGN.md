@@ -1,7 +1,7 @@
 # pikuri-vectordb design notes
 
 The settled design rationale that fits neither the user-facing guide
-chapter ([`book/03-vectordb.md`](../book/03-vectordb.md))
+chapter ([`book/vectordb.md`](../book/vectordb.md))
 nor the per-class YARD headers. Currently it holds one thing: the
 backend-engine survey behind the decision to add a Qdrant backend
 alongside Chroma, and to recommend Qdrant as the persistent default.
@@ -143,7 +143,7 @@ Why Qdrant gets the recommendation, in pikuri-specific order:
    technology to learn, audit, and trust — and one image on disk —
    instead of two. (Instances stay separate; only the engine
    converges. Sharing one instance is a possible later step, gated on
-   the ch13 assistant wiring.)
+   the universal-assistant wiring.)
 2. **Wire-surface stability.** Qdrant's 1.x REST has been stable since
    2023; Chroma has one major API break on record. Pikuri hand-rolls
    its backend clients, so API churn is paid in pikuri's own code.

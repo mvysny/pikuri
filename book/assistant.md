@@ -1,17 +1,17 @@
-# Chapter 13 — pikuri-assistant (stub)
+# pikuri-assistant (stub)
 
 > **Stub chapter, and the book's coda.** `pikuri-assistant` exists
 > as a binary in the repo, but the surface it integrates — vector-DB
-> recall ([chapter 3](03-vectordb.md)), persistent memories
-> ([chapter 4](04-memories.md)), MCP ([chapter 5](05-mcp.md)) —
+> recall ([the vector-DB chapter](vectordb.md)), persistent memories
+> ([the memories chapter](memories.md)), MCP ([the MCP chapter](mcp.md)) —
 > isn't all stable yet. This chapter is a placeholder until those
 > land. For now: a one-paragraph "what it is," and a TBD list of
 > what the full chapter will cover.
 
 Every other agent in this book holds at most two of the trifecta's
-three legs. The OS assistant ([chapter 7](07-os-assistant.md)) keeps
+three legs. The OS assistant ([the OS-assistant chapter](os-assistant.md)) keeps
 the disk and severs the network; the coding agent
-([chapter 8](08-code.md)) keeps the network and confines the disk.
+([the coding-agent chapter](code.md)) keeps the network and confines the disk.
 `pikuri-assistant` is the one binary that *reaches for all three* —
 an assistant that remembers things about you (private data), looks
 across your notes, browses the web, and plugs into MCP servers
@@ -19,7 +19,7 @@ across your notes, browses the web, and plugs into MCP servers
 the parent if you're not careful. That's exactly why it's last, and
 why it's still a stub: the chapter that walks it through end-to-end
 is the chapter that has to show which legs each piece holds and where
-the kit ([chapter 6](06-security.md)) cuts — and the quarantined
+the kit ([the security chapter](security.md)) cuts — and the quarantined
 wiring that makes those cuts real isn't built yet (below).
 
 ## What it is, in one paragraph
@@ -28,9 +28,9 @@ wiring that makes those cuts real isn't built yet (below).
 the pikuri lineup — a Q&A-shaped sibling to `pikuri-code`, but
 without the file-edit / shell stack that makes the coding agent
 the dense one. Its toolset, on the design board: vector-DB recall
-over your notes (chapter 3), persistent memories about you across
-conversations (chapter 4), a curated set of MCP servers you wired
-in (chapter 5), and the four bundled tools from chapter 1
+over your notes (the vector-DB chapter), persistent memories about you across
+conversations (the memories chapter), a curated set of MCP servers you wired
+in (the MCP chapter), and the four bundled tools from the first-conversation chapter
 (calculator, web search, web scrape, fetch). All four pieces have
 been introduced by the time you reach this chapter; the chapter's
 job is to show how they compose into a single binary that's
@@ -38,10 +38,10 @@ useful for a non-developer audience — somebody who wants an AI
 assistant that knows their notes and stays on their machine, not
 somebody who wants help refactoring code.
 
-## Documents: the sandbox takes over from chapter 3
+## Documents: the sandbox takes over from the vector-DB chapter
 
 One piece of the assistant is already real and worth reading now.
-[Chapter 3](03-vectordb.md) plugged PDF support into the extractor
+[The vector-DB chapter](vectordb.md) plugged PDF support into the extractor
 registry with `pikuri-pdf` — in-process, pure Ruby, nothing to
 install: training wheels, and the right call for an agent with no
 egress reading a corpus *you* chose. The assistant flips both
@@ -56,14 +56,14 @@ require 'pikuri-extractors'
 Pikuri::Extractors::DOCUMENTS.register
 ```
 
-Same registry, same one-call pattern you learned in chapter 3 —
+Same registry, same one-call pattern you learned in the vector-DB chapter —
 but now every conversion runs inside a one-shot **networkless
 docker container** (`--network=none --read-only --cap-drop=ALL`,
 bytes in via stdin, Markdown out via stdout, no volume mounts), so
 a malicious PDF exploiting poppler's parser detonates somewhere
 with no network and no filesystem. And the office formats — DOCX,
 ODT, XLSX, PPTX, EPUB, RTF — come along in the same registration.
-The `--- Page N ---` markers chapter 3 taught you to expect in PDF
+The `--- Page N ---` markers the vector-DB chapter taught you to expect in PDF
 output survive the swap; what you give up is lazy paging (the
 container re-converts the whole document per `read` window) — the
 trade-off table lives in the `Extractors::Documents` yardoc. One
@@ -73,7 +73,7 @@ nothing.
 ## Design note: the corpus, egress, and the librarian
 
 This is the binary that re-opens the problem
-[chapter 3](03-vectordb.md) dodged. There, the recall agent
+[the vector-DB chapter](vectordb.md) dodged. There, the recall agent
 (`pikuri-corpus`) had no internet tools at all, so reading your
 private corpus was safe by construction — no outbound leg, no
 trifecta. The assistant can't take that shortcut: browsing the web
@@ -86,7 +86,7 @@ The intended shape, therefore:
 
 - **The boss does not hold `vectordb_search` directly.** Corpus
   recall is reachable only by delegating to the bundled
-  `LIBRARIAN` sub-agent (chapter 3), which has `vectordb_search`
+  `LIBRARIAN` sub-agent (the vector-DB chapter), which has `vectordb_search`
   as its *only* tool and no egress of its own. A poisoned chunk it
   retrieves has no hand to act with, and the boss sees a distilled
   paragraph rather than raw chunks.
@@ -98,7 +98,7 @@ The intended shape, therefore:
   genuine break is a non-LLM decision point between the
   untrusted-input step and the egress step — human-gated egress —
   which is itself unbuilt. See `ideas/trifecta-detector.md` and
-  [chapter 6](06-security.md).
+  [the security chapter](security.md).
 
 **Prerequisite, not yet built.** Wiring the boss *without*
 `vectordb_search` while still handing it to the `LIBRARIAN`
@@ -114,14 +114,14 @@ stays a stub partly for this reason.
 
 ## Why this chapter is a stub
 
-The honest reason: memories (chapter 4) aren't shipped yet, and
+The honest reason: memories (the memories chapter) aren't shipped yet, and
 the corpus-recall integration is blocked on the persona-owned-tools
 prerequisite above — so writing the assistant chapter now would
 either ship inventions or skip the parts that make
 `pikuri-assistant` worth a chapter at all. (`pikuri-vectordb`
-itself *is* shipped — chapter 3 demos it as `pikuri-corpus` — it's
+itself *is* shipped — the vector-DB chapter demos it as `pikuri-corpus` — it's
 the *quarantined* wiring the assistant needs that waits.) The
-[MCP](05-mcp.md) and [security](06-security.md) chapters before it
+[MCP](mcp.md) and [security](security.md) chapters before it
 are real; the assistant chapter waits until the buildup is real
 too.
 
@@ -132,10 +132,10 @@ What the full chapter will cover, once the gems land:
   and memory, see the output.
 - The full wiring block — `Pikuri::Agent.new` with the four
   extensions assembled, side by side with `pikuri-code`'s denser
-  block from chapter 8, calling out what's the same and what's
+  block from the coding-agent chapter, calling out what's the same and what's
   different.
 - The trifecta calculus for this binary: which agents in the
-  graph hold which legs, where the kit (chapter 6) cuts, what
+  graph hold which legs, where the kit (the security chapter) cuts, what
   the residual risks are.
 - The hosted-provider opt-in path: setting `llm_api_key` (and
   `llm_server` / `llm_model`) in `~/.pikuri-examples-config.yaml`
@@ -148,10 +148,11 @@ What the full chapter will cover, once the gems land:
 
 This is the last chapter as the guide stands — the coda the rest of
 the book builds toward. The seams it leans on are all in place: the
-file/shell/sandbox/confirmer kit from chapters 7 and 8, the trifecta
-calculus from [chapter 6](06-security.md), corpus recall from
-[chapter 3](03-vectordb.md), memories from
-[chapter 4](04-memories.md), and MCP from [chapter 5](05-mcp.md).
+file/shell/sandbox/confirmer kit from the OS-assistant and
+coding-agent chapters, the trifecta
+calculus from [the security chapter](security.md), corpus recall from
+[the vector-DB chapter](vectordb.md), memories from
+[the memories chapter](memories.md), and MCP from [the MCP chapter](mcp.md).
 What's missing is the gem stability and the persona-owned-tools
 prerequisite above; once they land, this stub becomes the end-to-end
 walkthrough. A further chapter — the OS assistant *with* internet,

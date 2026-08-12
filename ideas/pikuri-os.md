@@ -9,7 +9,7 @@ note keeps only the *origin map*, the questions still open to
 validation, and the explicitly deferred work. For the shipped design and
 its rationale, read:
 
-- **Guide [chapter 7](../book/07-os-assistant.md)** — the
+- **Guide [the OS-assistant chapter](../book/os-assistant.md)** — the
   narrative walkthrough. Part 1: the severed-network sandbox, the
   read-before-edit fence, confirmed mutations, the passive-command
   detector, the file-index pair, `MACHINE.md`, boot grounding,
@@ -44,7 +44,7 @@ its rationale, read:
   top* of pikuri-os as a **demo binary** (thunderbird as a dev-dep; not a gem,
   not a merge); pikuri-os stays substrate-only and keeps its no-egress posture
   unchanged. Landed + live-verified — see CLAUDE.md's pikuri-os entry + the
-  "grow by bounded gems" convention, and book ch7 Part 3.
+  "grow by bounded gems" convention, and the book's OS-assistant chapter Part 3.
 
 ## Settled by initial testing
 
@@ -60,7 +60,7 @@ its rationale, read:
   `read` beats a remembered flag). Revisit if deeper causal chains show
   the active budget falling short. (The model *shape* argument — why MoE
   and not a bigger dense model, the same-tier and dedicated-box swaps —
-  is book [ch1](../book/01-chat.md) §"Why a mixture-of-experts model" +
+  is book [the first-conversation chapter](../book/chat.md) §"Why a mixture-of-experts model" +
   §"Picking a different model". Don't restate it here.)
 
 - **The permission-wall hand-off needs no explicit read-vs-mutate
@@ -111,7 +111,7 @@ declined against the offline, small-enough-to-audit posture.
 `pikuri-os` confirms **every** writable `write`/`edit` with a diff
 (`confirm_all_writes`), because writes are rare for a diagnosis agent, so
 there's little fatigue to cut and no "sensitive path" list to maintain —
-see book ch7 and {Pikuri::Workspace::WriteGate}. The considered-and-punted
+see the book's OS-assistant chapter and {Pikuri::Workspace::WriteGate}. The considered-and-punted
 generalization: an **allowlist of auto-allowed (safe) write paths**,
 deny-by-default = confirm. It's the inverse of a sensitive-path denylist
 (and the winning side of the enumeration game, like `PASSIVE_BINARIES`),

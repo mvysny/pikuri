@@ -1,21 +1,21 @@
-# Chapter 8 — The in-repo coding agent
+# The in-repo coding agent
 
 `pikuri-code` is an in-repo coding agent in the spirit of Claude
 Code / opencode / pi-code. You already met its machinery in
-[chapter 7](07-os-assistant.md): the three filesystem-and-shell seams
+[the OS-assistant chapter](os-assistant.md): the three filesystem-and-shell seams
 — `Workspace` (what the LLM sees on the filesystem), `Confirmer` (how
 user-state mutations get approved), and `Sandbox` (what filesystem the
 `bash` subprocess actually runs against) — were introduced there, at
 introductory depth, through the OS assistant. This chapter takes the
 *same three seams* and grows them up for a developer's repo, then
-unpacks the edges chapter 7 deferred (bubblewrap's overlays, the
+unpacks the edges the OS-assistant chapter deferred (bubblewrap's overlays, the
 git-config hardening), and adds three sub-agent personas: `FILE_MINER`
-(the read-only counterpart to `RESEARCHER` from chapter 2) for code
+(the read-only counterpart to `RESEARCHER` from the sub-agents chapter) for code
 recon, `RESEARCHER` itself for web lookups, and `GIT_REPO_RESEARCHER`
 for the "clone a public repo and dig through it" case.
 
-The single sentence that ties this chapter to the last: chapter 7's
-OS assistant kept the whole disk and severed the network — it cut the
+The single sentence that ties this chapter to the last: the OS
+assistant kept the whole disk and severed the network — it cut the
 trifecta's *egress* leg, because reading your machine was its job.
 The coding agent makes the **opposite cut**. A build genuinely needs
 the network (npm, `git fetch`), so egress stays; what it gives up
@@ -24,18 +24,20 @@ project, and a project-rooted `Workspace` confines the file tools the
 same way, so an injection can phone home but has nothing of yours to
 send. Same adversary, opposite leg.
 
-The three seams are the **kit slots** from [chapter 6](06-security.md)
+The three seams are the **kit slots** from [the security chapter](security.md)
 made concrete. Read this chapter for the *mechanics*; for the
 threat-model accounting — what each seam actually protects and
-where it stops — see [chapter 9 — Security revisited](09-security-revisited.md),
+where it stops — see [Security revisited](security-revisited.md),
 which is the closing of this chapter rather than a section
 inside it.
 
 ## Prerequisites
 
-Chapters 1, 2, 6, and 7 — chapter 7 introduced the `Workspace` /
-`Confirmer` / `Sandbox` seams you'll see grown up here, and
-[chapter 6](06-security.md) named the kit slots they fill.
+The [first-conversation](chat.md), [sub-agents](subagents.md),
+[security](security.md) and [OS-assistant](os-assistant.md)
+chapters — the last of those introduced the `Workspace` /
+`Confirmer` / `Sandbox` seams you'll see grown up here, and the
+security one named the kit slots they fill.
 `llama-server` running. `bundle install` done. Plus a couple of
 OS-level pieces:
 
@@ -58,7 +60,7 @@ mkdir /tmp/pikuri-playground && cd /tmp/pikuri-playground
 You'll land in a REPL with a `>` prompt — same shape as
 `pikuri-chat`, except the agent now has `read`, `grep`, `glob`,
 `edit`, `write`, `bash`, the four web/calculator tools from
-chapter 1, and the `agent` tool (with `FILE_MINER`, `RESEARCHER`, and
+the first-conversation chapter, and the `agent` tool (with `FILE_MINER`, `RESEARCHER`, and
 `GIT_REPO_RESEARCHER` personas wired in). Try:
 
 ```
@@ -285,7 +287,7 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_sub_agent_tool Pikuri::Tool::FETCH
   c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
 
-  # Four extensions — same configure/bind shape as ch.2
+  # Four extensions — same configure/bind shape as the sub-agents chapter
   c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
   c.add_extension Pikuri::Tasks::Extension.new
   c.add_extension Pikuri::Mcp::Extension.new(registry: mcp_registry,
@@ -303,19 +305,19 @@ end
 
 Four observations on this block:
 
-1. **The Extension pattern is the one from chapter 2.**
+1. **The Extension pattern is the one from the sub-agents chapter.**
    `SubAgent::Extension` is the same `configure(c)` + `bind(ctx)`
    pair you met there. (`Skill::Extension`, `Tasks::Extension`,
    and `Mcp::Extension` are the other three extensions
-   `pikuri-code` wires — chapters [12](12-skills.md),
-   [11](11-tasks.md), and [5](05-mcp.md) cover what those do;
+   `pikuri-code` wires — the [skills](skills.md),
+   [task-tracking](tasks.md), and [MCP](mcp.md) chapters cover what those do;
    for now treat them as lines that bring in features you
    haven't met yet.)
 2. **The same `workspace` / `confirmer` instances thread through
    six tools.** `Write` and `Bash` both take `confirmer`; all six
    file/shell tools take `workspace`. One construction, shared
    wiring — which is also why sub-agents inheriting parent tool
-   *instances* (chapter 2) preserves all that wiring: a `FILE_MINER`
+   *instances* (the sub-agents chapter) preserves all that wiring: a `FILE_MINER`
    spawned here uses the parent's `Read` tool, which already has
    the parent's `workspace` wired in.
 3. **`add_sub_agent_tool` vs. `add_tool`.** The parent's toolset
@@ -373,7 +375,7 @@ reads can't talk it into running `bash`, `write`, `fetch`,
 none of those tools are in `FILE_MINER`'s `tool_names`. The reply that
 comes back to the parent is just text — data, not instructions.
 
-Chapter 2's lesson about extension non-inheritance is what makes
+The sub-agents chapter's lesson about extension non-inheritance is what makes
 this work. If the parent's tools were inherited automatically,
 spawning a `FILE_MINER` from a coding agent with `bash` in scope would
 hand `bash` to the child, and the privilege separation would be a
@@ -439,7 +441,7 @@ no submodules — see `Pikuri::Code::GitClone` for the full
 mitigation list), `grep`s the source, and returns one paragraph
 with `path:line` citations. The temp workspace evaporates.
 
-**Why this matters:** trifecta-wise (the framing from chapter 2's
+**Why this matters:** trifecta-wise (the framing from the sub-agents chapter's
 `RESEARCHER` discussion), the persona has the network-egress leg
 and the untrusted-content leg, but the private-data leg is
 structurally near-zero — its filesystem is its own scratch dir
@@ -456,12 +458,12 @@ The threat-model accounting for the configuration above —
 what `pikuri-code`'s defaults actually protect, where they stop,
 and the outer-isolation step (wrapping pikuri itself in Docker)
 for when in-process defenses aren't enough — is
-[chapter 9 — Security revisited](09-security-revisited.md).
-That chapter is the closing pair to this one: chapter 8 is the
-mechanics, chapter 9 is what threats each mechanism actually
+[Security revisited](security-revisited.md).
+That chapter is the closing pair to this one: the coding-agent chapter is the
+mechanics, the security-revisited chapter is what threats each mechanism actually
 stops.
 
-After that, [chapter 10 — MCPs revisited](10-mcp-revisited.md)
+After that, [MCPs revisited](mcp-revisited.md)
 picks the MCP thread back up at the harder end of the spectrum —
 the official GitHub MCP in Docker, npx / pip packages of unknown
 provenance, Playwright with its open-web surface. The vocabulary
@@ -470,8 +472,8 @@ Extension protocol, configure/bind, sub-agent privilege separation,
 Workspace / Confirmer / Sandbox) is the entire vocabulary needed
 to read both.
 
-[Chapter 11 — Task tracking](11-tasks.md) and
-[chapter 12 — Skills (stub)](12-skills.md) round out the guide:
+[Task tracking](tasks.md) and
+[Skills (stub)](skills.md) round out the guide:
 `pikuri-tasks` as the in-memory task list `pikuri-code` already
 wires, and Agent Skills as the portable "when you see *X*, do
 *Y*" folder convention. Both are smaller chapters than this one.

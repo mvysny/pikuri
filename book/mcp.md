@@ -1,8 +1,8 @@
-# Chapter 5 — Your first MCP server
+# Your first MCP server
 
 The defaults — local llama, no tools that could send your data
 out, verified MCPs — are designed to be safe even with real data;
-[chapter 6](06-security.md) explains why. This chapter goes one
+[the security chapter](security.md) explains why. This chapter goes one
 gentler still: the server you wire in reads only the *public*
 [Open Library](https://openlibrary.org) book catalogue. Nothing
 of yours is handed to it — no file, no token, no account — so
@@ -10,9 +10,9 @@ even if it misbehaved there is nothing private for it to leak.
 That "nothing private is wired in" property is deliberate, and
 we come back to it below.
 
-Up to chapter 4 every tool pikuri's binaries reached for was
+Up to the memories chapter every tool pikuri's binaries reached for was
 bundled in a gem — `web_search`, `calculator`, `vectordb_search`,
-`recall` ([memories](04-memories.md)), and the rest. That covers
+`recall` ([memories](memories.md)), and the rest. That covers
 a lot, but it doesn't cover the case where someone *else* has
 already written
 the integration you want — a books catalogue, a database, an
@@ -45,14 +45,14 @@ The harder shapes — servers whose *code* you can't read (the
 official GitHub image you don't build yourself, an npx package of
 unknown provenance), servers that hold a credential, browser
 automation, the threat model in detail — wait for
-[chapter 10 — MCPs revisited](10-mcp-revisited.md). This chapter
+[MCPs revisited](mcp-revisited.md). This chapter
 is just enough to see the mechanics work, and to meet Docker as
-the boundary before chapter 10 leans on it.
+the boundary before the MCP-revisited chapter leans on it.
 
 ## Why a public catalogue, in a container
 
 Two design choices in this chapter are worth naming up front,
-because both are foreshadowing [chapter 6](06-security.md).
+because both are foreshadowing [the security chapter](security.md).
 
 **Nothing private is wired in.** The dangerous shape for any
 agent is the *lethal trifecta*: access to your private data, the
@@ -63,7 +63,7 @@ content pikuri didn't author. Two of the three legs are present.
 The third is missing on purpose: you wire in no calendar, no
 files, no token, nothing of yours. There is simply nothing
 private for a misbehaving server to reach, so there is nothing to
-exfiltrate. Chapter 6 names this trifecta properly; this chapter
+exfiltrate. The security chapter names this trifecta properly; this chapter
 just quietly keeps one leg amputated.
 
 **It runs in a container.** You *can* read this particular
@@ -77,15 +77,15 @@ around an MCP server. A Docker container is that boundary: it
 runs the server's code with its own filesystem and no access to
 your home directory, so a rogue dependency burrowing for
 `~/.ssh` finds an empty box. Docker itself arrived in
-[chapter 0](00-prerequisites.md) and has been quietly running
-infrastructure since chapter 3; this chapter is its first use as a
+[the prerequisites chapter](prerequisites.md) and has been quietly running
+infrastructure since the vector-DB chapter; this chapter is its first use as a
 *trust boundary*. The full "why every server you didn't write runs
-in a container" argument is [chapter 10](10-mcp-revisited.md).
+in a container" argument is [the MCP-revisited chapter](mcp-revisited.md).
 
 ## Rootless, or the boundary inverts
 
 You met and installed Docker — **rootless** — back in
-[chapter 0](00-prerequisites.md) ("it's a box, the program runs
+[the prerequisites chapter](prerequisites.md) ("it's a box, the program runs
 in the box, the box can't see your stuff"); if you skipped that
 section, now's the moment, because this chapter is exactly why it
 says "rootless" and not `usermod -aG docker`. Membership in the
@@ -117,9 +117,10 @@ every `docker run` in this chapter.)
 
 ## Prerequisites
 
-Chapters [1](01-chat.md) and [2](02-subagents.md). `llama-server`
+The [first-conversation](chat.md) and [sub-agents](subagents.md)
+chapters. `llama-server`
 running; `bundle install` done. Plus Docker (rootless, from
-[chapter 0](00-prerequisites.md) — just verified above) and one
+[the prerequisites chapter](prerequisites.md) — just verified above) and one
 build step: the Open Library server isn't
 published as a ready-made image, so you build one from its
 source — which conveniently means you read the source first.
@@ -129,7 +130,7 @@ git clone https://github.com/8enSmith/mcp-open-library
 cd mcp-open-library
 # Skim src/ — it's small. Every tool is a thin wrapper that calls
 # openlibrary.org and nothing else; no env reads, no shell, no file
-# writes. This is the "eyeball it" step chapter 10 will tell you to
+# writes. This is the "eyeball it" step the MCP-revisited chapter will tell you to
 # do for any server whose code you can actually read.
 docker build -t mcp-open-library .
 ```
@@ -204,7 +205,7 @@ files, no memory — the missing trifecta leg from the top of this
 chapter is missing *structurally*, baked into the binary, not held
 open by your restraint. (That's also why this demo gets its own
 binary instead of riding `pikuri-assistant`: the assistant will
-grow memory and file access in [chapter 13](13-assistant.md), and
+grow memory and file access in [the universal-assistant chapter](assistant.md), and
 this chapter's "nothing private is wired in" guarantee has to
 survive that.)
 
@@ -266,7 +267,7 @@ Each of these stresses the loop differently — title search,
 author search, an id-then-detail two-hop
 (`get_authors_by_name` → `get_author_info`), pure URL
 construction. The shape is worth contrasting with
-[chapter 3](03-vectordb.md)'s vector DB: that was *semantic*
+[the vector-DB chapter](vectordb.md)'s vector DB: that was *semantic*
 search over *your private* corpus; this is *structured* lookup
 against a *public* catalogue. Different retrieval shape, and —
 not by accident — the private-data leg is the one that's now
@@ -289,7 +290,7 @@ shows up one more time here:
   `#close`.
 
 The registry is the layer `bin/pikuri-openlibrary` hardcodes —
-and the layer `bin/pikuri-assistant` ([chapter 13](13-assistant.md))
+and the layer `bin/pikuri-assistant` ([the universal-assistant chapter](assistant.md))
 instead leaves as an empty slot for you to hand-edit your own
 servers into.
 
@@ -330,7 +331,7 @@ at all and so doesn't need a carve-out.
 ## The Extension — second time
 
 `Pikuri::Mcp::Extension` is the second extension you've met in
-this guide, after `SubAgent::Extension` in chapter 2. The shape
+this guide, after `SubAgent::Extension` in the sub-agents chapter. The shape
 is the same `configure(c)` + `bind(ctx)` pair:
 
 - `configure(c)` runs once on the parent's Configurator. It
@@ -346,10 +347,10 @@ is the same `configure(c)` + `bind(ctx)` pair:
   `"Error: server '...' is already connected; ..."` string.
 
 Sub-agents do **not** inherit the extension or the `mcp_connect`
-tool — the chapter 2 lesson about extension non-inheritance
+tool — the sub-agents chapter's lesson about extension non-inheritance
 applies. `pikuri-openlibrary` spawns no sub-agents, but the rule
 matters the moment you wire MCP into an agent that does, as
-[chapter 13](13-assistant.md)'s assistant will: a `RESEARCHER` it
+[the universal-assistant chapter](assistant.md)'s assistant will: a `RESEARCHER` it
 spawns has no way to reach the Open Library MCP. If you want a
 persona to reach MCP tools, you'd have to write one whose
 `tool_names` includes the MCP-synthesised tools by name — out of
@@ -448,7 +449,7 @@ stated purpose. The verifier's job is to spot text that tries to
 manipulate the calling agent into doing things *other* than what
 the tool claims.
 
-**One honest gap, deferred to chapter 6 and chapter 10.** The
+**One honest gap, deferred to the security chapter and the MCP-revisited chapter.** The
 verifier reads text the server emits *at registration*. It does
 **not** see runtime tool *responses* — a benign-looking server
 that returns a poisoned response to a tool call rides past it.
@@ -496,25 +497,25 @@ This chapter only opened the door:
   PyPI ten minutes ago). The discipline there is *the container
   is the boundary, always* — and the full argument, plus the
   isolation Docker does and doesn't buy you, is
-  [chapter 10](10-mcp-revisited.md).
+  [the MCP-revisited chapter](mcp-revisited.md).
 - **Credentials.** The Open Library MCP read a public catalogue;
   no token, nothing of yours. Once a server holds a credential —
   your GitHub PAT, your Linear API key — the "what can this
   server *do* if it goes wrong?" question gets sharper than the
   verifier alone can answer, and the missing trifecta leg
-  reappears. Also chapter 10.
+  reappears. Also the MCP-revisited chapter.
 - **Browser MCPs and other large untrusted-content surfaces.**
   Playwright MCP hands the agent a live browser pointed at the
   open web. The threat model bites harder than anywhere else in
-  the guide. Chapter 10.
+  the guide. The MCP-revisited chapter.
 - **Full threat model.** What `pikuri-mcp` does and doesn't
   protect against, mapped end-to-end. The framing for that — the
   lethal trifecta, the defense kit — is the *next* chapter; the
-  MCP-specific application is chapter 10.
+  MCP-specific application is the MCP-revisited chapter.
 
 ## What's next
 
-[Chapter 6 — Security](06-security.md) is the chapter the
+[Security](security.md) is the chapter the
 reassurance at the top of this one has been pointing at. The
 verifier you just met is one piece of pikuri's defense kit, and
 "nothing private is wired in" was one leg of a trifecta you'll

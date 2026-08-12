@@ -1,11 +1,11 @@
 # pikuri-os design notes
 
 The settled design rationale that fits neither the user-facing guide
-chapter ([`book/07-os-assistant.md`](../book/07-os-assistant.md)) nor
+chapter ([`book/os-assistant.md`](../book/os-assistant.md)) nor
 the per-class YARD headers — the cross-cutting *why* that spans several
 classes at once. The gem's threat model (kernel-severed egress +
 confirmed mutations + the passive-command detector) is **not** here:
-it graduated into book ch7 and the Sandbox / Confirmer / Workspace seam
+it graduated into the book's OS-assistant chapter and the Sandbox / Confirmer / Workspace seam
 invariants in [`../CLAUDE.md`](../CLAUDE.md). What remains for this file
 is the file-index story, which no single class owns:
 

@@ -1,4 +1,4 @@
-# Chapter 7 — The OS assistant: your machine
+# The OS assistant: your machine
 
 This is the first *complete, fully-implemented* assistant in the
 guide — and the gentlest possible introduction to the densest part
@@ -14,13 +14,13 @@ user-state changes get approved), `Bash` (running a real shell), and
 `Sandbox` (what that shell can actually touch).
 
 There is one thesis sentence to carry through both this chapter and
-the next. [Chapter 6](06-security.md) named the lethal trifecta —
+the next. [The security chapter](security.md) named the lethal trifecta —
 private data, untrusted content, a way to send bytes out — and said
 you defeat it by *structurally* removing a leg. This is the first
 agent that does it, and because reading your whole disk is the entire
 point, the leg it removes is **egress**: the network is severed by
 the kernel, so a prompt injection in a log file has the data but
-nowhere to send it. [Chapter 8](08-code.md) takes these same four
+nowhere to send it. [The coding-agent chapter](code.md) takes these same four
 seams and makes the *opposite* cut — it keeps the network (builds
 need it) and confines the disk instead. Same adversary, opposite leg.
 Hold onto that; it's the through-line.
@@ -28,17 +28,17 @@ Hold onto that; it's the through-line.
 One honest note about layering before we start. `pikuri-os` is a thin
 gem: it rides on top of `pikuri-workspace` (the file tools) and
 `pikuri-code` (the shell and the sandbox), the two gems
-[chapter 8](08-code.md) returns to directly. We'll meet their
+[the coding-agent chapter](code.md) returns to directly. We'll meet their
 concepts *as this agent uses them*, at introductory depth — the
 sharper edges (bubblewrap's overlays, the git-config hardening, the
-project-root containment algorithm) wait for chapter 8, where a
+project-root containment algorithm) wait for the coding-agent chapter, where a
 developer audience needs them. Reading order isn't dependency order:
 the relatable agent comes first, then we peel back a layer.
 
 The chapter runs in three parts. **Part 1** builds the agent as described
 above — full disk, network severed. **Part 2** does the harder thing:
 it puts the network *back*, carefully, without handing the trifecta its
-third leg — and it's where [chapter 2](02-subagents.md)'s sub-agents
+third leg — and it's where [the sub-agents chapter](subagents.md)'s sub-agents
 earn their keep for privacy, not just parallelism. **Part 3** adds a
 *second* app — your local mail and calendar — and uses it to sharpen the
 trifecta itself: the difference between a leg being *present* and a leg
@@ -50,7 +50,8 @@ being *severe*.
 
 ## Prerequisites
 
-Chapters [1](01-chat.md) and [6](06-security.md). `llama-server`
+The [first-conversation](chat.md) and [security](security.md)
+chapters. `llama-server`
 running, `bundle install` done. Plus a couple of OS-level pieces,
 all of which **degrade rather than crash** except the first:
 
@@ -105,7 +106,7 @@ property — a prompt injection in a file the agent reads can ignore it.
 So the posture is precise: **a network sandbox with no filesystem
 sandbox.** The `Sandbox` seam governs what the `bash` subprocess can
 touch, independently of what the LLM sees through its file tools. The
-coding agent (chapter 8) uses it to confine bash to a project
+coding agent (the coding-agent chapter) uses it to confine bash to a project
 directory while keeping the network. The OS assistant wants the
 *inverse*, and that's a sandbox variant of its own:
 
@@ -125,7 +126,7 @@ only way to an internet-capable shell here is the explicit
 warning that the security property is off — use it only on a
 throwaway box.
 
-**This is where chapter 6's trifecta argument becomes concrete.** The
+**This is where the security chapter's trifecta argument becomes concrete.** The
 agent holds two legs — private data (your whole disk) and untrusted
 content (logs, `~/Downloads`, cloned repos are all attacker-influenced
 bytes) — but never the third. You can't ask it to give up disk access;
@@ -133,7 +134,7 @@ reading your machine *is* its job. So you cut the leg you can spare.
 An injection that says "append a curl beacon to `~/.bashrc`" has no
 network to beacon to, and the same severed leg also contains the more
 mundane danger: the model's own honest mistake can't phone home
-either. Chapter 8 will keep the network and cut disk-reach instead —
+either. The coding-agent chapter will keep the network and cut disk-reach instead —
 the opposite leg, forced by the opposite need.
 
 **One subtlety, and it's the kind that bites anyone building this
@@ -166,7 +167,7 @@ looking for the socket instead.
 `Workspace` is the *other* filesystem seam — not what the shell
 touches, but what the LLM observes through `read` / `write` / `edit` /
 `grep` / `glob`. For this agent the whole host is in scope, and — unlike
-the coding agent of chapter 8 — the file tools are opened all the way up
+the coding agent of the coding-agent chapter — the file tools are opened all the way up
 to see exactly what `bash` sees:
 
 ```ruby
@@ -188,11 +189,11 @@ human is writes.**
 
 `project_root` is just the anchor for relative paths ("what's in *this*
 folder?") and where `bash` starts; absolute paths reach anywhere. There's
-no containment fence — the opposite of chapter 8's project-rooted
+no containment fence — the opposite of the coding-agent chapter's project-rooted
 workspace, and deliberate: the job is the whole machine. One gate still
 stands: the **read-before-edit gate**, where `edit` (and an overwriting
 `write`) refuses a path the agent hasn't `read` first — so a change can't
-land on bytes the model never saw. Chapter 8 raises the perimeter too,
+land on bytes the model never saw. The coding-agent chapter raises the perimeter too,
 fencing the file tools into the project, when the stakes are a shared
 repo rather than your own machine.
 
@@ -285,7 +286,7 @@ environment so a hostile repo-local `core.fsmonitor` is neutralised
 regardless of what the repo says. That's the headline vector closed
 deterministically; the residual (diff-driver execution on a repo whose
 `.git/config` an attacker handed you) is documented and accepted — a
-genuinely untrusted repo belongs in a VM. Chapter 8 unpacks that
+genuinely untrusted repo belongs in a VM. The coding-agent chapter unpacks that
 hardening; here, take it as the reason there's no per-repo trust prompt.
 
 There's a cheaper lever, too, and it's mostly in the system prompt:
@@ -306,7 +307,7 @@ only, nothing to send out, a perfect fit for the no-egress posture.
 
 `pikuri-os` exposes it as a **search → read-full pair**, the same
 two-step shape as `vectordb_search` → `vectordb_read` from
-[chapter 3](03-vectordb.md):
+[the vector-DB chapter](vectordb.md):
 
 - **`fileindex_search`** finds files whose contents match your words —
   inside PDFs and office docs included — and returns each path with the
@@ -331,7 +332,7 @@ corpus `localsearch` already holds.
 An assistant for your computer should remember where you keep your
 work, how your files are synced, the quirks of *this* setup — and have
 that knowledge in hand at the start of the next conversation.
-[Chapter 4](04-memories.md) built durable memory as mem0: automatic,
+[The memories chapter](memories.md) built durable memory as mem0: automatic,
 invisible capture into a vector store. For this agent the answer is
 deliberately simpler — a single markdown file:
 
@@ -342,7 +343,7 @@ deliberately simpler — a single markdown file:
 A `CLAUDE.md` for this host. It's read at boot and folded into the
 system prompt, and the agent edits it through the *same confirmed
 `write`/`edit` path* as any other file. That choice is the whole
-point of contrast with chapter 4. mem0's safety rested on an invisible
+point of contrast with the memories chapter. mem0's safety rested on an invisible
 structural filter ("capture user-role content only"); `MACHINE.md`'s
 safety is **visible, confirmed, and reversible** — a poisoned fact
 can't land silently, because the write surfaces to you as a plain-text
@@ -385,7 +386,7 @@ This is cheap and stops the model guessing distro paths.
 ## The wiring all together
 
 One extension assembles the whole surface, the same `add_extension`
-shape you've used since chapter 2:
+shape you've used since the sub-agents chapter:
 
 ```ruby
 agent = Pikuri::Agent.new(
@@ -461,7 +462,7 @@ recipient. That distinction is the lever the rest of Part 2 pulls.
 Given that, the design choice isn't *which* web tools the OS agent gets —
 it's that the OS agent gets **none** of them. All three live one level
 down, on a privilege-separated research sub-agent — the bundled
-`RESEARCHER` persona from [chapter 2](02-subagents.md) — reached through
+`RESEARCHER` persona from [the sub-agents chapter](subagents.md) — reached through
 the `agent` tool:
 
 ```ruby
@@ -478,7 +479,7 @@ c.add_extension Pikuri::SubAgent::Extension.new(
 tools are registered so *only a sub-agent* may see them — the parent LLM
 never holds `fetch`, and so has **no direct egress at all**. And
 `RESEARCHER` has the web tools but **no filesystem** — it can't read your
-disk. Line the legs up against [chapter 6](06-security.md)'s trifecta:
+disk. Line the legs up against [the security chapter](security.md)'s trifecta:
 
 - **The researcher** holds untrusted content + egress, but *not* private
   data — two legs, not three. Its `fetch` is unbounded, yes, but it has
@@ -514,7 +515,7 @@ network — you approve what leaves this machine.
 This is the same `Confirmer` from Part 1, reused unchanged. The point is
 subtle, and it's the lesson from `MACHINE.md`'s confirmed writes again:
 you are **not** being asked to approve the agent's *judgement*. You can't
-reliably spot a secret laundered into a plausible query (chapter 6's "no
+reliably spot a secret laundered into a plausible query (the security chapter's "no
 NX flag for content") — *look up the definition of "hunter2waterfall"* is
 a perfectly ordinary-looking request, and you'd have to already know the
 password to catch it.
@@ -586,7 +587,7 @@ Two boundaries, set independently; the flag moves only the second.
 
 A researcher that can't read the PDF it just found is half-blind, so
 `pikuri-os` registers a PDF text extractor into the extraction registry
-([chapter 3](03-vectordb.md) met that registry):
+([the vector-DB chapter](vectordb.md) met that registry):
 
 ```ruby
 require 'pikuri-pdf'
@@ -675,7 +676,7 @@ Now the question.
 
 ## Presence: nothing flips here
 
-Line the new agent up against [chapter 6](06-security.md)'s trifecta and
+Line the new agent up against [the security chapter](security.md)'s trifecta and
 all three legs are live — and *every one of them was already live in
 Part 2*. The private pool (your disk) was there. The untrusted content
 (logs, downloads) was there. The egress (the researcher's confirmed web
@@ -835,7 +836,7 @@ work, not convenience.
 
 ## What's next
 
-[Chapter 8 — the in-repo coding agent](08-code.md) takes the four
+[the in-repo coding agent](code.md) takes the four
 seams you just met and makes the opposite cut. Where this agent severed
 the network and kept the whole disk — restoring egress only inside a
 quarantined researcher — the coding agent keeps the network in the
@@ -845,5 +846,5 @@ in place of `AllowAll`. Same `Confirmer`, same `bash`, same
 passive-command detector (now with the git hardening unpacked). Same
 adversary, opposite trifecta leg — and now in a developer's hands,
 with read-only recon sub-agents on top. The threat-model accounting
-for both shapes is [chapter 9 — security
-revisited](09-security-revisited.md).
+for both shapes is [security
+revisited](security-revisited.md).

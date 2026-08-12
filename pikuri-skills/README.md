@@ -49,7 +49,7 @@ directory so the LLM can resolve sidecar files via `read`.
 ## Further reading
 
 - **Narrative walkthrough:**
-  [chapter 12 of the pikuri guide](../book/12-skills.md) —
+  [the skills chapter of the pikuri guide](../book/skills.md) —
   how skill folders are discovered, the `SKILL.md` format, and a
   worked drop-in example. (Currently a stub chapter; the API
   surface lives in the YARD docs below.)

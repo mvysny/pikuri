@@ -1,12 +1,12 @@
-# Chapter 10 — MCPs revisited: containerised servers
+# MCPs revisited: containerised servers
 
-[Chapter 5](05-mcp.md) wired one low-stakes MCP and pointed
-forward; [chapter 6](06-security.md) gave the framing; chapters
-[8](08-code.md) and [9](09-security-revisited.md) applied the kit
+[The MCP chapter](mcp.md) wired one low-stakes MCP and pointed
+forward; [the security chapter](security.md) gave the framing; chapters
+[8](code.md) and [9](security-revisited.md) applied the kit
 to the coding-agent shape. This chapter picks the MCP thread
 back up at the harder end of the spectrum — the cases where the
 verifier alone isn't enough, where you can't read the server's
-*code* the way you skimmed the book-catalogue reader in chapter 5,
+*code* the way you skimmed the book-catalogue reader in the MCP chapter,
 where the server holds a credential whose blast radius bites,
 and where the cleanest answer is *a container as the boundary
 between pikuri and the server*.
@@ -16,22 +16,23 @@ running in Docker. Two community shapes (npx-based, pip-based)
 follow, plus the largest untrusted-content surface in common use
 (Playwright). The chapter closes with the full threat-model
 section for `pikuri-mcp` — what wiring an MCP server in does and
-doesn't protect, mapped against the kit from chapter 6.
+doesn't protect, mapped against the kit from the security chapter.
 
 ## Prerequisites
 
-Chapters [1](01-chat.md), [2](02-subagents.md), [5](05-mcp.md),
-[6](06-security.md), and [8](08-code.md). `llama-server` running;
+The [first-conversation](chat.md), [sub-agents](subagents.md),
+[MCP](mcp.md), [security](security.md) and
+[coding-agent](code.md) chapters. `llama-server` running;
 `bundle install` done. Plus:
 
 - **Docker** — set up (rootless) back in
-  [chapter 0](00-prerequisites.md) and first used as an MCP
-  boundary in [chapter 5](05-mcp.md) with the book-catalogue
+  [the prerequisites chapter](prerequisites.md) and first used as an MCP
+  boundary in [the MCP chapter](mcp.md) with the book-catalogue
   server. Same tool, different image: the official GitHub MCP
   server is distributed as `ghcr.io/github/github-mcp-server` (a
   ready-made image you *pull* rather than build from source —
   itself part of this chapter's point). If you skipped those, the
-  one-time setup is in chapter 0. The stance chapter 5 introduced
+  one-time setup is in the prerequisites chapter. The stance the MCP chapter introduced
   gently and this
   chapter makes the rule: **every MCP server you don't write
   yourself runs in a container** — see the threat-model section
@@ -59,7 +60,7 @@ having a live server.)
 ## 1. Wire the GitHub MCP into `pikuri-code`
 
 `pikuri-code` already wires `Mcp::Extension` into its `Agent.new`
-block — you saw that as a four-extension stack in chapter 8's
+block — you saw that as a four-extension stack in the coding-agent chapter's
 wiring example. It also has an empty hand-edit slot for the
 registry near the top of `bin/pikuri-code`. Configuring an MCP
 server is just filling that slot in; everything else is already
@@ -89,7 +90,7 @@ cd /path/to/some-repo
 /path/to/pikuri/pikuri-code/bin/pikuri-code
 ```
 
-On a cold cache, the same two passes from chapter 5 fire:
+On a cold cache, the same two passes from the MCP chapter fire:
 
 1. **The verifier** against the GitHub server's handshake + tool
    list.
@@ -105,12 +106,12 @@ question that exercises the new surface:
 ```
 
 The same `mcp_connect` → `list_issues` → reply dance you saw in
-chapter 5 plays out. What's new is the *stakes*: this server
+the MCP chapter plays out. What's new is the *stakes*: this server
 holds a credential whose blast radius is the next section.
 
 ## Why Docker?
 
-[`SECURITY.md`](../SECURITY.md) §"Code trust" and chapter 6's
+[`SECURITY.md`](../SECURITY.md) §"Code trust" and the security chapter's
 code-trust section both settle the general posture in one bullet:
 MCP server processes are untrusted code you didn't write, so run
 them in a container. This chapter adopts that across the board.
@@ -137,7 +138,7 @@ Three MCP-specific consequences are worth being explicit about:
   (issues:read, contents:read), never a classic full-access
   token. Restated in the threat-model section below.
 
-Bubblewrap (chapter 8) is `pikuri-code`'s inner-process isolation
+Bubblewrap (the coding-agent chapter) is `pikuri-code`'s inner-process isolation
 for `bash`; Docker is the outer-process isolation this chapter
 uses for MCP. Different tools, different problems — bubblewrap
 is lightweight and bind-mount-based, Docker is heavier and
@@ -150,7 +151,7 @@ Docker-in-Docker needs either the host docker socket bind-mounted
 in or a `--privileged` outer container, and either gives the
 agent root access to your host OS. In that shape, MCPs run
 alongside pikuri inside the same container, not in nested ones.
-[Chapter 9's "Wrapping pikuri in Docker"](09-security-revisited.md#wrapping-pikuri-in-docker)
+[The security-revisited chapter's "Wrapping pikuri in Docker"](security-revisited.md#wrapping-pikuri-in-docker)
 covers this end-to-end.
 
 ## Running an npx-based MCP
@@ -327,9 +328,9 @@ you actively want to watch the browser, not as a default.
 
 If you want the browser to visit `localhost:3000`, the
 container's `localhost` isn't your host's `localhost` — and with
-[chapter 0](00-prerequisites.md)'s rootless Docker, your host's
+[the prerequisites chapter](prerequisites.md)'s rootless Docker, your host's
 `127.0.0.1` is flatly unreachable from containers. That's the
-same deliberate seal [chapter 4](04-memories.md) met, and here
+same deliberate seal [the memories chapter](memories.md) met, and here
 it's working *for* you: this is the chapter's
 largest-untrusted-content surface, and attacker-chosen JavaScript
 probing `127.0.0.1` for your loopback services is a classic move.
@@ -338,7 +339,7 @@ The advice you'll find online — `--network host`, or
 a root daemon; under rootless both dead-end inside the daemon's
 own network namespace, nowhere near your host. (And don't reach
 for `DOCKERD_ROOTLESS_ROOTLESSKIT_DISABLE_HOST_LOOPBACK=false` —
-chapter 4 explains how that daemon-wide knob un-builds this
+the memories chapter explains how that daemon-wide knob un-builds this
 chapter's whole boundary.)
 
 What works — on rootless and rootful alike — is giving the dev
@@ -366,7 +367,7 @@ as you like:
   network — fine on a trusted home LAN behind a router, worth a
   thought anywhere else.
 
-(Chapter 4 solved the same container-to-host problem with a
+(The memories chapter solved the same container-to-host problem with a
 supervised socat relay over a unix socket — the engineered
 version of this. Here the container is a hand-wired registry
 entry and the Playwright image carries no relay half, so the
@@ -431,15 +432,15 @@ The chapter covers all four.
 
 ## Threat model — what `pikuri-mcp` actually protects against
 
-This page's view, in the same spirit as chapter 9's threat-model
+This page's view, in the same spirit as the security-revisited chapter's threat-model
 section for the coding agent — what wiring an MCP server in does
-and doesn't cover. Chapter 6 is the synthesis behind it (the
+and doesn't cover. The security chapter is the synthesis behind it (the
 trifecta, the kit, the worked attacks); this section maps that
 synthesis onto the MCP-specific surface.
 
 What the default configuration *does* protect:
 
-- **Pre-flight injection detection.** The verifier (chapter 5)
+- **Pre-flight injection detection.** The verifier (the MCP chapter)
   runs before any tool from the server is callable: hidden
   Unicode payloads are rejected mechanically, LLM-judged
   injection attempts are rejected with reasoning, and the server
@@ -449,7 +450,7 @@ What the default configuration *does* protect:
   schema surface — tools that slipped the verifier still aren't
   in context unless the model explicitly activates them.
 - **Per-agent activation.** Sub-agents can't reach the MCP
-  surface at all: the privilege separation from chapter 2
+  surface at all: the privilege separation from the sub-agents chapter
   carries through, so a `FILE_MINER` reading a malicious file
   can't `mcp_connect` to anything.
 - **Container isolation (when you wrap in Docker).** A malicious
@@ -484,11 +485,11 @@ What it *doesn't* protect:
   a long-running cache, delete
   `~/.cache/pikuri/mcp_verifications/`.
 - **Poisoned tool *responses* at runtime.** This is the structural
-  gap chapter 6 named: the verifier checks the server's surface
+  gap the security chapter named: the verifier checks the server's surface
   at registration, but tool *outputs* during a conversation flow
   into the parent's context unchecked. MCP tools mount on the
   parent agent, so there's no sub-agent boundary between the
-  model and a poisoned response. Chapter 6's attack 4 walks this
+  model and a poisoned response. The security chapter's attack 4 walks this
   through end-to-end.
 
 In short: **assume MCP servers can take any action their token
@@ -499,10 +500,10 @@ still ship a poisoned response on a later call.
 
 ## What's next
 
-[Chapter 11 — Task tracking](11-tasks.md) covers `pikuri-tasks`
+[Task tracking](tasks.md) covers `pikuri-tasks`
 — the in-memory task list that lets the model externalize a
 multi-step plan into a structured slot it sees on every turn.
-[Chapter 12 — Skills (stub)](12-skills.md) closes the guide
+[Skills (stub)](skills.md) closes the guide
 with [Agent Skills](https://agentskills.io/specification),
 currently a forward-pointer until the guide has enough concrete
 workflows to motivate a real example.

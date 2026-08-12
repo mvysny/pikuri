@@ -104,13 +104,12 @@ approve prompts on that basis.
 
 ## Further reading
 
-- **Narrative walkthrough:** [chapter 8 of the pikuri
-  guide](../book/08-code.md) — the three new seams
+- **Narrative walkthrough:** [the coding-agent chapter of the pikuri guide](../book/code.md) — the three new seams
   (`Workspace` / `Confirmer` / `Sandbox`), the full wiring block
   with all four extensions, the privilege-separated `FILE_MINER` and
   `GIT_REPO_RESEARCHER` personas in action; the threat-model
   accounting then continues in
-  [chapter 9](../book/09-security-revisited.md).
+  [the security-revisited chapter](../book/security-revisited.md).
 - **API reference:** browse the YARD docs at
   <https://rubydoc.info/gems/pikuri-code> (once published), or run
   `bundle exec yard` in this directory for a local copy.

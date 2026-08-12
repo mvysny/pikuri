@@ -202,7 +202,7 @@ Open sub-questions if this graduates:
 The Confirmer's *role* — last-line-of-defense for the parent agent in
 `bin/pikuri-code`, where structural defense has run out and the human
 gate is what stops a poisoned context from leaking — is documented in
-[chapter 6 §"The human gate, and why fatigue is the enemy"](../book/06-security.md).
+[the security chapter §"The human gate, and why fatigue is the enemy"](../book/security.md).
 The two requirements (bother the human only on the genuinely
 consequential; be excellent when it does fire) and the dependency on the
 rest of the kit carrying the routine load are stated there.

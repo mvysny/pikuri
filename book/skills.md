@@ -1,4 +1,4 @@
-# Chapter 12 — Agent Skills (stub)
+# Agent Skills (stub)
 
 > **Stub chapter.** This is a holding place. The guide doesn't yet
 > have a workflow concrete enough to motivate Agent Skills the way
@@ -70,8 +70,8 @@ workflows to anchor it:
 - Discovery order, naming collisions, scoping skills to a
   specific project vs the user's home directory.
 - When a skill is the right tool versus when a fresh persona
-  ([chapter 2](02-subagents.md)) or an MCP server
-  ([chapter 5](05-mcp.md) / [chapter 10](10-mcp-revisited.md))
+  ([the sub-agents chapter](subagents.md)) or an MCP server
+  ([the MCP chapter](mcp.md) / [the MCP-revisited chapter](mcp-revisited.md))
   would fit better.
 
 Until then: <https://agentskills.io/specification> is the
@@ -80,12 +80,12 @@ authoritative reference, and the `pikuri-skills`
 
 ## What's next
 
-The book closes on [chapter 13 — pikuri-assistant](13-assistant.md),
+The book closes on [pikuri-assistant](assistant.md),
 itself still a stub; a fleshed-out version of it — waiting on the
 vectordb and memories gems stabilising — is the natural follow-on
 to the whole guide. Until then, the vocabulary you have now
 (`Pikuri::Agent`, `Tool`, listeners, the Extension protocol,
 configure/bind, sub-agent privilege separation, the kit from
-chapter 6, MCP's verifier + synthesizer + per-agent
+the security chapter, MCP's verifier + synthesizer + per-agent
 `mcp_connect`) is enough to read any pikuri-* gem's sources
 directly.

@@ -141,7 +141,7 @@ RSA PEM ~1600. A thread, not a wall — and the mailbox is exactly where
 someone pasted the key "just to have it" five years ago. (An agent that
 *does* hold local compute prices it lower still, by the secret's entropy —
 ~55 words for that ed25519 key; a network-severed sandbox cuts egress, never
-arithmetic. See `book/07-os-assistant.md` §"Why 'too big to hide' is not a
+arithmetic. See `book/os-assistant.md` §"Why 'too big to hide' is not a
 defense".) The bytes-visible property is worth stating because it is
 structural; "the payload is too big to hide" is not, and shouldn't be
 offered as reassurance.
@@ -205,7 +205,7 @@ secret spelled out by the first letters of an innocuous sentence ("I think
 dogs are super cute"), by word choice, by sentence count. That bottom rung
 reads as ordinary prose to the guards *and* to the human, which is where an
 injector who has read this file starts. It is slower, and slow is not a
-barrier: `book/07-os-assistant.md` §"Why 'too big to hide' is not a defense"
+barrier: `book/os-assistant.md` §"Why 'too big to hide' is not a defense"
 prices what fits. The human-gated, irreversible-send compose window — not the
 guard — is the backstop all of this leans on.
 

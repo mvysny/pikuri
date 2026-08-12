@@ -23,7 +23,7 @@ Adds:
   server, the community [Open Library
   catalogue reader](https://github.com/8enSmith/mcp-open-library)
   running in a locally-built Docker container, plus `calculator`.
-  The worked example of guide chapter 5.
+  The worked example of the guide's MCP chapter.
 
 ## Install
 
@@ -61,12 +61,11 @@ activation set.
 
 ## Further reading
 
-- **Narrative walkthrough:** [chapter 5 of the
-  guide](../book/05-mcp.md) is the gentle MCP intro — one
+- **Narrative walkthrough:** [the MCP chapter of the guide](../book/mcp.md) is the gentle MCP intro — one
   low-stakes server in a locally-built container (run via
   `bin/pikuri-openlibrary`), rootless Docker as the boundary, the
   verifier and synthesizer in depth.
-  [Chapter 10](../book/10-mcp-revisited.md) picks
+  [The MCP-revisited chapter](../book/mcp-revisited.md) picks
   the thread back up at the harder end: the official GitHub MCP
   in Docker, npx- and pip-based community servers, Playwright,
   and the full threat model.

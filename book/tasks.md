@@ -1,4 +1,4 @@
-# Chapter 11 — Task tracking (the agent's working memory)
+# Task tracking (the agent's working memory)
 
 A short chapter near the end of the guide. By the end you'll know
 why pikuri ships a task list, why it has exactly the shape it
@@ -206,7 +206,7 @@ Three properties matter:
   starts you fresh — by design; persistence is a feature the gem
   deliberately doesn't have.
 - **Not inherited by sub-agents.** This follows pikuri's
-  established rule from chapter 2: sub-agents don't inherit
+  established rule from the sub-agents chapter: sub-agents don't inherit
   extensions. A `RESEARCHER` or `FILE_MINER` spawned via the
   `agent` tool gets no task list. The parent's plan stays private
   to the parent, and sub-agents focus on their narrow remit
@@ -243,7 +243,7 @@ That's the entire feedback loop.
 
 `pikuri-code` wires this extension by default — coding agents do
 multi-step work, and the externalized-plan property pays off there
-more than anywhere else in the guide. [Chapter 8](08-code.md)'s
+more than anywhere else in the guide. [The coding-agent chapter](code.md)'s
 walkthrough shows the four-extension block (skills, tasks, MCP,
 sub-agents) all wired together; this chapter focused on tasks
 alone so the single-purpose API doesn't get lost in that wider
@@ -251,7 +251,7 @@ picture.
 
 ## What's next
 
-[Chapter 12 — Skills (stub)](12-skills.md) covers the last
+[Skills (stub)](skills.md) covers the last
 extension `pikuri-code` discovers: [Agent
 Skills](https://agentskills.io/specification), portable folders of
 "when you see *X*, do *Y*" instructions. Skills are text the model

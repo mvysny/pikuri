@@ -70,7 +70,7 @@ handling, and cancellation.
 
 ## Further reading
 
-- **Narrative walkthrough:** [chapter 1 of the pikuri guide](../book/01-chat.md)
+- **Narrative walkthrough:** [the first-conversation chapter of the pikuri guide](../book/chat.md)
   — install llama.cpp, start the server, run `pikuri-chat`, the
   agentic loop, the four bundled tools, and search-provider
   privacy postures.

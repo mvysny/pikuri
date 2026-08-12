@@ -66,7 +66,7 @@ end
 # Explicit extractor opt-in (requiring the gem alone changes
 # nothing): pikuri-extractors' sandboxed converter covers PDF and
 # the office formats (DOCX / ODT / XLSX / PPTX / EPUB / RTF) in one
-# registration, superseding chapter 3's in-process pikuri-pdf — on
+# registration, superseding the vector-DB chapter's in-process pikuri-pdf — on
 # an egress-capable agent, parsing untrusted documents belongs in
 # the networkless container. From here on web_scrape / fetch and
 # any file-reading tool pick the formats up through the Extractor

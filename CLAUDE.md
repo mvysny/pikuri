@@ -76,7 +76,7 @@ Rules:
 - **Single source of truth per fact.** One home; others link. Yardoc owns per-symbol truth + rationale; the book owns concepts + teaching order; DECISIONS.md owns the rejected alternative; CLAUDE.md owns invariants and points (`see {ClassName}`). Tempted to explain twice → link instead. A tiny load-bearing restatement is fine when it saves a jump (repeat the *one-line fact*, defer the *explanation*).
 - **YARD is browsed standalone** on rubydoc.info, so it carries the complete *local* what + why of the symbol; it may defer only the book-wide *narrative*, never the local truth.
 - **README stays a front door.** Concepts migrate to the book; per-symbol API + rationale to yardoc.
-- **The book grows organically** (chapters `00`–`13`, `book/README.md`). Add a chapter when a concept earns one.
+- **The book grows organically.** Add a chapter when a concept earns one: one new `book/<slug>.md`, one line in `book/README.md` (the ToC owns the order), and fix the two neighbouring "What's next" links. Chapters are named, not numbered — see Layout.
 - **`ideas/*.md` is transient** — a scratchpad where rationale is born. As pieces land in source / book / CLAUDE.md / DECISIONS.md, cut them from the note; a fully-graduated note is *deleted*, not left as a stub. Graduation homes: reader-half → book, per-symbol rationale → yardoc, invariant → CLAUDE.md (a Seam/Convention entry), **the choice made + the alternatives rejected → DECISIONS.md**, work deferred *as a consequence of a logged decision* → that entry's *Consequences*. Only a standalone open topic with no decision yet keeps a note alive. (See the `ideas-folder` skill.)
 - **`DECISIONS.md` is the home for roads not taken**, and the *only* doc that is never context-loaded — that's why rejection rationale goes there instead of into yardoc (browsed standalone at the API) or here (loaded every session, 40 KB cap). Cite entries by slug (`D-per-process-temp`); `grep '^## D-' DECISIONS.md` is the index, so no ToC. Entries are mutable — a refined decision is edited in place, a *shipped-then-reversed* one gets a tombstone + a fresh entry. **No entry without a real fork** (no rejected alternative → it's just how it works → yardoc). Boundaries: per-gem `DESIGN.md` / `SECURITY.md` keep the system-as-it-is and the shipped defenses, `COMPARISON.md` keeps what *others* do. Grep tripwire: every `D-<slug>` cited in the repo exists as a `^## D-` heading in `DECISIONS.md`.
 
@@ -115,9 +115,20 @@ entry file, and (where relevant) `bin/` + `prompts/`. Top-level `Gemfile`
 wires every gem via `gemspec path: '<gem>'`; top-level `Rakefile` fans
 out `rake test` and orchestrates `rake release VERSION=x.y.z` in lockstep.
 
-**"The book"** = the `book/` folder (chapters `00`–`13`, `book/README.md`
-is the ToC). "The book", "the guide", "chapter N" all mean there.
-(Renamed from `docs/guide/` in July 2026.)
+**"The book"** = the `book/` folder; `book/README.md` is the ToC.
+"The book" and "the guide" both mean there. (Renamed from
+`docs/guide/` in July 2026.)
+
+**Chapters are named, not numbered** (August 2026). Files are
+`security.md` / `code.md`, H1s carry no number, and prose refers to
+"the security chapter" — never "chapter 6". `book/README.md` is the
+**single source of truth for order**, which is why inserting a chapter
+costs one file plus one ToC line instead of renaming fourteen files and
+rewriting ~500 references. Named refs also can't rot: "the security
+chapter" survives a reordering that silently falsifies "chapter 6".
+Grep tripwire: `grep -rniE 'chapters? ?[0-9]+|\bch\.? ?[0-9]+\b' --include='*.md' --include='*.txt' .`
+and `grep -rnoE '[0-9]{2}-[a-z-]+\.md' .` both hit nothing (outside
+`ideas/`, which is transient).
 
 Everything pikuri ships lives under `Pikuri::`, contributed by each gem's
 own Zeitwerk loader. `Pikuri::PROMPT_DIRS` is likewise cooperative: each
@@ -150,7 +161,7 @@ downstream gems.
 - **Agent owns the extension surface; ruby_llm owns the loop.** Changing `agent.rb` = "what hooks fire when?", not reimplementing iteration. Reach for a different listener instead.
 - **Readable, not obfuscated.** Simplest implementation that does the job; no abstraction layers / plugin systems / config knobs not needed for the next concrete step.
 - **Grow by adding tools, listeners, or controls — not by complicating the loop.** New capabilities land as new `Pikuri::Tool` / `Listener` / `Control` constants with their own specs; core and ruby_llm's loop stay ignorant of them.
-- **Grow by adding *bounded gems*, not by fattening one — each addition re-examines the trifecta.** A bounded gem has a *closeable* threat model (freeze the surface, enumerate the legs, write the DESIGN.md); fattening a gem makes every new tool interact with every existing leg. But a bounded concept earns a gem only with a *novel* threat model **or** cohesive lib code needing a home — not merely a nameable posture (worked example: `bin/pikuri-computer` shipped as a demo + book ch7, not a gem). Name a gem after what it *refuses to become*.
+- **Grow by adding *bounded gems*, not by fattening one — each addition re-examines the trifecta.** A bounded gem has a *closeable* threat model (freeze the surface, enumerate the legs, write the DESIGN.md); fattening a gem makes every new tool interact with every existing leg. But a bounded concept earns a gem only with a *novel* threat model **or** cohesive lib code needing a home — not merely a nameable posture (worked example: `bin/pikuri-computer` shipped as a demo + the book's OS-assistant chapter, not a gem). Name a gem after what it *refuses to become*.
 
 ## CI
 

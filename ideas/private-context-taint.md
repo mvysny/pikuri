@@ -184,7 +184,7 @@ state directly. **Not decided.**
 - The killed-fetch-whitelist reason — the `github.com` /
   `raw.githubusercontent` / gist / paste example — as the concrete
   illustration of "attacker-readable ≠ malicious operator." Likely in
-  `06-security.md` / `09-security-revisited.md`.
+  `security.md` / `security-revisited.md`.
 - The Bounded→Sealed choice moment, including the "Google already
   knows — check your history" framing.
 - Named, teachable concepts: *taint*, *Sealed / Bounded / Off*,

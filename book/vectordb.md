@@ -1,4 +1,4 @@
-# Chapter 3 — Agentic search and the vector DB
+# Agentic search and the vector DB
 
 By the end of this chapter you'll have a chat agent with semantic
 recall over a document **corpus** — just the pile of files you point
@@ -12,7 +12,7 @@ disappoints.
 
 The defaults — local llama, no tools that could send your data
 out, verified MCPs — are designed to be safe even with real data;
-[chapter 6](06-security.md) explains why. This chapter is where it
+[the security chapter](security.md) explains why. This chapter is where it
 starts to matter. The whole point of indexing a corpus is to aim
 the agent at data you care about — your notes, your contracts, your
 medical records — so we treat the corpus as *private*, even though
@@ -23,7 +23,7 @@ corpus search and a calculator, and it has no way to reach the
 internet. Why that one rule defuses both *leaking* your data and
 *acting on* a poisoned chunk is the ["Why this agent can't leak your
 corpus"](#why-this-agent-cant-leak-your-corpus) section near the
-end; [chapter 6](06-security.md) makes the general argument.
+end; [the security chapter](security.md) makes the general argument.
 
 ## What a vector database does, in three concepts
 
@@ -60,14 +60,14 @@ lose some precision, not correctness.
 
 `pikuri-vectordb` exposes this stack as a single `vectordb_search`
 tool that the model decides when to call — same Thought →
-Tool-call → Observation loop from chapter 1, with the corpus
+Tool-call → Observation loop from the first-conversation chapter, with the corpus
 sitting alongside `calculator` as a capability the model reaches
 for when the question warrants it.
 
 ## Prerequisites: three models, one server
 
-Chapter 1 already set up the piece this chapter leans on: a
-`llama-server` running in [router mode](01-chat.md#3-start-llama-server-in-multi-model-mode),
+The first-conversation chapter already set up the piece this chapter leans on: a
+`llama-server` running in [router mode](chat.md#3-start-llama-server-in-multi-model-mode),
 serving every GGUF in `~/.cache/llama.cpp/` from one port. All
 this chapter does is drop two more GGUFs into that cache. The
 same router process then serves all three models — chat,
@@ -82,14 +82,14 @@ The two extras the chapter relies on:
 2. **Reranker** — a cross-encoder. The demo defaults to
    `bge-reranker-v2-m3` (~300 MB quantized).
 
-(The third — chat — is the Qwen3.6-35B you pulled in chapter 1.)
+(The third — chat — is the Qwen3.6-35B you pulled in the first-conversation chapter.)
 
 We'll create a config file for llama-server with all the models;
 llama-server will pull them automatically in the background.
 Please be patient - it will take a couple of seconds and llama-server
 won't show a progress bar. We'll pull at a higher quantization: `:Q8_0` instead of `:Q4_K_M`.
 
-**Why a higher quant than chapter 1's chat model.** `Q4_K_M` was
+**Why a higher quant than the first-conversation chapter's chat model.** `Q4_K_M` was
 designed for the *"I have a 35B model and need to fit it in 24 GB
 of VRAM"* case — large LLMs have enough parameter redundancy to
 absorb the precision loss. Embedders and rerankers are tiny by
@@ -143,7 +143,7 @@ config. The section header is the alias the client will use
 parameter names inside each section mirror `llama-server`'s
 long-form CLI flags (`embeddings`, `reranking`, `n-gpu-layers`,
 …). Anything not set in a section falls back to the router
-defaults, so `--jinja` and `-ngl 99` from chapter 1 still apply.
+defaults, so `--jinja` and `-ngl 99` from the first-conversation chapter still apply.
 
 **Why these `ctx-size` / `batch-size` / `ubatch-size` values.**
 `ctx-size` is the maximum sequence length the model accepts in a
@@ -183,12 +183,12 @@ or reload involved. You can verify with
 status: .status.value}'` and watch each `status` flip from
 `unloaded` to `loaded` on first hit, then stay there.
 
-Memory cost over chapter 1's chat-only setup is small: ~150 MB
+Memory cost over the first-conversation chapter's chat-only setup is small: ~150 MB
 for the embedder weights and ~600 MB for the reranker weights at
 Q8_0, plus a few hundred MB of KV cache between them at 8K
 context — ~1 GB for the two helpers together. The chat model's
 just-under-32-GB footprint dominates the budget, and it was sized
-([chapter 1](01-chat.md#3-start-llama-server-in-multi-model-mode))
+([the first-conversation chapter](chat.md#3-start-llama-server-in-multi-model-mode))
 to leave exactly this much headroom: chat + embedder + reranker
 all stay resident and still fit inside 32 GB of VRAM, barely.
 
@@ -223,7 +223,7 @@ This boots a single chat agent with:
 
 - The `vectordb_search`, `vectordb_read`, and `vectordb_reindex`
   tools,
-- The `calculator` from chapter 1 (so non-corpus arithmetic still
+- The `calculator` from the first-conversation chapter (so non-corpus arithmetic still
   works),
 - A `Pikuri::VectorDb::Backend::InMemory` pointed at the
   `book/` directory of this checkout (i.e., the chapters
@@ -258,8 +258,8 @@ in memory, ask it something:
 
 What you should see: the agent reasons about the question, fires
 off two or three `vectordb_search` calls, and answers with a
-paragraph plus a citation to `02-subagents.md` (and possibly
-`06-security.md` for the lethal-trifecta tie-in). The retrieved
+paragraph plus a citation to `subagents.md` (and possibly
+`security.md` for the lethal-trifecta tie-in). The retrieved
 chunks — a numbered list of `source (score=…)` snippets — arrive as
 the observations it reasons over, right in its own output stream.
 
@@ -279,7 +279,7 @@ want persistence.
 
 ## Plugging in PDF support — your first extractor
 
-Remember the end of chapter 1, where the agent scraped a PDF and
+Remember the end of the first-conversation chapter, where the agent scraped a PDF and
 could only report *"Error: unsupported content-type"*? A real
 corpus is full of PDFs — papers, manuals, scanned contracts — so
 this is the chapter that fixes it. `bin/pikuri-corpus` does it with
@@ -294,7 +294,7 @@ Pikuri::Extractors::PDF.register
 That's the whole wiring. pikuri-core routes every format→text
 conversion through one registry (`Pikuri::Extractor`), and
 *everything* that reads documents — the vectordb indexer, the
-`read` tool, even chapter 1's `web_scrape` — asks that registry.
+`read` tool, even the first-conversation chapter's `web_scrape` — asks that registry.
 One `register` call and all of them speak PDF at once: no
 per-tool dispatch to extend, no configuration file. Drop a PDF
 into your `--source` directory, reindex, and search hits will cite
@@ -314,7 +314,7 @@ Two deliberate design choices worth noticing:
 
 One forward note: pikuri-pdf is the *training-wheels* PDF extractor
 — in-process, pure Ruby, nothing to install — and it's the right
-wiring for this chapter's no-egress corpus agent. Chapter 13's
+wiring for this chapter's no-egress corpus agent. The universal-assistant chapter's
 assistant, which fetches untrusted documents from the open web,
 will swap it out for `pikuri-extractors`: the same registry slot,
 but the parsing happens inside a networkless docker container, and
@@ -412,7 +412,7 @@ did with one.
 
 **It defeats data exfiltration.** An agent that can read private
 data *and* reach the internet can be talked into mailing that data
-somewhere — the *lethal trifecta* [chapter 6](06-security.md) names
+somewhere — the *lethal trifecta* [the security chapter](security.md) names
 in full. You break it by removing any one leg, and the bluntest leg
 to remove is the outbound one. With no network tool on the agent,
 there is simply no channel for your corpus to escape through, no
@@ -437,9 +437,8 @@ you want one agent that browses the web, runs MCP servers, *and*
 reaches your private corpus — then the corpus has to be quarantined
 behind a sub-agent that itself has no egress: the bundled
 `LIBRARIAN` persona, the privilege-separation arc from
-[chapter 2](02-subagents.md) applied to retrieval. [Chapter
-6](06-security.md) makes the full trifecta argument and shows where
-the `LIBRARIAN` cut goes; [chapter 13](13-assistant.md) wires it into
+[the sub-agents chapter](subagents.md) applied to retrieval. [The security chapter](security.md) makes the full trifecta argument and shows where
+the `LIBRARIAN` cut goes; [the universal-assistant chapter](assistant.md) wires it into
 the assistant. Here, with retrieval as the agent's only job, we
 don't need it.
 
@@ -491,10 +490,10 @@ keeps it in sync incrementally, and a full `vectordb_reindex` is
 only needed after changing the embedder or chunker settings.
 
 `Server::Qdrant.ensure_running` requires `docker` on `PATH` — the
-rootless setup from [chapter 0](00-prerequisites.md), which until
+rootless setup from [the prerequisites chapter](prerequisites.md), which until
 now you could put off, becomes load-bearing here; the
 container image tag is pinned in `Server::Qdrant::IMAGE` — the
-same tag as the Qdrant inside [chapter 4](04-memories.md)'s
+same tag as the Qdrant inside [the memories chapter](memories.md)'s
 memory stack, by convention, so a host running both holds one
 image on disk. The container is named under a `pikuri-internal-`
 prefix that pikuri considers fully owned, and is recreated
@@ -504,7 +503,7 @@ yours and is never touched. If `docker` is unavailable, or you'd
 rather manage qdrant yourself (a production cluster, a shared
 docker-compose stack), point
 `Backend::Qdrant.new(host:, port:, collection:)` at it directly
-and skip the supervisor. (One caveat for later: chapter 4's
+and skip the supervisor. (One caveat for later: the memories chapter's
 memory stack publishes *its own* Qdrant on the same default host
 port, 6333 — the two are separate instances by design, so if you
 run both at once, give this supervisor a different `port:`.)
@@ -516,7 +515,7 @@ either engine answers top-k over a personal-sized corpus in
 single-digit milliseconds. Qdrant gets the recommendation because
 its REST surface has held stable since 2023 (Chroma has one
 breaking API revision on record), its server image is less than
-half the size, and chapter 4's memory stack already runs it — one
+half the size, and the memories chapter's memory stack already runs it — one
 engine to learn, audit, and trust instead of two. The full
 side-by-side survey lives in
 [`pikuri-vectordb/DESIGN.md`](../pikuri-vectordb/DESIGN.md).
@@ -572,19 +571,19 @@ takes the Qdrant container down — so no write is ever cut off
 half-done. The next boot's reconcile sweep folds in anything the
 interrupted run didn't reach.
 
-This is the shape `pikuri-assistant` ([chapter 13](13-assistant.md))
+This is the shape `pikuri-assistant` ([the universal-assistant chapter](assistant.md))
 builds on: a corpus that stays indexed between sessions and keeps
 itself current.
 
 ## What's next
 
 `pikuri-vectordb` gives the agent recall *over a corpus the user
-indexed*. The next chapter — [memories](04-memories.md) — is the
+indexed*. The next chapter — [memories](memories.md) — is the
 other half: recall *of facts the agent learned across earlier
 conversations*. The two pair naturally inside
 `pikuri-assistant` — the privacy-conscious assistant binary
-chapter 13 walks through, with vector search over your notes plus
+the universal-assistant chapter walks through, with vector search over your notes plus
 persistent memories about you across sessions — but each is
 introduced on its own first.
 
-→ Continue to [chapter 4 — Memories](04-memories.md).
+→ Continue to [Memories](memories.md).

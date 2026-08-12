@@ -36,7 +36,7 @@ from what the agent's job must touch: a coding agent must
 `git pull` / `mvn` / `curl` (network essential, containment cheap); an
 OS helper must inspect the real host (filesystem essential, egress is
 the whole risk). The class lives in pikuri-code because it's a `Bash`
-sandbox; its *user* is pikuri-os (see that gem's DESIGN and book ch7).
+sandbox; its *user* is pikuri-os (see that gem's DESIGN and the book's OS-assistant chapter).
 
 ### Sandbox is not Workspace
 

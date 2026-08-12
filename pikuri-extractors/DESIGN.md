@@ -5,7 +5,7 @@ converts untrusted documents under. The per-class contracts — the
 `matches?` / `extract` / `extract_lines` / `register` signatures, the
 exact converter argv, the `@raise` conditions — live in the
 {Pikuri::Extractors::Documents} YARD header. There is no dedicated book
-chapter: the guide wires `pikuri-pdf` first (ch3, ch7) and only ch13's
+chapter: the guide wires `pikuri-pdf` first (the vector-DB chapter, the OS-assistant chapter) and only the universal-assistant chapter's
 assistant swaps in this extractor. What this file carries is the
 cross-cutting *why* the class header would otherwise swell with — the
 sandbox threat model, the PDF-arm trade-off against a whole other gem,
@@ -55,7 +55,7 @@ registry's first-match-wins legible. The trade:
   Read wording. Costs: pdf-reader's five-gem dependency tail, and parsing
   untrusted bytes in-process (pure Ruby, so DoS at worst).
 
-Guide progression: ch3 / ch7 wire pikuri-pdf (no docker yet); ch13's
+Guide progression: the vector-DB chapter / the OS-assistant chapter wire pikuri-pdf (no docker yet); the universal-assistant chapter's
 assistant supersedes it with this extractor. (pikuri-pdf's own header
 carries only its local dependency-isolation reason and points here for
 the full contrast.)

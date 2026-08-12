@@ -32,18 +32,19 @@ sudo apt install ruby ruby-bundler
 bundle install
 ```
 
-Chapters 3+ of the guide also run local infrastructure (vector
-store, memory store, MCP servers) in Docker — set up **rootless**,
+From the vector-DB chapter onward, the guide also runs local
+infrastructure (vector store, memory store, MCP servers) in
+Docker — set up **rootless**,
 not via the `docker` group, which is passwordless root. The
 one-time setup lives in
-[book/00-prerequisites.md](book/00-prerequisites.md).
+[book/prerequisites.md](book/prerequisites.md).
 
 Pikuri itself is now installed in dev mode. To actually have a
 conversation you also need a model running. The shortest route —
 install `llama.cpp` and start `llama-server` with the default Qwen
 model — is the first thing the guide walks through:
 
-→ **[book/01-chat.md](book/01-chat.md)** — your first
+→ **[book/chat.md](book/chat.md)** — your first
 conversation, from a fresh checkout to a working assistant.
 
 ## Where to go next
@@ -52,11 +53,13 @@ Pikuri is small enough to read end-to-end in an evening. Two ways
 in:
 
 - **Read the guide** at [`book/`](book/). It's a short
-  book — chapter 01 starts a chat agent, chapter 02 introduces
-  sub-agents (`pikuri-minions`), chapter 03 walks the in-repo
-  coding agent (`pikuri-code`) and its security posture. Reading
-  order matters: each chapter assumes the previous one's
-  vocabulary.
+  book — the [first-conversation chapter](book/chat.md) starts a
+  chat agent, the [sub-agents chapter](book/subagents.md)
+  introduces delegation (`pikuri-minions`), and the
+  [coding-agent chapter](book/code.md) walks the in-repo coding
+  agent (`pikuri-code`) and its security posture. Reading order
+  matters: each chapter assumes the previous one's vocabulary,
+  and [`book/README.md`](book/README.md) is the running order.
 - **Or jump straight to whichever gem you want to use.** Each
   per-gem README is a reference card with a wired-up snippet:
   - [`pikuri-core`](pikuri-core/README.md) — `Pikuri::Agent`, the

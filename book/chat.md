@@ -1,4 +1,4 @@
-# Chapter 1 — Your first conversation
+# Your first conversation
 
 By the end of this chapter you'll have a working privacy-first
 chatbot — model and conversation both running entirely on your own
@@ -13,13 +13,13 @@ every later chapter builds on.
 
 The defaults — local llama, no tools that could send your data
 out, verified MCPs — are designed to be safe even with real data;
-[chapter 6](06-security.md) explains why. If you're uneasy until
+[the security chapter](security.md) explains why. If you're uneasy until
 then, just follow along with throwaway prompts. The defaults are
 tuned for the recommended path: pikuri running on your own
 machine, on a project you'd already trust to live there. Within
 that path the built-in safeguards are designed to hold without
-you thinking about them. Chapter 6 (and its code-track companion,
-[chapter 9](09-security-revisited.md)) is the heavyweight reading
+you thinking about them. The security chapter (and its code-track companion,
+[the security-revisited chapter](security-revisited.md)) is the heavyweight reading
 for when you want to step outside that path — pulling in
 third-party plugins, pointing pikuri at code you don't already
 trust, or running it unattended.
@@ -27,8 +27,8 @@ trust, or running it unattended.
 ## Prerequisites
 
 You should already have a checkout and `bundle install` finished,
-per [chapter 0](00-prerequisites.md) (chapter 0's Docker section
-can wait until chapter 3 — nothing here needs it). Quick
+per [the prerequisites chapter](prerequisites.md) (its Docker section
+can wait until the vector-DB chapter — nothing here needs it). Quick
 verification:
 
 ```sh
@@ -48,7 +48,7 @@ no answer.** We'll start one next.
 Ubuntu 26.04 LTS or newer** — that's the first Ubuntu release
 packaging `llama-server` build `b8681`, which is recent enough to
 include built-in multi-model routing. We rely on that in step 3
-below (and in [chapter 3](03-vectordb.md), where we run a chat
+below (and in [the vector-DB chapter](vectordb.md), where we run a chat
 model and an embedding model from the same server). Older Ubuntu
 releases ship a `llama.cpp` from before the
 [model-management feature](https://huggingface.co/blog/ggml-org/model-management-in-llamacpp)
@@ -107,8 +107,8 @@ model the router loads, not flags for a single model:
 The router keeps up to `--models-max` models resident
 simultaneously (default: 4) and only unloads the
 least-recently-used one when that limit is reached. With just
-the chat model so far that's one model in one process; chapter
-3 will add an embedder and a reranker by pulling more GGUFs
+the chat model so far that's one model in one process; the
+vector-DB chapter will add an embedder and a reranker by pulling more GGUFs
 into `~/.cache/llama.cpp/`, and this same router will pick them
 up on next request without displacing the chat model. The win
 over a separate `llama-swap` proxy is that there are no extra
@@ -117,7 +117,7 @@ moving parts to configure.
 **Memory.** Q4_K_M of this 35B-A3B model needs **a bit under
 32 GB of memory** for the weights plus KV cache — deliberately,
 so it fits a 32 GB VRAM budget with a little room left for the
-OS and for the embedder + reranker chapter 3 adds (another
+OS and for the embedder + reranker the vector-DB chapter adds (another
 ~1 GB between them). All three models stay resident at once and
 still fit in 32 GB — barely, but they fit.
 
@@ -278,7 +278,7 @@ document. That error string is the whole failure mode: tools hand
 the model observations, including failed ones, and the model reacts
 instead of crashing. pikuri-core deliberately ships no PDF parser —
 it's the kind of dependency you should opt into, not inherit — and
-chapter 3 opens by plugging one in with two lines. Remember this
+the vector-DB chapter opens by plugging one in with two lines. Remember this
 moment when you get there.
 
 ## Configuring the example scripts
@@ -323,12 +323,12 @@ The recognized keys:
 | `llm_api_key` | all scripts | API key for a hosted provider; omit for a keyless local server |
 | `brave_search_api_key` | chat, code, assistant | enables Brave web search (below) |
 | `exa_api_key` | chat, code, assistant | enables Exa web search (below) |
-| `embed_model` | corpus (ch. 3), memory (ch. 4) | embedding model |
-| `extraction_model` | memory (ch. 4) | mem0 extraction model |
-| `reranker_model`, `reranker_server` | corpus (ch. 3) | reranker model / its server |
+| `embed_model` | corpus, memory | embedding model |
+| `extraction_model` | memory | mem0 extraction model |
+| `reranker_model`, `reranker_server` | corpus | reranker model / its server |
 
 What stays on the command line is what changes *per run*: the prompt
-itself, and operational toggles like `--no-sandbox` (chapter 8) — a
+itself, and operational toggles like `--no-sandbox` (the coding-agent chapter) — a
 security switch you'd never want silently persisted in a file.
 
 ## Search providers and their privacy trade-offs
@@ -406,4 +406,4 @@ absorb only its summary back into the parent conversation. It's
 the smallest extension you can wire onto an agent, and the demo
 binary (`pikuri-minions`) makes the fan-out concrete.
 
-→ Continue to [chapter 2 — sub-agents](02-subagents.md).
+→ Continue to [sub-agents](subagents.md).

@@ -1,7 +1,7 @@
-# Chapter 9 — Security revisited: the coding-agent shape
+# Security revisited: the coding-agent shape
 
-[Chapter 6](06-security.md) gave you the kit (trifecta, the
-table, the decision procedure). [Chapter 8](08-code.md) just
+[The security chapter](security.md) gave you the kit (trifecta, the
+table, the decision procedure). [The coding-agent chapter](code.md) just
 showed three of those kit slots concretely — `Workspace` is the
 "blast-radius containment" row, `Confirmer` is the "human gate"
 row, `Sandbox::Bubblewrap` joins containment for the bash
@@ -11,16 +11,16 @@ default configuration actually protect, and what doesn't it?**
 Then the deepest layer — wrapping the **whole pikuri process** in
 a container, when in-process defenses aren't enough.
 
-There's no new code to run. This is where the kit from chapter 6
+There's no new code to run. This is where the kit from the security chapter
 gets compared, side by side, against the specific shape from
-chapter 8.
+the coding-agent chapter.
 
 ## What `pikuri-code`'s defaults protect
 
 `pikuri-code` is a working demo of the coding-agent shape; it is
 **not** a hardened tool, and the threat model has clear gaps.
 This chapter's view — what its defaults do and don't cover,
-mapped onto the kit slots from chapter 6.
+mapped onto the kit slots from the security chapter.
 
 What the default configuration *does* protect:
 
@@ -44,7 +44,7 @@ What the default configuration *does* protect:
   child that reads a prompt-injected file has no tool to act on
   it — only its one-paragraph reply reaches the parent. (Kit
   slot: break the trifecta, applied to the sub-agent boundary.
-  Chapter 6's "honest gap" — the relay leg — is in full force
+  The security chapter's "honest gap" — the relay leg — is in full force
   here: the parent still holds all three legs.)
 
 What it *doesn't* protect:
@@ -71,7 +71,7 @@ What it *doesn't* protect:
 - **The injection chain itself.** A page `web_scrape` fetches, or
   a file `read` loads, can carry instructions the model acts on;
   persona separation and the confirmation prompts shrink the
-  blast radius but don't close the vector. Chapter 6's five
+  blast radius but don't close the vector. The security chapter's five
   attacks walk this end to end — attack 5 is the worst case for
   this binary specifically.
 
@@ -82,13 +82,13 @@ outer wall.
 
 ## Wrapping pikuri in Docker
 
-Bubblewrap (chapter 8) and Docker (chapter 10) are both isolation
+Bubblewrap (the coding-agent chapter) and Docker (the MCP-revisited chapter) are both isolation
 mechanisms, but each protects only one thing. Bubblewrap wraps a
 single `bash` invocation; Docker wraps a single MCP server. The
 rest of pikuri's process — the file tools, the LLM transport, the
 MCP client side, the agent loop itself — runs with your usual
 shell's permissions. That's the right default for the recommended
-path (chapter 1: your machine, your project), and it's why pikuri
+path (the first-conversation chapter: your machine, your project), and it's why pikuri
 ships with no outer container.
 
 If you want to step outside that path — unattended runs, or
@@ -102,7 +102,7 @@ Bubblewrap stops `bash` from reading `~/.ssh`. It does not stop a
 parser bug in Nokogiri or Faraday from doing something unexpected
 in pikuri's own process, or a hostile MCP server from reading your
 home directory. The Workspace seam blocks the *named* file-tool
-path (chapter 8), but it lives in the same process; a
+path (the coding-agent chapter), but it lives in the same process; a
 path-traversal bug, or an MCP that does raw filesystem access,
 routes around it.
 
@@ -126,7 +126,7 @@ gaps:
 - **A defense-in-depth backstop for host secrets (secondary).**
   The Workspace seam already keeps file tools out of `~/.ssh`,
   `~/.aws`, `~/.gnupg`, and other projects; Bubblewrap keeps
-  `bash` out; chapter 10 recommends containerising MCPs to keep
+  `bash` out; the MCP-revisited chapter recommends containerising MCPs to keep
   them out too. The outer container makes "not in scope" a
   property of the filesystem view rather than of well-behaved
   code — useful if any of those has a bug, a misconfiguration
@@ -135,7 +135,7 @@ gaps:
 
 ### Why Docker-in-Docker is the wrong inner step
 
-Chapter 10's "every MCP in a container" stance is written for the
+The MCP-revisited chapter's "every MCP in a container" stance is written for the
 native-pikuri shape: pikuri trusted, MCPs not, container as the
 boundary between them. Once pikuri itself is in a container, the
 boundary moves up — and reaching for *another* container layer
@@ -148,7 +148,7 @@ both collapse the outer wall:
   *sibling* container with `-v /:/host` mounted in. Drop a key
   into `/host/root/.ssh/authorized_keys` from that sibling and
   the agent has root on your host — not a sandbox escape, the
-  daemon was a root-equivalent API the whole time. (Chapter 0's
+  daemon was a root-equivalent API the whole time. (The prerequisites chapter's
   rootless daemon softens "root" to "your user" — the sibling
   can't touch `/root`, but `~/.ssh/authorized_keys` and every
   file you own are still in reach, which is the whole exposure
@@ -165,11 +165,11 @@ Both are well-rehearsed escape paths. Treat either of them as
 So: **when pikuri itself is in a container, MCPs run alongside it
 in the same container, not in nested ones.** The outer Docker is
 the MCP sandbox. Drop the `docker run -i --rm …` wrappers from
-chapter 10's registry recipes and invoke the MCP binaries directly
+the MCP-revisited chapter's registry recipes and invoke the MCP binaries directly
 inside the container — `npx -y mcp-maven-deps@<pin>`, `python -m
 mcp_server_fetch`, and so on — with packages pinned in the outer
-image's Dockerfile the same way chapter 10 pinned them one layer
-in. Vendor-only images (the GitHub MCP example from chapter 10)
+image's Dockerfile the same way the MCP-revisited chapter pinned them one layer
+in. Vendor-only images (the GitHub MCP example from the MCP-revisited chapter)
 don't compose cleanly with this shape; you'd need to extract the
 binary into your outer image or pass on that MCP.
 
@@ -184,7 +184,7 @@ process does with what's mounted in:
   remains. Outer isolation bounds your *machine's* exposure, not
   this project's.
 - **Tokens keep their blast radius.** A GitHub PAT passed in via
-  `-e` does its full job from inside any container; chapter 10's
+  `-e` does its full job from inside any container; the MCP-revisited chapter's
   "scope the token tightly" applies unchanged.
 - **Bubblewrap inside is mostly redundant.** The outer container
   already isolates `bash`; running Bubblewrap inside adds little.
@@ -199,7 +199,7 @@ host. That's a longer list than it looks.
 
 - **A language runtime per MCP shape.** Node for npx-based MCPs,
   Python for pip-based ones, plus per-MCP system deps. The
-  Playwright MCP is the costliest single case in chapter 10 even
+  Playwright MCP is the costliest single case in the MCP-revisited chapter even
   when it lives in its own container — chromium, X11 socket
   discipline, screenshot paths — and an outer-container shape
   drags all of that into the *same* container as pikuri.
@@ -221,14 +221,14 @@ host. That's a longer list than it looks.
 
 None of these are individually hard. Stacked, they're a parallel
 dev environment to maintain — which is the operational reason
-chapter 1's recommended path stays container-free. The cost folds
+the first-conversation chapter's recommended path stays container-free. The cost folds
 into a normal workflow only when you *already* live inside the
 container: your editor opens projects there, your shell is the
 container's shell. If your hands-on development happens on the
 host, the container is a duplicate to keep in sync, and version
 skew between the two is a steady tax.
 
-For the recommended-path use case from chapter 1, outer Docker is
+For the recommended-path use case from the first-conversation chapter, outer Docker is
 overkill — the in-process defenses are designed for that path, and
 pikuri primarily optimizes for *not* running fully inside Docker.
 This section is for the cases where you've deliberately stepped
@@ -236,7 +236,7 @@ out of it.
 
 ## What's next
 
-[Chapter 10 — MCPs revisited](10-mcp-revisited.md) picks the MCP
+[MCPs revisited](mcp-revisited.md) picks the MCP
 thread back up at the harder end of the spectrum: the official
 GitHub MCP server in Docker, npx and pip packages of unknown
 provenance, Playwright with its open-web surface, and the full

@@ -1,7 +1,8 @@
-# Chapter 2 — Sub-agents
+# Sub-agents
 
-This chapter introduces exactly one new concept on top of chapter
-1: **delegation**. Letting the model spawn a fresh agent — with
+This chapter introduces exactly one new concept on top of the
+first-conversation chapter: **delegation**. Letting the model
+spawn a fresh agent — with
 its own narrow toolset and its own focused system prompt — to
 handle a self-contained side-quest, and absorbing only the final
 summary back into the parent conversation. It's the smallest
@@ -10,28 +11,28 @@ makes the fan-out shape concrete.
 
 By the end of this chapter you'll know what a *persona* is, what a
 *pikuri extension* looks like (the `configure` + `bind` dance
-you'll see again in chapter 5 with MCP and chapter 8 with the
+you'll see again in the MCP chapter with MCP and the coding-agent chapter with the
 file/shell stack), and what gets inherited vs. owned when a
 parent spawns a child.
 
 The defaults — local llama, no tools that could send your data
 out, verified MCPs — are designed to be safe even with real data;
-[chapter 6](06-security.md) explains why. Sub-agents are actually
+[the security chapter](security.md) explains why. Sub-agents are actually
 where the privacy story starts to *do work*: the persona system
 in this chapter is also pikuri's main privilege-separation
-mechanism, and chapter 6 will name it as the cheapest line in
+mechanism, and the security chapter will name it as the cheapest line in
 the defense kit.
 
 ## Prerequisites
 
-You've finished [chapter 1](01-chat.md), `llama-server` is still
+You've finished [the first-conversation chapter](chat.md), `llama-server` is still
 running on `localhost:8080`, and `bundle install` has been done
 since you cloned. If those are true, you're ready.
 
 ## 1. Run the minions demo
 
 `bin/pikuri-minions` is a "boss + minions" binary: the boss agent
-has the four network/arithmetic tools from chapter 1 *plus* the
+has the four network/arithmetic tools from the first-conversation chapter *plus* the
 `agent` tool, and one persona — `RESEARCHER` — is wired in as a
 delegate.
 
@@ -64,7 +65,7 @@ the fan-out apart from the boss's own work.
 
 From the model's perspective, delegation is *just another tool
 call*. The Thought → Tool-call → Observation loop is the same loop
-from chapter 1; the `agent` tool happens to spawn a fresh
+from the first-conversation chapter; the `agent` tool happens to spawn a fresh
 `Pikuri::Agent` instead of computing arithmetic or hitting Brave
 Search.
 
@@ -178,8 +179,8 @@ the ones it needs:
   run.
 
 Same shape used by `Pikuri::Skill::Extension` and
-`Pikuri::Mcp::Extension`. You'll see it again in chapter 5 (MCP)
-and chapter 8, where the coding agent wires four extensions at
+`Pikuri::Mcp::Extension`. You'll see it again in the MCP chapter (MCP)
+and the coding-agent chapter, where the coding agent wires four extensions at
 once.
 
 **Practical implication of the configure/bind split:** call
@@ -258,7 +259,7 @@ tool list — there is no `bash` to call. The reverse case (a
 same property in the other direction: it can read files but cannot
 reach the network.
 
-[Chapter 8](08-code.md) makes this concrete: `pikuri-code` wires
+[The coding-agent chapter](code.md) makes this concrete: `pikuri-code` wires
 `FILE_MINER` (a read-only filesystem-recon persona) so the coding
 agent can delegate "find every spec referencing `Foo`" without
 polluting its main context, but a prompt-injected `FILE_MINER`
@@ -269,15 +270,15 @@ cannot reach `web_search` or `bash` because those aren't in its
 
 You now know the smallest extension shape (the `configure` +
 `bind` pair), and you've seen one persona in action. The next
-three chapters — [vectordb](03-vectordb.md), [memories](04-memories.md),
-and [MCP](05-mcp.md) — are the buildup toward
+three chapters — [vectordb](vectordb.md), [memories](memories.md),
+and [MCP](mcp.md) — are the buildup toward
 `pikuri-assistant`: capabilities that an assistant binary wants
 (semantic search over your notes, persistent memories across
-conversations, external tool servers). Chapter 3 introduces a
+conversations, external tool servers). The vector-DB chapter introduces a
 second persona — `LIBRARIAN` — and demonstrates the same
 privilege-separation argument with the corpus's chunks as the
-threat surface. Chapter 4 is a stub until that gem lands;
-chapter 5 is the gentle MCP intro using a public book-catalogue
+threat surface. The memories chapter is a stub until that gem lands;
+the MCP chapter is the gentle MCP intro using a public book-catalogue
 example.
 
-→ Continue to [chapter 3 — Agentic search and the vector DB](03-vectordb.md).
+→ Continue to [Agentic search and the vector DB](vectordb.md).

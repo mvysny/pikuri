@@ -1,25 +1,26 @@
-# Chapter 0 — Prerequisites
+# Prerequisites
 
 This chapter is the one-time machine setup: Ruby, the pikuri
 checkout, and a Docker daemon that doesn't hand root to everything
 running under your account. Each later chapter installs its own
 *subject matter* when it first appears (llama.cpp and the models
-are chapter 1's job), but these three are boring enough to
+are the first-conversation chapter's job), but these three are boring enough to
 front-load — and the Docker section contains a security decision
 that deserves more than a parenthetical in a later chapter.
 
-In a hurry? Chapters [1](01-chat.md) and [2](02-subagents.md) need
+In a hurry? The [first-conversation](chat.md) and
+[sub-agents](subagents.md) chapters need
 only Ruby and the checkout. Docker first earns its keep in
-[chapter 3](03-vectordb.md) (persisting the vector index) and
-becomes load-bearing in chapters [4](04-memories.md),
-[5](05-mcp.md), and [10](10-mcp-revisited.md) — skipping the
-Docker section now and coming back at chapter 3 is a perfectly
+[the vector-DB chapter](vectordb.md) (persisting the vector index) and
+becomes load-bearing in the [memories](memories.md),
+[MCP](mcp.md), and [MCP-revisited](mcp-revisited.md) chapters — skipping the
+Docker section now and coming back at the vector-DB chapter is a perfectly
 fine reading order.
 
 ## The platform
 
 Linux. **Ubuntu 26.04 LTS or newer** makes every package command
-in this guide literal (chapter 1 needs its `llama.cpp` build
+in this guide literal (the first-conversation chapter needs its `llama.cpp` build
 anyway); another Debian derivative is one step removed; other
 distros mean adapting the `apt` lines yourself. macOS may work but
 isn't tested; Windows is unsupported.
@@ -50,7 +51,7 @@ all walled off from your real machine unless you explicitly punch
 a hole. The program inside thinks it has a whole Linux box; in
 reality it can't see your files, your other processes, or your
 keys. It's the same idea as the bubblewrap sandbox the coding
-agent uses ([chapter 8](08-code.md)), packaged as a widely-used,
+agent uses ([the coding-agent chapter](code.md)), packaged as a widely-used,
 batteries-included tool. Docker is everywhere — most server
 software ships as a Docker image now — so it's worth having
 installed regardless.
@@ -58,14 +59,14 @@ installed regardless.
 That's the whole mental model you need for now. The deeper
 material — what isolation Docker does and doesn't give you,
 ephemeral overlays, the container-socket footgun — is
-[chapter 10](10-mcp-revisited.md). For now: it's a box, the
+[the MCP-revisited chapter](mcp-revisited.md). For now: it's a box, the
 program runs in the box, the box can't see your stuff.
 
-The guide leans on that box from chapter 3 on: chapter 3 keeps
-your vector index in a Qdrant container, chapter 4 runs the mem0
-memory store as a small compose stack, and chapters 5
-and 10 use a container as the wall between pikuri and MCP-server
-code you didn't write. All of it just needs a working `docker` on
+The guide leans on that box from the vector-DB chapter on: that
+chapter keeps your vector index in a Qdrant container, the
+memories chapter runs the mem0 memory store as a small compose
+stack, and the two MCP chapters use a container as the wall
+between pikuri and MCP-server code you didn't write. All of it just needs a working `docker` on
 `PATH` — pikuri doesn't care how the daemon behind it runs. But
 *you* should.
 
@@ -137,13 +138,13 @@ Two rootless quirks worth knowing about up front:
   networking deliberately blocks containers from reaching services
   bound to the host's `127.0.0.1` (the network stack runs with
   `--disable-host-loopback`) — services that assume "local caller
-  = trusted caller" stay out of containers' reach. Chapter 1's
-  `llama-server` binds `127.0.0.1:8080`, and chapter 4 runs a
+  = trusted caller" stay out of containers' reach. The first-conversation chapter's
+  `llama-server` binds `127.0.0.1:8080`, and the memories chapter runs a
   container that must call it. That's what the `socat` in the apt
   line above is for: pikuri uses it to relay *one specific host
   service* to *the specific trusted containers that need it* over
   a unix socket file, leaving the loopback sealed for every other
-  container — [chapter 4](04-memories.md) shows the mechanism. The
+  container — [the memories chapter](memories.md) shows the mechanism. The
   other direction is unaffected: ports a container publishes, like
   Qdrant's `127.0.0.1:6333`, are reachable from the host as usual.
 - **Logging out stops your user's systemd services**, the rootless
@@ -162,5 +163,5 @@ and make it deliberately.
 
 No API key, no cloud account, no GPU-vendor SDK sign-up. The model
 runs on your own hardware and the conversation never leaves your
-machine — making that real is [chapter 1](01-chat.md)'s job, and
+machine — making that real is [the first-conversation chapter](chat.md)'s job, and
 the natural next page.

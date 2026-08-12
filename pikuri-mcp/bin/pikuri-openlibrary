@@ -3,7 +3,7 @@
 
 # Dev / demo entry point — runs from a source checkout only. The pikuri
 # gem ships as a library; this script is not installed by `gem install
-# pikuri-mcp`. It is the worked example of book/05-mcp.md: a
+# pikuri-mcp`. It is the worked example of book/mcp.md: a
 # minimal agent wired to exactly one MCP server — the community
 # Open Library catalogue reader (https://github.com/8enSmith/mcp-open-library)
 # running inside a locally-built Docker container.
@@ -20,7 +20,7 @@
 # (untrusted content) — two legs of the lethal trifecta. The third leg,
 # private data, is structurally absent: no files, no memory, no token,
 # nothing of yours is wired in, so a misbehaving server has nothing to
-# exfiltrate. Keep it that way — see book/06-security.md before
+# exfiltrate. Keep it that way — see book/security.md before
 # bolting more tools onto this agent.
 #
 # Prerequisite: build the server image once (the chapter walks through
@@ -169,7 +169,7 @@ unless mcp_ext.servers.live_ids.include?('openlibrary')
   warn 'Is docker running, and did you build the server image? One-time setup:'
   warn '  git clone https://github.com/8enSmith/mcp-open-library'
   warn '  cd mcp-open-library && docker build -t mcp-open-library .'
-  warn 'book/05-mcp.md is the full walkthrough.'
+  warn 'book/mcp.md is the full walkthrough.'
   exit 1
 end
 
