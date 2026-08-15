@@ -149,6 +149,16 @@ The `bin/pikuri-*` scripts are dev / demo entry points only, not gem
 executables. Production binaries (e.g. the planned `pikuri-tui`) live in
 downstream gems.
 
+**A `bin/` script is simple on purpose, so its simplifications are not
+pikuri policy.** Each one must stay readable end-to-end, so it takes the
+crudest handling that works — `exit 1` on a context overflow, synchronous
+stdin, no interloper. A real host (TUI, web client) may be far more
+complex and handle the same case properly. So don't cite a `bin/` script
+as evidence of how pikuri *behaves*, and don't propose a library feature
+whose value rests on a demo's shortcut — check whether the real host
+would even have the problem. Library behaviour is defined by `lib/` and
+its yardoc.
+
 ## Conventions
 
 - **Ruby, no Rails.** Plain classes, `Data.define` for value objects, Faraday for HTTP, Rainbow for terminal color. ruby_llm is the LLM transport — no provider-specific SDKs.
