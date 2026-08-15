@@ -50,8 +50,9 @@ module Pikuri
     # == Refusals (all as +"Error: ..."+)
     #
     # Path outside the workspace ({Filesystem::Error}), not found, EACCES, a
-    # directory ("use the glob tool"), image over {MAX_IMAGE_BYTES}, binary
-    # content (nothing in the registry claims it — the {Pikuri::FileType.binary?}
+    # directory (refused, but the refusal carries the directory's own entries —
+    # see {.directory_refusal}), image over {MAX_IMAGE_BYTES}, binary content
+    # (nothing in the registry claims it — the {Pikuri::FileType.binary?}
     # heuristic catches archives/artifacts with no extension list), offset past
     # EOF.
     class Read < Pikuri::Tool
@@ -99,7 +100,6 @@ module Pikuri
         - PDFs are text-extracted page-by-page with `--- Page N ---` markers in the output. Cite pages back to the user from those markers. PDFs cannot be modified with `edit`.
         - PNG / JPEG / GIF / WebP files are attached as images you can see directly, alongside a short text note with the path and size. Requires a vision-capable model; on a text-only model the provider will reject the call. Images cannot be modified with `edit`.
         - Other binary files (archives, compiled artifacts) are refused; this tool reads text otherwise.
-        - Directories are refused — use the `glob` tool to list files.
         - If unsure of the path, use `glob` first to look up filenames.
         - Avoid tiny repeated slices — if you need more context, read a larger window.
       DESC
@@ -161,7 +161,7 @@ module Pikuri
 
         resolved = workspace.resolve_for_read(path)
         return "Error: file not found: #{path}" unless resolved.exist?
-        return "Error: #{path} is a directory; use the glob tool to list files." if resolved.directory?
+        return directory_refusal(path: path, resolved: resolved) if resolved.directory?
 
         mime = Pikuri::FileType.detect_mime(resolved)
         return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
@@ -190,6 +190,35 @@ module Pikuri
         # surfaced by read_as_text_paged.
         "Error: #{e.message}"
       end
+
+      # Refuses, but hands back the directory's entries so the model recovers
+      # with no extra round-trip — the {Search::Utils.oversized_root_refusal}
+      # move:
+      #
+      #   Error: lib is a directory, not a file. It contains (directories end with `/`):
+      #   pikuri/  [3 dirs, 1 file]
+      #   version.rb  48B
+      #
+      # **Keep this out of {DESCRIPTION}.** It is error recovery, not a
+      # documented capability: teaching +read+ as a second way to list hands
+      # the model a two-tools-no-criterion coin flip (+D-directory-listing+).
+      #
+      # Never marks the read ledger — a directory can't be edited, so counting
+      # it would clear the read-before-edit gate for a path nobody read.
+      #
+      # @param path [String] raw path from the LLM (for the message)
+      # @param resolved [Pathname] workspace-resolved path
+      # @return [String] +"Error: ..."+ carrying the depth-1 listing
+      def self.directory_refusal(path:, resolved:)
+        base = "Error: #{path} is a directory, not a file."
+        listing = Listing.render(resolved)
+        return "#{base} It is empty." if listing.empty?
+
+        "#{base} It contains (directories end with `/`):\n#{listing}"
+      rescue SystemCallError => e
+        "#{base} It cannot be listed: #{e.message}"
+      end
+      private_class_method :directory_refusal
 
       # Render a {Pikuri::Extractor::Page} as the cat-n observation (6-col line
       # number, tab, truncated content) plus a trailer telling the model whether

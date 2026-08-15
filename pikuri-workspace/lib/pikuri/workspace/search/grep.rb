@@ -253,22 +253,12 @@ module Pikuri
         end
         private_class_method :strip_dot_slash
 
-        # Head-truncate +raw+ to {MAX_BYTES}, cutting at the last newline so the
-        # final row is never partial. Returns the content and a marker (empty if
-        # no truncation).
+        # Head-truncate +raw+ to {MAX_BYTES}. Returns the content and a marker
+        # (empty if no truncation).
         #
         # @return [Array(String, String)]
         def self.head_truncate(raw)
-          total = raw.bytesize
-          return [raw, ''] if total <= MAX_BYTES
-
-          head = raw.byteslice(0, MAX_BYTES)
-          last_nl = head.rindex("\n")
-          head = head.byteslice(0, last_nl) if last_nl
-          omitted = total - head.bytesize
-          marker = "\n\n... [#{omitted} bytes omitted; total was #{total} bytes; " \
-                   'refine pattern or path] ...'
-          [head, marker]
+          Utils.head_truncate(raw, max_bytes: MAX_BYTES, hint: 'refine pattern or path')
         end
         private_class_method :head_truncate
 

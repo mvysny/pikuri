@@ -44,7 +44,7 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
       result = described_class.oversized_root_refusal(@home, verb: 'list')
       listing = result.split(":\n", 2).last
 
-      assert_equal ".config/\nwork/\n.bashrc\ntodo.txt", listing
+      assert_equal ".config/  [empty]\nwork/  [empty]\n.bashrc  1B\ntodo.txt  1B", listing
     end
 
     it 'threads the verb into the message' do
@@ -72,16 +72,19 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
     end
   end
 
-  describe '.child_listing' do
-    it 'returns "" for an empty directory' do
-      Dir.mktmpdir('pikuri-empty-') do |dir|
-        assert_equal '', described_class.child_listing(dir)
-      end
+  describe '.head_truncate' do
+    it 'passes short input through with no marker' do
+      assert_equal ["a\nb", ''], described_class.head_truncate("a\nb", max_bytes: 100, hint: 'x')
     end
 
-    it 'reports an OS error rather than raising for an unreadable path' do
-      assert_equal 'OS error listing immediate children',
-                   described_class.child_listing('/does/not/exist')
+    it 'cuts at the last newline and threads the hint into the marker' do
+      raw = (['0123456789'] * 10).join("\n")
+
+      content, marker = described_class.head_truncate(raw, max_bytes: 25, hint: 'narrow it')
+
+      assert_equal "0123456789\n0123456789", content
+      assert_includes marker, 'bytes omitted'
+      assert_includes marker, 'narrow it'
     end
   end
 end

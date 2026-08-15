@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Add `Workspace::Listing` — the gem's one directory renderer (name-sorted, directories first, per-row sizes or `[4 dirs, 25 files]` summaries, errno classes where a row can't be measured), now backing the oversized-root refusal too. See `DECISIONS.md` `D-directory-listing`.
 - Add `pikuri-thunderbird` — the local Thunderbird profile as five read-only tools (`thunderbird_mail_search` / `_mail_read` / `_calendar_search` / `_calendar_read` / `_contact_search`) plus two opt-in hand-offs (`_mail_compose`, `_calendar_create`) that hand bytes to Thunderbird's own compose window or import wizard rather than sending anything. See `pikuri-thunderbird/DESIGN.md`.
 - Add `pikuri-os` — an offline, network-severed OS helper: `fileindex_search` / `fileindex_read` over a swappable desktop index (localsearch or Recoll), `MACHINE.md` resident memory, boot-time machine facts, and `bin/pikuri-os` whose `--with-internet` routes the web through a confirmed, isolated researcher. See `book/os-assistant.md` and `DECISIONS.md` `D-headless-os-agent`.
 - The privileged hand-off in `pikuri-os` splits reads from state changes: the agent never holds root, and anything that needs it comes back as an exact `sudo …` command for the human to run. See `DECISIONS.md` `D-no-agent-sudo`.
@@ -40,6 +41,7 @@ boot.
 - The guide moves from `docs/guide/` to `book/`, and its chapters are named rather than numbered (`book/security.md`, `book/tasks.md`), with `book/README.md` owning the order.
 - Fix `Code::Bash`'s read-only allowlist escapes — `rg --pre` executing an arbitrary program, unquoted globs, and other cases where an extra argument grows teeth on an otherwise read-only binary.
 - Fix `Grep` / `Glob` accepting `/`, `$HOME` or any parent of home as a search root; a refused root now comes back with a one-level listing to pick from, and ripgrep's error blob is capped instead of pasted whole into the observation.
+- Fix `read` on a directory: it pointed at `glob`, which lists no directories at all, so orientation dead-ended — it now hands back the directory's own entries instead. See `DECISIONS.md` `D-directory-listing`.
 - Fix `FullFsNoNet`'s `/dev` handling (bind the real one, not bwrap's synthetic `--dev`) and mask the live session's IPC sockets, so the severed egress is not handed straight back by the session bus.
 - Fix `ruby_llm` streaming error parsing against non-Hash bodies and against the `{"error": "…"}` string shape.
 - Fix sub-agent-only tools being credited to the parent node in the trifecta map, which reported the sub-agent quarantine as broken. See `DECISIONS.md` `D-trifecta-map-orphans`.

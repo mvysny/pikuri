@@ -79,6 +79,98 @@ design.
 
 ---
 
+## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
+
+**Status:** Accepted, landing in stages. Shipped: `Workspace::Listing` and
+`read`'s recovering refusal. Still to come: the `file_list` tool that makes
+it a *documented* capability, and a boot-time orientation snippet.
+
+**Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
+model opens — orienting in the repo — and reported: *"`glob *` gave me ten
+root files and no tree."* It was right. `glob` is built on `rg --files`, and
+**`rg --files` emits files only**: at this repo's root `glob '*'` returned 15
+files and hid all 18 directories, including every one of the fifteen
+`pikuri-*` gems. A model orienting here concludes pikuri is a docs repo.
+There is no glob pattern that reveals a directory exists; the only workaround
+is `glob '**/*'`, which dumps every file, mtime-scrambled and head-truncated.
+
+Worse, `read` on a directory *sent the model there*: `"is a directory; use
+the glob tool to list files."` Grok followed that instruction and correctly
+concluded the primitive was wrong.
+
+**Decision.** One renderer, {Pikuri::Workspace::Listing}, built on
+`Dir.children`. `read` on a directory refuses *and hands back the depth-1
+listing* — and says nothing about it in its description.
+
+**Alternatives rejected.**
+
+- **Teach `glob` about directories.** Three reasons, in order of weight.
+  (1) *mtime sort on directories is actively misleading* — measured at this
+  repo's root, 12 of the top 13 entries by mtime are directories, `.git` at
+  #2, because a directory's mtime bumps when a child is added or removed, not
+  edited. Directories would colonise the top of every result, and
+  mtime-descending is glob's stated unique capability. (2) *A matched
+  directory is a dead end* — the model gets `lib/` in a list and cannot
+  `read` it; its only follow-up is another `glob`. (3) `rg --files` can't
+  emit directories at all. A `depth:` parameter is separately a non-starter:
+  depth is already expressible in the pattern (`*`, `*/*`, `**/*`), and
+  `pattern: "**/*", depth: 1` has no defensible answer.
+- **Just tell the model to run `bash ls`** — what Claude Code does, and
+  verified frictionless here (`ls` is in `PASSIVE_BINARIES`, so it
+  pre-approves with no prompt in both `pikuri-code` and `pikuri-os`).
+  Rejected decisively because **`FILE_MINER` has no bash, by design**: the
+  recon sub-agent whose entire job is orienting in an unfamiliar tree would
+  be the one agent that can never list a directory, and granting it bash to
+  fix that deletes the documented no-shell-for-`curl` property. Two
+  supporting reasons: `pikuri-workspace` depends on `pikuri-core` only, so a
+  host wiring the file tools without the coding gem would have no way to see
+  a directory — the lower gem's completeness hanging on a gem above it; and
+  `Bash` takes the bare `Filesystem`, not the `Workspace` composite, so
+  `bash ls` bypasses `resolve_for_read` and routes orientation through
+  `ReadOnly`'s one admitted hole. **The asymmetry in one line: Claude Code is
+  one binary that always has bash; `pikuri-workspace` is a gem that
+  frequently isn't wired with one.** Composability is pikuri's product, so
+  pikuri can't assume the shell.
+- **`read` lists directories as a *documented* capability**, opencode-style
+  (*"Read a file **or directory** from the local filesystem"*). Rejected:
+  `read` would then have two behaviours keyed on path type — structurally the
+  same objection used against overloading `glob`. It's a weaker objection
+  here ("read" is a generic verb, "glob" names a mechanism), which is exactly
+  why the *undocumented recovery path* survives while the documented one
+  doesn't. Teaching two ways to list hands the model a
+  two-tools-no-criterion coin flip; teaching one and rescuing the other costs
+  zero schema and zero prompt bytes.
+- **Derive directories from `rg --files` output by path prefix.** Tempting —
+  gitignore correctness and child counts fall out of one call — but there a
+  directory exists only if some *file* under it survived rg, so symlinked
+  directories, directories holding only gitignored files, and empty
+  directories all vanish. Tolerable for a boot snapshot; wrong for a listing
+  answering "what is actually in this directory?". `Dir.children` is correct
+  on all three and needs no subprocess.
+
+**Consequences.**
+
+- **Nothing evaluates `.gitignore` any more.** Without rg, the listing shows
+  everything except `.git/` (matching Glob's hard exclusion) — so this is the
+  one file-tool surface that diverges from Grep/Glob on gitignore. Accepted:
+  `ls` doesn't respect gitignore either, and "`build/` exists" is orientation
+  signal rather than noise. Revisit only if the noise proves real.
+- **`Search::Utils.child_listing` is gone**, and with it its prose
+  `'OS error listing immediate children'` fallback. The oversized-root
+  refusal now renders through `Listing`, so it gained the size / child-count
+  columns and a byte cap it never had. Per-row failures print the errno class
+  (`[Errno::EACCES]`, `[Errno::ELOOP]`) rather than a prose word or Glob's
+  `0.0` fallback — same code, strictly more information, and each errno
+  implies a different follow-up.
+- **`read` must never mark the read ledger for a directory.** Free today (the
+  refusal returns before `mark_read`), but exactly the kind of thing a
+  refactor breaks silently, so it's pinned by a spec.
+- **Still open, tracked in `ideas/directory-listing.md`:** the `file_list`
+  tool (depth 1 by default, added to `FILE_MINER`), the boot-time orientation
+  snippet, and the docs sweep dropping the count from "five file tools".
+
+---
+
 ## D-no-static-poisoned-flag — No declared `poisoned:` on a node (2026-08-12)
 
 **Status:** Accepted (won't build); no code change. Closes the last open

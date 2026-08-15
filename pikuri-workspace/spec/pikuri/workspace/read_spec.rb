@@ -124,12 +124,33 @@ RSpec.describe Pikuri::Workspace::Read do
   end
 
   describe 'refusals' do
-    it 'refuses directories and points at the glob tool' do
-      FileUtils.mkdir_p(root + 'subdir')
+    it 'refuses directories but hands back their entries rather than dead-ending' do
+      FileUtils.mkdir_p(root + 'subdir/nested')
+      write_file('subdir/a.rb', 'x' * 1024)
 
       result = described_class.read(workspace: workspace, path: 'subdir', offset: 1, limit: 2000)
 
-      assert_equal 'Error: subdir is a directory; use the glob tool to list files.', result
+      assert_equal "Error: subdir is a directory, not a file. It contains " \
+                   "(directories end with `/`):\nnested/  [empty]\na.rb  1.0K", result
+    end
+
+    it 'says so plainly when the directory is empty' do
+      FileUtils.mkdir_p(root + 'hollow')
+
+      result = described_class.read(workspace: workspace, path: 'hollow', offset: 1, limit: 2000)
+
+      assert_equal 'Error: hollow is a directory, not a file. It is empty.', result
+    end
+
+    # The refusal returns before mark_read. Free today, but a refactor that
+    # moved the ledger write earlier would silently clear the read-before-edit
+    # gate for a path nobody read.
+    it 'does not mark the read ledger for a directory' do
+      FileUtils.mkdir_p(root + 'subdir')
+
+      described_class.read(workspace: workspace, path: 'subdir', offset: 1, limit: 2000)
+
+      refute workspace.read?(root + 'subdir')
     end
 
     it 'refuses missing files' do

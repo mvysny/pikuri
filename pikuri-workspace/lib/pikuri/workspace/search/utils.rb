@@ -3,8 +3,8 @@
 module Pikuri
   module Workspace
     module Search
-      # Shared helpers for the two search tools ({Grep} and {Glob}), which
-      # otherwise duplicate their oversized-root guard verbatim.
+      # The two guards every path-listing tool needs and none should own: an
+      # oversized-root refusal, and a byte cap on the rendered result.
       module Utils
         # Guard against a search/list rooted at +/+, the user's whole home dir,
         # or any parent of home (+/home+, which holds *every* user's home) —
@@ -23,12 +23,14 @@ module Pikuri
         #   Error: refusing to search from /home/alice — the whole home
         #   directory is too broad. Pick one of its entries below as `path` and
         #   search there instead (directories end with `/`):
-        #   .config/
-        #   work/
-        #   todo.txt
+        #   .config/  [3 dirs, 2 files]
+        #   work/  [12 dirs, 1 file]
+        #   todo.txt  412B
         #
-        # The listing is deliberately non-recursive: descending would re-do the
-        # very traversal this guard exists to prevent. It falls back to a plain
+        # The listing is deliberately one level deep: rendering a tree would
+        # re-do the very traversal this guard exists to prevent. (The child
+        # summary does open each entry once, but that's bounded by the root's
+        # own entry count — nothing like rg's walk.) It falls back to a plain
         # "narrow `path`" line if the directory is empty or unreadable.
         #
         # @param resolved [Pathname] the absolute search root
@@ -51,7 +53,7 @@ module Pikuri
             end
           return nil unless root_kind
 
-          listing = child_listing(normalized)
+          listing = root_listing(normalized)
           guidance =
             if listing.empty?
               'Narrow `path` to a specific subdirectory.'
@@ -72,19 +74,40 @@ module Pikuri
           Pathname.new(path).expand_path.cleanpath.to_s
         end
 
-        # One-level listing of +dir+'s immediate entries (dotfiles included, as
-        # +ls -a+), directories first with a trailing +/+, then files, each
-        # group sorted. Non-recursive by design (see {.oversized_root_refusal}).
+        # Head-truncate +raw+ to +max_bytes+, cutting at the last newline so
+        # the final row is never partial.
+        #
+        # @param raw [String]
+        # @param max_bytes [Integer]
+        # @param hint [String] what the caller should change to get less
+        #   output, e.g. +"refine pattern or path"+
+        # @return [Array(String, String)] the content and a marker (+""+ when
+        #   nothing was cut)
+        def self.head_truncate(raw, max_bytes:, hint:)
+          total = raw.bytesize
+          return [raw, ''] if total <= max_bytes
+
+          head = raw.byteslice(0, max_bytes)
+          last_nl = head.rindex("\n")
+          head = head.byteslice(0, last_nl) if last_nl
+          omitted = total - head.bytesize
+          marker = "\n\n... [#{omitted} bytes omitted; total was #{total} bytes; " \
+                   "#{hint}] ..."
+          [head, marker]
+        end
+
+        # A refusal still has to come back when the root itself can't be
+        # opened, so that degrades to the "narrow `path`" wording rather than
+        # raising out of a message-building helper.
         #
         # @param dir [String] absolute directory path
-        # @return [String] newline-joined entries, or +""+ if empty/unreadable
-        def self.child_listing(dir)
-          entries = Dir.children(dir)
-          dirs, files = entries.partition { |e| File.directory?(File.join(dir, e)) }
-          (dirs.sort.map { |d| "#{d}/" } + files.sort).join("\n")
+        # @return [String] {Pikuri::Workspace::Listing.render} at depth 1, or +""+
+        def self.root_listing(dir)
+          Listing.render(dir)
         rescue SystemCallError
-          'OS error listing immediate children'
+          ''
         end
+        private_class_method :root_listing
       end
     end
   end
