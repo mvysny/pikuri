@@ -79,6 +79,80 @@ design.
 
 ---
 
+## D-keep-calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
+
+**Status:** Accepted; no code change. `calculator` stays wired in all ten
+`bin/pikuri-*` demos. `ideas/feedback.txt` item 6 is cut with this entry.
+
+**Context.** Grok 4.6, reviewing a coding-agent wiring: *"`calculator` is a
+smell. If the model can't add, a tool won't save it; if it can, bash/python
+already exist. I'd drop it."* Neither Claude Code nor opencode ships a
+calculator, so the instinct has company. Both halves of the argument turn out
+to be properties of the harness Grok was speaking from rather than of the tool.
+
+**Decision.** Keep it, everywhere — including the three wirings that do have a
+shell.
+
+**Alternatives rejected.**
+
+- **Drop it from `pikuri-core` outright.** Ten bins wire `CALCULATOR`; only
+  three (`pikuri-code`, `pikuri-os`, `pikuri-computer`) wire a `bash`. In the
+  other seven — `pikuri-chat`, `pikuri-thunderbird`, `pikuri-memory`,
+  `pikuri-corpus`, `pikuri-minions`, `pikuri-openlibrary`, `pikuri-assistant` —
+  "bash/python already exist" is simply false, and there is no fallback at all:
+  a mail agent totalling invoice amounts, `LIBRARIAN` computing a percentage
+  over corpus hits. This is `D-directory-listing`'s asymmetry again, and the
+  same one-liner settles it: **Claude Code and opencode are single binaries
+  that always have bash; pikuri is a set of gems that frequently isn't wired
+  with one.** Composability is the product, so pikuri can't assume the shell.
+- **Drop it only from the three bash-carrying wirings** — the narrower move,
+  and the one that looks right until you read the confirmer. Three arms, in
+  order of weight.
+  (1) *An interpreter can never be allowlisted.* `python3`, `bc`, `awk` and
+  `expr` are absent from `Bash::PassiveCommandDetector::PASSIVE_BINARIES` and
+  must stay absent — pre-approving an interpreter is pre-approving arbitrary
+  code execution, which is the one thing the detector exists to stop. So the
+  modal prompt on `python3 -c '17.5 * 3'` is permanent by construction, not a
+  gap someone patches later.
+  (2) *The unconfirmed shell arithmetic is integer-only.* `echo` **is** passive,
+  so `echo $((7 * 3))` costs no prompt — but `$((7/2))` is `3`. Anything with a
+  decimal point isn't expressible without reaching for (1).
+  (3) *Confirmation prompts are a budget, spent from the human's attention.*
+  Routing every average-of-three-numbers through a `python3 -c` prompt trains
+  reflex-approval on the single most dangerous binary in the set, for the most
+  harmless possible reason. Keeping arithmetic off the prompt stream is what
+  leaves `python3 -c` rare enough to be worth reading. Nothing is traded for
+  it: `CALCULATOR.trifecta_legs` is `TrifectaLegs::NONE`, so the unconfirmed
+  path grants no capability to abuse.
+- **Accept "if it can add, drop the tool."** The premise is model-specific and
+  pikuri's default contradicts it: the book's first conversation runs
+  `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` — a 4-bit-quantized MoE with ~3B active
+  parameters — not a frontier model. And the failure mode was never "can't
+  add"; it's digit-level unreliability on long multiplication and floats, which
+  is exactly what a deterministic evaluator fixes. Privacy-first-by-default
+  makes this tool *more* load-bearing here than in a cloud-only coding agent,
+  not less.
+
+**Consequences.**
+
+- **The recurring cost is one tool schema per wiring, and nothing else.** The
+  implementation is ~100 hand-rolled lines with no gem closure (dropping
+  dentaku took concurrent-ruby, bigdecimal and tsort with it) and no trifecta
+  leg. Grok's separate complaint about the heavy static prefix is real, but
+  it's a per-wiring budget question — answered by unwiring tools a *given*
+  binary doesn't need, not by deleting one from core.
+- **It stays the teaching spine of the first chapter.** `book/chat.md` uses it
+  as the first tool call a reader ever sees, `Pikuri::Testing`'s yardoc
+  examples are built on it, and `bundled_legs_spec.rb` uses it as the canonical
+  zero-leg tool that keeps the trifecta advisory quiet. Dropping it would
+  re-spine all three around a tool that has legs — a worse first example, to
+  satisfy a critique aimed at a different wiring.
+- **Revisit only if** a wiring ever gains an unconfirmed float-capable
+  evaluator. By arm (1) that can't be an interpreter, so in practice it would
+  have to be this tool under another name.
+
+---
+
 ## D-walked-path-denylist — Two layers, and the cheap one is never the guarantee (2026-08-15)
 
 **Status:** Accepted, shipped. `Filesystem#denied?` plus `rg --glob` pruning

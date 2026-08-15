@@ -211,6 +211,11 @@ module Pikuri
     # Python expression syntax (+, -, *, /, //, %, **, unary minus, parentheses,
     # decimals) so the model emits syntax it already knows.
     #
+    # Stays wired even in shells that have +bash+: it is the only *unconfirmed*
+    # float arithmetic there, since a shell's own +$((…))+ is integer-only and
+    # every interpreter that isn't must stay off the passive allowlist. See
+    # +DECISIONS.md+ +D-keep-calculator+.
+    #
     # @return [Tool]
     CALCULATOR = new(
       name: 'calculator',

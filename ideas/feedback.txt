@@ -1,6 +1,13 @@
 Experimental coding harness — review
 =====================================
 
+This feedback is provided by Grok 4.6 running inside of
+pikuri-tui-code harness, on the pikuri-tui-code codebase.
+
+Items are cut from the list below as they settle, and the remainder
+renumbered; the reasoning lands in DECISIONS.md. Settled so far:
+the calculator (kept — D-keep-calculator).
+
 Overall verdict
 ---------------
 
@@ -88,13 +95,7 @@ What I'd change
    already batch `skill` with other tools, that's enough — I just need
    it to be the expected opening move, not a surprise tax.)
 
-6. `calculator` is a smell.
-
-   If the model can't add, a tool won't save it; if it can, bash/python
-   already exist. I'd drop it. The "don't eyeball arithmetic" rule can
-   stay as a prompt line.
-
-7. The standing prompt is heavy.
+6. The standing prompt is heavy.
 
    Safety block + harness + AGENTS.md + skills catalog + tool schemas
    on every turn is a lot of prefix. AGENTS.md is worth it for *this*
