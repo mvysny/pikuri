@@ -21,34 +21,28 @@ module Pikuri
     #
     # == Boot snapshot
     #
-    # A depth-1 {Listing} of the workspace root, injected once so orientation
-    # costs zero tool calls. It is the answer to +glob '*'+ hiding every
-    # directory — {Search::Glob} is +rg --files+, which emits files only, so a
-    # model opening in an unfamiliar tree concludes there are none:
+    # A depth-1 {Listing} of the workspace root, contributed once so
+    # orientation costs zero tool calls — {Search::Glob} is +rg --files+, which
+    # emits files only, so +glob '*'+ hides every directory:
     #
     #   <workspace_snapshot>
     #   The workspace root is /home/alice/proj. Its top level, as of the start of this conversation:
     #
-    #   lib/  [3 dirs, 1 file]
-    #   spec/  [empty]
-    #   README.md  4.2K
+    #   lib/  [1 dir, 1 file]
+    #   spec/  [1 dir, 1 file]
+    #   README.md  2.3K
     #
-    #   Only one level deep, and not refreshed: ...
+    #   One level only, and not refreshed — call `file_list` for anything deeper or newer.
     #   </workspace_snapshot>
     #
-    # **Depth 1, not 2.** {Listing}'s +[3 dirs, 1 file]+ column already does
-    # depth-2's job on the wide-flat directories where depth 2 costs most — a
-    # Jekyll blog's +_posts/  [0 dirs, 256 files]+ is 30 bytes against 24 KB
-    # for the expansion, and teaches more. Where depth 2 *is* cheap the layout
-    # is conventional, so it buys +src/+ and +build/+. Measured over 45
-    # projects: depth 1 fits 1 KB on all of them (median 312 B).
+    # One level is the design, not a default to grow: {Listing}'s
+    # +[N dirs, M files]+ column already does depth 2's job on the wide-flat
+    # directories where depth 2 costs most — a blog's +_posts/  [0 dirs, 256
+    # files]+ is 30 bytes against 24 KB expanded. Measurements and the rejected
+    # ladder live in +DECISIONS.md+ +D-directory-listing+.
     #
-    # **Stale by design.** Nothing refreshes it mid-conversation, which is why
-    # the snippet says so and points at +file_list+ — naming the tool is
-    # sanctioned here (unlike a +prompts/<bin>.txt+) because the snippet is
-    # contributed by the extension that *registers* it, so the two can't drift.
-    # +Agent#assemble_system_prompt+ re-pulls snippets on +clear_conversation+,
-    # which re-takes the snapshot; that bounds the drift without a mechanism.
+    # Re-taken whenever the prompt is re-assembled, so +clear_conversation+
+    # refreshes it and nothing else does.
     #
     # == Read-only gate
     #
@@ -83,17 +77,17 @@ module Pikuri
         A tool may ask you to confirm before it makes a change. If the user declines, stop rather than trying another route to the same end — a decline means they want to re-steer you, so hand back and wait for their guidance.
       SNIPPET
 
-      # @return [Integer] +depth+ the boot snapshot renders at. One — see the
-      #   class doc; not {Listing::DEFAULT_DEPTH}, which {FileList} may retune
-      #   for a per-call budget the snapshot does not share.
+      # @return [Integer] +depth+ the boot snapshot renders at. Deliberately
+      #   not {Listing::DEFAULT_DEPTH}: both are 1 today, so folding them
+      #   together compiles, passes, and silently re-points the snapshot the
+      #   day {FileList}'s per-call default moves.
       SNAPSHOT_DEPTH = 1
 
-      # @return [Integer] byte ceiling on the rendered snapshot. Over it, the
-      #   snippet degrades to a one-liner rather than head-truncating: a
-      #   truncated listing is an alphabetical prefix, and teaching the model
-      #   that +spec/+ does not exist is worse than teaching it nothing.
-      #   Twice the largest root measured (a real +$HOME+, 1,438 B), so it is a
-      #   fail-safe against a 5,000-entry +Downloads/+, not a routine path.
+      # @return [Integer] byte ceiling on the rendered snapshot; over it the
+      #   snippet degrades to one line rather than head-truncating, because a
+      #   truncated listing is an alphabetical prefix that teaches the model
+      #   +spec/+ does not exist. Twice the largest root measured (a real
+      #   +$HOME+), so it is a fail-safe, not a routine path.
       SNAPSHOT_MAX_BYTES = 2 * 1024
 
       # @return [Workspace] the composite shared across the tools;
@@ -168,9 +162,9 @@ module Pikuri
 
       private
 
-      # The +<workspace_snapshot>+ block — see the class doc for the rendered
-      # shape. An empty or oversized root each degrade to a single line, so the
-      # block is never absent and never truncated.
+      # The +<workspace_snapshot>+ block. An empty root and an over-cap root
+      # each collapse to one line, so the block is never blank — which would
+      # read as a failed walk — and never truncated.
       #
       # @return [String]
       def workspace_snapshot
