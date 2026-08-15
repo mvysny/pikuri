@@ -10,111 +10,66 @@ recovering refusal, and the `file_list` tool (plus the tool-naming convention �
 choice and every rejected road live in `DECISIONS.md` `D-directory-listing`;
 don't re-argue them here.
 
-## The idea
+## The idea — settled 2026-08-15
 
-Inject a depth-2 tree into the system prompt once at startup, so orientation
-costs zero tool calls. Measured on this repo (497 files, 184 dirs,
-gitignore-respecting, `~chars/3.5`):
+Inject a **depth-1** `Listing` into the system prompt once at startup, so
+orientation costs zero tool calls.
 
-| variant | chars | ~tokens |
-|---|---|---|
-| dirs depth ≤2, indented tree + child counts + root files | 1139 | **~325** |
-| dirs depth ≤3, same shape | 1555 | ~444 |
-| flat dir list, all depths | 6186 | ~1767 |
-| every file (Claude Code-ish) | 21629 | ~6180 |
+Not depth 2, and no auto-degrade ladder: **depth 1 is the whole answer.** It
+fixes the reported bug exactly — `rg --files` structurally cannot emit
+directories, so `glob` hides them all; depth 1 reveals them — and the
+measurements below say the extra levels are not worth their bytes.
 
-Indenting matters a lot here: the monorepo repeats `pikuri-X/lib/pikuri/X/`
-fifteen times, and a tree collapses the shared prefix (flat depth-≤2 list is
-1215 chars vs 1139 for the tree, but the gap widens fast with depth).
+## The evidence
 
-The depth-2 tree is genuinely legible — you learn instantly that this is a
-15-gem monorepo with a uniform `bin/ lib/ prompts/ spec/` shape:
+Measured 2026-08-15 with the *shipped* `Listing` renderer over 45 projects in
+`~/work/my` (vok excluded), plus this repo and a real `$HOME`.
 
-```
-bin/  (4)
-book/  (16)
-ideas/  (17)
-pikuri-code/  (4)
-  bin/  (1)
-  lib/  (1)
-  prompts/  (2)
-  spec/  (1)
-pikuri-core/  (3)
-  bin/  (1)
-  ...
-CHANGELOG.md
-CLAUDE.md
-...
-```
+| | median | max | fits 1 KB |
+|---|---|---|---|
+| depth 1 | 312 B (~90 tok) | 906 B (pikuri) | **45/45** |
+| depth 2 | 772 B | 24,720 B (mvysny.github.io) | 35/45 |
 
-**~325 tokens is cheap** for killing the single most common opening tool call.
-
-**Do NOT reuse `Listing::MAX_BYTES` here.** A boot injection is paid on *every*
-turn, forever; 50 KB would admit ~14k tokens of paths, which is Grok's item 7
-made worse by the fix for item 1. On this repo the cap wouldn't even bite —
-the full file list is 21.6 KB — so it would silently authorise a ~6.2k-token
-per-turn tax. Cap D at a couple of KB and let *depth* do the trimming. 50 KB
-stays `file_list`'s per-call ceiling, where a one-off cost is fine.
-
-Unlike `Listing`, D may keep the `rg --files` prefix derivation: gitignore
-correctness matters more for a snapshot, and the three blind spots
-(symlinked / gitignored-only / empty directories vanish) are tolerable when
-`file_list` can always answer the follow-up.
-
-**Gotcha if D does go the rg route:** sort path-segment-wise, not lexically.
-`-` (0x2D) sorts before `/` (0x2F), so `pikuri/lib` lands *after*
-`pikuri-workspace/spec` and renders under the wrong parent. (`Listing` is
-immune — it sorts per-directory.)
-
-## Measured 2026-08-15 — the ~325-token figure does not survive
-
-The table above was a **dirs-only, gitignore-respecting** tree with bare root
-filenames. `Listing` renders every file with a size and ignores gitignore, so
-D built on it costs far more. Re-measured with the shipped renderer:
+Per-root, for the two extremes:
 
 | root | depth 1 | depth 2 | depth 3 |
 |---|---|---|---|
-| this repo | ~259 tok | **~1,114 tok** | ~1,603 tok |
-| a real `$HOME` | ~418 tok | **~2,391 tok** | ~14,647 tok (hits the 50 KB cap) |
+| this repo | 906 B | 3,900 B | 5,612 B |
+| a real `$HOME` | 1,438 B | 8,065 B | 51,263 B (hits `Listing::MAX_BYTES`) |
 
-So depth 2 on a repo is **3.4× the note's advertised budget**, and on a home
-directory it is 4× over the "couple of KB" cap this note sets for D. Either D
-uses a dirs-only walker (the variant actually measured at ~325) or the budget
-moves. Don't design D against the old number.
+Three findings, in order of weight:
 
-Where the computer-shaped binaries actually root (checked, not assumed):
-`pikuri-os/bin/pikuri-os:98`, `pikuri-os/bin/pikuri-computer:98` and
-`pikuri-tui`'s `lib/computer/app.rb:218` all pass `project_root: Dir.pwd` —
-the launch directory. Not guaranteed to be `$HOME`, but for a "helper for this
-machine" started from a shell prompt, very often is.
+1. **The counts column does depth-2's job exactly where depth 2 is
+   unaffordable.** `mvysny.github.io` at depth 1 is 371 B and says
+   `_posts/  [0 dirs, 256 files]` / `_site/  [255 dirs, 8 files]` — Jekyll blog,
+   256 posts, generated output. Depth 2 there is **24.7 KB** and adds nothing
+   but 256 post filenames. Same shape in `aedict/aedict-testing`: 13 dictionary
+   corpora, 363 B at depth 1, ~80 near-identical filenames at depth 2.
+2. **Where depth 2 *is* cheap it is uninformative, for the same reason it is
+   cheap** — the layout is conventional. A 2× growth factor buys `src/`,
+   `build/`, `.github/workflows/`. This monorepo is the extreme case: 4.3×
+   growth to learn that fifteen gems each have `bin/ lib/ prompts/ spec/`.
+3. **pikuri is the outlier, not the typical case** — largest depth-1 output of
+   the 45 and the steepest depth-2 growth. Designing against it alone
+   overestimates the cost of a snapshot and the value of a second level.
 
-## Proposal to brainstorm — auto-degrade, not a bare flag
+The one apparent counter-example, `~/work/my/aedict` (4 rows, 124 B — a
+container of four sub-projects), does not survive contact with how the binaries
+are launched: `project_root: Dir.pwd`, so a coding agent starts in
+`aedict/aedict`, not the container. Each of the four renders as an ordinary
+project at depth 1 (275–531 B, 13–23 rows).
 
-**Needs a brainstorm before implementing; recorded here, not decided.**
-
-Instead of a constructor boolean on `Workspace::Extension`, let the snippet
-size itself: render at depth 2; if that is over budget **or** the workspace
-root is `$HOME`, fall back to depth 1; if still over budget, omit the snippet
-entirely. Never truncate mid-tree. `file_list`'s own default stays depth 1
-either way.
-
-The appeal is that it needs no per-host knowledge — a coding agent in a repo
-gets the depth-2 tree, a computer assistant launched from `$HOME` degrades on
-its own, and no host has to remember to set a flag. Open questions a brainstorm
-has to settle: what "over budget" is in tokens; whether `root == Dir.home` is
-the right proxy or just a special case of the budget test; whether a silent
-degrade is confusing when the model can't tell which depth it got; and whether
-D should use the dirs-only walker given the measurements above.
-
-The argument for D at all, from the user: **if a harness wires the workspace,
-it is safe to assume it wants to work with those files** — orientation is not
-speculative there the way it would be for a chat-only agent.
-
-## Wiring — settled 2026-08-15
+## Settled design
 
 D is a **`Workspace::Extension` system-prompt snippet, living in
-`pikuri-workspace`**, and it is allowed to go stale.
+`pikuri-workspace`**, unconditional, allowed to go stale.
 
+- **Depth 1, always.** No constructor flag, no degrade ladder, no depth stated
+  to the model. `file_list`'s own default stays depth 1 too, so the snapshot and
+  the tool agree.
+- **A 2 KB cap, as a fail-safe.** Twice the headroom over the largest root
+  measured (`$HOME`, 1,438 B), and still catches a 5,000-entry `Downloads/`.
+  Near-dead code by design.
 - **Accept drift, and say so in the snippet.** Label the tree a boot snapshot
   and add one line: a file or folder you can't find here may simply be newer
   than the snapshot — call `file_list` for the current state. Cheaper than any
@@ -124,9 +79,9 @@ D is a **`Workspace::Extension` system-prompt snippet, living in
 - **Extension, not `Control::Interloper`.** `system_prompt_snippets` is exactly
   this hook and already carries dynamic content (`Skill::Extension`,
   `Mcp::Extension`). The Interloper is also the *more* expensive answer to
-  staleness, not the cheaper one guessed above: a snippet is a stable prefix,
-  while a re-injected `kind: :system` item appends a message every time —
-  growing history and busting the prompt cache.
+  staleness, not the cheaper one guessed originally: a snippet is a stable
+  prefix, while a re-injected `kind: :system` item appends a message every time
+  — growing history and busting the prompt cache.
 - **`pikuri-workspace`, riding the existing `Workspace::Extension`.** The
   listing needs the workspace to know its root, and is useless without the
   file tools the same extension wires. Cost is a constant plus a line in
@@ -138,35 +93,53 @@ D is a **`Workspace::Extension` system-prompt snippet, living in
     *registers* the tool structurally can't drift: the `Tasks::Extension` /
     `SubAgentTool.available_agents_snippet` precedent.
 
-Three consequences, none of them blockers:
+### The degenerate paths
 
-1. **It can't be unconditional** (superseded in shape by the auto-degrade
-   proposal above; the *reason* stands). `pikuri-os` and
-   `pikuri-computer` both wire
-   `Filesystem::AllowAll.new(project_root: Dir.pwd, …)`
-   (`pikuri-os/bin/pikuri-os:98`, `pikuri-os/bin/pikuri-computer:98`), so a
-   launch from `$HOME` walks a home directory. Head-truncating that to the
-   couple-of-KB cap buys two KB of noise, not orientation — so **over budget,
-   drop a depth level, then omit entirely; never truncate mid-tree.** A
-   constructor flag on `Workspace::Extension` (default off, on in
-   `pikuri-code`) leaves the call with the host that knows its root is a repo.
-   Per-binary asymmetry is already established: `bin/pikuri-code:287` appends
-   `"Project root: …"` and the others don't.
-2. **`FILE_MINER` never sees D.** `SubAgentTool` selects tool *instances* from
-   the parent by name and wires no extensions (`sub_agent_tool.rb:34,149`), so
-   no snippet reaches a sub-agent. Already mitigated ahead of D:
-   `prompts/persona-file-miner.txt` and `persona-git-repo-researcher.txt` tell
-   both recon personas to open with a `file_list` at `depth: 2`. Re-check that
-   wording still reads right once D ships for the main agent.
-3. **Two walkers in one gem, deliberately.** D keeps the `rg --files` prefix
-   derivation while `Listing` uses `Dir.children`, and once D lands in
-   pikuri-workspace the two sit side by side — against the "one listing
-   formatter, not two" rule this work started from. It stands, because the
-   budgets differ: a boot snapshot that renders `node_modules/` has spent its
-   whole allowance on nothing, so gitignore correctness outranks the three
-   blind spots there, while a tool answering *"what is actually in this
-   directory?"* can't afford them. One formatter, two walkers — record the
-   reason in `D-directory-listing` so a later reader doesn't read it as drift.
+Two replace the snapshot with **one line**, never silence and never a
+head-truncated tree — a truncated listing is an alphabetical prefix that
+teaches the model `spec/` does not exist.
+
+1. **Over the 2 KB cap** — name the root and point at `file_list`.
+2. **Empty root** — say the root is empty. `Listing.render` returns `""` there
+   (real case: `~/work/my/pikuri-worktrees`), and a bare empty snippet reads as
+   a failed walk.
+
+The third, **root unreadable**, is deliberately *not* handled: `Listing.render`
+raises `SystemCallError` when the root itself can't be opened, and that
+propagates out of `Agent.new`. Costs zero lines, and it's the loud-errors call
+— a workspace rooted at a directory you can't open is a wiring bug, and every
+file tool is about to fail the same way. Narrower than it looks, too:
+`Filesystem::Restricted#initialize` already `realpath`s the root, so a *missing*
+root explodes before this code runs; only `EACCES` on an existing directory
+reaches here.
+
+### What the depth-1 choice dissolves
+
+Recorded so a later reader doesn't reopen them:
+
+- **No dirs-only walker, no `rg --files` derivation.** Gitignore correctness was
+  the whole case for a second walker, and it only matters at depth 2, where
+  `node_modules/` eats the allowance. At depth 1 it is *one row* — and an
+  informative one. So: one walker, one formatter, and no path-segment-sort
+  gotcha (`-` 0x2D sorts before `/` 0x2F) to guard against.
+- **No `root == Dir.home` proxy.** It was standing in for a budget test, and it
+  is wrong in both directions: a tidy home renders in 1.4 KB and is genuinely
+  useful to an OS-helper agent; `~/work/my/pikuri` is a repo. `$HOME` at depth 1
+  is comfortably under the cap, so nothing needs a special case.
+- **No constructor flag / per-host asymmetry.** ~90 tok at the median is cheap
+  enough to be unconditional, which is also the user's argument for D at all:
+  **if a harness wires the workspace, it is safe to assume it wants to work with
+  those files.**
+- **No "which depth did I get?" ambiguity.** The snippet is one shape, always.
+
+### Still true, and unaffected
+
+**`FILE_MINER` never sees D.** `SubAgentTool` selects tool *instances* from the
+parent by name and wires no extensions (`sub_agent_tool.rb:34,149`), so no
+snippet reaches a sub-agent. Already mitigated ahead of D:
+`prompts/persona-file-miner.txt` and `persona-git-repo-researcher.txt` tell both
+recon personas to open with a `file_list` at `depth: 2`. Re-check that wording
+still reads right once D ships for the main agent.
 
 ## Open questions
 
@@ -174,10 +147,14 @@ None. Ready to implement.
 
 ## Graduation
 
-- the boot-snapshot flag + the omit-don't-truncate rule → yardoc on
+- depth 1 + the 2 KB cap + one-line-not-truncation → yardoc on
   `Workspace::Extension`
 - a line in the relevant seam/convention in `CLAUDE.md`
-- *two walkers, one formatter* → the existing `D-directory-listing` entry
+- the depth-1 choice + its rejected roads (depth 2 with an auto-degrade ladder,
+  the dirs-only walker, the `rg --files`/gitignore walker, the `$HOME` proxy,
+  the constructor flag) → fold into the existing `D-directory-listing` entry,
+  whose status line already promises this snippet. Not a new entry: same
+  decision, second half.
 - `CHANGELOG.md` one-liner
 
 Once D ships, this note is fully graduated — delete it.
