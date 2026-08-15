@@ -239,7 +239,7 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 **Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering
 refusal, the `file_list` tool, and the depth-1 boot snapshot on
 `Workspace::Extension`. `ideas/directory-listing.md` is deleted with this
-entry.
+entry, and `ideas/feedback.txt` item 1 is cut.
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
 model opens — orienting in the repo — and reported: *"`glob *` gave me ten
