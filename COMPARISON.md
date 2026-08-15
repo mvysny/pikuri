@@ -330,9 +330,13 @@ Three properties fall out that neither of the usual two arms has:
   on every miss.
 - **Batches are validated against the pre-edit snapshot and applied
   atomically bottom-up** — one bad anchor rejects the whole batch, and
-  overlapping ranges are refused. That is a concrete answer to the
-  batched-edits question, and a stricter one than "apply them in order
-  and hope."
+  overlapping ranges are refused. Pikuri ships no batch tool
+  (`D-single-hunk-edit`), and the sweep behind that decision is worth
+  restating here: grok-build maintains *four* interchangeable
+  `ToolKind::Edit` implementations and benchmarks them, and batching is
+  not among the four. Where a batch does appear it is as a *property of
+  the anchor scheme* — atomic-or-nothing against a pre-edit snapshot —
+  not as a second tool.
 
 The cost is real and worth naming: anchors are only valid for the file
 state at read time, the read output carries ~10 extra characters per
@@ -345,6 +349,21 @@ cost across them. That the scheme is still a parameter, in a shipped
 product, is itself the finding: nobody knows which addressing scheme is
 best, and the team that could measure it hasn't closed the question
 either.
+
+The cost that would decide it *against* pikuri, though, is one grok-build
+doesn't have to care about: **an anchor validates by fingerprint, not by
+equality.** `util/hash.rs` encodes an FNV-1a 32-bit hash as three
+lowercase letters — 26³ = 17,576 buckets — and validation recomputes that
+3-letter code for the line at the given index and compares. A collision
+means a stale anchor *validates*, and the edit lands on changed content
+silently. The probability per validation is small and it is not zero,
+where a byte-exact `old_string` cannot false-positive at all. So the
+scheme buys freedom from the uniqueness tax by opening a silent
+wrong-edit window — a straight trade of pikuri's "predictability beats
+fuzz" posture (see {Pikuri::Workspace::Edit}), not a free improvement.
+Adopting it would be a reversal to argue for on its own merits, not a
+drop-in. Widening the hash narrows the window without closing it, and
+spends the payload win that motivated the scheme.
 
 Two smaller edit-path details worth stealing outright, both cheap:
 
@@ -903,7 +922,7 @@ warnings.
 - **Sub-agent toolset narrowing** — *shipped* via personas; see
   §"Sub-agents" above.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
-  `Confirmer` ever expands beyond binary approve/deny (C-tier #7 in
+  `Confirmer` ever expands beyond binary approve/deny (C-tier #14 in
   §"Ideas to borrow").
 - **PI's credential-dir deny-read defaults** (`~/.ssh`, `~/.aws`,
   `~/.gnupg`) — a `Workspace::Filesystem` default denylist gives some
@@ -1489,36 +1508,61 @@ more than wiring through ruby_llm's existing primitive.
    hierarchy + four bundled listeners covers the surface that was a
    `puts`-only path in the previous writeup. New rendering sinks (web
    UI, JSON log, TUI) plug in by subclassing `Listener::Base`.
-9. **Streaming deltas** — **DONE**. Opt-in via `Agent.new(streaming:
-   true)`; per-chunk `{Thinking,Assistant}Delta` events flow alongside
-   the message-level bookends and propagate to sub-agents and the
-   synthesizer consistently. The bundled `Terminal` listener still
-   renders on message bookends; a delta-rendering listener is the
-   straightforward next step.
-10. **Pluggable Operations interfaces** (pi). Lets a `bash` tool delegate to
+20. **Streaming deltas** — **DONE**. Opt-in via `Agent.new(streaming:
+    true)`; per-chunk `{Thinking,Assistant}Delta` events flow alongside
+    the message-level bookends and propagate to sub-agents and the
+    synthesizer consistently. The bundled `Terminal` listener still
+    renders on message bookends; a delta-rendering listener is the
+    straightforward next step.
+21. **Pluggable Operations interfaces** (pi). Lets a `bash` tool delegate to
     SSH/sandbox/cloud. Pikuri's `Subprocess.spawn` chokepoint is the
     seam where this would hook in; today it only spawns local.
-11. **Multi-provider abstraction** — **DONE** via the ruby_llm
+22. **Multi-provider abstraction** — **DONE** via the ruby_llm
     migration. Switching pikuri from llama.cpp/OpenAI-shape to
     Anthropic / Gemini / Bedrock / Ollama / etc. is a one-block edit
     in each `bin/pikuri-*`'s `RubyLLM.configure`. No library code change.
-12. **Vector search / RAG primitives** (langchainrb). Pikuri is an agent,
+23. **Vector search / RAG primitives** (langchainrb). Pikuri is an agent,
     not a RAG framework — out of scope by design. If a future binary
     needs RAG, it can compose `langchainrb`'s vector stores externally
     rather than pulling that scope into pikuri itself.
 
 ### Out of scope
 
-13. **Effect-based service architecture** (opencode). Massively too heavy
+24. **Effect-based service architecture** (opencode). Massively too heavy
     for a project this size.
-14. **LSP integration** (opencode). Deferred under "Coding-agent
-    deferrals" until a concrete use case shows up.
-15. **Steering / follow-up message queues** (pi). Pikuri's
+25. **LSP integration** (opencode, grok-build). Deferred under
+    "Coding-agent deferrals" until a concrete use case shows up.
+    grok-build's variant is worth knowing about — a full LSP client
+    manager whose diagnostics ride back to the model as a
+    `<system-reminder>` appended to tool output after an edit — but the
+    dependency (a running language server per project) is exactly the
+    weight pikuri is avoiding.
+26. **Steering / follow-up message queues** (pi). Pikuri's
     `Control::Interloper` already covers the mid-loop-injection case
     that motivated this idea in `bin/pikuri-code`'s REPL; a richer
     pi-style queue model is unmotivated today.
-16. **Persistent / resumable subagent sessions** (opencode). Requires a
-    session store. Not worth it for one feature.
+27. **Persistent / resumable subagent sessions** (opencode, grok-build).
+    Requires a session store. Not worth it for one feature.
+    grok-build adds **git-worktree isolation** for a child that writes,
+    which is the natural companion; pikuri's `GIT_REPO_RESEARCHER`
+    already does the throwaway-workspace half for read-only children,
+    and no pikuri persona writes.
+28. **Parallel toolsets as an A/B harness** (grok-build). Registering
+    several interchangeable implementations of each capability — its
+    own, plus ports of codex's and opencode's — and selecting per
+    session is the right design *if you are tuning a model against tool
+    surfaces*. Pikuri is a harness, not a model vendor: it should ship
+    one implementation per capability and spend the complexity budget
+    elsewhere. See §"grok-build's registry" for the three mechanisms
+    from it that *are* worth having on their own.
+29. **In-process kernel sandbox** (grok-build's Landlock / Seatbelt
+    applied at startup). It covers the agent's own filesystem calls, not
+    just the shell subprocess — strictly stronger than pikuri's
+    bubblewrap-around-`Bash`. But pikuri's file tools run in-process as
+    the real user *on purpose*, so `File.writable?` is exact and backs
+    the confirm-writable-writes posture (`CLAUDE.md` §Workspace seam).
+    Adopting this would mean giving that up. A real fork, decided the
+    other way.
 
 ---
 
@@ -1534,3 +1578,12 @@ more than wiring through ruby_llm's existing primitive.
 - opencode: `/tmp/agent-comparison/opencode` — `packages/opencode/src/session/processor.ts`,
   `packages/opencode/src/tool/`, `packages/opencode/src/permission/index.ts`,
   `packages/opencode/src/provider/provider.ts`
+- grok-build: shallow clone at `SOURCE_REV` `84ae1223` (August 2026) —
+  `crates/codegen/xai-grok-tools/src/{registry/types.rs,tool_taxonomy.rs,normalization.rs,util/unicode_confusables.rs}`,
+  `crates/codegen/xai-grok-tools/src/implementations/{grok_build,grok_build_concise,grok_build_hashline,codex,opencode,search_tool,use_tool,memory}/`,
+  `crates/codegen/xai-grok-agent/src/{config.rs,compaction.rs,system_reminder.rs}`,
+  `crates/codegen/xai-grok-sandbox/src/{lib.rs,profiles.rs,child_net.rs}`,
+  `crates/codegen/xai-grok-shell/src/{agent/folder_trust.rs,session/goal_tracker.rs}`,
+  `crates/common/xai-tool-types/src/task.rs`, and the user guide under
+  `crates/codegen/xai-grok-pager/docs/user-guide/` (permissions, sandbox,
+  skills, memory, subagents)

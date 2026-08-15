@@ -180,7 +180,9 @@ second edit tool.
   if given one. If payload size rather than call count ever becomes the
   problem, the prior art to read first is grok-build's `hashline` family
   (`anchor.rs`, `scheme.rs`, `benchmark.rs`) — line-range replace with the
-  staleness hole closed by per-line hashes.
+  staleness hole closed by per-line hashes. It closes that hole by
+  *fingerprint*, not equality, so it trades in a small silent wrong-edit
+  window that `old_string` doesn't have; `COMPARISON.md` works the numbers.
 
 ---
 
