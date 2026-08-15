@@ -36,14 +36,32 @@ module Pikuri
   # +module_function+ with no state — faithful reproduction plus the guard is
   # clearer than wrapping the buggy original. Re-running +module_function+
   # replaces both the module method and the private copy the provider gets via
-  # +include+. Delete this file once #837 ships and the gem pin moves past it.
+  # +include+.
+  #
+  # == When to delete this file
+  #
+  # ruby_llm main already carries an equivalent fix, in a module renamed to
+  # +RubyLLM::Protocols::ChatCompletions::Streaming+ — so the next release past
+  # 1.16.0 obsoletes the patch *and* moves its target. The load-time guard below
+  # turns that into a boot failure naming this file; delete it and its spec then.
   module RubyLlmPatches
     module_function
 
-    # @return [Boolean] +true+ once the patches below have been applied
-    #   (they run unconditionally at file load; this is a marker for specs)
+    # @return [Boolean] +true+ once the patches below have been applied; a
+    #   literal, kept honest by the load-time guard that raises if the target
+    #   module has moved out from under it
     def applied? = true
   end
+end
+
+# Reopening a module that has moved silently defines a fresh empty one: the
+# patch would stop applying, the bug would return, and nothing — not even
+# {Pikuri::RubyLlmPatches.applied?} — would notice. Fail at boot instead.
+unless defined?(RubyLLM::Providers::OpenAI::Streaming) &&
+       RubyLLM::Providers::OpenAI::Streaming.respond_to?(:parse_streaming_error)
+  raise "RubyLLM::Providers::OpenAI::Streaming.parse_streaming_error is gone from ruby_llm " \
+        "#{RubyLLM::VERSION} — the streaming error-parse patch no longer applies. It is fixed " \
+        'upstream: delete pikuri-core/lib/pikuri/ruby_llm_patches.rb and its spec (ruby_llm #837).'
 end
 
 module RubyLLM
