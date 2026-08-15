@@ -17,7 +17,38 @@ module Pikuri
     #
     # Contributes {PROMPT_SNIPPET} — the "a decline is final" confirmation
     # guidance — so it rides the wiring of the mutating tools instead of
-    # being restated in each host prompt.
+    # being restated in each host prompt, plus the boot snapshot below.
+    #
+    # == Boot snapshot
+    #
+    # A depth-1 {Listing} of the workspace root, injected once so orientation
+    # costs zero tool calls. It is the answer to +glob '*'+ hiding every
+    # directory — {Search::Glob} is +rg --files+, which emits files only, so a
+    # model opening in an unfamiliar tree concludes there are none:
+    #
+    #   <workspace_snapshot>
+    #   The workspace root is /home/alice/proj. Its top level, as of the start of this conversation:
+    #
+    #   lib/  [3 dirs, 1 file]
+    #   spec/  [empty]
+    #   README.md  4.2K
+    #
+    #   Only one level deep, and not refreshed: ...
+    #   </workspace_snapshot>
+    #
+    # **Depth 1, not 2.** {Listing}'s +[3 dirs, 1 file]+ column already does
+    # depth-2's job on the wide-flat directories where depth 2 costs most — a
+    # Jekyll blog's +_posts/  [0 dirs, 256 files]+ is 30 bytes against 24 KB
+    # for the expansion, and teaches more. Where depth 2 *is* cheap the layout
+    # is conventional, so it buys +src/+ and +build/+. Measured over 45
+    # projects: depth 1 fits 1 KB on all of them (median 312 B).
+    #
+    # **Stale by design.** Nothing refreshes it mid-conversation, which is why
+    # the snippet says so and points at +file_list+ — naming the tool is
+    # sanctioned here (unlike a +prompts/<bin>.txt+) because the snippet is
+    # contributed by the extension that *registers* it, so the two can't drift.
+    # +Agent#assemble_system_prompt+ re-pulls snippets on +clear_conversation+,
+    # which re-takes the snapshot; that bounds the drift without a mechanism.
     #
     # == Read-only gate
     #
@@ -51,6 +82,19 @@ module Pikuri
       PROMPT_SNIPPET = <<~SNIPPET.chomp
         A tool may ask you to confirm before it makes a change. If the user declines, stop rather than trying another route to the same end — a decline means they want to re-steer you, so hand back and wait for their guidance.
       SNIPPET
+
+      # @return [Integer] +depth+ the boot snapshot renders at. One — see the
+      #   class doc; not {Listing::DEFAULT_DEPTH}, which {FileList} may retune
+      #   for a per-call budget the snapshot does not share.
+      SNAPSHOT_DEPTH = 1
+
+      # @return [Integer] byte ceiling on the rendered snapshot. Over it, the
+      #   snippet degrades to a one-liner rather than head-truncating: a
+      #   truncated listing is an alphabetical prefix, and teaching the model
+      #   that +spec/+ does not exist is worse than teaching it nothing.
+      #   Twice the largest root measured (a real +$HOME+, 1,438 B), so it is a
+      #   fail-safe against a 5,000-entry +Downloads/+, not a routine path.
+      SNAPSHOT_MAX_BYTES = 2 * 1024
 
       # @return [Workspace] the composite shared across the tools;
       #   exposed for tests / introspection.
@@ -115,8 +159,36 @@ module Pikuri
       end
 
       # @return [Array<String>] the confirmation guidance ({PROMPT_SNIPPET}),
-      #   always — the confirmer is wired on every non-yolo host.
-      def system_prompt_snippets = [PROMPT_SNIPPET]
+      #   always — the confirmer is wired on every non-yolo host — followed by
+      #   the boot snapshot.
+      # @raise [SystemCallError] if the workspace root itself can't be opened.
+      #   Deliberately unhandled: it surfaces out of +Agent.new+, and a root you
+      #   can't open is a wiring bug every file tool is about to hit anyway.
+      def system_prompt_snippets = [PROMPT_SNIPPET, workspace_snapshot]
+
+      private
+
+      # The +<workspace_snapshot>+ block — see the class doc for the rendered
+      # shape. An empty or oversized root each degrade to a single line, so the
+      # block is never absent and never truncated.
+      #
+      # @return [String]
+      def workspace_snapshot
+        root    = @workspace.project_root
+        listing = Listing.render(root, filesystem: @workspace.filesystem, depth: SNAPSHOT_DEPTH)
+        body =
+          if listing.empty?
+            "The workspace root is #{root}. It is empty."
+          elsif listing.bytesize > SNAPSHOT_MAX_BYTES
+            "The workspace root is #{root}. It has too many entries to show " \
+              'here — call `file_list` to explore it.'
+          else
+            "The workspace root is #{root}. Its top level, as of the start of " \
+              "this conversation:\n\n#{listing}\n\nOne level only, and not " \
+              'refreshed — call `file_list` for anything deeper or newer.'
+          end
+        "<workspace_snapshot>\n#{body}\n</workspace_snapshot>"
+      end
     end
   end
 end

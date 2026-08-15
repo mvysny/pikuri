@@ -28,7 +28,62 @@ RSpec.describe Pikuri::Workspace::Extension do
 
   it 'contributes the confirmation guidance snippet' do
     ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
-    assert_equal [described_class::PROMPT_SNIPPET], ext.system_prompt_snippets
+    assert_equal described_class::PROMPT_SNIPPET, ext.system_prompt_snippets.first
+  end
+
+  describe 'boot snapshot' do
+    def snapshot(fs = filesystem)
+      described_class.new(filesystem: fs, confirmer: confirmer).system_prompt_snippets.last
+    end
+
+    it 'lists the root one level deep, and points at file_list for the rest' do
+      FileUtils.mkdir_p(root / 'lib' / 'nested')
+      File.write(root / 'lib' / 'thing.rb', 'x')
+      File.write(root / 'README.md', 'y' * 4300)
+
+      out = snapshot
+      assert_match(/\A<workspace_snapshot>\n/, out)
+      assert_match(/<\/workspace_snapshot>\z/, out)
+      assert_includes out, "The workspace root is #{root}."
+      assert_includes out, 'lib/  [1 dir, 1 file]'
+      assert_includes out, 'README.md  4.2K'
+      assert_includes out, '`file_list`'
+      # Depth 1: the child directory is summarised, never expanded into a row.
+      refute_includes out, 'nested/'
+    end
+
+    it 'says so for an empty root rather than emitting a blank block' do
+      out = snapshot
+      assert_includes out, 'It is empty.'
+      refute_includes out, 'as of the start of'
+    end
+
+    it 'degrades to one line over the byte cap instead of truncating' do
+      entry_count = (described_class::SNAPSHOT_MAX_BYTES / 8) + 50
+      entry_count.times { |i| File.write(root / format('f%05d', i), '') }
+
+      out = snapshot
+      assert_includes out, 'too many entries to show here'
+      assert_includes out, '`file_list`'
+      refute_includes out, 'f00000'
+      assert out.bytesize < described_class::SNAPSHOT_MAX_BYTES,
+             "degraded snippet should be tiny, was #{out.bytesize} B"
+    end
+
+    it 'propagates a root it cannot open' do
+      FileUtils.chmod(0o000, root)
+      assert_raises(SystemCallError) { snapshot }
+    ensure
+      FileUtils.chmod(0o755, root)
+    end
+
+    it 'is re-taken when the prompt is re-assembled' do
+      ext = described_class.new(filesystem: filesystem, confirmer: confirmer)
+      assert_includes ext.system_prompt_snippets.last, 'It is empty.'
+
+      File.write(root / 'appeared.txt', 'z')
+      assert_includes ext.system_prompt_snippets.last, 'appeared.txt'
+    end
   end
 
   describe '#configure' do

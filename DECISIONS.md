@@ -162,9 +162,10 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 ## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
 
-**Status:** Accepted. Shipped: `Workspace::Listing`, `read`'s recovering
-refusal, and the `file_list` tool. Still to come: a boot-time orientation
-snippet (`ideas/directory-listing.md`).
+**Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering
+refusal, the `file_list` tool, and the depth-1 boot snapshot on
+`Workspace::Extension`. `ideas/directory-listing.md` is deleted with this
+entry.
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
 model opens — orienting in the repo — and reported: *"`glob *` gave me ten
@@ -225,12 +226,75 @@ listing* — and says nothing about it in its description.
   gitignore correctness and child counts fall out of one call — but there a
   directory exists only if some *file* under it survived rg, so symlinked
   directories, directories holding only gitignored files, and empty
-  directories all vanish. Tolerable for a boot snapshot; wrong for a listing
-  answering "what is actually in this directory?". `Dir.children` is correct
-  on all three and needs no subprocess.
+  directories all vanish. `Dir.children` is correct on all three and needs no
+  subprocess. (This was held open as *tolerable for a boot snapshot* until the
+  snapshot chose depth 1 — see below — at which point gitignore stopped
+  mattering and the second walker died with it.)
+
+**The boot snapshot is depth 1** (2026-08-15, the second half of this
+decision). `Workspace::Extension` contributes a `<workspace_snapshot>`
+system-prompt snippet — one `Listing` of the root, one level deep,
+unconditional, capped at 2 KB, allowed to go stale. ~325 tokens at this repo's
+root; ~90 at the median project.
+
+Measured with the shipped renderer over 45 projects in `~/work/my`, plus a real
+`$HOME`. Depth 1 fits 1 KB on **45/45** (median 312 B, max 906 B — this repo).
+Depth 2's median is 772 B but its max is 24.7 KB, and the shape of that spread
+is the whole argument: **depth 2 is expensive exactly where it is informative,
+and uninformative exactly where it is cheap.** `Listing`'s `[N dirs, M files]`
+column already does its job on wide-flat directories — a Jekyll blog's
+`_posts/  [0 dirs, 256 files]` is 30 bytes against 24 KB for the expansion, and
+says more — while the repos where depth 2 costs only 2× are the ones with
+conventional layouts, so it buys `src/` and `build/`.
+
+Rejected, all of them consequences of wanting a second level:
+
+- **Depth 2 with an auto-degrade ladder** (2 → 1 → omit, against a byte
+  budget). The ladder is ~one line of code, so the objection isn't cost: it is
+  that the snippet's shape then varies silently by repo, and the model cannot
+  tell which depth it got. Depth 1 is one shape, always.
+- **A dirs-only or files-at-top-level-only walker**, to make depth 2 affordable
+  (~540 B here vs 1,900 B). A second rendering mode in `Listing` to buy a level
+  that measurement says isn't worth having.
+- **Keeping the `rg --files` prefix derivation for the snapshot**, on the
+  grounds that a boot budget can't afford to render `node_modules/`. True at
+  depth 2, where it eats the whole allowance; at depth 1 it is *one row*, and
+  an informative one. Dropping it is what leaves the gem with one walker.
+- **A `root == Dir.home` special case.** It was a proxy for a budget test, and
+  wrong in both directions — a tidy `$HOME` renders in 1,438 B and is genuinely
+  useful to an OS-helper agent; `~/work/my/pikuri` is a repo. `$HOME` at depth
+  1 clears the cap, so nothing needs the special case. (Narrower still than it
+  looked: `Filesystem::Restricted` *refuses* a `/home/*` project root outright,
+  so only the `AllowAll` hosts can be rooted there at all.)
+- **A constructor flag, default off, on in `pikuri-code`.** At ~90 tokens
+  median it is cheap enough to be unconditional, and a flag is a thing a host
+  forgets to set. The premise: if a harness wires the workspace, it wants to
+  work with those files.
+- **Head-truncating an over-budget snapshot.** A truncated listing is an
+  alphabetical prefix — it teaches the model that `spec/` does not exist. Over
+  the cap the snippet degrades to a single line naming the root; an empty root
+  likewise says so, because a blank block reads as a failed walk. A root that
+  can't be *opened* is the one case left unhandled: it raises out of
+  `Agent.new`, costs zero lines, and is a wiring bug every file tool is about
+  to hit anyway.
+- **`Control::Interloper` instead of a prompt snippet**, guessed to be the
+  cheaper answer to staleness. It is the more expensive one: a snippet is a
+  stable prefix, while a re-injected `kind: :system` item appends a message
+  every time, growing history and busting the prompt cache. Drift is bounded
+  without any mechanism — `Agent#assemble_system_prompt` re-pulls snippets on
+  `clear_conversation`, so the snapshot re-takes itself on `/clear`.
 
 **Consequences.**
 
+- **The snippet may name `file_list`**, against `CLAUDE.md`'s "no tool names in
+  a main/binary system prompt". That rule's target is prompt-vs-wiring drift,
+  and a snippet contributed by the extension that *registers* the tool
+  structurally can't drift — the `Tasks::Extension` /
+  `SubAgentTool.available_agents_snippet` precedent.
+- **`FILE_MINER` never sees the snapshot.** `SubAgentTool` selects tool
+  *instances* by name and wires no extensions, so no snippet reaches a
+  sub-agent. Mitigated ahead of it: both recon personas already open with a
+  `file_list`.
 - **Nothing evaluates `.gitignore` any more.** Without rg, the listing shows
   everything except `.git/` (matching Glob's hard exclusion) — so this is the
   one file-tool surface that diverges from Grep/Glob on gitignore. Accepted:
@@ -275,8 +339,10 @@ listing* — and says nothing about it in its description.
 - **"Five file tools" is gone from the docs.** Adding a sixth made the count
   wrong in 15 places at once; it collapses to "file tools", which can't go
   stale the next time one lands.
-- **Still open, tracked in `ideas/directory-listing.md`:** the boot-time
-  orientation snippet (Option D).
+- **One walker, one formatter.** `Listing`'s `Dir.children` walk serves both
+  `file_list` and the boot snapshot. The work started from a "one listing
+  formatter, not two" rule and, having briefly owed a second *walker* to the
+  snapshot's gitignore needs, ends up owing neither.
 
 ---
 
