@@ -41,14 +41,48 @@ Rejected — three reasons, in order of weight:
 2. **A matched directory is a dead end.** The model gets `lib/` in a result
    list and cannot `read` it. Its only follow-up is another `glob`. Reveals
    that something exists without revealing what's in it.
-3. **Not a flag flip.** `rg --files` can't emit directories at all, so this
-   means abandoning rg for `Dir.glob` (loses gitignore) or deriving dirs from
-   path prefixes. Real surgery.
+3. **Not a flag flip.** `rg --files` can't emit directories at all.
 
 And a `depth:` parameter on `glob` is a non-starter: depth is *already*
 expressible in the pattern (`*` = 1, `*/*` = 2, `**/*` = any). A second,
 contradictable way to say the same thing — `pattern: "**/*", depth: 1` has no
 defensible answer.
+
+## Why not just tell the LLM to run `bash ls`
+
+The tempting option, and the one Claude Code takes. Verified that it really
+would be frictionless: `ls` is in `PASSIVE_BINARIES`, so
+`PassiveCommandDetector#passive?` pre-approves it with no prompt, and the
+detector is wired in both `pikuri-code` (`bin/pikuri-code:252`) and `pikuri-os`
+(`os/extension.rb:103`). One call, zero friction, and `ls -la` is about as
+deeply in-distribution as a command gets.
+
+**Rejected, decisively, because `FILE_MINER` has no bash — by design.**
+`file_miner.rb:33` is `tool_names: %w[read grep glob]`, and the yardoc above it
+(`:16-21`) says why: *"no shell for `curl`… even if a file the miner reads
+carries a prompt-injection attempt."* Under a bash-only listing policy, the
+recon sub-agent whose entire job is orienting in an unfamiliar tree is the one
+agent that can never list a directory — and granting it bash to fix that would
+delete the documented security property and its `SECURITY.md:132` row.
+
+Two supporting reasons:
+
+- **Dependency direction.** `pikuri-workspace.gemspec` depends on `pikuri-core`
+  only; Bash lives in `pikuri-code`, which depends on workspace, not the
+  reverse. A host wiring the file tools without the coding gem would get
+  read/write/edit/grep/glob and no way to see a directory — the lower gem's
+  completeness hanging on a gem above it.
+- **Seam escape.** Bash takes the bare `Filesystem`, not the `Workspace`
+  composite, so `bash ls` bypasses `resolve_for_read` entirely — and
+  `read_only.rb:16` states outright that it doesn't gate Bash and won't pretend
+  to. Orientation in plan mode would route through the read-only posture's one
+  admitted hole.
+
+**The asymmetry in one line: Claude Code is one binary that always has bash;
+`pikuri-workspace` is a gem that frequently doesn't.** Claude Code can assume
+the shell — composability is pikuri's product, so pikuri can't. `pikuri-code`
+and `pikuri-os` lose nothing either way; the model can still reach for
+`bash ls` there if it prefers.
 
 ## What other harnesses do
 
@@ -65,21 +99,52 @@ ships a `list` tool". Worth knowing before claiming parity either way.
 
 New `Pikuri::Workspace::Search::List`, sibling of Grep/Glob:
 
-- `path` (default workspace root), `depth` (default 1, cap ~3),
-  `include_gitignored` mirroring glob's.
-- Directories first with a trailing `/` and a child count, then files with
-  size. `Utils.child_listing` already renders exactly this shape — it's just
-  unreachable except from the oversized-root refusal.
+- Params: `path` (default workspace root), `depth` (default 1, cap ~3).
+- **Sorted by name**, directories first with a trailing `/` and a child count,
+  then files with a size. Hierarchy is the axis here — which is the whole
+  argument against putting this in `glob`, so borrowing glob's mtime sort would
+  undercut it.
+- **Sizes human-readable** (`4.2K`, `50M`), not `52428800`. Models parse the
+  scaled form as easily as humans, and it's what `ls -h` has trained them on.
+  Note the existing `Glob::MAX_BYTES_LABEL` renders `"50 KB"` with a space —
+  keep that phrasing in the *truncation marker* and use `ls -h` style only for
+  per-row sizes; don't unify them.
+- **Output capped at `Glob::MAX_BYTES`** (50 KB), same head-truncation
+  treatment.
+- Takes the `Workspace::Workspace` composite like its siblings (it doesn't mark
+  the read ledger, but consistency settles it).
 - Reuse `Utils.oversized_root_refusal` and Glob's trifecta legs verbatim
   (filenames, no new leg — same reasoning as `glob.rb:108`).
 - Make `Utils.child_listing` delegate to the new renderer so there's one
   listing formatter, not two.
 - Replace `read.rb:164`'s false advice with the self-healing refusal below.
+- **Add to `FILE_MINER`** (`file_miner.rb:33` → `%w[read grep glob list]`), and
+  update the `SECURITY.md:132` row. Safe: `list` adds *no* trifecta leg beyond
+  what the persona already carries, and the injection defense is about having
+  no tool to *act* on an injected instruction — listing grants no action. It's
+  also the persona that needs orientation most.
 
-**Implementation trick:** don't reimplement gitignore. Run the existing
-`rg --files`, group paths by prefix at depth N. Directories, per-directory
-counts and gitignore correctness fall out of one call. Cost: an empty or
-fully-ignored directory vanishes — arguably correct for orientation.
+### Implementation: `Dir.children`, not the `rg --files` prefix trick
+
+Settled 2026-08-15. Deriving directories by grouping `rg --files` output by
+path prefix looked clever — gitignore correctness and child counts fall out of
+one call — but it has three blind spots, because a directory only exists if a
+*file* under it survived rg:
+
+- symlinked directories vanish (`rg --files` doesn't follow symlinks without `-L`)
+- directories holding only gitignored files vanish (no `build/`, no `node_modules/`)
+- empty directories vanish
+
+Tolerable for a boot snapshot (option D); wrong for a tool answering *"what is
+actually in this directory?"*. `Dir.children` is correct on all three, needs no
+subprocess, and is simpler.
+
+**Consequence: `include_gitignored` goes away.** Without rg, nothing evaluates
+`.gitignore`, so `list` shows everything except `.git/` (matching Glob's
+existing hard exclusion). This makes `list` the one file tool that diverges
+from Grep/Glob on gitignore — accepted, because `ls` doesn't respect gitignore
+either and "`build/` exists" is orientation signal rather than noise. Revisit
+only if the noise proves real.
 
 **Gotcha found while prototyping:** sort path-segment-wise, not lexically.
 `-` (0x2D) sorts before `/` (0x2F), so `pikuri/lib` lands *after*
@@ -101,9 +166,6 @@ one way to list, so it never faces a two-tools-no-criterion coin flip. The
 - The accidental `read lib/` self-heals with no extra round-trip.
 - Zero schema / description cost — which matters, because Grok's item 7 is that
   the standing prompt is already heavy.
-- Keeps `read`'s semantics honest: it must not touch the read-before-edit
-  ledger for a directory (the `:164` branch returns before `mark_read`, so this
-  is free today — don't break it).
 
 The road not taken (carry into the `D-` entry): letting `read` list
 directories as a *documented* capability, opencode-style. Rejected because
@@ -115,6 +177,18 @@ recovery path survives while the documented one doesn't.
 Constraint to preserve: `read` must not touch the read-before-edit ledger for a
 directory. Free today — the `:164` branch returns before `mark_read` — but the
 kind of thing a refactor silently breaks, so it wants a spec.
+
+### Docs sweep: drop the count from "five file tools"
+
+`"five file tools"` is load-bearing in nine places — `CLAUDE.md:27`, the
+Workspace seam at `CLAUDE.md:97`, `lib/pikuri-workspace.rb:8`,
+`extension.rb:5`, `workspace.rb:25`, `DESIGN.md:44`,
+`trifecta_legs_spec.rb:5`, `CHANGELOG.md` (historical, leave alone), and a spec
+*name* (`it 'registers all five file tools'`).
+
+Collapse to **"file tools"** — no counting, can't go stale. This is a pure
+docs/naming cleanup with no dependency on the tool, so it can land as its own
+commit *first* and stop being a blocker.
 
 ## Option D: boot-time orientation, on top
 
@@ -154,25 +228,42 @@ CLAUDE.md
 ```
 
 **~325 tokens is cheap** for killing the single most common opening tool call.
-Open questions: does it go stale mid-session (agent creates files)? Re-inject
-or accept drift? Is it an Extension, or `bin/`-level wiring? Does it belong in
-`pikuri-workspace` (owns the workspace) or the binaries (own the prompt)?
+
+**Do NOT reuse Glob's 50 KB cap here.** A boot injection is paid on *every*
+turn, forever; 50 KB would admit ~14k tokens of paths, which is Grok's item 7
+made worse by the fix for item 1. On this repo the cap wouldn't even bite —
+the full file list is 21.6 KB — so it would silently authorise a ~6.2k-token
+per-turn tax. Cap D at a couple of KB and let *depth* do the trimming. 50 KB
+stays `list`'s per-call ceiling, where a one-off cost is fine.
+
+Unlike `list`, D may keep the `rg --files` prefix derivation: gitignore
+correctness matters more for a snapshot, and the three blind spots are
+tolerable when the tool can always answer the follow-up.
+
+Open questions:
+
+- Does it go stale mid-session (agent creates files)? Re-inject, or accept drift?
+- Where does it wire — system prompt at boot (`bin/`-level), an Extension, or
+  `Control::Interloper` with `kind: :system`? The Interloper is already exactly
+  *"reference text landing as `add_message(:system)`"*, and it's also the
+  cheapest answer to staleness: re-inject mid-session instead of choosing
+  between a stale snapshot and none.
+- Does it belong in `pikuri-workspace` (owns the workspace) or the binaries
+  (own the prompt)?
 
 ## Open questions
 
-- Output format of `list`: sizes in bytes or `4.2K`? mtime column, or is that
-  glob's job and we keep them disjoint?
-- Does `list` sort by name (orientation) or mtime (consistency with glob)?
-  Name, probably — hierarchy is the axis here, which is the whole argument
-  against putting this in glob.
-- Sixth workspace tool = per-turn schema tokens, against Grok's item 7. Does D
-  alone get us most of the way, making `list` optional? (Leaning no — D is a
-  snapshot, `list` answers "what's in *this* dir I just found".)
-- Does `list` earn a spot in `FILE_MINER`'s toolset?
+- Tool name: `list` vs `ls` vs `tree`. (Checked: the CLAUDE.md tool-name
+  tripwire doesn't constrain this — it's scoped to backticked names in
+  `*/prompts/*.txt`, and none of the three appear there today.)
+- Exact row format — is a size column worth the tokens on every row, or only
+  for files over some threshold?
 
 ## Graduation
 
-- decision + the rejected `glob`-overload and `read`-only roads → `DECISIONS.md`
+- decision + the rejected roads (`glob`-overload, `bash ls`, documented
+  `read`-lists-dirs) → `DECISIONS.md`
 - the tool itself + its rationale → yardoc on `Search::List`
+- `FILE_MINER`'s new toolset → `SECURITY.md:132` row + the trifecta map
 - if D ships: a line in the relevant seam/convention in `CLAUDE.md`
 - `CHANGELOG.md` one-liner
