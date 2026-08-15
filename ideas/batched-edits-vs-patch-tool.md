@@ -90,7 +90,8 @@ Open sub-questions:
 - **Does it actually save a turn?** Parallel tool calls in one message
   already exist (Grok's own first nit praises them). If the model can emit
   three `edit` calls in one message today, batching saves confirmations and
-  atomicity, not round-trips. **Worth measuring before building.**
+  atomicity, not round-trips. **Worth measuring before building** — and see
+  the prior-art section: Claude Code shipped this arm and later removed it.
 
 ### 3. Word-boundary `replace_all`
 
@@ -118,6 +119,42 @@ Grok's literal ask. Nothing the others don't give, plus a parser and fuzz
 pressure. Note the OpenAI-style context-anchored envelope is essentially
 "several search-replaces in one wrapper with a stranger syntax" — i.e.
 arm 2 with worse ergonomics. **If the value is batching, ship batching.**
+
+## Prior art: Claude Code shipped batched edits, then removed them
+
+Checked against the installed binary (`claude` 2.1.233), not memory. Its
+live edit surface is three tools: `Edit` (`file_path`, `old_string`,
+`new_string`, `replace_all`), `Write` (full overwrite), `NotebookEdit`
+(`.ipynb` cells). No patch tool — `ApplyPatch` / `apply_patch` are zero
+hits in any form.
+
+`MultiEdit` appears 12 times, but never as a tool definition: in
+permission-rule help text (`Edit/Write/MultiEdit deny rule`) so old
+deny-rules keep matching, in two tool-name enum lists, and in a UI verb
+map beside the dead legacy names `FileReadTool` / `FileWriteTool` /
+`FileEditTool` / `GlobTool`. There is no `edits` array parameter anywhere.
+So it was a real tool that got **removed**, leaving compat scaffolding.
+
+Reads as evidence for arm 1: the harness with the most usage data shipped
+batching, then dropped it, while keeping strict single-hunk `Edit` *and*
+parallel tool calls. That matches arm 2's own open sub-question — that
+batching mostly buys atomicity, not round-trips.
+
+Caveats before leaning on it:
+
+- Removal is inferred from residue plus enum position. The binary doesn't
+  say *why* — redundancy with parallel calls, the genuinely nasty
+  partial-batch failure states, or prompt-cache economics that don't apply
+  here.
+- A harness aimed at frontier models is exactly where local-first diverges.
+  A tool dropped because a big model didn't need it says little about a 7B
+  one — the same asymmetry as the in-distribution argument below, pointing
+  the same way.
+
+Also: Claude Code's `Edit` has no `occurrence` equivalent — uniqueness or
+`replace_all`, nothing else. So pikuri is now *ahead* on that axis rather
+than catching up, and no one else's design can be cited as validation for
+it.
 
 ## Arguments to weigh either way
 
