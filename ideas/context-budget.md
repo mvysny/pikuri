@@ -4,9 +4,13 @@ Status: **idea, not built.** Origin: `feedback.txt` item 1 ("no 'where am
 I in context?' signal"), which asked for a budget line on *every* turn.
 That framing is rejected below; what survives is much smaller.
 
-The human-facing half of this already ships. The only open question is
-whether to add a model-facing half, and — after arguing it out — the
-answer is at most **one late warning**, never a per-turn readout.
+The human-facing half of this already ships. The open question is whether
+to add a model-facing half, and — after arguing it out — the answer is at
+most **one late warning**, never a per-turn readout. Its *wording*,
+though, turns out to be a function of the overflow policy, so even the
+late warning can't be written yet; what can be built ahead of that
+decision is the threshold detector underneath it (sensor vs. actuator,
+below).
 
 
 ## What already ships (grounded)
@@ -26,9 +30,14 @@ The number exists; it just points at the human.
   host can put the readout in a TUI footer.
 
 So "the user should watch the context size" is already implemented.
-Nit found while grounding this: `bin/pikuri-code` is the one binary that
-doesn't wire `TokenLog` (chat / os / memory all do). Worth fixing
-regardless of whether the rest of this note ever lands.
+
+(An earlier draft of this note claimed `bin/pikuri-code` was the one
+binary not wiring `TokenLog`. That was simply wrong — all ten binaries
+wire it, `pikuri-code` since the monorepo extraction. What they mostly
+lack is an `on_status_line` observer, so the readout is log-only: it
+reaches the human through `PIKURI_LOG`, not through the chat surface.
+That is a much weaker gap, and a `bin/` script's crudeness rather than a
+bug.)
 
 
 ## What happens at the wall — and why that's not settled
@@ -99,6 +108,13 @@ best work.** Knowledge of a constraint only pays when the constraint
 binds. The late-warning shape is an attempt to keep that property for
 ~90% of turns while making the last 10% non-fatal.
 
+The operator-discipline argument in
+[`context-overflow-behavior.md`](context-overflow-behavior.md)
+strengthens that steelman for the interactive agent specifically — if a
+human is watching the readout that already ships and ends the session
+first, the model never needs the number either. It leaves the case for
+(2) standing only where nobody is watching: the autonomous legs.
+
 
 ## Proposed shape
 
@@ -115,6 +131,30 @@ count reads as an instrument. No adjective, no advice, no anti-panic
 paragraph: if the model draws the wrong conclusion from one late
 mechanical reading, more words won't fix it, and the words are exactly
 what makes the per-turn version intolerable.
+
+### …but the wording can't actually be settled yet
+
+That "bare number, no advice" rule doesn't survive contact with the
+blocked question. **Actionable = fact + consequence**, and the bare line
+is only the fact. What the model should *do* on reading it differs per
+overflow policy:
+
+| Overflow policy | Right reaction at 85% |
+|---|---|
+| Fail loudly, lose the conversation *(today)* | write the handoff into the next message — stdout is the sink, the human pastes it into a fresh session |
+| Summarize in place and continue | **nothing.** Any reaction is pure damage: work truncated to dodge a wall that isn't there |
+| Hand off to a fresh agent seeded with a summary | write the handoff somewhere *durable* (task list, file) — prose is discarded with the history |
+
+Three policies, three incompatible reactions, so the sentence cannot be
+written before the policy is picked. And once the consequence is in the
+message, "no advice" is already broken.
+
+The uncomfortable implication: **the bare-number shape reads as an
+instrument only because it silently assumes `exit 1`.** Under today's
+demo behaviour a model can guess what the instrument means; under
+auto-compaction the same bytes are an active hazard. That is the concrete
+mechanism behind "downstream of `context-overflow-behavior.md`" — not
+ordering hygiene, but the message text being a function of the policy.
 
 Home: a `Control` next to {Pikuri::Agent::Control::StepLimit} — controls
 are already the family for loop-level budgets, and the natural firing
@@ -134,6 +174,35 @@ feature needs a denominator, so with no cap there is no band to cross and
 nothing to emit. Never invent a denominator, and never emit a bare "56k
 used so far" as a consolation prize — that's the inert middle-band line
 wearing a different hat.
+
+
+## Sensor vs. actuator — what is buildable now
+
+The feature is two pieces, and only one of them is blocked:
+
+- **Sensor** — band-crossing detection: 85/95, once per band, hysteresis,
+  `nil` cap ⇒ no bands. Pure arithmetic over `Event::ContextCap` +
+  `Event::Tokens`, both of which already ship, over a numerator
+  `TokenLog` already computes (`token_log.rb:164`). Policy-free: *every*
+  compaction strategy needs the same trigger — summarize-in-place and
+  seed-a-fresh-agent both fire on a threshold, not on the raise. Unlike
+  the actuator, it is ordinary wiring and **is** testable with
+  `Testing.fake_transport`.
+- **Actuator** — the `:system` append to the model. Blocked, per the
+  table above.
+
+The catch is CLAUDE.md's no-abstraction-just-in-case rule: a sensor whose
+only consumer is a feature that may never ship is speculative, and would
+be a `Control` firing an event nobody listens to. It earns its place
+today only with a *human*-facing consumer — a footer that goes amber, or
+one `warn` at 85% in `pikuri-code`. That needs no policy decision (the
+human is the actor and already knows what clearing does) and touches none
+of the blocked fork. Without such a consumer, the honest move is to build
+neither half and wait.
+
+Note this splits the blocking cleanly: the model-facing question is
+blocked on the overflow decision, the sensor is blocked only on wanting a
+human-facing warning.
 
 
 ## Considered and rejected
@@ -171,8 +240,9 @@ rather than keeping both.**
 
 ## How to settle it
 
-Not testable with `Testing.fake_transport` — this is a claim about model
-behaviour, not wiring. The experiment is running `pikuri-code` on one
+The *actuator* is not testable with `Testing.fake_transport` — it is a
+claim about model behaviour, not wiring (the sensor is ordinary wiring
+and does spec normally). The experiment is running `pikuri-code` on one
 real, long task twice, warning on and off, and watching whether the
 warned run degrades *before* the wall or hands off cleanly *at* it.
 
@@ -198,7 +268,13 @@ re-proposed every time someone rereads the feedback file.
 - The `nil`-cap ⇒ no-line rule, and the once-per-band hysteresis → yardoc
   on the new `Control`.
 - The compaction coupling → that entry's *Consequences*.
+- The fact-plus-consequence argument — why the message text is a function
+  of the overflow policy — → that entry's rationale, since it is the
+  reason the fork exists at all.
 - Then cut item 1 from `feedback.txt`, renumber the remainder, and add
   the settled line to its header note.
-- The `bin/pikuri-code` missing-`TokenLog` nit is independent — land it
-  separately, don't hold it hostage to this decision.
+
+The **sensor** can graduate ahead of all that, if a human-facing warning
+is wanted for its own sake: no `DECISIONS.md` entry (no fork — a
+threshold with hysteresis is just how it works), rationale to the new
+`Control`'s yardoc, `nil`-cap rule included.
