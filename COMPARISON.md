@@ -365,13 +365,27 @@ Adopting it would be a reversal to argue for on its own merits, not a
 drop-in. Widening the hash narrows the window without closing it, and
 spends the payload win that motivated the scheme.
 
-Two smaller edit-path details worth stealing outright, both cheap:
+Two smaller edit-path details, both cheap — and instructive in opposite
+directions: one transfers only after being inverted, the other doesn't
+transfer at all.
 
 - **Sparse line-number anchors.** grok-build's default `read_file`
   prints the `LINE→` prefix only on the first line and every tenth line
   after ("count from the nearest anchor"), rather than on every line.
-  Same addressability, a fraction of the tokens. Pikuri's `Read` prefixes
-  every line.
+  Same addressability, a fraction of the tokens — but *not* a free win
+  here, and pikuri already declined it: {Pikuri::Workspace::Read} picks
+  `cat -n` for **training-data familiarity** over opencode's cheaper
+  `"<n>: "` and pi's numberless output, and an outside-model review
+  (Grok 4.6, August 2026) confirmed the numbering and the
+  read-a-larger-window nudge as a pair, with "don't trade either back
+  for tokens." Grok's own product does the opposite of what Grok
+  advised pikuri, and the reason is the test to apply to every borrow
+  in this section: **a first-party model vendor can tune the model to
+  its format; a harness has to meet the model where it already is.**
+  grok-build can teach its model any encoding; pikuri targets small
+  local models it will never train, so familiarity is a feature it is
+  buying, not a cost it failed to notice. (See
+  `ideas/grok-build-cheap-borrows.md`.)
 - **Unicode confusable repair** (`util/unicode_confusables.rs`). Smart
   quotes, em-dashes, ellipses and non-breaking spaces pasted in from
   Slack or Google Docs render identically to ASCII in `read`, so the
@@ -380,8 +394,14 @@ Two smaller edit-path details worth stealing outright, both cheap:
   accidental — `U+2212 MINUS` and `U+00D7 MULTIPLICATION` are excluded
   as semantically meaningful), normalizes for *comparison only*, and
   keeps a byte-offset remap so the write lands on the original bytes.
-  Pikuri's `Edit` has the same failure mode with no mitigation, and this
-  is maybe forty lines of Ruby.
+  Pikuri's `Edit` has the same failure mode with no mitigation — but the
+  half to take is the *diagnosis*, not the repair: `Edit` normalizes
+  CRLF across the whole file, so a normalize-edit-writeback would
+  rewrite every smart quote in the file behind a "1 occurrence"
+  confirmation. Retrying a failed match against a normalized copy and
+  naming the offending codepoint costs nothing and keeps the
+  byte-for-byte contract (`D-single-hunk-edit`) intact. See
+  `ideas/grok-build-cheap-borrows.md`.
 
 ---
 
@@ -1388,25 +1408,35 @@ more than wiring through ruby_llm's existing primitive.
    parameter carries an inline `e.g. "..."` example in the ruby_llm
    pattern. Integer parameters describe their default and cap, which
    serves as the anchoring equivalent. Codified in `CLAUDE.md`.
-3. **Unicode confusable repair in `Edit`** (grok-build). Smart quotes,
+3. **Unicode confusable handling in `Edit`** (grok-build). Smart quotes,
    em-dashes, ellipses and non-breaking spaces pasted in from a chat app
    or a doc render identically to ASCII in `Read`, so the model's ASCII
    `old_string` never matches and the edit fails for a reason the model
-   cannot see. Normalize for *comparison only*, keep a byte-offset remap
-   so the write lands on original bytes, and keep the map narrow —
-   grok-build excludes `U+2212 MINUS` and `U+00D7 MULTIPLICATION`
-   because they carry meaning. Roughly forty lines.
-4. **Sparse line-number anchors in `Read`** (grok-build). Print the
-   `LINE→` prefix on the first line and every tenth line rather than
-   every line, and say so in the description ("count from the nearest
-   anchor"). Same addressability, a fraction of the tokens on every
-   read.
+   cannot see. Take the *diagnosis*, not grok-build's repair: on a
+   zero-match, retry against a confusable-normalized copy and, if it
+   matches, name the offending codepoint and line instead of editing.
+   Repair would need a byte-offset remap, because `Edit`'s
+   whole-file CRLF normalization would otherwise rewrite every smart
+   quote in the file behind a "1 occurrence" confirmation. Keep the map
+   narrow either way — grok-build excludes `U+2212 MINUS` and `U+00D7
+   MULTIPLICATION` because they carry meaning — and keep it separate
+   from `Sanitizer`, whose set is about deception, not accident. See
+   `ideas/grok-build-cheap-borrows.md`.
+4. **Sparse line-number anchors in `Read`** (grok-build) — **REJECTED**,
+   listed so it isn't re-proposed. Cheaper per read, but pikuri already
+   chose `cat -n` for training-data familiarity and had that confirmed
+   by an outside-model review; see §"Edit addressing" for the
+   vendor-can-tune-the-model / harness-cannot test that kills it, and
+   `ideas/grok-build-cheap-borrows.md`.
 5. **Interpolate caps from the constant that enforces them** (grok-build).
-   Pikuri already does this where the cap is a constant (`Read`'s
-   `MAX_BYTES_LABEL`) and not where it isn't (`web_search`'s "Defaults
-   to 10; most providers cap this at 20", typed beside a hard-coded
-   `max_results: 10`). This is the portable half of grok-build's
-   description-template machinery, minus the machinery.
+   The portable half of grok-build's description-template machinery,
+   minus the machinery — and already the in-tree convention for `bash`,
+   the three `thunderbird_*` searches, both `fileindex_*` tools and
+   `read`. Three tools still type the number by hand: `fetch` and
+   `web_scrape` restate constants that already exist and are already
+   what `.clamp` enforces, and `web_search` states a cap
+   ("most providers cap this at 20") that nothing enforces and pikuri
+   cannot verify. See `ideas/grok-build-cheap-borrows.md`.
 6. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
    `halt("done")` from `execute` ends the chat without a follow-up
