@@ -58,8 +58,9 @@ Related:
   already carries the multi-step trigger *and* the skip-single-step
   off-switch). The externalized, user-visible checklist is the better
   form; adding the prose too would be redundant.
-- **LSP tool / scheduling / monitoring / background daemon.** LSP is
-  also logged under [`coding-agent.md`](coding-agent.md); scheduling and
+- **LSP tool / scheduling / monitoring / background daemon.** LSP is no
+  longer deferred here — it has its own note, [`lsp.md`](lsp.md)
+  (investigated, direct client over a bridge); scheduling and
   monitoring are the far end of Claude's tool list and assume a daemon
   mode pikuri doesn't have (it's synchronous and request-scoped — see
   the Linux-first / out-of-scope notes in

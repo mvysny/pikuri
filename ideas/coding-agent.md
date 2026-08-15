@@ -15,6 +15,8 @@ Related:
   §"Permission model needs granularity" — the risk-tier / dry-run /
   time-bound wishlist the permission system would grow into.
 - [`claude-parity.md`](claude-parity.md) — LSP is deferred in both.
+- [`lsp.md`](lsp.md) — the LSP deferral below graduated into its own
+  note.
 
 ## The deferrals
 
@@ -31,9 +33,11 @@ Related:
   trade-off — adds mini_magick / ruby-vips for one tool's
   ergonomics. Revisit if "Read screenshot.png" being denied on size
   becomes a common annoyance.
-- **LSP tool.** opencode wires an LSP client for hover / definition /
-  diagnostics. Big-ticket feature; deferred until there's a concrete
-  use case beyond "opencode has one."
+- **LSP tool.** ~~Deferred until there's a concrete use case beyond
+  "opencode has one."~~ **Superseded by [`lsp.md`](lsp.md)** — the use
+  case arrived (`feedback.txt` item 2), the protocol is investigated and
+  the direct-vs-MCP fork is decided there. Delete this bullet when that
+  note graduates.
 - **Streaming output from bash.** `Code::Bash` returns a single
   observation `String`. Live process output is meant to stay on the
   listener stream once we add a TUI; meanwhile callers bound wall time
