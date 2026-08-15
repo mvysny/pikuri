@@ -101,6 +101,127 @@ RSpec.describe Pikuri::Workspace::Edit do
     end
   end
 
+  describe '.edit occurrence' do
+    it 'replaces only the Nth match and leaves the others alone' do
+      write_file('many.txt', "foo\nfoo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: false, occurrence: 2)
+
+      assert_equal 'Edited many.txt: replaced occurrence 2 of 3.', result
+      assert_equal "foo\nbar\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'lifts the uniqueness requirement rather than relaxing the match' do
+      write_file('many.txt', "foo\nfoo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'fo o', new_string: 'bar',
+                                    replace_all: false, occurrence: 1)
+
+      assert result.start_with?('Error: old_string not found'), "expected not-found, got #{result.inspect}"
+      assert_equal "foo\nfoo\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'takes the first match on occurrence 1' do
+      write_file('many.txt', "foo\nfoo\nfoo\n")
+
+      described_class.edit(workspace: workspace, path: 'many.txt',
+                           old_string: 'foo', new_string: 'bar',
+                           replace_all: false, occurrence: 1)
+
+      assert_equal "bar\nfoo\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'takes the last match on occurrence == the match count' do
+      write_file('many.txt', "foo\nfoo\nfoo\n")
+
+      described_class.edit(workspace: workspace, path: 'many.txt',
+                           old_string: 'foo', new_string: 'bar',
+                           replace_all: false, occurrence: 3)
+
+      assert_equal "foo\nfoo\nbar\n", (root + 'many.txt').binread
+    end
+
+    it 'counts non-overlapping matches, agreeing with the multi-match error' do
+      write_file('aaaa.txt', 'aaaa')
+
+      result = described_class.edit(workspace: workspace, path: 'aaaa.txt',
+                                    old_string: 'aa', new_string: 'B',
+                                    replace_all: false, occurrence: 2)
+
+      assert_equal 'Edited aaaa.txt: replaced occurrence 2 of 2.', result
+      assert_equal 'aaB', (root + 'aaaa.txt').binread
+    end
+
+    it 'works on a multi-line old_string' do
+      write_file('m.rb', "def a\n  x\nend\ndef b\n  x\nend\n")
+
+      result = described_class.edit(workspace: workspace, path: 'm.rb',
+                                    old_string: "  x\nend", new_string: "  y\nend",
+                                    replace_all: false, occurrence: 2)
+
+      assert_equal 'Edited m.rb: replaced occurrence 2 of 2.', result
+      assert_equal "def a\n  x\nend\ndef b\n  y\nend\n", (root + 'm.rb').binread
+    end
+
+    it 'matches in LF space on a CRLF file and preserves CRLF on write' do
+      write_file('crlf.txt', "foo\r\nfoo\r\n")
+
+      result = described_class.edit(workspace: workspace, path: 'crlf.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: false, occurrence: 2)
+
+      assert_equal 'Edited crlf.txt: replaced occurrence 2 of 2.', result
+      assert_equal "foo\r\nbar\r\n", (root + 'crlf.txt').binread
+    end
+
+    it 'rejects an occurrence past the match count, leaving the file untouched' do
+      write_file('many.txt', "foo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: false, occurrence: 3)
+
+      assert_equal 'Error: old_string matches 2 times in many.txt, so occurrence 3 does not exist.', result
+      assert_equal "foo\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'rejects occurrence below 1' do
+      write_file('many.txt', "foo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: false, occurrence: 0)
+
+      assert_equal 'Error: occurrence must be 1 or greater, got 0.', result
+      assert_equal "foo\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'rejects occurrence combined with replace_all' do
+      write_file('many.txt', "foo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: true, occurrence: 1)
+
+      assert result.start_with?('Error: occurrence and replace_all are mutually exclusive'),
+             "expected exclusivity error, got #{result.inspect}"
+      assert_equal "foo\nfoo\n", (root + 'many.txt').binread
+    end
+
+    it 'points at occurrence in the multi-match error' do
+      write_file('many.txt', "foo\nfoo\nfoo\n")
+
+      result = described_class.edit(workspace: workspace, path: 'many.txt',
+                                    old_string: 'foo', new_string: 'bar',
+                                    replace_all: false)
+
+      assert_includes result, 'Set occurrence=N'
+    end
+  end
+
   describe '.edit literal replacement (no gsub interpolation)' do
     it 'writes "\\1" literally rather than treating it as a backreference' do
       write_file('br.txt', 'a Q b')
@@ -313,6 +434,16 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal 'Edited ra2.txt: replaced 2 occurrences.', result
     end
 
+    it 'accepts occurrence as the literal String "2" (validator coercion)' do
+      write_file('occ.txt', "x\nx\nx\n")
+
+      result = tool.run('path' => 'occ.txt', 'old_string' => 'x',
+                        'new_string' => 'y', 'occurrence' => '2')
+
+      assert_equal 'Edited occ.txt: replaced occurrence 2 of 3.', result
+      assert_equal "x\ny\nx\n", (root + 'occ.txt').binread
+    end
+
     it 'reports missing required fields via the Parameters validator' do
       result = tool.run('path' => 'foo.txt', 'old_string' => 'a')
 
@@ -330,7 +461,7 @@ RSpec.describe Pikuri::Workspace::Edit do
   end
 
   describe 'parameters schema' do
-    it 'advertises path/old_string/new_string as required and replace_all as optional' do
+    it 'advertises path/old_string/new_string as required, replace_all and occurrence as optional' do
       schema = tool.parameters.to_openai
 
       assert_equal %w[path old_string new_string], schema[:required]
@@ -338,6 +469,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       assert_equal 'string',  schema[:properties][:old_string][:type]
       assert_equal 'string',  schema[:properties][:new_string][:type]
       assert_equal 'boolean', schema[:properties][:replace_all][:type]
+      assert_equal 'integer', schema[:properties][:occurrence][:type]
     end
 
     it 'wires through to_ruby_llm_tool under the "edit" name' do

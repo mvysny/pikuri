@@ -30,6 +30,14 @@ module Pikuri
     # compounding-heuristic risk. (opencode runs a 9-replacer cascade despite
     # saying "must match exactly"; pi stays strict, and so do we.)
     #
+    # +occurrence:+ is what keeps that strictness affordable. Uniqueness, not
+    # exactness, is the expensive half: in a repetitive file the model must
+    # paste a large window just to disambiguate, and the window is pure token
+    # cost. +occurrence: 2+ picks the second match by position instead. It
+    # cannot silently hit the wrong text — +old_string+ still has to match
+    # byte-for-byte, so a stale index fails the call rather than editing
+    # elsewhere.
+    #
     # == Line endings get normalized
     #
     # The one exception to "strict bytes": CRLF files are matched in LF space
@@ -45,9 +53,10 @@ module Pikuri
     #
     # Empty +old_string+ ("use the write tool") · +old_string+ == +new_string+
     # (no-op) · not found ("must match exactly") · multiple matches without
-    # +replace_all+ · missing / directory / binary file · not read this
-    # conversation (the gate, after the binary refusal) · workspace boundary /
-    # EACCES.
+    # +replace_all+ or +occurrence+ · +occurrence+ combined with +replace_all+ ·
+    # +occurrence+ below 1 or past the match count · missing / directory /
+    # binary file · not read this conversation (the gate, after the binary
+    # refusal) · workspace boundary / EACCES.
     class Edit < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.
@@ -60,7 +69,7 @@ module Pikuri
         - You must Read the file in this conversation before editing, or the call will fail.
         - Use for partial changes to an existing file.
         - `old_string` and `new_string` must differ.
-        - If `old_string` matches multiple times the call fails — add surrounding context to make the match unique, or set `replace_all: true`.
+        - If `old_string` matches multiple times the call fails — set `occurrence` to pick one by position, set `replace_all: true`, or add surrounding context to make the match unique.
         - Cannot create files (rejects empty `old_string` and missing files).
         - Binary files are refused.
         - CRLF files are matched in LF space; the original line endings are preserved on write.
@@ -98,11 +107,17 @@ module Pikuri
                                'Replace every occurrence of old_string ' \
                                'instead of failing on multiple matches. ' \
                                'Defaults to false, e.g. true.'
+            p.optional_integer :occurrence,
+                               'Replace only the Nth match (1-based, counted ' \
+                               'top to bottom) and leave the rest alone. Use ' \
+                               'this instead of padding old_string with ' \
+                               'context when the file repeats the same ' \
+                               'snippet. Cannot be combined with replace_all.'
           },
-          execute: ->(path:, old_string:, new_string:, replace_all: false) {
+          execute: ->(path:, old_string:, new_string:, replace_all: false, occurrence: nil) {
             Edit.edit(workspace: workspace, read_only: read_only, confirmer: confirmer,
                       path: path, old_string: old_string, new_string: new_string,
-                      replace_all: replace_all)
+                      replace_all: replace_all, occurrence: occurrence)
           },
           # No legs, for the same reason as {Write}: the observation reports the
           # outcome, never the file's bytes, so nothing enters the model's
@@ -122,17 +137,26 @@ module Pikuri
       # @param old_string [String] text to find
       # @param new_string [String] text to substitute
       # @param replace_all [Boolean] true replaces every occurrence; false
-      #   (default) errors on multiple matches
+      #   (default) errors on multiple matches unless +occurrence+ picks one
+      # @param occurrence [Integer, nil] 1-based index of the single match to
+      #   replace, lifting the uniqueness requirement; +nil+ (default) keeps
+      #   it. Mutually exclusive with +replace_all+.
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
       # @return [String] tool observation
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
-                    read_only: nil, confirmer: nil)
+                    occurrence: nil, read_only: nil, confirmer: nil)
         return "Error: cannot edit #{path} — #{read_only.message}" if read_only&.active?
 
         return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?
         return 'Error: old_string and new_string are identical — this edit is a no-op.' if old_string == new_string
+
+        if occurrence && replace_all
+          return 'Error: occurrence and replace_all are mutually exclusive; ' \
+                 'drop one — occurrence picks a single match, replace_all takes them all.'
+        end
+        return "Error: occurrence must be 1 or greater, got #{occurrence}." if occurrence && occurrence < 1
 
         resolved = workspace.resolve_for_write(path)
         return "Error: file not found: #{path}" unless resolved.exist?
@@ -158,29 +182,41 @@ module Pikuri
                  'exactly, including whitespace and indentation; re-read with the ' \
                  'read tool if uncertain.'
         end
-        if occurrences > 1 && !replace_all
+        if occurrence && occurrence > occurrences
+          return "Error: old_string matches #{occurrences} time#{occurrences == 1 ? '' : 's'} " \
+                 "in #{path}, so occurrence #{occurrence} does not exist."
+        end
+        if occurrences > 1 && !replace_all && !occurrence
           return "Error: old_string matches #{occurrences} times in #{path}. " \
-                 'Provide more surrounding context to make the match unique, ' \
-                 'or set replace_all=true to replace all occurrences.'
+                 'Set occurrence=N to replace just the Nth, set replace_all=true ' \
+                 'to replace all of them, or provide more surrounding context to ' \
+                 'make the match unique.'
         end
 
-        replaced = replace_all ? occurrences : 1
         new_content =
           if replace_all
             # Block form bypasses gsub's \1 / \& interpolation on the
             # replacement String — we want literal substitution.
             content.gsub(needle) { patch }
           else
-            idx = content.index(needle)
+            idx = nth_index(content, needle, occurrence || 1)
             content.byteslice(0, idx) + patch + content.byteslice(idx + needle.bytesize, content.bytesize - idx - needle.bytesize)
           end
 
         final = crlf ? new_content.gsub("\n", "\r\n") : new_content
 
+        detail =
+          if occurrence
+            "occurrence #{occurrence} of #{occurrences}"
+          else
+            replaced = replace_all ? occurrences : 1
+            "#{replaced} occurrence#{replaced == 1 ? '' : 's'}"
+          end
+
         if confirmer
           gate = WriteGate.check(
             confirmer: confirmer, path: path, resolved: resolved,
-            question: "OK to edit #{path} (#{replaced} occurrence#{replaced == 1 ? '' : 's'})?",
+            question: "OK to edit #{path} (#{detail})?",
             change: Confirmer::Change.new(path: path, old: raw, new: final)
           )
           return gate if gate
@@ -192,7 +228,7 @@ module Pikuri
         # follow-up edit needn't re-read. Idempotent — the read? gate passed.
         workspace.mark_read(resolved)
 
-        "Edited #{path}: replaced #{replaced} occurrence#{replaced == 1 ? '' : 's'}."
+        "Edited #{path}: replaced #{detail}."
       rescue Filesystem::Error => e
         "Error: #{e.message}"
       rescue Errno::EACCES => e
@@ -209,6 +245,24 @@ module Pikuri
         str.b.gsub("\r\n", "\n")
       end
       private_class_method :normalize_lf
+
+      # Byte offset of the +nth+ (1-based) non-overlapping match of +needle+.
+      #
+      #   nth_index("foofoofoo", "foo", 2)   # => 3
+      #
+      # Non-overlapping to agree with the +String#scan+ count the caller
+      # bounds +nth+ against — so the two can never disagree.
+      #
+      # @param haystack [String] BINARY-encoded content
+      # @param needle [String] BINARY-encoded search string
+      # @param nth [Integer] 1-based match index, already known to exist
+      # @return [Integer] byte offset of the match
+      def self.nth_index(haystack, needle, nth)
+        idx = haystack.index(needle)
+        (nth - 1).times { idx = haystack.index(needle, idx + needle.bytesize) }
+        idx
+      end
+      private_class_method :nth_index
     end
   end
 end

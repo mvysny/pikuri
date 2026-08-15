@@ -49,6 +49,12 @@ What I'd change
    without the unique-string dance. Keep `edit` for the one-hunk
    change.
 
+   Partly settled: the unique-string dance was the real tax, and
+   `edit`'s `occurrence: N` now pays it. Whether the rest earns a
+   batching or patch sibling is open — see
+   ideas/batched-edits-vs-patch-tool.md, which also owns the eventual
+   DECISIONS.md entry for the whole fork.
+
 3. No language intelligence.
 
    For Ruby I'd want go-to-definition and find-references. I can grep,
