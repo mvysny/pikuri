@@ -79,6 +79,86 @@ design.
 
 ---
 
+## D-keep-ruby-llm — Decline the piece, keep the gem (2026-08-16)
+
+**Status:** Accepted; nothing to implement. Reviewed against the reopen
+criteria below on 2026-08-16 and reaffirmed.
+
+**Context.** pikuri has only ever spoken the OpenAI-compatible
+`/v1/chat/completions` shape — a local llama.cpp server by default, the
+occasional cloud endpoint — and multi-provider config is out of scope
+(CLAUDE.md). ruby_llm's selling point is provider breadth we use none of,
+weighed against a stated value of being small enough to audit in an evening.
+A streaming error-parse crash in ruby_llm's OpenAI path (a non-200 whose
+body wasn't a Hash) made the question concrete enough to need an answer
+rather than a shrug.
+
+**Decision.** Keep ruby_llm as the chat transport. Where its direction
+fights ours, **decline the piece, keep the gem** — the pattern already set by
+`D-context-window-sources`, which refuses ruby_llm's model registry for a
+`/props` probe without touching the dependency. A defect on our path gets an
+upstream issue plus a small monkeypatch, guarded so it fails at boot rather
+than silently stops applying, and deleted the moment the fix ships
+({Pikuri::RubyLlmPatches}).
+
+**Alternatives rejected.**
+
+- **Hand-roll an OpenAI client.** Source-mapping ruby_llm's implementation
+  against the symbols we touch puts the *client* at ~550 LOC — believable.
+  But the *swap* is 2–3× that: ~100 `RubyLLM` references in `lib/` are
+  matched by ~106 more in `spec/`, and four consumers fall outside the
+  client entirely — `VectorDb::Embedder`'s `RubyLLM.embed` (the documented
+  lone Connection-seam exception), `Mcp::Servers` synthesizing raw
+  `RubyLLM::Tool` subclasses, `Workspace::Read`'s shipped image
+  observations (real multimodal `Content`, not the stub a first pass
+  assumed), and pikuri-tui downstream. We would also own the exact surface
+  that produced the motivating bug — SSE framing, partial-chunk buffering,
+  the `[DONE]` sentinel, error-body shapes — forever, instead of once.
+- **Adopt `ruby-openai`** (single-provider client; own only the loop, tool
+  dispatch and value types above it). The strongest of the three, and the
+  right target *if* a criterion below ever trips: Faraday-native like us, so
+  one HTTP stack in the process and `Pikuri::Testing`'s seam survives; the
+  dependency delta is −3 gems (`marcel`, `ruby_llm-schema` — already
+  replaced by `Tool::Parameters` — and `faraday-retry`). Rejected only
+  because it buys that against the same swap cost above, for a stack that is
+  otherwise stable.
+- **Adopt the official `openai` gem.** Its short dependency line lies in the
+  opposite direction: it hand-rolls `net/http` inside a large
+  Stainless-generated SDK. That adds a second HTTP path to a
+  Faraday-everywhere process, is not code anyone reads end-to-end, and
+  **deletes `Pikuri::Testing`** outright (see `D-fake-transport`), forcing a
+  new fake harness across every gem's specs. Vendor backing pays for a
+  moving API surface; ours is frozen.
+- **Wrapping the leaked `RubyLLM` value types** to make a future swap cheap.
+  They are public API three ways — `Workspace::Read` *returns* a
+  `RubyLLM::Content`, `Pikuri::Tool` *subclasses* `RubyLLM::Tool`, and MCP
+  tools *are* `RubyLLM::Tool`s — so a swap is a major-version break either
+  way. An anti-corruption layer bought for a swap we've decided against is
+  the just-in-case abstraction CLAUDE.md rejects; the **Value-type
+  passthrough** seam sanctions the leak deliberately.
+
+**Consequences.**
+
+- The dependency stays, monkeypatches are the escape hatch, and each is a
+  liability with a delete condition rather than a fixture.
+- **Reopen when** one of these trips, and not before: (1) a *second* bug of
+  this kind in ruby_llm's OpenAI path that upstream is slow to fix and is
+  awkward to patch — one bug is noise, a pattern is signal; (2) upstream
+  drift that actively fights the single-provider, audit-first posture and
+  cannot be declined in place; (3) a request/response knob we genuinely
+  need and cannot reach through `RubyLLM::Context`.
+- Criterion 1 has been tested once and did not trip: the motivating crash
+  was one 20-line method, found in two shapes, fixed upstream in a month.
+  Criterion 2 currently trends the other way — ruby_llm's
+  `providers/<vendor>/` → `protocols/<wire-format>/` refactor is upstream
+  converging on the single-wire-format view we already hold.
+- If a criterion does trip, spike before committing: a `ruby-openai` client
+  plus tool-call delta-merge and one round-trip against llama.cpp, driven by
+  `Pikuri::Testing`'s existing scripted-SSE specs, to replace the ~550-LOC
+  estimate with a measurement.
+
+---
+
 ## D-single-hunk-edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
 
 **Status:** Accepted and shipped. `Workspace::Edit` gains `occurrence:`;
@@ -1212,6 +1292,10 @@ Mechanics + limitations: {Pikuri::Testing}.
 - Most of `agent_spec` can't move to `fake_transport` without losing
   coverage — you can't fire a lone `after_tool_result`, or read
   `model_switches`, off a real chat.
+- Faking at the Faraday-adapter level constrains any future LLM-client
+  swap: a Faraday-native replacement keeps this seam, one that hand-rolls
+  `net/http` deletes it and forces a new fake harness across every gem's
+  specs. See `D-keep-ruby-llm`.
 
 ---
 
