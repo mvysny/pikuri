@@ -1,8 +1,10 @@
 # LSP client — language intelligence for the coding agent
 
 Status: **investigated, not built.** Protocol mechanics are settled and
-verified against live servers (below); the direct-vs-MCP fork is decided
-in principle; the tool-surface sketch is the live part.
+verified against live servers, plus a third pass through a shipped
+client (below); the direct-vs-MCP fork is decided in principle; the
+tool-surface sketch is the live part, though the static-enum /
+gate-at-dispatch question is now settled inside it.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -84,7 +86,11 @@ end
 
 Two throwaway clients, one against `rubocop --lsp`, one against
 `ruby-lsp` 0.26.10 driving the pikuri monorepo. (The scripts were
-scratchpad-only; the findings are the durable part.)
+scratchpad-only; the findings are the durable part.) Later re-run
+through Claude Code's own `LSP` tool against the same repo and the same
+`ruby-lsp` 0.26.10 — a third, independent client. Where that run
+confirmed or corrected a finding it is marked inline; what it revealed
+about *that implementation* is under Prior art below.
 
 **1. Capabilities are computed per workspace, not per binary.**
 The killer finding. Same `ruby-lsp` binary, same version:
@@ -101,10 +107,24 @@ The killer finding. Same `ruby-lsp` binary, same version:
 pikuri's `Gemfile`/`Gemfile.lock` contain no rubocop, so it detected no
 formatter (`window/logMessage`: "Auto detected formatter: none") and
 didn't advertise it. In a rubocop-bundled project that row flips.
-Consequence: **the tool surface cannot be a hardcoded matrix keyed on
-which server binary was spawned** — it has to be driven by the
-`initialize` response for *this* workspace, the way `Mcp::Servers`
-already synthesizes tools from what a server reports at connect time.
+Consequence: **capability knowledge must come from the `initialize`
+response for *this* workspace**, never from a matrix keyed on which
+server binary was spawned.
+
+But that check belongs at **dispatch time, not schema-construction time
+— the `operation` enum stays hardcoded.** With several servers
+registered (Ruby *and* Java, say) their capability sets differ, and
+*which* server applies isn't known until a call names a file; routing is
+by extension. A schema computed from capabilities would therefore have
+to advertise the union anyway, and would need rebuilding whenever a
+server restarts or a workspace gains a formatter — a moving tool
+description is worse than a static one the model can learn. So: static
+enum (the superset pikuri supports) → route on the file's extension →
+consult *that* server's advertised capabilities → clean refusal string
+if it lacks the operation. This is the one place `Mcp::Servers`'
+synthesize-tools-from-what-the-server-reports shape does *not* transfer:
+one MCP server owns its own tool names, whereas here many servers share
+one tool and the file picks the server.
 
 **2. Asking before the index is built returns `[]`, not an error.**
 My first run fired `textDocument/definition` immediately after
@@ -138,6 +158,19 @@ by the model, so they reach no `resolve_for_read` — `D-walked-path-denylist`
 territory: results must go through `Filesystem#denied?`, plus almost
 certainly a workspace-root confinement on top.
 
+Re-checked with the third client, and worth recording because the
+obvious reading of that run is wrong. There, `goToDefinition` on
+`resolve_for_read` returned *only* the two in-repo hits — which looks
+like root confinement. It isn't: `goToDefinition` on `Faraday` returned
+45 locations, every one under `~/.local/share/…/gems/`. The stale
+`pikuri-workspace-0.0.6` copies are absent from that run for an
+unrelated reason (the top-level `Gemfile` wires siblings via
+`gemspec path:`, so the bundle index points at the working tree), and
+the released gem is installed either way. Conclusion: **no shipped
+client confines results.** Both the `denied?` pass and the root
+confinement are ours to write, with no prior art to inherit — which also
+removes the last reason to hope a bridge would handle it.
+
 **4. Two response shapes.** ruby-lsp answers with `LocationLink`
 (`targetUri` / `targetRange` / `targetSelectionRange`), not plain
 `Location` (`uri` / `range`); servers choose based on the `linkSupport`
@@ -153,10 +186,33 @@ before feeding positions onward.
 call sites, 2 declarations, **34 spec hits**. Raw output is a lousy
 observation — needs lib/spec grouping and a cap, like `Grep` already does.
 
+The third client reproduced that split to the exact number, uncapped and
+ungrouped. And it is not only `references`: `definition` and `hover` on
+a **constant** are worse, for a Ruby-specific reason. Every file that
+reopens `module Faraday` is a definition of it, so `goToDefinition` on
+`Faraday` returned 45 locations and `hover` returned a wall of 45 doc
+links *ahead of* the docstring. Capping and grouping must cover all
+three operations, and the constant case wants the most aggressive cap —
+a reopened namespace's "definitions" are nearly all noise, and the one
+the model wants (`faraday.rb`) is not distinguishable by position in the
+list.
+
 **7. `positionEncoding` is negotiable.** Offer
 `general.positionEncodings: ["utf-8","utf-16"]`; ruby-lsp picks `utf-8`,
 which removes the UTF-16-code-unit offset conversion. Fall back to
 converting if a server insists on utf-16 (the 3.17 default).
+
+**8. Hover is rich on constants and empty on methods.** `hover` on
+`Pikuri::FileType` returned the constant, a definition link, and the
+*entire yardoc class comment* — both responsibilities, the two
+`Pathname` conveniences, the "Deliberate non-goals" list. `hover` on the
+`def resolve_for_read` line returned nothing at all. ruby-lsp resolves
+documentation through its constant index; method-level hover is simply
+not the same feature. Consequence: hover's value is split down the
+middle, and in a codebase whose yardoc *is* the declared source of
+truth, the constant half answers "what is this class for?" in one call
+without reading a file — a different operation from `read`, not a third
+spelling of it.
 
 ## There is no Ruby LSP client gem
 
@@ -236,6 +292,34 @@ character: integer  (required, 1-based, "as shown in editors")
 query:     string   (workspaceSymbol only)
 ```
 
+Run against this repo on the same `ruby-lsp` 0.26.10, it behaves as
+follows — the parts worth knowing before copying it:
+
+- **1-based in *and* out, confirmed.** Input `line: 218, character: 11`
+  landed on `def resolve_for_read` at a 6-space indent; output reported
+  `218:11`, and `415:13` for the 8-space-indented override. The
+  translation is symmetric, which is the property that matters — a
+  position it prints can be fed straight back in.
+- **The degrade string is real.** `goToDefinition` on `CLAUDE.md` →
+  `No LSP server available for file type: .md`. So it *does* route on
+  extension — the mechanism the multi-server design needs.
+- **But there is no capability check on the routed-to server.** Three of
+  the nine enum operations are unbacked by ruby-lsp and leak the raw
+  protocol error instead of degrading: `goToImplementation` →
+  `Method not found: textDocument/implementation`; `prepareCallHierarchy`
+  and `incomingCalls` → `Method not found:
+  textDocument/prepareCallHierarchy`. Extension routing without the
+  capability half. Pikuri should reuse the `.md` refusal's shape here —
+  same static enum, one more gate.
+- **No indexing gate.** The first `goToDefinition` after startup returned
+  `No definition found. This may occur if the cursor is not on a symbol,
+  or if the definition is in an external library not indexed…` — finding
+  2's false-premise answer, verbatim — while a `hover` issued in the same
+  batch correctly failed with `server is starting`. The readiness signal
+  exists and one path ignores it. **The single most important thing not
+  to copy.**
+- **No confinement, no capping.** See findings 3 and 6.
+
 Worth stealing:
 
 - **One tool, an `operation` enum — not nine tools.** Nine `lsp_*`
@@ -243,7 +327,9 @@ Worth stealing:
   convention in [`../CLAUDE.md`](../CLAUDE.md) (a `foo_*` prefix marks a
   family sharing one backing resource, which LSP genuinely is); the
   evidence still favours the single tool, and `Tool::Parameters`
-  validates enums strictly so nothing is lost on safety.
+  validates enums strictly so nothing is lost on safety. The enum also
+  stays **static** — per finding 1, with several servers registered it
+  can't track any one server's capabilities anyway.
 - **1-based line *and* character.** LSP is 0-based on both; translate at
   the boundary, because the model reads files through `Read`, which
   prints 1-based line numbers. This is the highest-value line of code in
@@ -256,9 +342,16 @@ Worth stealing:
 
 Worth arguing with:
 
-- `filePath` is required even for `workspaceSymbol`, which takes no
+- ~~`filePath` is required even for `workspaceSymbol`, which takes no
   position in LSP — it's the server-routing selector. Principled, still a
-  wart; consider routing on workspace root instead.
+  wart; consider routing on workspace root instead.~~ **Withdrawn.**
+  Finding 1's multi-server argument vindicates it: once several servers
+  can be registered, *every* operation needs a routing selector, and a
+  file path is the only one the model reliably has. Routing on workspace
+  root fails precisely in the mixed-language repo that makes a registry
+  worth having. Keep it; explain why in the parameter description, since
+  a required `filePath` on a workspace-wide query reads as a bug
+  otherwise.
 - It exposes `workspaceSymbol` raw and lets the model chain it into
   `goToDefinition`. That works because the model is strong. **Pikuri's
   default is local llama.cpp**, and small local models chain multi-call
@@ -273,13 +366,16 @@ Worth arguing with:
   workspace edit it needs the `Confirmer` seam and stops being closeable.
 - `Pikuri::Lsp::Registry::StdioEntry` mirroring
   `Mcp::Registry::StdioEntry` — command, args, env, claimed extensions.
+  The claimed-extensions field is load-bearing, not decorative: it is the
+  dispatch key that picks the server, per finding 1.
 - `Pikuri::Lsp::ClientWrapper` — long-lived child, id demux on a reader
   thread, auto-reply to server→client requests, restart-on-death copied
   from the MCP wrapper. Needs the same documented exception to the
   Subprocess seam (`Subprocess.spawn` is one-shot; this isn't).
-- One `lsp` tool, `operation` enum, 1-based coordinates, capability-gated
-  at connect time, results filtered through `Filesystem#denied?` +
-  root-confined + capped/grouped.
+- One `lsp` tool, static `operation` enum, 1-based coordinates,
+  capability-gated **at dispatch** (route by extension, then refuse
+  cleanly if that server lacks the operation), results filtered through
+  `Filesystem#denied?` + root-confined + capped/grouped.
 - Book chapter when it lands (`book/language-intelligence.md`?) — the
   protocol is genuinely interesting and nothing else in pikuri teaches
   "how does an editor know things".
@@ -295,7 +391,10 @@ Worth arguing with:
   there and the model is good at it. This is what the MCP spike measures.
 - **Multi-language, or Ruby-only first?** Registry design is
   language-agnostic for free; the question is whether to ship any server
-  config beyond Ruby before there's a user.
+  config beyond Ruby before there's a user. Whichever way it goes, the
+  *dispatch* path must assume multi-server from day one (finding 1) —
+  retrofitting extension routing plus per-server capability checks later
+  would touch every operation.
 - **Where does workspace-root confinement live** — in the wrapper, or as
   a `Workspace::Filesystem` call in the tool? The latter reuses the seam;
   the former keeps the tool thin.
@@ -313,17 +412,24 @@ Worth arguing with:
   gate; breaks the closeable threat model. Not in v1.
 - **Depending on `language_server-protocol`.** See above — 40 lines of
   framing, wrong reader shape.
-- **Hover as a `read` replacement.** Tempting (cheap docs lookup), but
-  it's a third way to read code alongside `read` and `grep`; wait until
-  navigation proves itself.
+- **Hover as a `read` replacement.** Deferred as a third way to read code
+  alongside `read` and `grep`. Finding 8 weakens that reasoning: on a
+  *constant*, one hover returns the whole yardoc class comment, which in
+  this codebase is the declared source of truth — a different operation
+  from "read the file", not a third spelling of it. Still deferred, but
+  the blocker has moved: it is now the volume problem (45 doc links for
+  `Faraday`), which is a capping question, not a tool-surface one.
 
 ## Graduation
 
 When built: protocol mechanics + the "capabilities are per-workspace"
-and "empty result ≠ no definition" lessons → book chapter; per-symbol
-rationale → yardoc on `Lsp::ClientWrapper` / the tool; the
-walked-path-filtering and Subprocess-exception invariants → a
-`CLAUDE.md` seam entry; **direct-vs-MCP with the bridges named** → a new
+and "empty result ≠ no definition" lessons → book chapter (both are
+better taught with the observation that a shipped client gets the second
+one wrong); per-symbol rationale → yardoc on `Lsp::ClientWrapper` / the
+tool, including why the `operation` enum is static while gating happens
+at dispatch; the walked-path-filtering and Subprocess-exception
+invariants → a `CLAUDE.md` seam entry; **direct-vs-MCP with the bridges
+named** → a new
 `DECISIONS.md` entry (suggested slug `lsp-direct-not-mcp`, with the usual
 prefix); the COMPARISON.md LSP column → `✅`. Then delete this file,
 plus the superseded LSP bullets in `coding-agent.md` and
