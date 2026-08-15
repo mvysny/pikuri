@@ -79,6 +79,111 @@ design.
 
 ---
 
+## D-single-hunk-edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
+
+**Status:** Accepted and shipped. `Workspace::Edit` gains `occurrence:`;
+no second edit tool ships. `ideas/feedback.txt` item 2 is cut with this
+entry.
+
+**Context.** Grok 4.6, reviewing a coding-agent wiring: *"`edit` is
+search-replace only. Painful for a rename-across-a-file or a method move. A
+unified-diff / apply-patch tool as a sibling of `edit` would cover the
+'this function is now a different shape' case without the unique-string
+dance."* Three pain cases are named, and they are not the same problem:
+(a) rename — `replace_all` exists, so the real gap is that it has no word
+boundary; (b) method move — two edits, so the body crosses the wire twice;
+(c) reshape — one edit, old body plus new body.
+
+The prescription doesn't fit any of them. A diff is not cheaper: a move
+under a diff is a removal hunk carrying the body as `-` lines plus an
+addition hunk carrying it again as `+` lines — the same 2×, plus headers
+and context; a reshape under a diff is context + old + new, where
+search-replace is `old + new`. **The tax Grok actually hit was
+*uniqueness*, not exactness.** A diff hunk is disambiguated by line number,
+`old_string` by *being unique*, so a repetitive file forces a much larger
+anchor than three lines of context would — `edit.rb`'s own four
+near-identical `p.required_string` blocks are the worked example.
+
+**Decision.** Add `occurrence: N` to `edit` — replace the Nth match by
+position, mutually exclusive with `replace_all`. It lifts uniqueness
+without touching strictness: `old_string` still matches byte-for-byte, so a
+stale index fails the call rather than editing the wrong text. Ship no
+second edit tool.
+
+**Alternatives rejected.**
+
+- **A batched-edits tool (one call, a JSON array of hunks, atomic).** The
+  arm "sibling of `edit`" is really reaching for, and the only one that
+  improves (b). Killed by a clean sweep of the field: **four harnesses, four
+  different edit philosophies, zero batch tools.** Claude Code shipped
+  `MultiEdit` and *removed* it (2.1.233 retains only permission-help and
+  enum residue beside dead names like `FileEditTool`, with no `edits`
+  parameter anywhere); opencode ships `edit` / `write` / `apply_patch` and
+  no batch; grok-build maintains *four* interchangeable `ToolKind::Edit`
+  implementations (`search_replace`, opencode's `edit`, `hashline_edit`,
+  `apply_patch`) and benchmarks them — and batching is not among the four.
+  That is not an oversight in a project that clearly cares about the
+  question. Secondary costs that made it unattractive independently: the
+  naming convention has no slot for it (a universal verb goes bare, a
+  prefix marks a family sharing a backing resource — `multi_edit` is
+  neither), and partial-batch failure needs its own reporting vocabulary or
+  the model retries blind.
+- **`apply_patch` / a V4A envelope.** Grok's literal ask, and the arm with
+  real prior art — it is Codex's entire edit surface. Rejected because the
+  format is **model-specific training, not generic diff fluency**: OpenAI
+  describes V4A as a grammar their models were specifically trained to
+  produce, and designed the line arithmetic *out* rather than reuse unified
+  diff. The decisive evidence is how the one cross-model harness gates it —
+  opencode's registry enables `apply_patch` only for `gpt-` models that are
+  neither `gpt-4` nor `oss`, and *removes* `edit`/`write` when it does, so
+  Claude, Grok, Qwen and local models never see it. **`gpt-oss` is excluded
+  too**: OpenAI's own open-weights models don't get the format OpenAI
+  trained — a harness author's empirical judgment, and the most relevant
+  data point there is for a local-first project. grok-build agrees
+  implicitly, filing its port under a namespace literally called `codex`
+  rather than making it Grok's default.
+- **A unified diff.** `@@ -145,7 +145,9 @@` is line *arithmetic*, which
+  small models are bad at in the way they are bad at arithmetic generally.
+  Note this is the *only* arm the "fuzz cascade" objection in {Pikuri::Workspace::Edit}
+  applies to — a context-anchored envelope fails on an unmatched anchor,
+  exactly like `old_string`, and is no fuzzier.
+- **Line-range replace (`start_line` / `end_line`, no `old_string`).** The
+  only arm that genuinely drops payload, and `Read` already emits `cat -n`
+  numbering so the anchors are free. Rejected on two counts: staleness —
+  `Edit` deliberately keeps a path marked read after a write, so numbers
+  drift silently — and it forfeits the implicit read-check, letting a
+  hallucinated range silently destroy real code where a wrong `old_string`
+  merely fails.
+
+**Consequences.**
+
+- **The uniqueness escape lives in the error string.** `edit`'s multi-match
+  refusal leads with `Set occurrence=N` before the paste-more-context
+  advice; that observation is where the model actually learns the parameter
+  exists, so it must not be reworded back into a bare "add more context".
+- **The rename gap (a) is untouched and still open.** A word-boundary
+  `replace_all` was never part of this fork. `sed` via `bash` is *not* the
+  fallback: it escapes both the read-before-edit gate and the `ReadOnly`
+  gate (plan mode covers Write/Edit, not bash), so routing renames through
+  the shell routes them around the posture.
+- **One thing the field cannot tell us, recorded so nobody re-derives it as
+  new.** All four harnesses target models with reliable *parallel* tool
+  calls, which is what makes N single-hunk edits cost one turn. If pikuri's
+  local default emits one tool call per turn, N edits become N sequential
+  round-trips — and on local hardware prompt processing, not generation, is
+  the expensive part. Nobody in the field is local-first, so 0-for-4 does
+  not test this. It did not change the decision (an unused tool costs schema
+  tokens on every turn, and the measurement has never been taken), but it is
+  the one hypothesis that could reopen it.
+- **Revisit only with a measurement**, in this order: does the default local
+  model emit parallel tool calls; would it reach for a batch tool unprompted
+  if given one. If payload size rather than call count ever becomes the
+  problem, the prior art to read first is grok-build's `hashline` family
+  (`anchor.rs`, `scheme.rs`, `benchmark.rs`) — line-range replace with the
+  staleness hole closed by per-line hashes.
+
+---
+
 ## D-keep-calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
 
 **Status:** Accepted; no code change. `calculator` stays wired in all ten

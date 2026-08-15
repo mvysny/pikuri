@@ -1,6 +1,6 @@
 # COMPARISON.md
 
-A side-by-side look at how four OSS agent-or-agent-adjacent projects solve
+A side-by-side look at how six OSS agent-or-agent-adjacent projects solve
 the same problems pikuri solves, and a ranked list of ideas worth porting.
 *Pikuri-as-shipped state* — the pikuri rows describe the codebase as it is
 post-MCP/skills/coding-tools migration; ruby_llm itself is now infrastructure
@@ -15,8 +15,9 @@ under us, not a peer to compare against.
 | **langchainrb** ([patterns-ai-core/langchainrb](https://github.com/patterns-ai-core/langchainrb)) | Ruby | LLM-app framework: RAG/vector search + Assistant + multi-provider | ~421 lines (`assistant.rb`) state machine: `:ready` → `:in_progress` → `:requires_action` → `:completed` | `Langchain::Assistant` + class-level `ToolDefinition` DSL + per-provider `LLM::Adapter` |
 | **pi** ([earendil-works/pi](https://github.com/earendil-works/pi)) | TypeScript | extensible coding-agent harness | ~700 lines (`agent-loop.ts`) | Typebox-typed tools + extensions/skills |
 | **opencode** ([sst/opencode](https://github.com/sst/opencode)) | TypeScript | full terminal coding agent (Claude-Code-shaped) | effect-based, split across `processor.ts`/`session.ts` | Effect services + `.txt` prompt files |
+| **grok-build** ([xai-org/grok-build](https://github.com/xai-org/grok-build)) | Rust | shipped commercial coding agent: TUI + headless + ACP-embedded | actor-per-session (`SessionActor`) over a tool registry, with a `GoalTracker` state machine driving multi-turn autonomy above it | a `ToolKind`-keyed **registry of interchangeable tool implementations** (its own, plus in-tree ports of codex's and opencode's) selected per session by named toolset preset |
 
-The five are at very different scopes:
+The six are at very different scopes:
 
 - **ruby_llm** is now pikuri's runtime, not a peer. It still appears in the
   comparison because some design choices (tool DSL, message shape, error-
@@ -30,6 +31,15 @@ The five are at very different scopes:
   pushed to extensions.
 - **opencode** is much bigger than pikuri — closer to Claude Code itself. The
   value here is mining ideas, not comparing line counts.
+- **grok-build** is the biggest by a wide margin — ~1.6M lines of Rust across
+  92 crates, a periodic export of xAI's internal monorepo (`SOURCE_REV`
+  records the upstream SHA; external contributions are refused). It is the
+  only *shipped commercial product* in the set, so it is the one place to see
+  which ideas survived contact with paying users at scale: a permission
+  system an order of magnitude more detailed than opencode's, an OS-level
+  sandbox applied to the agent's own process, and a tool layer built as an
+  A/B harness rather than a fixed set. Ideas only — nothing about its size is
+  a target.
 
 Pikuri now spans two distinct application shapes — general-purpose chat
 (`bin/pikuri-chat`), in-repo coding (`bin/pikuri-code`), and an
@@ -51,8 +61,9 @@ deliberate set of bundled tools.
 | langchainrb | state machine over `messages.last.standard_role`: `process_latest_message` dispatches `:system / :llm / :user / :tool` to handlers; on tool-call response sets `:requires_action`; `execute_tools` sets `:in_progress`; loops until terminal state | per-LLM block at `Assistant.new(...) { \|chunk\| ... }`; provider-dependent | LLM returns no tool calls → `:completed`; or `auto_tool_execution: false` returns at `:requires_action` so host can inspect | no |
 | pi | nested loops: outer for follow-up queue, inner for steering+tools (`packages/agent/src/agent-loop.ts:155–269`) | yes — `EventStream<AgentEvent>` | `shouldStopAfterTurn()` hook, `stopReason`, abort | implicit via context-window compaction |
 | opencode | one-shot processor returning `"compact" \| "stop" \| "continue"` per turn (`src/session/processor.ts:115–425`) | yes — Vercel AI SDK chunk events | model emits no tool calls → `"stop"` | no — context overflow → `"compact"` |
+| grok-build | a `SessionActor` per session owning the turn loop, plus an optional **goal state machine** above it (`session/goal_{tracker,classifier,strategist,evaluator,stop_detector}.rs`) that re-prompts the agent across turns until a goal's gaps close | yes — ACP `SessionUpdate` notifications, same stream for TUI / headless / editor | model emits no tool calls; goal mode adds `GoalStopDetector` + a stall trip (two identical "gap fingerprints" in a row → auto-pause) | goal-mode run cap (with a one-off `+3` bonus when the strategist restructures); context pressure handled by auto-compaction at 85% of the window, not by a step budget |
 
-**Takeaway.** Pikuri's loop is now the thinnest of the five with real
+**Takeaway.** Pikuri's loop is now the thinnest of the six with real
 extension wiring: ruby_llm owns iteration, and pikuri's `Agent` is a
 wiring file — three callbacks, three controls, one sealed `Event`
 hierarchy, plus a step-exhaustion rescue (`Synthesizer.run`) and a
@@ -61,6 +72,21 @@ and propagates to sub-agents and the synthesizer consistently. The
 langchainrb state-machine approach is the obvious Ruby alternative
 shape but pays for orthogonal "host decides when to run tools" cases
 pikuri doesn't need.
+
+The contrast worth recording is grok-build's **goal mode**, which is the
+only thing in the set that answers "the agent stopped but isn't done"
+with machinery rather than a message. Where pikuri's `StepLimit` is a
+*budget* (run out → raise, or synthesize a final answer) and opencode's
+overflow is a *compaction*, grok-build's `GoalTracker` is a *supervisor*:
+a classifier scores the remaining gaps after each attempt, a strategist
+restructures the plan when progress stalls, and a stop detector decides
+the goal is met. Its interesting property is the failure mode it designs
+for — a stall is detected by *fingerprinting the flagged gaps* and
+tripping when two consecutive attempts produce an identical fingerprint,
+i.e. the model is looping rather than converging. That's a real answer
+to a question pikuri currently answers with "the human is watching."
+Out of scope for pikuri as shipped, but the stall fingerprint is the
+cheap half and would transfer to `StepLimit` on its own.
 
 ---
 
@@ -89,6 +115,13 @@ pikuri doesn't need.
   Anthropic, Google, Bedrock, etc.
 - **opencode**: built on Vercel AI SDK. Adding a provider is one entry in
   `BUNDLED_PROVIDERS` (`src/provider/provider.ts:93–118`).
+- **grok-build**: first-party by construction — the transport talks to xAI's
+  own backend, with OAuth-in-browser on first launch and custom-model config
+  as the escape hatch (its user guide's custom-models page). The abstraction
+  it *does* invest in is the opposite direction: **ACP** (Agent Client
+  Protocol) as the outward interface, so the same runtime serves the TUI, a
+  headless `-p` invocation, `grok agent stdio`, and an editor plugin over one
+  session/notification protocol.
 
 **Takeaway.** Pikuri inherits ruby_llm's "canonical schema + thin
 per-provider adapter" shape — chosen over opencode's SDK-of-SDKs and
@@ -109,6 +142,7 @@ small `bin/`-level change rather than a library-level rewrite.
 | langchainrb | class `extend Langchain::ToolDefinition`; `define_function :method_name, description: do property :foo, type:, required:; end`; tool can expose multiple functions, each becomes a separate tool entry named `<class>__<method>` | DSL → JSON Schema with per-provider exporters; supports `object`/`array`/`enum` recursively | required-key checked by JSON Schema export only — no DidYouMean, no coercion |
 | pi | `AgentTool<TParameters>` interface, factory functions | Typebox `Type.Object()` (compile-time + runtime) | Typebox-strict; optional `prepareArguments()` shim for LLM quirks |
 | opencode | Effect Schema decoders (Zod-shaped) + `.txt` description files | Effect `Schema.decodeUnknownEffect()` | strict; failure produces "rewrite the input so it satisfies..." message |
+| grok-build | `impl Tool` (typed `Args`/`Output`) + an `impl ToolMetadata` declaring `kind` / `namespace` / `description_template` / `requires_expr`; a session then *selects* implementations by name from a global `ToolRegistryBuilder` | derived from the `Args` type via `schemars`, with per-field `#[schemars(description = …)]`; the registry can rename parameters per deployment | serde-strict, with deliberate leniency shims (`deserialize_lenient_i64` accepts `"-3"` for `-3`) — the model's known failure modes are absorbed at the edge rather than bounced back |
 
 **Takeaway.** Pikuri's strict-with-DidYouMean validator is still the single
 most load-bearing piece of code distinguishing it from ruby_llm and
@@ -121,6 +155,76 @@ opencode's pattern. Method-signature introspection (ruby_llm's
 auto-infer-from-`execute`) remains an option for trivial tools, but the
 explicit `Parameters` builder keeps per-argument descriptions next to
 the schema, which is hard to give up entirely.
+
+### grok-build's registry: a tool layer built as an A/B harness
+
+The one structural idea in grok-build with no analogue anywhere else in
+this comparison, and the reason its tool crate is ~129k lines: **the same
+capability ships several times over, and which implementation the model
+sees is a per-session config decision.** `ToolRegistryBuilder::new()`
+registers all of them side by side
+(`crates/codegen/xai-grok-tools/src/registry/types.rs:674–765`):
+
+- its own `read_file` / `search_replace` / `list_dir` / `grep` / `bash`;
+- **in-tree ports of openai/codex's** `apply_patch`, `read_file`,
+  `list_dir`, `grep_files` (`implementations/codex/`);
+- **in-tree ports of sst/opencode's** `read` / `edit` / `write` / `grep` /
+  `glob` / `bash` / `todowrite` / `skill` (`implementations/opencode/`) —
+  both ports carry Apache §4(b) change notices in
+  `xai-grok-tools/THIRD_PARTY_NOTICES.md`;
+- a `GrokBuildConcise` namespace: same behaviour, deliberately shorter
+  output and descriptions, for token-tight deployments;
+- a `GrokBuildHashline` namespace: a third *addressing scheme* for edits
+  (below).
+
+Four mechanisms hold that together, and each is independently interesting:
+
+- **`ToolKind` is the semantic identity, the wire name is not.** `read_file`,
+  codex's `read_file` and opencode's `Read` all declare `ToolKind::Read`, so
+  presentation (`"Read"`), the read-only classification, permission rules, and
+  telemetry are written once against the *kind* and survive swapping the
+  implementation. A canonical `_meta` envelope (`x.ai/tool`) stamps every tool
+  call with kind + namespace + a **normalized input dict** — `path` / `offset` /
+  `limit` / `command` / `pattern` — so a consumer reads one vocabulary no matter
+  which toolset produced the call (`tool_taxonomy.rs`, `normalization.rs`).
+  Both matches are exhaustive: a new kind or a new input variant must classify
+  itself or the crate doesn't compile.
+- **Tool descriptions are templates rendered against the live wiring.** They
+  interpolate config (`{max_lines_read}`, `max_timeout_ms`), the renamed
+  parameter names (`${{ params.read.target_file }}`), and — the good part —
+  *sibling tools by kind*, guarded by conditionals:
+  `${%- if tools.by_kind.edit %} for use with ${{ tools.by_kind.edit }}${%- endif %}`.
+  Every clause that depends on another tool existing disappears when it isn't
+  wired.
+- **`requires_expr` is a dependency expression over kinds.** `TaskTool`
+  declares `And(BackgroundTaskAction, KillTaskAction)` — offer the subagent
+  spawner only if the tools for retrieving and killing its results are also
+  present. Incoherent toolsets fail validation at finalize instead of
+  confusing the model at runtime.
+- **Behaviour is versioned per release.** `read_file/versions/legacy_0_4_10.rs`
+  keeps the exact historical error string and the "gitignored files are
+  readable" policy of v0.4.10, so a model tuned against that surface keeps the
+  semantics it was tuned against.
+
+**Takeaway for pikuri.** The A/B-harness framing is a first-party-model
+company's problem, not pikuri's — you build it when you're tuning a model
+against tool surfaces and need to measure which surface wins. Pikuri
+should not grow parallel toolsets. But three of the four mechanisms are
+independently cheap and land on real pikuri friction:
+
+- The **templated cross-tool reference** is a direct answer to pikuri's
+  "no tool names in a main/binary system prompt" rule (`CLAUDE.md`
+  §Conventions). That rule exists because a name in a prompt drifts
+  against the wiring; grok-build removes the drift instead of the name,
+  by resolving the reference at render time against the finalized
+  toolset. Pikuri's rule stays correct as written, but the *reason* for
+  it is now known to be fixable.
+- **`requires_expr`** is the missing guard on pikuri's `Persona#tool_names`
+  and on each `bin/pikuri-*` wiring — nothing today catches a persona
+  that lists a tool whose companion isn't in scope.
+- **`ToolKind` as identity** is what pikuri would need the day two tools
+  serve one purpose (it already nearly happens: `web_scrape` vs `fetch`,
+  `glob` vs `file_list`). Not needed yet.
 
 MCP tools are the documented exception to pikuri's strict-validation
 contract — they're synthesised as raw `RubyLLM::Tool` subclasses inside
@@ -140,6 +244,7 @@ end. See `pikuri-mcp/lib/pikuri/mcp/servers.rb` for the rationale.
 | langchainrb | ✅ | — | ✅ file_system | ✅ file_system | — | — | — | ✅ google_search / tavily | — | — | — | — | — | — | ✅ vectorsearch (Chroma, Pinecone, Pgvector, Weaviate, Qdrant, Milvus, Elasticsearch, Hnswlib) + DB, NewsRetriever, Weather, Wikipedia, RubyCodeInterpreter |
 | pi | — | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ find | — | — | — (extension) | ✅ via extensions | — | — (extension) | — | — |
 | opencode | — | ✅ shell | ✅ read | ✅ write | ✅ edit + patch | ✅ grep | ✅ glob | ✅ search (Exa) | ✅ fetch | ✅ task | ✅ | — | ✅ todo + plan | ✅ | — |
+| grok-build | — | ✅ bash | ✅ read_file | ✅ write | ✅ search_replace + apply_patch + hashline_edit | ✅ grep | ✅ list_dir + glob | ✅ web_search | ✅ web_fetch | ✅ task | ✅ skill | ✅ (+ `search_tool`/`use_tool` deferred loading) | ✅ todo_write + enter/exit_plan_mode + update_goal + workflow | ✅ lsp | ✅ memory_search / memory_get (SQLite FTS5 + optional vec0) |
 
 ruby_llm ships **no tools at all** — it's an SDK; the developer subclasses
 `RubyLLM::Tool` and wires their own. langchainrb's "tools" are a different
@@ -147,7 +252,30 @@ shape — most are *capability wrappers* (Wikipedia, Weather, NewsRetriever,
 SQL Database, Vectorsearch) rather than the file/shell building blocks
 pikuri ships. pi ships only file/shell ops; web search, sub-agents, etc.
 are pushed to extensions. opencode is the most batteries-included on the
-coding-agent axis.
+coding-agent axis — except against grok-build, which ships everything
+opencode does plus five categories nobody else has: **scheduling**
+(`scheduler_create` / `_delete` / `_list` — cron-style recurring agent
+runs), **monitoring** (`monitor` — watch a condition and re-enter),
+**media generation** (`image_gen`, `image_edit`, `image_to_video`,
+`reference_to_video`), **direct user interrogation**
+(`ask_user_question` — the agent pauses and asks a multiple-choice
+question), and **goal tracking** (`update_goal`, `workflow`). The
+grok-build row is also the widest column set of any project here because
+its tool *count* is a per-session config value, not a fixed number: the
+matrix shows the union across its named toolset presets (`grok-build`,
+`grok-build-concise`, `grok-build-plan`, `codex`, `explore`, `plan`,
+`grok-computer`).
+
+The `search_tool` / `use_tool` pair deserves its own note: rather than
+putting every MCP tool's schema in the context window, grok-build indexes
+them and exposes **BM25 keyword search over the tool catalog** plus a
+single meta-dispatch tool that calls a discovered tool by qualified name.
+That is the same problem pikuri's `mcp_connect` solves (don't pay for MCP
+schemas you aren't using) with a different lever — search-then-call
+rather than connect-then-register — and it degrades better when one
+server exposes a hundred tools. `use_tool` even carries a corrective for
+the predictable failure: hand it a *native* tool name and it answers
+"call it directly" instead of the generic not-an-MCP-tool error.
 
 The pikuri row reflects the union of three bundled binaries:
 `bin/pikuri-chat` wires calc + web_search + web_scrape + fetch +
@@ -163,6 +291,78 @@ versus opencode are todo/plan tools and LSP — both deliberately
 deferred (see `ideas/coding-agent.md`). The gap versus
 langchainrb is vector search / RAG — out of scope by design; pikuri is
 an agent, not a RAG framework.
+
+### Edit addressing: grok-build ships all three arms, and measures them
+
+Pikuri has settled how an `edit` call *names* the place it edits — a
+unique string, with `occurrence: N` to escape the uniqueness tax, and no
+batch or patch sibling (`DECISIONS.md` `D-single-hunk-edit`). The
+candidate answers are usually framed as two: match a unique string
+(Claude Code, opencode, pikuri) or ship a patch format with line context
+(codex's `apply_patch`). grok-build ships **both, plus a third**, and
+built a benchmark harness to choose between them.
+
+The third is `GrokBuildHashline`. `hashline_read` returns every line as
+`LINE:HASH[:HASH]→CONTENT`, where the hash is a whitespace-normalized
+fingerprint of the line and (depending on scheme) its surrounding
+context. `hashline_edit` then takes *those anchors* as its addresses:
+
+```
+"replace"      — { "op": "replace", "anchor": "22:abc:rst", "content": "    let x = 42;" }
+                 ranges via "end_anchor" (inclusive); "content": "" deletes
+"insert_after" — { "op": "insert_after", "anchor": "22:abc:rst", "content": "…" }
+                 "0:" for beginning-of-file, "EOF" for end
+"write"        — whole-file replacement, no anchor
+```
+
+Three properties fall out that neither of the usual two arms has:
+
+- **Verification is intrinsic, not a side effect of uniqueness.** The
+  anchor *is* a content fingerprint, so a stale anchor fails loudly
+  rather than editing the wrong copy. Pikuri's string-uniqueness rule
+  buys the same safety by refusing ambiguous matches — which is exactly
+  the tax `occurrence: N` was added to escape. Anchors get the safety
+  without the tax, because two identical lines have identical local
+  hashes but different line numbers.
+- **A failed edit returns fresh anchors, and the description tells the
+  model to retry immediately rather than re-read.** That closes the
+  read→edit→stale→re-read→edit loop that costs pikuri a full file read
+  on every miss.
+- **Batches are validated against the pre-edit snapshot and applied
+  atomically bottom-up** — one bad anchor rejects the whole batch, and
+  overlapping ranges are refused. That is a concrete answer to the
+  batched-edits question, and a stricter one than "apply them in order
+  and hope."
+
+The cost is real and worth naming: anchors are only valid for the file
+state at read time, the read output carries ~10 extra characters per
+line, and the model must never invent an anchor (the description says so
+twice). grok-build hedges it by keeping the anchor scheme *pluggable* —
+`scheme.rs` defines three candidates (content-only, chunk-fingerprint,
+checkpoint-chain) trading freshness detection against anchor churn — and
+shipping `benchmark.rs` to measure read-amplification and validation
+cost across them. That the scheme is still a parameter, in a shipped
+product, is itself the finding: nobody knows which addressing scheme is
+best, and the team that could measure it hasn't closed the question
+either.
+
+Two smaller edit-path details worth stealing outright, both cheap:
+
+- **Sparse line-number anchors.** grok-build's default `read_file`
+  prints the `LINE→` prefix only on the first line and every tenth line
+  after ("count from the nearest anchor"), rather than on every line.
+  Same addressability, a fraction of the tokens. Pikuri's `Read` prefixes
+  every line.
+- **Unicode confusable repair** (`util/unicode_confusables.rs`). Smart
+  quotes, em-dashes, ellipses and non-breaking spaces pasted in from
+  Slack or Google Docs render identically to ASCII in `read`, so the
+  model's ASCII `old_string` never matches on `edit`. grok-build keeps a
+  deliberately narrow map (only substitutions that are near-always
+  accidental — `U+2212 MINUS` and `U+00D7 MULTIPLICATION` are excluded
+  as semantically meaningful), normalizes for *comparison only*, and
+  keeps a byte-offset remap so the write lands on the original bytes.
+  Pikuri's `Edit` has the same failure mode with no mitigation, and this
+  is maybe forty lines of Ruby.
 
 ---
 
@@ -278,6 +478,44 @@ existing files", "NEVER write new files unless explicitly required",
 "This tool will FAIL if `oldString` is found multiple times in the file with
 an error...").
 
+### grok-build (verbatim — the `bash` description, unrendered)
+
+Same shape (summary, blank line, `Usage notes:` bullets) — but the string
+in the source is a *template*, and what the model sees depends on the
+host and the wiring:
+
+```
+Run a ${%- if is_windows %} shell command${%- else %} bash command${%- endif %} and return its output.
+
+Usage notes:
+  - You can specify an optional ${{ params.execute.timeout }} in milliseconds (up to ${{ max_timeout_ms | default(300000) }}ms). ${%- if auto_background_on_timeout %} If not specified, foreground commands exceeding the default timeout will be automatically backgrounded instead of killed. …${%- else %} If not specified, foreground commands will timeout after ${{ default_timeout_ms | default(120000) }}ms.${%- endif %} …
+  - Timeout enforcement: when the timeout fires, the wrapper${%- if is_windows %} terminates the child's Job Object, killing every descendant process immediately…${%- else %} kills the child process group (SIGTERM, escalated to SIGKILL after a ~1s grace period). Descendants that did not detach via `setsid` / `nohup` will also be killed.${%- endif %} … disables the wrapper timeout entirely${%- if tools.by_kind.kill_task_action %}; the child's lifetime is owned by the model via ${{ tools.by_kind.kill_task_action }}${%- endif %}.
+  - If the output exceeds {max_output_bytes} characters, the middle is truncated (you keep the beginning and end) and the result includes the path to a log file with the full output, which you can read or search.
+  - You can use the ${{ params.execute.is_background }} parameter to run the command in the background…${%- if system_reminders_enabled %} You are notified on completion, so do not poll or sleep-wait for it.${%- elif tools.by_kind.background_task_action %} Check on it later with the ${{ tools.by_kind.background_task_action }} tool.${%- endif %}
+${%- if shell_uses_semicolon %}
+  - '&&' is not supported in this shell; chain sequential commands with ';'.
+${%- endif %}
+${%- if not has_unix_utilities %}
+  - The Unix utilities `grep`, `head`, `tail`, `sed`, `awk`, and `find` are NOT available in this shell. Use the dedicated tools instead.
+${%- endif %}
+```
+
+Five things are conditional here: the host OS, the shell's chaining
+operator, whether Unix utilities exist on `PATH`, whether sibling tools
+(`kill_task`, `get_task_output`) are wired, and whether the runtime's
+system-reminder channel will tell the model when a background task
+finishes. Numbers (`max_timeout_ms`, `max_output_bytes`) come from live
+config rather than being restated by hand. A render failure degrades by
+stripping the markers (`strip_markers_on_render_failure`) rather than
+shipping template syntax to the model.
+
+Note also the output-cap bullet: over the cap, grok-build truncates the
+*middle* (keeping head and tail) and hands the model a path to the full
+log. That is the disk-spillover idea already listed below as
+worth-borrowing, plus the detail that the tail is usually the part that
+matters — a build's error summary lives at the end, so head-only
+truncation throws away the answer.
+
 **Takeaway.** opencode's pattern — _summary, then bullet list of usage
 constraints_ — is the gold standard, and pikuri now applies it uniformly
 across all bundled tools. The one place pikuri diverges: opencode bakes
@@ -286,6 +524,21 @@ returned"), pikuri factors them into a single universal rule in each
 binary's system prompt. Cheaper to maintain, loses some tool-specific
 specificity. Langchainrb's terse style is the floor; ruby_llm's
 `e.g.`-in-parameters is a free uplift pikuri now applies universally.
+
+grok-build is the ceiling, and it shows what pikuri's own convention is
+buying and paying for. Pikuri factors universal recovery guidance into
+the system prompt to avoid per-tool drift; grok-build keeps everything
+in the tool and prevents drift by making the description *derive* from
+the wiring and config it describes. Pikuri's version is cheaper and fits
+a codebase meant to be read in an evening; grok-build's is the only one
+of the two that cannot go stale. The concrete, portable lesson is
+narrower than the machinery: **a number that appears in a description
+should be interpolated from the constant that enforces it, not typed
+twice.** Pikuri already does this where the cap is a constant
+(`Read`'s `MAX_BYTES_LABEL` / `MAX_IMAGE_BYTES_LABEL`) and doesn't where
+it isn't (`web_search`'s "Defaults to 10; most providers cap this at 20"
+is typed next to a hard-coded `max_results: 10`). Closing that gap is
+the whole portable half of grok-build's template machinery.
 
 ---
 
@@ -298,6 +551,7 @@ specificity. Langchainrb's terse style is the floor; ruby_llm's
 | langchainrb | `messages` (Array of provider-specific `Messages::*Message`); `add_message_callback` proc fires on every append | none beyond the two callbacks (`add_message_callback`, `tool_execution_callback`) | per-LLM block at `Assistant.new(...) { ... }` | running totals on `Assistant`: `total_prompt_tokens` / `total_completion_tokens` / `total_tokens` |
 | pi | TypeScript discriminated union; custom message types extensible via declaration merging | `EventStream<AgentEvent>` | yes | per-event |
 | opencode | `MessageV2` with `ErrorPart` / `ToolPart` / `TextPart` etc.; parts are typed and persisted in SQLite per session | Vercel AI SDK chunks; bus emits typed events for permission flows | yes | per-message |
+| grok-build | per-session actor + SQLite journal (`xai-sqlite-journal`); sessions are listable, resumable, forkable, and searchable (`session_search`) | **ACP `SessionUpdate` notifications** — one protocol serving TUI, headless, and editor clients alike; tool calls carry the canonical `x.ai/tool` `_meta` envelope | yes | `xai-token-estimation` + auto-compaction at 85% of the window, with an optional speculative two-pass compaction that summarizes the history prefix in the background *before* the threshold is hit |
 
 **Takeaway.** Pikuri now has the richest structured-event surface among
 Ruby implementations: a sealed `Data.define` value hierarchy covering
@@ -308,6 +562,31 @@ listeners override. Langchainrb's two-callback model
 (`add_message_callback` + `tool_execution_callback`) is the same
 *architectural shape* pikuri started with, but the sealed event
 hierarchy is the upgrade pi/opencode have and Ruby otherwise lacks.
+
+The one capability every project here has and pikuri doesn't is
+**context compaction**. grok-build's is the most developed: auto-compact
+at 85% of the window, a configurable summarizer model, a wall-clock
+budget per compaction (a generation that overruns is cut and retried —
+the backstop token limits miss when reasoning runs away), an optional
+memory-flush turn that writes durable notes *before* the history is
+discarded, and a two-pass mode that speculatively summarizes the prefix
+in the background so the compaction itself is cheap. Pikuri's answer
+today is `exit 1` in a `bin/` script (`ideas/context-overflow-behavior.md`),
+which is a demo shortcut and not a library position; the memory-flush
+ordering is the piece worth remembering when that changes, because
+pikuri-memory's capture step has exactly the same before-or-after
+question.
+
+A second grok-build channel pikuri has no equivalent for:
+**system reminders** — `<system-reminder>` blocks appended to *tool
+output* on the way back to the model, either by the tool itself (an empty
+file read) or by cross-cutting reminders registered on the registry
+(fresh LSP diagnostics, newly discovered skills, a completed background
+task, a nudge to use `todo_write` after N turns without one). It is a
+control channel that costs nothing when quiet, and it lets the harness
+tell the model something without a user turn or a system-prompt rewrite.
+Pikuri's nearest thing is `Control::Interloper`'s `:system` kind, which
+is host-driven and lands as a message rather than riding an observation.
 
 The four bundled listeners (`Terminal`, `InMemoryEventList`, `TokenLog`,
 `RateLimited`) demonstrate the surface: TUI rendering, test capture,
@@ -326,6 +605,7 @@ a JSON log) would take.
 | langchainrb | tools are expected to handle and return `tool_response(content: "...")` — failures surface as observation text; required-key validation happens at JSON Schema export, not at run time | tool returns whatever; `execute_tools` catches any exception, logs it, and transitions to `:failed` state — loop ends, host inspects | same as recoverable — caught at the `execute_tools` boundary |
 | pi | caught and wrapped as `ToolResultMessage` with `isError: true` | caught and wrapped as text `"Error: <msg>"` | caught and wrapped (same path) |
 | opencode | tool catches Effect Schema decode failure and returns "rewrite the input..." text | text observation | caught and converted to `MessageV2.ErrorPart`; loop continues |
+| grok-build | typed `ToolError` returned to the model; several classes of malformed argv are *absorbed* rather than rejected (a stringified integer, a JSON-encoded array where an array was expected), and a wrong-namespace call gets a corrective ("call it directly") instead of a generic error | typed `ToolError` observation, with `<system-reminder>` hints appended; `xai-circuit-breaker` guards repeatedly-failing external legs | `anyhow` up through the actor; the session survives and reports |
 
 Pikuri's split — _recoverable failures become observations, bugs raise_ — is
 explicit and documented in `pikuri-core/lib/pikuri/tool.rb`. ruby_llm shares the
@@ -343,6 +623,19 @@ when the failure is cosmetic.
 "trap-everything" posture is what you want when the agent is long-running
 and unattended; the "raise on bugs" posture is what you want during
 development. Pikuri's choice is the latter — fine for its scope.
+
+grok-build adds a third axis pikuri's split doesn't cover: *when the
+model's input is wrong in a way you can confidently fix, fix it.* Its
+readers accept `"-3"` where `-3` was declared, its edit tool accepts a
+JSON-encoded string where an array was declared, and `use_tool` answers
+a native tool name with "call it directly." Each of those is a round
+trip the model doesn't spend. That sits uneasily against pikuri's
+strict-validator-with-DidYouMean bet, which spends the round trip
+deliberately to teach the schema — and the honest reading is that the
+two are optimizing for different things. A first-party model vendor can
+fix the model; pikuri can only fix the harness, so the corrective error
+message is doing more work here than it does there. Worth noting as a
+real fork, not adopting wholesale.
 
 ---
 
@@ -433,6 +726,9 @@ development. Pikuri's choice is the latter — fine for its scope.
   Three actions: `allow` / `deny` / `ask`. On `ask`, execution is paused via
   a `Deferred`, the bus emits a request, the UI replies "once" / "always" /
   "reject". Denial returns a typed error to the model.
+- **grok-build**: the most developed of the six, on both axes at once —
+  and the only project here whose OS sandbox covers the *agent's own
+  process*, not just its shell subprocess. Detailed below.
 
 **Takeaway.** Pikuri's three-seam approach — `Workspace` locks the
 file tools' read/write paths to the discovered project root;
@@ -635,6 +931,132 @@ separately, let the user opt in at the weight they need"** —
 different shape from opencode's explicit "we're not a sandbox, run
 it in Docker yourself."
 
+### Prior art deep-dive: grok-build's authorization pipeline and in-process sandbox
+
+grok-build is where the permission axis has clearly been through the
+most contact with real users, and it is the strongest prior art in this
+document for pikuri's two deferred security threads — glob permission
+rules (`ideas/coding-agent.md`) and agentic review of bash commands.
+
+**The authorization pipeline is ordered and documented.** Every tool call
+walks five stages: (1) `PreToolUse` hooks, which may deny but whose
+*allow* only declines to deny; (2) permission rules from every config
+source, merged and evaluated **by severity, not by order or file** —
+`deny` > `ask` > `allow`, so a global deny cannot be overridden by a
+project allow; (3) remembered per-command grants, scoped to the git
+repository root; (4) built-in auto-approvals for read-only tools and a
+curated read-only shell-command list; (5) the permission mode's prompt
+policy. Six modes span the range from `default` (ask) through
+`acceptEdits`, `auto`, `dontAsk` (deny-by-default allowlists for CI) to
+`bypassPermissions` (`--yolo`). Rules cover `Bash`, `Read`, `Edit`,
+`Grep`, `MCPTool`, `WebFetch`, `WebSearch`, and grok-build reads Claude
+Code's `.claude/settings.json` directly — an interoperability move
+pikuri already parallels on skills.
+
+**The shell-command analysis is the part worth reading closely.** This is
+the concrete content of the "which commands are actually safe to
+auto-approve" question pikuri deferred:
+
+- Commands are parsed and **split on `&&`, `||`, `;`, `|`, and newlines**,
+  and `deny`/`ask` are checked *per segment*; a command that can't be
+  split into simple segments (subshells, `$(…)`, backticks, background
+  `&`, control flow) prompts as one unit.
+- Segment checks **strip env prefixes** (`RUST_LOG=debug …`) and peel a
+  fixed wrapper set (`timeout`, `nice`, `ionice`, `chrt`, `stdbuf`,
+  `env`); `sudo`, `xargs`, and `nohup` are deliberately *not* peeled.
+  `deny`/`ask` also reach inside inline `bash -c` scripts.
+- The read-only allowlist is **word-boundary matched** (`ls` doesn't
+  match `lsof`), and its exclusions are the education: `tee` is off the
+  list because it writes arbitrary files; `cargo check` is off it because
+  it compiles and runs `build.rs`, proc-macros, and any
+  `build.rustc-wrapper` from the repo; `rg --pre` is off it because it
+  spawns a preprocessor per file; `sort --compress-program=…` likewise.
+  Most valuable of all, a *git* command whose local config installs an
+  executable hook — `core.fsmonitor`, a `diff.*.command` / `textconv` /
+  `external` driver, or an `alias.<safe-subcommand> = !…` — raises a
+  prompt floor, because `git log` in a hostile repo is arbitrary code
+  execution. That list is a free security review of any future
+  auto-approval logic in pikuri.
+- A **dangerous-command list** (`rm`, `chmod`, `chown`, `chgrp`,
+  `chattr`, `pkill`, `kill`, `killall`, `git push`) never honors a
+  remembered *prefix* — only an exact grant for the whole command — and
+  when no rememberable grant could stop the prompt recurring, the
+  "always allow" row isn't offered at all rather than saving a rule that
+  wouldn't work.
+- And an honest documented footgun: `allow` rules match the **whole
+  command string only**, so `Bash(git *)` auto-approves
+  `git status && rm -rf /`. The docs say so in as many words.
+
+**The sandbox inverts pikuri's posture.** `xai-grok-sandbox` applies
+**Landlock (Linux) / Seatbelt (macOS)** *once at process startup*, via
+the `nono` crate, so it covers the agent's own `tokio::fs` calls as well
+as every child. Five profiles — `off` (default), `workspace` (read
+everywhere, write CWD + temp + `~/.grok`), `devbox`, `read-only`,
+`strict` — with custom profiles in `sandbox.toml`. Network is the mirror
+image of pikuri's `FullFsNoNet`: open at the process level (the agent
+needs the LLM API) and **blocked per-subprocess via seccomp**, Linux
+only, explicitly a no-op on macOS. Two implementation details are worth
+recording:
+
+- A custom profile's `deny` list is **kernel-enforced for read *and*
+  write/rename**, specifically so the `mv secret x && cat x` bypass is
+  closed. On Linux that requires bubblewrap, and if bubblewrap is
+  missing or any single deny path can't be bound, grok-build **refuses to
+  start** rather than run with denied paths exposed — the same
+  fail-closed posture as pikuri's `FullFsNoNet` raising instead of
+  degrading.
+- Nested user namespaces are disabled inside the bwrap layer so mount
+  binds can't be rearranged from within, and the seccomp filter rejects
+  `clone`/`clone3` carrying namespace bits — grok-build blocks from
+  inside its own sandbox the very primitive pikuri's sandbox is built on.
+
+**Folder trust is the gap it closes that pikuri hasn't.** A cloned
+repository can ship `.mcp.json`, a project `.grok/config.toml` carrying
+`[permission]` auto-approve rules and `[mcp_servers]` commands, or
+`.grok/lsp.json` — all of which the CLI would otherwise honor on
+`cd`-and-launch. grok-build's own module comment calls this what it is:
+**"a 1-click RCE / policy bypass."** So it resolves a VS-Code-style
+trust decision **once per workspace, before any repo-local server is
+spawned**, and every loader consults a cheap `project_scope_allowed`
+check. Two grants are deliberately provisional and never cached — the
+"there were no repo configs" allow (so a config that appears after a
+`git pull`, or that the agent itself writes, is re-checked) and the
+unrecordable-key case (cwd is `$HOME` or the filesystem root).
+
+**No prompt-injection defense** — same as PI and opencode. Every hit for
+"prompt injection" in the tree is the benign sense (injecting text
+*into* the prompt). The load-bearing tag in pikuri's SECURITY.md stands:
+three of the largest coding agents in the world, including a shipped
+commercial one, all decline to claim it. What grok-build does have, and
+pikuri independently arrived at, is a *mechanical* Unicode confusable
+pre-pass — grok-build's is aimed at edit-matching failures rather than at
+hidden instructions, but it is the same instinct as `Mcp::Verifier`'s
+confusable check.
+
+**What pikuri should take, and what it shouldn't.** The six-mode
+permission system, the persisted grant store, and the managed
+`/etc/grok/requirements.toml` admin layer are all enterprise-shaped and
+out of scope. Three things are not:
+
+- **The read-only shell-command list, with its exclusions** — the
+  `git -c` / `textconv` / `!alias` finding in particular. If pikuri ever
+  auto-approves a bash command, this list is the starting point, and
+  re-deriving it independently would be negligent.
+- **Folder trust.** Pikuri's `Skill::Catalog::Bundled` scans
+  `.pikuri/skills`, `.claude/skills` and `.agents/skills` under whatever
+  bases the host passes — typically the project root — so a cloned
+  repository's skill names and descriptions land in the system prompt
+  with no trust decision at all. The `skill` tool already tags a skill
+  body `untrusted: :hard`, which is the right classification of the
+  *content*; what's missing is a gate on the *source*. `Mcp::Registry`
+  is host-supplied today, so skills are the live exposure.
+- **Per-segment analysis before any policy decision.** Pikuri's
+  `Confirmer` shows the human one command string. Splitting on the shell
+  operators and showing the segments — the way grok-build does before
+  any rule matches — is a presentation change that costs nothing and
+  directly serves the confirmer-fatigue argument in the book's
+  [security chapter](book/security.md).
+
 ---
 
 ## Sub-agents
@@ -676,6 +1098,24 @@ it in Docker yourself."
     is allowed to do
   - tool list can be different (unavailable tools passed as `{name: false}`)
   - return wrapped in `<task_result>...</task_result>` tags
+- **grok-build** (`task` tool + a coordinator actor): the most featureful
+  of the six. Three built-in types (`general-purpose`, `explore`, `plan`)
+  plus user-defined personas; **background by default** (returns a
+  subagent id immediately, results retrieved via `get_task_output` /
+  `wait_tasks`, cancelled via `kill_task`); **resumable** via
+  `resume_from: <subagent_id>`, which keeps the child's full transcript
+  and tool state so the parent only describes what changed; an
+  `isolation` parameter that can run the child in its own **git
+  worktree** (`session/worktree_pool.rs`); a depth counter with a
+  configurable maximum instead of pikuri's structural
+  no-`agent`-in-the-persona rule; and children that receive a
+  *compacted* copy of `AGENTS.md` rather than the full project
+  instructions — with the description telling the parent to inline any
+  convention the child actually needs. Each type's toolset is a named
+  preset, and the read-only guarantee is spelled out in the source as a
+  property of that preset: the `explore` toolset omits bash "so
+  exploration cannot mutate the workspace — the read-only guarantee is
+  enforced by the toolset, not merely by the prompt."
 
 **Takeaway.** Pikuri's `agent` tool is closer in spirit to
 opencode's `task` than to a simple "filter the parent's tools"
@@ -689,6 +1129,25 @@ Opencode's `task` adds session persistence and resumability on
 top, backed by SQLite; that's a fair amount of machinery for one
 feature, not worth porting until pikuri has another reason to
 introduce a session store.
+
+The sentence in grok-build's source — "the read-only guarantee is
+enforced by the toolset, not merely by the prompt" — is worth quoting
+because it is pikuri's structural-defense argument, arrived at
+independently by a team with no stake in pikuri's framing, and written
+as a code comment rather than a security claim. Two projects reaching
+the same conclusion from opposite directions (pikuri from the lethal
+trifecta, grok-build from "what does `explore` need") is the strongest
+external validation of the persona model in this document.
+
+Where grok-build goes further and pikuri deliberately doesn't:
+**resumability** (`resume_from` keeps a child's transcript, so a
+follow-up costs one delta instead of a re-run) and **worktree
+isolation** (parallel children editing the same repo without colliding).
+Both are the same trade opencode's `task` makes — real capability for a
+session store's worth of machinery. Pikuri's `GIT_REPO_RESEARCHER`
+already does the throwaway-workspace half for the read-only case; the
+worktree variant is what a *writing* sub-agent would need, and pikuri
+has none.
 
 ### Bundled persona inventory
 
@@ -704,6 +1163,7 @@ zoo."
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
 | Claude Code | `general-purpose`, `Explore`, `Plan`, `statusline-setup`, `claude-code-guide` | <https://code.claude.com/docs/en/sub-agents> |
+| grok-build | `general-purpose`, `explore`, `plan` (+ user-defined personas, + an orchestrator mode on the main agent) | `crates/common/xai-tool-types/src/task.rs`; toolsets in `xai-grok-agent/src/config.rs` |
 
 Cross-cutting by role:
 
@@ -737,6 +1197,19 @@ which pikuri has not committed to either way.
 
 Notable shape differences:
 
+- **grok-build's three built-ins are the same three Claude Code ships**
+  (`general-purpose` / `explore` / `plan`), which makes that trio look
+  like the settled convergent answer rather than one vendor's taste.
+  Pikuri covers `explore` twice over — split by *what* is read
+  (`RESEARCHER` web, `FILE_MINER` fs, `GIT_REPO_RESEARCHER` clone-and-dig)
+  — and covers neither of the other two. The `planner = read-only +
+  intent-shaping` signal noted below is now four-for-four across the
+  projects that ship personas at all.
+- **grok-build also has an orchestrator mode** — not a subagent but a
+  system-prompt body appended to the main agent, telling it to delegate
+  coding and exploration and to treat subagents "as expert peers, not
+  junior helpers." A prompt-level answer to the same problem opencode
+  solves with primary modes.
 - **opencode mixes primary modes and subagents in one registry** —
   `build` and `plan` are not delegated children but modes of the main
   agent itself. pi and Claude Code (and pikuri) keep "modes" separate
@@ -780,6 +1253,21 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   implementation reuses pi's XML block shape so a skill folder authored
   against any compliant harness renders consistently here.
 - **opencode**: ships its own skill mechanism (related but pre-standard).
+- **grok-build**: the widest discovery net of anyone — `.grok/skills`,
+  `.agents/skills`, `.claude/skills` *and* `.cursor/skills`, at local /
+  repo / user tiers, walking every directory between CWD and the repo
+  root, deduplicated by name with higher tiers winning. Vendor
+  compatibility is a config cell you can switch off per vendor
+  (`[compat.claude] skills = false`), and known vendor-shipped defaults
+  (Cursor's `shell`, `canvas`, `statusline`) are always filtered out.
+  Three details pikuri's catalog doesn't have: discovery deliberately
+  **ignores `.gitignore`** (teams gitignore `.claude/**` as local config
+  yet still expect project commands to work), a `[skills] disabled` list
+  keeps a skill listed but inert (distinct from `ignore`, which hides it),
+  and flat `*.md` under a `commands/` directory become user-invocable
+  slash commands. It also ships **plugins** — a marketplace-installable
+  bundle of skills + commands + agents + hooks + MCP servers, gated by
+  the same folder-trust decision.
 - **ruby_llm, langchainrb**: no concept of skills.
 
 ### MCP (Model Context Protocol)
@@ -801,8 +1289,53 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
 - **opencode**: ships MCP support; pikuri's `Mcp::Servers` is informed
   by opencode's shape but uses the `mcp` Ruby gem for the transport
   layer.
+- **grok-build**: MCP servers from config, gated by folder trust, plus
+  the `search_tool` / `use_tool` deferred-loading pair described under
+  §"Available tools" — a BM25 index over the tool catalog instead of
+  every schema in the window. Descriptions are truncated to 2 KB with a
+  fingerprint `(tool_count, description_hash, names_hash)` used to detect
+  when a server's surface changed. No pre-flight injection scan; the
+  trust gate is the analogous control, and it fires earlier (before the
+  server is spawned) but is coarser (whole workspace, not per-server).
 - **ruby_llm, langchainrb, pi (core)**: no MCP. Could be wired
   externally via the `mcp` gem.
+
+### Memory
+
+Only two projects here ship cross-conversation memory, and they picked
+opposite substrates.
+
+- **pikuri** (`pikuri-memory`): durable memory backed by **mem0**, run as
+  a self-managed sidecar, with a `recall` tool plus per-turn prefetch and
+  capture.
+- **grok-build**: **Markdown files plus a local SQLite index** —
+  `~/.grok/memory/MEMORY.md` global, `<project-slug>-<hash8>/MEMORY.md`
+  per workspace (keyed on the `origin` remote in `org/repo` form when
+  there is one, so clones and worktrees of a repo share memory), plus
+  per-session logs. Search is **FTS5 keyword by default, with `vec0`
+  vector search layered on when an embedding model is configured**. Two
+  `memory_search` / `memory_get` tools. Experimental, off by default.
+  Automatic per-session saves are *metadata only* and use **no LLM call**
+  (message counts, up to five substantive prompt topics, timestamp);
+  richer capture is an explicit `/flush`, and a `/remember` write shows
+  the user a review panel — with an optional rewritten version — before
+  anything is written.
+
+The substrate difference matters more than the feature difference.
+grok-build's memory is greppable Markdown a human can edit, versioned
+by nothing and owned by the user; pikuri's is a service. Given pikuri's
+privacy-first positioning and its "small enough to audit" ceiling,
+Markdown-plus-SQLite is arguably the more pikuri-shaped answer than the
+one pikuri shipped — and the fallback ladder (FTS5 always, vectors only
+if an embedder is configured) is exactly the degradation story
+`pikuri-vectordb` has to tell anyway. Worth revisiting; not worth
+churning a shipped gem over.
+
+Two mechanisms are cheap and orthogonal to the substrate: the
+**no-LLM-call automatic save** (metadata summaries cost nothing and
+still make a session findable later) and the **confirm-before-write
+review panel**, which is the `Confirmer` seam applied to memory writes —
+a place pikuri's memory capture currently writes unattended.
 
 **Takeaway.** Both Skills and MCP are extension surfaces pikuri added
 deliberately — Skills for "give the agent static text knowledge that
@@ -836,7 +1369,26 @@ more than wiring through ruby_llm's existing primitive.
    parameter carries an inline `e.g. "..."` example in the ruby_llm
    pattern. Integer parameters describe their default and cap, which
    serves as the anchoring equivalent. Codified in `CLAUDE.md`.
-3. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
+3. **Unicode confusable repair in `Edit`** (grok-build). Smart quotes,
+   em-dashes, ellipses and non-breaking spaces pasted in from a chat app
+   or a doc render identically to ASCII in `Read`, so the model's ASCII
+   `old_string` never matches and the edit fails for a reason the model
+   cannot see. Normalize for *comparison only*, keep a byte-offset remap
+   so the write lands on original bytes, and keep the map narrow —
+   grok-build excludes `U+2212 MINUS` and `U+00D7 MULTIPLICATION`
+   because they carry meaning. Roughly forty lines.
+4. **Sparse line-number anchors in `Read`** (grok-build). Print the
+   `LINE→` prefix on the first line and every tenth line rather than
+   every line, and say so in the description ("count from the nearest
+   anchor"). Same addressability, a fraction of the tokens on every
+   read.
+5. **Interpolate caps from the constant that enforces them** (grok-build).
+   Pikuri already does this where the cap is a constant (`Read`'s
+   `MAX_BYTES_LABEL`) and not where it isn't (`web_search`'s "Defaults
+   to 10; most providers cap this at 20", typed beside a hard-coded
+   `max_results: 10`). This is the portable half of grok-build's
+   description-template machinery, minus the machinery.
+6. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
    `halt("done")` from `execute` ends the chat without a follow-up
    model call. Pikuri's synthetic-tool factory already passes any
@@ -846,15 +1398,45 @@ more than wiring through ruby_llm's existing primitive.
 
 ### B-tier — worth it but more invasive
 
-4. **Method-signature introspection as a Parameters fallback** (ruby_llm).
+7. **Over-cap tool output: truncate the middle, spill to disk** (all of
+   PI, opencode, grok-build). Per-tool byte caps already exist in
+   `Bash` / `Read` / `WebScrape`; the missing pieces are writing the
+   overflow to a `Paths.new_temp` file and returning the path so the
+   model can `grep` it, and keeping the **tail** as well as the head —
+   a build's error summary lives at the end, so head-only truncation
+   discards the answer. Cross-cutting version tracked in
+   `ideas/security-open-questions.md` §"Output-size DoS and cost".
+8. **Tool dependency expressions** (grok-build's `requires_expr`). A
+   tool declares which other tools it needs — grok-build's `task`
+   requires the kinds that retrieve and kill its results — and the
+   registry validates it when the toolset is finalized. Pikuri has no
+   guard on an incoherent `Persona#tool_names` or `bin/pikuri-*`
+   wiring; the failure surfaces as model confusion at runtime instead.
+9. **Folder-trust gate before repo-supplied config** (grok-build,
+   Claude Code). `Skill::Catalog::Bundled` scans `.pikuri/skills`,
+   `.claude/skills` and `.agents/skills` under the project root, so a
+   cloned repository's skill names and descriptions reach the system
+   prompt with no trust decision. The `skill` tool already classifies a
+   skill body as `untrusted: :hard`; the gap is a gate on the *source*,
+   resolved once per workspace. grok-build's refinement worth copying:
+   a "there were no repo configs" allow is never cached, so a skill
+   that appears after a `git pull` is re-checked.
+10. **Per-segment display of chained shell commands in `Confirmer`**
+    (grok-build). Split the command on `&&`, `||`, `;`, `|` and
+    newlines and show the human the segments; refuse to split — and say
+    so — on subshells, `$(…)`, backticks, or control flow. Pure
+    presentation, lands in the confirmer where presentation belongs,
+    and directly serves the anti-fatigue argument in the book's
+    [security chapter](book/security.md).
+11. **Method-signature introspection as a Parameters fallback** (ruby_llm).
    When a tool's `execute` Proc has typed kwargs, derive the schema
    automatically. Trade-off: descriptions still need to live somewhere — so
    this saves typing only for the dumbest tools. Keep the explicit builder as
    the primary path.
-5. **Tool descriptions in separate `.txt` files** (opencode pattern). Easier
+12. **Tool descriptions in separate `.txt` files** (opencode pattern). Easier
    to iterate on a multi-paragraph description without touching Ruby. Wait
    until any single description gets long enough to be awkward in a heredoc.
-6. **One-class-many-functions tools** (langchainrb's `define_function`
+13. **One-class-many-functions tools** (langchainrb's `define_function`
    pattern, where a `MovieInfoTool` class exposes both `search_movie` and
    `get_movie_details` as separate function entries). Reduces boilerplate
    when a single capability really does have multiple operations. Today
@@ -865,11 +1447,45 @@ more than wiring through ruby_llm's existing primitive.
 
 ### C-tier — only when scope changes
 
-7. **Permission system with glob rules** (opencode). Pikuri ships
-   `Workspace` + `Confirmer` as v1; the three-action `allow` / `deny` /
-   `ask` glob model is the right next step once friction shows up.
-   Tracked in `ideas/coding-agent.md`.
-8. **Structured event stream** — **DONE**. The `Agent::Event` sealed
+14. **Permission system with glob rules** (opencode, grok-build). Pikuri
+    ships `Workspace` + `Confirmer` as v1; the three-action `allow` /
+    `deny` / `ask` glob model is the right next step once friction shows
+    up. Tracked in `ideas/coding-agent.md`. grok-build is the richer
+    reference of the two — evaluation by severity rather than by source,
+    per-segment matching, and a curated read-only command allowlist whose
+    *exclusions* (`tee`, `cargo check`, `rg --pre`, and any `git` command
+    whose local config installs an executable hook) are the part worth
+    reading before writing any auto-approval logic.
+15. **Stall detection for `StepLimit`** (grok-build's goal mode). Its
+    supervisor fingerprints the remaining gaps after each attempt and
+    trips when two consecutive attempts produce an identical
+    fingerprint — the model is looping, not converging. The full goal
+    subsystem is out of scope; the fingerprint alone is a better
+    exhaustion signal than a step count, and would compose with the
+    existing `on_exhausted: :synthesize` path.
+16. **Content-hash anchors as an edit-addressing arm** (grok-build's
+    `hashline_*`). A third answer alongside unique-string matching and
+    patch-with-context: `read` returns `LINE:HASH→CONTENT`, `edit`
+    addresses by anchor, a stale anchor fails loudly and the error
+    carries fresh anchors so the model retries without re-reading.
+    Rejected for now as line-range-with-the-staleness-hole-closed
+    (`DECISIONS.md` `D-single-hunk-edit`), and the arm to read first if
+    payload size ever displaces call count as the problem — but note
+    grok-build ships the scheme as a *parameter* with a benchmark
+    harness, so the question isn't settled there either.
+17. **Deferred MCP tool loading via search** (grok-build's
+    `search_tool` / `use_tool`). A keyword index over the MCP catalog
+    plus one meta-dispatch tool, instead of every schema in the window.
+    Same goal as pikuri's `mcp_connect` with a different lever; scales
+    better when one server exposes a hundred tools.
+18. **Markdown-plus-SQLite memory substrate** (grok-build). Greppable,
+    human-editable files with an FTS5 index and optional vector search
+    when an embedder is configured, versus `pikuri-memory`'s mem0
+    sidecar. Arguably the more pikuri-shaped answer on privacy and
+    auditability grounds; not worth churning a shipped gem over, but
+    the no-LLM-call automatic save and the confirm-before-write review
+    panel are separable and cheap.
+19. **Structured event stream** — **DONE**. The `Agent::Event` sealed
    hierarchy + four bundled listeners covers the surface that was a
    `puts`-only path in the previous writeup. New rendering sinks (web
    UI, JSON log, TUI) plug in by subclassing `Listener::Base`.

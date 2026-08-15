@@ -8,7 +8,8 @@ The verdict below is a snapshot of that moment. Items are cut from the
 list as they settle, and the remainder renumbered; the reasoning lands
 in DECISIONS.md. Settled so far: the directory listing (shipped as
 file_list + the boot snapshot — D-directory-listing), the calculator
-(kept — D-keep-calculator).
+(kept — D-keep-calculator), the edit tool's shape (occurrence: N shipped,
+no batch or patch sibling — D-single-hunk-edit).
 
 The "What works" section is also gone. Praise has no fork to log, so it
 graduated to the yardoc of each symbol it confirmed, phrased as what not
@@ -41,21 +42,7 @@ What I'd change
    on each turn ("~40% context used") would change behavior: I'd hand
    off earlier, and I wouldn't re-read files I already have.
 
-2. Edit is search-replace only.
-
-   Fine for surgical fixes. Painful for a rename-across-a-file or a
-   method move. A unified-diff / apply-patch tool as a sibling of
-   `edit` would cover the "this function is now a different shape" case
-   without the unique-string dance. Keep `edit` for the one-hunk
-   change.
-
-   Partly settled: the unique-string dance was the real tax, and
-   `edit`'s `occurrence: N` now pays it. Whether the rest earns a
-   batching or patch sibling is open — see
-   ideas/batched-edits-vs-patch-tool.md, which also owns the eventual
-   DECISIONS.md entry for the whole fork.
-
-3. No language intelligence.
+2. No language intelligence.
 
    For Ruby I'd want go-to-definition and find-references. I can grep,
    but `ConfirmerPopup` vs `ask` vs the pikuri `Confirmer` interface is
@@ -63,7 +50,7 @@ What I'd change
    already have this idea in the gradle/maven skills; a generic LSP
    tool would pay rent here.
 
-4. Skill load costs a turn.
+3. Skill load costs a turn.
 
    Before any UI work I'm supposed to load `cop` and `tuile`. That's
    correct and also a round-trip. Either auto-inject those two when the
@@ -72,7 +59,7 @@ What I'd change
    already batch `skill` with other tools, that's enough — I just need
    it to be the expected opening move, not a surprise tax.)
 
-5. The standing prompt is heavy.
+4. The standing prompt is heavy.
 
    Safety block + harness + AGENTS.md + skills catalog + tool schemas
    on every turn is a lot of prefix. AGENTS.md is worth it for *this*
