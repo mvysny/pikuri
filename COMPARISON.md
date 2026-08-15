@@ -135,7 +135,7 @@ end. See `pikuri-mcp/lib/pikuri/mcp/servers.rb` for the rationale.
 
 | | calc | shell/bash | read | write | edit | grep | glob | search | scrape/fetch | sub-agent | skill | mcp | todo/plan | LSP | vector/RAG |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pikuri | ✅ | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ glob | ✅ web_search | ✅ web_scrape + fetch | ✅ | ✅ Agent Skills standard | ✅ stdio + HTTP | — | — | — |
+| pikuri | ✅ | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ glob + file_list | ✅ web_search | ✅ web_scrape + fetch | ✅ | ✅ Agent Skills standard | ✅ stdio + HTTP | — | — | — |
 | ruby_llm | — (SDK only — no bundled tools) | | | | | | | | | | | | | | |
 | langchainrb | ✅ | — | ✅ file_system | ✅ file_system | — | — | — | ✅ google_search / tavily | — | — | — | — | — | — | ✅ vectorsearch (Chroma, Pinecone, Pgvector, Weaviate, Qdrant, Milvus, Elasticsearch, Hnswlib) + DB, NewsRetriever, Weather, Wikipedia, RubyCodeInterpreter |
 | pi | — | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ find | — | — | — (extension) | ✅ via extensions | — | — (extension) | — | — |
@@ -699,7 +699,7 @@ zoo."
 
 | Project | Personas shipped | Source |
 | --- | --- | --- |
-| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 20 steps); `FILE_MINER` (read/grep/glob, 30 steps); `GIT_REPO_RESEARCHER` (git_clone + read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,file_miner}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb` |
+| pikuri | `RESEARCHER` (web_search/web_scrape/fetch, 20 steps); `FILE_MINER` (file_list/read/grep/glob, 30 steps); `GIT_REPO_RESEARCHER` (git_clone + file_list/read/grep/glob + web reads, 30 steps, per-invocation temp workspace) — queued: `reviewer` | `pikuri-subagents/lib/pikuri/sub_agent/{researcher,file_miner}.rb`; `pikuri-code/lib/pikuri/code/git_repo_researcher.rb` |
 | ruby_llm / langchainrb | none — no sub-agent surface | — |
 | pi | `planner`, `reviewer`, `scout`, `worker` | `packages/coding-agent/examples/extensions/subagent/agents/` |
 | opencode | `build`, `plan` (primary modes); `general`, `explore`, `scout` (subagents); `compaction`, `title`, `summary` (hidden housekeeping) | `packages/opencode/src/agent/agent.ts` |
@@ -826,7 +826,8 @@ more than wiring through ruby_llm's existing primitive.
 
 1. **Bring all tool descriptions up to the opencode bar** — **DONE**.
    All bundled tools (calculator, web_search, web_scrape, fetch,
-   sub_agent, skill, read, write, edit, grep, glob, bash, mcp_connect)
+   sub_agent, skill, read, write, edit, grep, glob, file_list, bash,
+   mcp_connect)
    use the heredoc summary + `Usage:` bullets shape. The pikuri variant
    of the pattern factors universal `Error: ...` recovery into each
    binary's system prompt rather than restating it per-tool. Convention

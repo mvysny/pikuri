@@ -32,7 +32,7 @@ RSpec.describe 'trifecta dry run: pikuri-code' do
     end
   end
 
-  # The parent's own tools, as bin/pikuri-code wires them: the five file tools
+  # The parent's own tools, as bin/pikuri-code wires them: the file tools
   # over the workspace, plus bash. The web tools are deliberately absent — they
   # live on the sub-agent personas.
   def parent_tools(sandbox: bubblewrap_shaped, **flags)

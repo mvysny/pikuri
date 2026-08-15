@@ -57,7 +57,7 @@ module Pikuri
         - URL must be `https://` (preferred) or `http://`. Any other scheme (`ssh://`, `git://`, `file://`) is refused.
         - Always cloned with `--depth 1 --no-recurse-submodules`; you get the current tip, no history, no submodules.
         - Target directory name is derived from the URL's last segment (without `.git`). If that directory already exists, the call fails — pick a different URL or work with what you cloned.
-        - On success returns the relative path to the cloned repo; use `read`, `grep`, `glob` to navigate it.
+        - On success returns the relative path to the cloned repo; use `file_list`, `read`, `grep`, `glob` to navigate it.
         - Clones run inside a sandbox bound to your workspace — host files, SSH keys, and `~/.gitconfig` are NOT visible to the cloned repo's hooks/filters.
       DESC
 

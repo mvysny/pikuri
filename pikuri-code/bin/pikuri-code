@@ -408,7 +408,7 @@ begin
     # a prompt injection. See SECURITY.md §"Defense: capability
     # boundaries via sub-agents". The `skill` tool, when the catalog
     # is non-empty, is appended by the Skill::Extension below.
-    # The five file tools (read/grep/glob/edit/write) share one
+    # The file tools (read/grep/glob/file_list/edit/write) share one
     # Workspace composite (Filesystem + this session's read record) so
     # the read-before-edit gate works across them. The extension owns
     # that composite; Bash and the sandbox take the raw `filesystem`

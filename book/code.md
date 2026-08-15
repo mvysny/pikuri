@@ -59,7 +59,7 @@ mkdir /tmp/pikuri-playground && cd /tmp/pikuri-playground
 
 You'll land in a REPL with a `>` prompt — same shape as
 `pikuri-chat`, except the agent now has `read`, `grep`, `glob`,
-`edit`, `write`, `bash`, the four web/calculator tools from
+`file_list`, `edit`, `write`, `bash`, the four web/calculator tools from
 the first-conversation chapter, and the `agent` tool (with `FILE_MINER`, `RESEARCHER`, and
 `GIT_REPO_RESEARCHER` personas wired in). Try:
 
@@ -87,7 +87,7 @@ prompts and isolations are actually doing.
 ## The Workspace seam — what the LLM sees
 
 `Pikuri::Workspace::Filesystem` is the object every filesystem
-tool (`read`, `write`, `edit`, `grep`, `glob`) takes via its
+tool (`read`, `write`, `edit`, `grep`, `glob`, `file_list`) takes via its
 constructor. Every path the LLM hands to those tools is routed
 through `workspace.resolve_for_read(path)` or
 `workspace.resolve_for_write(path)` before the tool touches disk.
@@ -184,7 +184,7 @@ This is the seam that's *distinct from* Workspace and worth taking
 slowly. The split:
 
 - **Workspace** decides what the LLM can observe via
-  `read` / `write` / `edit` / `grep` / `glob`.
+  `read` / `write` / `edit` / `grep` / `glob` / `file_list`.
 - **Sandbox** decides what filesystem view the `bash` subprocess
   runs against when it `cat`s a file or `curl`s a URL.
 
@@ -329,7 +329,7 @@ Four observations on this block:
    so untrusted content (scraped pages, cloned repos) can only
    land in a child context.
 4. **Order matters for the SubAgent extension specifically.** Its
-   `configure` validates `FILE_MINER`'s `tool_names: %w[read grep glob]`
+   `configure` validates `FILE_MINER`'s `tool_names: %w[file_list read grep glob]`
    against `c.tools`, and `GIT_REPO_RESEARCHER`'s `git_clone` /
    web tools against `c.sub_agent_tools` — both were registered
    above, so the validation passes. Move `add_extension` above
@@ -347,7 +347,7 @@ the parent's context.
 Pikuri::SubAgent::FILE_MINER
 # => Persona.new(
 #      name:          'file_miner',
-#      tool_names:    %w[read grep glob],
+#      tool_names:    %w[file_list read grep glob],
 #      max_steps:     30,
 #      system_prompt: Pikuri.prompt('persona-file-miner'),
 #      ...)
@@ -394,7 +394,7 @@ exact line citations.
 Pikuri::Code::GIT_REPO_RESEARCHER
 # => Persona.new(
 #      name:                 'git_repo_researcher',
-#      tool_names:           %w[git_clone read grep glob
+#      tool_names:           %w[git_clone file_list read grep glob
 #                               web_search web_scrape fetch],
 #      max_steps:            30,
 #      needs_temp_workspace: true,
@@ -413,7 +413,7 @@ Two distinguishing pieces vs. `FILE_MINER`:
    `Pikuri::SubAgent::SubAgentTool` owns the lifecycle. At spawn:
    `mktmpdir` + mint a `Pikuri::Workspace::Filesystem` rooted at
    the temp dir + thread it through every fs-touching tool the
-   persona uses (`git_clone`, `read`, `grep`, `glob`) via the
+   persona uses (`git_clone`, `file_list`, `read`, `grep`, `glob`) via the
    tool's `#with_workspace` hook. At sub-agent close:
    `FileUtils.remove_entry`. The persona itself stays
    declarative — no `Proc`, no factory.

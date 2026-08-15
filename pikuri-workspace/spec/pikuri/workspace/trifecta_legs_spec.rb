@@ -2,7 +2,7 @@
 
 require 'tmpdir'
 
-# The trifecta legs the five file tools inherit from their workspace, plus the
+# The trifecta legs the file tools inherit from their workspace, plus the
 # two Filesystem flags that decide them.
 RSpec.describe 'Workspace trifecta legs' do
   let(:root) { Pathname.new(Dir.mktmpdir('pikuri-legs-root-')).realpath }

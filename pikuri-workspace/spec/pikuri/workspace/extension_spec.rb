@@ -32,7 +32,7 @@ RSpec.describe Pikuri::Workspace::Extension do
   end
 
   describe '#configure' do
-    it 'registers all five file tools' do
+    it 'registers every file tool' do
       described_class.new(filesystem: filesystem, confirmer: confirmer).configure(configurator)
 
       names = configurator.tools.map(&:name)

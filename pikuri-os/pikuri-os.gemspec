@@ -49,7 +49,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # Agent runtime + Tool base class + Extension protocol live in
-  # pikuri-core; the five file tools + Confirmer live in
+  # pikuri-core; the file tools + Confirmer live in
   # pikuri-workspace; Bash + Bash::Sandbox (the net-isolation seam this
   # agent rides) live in pikuri-code. Lockstep-versioned so an upgrade
   # to any of them always pulls the matching peer.

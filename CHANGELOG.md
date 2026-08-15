@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Add the `file_list` tool — `Workspace::FileList`, the only tool that shows the model a directory *exists* (`glob` is `rg --files`, which emits files only); `path` defaults to the workspace root, `depth` to 1 and caps at 3. Wired by `Workspace::Extension` and added to the `FILE_MINER` / `GIT_REPO_RESEARCHER` recon personas. See `DECISIONS.md` `D-directory-listing`.
 - Add `Workspace::Listing` — the gem's one directory renderer (name-sorted, directories first, per-row sizes or `[4 dirs, 25 files]` summaries, errno classes where a row can't be measured), now backing the oversized-root refusal too. See `DECISIONS.md` `D-directory-listing`.
 - Add `pikuri-thunderbird` — the local Thunderbird profile as five read-only tools (`thunderbird_mail_search` / `_mail_read` / `_calendar_search` / `_calendar_read` / `_contact_search`) plus two opt-in hand-offs (`_mail_compose`, `_calendar_create`) that hand bytes to Thunderbird's own compose window or import wizard rather than sending anything. See `pikuri-thunderbird/DESIGN.md`.
 - Add `pikuri-os` — an offline, network-severed OS helper: `fileindex_search` / `fileindex_read` over a swappable desktop index (localsearch or Recoll), `MACHINE.md` resident memory, boot-time machine facts, and `bin/pikuri-os` whose `--with-internet` routes the web through a confirmed, isolated researcher. See `book/os-assistant.md` and `DECISIONS.md` `D-headless-os-agent`.
@@ -45,6 +46,7 @@ boot.
 - Fix `FullFsNoNet`'s `/dev` handling (bind the real one, not bwrap's synthetic `--dev`) and mask the live session's IPC sockets, so the severed egress is not handed straight back by the session bus.
 - Fix `ruby_llm` streaming error parsing against non-Hash bodies and against the `{"error": "…"}` string shape.
 - Fix sub-agent-only tools being credited to the parent node in the trifecta map, which reported the sub-agent quarantine as broken. See `DECISIONS.md` `D-trifecta-map-orphans`.
+- **Breaking:** `SubAgent::FILE_MINER` and `Code::GIT_REPO_RESEARCHER` now list `file_list` in `tool_names`, so `SubAgent::Extension#configure` raises unless a `file_list` tool is registered. Hosts wiring the file tools through `Workspace::Extension` get it automatically; a host registering file tools by hand must add `Workspace::FileList.new(workspace:)`.
 - **Breaking:** `Workspace::Confirmer` is now a chrome-only seam whose primitive is `#ask(request:)` returning `Approved(detail)` / `Rejected(reason)`, with `#confirm?` as the boolean convenience. A custom confirmer must implement `#ask`, and command-approval policy moves out to `Code::Bash::PassiveCommandDetector`.
 - **Breaking:** `Workspace::Grep` / `Workspace::Glob` → `Workspace::Search::Grep` / `Workspace::Search::Glob`. Update the constants; the `grep` / `glob` tool names are unchanged.
 - **Breaking:** `Tool::Parameters#to_h` → `#to_openai`. Rename the call.

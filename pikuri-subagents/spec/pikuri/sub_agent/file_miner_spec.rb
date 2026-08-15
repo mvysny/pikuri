@@ -7,7 +7,7 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
   end
 
   it 'declares read-only fs tool_names — no egress, no mutation, no agent recursion' do
-    assert_equal %w[read grep glob], described_class.tool_names
+    assert_equal %w[file_list read grep glob], described_class.tool_names
   end
 
   it 'loads its system prompt from pikuri-subagents/prompts/persona-file-miner.txt' do
@@ -23,7 +23,7 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
   describe 'integration with Pikuri::SubAgent::Extension' do
     # Stub tools whose names match FILE_MINER.tool_names. Hand-rolled
     # rather than pulling in the real Pikuri::Workspace::Read / Grep /
-    # Glob so pikuri-subagents stays decoupled from pikuri-workspace at
+    # Glob / FileList so pikuri-subagents stays decoupled from pikuri-workspace at
     # both the runtime-dep level ({Pikuri::SubAgent::FILE_MINER}
     # §"Decoupled from pikuri-workspace") and the test-closure level.
     def stub_tool(name)
@@ -35,7 +35,7 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
       )
     end
 
-    let(:tools) { %w[read grep glob].map { |n| stub_tool(n) } }
+    let(:tools) { %w[file_list read grep glob].map { |n| stub_tool(n) } }
 
     let(:configurator) do
       Pikuri::Agent::Configurator.new(
@@ -49,7 +49,7 @@ RSpec.describe Pikuri::SubAgent::FILE_MINER do
       )
     end
 
-    it 'configures cleanly when read/grep/glob are present' do
+    it 'configures cleanly when file_list/read/grep/glob are present' do
       tools.each { |t| configurator.add_tool(t) }
       ext = Pikuri::SubAgent::Extension.new(personas: [described_class])
       # No raise — the persona's tool_names are a subset of registered tools.

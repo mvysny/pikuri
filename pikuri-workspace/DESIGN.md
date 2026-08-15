@@ -41,7 +41,7 @@ compose (each piece's own contract stays in its YARD):
   read in a sub-agent's temp clone can never satisfy an edit in another
   workspace.
 - **{Pikuri::Workspace::Extension}** shares that one composite across all
-  five file tools and clears the record on conversation reset — a
+  file tools and clears the record on conversation reset — a
   `/clear` re-arms the gate from empty.
 
 ## Two guards — why Write confirms an overwrite and Edit doesn't

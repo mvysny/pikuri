@@ -5,8 +5,8 @@ module Pikuri
     # Bundled "read-only filesystem recon" persona. Sibling to
     # {RESEARCHER}, different surface: a narrow read-only fs toolset (no
     # network, shell, writes, or recursion) and a step budget sized as a
-    # runaway cap, not a tight target — a glob → grep → read chain over a
-    # large tree fans out legitimately before the answer lands. A coding
+    # runaway cap, not a tight target — a file_list → grep → read chain over
+    # a large tree fans out legitimately before the answer lands. A coding
     # parent delegates a lookup ("find where X is defined and how it's
     # wired") so the intermediate results don't pollute its context; the
     # child returns one paragraph with +path:line+ citations.
@@ -27,10 +27,10 @@ module Pikuri
     # @return [Persona]
     FILE_MINER = Persona.new(
       name: 'file_miner',
-      description: 'Read-only code/filesystem recon with read, grep, glob. ' \
+      description: 'Read-only code/filesystem recon with file_list, read, grep, glob. ' \
                    'Use to delegate file lookups so their contents stay out of your context. ' \
                    'Returns one paragraph + file:line references.',
-      tool_names: %w[read grep glob].freeze,
+      tool_names: %w[file_list read grep glob].freeze,
       system_prompt: Pikuri.prompt('persona-file-miner'),
       max_steps: 30
     )

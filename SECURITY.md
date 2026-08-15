@@ -129,8 +129,8 @@ fully-fooled model:
 
 - `RESEARCHER` — `web_search` / `web_scrape` / `fetch`. Web in/out;
   no `read` / `bash` / `write` / `agent` recursion.
-- `FILE_MINER` — `read` / `grep` / `glob`. Reads files; no egress, no
-  `bash` / `write` / recursion.
+- `FILE_MINER` — `file_list` / `read` / `grep` / `glob`. Reads files;
+  no egress, no `bash` / `write` / recursion.
 - `GIT_REPO_RESEARCHER` — `git_clone` plus a `FILE_MINER`+web set,
   cloning (HTTPS-only, shallow) into a temp workspace *disjoint*
   from the parent's project root, so cloned bytes never land where

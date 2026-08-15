@@ -2,8 +2,8 @@
 
 module Pikuri
   module Workspace
-    # An {Pikuri::Agent::Extension} that wires the five file tools ({Read},
-    # {Search::Grep}, {Search::Glob}, {Edit}, {Write}) onto an agent, sharing a single
+    # An {Pikuri::Agent::Extension} that wires the file tools ({Read},
+    # {Search::Grep}, {Search::Glob}, {FileList}, {Edit}, {Write}) onto an agent, sharing a single
     # {Workspace} composite — which is what makes the read-before-edit gate
     # work: {Read} marks a path read in the same record {Edit} and
     # overwrite-{Write} consult. One registration point removes the per-host
@@ -36,11 +36,11 @@ module Pikuri
     class Extension
       include Pikuri::Agent::Extension
 
-      # The five tools the extension owns, and the duplicate-registration guard
+      # The tools the extension owns, and the duplicate-registration guard
       # list: it must be the single owner of the shared {Workspace}, so a
       # pre-registered file tool (on a different composite) would defeat the
       # read-ledger sharing.
-      TOOL_CLASSES = [Read, Search::Grep, Search::Glob, Edit, Write].freeze
+      TOOL_CLASSES = [Read, Search::Grep, Search::Glob, FileList, Edit, Write].freeze
 
       # @return [String] system-prompt guidance wired alongside the mutating
       #   tools: the confirmer may pause a write/edit (and a co-wired Bash)
@@ -52,7 +52,7 @@ module Pikuri
         A tool may ask you to confirm before it makes a change. If the user declines, stop rather than trying another route to the same end — a decline means they want to re-steer you, so hand back and wait for their guidance.
       SNIPPET
 
-      # @return [Workspace] the composite shared across the five tools;
+      # @return [Workspace] the composite shared across the tools;
       #   exposed for tests / introspection.
       attr_reader :workspace
 
@@ -80,8 +80,8 @@ module Pikuri
         TOOL_CLASSES.each do |cls|
           if c.tools.any?(cls)
             raise "#{cls} cannot be pre-registered (in tools: or via c.add_tool) " \
-                  'when adding Pikuri::Workspace::Extension — the extension auto-registers all five ' \
-                  'file tools so they share one Workspace (and one read record).'
+                  'when adding Pikuri::Workspace::Extension — the extension auto-registers every ' \
+                  'file tool so they share one Workspace (and one read record).'
           end
         end
 
@@ -90,6 +90,7 @@ module Pikuri
         c.add_tool Read.new(workspace: @workspace)
         c.add_tool Search::Grep.new(workspace: @workspace)
         c.add_tool Search::Glob.new(workspace: @workspace)
+        c.add_tool FileList.new(workspace: @workspace)
         # Edit takes no posture flag: a non-nil confirmer *is* its
         # confirm-all-writes posture (see {Edit}), so +confirm_all_writes+
         # reaches Edit as confirmer-or-nil.

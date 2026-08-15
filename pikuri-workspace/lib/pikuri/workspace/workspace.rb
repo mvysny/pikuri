@@ -22,7 +22,7 @@ module Pikuri
     #
     # == Facade over Filesystem
     #
-    # The five file tools only +resolve_for_read+/+resolve_for_write+ a path and
+    # The file tools only +resolve_for_read+/+resolve_for_write+ a path and
     # (for Grep/Glob's chdir) read +project_root+ — all delegated straight to
     # the wrapped {Filesystem}, so a tool that took a +Filesystem+ works
     # unchanged; the only new surface is {#mark_read}/{#read?}. (Bash keeps

@@ -81,9 +81,9 @@ design.
 
 ## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
 
-**Status:** Accepted, landing in stages. Shipped: `Workspace::Listing` and
-`read`'s recovering refusal. Still to come: the `file_list` tool that makes
-it a *documented* capability, and a boot-time orientation snippet.
+**Status:** Accepted. Shipped: `Workspace::Listing`, `read`'s recovering
+refusal, and the `file_list` tool. Still to come: a boot-time orientation
+snippet (`ideas/directory-listing.md`).
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
 model opens — orienting in the repo — and reported: *"`glob *` gave me ten
@@ -165,9 +165,37 @@ listing* — and says nothing about it in its description.
 - **`read` must never mark the read ledger for a directory.** Free today (the
   refusal returns before `mark_read`), but exactly the kind of thing a
   refactor breaks silently, so it's pinned by a spec.
-- **Still open, tracked in `ideas/directory-listing.md`:** the `file_list`
-  tool (depth 1 by default, added to `FILE_MINER`), the boot-time orientation
-  snippet, and the docs sweep dropping the count from "five file tools".
+- **The tool is `file_list`, and the file tools are not renamed.** Enumerating
+  the shipped tool names surfaced pikuri's unwritten convention, already
+  consistent: a prefix marks a *family sharing one backing resource*
+  (`task_*`, `thunderbird_*`, `vectordb_*`, `fileindex_*`, `web_*`, `git_*`),
+  while a *universal singleton verb goes bare* (`read`, `write`, `edit`,
+  `grep`, `glob`, `bash`, `fetch`, `skill`, `recall`, `agent`, `calculator`).
+  Rejected: a `file_read` / `file_write` sweep over the siblings — it spends
+  the most in-distribution tool names in existence for nothing semantic, is a
+  breaking change to every host's persona `tool_names:`, and makes pikuri the
+  one row that doesn't line up in `COMPARISON.md`'s parity table. So why
+  prefix *this* one? Not collision — grammar. `read`/`write`/`edit` are
+  transitive verbs with an implied object convention supplies ("a file");
+  `list` has none, and "list *what*?" is live in a wiring that also carries
+  tasks, MCP servers and skills. Also rejected: `ls`, whose precise
+  behavioural prior (flags, columns, `-la`) makes every divergence from real
+  `ls` a trap; and `file_tree`, because **the name must track the default
+  depth** — "tree" promises hierarchy and depth 1 delivers a flat listing.
+  The convention itself now lives in `CLAUDE.md`'s Conventions.
+- **`depth` caps rather than refuses.** Over `Listing::MAX_DEPTH` clamps down
+  (the answer is still the one asked for, just shallower); below 1 is an
+  error, mirroring `read`'s `offset` / `limit` guards.
+- **Both recon personas take it, with no new trifecta leg.** `FILE_MINER` and
+  `GIT_REPO_RESEARCHER` orient in trees they have never seen, which is the
+  whole case for the tool; listing grants no *action*, so the no-tool-to-act-on-
+  an-injection property is untouched. The `file_list` first move is in their
+  persona prompts — the sanctioned carve-out that may name its own tools.
+- **"Five file tools" is gone from the docs.** Adding a sixth made the count
+  wrong in 15 places at once; it collapses to "file tools", which can't go
+  stale the next time one lands.
+- **Still open, tracked in `ideas/directory-listing.md`:** the boot-time
+  orientation snippet (Option D).
 
 ---
 

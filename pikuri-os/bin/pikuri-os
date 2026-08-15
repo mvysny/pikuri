@@ -171,7 +171,7 @@ agent = Pikuri::Agent.new(
   c.add_listener Pikuri::Agent::Listener::Terminal.new
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
   c.add_tool Pikuri::Tool::CALCULATOR
-  # One extension wires the whole OS-helper surface: the five file tools,
+  # One extension wires the whole OS-helper surface: the file tools,
   # bash (gated by the read-only auto-confirmer + the sandbox above), the
   # file-index tools, and the machine facts + MACHINE.md memory folded
   # into the system prompt.

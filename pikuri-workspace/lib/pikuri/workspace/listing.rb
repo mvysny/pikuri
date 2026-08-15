@@ -38,6 +38,9 @@ module Pikuri
       #   because Zeitwerk's eager-load order between siblings isn't guaranteed.
       MAX_BYTES = 50 * 1024
 
+      # @return [String] human-readable {MAX_BYTES} for truncation messages.
+      MAX_BYTES_LABEL = "#{MAX_BYTES / 1024} KB"
+
       # @return [Integer] default +depth+ — immediate children only.
       DEFAULT_DEPTH = 1
 

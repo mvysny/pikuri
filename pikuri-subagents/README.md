@@ -20,7 +20,7 @@ Provides:
   (`web_search` / `web_scrape` / `fetch`), 20 steps, focused
   research system prompt.
 - `Pikuri::SubAgent::FILE_MINER` — bundled persona: read-only
-  filesystem recon (`read` / `grep` / `glob`), 30 steps. No
+  filesystem recon (`file_list` / `read` / `grep` / `glob`), 30 steps. No
   egress, no mutation, no `agent` recursion — gives
   prompt-injected file contents nothing actionable to reach for.
 

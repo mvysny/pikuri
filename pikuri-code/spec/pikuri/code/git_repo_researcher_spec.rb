@@ -7,7 +7,7 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
   end
 
   it 'declares clone-and-dig tool_names — git_clone + fs reads + web reads, no shell/mutation/recursion' do
-    assert_equal %w[git_clone read grep glob web_search web_scrape fetch],
+    assert_equal %w[git_clone file_list read grep glob web_search web_scrape fetch],
                  described_class.tool_names
   end
 
@@ -38,6 +38,7 @@ RSpec.describe Pikuri::Code::GIT_REPO_RESEARCHER do
         Pikuri::Workspace::Read.new(workspace: workspace),
         Pikuri::Workspace::Search::Grep.new(workspace: workspace),
         Pikuri::Workspace::Search::Glob.new(workspace: workspace),
+        Pikuri::Workspace::FileList.new(workspace: workspace),
         Pikuri::Tool::WebSearch.build,
         Pikuri::Tool::WEB_SCRAPE,
         Pikuri::Tool::FETCH

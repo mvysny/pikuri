@@ -45,7 +45,7 @@ harness, and its first step was:
 The detector is that step, done by machine, over the wiring that
 actually booted rather than the one you meant to write. That
 distinction is the whole value. You can hold a four-tool agent in
-your head; `pikuri-code` wires five file tools, `bash`, three
+your head; `pikuri-code` wires the file tools, `bash`, three
 sub-agent-only web tools and three personas — and the question
 "can the parent egress?" has a non-obvious answer that turns on a
 sandbox setting two files away.
@@ -149,8 +149,8 @@ The map carries facts; the one-line advisory above it carries the
 meaning:
 
 ```
-[TRIFECTA: HARD] pikuri-code — private(read, grep, glob, bash) +
-untrusted(read, grep, glob, bash, skill) + egress(bash). An injection in
+[TRIFECTA: HARD] pikuri-code — private(read, grep, glob, file_list, bash) +
+untrusted(read, grep, glob, file_list, bash, skill) + egress(bash). An injection in
 what this agent reads can drive an exfiltration. Break a leg:
 sever egress (a network-off sandbox), or privilege-separate the
 step that reads untrusted content. See book/trifecta-detector.md in this repo.

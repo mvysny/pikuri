@@ -406,7 +406,7 @@ end
 ```
 
 `Os::Extension` is a composite: it adds `Workspace::Extension` (the
-five file tools) and `Code::Extension` (`bash`, with the
+file tools) and `Code::Extension` (`bash`, with the
 passive-command detector), then layers on the `fileindex_*` tools, the
 grounding block, and the `MACHINE.md` section. The binary doesn't
 re-derive any of that — and neither will the TUI or web client that
