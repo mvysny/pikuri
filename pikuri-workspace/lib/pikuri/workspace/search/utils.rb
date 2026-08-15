@@ -24,6 +24,7 @@ module Pikuri
         #   directory is too broad. Pick one of its entries below as `path` and
         #   search there instead (directories end with `/`):
         #   .config/  [3 dirs, 2 files]
+        #   .ssh/  [denied]
         #   work/  [12 dirs, 1 file]
         #   todo.txt  412B
         #
@@ -34,10 +35,12 @@ module Pikuri
         # "narrow `path`" line if the directory is empty or unreadable.
         #
         # @param resolved [Pathname] the absolute search root
+        # @param filesystem [Filesystem] threaded into the listing so a
+        #   credential dir under the refused root renders +[denied]+
         # @param verb [String] the tool's action word for the message, e.g.
         #   +"search"+ (Grep) or +"list"+ (Glob)
         # @return [String, nil] the +"Error: ..."+ refusal, or +nil+ to proceed
-        def self.oversized_root_refusal(resolved, verb:)
+        def self.oversized_root_refusal(resolved, filesystem:, verb:)
           normalized = normalize_root(resolved)
           home = normalize_root(Pathname.new(Dir.home))
           root_kind =
@@ -53,7 +56,7 @@ module Pikuri
             end
           return nil unless root_kind
 
-          listing = root_listing(normalized)
+          listing = root_listing(normalized, filesystem: filesystem)
           guidance =
             if listing.empty?
               'Narrow `path` to a specific subdirectory.'
@@ -96,14 +99,70 @@ module Pikuri
           [head, marker]
         end
 
+        # Search-root-relative paths of every denied root that falls *under*
+        # +root+ — the only ones an rg walk rooted there could reach.
+        #
+        #   denied_prefixes(filesystem: fs, root: Pathname.new('/home/alice'))
+        #   # => [".aws", ".gnupg", ".ssh"]
+        #
+        # @param filesystem [Filesystem] supplies {Filesystem#denied_roots}
+        # @param root [Pathname] the rg search root
+        # @return [Array<String>] sorted, +""+-free relative paths
+        def self.denied_prefixes(filesystem:, root:)
+          base = normalize_root(root)
+          filesystem.denied_roots.filter_map { |denied|
+            absolute = denied.exist? ? denied.realpath.to_s : denied.to_s
+            next unless absolute.start_with?(base + File::SEPARATOR)
+
+            absolute.delete_prefix(base + File::SEPARATOR)
+          }.sort
+        end
+
+        # +rg --glob '!<rel>'+ for each denied root under +root+, pruning the
+        # subtree before rg ever walks it. Verified: a negative glob on a
+        # directory prunes its contents and survives +--no-ignore+, the same
+        # property {Glob}'s +!.git/*+ relies on.
+        #
+        # This is the *optimization*, never the guarantee — it goes silently
+        # partial whenever a denied root sits outside the search root, and an
+        # rg flag change could weaken it without a test noticing. The
+        # {Filesystem#denied?} filter on the results is what fails closed.
+        #
+        # @param filesystem [Filesystem]
+        # @param root [Pathname] the rg search root
+        # @return [Array<String>] argv fragments, empty when nothing is denied
+        def self.denied_globs(filesystem:, root:)
+          denied_prefixes(filesystem: filesystem, root: root)
+            .flat_map { |rel| ['--glob', "!#{rel}"] }
+        end
+
+        # Drop every output line rg emitted for a denied path. rg puts the path
+        # first on the line and never follows symlinks (no +-L+ in either
+        # tool's argv), so a leading-prefix test is exact for the path segment
+        # — no need to find where the path ends, which a filename containing
+        # +:+ would make ambiguous. It may over-match (a +.netrc.bak+ line goes
+        # too); over-filtering is the safe direction for a credential guard.
+        #
+        # @param raw [String] rg output, +./+ prefixes already stripped
+        # @param prefixes [Array<String>] from {.denied_prefixes}
+        # @return [String]
+        def self.reject_denied_lines(raw, prefixes:)
+          return raw if prefixes.empty?
+
+          raw.lines.reject { |line|
+            prefixes.any? { |rel| line.start_with?(rel) }
+          }.join
+        end
+
         # A refusal still has to come back when the root itself can't be
         # opened, so that degrades to the "narrow `path`" wording rather than
         # raising out of a message-building helper.
         #
         # @param dir [String] absolute directory path
+        # @param filesystem [Filesystem]
         # @return [String] {Pikuri::Workspace::Listing.render} at depth 1, or +""+
-        def self.root_listing(dir)
-          Listing.render(dir)
+        def self.root_listing(dir, filesystem:)
+          Listing.render(dir, filesystem: filesystem)
         rescue SystemCallError
           ''
         end

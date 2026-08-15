@@ -168,6 +168,33 @@ and MCP tools mount on the parent (no sub-agent boundary between the
 model and the payload), so "pick reputable MCPs" applies at every
 call too.
 
+**Credential floor under a whole-host workspace.** When the
+workspace is `Filesystem::AllowAll` — the container / dev-container
+posture, and `pikuri-code --yolo` — every path resolves *except* a
+default denylist: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.docker`,
+`~/.kube`, `~/.netrc`, `/etc/shadow` (and the `/root` variants).
+Denied paths are refused by `read`/`write`/`edit`, rendered as
+`[denied]` by `file_list`, and dropped from `grep`/`glob` results.
+Symlinks are resolved before the test, so a `decoy → ~/.ssh` planted
+inside the workspace is caught.
+
+Two limits, both deliberate. It is a **floor, not a boundary**: a
+co-wired `bash` bypasses it entirely, which is why `AllowAll` is meant
+for use *inside* a container that is itself the boundary. And a host
+may pass `denylist: []` to drop it — `pikuri-os` and `pikuri-computer`
+do exactly that, on the reasoning that their `bash` already sees the
+whole disk under a network-severed sandbox, so half a floor would be
+theater rather than defense.
+
+> **Fixed 2026-08-15, and worth naming because it shipped broken:**
+> the denylist gated only paths the *model supplied* to a `resolve_`
+> call. A path a tool **walked** to on its own reached no such call,
+> so `grep 'BEGIN PRIVATE KEY' ~` returned the bytes `read` refused
+> to open, and `glob '**/*'` listed the key filenames. Every
+> enumerating tool now consults `Filesystem#denied?` on its own
+> results. If you ran a pre-0.0.8 `--yolo` session over a home
+> directory, assume anything under the denylist was reachable.
+
 > **Five worked attacks** — credential exfil via a scraped page, a
 > destructive command in a vendored file, a malicious MCP
 > description, a poisoned MCP *response*, and the compound

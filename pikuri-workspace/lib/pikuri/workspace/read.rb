@@ -161,7 +161,7 @@ module Pikuri
 
         resolved = workspace.resolve_for_read(path)
         return "Error: file not found: #{path}" unless resolved.exist?
-        return directory_refusal(path: path, resolved: resolved) if resolved.directory?
+        return directory_refusal(workspace: workspace, path: path, resolved: resolved) if resolved.directory?
 
         mime = Pikuri::FileType.detect_mime(resolved)
         return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
@@ -206,12 +206,13 @@ module Pikuri
       # Never marks the read ledger — a directory can't be edited, so counting
       # it would clear the read-before-edit gate for a path nobody read.
       #
+      # @param workspace [Workspace]
       # @param path [String] raw path from the LLM (for the message)
       # @param resolved [Pathname] workspace-resolved path
       # @return [String] +"Error: ..."+ carrying the depth-1 listing
-      def self.directory_refusal(path:, resolved:)
+      def self.directory_refusal(workspace:, path:, resolved:)
         base = "Error: #{path} is a directory, not a file."
-        listing = Listing.render(resolved)
+        listing = Listing.render(resolved, filesystem: workspace.filesystem)
         return "#{base} It is empty." if listing.empty?
 
         "#{base} It contains (directories end with `/`):\n#{listing}"

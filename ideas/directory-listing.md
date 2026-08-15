@@ -66,6 +66,50 @@ correctness matters more for a snapshot, and the three blind spots
 `pikuri-workspace/spec` and renders under the wrong parent. (`Listing` is
 immune — it sorts per-directory.)
 
+## Measured 2026-08-15 — the ~325-token figure does not survive
+
+The table above was a **dirs-only, gitignore-respecting** tree with bare root
+filenames. `Listing` renders every file with a size and ignores gitignore, so
+D built on it costs far more. Re-measured with the shipped renderer:
+
+| root | depth 1 | depth 2 | depth 3 |
+|---|---|---|---|
+| this repo | ~259 tok | **~1,114 tok** | ~1,603 tok |
+| a real `$HOME` | ~418 tok | **~2,391 tok** | ~14,647 tok (hits the 50 KB cap) |
+
+So depth 2 on a repo is **3.4× the note's advertised budget**, and on a home
+directory it is 4× over the "couple of KB" cap this note sets for D. Either D
+uses a dirs-only walker (the variant actually measured at ~325) or the budget
+moves. Don't design D against the old number.
+
+Where the computer-shaped binaries actually root (checked, not assumed):
+`pikuri-os/bin/pikuri-os:98`, `pikuri-os/bin/pikuri-computer:98` and
+`pikuri-tui`'s `lib/computer/app.rb:218` all pass `project_root: Dir.pwd` —
+the launch directory. Not guaranteed to be `$HOME`, but for a "helper for this
+machine" started from a shell prompt, very often is.
+
+## Proposal to brainstorm — auto-degrade, not a bare flag
+
+**Needs a brainstorm before implementing; recorded here, not decided.**
+
+Instead of a constructor boolean on `Workspace::Extension`, let the snippet
+size itself: render at depth 2; if that is over budget **or** the workspace
+root is `$HOME`, fall back to depth 1; if still over budget, omit the snippet
+entirely. Never truncate mid-tree. `file_list`'s own default stays depth 1
+either way.
+
+The appeal is that it needs no per-host knowledge — a coding agent in a repo
+gets the depth-2 tree, a computer assistant launched from `$HOME` degrades on
+its own, and no host has to remember to set a flag. Open questions a brainstorm
+has to settle: what "over budget" is in tokens; whether `root == Dir.home` is
+the right proxy or just a special case of the budget test; whether a silent
+degrade is confusing when the model can't tell which depth it got; and whether
+D should use the dirs-only walker given the measurements above.
+
+The argument for D at all, from the user: **if a harness wires the workspace,
+it is safe to assume it wants to work with those files** — orientation is not
+speculative there the way it would be for a chat-only agent.
+
 ## Wiring — settled 2026-08-15
 
 D is a **`Workspace::Extension` system-prompt snippet, living in
@@ -96,7 +140,8 @@ D is a **`Workspace::Extension` system-prompt snippet, living in
 
 Three consequences, none of them blockers:
 
-1. **It can't be unconditional — flag it, default off.** `pikuri-os` and
+1. **It can't be unconditional** (superseded in shape by the auto-degrade
+   proposal above; the *reason* stands). `pikuri-os` and
    `pikuri-computer` both wire
    `Filesystem::AllowAll.new(project_root: Dir.pwd, …)`
    (`pikuri-os/bin/pikuri-os:98`, `pikuri-os/bin/pikuri-computer:98`), so a

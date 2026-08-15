@@ -4,7 +4,8 @@ require 'tmpdir'
 require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Listing do
-  let(:root) { Pathname.new(Dir.mktmpdir('pikuri-listing-')).realpath }
+  let(:root)       { Pathname.new(Dir.mktmpdir('pikuri-listing-')).realpath }
+  let(:filesystem) { Pikuri::Workspace::Filesystem.new(project_root: root) }
 
   after { FileUtils.rm_rf(root) }
 
@@ -14,6 +15,10 @@ RSpec.describe Pikuri::Workspace::Listing do
     File.write(root + rel, content)
   end
 
+  def render(dir = root, depth: 1, fs: filesystem)
+    described_class.render(dir, filesystem: fs, depth: depth)
+  end
+
   describe 'depth 1' do
     it 'lists directories first (slash-suffixed) then files, each group sorted' do
       mkdir('zeta')
@@ -21,7 +26,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       write('b.txt')
       write('a.txt')
 
-      rows = described_class.render(root).split("\n")
+      rows = render(root).split("\n")
 
       assert_equal ['alpha/', 'zeta/', 'a.txt', 'b.txt'],
                    rows.map { |r| r.split('  ').first }
@@ -31,7 +36,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       write('.bashrc')
       mkdir('.config')
 
-      result = described_class.render(root)
+      result = render(root)
 
       assert_includes result, '.config/'
       assert_includes result, '.bashrc'
@@ -41,7 +46,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       mkdir('.git/objects')
       write('README.md')
 
-      refute_includes described_class.render(root), '.git'
+      refute_includes render(root), '.git'
     end
 
     it 'summarises each directory with its immediate child counts' do
@@ -49,31 +54,31 @@ RSpec.describe Pikuri::Workspace::Listing do
       mkdir('lib/two')
       write('lib/a.rb')
 
-      assert_includes described_class.render(root), 'lib/  [2 dirs, 1 file]'
+      assert_includes render(root), 'lib/  [2 dirs, 1 file]'
     end
 
     it 'marks an empty directory rather than counting it as zero of each' do
       mkdir('empty')
 
-      assert_equal 'empty/  [empty]', described_class.render(root)
+      assert_equal 'empty/  [empty]', render(root)
     end
 
     it 'gives each file a human-readable size' do
       write('small.txt', 'x' * 512)
       write('big.txt', 'x' * 4300)
 
-      result = described_class.render(root)
+      result = render(root)
 
       assert_includes result, 'small.txt  512B'
       assert_includes result, 'big.txt  4.2K'
     end
 
     it 'returns "" for a directory with no entries' do
-      assert_equal '', described_class.render(root)
+      assert_equal '', render(root)
     end
 
     it 'raises when the root itself cannot be opened' do
-      assert_raises(Errno::ENOENT) { described_class.render(root + 'nope') }
+      assert_raises(Errno::ENOENT) { render(root + 'nope') }
     end
   end
 
@@ -81,13 +86,13 @@ RSpec.describe Pikuri::Workspace::Listing do
     it 'prints the errno class instead of a fake size for a dangling symlink' do
       File.symlink(root + 'gone.txt', root + 'link.txt')
 
-      assert_equal 'link.txt  [Errno::ENOENT]', described_class.render(root)
+      assert_equal 'link.txt  [Errno::ENOENT]', render(root)
     end
 
     it 'prints the errno class for a self-referential symlink' do
       File.symlink(root + 'loop', root + 'loop')
 
-      assert_equal 'loop  [Errno::ELOOP]', described_class.render(root)
+      assert_equal 'loop  [Errno::ELOOP]', render(root)
     end
 
     it 'prints the errno class for a directory it cannot open' do
@@ -96,7 +101,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       File.chmod(0o000, root + 'locked')
 
       begin
-        assert_equal 'locked/  [Errno::EACCES]', described_class.render(root)
+        assert_equal 'locked/  [Errno::EACCES]', render(root)
       ensure
         File.chmod(0o700, root + 'locked')
       end
@@ -109,7 +114,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       write('lib/a.rb', 'x' * 2048)
       write('top.md')
 
-      result = described_class.render(root, depth: 2)
+      result = render(root, depth: 2)
 
       assert_equal "lib/\n  pikuri/  [1 dir, 0 files]\n  a.rb  2.0K\ntop.md  1B", result
     end
@@ -117,23 +122,23 @@ RSpec.describe Pikuri::Workspace::Listing do
     it 'keeps the summary on directories at the deepest rendered level' do
       mkdir('a/b/c')
 
-      assert_equal "a/\n  b/  [1 dir, 0 files]", described_class.render(root, depth: 2)
+      assert_equal "a/\n  b/  [1 dir, 0 files]", render(root, depth: 2)
     end
 
     it 'marks an expanded directory that turns out to be empty' do
       mkdir('a/empty')
 
-      assert_equal "a/\n  empty/  [empty]", described_class.render(root, depth: 2)
+      assert_equal "a/\n  empty/  [empty]", render(root, depth: 2)
     end
 
     it 'clamps depth to the 1..MAX_DEPTH range' do
       mkdir('a/b/c/d/e')
 
-      deep = described_class.render(root, depth: 99)
-      flat = described_class.render(root, depth: 0)
+      deep = render(root, depth: 99)
+      flat = render(root, depth: 0)
 
-      assert_equal described_class.render(root, depth: described_class::MAX_DEPTH), deep
-      assert_equal described_class.render(root, depth: 1), flat
+      assert_equal render(root, depth: described_class::MAX_DEPTH), deep
+      assert_equal render(root, depth: 1), flat
     end
   end
 
@@ -142,7 +147,7 @@ RSpec.describe Pikuri::Workspace::Listing do
       name = 'a' * 180
       300.times { |i| write(format('%s%03d.txt', name, i)) }
 
-      result = described_class.render(root)
+      result = render(root)
       rows = result.split("\n")
 
       assert_operator result.bytesize, :<, described_class::MAX_BYTES + 200

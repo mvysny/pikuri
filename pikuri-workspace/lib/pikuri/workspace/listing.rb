@@ -5,7 +5,7 @@ module Pikuri
     # Renders a directory as rows a model can orient from — name-sorted,
     # directories first, sizes +ls -h+ style:
     #
-    #   Listing.render(project_root, depth: 2)   # =>
+    #   Listing.render(project_root, filesystem: fs, depth: 2)   # =>
     #   lib/
     #     pikuri/  [3 dirs, 1 file]
     #     version.rb  48B
@@ -23,6 +23,14 @@ module Pikuri
     # vanished mid-listing, +EACCES+ a directory you can't open, +ELOOP+ a
     # symlink cycle. Each implies a different follow-up, and a model reads
     # +EACCES+ unaided. Only the *root* failing raises.
+    #
+    # A credential path is +[denied]+ and is never descended into or +stat+ed
+    # (+.ssh/  [denied]+). Shown rather than omitted because this listing
+    # answers *"what is here"*, where a silent omission is a lie the model
+    # would burn turns re-probing — and +~/.ssh+ existing is not the secret;
+    # its filenames and bytes are. That is why {Filesystem#denied?} is a
+    # *required* constructor-level input here: a default of "nothing is
+    # denied" would let a new caller leak by forgetting.
     #
     # == Implementation details
     #
@@ -63,15 +71,22 @@ module Pikuri
       # @return [Array<String>] size suffixes, +ls -h+ style.
       SIZE_UNITS = %w[B K M G T].freeze
 
+      # @return [String] stands in for the size / summary column on a path
+      #   under {Filesystem#denied?}.
+      DENIED = '[denied]'
+
       # Render +dir+'s entries.
       #
       # @param dir [String, Pathname] absolute directory path
+      # @param filesystem [Filesystem] consulted per row via
+      #   {Filesystem#denied?}; required, never defaulted (see the class doc)
       # @param depth [Integer] levels to descend, clamped to +1..{MAX_DEPTH}+
       # @return [String] newline-joined rows, head-truncated at {MAX_BYTES};
       #   +""+ when +dir+ has no entries
       # @raise [SystemCallError] if +dir+ itself can't be opened
-      def self.render(dir, depth: DEFAULT_DEPTH)
-        rows = child_rows(dir.to_s, depth: depth.clamp(1, MAX_DEPTH), indent: '')
+      def self.render(dir, filesystem:, depth: DEFAULT_DEPTH)
+        rows = child_rows(dir.to_s, filesystem: filesystem,
+                          depth: depth.clamp(1, MAX_DEPTH), indent: '')
         return '' if rows.empty?
 
         content, marker = Search::Utils.head_truncate(
@@ -84,10 +99,14 @@ module Pikuri
       #
       # @return [Array<String>]
       # @raise [SystemCallError] if +dir+ can't be opened
-      def self.child_rows(dir, depth:, indent:)
+      def self.child_rows(dir, filesystem:, depth:, indent:)
         dirs, files = partition_children(dir)
-        dirs.flat_map { |name| dir_rows(File.join(dir, name), name: name, depth: depth, indent: indent) } +
-          files.map { |name| file_row(File.join(dir, name), name: name, indent: indent) }
+        dirs.flat_map { |name|
+          dir_rows(File.join(dir, name), name: name, filesystem: filesystem,
+                                         depth: depth, indent: indent)
+        } + files.map { |name|
+          file_row(File.join(dir, name), name: name, filesystem: filesystem, indent: indent)
+        }
       end
       private_class_method :child_rows
 
@@ -96,11 +115,13 @@ module Pikuri
       # a bare +foo/+ with nothing under it reads as truncation.
       #
       # @return [Array<String>]
-      def self.dir_rows(absolute, name:, depth:, indent:)
+      def self.dir_rows(absolute, name:, filesystem:, depth:, indent:)
         label = "#{indent}#{name}/"
+        return ["#{label}#{GAP}#{DENIED}"] if filesystem.denied?(absolute)
         return ["#{label}#{GAP}#{summary(absolute)}"] if depth <= 1
 
-        sub = child_rows(absolute, depth: depth - 1, indent: indent + INDENT)
+        sub = child_rows(absolute, filesystem: filesystem, depth: depth - 1,
+                                   indent: indent + INDENT)
         sub.empty? ? ["#{label}#{GAP}[empty]"] : [label] + sub
       rescue SystemCallError => e
         ["#{label}#{GAP}[#{e.class}]"]
@@ -118,7 +139,9 @@ module Pikuri
       private_class_method :summary
 
       # @return [String] one file's row, e.g. +"version.rb  48B"+
-      def self.file_row(absolute, name:, indent:)
+      def self.file_row(absolute, name:, filesystem:, indent:)
+        return "#{indent}#{name}#{GAP}#{DENIED}" if filesystem.denied?(absolute)
+
         "#{indent}#{name}#{GAP}#{human_size(File.size(absolute))}"
       rescue SystemCallError => e
         "#{indent}#{name}#{GAP}[#{e.class}]"

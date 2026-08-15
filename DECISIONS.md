@@ -79,6 +79,87 @@ design.
 
 ---
 
+## D-walked-path-denylist — Two layers, and the cheap one is never the guarantee (2026-08-15)
+
+**Status:** Accepted, shipped. `Filesystem#denied?` plus `rg --glob` pruning
+across `Listing` / `Search::Glob` / `Search::Grep`.
+
+**Context.** `AllowAll`'s credential denylist (`~/.ssh`, `~/.aws`, …,
+`/etc/shadow`) was enforced in exactly one place: `resolve_for_read` /
+`resolve_for_write`. Those only ever see a path the **model supplied**. A path
+a tool **walked** to on its own reaches no `resolve_` call — so, measured
+against a synthetic home:
+
+| call | before |
+|---|---|
+| `read .ssh/id_rsa` | refused |
+| `glob '**/*'` | listed `.ssh/id_rsa` |
+| `grep 'PRIVATE KEY'` | **returned the key's contents** |
+
+Adding `file_list` would have made a third leak (it enumerated the key
+filenames at depth 2), which is how the gap surfaced. `pikuri-code --yolo`'s
+own comment claimed "every path resolves except those under the credential
+denylist" — false for two of its own tools.
+
+**Decision.** Two layers, with an explicit ordering of trust:
+
+1. **`Filesystem#denied?` on every walked result** — the guarantee. Base
+   `Filesystem` returns `false` (a scoped workspace contains by its
+   readable/writable ceiling instead); `AllowAll` symlink-resolves the
+   candidate and tests containment against the same denylist
+   `resolve_unrestricted` uses.
+2. **`rg --glob '!<rel>'` pruning** via `Filesystem#denied_roots` — an
+   optimization, so rg never walks a subtree whose results would be discarded.
+
+**Layer 2 is never load-bearing**, and that is the point of writing it down: it
+goes silently partial whenever a denied root sits outside the search root, and
+an rg flag change could weaken it with no test going red. A spec runs `glob`
+and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
+
+**Alternatives rejected.**
+
+- **Pruning alone (layer 2 only).** The tempting "just exclude it from rg"
+  fix. Rejected on the failure mode, not the coverage: an optimization that
+  quietly stops working leaves no trace, whereas a filter on the data path
+  fails closed. The rejected-lines spec exists to keep this honest.
+- **A cheap lexical prefix test instead of symlink resolution.** Sound for the
+  rg tools specifically — neither passes `-L`, so rg never follows a symlink
+  and its paths are always real. Rejected anyway: `Listing` *does* follow
+  symlinks (`File.directory?`), so a `decoy → ~/.ssh` inside the workspace
+  would be descended into. Two strengths of the same predicate is a subtle
+  thing to get wrong for a saving nobody has measured — realpath is
+  microseconds, and layer 2 keeps the volume small. The rg-symlink fact is
+  recorded as grounds to weaken it later *under profiling*, not now.
+- **Silently omitting denied entries from `file_list`.** Rejected: that tool
+  answers *"what is here"*, where an omission is a lie the model burns turns
+  re-probing. `~/.ssh` existing is not the secret; its filenames and bytes
+  are — so the row shows `[denied]`, matching what `read` already says out
+  loud. `glob`/`grep` answer *"what matches"*, where a non-match is not a lie,
+  so they omit silently. The asymmetry is the question each tool answers, not
+  inconsistency.
+- **Scoping the denylist to reads and documenting listing/searching as out of
+  scope.** Not defensible while `grep` returned key material.
+
+**Consequences.**
+
+- **`Listing.render` takes `filesystem:` as a required keyword.** No default.
+  An optional "nothing is denied" default is precisely how a new caller leaks
+  by forgetting, and this is the seam a future path-walking tool will copy.
+- **The `denylist: []` hosts are untouched.** `pikuri-os`, `pikuri-computer`
+  and `pikuri-tui-computer` pass an empty denylist deliberately (their `bash`
+  sees the whole disk under `FullFsNoNet`, so half a floor is theater), so
+  `denied?` short-circuits to `false` and they pay nothing. This fix does not
+  quietly re-close a door someone opened on purpose — a spec pins that too.
+- **The grep filter may over-match.** It drops any output line starting with a
+  denied relative prefix rather than parsing where the path ends (a filename
+  containing `:` makes that ambiguous), so a `.netrc.bak` line goes too.
+  Over-filtering is the safe direction for a credential guard.
+- **Documented in `SECURITY.md` rather than quietly fixed.** pikuri is alpha
+  and rarely deployed; naming the hole and the exposure window costs less than
+  the doc-debt of a defense that was advertised before it worked.
+
+---
+
 ## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
 
 **Status:** Accepted. Shipped: `Workspace::Listing`, `read`'s recovering

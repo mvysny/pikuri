@@ -4,6 +4,14 @@ require 'tmpdir'
 require 'fileutils'
 
 RSpec.describe Pikuri::Workspace::Search::Utils do
+  # A scoped Filesystem denies nothing, so these assert the refusal's shape;
+  # the denylist's effect on the listing is covered in denylist_spec.rb.
+  let(:filesystem) { Pikuri::Workspace::Filesystem::AllowAll.new(project_root: Dir.pwd, denylist: []) }
+
+  def refusal_for(root, verb:)
+    described_class.oversized_root_refusal(root, filesystem: filesystem, verb: verb)
+  end
+
   describe '.oversized_root_refusal' do
     # Point $HOME at a controlled tree so the refusal's listing is assertable
     # (Dir.home reads $HOME on Linux). realpath the temp dir up front so it
@@ -27,11 +35,11 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
     end
 
     it 'returns nil for an ordinary subdirectory' do
-      assert_nil described_class.oversized_root_refusal(@home + 'work', verb: 'search')
+      assert_nil refusal_for(@home + 'work', verb: 'search')
     end
 
     it 'refuses the whole home dir and lists its immediate entries' do
-      result = described_class.oversized_root_refusal(@home, verb: 'search')
+      result = refusal_for(@home, verb: 'search')
 
       assert result.start_with?('Error: refusing to search from'), result[0, 80].inspect
       assert_includes result, 'the whole home directory'
@@ -41,19 +49,19 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
     end
 
     it 'lists directories (slash-suffixed) before files, each group sorted' do
-      result = described_class.oversized_root_refusal(@home, verb: 'list')
+      result = refusal_for(@home, verb: 'list')
       listing = result.split(":\n", 2).last
 
       assert_equal ".config/  [empty]\nwork/  [empty]\n.bashrc  1B\ntodo.txt  1B", listing
     end
 
     it 'threads the verb into the message' do
-      assert_includes described_class.oversized_root_refusal(@home, verb: 'list'),
+      assert_includes refusal_for(@home, verb: 'list'),
                       'refusing to list from'
     end
 
     it 'refuses the filesystem root' do
-      result = described_class.oversized_root_refusal(Pathname.new('/'), verb: 'search')
+      result = refusal_for(Pathname.new('/'), verb: 'search')
 
       assert result.start_with?('Error: refusing to search from /'), result[0, 80].inspect
       assert_includes result, 'the whole filesystem root'
@@ -61,7 +69,7 @@ RSpec.describe Pikuri::Workspace::Search::Utils do
 
     it 'refuses a parent of home (broader than home itself) and lists it' do
       parent = @home.parent
-      result = described_class.oversized_root_refusal(parent, verb: 'search')
+      result = refusal_for(parent, verb: 'search')
 
       assert result.start_with?("Error: refusing to search from #{parent}"), result[0, 120].inspect
       assert_includes result, 'a parent of your home directory'

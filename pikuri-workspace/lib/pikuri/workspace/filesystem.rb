@@ -296,6 +296,27 @@ module Pikuri
         nil
       end
 
+      public
+
+      # Whether +path+ sits under a credential denylist entry.
+      #
+      # {#resolve_for_read} gates a path the *model* supplied; this gates a
+      # path a tool **walked** to on its own (a {Listing} row, an +rg+ hit),
+      # which no +resolve_+ call ever sees. A scoped Filesystem has no
+      # denylist — containment is the readable/writable ceiling — so this is
+      # always +false+ here; {AllowAll} overrides it.
+      #
+      # @param path [String, Pathname]
+      # @return [Boolean]
+      def denied?(_path) = false
+
+      # @return [Array<Pathname>] the denied roots, for callers that can prune
+      #   a walk up front (+rg --glob '!…'+) instead of filtering its results.
+      #   Empty here; see {#denied?}.
+      def denied_roots = []
+
+      private
+
       # Rewrite +/tmp+ / +/tmp/foo+ inputs to land under {#temp} when
       # {#alias_tmp_to_temp} is set; other inputs pass through. In the base
       # class so {AllowAll} inherits it.
@@ -332,9 +353,11 @@ module Pikuri
       # only behind an outer egress boundary, since bash bypasses it anyway.
       # Prefer the parameter over subclassing.
       class AllowAll < Filesystem
-        # Default credential floor even ALLOW_ALL refuses (read and write) — the
-        # default +denylist:+, so an unconfigured AllowAll is safe out of the
-        # box; widen only by explicitly passing a smaller list. Expanded via
+        # Default credential floor even ALLOW_ALL refuses (read *and* write, and
+        # {#denied?} for anything a tool walks to) — the default +denylist:+, so
+        # an unconfigured AllowAll keeps its credential floor out of the box;
+        # widen only by explicitly passing a smaller list. It is a floor, not a
+        # boundary: a co-wired {Pikuri::Code::Bash} walks around it entirely. Expanded via
         # +ENV['HOME']+ at load, unioned with the +/root+ variants (dev-container
         # default user). Frozen.
         DEFAULT_CREDENTIAL_DENYLIST = begin
@@ -400,7 +423,39 @@ module Pikuri
           resolve_unrestricted(path)
         end
 
+        # The walked-path gate (see {Filesystem#denied?}). Symlink-resolves
+        # +path+ first, so a +decoy → ~/.ssh+ inside the workspace is caught
+        # even though nothing ever handed it to a +resolve_+ call.
+        #
+        # @param path [String, Pathname]
+        # @return [Boolean]
+        def denied?(path)
+          !denying_root(normalize(path)).nil?
+        end
+
+        # @return [Array<Pathname>]
+        def denied_roots = @denylist
+
         private
+
+        # @param resolved [Pathname] symlink-resolved absolute path
+        # @return [Pathname, nil] the denylist entry containing +resolved+
+        def denying_root(resolved)
+          @denylist.find do |denied|
+            candidate = denied.exist? ? denied.realpath : denied
+            resolved == candidate ||
+              resolved.to_s.start_with?(candidate.to_s + File::SEPARATOR)
+          end
+        end
+
+        # @return [Pathname] symlink-resolved; falls back to a lexical cleanup
+        #   for a path that doesn't exist (the agent creating a credential dir
+        #   the user lacks must still be blocked).
+        def normalize(path)
+          Pathname.new(path).realpath
+        rescue SystemCallError
+          Pathname.new(path).expand_path.cleanpath
+        end
 
         def resolve_unrestricted(path)
           path = apply_tmp_alias(path)
@@ -413,11 +468,9 @@ module Pikuri
           base = existing.realpath
           resolved = base + cleaned.relative_path_from(existing)
 
-          @denylist.each do |denied|
-            candidate = denied.exist? ? denied.realpath : denied
-            next unless resolved == candidate ||
-                        resolved.to_s.start_with?(candidate.to_s + File::SEPARATOR)
-
+          # +resolved+ is already realpath-based, so it goes to the shared
+          # containment test directly rather than through {#denied?}.
+          if (denied = denying_root(resolved))
             raise Error,
                   "path '#{path}' resolves under a denied credential location " \
                   "('#{denied}') — this AllowAll's denylist blocks it. " \

@@ -38,6 +38,14 @@ module Pikuri
       # +count+ (+path:count+). Use +files_with_matches+ to scope a broad search
       # cheaply before paying for +content+.
       #
+      # == Credential paths
+      #
+      # Pruned twice: +rg --glob '!…'+ keeps rg out of the subtree, and every
+      # surviving output line whose path sits under a denied root is dropped —
+      # the guarantee if the pruning ever goes partial (see
+      # {Utils.reject_denied_lines}). Without it a single
+      # +grep 'BEGIN PRIVATE KEY'+ returns what {Read} refuses to open.
+      #
       # == Truncation / exit codes
       #
       # Head-truncated to {MAX_BYTES} (head-only — grep tails carry less signal;
@@ -174,14 +182,18 @@ module Pikuri
             search_target = rel
           end
 
-          if (refusal = Utils.oversized_root_refusal(resolved_root, verb: 'search'))
+          if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
+                                                     verb: 'search'))
             return refusal
           end
 
+          denied_prefixes = Utils.denied_prefixes(filesystem: workspace.filesystem,
+                                                  root: workspace.project_root)
           argv = build_argv(pattern: pattern, glob: glob,
                             case_insensitive: case_insensitive,
                             output_mode: output_mode, path: search_target,
-                            include_gitignored: include_gitignored)
+                            include_gitignored: include_gitignored,
+                            denied_globs: denied_prefixes.flat_map { |rel| ['--glob', "!#{rel}"] })
 
           result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
           exit_code = result.status.exitstatus
@@ -189,7 +201,8 @@ module Pikuri
           case exit_code
           when 0
             format_output(result.output, output_mode: output_mode,
-                          pattern: pattern, path: path)
+                          pattern: pattern, path: path,
+                          denied_prefixes: denied_prefixes)
           when 1
             no_match_message(pattern: pattern, path: path)
           else
@@ -204,7 +217,7 @@ module Pikuri
         #
         # @return [Array<String>]
         def self.build_argv(pattern:, glob:, case_insensitive:, output_mode:, path:,
-                            include_gitignored:)
+                            include_gitignored:, denied_globs: [])
           argv = [
             'rg',
             '--line-number',
@@ -216,6 +229,7 @@ module Pikuri
             '--max-columns-preview',
             '--sort=path'
           ]
+          argv.concat(denied_globs)
           argv << '--no-ignore' if include_gitignored
           argv << '-i' if case_insensitive
           argv.push('--glob', glob) if glob
@@ -232,8 +246,10 @@ module Pikuri
         # append a count footer.
         #
         # @return [String]
-        def self.format_output(raw, output_mode:, pattern:, path:)
-          cleaned = strip_dot_slash(raw)
+        def self.format_output(raw, output_mode:, pattern:, path:, denied_prefixes:)
+          # The guarantee, after build_argv's pruning did the cheap 99%. Runs on
+          # ./-stripped text so the prefixes are workspace-relative like rg's.
+          cleaned = Utils.reject_denied_lines(strip_dot_slash(raw), prefixes: denied_prefixes)
           content, truncation_marker = head_truncate(cleaned)
           stripped = content.chomp
 

@@ -35,6 +35,12 @@ module Pikuri
       # explicit +--glob+, so it survives +--no-ignore+). Output +./+ prefixes
       # (from search path +.+) are stripped post-rg.
       #
+      # == Credential paths
+      #
+      # Pruned twice: +rg --glob '!…'+ keeps rg out of the subtree, and a
+      # {Filesystem#denied?} pass over the surviving list is the guarantee if
+      # that ever goes partial (see {Utils.denied_globs}).
+      #
       # == Sort / truncation / exit codes
       #
       # mtime-descending in Ruby (path-ascending tiebreaker), one +stat+ per
@@ -153,11 +159,14 @@ module Pikuri
             search_target = rel
           end
 
-          if (refusal = Utils.oversized_root_refusal(resolved_root, verb: 'list'))
+          if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
+                                                     verb: 'list'))
             return refusal
           end
 
-          argv = build_argv(path: search_target, include_gitignored: include_gitignored)
+          argv = build_argv(path: search_target, include_gitignored: include_gitignored,
+                            denied_globs: Utils.denied_globs(filesystem: workspace.filesystem,
+                                                             root: workspace.project_root))
           result = Pikuri::Subprocess.spawn(*argv, chdir: workspace.project_root.to_s).wait
           exit_code = result.status.exitstatus
 
@@ -185,7 +194,7 @@ module Pikuri
         # exclusion is an explicit +--glob+, so it survives +--no-ignore+.
         #
         # @return [Array<String>]
-        def self.build_argv(path:, include_gitignored:)
+        def self.build_argv(path:, include_gitignored:, denied_globs:)
           argv = [
             'rg',
             '--files',
@@ -193,6 +202,7 @@ module Pikuri
             '--hidden',
             '--glob', '!.git/*'
           ]
+          argv.concat(denied_globs)
           argv << '--no-ignore' if include_gitignored
           argv.push('--', path)
         end
@@ -206,6 +216,8 @@ module Pikuri
         def self.format_output(raw, workspace:, pattern:, path:)
           all_paths = raw.split("\n").reject(&:empty?).map { |p| p.sub(%r{\A\./}, '') }
           paths = all_paths.select { |p| File.fnmatch?(pattern, p, FNMATCH_FLAGS) }
+          # The guarantee, after build_argv's pruning did the cheap 99%.
+          paths = paths.reject { |p| workspace.filesystem.denied?(workspace.project_root + p) }
           return no_match_message(pattern: pattern, path: path) if paths.empty?
 
           sorted = mtime_sort(paths, workspace.project_root)

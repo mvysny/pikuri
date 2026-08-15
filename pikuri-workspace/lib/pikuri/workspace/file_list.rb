@@ -100,11 +100,12 @@ module Pikuri
         return "Error: path not found: #{path}" unless resolved.exist?
         return "Error: #{path} is a file, not a directory; use the read tool to view it." if resolved.file?
 
-        if (refusal = Search::Utils.oversized_root_refusal(resolved, verb: 'list'))
+        if (refusal = Search::Utils.oversized_root_refusal(resolved, filesystem: workspace.filesystem,
+                                                          verb: 'list'))
           return refusal
         end
 
-        listing = Listing.render(resolved, depth: depth)
+        listing = Listing.render(resolved, filesystem: workspace.filesystem, depth: depth)
         listing.empty? ? '(Empty directory)' : listing
       rescue Filesystem::Error => e
         "Error: #{e.message}"
