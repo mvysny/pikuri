@@ -40,8 +40,9 @@ does `warn` + `exit 1` (`pikuri-code/bin/pikuri-code:366`).
 / demo entry points (CLAUDE.md, Layout), and dying on overflow is that
 deliberate simplicity in action — the right move for a script whose job
 is to be readable end-to-end. A real host (`pikuri-tui`) can and should
-do something better; *what* is an open question for its own session, not
-this note's to answer.
+do something better; *what* is
+[`context-overflow-behavior.md`](context-overflow-behavior.md)'s
+question, not this note's.
 
 That matters here because it changes the size of the prize. Against
 `exit 1`, a pre-wall handoff written by the model saves a session that
@@ -50,8 +51,8 @@ auto-clears with a summary, or lets the human rewind, most of that value
 evaporates — such a host can summarize the history *after* the fact and
 doesn't need the model to have volunteered anything in advance.
 
-**So this note is downstream of the tui's overflow decision, and should
-not land before it.** If the host handles overflow well, the honest
+**So this note is downstream of `context-overflow-behavior.md`, and
+should not land before it.** If the host handles overflow well, the honest
 outcome may be "tell the model nothing" (see the steelman below).
 
 With that caveat, the test for the feature is: **what can the model do
@@ -187,8 +188,8 @@ host anyone will actually use.
 
 ## Graduation plan
 
-Blocked on `pikuri-tui`'s overflow decision — see above. Once that's
-settled, the fork here is real (per-turn vs. late-only vs. nothing), so
+Blocked on [`context-overflow-behavior.md`](context-overflow-behavior.md)
+— see above. Once that's settled, the fork here is real (per-turn vs. late-only vs. nothing), so
 this earns a `DECISIONS.md` entry whenever it lands — including the "tell
 it nothing" branch, which is a legitimate outcome and would otherwise get
 re-proposed every time someone rereads the feedback file.
