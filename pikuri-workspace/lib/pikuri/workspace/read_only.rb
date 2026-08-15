@@ -8,6 +8,11 @@ module Pikuri
     # constructs one and hands it to {Workspace::Extension} (which threads it
     # into Write/Edit) and to whatever drives it.
     #
+    # Enforcement is the point, so a prompt-only "plan mode" is not a cheaper
+    # version of this: an outside-model review (Grok 4.6, 2026-08) rated the
+    # posture it *couldn't* talk its way past over being told to "think step by
+    # step and then start editing".
+    #
     # == What this does NOT gate: Bash
     #
     # This governs only {Write}/{Edit}, **not** {Pikuri::Code::Bash}. A shell

@@ -10,6 +10,10 @@ module Pikuri
     # parent delegates a lookup ("find where X is defined and how it's
     # wired") so the intermediate results don't pollute its context; the
     # child returns one paragraph with +path:line+ citations.
+    # That return contract is the load-bearing half — a miner handing back its
+    # transcript or the file bodies would *move* the parent's context cost, not
+    # spend it. An outside-model review (Grok 4.6, 2026-08) confirmed the shape
+    # from the parent's seat; keep the discipline in +persona-file-miner+.
     #
     # == Privilege-separation
     #

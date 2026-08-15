@@ -37,6 +37,9 @@ module Pikuri
       # +content+ (default, +path:line:content+) · +files_with_matches+ (paths) ·
       # +count+ (+path:count+). Use +files_with_matches+ to scope a broad search
       # cheaply before paying for +content+.
+      # The cheap modes and the {MAX_BYTES} cap are one budget lever, confirmed
+      # as such by an outside-model review (Grok 4.6, 2026-08): collapsing to a
+      # +content+-only grep is a regression, not a simplification.
       #
       # == Credential paths
       #

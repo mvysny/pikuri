@@ -17,6 +17,11 @@ module Pikuri
     # the catalog is non-empty. The bound catalog rides in the +execute+
     # closure, so a sub-agent inheriting the tool resolves names against
     # the same catalog the parent saw.
+    #
+    # The prompt pays per skill *installed*, this tool pays per skill
+    # *used* — the split an outside-model review (Grok 4.6, 2026-08)
+    # picked out over dumping every body up front. Pre-injecting bodies
+    # to save the round-trip trades the cheap axis for the expensive one.
     class SkillTool < Pikuri::Tool
       # Description shown to the LLM (opencode-shape; inventory omitted —
       # see the class header).

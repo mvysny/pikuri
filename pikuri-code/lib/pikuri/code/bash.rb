@@ -103,6 +103,12 @@ module Pikuri
       # bullets. Per-parameter constraints (default, max) live in the
       # parameter descriptions.
       #
+      # The +Avoid ... cat / rg / find+ bullet is load-bearing, not etiquette —
+      # a shell read skips the +cat -n+ numbering {Pikuri::Workspace::Edit}
+      # anchors on, the byte caps, the read-before-edit ledger and the path
+      # gate. (An outside-model review — Grok 4.6, 2026-08 — called the split
+      # the right bet; nothing tests that the model obeys the bullet.)
+      #
       # @return [String]
       DESCRIPTION = <<~DESC
         Run a bash command in the workspace.

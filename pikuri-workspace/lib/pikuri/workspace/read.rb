@@ -15,6 +15,9 @@ module Pikuri
     # models recognize it; opencode's +"<n>: "+ saves tokens but trades
     # familiarity, pi omits numbers (cheapest, but no range citation or {Edit}
     # boundaries).
+    # The numbering and {DESCRIPTION}'s read-a-larger-window nudge were
+    # confirmed as a pair by an outside-model review (Grok 4.6, 2026-08) —
+    # don't trade either back for tokens.
     #
     # == Truncation rules
     #

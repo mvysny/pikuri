@@ -275,6 +275,12 @@ sandbox = if sandbox_enabled
 #   * project — AGENTS.md, else CLAUDE.md, at the project root (AGENTS.md wins)
 # Each is injected verbatim under a header naming its source path, so the
 # LLM can tell user-wide preferences from this project's rules.
+#
+# An outside-model review (Grok 4.6, 2026-08) found the project file the
+# most valuable thing in the prefix — "the decisions I would otherwise
+# rediscover, and get wrong" — and the base prompt's guardrails
+# project-shaped rather than safety theater. The same review calls the
+# standing prefix too heavy: when it gets trimmed, these two go last.
 system_prompt = Pikuri.prompts(:'coding-system-prompt', :'agent-loop')
 context_paths = [
   Pathname.new(Dir.home).join('.claude', 'CLAUDE.md'),

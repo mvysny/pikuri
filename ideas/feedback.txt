@@ -10,6 +10,15 @@ in DECISIONS.md. Settled so far: the directory listing (shipped as
 file_list + the boot snapshot — D-directory-listing), the calculator
 (kept — D-keep-calculator).
 
+The "What works" section is also gone. Praise has no fork to log, so it
+graduated to the yardoc of each symbol it confirmed, phrased as what not
+to trade away: bash.rb's DESCRIPTION (the shell-vs-file-tool split),
+read.rb (cat-n numbering + read-a-larger-window), grep.rb (the cheap
+output modes + the byte cap), file_miner.rb (one paragraph + path:line),
+skill_tool.rb (on-demand loading), read_only.rb (plan mode enforced, not
+asked for), and bin/pikuri-code's prompt build (the two instruction
+layers + the base prompt's guardrails).
+
 Overall verdict
 ---------------
 
@@ -20,38 +29,6 @@ conventions. I would work in this without fighting it.
 
 If you only do two things: add a directory listing, and surface a
 context-budget hint each turn. Everything else is polish.
-
-
-What works
-----------
-
-File tools instead of shell for reading. `read` / `grep` / `glob` /
-`edit` as first-class tools, with an explicit "don't `cat`/`rg`/`find`
-through bash" rule, is the right split. Line-numbered reads, 50 KB grep
-caps, `output_mode: count|files_with_matches`, and "read a real window,
-not three-line slices" all match how I'd actually work.
-
-Context is treated as scarce. Sub-agents that return one paragraph plus
-`file:line` refs, on-demand skills instead of a 20-page dump, plan mode
-as a read-only posture — that's the difference between a harness that
-stays coherent on a large repo and one that drowns. `file_miner` in
-particular is the right shape: recon that doesn't pollute the main
-thread.
-
-Project memory is unusually good. `AGENTS.md` is the real system prompt
-for this repo: what we own vs pikuri, the UI-thread rule, "extract
-blocks / don't share App scaffolding", ideas-folder graduation. Most
-harnesses give you a generic "you are a senior engineer". This one tells
-me the decisions I would otherwise rediscover (and get wrong).
-
-Guardrails that match the work. Don't commit unless asked. Don't
-silently pick an architecture when there's a real fork. Match
-neighboring code. Run the suite after a substantive change. Our bugs
-raise, library exceptions get logged. Those are project-shaped rules,
-not generic safety theater.
-
-Plan mode as a tool, not a vibe. Disabling writes until a plan is
-approved is better than "think step by step and then start editing".
 
 
 What I'd change
