@@ -258,11 +258,17 @@ Also rejected:
 
 ### Docs sweep: drop the count from "five file tools"
 
-`"five file tools"` is load-bearing in nine places — `CLAUDE.md:27`, the
-Workspace seam at `CLAUDE.md:97`, `lib/pikuri-workspace.rb:8`,
-`extension.rb:5`, `workspace.rb:25`, `DESIGN.md:44`,
-`trifecta_legs_spec.rb:5`, `CHANGELOG.md` (historical, leave alone), and a spec
-*name* (`it 'registers all five file tools'`).
+`"five file tools"` is load-bearing in sixteen places, not the nine first
+counted here: `CLAUDE.md:27`, the Workspace seam at `CLAUDE.md:97`,
+`lib/pikuri-workspace.rb:8`, `extension.rb:5`, `workspace.rb:25`,
+`DESIGN.md:44`, `trifecta_legs_spec.rb:5`, a spec *name*
+(`it 'registers all five file tools'`), and the eight the first sweep missed —
+`pikuri-code/bin/pikuri-code:411`, `pikuri-code/spec/pikuri/code/dry_run_spec.rb:35`,
+`pikuri-os/bin/pikuri-os:174`, `pikuri-os/bin/pikuri-computer:167`,
+`pikuri-os/pikuri-os.gemspec:52`, `book/os-assistant.md:409`,
+`book/trifecta-detector.md:48` ("wires five file tools"), plus `CHANGELOG.md`
+(historical, leave alone). Re-grep before the sweep rather than trusting this
+list.
 
 Collapse to **"file tools"** — no counting, can't go stale. This is a pure
 docs/naming cleanup with no dependency on the tool, so it can land as its own
@@ -318,20 +324,70 @@ Unlike `file_list`, D may keep the `rg --files` prefix derivation: gitignore
 correctness matters more for a snapshot, and the three blind spots are
 tolerable when the tool can always answer the follow-up.
 
-Open questions:
+### Wiring — settled 2026-08-15
 
-- Does it go stale mid-session (agent creates files)? Re-inject, or accept drift?
-- Where does it wire — system prompt at boot (`bin/`-level), an Extension, or
-  `Control::Interloper` with `kind: :system`? The Interloper is already exactly
-  *"reference text landing as `add_message(:system)`"*, and it's also the
-  cheapest answer to staleness: re-inject mid-session instead of choosing
-  between a stale snapshot and none.
-- Does it belong in `pikuri-workspace` (owns the workspace) or the binaries
-  (own the prompt)?
+D is a **`Workspace::Extension` system-prompt snippet, living in
+`pikuri-workspace`**, and it is allowed to go stale.
+
+- **Accept drift, and say so in the snippet.** Label the tree a boot snapshot
+  and add one line: a file or folder you can't find here may simply be newer
+  than the snapshot — call `file_list` for the current state. Cheaper than any
+  refresh mechanism, and drift is *already* bounded without one —
+  `Agent#assemble_system_prompt` (`agent.rb:490`) re-pulls every extension's
+  snippets on `clear_conversation`, so the snapshot re-takes itself on `/clear`.
+- **Extension, not `Control::Interloper`.** `system_prompt_snippets` is exactly
+  this hook and already carries dynamic content (`Skill::Extension`,
+  `Mcp::Extension`). The Interloper is also the *more* expensive answer to
+  staleness, not the cheaper one guessed above: a snippet is a stable prefix,
+  while a re-injected `kind: :system` item appends a message every time —
+  growing history and busting the prompt cache.
+- **`pikuri-workspace`, riding the existing `Workspace::Extension`.** The
+  listing needs the workspace to know its root, and is useless without the
+  read/grep/glob/edit/write tools the same extension wires. Cost is a constant
+  plus a line in `#system_prompt_snippets` — no new wiring point.
+  - It's also the only home where the staleness line may *name* `file_list`. A
+    `prompts/<bin>.txt` version couldn't — CLAUDE.md's "No tool names in a
+    main/binary system prompt" tripwire would hit it. That rule's target is
+    prompt-vs-wiring drift, and a snippet contributed by the extension that
+    *registers* the tool structurally can't drift: the `Tasks::Extension` /
+    `SubAgentTool.available_agents_snippet` precedent.
+
+Three consequences, none of them blockers:
+
+1. **It can't be unconditional — flag it, default off.** `pikuri-os` and
+   `pikuri-computer` both wire
+   `Filesystem::AllowAll.new(project_root: Dir.pwd, …)`
+   (`pikuri-os/bin/pikuri-os:98`, `pikuri-os/bin/pikuri-computer:98`), so a
+   launch from `$HOME` walks a home directory. Head-truncating that to the
+   couple-of-KB cap buys two KB of noise, not orientation — so **over budget,
+   drop a depth level, then omit entirely; never truncate mid-tree.** A
+   constructor flag on `Workspace::Extension` (default off, on in
+   `pikuri-code`) leaves the call with the host that knows its root is a repo.
+   Per-binary asymmetry is already established: `bin/pikuri-code:287` appends
+   `"Project root: …"` and the others don't.
+2. **`FILE_MINER` never sees D.** `SubAgentTool` selects tool *instances* from
+   the parent by name and wires no extensions (`sub_agent_tool.rb:34,149`), so
+   no snippet reaches a sub-agent. That dents the depth-1 argument under
+   *Naming*: "D solves orientation at boot, so the tool's remaining job is the
+   targeted follow-up" holds for the main agent and fails for the one persona
+   this note calls the neediest orienteer. Fix in
+   `prompts/persona-file-miner.txt` — persona prompts are the sanctioned
+   carve-out that may name their tools, so tell the miner to open with a
+   `file_list` at depth 2. Depth 1 survives as the *default*; the miner just
+   passes an argument.
+3. **Two walkers in one gem, deliberately.** D keeps the `rg --files` prefix
+   derivation while `file_list` uses `Dir.children`, and once D lands in
+   pikuri-workspace the two sit side by side — against this note's own "one
+   listing formatter, not two". It stands, because the budgets differ: a boot
+   snapshot that renders `node_modules/` has spent its whole allowance on
+   nothing, so gitignore correctness outranks the three blind spots there,
+   while a tool answering *"what is actually in this directory?"* can't afford
+   them. One formatter, two walkers — record the reason in the `D-` entry so a
+   later reader doesn't read it as drift.
 
 ## Open questions
 
-None left. This is ready to implement.
+None left, D's wiring included. This is ready to implement.
 
 (Settled last: `[4 dirs, 25 files]` over `[4 folders, …]` and over a terser
 `(4d, 25f)` — the terse form is inferable from context, but we're already
@@ -347,5 +403,8 @@ spending a row per entry, so the few extra tokens buy unambiguity.)
   Conventions (one line, pointing at nothing).
 - the tool itself + its rationale → yardoc on `Workspace::FileList`
 - `FILE_MINER`'s new toolset → `SECURITY.md:132` row + the trifecta map
-- if D ships: a line in the relevant seam/convention in `CLAUDE.md`
+- if D ships: a line in the relevant seam/convention in `CLAUDE.md`; the
+  boot-snapshot flag + the omit-don't-truncate rule → yardoc on
+  `Workspace::Extension`; the miner's opening `file_list` →
+  `prompts/persona-file-miner.txt`; *two walkers, one formatter* → the `D-` entry
 - `CHANGELOG.md` one-liner
