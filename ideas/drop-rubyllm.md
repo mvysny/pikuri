@@ -1,22 +1,54 @@
 # Dropping ruby_llm for a hand-rolled OpenAI-compatible client
 
-Status: **considered, not decided — deliberately parked.** This note
+Status: **reviewed 2026-08-16 — keep ruby_llm, still parked.** This note
 exists to get the "nuke ruby_llm" argument *out of the way* so it stops
 contaminating bug-fix decisions. Nothing here is scheduled. The
 decision criteria at the bottom are the live part; revisit only when one
-of them actually trips.
+of them actually trips. The 2026-08 review resolved the origin bug and
+corrected the sizing — see "How the origin bug ended" and the sizing
+caveats.
 
 Origin: the streaming error-parse crash of 2026-07 (`TypeError: String
 does not have #dig` in `ruby_llm/providers/openai/streaming.rb:43`,
 `parse_streaming_error` assuming a Hash body — a non-200 whose body is a
 bare JSON string mentioning "error", the Grok-in-Europe case). That bug
-is being fixed on its own track (upstream
+was fixed on its own track (upstream
 [ruby_llm#837](https://github.com/crmne/ruby_llm/issues/837) + a local
 monkeypatch in `pikuri-core/lib/pikuri/ruby_llm_patches.rb`); it is *not*
 justification to drop ruby_llm. It is only what prompted
 writing this down. See `ideas/typed-transports.md` for the adjacent
 "where does the transport abstraction live" question (that note already
 argues the privacy-classification concept ends up *above* ruby_llm).
+
+## How the origin bug ended (2026-08-16)
+
+**Fixed upstream, in our exact shape.** #837 was closed 2026-08-10 by
+crmne — directly, no PR link, no reply to the thread (its one comment is
+ours). But `main` now carries the guard we proposed, essentially verbatim:
+non-Hash body → `[nil, error_data.to_s]`, non-Hash `error` value →
+`[nil, error.to_s]`. A month, zero conversation, but it landed. **So
+criterion 1 did not trip:** one bug, found in two shapes in one 20-line
+method, now upstream's.
+
+Two things the review turned up alongside it:
+
+- **The target module moved.** On `main` the file is
+  `lib/ruby_llm/protocols/chat_completions/streaming.rb` —
+  `RubyLLM::Protocols::ChatCompletions::Streaming`, not
+  `Providers::OpenAI::Streaming`. Our patch reopens the old path, and
+  reopening a *gone* module silently defines a fresh empty one: the patch
+  would stop applying and the bug would return unnoticed. Defused with a
+  load-time guard that raises naming the file (verified by removing the
+  method and loading). Delete the patch + its spec at the next version
+  bump — it carries the fix anyway.
+- **The refactor is upstream moving toward us.** `providers/<vendor>/` →
+  `protocols/<wire-format>/` is ruby_llm conceding that OpenAI
+  chat-completions is a shared protocol rather than one vendor's API.
+  That undercuts the "ruby_llm's churn is in surface we don't use"
+  argument under *For dropping* — this churn is squarely in the surface
+  we do use, and it improves it. Note also there has been **no release
+  since 1.16.0 (2026-06-09)**, so the fix is on `main` only and the patch
+  rides along until the bump.
 
 Related:
 
@@ -49,21 +81,33 @@ symbol — the real surface, not the imagined one:
 
 | Symbol | hits | what it does for us |
 |---|---|---|
-| `RubyLLM::Context` | 14 | per-agent connection isolation (**Connection seam**) — `build_context` maps `transport.api_base`/`api_key` onto a per-chat context so agents/sub-agents can't stomp a global |
-| `RubyLLM::Tool` | 12 | the base class our `Pikuri::Tool` adapter subclasses |
-| `RubyLLM::Chat` | 12 | `#complete`, `#add_message`, `#messages`, callbacks (**Loop seam**) |
+| `RubyLLM::Context` | 16 | per-agent connection isolation (**Connection seam**) — `build_context` maps `transport.api_base`/`api_key` onto a per-chat context so agents/sub-agents can't stomp a global |
+| `RubyLLM::Tool` | 14 | the base class our `Pikuri::Tool` adapter subclasses — *and* what `Mcp::Servers` synthesizes directly (**MCP-tool bypass**) |
 | `RubyLLM::ContextLengthExceededError` | 11 | context-overflow detection we branch on |
-| `RubyLLM::Message` | 10 | value type (**value-type passthrough**) |
-| `RubyLLM::Content` | 10 | value type (multimodal content parts) |
-| `RubyLLM::Chunk` | 6 | streaming delta value type |
-| `RubyLLM::ModelNotFoundError` | 2 | error branch |
+| `RubyLLM::Content` | 9 | value type (multimodal content parts) |
+| `RubyLLM::Chat` | 8 | `#complete`, `#add_message`, `#messages`, callbacks (**Loop seam**) |
+| `RubyLLM::Message` | 8 | value type (**value-type passthrough**) |
+| `RubyLLM::Chunk` | 5 | streaming delta value type |
+| `RubyLLM::ModelNotFoundError` | 1 | error branch |
 | `RubyLLM::Model::Info` | 1 | model metadata |
 | `RubyLLM::Attachment` | 1 | multimodal attachment |
+
+Plus a bare `RubyLLM.` receiver 58× — including `RubyLLM.embed`, which
+`VectorDb::Embedder` leans on (15 hits in that one file; the documented
+lone Connection-seam exception).
 
 So the load-bearing pieces are: **the SSE streaming parser + provider
 error taxonomy**, **the `Chat#complete` loop + tool-call dispatch**, the
 **value types** (`Message`/`Content`/`Chunk`/`Attachment`), **context
-isolation** (`Context`), and **context-length detection**.
+isolation** (`Context`), **context-length detection**, and
+**embeddings**.
+
+**This table measures `lib/` + `bin/` only — that is the estimate's blind
+spot.** `grep -rn RubyLLM pikuri-*/spec` is **106 more references**
+(`agent_spec` 31, `synthesizer_spec` 14, `embedder_spec` 11,
+`sub_agent_tool_spec` / `servers_spec` 8 each…), and pikuri-tui's specs
+now inject `Pikuri::Testing.fake_transport` too. A swap is a
+lib-plus-spec-plus-downstream retarget, not a lib one.
 
 ## For dropping
 
@@ -83,7 +127,9 @@ isolation** (`Context`), and **context-length detection**.
 - **The bugs we'd inherit are shallow.** The SSE + error-taxonomy code
   is where the defects live (see origin). If we own it we fix it in one
   place on our schedule, instead of monkeypatching around a release
-  cadence.
+  cadence. *(Weakened 2026-08: the one instance of this took a month to
+  fix upstream and cost us ~25 lines of patch in the meantime — a real
+  but small tax, and one that self-cleared.)*
 
 ## Against dropping
 
@@ -107,6 +153,16 @@ isolation** (`Context`), and **context-length detection**.
   feature payoff.
 - **Streaming reasoning + multimodal.** `Chunk.thinking`, `Attachment`,
   `Content` parts — all handled today; all things we'd re-handle.
+- **It is a breaking change for every downstream host, not a refactor.**
+  `RubyLLM` types are in pikuri's *public* API, three ways:
+  `Workspace::Read` **returns** a `RubyLLM::Content` for an image,
+  `Pikuri::Tool` **subclasses** `RubyLLM::Tool`, and MCP tools **are**
+  raw `RubyLLM::Tool`s (the MCP-tool bypass seam). So a rip-out is a
+  major-version event that breaks pikuri-tui and any other host — not
+  the internal retarget "Sizing the port" implies. (Not an argument to
+  wrap the types: the **Value-type passthrough** seam sanctions the leak
+  deliberately, and buying an anti-corruption layer for a swap we've
+  decided against is the just-in-case abstraction CLAUDE.md rejects.)
 - **A two-line bug is a terrible reason to move.** Letting this defect
   drive an architecture decision is the tail wagging the dog. The bug
   has a cheap fix on its own track.
@@ -165,7 +221,10 @@ candidates plus the incumbent (numbers measured 2026-07-12):
 - **`ruby_llm`** is the most actively developed of the three and the
   only one being pushed weekly — but its churn is *multi-provider*
   churn, i.e. movement in surface we don't use, which is where our bugs
-  have come from.
+  have come from. *(Both halves corrected 2026-08-16: `main` is busy but
+  **no release since 1.16.0 / 2026-06-09**, so fixes sit unshipped; and
+  the `providers/` → `protocols/` refactor is churn in surface we very
+  much do use — and an improvement. See "How the origin bug ended".)*
 
 ### Popularity
 
@@ -228,6 +287,24 @@ for `ruby-openai`. Everything `ruby-openai` "brings"
 (`event_stream_parser`, `faraday`, `faraday-multipart`) is already
 present, so the transitive surface only *shrinks*.
 
+### The test seam turned this into a hard constraint (added 2026-08-16)
+
+`Pikuri::Testing` shipped 2026-07-17 (`D-fake-transport`) and fakes the LLM
+at the **Faraday adapter** level — `ChatTransport#faraday_adapter` installed
+onto the per-chat context via `config.faraday_adapter=`, scripting raw SSE.
+That was an aesthetic argument above; it is now mechanical:
+
+- **`ruby-openai` is Faraday-native**, so the scripted-SSE seam survives the
+  swap conceptually — one HTTP stack in the process, one place to fake it.
+- **The official `openai` gem hand-rolls `net/http`.** Adopting it doesn't
+  just add a second HTTP path — it **deletes `Pikuri::Testing`** and forces a
+  new fake harness across every gem's specs *and* pikuri-tui's. That's a
+  disqualifier, not a preference.
+
+It cuts for the spike, too: the fake is the cheap way to *run* one. Write the
+client, point the existing scripted-SSE specs at it, and the ~550-LOC guess
+becomes a measurement.
+
 ### Reading
 
 For pikuri's stated posture — single provider, audit-first, already
@@ -278,7 +355,7 @@ code we'd **own** (as opposed to delete or retarget):
 | Piece we'd own | ruby_llm ref (LOC) | our est. | why the discount |
 |---|---|---|---|
 | Chat loop — `complete` + tool-dispatch + message accumulation | `chat.rb` 521 | ~150 | one provider, no tool-DSL, no async/batch variants; the pikuri loop wiring already lives in `agent.rb` |
-| Value types — `Message`/`Content`/`Chunk`/`Attachment` | 127+91+6+224 = 448 | ~120 | `Data.define`; `Attachment`/multimodal is 1 hit total, so a stub |
+| Value types — `Message`/`Content`/`Chunk`/`Attachment` | 127+91+6+224 = 448 | ~120 → **~200** | `Data.define`. **Corrected 2026-08:** the "`Attachment` is 1 hit, so a stub" discount is wrong — `Workspace::Read` *ships* image observations as a `RubyLLM::Content` with the file attached (6c57d83), so multimodal is a live feature to port, not a stub |
 | Request rendering — messages+tools → params hash | `openai/chat.rb` 236 + `openai/tools.rb` 125 | ~120 | we build the hash `ruby-openai` passes through verbatim |
 | Streaming **semantics** — merge tool-call deltas, usage, error-body | `openai/streaming.rb` 55 + half of `streaming.rb` | ~80 | framing is `ruby-openai`'s; the *"is the error body Hash or bare String"* call (the bug that started this note) becomes ours here |
 | Error taxonomy — context-length regexes + HTTP→error mapping | `error_middleware.rb` 81 + `error.rb` 48 | ~60 | port the `CONTEXT_LENGTH_PATTERNS` set + a few `raise` branches |
@@ -296,13 +373,30 @@ For scale: this owns ~550 lines to replace the ~1,450 LOC of ruby_llm
 
 Caveats that would push the number **up** if we wanted parity, not just
 "works against llama.cpp": streaming **reasoning/thinking** deltas
-(`Chunk.thinking`), real **multimodal** `Attachment` handling, and
-**prompt-caching** hints are all handled-today, drop-on-the-floor in the
-estimate above; each is additive. The estimate is a *design-time* figure
-from source-mapping — the decision-criteria coda still stands: before
+(`Chunk.thinking`) and **prompt-caching** hints are handled-today,
+drop-on-the-floor in the estimate above; each is additive.
+
+**Four more the table zeroed out entirely (found 2026-08-16).** The
+~550-LOC headline is a fair figure for *the client*; it is not the cost of
+*the swap*:
+
+- **Embeddings.** `VectorDb::Embedder` is 15 hits of `RubyLLM.embed` — the
+  documented lone Connection-seam exception. Hand-rolling `/v1/embeddings`
+  is maybe ~30 LOC, but it's ~30 more than zero, plus 11 spec refs.
+- **MCP tool synthesis.** `Mcp::Servers` builds raw `RubyLLM::Tool`
+  subclasses (8 hits) — the MCP-tool bypass seam. That path retargets onto
+  a pikuri base class; the `mcp` gem integration is uncosted above.
+- **Specs.** 106 references across `pikuri-*/spec`, roughly matching the
+  lib surface. Mechanical, but it doubles the churn.
+- **Downstream.** pikuri-tui's specs inject transports; its `RubyLLM`-typed
+  API breaks. See the public-API bullet under *Against dropping*.
+
+Read together: **2–3× the headline**, against a benefit that shrank when
+#837 landed upstream. The estimate remains a *design-time* figure from
+source-mapping — the decision-criteria coda still stands: before
 committing, build the throwaway spike (client + delta-merge + one
-tool-call round-trip against llama.cpp) to convert this ~550 into a
-*measured* count.
+tool-call round-trip against llama.cpp, driven by `Pikuri::Testing`'s
+existing scripted-SSE specs) to convert this into a *measured* count.
 
 ## Decision criteria — only reopen when one trips
 
@@ -315,10 +409,21 @@ tool-call round-trip against llama.cpp) to convert this ~550 into a
 3. **We genuinely need control the API doesn't expose** — a request/
    response knob ruby_llm hides that we can't reach through `Context`.
 
-Absent one of these: **keep ruby_llm.** The fix for the current bug is
-upstream-issue + local monkeypatch, tracked separately. If we do build
-the spike, do it as a scoped throwaway first (a `ruby-openai` client +
-tool-call delta-merge + one round-trip against llama.cpp) to *measure
-the real line count* before committing — the ~550-LOC figure under
-"Sizing the port" is a source-mapped design-time estimate, not a
-measurement.
+**Read as of 2026-08-16 — none tripped, so: keep ruby_llm.**
+
+1. *Did not trip.* One bug, two shapes, one method, fixed upstream in a
+   month. A pattern needs a second one.
+2. *Trending the other way.* The `providers/` → `protocols/` refactor is
+   upstream converging on the single-wire-format view we already hold. And
+   where their direction did fight ours we simply declined it in place —
+   `D-context-window-sources` refuses ruby_llm's model registry for a
+   `/props` probe, no rip-out required. That's the pattern to keep using:
+   **decline the piece, keep the gem.**
+3. *No instance.* Nothing has been unreachable through `Context`.
+
+If a criterion does trip later, build the spike as a scoped throwaway
+first (a `ruby-openai` client + tool-call delta-merge + one round-trip
+against llama.cpp, run against `Pikuri::Testing`'s existing scripted-SSE
+specs) to *measure the real line count* before committing — the ~550-LOC
+figure under "Sizing the port" is a source-mapped design-time estimate,
+not a measurement, and the caveats there put the true swap at 2–3× it.
