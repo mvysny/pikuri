@@ -1,24 +1,29 @@
 # Does the skill catalog earn its slot in the system prompt?
 
-Status: **open question, nothing decided.** Split out of
-[`lazy-skill-registration.md`](lazy-skill-registration.md), where it
-arrived as a thread. It's a *sister* idea, not a sub-idea: that note asks
-"can a `paths:` glob promote a skill at the moment it becomes relevant?",
-this one asks the prior question — **is an always-resident
-`<available_skills>` block worth what it costs, given the model rarely
-activates on it anyway?** The two answers compose (the synthesis below
-uses `paths:` as the promotion trigger), but each is decidable without
-the other, and the ideas graduate to different places.
+Status: **open question, nothing decided.** Split out of what is now
+[`skill-path-activation.md`](skill-path-activation.md), where it arrived
+as a thread. It's a *sister* idea, not a sub-idea: that note asks "*when*
+should an entry be promoted?", this one asks the prior question — **is an
+always-resident `<available_skills>` block worth what it costs, given the
+model rarely activates on it anyway?** The two answers compose (the
+synthesis below uses `paths:` as the promotion trigger), but each is
+decidable without the other.
+
+**Scope.** This note owns *what a resident entry contains* — names vs.
+descriptions, how long a description should be, what it's allowed to say,
+and who gets to see the list at all (including sub-agents). It does
+**not** own the trigger mechanism (→ `skill-path-activation.md`) or the
+measurements it argues from (→ `skill-cost-model.md`).
 
 Related:
 
-- [`lazy-skill-registration.md`](lazy-skill-registration.md) — the
-  path-matcher mechanism this note's tier 1 would ride on. Also carries
-  the same-matcher-applied-to-*tools* thread.
-- [`skill-load-cost.md`](skill-load-cost.md) — the tier measurements, the
-  KV-cache analysis that prices *prefix mutation* (load it before
+- [`skill-cost-model.md`](skill-cost-model.md) — the tier measurements
+  (including the 40:1 names-to-descriptions ratio this note turns on),
+  the KV-cache analysis that prices *prefix mutation* (load it before
   arguing about token counts here), and the cheap borrows, one of which
   hands this note its tier 0 for free.
+- [`skill-path-activation.md`](skill-path-activation.md) — the
+  path-matcher mechanism this note's tier 1 would ride on.
 - [`claude-parity.md`](claude-parity.md) — "Skill-invocation emphasis —
   measure" is the description-side rival: maybe the catalog works fine
   and the descriptions are just bad.
@@ -99,14 +104,17 @@ Relying on judgment is a choice, not a finding.
    - **path activation only** — then a skill without `paths:` is
      permanently unreachable, and `cop` is exactly that skill.
    - **a `skill_list` discovery call** — a genuine extra round-trip,
-     which is the thing `skill-load-cost.md` item 3 set out to avoid.
-Objection: yes, true, LLM can't load a skill it never saw, but as my experience shows,
-even with a full catalog loaded, LLM rarely auto-loads a skill unless massively nudged.
-The user tells the LLM to load the skill (or loads it directly via a slash command),
-which means it's the UX job to list skills, not the context job.
-So maybe all we need is a "Available skills: [cop, tuile, ...]" in a context, so that
-the LLM knows which tools are available, so that it doesn't feel like issuing
-skill load tool call in the dark, but that's it - no description attached to the skill.
+     which is the thing `feedback.txt` item 3 set out to avoid.
+
+   **Author's objection (2026-08-16):** *yes, true, the LLM can't load a
+   skill it never saw — but as my experience shows, even with a full
+   catalog loaded, the LLM rarely auto-loads a skill unless massively
+   nudged. The user tells the LLM to load the skill (or loads it directly
+   via a slash command), which means it's the **UX's** job to list
+   skills, not the context's. So maybe all we need is `Available skills:
+   [cop, tuile, …]` in context, so the LLM knows what exists and isn't
+   issuing a load call in the dark — but that's it, no description
+   attached.*
 
    **Granted — and it reframes tier 0 from a compromise into the design.**
    The one hole is that *"listing is the UX's job"* assumes a human at a
@@ -119,7 +127,7 @@ skill load tool call in the dark, but that's it - no description attached to the
    exists to prevent. Two consequences:
 
    - The name list should live where a persona can still see it: the
-     **tool schema enum** (`skill-load-cost.md` cheap borrow 1), not a
+     **tool schema enum** (`skill-cost-model.md` cheap borrow 1), not a
      system-prompt block the persona overwrites. For a main agent the
      enum is a redundancy; for a sub-agent it's the whole interface.
    - It reopens *which* names. Options: (i) every persona sees the full
@@ -133,7 +141,7 @@ skill load tool call in the dark, but that's it - no description attached to the
    My read: (ii). It matches how a persona already owns its toolset
    verbatim, costs nothing at runtime, and it is the only option where
    "which skills does this agent need?" is answered by a human — the
-   objection's own principle, applied one level down. See open question 7.
+   objection's own principle, applied one level down. See open question 6.
 2. **So "drop the registry, nudge from CLAUDE.md" is a wash on cost and a
    loss on freshness.** The saving people picture comes from dropping the
    **descriptions**, not from dropping the **mechanism**. Those are
@@ -154,16 +162,15 @@ skill load tool call in the dark, but that's it - no description attached to the
 
 ## The synthesis: three tiers, not two
 
-The separable thing in claim 2 is descriptions-vs-names. Measured
-2026-08-16 on `~/.claude/skills` (12 on-disk skills; `skill-load-cost.md`'s
-28 / 3.8 k figure is Claude Code's own accounting and includes plugin
-skills):
+The separable thing in claim 2 is descriptions-vs-names, and
+`skill-cost-model.md` prices the split: on this machine's 12 on-disk
+skills, names render to ~65 tokens and descriptions to ~1.5 k.
 
-| tier | resident | cost, 12 skills | arrives |
-|---|---|---|---|
-| 0 | `<name>` only | 116 B of names, ~250 B rendered → **~65 tok** | always |
-| 1 | + `<description>` | 4 587 B → **~1.5 k tok** rendered | on a `paths:` match, as an injection |
-| 2 | body | 2–30 KB each | on the `skill` call |
+| tier | resident | arrives |
+|---|---|---|
+| 0 | `<name>` only (~65 tok / 12 skills) | always |
+| 1 | + `<description>` (~1.5 k tok / 12 skills) | on a `paths:` match, as an injection |
+| 2 | body (2–30 KB each) | on the `skill` call |
 
 **Descriptions are 40× the names.** That ratio is the whole argument:
 tier 0 is nearly free, and it is the tier that keeps `skill(name:)`
@@ -184,7 +191,7 @@ matching file is touched.
 
 Two riders:
 
-- **Tier 0 may already be free.** `skill-load-cost.md` cheap borrow 1
+- **Tier 0 may already be free.** `skill-cost-model.md` cheap borrow 1
   proposes enum-constraining `SkillTool`'s `name` parameter to the
   catalog's names. An enum of every skill name **is** a names-only
   catalog, living in the tool schema where it is paid anyway. If that
@@ -194,14 +201,13 @@ Two riders:
   composes the same way — tier 0 must not carry locations.
 - **It does not fix a description that fails to say *when*.** Such a
   description fails identically at tier 1, one turn later. The preamble
-  sharpening and the lead-with-the-trigger authoring guidance in
-  `skill-load-cost.md` open question 1 remain prerequisites, not
-  alternatives.
+  sharpening and the lead-with-the-trigger authoring guidance in open
+  question 1 below remain prerequisites, not alternatives.
 
 
 ## What the caching analysis does to this
 
-`skill-load-cost.md`'s KV-cache section is the reason this note can't be
+`skill-cost-model.md`'s KV-cache section is the reason this note can't be
 argued in raw token counts, and it cuts both ways.
 
 **For tier 0.** The costs a cache does *not* refund are window capacity
@@ -226,10 +232,10 @@ one provider. Two mitigations, neither free:
   provider. But a promotion is not a tool call, so it can't ride it
   without inventing a fake one, which is worse than the problem.
 
-That is a genuine cost neither note had priced, and it is the thing to
-measure before building: **how many activations does a realistic session
-actually fire?** If it's 1–3, this is noise. If a chatty glob fires
-fifteen times, tier 0 is a net loss on Anthropic.
+That is a genuine cost, and it is the thing to measure before building:
+**how many activations does a realistic session actually fire?** If it's
+1–3, this is noise. If a chatty glob fires fifteen times, tier 0 is a net
+loss on Anthropic. (Open question 2, shared with the activation note.)
 
 
 ## Four observations (Claude, 2026-08-16)
@@ -262,7 +268,7 @@ Consequences for this note: it strengthens the *structural* half of claim
 2 (a trigger that fires on something the model doesn't have to notice)
 and weakens `claude-parity.md`'s description-side rival as a *complete*
 answer, without making it wrong — sharper descriptions still help the
-cases where the model does pause to check. It also means open question 3's
+cases where the model does pause to check. It also means open question 4's
 fair test should be read carefully: skills that fire on description alone
 will skew toward the capability-shaped ones (`dataviz`, `gh-auth`), and
 that's a real result, not a confound — it just doesn't generalize to the
@@ -324,9 +330,9 @@ activation would invalidate the cache exactly like the system prompt
 does. The withhold-descriptions-only design keeps the prefix stable and
 confines all mutation to appended injections.
 
-### 4. A third placement for question 7(a): the tool description
+### 4. A third placement for question 6(a): the tool description
 
-Question 7(a) offers the enum or a system-prompt block. There's a third,
+Question 6(a) offers the enum or a system-prompt block. There's a third,
 and it's the one pikuri explicitly ruled out: put the catalog in
 {Pikuri::Skill::SkillTool}'s `description`. Its class header rejects this
 today ("the inventory … lives in the system prompt … as PI and Claude
@@ -348,51 +354,82 @@ Two caveats, neither fatal: a tool description is built once at
 can (promotions stay injections either way); and it would need the
 `SkillTool` header's convention argument revisited rather than ignored,
 since that sentence also needs correcting for opencode v2's move
-(`skill-load-cost.md` cheap borrow 3 — do both in one pass).
+(`skill-cost-model.md` cheap borrow 3 — do both in one pass).
 
 
 ## Open questions
 
-1. **Is a bare name a strong enough recall cue?** Tier 0 assumes a model
+1. **Say-*when* vs. stay-short — the per-entry content tension.** (Moved
+   here from `skill-cost-model.md`, where it was open question 1: it's a
+   what-does-an-entry-contain question, so it belongs on this axis.) The
+   failure Grok reported is a description that says what a skill *is* but
+   not when to reach for it; the fix is to add the trigger. But the
+   measurement says descriptions are *already* 3–6× the spec's 50–100
+   token budget, and every added word is paid every turn by every
+   session. Two levers pull opposite ways:
+   - **The prompt half is free and unambiguous** — sharpen the
+     `format_catalog` preamble from "load it *before* answering from
+     your own knowledge" to something that also covers *recon*. One
+     sentence, paid once, not per skill. Do this regardless.
+   - **The per-skill half is the trade.** Options, roughly in order of
+     how much machinery they cost: (i) author guidance only ("lead with
+     the trigger, cap at ~2 lines") — free, unenforced; (ii) warn at
+     scan time above some length well under the standard's 1024-char
+     cap — cheap, honest, no truncation risk; (iii) adopt
+     `when-to-use:` as a separate field so the *trigger* is structured
+     and the *description* can be trimmed independently — the
+     structurally right answer and the only one that survives tier 0
+     later, but a non-standard key (see question 5); (iv) truncate in
+     the catalog render like grok-build's proportional split — clever,
+     and clever is how you cut a trigger sentence in half.
+
+   My read: (i) + the preamble now, (ii) if a real catalog keeps
+   growing, (iii) only if `when-to-use:` earns its way in for another
+   reason. Explicitly *not* (iv).
+
+   **Revised after the caching analysis.** The trade is less tight than
+   it looked, and it tilts toward *saying when*. A longer description
+   costs prefill only on turn one; what it costs forever is window
+   capacity and attention. But a description that fails to fire the right
+   skill costs a whole wasted recon pass — which is far more of *both*.
+   So on the merits: pay the words, spend them on the trigger. That
+   demotes (ii) from "cheap and honest" to "solving the cheap half" and
+   makes (i) — teaching authors to lead with the trigger and cut the
+   *narrative*, not the trigger — the whole answer for per-entry editing.
+   The remaining worry isn't length, it's **twenty-eight descriptions of
+   which one is relevant**: attention dilution scales with catalog
+   *size*, and no amount of per-entry editing fixes it. Which is the
+   argument for tier 0 — the only proposal on the table that *removes*
+   descriptions rather than shortening them.
+2. **Is a bare name a strong enough recall cue?** Tier 0 assumes a model
    seeing `karibu-testing` in a name list will reach for it once the path
    fires and the description arrives. Plausible, untested. Failure mode
    to watch: a model that ignores the name-only entry *and* ignores the
    injected description because it arrived mid-turn rather than in the
    prompt it was primed on. Cheapest probe: hand-render tier 0 for this
    repo's catalog and try it against a local model — no code required.
-2. **How many activations per session?** The number that decides the
+3. **How many activations per session?** The number that decides the
    Anthropic cache trade above. Measurable today with a throwaway
-   listener over `Event::ToolCall`, before any of this is built.
-3. **Does claim 1 survive a fair test?** The nudge list is
+   listener over `Event::ToolCall`, before any of this is built. (Shared
+   with `skill-path-activation.md`, which owns the mechanism side.)
+4. **Does claim 1 survive a fair test?** The nudge list is
    selection-biased. The honest experiment is the other direction: take
    the skills *without* a CLAUDE.md nudge and check whether they ever
    fire on description alone. If they do, the catalog is working and only
    the task-shaped triggers need help — which is a much smaller fix
    (better descriptions) than any mechanism here.
-4. **What does a *human* see?** The author's framing — being handed the
-   Tuile manual at the moment you open a Tuile file — is a UX claim, not
-   a token claim, and it's the part with no counter-argument. If
-   promotion lands, the render must be legible in a TUI, not just a
-   model-facing `<system-reminder>`. That's
-   `lazy-skill-registration.md`'s open question 6 (dedicated event vs.
-   `Event::SystemInjected`), which this note upgrades from a rendering
-   nicety to the feature's actual selling point.
 5. **Is `when-to-use:` the better cut?** grok-build splits the trigger
    out of the description as its own frontmatter field. Tier 0 withholds
    the *whole* description; a `when-to-use:` split would let the baseline
    carry name + trigger (cheap, and the part that decides activation)
    while withholding the narrative (expensive, and only useful once
-   you've decided). Strictly better shaped, one more non-standard key.
-   Both notes want it; neither has justified it alone.
-6. **Does tier 0 change what `clear_conversation` restores?** The
-   baseline is rebuilt from the catalog, so name-only returns and
-   promotions are discarded with the injections that carried them.
-   Probably correct semantics for free — but it means a long session that
-   clears loses its promotions and re-pays them, which interacts with
-   question 2.
-7. **Who lists skills for a sub-agent?** The picker-less UX gap under the
-   objection in claim 2.1: if listing is the host UX's job, a persona has
-   no host UX. Sub-questions, in the order they need answering:
+   you've decided). Strictly better shaped, one more non-standard key —
+   and the same compatibility cost `paths:` carries in the activation
+   note. Both notes want it; neither has justified it alone.
+6. **Who lists skills for a sub-agent?** The picker-less UX gap under the
+   author's objection in claim 2.1: if listing is the host UX's job, a
+   persona has no host UX. Sub-questions, in the order they need
+   answering:
    (a) does the name list ride the **tool schema enum**, which survives a
    persona replacing the system prompt, rather than a prompt block?
    (b) does a persona get the **whole** catalog or a `skill_names:`
@@ -403,15 +440,31 @@ since that sentence also needs correcting for opencode v2's move
    {Pikuri::SubAgent::Persona}'s yardoc" rather than a new field.
    Note this is the *only* question here that can't be deferred by
    shipping tier 0 first: whatever carries the names decides it.
+   (Distinct from the activation note's sub-agent question, which is
+   about whether an *activation* is per-agent or catalog-wide.)
+7. **What does a *human* see?** The author's framing — being handed the
+   Tuile manual at the moment you open a Tuile file — is a UX claim, not
+   a token claim, and it's the part with no counter-argument. If
+   promotion lands, the render must be legible in a TUI, not just a
+   model-facing `<system-reminder>`. Mechanism side:
+   `skill-path-activation.md`'s question about a dedicated event vs.
+   `Event::SystemInjected`, which this note upgrades from a rendering
+   nicety to the feature's actual selling point.
+8. **Does tier 0 change what `clear_conversation` restores?** The
+   baseline is rebuilt from the catalog, so name-only returns and
+   promotions are discarded with the injections that carried them.
+   Probably correct semantics for free — but it means a long session that
+   clears loses its promotions and re-pays them, which interacts with
+   question 3.
 
 
 ## Graduation plan (when this settles)
 
-- **Same `DECISIONS.md` entry as the other two notes**, not a new one.
-  `skill-load-cost.md` open question 3 already settled on *one* entry for
-  the *what the catalog advertises, and when the body arrives* axis, and
-  this is that axis stated at its most general. Entries are mutable;
-  this extends it in place.
+- **Same `DECISIONS.md` entry as the other two skill notes**, not a new
+  one — the *what the catalog advertises, and when the body arrives*
+  axis, stated here at its most general. Entries are mutable; this
+  extends it in place. (`skill-cost-model.md` open question 2 settled
+  that coordination.)
 - **If tier 0 is built** → the three-tier table belongs in
   {Pikuri::Skill::Renderer}'s header, which already documents the two
   renders and would gain a third; the `paths:`-implies-withhold rule to
@@ -434,6 +487,10 @@ since that sentence also needs correcting for opencode v2's move
   - lenient *name* validation is load-bearing in the wrong direction the
     moment names are the only thing resident → one line in
     {Pikuri::Skill::Catalog}'s validation paragraph.
+- The **authoring guidance** from question 1 (lead with the trigger, cut
+  the narrative, ~2 lines) is advice to skill *authors*, so it belongs
+  wherever the book teaches skill authoring — not in a yardoc nobody
+  writing a `SKILL.md` will read.
 - The capability-vs-correction asymmetry (observation 1) is a *concept*,
   not a per-symbol fact: it explains why skills need a trigger where MCP
   servers don't, and it's the kind of thing the book's skills material
@@ -442,12 +499,12 @@ since that sentence also needs correcting for opencode v2's move
   them then adds a nudge mechanism anyway.
 - The Anthropic prefix-rewrite cost of a `:system` promotion →
   {Pikuri::Skill::Extension#schedule_load_skill} yardoc, where
-  `skill-load-cost.md` is already sending one sentence on the same
+  `skill-cost-model.md` is already sending one sentence on the same
   mechanism. Merge, don't stack.
 - The human-facing half ("handed the manual at the moment you open the
   file") → the book's skills material if it ships, since it's a concept
   and a teaching example, not a per-symbol fact.
-- **Whichever way question 7 goes**, the answer is a fact about personas
+- **Whichever way question 6 goes**, the answer is a fact about personas
   and belongs in {Pikuri::SubAgent::Persona}'s yardoc — including "a
   sub-agent gets no skills", if that's the ruling. It is currently
   unstated in either direction, which is why the gap was invisible.

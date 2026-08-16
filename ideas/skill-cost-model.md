@@ -1,28 +1,44 @@
-# Does loading a skill cost too much?
+# What skills actually cost in context — the shared evidence base
 
-Status: **idea, brainstorming — nothing built, nothing decided.** Origin:
-`feedback.txt` item 3 ("skill load costs a turn"), which asked for one of
-three things: path-triggered auto-injection, a batch `skill` call, or at
-least for skill-loading to feel like the *expected opening move* rather
-than a surprise tax.
+Status: **measurements + settled dispositions; the open forks live in the
+sister notes.** Origin: `feedback.txt` item 3 ("skill load costs a
+turn"), which asked for one of three things: path-triggered
+auto-injection, a batch `skill` call, or at least for skill-loading to
+feel like the *expected opening move* rather than a surprise tax.
 
-The framing is the first thing to fix, and then two of the three asks
-mostly dissolve. What survives is a genuinely open question about
-*ordering* (not cost) plus a handful of cheap borrows that fell out of
-reading the prior art.
+The framing was the first thing to fix, and then two of the three asks
+mostly dissolved. What was left was not one question but three, so this
+note kept the part that is *evidence* — what each tier costs, what the KV
+cache does and does not refund, and what the other harnesses ship — and
+handed the live forks to the notes below.
+
+**Scope.** This note owns the numbers and the prior art, so the other two
+can argue without re-deriving them. It does **not** decide what the
+catalog should contain (→ `skill-catalog-in-context.md`) or whether a
+`paths:` trigger should exist (→ `skill-path-activation.md`). Anything
+here that turns into a fork belongs over there.
 
 Related:
 
+- [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — *what*
+  the resident catalog advertises. Consumes the tier measurements and
+  the caching section below; also inherits this note's old open question
+  about description length, which is a what-does-an-entry-contain
+  question.
+- [`skill-path-activation.md`](skill-path-activation.md) — *when* an
+  entry is promoted. Consumes the grok-build survey below.
+- [`tool-list-in-context.md`](tool-list-in-context.md) — the same
+  resident-prefix arithmetic applied to tool schemas, which turn out to
+  be ~4× the skill catalog.
 - [`claude-parity.md`](claude-parity.md) — its one live open item,
-  "Skill-invocation emphasis — measure", is the same question as item
-  3(c) below. Whichever note survives, these two should merge.
+  "Skill-invocation emphasis — measure", is item 3(c) below. Whichever
+  note survives, these two should merge.
+- [`grok-build-cheap-borrows.md`](grok-build-cheap-borrows.md) — a
+  *different* set of borrows from the same survey (Edit/Read shaped).
+  Same name, no overlap; the ones below are all skills-surface.
 - [`context-budget.md`](context-budget.md) — same shape of mistake:
   feedback asking for a per-turn signal, where the honest answer is much
   smaller than the ask.
-- [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — the
-  general form of the same axis: given all of the above, does an
-  always-resident `<available_skills>` earn its slot at all? Consumes
-  this note's measurements and the caching section.
 
 
 ## The arithmetic — "a turn" is the cheap axis
@@ -56,7 +72,9 @@ Two nuances worth keeping honest:
   is a one-shot and doesn't have the problem.
 
 
-## Measured: what tier 1 actually costs
+## Measured: what each tier costs
+
+### Tier 1, at real catalog size
 
 Claude Code's `/context` on this machine, 2026-08-16 — a real 28-skill
 catalog, which is the closest thing to evidence available. (Its
@@ -80,23 +98,38 @@ length either way.)
   about **1:9** for a single skill — but tier 1 is paid every turn by
   every session, and tier 2 only by the session that asked.
 
-Two things follow. First, the item-3 framing is confirmed from the other
-side: the expensive thing is what's resident, not what a call costs.
-Second — and this is new — **the over-budget descriptions are the
-cheapest thing on this whole list to fix**, and nothing about them
-requires a mechanism.
+### Tier 0 vs tier 1 — names are 40× cheaper than descriptions
 
-The reason they're fat is visible in the same table: `claude-api` and
-`dataviz` carry TRIGGER/SKIP blocks inside their `description`. The
-description has started doing the skill's job. That's the failure
-`when-to-use:` exists to fix structurally, and it's also a tension with
-no free answer — see open question 1.
+Measured 2026-08-16 on `~/.claude/skills` (12 on-disk skills; the 28 /
+3.8 k figure above is Claude Code's own accounting and includes plugin
+skills):
+
+| tier | resident | cost, 12 skills |
+|---|---|---|
+| 0 | `<name>` only | 116 B of names, ~250 B rendered → **~65 tok** |
+| 1 | + `<description>` | 4 587 B → **~1.5 k tok** rendered |
+| 2 | body | 2–30 KB each, on the `skill` call |
+
+That 40:1 ratio is the load-bearing number for
+[`skill-catalog-in-context.md`](skill-catalog-in-context.md), which owns
+what to do about it.
+
+Two things follow from the tier-1 numbers here. First, the item-3 framing
+is confirmed from the other side: the expensive thing is what's resident,
+not what a call costs. Second, **the over-budget descriptions are the
+cheapest thing on this whole list to fix**, and nothing about them
+requires a mechanism — the reason they're fat is visible in the same
+table, since `claude-api` and `dataviz` carry TRIGGER/SKIP blocks inside
+their `description`. The description has started doing the skill's job.
+(That tension — say *when* vs. stay short — is a what-an-entry-contains
+question and moved to the catalog note.)
 
 
 ## Does the KV cache neutralize the length? (author's question, 2026-08-16)
 
 Partly — and working out *which* part turns out to matter more than the
-token counts above.
+token counts above. This section is the reason none of these notes can be
+argued in raw token counts; read it before quoting any number.
 
 | cost | neutralized by caching? |
 |---|---|
@@ -109,7 +142,8 @@ So the honest correction: the naive "4 000 tokens **per turn**" framing
 overstates it in compute terms, and pre-injection is less catastrophic
 than that arithmetic implies. What survives is capacity and attention —
 you pay for skills you don't use, in every session, in the two currencies
-no cache refunds.
+no cache refunds. Note that both of those scale with catalog **size**, so
+no amount of per-entry editing fixes them; only removing entries does.
 
 **The inversion.** Once caching is in the picture, the expensive operation
 is not *length*, it's **mutating the prefix**. A stable prefix is free
@@ -122,22 +156,23 @@ accidentally the cache-optimal one:
 - the body arrives as a **tool result appended at the end** — append-only,
   so it invalidates nothing and is itself cached from the next turn.
 
-That reframes two things written elsewhere in these notes:
+Three consequences, each of which is a *cost* the sister notes have to
+carry:
 
-1. `assemble_system_prompt` building once and never amending was
-   described in `lazy-skill-registration.md` as a *limitation*. It's also
-   a cache virtue, and any "amend the system prompt mid-conversation"
-   seam — opencode's `SystemContext` delta re-render, or a catalog that
-   grows entries as skills activate — buys its flexibility by throwing
-   away the cache on every change. That's a real cost against lazy
-   registration that neither note had priced.
-2. It sharpens why the tool path beats the host path (see open question
-   2): a tool result is append-only on *every* provider, whereas the
-   `:system` interloper kind is hoisted into the top-level system param on
-   Anthropic — i.e. it **rewrites the prefix**, invalidating the entire
-   prompt cache for the rest of the conversation. Every host-loaded skill,
-   one full cache nuke. The stickiness I flagged earlier is the smaller
-   half of that problem.
+1. `assemble_system_prompt` building once and never amending is not only
+   a limitation — it's a cache virtue. Any "amend the system prompt
+   mid-conversation" seam (opencode's `SystemContext` delta re-render, or
+   a catalog that grows entries as skills activate) buys its flexibility
+   by throwing away the cache on every change.
+2. The tool path beats the host path (see open question 1): a tool result
+   is append-only on *every* provider, whereas the `:system` interloper
+   kind is hoisted into the top-level system param on Anthropic — i.e. it
+   **rewrites the prefix**, invalidating the entire prompt cache for the
+   rest of the conversation. Every host-loaded skill, one full cache
+   nuke. The stickiness flagged above is the smaller half of that problem.
+3. Anything that promotes a catalog entry mid-session pays (2) **per
+   activation**. That makes *"how many activations does a realistic
+   session fire?"* a load-bearing measurement for both sister notes.
 
 **Decision (author, 2026-08-16): keep `:system` for the host path, and
 don't build anything that leans on Anthropic's hoist-and-stick.** pikuri
@@ -182,7 +217,7 @@ system prompt "as PI and Claude Code do (opencode is the outlier)".
 into a system-context block (`core/src/skill/guidance.ts`,
 `SystemContext.Key "core/skill-guidance"`); only its docs page still
 claims the tool description. The yardoc sentence needs a correction pass
-regardless of what happens to this note.
+regardless of what happens to any of these notes.
 
 opencode's version is *live*, though, in a way pikuri's isn't: the block
 declares `baseline` / `update` / `removed` renders, so when the skill set
@@ -191,7 +226,8 @@ changed. This list supersedes the previous available skills list."), and
 when the `skill` tool is denied the block vanishes entirely. pikuri
 assembles the system prompt once at construction (and on
 `clear_conversation`). Probably fine — pikuri scans at boot and doesn't
-watch the filesystem — but it's the mechanism a hot-reload would need.
+watch the filesystem — but it's the mechanism a hot-reload would need,
+and per the caching section it is the mechanism that costs a cache.
 
 ### grok-build ships item 3(a) — and it does *not* inject the body
 
@@ -205,15 +241,11 @@ invocation, so the listing stays terse."*
 
 So the only shipped implementation of "auto-load on path match" promotes
 the skill *into tier 1* and still makes the model spend the tool call for
-tier 2. The trigger fixes **ordering**, it does not skip the round-trip —
-independent confirmation of the split argued above.
-
-That also means the mechanism is a different feature from the one the
-feedback asked for, with a different cost profile, so it moved to its own
-note: **[`lazy-skill-registration.md`](lazy-skill-registration.md)**, which
-carries the grok-build implementation detail, the `mcp_connect` parallel,
-and the (surprisingly short) list of what pikuri would need to build it.
-Item 3(a) *as asked* stays rejected here.
+tier 2. **The trigger fixes ordering; it does not skip the round-trip** —
+independent confirmation of the split argued above. Item 3(a) *as asked*
+stays rejected here; the reframed version is a different feature and
+lives in [`skill-path-activation.md`](skill-path-activation.md), which
+also carries grok-build's implementation detail.
 
 Two more grok-build details in the same area:
 
@@ -223,7 +255,8 @@ Two more grok-build details in the same area:
   with the listing formatter stripping "Use when …" trigger prefixes out
   of the description when both are present. That is a targeted fix for
   exactly the failure Grok reported: descriptions that say what a skill
-  *is* but not *when* to reach for it.
+  *is* but not *when* to reach for it. (Whether to adopt it: catalog
+  note.)
 
 ### Both harnesses make the *human* path zero-round-trip
 
@@ -244,8 +277,8 @@ prompt-assembly time:
 pikuri has this seam already —
 {Pikuri::Skill::Extension#schedule_load_skill} — but injects `:system`
 rather than folding into the user turn, and no bundled `bin/` exposes it.
-The `:user` vs `:system` choice is the interesting divergence: `:system`
-is what makes it sticky on Anthropic (above).
+The `:user` vs `:system` choice is the interesting divergence, and it is
+settled in open question 1 below.
 
 ### The spec's own guidance
 
@@ -265,62 +298,19 @@ and exempting skill content from context compaction.
   expensive axis unconditionally on any Ruby file touch, and most edits
   under `lib/` aren't component design. Also a glob→skill config table,
   which is the wall-of-JSON pikuri exists as a counter-move to. The
-  reframed version — path glob as a relevance filter that promotes a
-  withheld skill into the *catalog* — is a different feature and now
-  lives in [`lazy-skill-registration.md`](lazy-skill-registration.md).
+  reframed version — a path glob as a relevance filter that promotes a
+  withheld *catalog entry* — is a different feature and lives in
+  [`skill-path-activation.md`](skill-path-activation.md).
 - **(b) batch load — already available**, via parallel tool calls. No
   new parameter.
-- **(c) "expected opening move" — the only live residue**, and it's a
-  prompt/description problem, not a mechanism one. Merge with
-  `claude-parity.md`'s open measure item.
+- **(c) "expected opening move" — a prompt/description problem, not a
+  mechanism one.** Merge with `claude-parity.md`'s open measure item; the
+  per-entry half is the catalog note's business.
 
 
-## Open questions (the brainstorm continues here)
+## Open questions
 
-1. **Say-*when* vs. stay-short — the description tension.** This is the
-   live one. The failure Grok reported is a description that says what a
-   skill *is* but not when to reach for it; the fix is to add the
-   trigger. But the measurement above says descriptions are *already*
-   3–6× the spec's budget, and every added word is paid every turn by
-   every session. Two levers pull opposite ways, and the note has no
-   answer yet:
-   - **The prompt half is free and unambiguous** — sharpen the
-     `format_catalog` preamble from "load it *before* answering from
-     your own knowledge" to something that also covers *recon*. One
-     sentence, paid once, not per skill. Do this regardless.
-   - **The per-skill half is the trade.** Options, roughly in order of
-     how much machinery they cost: (i) author guidance only ("lead with
-     the trigger, cap at ~2 lines") — free, unenforced; (ii) warn at
-     scan time above some length well under the standard's 1024-char
-     cap — cheap, honest, no truncation risk; (iii) adopt
-     `when-to-use:` as a separate field so the *trigger* is structured
-     and the *description* can be trimmed independently — the
-     structurally right answer and the only one that survives
-     lazy-registration later, but a non-standard key; (iv) truncate in
-     the catalog render like grok-build's proportional split — clever,
-     and clever is how you cut a trigger sentence in half.
-
-   My read: (i) + the preamble now, (ii) if a real catalog keeps
-   growing, (iii) only if `when-to-use:` earns its way in for another
-   reason. Explicitly *not* (iv).
-
-   **Revised after the caching section above.** The trade is less tight
-   than it looked, and it tilts toward *saying when*. A longer description
-   costs prefill only on turn one; what it costs forever is window
-   capacity and attention. But a description that fails to fire the right
-   skill costs a whole wasted recon pass — which is far more of *both*.
-   So on the merits: pay the words, spend them on the trigger. That
-   demotes (ii) from "cheap and honest" to "solving the cheap half" and
-   makes (i) — teaching authors to lead with the trigger and cut the
-   *narrative*, not the trigger — the whole answer for now. The remaining
-   worry isn't length, it's **twenty-eight descriptions of which one is
-   relevant**: attention dilution scales with catalog *size*, and no
-   amount of per-entry editing fixes it. Which is the one honest argument
-   left standing for `lazy-skill-registration.md` — and, more directly,
-   for [`skill-catalog-in-context.md`](skill-catalog-in-context.md),
-   whose name-only baseline is the only proposal on the table that
-   removes descriptions rather than shortening them.
-2. ~~**Should the human path fold into the user turn instead of
+1. ~~**Should the human path fold into the user turn instead of
    `:system`?**~~ **Answered — keep `:system`.** Worth writing down,
    because the three roles in play are easy to conflate:
 
@@ -350,19 +340,18 @@ and exempting skill content from context compaction.
    is human-chosen (a UI picker), so it's trusted by act of selection —
    which is fine, but it's an argument nobody has written down. One
    sentence in `schedule_load_skill`'s yardoc closes it.
-3. ~~**One DECISIONS.md entry or two?**~~ **Settled: one**, written when
-   this note graduates rather than waiting on
-   `lazy-skill-registration.md`. Same axis — *what the catalog
+2. ~~**One DECISIONS.md entry or two?**~~ **Settled: one**, and it
+   governs all three skill notes. Same axis — *what the catalog
    advertises, and when the body arrives* — and entries are mutable, so
-   lazy registration extends it in place if it ever lands. Same ruling
-   for [`skill-catalog-in-context.md`](skill-catalog-in-context.md),
-   which is that axis at its most general: three notes, one entry,
-   whichever settles last does the editing.
+   whichever note settles last edits the entry in place rather than
+   opening a second. (The tool-gating fork is **not** on this axis and
+   gets its own entry; see
+   [`tool-list-in-context.md`](tool-list-in-context.md).)
 
 
 ## Cheap borrows spotted along the way
 
-Independent of how the main question settles; each is small enough to
+Independent of how the main questions settle; each is small enough to
 land on its own.
 
 1. **Enum-constrain `SkillTool`'s `name`.** {Pikuri::Tool::Parameters}
@@ -395,7 +384,7 @@ land on its own.
    catalog copy is the redundant one, and it's not cheap: absolute paths
    like `/home/mavi/.claude/skills/writing-javadoc/SKILL.md` run ~15
    tokens, so a 28-skill catalog pays ~400 tokens for a duplicate. On the
-   exact axis this note is about, and spec-blessed.
+   exact axis these notes are about, and spec-blessed.
    Counter-argument to weigh first: `location` is also what enables
    *file-read activation* (the model `read`s SKILL.md directly, no tool),
    which is the documented fallback if the `skill` tool is ever absent —
@@ -414,7 +403,8 @@ land on its own.
    `clear_conversation` does to it, and the answer is obvious.
 6. **`when-to-use:` / `disable-model-invocation:` frontmatter** — noted,
    not proposed. Both are non-standard extensions; worth knowing they
-   exist before inventing our own spelling if we ever want them.
+   exist before inventing our own spelling if we ever want them. Whether
+   `when-to-use:` earns its way in is a catalog-note question.
 7. **Compaction, when it ever exists.** The spec's Step 5 says to exempt
    skill content from pruning — losing a skill mid-conversation degrades
    the agent silently, with no error. pikuri doesn't summarize-and-
@@ -429,16 +419,17 @@ land on its own.
 - The 100:1 arithmetic + "the trigger is a relevance filter, not a
   preloader" → {Pikuri::Skill::SkillTool} yardoc, tightening the sentence
   that's already there.
-- The rejected forks (glob→skill config table; `names:` array; body
-  pre-injection) → `DECISIONS.md`, **one** entry on the
-  what-the-catalog-advertises-and-when-the-body-arrives axis; lazy
-  registration extends it in place later rather than opening a second.
+- The rejected forks that are *this note's* (a `names:` array; body
+  pre-injection; a glob→skill config table) → the shared `DECISIONS.md`
+  entry on the what-the-catalog-advertises-and-when-the-body-arrives
+  axis. The sister notes extend that same entry in place.
 - Why the host path is `:system` and not `:user` (the `on_user_message`
   dispatch would fire on reference text), the trust consequence of
   promoting hard-untrusted skill text into the system slot, and the
   Anthropic prompt-cache invalidation a host load costs →
   {Pikuri::Skill::Extension#schedule_load_skill} yardoc, one sentence
-  each.
+  each. The catalog note routes a sentence to the same place — merge,
+  don't stack.
 - "The cache makes a stable prefix free; mutating it is the expensive
   operation" is a cross-cutting fact, not a skills fact — it belongs
   wherever the book teaches prompt assembly, and it is the reason
