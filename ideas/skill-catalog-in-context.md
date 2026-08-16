@@ -107,6 +107,33 @@ which means it's the UX job to list skills, not the context job.
 So maybe all we need is a "Available skills: [cop, tuile, ...]" in a context, so that
 the LLM knows which tools are available, so that it doesn't feel like issuing
 skill load tool call in the dark, but that's it - no description attached to the skill.
+
+   **Granted — and it reframes tier 0 from a compromise into the design.**
+   The one hole is that *"listing is the UX's job"* assumes a human at a
+   keyboard, and **a sub-agent has no keyboard**: no CLAUDE.md, no slash
+   commands, no picker, and its persona `system_prompt:` replaces the
+   main prompt rather than extending it. It still inherits the `skill`
+   tool over the same catalog, so if listing belongs to the UX then a
+   sub-agent's skill list is *nobody's* job — and it would be calling
+   `skill` genuinely blind, which is the exact failure the bare-name line
+   exists to prevent. Two consequences:
+
+   - The name list should live where a persona can still see it: the
+     **tool schema enum** (`skill-load-cost.md` cheap borrow 1), not a
+     system-prompt block the persona overwrites. For a main agent the
+     enum is a redundancy; for a sub-agent it's the whole interface.
+   - It reopens *which* names. Options: (i) every persona sees the full
+     name list — cheap, but `FILE_MINER` gets `dataviz` forever; (ii) the
+     parent pre-selects per persona at wiring time, exactly as
+     `tool_names:` already does, so a `skill_names:` field is the same
+     move one axis over; (iii) personas get no skills at all, consistent
+     with "sub-agents don't inherit extensions" and roughly what happens
+     today for the description half.
+
+   My read: (ii). It matches how a persona already owns its toolset
+   verbatim, costs nothing at runtime, and it is the only option where
+   "which skills does this agent need?" is answered by a human — the
+   objection's own principle, applied one level down. See open question 7.
 2. **So "drop the registry, nudge from CLAUDE.md" is a wash on cost and a
    loss on freshness.** The saving people picture comes from dropping the
    **descriptions**, not from dropping the **mechanism**. Those are
@@ -114,7 +141,9 @@ skill load tool call in the dark, but that's it - no description attached to the
 3. **Sub-agents and non-`bin/` hosts never see CLAUDE.md.** A persona
    gets its tool snapshot and its own system prompt, and it *does* inherit
    the `skill` tool closing over the same catalog. Whatever carries name
-   knowledge has to be the catalog, or personas lose skills entirely.
+   knowledge has to be the catalog, or personas lose skills entirely —
+   and the same hole swallows the picker, not just CLAUDE.md, which is
+   the gap under the objection above.
 4. **A `bin/` demo's manual load is not evidence about the library.**
    CLAUDE.md's own warning: no bundled binary even exposes
    {Pikuri::Skill::Extension#schedule_load_skill}, so "the user loads it
@@ -242,6 +271,19 @@ fifteen times, tier 0 is a net loss on Anthropic.
    Probably correct semantics for free — but it means a long session that
    clears loses its promotions and re-pays them, which interacts with
    question 2.
+7. **Who lists skills for a sub-agent?** The picker-less UX gap under the
+   objection in claim 2.1: if listing is the host UX's job, a persona has
+   no host UX. Sub-questions, in the order they need answering:
+   (a) does the name list ride the **tool schema enum**, which survives a
+   persona replacing the system prompt, rather than a prompt block?
+   (b) does a persona get the **whole** catalog or a `skill_names:`
+   subset chosen at wiring time, mirroring `tool_names:`? (c) is that
+   field worth adding before any persona actually wants a skill —
+   `RESEARCHER` / `FILE_MINER` / `LIBRARIAN` arguably want none, which
+   would make the honest answer "no skills for sub-agents, and say so in
+   {Pikuri::SubAgent::Persona}'s yardoc" rather than a new field.
+   Note this is the *only* question here that can't be deferred by
+   shipping tier 0 first: whatever carries the names decides it.
 
 
 ## Graduation plan (when this settles)
@@ -269,3 +311,7 @@ fifteen times, tier 0 is a net loss on Anthropic.
 - The human-facing half ("handed the manual at the moment you open the
   file") → the book's skills material if it ships, since it's a concept
   and a teaching example, not a per-symbol fact.
+- **Whichever way question 7 goes**, the answer is a fact about personas
+  and belongs in {Pikuri::SubAgent::Persona}'s yardoc — including "a
+  sub-agent gets no skills", if that's the ruling. It is currently
+  unstated in either direction, which is why the gap was invisible.
