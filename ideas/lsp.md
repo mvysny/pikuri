@@ -1246,6 +1246,26 @@ optional `line`. `typeDefinition`'s parameter description must say that
 `file` + `line` are effectively required for it, since it is the one
 operation whose usual anchor is invisible to the index.
 
+**The one mechanic this rests on, and it is only half verified.** The
+index hop has two steps, and the runs above only prove the first:
+`workspace/symbol` + exact-name filter finds the declaration (findings 3
+and 5, J8), and then that hit must become a *position*. It is not simply
+`location.range.start`: a symbol's range routinely begins at the
+**keyword** — `class Foo` starts at `class`, `def resolve_for_read` at
+`def` — and a `definition` / `references` / `prepare*` query anchored on
+`class` can legitimately answer nothing, which is finding 2's empty
+result yet again. Newer servers sharpen it: a `WorkspaceSymbol` reply may
+carry a bare `{uri}` with no range at all.
+
+So the column is derived at *both* ends by the same helper — read the
+declaration's line, locate the symbol text in it, take that column —
+which is why every throwaway client grew `locate(text, symbol)` on its
+first attempt. That costs a line read at the declaration site (routed
+through the `Workspace` seam like any other, and subject to open item 2
+when the declaration is out of root). **Check it on the first live run of
+each server**: an anchor landing on the keyword fails silently, and
+silent-empty is the failure mode this note exists to refuse.
+
 Membership then follows:
 
 **The exclusion criterion, stated properly.** An earlier pass cut
