@@ -89,6 +89,60 @@ description has started doing the skill's job. That's the failure
 no free answer — see open question 1.
 
 
+## Does the KV cache neutralize the length? (author's question, 2026-08-16)
+
+Partly — and working out *which* part turns out to matter more than the
+token counts above.
+
+| cost | neutralized by caching? |
+|---|---|
+| **prefill / latency** | **Yes, essentially.** The catalog sits in the stable system prefix, so llama.cpp's slot prefix-reuse and Anthropic's prompt cache both skip it after turn one. This is the cost the "3.8 k every turn" phrasing implies, and for it the phrasing is wrong. |
+| **window capacity** | **No.** Cached tokens still occupy KV slots. 3.8 k of a 64 k window is 3.8 k the conversation can't have, cache or no cache — and on a local GPU it's VRAM held for the whole session. |
+| **attention** | **No, and this is the real one.** Every decoded token attends over the whole prefix. Twenty-eight skill descriptions the current task will never use are twenty-eight distractors competing for attention on every single token. No cache touches this. |
+| **cloud spend** | **Mostly.** Anthropic cache reads are ~0.1×, not 0×; writes are 1.25×. Cheap, not free. |
+
+So the honest correction: the naive "4 000 tokens **per turn**" framing
+overstates it in compute terms, and pre-injection is less catastrophic
+than that arithmetic implies. What survives is capacity and attention —
+you pay for skills you don't use, in every session, in the two currencies
+no cache refunds.
+
+**The inversion.** Once caching is in the picture, the expensive operation
+is not *length*, it's **mutating the prefix**. A stable prefix is free
+after turn one; a prefix that changes invalidates everything after the
+change point and re-prefills. Which means pikuri's current shape is
+accidentally the cache-optimal one:
+
+- the catalog lives in the **assemble-once system prompt** — the most
+  stable, best-cached position available;
+- the body arrives as a **tool result appended at the end** — append-only,
+  so it invalidates nothing and is itself cached from the next turn.
+
+That reframes two things written elsewhere in these notes:
+
+1. `assemble_system_prompt` building once and never amending was
+   described in `lazy-skill-registration.md` as a *limitation*. It's also
+   a cache virtue, and any "amend the system prompt mid-conversation"
+   seam — opencode's `SystemContext` delta re-render, or a catalog that
+   grows entries as skills activate — buys its flexibility by throwing
+   away the cache on every change. That's a real cost against lazy
+   registration that neither note had priced.
+2. It sharpens why the tool path beats the host path (see open question
+   2): a tool result is append-only on *every* provider, whereas the
+   `:system` interloper kind is hoisted into the top-level system param on
+   Anthropic — i.e. it **rewrites the prefix**, invalidating the entire
+   prompt cache for the rest of the conversation. Every host-loaded skill,
+   one full cache nuke. The stickiness I flagged earlier is the smaller
+   half of that problem.
+
+**Decision (author, 2026-08-16): keep `:system` for the host path, and
+don't build anything that leans on Anthropic's hoist-and-stick.** pikuri
+can't stop the provider hoisting — that's ruby_llm's Anthropic adapter —
+but it can decline to *rely* on the behaviour, and should say plainly in
+`schedule_load_skill`'s yardoc that a host load costs an Anthropic prompt
+cache on top of the divergence already documented there.
+
+
 ## Prior art: what the other harnesses actually ship
 
 Checked against a local opencode checkout (`~/temp/opencode`,
@@ -245,6 +299,20 @@ and exempting skill content from context compaction.
    My read: (i) + the preamble now, (ii) if a real catalog keeps
    growing, (iii) only if `when-to-use:` earns its way in for another
    reason. Explicitly *not* (iv).
+
+   **Revised after the caching section above.** The trade is less tight
+   than it looked, and it tilts toward *saying when*. A longer description
+   costs prefill only on turn one; what it costs forever is window
+   capacity and attention. But a description that fails to fire the right
+   skill costs a whole wasted recon pass — which is far more of *both*.
+   So on the merits: pay the words, spend them on the trigger. That
+   demotes (ii) from "cheap and honest" to "solving the cheap half" and
+   makes (i) — teaching authors to lead with the trigger and cut the
+   *narrative*, not the trigger — the whole answer for now. The remaining
+   worry isn't length, it's **twenty-eight descriptions of which one is
+   relevant**: attention dilution scales with catalog *size*, and no
+   amount of per-entry editing fixes it. Which is the one honest argument
+   left standing for `lazy-skill-registration.md`.
 2. ~~**Should the human path fold into the user turn instead of
    `:system`?**~~ **Answered — keep `:system`.** Worth writing down,
    because the three roles in play are easy to conflate:
@@ -293,7 +361,11 @@ land on its own.
    impossible instead of merely well-handled. The spec explicitly
    recommends it. Note the interaction: the tool is snapshot into
    sub-agents, so the enum must be built from the same `catalog.list` the
-   closure captures.
+   closure captures. Second interaction, spotted later: an enum of every
+   skill name **is** a names-only catalog living in the tool schema, so
+   this borrow also hands
+   [`lazy-skill-registration.md`](lazy-skill-registration.md)'s tier 0
+   for free. Land it first if that thread goes anywhere.
 2. **List the skill's sidecar files in the load result.** Both harnesses
    do it: opencode globs the skill dir, caps at 10, sorts, excludes
    `SKILL.md`, and emits `<skill_files>` with a "file list is sampled"
@@ -352,10 +424,17 @@ land on its own.
   what-the-catalog-advertises-and-when-the-body-arrives axis; lazy
   registration extends it in place later rather than opening a second.
 - Why the host path is `:system` and not `:user` (the `on_user_message`
-  dispatch would fire on reference text), plus the trust consequence of
-  promoting hard-untrusted skill text into the system slot →
+  dispatch would fire on reference text), the trust consequence of
+  promoting hard-untrusted skill text into the system slot, and the
+  Anthropic prompt-cache invalidation a host load costs →
   {Pikuri::Skill::Extension#schedule_load_skill} yardoc, one sentence
   each.
+- "The cache makes a stable prefix free; mutating it is the expensive
+  operation" is a cross-cutting fact, not a skills fact — it belongs
+  wherever the book teaches prompt assembly, and it is the reason
+  {Pikuri::Agent#assemble_system_prompt}'s build-once shape is a virtue
+  rather than a missing feature. Worth a line in that method's yardoc so
+  the next person to propose an amend-the-prompt seam sees the price.
 - The failure mode worth naming wherever this lands: Grok's pain was not
   tokens or latency, it was doing half its recon under the wrong mental
   model and having to redo it — and that wasted recon is *itself* far
