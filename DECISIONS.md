@@ -79,6 +79,161 @@ design.
 
 ---
 
+## D-skill-path-activation — Gate descriptions on `paths:`, keep the catalog in the system prompt (2026-08-16)
+
+**Status:** Accepted; not yet implemented. `Catalog::Bundled#parse_skill`
+still reads only `name` and `description`. The author's own
+`~/.claude/skills` is already annotated, which is inert for pikuri but
+*not* for Claude Code — see Consequences.
+
+**Context.** The axis is *what the catalog advertises, and when the body
+arrives*. `Skill::Extension` contributes an `<available_skills>`
+system-prompt snippet carrying every skill's description; on the author's
+ten-skill catalog that is ~4.8 KB resident on every turn, of which at most
+one entry is relevant to any given session. Two things made the status quo
+hard to defend. The author's global CLAUDE.md hand-wrote five skill nudges
+*while that catalog was already resident* — nobody writes a redundant
+nudge for a mechanism that works. And descriptions fail asymmetrically:
+they work for capability-shaped skills, where the model feels a gap it
+cannot fill, and fail for correction-shaped ones like `cop`, where the
+model confidently does the wrong thing and never runs the relevance check
+at all.
+
+**Decision.** Adopt grok-build's `paths:` frontmatter key, with pikuri's
+own placement:
+
+1. The catalog **stays a system-prompt snippet** and carries every
+   *ungated* skill in full.
+2. A skill declaring a non-empty `paths:` is withheld from that block and
+   listed **name-only** in a sibling `<contextual_skills>` section whose
+   preamble states that full descriptions arrive on a file match and that
+   the model may load one by name regardless.
+3. When a tool **reads or edits** a file matching those globs, the skill's
+   description is appended to the log as a system message.
+4. A promotion carries a **description, never a body**.
+5. A gated skill stays **invocable** before its path fires.
+6. `paths:` answers *"is this ecosystem in play?"*; `when-to-use:` answers
+   *"is this the moment?"*. They compose on one skill and are not rivals.
+7. An author-declared `paths:` is **advisory only**. Forcing a load is
+   operator wiring through {Pikuri::Skill::Extension#schedule_load_skill}.
+
+Prior art and the read of grok-build's implementation live in
+`COMPARISON.md` (*Skills → Frontmatter*, and *→ How grok-build's
+conditional activation actually works*).
+
+**Alternatives rejected.**
+
+- **Delete the catalog; rely on `skill(name:)` plus path activation.** The
+  model cannot call a tool with an argument it has never seen. The name
+  has to come from somewhere, and every substitute is worse: a CLAUDE.md
+  nudge is the same words in a hand-maintained home that rots silently on
+  a rename, where the catalog is regenerated from the filesystem at boot;
+  path activation alone leaves a skill without `paths:` permanently
+  unreachable, and `cop` is exactly that skill; a `skill_list` discovery
+  call buys a round-trip.
+- **Tier 0 — names-only for *every* skill, descriptions promoted on
+  demand.** Measured at ~65 tokens for names against ~1.5 k for
+  descriptions, so the ratio is tempting. Rejected because it withholds
+  the descriptions that *work*: the file-shaped skills whose descriptions
+  do fire are precisely the ones a glob can gate, while `cop` — which
+  demonstrably never fires — has no predicate and would stay resident. It
+  removes the working half and keeps the failing half, and makes every
+  gated skill need two things to go right where it previously needed one.
+  Gating per skill, chosen by the author, keeps the ratio without the
+  inversion. No surveyed harness ships a names-only catalog; grok-build
+  renders one only as budget overflow, and its source carries a comment
+  rejecting a names-only footer as "wastes tokens and looks like skills
+  with no description".
+- **Move the catalog out of the system prompt, as grok-build does.** Its
+  baseline goes into the first user message
+  (`prompt/user_message.rs`), never the prompt — a genuinely better
+  position on two counts: promotion mutates no prefix, and skill
+  descriptions are `untrusted: :hard` text that would sit in a data
+  position rather than the most-trusted slot in the request. Declined for
+  now as a larger change than this decision needs; recorded because it is
+  the strongest argument against our placement and the first thing to
+  revisit. The consequence we accept is that the untrusted-description gap
+  stays open for ungated skills.
+- **Make a gated skill non-invocable, as grok-build does** (a held skill
+  never reaches its `AvailableSkills` registry, so `has_skill()` refuses
+  it). Rejected because it converts a visibility filter into a capability
+  gate, and the `gradle`-shaped case wants the opposite: reachable on the
+  model's judgment even when the glob has not fired. **`paths:` is
+  therefore not an access control** — it hides a description and restricts
+  nothing. The feature's name invites the opposite reading, so the
+  non-claim belongs in {Pikuri::Skill::Catalog}'s yardoc.
+- **Invent a `project-has:` predicate** for "this is a Gradle project"
+  rather than "a Gradle file was touched". Not in the spec, not in
+  grok-build, not anywhere; inventing a predicate no harness implements,
+  to serve a saving in the hundreds of tokens, was the clearest thing to
+  drop. Its motivating case is served by operator wiring instead.
+- **Pre-inject the body on a path match.** A `paths:` in a downloaded
+  bundle deciding to occupy 4 KB of a host's context is the skill *author*
+  spending someone else's window. The same act by an operator wiring their
+  own session is legitimate — hence decision 7. Same mechanism, different
+  hand on it, opposite verdict.
+- **`paths: []` as the spelling for "never advertise".** In the shipped
+  implementation an empty list means **unconditional** — the exact
+  opposite — and so does `["**"]`, because normalization drops a match-all
+  to `nil`. It is also a YAML footgun with an inverted failure: a bare
+  `paths:` with nothing under it parses to `nil`, so the author types the
+  thing meaning "hide" and gets "advertise". A skill that should never be
+  model-invoked wants `disable-model-invocation:`, which is a separate
+  question and blocked on the host load path.
+- **`metadata: {pikuri-paths: …}` over the top-level key.** Spec-clean,
+  and the spec's sanctioned extension point — grok-build parses `metadata`
+  too, so the shape is proven. Rejected because top-level `paths:` is what
+  two independent harnesses already honour, and agreement is the whole
+  value of not inventing a dialect. For a *newly invented* predicate there
+  would be no agreement to buy and `metadata:` would win by default.
+
+**Consequences.**
+
+- **Anthropic and Bedrock pay a prompt-cache invalidation per activation,
+  accepted.** ruby_llm's `providers/anthropic/chat.rb` partitions *every*
+  `:system` message out of the array and folds it into `payload[:system]`,
+  so an injected promotion rewrites the prefix. The OpenAI-compatible path
+  — including the local llama.cpp default — keeps it positional
+  (`providers/openai/chat.rb` `format_role`), so it costs nothing there.
+  pikuri targets the OpenAI path first; this is a known trade, not an
+  oversight.
+- **The gated set is ecosystem filters, not moment triggers.** When a
+  predicate cannot be exact, prefer over-firing to under-firing: an
+  over-fire spends a few hundred bytes on an entry the model ignores, an
+  under-fire withholds the skill at the moment it was needed. A coarse
+  glob is also not *adding* a false positive relative to leaving a skill
+  ungated — ungated shows it in every project — so it strictly shrinks the
+  surface.
+- **Measured on the author's ten-skill catalog:** five skills carry
+  `paths:`, holding 2 828 of 4 798 description bytes (59 %); in a Ruby
+  session roughly 1 465 bytes (31 %) stay withheld, since the Ruby-gated
+  ones fire almost at once. Both numbers matter — the first is what the
+  mechanism *can* gate, the second what it saves in one session. An
+  earlier estimate of the same quantity, made by the party proposing the
+  mechanism, was 3× off in the optimistic direction and was corrected only
+  by writing the frontmatter it was estimating. Anyone re-opening this
+  should author before estimating.
+- **Cheap-to-gate and expensive-to-carry are nearly disjoint.** `gradle`
+  (117 B) and `maven` (175 B) are the skills a project-type predicate fits
+  best and the ones with nothing to save; `cop` (1058 B) is the largest
+  description and the least gateable. Gating is a relevance measure that
+  happens to save bytes, not a compression scheme.
+- **Ships as one change:** frontmatter parsing (with the empty/match-all
+  normalization), a glob matcher, a post-tool-call listener holding
+  session-scoped activation state — *not* in `Catalog::Bundled`, which
+  deep-freezes itself — and the two-section render. Activation must ignore
+  paths a tool *walked* to (`grep` hits, listing rows) and count only
+  model-supplied read/edit targets, mirroring both grok-build and pikuri's
+  own **Denylist seam** distinction; a repo-wide grep would otherwise
+  activate half the catalog at once.
+- **Reopen when** one of these trips: (1) the untrusted-description
+  position becomes a real finding rather than a theoretical one, which
+  argues for the placement move above; (2) activation counts per session
+  turn out high enough on Anthropic that the cache trade stops being
+  noise; (3) a third harness settles on a different spelling.
+
+---
+
 ## D-keep-ruby-llm — Decline the piece, keep the gem (2026-08-16)
 
 **Status:** Accepted; nothing to implement. Reviewed against the reopen

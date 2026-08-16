@@ -1319,10 +1319,14 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   and flat `*.md` under a `commands/` directory become user-invocable
   slash commands. It also ships **plugins** — a marketplace-installable
   bundle of skills + commands + agents + hooks + MCP servers, gated by
-  the same folder-trust decision.
+  the same folder-trust decision. Its catalog is **not** a system-prompt
+  block — baseline and updates alike arrive as `<system-reminder>`
+  injections, and a `paths:` frontmatter key holds a skill out of the
+  listing until a tool reads or edits a matching file; see *How
+  grok-build's conditional activation actually works* below.
 - **ruby_llm, langchainrb**: no concept of skills.
 
-#### Frontmatter: the six standard fields, and the extension point nobody uses
+#### Frontmatter: the six standard fields, and the nine invented ones
 
 Verified 2026-08-16, against the spec and the same grok-build
 `SOURCE_REV` as the rest of this document. The
@@ -1346,37 +1350,157 @@ grok-build invents nine, all at top level (`discovery.rs:300–318`):
 
 Three findings worth carrying:
 
-1. **The spec has a sanctioned extension point and grok-build declines
-   it.** `metadata` is *"an arbitrary key-value mapping … clients can use
-   this to store additional properties not defined by the Agent Skills
-   spec"*, with a recommendation to pick "reasonably unique" key names.
-   Putting nine keys at top level instead makes them not merely
-   non-standard but **off-spec**, and any could collide with a future
-   official field of the same name. The consequence for anyone adding a
-   key is a real fork: grok-build's spelling buys two-harness agreement
-   and inherits the collision risk, while `metadata: {<vendor>-<key>: …}`
-   is spec-clean and agrees with nobody. For a *newly invented*
-   predicate there is no agreement to buy, so `metadata:` wins by
-   default.
+1. **grok-build uses the sanctioned extension point *and* top-level
+   keys.** `metadata` is *"an arbitrary key-value mapping … clients can
+   use this to store additional properties not defined by the Agent
+   Skills spec"*, with a recommendation to pick "reasonably unique" key
+   names. grok-build parses it (`discovery.rs` `parse_metadata`),
+   promoting `metadata.author` and `metadata.short-description` to typed
+   fields and keeping the rest in a generic string map — and documents
+   that in its user guide. The nine extension keys sit at top level
+   *alongside* that, which is off-spec for those nine (any could collide
+   with a future official field), but the extension point is not
+   declined. So a harness adding a key has a real fork with a proven
+   precedent on both sides: grok-build's top-level spelling buys
+   two-harness agreement and inherits the collision risk, while
+   `metadata: {<vendor>-<key>: …}` is spec-clean, agrees with nobody, and
+   is nonetheless the shape grok-build itself reads. For a *newly
+   invented* predicate there is no agreement to buy, so `metadata:` wins
+   by default. (An earlier revision of this finding said grok-build
+   declined `metadata:` outright; that was wrong.)
 2. **An empty `paths:` marks a skill *unconditional*, not "never".**
    `…/skill_discovery_tracker/conditional.rs:38` gates on
    `s.paths.as_ref().is_some_and(|p| !p.is_empty()) && …`, so `paths: []`
    means always-listed — the opposite of what an author writing "this
    skill matches no paths" would intend. Anyone reaching for `paths: []`
    as a spelling for human-invoked-only is reaching for an inverted one.
+   `paths: ["**"]` lands the same way: `normalize_skill_paths`
+   (`discovery.rs:243`) drops empties, strips a trailing `/**` (`src/**`
+   → `src`), and returns `None` when the result is empty *or* every
+   pattern is `**` — and `None` is exactly what "unconditional" is
+   spelled as internally.
 3. **Unknown keys fail open, everywhere.** pikuri's
    `Catalog::Bundled#parse_skill` reads only `description` and `name` and
    drops the rest; Claude Code listed a skill carrying `argument-hint:`
    (a slash-command key, not a skill one) normally for months. A skill
    tagged with a key the host doesn't implement is simply advertised
    unconditionally — costing nothing and buying nothing until someone
-   implements it.
+   implements it. Qualified by finding 4: `paths:` is no longer unknown
+   everywhere.
+4. **`paths:` is not a grok-build invention — Claude Code implements it
+   too.** Observed directly on 2026-08-16. Claude Code is closed-source,
+   so this is black-box evidence rather than a source citation, but the
+   behaviour is unambiguous: five skills under `~/.claude/skills` were
+   annotated with `paths:`, and the four whose globs matched nothing read
+   that session vanished from the session's skill listing, while
+   `ideas-folder` (`ideas/**`) stayed — `ideas/*.md` had been read.
+   Reading a single `.rb` file then caused exactly the two
+   `**/*.rb`-gated skills (`writing-rdoc`, `tuile`) to be announced
+   mid-session **with their full descriptions**, while the `**/*.java`-
+   and `src/test`-gated ones stayed hidden. That is grok-build's shape
+   precisely: withheld until a touched file matches, then promoted
+   description-and-all.
+
+   Two riders. Claude Code did **not** render `when-to-use:` in those
+   announcements, so it implements at least one of grok-build's nine
+   extensions and not another — a reminder that "non-standard" is not one
+   bucket. And the practical consequence for a shared skill folder is
+   that annotating it is *not* inert: `~/.claude/skills` is where most
+   pikuri-visible skills actually live, so a `paths:` added for pikuri's
+   benefit changes Claude Code sessions today.
+
+   For pikuri the load-bearing part is convergence: **two independent
+   harnesses ship this predicate**, which makes it an emerging extension
+   rather than one vendor's idea, and turns finding 1's "grok-build's
+   spelling buys two-harness agreement" into three. It is also the
+   strongest available argument that pikuri is now *behind* on this axis
+   rather than declining to follow a fad.
 
 `compatibility` is the nearest existing field in spirit — its own
 examples are *"Requires git, docker, jq"* and *"Designed for Claude
 Code"* — but it is free text aimed at a human judging "will this work in
 my environment". Nothing parses it, and it cannot carry a machine
 predicate.
+
+#### How grok-build's conditional activation actually works
+
+Read 2026-08-16 against `main` at `5163763` — a newer monorepo sync than
+the `84ae1223` the rest of this document cites, so treat this subsection
+as the later reading where the two disagree. Five mechanics; the third
+has consequences well beyond skills. grok-build is the only harness whose
+*implementation* can be read, but per finding 4 above it is not the only
+one shipping the feature, so read this as the documented reference
+implementation of a predicate two harnesses now honour.
+
+**1. The trigger is a file the model *touched*, not a project shape.**
+`SkillDiscoveryReminder` runs after every tool call, but
+`extract_activation_paths` (`reminders/skill_discovery.rs:68`) yields
+paths from only four output variants — `ReadFile`, `ListDir`,
+`SearchReplace`, and `ApplyPatch` (every file of a multi-file patch,
+rename targets included). Its comment is explicit that *"Bash/grep paths
+are excluded (unparseable / incidental)"*. So `paths: [build.gradle]`
+fires only when the model **reads or edits** that file; a `grep` hit, a
+`bash` invocation, or the file merely existing in the project all fail
+to activate it. `paths:` cannot express "this is a Gradle project".
+
+**2. Matching is gitignore syntax; activation is sticky and
+session-scoped.** `skill_matches_any` (`conditional.rs:96`) builds an
+`ignore::GitignoreBuilder` matcher from the patterns relative to cwd and
+uses `matched_path_or_any_parents`, so a bare directory pattern matches
+files beneath it. Activated skills stay in `held`, gated by an
+`activated` set, so a re-seed can re-promote them; `/clear` calls
+`rehide()` (`conditional.rs:86`), which clears activations and
+re-partitions so a promoted skill drops back to held.
+
+**3. There is no resident skill catalog in the system prompt at all —
+the startup baseline is an injection too.** `<available_skills>` occurs
+in exactly one file repo-wide (the tracker's listing renderer); no
+prompt template renders it. `seed()` marks `pending = BaselineChange`
+and the first `take_pending()` emits the whole listing as a
+`<system-reminder>`, the same channel a later activation uses. A test is
+named for the property: `seed_produces_system_reminder_not_prompt_mutation`
+(`skill_discovery_tracker/mod.rs:1047`). Two consequences worth
+borrowing independently of `paths:`. Promotion mutates no prefix, so it
+costs no prompt-cache invalidation — the cost that would otherwise price
+conditional activation out on a provider that hoists system content.
+And skill descriptions, which are attacker-influenceable text in a
+bundle that travels between harnesses, sit in *conversation* position
+rather than the most-trusted slot in the request — which is where
+untrusted text belongs, and which pikuri's own `<available_skills>`
+system-prompt snippet does not do.
+
+**4. `when-to-use:` is a rendering split, and the renderer retro-fits it
+when the field is absent.** Parsed as either `when-to-use` or
+`when_to_use`, capped at 1024 chars like `description`. Rendered as
+`description — Use when: <trigger>` (XML) or a separate `Use when:` line.
+When the field is missing, `build_skill_entry` (`listing.rs:525`) derives
+one by splitting the *description* at the first of ten recognized
+connectives (`use this skill when`, `use when`, `triggers on`,
+`invoke when`, …, case-insensitive) and treating the tail as the trigger;
+the leading connective is then stripped so the renderer's own label isn't
+doubled, with a word-boundary guard so `Use whenever` doesn't match. A
+description that *opens* with a connective is left unsplit (the
+before-half would be empty). The split takes everything after the first
+match, so trailing non-trigger prose lands in the trigger half — the
+practical argument for authoring the field rather than relying on the
+extractor.
+
+**5. Names-only listing exists, but only as budget overflow.** Per entry,
+`description` + `when_to_use` share a 400-byte cap, split proportionally
+to their lengths with a 20-byte floor each; the listing as a whole gets
+50 % of the context window. `name_only()` renders when that budget runs
+out. A comment at `mod.rs:446` records that a names-only footer for
+disabled skills was considered and rejected because it *"wastes tokens
+and looks like skills with no description"* — so no surveyed harness
+ships a names-only catalog even as a fallback design, let alone a
+baseline.
+
+One signal about maturity: **`paths:` is the single extension key absent
+from grok-build's own user guide.** The Optional Frontmatter Fields table
+documents `when-to-use`, `allowed-tools`, `argument-hint`,
+`user-invocable`, `disable-model-invocation`, `model`, `effort`,
+`license`, `compatibility` and `metadata` — every extension key except
+this one. It is shipped but unadvertised.
 
 ### MCP (Model Context Protocol)
 
@@ -1685,4 +1809,7 @@ more than wiring through ruby_llm's existing primitive.
   `crates/codegen/xai-grok-shell/src/{agent/folder_trust.rs,session/goal_tracker.rs}`,
   `crates/common/xai-tool-types/src/task.rs`, and the user guide under
   `crates/codegen/xai-grok-pager/docs/user-guide/` (permissions, sandbox,
-  skills, memory, subagents)
+  skills, memory, subagents). *Skills → How grok-build's conditional
+  activation actually works* was read later, against `main` at
+  `5163763` — `crates/codegen/xai-grok-tools/src/{types/skill_discovery_tracker/{conditional,listing,mod}.rs,implementations/skills/discovery.rs,reminders/skill_discovery.rs}`
+  and `crates/codegen/xai-grok-agent/src/prompt/skills.rs`

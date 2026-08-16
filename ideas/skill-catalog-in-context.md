@@ -1,13 +1,15 @@
 # Does the skill catalog earn its slot in the system prompt?
 
-Status: **the trigger axis is settled — no new machinery (R9); four items
-remain live.** Rejected: `paths:` gating, tier 0, and the `project-has:`
-predicate that was proposed and killed the same day; activation stays
-model judgment, so the *description* is the only lever and the authoring
-guidance (question 11) is now the whole intervention. Still owed
+Status: **`paths:` gating is adopted (R10, reversing R9); the design is
+settled and the build is the open work.** The catalog stays in the system
+prompt (a deliberate divergence from grok-build, which puts it in the
+first user message) and carries the ungated skills in full; a `paths:`
+skill is listed name-only until a touched file matches, at which point its
+description is appended to the log. Tier 0 as a *global* posture stays
+rejected — gating is per skill, chosen by the author. Still owed
 regardless: enum + name strictness, description injection-scan parity, the
-`SkillTool` description bug (questions 1–3), plus the one surviving fork —
-where the baseline lives (question 4). Split out of what is now
+`SkillTool` description bug (questions 1–3), plus where the baseline lives
+(question 4), which R10 does not touch. Split out of what is now
 [`skill-path-activation.md`](skill-path-activation.md), where it arrived
 as a thread. It's a *sister* idea, not a sub-idea: that note asks "*when*
 should an entry be promoted?", this one asks the prior question — **is an
@@ -770,6 +772,12 @@ Two concessions to the statement, both real:
 
 ### R9. Decision (author, 2026-08-16): no new machinery — LLM discretion stands
 
+> **Superseded the same day by R10, which reverses the decision.** R9's
+> reasoning is kept because R10 rests on it: what changed is the *price*
+> of two inputs R9 took as given, not the shape of the argument. Read R9
+> for why the mechanism has to justify itself, then R10 for why it now
+> does.
+
 > Let's not invent new machinery, accepting that the `gradle` skill may or
 > may not autoload, based on LLM discretion.
 
@@ -817,14 +825,187 @@ leaving the *host-side* seam that already models it. Those are consistent
 human declaring it.
 
 
+### R10. Decision (author, 2026-08-16): `paths:` is adopted — R9 reversed
+
+> R9 is wrong! We *are* getting `paths:` into Pikuri. It's not exotic and
+> it's finally a mechanism that can force auto-load of those pesky skills
+> (or at least some of those).
+
+R9 falls as a decision and stands as reasoning. Two of its inputs were
+mispriced, and both were corrected by reading source rather than arguing:
+
+**1. The cache cost is provider-split, and pikuri's default provider does
+not pay it.** Verified in ruby_llm 1.16.0. On the OpenAI-compatible path —
+which is what a local llama.cpp endpoint is — `format_role`
+(`providers/openai/chat.rb:150`) merely relabels a `:system` message to
+`system`/`developer` and leaves it **in the messages array**, so an
+injected promotion is appended and mutates no prefix. On Anthropic and
+Bedrock the opposite: `separate_messages` partitions *every* `:system`
+message out of the array and `build_system_content` folds them into
+`payload[:system]` (`providers/anthropic/chat.rb:27–46`), so each
+activation rewrites the prefix and invalidates the whole prompt cache.
+**Accepted as an Anthropic/Bedrock limitation**, since pikuri targets the
+OpenAI API path first. R9 priced the Anthropic behaviour as if it were
+universal.
+
+**2. The mechanism is smaller than R9's "matcher, listener, path-args map,
+injection channel, cache invalidation".** Reading grok-build's
+implementation (surveyed in `COMPARISON.md`, *Skills → How grok-build's
+conditional activation actually works*) collapses two of the five: the
+injection channel is one already-existing message append, and the cache
+invalidation is item 1. What is left is a glob matcher, a post-tool-call
+listener, and session-scoped activation state.
+
+#### The design
+
+Two parts. (Slash commands as user messages are a *different axis* —
+`slash-commands.md` — and are not part of this decision.)
+
+**CATALOG — a deliberate divergence from grok-build.** pikuri keeps
+rendering the catalog as a **system-prompt** snippet. grok-build does not:
+its baseline goes into the *first user message*
+(`prompt/user_message.rs:365`), never the prompt. We adopt grok-build's
+*membership rule* (`take_unconditional` partitions on a non-empty
+`paths:`) and reject its *placement*. Anyone reading this later should
+know the hybrid was chosen, not inherited.
+
+**PATHS.** When a touched file matches a skill's `paths:`, that skill's
+description — plus the instruction telling the model how to load the body —
+is appended to the log as a system message. This is grok-build's behaviour
+verbatim, including that the promotion carries a **description, never a
+body**: their envelope reads *"Newly discovered skills. Use the
+{read_tool} tool with the provided absolute path to fetch full contents."*
+Body injection in grok-build has exactly one call site and it is an agent
+definition's static `skills:` list, nothing path-triggered.
+
+#### The two-intent split — what makes the frontmatter authorable
+
+The design deadlocked until it was clear that `paths:` was being asked to
+express two author intents that want opposite treatment:
+
+- **(A) "irrelevant outside this context"** — `karibu-testing` in a
+  non-Vaadin repo. Hide it; if it never surfaces, nothing is lost.
+- **(B) "critical at this moment"** — `gradle` in a Gradle project. It
+  must be *prominent* then, not merely reachable.
+
+One question separates them: **if this skill's path never fires this
+session, has the user lost anything?** No → gate. Yes → do not gate.
+`paths:` serves (A) only.
+
+**Which is why `gradle` is not gated**, and the measurement is blunter
+than the principle: its description is **117 bytes**. There is nothing to
+save. Measured across the ten skills on disk, the fat descriptions and the
+path-gateable ones are nearly disjoint sets — `gradle` (117 B) and `maven`
+(175 B) are in neither, and `cop` (1058 B) is the largest and the least
+gateable. The whole `gradle` thread was never a catalog-cost problem.
+
+#### The author/operator line — where "force a load" actually lives
+
+(B) is real and still wants an answer; it is just not this feature's. The
+trust argument from R2 draws the line at *who declared it*:
+
+- **Author-declared `paths:` → advisory promotion only.** A downloaded
+  bundle must not get to spend 4 KB of a host's window.
+- **Operator-declared wiring → forced load.** A human spending their own
+  window is legitimate, which is
+  {Pikuri::Skill::Extension#schedule_load_skill} (question 7).
+
+Same path-matcher underneath, two actions, distinguished by the hand on
+it. "In a Gradle project, load `gradle`" is host wiring, not frontmatter.
+
+#### Gated-but-invocable, and the render that stops it being a phantom
+
+**Decision: a gated skill is absent from the catalog but remains
+invocable early.** This diverges from grok-build, where a held skill never
+reaches `AvailableSkills` and `has_skill()` refuses it. The cost of our
+choice is a model that can call a name it was never shown, so the catalog
+names the gated set without describing it:
+
+```
+<available_skills> … full entries … </available_skills>
+<contextual_skills description="Skills scoped to project types not
+  detected yet. Their full descriptions arrive automatically the moment
+  you read or edit a matching file. You may also load one by name at any
+  time if you judge it relevant.">
+  <skill name="tuile"/> …
+</contextual_skills>
+```
+
+Framing matters: *contextual*, not *lesser*. That reading is only honest
+because `paths:` is reserved for intent (A) — a gated skill really is
+inapplicable here. ~10 tokens for five names.
+
+#### `paths:` and `when-to-use:` compose — they are not rivals
+
+The measurement section above says `writing-rdoc` "wants `when-to-use:`,
+not `paths:`" because `**/*.rb` fires on every Ruby touch. Under the
+two-intent split it wants **both, at different levels**: `paths:` answers
+*"is Ruby even in play?"* (in a Java repo it never fires and 926 bytes are
+saved), `when-to-use:` answers *"is this the moment?"*. The over-firing
+objection dissolves because a fire never meant "write a doc now" — it
+means "this project has Ruby in it". That retires R1 as an objection: what
+gating withholds is the *project-scoped* half, and the intent trigger it
+was accused of discarding moves into a field built to carry it.
+
+#### What R10 corrects elsewhere in this note
+
+- **R4** ("gating is advisory — it restricts nothing") was written as a
+  property of the mechanism; it is a *choice*. grok-build's gating does
+  restrict. Ours does not, per the decision above — so R4's conclusion
+  survives for pikuri while its reasoning ("the enum must carry every
+  name") is not the reason.
+- **The "clean `paths:` fit" list** (`tuile`, `ideas-folder`) was drafted
+  without writing the globs, and writing them changed the answer twice.
+  `tuile`'s exact predicate is "this project depends on tuile" — a
+  manifest-content check `paths:` cannot express. The tempting proxy (the
+  widget-suffix filenames the skill itself mandates) was **rejected**: it
+  under-fires on `app.rb`, which is where the threading and screen rules
+  are most needed. It settled on the coarse `**/*.rb`, which is not
+  dishonest, merely *coarser than the skill's scope* — and that is fine
+  under the rule below.
+
+- **Asymmetry rule, and it generalizes past `tuile`: when a predicate
+  cannot be exact, prefer over-firing to under-firing.** An over-fire
+  spends a few hundred bytes on an entry the model can ignore; an
+  under-fire withholds the skill at the exact moment it was needed. Note
+  also that a coarse glob is not *adding* a false positive relative to
+  leaving the skill ungated — ungated shows it in every project, so
+  `**/*.rb` strictly shrinks the surface. That disposes of the
+  "leave it ungated instead" alternative on both axes at once.
+
+- **The gated set is ecosystem filters, not moment triggers** — `**/*.rb`
+  (`writing-rdoc`, `tuile`), `**/*.java` plus test dirs
+  (`writing-javadoc`, `karibu-testing`), `ideas/**` (`ideas-folder`). No
+  entry uses `paths:` to express a moment, which is what went wrong in
+  every earlier draft. This is the split doing its job: `paths:` asks *is
+  this ecosystem in play?*, `when-to-use:` asks *is this the moment?*
+- **The gated fraction, re-measured after actually authoring:** five
+  skills carry `paths:`, holding **2 828 of 4 798 description bytes
+  (59 %)** — far above the 17 % this note recorded, because that pass
+  excluded `writing-rdoc`/`-javadoc` on the over-firing objection now
+  retired. The honest per-session figure is lower and repo-dependent: in a
+  pikuri session `writing-rdoc` and `ideas-folder` fire almost at once, so
+  roughly **1 465 bytes (31 %) stay withheld**. Record both — the first is
+  what the mechanism can gate, the second is what it saves here.
+
+#### What reopens
+
+Questions **5** and **8** were closed by R9 and are live again — though 5
+is now answered in the affirmative by decision rather than by arithmetic,
+and 8 is the measurement that tells us whether the Anthropic limitation is
+noise or real. Question **6** stays closed on its own dependencies (7 plus
+the command registry). Question **4** is untouched: R10 decides what the
+baseline *contains*, not where it *lives*.
+
+
 ## Open questions
 
-Ordered by what blocks what, not by interest. **Questions 5, 6 and 8 are
-closed by R9**; they are kept, marked, because the arithmetic is the
-reason and a future reader will re-propose the mechanism without it. Items 1–3 are owed
-regardless of how the forks settle; 4–7 are the forks (4 and 7 survive
-R9); 8–10 are the measurements that decide them; 11–15 are content and
-compatibility.
+Ordered by what blocks what, not by interest. **R10 reopens 5 and 8**
+(closed by R9) and leaves 6 closed on its own dependencies; the R9
+markings below are kept as history, since the arithmetic is still the
+reason a future reader should not re-propose this casually. Items 1–3 are
+owed regardless; 4–7 are the forks (4 and 7 both survive R10 untouched);
+8–10 are measurements; 11–15 are content and compatibility.
 
 ### Owed regardless
 
