@@ -5,10 +5,14 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The tool
-surface is settled — six name-based operations, and no column ever
+surface is settled — ten name-based operations, and no column ever
 asked of the model — as are what an out-of-root result becomes and how
-this gets tested. One implementation-level question is parked for the
-next session; see "Open — revisit in an upcoming session".
+this gets tested. The one deliberate impurity is a hardcoded
+scheme→request table, so that Java library source is readable before LSP
+3.18 exists anywhere and the Java arm can therefore be *run* rather than
+only designed; see "What a result outside the root becomes". One
+implementation-level question is parked for the next session; see
+"Open — revisit in an upcoming session".
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -461,11 +465,13 @@ rooted elsewhere, which produced the sharpest lesson of the lot:
   yet `hover` there returned the FQN, the full javadoc prose, and a
   provenance line — `Source: slf4j-api-2.0.18.jar`. J4 reproduced in a
   shipped client on a real project: absent `classFileContentsSupport`,
-  jdtls withholds library *locations* but not library *text*. **The
-  actionable half is that hover is the working fallback** — "what is this
-  library class" is answerable for Java today, without 3.18, so the
-  blocked capability is navigation-to-source alone, not library
-  intelligence as such.
+  jdtls withholds library *locations* but not library *text*. **Hover is
+  the working fallback** — "what is this library class" is answerable for
+  Java without 3.18 and without any content request at all. Pikuri does
+  not stop there (it declares the flag and reads the resulting `jdt:` URI
+  via the scheme table), but this stays the floor: even a
+  half-configured Java entry answers the *what*, and only the
+  show-me-the-source half depends on the rest.
 - **`findReferences` groups by file.** 9 references across 6 files, a
   count header, one group per repo-relative path, bare `Line L:C` entries,
   no snippets. So it *does* group — by file, which is not finding 6's
@@ -582,16 +588,20 @@ StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
   `extendedClientCapabilities.classFileContentsSupport` jdtls silently
   refuses every library definition, so this is the difference between
   Java navigation working and quietly returning nothing. It is the
-  designated home for per-server non-spec glue, which keeps the client
-  generic — pikuri has no jdtls special case, the Java *entry* does.
-There is deliberately **no `content_request`** field — reading a
-server-private URI is standard-only; see "What a result outside the root
-becomes".
-  Same principle as `init_options` and its natural partner: the
-  capability declared there is what makes the server hand back `jdt://`
-  URIs at all, so an entry that sets one without the other is
-  half-configured. Nil means non-`file:` results are reported and
-  dropped. See "What a result outside the root becomes".
+  designated home for per-server non-spec glue that must travel *outbound
+  at handshake time*, and it keeps that class of glue out of the client.
+
+There is deliberately **no `content_request` field.** Reading a
+server-private URI is per-server glue too, but it is the *inbound* half —
+which request answers a `jdt:` URI — and pushing it into config would cost
+the user two arcane coupled strings (a method name and a params shape)
+that are wrong in silence when mistyped, in a YAML file, to configure
+something they cannot verify. pikuri hardcodes that table instead: one row
+today, `jdt:` → `java/classFileContents`, tried only after the standard
+3.18 request is found absent. The asymmetry with `init_options` is the
+point — a capability *declaration* is data the user can copy from their
+server's README, whereas a *protocol method* is code. See "What a result
+outside the root becomes".
 **No `startup_timeout:`, and no timeout at all.** The obvious fifth field
 — ruby-lsp indexes this repo in seconds, a cold jdtls import is minutes —
 is a trap twice over. No value is defensible (30s is wrong for Java, 300s
@@ -691,7 +701,7 @@ hard refusal.
   applies** — an LSP hit under a denied root must not leak just because
   the server walked to it, which is `D-walked-path-denylist` doing
   precisely its job.
-- **Custom schemes — standard-only, which today means not at all.** A
+- **Custom schemes — standard first, with one hardcoded fallback.** A
   `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
   is a *handle, not a locator*: an index into jdtls's own view of the
   classpath, closer to a file descriptor than a path, and meaningless to
@@ -701,59 +711,103 @@ hard refusal.
   nowhere in its handshake). Editors solve this with per-server plugins —
   vscode-java and nvim-jdtls both hardcode `java/classFileContents`.
 
-  pikuri will not. The one supported path is **LSP 3.18's
-  `workspace/textDocumentContent`** — client→server, `{uri}` → `{text}`,
-  with the server advertising a `schemes: string[]` list, which is real
-  discovery rather than out-of-band lore. Detection is then a capability
-  check at dispatch, the same shape finding 1 already established for
-  operations; no new mechanism and no config field.
+  The preferred path stays **LSP 3.18's `workspace/textDocumentContent`**
+  — client→server, `{uri}` → `{text}`, with the server advertising a
+  `schemes: string[]` list, which is real discovery rather than
+  out-of-band lore. Detection is a capability check at dispatch, the same
+  shape finding 1 already established for operations. When a server
+  advertises it, it wins outright and nothing below runs.
 
-  The cost, accepted deliberately: **nothing implements it yet**, so
-  today a custom-scheme result is unreadable. ruby-lsp is unaffected —
-  Ruby gems are unpacked source on disk, so it emits `file:` URIs
-  exclusively (all 45 `Faraday` hits were gem paths). **What is blocked for
-  Java is narrower than it sounds: navigation *to library source*, not
-  library intelligence.** `hover` on a library class still returns its
-  FQN, full javadoc and originating jar (Prior art), so "what is this
-  thing" is answerable today and only "show me its code" waits for 3.18.
-  That is an acceptable wait rather than a reason to carry a
-  `content_request` escape hatch: one config field, two arcane coupled
-  strings, and a jdtls-shaped hole in a generic client, all to buy a
-  feature the standard is about to provide for free.
+  **But nothing implements it yet, and a standard-only stance made the
+  Java arm untestable.** That is the reversal: an earlier pass accepted
+  "unreadable until 3.18" as a narrow cost, on the grounds that `hover`
+  still answers "what is this library class" (Prior art). It is narrow in
+  *capability* and total in *development* — Java's whole reason to want
+  LSP is that most of what you navigate to lives in a jar, so a Java arm
+  that cannot follow a single library definition cannot be exercised on a
+  real project, and an operation set nobody can run against jdtls is
+  designed blind. **Designing a surface you cannot test is the worse
+  failure.** So:
 
-  **No `lsp_read` tool.** The tempting shape — expose a tool that takes a
-  URI and returns its text — would be, in every configuration that ships
-  today, a tool that always errors: ruby-lsp never emits a custom URI and
-  jdtls's cannot be read. It would spend prompt budget to do nothing, and
-  reintroduce exactly the chaining hop collapsed elsewhere in this note
-  because small local models chain badly. Instead the existing `lsp` tool
-  reports unreadable results inline with their reason — "2 more in
-  libraries; this server's `jdt:` URIs need LSP 3.18 content support,
-  which jdtls does not implement yet" — never a bare count, never
-  silence. When a 3.18 server appears the *same* path fetches and inlines
-  the text: no new tool, no chaining, and the model never holds a URI it
-  must decide what to do with.
+  **A scheme→request table, hardcoded in the client, with exactly one
+  entry today: `jdt:` → `java/classFileContents`.** Mechanics, all four
+  of them small:
 
-  And when explicit loading is eventually wanted, it lands as **another
-  `operation` enum entry, not a second tool** — the same reasoning that
-  made this one tool rather than nine, and free to defer because the enum
-  is static and hardcoded anyway (finding 1), so adding a value later
-  breaks nothing. The question to answer *then*, not now: automatic
-  inlining and an explicit read are not rivals but serve different needs
-  — a bounded snippet per result keeps `goToDefinition` usable (J7's
-  22 KB × 45 `Faraday` hits is the failure mode), while an explicit
-  operation is how the model asks for the *whole* document when the
-  snippet is not enough.
+  - **The scheme is the discriminator, because there is nothing else to
+    detect.** jdtls advertises no content capability, so a capability
+    check is impossible by construction — but only the server that
+    *issued* a `jdt:` URI can read it, and that server is jdtls by the
+    same construction. Keying on the scheme of the URI we were just
+    handed is therefore exact, not a guess.
+  - **Try-then-degrade, never raise.** A `Method not found` (finding 9's
+    error shape) drops straight back to the report-unreadable string
+    below, so a wrongly-matched scheme costs one round trip and nothing
+    else.
+  - **Both reply shapes.** 3.18 returns `{text:}`; `java/classFileContents`
+    returns a **bare String** (J7). One parse hook accepts either — J7
+    already flagged this, and it is why the two paths can share a
+    call site.
+  - **Slice, memoize, cap.** J7 measured 22,639 bytes for one class in
+    10 ms — cheap to fetch, ruinous to inline. Slice to the target range
+    like any other snippet, memoize per URI within a call (the 45-hit
+    `Faraday` shape repeats URIs), and cap how many content fetches one
+    call makes.
 
-  **Wire jdtls anyway and you still want the capability declared.**
-  Nothing stops a user registering it, and there the entry's
-  `init_options` still earns its keep: with `classFileContentsSupport`
-  jdtls returns a `jdt://` URI and pikuri says plainly that it cannot
-  read it; without it, jdtls returns *zero locations* (J4) and the model
-  concludes the symbol has no definition. Loud beats silent, so the Java
-  example keeps it — and in-project navigation works either way (J2's
-  `WebServer` resolved fine), so what is missing is only *jumping into*
-  library source, with `hover` still covering what that library symbol is.
+  **The cost, named rather than waved off.** This *is* the jdtls-shaped
+  hole a previous pass refused, and the refusal's reasoning was not
+  wrong — it was aimed at the wrong shape. What it actually rejected was a
+  **`content_request` config field**: two arcane coupled strings the user
+  must get right, in a file format pikuri exists as a counter-move to.
+  That rejection stands (see Configuration). A table in the client is a
+  different animal: the user writes nothing, the entry is one line plus a
+  parse hook, it is named after a server rather than parameterized over
+  all of them, and it carries a **written deletion condition — delete the
+  `jdt:` row the day jdtls advertises `textDocumentContent`**, at which
+  point the standard path already above it takes over with no other edit.
+  The generic-client principle survives where it matters: the *protocol
+  layer* stays server-agnostic, and the exception is one table the book
+  chapter can print in full.
+
+  **No egress is added.** Every entry in that table is a JSON-RPC request
+  to a child pikuri already spawned over a pipe it already owns — the same
+  leg as every other operation. The table may never gain a row that
+  reaches the network; that is what keeps the `http(s):` refusal below
+  load-bearing rather than decorative, and it is the sentence the
+  trifecta answer will lean on.
+
+  ruby-lsp is unaffected either way — Ruby gems are unpacked source on
+  disk, so it emits `file:` URIs exclusively (all 45 `Faraday` hits were
+  gem paths). The table exists for the typed half of the target, which is
+  exactly where the note already argued the payoff is close to certain.
+
+  **A scheme with no row is still reported, never silent.** `zipfile:`,
+  `deno:`, `sourcekit-lsp:` and anything else get the inline reason — "2
+  more in libraries; this server's `zipfile:` URIs need LSP 3.18 content
+  support, which it does not advertise" — never a bare count. Adding a row
+  later is the same one-line change as removing the `jdt:` one, and the
+  bar for adding one is a server someone actually wired and can test.
+
+  **Still no `lsp_read` tool.** The tempting shape — a tool taking a URI
+  and returning its text — would reintroduce exactly the chaining hop
+  collapsed everywhere else in this note, because small local models chain
+  badly, and would hand the model a 300-character `jdt:` URI to hold and
+  decide about. The `lsp` tool inlines content itself, on the same path
+  for both the standard request and the fallback. And when explicit
+  loading is eventually wanted it lands as **another `operation` enum
+  entry, not a second tool** — free to defer because the enum is static
+  and hardcoded (finding 1). The question to answer *then*: automatic
+  inlining and an explicit read are not rivals but serve different needs —
+  a bounded snippet per result keeps `definition` usable (J7's 22 KB × 45
+  `Faraday` hits is the failure mode), while an explicit operation is how
+  the model asks for the *whole* document when the snippet is not enough.
+
+  **The Java entry's `classFileContentsSupport` is now load-bearing
+  twice.** Without it jdtls returns *zero locations* for a library symbol
+  (J4) and the model concludes it has no definition; with it, jdtls
+  returns a `jdt:` URI — which the table now turns into readable source
+  rather than a polite refusal. In-project navigation works either way
+  (J2's `WebServer` resolved fine), so what the flag buys is the entire
+  library half.
 
 - **`http(s):` and everything else — never dereferenced, only printed.**
   This is the load-bearing refusal. Fetching a URI the *server* chose
@@ -928,15 +982,16 @@ than cargo-cult:
   the project compiles against. The launcher hard-fails below Java 21
   (`jdtls requires at least Java 21`) while your project may target 8;
   a reader who conflates the two will "fix" the wrong one.
-- **`classFileContentsSupport`** — and the honest caveat that comes with
-  it. Without it every library symbol answers with *silence* (J4); with
-  it you get a `jdt://` URI pikuri reports as unreadable until jdtls
-  ships LSP 3.18. Declaring it therefore buys a loud failure instead of a
-  false premise, which is the whole reason it stays in the example. The
-  chapter should show that failure rather than assert it: a
-  `LoggerFactory` with no definition is a better teacher than a
-  capability flag nobody would question — and in-project navigation works
-  throughout, so only the library half is missing.
+- **`classFileContentsSupport`** — the flag that turns Java library
+  navigation on. Without it every library symbol answers with *silence*
+  (J4); with it jdtls returns a `jdt:` URI, which pikuri reads through the
+  scheme table's one row. So the chapter can *demonstrate* it rather than
+  assert it: delete the flag and `LoggerFactory` has no definition, restore
+  it and the same call returns its source. A toggle the reader can flip in
+  ten seconds teaches the whole silent-empty lesson better than any
+  paragraph — and it is the chapter's natural place to show the scheme
+  table, since this is the one configuration where a custom-scheme URI
+  actually appears.
 
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
@@ -1001,7 +1056,7 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
-## The tool surface: six operations, and no column
+## The tool surface: ten operations, and no column
 
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
@@ -1049,13 +1104,14 @@ whichever of them supports it. An enum sized to the intersection would
 serve neither well.
 
 **In: `definition`, `references`, `hover`, `workspaceSymbol`,
-`typeDefinition`, `implementation`.** Uniform shape, no chaining. Each
-needs its capping discipline — references grouped lib/spec (finding 6),
-hover and definition capped hardest on constants, where a reopened Ruby
-namespace yields 45 near-identical hits.
+`typeDefinition`, `implementation`, `incomingCalls`, `outgoingCalls`,
+`supertypes`, `subtypes`.** Uniform shape, no chaining. Each needs its
+capping discipline — references grouped lib/spec (finding 6), hover and
+definition capped hardest on constants, where a reopened Ruby namespace
+yields 45 near-identical hits.
 
-The last two are the static-language pair, and J9 is why they are not
-redundant with `definition`:
+`typeDefinition` and `implementation` are the static-language pair, and
+J9 is why they are not redundant with `definition`:
 
 - **`typeDefinition`** answers a different question than `definition`.
   On `var names = new ArrayList<String>()`, `definition` gives the local
@@ -1068,6 +1124,54 @@ redundant with `definition`:
   and method level both. Ruby has no interfaces and ruby-lsp does not
   advertise it (finding 9) — so for `.rb` it is a clean refusal, which is
   the gate working, not a gap.
+
+**The two hierarchies ship in v1, as four enum values.** They were the
+strongest deferred candidates and the deferral was doing real damage: with
+`implementation` refusing on `.rb`, Ruby had *no* "who overrides this"
+operation at all, and grepping `< Base` is exactly the unreliable thing an
+LSP hop exists to settle. Both hierarchies are valuable in both languages,
+which no other candidate on the fence can say.
+
+- **Four values, not two.** Direction *is* the question — "who calls this"
+  and "what does this call" are separate asks, and one lumped operation
+  returning both doubles the volume for a model that wanted half. A
+  `direction:` parameter is worse: it would apply to four of ten
+  operations, which is Claude Code's `query`-only-for-`workspaceSymbol`
+  wart rebuilt. Flat enum values, strictly validated by
+  `Tool::Parameters`.
+- **The prepare hop is collapsed, exactly like `workspace/symbol` inside
+  `definition`.** LSP makes both a two-step chain —
+  `textDocument/prepareCallHierarchy` → item → `callHierarchy/incomingCalls`,
+  and `textDocument/prepareTypeHierarchy` → item → `typeHierarchy/subtypes`.
+  The model issues one call with a `symbol`; the tool runs prepare, filters
+  its items for an exact name match (finding 5's discipline again, since
+  prepare can return several), and fetches. This *was* the exclusion reason,
+  and it is the one the note's own design already knows how to dissolve.
+  Claude Code exposes `prepareCallHierarchy` as a model-facing operation —
+  the chaining hop, handed to the model — which is precisely what pikuri's
+  local-model default cannot afford.
+- **The capability gate splits them per language, and that is the gate
+  working.** Finding 9: jdtls advertises both providers; ruby-lsp
+  advertises `typeHierarchyProvider` but **not** `callHierarchyProvider`.
+  So `.rb` gets `subtypes` / `supertypes` and a clean refusal on the call
+  pair, while `.java` gets all four. `subtypes` is what closes the Ruby
+  hole `implementation`'s refusal leaves open.
+- **Unverified, and it must be verified first.** Nothing in the findings
+  above actually *ran* a type hierarchy — finding 9 only records that
+  ruby-lsp advertises the provider. Whether `typeHierarchy/subtypes`
+  returns useful results there, and whether `supertypes` walks the module
+  ancestry (`include` / `prepend` ordering, the thing grep genuinely
+  cannot reconstruct), is the first thing to check when implementing. An
+  advertised provider that returns an empty array is finding 2 wearing a
+  fourth hat, and the book chapter must not claim otherwise before a live
+  run says so.
+- **Volume.** `incomingCalls` on a popular method is `references`-shaped —
+  same cap and same lib/spec grouping. `outgoingCalls` is the weakest of
+  the four, since the model can just `read` the body; it ships because
+  once prepare is collapsed the marginal cost is one enum value and one
+  dispatch arm, and it is the honest counterpart to `incomingCalls`. If it
+  goes unused, drop it — the enum is static, so removal is as cheap as
+  addition.
 
 `workspaceSymbol` is exposed *as well as* being the internal
 name→position mechanism, because J8 shows it does something no tool
@@ -1087,19 +1191,14 @@ of exact-match-first ordering and a hard cap.
   takes a single `textDocument: {uri}` and searches nothing.
 - **`declaration`** — marginal against `definition` in both languages
   (C-style header/impl splits are the case it exists for).
-- **The two hierarchies — `callHierarchy` and `typeHierarchy`** — are the
-  strongest *deferred* candidates rather than rejects, and both are
-  valuable in both languages ("who calls this", "what subclasses this").
-  Each is a prepare-then-fetch chain, which is the exclusion reason — but
-  the same collapse that hides `workspace/symbol` inside `definition`
-  would hide `prepare` inside them, making `incomingCalls(symbol:)` a
-  single model call. Note `typeHierarchy` is advertised by *both* servers
-  (finding 9). Add when there is evidence the model wants them; the
-  mechanism is already understood.
 
-Adding a value later breaks nothing (the enum is static and hardcoded),
-
-so this is a floor, not a ceiling.
+Adding a value later breaks nothing (the enum is static and hardcoded), so
+this is a floor, not a ceiling. What remains outside it is now only
+`documentSymbol`, `declaration`, and the write-side operations the gem
+refuses on purpose (rename, formatting, code actions, diagnostics) —
+plus `completion`, which never came up because an agent writes whole
+files rather than completing at a cursor, and is recorded here so the
+omission is a decision rather than an oversight.
 
 ## How the protocol is modeled, and the build order
 
@@ -1145,7 +1244,9 @@ Build order:
    a serialization bug is invisible because both sides agree on the same
    wrong thing. So the parse layer also gets **fixtures of raw captured
    bytes** from real servers — the `LocationLink` reply, a `jdt://` URI,
-   the `$/progress` payloads, all recorded in the findings above.
+   a `java/classFileContents` reply (a bare String, J7 — the fixture that
+   proves the both-shapes parse hook), the `$/progress` payloads, all
+   recorded in the findings above.
 
 ## Testing
 
@@ -1170,16 +1271,38 @@ Three layers, because the middle one cannot be done in-process:
    token that never closes (J2), a reply that never arrives, hostile
    bytes in a `title`. Drive the fake from a thread — a spec that writes
    more than the pipe buffer with nobody reading will deadlock.
+
+   The scheme table belongs here too, and it is three cases the fake can
+   play that no real server will: a server advertising 3.18
+   `textDocumentContent` (the standard path wins, the table is never
+   consulted), a server advertising nothing that answers
+   `java/classFileContents` with a bare String (the fallback fires), and
+   one that answers `Method not found` (degrade to the inline
+   report-unreadable string, no raise). A prepare-then-fetch hierarchy
+   whose `prepare` returns several items is a fourth — that is where the
+   exact-name filter earns its spec.
 2. **Spawn and death → tiny real subprocesses, no LSP involved.** A
    nonexistent command for the missing-binary raise; `sh -c 'exit 1'` for
    child-death detection and the stderr tail; teardown through
    {Pikuri::Finalizers}. In-process pipes give EOF but no exit status, so
    this layer is what covers "died" as distinct from "closed".
-3. **One live-server smoke spec** against `ruby-lsp`, tagged to skip when
-   the binary is absent. Proves the stack works end to end without making
-   CI depend on it — the `ruby:4.0` image has no `ruby-lsp`, and while CI
-   already installs `ripgrep` for the Grep specs, layers 1 and 2 mean
-   nothing here *needs* that precedent followed.
+3. **Live-server smoke specs**, each tagged to skip when its binary is
+   absent. `ruby-lsp` against this repo proves the stack end to end
+   without making CI depend on it — the `ruby:4.0` image has no
+   `ruby-lsp`, and while CI already installs `ripgrep` for the Grep specs,
+   layers 1 and 2 mean nothing here *needs* that precedent followed.
+
+   **A second arm against `jdtls` is what the scheme table buys**, and it
+   is the reason the table exists: with it, one `definition` on
+   `LoggerFactory` in a scratch Maven fixture exercises the typed half all
+   the way through — capability routing by extension, `initializationOptions`,
+   a `jdt:` URI, the fallback fetch, the range slice. Skipped in CI like
+   the Ruby arm (a cold import is minutes, J6), and the honest framing is
+   that this arm is **primarily a manual check** — a spec that runs on one
+   developer's machine is a smoke test, not coverage. Everything it would
+   assert is already covered deterministically by layer 1's fake; what a
+   live jdtls adds is the thing a fake can never give, which is proof that
+   our idea of the protocol matches a real server's.
 
 ## Open — revisit in an upcoming session
 
@@ -1188,11 +1311,17 @@ membership — are settled above; this is the place to start next time.
 
 - **The gem's trifecta contribution.** `Mcp::Extension` declares its
   legs; `pikuri-lsp` must too, and the answer is not obviously "nothing".
-  No egress (the `http(s)` refusal is what buys that) and no new private
-  data *in principle* — results are derived from files the agent can
-  already read — but snippet content for out-of-root results is text from
-  outside the workspace entering the context, which is the untrusted-input
-  leg however local it is. Write it down rather than defaulting to silence.
+  No egress — the `http(s)` refusal buys that, and the scheme table has to
+  hold the line with it, since every row is a request to a child over a
+  pipe we already own and a row that reached the network would undo the
+  refusal from the inside. No new private data *in principle* — results
+  are derived from files the agent can already read — but snippet content
+  for out-of-root results is text from outside the workspace entering the
+  context, which is the untrusted-input leg however local it is, and the
+  fallback widens it slightly: `java/classFileContents` pulls text out of
+  a **jar**, which is further from the workspace than a gem path and the
+  one place this gem reads bytes the user never checked out. Write it down
+  rather than defaulting to silence.
 
 ## Considered, deferred
 
@@ -1238,9 +1367,17 @@ rationale → yardoc on `Lsp::Registry::StdioEntry`, and the two worked
 configs → the book chapter (the *no configurable root* rule is the one
 that also wants a sentence in the seam entry, since it is what keeps the
 LSP's project and the `Workspace` root the same boundary);
-**direct-vs-MCP with the bridges named**, and **no-timeout with its three
-replacements**, → two new `DECISIONS.md` entries (suggested slugs
-`lsp-direct-not-mcp` and `lsp-no-startup-timeout`, with the usual
-prefix); the COMPARISON.md LSP column → `✅`. Then delete this file,
-plus the superseded LSP bullets in `coding-agent.md` and
+**direct-vs-MCP with the bridges named**, **no-timeout with its three
+replacements**, and **the scheme table** (standard-first, one hardcoded
+`jdt:` row, rejected alternatives: standard-only — which made the Java arm
+untestable — and a `content_request` config field; plus the deletion
+condition) → three new `DECISIONS.md` entries (suggested slugs
+`lsp-direct-not-mcp`, `lsp-no-startup-timeout`, `lsp-scheme-fallback`,
+with the usual prefix); the COMPARISON.md LSP column → `✅`. Then delete
+this file, plus the superseded LSP bullets in `coding-agent.md` and
 `claude-parity.md`.
+
+The scheme table also wants a line in the `CLAUDE.md` seam entry, since
+"pikuri-lsp reads only `file:` paths and one enumerated server-private
+scheme, never the network" is an invariant someone could break by adding
+a row without noticing.
