@@ -17,9 +17,15 @@ the Drop list, the catalog's *missing-`description`* hard failure was
 borrowed without the rationale that justifies it, and `Registry#get`
 turned out to carry two contracts that P3's sample only showed one of.
 The `allowed-tools:` refusal also grew the paragraph reconciling it with
-how pikuri treats the same key on a skill. **Question 1 is the only open
-item touching on-disk compatibility, and it blocks nothing** — 3, 5 and
-6 are a host's call, a sentence of yardoc, and a settled lean.
+how pikuri treats the same key on a skill.
+
+**Question 1 closed the same day, by measurement** against Claude Code
+2.1.233 — see *Unreferenced arguments*. It confirmed the lean (arguments
+a body never references are appended) and turned up three things nobody
+was looking for: the expansion is XML-wrapped, `$n` is off by one, and
+`wh.md`'s `$1` has never worked. **Nothing open now blocks
+implementation** — questions 3, 5 and 6 are a host's call, a sentence of
+yardoc, and a settled lean.
 
 **Scope.** This note owns the *human-invoked* half of the prompt-bundle
 surface: discovery of `commands/`, argument interpolation, and how a
@@ -217,7 +223,13 @@ Copy:
   namespaced commands rather than degrade — worse than not supporting
   them.
 - **`$ARGUMENTS` / `$n`.** Trivial, and the only interpolation that
-  can't be replaced by prose.
+  can't be replaced by prose. Two riders from the 2026-08-16
+  measurement: append `ARGUMENTS: <raw>` — that exact spelling — when
+  the body references neither, and implement `$n` **1-based**, blanking
+  an out-of-range index. Claude Code 2.1.233 is 0-based there and leaves
+  an out-of-range `$n` as literal text; that is its bug, and the one
+  place this note knowingly diverges from observed behaviour. Reasoning
+  and the probe transcript live in *Unreferenced arguments* below.
 - **Lenient validation**, matching the catalog on unknown keys — ignored.
   **But not its hard failure** (revised 2026-08-16): `Catalog::Bundled`
   drops a skill with no `description` because for a *skill* the
@@ -390,8 +402,72 @@ that names its arguments in prose is clearly a shape people write (we
 just wrote one). Whether pikuri appends unreferenced arguments decides
 whether those files work or silently ignore what the human typed —
 silently, because a command body has no way to signal it didn't see an
-argument. Lean: append, as a trailing
-`(arguments: <raw>)` line, when the body references neither placeholder.
+argument. Lean was: append, as a trailing `(arguments: <raw>)` line,
+when the body references neither placeholder.
+
+### Measured, 2026-08-16 — and the lean was right about the *what*
+
+Run against **Claude Code 2.1.233**, headless (`claude -p "/probe ALPHA
+BRAVO"`) in a throwaway project holding nothing but
+`.claude/commands/*.md`. Each probe body asked the model to echo its own
+user message verbatim in a fenced block; every result below reproduced
+on two models (haiku and sonnet), which is what rules out the model
+paraphrasing rather than reporting. The expansion is:
+
+```
+<command-message>probe</command-message>
+<command-name>/probe</command-name>
+<command-args>ALPHA BRAVO</command-args>      ← only when args were typed
+<body, with $ARGUMENTS / $n substituted>
+
+
+ARGUMENTS: ALPHA BRAVO                        ← only when the body referenced neither
+```
+
+Four findings, in ascending order of how much they change:
+
+1. **Yes, it appends** — as a trailing `ARGUMENTS: <raw>` block after two
+   blank lines, and only when the body references neither `$ARGUMENTS`
+   nor a `$n`. With no arguments typed, neither the tag nor the block
+   appears. So the lean was right, and pikuri should **copy the spelling
+   verbatim** rather than invent `(arguments: …)`: a body authored
+   against Claude Code then reads identically here, which is the entire
+   point of scanning someone else's directory.
+2. **It wraps** — see open question 4, which this partly re-opens and
+   then closes the same way.
+3. **`$n` is off by one, and it is Claude Code's bug, not a convention.**
+   `/probed AAA BBB CCC` against a body reading
+   `one=[$1] two=[$2] three=[$3] all=[$ARGUMENTS]` expands to
+   `one=[BBB] two=[CCC] three=[$3] all=[AAA BBB CCC]`. `$ARGUMENTS` is
+   correct; `$n` indexes the argument list **0-based** while being
+   documented and universally written as 1-based, so `$1` yields the
+   *second* word. An out-of-range `$n` is left as **literal text**, not
+   emptied — so a one-argument invocation leaves the characters `$1`
+   sitting in the prompt.
+
+   pikuri should implement **1-based, as documented and as every author
+   writes it**, and blank an out-of-range `$n` rather than leaking the
+   placeholder. This is the one place to knowingly diverge from observed
+   Claude Code behaviour: matching the bug would mean matching it
+   forever, and nobody authored *against* it — the shape it produces is
+   a body that silently reads the wrong word, which an author is far
+   likelier to have papered over than noticed.
+4. **`wh.md`'s fix does not actually work** — the file that motivated
+   this note, checked as a consequence of finding 3. `/wh swingai` is a
+   single-argument invocation, so its `$1` is out of range: the label
+   never lands in the placeholder, the literal `$1` survives into the
+   prompt, and the command works only because the body says *"If that is
+   empty, use 'swingai'"* and 'swingai' is also the intended default.
+   The `$ARGUMENTS` mention on its own line is what actually conveys the
+   label today.
+
+   So the paragraph above — "no *known* command depends on the append
+   behaviour" — holds for the wrong reason: `wh.md` doesn't depend on the
+   append because it references `$ARGUMENTS`, not because its `$1` works.
+   Under pikuri's 1-based rule the file behaves as its author intended,
+   with no edit. That is a small piece of evidence for finding 3's
+   divergence: the *fix* for the bug is what makes the existing bundle
+   correct.
 
 
 ## What pikuri already has
@@ -435,12 +511,12 @@ to be reachable from pikuri aren't.
 
 ## Open questions
 
-1. **What does Claude Code do with arguments a body never references,
-   and should pikuri match it?** No longer load-bearing for `wh.md`
-   (see above), but still a compatibility question for imported
-   bundles. Testable in five minutes: a command whose body is
-   `print the word FOO only`, invoked as `/that bar`, and see whether
-   `bar` shows up.
+1. ~~**What does Claude Code do with arguments a body never references,
+   and should pikuri match it?**~~ **Closed 2026-08-16 by measurement**
+   — it appends `ARGUMENTS: <raw>`, and pikuri copies the spelling. The
+   probe also turned up the `$n` off-by-one and the expansion wrapper;
+   all four findings are in *Unreferenced arguments* above, and the two
+   that changed a decision are folded into the Copy list and question 4.
 2. **Which directories does the registry scan?** `.pikuri/commands` and
    `.claude/commands` are obvious. Is there an `.agents/commands`
    convention in PI, mirroring `.agents/skills`? Don't add the third
@@ -477,7 +553,18 @@ to be reachable from pikuri aren't.
    a body pointing at a sidecar file has no base directory to resolve
    against.
 
-   That second half was the only real argument for a wrapper, and
+   **Prior art, measured 2026-08-16: Claude Code *does* wrap** — three
+   tags, `<command-message>` / `<command-name>` / `<command-args>`, the
+   last omitted when no arguments were typed. So the "an XML wrapper
+   reads oddly in a user turn" half of the argument above is this note's
+   aesthetic judgement and not a shared one; drop it as a reason. What
+   survives the measurement is the decisive part: **that wrapper carries
+   no location**, so it does not solve the base-directory problem that
+   was the only *functional* argument for having one. A wrapper pikuri
+   would have to extend anyway, to carry the one field the prior art
+   omits, is a wrapper worth not having.
+
+   That functional half was the only real argument for one, and
    dropping `@path` is what answers it: a sidecar reference stays
    literal text, the model resolves it by calling `read`, and `read`
    needs a base directory — which the one-line footer supplies. So: **no
