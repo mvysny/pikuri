@@ -916,6 +916,52 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
+## How the protocol is modeled, and the build order
+
+`Data.define` values serialized through `JSON.generate`; **no string
+concatenation anywhere near the wire**. The framing header is the one
+place bytes are assembled by hand, and it is three fields.
+
+But *not* a model of LSP. The full protocol is hundreds of interfaces —
+hand-writing them is the `language_server-protocol` dependency rejected
+above, rebuilt worse. Data classes earn their place only where the wire
+shape is messy and the internal shape should be clean:
+
+- **`Location`** — the prize. Servers answer with either `Location`
+  (`uri`/`range`) or `LocationLink` (`targetUri`/`targetRange`/
+  `targetSelectionRange`) depending on the `linkSupport` we declare
+  (finding 4, and the bug that crashed the first throwaway parser). One
+  Data class, one `.from_wire` accepting both shapes, and the rest of the
+  gem never learns there were two.
+- **`ServerProgress`** — `begin` / `report` / `end` collapsing into the
+  one variant hosts consume.
+- **`Position` / `Range`** — small, ubiquitous, and the home for the
+  1-based↔0-based and utf-16 conversions, so those live in one place
+  instead of at every call site.
+
+Everything else stays plain: outbound message envelopes are Hashes handed
+to `JSON.generate` (that is not string concatenation), and **the
+`initialize` result's capabilities object stays a Hash** — we only ask
+whether a key is present, and capability values are unions in practice
+(`definitionProvider` came back as `true` from jdtls, an object
+elsewhere), so typing 25 fields buys a schema nobody reads.
+
+Build order:
+
+1. **Gem skeleton + the protocol layer.** Framing, id demux, the Data
+   classes above. Independent of both parked questions — enum membership
+   is the tool layer, the trifecta contribution is the extension layer,
+   and neither touches this.
+2. **The fake server, sharing those types in reverse** — it parses what
+   the client writes and serializes canned replies. Any asymmetry (a
+   field we can write but not parse) surfaces immediately.
+
+   The trap to avoid: if the fake builds replies with our own serializer,
+   a serialization bug is invisible because both sides agree on the same
+   wrong thing. So the parse layer also gets **fixtures of raw captured
+   bytes** from real servers — the `LocationLink` reply, a `jdt://` URI,
+   the `$/progress` payloads, all recorded in the findings above.
+
 ## Testing
 
 **A fake server driven over in-process pipes, not a subprocess.** The
