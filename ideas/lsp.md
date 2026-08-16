@@ -5,7 +5,7 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The tool
-surface is settled — three name-based operations, and no column ever
+surface is settled — four name-based operations, and no column ever
 asked of the model — as are what an out-of-root result becomes and how
 this gets tested. One implementation-level question is parked for the
 next session; see "Open — revisit in an upcoming session".
@@ -285,6 +285,20 @@ from the sources jar. Two consequences: the reply is a plain String, not
 the `{text:}` object a spec-shaped request would return, so a generic
 hook must accept both; and a whole class is far too much for one
 observation, so the content path slices to the target range.
+
+**J8. `workspace/symbol` searches inside jars — the one thing grep can
+never do.** A Maven fixture with commons-lang3 on the classpath:
+`workspace/symbol("StringUtils")` returned 5 hits — commons-lang3's, the
+JDK compiler's internal one, a jcef jar's — every one a `jdt://` URI
+inside a binary jar. The decisive case is **`ArrayUtils`, which appears
+nowhere in the source and is never imported**: 2 hits anyway. Grep over
+the project finds nothing and grep over `~/.m2` finds unreadable binary.
+The same argument holds for Ruby without the binary part, because
+pikuri's `Grep` is workspace-scoped while the server's index covers the
+whole bundle — there the hits are `file:` URIs and readable today. Prefix
+queries work and are noisy (`StringUt` → 11 hits, including
+`StringUTF16` and `StringBufferInputStream`), which is finding 5's
+fuzziness confirmed on a second server.
 
 **J6. Warm start is 10× cheaper, which settles the data-dir question.**
 Same repo, same `-data`: 78s cold, 7.7s warm. `Paths.cache` (shared,
@@ -916,7 +930,7 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
-## The tool surface: three operations, and no column
+## The tool surface: four operations, and no column
 
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
@@ -949,21 +963,27 @@ concrete. Three consequences worth noting:
 
 Membership then follows:
 
-**In: `definition`, `references`, `hover`.** Uniform shape, no chaining,
-and precisely the origin use case. Each needs its capping discipline —
-references grouped lib/spec (finding 6), hover and definition capped
-hardest on constants, where a reopened namespace yields 45 near-identical
-hits.
+**In: `definition`, `references`, `hover`, `workspaceSymbol`.** Uniform
+shape, no chaining, and precisely the origin use case. Each needs its
+capping discipline — references grouped lib/spec (finding 6), hover and
+definition capped hardest on constants, where a reopened namespace yields
+45 near-identical hits.
+
+`workspaceSymbol` is exposed *as well as* being the internal name→position
+mechanism, because J8 shows it does something no tool pikuri has can ever
+do: it searches the server's index, which covers dependencies. That is
+not in tension with collapsing the hop — the collapse means the model is
+never *forced* to chain, not that discovery is hidden. Its fuzziness
+(finding 5, and 11 hits for a three-letter prefix in J8) makes it the
+operation most in need of exact-match-first ordering and a hard cap.
 
 **Out, with reasons:**
 
-- **`workspaceSymbol`** — becomes the internal mechanism, not a verb.
-  Exposing it hands a small model a deliberately fuzzy list to chain
-  from, and `definition(symbol: "Foo")` returning nothing is already the
-  existence check.
 - **`documentSymbol`** — the only file-keyed operation, so it breaks the
-  uniform shape, and `grep '^\s*(def|class|module)'` already outlines a
-  file using a tool that is always present.
+  uniform shape, and for one named file `grep '^\s*(def|class|module)'`
+  genuinely does outline it. The reach-into-dependencies argument that
+  might seem to save it belongs to `workspaceSymbol`: `documentSymbol`
+  takes a single `textDocument: {uri}` and searches nothing.
 - **`goToImplementation`, `prepareCallHierarchy`, `incomingCalls`,
   `outgoingCalls`** — unsupported by ruby-lsp (verified: Claude Code
   leaks raw `Method not found` for all three against it), and the
