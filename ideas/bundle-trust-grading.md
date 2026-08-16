@@ -185,11 +185,14 @@ step, not duck typing — `catalog.rb:116` currently does
 Then one reader — `#untrusted_level`, returning `:none` or `:hard` — and
 `SkillTool` consumes it instead of the literal. The abstract `Catalog`
 defaults it to `:hard` (hosts subclass `Catalog` directly, and silence
-buys the pessimistic value there too). `Catalog::Empty` returns `:none`,
-which nothing reaches by the normal path — `Extension#configure` no-ops
-on an empty catalog and raises on a pre-registered `SkillTool` — so
-either say it is for a hand-constructed `SkillTool` or leave `Empty`
-inheriting the base default and skip the override.
+buys the pessimistic value there too). `Catalog::Empty` returns `:none`
+— not a special case but the union rule applied: a union over zero
+stored skills is the identity, and a catalog that loaded no bytes
+contributes no untrusted content. Unreachable by the normal path
+(`Extension#configure` no-ops on an empty catalog and raises on a
+pre-registered `SkillTool`), so it exists for a hand-constructed
+`SkillTool` and for `Bundled` scanning empty dirs, which lands on the
+same value by the same argument.
 
 **The union needs a carrier, and it should not be the `Skill` record.**
 "Union at the point a skill wins its name" means `scan_root` must know
@@ -411,3 +414,27 @@ prose on the same terms a skill body is.
   reports `:hard`, and no host can do better without redoing the scan).
 - **Rejected** → a one-line why-not in `SkillTool`'s existing comment,
   which is already where a reader meets the question.
+
+### What else the change touches
+
+Found by sweeping for anything that records today's unconditional
+`:hard`. None of it is a blocker; all of it goes stale silently if
+missed.
+
+- **`pikuri-skills/spec/pikuri/skill/trifecta_legs_spec.rb`** asserts
+  `:hard` with the rationale in the example name. Becomes two examples,
+  one per base trust.
+- **`book/trifecta-detector.md:153`** prints a worked `pikuri-code`
+  advisory whose attribution reads `untrusted(read, grep, glob,
+  file_list, bash, skill)`. That is exactly the line the new prompt
+  changes, so the chapter either updates it or says which answer it is
+  showing. Its "Who declares each leg" table (`:182`) also calls
+  `:untrusted` framework-determined, which `Filesystem#trusted?` already
+  softened and this softens further — one sentence, not a rewrite.
+- **`pikuri-code/spec/pikuri/code/dry_run_spec.rb`** pins the verdict
+  table "as bin/pikuri-code wires them", but `parent_tools` has no
+  `SkillTool` — so the grading cannot move a row there. Pre-existing gap
+  that this makes conspicuous: either add the row (pinning both
+  readings) or say why skills sit outside that table. Note its
+  `trusted: true` rows already model the readable-set-is-project-root
+  workspace that the real binary is not, which is why they pass today.
