@@ -455,6 +455,23 @@ rooted elsewhere, which produced the sharpest lesson of the lot:
   for pikuri including it (J9) and dropping `documentSymbol`.
 - **`line` and `character` are required for every operation**, including
   `workspaceSymbol`, which needs neither.
+- **`goToDefinition` on a library class fails while `hover` on the very
+  same position succeeds.** Re-run correctly rooted (headless, from the
+  project dir): `goToDefinition` on `LoggerFactory` returned no location,
+  yet `hover` there returned the FQN, the full javadoc prose, and a
+  provenance line — `Source: slf4j-api-2.0.18.jar`. J4 reproduced in a
+  shipped client on a real project: absent `classFileContentsSupport`,
+  jdtls withholds library *locations* but not library *text*. **The
+  actionable half is that hover is the working fallback** — "what is this
+  library class" is answerable for Java today, without 3.18, so the
+  blocked capability is navigation-to-source alone, not library
+  intelligence as such.
+- **`findReferences` groups by file.** 9 references across 6 files, a
+  count header, one group per repo-relative path, bare `Line L:C` entries,
+  no snippets. So it *does* group — by file, which is not finding 6's
+  lib/spec split — includes the declaration among the references, and
+  leaves lines unsorted within a group (241, 73, 334). No cap is
+  demonstrated either way; 9 results would not reach one.
 - **An out-of-project file answers "No definition found".** Both probes
   returned that string; the *actual* cause appeared only as an editor
   diagnostic — `VaadinBootBase.java is a non-project file, only syntax
@@ -694,9 +711,12 @@ hard refusal.
   The cost, accepted deliberately: **nothing implements it yet**, so
   today a custom-scheme result is unreadable. ruby-lsp is unaffected —
   Ruby gems are unpacked source on disk, so it emits `file:` URIs
-  exclusively (all 45 `Faraday` hits were gem paths). **Java library
-  navigation is therefore blocked until jdtls ships 3.18**, and that is
-  an acceptable wait rather than a reason to carry a
+  exclusively (all 45 `Faraday` hits were gem paths). **What is blocked for
+  Java is narrower than it sounds: navigation *to library source*, not
+  library intelligence.** `hover` on a library class still returns its
+  FQN, full javadoc and originating jar (Prior art), so "what is this
+  thing" is answerable today and only "show me its code" waits for 3.18.
+  That is an acceptable wait rather than a reason to carry a
   `content_request` escape hatch: one config field, two arcane coupled
   strings, and a jdtls-shaped hole in a generic client, all to buy a
   feature the standard is about to provide for free.
@@ -732,7 +752,8 @@ hard refusal.
   read it; without it, jdtls returns *zero locations* (J4) and the model
   concludes the symbol has no definition. Loud beats silent, so the Java
   example keeps it — and in-project navigation works either way (J2's
-  `WebServer` resolved fine), so only the library half is blocked.
+  `WebServer` resolved fine), so what is missing is only *jumping into*
+  library source, with `hover` still covering what that library symbol is.
 
 - **`http(s):` and everything else — never dereferenced, only printed.**
   This is the load-bearing refusal. Fetching a URI the *server* chose
