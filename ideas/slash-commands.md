@@ -857,55 +857,25 @@ to be reachable from pikuri aren't.
    an agent that genuinely holds all three. `TrifectaLegs`' own yardoc
    names over-warning as the declared bias, so the tie goes to `:hard`.
 
-   **Accepted refinement: trust by *source*, and the flag already
-   exists** (2026-08-16). `:hard` is right as the *default*, not as the
-   answer — a bundle the human wrote is trusted in fact, and the
-   registry can say so honestly. `Workspace::Filesystem#trusted?` is
-   already this exact concept, in almost these words: *"whether every
-   byte reachable here is user-authored — the opt-out from the file
-   tools' default `:hard` untrusted leg"*, defaulting `false` because
-   "cloned dependencies, fetched PR branches, saved downloads and
-   package caches" are the norm. So the rule is per source:
+   **`:hard` is the default, not the answer — and the graded answer is
+   [`bundle-trust-grading.md`](bundle-trust-grading.md)'s to own**
+   (2026-08-16). A bundle the human wrote is trusted in fact, and
+   `Workspace::Filesystem#trusted?` is already that exact concept. But
+   the opt-out channel is a shipped-gem change to `pikuri-skills` that
+   `SkillTool` needs first and for the same reason, so it lives in that
+   note: what a project base inherits, what a home base must declare,
+   the union rule, and why a skill or command body is prose rather than
+   an executable. Commands adopt whatever lands there.
 
-   - **Project-base bundles inherit `fs.trusted?`.** Not a new rule —
-     the same bytes `read` would return, from the same root, with the
-     trust already declared once by the host. Declaring them differently
-     from `read` would be incoherent.
-   - **Home-base bundles take a declared flag, defaulting `false`.**
-     Home is *not* automatically user-authored: `~/.claude/skills` and
-     `~/.claude/commands` routinely hold marketplace plugins, cloned
-     collections and pasted files. Like `trusted:` and `private:`, this
-     is a declaration the framework cannot verify, so it defaults to the
-     pessimistic value and the human opts in.
+   Two consequences for *this* note, which is all that's needed here:
 
-   Two properties worth writing down before anyone builds it. First, the
-   *"claim it only when the trusted area is the tool's entire reachable
-   set — a vouched-for island inside a broad root buys nothing"* rider
-   is satisfiable **here but not for `read`**: `read` reaches the whole
-   project root, so its trust is all-or-nothing, whereas a registry's
-   reachable set *is* the enumerable list of files it loaded at scan
-   time. That is why per-source grading is honest on this surface and
-   would not be on that one. Second, the leg is a boot-time union, so a
-   single project-base command from an untrusted repo takes the whole
-   surface to `:hard` however many trusted home commands sit beside it —
-   consistent with `|` everywhere else, and worth stating so it doesn't
-   read as a bug.
-
-   **This reaches skills, and that part is bigger than this note.**
-   `SkillTool` declares `untrusted: :hard` unconditionally today. That
-   is not a bug: `Catalog::Bundled` takes `search_bases:` and knows
-   nothing about the workspace, so it has no trust signal to consult and
-   the pessimistic default is the only honest answer available to it.
-   But it means a fully trusted workspace lights the untrusted leg for a
-   skill whose bytes `read` would report as `:none` — the same
-   inconsistency, one surface over. The real unit of work is therefore
-   **growing the opt-out channel** — a declared per-search-base trust
-   that *both* the catalog and the command registry consume — which is a
-   shipped-gem change to `pikuri-skills` and now has its own note:
-   [`bundle-trust-grading.md`](bundle-trust-grading.md). Commands should
-   not invent a private answer to
-   a question skills already have the wrong answer to; if commands ship
-   first, they ship at `:hard` and adopt the channel when it lands.
+   - **Commands ship at `:hard` if they ship first**, and adopt the
+     channel when it lands — no private spelling of a fact skills
+     already own.
+   - **A command file is prose, exactly as a skill body is.** So the
+     provenance argument above needs no command-specific escape hatch:
+     whatever makes project sources trustworthy makes the project's
+     command files trustworthy, and neither claim reaches `~/.claude`.
 
    **Mechanism, and the narrow amendment to P3.** The hook already
    exists and is documented for this exact shape:
