@@ -5,9 +5,17 @@ module Pikuri
     # Expands a {Registry::Command} into the text a host sends as the *user's*
     # turn. Stateless.
     #
-    #   body:  "Weekly log for `$ARGUMENTS`, from Monday on."
+    #   body:  "Weekly log for $ARGUMENTS, Monday through today."
     #   expand(cmd, arguments: 'swingai')
-    #   # => "Weekly log for `swingai`, from Monday on."
+    #   # => "Weekly log for swingai, Monday through today."
+    #
+    # A body that only *mentions* the token keeps it — the span is code — and
+    # the arguments arrive in the tail instead, which is exactly what
+    # +~/.claude/commands/wh.md+ does:
+    #
+    #   body:  "Read the label off `$ARGUMENTS`."
+    #   expand(cmd, arguments: 'swingai')
+    #   # => "Read the label off `$ARGUMENTS`.\n\n\nARGUMENTS: swingai"
     #
     # The result is a user message, never a +:system+ block: +/wh swingai+ is
     # the human's request typed short, so +on_user_message+ must fire (a memory

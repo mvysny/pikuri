@@ -11,9 +11,12 @@ module Pikuri
     # and prints {#message}; the command stays in {Registry#list} so a menu can
     # still show it, greyed out or not.
     #
-    #   text = registry.expand(name, arguments: args)
-    # rescue Pikuri::Command::RefusedError => e
-    #   puts e.message
+    #   begin
+    #     text = registry.expand(name, arguments: args)
+    #   rescue Pikuri::Command::RefusedError => e
+    #     puts "/#{name} is unavailable — #{e.message}"
+    #     next
+    #   end
     class RefusedError < StandardError
       # @return [String] path of the command file
       attr_reader :location

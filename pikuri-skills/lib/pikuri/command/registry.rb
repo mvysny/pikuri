@@ -36,11 +36,10 @@ module Pikuri
     # first command seen for a name wins and later ones are dropped with a
     # warning. Pass the project root first for "project beats global".
     #
-    # A host resolving a typed +/name+ owes one more rule, which lives in the
-    # host because nothing here can see the other two namespaces: **host
-    # built-in > command > skill**. Built-ins are matched first so a cloned
-    # repo shipping +.claude/commands/plan.md+ cannot capture a +/plan+ that
-    # flips a safety gate.
+    # A host resolving a typed +/name+ owes one more rule, since nothing here
+    # sees the other two namespaces: **host built-in > command > skill**.
+    # Match built-ins first or a cloned repo shipping
+    # +.claude/commands/plan.md+ captures a +/plan+ that flips a safety gate.
     #
     # == Validation, and the two refusals
     #
@@ -53,20 +52,16 @@ module Pikuri
     # Two things are refused, at {#get} rather than at scan time, so typing
     # +/foo+ explains itself instead of the entry being mysteriously absent:
     #
-    # * +allowed-tools:+ — a *restriction* the author asked for. pikuri fixes
-    #   tools at configure time and cannot narrow them mid-conversation, so
-    #   honouring it is out of reach and ignoring it would silently run the
-    #   command with the full toolset.
-    # * a <code>!`cmd`</code> body directive — Claude Code runs these before
-    #   sending the prompt, gated only by the untrusted file's own
-    #   +allowed-tools:+. pikuri never will: it would make a +.md+ that
-    #   travels with a clone into arbitrary code execution behind a slash,
-    #   reaching no confirmer, no sandbox and no {Pikuri::Subprocess} seam.
+    # * +allowed-tools:+ — a narrowing pikuri cannot honour, since an agent's
+    #   toolset is fixed at +configure+ time; ignoring the key would *widen*
+    #   what the author asked to fence.
+    # * a <code>!`cmd`</code> body directive — the shell command Claude Code
+    #   runs before sending the prompt. pikuri never runs it.
     #
-    # Detection is deliberately over-eager and does *not* skip fenced blocks:
-    # a false positive is a loud exception on a file its author can edit, a
-    # false negative is silent semantic drift. Substitution ({Renderer}) makes
-    # the opposite call for the opposite reason — see there.
+    # Detection is over-eager on purpose and does *not* skip fenced blocks —
+    # the inverse of what {Renderer} does to the same characters, which is not
+    # an inconsistency; see there. Rationale for both refusals:
+    # +DECISIONS.md+ +D-command-inlining-legs+.
     #
     # == Trust
     #
@@ -81,21 +76,32 @@ module Pikuri
       private_constant :LOGGER
 
       # Subdirectory names scanned under each search base, in precedence
-      # order. There is deliberately no +.agents/commands+: no harness
-      # surveyed in +COMPARISON.md+ defines one, and an invented convention is
-      # worse than a missing one.
+      # order. No +.agents/commands+: no harness in +COMPARISON.md+ defines
+      # one, and an invented convention is worse than a missing one.
       COMMAND_SUBDIRS = ['.pikuri/commands', '.claude/commands'].freeze
       private_constant :COMMAND_SUBDIRS
 
       # A loaded command. Bodies are eager-loaded at scan time; command files
       # are small and expansion stays IO-free.
       #
-      # +refusal+ is the reason string this command cannot be run (+nil+ when
-      # it can), captured during the scan rather than re-derived by {#get}.
-      # +sidecars+ says the command's directory holds something the registry
-      # did *not* load as a command — a non-Markdown file, or a subdirectory
-      # holding no commands — which is what earns the expansion its
-      # "this command lives in …" footer.
+      # @!attribute [r] name
+      #   @return [String] the address the human types, +/+ excluded
+      # @!attribute [r] description
+      #   @return [String] menu chrome; the name itself when the file gave none
+      # @!attribute [r] argument_hint
+      #   @return [String, nil] opaque display string, e.g. +"<label> [--since DATE]"+
+      # @!attribute [r] location
+      #   @return [String] absolute path of the +.md+
+      # @!attribute [r] body
+      #   @return [String] everything after the frontmatter, un-expanded
+      # @!attribute [r] refusal
+      #   @return [String, nil] why this cannot run, captured at scan time so
+      #     {#get} re-reads nothing; +nil+ when it can
+      # @!attribute [r] sidecars
+      #   @return [Boolean] the command's directory holds something the
+      #     registry did not load as a command — a non-Markdown file, or a
+      #     subdirectory holding none — which is what earns the expansion its
+      #     "this command lives in …" footer
       Command = Data.define(:name, :description, :argument_hint, :location, :body, :refusal, :sidecars) do
         # @return [Boolean] true when {#get} would raise instead of returning this
         def refused? = !refusal.nil?
@@ -159,10 +165,8 @@ module Pikuri
         command
       end
 
-      # {#get} plus {Renderer.expand} — the one-call form, and the one that
-      # documents what the result *is*: the human's own user turn, to be sent
-      # with +run_loop(user_message:)+ or
-      # +Control::Interloper#inject_user_message+, never as a +:system+ block.
+      # {#get} plus {Renderer.expand}, in one call. What comes back is the
+      # human's own *user* turn — see {Renderer} for what that rules out.
       #
       # @param name [String]
       # @param arguments [String] everything typed after the command name
@@ -175,7 +179,8 @@ module Pikuri
         Renderer.expand(command, arguments: arguments)
       end
 
-      # @return [Boolean]
+      # @return [Boolean] true when no base held a command; {Extension} then
+      #   declares nothing
       def empty? = @list.empty?
 
       # @return [Symbol] +:none+ when every runnable command came from a
