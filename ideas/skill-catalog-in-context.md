@@ -30,25 +30,16 @@ Related:
 
 ## Owed regardless of the `paths:` work
 
-1. **Enum-constrain `SkillTool`'s `name`, and price in the leniency
-   reversal.** `skill-cost-model.md` cheap borrow 1. Constraint from the
-   old observation 3, which still holds under the shipped design: the enum
-   must list **every** skill including the `paths:`-gated ones, or a
-   promoted skill is un-callable — the model reads the injected
-   description, calls `skill(name: "tuile")`, and the schema rejects it.
-   Stated positively, that is what lets the two mechanisms compose: the
-   enum is stable for the whole session and only descriptions move, so the
-   cached prefix never churns.
-
-   The catch is that this is **not** the advertised one-liner.
-   `Catalog::Bundled#validate_name` already checks the standard's shape
-   (`/\A[a-z0-9-]+\z/`, the 64-char cap, leading/trailing hyphen, `--`)
-   and merely warns. An enum built from leniently-validated names puts
-   arbitrary text in the *tool schema*, which is a worse position than a
-   prompt block — so `warn` → skip must land in the same commit. That is a
-   documented-posture reversal and needs its own `DECISIONS.md` line.
-   Open: skip the skill entirely, or load it and omit it from the enum
-   (unreachable but visible in logs)?
+1. ~~**Enum-constrain `SkillTool`'s `name`.**~~ **Dropped 2026-08-16** —
+   `D-skill-path-activation` decision 5 makes a gated skill refuse by
+   name until its path fires, and an enum of only the *active* set would
+   have to be rebuilt on every promotion, churning the tool schema
+   mid-session. Both surveyed harnesses agree by construction: the one
+   that hides skills is the one that takes a free-form name. The
+   leniency reversal it dragged along (`validate_name`'s warn-and-
+   continue) is dropped with it — a lenient name now reaches only a
+   prompt block, never a tool schema, which is the position the current
+   posture was written for.
 
 2. **Scan skill descriptions for injection, at MCP parity — and decide
    where the scan lives.** Live asymmetry today: `<available_mcps>`
@@ -110,18 +101,17 @@ Related:
    reopen criterion 2 on the decision, and measurable today with a
    throwaway listener over `Event::ToolCall` — before any of it ships.
 
-6. **Is a bare name a strong enough recall cue, on a *local* model?** More
-   relevant now than when tier 0 was the proposal: the shipped design puts
-   gated skills in a name-only `<contextual_skills>` section, so the
-   question is live for exactly those entries. Every number and anecdote
+6. ~~**Is a bare name a strong enough recall cue, on a *local* model?**~~
+   **Moot 2026-08-16** — there is no name-only tier any more; a gated
+   skill is withheld outright. What survives is the sharper half of the
+   same worry, and it is now the *only* thing standing between the
+   mechanism and being useless on pikuri's default backend: **does a
+   local model act on a description that arrived mid-turn**, rather than
+   in the system prompt it was primed on? Every number and anecdote
    behind this family of notes came from Claude Code over a catalog
-   authored for Claude Code — all ten skills are `~/.claude/skills`, none
-   pikuri-native. pikuri defaults to local llama.cpp, where the prior is
-   far weaker. Failure mode to watch: the model ignores the name-only
-   entry *and* the injected description, because the latter arrived
-   mid-turn rather than in the prompt it was primed on. Cheapest probe:
-   hand-render the two-section catalog and try it against the local model.
-   No code required.
+   authored for Claude Code — none of it is evidence about llama.cpp.
+   Cheapest probe: hand-inject a promotion block mid-conversation and see
+   whether the local model calls `skill`. No code required.
 
 7. **Does a trigger-first description fire without a nudge?** Running
    *observationally* rather than as a formal experiment, because it no
@@ -144,9 +134,14 @@ Related:
    {Pikuri::Skill::Extension#schedule_load_skill} — a seam that exists, is
    main-agent-only, and that no bundled `bin/` exposes.
    `D-skill-path-activation` decision 7 makes it the sanctioned home for
-   "in a Gradle project, load `gradle`", so it now has three dependents
-   (that case, `disable-model-invocation:`, and the deterministic-load
-   argument generally). Caveat and the reason it is not already done:
+   "in a Gradle project, load `gradle`", so it now has four dependents
+   (that case, `disable-model-invocation:`, the deterministic-load
+   argument generally, and — since that decision hides gated skills
+   outright — the *only* operator route to a skill whose glob has not
+   fired). The fourth is what promotes this from nice-to-have: Claude
+   Code gates its human operator too (`/writing-rdoc` → `Unknown
+   command`), and pikuri's stated non-copying of that is a promise only
+   `schedule_load_skill` currently keeps. Caveat and the reason it is not already done:
    CLAUDE.md's own rule says a `bin/` demo's shortcut is not evidence
    about the library — so this must be argued as "the library seam is
    under-exercised", not "the demo needs a feature".
@@ -165,17 +160,22 @@ Related:
     moment you open a Tuile file is a UX claim, not a token claim, and it
     is the part with no counter-argument. The render must be legible in a
     TUI, not just a model-facing `<system-reminder>` — which turns
-    `skill-path-activation.md`'s dedicated-event-vs-`Event::SystemInjected`
-    question from a rendering nicety into the feature's selling point. One
-    reassurance: **withholding costs the model's view, never the human's**
-    — descriptions stay on disk, so a host picker renders the full catalog
-    under every design considered.
+    `skill-path-activation.md`'s two-events design (settled: a
+    `Skill::Promoted` domain event alongside `Event::SystemInjected`)
+    from a rendering nicety into the feature's selling point. The
+    reassurance behind it — **withholding costs the model's view, never
+    the human's** — held under every design *considered*, but not under
+    every design *shipped*: Claude Code gates its operator too
+    (`/writing-rdoc` → `Unknown command`). It is a promise pikuri now
+    makes deliberately (`D-skill-path-activation` decision 7), not one
+    that falls out for free, and item 8 is where it gets kept.
 
 
 ## Graduation plan for what is left
 
-- Items 1–3 graduate **as fixes**, each with its own commit; item 1 also
-  earns a `DECISIONS.md` line for the lenient-validation reversal.
+- Items 2–3 graduate **as fixes**, each with its own commit. Item 1 is
+  dropped, and its `DECISIONS.md` line landed as a rejected alternative
+  on `D-skill-path-activation` rather than an entry of its own.
 - Item 4, whichever way it lands, edits `D-skill-path-activation` in place
   (entries are mutable) rather than taking a new entry.
 - **Two facts outlive every remaining item and should graduate now, since

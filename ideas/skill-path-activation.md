@@ -55,12 +55,12 @@ def on_event(event)
     return if newly.empty?
 
     newly.each { |s| @announced << s.name }
-    @ext.announce(newly)   # → interloper.inject_system_message
+    @ext.announce(newly, path)   # inject_system_message + emit Skill::Promoted
   end
 end
 ```
 
-Three constraints the sketch encodes:
+Four constraints the sketch encodes:
 
 - **The state cannot live on the catalog.** `Catalog::Bundled#initialize`
   ends with `@skills.freeze`, `@list.freeze`, `freeze` (`catalog.rb:121-123`),
@@ -88,34 +88,49 @@ Three constraints the sketch encodes:
   grok-build lands from the opposite direction (it has typed tool
   outputs and still excludes bash/grep as "unparseable / incidental").
   Cross-reference the seam wherever this lands.
+- **Two events fire, and they mark different moments.** The injection
+  emits `Event::SystemInjected` unconditionally (`agent.rb:701`) — its
+  contract is that the stream mirrors log growth, so it must not be
+  suppressed. Alongside it goes a *domain* event, since core's `Event::`
+  is sealed for loop narration and gems emit their own via
+  `ctx.emit_event` (`event.rb:9-14`):
+
+  ```ruby
+  # pikuri-skills/lib/pikuri/skill/promoted.rb
+  Promoted = Data.define(:skills, :path) do
+    def to_s = "skills available: #{skills.map(&:name).join(', ')} (matched #{path})"
+  end
+  ```
+
+  Modelled on {Pikuri::Code::PlanModeChanged}, whose `to_s` exists so
+  `Listener::Terminal`'s `else` branch (`terminal.rb:110-114`) renders it
+  legibly while a real TUI pattern-matches it. `path:` is load-bearing:
+  the decision *accepts* over-firing as the safe direction, so the human
+  will sometimes see a skill appear for no visible reason, and without
+  the trigger path diagnosing that means guessing which glob matched.
+  Two accepted costs: `SystemInjected` re-renders the same promotion as
+  a dim text block (a pre-existing `Terminal` wart — it truncates
+  `ToolResult` but not `SystemInjected`, so a long `recall` injection has
+  it too), and the domain event lands *between* the tool call and its
+  result, since the listener enqueues at `before_tool_call` while the
+  interloper drains at `after_tool_result`. Both accepted 2026-08-16;
+  "we decided" and "the model saw it" genuinely are different moments.
 
 
 ## What the decision did not settle
 
-1. **Announcement channel.** Reusing `:system` + `Event::SystemInjected`
-   means listeners render "3 skills became available" as a message. Worth
-   a dedicated event so a TUI shows a status line instead? The sister
-   note's item 10 raises the stakes: if the hand-off is also *for the
-   human* — here's the Tuile manual, now that you're in a Tuile file —
-   this stops being a rendering nicety and becomes the selling point.
-2. **Activation scope across sub-agents.** Sub-agents don't inherit
-   extensions, but they *do* inherit the `skill` tool via the tool
-   snapshot, closing over the same catalog — so a sub-agent can load a
-   gated skill by name while never seeing a promotion. Per-agent (like
-   `add_raw_tool`, which stays out of `Agent#tools` deliberately) or
-   catalog-wide? Note the decision's "gated skills stay invocable" makes
-   this a pure visibility question, not a capability one.
-3. **How many activations does a real session fire?** Reopen criterion 2
+1. **How many activations does a real session fire?** Reopen criterion 2
    on the decision, and the only number that prices the Anthropic
    prefix-rewrite trade: 1–3 is noise, fifteen is a net loss there.
    Measurable today with a throwaway listener over `Event::ToolCall`,
    before any of this ships. One free data point: Claude Code fired
    `paths:` twice across ~8 tool calls in a session that read two `.rb`
    files — consistent with noise.
-4. **Does an unmatched-but-touched path deserve anything?** Not raised
-   before. If a session touches fifty files and no glob ever fires, the
-   `<contextual_skills>` names sit there paying rent for nothing. Silent
-   is probably right; noted so nobody mistakes it for an oversight.
+
+That is the whole remainder. The announcement channel, the sub-agent
+scope question and the what-if-no-glob-ever-fires question all closed on
+2026-08-16 — the last of them dissolved rather than answered, since a
+fully-withheld skill costs nothing while it waits.
 
 
 ## Graduation
@@ -129,8 +144,11 @@ Three constraints the sketch encodes:
   this feature unsurprising — belongs wherever that pattern gets taught
   once: `COMPARISON.md` or the book's skills material. It is the last
   piece of the original note with no durable home.
-- Questions 1–2 edit `D-skill-path-activation` in place (entries are
-  mutable) rather than opening a second entry; 3 is a measurement that
-  either confirms the accepted trade or trips its reopen criterion.
+- `Skill::Promoted` and the two-events-two-moments rationale go to that
+  class's own yardoc when it lands; `PlanModeChanged` is the model for
+  how much to say.
+- The one open measurement either confirms the accepted Anthropic trade
+  or trips reopen criterion 2 on the decision, which is edited in place
+  (entries are mutable) rather than opening a second entry.
 - **This note is deleted when the mechanism ships** — nothing in it is
   meant to outlive the code it describes.

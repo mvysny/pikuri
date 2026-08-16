@@ -79,12 +79,16 @@ design.
 
 ---
 
-## D-skill-path-activation — Gate descriptions on `paths:`, keep the catalog in the system prompt (2026-08-16)
+## D-skill-path-activation — Withhold `paths:`-gated skills entirely from the model, never from the operator (2026-08-16)
 
 **Status:** Accepted; not yet implemented. `Catalog::Bundled#parse_skill`
 still reads only `name` and `description`. The author's own
 `~/.claude/skills` is already annotated, which is inert for pikuri but
-*not* for Claude Code — see Consequences.
+*not* for Claude Code — see Consequences. Decisions 2 and 5 were
+**reversed the same day they were written**, after probing Claude Code
+rather than reasoning about it; the first version is the first rejected
+alternative below, and it is there because the argument for it was good
+and someone will make it again.
 
 **Context.** The axis is *what the catalog advertises, and when the body
 arrives*. `Skill::Extension` contributes an `<available_skills>`
@@ -104,18 +108,28 @@ own placement:
 
 1. The catalog **stays a system-prompt snippet** and carries every
    *ungated* skill in full.
-2. A skill declaring a non-empty `paths:` is withheld from that block and
-   listed **name-only** in a sibling `<contextual_skills>` section whose
-   preamble states that full descriptions arrive on a file match and that
-   the model may load one by name regardless.
+2. A skill declaring a non-empty `paths:` is withheld **entirely** — no
+   description, no name, no sibling section, and no hint that anything is
+   withheld. The catalog does not advertise its own incompleteness.
 3. When a tool **reads or edits** a file matching those globs, the skill's
    description is appended to the log as a system message.
 4. A promotion carries a **description, never a body**.
-5. A gated skill stays **invocable** before its path fires.
+5. A gated skill is **not loadable by name** before its path fires:
+   `skill(name:)` refuses it exactly as it refuses a name that exists
+   nowhere, with the same message. `SkillTool`'s `name` therefore stays a
+   **free-form string, never an enum** of the active set — an enum would
+   have to be rebuilt on every promotion, churning the tool schema
+   mid-session on every provider.
 6. `paths:` answers *"is this ecosystem in play?"*; `when-to-use:` answers
    *"is this the moment?"*. They compose on one skill and are not rivals.
-7. An author-declared `paths:` is **advisory only**. Forcing a load is
-   operator wiring through {Pikuri::Skill::Extension#schedule_load_skill}.
+7. An author-declared `paths:` is **advisory only**, and gates the *model*
+   alone. Operator wiring — {Pikuri::Skill::Extension#schedule_load_skill}
+   today, a host picker or slash command later — reaches every skill in
+   the catalog, gated or not, without waiting for a glob. This is a
+   deliberate divergence from both surveyed harnesses (see Consequences)
+   and it is what keeps decision 2 an optimization rather than a
+   restriction: the escape hatch is what makes hiding safe to be
+   aggressive about.
 
 Prior art and the read of grok-build's implementation live in
 `COMPARISON.md` (*Skills → Frontmatter*, and *→ How grok-build's
@@ -154,14 +168,31 @@ conditional activation actually works*).
   the strongest argument against our placement and the first thing to
   revisit. The consequence we accept is that the untrusted-description gap
   stays open for ungated skills.
-- **Make a gated skill non-invocable, as grok-build does** (a held skill
-  never reaches its `AvailableSkills` registry, so `has_skill()` refuses
-  it). Rejected because it converts a visibility filter into a capability
-  gate, and the `gradle`-shaped case wants the opposite: reachable on the
-  model's judgment even when the glob has not fired. **`paths:` is
-  therefore not an access control** — it hides a description and restricts
-  nothing. The feature's name invites the opposite reading, so the
-  non-claim belongs in {Pikuri::Skill::Catalog}'s yardoc.
+- **Advertise gated skills name-only, in a sibling `<contextual_skills>`
+  section, and keep them invocable.** This was the decision as first
+  accepted, reversed the same day on evidence. Three things killed it.
+  It is shipped by **nobody**: grok-build holds a gated skill out of its
+  `AvailableSkills` registry entirely (`has_skill()` refuses it), and
+  Claude Code was then observed doing the same, down to returning the
+  identical "unknown skill" message it returns for a name that exists
+  nowhere (`COMPARISON.md`, *Skills → Frontmatter*, finding 4). One
+  harness is noise; two independent ones are a signal, and this is the
+  same convergence argument that chose the top-level `paths:` spelling —
+  applying it to the spelling and declining it for the semantics would
+  have been incoherent. It rests on an **unmeasured assumption that is
+  weakest exactly where pikuri runs**: that a bare name is a strong
+  enough recall cue, which is far likelier on Claude than on the local
+  llama.cpp default. And it costs more than the names — a preamble
+  explaining the two-tier scheme and the load-by-name-anyway caveat
+  outweighs the ~65 bytes of names it was protecting.
+- **Keep the `SkillTool` `name` argument enum-constrained** over the
+  active set. Rejected as incompatible with decision 5, and the two
+  surveyed harnesses agree by construction: the one that hides skills is
+  the one that takes a free-form name. This retires the enum item that
+  `ideas/skill-catalog-in-context.md` carried as owed-regardless, and
+  with it the lenient-name-validation reversal that blocked it —
+  `validate_name`'s warn-and-continue posture stands, because a lenient
+  name now reaches only a prompt block, never a tool schema.
 - **Invent a `project-has:` predicate** for "this is a Gradle project"
   rather than "a Gradle file was touched". Not in the spec, not in
   grok-build, not anywhere; inventing a predicate no harness implements,
@@ -221,7 +252,8 @@ conditional activation actually works*).
 - **Ships as one change:** frontmatter parsing (with the empty/match-all
   normalization), a glob matcher, a post-tool-call listener holding
   session-scoped activation state — *not* in `Catalog::Bundled`, which
-  deep-freezes itself — and the two-section render. Activation must ignore
+  deep-freezes itself — and a catalog render that simply skips gated
+  entries. Activation must ignore
   paths a tool *walked* to (`grep` hits, listing rows) and count only
   model-supplied read/edit targets, mirroring both grok-build and pikuri's
   own **Denylist seam** distinction; a repo-wide grep would otherwise
@@ -230,7 +262,38 @@ conditional activation actually works*).
   promotion is already in the log, and re-injecting it pays the cost
   again for nothing. That flag clears on `Event::Reset`, which is also
   what makes `clear_conversation` re-hide correctly: the reset drops the
-  announcement from the log, so the next touch must re-announce.
+  announcement from the log, so the next touch must re-announce. Both the
+  walked-path exclusion and the once-per-conversation rule were then
+  observed in Claude Code before pikuri wrote a line of it — see
+  `COMPARISON.md` finding 4.
+- **`paths:` still is not access control, and now looks like it.** It
+  withholds and refuses, but it restricts nothing, because **the gated
+  party controls the trigger**: a model that wants a hidden skill need
+  only read a matching file. The honest formulation is *unreachable by
+  ignorance, not by permission* — and ignorance is not a security
+  boundary. The feature's shape now invites the wrong reading where
+  before only its name did, so the non-claim is owed in
+  {Pikuri::Skill::Catalog}'s yardoc, not merely available here. Anything
+  wanting a real restriction is `disable-model-invocation:`, a separate
+  question.
+- **The convergence is on the model-facing gate only; the operator path
+  deliberately diverges.** Claude Code gates the human as well — in a
+  fresh session `/writing-rdoc` returns `Unknown command`, for a skill
+  the operator wrote and named from memory. That is the mechanism's
+  justification collapsing: withholding is defensible because the model
+  cannot judge relevance for a skill it has not been shown, and an
+  operator typing the name has already made that judgment. pikuri keeps
+  decision 7 unconditional instead, which costs nothing (the descriptions
+  never left the disk) and makes the aggressive hiding in decision 2
+  affordable. It also preserves an invariant worth naming: **withholding
+  costs the model's view, never the human's.**
+- **A gated skill is permanently unreachable to sub-agents.** They do not
+  inherit extensions, so no listener ever promotes for them, and under
+  decision 5 the name will not load either. Accepted rather than fixed:
+  no bundled persona wires `skill` at all, and a persona that wants one
+  should name it in `tool_names:` and carry the knowledge in its own
+  system prompt. This retires the per-agent-vs-catalog-wide scope
+  question that `ideas/skill-path-activation.md` carried.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session

@@ -1401,6 +1401,42 @@ Three findings worth carrying:
    precisely: withheld until a touched file matches, then promoted
    description-and-all.
 
+   **"Hidden" means unreachable, not merely unlisted.** Probed the same
+   day: `skill(name: "writing-javadoc")` — on disk, valid frontmatter,
+   `**/*.java` never touched — returned `Unknown skill: writing-javadoc`,
+   *byte-identical* to the reply for a name that exists nowhere. So a
+   gated skill is indistinguishable from a nonexistent one, and the
+   listing withholds the **whole entry, name included** — Claude Code
+   ships grok-build's capability gate, not a visibility filter. A rider
+   that matters for anyone copying the shape: that refusal came back as a
+   *tool-execution* error, not a schema rejection, so Claude Code's skill
+   tool takes a **free-form** `name` rather than an enum of the active
+   set. The two choices are a package — an enum of only-active names
+   would have to be rebuilt on every promotion, churning the tool schema
+   mid-session.
+
+   **The gate binds the human operator too.** In a fresh session,
+   `/writing-rdoc` — a skill the operator wrote, whose name they typed
+   from memory — returned `Unknown command: writing-rdoc`. So the
+   withholding is not a model-context optimization with a human escape
+   hatch; it is a hard gate on every surface, and the one party who
+   provably is *not* ignorant of the skill is blocked by a mechanism
+   whose only justification is ignorance. Worth stating plainly because
+   it is the part pikuri should **not** copy: `paths:` is authored to
+   manage the model's context, and an operator asking for a skill by name
+   has already supplied the relevance judgment the glob was standing in
+   for.
+
+   Three further behaviours, observed in the same session and worth
+   having because they are the parts a reimplementation gets wrong:
+   **Bash does not count as a touch** — repeated `grep`/`sed` over `.rb`
+   files through the shell promoted nothing across four separate turns,
+   and a single `Read` of one `.rb` file promoted both `**/*.rb` skills
+   at once; **promotion is once per conversation** — `ideas-folder` fired
+   on the first `ideas/` read and never re-fired across a later read, a
+   write and an edit in the same folder; and the announcement carries the
+   description only, never the body.
+
    Two riders. Claude Code did **not** render `when-to-use:` in those
    announcements, so it implements at least one of grok-build's nine
    extensions and not another — a reminder that "non-standard" is not one
