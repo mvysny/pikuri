@@ -1306,22 +1306,101 @@ Three layers, because the middle one cannot be done in-process:
 
 ## Open — revisit in an upcoming session
 
-One left. The other two — the testing story and the operation enum's
-membership — are settled above; this is the place to start next time.
+One item, and its hardest axis is now settled; what remains is the rest of
+the declaration and where it is written. The other two — the testing story
+and the operation enum's membership — are settled above.
 
-- **The gem's trifecta contribution.** `Mcp::Extension` declares its
-  legs; `pikuri-lsp` must too, and the answer is not obviously "nothing".
-  No egress — the `http(s)` refusal buys that, and the scheme table has to
-  hold the line with it, since every row is a request to a child over a
-  pipe we already own and a row that reached the network would undo the
-  refusal from the inside. No new private data *in principle* — results
-  are derived from files the agent can already read — but snippet content
-  for out-of-root results is text from outside the workspace entering the
-  context, which is the untrusted-input leg however local it is, and the
-  fallback widens it slightly: `java/classFileContents` pulls text out of
-  a **jar**, which is further from the workspace than a gem path and the
-  one place this gem reads bytes the user never checked out. Write it down
-  rather than defaulting to silence.
+### The gem's trifecta contribution
+
+`Mcp::Extension` declares its legs; `pikuri-lsp` must too, and the answer
+is not "nothing".
+
+**Egress: `:no_egress` — and *not* because we trust the server.** The
+tempting argument is that a well-behaved LSP only fetches artifacts from a
+vetted set of hosts (jdtls pulling a jar from Maven Central), and that this
+is too weak a leg to tag. That argument must not be written down, because
+it argues for the opposite of its conclusion: `D-egress-axis-shape` defines
+`egress_destination` as `:tool_vouched` / `:attacker_reachable` and
+explicitly rejected a `:safe_vetted_set` rung — "this detector never claims
+safety; bytes genuinely leave a vouched destination, they merely cannot be
+read back." A vetted destination is a *rung*, so that phrasing lands
+`lsp` on the map as `:tool_vouched` + `:unreviewed` forever. It is also
+not true: the hosts come from the *project's* `build.gradle` /
+`settings.xml`, so they are project-controlled, not vetted.
+
+The argument that survives is the one that entry used to drop
+`egress_human_author`: a seat whose outbound bytes do not originate in the
+model's choosing **holds no leg to grade**, and clean-by-construction is
+leg-*absence*. Apply it here: the model supplies `operation`, `symbol`,
+`file`, `line`, and none of it reaches a socket — it reaches an in-memory
+index. A jdtls dependency fetch happens at project import, driven by build
+files, and happens identically if the model never issues a single call.
+Network activity is not a function of model input, so there is nothing to
+grade.
+
+**Why that does not collide with MCP, which is the objection to expect.**
+`Mcp::Extension` declares `ASSUMED` — hard `:untrusted`, unreviewed,
+attacker-reachable — *unconditionally*, because "the tool list arrives at
+runtime from a server you didn't write". Both gems spawn a user-configured
+foreign stdio binary with inherited env, so the parity question is fair and
+the answer must be in the DESIGN.md: **an MCP server contributes
+model-callable tools with model-supplied arguments; an LSP server
+contributes none.** One pikuri-authored tool, fixed schema, and pikuri
+chooses every JSON-RPC request that leaves. There is no foreign tool
+surface, hence nothing undeclarable, hence `ASSUMED` does not transfer.
+
+**Untrusted input: yes, and wider than the note first claimed.** "Results
+are derived from files the agent can already read" is false, and false *by
+design* — the server's index reaches outside the workspace root (the whole
+bundle, jars, the JDK) while `Grep` is workspace-scoped, which J8 sells as
+the feature. The `jdt:` fallback widens it once more: it pulls text out of
+a **jar**, the one place this gem reads bytes the user never checked out. A
+dependency is attacker-influenceable, so this is the leg the gem really
+holds. Open sub-question: `Filesystem#denied?` is built for paths *under*
+the root, and these are outside it entirely — check whether it has any
+opinion about `~/.local/share/…/gems/`, or whether root confinement is
+carrying that alone.
+
+**Private: probably no new mechanism.** `private:` is inherited from the
+user, not claimed by the tool (`D-egress-axis-shape`), and
+`bin/pikuri-code` already asks at startup whether the project is private
+and feeds the map. LSP reads the same project, so it should ride that
+answer rather than introduce an `Lsp::Registry#private?` mirroring MCP's.
+
+**Where it is declared is the open mechanical question.** MCP declares at
+the *extension* because its tools synthesize as raw `RubyLLM::Tool`s with
+no leg surface (the MCP-tool bypass seam). `lsp` has no bypass — it is a
+real `Pikuri::Tool` — so it can declare `trifecta_legs:` at its own
+declaration site the way `Workspace::Write` does, and probably should.
+Confirm the extension then contributes nothing, or the same legs get
+counted twice.
+
+**Four sentences the DESIGN.md owes, none of them a tag:**
+
+1. pikuri-lsp never dereferences a remote URI — the `http(s):` refusal plus
+   the no-network-row invariant on the scheme table, both greppable.
+2. The registered server may go online on its own; that traffic is a
+   function of the project's build files, not of anything the model said.
+3. The one steering path, stated so nobody thinks we missed it: the model
+   edits `build.gradle`, the server re-imports, and fetches a host that
+   file names. It takes a confirmed `Write`, and `bash` running gradle
+   produces the same fetch — so the leg belongs to `write`, not to `lsp`.
+4. A malicious registered server means all bets are off, and that is the
+   *same* boundary an `Mcp::Registry::StdioEntry` already has — user-chosen
+   argv, inherited env, unsandboxed — so it reads as precedent rather than
+   special pleading. Such a server needs no clever channel; it can POST
+   `~/.ssh` directly.
+
+**And one asymmetry to state before a reader finds it.** `Code::Bash`
+defaults to `FullFsNoNet` (`--unshare-net`), and the code agent's prompt
+tells the model the commands it runs cannot reach the internet — while the
+LSP child is not sandboxed at all. So a repo gets network through jdtls
+that it explicitly does not get through `bash`. It cannot simply inherit
+the bash posture either: a netless jdtls cannot import a Gradle project
+that must resolve dependencies, and ruby-lsp's custom-bundle mode shells
+out to `bundle install`. The answer is "not sandboxed, deliberately, and
+here is why" — but written down, because someone who knows about the
+sandbox will otherwise find it themselves and read it as an oversight.
 
 ## Considered, deferred
 
@@ -1371,11 +1450,15 @@ LSP's project and the `Workspace` root the same boundary);
 replacements**, and **the scheme table** (standard-first, one hardcoded
 `jdt:` row, rejected alternatives: standard-only — which made the Java arm
 untestable — and a `content_request` config field; plus the deletion
-condition) → three new `DECISIONS.md` entries (suggested slugs
-`lsp-direct-not-mcp`, `lsp-no-startup-timeout`, `lsp-scheme-fallback`,
-with the usual prefix); the COMPARISON.md LSP column → `✅`. Then delete
-this file, plus the superseded LSP bullets in `coding-agent.md` and
-`claude-parity.md`.
+condition), and **`:no_egress` despite a child that goes online** (rejected
+alternatives: a `:tool_vouched` tag on the vetted-destination argument, and
+inheriting MCP's `ASSUMED` on the shared foreign-stdio-binary shape) → four
+new `DECISIONS.md` entries (suggested slugs `lsp-direct-not-mcp`,
+`lsp-no-startup-timeout`, `lsp-scheme-fallback`, `lsp-no-egress-leg`, with
+the usual prefix); the threat model itself, including the unsandboxed-child
+asymmetry against `Code::Bash` → `pikuri-lsp/DESIGN.md`; the COMPARISON.md
+LSP column → `✅`. Then delete this file, plus the superseded LSP bullets
+in `coding-agent.md` and `claude-parity.md`.
 
 The scheme table also wants a line in the `CLAUDE.md` seam entry, since
 "pikuri-lsp reads only `file:` paths and one enumerated server-private
