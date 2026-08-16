@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Skill::Catalog do
     end
   end
 
-  describe Pikuri::Skill::Catalog::Base do
+  describe Pikuri::Bundle::Base do
     it 'defaults trusted to false' do
       refute described_class.new(dir: '/tmp').trusted
     end

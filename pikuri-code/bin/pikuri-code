@@ -196,8 +196,8 @@ repo_sources_are_mine =
 home_skills_are_mine = sandbox_enabled || confirm_enabled
 skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
   search_bases: [
-    Pikuri::Skill::Catalog::Base.new(dir: project_root, trusted: repo_sources_are_mine),
-    Pikuri::Skill::Catalog::Base.new(dir: Dir.home, trusted: home_skills_are_mine)
+    Pikuri::Bundle::Base.new(dir: project_root, trusted: repo_sources_are_mine),
+    Pikuri::Bundle::Base.new(dir: Dir.home, trusted: home_skills_are_mine)
   ]
 )
 

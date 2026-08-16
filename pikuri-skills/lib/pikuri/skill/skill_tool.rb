@@ -75,7 +75,7 @@ module Pikuri
           # No egress; untrusted graded by the catalog. A skill body is prose —
           # Markdown dropped into the model's context verbatim, exactly like a README
           # the model +read+, with no added privilege — so the only question is whose
-          # bytes they are, and {Catalog::Base} answers it per root. Unvouched is
+          # bytes they are, and {Pikuri::Bundle::Base} answers it per root. Unvouched is
           # +:hard+ and is the default, which is what a downloaded +.agents/+ bundle
           # gets; the Agent Skills standard exists precisely so bundles travel.
           # An executable sidecar changes nothing here: it runs only when the model

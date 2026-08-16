@@ -69,7 +69,7 @@ the table:
   user-installed text, and "user-vetted by definition"
   ([`../SECURITY.md`](../SECURITY.md) §"Code trust" — skills bullet) is
   now a claim the host makes per search base rather than an assumption
-  the framework carries: `Skill::Catalog::Base(trusted:)` defaults to
+  the framework carries: `Bundle::Base(trusted:)` defaults to
   *not* vetted and grades the tool's untrusted leg
   (`D-bundle-trust-grading`). That reports the exposure; it does not
   defend against it. A `Mcp::Verifier`-shaped pass for skills would

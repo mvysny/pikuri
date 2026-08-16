@@ -197,7 +197,7 @@ The `:untrusted` row is "framework" in the sense that it defaults
 **on** and no tool author can quietly switch it off — but you can
 *answer* it, and the two questions `pikuri-code` asks at boot are
 exactly that. `Filesystem#trusted?` speaks for the file tools;
-`Catalog::Base(trusted:)` speaks for each place skills were loaded
+`Bundle::Base(trusted:)` speaks for each place skills were loaded
 from. Both are unverifiable claims, so both default to the
 pessimistic value, and both are claims about *one reachable set*
 rather than about "the repo": a workspace that can read

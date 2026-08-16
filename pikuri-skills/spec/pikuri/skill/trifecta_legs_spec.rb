@@ -7,7 +7,7 @@ RSpec.describe 'skill tool trifecta legs' do
   TRIFECTA_FIXTURE_ROOT = File.expand_path('../../fixtures/skills', __dir__)
 
   def base(name, **flags)
-    Pikuri::Skill::Catalog::Base.new(dir: File.join(TRIFECTA_FIXTURE_ROOT, name), **flags)
+    Pikuri::Bundle::Base.new(dir: File.join(TRIFECTA_FIXTURE_ROOT, name), **flags)
   end
 
   def untrusted_leg(*search_bases)
@@ -44,7 +44,7 @@ RSpec.describe 'skill tool trifecta legs' do
       # same as absent — missing-description-tree's one skill is discarded.
       assert_equal :none, untrusted_leg(base('valid-tree', trusted: true), base('missing-description-tree'))
       assert_equal :none, untrusted_leg(base('valid-tree', trusted: true),
-                                        Pikuri::Skill::Catalog::Base.new(dir: '/definitely/does/not/exist'))
+                                        Pikuri::Bundle::Base.new(dir: '/definitely/does/not/exist'))
     end
 
     it 'is hard for a catalog subclass that makes no claim' do

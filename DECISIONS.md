@@ -674,7 +674,7 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 ## D-bundle-trust-grading — Trust is per search base, and the workspace is not asked (2026-08-16)
 
-**Status:** Accepted, fully shipped: `Skill::Catalog::Base`,
+**Status:** Accepted, fully shipped: `Bundle::Base`,
 `Catalog#untrusted_level`, `SkillTool` consuming it, and the third boot
 question in `bin/pikuri-code`. `ideas/bundle-trust-grading.md` is deleted with
 this entry; its one open thread moved to `ideas/security-open-questions.md`.
@@ -699,7 +699,7 @@ advisory muted, and an agent printing three legs when it holds two teaches its
 operator the map is wrong.
 
 **Decision.** Trust is declared **per search base** —
-`Catalog::Base = Data.define(:dir, :trusted)`, unioned at scan time into one
+`Bundle::Base = Data.define(:dir, :trusted)`, unioned at scan time into one
 `#untrusted_level` — and the host answers it with a value, never by handing the
 catalog a `Filesystem`.
 

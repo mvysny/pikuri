@@ -61,10 +61,23 @@ not exist yet and reaches skills too (`SkillTool` is unconditionally
 `:hard`), so it is **its own note and its own `DECISIONS.md` entry**;
 commands ship at `:hard` and adopt it when it lands.
 
-One genuinely contested piece is left, and it is still the only thing
-between this note and an implementer: **question 7** — whether
-substitution respects fenced blocks and code spans. Question 6 remains a
-settled lean.
+**Question 7 settled 2026-08-16 — rule C, fence- and span-aware for
+both tokens** (author's call, on the lean the second pass had reached).
+Settling it turned up the consequence nobody had traced: the *append*
+gate has to read the same way, and under C the file that motivated this
+whole note interpolates nothing at all. See there.
+
+**Question 5 settled 2026-08-16, and question 2's second axis with it** —
+the untrusted leg is declared, and *graded per command source* by the
+algorithm skills already got: a trust flag on every search base, unioned
+over what the registry stored, `:hard` still what silence buys. Settling
+it turned up a payoff (the file that motivated this note comes out
+**trusted**, so the banner stays quiet over it) and a prerequisite whose
+window is closing (the shared `Base` record). See there.
+
+What is left is one unstamped lean (question 6), the build-or-wait call
+in *No host today*, and the `DECISIONS.md` entries that graduate whether
+or not this is ever built.
 
 **Scope.** This note owns the *human-invoked* half of the prompt-bundle
 surface: discovery of `commands/`, argument interpolation, and how a
@@ -89,9 +102,11 @@ Related:
   other.
 - `DECISIONS.md` `D-bundle-trust-grading` — question 5's spin-off,
   **shipped 2026-08-16**: a catalog declares its skills user-authored per
-  search base (`Skill::Catalog::Base`), so the untrusted leg is graded
+  search base (`Bundle::Base`), so the untrusted leg is graded
   over what was actually loaded instead of pinned at `:hard`. Commands
-  adopt that channel rather than inventing one.
+  adopt that channel rather than inventing one — **settled 2026-08-16**
+  (question 5), which makes the `Base` record shared rather than
+  skill-owned and hands that entry an amendment to carry.
 - [`claude-parity.md`](claude-parity.md) — Claude-Code parity, but for
   the *prompt*. This is a *harness* parity item; if it lands, that note
   gains nothing and this one graduates on its own.
@@ -295,6 +310,12 @@ Copy:
   out-of-range `$n` stays **literal text**, matching Claude Code — this
   reversed on the second review pass; see finding 3. Reasoning and the
   probe transcript live in *Unreferenced arguments* below.
+
+  **Both halves skip fenced blocks and inline code spans** (question 7,
+  settled): the substitution *and* the "references neither" check that
+  gates the append. One function, or a body that merely *mentions* a
+  token in backticks gets neither substitution nor append, and the
+  argument the human typed is silently gone.
 - **The tokenizer, spelled out** (settled 2026-08-16 — the note wrote
   `$n` throughout and never said what *n* indexes, which is the first
   thing an implementer needs). `$ARGUMENTS` is the raw argument string,
@@ -468,7 +489,7 @@ Design notes for whoever builds it:
   documented `allowed-tools`. **This rule is about *detection* and does
   not carry over to *substitution*,** where the polarity inverts and a
   false positive is silent — see question 7, which is where that got
-  noticed.
+  noticed and which settled the opposite way (rule C).
 - **Only these two.** `model:` stays an ignored key — running the right
   prompt on the wrong model is a quality issue, not a widening. `@path`
   is dropped by *not interpolating it*, which is a third handling, not a
@@ -679,6 +700,12 @@ to be reachable from pikuri aren't.
    project-local involved. Mirror the kwarg rather than hardcoding a
    root: same shape, same left-to-right first-wins precedence, and the
    motivating file is reachable on day one.
+
+   **Settled 2026-08-16, as part of question 5** — and it is not merely
+   the same kwarg but the same *records*: `search_bases:` takes
+   `Base(dir:, trusted:)`, so a host builds one base list and hands it
+   to both surfaces. Precedence, first-wins and the bare-path-means-
+   untrusted fallback all come along unchanged.
 3. **Name collision in the typed slash namespace.** ~~Only bites once
    there's a merged menu (P4), so it can be decided by the host that
    first hits it.~~ **Settled 2026-08-16**, pulled forward because the
@@ -787,8 +814,9 @@ to be reachable from pikuri aren't.
 5. **Is the expansion trusted or untrusted text?** ~~Probably a
    downgrade we're comfortable with — the human typed `/wh`, which is
    consent in a way a model's `skill(name:)` is not.~~ **Proposed
-   2026-08-16 — and the old lean was backwards; author's call still
-   open.** Untrusted, `:hard`, and it has to be *declared* — the same
+   2026-08-16 — the old lean was backwards — and settled the same day,
+   graded per source (see the end of this entry).** Untrusted, and it
+   has to be *declared* — silence buys `:hard`, the same
    `TrifectaLegs.new(private: false, untrusted: :hard,
    egress_payload_review: :no_egress)` that `SkillTool` carries, arrived
    at independently and landing on the identical value.
@@ -859,7 +887,7 @@ to be reachable from pikuri aren't.
    names over-warning as the declared bias, so the tie goes to `:hard`.
 
    **`:hard` is the default, not the answer — and the graded answer
-   shipped for skills on 2026-08-16** as `Skill::Catalog::Base` (see
+   shipped for skills on 2026-08-16** as `Pikuri::Bundle::Base` (see
    `DECISIONS.md` `D-bundle-trust-grading`). A bundle the human wrote is
    trusted in fact; that entry owns what a base declares, the union over
    the skills a catalog actually stored, why a skill or command body is
@@ -896,6 +924,101 @@ to be reachable from pikuri aren't.
    `bin/pikuri-code` already prints tells the truth. Making it an object
    rather than a host-supplied kwarg is the P1 principle again: the
    mistake should be unrepresentable, not something each host remembers.
+
+   **What the mechanism actually costs, which the note had not priced**
+   (found 2026-08-16, reading `Trifecta.build`). Every extension's legs
+   are unioned into **one pseudo-tool row with a hardcoded label**:
+   `tool_legs['(mcp)'] = extra unless extra == NONE`
+   (`pikuri-core/lib/pikuri/trifecta.rb:80`). That is honest today only
+   because `Mcp::Extension` is the sole legs-contributing extension in
+   the tree — `SubAgent::Extension` returns children with
+   `legs: NONE`. A `Command::Extension` is the **second**, so the boot
+   banner would report the untrusted leg as `untrusted((mcp))` on an
+   agent with no MCP server wired, and `Report#attribution`'s own yardoc
+   is the indictment: *"Which tool contributed each leg, so the line
+   names something the reader can actually go and change."* It would
+   name something that isn't there — and it misfires in exactly the
+   default case, since a fully-trusted registry contributes `NONE` and
+   creates no row at all.
+
+   So question 5 is really two decisions, and the second is a small
+   `pikuri-core` change: **`Contribution` carries its own row label**
+   (or `build` keys rows per contributing extension). Commands are
+   merely the forcing function — the hardcoded string is a latent
+   single-contributor shortcut, and any second contributor trips it.
+   Worth doing with the declaration rather than after it: a banner that
+   blames MCP for a command surface is a worse under-warn than the
+   missing leg it was meant to fix, because it reads as informative.
+
+   **Cheaper than the note implies, on the other side.** The grading
+   channel needs no new human input: `bin/pikuri-code` already asks
+   `repo_sources_are_mine` and feeds it to the catalog's project
+   `Base`, so a `Command::Registry` taking the same `Base` records
+   reuses that answer verbatim — one more argument at the wiring site,
+   no third trust question. And the contribution computes itself from
+   the registry exactly as MCP's does from `@registry.private?`,
+   including the `return nil` when there is nothing to declare.
+
+   ### The grading, settled — one base list, both surfaces
+
+   Author's call, 2026-08-16: **command sources plus a trust flag on
+   every source** — `Skill::Catalog::Bundled`'s algorithm applied
+   verbatim. `search_bases:` takes `Base(dir:, trusted:)`, the union
+   runs at scan time over what the registry actually *stored*, and
+   `:hard` is what a base that says nothing buys. This closes question
+   2's second axis too; the two were one decision wearing two numbers.
+
+   **The payoff, which a flat `:hard` would have thrown away.**
+   `bin/pikuri-code` vouches for the home base without asking anyone —
+   `home_skills_are_mine = sandbox_enabled || confirm_enabled` — because
+   skill roots ride in the workspace's `readable:` and never its
+   `writable:`, so nothing but the user's own hand puts a file there.
+   That argument transfers to `~/.claude/commands/` unchanged: same
+   tree, same read-only wiring. So the graded registry answers `:none`
+   over `wh.md` and the banner stays quiet about the user's own work,
+   where a flat `:hard` would have lit a leg over it — the over-warn
+   that gets a detector muted. Two conditions ride along, both already
+   true of skills: command roots go into `readable:` only, and the vouch
+   dies under `--yolo` / `--no-sandbox --no-confirm`, where bash can
+   write that directory for real and the next session would load bytes
+   the agent authored. Reuse that boolean rather than computing a second
+   one — it wants renaming to `home_bundles_are_mine`.
+
+   **The one place the mirror is not literal: a refused command must
+   not taint.** The catalog unions at the point a skill *wins its name*,
+   so an untrusted base costs nothing when its entries all lost a
+   collision. Commands have a state skills lack — the refused record
+   (`allowed-tools:`, `` !`…` ``), kept in `#list` so `/foo` can explain
+   itself, never expandable. Its bytes cannot reach the context, so it
+   does not taint. That is the catalog's own rule applied to a state the
+   catalog doesn't have, not a divergence from it — but it is a line
+   someone will otherwise write the obvious way.
+
+   **The prerequisite — done 2026-08-16, ahead of any command code.**
+   Both surfaces want the same record, and there were three ways to have
+   it: duplicate it as `Command::Registry::Base`, and a host builds two
+   parallel arrays out of the same two booleans with nothing keeping
+   them in step; have `Command::Registry` accept `Skill::Catalog::Base`,
+   which works — both surfaces live in `pikuri-skills`, so no dependency
+   appears — but reads as a command being a kind of skill, the one thing
+   P1 exists to deny; or relocate the record to a shared home. The third
+   shipped: **`Pikuri::Bundle::Base`**, under `pikuri-skills`, in the
+   home the frontmatter splitter P1 requires extracting will share. The
+   vocabulary was already in the repo — the
+   decision entry is `D-bundle-trust-grading`, not
+   `D-skill-trust-grading`. Done now because the window was closing:
+   `Skill::Catalog::Base` had never been tagged, so the move cost one
+   edit to an existing `[Unreleased]` CHANGELOG line, where after the
+   next release it would have cost a breaking entry plus a migration
+   sentence for a cosmetic gain.
+
+   **The rest mirrors straight across.** `Registry#untrusted_level`,
+   with an empty registry answering `:none` the way `Catalog::Empty`
+   does; `Command::Extension#trifecta_contribution` reads it and returns
+   `nil` when it is `:none`, exactly as `Mcp::Extension` returns `nil`
+   on an empty server registry. Plus one sentence of yardoc saying the
+   flag changes what the report *says* and gates no expansion — the same
+   non-promise the skill side makes.
 6. **Should `argument_hint` be parsed or passed through?** Claude Code
    treats it as an opaque display string. Parsing it into required /
    optional slots would let the TUI validate before dispatch, and would
@@ -904,8 +1027,8 @@ to be reachable from pikuri aren't.
    argument the way `wh.md` already does ("if no label was given, use
    'swingai'").
 7. **Does substitution respect fenced blocks and code spans?** *(Opened
-   on the second review pass, 2026-08-16 — the only thing now standing
-   between this note and an implementer.)*
+   on the second review pass, 2026-08-16.)* **Settled the same day: yes
+   — rule C, both tokens, fenced blocks and inline spans alike.**
 
    The note settled fence-awareness once already, in the opposite
    direction: *"Be over-eager on detection, deliberately. Don't try to
@@ -978,8 +1101,8 @@ to be reachable from pikuri aren't.
    | C. both fence-aware | unchanged | **fixed** | fine | fixed |
    | D. blind + `$$` escape | fine | fixed *if edited* | fine | fixed *if edited* |
 
-   **Lean, revised: C — skip inline code spans and fenced blocks for
-   both tokens.** The draft's asymmetric B is wrong, and line 14 is the
+   **Settled: C — skip inline code spans and fenced blocks for both
+   tokens.** The draft's asymmetric B is wrong, and line 14 is the
    counterexample sitting in the motivating file. D fails on the case
    that matters most — imported bundles nobody will edit, which is the
    whole reason to scan someone else's directory.
@@ -997,6 +1120,38 @@ to be reachable from pikuri aren't.
    sentence into the yardoc, or the next reader will "fix" one of them
    to match the other.
 
+   ### What C costs the motivating file — found while settling it
+
+   Every `$ARGUMENTS` in `wh.md` is backticked: lines 12, 14 and 16, and
+   there are no others. So under C the file that motivated this note has
+   **zero substitutable placeholders**, and `/wh swingai` delivers its
+   argument only if the *append* fires.
+
+   Which makes the append gate part of this decision rather than a
+   neighbouring rule: **"the body references neither placeholder" must
+   be evaluated with the same span- and fence-awareness as
+   substitution.** Read it blind and `wh.md` counts as referencing
+   `$ARGUMENTS`, so nothing is appended; substitute under C and nothing
+   is interpolated either — and the word the human typed is gone, with
+   no error, on the most common invocation of the only command file we
+   have. Two rules that are individually defensible and jointly a
+   data-loss bug. Write them as one function over one tokenization of
+   the body, not two passes that can disagree.
+
+   With the gate span-aware, `wh.md` lands as its own prose plus a
+   trailing `ARGUMENTS: swingai` — line 14's warning about `$1` survives
+   intact, and the label arrives in the block. Right outcome, reached by
+   the two halves agreeing rather than by either alone.
+
+   It also moves the irreducibly ambiguous case from hypothetical to
+   line 12. ``Invoked as `/wh $ARGUMENTS`.`` is a placeholder the author
+   *did* mean — Claude Code renders it ``Invoked as `/wh swingai`.`` —
+   sitting two lines above a mention they did not. Same file, same
+   backticks, opposite intent, which is the residual cost priced in
+   above: C leaves line 12 literal, and the append is what keeps that
+   harmless. So the table's "unchanged" for that cell is accurate but
+   reads better as *un-substituted, and carried by the append instead*.
+
 
 ## Graduation plan (when this settles)
 
@@ -1011,8 +1166,13 @@ to be reachable from pikuri aren't.
   `grep -rn 'Command::Registry' pikuri-*/lib/` never appears in a
   `system_prompt_snippets` or `add_tool` neighbourhood. Worth an entry
   next to the Capability seam only if a host actually wires it.
-- **`DECISIONS.md`** gets the real forks, which are P1–P3 plus question
-  3: one catalog vs. two registries; `:user` vs. `:system` injection;
+- **`DECISIONS.md`** gets the real forks, which are P1–P3 plus questions
+  3 and 7: one catalog vs. two registries; `:user` vs. `:system` injection;
+  **fence- and span-aware substitution** (roads not taken: substitute
+  blindly as Claude Code does, or ask authors for a `$$` escape — both
+  rejected on imported bundles nobody will edit; and the rider that the
+  append gate reads the body the same way, which is what keeps the
+  motivating file from losing its argument);
   the **host built-in > command > skill** precedence (roads not taken:
   skill wins, or raise on collision — the latter rejected because
   `Catalog::Bundled` already answers the same question with a warning,
@@ -1037,6 +1197,16 @@ to be reachable from pikuri aren't.
   carrying across is the one the measurement produced: a skill whose
   description tells the model to ignore it is a bundle filed on the
   wrong surface.
+- **Question 5 needs no entry of its own** — it is an *adoption* of
+  `D-bundle-trust-grading`, so that entry gains a sentence saying the
+  channel serves both bundle surfaces, and the `Base` record moves to a
+  shared home under the name the entry already uses. Two riders belong
+  there rather than here, because they are facts about the grading and
+  not about commands: a *refused* command never taints (its bytes cannot
+  reach the context), and the home-base vouch covers `commands/` for the
+  same reason it covers `skills/` — read-only roots, void under `--yolo`.
+  Do the relocation **before the next release**, while it is still a
+  CHANGELOG edit rather than a breaking change.
 - **Rejected** → a one-line why-not in `Pikuri::Skill::Catalog`'s
   yardoc, since "why doesn't pikuri see my `.claude/commands`?" is the
   question that lands there.

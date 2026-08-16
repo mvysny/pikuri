@@ -4,7 +4,8 @@ require 'pikuri-core'
 
 # Entry file for the pikuri-skills gem: a per-gem Zeitwerk loader
 # rooted at this +lib/+, contributing +Pikuri::Skill::{Catalog,
-# SkillTool, Extension}+ to the shared +Pikuri::+ namespace.
+# SkillTool, Extension}+ and +Pikuri::Bundle::Base+ to the shared
+# +Pikuri::+ namespace.
 module Pikuri
   module Skill
     LOADER = Zeitwerk::Loader.new

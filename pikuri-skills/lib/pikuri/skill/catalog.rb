@@ -32,27 +32,6 @@ module Pikuri
       # SKILL.md files are small and the tool's hot path stays IO-free.
       Skill = Data.define(:name, :description, :location, :body)
 
-      # One search base: a directory to scan, plus whether the bytes under it
-      # are the user's own.
-      #
-      #   Base.new(dir: project_root, trusted: repo_sources_are_mine)
-      #   Base.new(dir: Dir.home)                     # trusted: false
-      #
-      # +trusted+ asks what +Pikuri::Workspace::Filesystem#trusted?+ asks for
-      # the file tools — user-authored bytes, or bytes that arrived with a
-      # clone? — but about *this root alone*. That is why it is a value the
-      # host passes rather than a reach into the workspace: the two objects
-      # reach different bytes, so a workspace whose +readable:+ carries
-      # +~/.m2/repository+ is honestly untrusted while the project's own
-      # +.pikuri/skills+ beside it is honestly the user's. Like +private:+, it
-      # is unverifiable, so silence buys +false+.
-      Base = Data.define(:dir, :trusted) do
-        # @param dir [String, Pathname] directory to scan for skill subdirs
-        # @param trusted [Boolean] every byte under +dir+ is user-authored
-        # @return [Base]
-        def initialize(dir:, trusted: false) = super
-      end
-
       # The +untrusted+ trifecta leg {SkillTool} declares.
       #
       # +:hard+ in the base class: a subclass loading skills from somewhere
@@ -138,17 +117,18 @@ module Pikuri
       # == Trust
       #
       #   Bundled.new(search_bases: [
-      #     Base.new(dir: project_root, trusted: repo_sources_are_mine),
-      #     Base.new(dir: Dir.home)
+      #     Pikuri::Bundle::Base.new(dir: project_root, trusted: repo_sources_are_mine),
+      #     Pikuri::Bundle::Base.new(dir: Dir.home)
       #   ])
       #
-      # Per-base {Base#trusted} unions into one {#untrusted_level} at scan
-      # time, because {SkillTool} declares its legs once: a single skill from
-      # an unvouched base takes the whole catalog to +:hard+. The union counts
-      # a skill at the point it *wins its name*, so an untrusted base costs
-      # nothing when it is empty or when its skills all lost a collision — a
-      # host may therefore name a base it knows nothing about and still report
-      # +:none+ for the user who turns out to have no skills there.
+      # Per-base {Pikuri::Bundle::Base#trusted} unions into one
+      # {#untrusted_level} at scan time, because {SkillTool} declares its legs
+      # once: a single skill from an unvouched base takes the whole catalog to
+      # +:hard+. The union counts a skill at the point it *wins its name*, so
+      # an untrusted base costs nothing when it is empty or when its skills all
+      # lost a collision — a host may therefore name a base it knows nothing
+      # about and still report +:none+ for the user who turns out to have no
+      # skills there.
       #
       # A host that can *rule out* writes to a base may vouch for it without
       # asking anyone: +bin/pikuri-code+ does this for +Dir.home+, since skill
@@ -160,11 +140,11 @@ module Pikuri
         SKILL_SUBDIRS = ['.pikuri/skills', '.claude/skills', '.agents/skills'].freeze
         private_constant :SKILL_SUBDIRS
 
-        # @param search_bases [Array<Base, String, Pathname>] directories
-        #   under which to look for skill subdirs. Typical values: the project
-        #   root and +Dir.home+. Processed left to right. A bare path means
-        #   +Base.new(dir: path)+ — untrusted, so the unsafe value is the one
-        #   you get by saying nothing.
+        # @param search_bases [Array<Pikuri::Bundle::Base, String, Pathname>]
+        #   directories under which to look for skill subdirs. Typical values:
+        #   the project root and +Dir.home+. Processed left to right. A bare
+        #   path means +Bundle::Base.new(dir: path)+ — untrusted, so the unsafe
+        #   value is the one you get by saying nothing.
         # @return [Bundled]
         def initialize(search_bases:)
           super()
@@ -173,7 +153,7 @@ module Pikuri
           @untrusted = false
 
           search_bases.each do |entry|
-            base = entry.is_a?(Base) ? entry : Base.new(dir: entry)
+            base = entry.is_a?(Bundle::Base) ? entry : Bundle::Base.new(dir: entry)
             SKILL_SUBDIRS.each do |sub|
               root = File.join(base.dir.to_s, sub)
               next unless File.directory?(root)
