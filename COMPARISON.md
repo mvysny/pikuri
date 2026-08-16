@@ -1277,17 +1277,30 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
 
 ### Skills
 
-- **pikuri**: `Tool::SkillCatalog` (abstract base) +
-  `SkillCatalog::Bundled` (on-disk scanner) implement the
-  [Agent Skills standard](https://agentskills.io/specification). Scans
-  `.pikuri/skills`, `.claude/skills`, `.agents/skills` walking from CWD
-  up to the git root, plus the same three under `~/`. Project beats
-  global; within each tier, `.pikuri` ➜ `.claude` ➜ `.agents`.
-  Frontmatter validation is lenient — only a missing `description` is
-  fatal (everything else warns + loads). When the catalog is non-empty,
-  `Agent#initialize` appends a `<available_skills>` XML block (same shape
-  as PI's) to the system prompt and registers the `skill` tool that
-  loads a named skill's body on demand.
+- **pikuri**: the `pikuri-skills` gem — `Skill::Catalog` (abstract base)
+  + `Catalog::Bundled` (on-disk scanner) + `Skill::Renderer` (the XML) +
+  `Skill::Extension` (the wiring) — implements the
+  [Agent Skills standard](https://agentskills.io/specification).
+  Discovery is **host-supplied, not walked**: `Catalog::Bundled.new
+  (search_bases: [...])` scans `.pikuri/skills`, `.claude/skills`,
+  `.agents/skills` under each base it is given, skipping missing ones.
+  Precedence is bases left-to-right then subdirs in that order, first
+  name seen winning (later duplicates warn and are dropped) — so
+  "project beats global" is the *typical wiring*
+  (`search_bases: [project_root, Dir.home]`, what `bin/pikuri-code`
+  passes) rather than a rule the catalog enforces. One directory level
+  only, each entry needing a `SKILL.md`; frontmatter validation is
+  lenient — a missing `description` is the sole hard failure, everything
+  else warns and loads, and a file with no frontmatter is skipped
+  silently. Wiring is opt-in via `c.add_extension(Skill::Extension.new
+  (catalog:))`, which on a non-empty catalog contributes the
+  `<available_skills>` block (same shape as PI's) as a system-prompt
+  snippet and registers the `skill` tool that loads a named body on
+  demand; an empty catalog is a no-op in both. `Catalog#roots` is
+  exposed so the host can fold the skill dirs into the workspace's
+  readable set, which is what makes a skill's sidecar files reachable
+  through `read`. Nothing scans a `commands/` directory — flat `*.md`
+  slash commands are not discovered.
 - **pi**: implements the same Agent Skills standard; pikuri's
   implementation reuses pi's XML block shape so a skill folder authored
   against any compliant harness renders consistently here.
