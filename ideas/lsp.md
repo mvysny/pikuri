@@ -356,12 +356,6 @@ Rejected anyway, for four reasons:
 4. **Teaching mandate.** A small LSP client is a good book chapter about
    how editors actually work. "Install this Go binary" teaches nothing.
 
-**But use a bridge as a measuring instrument.** Wire
-`mcp-language-server` through `pikuri-mcp` for an afternoon and watch
-*which operations the model actually reaches for and how it phrases
-them* — the one question a design doc can't answer. Then throw it away
-and write the direct client informed by that. Ship direct; spike via MCP.
-
 ## Prior art: what Claude Code's own LSP tool looks like
 
 Read straight off its tool schema (it went direct too, with servers
@@ -883,12 +877,10 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   whether a given model reaches for it will vary by model. Since the
   registry is language-agnostic anyway, this changes no design decision;
   it is a claim to keep out of the chapter's marketing.
-- **Multi-language, or Ruby-only first?** Registry design is
-  language-agnostic for free; the question is whether to ship any server
-  config beyond Ruby before there's a user. Whichever way it goes, the
-  *dispatch* path must assume multi-server from day one (finding 1) —
-  retrofitting extension routing plus per-server capability checks later
-  would touch every operation.
+- ~~**Multi-language, or Ruby-only first?**~~ **Moot** — nothing ships
+  wired either way. Dispatch still assumes multi-server from day one
+  (finding 1); retrofitting routing plus per-server capability checks
+  later would touch every operation.
 - ~~**Where does confinement live, and is it a capability question?**~~
   **Settled — see "What a result outside the root becomes" below.** Every
   result is location + snippet, the scheme decides where the snippet comes
@@ -921,6 +913,38 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   {Pikuri::Mcp::Servers#start_one} rather than warning and degrading —
   "errors are loud", with no default to break for people who never asked
   for LSP.
+
+## Not yet decided — but implementation-level, not design forks
+
+Everything above settles the *design*. These three are the decisions the
+first hour of coding runs into, and none of them is discussed anywhere in
+this note:
+
+- **Which operations the enum actually contains.** "Static, the superset
+  pikuri supports" is settled; the membership is not. Claude Code ships
+  nine (Prior art), but three of them are unbacked by ruby-lsp, and
+  `prepareCallHierarchy` / `incomingCalls` / `outgoingCalls` are a
+  three-call sequence a small local model will chain badly — the same
+  argument that collapsed name→position. Likely v1: `definition`,
+  `references`, `hover`, `documentSymbol`, `workspaceSymbol`. Decide
+  before writing the description, since the description is the API.
+- **How this is tested, and whether CI can run it.** Every spec here
+  needs a live server subprocess, and the `ruby:4.0` CI image has no
+  `ruby-lsp` (CI already installs `ripgrep` for the Grep specs, so there
+  is precedent for adding one). The alternative is a fake server — a
+  scripted stdio responder replaying canned frames — which tests the
+  client's demux, gate, and capping without any real server, and is the
+  only way to test the *failure* paths that matter most here (early `[]`,
+  a token that never closes, a child that dies mid-request). Probably
+  both: a fake for the protocol logic, one live-server spec tagged to
+  skip when the binary is absent.
+- **The gem's trifecta contribution.** `Mcp::Extension` declares its
+  legs; `pikuri-lsp` must too, and the answer is not obviously "nothing".
+  No egress (the `http(s)` refusal is what buys that) and no new private
+  data *in principle* — results are derived from files the agent can
+  already read — but snippet content for out-of-root results is text from
+  outside the workspace entering the context, which is the untrusted-input
+  leg however local it is. Write it down rather than defaulting to silence.
 
 ## Considered, deferred
 
