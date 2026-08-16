@@ -4,7 +4,9 @@ Status: **proposal, unbuilt.** Split out 2026-08-16 from
 [`slash-commands.md`](slash-commands.md) question 5, which needed this
 and correctly refused to invent a private answer for commands to a
 question skills already answer pessimistically. Rewritten the same day
-once the project half turned out to need no decision at all.
+once the project half turned out to need no decision at all, and revised
+again after a review pass found a construction-order problem in the
+proposed wiring and a self-defeating rejection in the graduation plan.
 
 **One line:** `SkillTool` declares `untrusted: :hard` unconditionally
 because `Catalog::Bundled` has no way to be told otherwise. Give it one
@@ -77,47 +79,112 @@ A per-search-base trust value, consumed by `Catalog` and (when it
 exists) `Command::Registry`. **Only one of the two bases is a
 decision.**
 
-- **Project base — inherits `Filesystem#trusted?`. Not a declaration, a
-  copy.** Same bytes `read` returns, from the same root, with the fact
-  already declared once. There is nothing here for a host to think
-  about; a host that thinks about it separately can only get it wrong.
+- **Project base — the same value the host hands `Filesystem(trusted:)`.
+  Not a declaration, a copy.** Same bytes `read` returns, from the same
+  root, with the fact already declared once. There is nothing here for a
+  host to think about; a host that thinks about it separately can only
+  get it wrong. **Carve-out:** in a wiring with skills but no file tools
+  (a Q&A agent with a catalog and web tools) there is no `Filesystem` to
+  copy from, so the project base is a declaration there too. The kwarg
+  shape covers both; only the *prose* about it being automatic is
+  workspace-specific.
 - **Home base — a declaration, defaulting `false`.** `~/.claude/skills`
   is *not* automatically user-authored: marketplace plugins, cloned
-  collections and pasted files land there routinely, and it sits outside
-  `project_root`, so `filesystem.trusted?` never made a claim about it.
-  Like `trusted:` and `private:`, the framework cannot verify it, so
-  silence buys the pessimistic value.
+  collections and pasted files land there routinely. Like `trusted:` and
+  `private:`, the framework cannot verify it, so silence buys the
+  pessimistic value. **This half is not yet independent of the open
+  question below** — today a host folds the home base into the
+  workspace's `readable:` list, and `trusted?` is declared over the
+  *whole* reachable set, not over `project_root`. So a `trusted: true`
+  filesystem in the current `bin/pikuri-code` shape already claims those
+  bytes. Grading the home base separately only becomes honest once that
+  is settled; see "The one open question".
 
 ### The gem boundary forces the shape
 
 `pikuri-skills.gemspec` depends on **`pikuri-core` only** — not
 `pikuri-workspace`. So `Catalog::Bundled` cannot ask a `Filesystem`
-anything, and the inheritance must be **the host bridging two objects it
-already holds**, not a dependency:
+anything, and the copy must be **the host passing a value it already
+holds**, not a dependency.
+
+The obvious spelling — `trusted: filesystem.trusted?` — does not
+compile in the one real wiring, and the reason improves the design.
+`bin/pikuri-code` builds the catalog **before** the filesystem, because
+the filesystem needs the catalog: `skill_catalog` at `:121`,
+`readable: … + skill_catalog.roots` at `:206`. There is no `filesystem`
+to ask yet.
+
+There does not need to be. `trusted?` is nothing but the value the host
+already computed to hand `Filesystem.new(trusted:)`, so the host
+computes it once and passes the *same local* to both — the catalog
+taking it per base, as `Catalog::Base = Data.define(:dir, :trusted)`
+(`dir` a `String` or `Pathname`):
 
 ```ruby
-catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: [
-  Pikuri::Skill::Catalog::Base.new(project_root, trusted: filesystem.trusted?),
+trusted_bytes = ...   # the host's own answer, however it gets it
+
+skill_catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: [
+  Pikuri::Skill::Catalog::Base.new(project_root, trusted: trusted_bytes),
   Pikuri::Skill::Catalog::Base.new(Dir.home,     trusted: home_skills_are_mine)
 ])
+
+filesystem = Pikuri::Workspace::Filesystem.new(
+  project_root: project_root,
+  readable:     … + skill_catalog.roots,
+  trusted:      trusted_bytes,
+  private:      private_repo
+)
 ```
+
+This is strictly better than the reader-call form. "Not a declaration, a
+copy" becomes literally true — one local, not a getter that can drift —
+and the pattern already exists three lines up: `private_repo`
+(`pikuri-code:139`) is exactly this, one local computed from a prompt
+and spent on `Filesystem(private:)`. The gem boundary that looked like a
+constraint forcing an awkward bridge turns out to enforce the better
+shape: `pikuri-skills` never sees a `Filesystem`, and need not know a
+workspace exists at all.
+
+The one constraint it does impose on a host: the answer must be *in
+hand before the catalog is built*. `private_repo` is prompted at
+`:139`, after the catalog at `:121` — a trust prompt on the same model
+would have to move above it.
 
 The catalog cannot tell which base is "the project" one, so the shape
 stays symmetric even though the semantics aren't: the first line is a
 copy, the second is a judgment.
 
-A bare path keeps working and means `trusted: false`, so every existing
-call site stays correct without an edit and the unsafe value is the one
-you get by saying nothing. That needs a real coercion step, not duck
-typing — `catalog.rb:116` currently does `File.join(base.to_s, sub)`,
-and a `Data.define` `Base` would `to_s` into `#<data …>`.
+**`--yolo` must force the local `false`.** `Filesystem::AllowAll` raises
+on `trusted:` (`filesystem.rb:392`). If the yolo branch dropped the flag
+while the catalog kept `true`, `skill` would report `:none` against
+`read`'s `:hard` — the same-bytes asymmetry this note exists to remove,
+pointing the other way. One local, forced `false` under yolo, keeps the
+two locked together.
+
+A bare path in `search_bases:` keeps working and means `trusted: false`,
+so every existing call site stays correct without an edit and the unsafe
+value is the one you get by saying nothing. That needs a real coercion
+step, not duck typing — `catalog.rb:116` currently does
+`File.join(base.to_s, sub)`, and a `Data` `Base` would `to_s` into
+`#<data …>`.
 
 Then one reader — `#untrusted_level`, returning `:none` or `:hard` — and
 `SkillTool` consumes it instead of the literal. The abstract `Catalog`
 defaults it to `:hard` (hosts subclass `Catalog` directly, and silence
-buys the pessimistic value there too); `Catalog::Empty` returns `:none`.
+buys the pessimistic value there too). `Catalog::Empty` returns `:none`,
+which nothing reaches by the normal path — `Extension#configure` no-ops
+on an empty catalog and raises on a pre-registered `SkillTool` — so
+either say it is for a hand-constructed `SkillTool` or leave `Empty`
+inheriting the base default and skip the override.
 
-### Two properties to write into the yardoc
+**The union needs a carrier, and it should not be the `Skill` record.**
+"Union at the point a skill wins its name" means `scan_root` must know
+its base's trust and the answer must survive shadowing. Adding a field
+to the `Catalog::Skill` `Data.define` changes a public shape
+(`deconstruct`, positional construction) for a fact no consumer of a
+skill wants; fold a boolean during the scan instead, next to `@skills`.
+
+### Properties to write into the yardoc
 
 - **It is a boot-time union over the skills actually *stored*.** One
   untrusted-base skill takes the whole catalog to `:hard`, however many
@@ -125,15 +192,35 @@ buys the pessimistic value there too); `Catalog::Empty` returns `:none`.
   everywhere else. Say it, so it does not read as a bug. Union at the
   point a skill wins its name, not at scan: a skill *shadowed* by an
   earlier base is never loaded and must not count.
+  **The complement is the good half, and it is why the union is over
+  *stored* rather than over *declared bases*: an untrusted base that
+  turns out to be empty costs nothing.** A host wires `Dir.home` with
+  `trusted: false` unconditionally — it cannot know what is there — and
+  a user with no `~/.claude/skills` at all still gets `:none`. Nothing
+  outside the catalog can compute that without redoing the scan.
+  **The other side bounds the payoff, and should be said too:** one
+  third-party skill in that directory returns the banner to `:hard`. The
+  quiet reading is earned by a wiring whose *entire stored set* is
+  vouched for — an empty or absent home base, or one the host declares.
+- **Grading the tool silently grades the prompt block.**
+  `Extension#system_prompt_snippets` injects the same bundles'
+  *descriptions* into the system prompt and declares no legs of its own,
+  as does `#schedule_load_skill`; both ride `SkillTool`'s declaration.
+  Correct — same bytes, same catalog — but it should be a sentence of
+  yardoc rather than an accident, since the extension is where a reader
+  would look for a second contribution and find none.
 - **The "entire reachable set" rider is what earns the home base its
   grading.** `Filesystem#trusted?` warns: *"claim it only when the
   trusted area is the tool's entire reachable set — a vouched-for island
   inside a broad root buys nothing."* This is the argument for the
-  *home* half specifically — home skills are the only bytes the catalog
-  reaches that `read`'s root does not govern, and a catalog's reachable
-  set is the enumerable list of files it loaded at scan time, so grading
-  them separately is honest. The project half needs no such argument; it
-  is just `read`'s answer, repeated.
+  *home* half specifically: a catalog's reachable set is the enumerable
+  list of files it loaded at scan time, so grading it per base is
+  honest in a way an island inside a walkable root is not. The project
+  half needs no such argument; it is just `read`'s answer, repeated.
+  Note the rider cuts both ways and that is the open question below: the
+  moment the host folds the home base into `readable:`, those bytes stop
+  being outside `read`'s reach and the island is `read`'s, not the
+  catalog's.
 
 Precedent that a derived (not merely declared) leg is normal:
 `Code::Bash` already composes trust with the sandbox —
@@ -153,11 +240,27 @@ raises on `AllowAll` + `trusted:` for the same reason; a `readable:`
 root outside `project_root` combined with `trusted: true` is the same
 incoherence in miniature and probably deserves the same treatment.
 
-**Latent today, and independent of this note.** It goes live the moment
-any `bin/` declares `Filesystem(trusted: true)`, which needs nothing
-from here — no `bin/` does today, so `read` is `:hard` everywhere and
-nothing is currently wrong. What this note adds is the *motive* to
-declare it. Fix the two together.
+**Latent today, but a precondition for the home half — not an
+independent bug** (corrected 2026-08-16; an earlier draft filed it as
+independent, and the home-base bullet above leaned on a premise it
+falsifies). It goes live the moment any `bin/` declares
+`Filesystem(trusted: true)`, which needs nothing from here — no `bin/`
+does today, so `read` is `:hard` everywhere and nothing is currently
+wrong. What this note adds is the *motive* to declare it. But the home
+base's whole claim to separate grading is that `trusted?` made no claim
+about `~/.claude/skills`, and in the shipped `bin/pikuri-code` wiring it
+does, because `trusted?` is declared over the whole reachable set and
+`skill_catalog.roots` sits in `readable:`. So `home_skills_are_mine:
+false` alongside `trusted_bytes: true` is exactly the incoherence
+`filesystem.rb:392` refuses for `AllowAll`, in miniature.
+
+Two ways out, and the note does not pick one: extend that raise to any
+`readable:` root outside `project_root` under `trusted: true` (then the
+host must vouch for its home skills or drop `trusted:`), or stop folding
+the home base into `readable:` (then the sidecar `read` for home skills
+stops working — see `Catalog#roots`, whose whole documented purpose is
+that fold). Either way, **settle this before the home half ships**; the
+project half is unaffected and could land alone.
 
 ### Settled, for the record
 
@@ -201,8 +304,10 @@ prose on the same terms a skill body is.
 ## Graduation plan
 
 - **Built** → `Catalog` / `Catalog::Base` / `SkillTool` yardoc owns the
-  per-symbol truth (what `trusted:` claims, the union rule, the
-  project-inherits-`read` rule and why the rider only concerns home).
+  per-symbol truth (what `trusted:` claims, the union-over-stored rule
+  and the empty-base complement, that the project base is the same value
+  the host spends on `Filesystem(trusted:)`, and why the reachable-set
+  rider only concerns home).
   One `CHANGELOG` sentence; **breaking only if** the bare-path form
   stops working, which it should not.
 - **`DECISIONS.md`** gets the fork: *declared per-base trust* vs. three
@@ -213,8 +318,15 @@ prose on the same terms a skill body is.
   `Filesystem` (rejected: `pikuri-skills` depends on `pikuri-core` only,
   and reaching for `pikuri-workspace` to answer a question the host can
   answer in one kwarg inverts the dependency for nothing); and a single
-  catalog-wide flag instead of per-base (rejected: the common wiring is
-  a trusted project plus an unvouched `~/.claude/skills`, and one flag
-  forces that case to `:hard`, which is the whole benefit gone).
+  catalog-wide flag instead of per-base (rejected, but **not** on the
+  grounds an earlier draft gave — "the common wiring is a trusted
+  project plus an unvouched `~/.claude/skills`, and one flag forces that
+  case to `:hard`" is falsified by the union rule, which forces the same
+  `:hard` whenever that directory *stores a skill*. The real ground is
+  the case where it does not: a host must wire `Dir.home` untrusted
+  unconditionally, since it cannot know what is there, and only the
+  catalog knows whether anything was loaded. Per-base + union-over-stored
+  reports `:none` for the user with no `~/.claude/skills`; one flag
+  reports `:hard`, and no host can do better without redoing the scan).
 - **Rejected** → a one-line why-not in `SkillTool`'s existing comment,
   which is already where a reader meets the question.
