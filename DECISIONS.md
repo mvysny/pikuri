@@ -79,7 +79,7 @@ design.
 
 ---
 
-## D-skill-path-activation — Withhold `paths:`-gated skills entirely from the model, never from the operator (2026-08-16)
+## D-skill-path-activation — A `paths:` skill is not in play until its path fires (2026-08-16)
 
 **Status:** Accepted; not yet implemented. `Catalog::Bundled#parse_skill`
 still reads only `name` and `description`. The author's own
@@ -122,14 +122,15 @@ own placement:
    mid-session on every provider.
 6. `paths:` answers *"is this ecosystem in play?"*; `when-to-use:` answers
    *"is this the moment?"*. They compose on one skill and are not rivals.
-7. An author-declared `paths:` is **advisory only**, and gates the *model*
-   alone. Operator wiring — {Pikuri::Skill::Extension#schedule_load_skill}
-   today, a host picker or slash command later — reaches every skill in
-   the catalog, gated or not, without waiting for a glob. This is a
-   deliberate divergence from both surveyed harnesses (see Consequences)
-   and it is what keeps decision 2 an optimization rather than a
-   restriction: the escape hatch is what makes hiding safe to be
-   aggressive about.
+7. The gate is the **default at every surface**, not the model's alone:
+   {Pikuri::Skill::Extension#schedule_load_skill} refuses a pending skill
+   exactly as the tool does, and so must any future picker or typed
+   `/name`. One rule with no exceptions to remember — *a `paths:` skill
+   is not in play until its path fires*. Two deliberate carve-outs, both
+   because they are not invocation routes: `Catalog#get` stays unfiltered
+   (the catalog is frozen, session-less, pure holding — the gate lives in
+   its callers, never in the catalog itself), and `bin/pikuri-code`'s
+   startup banner keeps reporting what is *installed*.
 
 Prior art and the read of grok-build's implementation live in
 `COMPARISON.md` (*Skills → Frontmatter*, and *→ How grok-build's
@@ -200,9 +201,12 @@ conditional activation actually works*).
   drop. Its motivating case is served by operator wiring instead.
 - **Pre-inject the body on a path match.** A `paths:` in a downloaded
   bundle deciding to occupy 4 KB of a host's context is the skill *author*
-  spending someone else's window. The same act by an operator wiring their
-  own session is legitimate — hence decision 7. Same mechanism, different
-  hand on it, opposite verdict.
+  spending someone else's window — where the same act by a host loading a
+  skill it named itself is legitimate, because it is spending its own.
+  Same mechanism, different hand on it, opposite verdict. Note this is
+  the one place the author/host asymmetry still bites after decision 7
+  closed the operator exemption: a host may pre-inject a body it chose,
+  but it may no longer name a *gated* skill to do it to.
 - **`paths: []` as the spelling for "never advertise".** In the shipped
   implementation an empty list means **unconditional** — the exact
   opposite — and so does `["**"]`, because normalization drops a match-all
@@ -276,26 +280,37 @@ conditional activation actually works*).
   {Pikuri::Skill::Catalog}'s yardoc, not merely available here. Anything
   wanting a real restriction is `disable-model-invocation:`, a separate
   question.
-- **The convergence is on the model-facing gate only; the operator path
-  deliberately diverges.** Claude Code gates the human as well — in a
-  fresh session `/writing-rdoc` returns `Unknown command`, for a skill
-  the operator wrote and named from memory. That is the mechanism's
-  justification collapsing: withholding is defensible because the model
-  cannot judge relevance for a skill it has not been shown, and an
-  operator typing the name has already made that judgment. pikuri keeps
-  decision 7 unconditional instead, which costs nothing (the descriptions
-  never left the disk) and makes the aggressive hiding in decision 2
-  affordable. It also preserves an invariant worth naming: **withholding
-  costs the model's view, never the human's.** The invariant holds
-  structurally rather than by care — the gate lives in the renderer and
-  the tool, while both operator routes read the catalog directly
-  (`schedule_load_skill` → `Catalog#get`; `bin/pikuri-code`'s startup
-  banner → `catalog.list`). Filtering `Catalog#get` instead is the one
-  implementation slip that would reproduce the copied bug, so the tool
-  must consult the listener's activation state rather than the catalog
-  being made to lie. Honest scope, though: pikuri ships no skill picker
-  and no slash commands, so today the promise rests on that banner and a
-  programmatic seam no `bin/` calls.
+- **The operator is gated too, and that was decided twice.** The entry
+  first carved out an operator exemption on the reasoning that
+  withholding is defensible only because the model cannot judge relevance
+  for a skill it was never shown, while an operator typing the name has
+  already made that judgment. Both surveyed harnesses refuse the carve-
+  out. Claude Code: `/writing-rdoc` in a fresh session returns `Unknown
+  command`. grok-build: `slash_skills()` is built from `startup_skills`,
+  which `take_unconditional` has already stripped of held skills, and
+  `skill_resolvable` searches only that set — so the name does not
+  resolve when typed, not merely fail to autocomplete. Its one accessor
+  reaching held skills, `ConditionalSkills::held`, serves a single
+  model-facing did-you-mean for a failed `SKILL.md` read.
+  **What settled it was not the vote but what an exemption would be worth
+  in practice.** `Catalog` is public and unfiltered, so a host building
+  the obvious skill picker enumerates `catalog.list` — as
+  `bin/pikuri-code`'s banner already does — and re-exposes every gated
+  skill on precisely the surface both harnesses gate. An exemption that
+  every naive host opts out of is a nominal convergence. Gating by
+  default is the only version that survives contact with a third-party
+  host.
+- **`paths:` auto-*advertises*; it never auto-loads.** Worth stating
+  because the opposite reading makes decision 7 look redundant rather
+  than restrictive. A promotion carries description (+ `when-to-use`),
+  capped — grok-build's listing renderer says so outright: *"Discovery
+  only — the full skill body is loaded on invocation, so the listing
+  stays terse"* — and Claude Code was observed doing the same. So
+  invocation stays the only route to a body, and gating it closes the
+  sole path rather than a redundant one. A `force:` escape hatch on
+  `schedule_load_skill` is the obvious future request; deferred until
+  something concrete needs it, since the case that would have wanted it
+  (`gradle`) is a skill deliberately left ungated.
 - **A gated skill is permanently unreachable to sub-agents.** They do not
   inherit extensions, so no listener ever promotes for them, and under
   decision 5 the name will not load either. Accepted rather than fixed:

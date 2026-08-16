@@ -1415,17 +1415,33 @@ Three findings worth carrying:
    would have to be rebuilt on every promotion, churning the tool schema
    mid-session.
 
-   **The gate binds the human operator too.** In a fresh session,
-   `/writing-rdoc` — a skill the operator wrote, whose name they typed
-   from memory — returned `Unknown command: writing-rdoc`. So the
-   withholding is not a model-context optimization with a human escape
-   hatch; it is a hard gate on every surface, and the one party who
-   provably is *not* ignorant of the skill is blocked by a mechanism
-   whose only justification is ignorance. Worth stating plainly because
-   it is the part pikuri should **not** copy: `paths:` is authored to
-   manage the model's context, and an operator asking for a skill by name
-   has already supplied the relevance judgment the glob was standing in
-   for.
+   **The gate binds the human operator too — in both harnesses.** In a
+   fresh Claude Code session, `/writing-rdoc` — a skill the operator
+   wrote, whose name they typed from memory — returned `Unknown command:
+   writing-rdoc`. grok-build does the same by construction: `slash_skills()`
+   (`skill_discovery_tracker/mod.rs:475`) combines `discovered_skills`
+   with `startup_skills`, and `startup_skills` is what `take_unconditional`
+   left behind after partitioning the gated ones into `ConditionalSkills::held`
+   (`mod.rs:334-336`). `bridge.rs:411-415` calls that projection *"the
+   authoritative source for slash command advertisement"*, and
+   `SlashCommandSet::skill_resolvable` (`slash_commands.rs:659-665`)
+   searches only it — so a gated name does not resolve when typed, not
+   merely fail to autocomplete. The one accessor that reaches held
+   skills, `ConditionalSkills::held` — commented *"so registry-wide
+   lookups can see skills the listing withholds"* — has exactly one
+   consumer, `suggest_skill_path`, a **model-facing** did-you-mean for a
+   failed `SKILL.md` read. There is no operator escape hatch in either
+   implementation.
+
+   Two riders on that, both cutting against copying it uncritically.
+   `paths:` is **absent from grok-build's own user guide**, whose
+   optional-frontmatter table documents ten other fields — so this is
+   convergence on undocumented behaviour. And that guide documents
+   `user-invocable: false` (*"hide it from slash commands"*) and
+   `disable-model-invocation: true` (*"only your slash command runs the
+   skill"*) as deliberately **orthogonal** axes for the two audiences —
+   which `paths:`, undocumented, collapses. The behaviour is what two
+   harnesses do; it is not obviously what either designed.
 
    Three further behaviours, observed in the same session and worth
    having because they are the parts a reimplementation gets wrong:

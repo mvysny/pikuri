@@ -134,14 +134,12 @@ Related:
    {Pikuri::Skill::Extension#schedule_load_skill} — a seam that exists, is
    main-agent-only, and that no bundled `bin/` exposes.
    `D-skill-path-activation` decision 7 makes it the sanctioned home for
-   "in a Gradle project, load `gradle`", so it now has four dependents
-   (that case, `disable-model-invocation:`, the deterministic-load
-   argument generally, and — since that decision hides gated skills
-   outright — the *only* operator route to a skill whose glob has not
-   fired). The fourth is what promotes this from nice-to-have: Claude
-   Code gates its human operator too (`/writing-rdoc` → `Unknown
-   command`), and pikuri's stated non-copying of that is a promise only
-   `schedule_load_skill` currently keeps. Caveat and the reason it is not already done:
+   "in a Gradle project, load `gradle`", so it has three dependents (that
+   case, `disable-model-invocation:`, and the deterministic-load argument
+   generally). It is *not* the escape hatch for a gated skill any more —
+   decision 7 now gates this seam too, so the deterministic-load case
+   only works for skills their author left ungated, which `gradle` is.
+   Caveat and the reason it is not already done:
    CLAUDE.md's own rule says a `bin/` demo's shortcut is not evidence
    about the library — so this must be argued as "the library seam is
    under-exercised", not "the demo needs a feature".
@@ -162,13 +160,16 @@ Related:
     TUI, not just a model-facing `<system-reminder>` — which turns
     `skill-path-activation.md`'s two-events design (settled: a
     `Skill::Promoted` domain event alongside `Event::SystemInjected`)
-    from a rendering nicety into the feature's selling point. The
-    reassurance behind it — **withholding costs the model's view, never
-    the human's** — held under every design *considered*, but not under
-    every design *shipped*: Claude Code gates its operator too
-    (`/writing-rdoc` → `Unknown command`). It is a promise pikuri now
-    makes deliberately (`D-skill-path-activation` decision 7), not one
-    that falls out for free, and item 8 is where it gets kept.
+    from a rendering nicety into the feature's selling point. Strike the
+    reassurance this item used to carry — *withholding costs the model's
+    view, never the human's*. It held under every design **considered**
+    and under none **shipped**: both harnesses gate the operator, and
+    `D-skill-path-activation` decision 7 now follows them. So the human
+    loses the entry too until the glob fires, and the promotion moment is
+    the *only* moment they are told the skill exists. That does not
+    weaken the UX claim, it sharpens it — the `Skill::Promoted` render is
+    now the feature's sole human-facing surface, not a nicer alternative
+    to one.
 
 
 ## Graduation plan for what is left
