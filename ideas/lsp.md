@@ -218,6 +218,19 @@ truth, the constant half answers "what is this class for?" in one call
 without reading a file — a different operation from `read`, not a third
 spelling of it.
 
+**9. What ruby-lsp does *not* advertise, exactly.** Finding 1 counted the
+capabilities without naming them, and the absences turn out to decide the
+operation enum. Present: `definition`, `references`, `workspaceSymbol`,
+`hover`, `documentSymbol`, `completion`, `rename`, `diagnostic`,
+`typeHierarchy` (20 providers). **Absent: `typeDefinitionProvider`,
+`implementationProvider`, `declarationProvider`,
+`callHierarchyProvider`** — and calling one anyway returns
+`Method not found: textDocument/typeDefinition`, i.e. the raw protocol
+error a shipped client leaks (Prior art) rather than a clean refusal.
+Same run re-confirmed finding 7's other half: ruby-lsp answered
+`positionEncoding: "utf-8"`, accepting the offer jdtls ignored, so both
+branches of that negotiation are now verified against real servers.
+
 ## Findings from a live jdtls run
 
 A fourth throwaway client, against `jdtls` 1.58 / JDK 25, on three
@@ -988,8 +1001,18 @@ operation most in need of exact-match-first ordering and a hard cap.
   `outgoingCalls`** — unsupported by ruby-lsp (verified: Claude Code
   leaks raw `Method not found` for all three against it), and the
   hierarchy trio is a three-call chain on top.
-- **`typeDefinition`, `declaration`, `typeHierarchy`** — advertised by
-  both servers, but marginal over `definition` or chained like the above.
+- **`typeDefinition`** — *not* marginal, and the earlier claim that it was
+  is withdrawn. On `var x = service.fetch()` the type appears nowhere in
+  the source, so it is the only way to learn it and grep can never
+  answer it. It is out because **ruby-lsp does not implement it**
+  (finding 9), making it a typed-language capability that arrives *with*
+  Java rather than before it. When it does, note that it is the first
+  operation for which `symbol` alone is insufficient — a local variable
+  is not in the workspace index, so `file` + `line` become effectively
+  required, and the parameter description has to say so.
+- **`declaration`, `typeHierarchy`** — `declaration` is unsupported by
+  ruby-lsp too; `typeHierarchy` is supported by both but is a
+  prepare-then-fetch chain like the call hierarchy.
 
 Adding a value later breaks nothing (the enum is static and hardcoded),
 so this is a floor, not a ceiling.
