@@ -614,15 +614,31 @@ hard refusal.
   applies** — an LSP hit under a denied root must not leak just because
   the server walked to it, which is `D-walked-path-denylist` doing
   precisely its job.
-- **Custom schemes — content only if the entry says how.** pikuri never
-  invents a reader for `jdt:` or anyone else's scheme. A sibling to
-  `init_options`, `content_request: 'java/classFileContents'`, names the
-  request to call with `{uri:}`; the pair travels together, since it is
-  declaring `classFileContentsSupport` that makes jdtls emit `jdt://` URIs
-  in the first place. Normalize the reply from String-or-`{text:}` (J7).
-  With no `content_request` configured, such results are **reported and
-  dropped** — "2 more in libraries, no content provider configured for
-  `jdt:`" — never silently omitted, which is the finding-2 lesson again.
+- **Custom schemes — the issuing server is the only reader.** A
+  `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
+  is a *handle, not a locator*: an index into jdtls's own view of the
+  classpath, closer to a file descriptor than to a path, and meaningless
+  to anything else. So pikuri never reads one — it hands it back to the
+  server that issued it. Two halves, both facts about the server and
+  therefore both in the entry:
+
+  1. **Seeing them at all is pikuri's choice**, declared via
+     `init_options`' `classFileContentsSupport` — a promise to jdtls that
+     the client can display virtual documents. Absent it, jdtls concludes
+     the client could do nothing with such a URI and returns *zero
+     locations* rather than an error (J4).
+  2. **Reading them is a request back to the server**:
+     `content_request: 'java/classFileContents'` with `{uri:}`, reply
+     normalized from String-or-`{text:}` (J7).
+
+  Keeping both in the entry is what keeps the client generic — no server
+  names in `pikuri-lsp`. The cost is two arcane strings that must travel
+  together, so a half-configured entry must not fail silently: a
+  non-`file:` result with no `content_request` is **reported and
+  dropped** — "2 more in libraries; no content_request configured for
+  scheme `jdt:`, see that server's docs for the request that serves it" —
+  and logged for the human, since it is a config error rather than
+  something the model can act on.
 - **`http(s):` and everything else — never dereferenced, only printed.**
   This is the load-bearing refusal. Fetching a URI the *server* chose
   hands pikuri-lsp an attacker-influenceable egress leg: the gem's entire
@@ -820,8 +836,16 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   indexing with the user typing their first prompt and the model's first
   few turns, so the unbounded block is usually near-zero and only bites
   the session that asks for language intelligence immediately.
-- **Does the model actually use it?** The honest risk: `grep` is right
-  there and the model is good at it. This is what the MCP spike measures.
+- ~~**Does the model actually use it?**~~ **Not a blocker — build it
+  anyway**, but the expected payoff is uneven and the book should say so.
+  For a typed language it is close to certain: Java's answer to "where is
+  this defined" is a compiler fact, and `grep` for an overloaded method
+  name in a multi-module build is hopeless. For Ruby it is genuinely
+  unclear — dynamic dispatch means the server returns *candidates*
+  (finding 3), which is much closer to what `grep` already gives, and
+  whether a given model reaches for it will vary by model. Since the
+  registry is language-agnostic anyway, this changes no design decision;
+  it is a claim to keep out of the chapter's marketing.
 - **Multi-language, or Ruby-only first?** Registry design is
   language-agnostic for free; the question is whether to ship any server
   config beyond Ruby before there's a user. Whichever way it goes, the
