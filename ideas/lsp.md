@@ -5,8 +5,8 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The
-tool-surface sketch is the live part. One lifecycle question remains
-open: what a result outside the workspace root becomes.
+tool-surface sketch is the live part; the last lifecycle question,
+what an out-of-root result becomes, is settled too.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -276,6 +276,14 @@ to it and the model cannot `read` it. So the confinement open question
 has one arm forced: for non-`file:` results the tool must return
 *content*, or drop them and forfeit library navigation entirely.
 
+**J7. `java/classFileContents` works, returns a bare String, and is
+huge.** Called with the `jdt://` URI from J5 it answered in 10ms with
+**22,639 bytes** — the complete attached source of `LoggerFactory.java`
+from the sources jar. Two consequences: the reply is a plain String, not
+the `{text:}` object a spec-shaped request would return, so a generic
+hook must accept both; and a whole class is far too much for one
+observation, so the content path slices to the target range.
+
 **J6. Warm start is 10× cheaper, which settles the data-dir question.**
 Same repo, same `-data`: 78s cold, 7.7s warm. `Paths.cache` (shared,
 persistent) over `Paths.new_temp`, as leaned.
@@ -472,7 +480,8 @@ Ruby that is the entire entry. Two more fields earn their place, and two
 that look obligatory must *not* exist.
 
 ```ruby
-StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
+StdioEntry = Data.define(:id, :command, :files, :env, :init_options,
+                         :content_request)
 ```
 
 - **`id`** — `"ruby"`, `"java"`. Unlike MCP's id this is *not* a
@@ -499,6 +508,13 @@ StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
   Java navigation working and quietly returning nothing. It is the
   designated home for per-server non-spec glue, which keeps the client
   generic — pikuri has no jdtls special case, the Java *entry* does.
+- **`content_request`** — the request name to call with `{uri:}` for
+  results whose scheme pikuri cannot read (`'java/classFileContents'`).
+  Same principle as `init_options` and its natural partner: the
+  capability declared there is what makes the server hand back `jdt://`
+  URIs at all, so an entry that sets one without the other is
+  half-configured. Nil means non-`file:` results are reported and
+  dropped. See "What a result outside the root becomes".
 **No `startup_timeout:`, and no timeout at all.** The obvious fifth field
 — ruby-lsp indexes this repo in seconds, a cold jdtls import is minutes —
 is a trap twice over. No value is defensible (30s is wrong for Java, 300s
@@ -573,6 +589,54 @@ Two details that decide whether the deferred drain behaves:
 - **Always emit a terminal `done: true` when the wait exits**, whatever
   is parked. Otherwise a host that drew a bar keeps it up forever when
   readiness arrives without a matching `end`.
+
+### What a result outside the root becomes
+
+**There is no standard "read this URI" request in the LSP that ships
+today.** Verified: the Ruby SDK is `language_server-protocol` 3.17.0.6
+and neither it nor ruby-lsp mentions `textDocumentContent` anywhere. The
+spec assumes the client is an editor that owns a filesystem. jdtls fills
+the gap with its own `java/classFileContents`, and other servers invent
+their own schemes the same way (`zipfile:`, `deno:`, `jar:`,
+`sourcekit-lsp:`). If a standard request lands in a later spec revision,
+it slots into the same hook below.
+
+So: **every result is rendered as location + snippet, and the URI scheme
+decides where the snippet comes from.** Three tiers, and the third is a
+hard refusal.
+
+- **`file:` — the only scheme pikuri reads itself.** In-root results go
+  through the `Workspace` seam and also carry the path, because the model
+  can usefully `read` more of it. Out-of-root results (the 45 `Faraday`
+  hits under `gems/`) come back as snippet-only: a path the model cannot
+  open is a dead-end citation, and "what does this library method do" is
+  one of the top reasons to want LSP at all. **`Filesystem#denied?` still
+  applies** — an LSP hit under a denied root must not leak just because
+  the server walked to it, which is `D-walked-path-denylist` doing
+  precisely its job.
+- **Custom schemes — content only if the entry says how.** pikuri never
+  invents a reader for `jdt:` or anyone else's scheme. A sibling to
+  `init_options`, `content_request: 'java/classFileContents'`, names the
+  request to call with `{uri:}`; the pair travels together, since it is
+  declaring `classFileContentsSupport` that makes jdtls emit `jdt://` URIs
+  in the first place. Normalize the reply from String-or-`{text:}` (J7).
+  With no `content_request` configured, such results are **reported and
+  dropped** — "2 more in libraries, no content provider configured for
+  `jdt:`" — never silently omitted, which is the finding-2 lesson again.
+- **`http(s):` and everything else — never dereferenced, only printed.**
+  This is the load-bearing refusal. Fetching a URI the *server* chose
+  hands pikuri-lsp an attacker-influenceable egress leg: the gem's entire
+  claim is read-only local navigation with no network, and a dependency
+  that can name a URL in its source map would break that claim, with the
+  request itself as the exfiltration channel (the data rides in the URL).
+  pikuri already has `fetch` and `web_scrape` for network reads a human
+  asked for. Render the URL as text and let the model decide to reach for
+  those; the LSP tool never dereferences.
+
+Volume is part of this, not separate from it: J7's single class was
+22 KB. A snippet is the definition's `range` plus a few lines of context,
+never the whole document — the same capping discipline finding 6 demands
+for `references`.
 
 ### The coalescing mailbox
 
@@ -691,7 +755,8 @@ Pikuri::Lsp::Registry::StdioEntry.new(
   env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') },
   init_options: {
     extendedClientCapabilities: { classFileContentsSupport: true }
-  }
+  },
+  content_request: 'java/classFileContents'
 )
 ```
 
@@ -732,10 +797,12 @@ than cargo-cult:
   the project compiles against. The launcher hard-fails below Java 21
   (`jdtls requires at least Java 21`) while your project may target 8;
   a reader who conflates the two will "fix" the wrong one.
-- **`classFileContentsSupport`** — without it, every library symbol
-  answers with silence (J4). This is the one where the chapter should
-  show the failure first: a `LoggerFactory` that has no definition is a
-  better teacher than a capability flag nobody would question.
+- **`classFileContentsSupport` + `content_request`** — the pair. Without
+  the capability every library symbol answers with silence (J4); without
+  the request name the resulting `jdt://` hit has no readable content
+  (J5, J7). This is the one where the chapter should show the failure
+  first: a `LoggerFactory` that has no definition is a better teacher
+  than a capability flag nobody would question.
 
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
@@ -761,26 +828,10 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   *dispatch* path must assume multi-server from day one (finding 1) —
   retrofitting extension routing plus per-server capability checks later
   would touch every operation.
-- **Where does workspace-root confinement live** — in the wrapper, or as
-  a `Workspace::Filesystem` call in the tool? The latter reuses the seam;
-  the former keeps the tool thin.
-- **…and confinement is a *capability* question, not only a filtering
-  one.** Finding 3 treats out-of-root hits as noise to drop, but the
-  `Faraday` run is the counter-example: 45 locations under `gems/`, and
-  "what does this library method actually do" is one of the top reasons to
-  want LSP at all. Confine hard and the model falls back to grep for
-  exactly the case where grep is worst. Return the paths unconfined and
-  the model gets citations it cannot then `read`. Third way: for
-  out-of-root hits return the *snippet* rather than the path, so no read
-  capability is granted. Note this lands differently per host — under
-  `bin/pikuri-code` the gem sources are already reachable via `bash`, so
-  nothing is widened; under a read-only workspace-confined host it is a
-  new leg. **J5 forces one arm for Java**: a library definition comes back
-  as a `jdt://` URI, not a path — nothing to deny-check, nothing to
-  `read`, contents only via jdtls's own `java/classFileContents`. So
-  either non-`file:` results return *content*, or Java library navigation
-  is dropped outright. The snippet answer and the `jdt://` answer are the
-  same mechanism, which is a good sign it is the right one.
+- ~~**Where does confinement live, and is it a capability question?**~~
+  **Settled — see "What a result outside the root becomes" below.** Every
+  result is location + snippet, the scheme decides where the snippet comes
+  from, and only `file:` is ever read by pikuri itself.
 - ~~**The readiness gate may not be generic.**~~ **Settled by J1–J3** —
   one generic gate (all progress tokens closed, plus a short settle
   debounce) serves both servers, because a false-early edge is harmless
