@@ -23,9 +23,23 @@ how pikuri treats the same key on a skill.
 2.1.233 — see *Unreferenced arguments*. It confirmed the lean (arguments
 a body never references are appended) and turned up three things nobody
 was looking for: the expansion is XML-wrapped, `$n` is off by one, and
-`wh.md`'s `$1` has never worked. **Nothing open now blocks
-implementation** — questions 3, 5 and 6 are a host's call, a sentence of
-yardoc, and a settled lean.
+`wh.md`'s `$1` did not work.
+
+**Second review pass, 2026-08-16 — the mechanics, not the forks.** The
+two earlier passes audited the *security and API* forks, and all of it
+held. This one asked instead what an implementer would still have to
+invent, and found that the **interpolation contract had never been
+written down** — every pass had walked past it. Settled here: argument
+tokenization, the `$n` range, out-of-range handling (flipped, see
+finding 3), where a command's name comes from, the no-frontmatter file,
+and the question-4 footer gate, which as written gated nothing. The pass
+also caught two rotted cross-references and one finding that the file it
+described had outrun.
+
+One genuinely contested piece is left, and it is now the only thing
+between this note and an implementer: **question 7** — whether
+substitution respects fenced blocks and code spans. Questions 3, 5 and 6
+remain a host's call, a sentence of yardoc, and a settled lean.
 
 **Scope.** This note owns the *human-invoked* half of the prompt-bundle
 surface: discovery of `commands/`, argument interpolation, and how a
@@ -40,9 +54,14 @@ Related:
 - [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — the
   sister surface, and the reason the split is cheap: every argument
   there is about *what the catalog costs in the prompt*. A command costs
-  **zero prompt tokens**, so none of it applies. Its **question 6 is
-  this note's second motive** — see below; read that question and this
-  note together, they answer each other.
+  **zero prompt tokens**, so none of it applies. Its **question 8** is
+  where the two surfaces cross: it counts `disable-model-invocation:`
+  among the three dependents of the host-driven load path, and this note
+  is the argument that it is not one of them.
+- [`skill-cost-model.md`](skill-cost-model.md) — the 12-skill catalog
+  measurement, and **this note's second motive** (its deferred item 6).
+  See below; read that item and this note together, they answer each
+  other.
 - [`claude-parity.md`](claude-parity.md) — Claude-Code parity, but for
   the *prompt*. This is a *harness* parity item; if it lands, that note
   gains nothing and this one graduates on its own.
@@ -68,19 +87,23 @@ The middle two rows are the ones that settle the API.
 
 ### The second motive: it's also the fix for a measured resident cost
 
-This note started as "pikuri can't see my commands dir". The sister
-note's catalog measurement (2026-08-16) supplies an independent second
-reason, and it's the stronger one.
+This note started as "pikuri can't see my commands dir".
+`skill-cost-model.md`'s catalog measurement (2026-08-16) supplies an
+independent second reason, and it's the stronger one.
 
 Two of the 12 skills measured — `wh` and `grill-me` — were
 slash-commands filed as skills. `wh` even carried `argument-hint:`, a
 command frontmatter key. Their descriptions were resident tokens spent
 **telling the model to ignore them**, on every turn, forever (`wh`'s
-read *"Only invoked manually."*). That note reaches for a
-`disable-model-invocation:` frontmatter key to withhold them. The real
-answer is that they aren't skills: a bundle the human invokes belongs on
-the human-invoked surface, where it costs nothing resident because it
-was never advertised in the first place.
+read *"Only invoked manually."*). The sister notes' mechanism for
+withholding such a bundle is a `disable-model-invocation:` frontmatter
+key — recorded in `skill-cost-model.md`'s deferred item 6 as *noted, not
+proposed*, and counted in `skill-catalog-in-context.md`'s question 8 as
+one dependent of the host-driven load path. Neither note argues *for*
+it, which is the opening this one takes: they aren't skills at all. A
+bundle the human invokes belongs on the human-invoked surface, where it
+costs nothing resident because it was never advertised in the first
+place.
 
 Both moved to `~/.claude/commands/` the same day — **and thereby became
 invisible to pikuri**, which is the regression this note closes. So the
@@ -219,17 +242,47 @@ Copy:
   `/` popup — `wh.md` carries
   `argument-hint: <project-label> [--since YYYY-MM-DD]` and that is
   exactly what the menu should render.
-- **Namespacing.** Three lines, and a flat scanner would *silently miss*
-  namespaced commands rather than degrade — worse than not supporting
-  them.
+- **Namespacing — and with it, the name.** A command's name *is* its
+  path: the `.md` stem, prefixed by whatever subdirectories it sits
+  under within the scanned dir, `:`-joined —
+  `commands/frontend/foo.md` → `frontend:foo`. Three lines, and a flat
+  scanner would *silently miss* namespaced commands rather than degrade
+  — worse than not supporting them.
+
+  **A frontmatter `name:` is ignored** (settled 2026-08-16; the note
+  named the namespacing rule and never said where the *name* came from).
+  This is the one place the command record deliberately diverges from
+  `Catalog::Skill`, where `name:` overrides the parent directory. For a
+  skill the name is a label the model reads; for a command it is the
+  **address the human types**, and an address that its location doesn't
+  predict is not an address. Warn on a mismatch, load under the path.
 - **`$ARGUMENTS` / `$n`.** Trivial, and the only interpolation that
-  can't be replaced by prose. Two riders from the 2026-08-16
-  measurement: append `ARGUMENTS: <raw>` — that exact spelling — when
-  the body references neither, and implement `$n` **1-based**, blanking
-  an out-of-range index. Claude Code 2.1.233 is 0-based there and leaves
-  an out-of-range `$n` as literal text; that is its bug, and the one
-  place this note knowingly diverges from observed behaviour. Reasoning
-  and the probe transcript live in *Unreferenced arguments* below.
+  can't be replaced by prose. Riders from the 2026-08-16 measurement:
+  append `ARGUMENTS: <raw>` — that exact spelling — when the body
+  references neither, and implement `$n` **1-based**, the one place this
+  note knowingly diverges from Claude Code 2.1.233 (0-based in the
+  binary, 1-based in its own docs and in every body anyone writes). An
+  out-of-range `$n` stays **literal text**, matching Claude Code — this
+  reversed on the second review pass; see finding 3. Reasoning and the
+  probe transcript live in *Unreferenced arguments* below.
+- **The tokenizer, spelled out** (settled 2026-08-16 — the note wrote
+  `$n` throughout and never said what *n* indexes, which is the first
+  thing an implementer needs). `$ARGUMENTS` is the raw argument string,
+  verbatim, exactly as typed after the command name. `$1`…`$9` index
+  that string **split on whitespace** — no quote handling, no flag
+  awareness. `/wh swingai --since 2026-08-10` gives `$1 = swingai`,
+  `$2 = --since`, `$3 = 2026-08-10`. Three deliberate non-features:
+
+  - **No shell quoting.** `/foo "two words"` is three tokens, one of
+    them `"two`. Supporting quotes means picking a quoting dialect and
+    then owning its escapes forever; a body that wants a multi-word
+    argument should read `$ARGUMENTS`, which is what it meant.
+  - **Nine, not unbounded.** `$1`…`$9` is what the prior art documents,
+    so it is the range authors write against. A body wanting a tenth
+    positional is a body that should be parsing `$ARGUMENTS`.
+  - **No flag parsing.** A command mixing flags with positionals reads
+    them off `$ARGUMENTS` — which is the shape `wh.md` arrived at on its
+    own, unprompted, for exactly this reason.
 - **Lenient validation**, matching the catalog on unknown keys — ignored.
   **But not its hard failure** (revised 2026-08-16): `Catalog::Bundled`
   drops a skill with no `description` because for a *skill* the
@@ -239,10 +292,30 @@ Copy:
   the description is chrome for the popup. Inheriting the hard failure
   would make an imported command *silently absent from the menu* for a
   reason that stopped applying at the surface boundary. So: warn, fall
-  back to the name as its own display string, and load it. That leaves
-  the registry with **no hard failure at all** except the two refusals
-  below — which is the right shape, since a command that parses is a
-  command the human can invoke.
+  back to the name as its own display string, and load it.
+
+  **Nor its *other* silent drop** (spotted 2026-08-16, one layer along
+  from the same trap): `parse_skill` also returns nil when
+  `split_frontmatter` finds no frontmatter block at all, reasoning that
+  such a file was *"not meant as a skill"*. That is a fair inference
+  about a stray `.md` sitting inside a skill *directory*, and the wrong
+  one here — under `commands/`, a frontmatter-less `.md` is an ordinary
+  command. Frontmatter is optional in the prior art and every key in it
+  is UI chrome; the body is the whole point and it is right there. So:
+  no frontmatter ⇒ the entire file is the body, the name comes from the
+  path as always, the description falls back to the name. Nothing on
+  disk would have caught this — both files in the directory that
+  motivated this note happen to carry frontmatter.
+
+  Accepted consequence: with no frontmatter requirement left, *every*
+  `.md` under a scanned `commands/` dir is a command, a stray
+  `README.md` included. That is what the prior art does, and the failure
+  mode is a junk entry in a menu the human is looking at — recoverable
+  by eye, unlike a real command silently missing from it.
+
+  Together these leave the registry with **no hard failure at all**
+  except the two refusals below — which is the right shape, since a
+  command that parses is a command the human can invoke.
 
 Drop:
 
@@ -362,7 +435,10 @@ Design notes for whoever builds it:
   inside a fenced block) is a loud exception on a file the author can
   trivially edit. A false negative is silent semantic drift. Don't try
   to skip fenced code blocks. Also match `allowed_tools` alongside the
-  documented `allowed-tools`.
+  documented `allowed-tools`. **This rule is about *detection* and does
+  not carry over to *substitution*,** where the polarity inverts and a
+  false positive is silent — see question 7, which is where that got
+  noticed.
 - **Only these two.** `model:` stays an ignored key — running the right
   prompt on the wrong model is a quality issue, not a widening. `@path`
   is dropped by *not interpolating it*, which is a third handling, not a
@@ -377,9 +453,15 @@ Design notes for whoever builds it:
   The shape is deliberate rather than awkward: *absent* is an ordinary
   outcome the human caused by typo, *refused* is a fact about a file on
   disk that the human can't fix by retyping.
-- Later, if a host wants to grey the entry out rather than let the
-  invoke raise, that's a predicate on the record (`#refused?` plus a
-  reason), not a change to this behaviour.
+- **The record carries the refusal, from scan time** (spotted
+  2026-08-16). "Raise at retrieval, warn at scan" means detection has
+  *already run* during the scan — so the refusal and its trigger are a
+  field on the stored record, not something `#get` re-derives by
+  re-reading the file. Which means `#refused?` plus its reason string is
+  free the day this ships; there is nothing to store later. What is
+  actually deferred is only the host-side affordance — whether a `/`
+  menu greys the entry out instead of letting the invoke raise is the
+  host's call, and it changes nothing here.
 
 ### Unreferenced arguments: a near-miss, now closed at the source
 
@@ -391,9 +473,12 @@ unreferenced arguments" load-bearing for the very file that motivated
 this note.
 
 Fixed at the source instead (2026-08-16): `wh.md` now interpolates
-explicitly — `$1` for the label, `$ARGUMENTS` for the `--since` flag it
-can't address positionally. So no *known* command depends on the append
-behaviour.
+explicitly rather than asking in prose. It settled — after an
+intermediate version that used `$1`, see finding 4 — on `$ARGUMENTS`
+alone, reading both the label and the `--since` flag off the raw string.
+So no *known* command depends on the append behaviour. `grill-me.md`,
+the only other file in that directory, references neither placeholder
+and takes no arguments, so the rule is unobservable there too.
 
 That downgrades open question 1 from a prerequisite to a compatibility
 question — but doesn't delete it. The whole point of reading
@@ -446,28 +531,52 @@ Four findings, in ascending order of how much they change:
    sitting in the prompt.
 
    pikuri should implement **1-based, as documented and as every author
-   writes it**, and blank an out-of-range `$n` rather than leaking the
-   placeholder. This is the one place to knowingly diverge from observed
+   writes it**. This is the one place to knowingly diverge from observed
    Claude Code behaviour: matching the bug would mean matching it
    forever, and nobody authored *against* it — the shape it produces is
    a body that silently reads the wrong word, which an author is far
    likelier to have papered over than noticed.
-4. **`wh.md`'s fix does not actually work** — the file that motivated
-   this note, checked as a consequence of finding 3. `/wh swingai` is a
-   single-argument invocation, so its `$1` is out of range: the label
-   never lands in the placeholder, the literal `$1` survives into the
-   prompt, and the command works only because the body says *"If that is
-   empty, use 'swingai'"* and 'swingai' is also the intended default.
-   The `$ARGUMENTS` mention on its own line is what actually conveys the
-   label today.
 
-   So the paragraph above — "no *known* command depends on the append
-   behaviour" — holds for the wrong reason: `wh.md` doesn't depend on the
-   append because it references `$ARGUMENTS`, not because its `$1` works.
-   Under pikuri's 1-based rule the file behaves as its author intended,
-   with no edit. That is a small piece of evidence for finding 3's
-   divergence: the *fix* for the bug is what makes the existing bundle
-   correct.
+   **The out-of-range half is *not* a divergence — reversed 2026-08-16**
+   on the second review pass. This finding originally bundled two
+   changes: 1-based indexing *and* "blank an out-of-range `$n` rather
+   than leaking the placeholder". The second is wrong. Blanking makes a
+   `$1` the author never meant as a placeholder silently *vanish*;
+   leaving it literal leaves the mistake visible in the prompt, where a
+   human reading the transcript can see it. Every other call in this
+   note leans the same way — raise at retrieval, be over-eager on
+   detection, errors are loud — and the counter-evidence arrived within
+   the day: see finding 4, whose file now carries a `$1` in prose that
+   means nothing of the sort. So: **1-based, and an out-of-range index
+   passes through untouched**, exactly as Claude Code does it.
+4. **`wh.md`'s `$1` did not work** — the file that motivated this note,
+   checked as a consequence of finding 3. `/wh swingai` is a
+   single-argument invocation, so its `$1` was out of range: the label
+   never landed in the placeholder and the literal `$1` survived into
+   the prompt.
+
+   **Superseded the same day — the author routed around the bug rather
+   than waiting for us to fix it.** (Recorded on the second review pass,
+   2026-08-16, from the file on disk rather than this note's account of
+   it.) `wh.md` no longer uses `$1` as a placeholder at all: it reads
+   the label off `$ARGUMENTS`, and carries a parenthetical saying why —
+   *"positional expansion is off by one in Claude Code 2.1.233, so `$1`
+   yields the second word."*
+
+   Two consequences, pulling opposite ways:
+
+   - The note argued that under pikuri's 1-based rule "the file behaves
+     as its author intended, with no edit", and offered that as evidence
+     for the divergence. **That evidence is gone** — there was an edit,
+     and it went the other way. Finding 3's divergence now rests on its
+     own argument (nobody authored *against* the bug), which is still
+     the right one, but it stands alone.
+   - The file is now evidence for something sharper. It contains the
+     characters `$1` in **prose**, inside backticks, meaning nothing but
+     themselves — plus a fenced bash block using `$(…)` and `$monday`. A
+     renderer that substitutes blindly eats them. That is **question
+     7**, and the file that motivated this whole note trips it on day
+     one.
 
 
 ## What pikuri already has
@@ -568,12 +677,23 @@ to be reachable from pikuri aren't.
    dropping `@path` is what answers it: a sidecar reference stays
    literal text, the model resolves it by calling `read`, and `read`
    needs a base directory — which the one-line footer supplies. So: **no
-   wrapper; a `(this command lives in <dir>)` footer, appended only when
-   the registry sees a sibling file** next to the `.md`. Three pieces
+   wrapper; a `(this command lives in <dir>)` footer.** Three pieces
    that only work together, and the third is the wiring already in the
    "What pikuri already has" table — `Registry#roots` into
    `Workspace::Filesystem`'s `readable:`, or the model resolves the path
    and is then denied the read.
+
+   **The gate on that footer, corrected** (second review pass,
+   2026-08-16). It read "appended only when the registry sees a sibling
+   file next to the `.md`" — which gates nothing, because in a flat
+   `commands/` directory *every command is a sibling of every other*.
+   `~/.claude/commands/` holds exactly `wh.md` and `grill-me.md`, so the
+   condition fires for both and the footer is unconditional in practice.
+   The intent was **sidecar** siblings, so say that: append the footer
+   only when the command's directory holds an entry the registry did
+   *not* load as a command — a subdirectory, or a file that isn't one of
+   the `.md`s it scanned. A directory of nothing but commands gets no
+   footer, which is the common case and the one worth keeping quiet.
 5. **Is the expansion trusted or untrusted text?** `SkillTool` declares
    `untrusted: :hard` precisely because a skill is a file someone else
    wrote. A command file is the same bytes with the same provenance —
@@ -589,6 +709,51 @@ to be reachable from pikuri aren't.
    it — pass the string through, let the model handle a missing
    argument the way `wh.md` already does ("if no label was given, use
    'swingai'").
+7. **Does substitution respect fenced blocks and code spans?** *(Opened
+   on the second review pass, 2026-08-16 — the only thing now standing
+   between this note and an implementer.)*
+
+   The note settled fence-awareness once already, in the opposite
+   direction: *"Be over-eager on detection, deliberately. Don't try to
+   skip fenced code blocks."* That was decided for `` !`…` ``
+   **detection**, and it is right there, because a false positive is a
+   loud exception on a file the author can trivially edit. **For `$n`
+   substitution the polarity inverts** — a false positive is not an
+   exception, it is silent corruption of the prompt. Nothing in the note
+   noticed that the same rule was being carried across a sign change.
+
+   The motivating file is on both sides of it. Today's `wh.md` contains
+   `` `$1` `` in prose (a parenthetical *about* the off-by-one bug) and
+   a fenced bash block using `$(…)` and `$monday`. Invoke it as
+   `/wh swingai --since 2026-08-10` and a blind renderer rewrites the
+   parenthetical into nonsense.
+
+   Two mitigations are already in place and shrink the problem before
+   this question is even answered:
+
+   - **Out-of-range `$n` now passes through literal** (finding 3, as
+     revised), so the single-argument `/wh swingai` — the overwhelmingly
+     common invocation — leaves the prose alone by itself.
+   - **`$ARGUMENTS` is a distinctive token.** It essentially never
+     occurs by accident; where it appears in a body, the author meant
+     it. The exposure is `$1`…`$9` specifically, which is also exactly
+     what collides with shell positional parameters — i.e. with the
+     contents of fenced bash blocks.
+
+   Which suggests the cheapest answer is **asymmetric**: substitute
+   `$ARGUMENTS` anywhere, and make only `$n` fence-aware — skipping
+   fenced blocks and inline code spans. That is a small scanner and it
+   buys the one case that actually bites. The alternatives are a
+   `$$`/backslash escape (puts the burden on authors, and on *imported*
+   bundles nobody will edit), or blind substitution plus a scan-time
+   warning when a `$n` is found inside a fence (loud, but warns on the
+   many files where it is harmless).
+
+   Note that fence-aware substitution and fence-blind `!` detection can
+   coexist without contradiction — they are answering different
+   questions about the same characters, and the asymmetry is the point,
+   not an inconsistency. Whoever builds this should write that sentence
+   into the yardoc, or the next reader will "fix" one of them.
 
 
 ## Graduation plan (when this settles)
