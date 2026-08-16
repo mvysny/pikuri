@@ -480,8 +480,7 @@ Ruby that is the entire entry. Two more fields earn their place, and two
 that look obligatory must *not* exist.
 
 ```ruby
-StdioEntry = Data.define(:id, :command, :files, :env, :init_options,
-                         :content_request)
+StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
 ```
 
 - **`id`** — `"ruby"`, `"java"`. Unlike MCP's id this is *not* a
@@ -508,10 +507,9 @@ StdioEntry = Data.define(:id, :command, :files, :env, :init_options,
   Java navigation working and quietly returning nothing. It is the
   designated home for per-server non-spec glue, which keeps the client
   generic — pikuri has no jdtls special case, the Java *entry* does.
-- **`content_request`** — the request name to call with `{uri:}` for
-  results whose scheme pikuri cannot read (`'java/classFileContents'`).
-  One string, not a scheme→request map: results are routed back to the
-  server that produced them, so the scheme never has to be interpreted.
+There is deliberately **no `content_request`** field — reading a
+server-private URI is standard-only; see "What a result outside the root
+becomes".
   Same principle as `init_options` and its natural partner: the
   capability declared there is what makes the server hand back `jdt://`
   URIs at all, so an entry that sets one without the other is
@@ -616,83 +614,55 @@ hard refusal.
   applies** — an LSP hit under a denied root must not leak just because
   the server walked to it, which is `D-walked-path-denylist` doing
   precisely its job.
-- **Custom schemes — the issuing server is the only reader.** A
+- **Custom schemes — standard-only, which today means not at all.** A
   `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
   is a *handle, not a locator*: an index into jdtls's own view of the
-  classpath, closer to a file descriptor than to a path, and meaningless
-  to anything else. So pikuri never reads one — it hands it back to the
-  server that issued it. Two halves, both facts about the server and
-  therefore both in the entry:
+  classpath, closer to a file descriptor than a path, and meaningless to
+  anything else. Only the issuing server can read it, and **the protocol
+  offers no way to discover how to ask** (verified: jdtls advertises 25
+  capabilities, none content-related, and the substring "content" appears
+  nowhere in its handshake). Editors solve this with per-server plugins —
+  vscode-java and nvim-jdtls both hardcode `java/classFileContents`.
 
-  1. **Seeing them at all is pikuri's choice**, declared via
-     `init_options`' `classFileContentsSupport` — a promise to jdtls that
-     the client can display virtual documents. Absent it, jdtls concludes
-     the client could do nothing with such a URI and returns *zero
-     locations* rather than an error (J4).
-  2. **Reading them is a request back to the server**:
-     `content_request: 'java/classFileContents'` with `{uri:}`, reply
-     normalized from String-or-`{text:}` (J7).
+  pikuri will not. The one supported path is **LSP 3.18's
+  `workspace/textDocumentContent`** — client→server, `{uri}` → `{text}`,
+  with the server advertising a `schemes: string[]` list, which is real
+  discovery rather than out-of-band lore. Detection is then a capability
+  check at dispatch, the same shape finding 1 already established for
+  operations; no new mechanism and no config field.
 
-  **Nothing in the protocol reveals the request name — that is why this
-  is config.** Verified: jdtls advertises 25 capabilities, all standard,
-  and the substring "content" appears *nowhere* in its handshake; its
-  `executeCommandProvider` lists exactly one command,
-  `java.project.isTestFile`. So the server hands out `jdt://` URIs while
-  saying nothing whatsoever about how to read them. The knowledge is
-  out-of-band, in the server's documentation — which is exactly why
-  editors ship *server-specific* plugins (vscode-java, nvim-jdtls both
-  hardcode `java/classFileContents`), and why a generic LSP client cannot
-  navigate into Java libraries without Java-specific code. Somebody has
-  to hardcode it; the only question is whether that somebody is
-  `pikuri-lsp` (a jdtls special case in the client) or the entry. Hence
-  the field: it is **a user-supplied stand-in for a discovery mechanism
-  the deployed protocol does not have**, not decorative glue.
+  The cost, accepted deliberately: **nothing implements it yet**, so
+  today a custom-scheme result is unreadable. ruby-lsp is unaffected —
+  Ruby gems are unpacked source on disk, so it emits `file:` URIs
+  exclusively (all 45 `Faraday` hits were gem paths). **Java library
+  navigation is therefore blocked until jdtls ships 3.18**, and that is
+  an acceptable wait rather than a reason to carry a
+  `content_request` escape hatch: one config field, two arcane coupled
+  strings, and a jdtls-shaped hole in a generic client, all to buy a
+  feature the standard is about to provide for free.
 
-  **LSP 3.18 standardizes exactly this, and no server we care about
-  implements it.** Verified from the reference implementation's source:
-  `workspace/textDocumentContent`, client→server, `{uri}` → `{text}`,
-  client capability `workspace.textDocumentContent`, and — the part that
-  makes it real discovery — `TextDocumentContentRegistrationOptions` with
-  a `schemes: string[]` list. `@since 3.18.0`, and 3.18 is Current. Then:
+  **No `lsp_read` tool.** The tempting shape — expose a tool that takes a
+  URI and returns its text — would be, in every configuration that ships
+  today, a tool that always errors: ruby-lsp never emits a custom URI and
+  jdtls's cannot be read. It would spend prompt budget to do nothing, and
+  reintroduce exactly the chaining hop collapsed elsewhere in this note
+  because small local models chain badly. Instead the existing `lsp` tool
+  reports unreadable results inline with their reason — "2 more in
+  libraries; this server's `jdt:` URIs need LSP 3.18 content support,
+  which jdtls does not implement yet" — never a bare count, never
+  silence. When a 3.18 server appears the *same* path fetches and inlines
+  the text: no new tool, no chaining, and the model never holds a URI it
+  must decide what to do with.
 
-  - **ruby-lsp cannot.** The Ruby binding tops out at
-    `language_server-protocol` **3.17.0.6**; no 3.18 gem exists, so the
-    types aren't in the ecosystem.
-  - **jdtls does not.** Newest is **1.60.0** (June 2026, vs. the 1.58
-    tested above). It *does* bundle lsp4j **1.0.0**, which carries the
-    whole 3.18 type family — but `jdt.ls.core` 1.60 references only
-    `TextDocumentContentChangeEvent`, the unrelated `didChange` type, and
-    still ships `java/classFileContents`. Having the types in the binding
-    is not implementing the feature.
+  **Wire jdtls anyway and you still want the capability declared.**
+  Nothing stops a user registering it, and there the entry's
+  `init_options` still earns its keep: with `classFileContentsSupport`
+  jdtls returns a `jdt://` URI and pikuri says plainly that it cannot
+  read it; without it, jdtls returns *zero locations* (J4) and the model
+  concludes the symbol has no definition. Loud beats silent, so the Java
+  example keeps it — and in-project navigation works either way (J2's
+  `WebServer` resolved fine), so only the library half is blocked.
 
-  So `content_request` is **not a legacy fallback — it is the only
-  mechanism that works**, for both example servers, today. The standard
-  path is what to *prefer once advertised*, but building it now would be
-  untestable dead code for a feature nothing speaks. Being forward-looking
-  here means being ready to switch, not shipping an unexercised branch.
-  The switch is also free at the config level when it comes: the server
-  announces its `schemes` in the handshake, so pikuri detects it without
-  the user touching their entry.
-
-  **The scheme is never the dispatch key — provenance is.** One
-  `content_request` string per entry suffices because every result
-  arrives as the reply to a request pikuri sent to *one specific server*,
-  so the URI's origin is already known without parsing it. "Not a file,
-  and the java server produced it, so ask the java server." pikuri never
-  learns that `jdt` means anything, and needs no scheme→request map.
-
-  The scheme is still read, but only as a three-way gate: `file:` → read
-  it here; `http(s):` → print only, and **not** forwarded to the server
-  either, since making jdtls fetch it is the same egress leg with an
-  extra hop; anything else → the issuing server's `content_request`.
-
-  Keeping both halves in the entry is what keeps the client generic — no
-  server names in `pikuri-lsp`. The cost is two arcane strings that must
-  travel together, so a half-configured entry must not fail silently: a
-  non-`file:` result with no `content_request` is **reported and
-  dropped** — "2 more in libraries; the java server returned `jdt:` URIs
-  but has no content_request configured" — and logged for the human,
-  since it is a config error rather than something the model can act on.
 - **`http(s):` and everything else — never dereferenced, only printed.**
   This is the load-bearing refusal. Fetching a URI the *server* chose
   hands pikuri-lsp an attacker-influenceable egress leg: the gem's entire
@@ -825,8 +795,7 @@ Pikuri::Lsp::Registry::StdioEntry.new(
   env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') },
   init_options: {
     extendedClientCapabilities: { classFileContentsSupport: true }
-  },
-  content_request: 'java/classFileContents'
+  }
 )
 ```
 
@@ -867,12 +836,15 @@ than cargo-cult:
   the project compiles against. The launcher hard-fails below Java 21
   (`jdtls requires at least Java 21`) while your project may target 8;
   a reader who conflates the two will "fix" the wrong one.
-- **`classFileContentsSupport` + `content_request`** — the pair. Without
-  the capability every library symbol answers with silence (J4); without
-  the request name the resulting `jdt://` hit has no readable content
-  (J5, J7). This is the one where the chapter should show the failure
-  first: a `LoggerFactory` that has no definition is a better teacher
-  than a capability flag nobody would question.
+- **`classFileContentsSupport`** — and the honest caveat that comes with
+  it. Without it every library symbol answers with *silence* (J4); with
+  it you get a `jdt://` URI pikuri reports as unreadable until jdtls
+  ships LSP 3.18. Declaring it therefore buys a loud failure instead of a
+  false premise, which is the whole reason it stays in the example. The
+  chapter should show that failure rather than assert it: a
+  `LoggerFactory` with no definition is a better teacher than a
+  capability flag nobody would question — and in-project navigation works
+  throughout, so only the library half is missing.
 
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
@@ -974,7 +946,8 @@ one wrong, and the second is sharper for J3's contrast — one server
 defers, the other answers `[]`, and only one of them can be trusted);
 the three silent-empty traps (pre-index query, an undeclared
 `classFileContentsSupport`, a fuzzy `workspace/symbol` hit) → one book
-section, since they are the same lesson wearing three hats; per-symbol rationale → yardoc on `Lsp::ClientWrapper` / the
+section, since they are the same lesson wearing three hats; per-symbol
+rationale → yardoc on `Lsp::ClientWrapper` / the
 tool, including why the `operation` enum is static while gating happens
 at dispatch; the walked-path-filtering and Subprocess-exception
 invariants → a `CLAUDE.md` seam entry; the entry's field-by-field
