@@ -654,6 +654,17 @@ hard refusal.
   the text: no new tool, no chaining, and the model never holds a URI it
   must decide what to do with.
 
+  And when explicit loading is eventually wanted, it lands as **another
+  `operation` enum entry, not a second tool** — the same reasoning that
+  made this one tool rather than nine, and free to defer because the enum
+  is static and hardcoded anyway (finding 1), so adding a value later
+  breaks nothing. The question to answer *then*, not now: automatic
+  inlining and an explicit read are not rivals but serve different needs
+  — a bounded snippet per result keeps `goToDefinition` usable (J7's
+  22 KB × 45 `Faraday` hits is the failure mode), while an explicit
+  operation is how the model asks for the *whole* document when the
+  snippet is not enough.
+
   **Wire jdtls anyway and you still want the capability declared.**
   Nothing stops a user registering it, and there the entry's
   `init_options` still earns its keep: with `classFileContentsSupport`
