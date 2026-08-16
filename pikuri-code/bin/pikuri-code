@@ -179,14 +179,25 @@ repo_sources_are_mine =
 # Built after the prompts because the project base needs their answer, and
 # before the workspace because the workspace needs its roots.
 #
-# +Dir.home+ goes in unvouched and is not prompted for: this bin cannot know
-# what a marketplace plugin or a cloned collection left in ~/.claude/skills.
-# That costs nothing until one is actually there — the catalog unions over the
-# skills it *stored*, so a user with no home skills still reports :none.
+# +Dir.home+ is vouched for without asking, and the reason is a property this
+# binary can check rather than a guess about its user: the agent has no way to
+# put a skill there. Home skill roots ride in readable:, never writable:, so
+# write/edit refuse them; sandboxed bash gets readable dirs as *ephemeral
+# overlays*, so a write vanishes at exit and the file tools never see it; and
+# unsandboxed bash still confirms every command. Nothing lands in
+# ~/.claude/skills except by the user's own hand, which is exactly what the
+# +trusted+ flag claims. (Home as a whole is a different matter — Downloads, a
+# mail store — which is why this vouches for the skill dirs, not for $HOME.)
+#
+# The exception is the mode where both guards are off: --yolo, or
+# --no-sandbox --no-confirm. There bash can write ~/.claude/skills for real and
+# unwatched, so the next session would load bytes the agent authored — the one
+# self-poisoning loop this flag must not paper over.
+home_skills_are_mine = sandbox_enabled || confirm_enabled
 skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
   search_bases: [
     Pikuri::Skill::Catalog::Base.new(dir: project_root, trusted: repo_sources_are_mine),
-    Pikuri::Skill::Catalog::Base.new(dir: Dir.home)
+    Pikuri::Skill::Catalog::Base.new(dir: Dir.home, trusted: home_skills_are_mine)
   ]
 )
 

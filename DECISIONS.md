@@ -738,13 +738,19 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   `bin/pikuri-code` builds the catalog *before* the filesystem, because the
   filesystem needs `skill_catalog.roots` in `readable:`, so `filesystem.trusted?`
   is not even in scope at the call site.
-- **One catalog-wide flag instead of per-base.** Rejected, though not for the
-  reason it first appears: with a home dir that *stores* a skill, per-base plus
-  the union produces the same `:hard` a single flag would. The case that
-  separates them is the empty one. A host must wire `Dir.home` untrusted
-  unconditionally, and only the catalog knows whether anything was loaded from
-  it — so per-base reports `:none` for the user with no `~/.claude/skills`, and
-  no host can match that without redoing the scan itself.
+- **One catalog-wide flag instead of per-base.** Rejected: the project root and
+  the home skill dirs earn their trust by different arguments — one is a claim
+  the user makes about bytes they may not have read, the other a property of
+  the wiring (nothing but the user can write there) — and they are answered at
+  different times, the first by a prompt and the second by two flags. One
+  boolean cannot carry both. The union then covers the case neither can: a base
+  that stores nothing costs nothing, which only the catalog is in a position to
+  know.
+- **Defaulting `~/.claude/skills` to trusted in the *library*.** Rejected while
+  accepting the argument for it: `pikuri-skills` is wired by hosts that are not
+  a personal dev tool, and it cannot verify that a host keeps skill roots out
+  of `writable:` the way `pikuri-code` does. Silence keeps buying the
+  pessimistic value; a host that can rule out writes says so in one kwarg.
 - **Per subdir rather than per base** — grading `.pikuri/skills` apart from
   `.agents/skills` under one root. Rejected as unrepresentable: `trusted?` is
   all-or-nothing over a root, so splitting them recreates the same-bytes
@@ -768,6 +774,18 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   and whether a hostile `.gitattributes` may *execute code* (`trusted_repo`).
   Reusing the last for the second would claim `vendor/` is your own work on the
   strength of you controlling `.git/config`.
+- **It vouches for `Dir.home` without asking, on a property rather than a
+  guess.** Skill roots ride in the workspace's `readable:` and never its
+  `writable:`, so `write`/`edit` refuse them and sandboxed bash gets them as
+  *ephemeral overlays* whose writes vanish at exit; unsandboxed bash still
+  confirms every command. The agent therefore has no way to put a skill in
+  `~/.claude/skills`, which is the whole content of the claim — and if it did,
+  the self-poisoning loop it would open is the failure pikuri exists to
+  prevent, not a banner nuance. The flag is `sandbox_enabled ||
+  confirm_enabled`, because `--yolo` (and `--no-sandbox --no-confirm`) is
+  exactly the mode where both guards are off and that write becomes real. Note
+  this vouches for the *skill dirs*, not for `$HOME`: `~/Downloads` and a mail
+  store are why the home directory as a whole is not trusted.
 - **What moves in that binary is the map, not the verdict.** `read` and `bash`
   keep the untrusted leg, so it stays `[TRIFECTA: HARD]`; what changes is that
   `skill` leaves the `untrusted(…)` attribution and its own line reads `[]`. A

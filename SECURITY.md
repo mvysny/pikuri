@@ -98,12 +98,17 @@ running their intended code.
 - **Skills — text, not code.** Skills are Markdown + YAML
   frontmatter the user dropped under `.pikuri/skills/` /
   `.claude/skills/` / `.agents/skills/`. They don't execute; they're
-  prompts. Treat them like any other source you'd `git clone` — read
-  before you trust. pikuri assumes you haven't: a skill counts as
-  attacker-authored in the boot advisory unless the host says
-  otherwise for the directory it came from, which is why
-  `pikuri-code` asks whether you wrote the files under this
-  directory yourself.
+  prompts. Treat a skill that arrived with a repo like any other
+  source you'd `git clone` — read before you trust — because pikuri
+  assumes you haven't: it counts as attacker-authored in the boot
+  advisory unless you say otherwise, which is what `pikuri-code` asks
+  when it asks whether you wrote the files under this directory
+  yourself. Your own `~/.claude/skills` needs no such question: the
+  agent cannot write there (skill dirs are readable, never writable,
+  and sandboxed `bash` only ever writes to a throwaway overlay), so
+  nothing gets in but by your hand. Turn off *both* the sandbox and
+  confirmation and that stops being true, so those modes stop
+  vouching for it.
 
 That's the baseline. The rest of this document is about the harder
 problem: **prompt injection of code you've already decided to

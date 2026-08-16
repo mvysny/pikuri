@@ -146,10 +146,14 @@ module Pikuri
       # time, because {SkillTool} declares its legs once: a single skill from
       # an unvouched base takes the whole catalog to +:hard+. The union counts
       # a skill at the point it *wins its name*, so an untrusted base costs
-      # nothing when it is empty or when its skills all lost a collision —
-      # which is what lets a host wire +Dir.home+ untrusted unconditionally,
-      # never knowing what is there, and still report +:none+ for the user who
-      # has no +~/.claude/skills+ at all.
+      # nothing when it is empty or when its skills all lost a collision — a
+      # host may therefore name a base it knows nothing about and still report
+      # +:none+ for the user who turns out to have no skills there.
+      #
+      # A host that can *rule out* writes to a base may vouch for it without
+      # asking anyone: +bin/pikuri-code+ does this for +Dir.home+, since skill
+      # roots ride in the workspace's +readable:+ and never its +writable:+, so
+      # nothing but the user's own hand puts a skill there.
       class Bundled < Catalog
         # Subdirectory names scanned under each search base, in
         # precedence order.
