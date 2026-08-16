@@ -4,11 +4,11 @@ Status: **investigated, not built.** Protocol mechanics are settled and
 verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
-progress-delivery mechanism are drafted (Configuration). The
-tool-surface sketch is the live part; the last lifecycle question, what
-an out-of-root result becomes, is settled too, as is the testing story.
-Two implementation-level questions are parked for the next session — see
-"Open — revisit in an upcoming session".
+progress-delivery mechanism are drafted (Configuration). The tool
+surface is settled — three name-based operations, and no column ever
+asked of the model — as are what an out-of-root result becomes and how
+this gets tested. One implementation-level question is parked for the
+next session; see "Open — revisit in an upcoming session".
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -916,6 +916,64 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
+## The tool surface: three operations, and no column
+
+Membership could not be settled on its own — it falls out of the
+parameter shape, which is the more consequential half.
+
+**pikuri never asks the model for a column.** Claude Code requires
+`line` *and* `character`; getting a column right means counting
+characters inside a line, which a strong model does and a local 4B model
+does not. Nothing hands the model that coordinate either: `Read` prints
+line numbers, `grep` prints `file:line:text`, neither prints columns.
+(Evidence from the throwaway clients: every one of them grew a
+`locate(text, symbol)` helper on the first attempt, because supplying
+columns by hand was intolerable even by hand.)
+
+So the parameters are **`symbol` (required), `file` and `line`
+(optional disambiguators)**. The tool resolves the column itself by
+locating the symbol text, and resolves a bare name through
+`workspace/symbol` + an exact-name filter (finding 5). That is the
+"collapse the name→position hop inside the tool" commitment made
+concrete. Three consequences worth noting:
+
+- Routing still works: `file` is the server selector when given, and with
+  a bare name the tool fans out to every registered server and merges —
+  cheap, and correct, since a name may live in either language.
+- The 1-based↔0-based conversion shrinks to `line` alone, and the utf-16
+  conversion (mandatory per finding 7, since jdtls refused our utf-8
+  offer) becomes an entirely *private* detail: the model never sees an
+  encoded offset in either direction.
+- A symbol that isn't literally on the named line is a clean error
+  ("`foo` not found on line 42"), not a silent wrong answer.
+
+Membership then follows:
+
+**In: `definition`, `references`, `hover`.** Uniform shape, no chaining,
+and precisely the origin use case. Each needs its capping discipline —
+references grouped lib/spec (finding 6), hover and definition capped
+hardest on constants, where a reopened namespace yields 45 near-identical
+hits.
+
+**Out, with reasons:**
+
+- **`workspaceSymbol`** — becomes the internal mechanism, not a verb.
+  Exposing it hands a small model a deliberately fuzzy list to chain
+  from, and `definition(symbol: "Foo")` returning nothing is already the
+  existence check.
+- **`documentSymbol`** — the only file-keyed operation, so it breaks the
+  uniform shape, and `grep '^\s*(def|class|module)'` already outlines a
+  file using a tool that is always present.
+- **`goToImplementation`, `prepareCallHierarchy`, `incomingCalls`,
+  `outgoingCalls`** — unsupported by ruby-lsp (verified: Claude Code
+  leaks raw `Method not found` for all three against it), and the
+  hierarchy trio is a three-call chain on top.
+- **`typeDefinition`, `declaration`, `typeHierarchy`** — advertised by
+  both servers, but marginal over `definition` or chained like the above.
+
+Adding a value later breaks nothing (the enum is static and hardcoded),
+so this is a floor, not a ceiling.
+
 ## How the protocol is modeled, and the build order
 
 `Data.define` values serialized through `JSON.generate`; **no string
@@ -998,19 +1056,9 @@ Three layers, because the middle one cannot be done in-process:
 
 ## Open — revisit in an upcoming session
 
-Everything above settles the *design*. These are implementation-level
-decisions rather than design forks, but the first hour of coding runs
-into them, so they are the place to start next time. (The testing story
-was the third; it is settled below.)
+One left. The other two — the testing story and the operation enum's
+membership — are settled above; this is the place to start next time.
 
-- **Which operations the enum actually contains.** "Static, the superset
-  pikuri supports" is settled; the membership is not. Claude Code ships
-  nine (Prior art), but three of them are unbacked by ruby-lsp, and
-  `prepareCallHierarchy` / `incomingCalls` / `outgoingCalls` are a
-  three-call sequence a small local model will chain badly — the same
-  argument that collapsed name→position. Likely v1: `definition`,
-  `references`, `hover`, `documentSymbol`, `workspaceSymbol`. Decide
-  before writing the description, since the description is the API.
 - **The gem's trifecta contribution.** `Mcp::Extension` declares its
   legs; `pikuri-lsp` must too, and the answer is not obviously "nothing".
   No egress (the `http(s)` refusal is what buys that) and no new private
