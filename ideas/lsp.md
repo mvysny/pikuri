@@ -10,9 +10,11 @@ asked of the model — as are what an out-of-root result becomes and how
 this gets tested. The one deliberate impurity is a hardcoded
 scheme→request table, so that Java library source is readable before LSP
 3.18 exists anywhere and the Java arm can therefore be *run* rather than
-only designed; see "What a result outside the root becomes". One
-implementation-level question is parked for the next session; see
-"Open — revisit in an upcoming session".
+only designed; see "What a result outside the root becomes". The gem's
+trifecta legs are settled too — `:no_egress`, unconditional
+`untrusted: :hard`, `private:` riding the host — so **no design fork is
+parked any more**; what is left is implementation plus the handful of
+live-run checks flagged inline.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -1304,16 +1306,22 @@ Three layers, because the middle one cannot be done in-process:
    live jdtls adds is the thing a fake can never give, which is proof that
    our idea of the protocol matches a real server's.
 
-## Open — revisit in an upcoming session
+## Trifecta: the legs this gem declares
 
-One item, and its hardest axis is now settled; what remains is the rest of
-the declaration and where it is written. The other two — the testing story
-and the operation enum's membership — are settled above.
-
-### The gem's trifecta contribution
+Settled — this was the last parked design fork, alongside the testing story
+and the enum's membership. Two *verification* tasks survive it (not forks;
+both listed at the end) and belong to the implementation session.
 
 `Mcp::Extension` declares its legs; `pikuri-lsp` must too, and the answer
 is not "nothing".
+
+```ruby
+Tool::TrifectaLegs.new(
+  private: <rides the host's project-private answer>,
+  untrusted: :hard,             # unconditional — see below
+  egress_payload_review: :no_egress
+)
+```
 
 **Egress: `:no_egress` — and *not* because we trust the server.** The
 tempting argument is that a well-behaved LSP only fetches artifacts from a
@@ -1349,33 +1357,80 @@ contributes none.** One pikuri-authored tool, fixed schema, and pikuri
 chooses every JSON-RPC request that leaves. There is no foreign tool
 surface, hence nothing undeclarable, hence `ASSUMED` does not transfer.
 
-**Untrusted input: yes, and wider than the note first claimed.** "Results
-are derived from files the agent can already read" is false, and false *by
-design* — the server's index reaches outside the workspace root (the whole
-bundle, jars, the JDK) while `Grep` is workspace-scoped, which J8 sells as
-the feature. The `jdt:` fallback widens it once more: it pulls text out of
-a **jar**, the one place this gem reads bytes the user never checked out. A
-dependency is attacker-influenceable, so this is the leg the gem really
-holds. Open sub-question: `Filesystem#denied?` is built for paths *under*
-the root, and these are outside it entirely — check whether it has any
-opinion about `~/.local/share/…/gems/`, or whether root confinement is
-carrying that alone.
+**Untrusted: `:hard`, unconditionally — and the reason is that `Read`'s
+conditional cannot be copied.** The first draft of this note claimed
+results "are derived from files the agent can already read". That is false
+by *design*: the server's index reaches outside the workspace root — the
+whole bundle, jars, the JDK — while `Grep` is workspace-scoped, which J8
+sells as the feature. The `jdt:` fallback widens it once more, pulling text
+out of a **jar**, the one place this gem reads bytes the user never checked
+out.
 
-**Private: probably no new mechanism.** `private:` is inherited from the
-user, not claimed by the tool (`D-egress-axis-shape`), and
-`bin/pikuri-code` already asks at startup whether the project is private
-and feeds the map. LSP reads the same project, so it should ride that
-answer rather than introduce an `Lsp::Registry#private?` mirroring MCP's.
+The shape of the declaration follows from what {Pikuri::Workspace::Read}
+already does:
 
-**Where it is declared is the open mechanical question.** MCP declares at
-the *extension* because its tools synthesize as raw `RubyLLM::Tool`s with
-no leg surface (the MCP-tool bypass seam). `lsp` has no bypass — it is a
-real `Pikuri::Tool` — so it can declare `trifecta_legs:` at its own
-declaration site the way `Workspace::Write` does, and probably should.
-Confirm the extension then contributes nothing, or the same legs get
-counted twice.
+```ruby
+untrusted: workspace.filesystem.trusted? ? :none : :hard
+```
 
-**Four sentences the DESIGN.md owes, none of them a tag:**
+So pikuri's model is not "source files are untrusted" — it is *"the host
+asked the human whether this checkout is trusted, and `read` rides that
+answer."* That works precisely because `read` is confined to the root: the
+vouching and the reach are the same set. For `lsp` they are not. **A user
+who answered "yes, I trust this repo" made a claim about the code they
+checked out, not about four hundred transitive jars Maven resolved, nor a
+`-sources.jar` nobody has ever diffed.** Riding `trusted?` would stretch a
+human's answer past the question they were asked — the same failure
+`D-egress-axis-shape` names when it rejects a seat-named egress axis
+("invites a confirmer-holding tool to declare the softer rung and silently
+deletes the alarm"). No question the host currently asks has an answer that
+could honestly turn this leg off, so it is a constant.
+
+And it is not a theoretical exposure: finding 8 has `hover` returning an
+entire yardoc class comment verbatim (45 doc links for `Faraday`), and J7
+has `java/classFileContents` returning 22 KB of attached source. **Quoting
+third-party prose into the context in bulk is this gem's marquee feature,
+not an edge case of it** — and a sources jar is the cheapest place in a
+dependency tree to put text aimed at a model, since it is fetched
+separately from the binary and scrutinized far less.
+
+**The consequence to accept on purpose.** On an *untrusted* checkout
+nothing changes — `read` is already `:hard` there. On a **trusted** one it
+does: `read` declares `:none`, so a wiring with `fetch` or `web_search`
+that sits below the verdict line today would light the untrusted leg the
+day `lsp` is wired in. That is correct rather than unfortunate — the jars
+were never vouched for, and a trusted repo with a poisoned dependency is
+the realistic attack, not a contrived one — but it means adding LSP to a
+trusted-repo coding session can flip the trifecta verdict, and the
+`DECISIONS.md` entry must say so rather than let a user discover it as an
+unexplained alarm. `D-egress-axis-shape` already blesses declaring a true
+axis for the map's sake when no verdict moves; this is the stronger case,
+where one does.
+
+**The escape hatch, named and rejected:** confine results to the root and
+keep `:none`. That deletes J8 — searching inside jars, the one thing grep
+can never do — so the tag is *the price of the capability*, not a defect to
+engineer away. Write that sentence down, because it is the first thing
+someone will propose when the map goes loud.
+
+**Private: no new mechanism.** `private:` is inherited from the user, not
+claimed by the tool (`D-egress-axis-shape`), and `bin/pikuri-code` already
+asks at startup whether the project is private and feeds the map. LSP reads
+the same project, so it rides that answer rather than introducing an
+`Lsp::Registry#private?` mirroring MCP's.
+
+**Which settles the declaration site too.** MCP declares at the *extension*
+because its tools synthesize as raw `RubyLLM::Tool`s with no leg surface
+(the MCP-tool bypass seam). `lsp` has no bypass — it is a real
+`Pikuri::Tool` — and the three axes now want three different sources: a
+host answer, a constant, and `:no_egress`. That composes comfortably at a
+`trifecta_legs:` declaration site on the tool, the way
+{Pikuri::Workspace::Read} does it, and awkwardly at the extension. So: on
+the tool, with the extension contributing nothing — confirm that, or the
+same legs get counted twice.
+
+**Four sentences the DESIGN.md owes about the *absent* egress leg, none of
+them a tag:**
 
 1. pikuri-lsp never dereferences a remote URI — the `http(s):` refusal plus
    the no-network-row invariant on the scheme table, both greppable.
@@ -1401,6 +1456,17 @@ that must resolve dependencies, and ruby-lsp's custom-bundle mode shells
 out to `bundle install`. The answer is "not sandboxed, deliberately, and
 here is why" — but written down, because someone who knows about the
 sandbox will otherwise find it themselves and read it as an oversight.
+
+**The two verification tasks this leaves**, both for the implementation
+session and neither a design fork:
+
+1. **Does `Filesystem#denied?` have an opinion outside the root?** It is
+   built for paths *under* the workspace root, and every interesting LSP
+   result is outside it. Either it answers usefully for
+   `~/.local/share/…/gems/` or root confinement is carrying that boundary
+   alone — and the `D-walked-path-denylist` rule needs to know which.
+2. **Confirm `Lsp::Extension` contributes no legs**, now that the tool
+   declares them, or the same legs land on the map twice.
 
 ## Considered, deferred
 
@@ -1450,15 +1516,20 @@ LSP's project and the `Workspace` root the same boundary);
 replacements**, and **the scheme table** (standard-first, one hardcoded
 `jdt:` row, rejected alternatives: standard-only — which made the Java arm
 untestable — and a `content_request` config field; plus the deletion
-condition), and **`:no_egress` despite a child that goes online** (rejected
-alternatives: a `:tool_vouched` tag on the vetted-destination argument, and
-inheriting MCP's `ASSUMED` on the shared foreign-stdio-binary shape) → four
-new `DECISIONS.md` entries (suggested slugs `lsp-direct-not-mcp`,
-`lsp-no-startup-timeout`, `lsp-scheme-fallback`, `lsp-no-egress-leg`, with
-the usual prefix); the threat model itself, including the unsandboxed-child
-asymmetry against `Code::Bash` → `pikuri-lsp/DESIGN.md`; the COMPARISON.md
-LSP column → `✅`. Then delete this file, plus the superseded LSP bullets
-in `coding-agent.md` and `claude-parity.md`.
+condition), and **the declared trifecta legs** — one entry for all three
+axes, since it is one declaration a reader questions once: `:no_egress`
+despite a child that goes online (rejected: a `:tool_vouched` tag on the
+vetted-destination argument; inheriting MCP's `ASSUMED` on the shared
+foreign-stdio-binary shape) and unconditional `untrusted: :hard` (rejected:
+riding `filesystem.trusted?` the way {Pikuri::Workspace::Read} does;
+confining results to the root to earn `:none`), **with the trusted-checkout
+verdict flip stated as a consequence** → four new `DECISIONS.md` entries
+(suggested slugs `lsp-direct-not-mcp`, `lsp-no-startup-timeout`,
+`lsp-scheme-fallback`, `lsp-trifecta-legs`, with the usual prefix); the
+threat model itself, including the unsandboxed-child asymmetry against
+`Code::Bash` → `pikuri-lsp/DESIGN.md`; the COMPARISON.md LSP column → `✅`.
+Then delete this file, plus the superseded LSP bullets in
+`coding-agent.md` and `claude-parity.md`.
 
 The scheme table also wants a line in the `CLAUDE.md` seam entry, since
 "pikuri-lsp reads only `file:` paths and one enumerated server-private
