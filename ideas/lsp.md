@@ -648,14 +648,31 @@ hard refusal.
   the field: it is **a user-supplied stand-in for a discovery mechanism
   the deployed protocol does not have**, not decorative glue.
 
-  Sunset condition: LSP **3.18 fixes this** — now marked Current, it
-  defines `workspace/textDocumentContent`, where the server advertises
-  the schemes it can serve (verified that the request exists in 3.18; the
-  registration details were not readable in the fetched spec). Nothing
-  ships it yet — the Ruby SDK is 3.17.0.6 and jdtls does not implement
-  it — but when a server does, pikuri reads the scheme list straight from
-  the handshake and `content_request` degrades to a fallback for older
-  servers.
+  **LSP 3.18 standardizes exactly this, and no server we care about
+  implements it.** Verified from the reference implementation's source:
+  `workspace/textDocumentContent`, client→server, `{uri}` → `{text}`,
+  client capability `workspace.textDocumentContent`, and — the part that
+  makes it real discovery — `TextDocumentContentRegistrationOptions` with
+  a `schemes: string[]` list. `@since 3.18.0`, and 3.18 is Current. Then:
+
+  - **ruby-lsp cannot.** The Ruby binding tops out at
+    `language_server-protocol` **3.17.0.6**; no 3.18 gem exists, so the
+    types aren't in the ecosystem.
+  - **jdtls does not.** Newest is **1.60.0** (June 2026, vs. the 1.58
+    tested above). It *does* bundle lsp4j **1.0.0**, which carries the
+    whole 3.18 type family — but `jdt.ls.core` 1.60 references only
+    `TextDocumentContentChangeEvent`, the unrelated `didChange` type, and
+    still ships `java/classFileContents`. Having the types in the binding
+    is not implementing the feature.
+
+  So `content_request` is **not a legacy fallback — it is the only
+  mechanism that works**, for both example servers, today. The standard
+  path is what to *prefer once advertised*, but building it now would be
+  untestable dead code for a feature nothing speaks. Being forward-looking
+  here means being ready to switch, not shipping an unexercised branch.
+  The switch is also free at the config level when it comes: the server
+  announces its `schemes` in the handshake, so pikuri detects it without
+  the user touching their entry.
 
   **The scheme is never the dispatch key — provenance is.** One
   `content_request` string per entry suffices because every result
