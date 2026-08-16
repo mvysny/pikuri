@@ -41,32 +41,21 @@ Related:
    prompt block, never a tool schema, which is the position the current
    posture was written for.
 
-2. **Scan skill descriptions for injection, at MCP parity — and decide
-   where the scan lives.** Live asymmetry today: `<available_mcps>`
-   descriptions get `Mcp::Verifier` before they reach the LLM (on by
-   default, `verify_mcp_servers: true`); `<available_skills>` descriptions
-   get nothing, though both are `untrusted: :hard` text in the same
-   position. `Renderer.escape_xml` is tag-forgery defense, not instruction
-   defense, and nothing above should be read as claiming otherwise.
+2. ~~**Scan skill descriptions for injection, at MCP parity.**~~ **Moved
+   2026-08-16** to [`bundle-trust-grading.md`](bundle-trust-grading.md),
+   which owns the is-this-bundle-trusted axis whole. The scan is one
+   answer to that question rather than a catalog question, and splitting
+   it across two notes was how it stayed unanswered.
 
-   The structural problem: the MCP verifier is an **LLM pass** wired at
-   `Agent#initialize` with a transport in hand, whereas `Catalog::Bundled`
-   is constructed *before* the agent, is pure, takes no transport, and
-   deep-freezes itself. Parity is not a copy-paste. Options: move the scan
-   to `Skill::Extension#configure` (has the agent, but the catalog is
-   already built and shared); a cheaper static tripwire
-   (`ideas/injection-tripwire.md`); or accept the asymmetry and document
-   why. `D-skill-path-activation` raises the stakes slightly — a promoted
-   description lands in `payload[:system]` on Anthropic, a *more* trusted
-   slot than the block it was withheld from.
-
-3. **Fix `SkillTool`'s description, which lies to a sub-agent.** It says
-   three times that the inventory is "in your system prompt under
-   `<available_skills>`" — false for any persona that lists `skill` in
-   `tool_names:`, whose prompt carries no such block. Independent of
-   everything else, and it pairs with `skill-cost-model.md` cheap borrow 3
-   (the stale "opencode is the outlier" sentence in the same class
-   header). One pass, one commit.
+3. ~~**Fix `SkillTool`'s description, which lies to a sub-agent.**~~
+   **Done 2026-08-16.** The description no longer asserts that
+   `<available_skills>` is in the prompt — false for any persona naming
+   `skill` in `tool_names:`, which inherits the tool but not the
+   `Extension` that contributes the block. Recovery now leans on the
+   not-found error, which enumerates the catalog and works for both agent
+   kinds. `skill-cost-model.md` cheap borrow 3 (the stale "opencode is
+   the outlier" sentence) landed in the same pass, opencode v2 having
+   moved its inventory into the prompt too.
 
 
 ## The one fork `D-skill-path-activation` did not touch
@@ -174,23 +163,20 @@ Related:
 
 ## Graduation plan for what is left
 
-- Items 2–3 graduate **as fixes**, each with its own commit. Item 1 is
-  dropped, and its `DECISIONS.md` line landed as a rejected alternative
-  on `D-skill-path-activation` rather than an entry of its own.
+- Items 1–3 are closed: 1 dropped (its `DECISIONS.md` line landed as a
+  rejected alternative on `D-skill-path-activation`), 2 moved to
+  `bundle-trust-grading.md`, 3 fixed.
 - Item 4, whichever way it lands, edits `D-skill-path-activation` in place
   (entries are mutable) rather than taking a new entry.
-- **Two facts outlive every remaining item and should graduate now, since
-  they are true today and invisible in the code:**
-  - skill descriptions are `untrusted: :hard` text resident in the
-    *system prompt*, while the equivalent MCP text gets a pre-flight
-    injection scan → a `SECURITY.md` / threat-model fact, not a
-    skills-feature fact, live regardless of item 2's outcome;
-  - a sub-agent gets skills only if its persona names `skill` in
-    `tool_names:`, and no bundled persona does → {Pikuri::SubAgent::Persona}'s
-    yardoc, which is currently silent in both directions.
-    {Pikuri::SubAgent::SubAgentTool}'s header already carries the general
-    form ("one that needs MCP / Skills ships its own wiring"); `Persona`
-    is where someone writing one will look.
+- **One fact outlives every remaining item and should graduate now, since
+  it is true today and invisible in the code:** a sub-agent gets skills
+  only if its persona names `skill` in `tool_names:`, and no bundled
+  persona does → {Pikuri::SubAgent::Persona}'s yardoc, which is currently
+  silent in both directions. {Pikuri::SubAgent::SubAgentTool}'s header
+  already carries the general form ("one that needs MCP / Skills ships
+  its own wiring"); `Persona` is where someone writing one will look.
+  `SkillTool`'s header now carries the tool-side half of the same fact,
+  so the two should read as one story.
 - The **capability-vs-correction asymmetry** is the one concept worth
   teaching and it has no home yet: an MCP server advertises a *capability*
   the model can feel the lack of, while a skill advertises a *correction*

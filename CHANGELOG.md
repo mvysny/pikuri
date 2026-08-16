@@ -42,6 +42,7 @@ boot.
 - Add `Pikuri::Code::Extension` — one-call wiring for the pikuri-code-only pieces.
 - Add Reline to the example REPLs for history and line editing; `pikuri-workspace` now declares the `reline` dependency Ruby 4.0 dropped from its defaults.
 - The guide moves from `docs/guide/` to `book/`, and its chapters are named rather than numbered (`book/security.md`, `book/tasks.md`), with `book/README.md` owning the order.
+- Fix the `skill` tool's description telling a sub-agent its skills are listed in the system prompt under `<available_skills>` — a persona naming `skill` in `tool_names:` inherits the tool but not the `Skill::Extension` that contributes that block, so recovery now leans on the not-found error, which lists the real names.
 - Fix `Code::Bash`'s read-only allowlist escapes — `rg --pre` executing an arbitrary program, unquoted globs, and other cases where an extra argument grows teeth on an otherwise read-only binary.
 - Fix the credential denylist covering only paths the model *supplied*: `grep` returned the contents of `~/.ssh/id_rsa` and `glob` listed it, because a path a tool walked to reached no `resolve_for_read`. Every enumerating tool now consults `Filesystem#denied?`. See `SECURITY.md` and `DECISIONS.md` `D-walked-path-denylist`.
 - Fix `Grep` / `Glob` accepting `/`, `$HOME` or any parent of home as a search root; a refused root now comes back with a one-level listing to pick from, and ripgrep's error blob is capped instead of pasted whole into the observation.

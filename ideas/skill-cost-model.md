@@ -212,13 +212,13 @@ in one shot) the easier one to type.
 
 ### The catalog is in the system prompt — opencode moved
 
-{Pikuri::Skill::SkillTool}'s header says the inventory lives in the
-system prompt "as PI and Claude Code do (opencode is the outlier)".
-**That is now out of date.** opencode v2 renders `<available_skills>`
-into a system-context block (`core/src/skill/guidance.ts`,
-`SystemContext.Key "core/skill-guidance"`); only its docs page still
-claims the tool description. The yardoc sentence needs a correction pass
-regardless of what happens to any of these notes.
+{Pikuri::Skill::SkillTool}'s header used to say the inventory lives in
+the system prompt "as PI and Claude Code do (opencode is the outlier)".
+opencode v2 renders `<available_skills>` into a system-context block
+(`core/src/skill/guidance.ts`, `SystemContext.Key "core/skill-guidance"`);
+only its docs page still claims the tool description. **Corrected
+2026-08-16** — the convention is now unanimous, which is also the
+strongest argument against sister-note item 4's move.
 
 opencode's version is *live*, though, in a way pikuri's isn't: the block
 declares `baseline` / `update` / `removed` renders, so when the skill set
@@ -376,8 +376,8 @@ land on its own.
    there *are* none — a real round-trip, unlike the one item 3 complained
    about. This is the borrow most directly responsive to the actual
    feedback.
-3. **Correct the "opencode is the outlier" sentence** in
-   {Pikuri::Skill::SkillTool}'s header (see above). Needed regardless.
+3. ~~**Correct the "opencode is the outlier" sentence**~~ — **done
+   2026-08-16**, alongside the sub-agent fix in the same header.
 4. **Drop `<location>` from the catalog render.** The spec says outright:
    *"If your dedicated activation tool provides the skill directory path
    in its result, you can omit `location` from the catalog."* pikuri

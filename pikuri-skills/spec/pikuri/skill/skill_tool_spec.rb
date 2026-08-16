@@ -22,6 +22,19 @@ RSpec.describe Pikuri::Skill::SkillTool do
       assert tool.description.include?('available_skills'),
              "expected static description to point the LLM at the prompt's catalog, got: #{tool.description}"
     end
+
+    # A persona naming `skill` in tool_names: inherits the tool but not the
+    # Extension that contributes <available_skills>, so a description promising
+    # that section would send it looking for a block its prompt never carries.
+    it 'never asserts the prompt carries that catalog, for the sub-agent case' do
+      tool = described_class.new(catalog: catalog)
+      text = "#{tool.description} #{tool.parameters.to_openai[:properties][:name][:description]}"
+
+      refute_match(/(is|are) listed in your system prompt/, text)
+      refute_match(/Must match a name listed under/, text)
+      assert text.include?('when it carries that section'),
+             "expected the description to hedge on the catalog's presence, got: #{text}"
+    end
   end
 
   describe 'execution' do

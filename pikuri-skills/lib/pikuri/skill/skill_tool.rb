@@ -9,9 +9,19 @@ module Pikuri
     #
     # The available-skills inventory is *not* in this tool's
     # description — it lives in the system prompt (see
-    # {Renderer.format_catalog}), next to the agent's persona, as PI
-    # and Claude Code do (opencode is the outlier). So the description
-    # is static: it explains the load mechanism, not the inventory.
+    # {Renderer.format_catalog}), next to the agent's persona, as PI,
+    # Claude Code and opencode v2 all do. So the description is static:
+    # it explains the load mechanism, not the inventory.
+    #
+    # A sub-agent is the exception, and the description must not paper
+    # over it: {Extension} contributes that prompt snippet, and
+    # sub-agents don't inherit extensions — so a persona naming +skill+
+    # in its +tool_names:+ gets this tool with no +<available_skills>+
+    # block anywhere in its prompt, and supplies the loadable names in
+    # its own +system_prompt:+ instead. Hence the description says
+    # *where the list is, when there is one* rather than asserting the
+    # section exists, and the not-found error enumerates the catalog so
+    # recovery never depends on a block that may be absent.
     #
     # {Extension#configure} auto-registers this (never manually) when
     # the catalog is non-empty. The bound catalog rides in the +execute+
@@ -31,10 +41,10 @@ module Pikuri
         Load a specialized skill that provides domain-specific instructions and resources for a particular task.
 
         Usage:
-        - The catalog of available skills is listed in your system prompt under `<available_skills>`.
         - Invoke this tool with a skill's `name` to inject its full instructions into the conversation.
+        - Load only a name you were actually given: your system prompt lists them under `<available_skills>` when it carries that section, otherwise your instructions name the skills you may load.
         - The loaded skill may reference helper scripts and files in its base directory — use the `read` tool to load those when the skill's instructions tell you to.
-        - On `Error: skill '...' not found`, do NOT retry with a guessed name. Pick a name that actually appears in `<available_skills>`, or report to the user that no matching skill is installed.
+        - On `Error: skill '...' not found`, do NOT retry with a guessed name — the error lists every name that does exist, so load one of those or report to the user that no matching skill is installed.
       DESC
 
       # @param catalog [Catalog] the catalog to resolve names against.
@@ -48,8 +58,7 @@ module Pikuri
           parameters: Pikuri::Tool::Parameters.build { |p|
             p.required_string :name,
                               'Name of the skill to load, e.g. "pdf-extraction". ' \
-                              'Must match a name listed under `<available_skills>` ' \
-                              'in the system prompt.'
+                              'Must match one of the skill names you were given.'
           },
           execute: lambda { |name:|
             loaded = catalog.get(name)
