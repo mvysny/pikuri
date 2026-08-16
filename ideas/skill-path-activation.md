@@ -88,6 +88,19 @@ Four constraints the sketch encodes:
   grok-build lands from the opposite direction (it has typed tool
   outputs and still excludes bash/grep as "unparseable / incidental").
   Cross-reference the seam wherever this lands.
+- **The gate belongs to the render and the tool — never to `Catalog#get`.**
+  This is the one place a careless implementation reproduces the
+  behaviour `D-skill-path-activation` decision 7 deliberately refuses.
+  Today `SkillTool.new(catalog:)` and `schedule_load_skill` share a
+  single unfiltered lookup (`extension.rb:109`), so the obvious way to
+  implement decision 5 — filter `Catalog#get` — silently gates the
+  operator along with the model, which is precisely Claude Code's bug.
+  Instead `Skill::Extension` constructs the activation tracker and hands
+  it to **both** the listener and the `SkillTool`; the tool consults it,
+  `schedule_load_skill` does not, and the renderer skips gated entries.
+  Note what already works unchanged and must keep working:
+  `bin/pikuri-code:495-497` prints every catalog name at startup off
+  `catalog.list`, which is an operator surface the gate must not reach.
 - **Two events fire, and they mark different moments.** The injection
   emits `Event::SystemInjected` unconditionally (`agent.rb:701`) — its
   contract is that the stream mirrors log growth, so it must not be

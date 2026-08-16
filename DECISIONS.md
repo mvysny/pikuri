@@ -286,7 +286,16 @@ conditional activation actually works*).
   decision 7 unconditional instead, which costs nothing (the descriptions
   never left the disk) and makes the aggressive hiding in decision 2
   affordable. It also preserves an invariant worth naming: **withholding
-  costs the model's view, never the human's.**
+  costs the model's view, never the human's.** The invariant holds
+  structurally rather than by care — the gate lives in the renderer and
+  the tool, while both operator routes read the catalog directly
+  (`schedule_load_skill` → `Catalog#get`; `bin/pikuri-code`'s startup
+  banner → `catalog.list`). Filtering `Catalog#get` instead is the one
+  implementation slip that would reproduce the copied bug, so the tool
+  must consult the listener's activation state rather than the catalog
+  being made to lie. Honest scope, though: pikuri ships no skill picker
+  and no slash commands, so today the promise rests on that banner and a
+  programmatic seam no `bin/` calls.
 - **A gated skill is permanently unreachable to sub-agents.** They do not
   inherit extensions, so no listener ever promotes for them, and under
   decision 5 the name will not load either. Accepted rather than fixed:
