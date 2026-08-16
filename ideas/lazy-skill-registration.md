@@ -8,10 +8,23 @@ This note is the *other* thing the same mechanism can do — and it is a
 different feature with a different cost profile, which is why it gets its
 own file.
 
+Since then it has grown one further thread, from the author
+(2026-08-16): **the same matcher applied to the *tool* list**, which is
+below. A second thread — whether the catalog earns its system-prompt slot
+at all — split off again into its own sister note, because it is the
+*prior* question and decidable without this one.
+
 Related:
 
+- [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — the
+  sister note. Asks whether an always-resident `<available_skills>` is
+  worth its cost; its answer (a names-only baseline promoted to
+  descriptions on a match) uses *this* note's matcher as the trigger, and
+  changes what "withheld" should mean here — the name stays, only the
+  description is withheld.
 - [`skill-load-cost.md`](skill-load-cost.md) — the cost arithmetic that
-  rules out body pre-injection, and the rest of the feedback item.
+  rules out body pre-injection, the KV-cache analysis that prices prefix
+  mutation, and the rest of the feedback item.
 - [`claude-parity.md`](claude-parity.md) — its "Skill-invocation
   emphasis — measure" item is the *description-side* answer to the same
   ordering problem, and the cheaper one. If that fixes enough, this note
@@ -157,6 +170,130 @@ is not a pikuri limitation to apologize for; it's where the shipped
 implementation also drew the line.
 
 
+## Thread: the same matcher, applied to *tools*
+
+The author's framing: a user accumulates *tools* the way they accumulate
+skills — thunderbird, vectordb, memory, a pile of MCP servers — and only
+a slice of them is applicable to any one project. Gate the **tool list**
+on `paths:` the same way and only advertise what this project needs.
+
+### The prize is genuinely bigger
+
+Measured on this repo, 2026-08-16. Proxy for the tool side: every
+heredoc body plus every single-line `description:` string in the 30 files
+under `pikuri-*/lib/` that define a `Pikuri::Tool` — which is what a
+JSON schema is mostly made of, modulo ~20–30 % scaffolding.
+
+| | bytes | ≈ tokens |
+|---|---|---|
+| all 30 pikuri tools' schema prose | 22 KB | ~5.5 k |
+| the 12-skill `~/.claude/skills` catalog render | 5.9 KB | ~1.5 k |
+
+Per item: ~730 B/tool vs ~380 B/skill-description. So **the whole tool
+surface is roughly 4× the whole skill catalog** — and it is paid on the
+same terms the catalog is: resident, every turn, scaling with what's
+*installed* rather than what's *used*. (Deliberately no window-percentage
+here; `skill-load-cost.md` retracted that framing, and the asymmetry is
+the argument at any window size.)
+
+### …but pikuri already answers it twice, and both beat a matcher
+
+1. **Per-binary wiring.** No shipped binary wires all 30 tools.
+   `bin/pikuri-thunderbird` doesn't pay for `vectordb_*`. "Which tools
+   does this project need?" is answered at *construction*, by a human, in
+   Ruby — which is precisely pikuri's counter-move to the wall of JSON.
+2. **Sub-agent personas.** A persona owns its toolset verbatim and costs
+   the parent exactly one `agent` schema. That's *better* than gating,
+   because the sub-agent's whole context is separate — the parent never
+   pays the observations either. `LIBRARIAN` is this pattern applied to
+   the "vectordb tools don't belong in a coding agent's list" case, and
+   it already ships.
+
+Which bounds the scope honestly: **this is a feature for a future
+general-purpose host** (a `pikuri-tui` that wires everything because it
+can't know what you'll ask), not for anything in `bin/` today. CLAUDE.md's
+warning applies — don't propose a library feature whose value rests on a
+demo's shortcut; here it's the opposite, the demos are *fine* and the
+hypothetical host is the one with the problem.
+
+### Three things make tools harder to gate than skills
+
+- **Withholding a tool withholds a capability, not a document.** A skill
+  the model never sees → it does the work with worse instructions. A tool
+  it never sees → it *can't do the work at all* and has no way to ask.
+  That asymmetry is why `mcp_connect` advertises `<available_mcps>`
+  rather than hiding servers outright.
+- **The bootstrap hole.** A path matcher fires only *after* some tool
+  touched a matching path, so the trigger tools (`read`, `glob`,
+  `file_list`) must always be wired. Fine for families downstream of file
+  work; useless for intent-driven ones — nothing the model *reads* tells
+  you it is about to want `thunderbird_mail_search`. Half a real toolbox
+  is unreachable by this predicate.
+- **Cache invalidation, and it's the whole prefix.** Tool schemas sit at
+  the very front of the request; adding one mid-conversation invalidates
+  the *entire* cached prefix — the general point `skill-load-cost.md`'s
+  caching section makes, that the expensive operation is not length but
+  **mutating the prefix**. Paid **per activation**, where `mcp_connect`
+  pays it once per session by design. Note this is the same wall the
+  skills case hits with the system prompt, and there the escape is
+  "announce via an interloper injection, which *appends*". Tools have no
+  such escape: a tool must actually be in the list to be callable.
+
+Removal is worse than addition — history containing a call to a tool no
+longer declared is a shape some providers reject. **Gating is add-only.**
+
+### Rivals, in the order to exhaust them
+
+1. **Per-binary wiring + sub-agent personas** — shipped, free,
+   human-authored, and it's what pikuri is *for*.
+2. **Model-driven activation** — `mcp_connect`'s shape, generalized:
+   advertise a *family* in one line, let the model materialize the
+   schemas with a connect call. Paid once, model-controlled, no bootstrap
+   hole, and `ExtensionContext#add_raw_tool` already exists. This is what
+   Claude Code does at scale today: the session this note was written in
+   has ~100 MCP tools deferred to names-only, with a `ToolSearch` tool
+   that fetches schemas on demand.
+3. **Path-gated tools** — last, only for a general-purpose host, and only
+   for path-shaped families.
+
+Note the inversion between the two applications: for **skills** the
+predicate is the easy part and the assemble-once system prompt is the
+wall; for **tools** the mutation seam already exists and the *predicate*
+is what doesn't fit.
+
+
+## What the sister note does to this one
+
+[`skill-catalog-in-context.md`](skill-catalog-in-context.md) asks the
+prior question — is an always-resident catalog worth its slot? — and its
+answer feeds straight back here, so read the two together before
+building either. In short: **withhold the description, never the name.**
+
+The framing at the top of this note ("withheld from `<available_skills>`
+until a tool touches a matching file") hides the name too, which leaves
+the model unable to call `skill(name:)` for a skill it has never seen —
+a discoverability hole with no upside, since the names are ~40× cheaper
+than the descriptions they sit next to (measured over there). Redefine
+"withheld" as *name-only until the path fires*, and:
+
+- the hole closes, and a sub-agent that inherits the `skill` tool but not
+  the extension can still reach a gated skill by name (open question 4
+  below becomes much less sharp);
+- the opt-in needs no policy knob — a skill declaring `paths:` is
+  asserting its trigger is lexical-on-file, so withholding its
+  description until the glob fires is what the author already meant;
+- open question 1 ("does it earn its complexity at pikuri's catalog
+  sizes?") turns from measure-and-hope into arithmetic: the saving is the
+  description bytes of every path-gated skill, on every turn, forever.
+
+The cost that arrives with it is on the other side of the ledger and is
+priced in the sister note: a promotion is an interloper `:system` item,
+which Anthropic hoists into the system param — **rewriting the prefix and
+nuking the prompt cache, once per activation**. That makes "how many
+activations does a real session fire?" a load-bearing measurement for
+this note too, not just for that one.
+
+
 ## Open questions
 
 1. **Does it earn its complexity at pikuri's catalog sizes?** The saving
@@ -183,7 +320,9 @@ implementation also drew the line.
    it advertised. Is that a bug, a feature, or a reason to activate
    catalog-wide rather than per-agent? (Compare `add_raw_tool`, which
    deliberately keeps MCP activation per-agent by staying out of
-   `Agent#tools`.)
+   `Agent#tools`. And note the sister note's name-only baseline mostly
+   dissolves this: the sub-agent *does* see the name, just not the
+   description.)
 5. **Does an activation survive `clear_conversation`?** grok-build
    `rehide`s on `/clear`. pikuri rebuilds the system prompt there, so the
    baseline returns automatically — but any injected announcements are
@@ -192,7 +331,23 @@ implementation also drew the line.
    `Event::SystemInjected`, which listeners render. A "3 skills became
    available" line is arguably chrome, not conversation. Worth a
    dedicated event so a TUI can render it as a status line rather than a
-   message?
+   message? (The sister note raises the stakes: if the hand-off is also
+   *for the human* — "here's the Tuile manual, now that you're in a Tuile
+   file" — this stops being a rendering nicety and becomes the feature's
+   selling point.)
+7. **Does the tool thread survive contact with per-binary wiring?** My
+   read is no, not until a general-purpose host exists — but the shared
+   machinery (the `paths:` matcher, the path-args map in *Prerequisite*
+   below) is the same either way, so building it for skills costs nothing
+   extra and keeps the option. Don't build the tool half speculatively.
+8. **Is `mcp_connect`-shaped activation the better generalization for
+   *both*?** Model-driven, one round-trip, no bootstrap hole, works for
+   intent-driven families a glob can't reach. Against it: it's another
+   tool schema, and it puts the decision back on the model — which is
+   exactly the judgment the sister note argues is unreliable. Possibly
+   the answer splits by axis: harness-driven `paths:` for skills (cheap,
+   additive, appends), model-driven connect for tools (expensive,
+   prefix-busting, deserves an explicit decision).
 
 
 ## Prerequisite worth doing regardless
@@ -225,3 +380,16 @@ listener.
   invariant worth recording against the capability seam).
 - The `mcp_connect` parallel → `COMPARISON.md` or the book's skills
   material, wherever the two-tier-inventory pattern is best taught once.
+- **The tool-gating thread** → whichever way it goes, the durable nugget
+  is *"per-binary wiring and sub-agent personas are pikuri's answer to
+  tool-list bloat"*, plus the add-only / prefix-invalidation constraint.
+  That's a `DECISIONS.md` entry on its own axis (**not** the catalog one)
+  — the fork is real and someone will re-propose it the first time a
+  general-purpose host exists. Point {Pikuri::SubAgent::Persona}'s yardoc
+  at it.
+- The name-only-baseline material graduates with
+  [`skill-catalog-in-context.md`](skill-catalog-in-context.md), not here.
+  Both notes land in the *same* `DECISIONS.md` entry (the
+  what-the-catalog-advertises axis, per `skill-load-cost.md` open
+  question 3) — so whichever settles last edits that entry rather than
+  opening a second.

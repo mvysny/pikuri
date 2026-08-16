@@ -19,6 +19,10 @@ Related:
 - [`context-budget.md`](context-budget.md) — same shape of mistake:
   feedback asking for a per-turn signal, where the honest answer is much
   smaller than the ask.
+- [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — the
+  general form of the same axis: given all of the above, does an
+  always-resident `<available_skills>` earn its slot at all? Consumes
+  this note's measurements and the caching section.
 
 
 ## The arithmetic — "a turn" is the cheap axis
@@ -312,7 +316,10 @@ and exempting skill content from context compaction.
    worry isn't length, it's **twenty-eight descriptions of which one is
    relevant**: attention dilution scales with catalog *size*, and no
    amount of per-entry editing fixes it. Which is the one honest argument
-   left standing for `lazy-skill-registration.md`.
+   left standing for `lazy-skill-registration.md` — and, more directly,
+   for [`skill-catalog-in-context.md`](skill-catalog-in-context.md),
+   whose name-only baseline is the only proposal on the table that
+   removes descriptions rather than shortening them.
 2. ~~**Should the human path fold into the user turn instead of
    `:system`?**~~ **Answered — keep `:system`.** Worth writing down,
    because the three roles in play are easy to conflate:
@@ -347,7 +354,10 @@ and exempting skill content from context compaction.
    this note graduates rather than waiting on
    `lazy-skill-registration.md`. Same axis — *what the catalog
    advertises, and when the body arrives* — and entries are mutable, so
-   lazy registration extends it in place if it ever lands.
+   lazy registration extends it in place if it ever lands. Same ruling
+   for [`skill-catalog-in-context.md`](skill-catalog-in-context.md),
+   which is that axis at its most general: three notes, one entry,
+   whichever settles last does the editing.
 
 
 ## Cheap borrows spotted along the way
@@ -364,8 +374,8 @@ land on its own.
    closure captures. Second interaction, spotted later: an enum of every
    skill name **is** a names-only catalog living in the tool schema, so
    this borrow also hands
-   [`lazy-skill-registration.md`](lazy-skill-registration.md)'s tier 0
-   for free. Land it first if that thread goes anywhere.
+   [`skill-catalog-in-context.md`](skill-catalog-in-context.md)'s tier 0
+   for free. Land it first if that note goes anywhere.
 2. **List the skill's sidecar files in the load result.** Both harnesses
    do it: opencode globs the skill dir, caps at 10, sorts, excludes
    `SKILL.md`, and emits `<skill_files>` with a "file list is sampled"
