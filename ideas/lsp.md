@@ -5,7 +5,7 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The tool
-surface is settled — four name-based operations, and no column ever
+surface is settled — six name-based operations, and no column ever
 asked of the model — as are what an out-of-root result becomes and how
 this gets tested. One implementation-level question is parked for the
 next session; see "Open — revisit in an upcoming session".
@@ -299,6 +299,23 @@ the `{text:}` object a spec-shaped request would return, so a generic
 hook must accept both; and a whole class is far too much for one
 observation, so the content path slices to the target range.
 
+**J9. `typeDefinition` and `implementation` work, and neither is
+redundant.** A Maven fixture with `var names = new ArrayList<String>();`:
+`typeDefinition(names)` → `java.util.ArrayList` in `java.base`, while
+`definition(names)` → the local declaration in `Main.java`. **Different
+answers to different questions**, and with `var` the type appears nowhere
+in the source, so nothing else — hover aside — can recover it and grep
+certainly cannot. `typeDefinition` on `Greeter g = new LoudGreeter()`
+returns the *declared* type. `implementation` resolves an interface to
+its implementor and works at method level too (`greet` → the override in
+`LoudGreeter`). This is the evidence that a statically typed language
+needs operations a dynamic one has no use for.
+
+Also visible in that run: the `jdt://` URI for `ArrayList` is **~300
+characters**, its query string encoding the whole classpath entry
+(jrt-fs.jar path, javadoc location, `maven.pomderived`, …). Never show
+one to the model; render it as `java.util.ArrayList (java.base)`.
+
 **J8. `workspace/symbol` searches inside jars — the one thing grep can
 never do.** A Maven fixture with commons-lang3 on the classpath:
 `workspace/symbol("StringUtils")` returned 5 hits — commons-lang3's, the
@@ -428,6 +445,26 @@ follows — the parts worth knowing before copying it:
   exists and one path ignores it. **The single most important thing not
   to copy.**
 - **No confinement, no capping.** See findings 3 and 6.
+
+Re-run later against a **Java** project (`vaadin-boot`) from a session
+rooted elsewhere, which produced the sharpest lesson of the lot:
+
+- **Its enum has no `typeDefinition`.** Confirmed verbatim from the
+  schema — nine operations, and the one a statically typed language most
+  needs is not among them, while `documentSymbol` is. Independent support
+  for pikuri including it (J9) and dropping `documentSymbol`.
+- **`line` and `character` are required for every operation**, including
+  `workspaceSymbol`, which needs neither.
+- **An out-of-project file answers "No definition found".** Both probes
+  returned that string; the *actual* cause appeared only as an editor
+  diagnostic — `VaadinBootBase.java is a non-project file, only syntax
+  errors are reported` — because the server had been rooted at the
+  session's own workspace, not the file's project. So the honest reason
+  existed and went to a side channel, while the model-facing answer was
+  the false premise of finding 2 in yet another disguise. **pikuri needs
+  a distinct refusal for out-of-project**, never "no definition found" —
+  and it is a third argument for tying `rootUri` to the `Workspace` root
+  and refusing paths outside it up front, where the reason is still known.
 
 Worth stealing:
 
@@ -943,7 +980,7 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
-## The tool surface: four operations, and no column
+## The tool surface: six operations, and no column
 
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
@@ -976,45 +1013,71 @@ concrete. Three consequences worth noting:
 
 Membership then follows:
 
-**In: `definition`, `references`, `hover`, `workspaceSymbol`.** Uniform
-shape, no chaining, and precisely the origin use case. Each needs its
-capping discipline — references grouped lib/spec (finding 6), hover and
-definition capped hardest on constants, where a reopened namespace yields
-45 near-identical hits.
+**The exclusion criterion, stated properly.** An earlier pass cut
+operations because *ruby-lsp lacks them* — which contradicts this note's
+own design. The enum is the superset **pikuri** supports, gated per
+server at dispatch (finding 1); "one server lacks it" is precisely what
+that gate is for, and produces a clean refusal rather than an absence.
+The real criteria are: too little value, chaining the model handles
+badly, or redundancy with a tool pikuri already ships.
 
-`workspaceSymbol` is exposed *as well as* being the internal name→position
-mechanism, because J8 shows it does something no tool pikuri has can ever
-do: it searches the server's index, which covers dependencies. That is
-not in tension with collapsing the hop — the collapse means the model is
-never *forced* to chain, not that discovery is hidden. Its fuzziness
-(finding 5, and 11 hits for a three-letter prefix in J8) makes it the
-operation most in need of exact-match-first ordering and a hard cap.
+That matters because **statically and dynamically typed languages want
+different operations**, and pikuri targets both — ruby-lsp and jdtls are
+the two representatives, and every operation below was exercised against
+whichever of them supports it. An enum sized to the intersection would
+serve neither well.
 
-**Out, with reasons:**
+**In: `definition`, `references`, `hover`, `workspaceSymbol`,
+`typeDefinition`, `implementation`.** Uniform shape, no chaining. Each
+needs its capping discipline — references grouped lib/spec (finding 6),
+hover and definition capped hardest on constants, where a reopened Ruby
+namespace yields 45 near-identical hits.
+
+The last two are the static-language pair, and J9 is why they are not
+redundant with `definition`:
+
+- **`typeDefinition`** answers a different question than `definition`.
+  On `var names = new ArrayList<String>()`, `definition` gives the local
+  declaration and `typeDefinition` gives `java.util.ArrayList` — a type
+  written nowhere in the source. Nothing else recovers it. It is the one
+  operation for which `symbol` alone is insufficient (a local variable is
+  not in the workspace index), so `file` + `line` are effectively
+  required and its parameter description must say so.
+- **`implementation`** resolves an interface to its implementors, at type
+  and method level both. Ruby has no interfaces and ruby-lsp does not
+  advertise it (finding 9) — so for `.rb` it is a clean refusal, which is
+  the gate working, not a gap.
+
+`workspaceSymbol` is exposed *as well as* being the internal
+name→position mechanism, because J8 shows it does something no tool
+pikuri has can ever do: it searches the server's index, which reaches
+inside jars and outside the workspace root. That is not in tension with
+collapsing the hop — the collapse means the model is never *forced* to
+chain, not that discovery is hidden. Its fuzziness (finding 5, and 11
+hits for a three-letter prefix in J8) makes it the operation most in need
+of exact-match-first ordering and a hard cap.
+
+**Out, with reasons that survive the reframe:**
 
 - **`documentSymbol`** — the only file-keyed operation, so it breaks the
   uniform shape, and for one named file `grep '^\s*(def|class|module)'`
   genuinely does outline it. The reach-into-dependencies argument that
   might seem to save it belongs to `workspaceSymbol`: `documentSymbol`
   takes a single `textDocument: {uri}` and searches nothing.
-- **`goToImplementation`, `prepareCallHierarchy`, `incomingCalls`,
-  `outgoingCalls`** — unsupported by ruby-lsp (verified: Claude Code
-  leaks raw `Method not found` for all three against it), and the
-  hierarchy trio is a three-call chain on top.
-- **`typeDefinition`** — *not* marginal, and the earlier claim that it was
-  is withdrawn. On `var x = service.fetch()` the type appears nowhere in
-  the source, so it is the only way to learn it and grep can never
-  answer it. It is out because **ruby-lsp does not implement it**
-  (finding 9), making it a typed-language capability that arrives *with*
-  Java rather than before it. When it does, note that it is the first
-  operation for which `symbol` alone is insufficient — a local variable
-  is not in the workspace index, so `file` + `line` become effectively
-  required, and the parameter description has to say so.
-- **`declaration`, `typeHierarchy`** — `declaration` is unsupported by
-  ruby-lsp too; `typeHierarchy` is supported by both but is a
-  prepare-then-fetch chain like the call hierarchy.
+- **`declaration`** — marginal against `definition` in both languages
+  (C-style header/impl splits are the case it exists for).
+- **The two hierarchies — `callHierarchy` and `typeHierarchy`** — are the
+  strongest *deferred* candidates rather than rejects, and both are
+  valuable in both languages ("who calls this", "what subclasses this").
+  Each is a prepare-then-fetch chain, which is the exclusion reason — but
+  the same collapse that hides `workspace/symbol` inside `definition`
+  would hide `prepare` inside them, making `incomingCalls(symbol:)` a
+  single model call. Note `typeHierarchy` is advertised by *both* servers
+  (finding 9). Add when there is evidence the model wants them; the
+  mechanism is already understood.
 
 Adding a value later breaks nothing (the enum is static and hardcoded),
+
 so this is a floor, not a ceiling.
 
 ## How the protocol is modeled, and the build order
