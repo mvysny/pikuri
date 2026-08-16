@@ -191,20 +191,57 @@ Drop:
   turn the human deliberately typed — which is also what keeps the
   feature inside `pikuri-skills` rather than earning its own gem.
 
-  Note this is not merely "unimplemented": the `!` line must be
-  **inert**, and `allowed-tools:` must stay an ignored key. Silently
-  dropping a `!`-line's *output* while leaving its text in the prompt is
-  the quiet failure — the model then reasons about a `git status` it
-  never saw. Preferred handling is to pass the line through verbatim as
-  literal text, so the human can see why the command misbehaved.
-- **`allowed-tools` / `model`.** pikuri fixes tools at `configure` time
-  and the model at transport construction. Neither is amendable
-  mid-conversation, and inventing a seam for it is far more than this
-  feature is worth. Ignore the keys.
+- **`allowed-tools:`, on its own merits.** Independent of `!`, this key
+  is a *restriction* the author asked for. pikuri fixes tools at
+  `configure` time and cannot narrow them mid-conversation, so honouring
+  it is out of reach — but **ignoring** it runs the command with the
+  full toolset when the author asked for a fenced one. That's a
+  widening, not a no-op, and it's why this key doesn't get the
+  ignore-unknown-keys treatment the rest of the frontmatter does.
 - **`disable-model-invocation`.** Inverted by default: pikuri never
   exposes commands to the model, so every command behaves as if this
   were set. That's the deliberate divergence, and it's what makes the
   feature cost zero tokens.
+
+### Refusing the two, and why fail-closed beats pass-through
+
+Settled 2026-08-16: **`Registry#get` raises** when a command declares
+`allowed-tools:` or its body contains a `` !`…` `` directive. Not
+"ignored", not "rendered inert" — unavailable, with an exception naming
+the file and the trigger. Reverting is a feature request, which is
+exactly the signal we'd want before building the confirmer-gated version.
+
+This replaces an earlier proposal in this note to pass the `!` line
+through as literal text so the human could see it. That was wrong: a
+literal `` !`git status` `` sitting in the prompt reads to the model as
+an *instruction*, so the likely outcome isn't "visibly misbehaves", it's
+"the model runs `git status` through the real `bash` tool a beat later".
+Which is more or less the behaviour we refused, arrived at
+unpredictably. An exception has no such second reading.
+
+Design notes for whoever builds it:
+
+- **Raise at retrieval, warn at scan.** Keeping the entry in `#list`
+  means the human types `/foo` and learns *why* it's unavailable;
+  skipping it at scan time (the catalog's handling for a missing
+  `description`) makes it silently absent from the menu, which is the
+  same discoverability failure one layer up. A scan-time warning covers
+  the host that never renders the exception.
+- **A dedicated error class** — a host needs to rescue this precisely
+  and turn it into a message, not a backtrace. It is host-facing: it
+  never reaches a tool, so the `"Error: …"`-string convention for
+  model-visible failures doesn't apply.
+- **Be over-eager on detection, deliberately.** A false positive
+  (a command body that merely *discusses* the syntax, or carries one
+  inside a fenced block) is a loud exception on a file the author can
+  trivially edit. A false negative is silent semantic drift. Don't try
+  to skip fenced code blocks. Also match `allowed_tools` alongside the
+  documented `allowed-tools`.
+- **Only these two.** `model:` stays an ignored key — running the right
+  prompt on the wrong model is a quality issue, not a widening.
+- Later, if a host wants to grey the entry out rather than let the
+  invoke raise, that's a predicate on the record (`#refused?` plus a
+  reason), not a change to this behaviour.
 
 ### Unreferenced arguments: a near-miss, now closed at the source
 
