@@ -510,6 +510,8 @@ StdioEntry = Data.define(:id, :command, :files, :env, :init_options,
   generic — pikuri has no jdtls special case, the Java *entry* does.
 - **`content_request`** — the request name to call with `{uri:}` for
   results whose scheme pikuri cannot read (`'java/classFileContents'`).
+  One string, not a scheme→request map: results are routed back to the
+  server that produced them, so the scheme never has to be interpreted.
   Same principle as `init_options` and its natural partner: the
   capability declared there is what makes the server hand back `jdt://`
   URIs at all, so an entry that sets one without the other is
@@ -631,14 +633,25 @@ hard refusal.
      `content_request: 'java/classFileContents'` with `{uri:}`, reply
      normalized from String-or-`{text:}` (J7).
 
-  Keeping both in the entry is what keeps the client generic — no server
-  names in `pikuri-lsp`. The cost is two arcane strings that must travel
-  together, so a half-configured entry must not fail silently: a
+  **The scheme is never the dispatch key — provenance is.** One
+  `content_request` string per entry suffices because every result
+  arrives as the reply to a request pikuri sent to *one specific server*,
+  so the URI's origin is already known without parsing it. "Not a file,
+  and the java server produced it, so ask the java server." pikuri never
+  learns that `jdt` means anything, and needs no scheme→request map.
+
+  The scheme is still read, but only as a three-way gate: `file:` → read
+  it here; `http(s):` → print only, and **not** forwarded to the server
+  either, since making jdtls fetch it is the same egress leg with an
+  extra hop; anything else → the issuing server's `content_request`.
+
+  Keeping both halves in the entry is what keeps the client generic — no
+  server names in `pikuri-lsp`. The cost is two arcane strings that must
+  travel together, so a half-configured entry must not fail silently: a
   non-`file:` result with no `content_request` is **reported and
-  dropped** — "2 more in libraries; no content_request configured for
-  scheme `jdt:`, see that server's docs for the request that serves it" —
-  and logged for the human, since it is a config error rather than
-  something the model can act on.
+  dropped** — "2 more in libraries; the java server returned `jdt:` URIs
+  but has no content_request configured" — and logged for the human,
+  since it is a config error rather than something the model can act on.
 - **`http(s):` and everything else — never dereferenced, only printed.**
   This is the load-bearing refusal. Fetching a URI the *server* chose
   hands pikuri-lsp an attacker-influenceable egress leg: the gem's entire
