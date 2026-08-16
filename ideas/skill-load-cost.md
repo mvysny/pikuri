@@ -52,6 +52,36 @@ Two nuances worth keeping honest:
   is a one-shot and doesn't have the problem.
 
 
+## Measured: what tier 1 actually costs
+
+Claude Code's `/context` on this machine, 2026-08-16 — a real 28-skill
+catalog, which is the closest thing to evidence available. (Its
+accounting, not pikuri's, but the number is dominated by description
+length either way.)
+
+- **28 skills → 3.8 k tokens** of catalog, every turn. On a 1 M window
+  that's 0.4 %; on a 32 k local llama.cpp it's **12 %**, which is the
+  configuration pikuri defaults to.
+- Per-entry: `dataviz` ~380, `claude-api` ~360, `cop` ~310,
+  `update-config` ~240, `writing-rdoc` ~210. The Agent Skills spec
+  budgets **50–100 tokens per entry**. These are 3–6× over.
+- `cop`: catalog entry ~310 tokens, body ~2 800. So tier 1 : tier 2 is
+  about **1:9** for a single skill — but tier 1 is paid every turn by
+  every session, and tier 2 only by the session that asked.
+
+Two things follow. First, the item-3 framing is confirmed from the other
+side: the expensive thing is what's resident, not what a call costs.
+Second — and this is new — **the over-budget descriptions are the
+cheapest thing on this whole list to fix**, and nothing about them
+requires a mechanism.
+
+The reason they're fat is visible in the same table: `claude-api` and
+`dataviz` carry TRIGGER/SKIP blocks inside their `description`. The
+description has started doing the skill's job. That's the failure
+`when-to-use:` exists to fix structurally, and it's also a tension with
+no free answer — see open question 1.
+
+
 ## Prior art: what the other harnesses actually ship
 
 Checked against a local opencode checkout (`~/temp/opencode`,
@@ -182,31 +212,48 @@ and exempting skill content from context compaction.
 
 ## Open questions (the brainstorm continues here)
 
-1. **Is the ordering problem better solved in the description?**
-   grok-build's `when-to-use:` split says the real failure is
-   descriptions that don't say *when*. pikuri could get most of the
-   benefit by (i) sharpening the catalog preamble from "before answering
-   from your own knowledge" to something that covers *recon* too, and
-   (ii) saying so in whatever guidance we give skill authors. Both are
-   free — and if they work, `lazy-skill-registration.md` never needs
-   building.
-2. **What is the actual failure mode we're fixing?** Grok's pain wasn't
-   tokens or latency — it was doing half its recon under the wrong mental
-   model and having to redo it. That wasted recon is *itself* far more
-   context than the skill body. Worth stating explicitly wherever this
-   lands, because it's the argument that makes the trigger-wording fix
-   the high-value one.
-3. **Should the human path fold into the user turn instead of `:system`?**
+1. **Say-*when* vs. stay-short — the description tension.** This is the
+   live one. The failure Grok reported is a description that says what a
+   skill *is* but not when to reach for it; the fix is to add the
+   trigger. But the measurement above says descriptions are *already*
+   3–6× the spec's budget, and every added word is paid every turn by
+   every session. Two levers pull opposite ways, and the note has no
+   answer yet:
+   - **The prompt half is free and unambiguous** — sharpen the
+     `format_catalog` preamble from "load it *before* answering from
+     your own knowledge" to something that also covers *recon*. One
+     sentence, paid once, not per skill. Do this regardless.
+   - **The per-skill half is the trade.** Options, roughly in order of
+     how much machinery they cost: (i) author guidance only ("lead with
+     the trigger, cap at ~2 lines") — free, unenforced; (ii) warn at
+     scan time above some length well under the standard's 1024-char
+     cap — cheap, honest, no truncation risk; (iii) adopt
+     `when-to-use:` as a separate field so the *trigger* is structured
+     and the *description* can be trimmed independently — the
+     structurally right answer and the only one that survives
+     lazy-registration later, but a non-standard key; (iv) truncate in
+     the catalog render like grok-build's proportional split — clever,
+     and clever is how you cut a trigger sentence in half.
+
+   My read: (i) + the preamble now, (ii) if a real catalog keeps
+   growing, (iii) only if `when-to-use:` earns its way in for another
+   reason. Explicitly *not* (iv).
+2. **Should the human path fold into the user turn instead of `:system`?**
    Both prior-art harnesses put a human-loaded skill in the user message;
    pikuri puts it in `:system`, which is sticky on Anthropic and
-   positional elsewhere. Is the divergence (documented honestly in
-   `schedule_load_skill`'s yardoc) the right call, or is it a bug we
-   haven't hit because no bundled binary exercises it?
-4. **Does this earn a DECISIONS.md entry on its own?** The fork here is
-   real (pre-inject bodies vs. load on demand) and no `D-` entry covers
-   skills yet — but `lazy-skill-registration.md` will want an entry too,
-   on an adjacent fork. One entry covering "what the catalog advertises
-   and when the body arrives", or two?
+   positional elsewhere. So the *same skill* behaves differently
+   depending on who loaded it — that's the smell, more than either
+   choice on its own. Unexercised today (no bundled binary calls
+   `schedule_load_skill`), and CLAUDE.md warns against library features
+   whose value rests on a demo's shortcut, so the honest answer may be
+   "leave it, it's documented". But *unexercised* also means *untested
+   in anger*: is a `bin/` wiring worth adding purely to find out?
+3. **One DECISIONS.md entry or two?** Recommendation: **one**, and write
+   it when this note graduates rather than waiting on
+   `lazy-skill-registration.md`. The axis is the same — *what the catalog
+   advertises, and when the body arrives* — and entries are mutable, so
+   lazy registration extends it in place if it ever lands. Two entries on
+   one axis is how a reader ends up reading only half the reasoning.
 
 
 ## Cheap borrows spotted along the way
@@ -232,9 +279,41 @@ land on its own.
    feedback.
 3. **Correct the "opencode is the outlier" sentence** in
    {Pikuri::Skill::SkillTool}'s header (see above). Needed regardless.
-4. **`when-to-use:` / `disable-model-invocation:` frontmatter** — noted,
+4. **Drop `<location>` from the catalog render.** The spec says outright:
+   *"If your dedicated activation tool provides the skill directory path
+   in its result, you can omit `location` from the catalog."* pikuri
+   emits it in both — `format_catalog`'s `<location>` **and**
+   `format_skill`'s `location=` attribute plus the base-dir sentence. The
+   catalog copy is the redundant one, and it's not cheap: absolute paths
+   like `/home/mavi/.claude/skills/writing-javadoc/SKILL.md` run ~15
+   tokens, so a 28-skill catalog pays ~400 tokens for a duplicate. On the
+   exact axis this note is about, and spec-blessed.
+   Counter-argument to weigh first: `location` is also what enables
+   *file-read activation* (the model `read`s SKILL.md directly, no tool),
+   which is the documented fallback if the `skill` tool is ever absent —
+   and pikuri wires skill roots into `Filesystem#readable:` precisely so
+   that works. Dropping it makes the tool the only door. Probably fine —
+   the tool is auto-registered whenever the catalog is non-empty — but
+   it's a real coupling, not a pure win.
+5. **Dedupe a repeated load.** {Pikuri::Skill::SkillTool} re-renders the
+   full body every time it's called, so a model that loads `cop` three
+   times pays ~2 800 tokens three times. The spec's Step 5 recommends
+   tracking activations and skipping re-injection. This is worse on
+   Anthropic, where a *host*-loaded skill is hoisted and sticky — repeat
+   loads accumulate in the system param. Cheap fix (a `Set` of loaded
+   names in the tool's closure, returning "already loaded in this
+   conversation" on a repeat); the only design question is what
+   `clear_conversation` does to it, and the answer is obvious.
+6. **`when-to-use:` / `disable-model-invocation:` frontmatter** — noted,
    not proposed. Both are non-standard extensions; worth knowing they
    exist before inventing our own spelling if we ever want them.
+7. **Compaction, when it ever exists.** The spec's Step 5 says to exempt
+   skill content from pruning — losing a skill mid-conversation degrades
+   the agent silently, with no error. pikuri doesn't summarize-and-
+   continue today (see `claude-parity.md`), so there is nothing to fix;
+   recording it because the enabling half is *already* in place — the
+   `<skill name="…">` envelope is exactly the tag a future compactor
+   would key on. Don't lose that if the envelope is ever restyled.
 
 
 ## Graduation plan (when this settles)
@@ -243,7 +322,14 @@ land on its own.
   preloader" → {Pikuri::Skill::SkillTool} yardoc, tightening the sentence
   that's already there.
 - The rejected forks (glob→skill config table; `names:` array; body
-  pre-injection) → `DECISIONS.md`, one entry.
+  pre-injection) → `DECISIONS.md`, **one** entry on the
+  what-the-catalog-advertises-and-when-the-body-arrives axis; lazy
+  registration extends it in place later rather than opening a second.
+- The failure mode worth naming wherever this lands: Grok's pain was not
+  tokens or latency, it was doing half its recon under the wrong mental
+  model and having to redo it — and that wasted recon is *itself* far
+  more context than the skill body. It's the argument that makes the
+  free, prompt-side fixes the high-value ones.
 - The prior-art survey (opencode v2's live system-context block,
   grok-build's `paths:` gating, both harnesses' zero-round-trip human
   path) → `COMPARISON.md` §Skills, which is *also* stale on pikuri's own
