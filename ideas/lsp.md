@@ -4,7 +4,9 @@ Status: **investigated, not built.** Protocol mechanics are settled and
 verified against live servers, plus a third pass through a shipped
 client (below); the direct-vs-MCP fork is decided in principle; the
 tool-surface sketch is the live part, though the static-enum /
-gate-at-dispatch question is now settled inside it.
+gate-at-dispatch question is now settled inside it. The registry entry's
+field list is drafted (Configuration), with the lifecycle questions
+around it still open.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -365,20 +367,233 @@ Worth arguing with:
   application — **read-only navigation**. The moment it applies a
   workspace edit it needs the `Confirmer` seam and stops being closeable.
 - `Pikuri::Lsp::Registry::StdioEntry` mirroring
-  `Mcp::Registry::StdioEntry` — command, args, env, claimed extensions.
-  The claimed-extensions field is load-bearing, not decorative: it is the
-  dispatch key that picks the server, per finding 1.
+  `Mcp::Registry::StdioEntry` — see Configuration below. The
+  claimed-files field is load-bearing, not decorative: it is the dispatch
+  key that picks the server, per finding 1.
 - `Pikuri::Lsp::ClientWrapper` — long-lived child, id demux on a reader
   thread, auto-reply to server→client requests, restart-on-death copied
   from the MCP wrapper. Needs the same documented exception to the
   Subprocess seam (`Subprocess.spawn` is one-shot; this isn't).
+- `Pikuri::Lsp::ServerProgress` domain event + an `Lsp::Extension`
+  mirroring `Mcp::Extension`: configure builds the shared client set and
+  arms `on_close`, bind hands the tool its emitter. See Configuration.
 - One `lsp` tool, static `operation` enum, 1-based coordinates,
   capability-gated **at dispatch** (route by extension, then refuse
   cleanly if that server lacks the operation), results filtered through
   `Filesystem#denied?` + root-confined + capped/grouped.
 - Book chapter when it lands (`book/language-intelligence.md`?) — the
   protocol is genuinely interesting and nothing else in pikuri teaches
-  "how does an editor know things".
+  "how does an editor know things". Two worked configs, Ruby and Java —
+  see Configuration.
+
+## Configuration
+
+Launch argv plus the files a server claims is indeed the spine, and for
+Ruby that is the entire entry. Two more fields earn their place, and two
+that look obligatory must *not* exist.
+
+```ruby
+StdioEntry = Data.define(:id, :command, :files, :env)
+```
+
+- **`id`** — `"ruby"`, `"java"`. Unlike MCP's id this is *not* a
+  model-facing handle (the model never names a server; the file picks
+  it). It is for log lines, restart messages, and the degrade string.
+  Duplicates raise, copied from `Mcp::Registry`.
+- **`command`** — argv array, `Subprocess.spawn` convention, same
+  Subprocess-seam carve-out as the MCP wrapper.
+- **`files`** — the dispatch key. **Globs matched against the basename**,
+  not bare extensions: `%w[*.rb *.rake *.gemspec Rakefile]`. An
+  extension-keyed field is one character shorter and lies the first time
+  someone opens a `Rakefile`. First match in declaration order wins; no
+  overlap detection (computing glob overlap is real work to prevent a
+  misconfiguration nobody has made yet).
+- **`env`** — merged over the inherited environment, exactly
+  `StdioEntry#env`'s role in MCP: the legitimate per-child channel of the
+  "Environment is not a secret store" seam. Here it carries `JAVA_HOME`
+  rather than a token.
+**No `startup_timeout:`, and no timeout at all.** The obvious fifth field
+— ruby-lsp indexes this repo in seconds, a cold jdtls import is minutes —
+is a trap twice over. No value is defensible (30s is wrong for Java, 300s
+is wrong for Ruby), and what it buys is a `"still indexing, try grep"`
+observation, which is a *decision point* handed to a small local model:
+retry, wait, or give up, and it cannot express "wait" as a tool call
+anyway. This is finding 6's name→position argument again — pikuri
+collapses hops the model would chain badly. So the first call blocks
+until the server is ready, however long that is. The LLM can wait
+endlessly; the human decides otherwise via Ctrl+C.
+
+Three things replace the clock, none of them a clock:
+
+- **Die on child death.** What a timeout actually guards is not a slow
+  index but a server that never becomes ready — jdtls failing a
+  dependency import, ruby-lsp's custom-bundle `bundle install` erroring.
+  Child exit is a *definite* answer: `"ruby-lsp failed to start: <stderr
+  tail>"`, an honest error rather than a guess, and it catches the common
+  case earlier than any timeout would.
+- **`Cancellable` must break the wait.** A blocking read never reaches a
+  tool-call boundary, so `bin/pikuri-code`'s SIGINT trap would not fire —
+  the wait has to poll the cancel flag. This is what makes "endless"
+  acceptable: the human is the timeout, using a mechanism pikuri already
+  has.
+- **Surface progress as a domain event.** A silent three-minute stall is
+  indistinguishable from a hang for the person watching. The `$/progress`
+  payloads are already parsed for the readiness gate, so they only need a
+  way out — see below. Not optional once the clock is gone.
+
+### Progress as a domain event
+
+`Pikuri::Lsp::ServerProgress`, emitted via `ctx.emit_event` like
+`Tasks::ListChanged` and `Code::PlanModeChanged`; a TUI or web host draws
+a bar, `bin/pikuri-code`'s terminal listener prints one crude line, and
+every other listener no-ops for free. (Named without the `Lsp` prefix —
+the namespace already carries it, per its siblings.)
+
+```ruby
+ServerProgress = Data.define(:server_id, :title, :message, :percentage, :done)
+```
+
+Maps 1:1 onto LSP's `WorkDoneProgress` `begin` / `report` / `end`, with
+`done: true` as the `end` marker so one variant covers the lifecycle and
+the host knows when to dismiss the bar. Two payload notes that decide
+whether a consumer works: **`percentage` is optional in LSP** and plenty
+of servers never send it, so a host needs an indeterminate-spinner
+fallback — a bar is not always drawable. And **`server_id` is why the
+entry keeps `id`**: at boot with Ruby and Java both registered, two
+servers index concurrently and a host must key its bars by server. That
+promotes `id` from a diagnostics-only field to a real payload key.
+
+**The thread problem, which is the actual design work here.** Progress
+notifications arrive on the client's *reader thread*, while
+{ExtensionContext#emit_event} is documented as agent-thread-only — this
+would be pikuri's first event emitted from anywhere else, and emitting it
+raw would let a progress line interleave into the middle of the terminal
+listener's streaming render. Resolution: the client parks progress, and
+the **first-call wait loop drains it and emits on the agent thread** —
+the loop is already there polling `Cancellable`, so this costs nothing
+and the contract holds. Emission therefore has exactly one call site, and
+`bind` hands the tool an emitter lambda (the `Tasks::Extension` shape;
+the capability seam's sanctioned explicit handoff to a non-extension
+consumer) rather than wiring the producer.
+
+Two details that decide whether the deferred drain behaves:
+
+- **Park latest-value-per-token, not a FIFO backlog.** ruby-lsp emits
+  hundreds of `report` notifications during an index; a queue drained
+  three minutes later would replay all of them, a burst of stale
+  percentages racing to catch up before the first live one. Coalescing
+  per token makes the drain emit *current* state, then track live.
+- **Always emit a terminal `done: true` when the wait exits**, whatever
+  is parked. Otherwise a host that drew a bar keeps it up forever when
+  readiness arrives without a matching `end`.
+
+### The coalescing mailbox
+
+Both of those belong in one small class rather than smeared across the
+wait loop, and its single responsibility states cleanly: **it is the
+thread boundary** — a producer thread pushes, a consumer thread drains
+the newest value per key, and the block runs on the *consumer's* thread.
+
+```ruby
+mailbox.drain(tick: 0.1) do |update|   # nil on an idle tick
+  cancellable.check!
+  break if client.ready? || client.dead?
+  emit.call(update) if update
+end
+```
+
+- **`push(key, value)`** — coalesce per key, not to one global latest.
+  jdtls can hold "Importing project" and "Building workspace" open at
+  once, and with Ruby and Java both booting there are two servers besides;
+  a single latest-value flickers between unrelated tasks. Taking the key
+  as a parameter keeps the class ignorant of the value type, so no
+  key-extractor strategy has to be injected.
+- **Terminate with `break`.** The caller must check readiness *and*
+  `Cancellable` regardless, so give it one place to do it: yield `nil` on
+  an idle tick and let plain Ruby end the loop. No `stop_when:` predicate,
+  no magic return value, and a `Cancelled` raised inside the block just
+  propagates.
+- **Not named `run_loop`** — {Pikuri::Agent#run_loop} is *the* chat loop,
+  and a second one is a permanent readability tax at every call site.
+- **A mailbox, not a queue**: no backlog exists by construction, so
+  `Thread::Queue` is the wrong primitive (it preserves exactly what this
+  discards). `Mutex` + `ConditionVariable`, ~30 lines.
+
+**Where it lives.** Its own class either way, but *inside `pikuri-lsp`*
+until a second caller exists — with one, "reusable" is a hypothesis, and
+promoting later costs nothing. Candidates worth checking when the time
+comes: vectordb corpus indexing and MCP boot probing. Both need testing
+for whether they are genuinely cross-thread or merely sequential on the
+agent thread; if sequential, there is no second caller and this correctly
+stays gem-local.
+
+Consequence accepted deliberately: progress nobody is waiting on
+surfaces no events. That is the *correct* scope, not merely the cheap
+one, in both directions — background indexing while the user types their
+first prompt has no audience, and background indexing while the model is
+mid-turn doing unrelated work has a worse-than-none audience, since a bar
+for something nobody is blocked on competes with the model's output. A
+host wanting a boot-time status bar anyway needs current-state polling on
+the extension; v1 shouldn't build it until a real TUI asks, and if this
+bites, redesign then.
+
+`title` / `message` are server-supplied strings reaching a terminal;
+defanging is the renderer's job via `Pikuri::Sanitizer`, per the
+Confirmer seam's presentation rule, so nothing new is owed here.
+
+**No `root:` / `cwd:`, deliberately.** The child is spawned with cwd =
+the `Workspace` root, full stop. Both reference servers derive their
+identity from cwd — ruby-lsp resolves the project bundle from it, and the
+jdtls launcher hashes it to pick a data directory — so a configurable
+root would silently let the LSP's idea of the project diverge from the
+`Workspace` root, which is also the confinement and denylist boundary
+(finding 3). One root, one boundary. If a Java-in-a-subdirectory monorepo
+breaks that, we learn it from a real user; jdtls imports nested projects
+from a parent root today.
+
+**Config is Ruby, and that is half the point.** The Java entry below
+computes its data directory through `Pikuri::Paths.cache`; a JSON config
+file — the thing pikuri exists as a counter-move to — cannot. Worth one
+paragraph in the chapter.
+
+### The two book examples
+
+Ruby is three lines and teaches that the whole config is two facts:
+
+```ruby
+Pikuri::Lsp::Registry::StdioEntry.new(
+  id: 'ruby', command: %w[ruby-lsp],
+  files: %w[*.rb *.rake *.gemspec Rakefile Gemfile]
+)
+```
+
+Java exercises the remaining two, each for a reason the reader can check
+— and is where the chapter shows a first call blocking for minutes and
+that being the correct behaviour:
+
+```ruby
+Pikuri::Lsp::Registry::StdioEntry.new(
+  id: 'java', files: %w[*.java],
+  command: ['jdtls', '-data', Pikuri::Paths.cache('jdtls', project_slug).to_s],
+  env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') }
+)
+```
+
+Why `-data` is passed explicitly, read out of the launcher
+(`jdtls.py`, read today — this is source-reading, not a live run like the
+findings above): its default is
+`~/.cache/jdtls/jdtls-<sha1>` where the sha1 is over
+**`File.basename(Dir.pwd)`** — the basename alone, so `~/work/app` and
+`~/clients/acme/app` share one workspace state directory. It also
+hardcodes `~/.cache`, ignoring `XDG_CACHE_HOME`. Both are exactly what
+pikuri's `Paths` convention exists to prevent, which makes this a
+four-line demonstration of the convention rather than a paragraph
+asserting it.
+
+The chapter gets a second payoff for free: with both entries registered,
+finding 1's multi-server dispatch is exercised for real — `.java` and
+`.rb` routing to different servers with different capability sets — and
+the `.md` refusal is a live behaviour, not a hypothetical.
 
 ## Open questions
 
@@ -386,7 +601,11 @@ Worth arguing with:
   run's wall time. `bin/pikuri-code` is synchronous and request-scoped —
   do we pay it lazily on first `lsp` call (a multi-second stall mid-loop),
   eagerly at boot (slow start for sessions that never use it), or in
-  background at boot and block only on first use? Leaning the third.
+  background at boot and block only on first use? Leaning the third, and
+  the no-timeout decision strengthens it: background start overlaps
+  indexing with the user typing their first prompt and the model's first
+  few turns, so the unbounded block is usually near-zero and only bites
+  the session that asks for language intelligence immediately.
 - **Does the model actually use it?** The honest risk: `grep` is right
   there and the model is good at it. This is what the MCP spike measures.
 - **Multi-language, or Ruby-only first?** Registry design is
@@ -398,6 +617,40 @@ Worth arguing with:
 - **Where does workspace-root confinement live** — in the wrapper, or as
   a `Workspace::Filesystem` call in the tool? The latter reuses the seam;
   the former keeps the tool thin.
+- **…and confinement is a *capability* question, not only a filtering
+  one.** Finding 3 treats out-of-root hits as noise to drop, but the
+  `Faraday` run is the counter-example: 45 locations under `gems/`, and
+  "what does this library method actually do" is one of the top reasons to
+  want LSP at all. Confine hard and the model falls back to grep for
+  exactly the case where grep is worst. Return the paths unconfined and
+  the model gets citations it cannot then `read`. Third way: for
+  out-of-root hits return the *snippet* rather than the path, so no read
+  capability is granted. Note this lands differently per host — under
+  `bin/pikuri-code` the gem sources are already reachable via `bash`, so
+  nothing is widened; under a read-only workspace-confined host it is a
+  new leg.
+- **The readiness gate may not be generic — and it is now load-bearing.**
+  Finding 2 says block on the indexing-progress `end`, which is right for
+  ruby-lsp. jdtls also emits its own `language/status` notification, and
+  whether `$/progress` alone suffices there is unverified. With the
+  timeout removed there is no clock as backstop, so a server that never
+  opens a progress token leaves the gate waiting for something that never
+  begins, and the fallback — query anyway — *is* finding 2's false-premise
+  answer. Verify the jdtls signal before Java ships in the chapter, not
+  after. Worst case the gate needs a per-server predicate, the one thing
+  that would put a genuinely ugly knob back in `StdioEntry`.
+- **Concurrent sessions in one repo.** Two `pikuri-code` processes on the
+  same checkout hand both servers the same state directory (jdtls's
+  `-data`, ruby-lsp's in-repo `.ruby-lsp/` custom bundle). `Paths.cache`
+  is shared-and-persistent by design; `Paths.new_temp` would fix the
+  collision and re-index from scratch every session, which for jdtls costs
+  minutes. Probably: keep `cache`, accept that the second session may fail
+  to start its server and degrades to grep.
+- **Missing binary at boot.** If `bin/pikuri-code` ships a Ruby entry
+  registered *by default* — which is the only way the feature gets used —
+  then a machine without `ruby-lsp` must warn loudly and degrade, not
+  raise. That tension (registered-by-default vs. errors-are-loud) is
+  decided by whether the default entry ships, so decide that first.
 
 ## Considered, deferred
 
@@ -412,6 +665,13 @@ Worth arguing with:
   gate; breaks the closeable threat model. Not in v1.
 - **Depending on `language_server-protocol`.** See above — 40 lines of
   framing, wrong reader shape.
+- **An `init_options:` passthrough** on `StdioEntry` (verbatim into
+  `initialize`, plus a `settings:` slice to answer the server's
+  `workspace/configuration` requests with something other than `null`).
+  It is the standard LSP escape hatch and costs a line, but neither
+  reference server needs it, and "a config knob for the next concrete
+  step" is the bar. Tripwire: the first server that won't work without it
+  adds it as an uninterpreted hash — pikuri never parses the contents.
 - **Hover as a `read` replacement.** Deferred as a third way to read code
   alongside `read` and `grep`. Finding 8 weakens that reasoning: on a
   *constant*, one hover returns the whole yardoc class comment, which in
@@ -428,9 +688,14 @@ better taught with the observation that a shipped client gets the second
 one wrong); per-symbol rationale → yardoc on `Lsp::ClientWrapper` / the
 tool, including why the `operation` enum is static while gating happens
 at dispatch; the walked-path-filtering and Subprocess-exception
-invariants → a `CLAUDE.md` seam entry; **direct-vs-MCP with the bridges
-named** → a new
-`DECISIONS.md` entry (suggested slug `lsp-direct-not-mcp`, with the usual
+invariants → a `CLAUDE.md` seam entry; the entry's field-by-field
+rationale → yardoc on `Lsp::Registry::StdioEntry`, and the two worked
+configs → the book chapter (the *no configurable root* rule is the one
+that also wants a sentence in the seam entry, since it is what keeps the
+LSP's project and the `Workspace` root the same boundary);
+**direct-vs-MCP with the bridges named**, and **no-timeout with its three
+replacements**, → two new `DECISIONS.md` entries (suggested slugs
+`lsp-direct-not-mcp` and `lsp-no-startup-timeout`, with the usual
 prefix); the COMPARISON.md LSP column → `✅`. Then delete this file,
 plus the superseded LSP bullets in `coding-agent.md` and
 `claude-parity.md`.
