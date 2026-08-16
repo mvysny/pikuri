@@ -203,9 +203,12 @@ ever surface it. The author self-selects, per skill, in the frontmatter
 they were already writing.
 
 Against this repo's real catalog: `cop` stays fully advertised (correct —
-its trigger is conceptual); `gradle`, `maven`, `karibu-testing`,
-`vaadin-boot-app`, `writing-rdoc`/`-javadoc`, `tuile` drop to name-only
-until a matching file is touched.
+its trigger is conceptual); `tuile` and `ideas-folder` drop to name-only
+until a matching file is touched, and `gradle` / `maven` /
+`karibu-testing` drop only if you accept a predicate that misfires. That
+list is shorter than an earlier draft's, which also gated
+`writing-rdoc`/`-javadoc` and `vaadin-boot-app` — see the measurement
+below, where authoring the frontmatter cut the estimate by 3×.
 
 
 ### Measured: pikuri's own catalog (2026-08-16)
@@ -228,15 +231,44 @@ Longest descriptions: `cop` 921 chars, `writing-rdoc` 629,
 
 Two things the measurement says that no previous number did:
 
-**1. The gated fraction, which nobody had counted.** 7 of 12 skills carry
-a plausible `paths:` predicate, and they are **2 678 B — 58 % — of the
-description bytes**. Tier 0 on this catalog saves ~700 tokens per turn.
-Be honest about that number in both directions: on a 64 k window it is
-~1 %, and the prefill is cached anyway, so what it actually buys is window
-capacity plus seven fewer distractors — *not* the 40× the ratio implies
-(the ratio compares names to descriptions, not a real catalog to itself).
-But it scales the right way: 58 % of a quantity that grows with skills
-*installed*, so the case strengthens at 28 skills and vanishes at 3.
+**1. The gated fraction, which nobody had counted — and which shrank by
+3× when someone actually counted it.** The first pass estimated 7 of 12
+skills as carrying a plausible `paths:` predicate, at 2 678 B / 58 % of
+the description bytes, and concluded tier 0 saves ~700 tokens per turn.
+**That estimate was made by pattern-matching skill names, by the same
+party arguing for the mechanism.** Drafting the actual frontmatter per
+skill, 2026-08-16, gives a very different answer:
+
+| | skills | description bytes | share |
+|---|---|---|---|
+| clean `paths:` fit | 2 (`tuile`, `ideas-folder`) | 795 | **17 %** |
+| + partial / over-firing | 5 (+ `maven`, `gradle`, `karibu-testing`) | 1 557 | 33 % |
+| the estimate it replaces | 7 | 2 678 | 58 % |
+
+Where the four lost skills went, and why each is a category rather than a
+quibble:
+
+- `writing-rdoc` / `writing-javadoc` — `**/*.rb` / `**/*.java` fires on
+  every touch of the language. Per claim 1's table a mis-triggering entry
+  is **worse** than a resident one: the model pays to ignore it on every
+  subsequent turn. These want `when-to-use:` (question 12), not `paths:`.
+- `vaadin-boot-app` — the **bootstrap hole** in miniature
+  (`tool-list-in-context.md` names it for tools): the skill is most needed
+  at *scaffold* time, when the project has no files to touch.
+- `cop` — pure intent, as claim 1 already said.
+
+So tier 0's saving on this catalog is **~200 tokens per turn**, not 700 —
+about 0.3 % of a 64 k window, and the prefill is cached anyway, so what it
+actually buys is window capacity plus *two* fewer distractors. The
+scaling argument survives but is much weaker: the thing that shrank is the
+**ratio**, not the count, so it does not recover at 28 skills the way the
+first estimate implied.
+
+The methodological lesson outlives the number, and belongs wherever this
+lands: **an estimate of how much a mechanism would save, made by the party
+proposing it, was 3× optimistic — and the correction cost one afternoon of
+writing the config it was estimating.** Authoring beats estimating,
+cheaply, and should have come first.
 
 **2. A third category the tier table has no row for.** `wh`'s description
 is *"Generates a weekly work log. Only invoked manually."* — 51 resident
@@ -513,10 +545,12 @@ something the model doesn't have to notice, which is the failure
 observation 1 identifies. Two mechanisms, two arguments; the catalog note
 owns only the cost one.
 
-Corollary: if the cost is ~700 tokens per turn (measured above) and the
-activation story is neutral-to-worse, tier 0's case rests on catalog
-*size*. Which makes open question 8 — does anyone actually have a big
-catalog — decisive rather than colour.
+Corollary: if the saving is ~200 tokens per turn (measured above, after
+the 3× correction) and the activation story is neutral-to-worse, tier 0's
+case rests on catalog *size* — and thinly, because what the correction cut
+was the ratio, not the count, so a bigger catalog scales a smaller
+fraction. Open question 8 stays the deciding measurement, but the burden
+it has to clear went up.
 
 ### R2. The hand-written nudges are asking for a *deterministic* channel, not a better advisory one
 
@@ -768,11 +802,14 @@ measurements that decide them; 11–15 are content and compatibility.
    `tool_names:`, which is fine until someone wants a subset.
 5. **Does tier 0 earn it — now that it's a cost argument only?** Per R1,
    the activation half belongs to the sister note, so this turns purely on
-   catalog size. Measured here: 58 % of description bytes, ~700 tokens per
-   turn, ~1 % of a 64 k window, against a permanent complexity cost (a
-   matcher, an injection channel, a per-activation Anthropic cache nuke).
-   My read: **not at 12 skills.** The question is whether anyone is at 28,
-   and that's open question 8's territory.
+   catalog size. Measured here, after authoring the frontmatter rather
+   than estimating it: **17 % of description bytes, ~200 tokens per turn**,
+   ~0.3 % of a 64 k window — against a permanent complexity cost (a
+   matcher, a listener, a path-args map, an injection channel, a
+   per-activation Anthropic cache nuke). My read hardened from "not at 12
+   skills" to **probably not at any size**: the 3× correction hit the
+   *ratio*, so a 28-skill catalog gates the same thin fraction. Open
+   question 8 still decides it, but it now has a much higher bar to clear.
 6. **Is `disable-model-invocation:` the cheaper first cut?** The category
    the measurement surfaced, not the argument: `wh` and `grill-me` are
    slash-command-only skills paying resident tokens to tell the model to
@@ -1030,10 +1067,13 @@ restores?"* — no, per R7.
   persona. Land it with cost-note borrow 3 (the stale "opencode is the
   outlier" sentence in the same header).
 - **The pikuri-catalog measurement** (12 skills, 44:1 names-to-
-  descriptions, 58 % of description bytes plausibly path-gated, ~700
+  descriptions, **17 %** of description bytes cleanly path-gated, ~200
   tokens/turn) is the number that makes tier 0 decidable rather than
   arguable. If tier 0 is rejected, it is the *reason* — so it belongs in
   the `DECISIONS.md` entry, next to the 40:1 ratio and outliving both.
+  Carry the **3× correction** with it, not just the final figure: the
+  estimate-vs-authored gap is the part a future reader needs, because the
+  next person to propose this will arrive with an estimate too.
 - **R2's reframe outlives every fork**: the hand-written CLAUDE.md nudges
   are asking for *deterministic* loading, which is the host path, not a
   trigger. That is the sentence

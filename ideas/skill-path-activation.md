@@ -248,6 +248,34 @@ building it for skills keeps that option open at no extra cost.
    glob beat the sentence? (The sister note's claim-1 table is the
    evidence: 2 of the 5 hand-written nudges are intent-gated, so a glob
    wouldn't have rescued them either.)
+
+   **Sharpened 2026-08-16, by drafting the frontmatter for a real
+   12-skill catalog rather than estimating it.** Only 2 of 10 turned out
+   to be clean fits; the sister note's measurement carries the arithmetic
+   and the 3× correction it forced. What belongs *here* is the mechanism
+   defect the exercise exposed, because it is a fact about the predicate
+   and not about that catalog:
+
+   **`paths:` fires on a file being *touched*, never on a file
+   *existing*** — grok-build extracts activation paths from tool outputs,
+   so nothing fires until the agent reads or writes something. But the two
+   most mechanical real-world triggers are project-shape predicates:
+   *"this is a Gradle project"* (`build.gradle` exists), *"this is a Maven
+   project"* (`pom.xml` exists). You can work an entire Gradle session
+   without ever opening a build file, so a `paths: ["build.gradle*"]`
+   under-fires badly — while the honest glob for the same intent
+   (`**/*.java`) over-fires on every Java project alive.
+
+   That is a **missing predicate, not a tuning problem**, and it is
+   exactly the shape of the `gradle`/`maven` nudges the sister note's
+   claim 1 opens with — the two rows its own table calls "yes, exactly"
+   expressible as a glob. They are not: the table conflated *file exists*
+   with *file touched*. If this note is ever built, a `project-has:`
+   predicate (evaluated once at catalog scan, against the workspace root)
+   is cheaper than `paths:` in every dimension — no listener, no path-args
+   map, no injection, no per-activation cache cost, because it resolves
+   at boot and the baseline stays static. It also has no bootstrap hole.
+   Worth considering *before* `paths:`, not after.
 3. **A non-standard frontmatter key is a compatibility cost.** `paths:`
    isn't in the Agent Skills spec. A skill authored for pikuri would
    behave differently in Claude Code (which ignores unknown keys and lists
