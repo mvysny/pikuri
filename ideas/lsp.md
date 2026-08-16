@@ -595,13 +595,13 @@ Two details that decide whether the deferred drain behaves:
 ### What a result outside the root becomes
 
 **There is no standard "read this URI" request in the LSP that ships
-today.** Verified: the Ruby SDK is `language_server-protocol` 3.17.0.6
-and neither it nor ruby-lsp mentions `textDocumentContent` anywhere. The
-spec assumes the client is an editor that owns a filesystem. jdtls fills
-the gap with its own `java/classFileContents`, and other servers invent
-their own schemes the same way (`zipfile:`, `deno:`, `jar:`,
-`sourcekit-lsp:`). If a standard request lands in a later spec revision,
-it slots into the same hook below.
+today, and no way to discover a server's non-standard one.** Verified:
+the Ruby SDK is `language_server-protocol` 3.17.0.6 and neither it nor
+ruby-lsp mentions `textDocumentContent` anywhere. The spec assumes the
+client is an editor that owns a filesystem. jdtls fills the gap with its
+own `java/classFileContents`, and other servers invent their own schemes
+the same way (`zipfile:`, `deno:`, `jar:`, `sourcekit-lsp:`) — each
+documented in prose, none announced over the wire.
 
 So: **every result is rendered as location + snippet, and the URI scheme
 decides where the snippet comes from.** Three tiers, and the third is a
@@ -632,6 +632,30 @@ hard refusal.
   2. **Reading them is a request back to the server**:
      `content_request: 'java/classFileContents'` with `{uri:}`, reply
      normalized from String-or-`{text:}` (J7).
+
+  **Nothing in the protocol reveals the request name — that is why this
+  is config.** Verified: jdtls advertises 25 capabilities, all standard,
+  and the substring "content" appears *nowhere* in its handshake; its
+  `executeCommandProvider` lists exactly one command,
+  `java.project.isTestFile`. So the server hands out `jdt://` URIs while
+  saying nothing whatsoever about how to read them. The knowledge is
+  out-of-band, in the server's documentation — which is exactly why
+  editors ship *server-specific* plugins (vscode-java, nvim-jdtls both
+  hardcode `java/classFileContents`), and why a generic LSP client cannot
+  navigate into Java libraries without Java-specific code. Somebody has
+  to hardcode it; the only question is whether that somebody is
+  `pikuri-lsp` (a jdtls special case in the client) or the entry. Hence
+  the field: it is **a user-supplied stand-in for a discovery mechanism
+  the deployed protocol does not have**, not decorative glue.
+
+  Sunset condition: LSP **3.18 fixes this** — now marked Current, it
+  defines `workspace/textDocumentContent`, where the server advertises
+  the schemes it can serve (verified that the request exists in 3.18; the
+  registration details were not readable in the fetched spec). Nothing
+  ships it yet — the Ruby SDK is 3.17.0.6 and jdtls does not implement
+  it — but when a server does, pikuri reads the scheme list straight from
+  the handshake and `content_request` degrades to a fallback for older
+  servers.
 
   **The scheme is never the dispatch key — provenance is.** One
   `content_request` string per entry suffices because every result
