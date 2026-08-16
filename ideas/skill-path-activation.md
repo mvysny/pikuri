@@ -1,6 +1,16 @@
 # Path-triggered skill activation — promoting a skill at the moment it becomes relevant
 
-Status: **idea, not built.** Split out of what is now
+Status: **REJECTED, 2026-08-16 — not built, and not to be built** (author:
+*"let's not invent new machinery, accepting that the `gradle` skill may or
+may not autoload, based on LLM discretion"*; the arithmetic behind it is
+the sister note's R9). The note is kept until it graduates into the shared
+`DECISIONS.md` entry, because the rejection rests on numbers — 17 % of
+description bytes cleanly gateable, ~200 tokens per turn — that someone
+will otherwise re-derive from scratch the next time a catalog gets big.
+Everything below is the case as it stood; read open question 2 first for
+what actually closed it.
+
+Split out of what is now
 [`skill-cost-model.md`](skill-cost-model.md), where it arrived disguised
 as `feedback.txt` item 3(a) ("auto-inject `cop` and `tuile` when the path
 is `lib/**/*.rb`"). That framing is rejected over there and stays
@@ -270,12 +280,40 @@ building it for skills keeps that option open at no extra cost.
    exactly the shape of the `gradle`/`maven` nudges the sister note's
    claim 1 opens with — the two rows its own table calls "yes, exactly"
    expressible as a glob. They are not: the table conflated *file exists*
-   with *file touched*. If this note is ever built, a `project-has:`
-   predicate (evaluated once at catalog scan, against the workspace root)
-   is cheaper than `paths:` in every dimension — no listener, no path-args
-   map, no injection, no per-activation cache cost, because it resolves
-   at boot and the baseline stays static. It also has no bootstrap hole.
-   Worth considering *before* `paths:`, not after.
+   with *file touched*.
+
+   **A `project-has:` predicate was proposed here and then rejected the
+   same day; recorded because the gap is real and it will be re-proposed.**
+   The shape: evaluated once at catalog scan against the workspace root,
+   so it is cheaper than `paths:` in every dimension — no listener, no
+   path-args map, no injection, no per-activation cache cost, no bootstrap
+   hole, and the baseline stays static. Three things killed it:
+
+   - **It exists nowhere.** Verified 2026-08-16: the Agent Skills spec
+     defines six frontmatter fields (`name`, `description`, `license`,
+     `compatibility`, `metadata`, `allowed-tools`) and grok-build adds nine
+     more (`discovery.rs:300–318`). None of the fifteen expresses project
+     shape. Inventing a sixteenth to serve a saving measured at 17 % of
+     description bytes is the worst ratio on the whole list.
+   - **If it ever were wanted, it must not be a top-level key.** The spec's
+     `metadata` map is the sanctioned home for client-specific properties
+     ("reasonably unique key names"), so the spelling would be
+     `metadata: {pikuri-project-has: "build.gradle"}`. grok-build putting
+     its own nine at top level is a thing to *not* copy, not a precedent.
+   - **The host already answers it, without frontmatter.** pikuri's
+     `Catalog::Bundled` takes `search_bases:`, and `.pikuri/skills` is
+     scanned from the *project root* — so "this skill applies to this
+     project" is already expressible by putting the skill in the project.
+     What is genuinely unserved is the narrower *project-**type*** case
+     ("all my Gradle projects"), which is why the author keeps it in
+     `~/.claude/skills` and nudges from CLAUDE.md instead.
+
+   **Author's decision, 2026-08-16 — see the sister note's R9:** *"let's
+   not invent new machinery, accepting that the `gradle` skill may or may
+   not autoload, based on LLM discretion."* So the answer to this question
+   is: the glob does **not** beat the sentence, and neither does anything
+   else proposed here. Judgment stays the activation mechanism, and the
+   description is the only lever on it.
 3. **A non-standard frontmatter key is a compatibility cost.** `paths:`
    isn't in the Agent Skills spec. A skill authored for pikuri would
    behave differently in Claude Code (which ignores unknown keys and lists
@@ -325,19 +363,31 @@ building it for skills keeps that option open at no extra cost.
    [`tool-list-in-context.md`](tool-list-in-context.md) owns.
 
 
-## Graduation plan (when this settles)
+## Graduation plan (settled — rejected)
 
-- **Rejected** → the shared `DECISIONS.md` entry (the
+- **The rejection** → the shared `DECISIONS.md` entry (the
   what-the-catalog-advertises-and-when-the-body-arrives axis, per
   `skill-cost-model.md` open question 2) gains the
   advertise-always-vs-path-gated fork, plus a one-line why-not where a
   future reader would look — probably {Pikuri::Skill::Catalog}'s yardoc,
-  since the temptation recurs whenever someone's catalog gets big.
-- **Built** → `paths:` semantics to {Pikuri::Skill::Catalog} yardoc, the
-  activation mechanism to `pikuri-skills`' own docs, the
-  observe-via-`ToolCall`-args pattern to CLAUDE.md only if it becomes a
-  seam (it would be the first listener that *acts*, which is a real
-  invariant worth recording against the capability seam).
+  since the temptation recurs whenever someone's catalog gets big. Carry
+  **three numbers and one defect**, because they are what make the entry
+  re-usable rather than an opinion: 17 % of description bytes cleanly
+  gateable on a real 12-skill catalog; ~200 tokens per turn; the estimate
+  that preceded the authoring was 3× optimistic; and `paths:` fires on
+  *touch*, never on *existence*, so the two most mechanical real triggers
+  (is-a-Gradle-project, is-a-Maven-project) are inexpressible.
+- ~~**Built** → `paths:` semantics to {Pikuri::Skill::Catalog} yardoc…~~
+  Moot. The one piece worth keeping from the build sketch is negative and
+  belongs in the entry: the mechanism needs a matcher, a listener, a
+  path-args map and an injection channel, and it would have been **the
+  first listener that *acts*** — a real invariant against the capability
+  seam, and part of why the price was wrong for the prize.
+- **The frontmatter survey** → `COMPARISON.md`, which is the doc that owns
+  what others do: the spec's six fields, grok-build's nine extras, and the
+  fact that the spec's `metadata` map is the sanctioned extension point
+  grok-build declines to use. That outlives this decision entirely — it is
+  the reference anyone reaches for the next time a custom key is proposed.
 - The path-args map (supplied vs. walked paths, and where the map lives)
   is a fact about tools, not about skills — if it gets built it belongs
   wherever that mechanism lands, and it should be cross-referenced from

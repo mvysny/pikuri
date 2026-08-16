@@ -1,8 +1,13 @@
 # Does the skill catalog earn its slot in the system prompt?
 
-Status: **open question; three items now owed regardless of how it
-settles** (enum + name strictness, description injection-scan parity, the
-`SkillTool` description bug — open questions 1–3). Split out of what is now
+Status: **the trigger axis is settled — no new machinery (R9); four items
+remain live.** Rejected: `paths:` gating, tier 0, and the `project-has:`
+predicate that was proposed and killed the same day; activation stays
+model judgment, so the *description* is the only lever and the authoring
+guidance (question 11) is now the whole intervention. Still owed
+regardless: enum + name strictness, description injection-scan parity, the
+`SkillTool` description bug (questions 1–3), plus the one surviving fork —
+where the baseline lives (question 4). Split out of what is now
 [`skill-path-activation.md`](skill-path-activation.md), where it arrived
 as a thread. It's a *sister* idea, not a sub-idea: that note asks "*when*
 should an entry be promoted?", this one asks the prior question — **is an
@@ -763,11 +768,63 @@ Two concessions to the statement, both real:
   question 10.
 
 
+### R9. Decision (author, 2026-08-16): no new machinery — LLM discretion stands
+
+> Let's not invent new machinery, accepting that the `gradle` skill may or
+> may not autoload, based on LLM discretion.
+
+The close on the whole trigger axis, and it lands where the evidence had
+been pointing for several rounds: the resident description catalog stays,
+activation stays a matter of model judgment, and **nothing is built to
+make it deterministic.**
+
+What that settles, in order of how much machinery each would have cost:
+
+- **`project-has:` — dead before it existed.** Proposed one turn earlier
+  in `skill-path-activation.md` as the predicate `paths:` is missing; not
+  in the spec, not in grok-build, not anywhere (verified below). Inventing
+  a predicate no harness implements to serve a saving measured at 17 % was
+  the clearest thing on the list to drop.
+- **`paths:` gating in pikuri — rejected.** Not because it is exotic (it
+  ships in grok-build) but because *adopting* it is a matcher, a listener,
+  a path-args map, an injection channel and a per-activation Anthropic
+  cache invalidation, bought for ~200 tokens per turn.
+- **Tier 0 — falls with it.** Withholding descriptions only makes sense if
+  something later promotes them; with no trigger, tier 0 is a names-only
+  catalog *permanently*, which this note argues is worse than what exists.
+  The tier table survives as an *analysis* of what each level costs, not
+  as a proposal.
+
+What it explicitly does **not** settle, and none of it is machinery:
+
+- **The three owed-regardless items** (open questions 1–3): the schema
+  enum plus its name-strictness prerequisite, injection-scan parity for
+  descriptions, and the `SkillTool` description bug. All are corrections
+  to what already ships.
+- **The authoring guidance** (R3, question 11): lead with the trigger,
+  cut the narrative. This decision makes it *more* load-bearing, not less
+  — if judgment is the only activation mechanism, the description is the
+  only lever, so the `cop` / `writing-rdoc` rewrite is now the whole
+  intervention rather than a cheap first test.
+- **R2's host load path** (question 7): {Pikuri::Skill::Extension#schedule_load_skill}
+  already exists and is unexposed. Exposing it is wiring, not machinery,
+  and it remains the honest answer to a nudge that wants determinism.
+
+The reframe worth keeping: the author's own nudges asked for deterministic
+loading (R2), and this decision declines to build it *harness-side* while
+leaving the *host-side* seam that already models it. Those are consistent
+— what was rejected is pikuri inferring intent from file paths, not a
+human declaring it.
+
+
 ## Open questions
 
-Ordered by what blocks what, not by interest. Items 1–3 are owed
-regardless of how the forks settle; 4–7 are the forks; 8–10 are the
-measurements that decide them; 11–15 are content and compatibility.
+Ordered by what blocks what, not by interest. **Questions 5, 6 and 8 are
+closed by R9**; they are kept, marked, because the arithmetic is the
+reason and a future reader will re-propose the mechanism without it. Items 1–3 are owed
+regardless of how the forks settle; 4–7 are the forks (4 and 7 survive
+R9); 8–10 are the measurements that decide them; 11–15 are content and
+compatibility.
 
 ### Owed regardless
 
@@ -802,7 +859,7 @@ measurements that decide them; 11–15 are content and compatibility.
    `skill-cost-model.md` cheap borrow 3 (the stale "opencode is the
    outlier" sentence in the same class header) — one pass, one commit.
 
-### The forks
+### The forks (5–6 closed by R9; 4 and 7 survive)
 
 4. **Where does the baseline live — system-prompt block, or tool
    description + enum?** Observation 4's middle row, and the only fork
@@ -815,7 +872,14 @@ measurements that decide them; 11–15 are content and compatibility.
    is correct for both agent kinds. Residual from the resolved sub-agent
    question: this makes a persona's skill access all-or-nothing on
    `tool_names:`, which is fine until someone wants a subset.
-5. **Does tier 0 earn it — now that it's a cost argument only?** Per R1,
+
+   **Status after R9: still live, and now the only fork left.** R9 killed
+   the trigger, not the placement question — this one was always
+   independent of tier 0, and it is the half that fixes a shipped bug
+   (question 3) rather than adding behaviour. It is also the *cheapest*
+   thing on the list: moving a string.
+5. ~~**Does tier 0 earn it — now that it's a cost argument only?**~~
+   **Closed by R9 — no.** Per R1,
    the activation half belongs to the sister note, so this turns purely on
    catalog size. Measured here, after authoring the frontmatter rather
    than estimating it: **17 % of description bytes, ~200 tokens per turn**,
@@ -838,10 +902,20 @@ measurements that decide them; 11–15 are content and compatibility.
 
    **Two answers, 2026-08-16.**
 
-   *(a) An empty `paths:` is not the spelling.* Asked whether `paths: []`
-   could express "human-only" for free, since a skill that never matches
-   is never promoted. It would work, and it should still be rejected on
-   four counts: it is a **coincidence, not a declaration** (the two
+   *(a) An empty `paths:` is not the spelling — and it is inverted.*
+   **Verified against grok-build source, 2026-08-16**
+   (`skill_discovery_tracker/conditional.rs:38`):
+
+   ```rust
+   s.paths.as_ref().is_some_and(|p| !p.is_empty()) && !self.activated.contains(&s.dedup_key())
+   ```
+
+   An empty list is *explicitly not gated*. So in the only shipped
+   implementation `paths: []` does not merely fail to mean "human-only" —
+   it marks the skill **unconditional**, the exact opposite. That settles
+   it on its own; the four reasons below were argued before the check and
+   stand as the design case. It is a **coincidence, not a declaration**
+   (the two
    propositions coincide only under today's promotion rule — add a second
    trigger and `paths: []` silently stops meaning "never"); it is a
    **YAML footgun with an inverted failure**, because absent-`paths:`
@@ -1010,6 +1084,46 @@ measurements that decide them; 11–15 are content and compatibility.
     non-standard keys is no longer three separate small costs**; it is a
     dialect. If any of them lands, they should be justified and spelled
     (grok-build's spelling) in one pass, so at least two harnesses agree.
+
+    **Verified 2026-08-16, and the dialect is worse-shaped than assumed.**
+    The Agent Skills spec defines exactly six frontmatter fields — `name`,
+    `description`, `license`, `compatibility`, `metadata`, `allowed-tools`
+    — and **none of them expresses when a skill applies.** grok-build's
+    `discovery.rs:300–318` carries nine more on top: `short_description`,
+    `author`, `argument_hint`, `model`, `effort`, `user_invocable`,
+    `disable_model_invocation`, `when_to_use`, `paths`.
+
+    The find that matters: **the spec has a sanctioned extension point and
+    grok-build ignores it.** `metadata` is *"an arbitrary key-value mapping
+    … clients can use this to store additional properties not defined by
+    the Agent Skills spec"*, with the spec recommending "reasonably unique"
+    key names to avoid collisions. grok-build put its nine at top level
+    anyway — so its extensions are not merely non-standard, they are
+    **off-spec**, and any of them could collide with a future official
+    field of the same name.
+
+    That turns the borrow into a real fork, should pikuri ever want one of
+    these keys:
+    - **grok-build's spelling** — two harnesses agree, and you inherit the
+      spec violation and the collision risk;
+    - **`metadata: {pikuri-when-to-use: …}`** — spec-clean, collision-safe,
+      and agrees with nobody.
+
+    For a key that already exists somewhere the first is arguable. For a
+    *newly invented* predicate there is no "two harnesses agree" to buy, so
+    `metadata:` wins by default — which is half of why R9 declined to
+    invent one. Also worth knowing: `compatibility` is the nearest existing
+    field in spirit (its own examples are *"Requires git, docker, jq"*,
+    *"Designed for Claude Code"*) but it is free text capped at 500 chars,
+    aimed at a human judging "will this work in my environment". Nothing
+    parses it, and it cannot carry a machine predicate.
+
+    Failure mode of any unknown key, confirmed both ways: **fail-open.**
+    `Catalog::Bundled#parse_skill` reads only `frontmatter['description']`
+    and `['name']` and drops the rest; and `wh` carried `argument-hint:` in
+    `~/.claude/skills/` for months while Claude Code listed it normally. A
+    tagged skill is simply advertised unconditionally everywhere — which
+    costs nothing and buys nothing until someone implements the key.
 13. **Where do we say `paths:` is not an access control?** Per R4, the
     enum must carry every name, so a gated skill's body is loadable at
     any time — gating hides a description and restricts nothing. Correct
@@ -1053,12 +1167,14 @@ restores?"* — no, per R7.
   where the axes cross — a skill that costs resident tokens to say
   "ignore me" is a bundle filed on the wrong surface, and that is a
   one-line cross-reference, not a merged entry.
-- **If tier 0 is built** → the three-tier table belongs in
-  {Pikuri::Skill::Renderer}'s header, which already documents the two
-  renders and would gain a third; the `paths:`-implies-withhold rule to
-  {Pikuri::Skill::Catalog} yardoc alongside the `paths:` semantics
-  themselves.
-- **If rejected** → the durable nugget is the **40:1
+- ~~**If tier 0 is built** → the three-tier table belongs in
+  {Pikuri::Skill::Renderer}'s header…~~ **Moot per R9.** The tier table
+  still graduates, but as *analysis* rather than design: it is the clearest
+  statement of what each disclosure level costs, and
+  {Pikuri::Skill::Renderer}'s header is still where a reader of the two
+  shipped renders would want it. Write it as "here is why there are two
+  renders and not three."
+- **Rejected, which is now the live branch** → the durable nugget is the **40:1
   names-to-descriptions measurement** and why "just delete the catalog"
   doesn't follow from it (the name has to come from somewhere; a
   hand-written CLAUDE.md nudge is the same words in a rotting home). One
