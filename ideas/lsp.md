@@ -1,12 +1,13 @@
 # LSP client — language intelligence for the coding agent
 
 Status: **investigated, not built.** Protocol mechanics are settled and
-verified against live servers, plus a third pass through a shipped
-client (below); the direct-vs-MCP fork is decided in principle; the
-tool-surface sketch is the live part, though the static-enum /
-gate-at-dispatch question is now settled inside it. The registry entry's
-field list is drafted (Configuration), with the lifecycle questions
-around it still open.
+verified against live servers — ruby-lsp, rubocop, a shipped client, and
+now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
+is decided in principle; the registry entry's field list and the
+progress-delivery mechanism are drafted (Configuration). The
+tool-surface sketch is the live part. Two lifecycle questions remain
+open: what a result outside the workspace root becomes, and whether
+`bin/pikuri-code` registers a Ruby server by default.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -216,6 +217,82 @@ truth, the constant half answers "what is this class for?" in one call
 without reading a file — a different operation from `read`, not a third
 spelling of it.
 
+## Findings from a live jdtls run
+
+A fourth throwaway client, against `jdtls` 1.58 / JDK 25, on three
+fixtures: a two-file plain-Java project, and a copy of the `vaadin-boot`
+Gradle multi-module repo (copied to a scratch dir precisely because a
+jdtls import writes `.project` / `.classpath` / `.settings/` into the
+project directory) run both cold and warm. This settles the readiness
+open question, and reverses one deferral.
+
+**J1. `$/progress` from jdtls is opt-in via *our* capability.** Declare
+`window.workDoneProgress: true` and tokens flow; omit it and jdtls emits
+**zero** `$/progress` messages, narrating startup only through
+`language/status` — a custom notification outside the LSP spec. So the
+readiness signal is not merely per-server, it is contingent on what the
+client asked for.
+
+**J2. There is a usable readiness edge, and it is a long-lived token.**
+Cold import of the Gradle repo: an `Initialize Workspace` token opened at
+2.08s and stayed open for the entire 74-second import, ending at 76.43s
+together with `language/status` `ProjectStatus OK` and `Started "Ready"`;
+`ServiceReady` followed 0.14s later, and the first correct answer 1.5s
+after that. So the token's `end` is a good edge. But it is *bracketed* by
+transient tokens — the plain project produced eight (`Building`,
+`Check JDK Index`, `Synchronizing projects` ×2 concurrent, `Detect
+installed JVMs`, `Validate documents`, …), several beginning and ending
+inside the same millisecond, and there **all** tokens were closed 0.9s
+before the server could answer. "No tokens open" is therefore a false
+ready-edge; a short settle-debounce is what makes the rule usable, and a
+debounce is not the timeout we removed — it never abandons the wait.
+
+**J3. The gate is a ruby-lsp workaround, not a universal need — jdtls
+defers instead of lying.** Every `textDocument/definition` sent during
+that 74-second import got *no response at all*; the whole backlog flushed
+at 77.87s with correct answers. Finding 2's catastrophic early-`[]` is a
+ruby-lsp behaviour, not LSP's. Since a false-early gate is harmless
+against a server that defers and essential against one that doesn't, one
+generic quiescence-plus-debounce gate covers both — **and the feared
+per-server readiness predicate is not needed.** The open question closes
+without a config knob.
+
+**J4. `initializationOptions` stops being deferrable.** Navigation to any
+library symbol returned `0 location(s)` — silently, with no error, and
+with **empty diagnostics on the file**, so the classpath was fine and it
+compiled cleanly. It is not a readiness or resolution failure: jdtls
+withholds library definitions unless the client declares
+`initializationOptions.extendedClientCapabilities.classFileContentsSupport`,
+another non-spec extension. Declaring it flips `LoggerFactory` from
+nothing to a hit, in the same warm 7.7s. An agent without it concludes
+"slf4j has no definition" — finding 2's false premise by a different
+route. This is the tripwire the `init_options:` deferral named, tripped
+before shipping.
+
+**J5. A Java library definition is not a file.** That hit came back as
+`jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…` —
+a virtual URI whose contents are fetched with jdtls's own
+`java/classFileContents` request. `Filesystem#denied?` cannot be applied
+to it and the model cannot `read` it. So the confinement open question
+has one arm forced: for non-`file:` results the tool must return
+*content*, or drop them and forfeit library navigation entirely.
+
+**J6. Warm start is 10× cheaper, which settles the data-dir question.**
+Same repo, same `-data`: 78s cold, 7.7s warm. `Paths.cache` (shared,
+persistent) over `Paths.new_temp`, as leaned.
+
+Two corrections to the Ruby findings above, both from this run:
+
+- **Finding 7 understates it.** jdtls answered `positionEncoding: nil` —
+  it ignored our `utf-8` offer and stayed on the 3.17 utf-16 default. The
+  UTF-16 offset conversion is therefore mandatory code exercised by one
+  of the two shipped examples, not a fallback for a hypothetical server.
+- **`didOpen` is a precondition nowhere stated.** No query answers until
+  the document has been opened with its full text. The `lsp` tool takes a
+  path and the model never "opens" anything, so the tool opens it — and
+  the file it opens must be the one on disk, which is a read the
+  `Workspace` seam should route.
+
 ## There is no Ruby LSP client gem
 
 Checked rubygems:
@@ -393,7 +470,7 @@ Ruby that is the entire entry. Two more fields earn their place, and two
 that look obligatory must *not* exist.
 
 ```ruby
-StdioEntry = Data.define(:id, :command, :files, :env)
+StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
 ```
 
 - **`id`** — `"ruby"`, `"java"`. Unlike MCP's id this is *not* a
@@ -412,6 +489,14 @@ StdioEntry = Data.define(:id, :command, :files, :env)
   `StdioEntry#env`'s role in MCP: the legitimate per-child channel of the
   "Environment is not a secret store" seam. Here it carries `JAVA_HOME`
   rather than a token.
+- **`init_options`** — passed verbatim as `initializationOptions` in the
+  `initialize` request; pikuri never parses the contents. Deferred as
+  speculative until J4 tripped its own tripwire: without
+  `extendedClientCapabilities.classFileContentsSupport` jdtls silently
+  refuses every library definition, so this is the difference between
+  Java navigation working and quietly returning nothing. It is the
+  designated home for per-server non-spec glue, which keeps the client
+  generic — pikuri has no jdtls special case, the Java *entry* does.
 **No `startup_timeout:`, and no timeout at all.** The obvious fifth field
 — ruby-lsp indexes this repo in seconds, a cold jdtls import is minutes —
 is a trap twice over. No value is defensible (30s is wrong for Java, 300s
@@ -575,7 +660,10 @@ that being the correct behaviour:
 Pikuri::Lsp::Registry::StdioEntry.new(
   id: 'java', files: %w[*.java],
   command: ['jdtls', '-data', Pikuri::Paths.cache('jdtls', project_slug).to_s],
-  env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') }
+  env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') },
+  init_options: {
+    extendedClientCapabilities: { classFileContentsSupport: true }
+  }
 )
 ```
 
@@ -628,24 +716,27 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   capability is granted. Note this lands differently per host — under
   `bin/pikuri-code` the gem sources are already reachable via `bash`, so
   nothing is widened; under a read-only workspace-confined host it is a
-  new leg.
-- **The readiness gate may not be generic — and it is now load-bearing.**
-  Finding 2 says block on the indexing-progress `end`, which is right for
-  ruby-lsp. jdtls also emits its own `language/status` notification, and
-  whether `$/progress` alone suffices there is unverified. With the
-  timeout removed there is no clock as backstop, so a server that never
-  opens a progress token leaves the gate waiting for something that never
-  begins, and the fallback — query anyway — *is* finding 2's false-premise
-  answer. Verify the jdtls signal before Java ships in the chapter, not
-  after. Worst case the gate needs a per-server predicate, the one thing
-  that would put a genuinely ugly knob back in `StdioEntry`.
+  new leg. **J5 forces one arm for Java**: a library definition comes back
+  as a `jdt://` URI, not a path — nothing to deny-check, nothing to
+  `read`, contents only via jdtls's own `java/classFileContents`. So
+  either non-`file:` results return *content*, or Java library navigation
+  is dropped outright. The snippet answer and the `jdt://` answer are the
+  same mechanism, which is a good sign it is the right one.
+- ~~**The readiness gate may not be generic.**~~ **Settled by J1–J3** —
+  one generic gate (all progress tokens closed, plus a short settle
+  debounce) serves both servers, because a false-early edge is harmless
+  against a server that defers its replies and essential against one that
+  answers `[]`. No per-server predicate, no knob. What must not be
+  forgotten is the *capability* half: `window.workDoneProgress: true`
+  has to be declared or jdtls emits no progress for the gate to watch.
 - **Concurrent sessions in one repo.** Two `pikuri-code` processes on the
   same checkout hand both servers the same state directory (jdtls's
   `-data`, ruby-lsp's in-repo `.ruby-lsp/` custom bundle). `Paths.cache`
   is shared-and-persistent by design; `Paths.new_temp` would fix the
   collision and re-index from scratch every session, which for jdtls costs
-  minutes. Probably: keep `cache`, accept that the second session may fail
-  to start its server and degrades to grep.
+  minutes — J6 measured it at 78s cold against 7.7s warm on the same repo.
+  So: keep `cache`, accept that the second session may fail to start its
+  server and degrades to grep.
 - **Missing binary at boot.** If `bin/pikuri-code` ships a Ruby entry
   registered *by default* — which is the only way the feature gets used —
   then a machine without `ruby-lsp` must warn loudly and degrade, not
@@ -665,13 +756,11 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   gate; breaks the closeable threat model. Not in v1.
 - **Depending on `language_server-protocol`.** See above — 40 lines of
   framing, wrong reader shape.
-- **An `init_options:` passthrough** on `StdioEntry` (verbatim into
-  `initialize`, plus a `settings:` slice to answer the server's
-  `workspace/configuration` requests with something other than `null`).
-  It is the standard LSP escape hatch and costs a line, but neither
-  reference server needs it, and "a config knob for the next concrete
-  step" is the bar. Tripwire: the first server that won't work without it
-  adds it as an uninterpreted hash — pikuri never parses the contents.
+- ~~**An `init_options:` passthrough** on `StdioEntry`.~~ **Reversed by
+  J4** — jdtls needs it for library navigation, so it is a field now. What
+  stays deferred is the *other* half: a `settings:` slice to answer the
+  server's `workspace/configuration` requests with something other than
+  `null`. Both reference servers tolerate `null`s.
 - **Hover as a `read` replacement.** Deferred as a third way to read code
   alongside `read` and `grep`. Finding 8 weakens that reasoning: on a
   *constant*, one hover returns the whole yardoc class comment, which in
@@ -685,7 +774,11 @@ the `.md` refusal is a live behaviour, not a hypothetical.
 When built: protocol mechanics + the "capabilities are per-workspace"
 and "empty result ≠ no definition" lessons → book chapter (both are
 better taught with the observation that a shipped client gets the second
-one wrong); per-symbol rationale → yardoc on `Lsp::ClientWrapper` / the
+one wrong, and the second is sharper for J3's contrast — one server
+defers, the other answers `[]`, and only one of them can be trusted);
+the three silent-empty traps (pre-index query, an undeclared
+`classFileContentsSupport`, a fuzzy `workspace/symbol` hit) → one book
+section, since they are the same lesson wearing three hats; per-symbol rationale → yardoc on `Lsp::ClientWrapper` / the
 tool, including why the `operation` enum is static while gating happens
 at dispatch; the walked-path-filtering and Subprocess-exception
 invariants → a `CLAUDE.md` seam entry; the entry's field-by-field
