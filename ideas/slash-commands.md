@@ -22,7 +22,9 @@ Related:
 - [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — the
   sister surface, and the reason the split is cheap: every argument
   there is about *what the catalog costs in the prompt*. A command costs
-  **zero prompt tokens**, so none of it applies.
+  **zero prompt tokens**, so none of it applies. Its **question 6 is
+  this note's second motive** — see below; read that question and this
+  note together, they answer each other.
 - [`claude-parity.md`](claude-parity.md) — Claude-Code parity, but for
   the *prompt*. This is a *harness* parity item; if it lands, that note
   gains nothing and this one graduates on its own.
@@ -45,6 +47,35 @@ drives a design decision:
 | on-disk unit | directory + `SKILL.md` + sidecars | one `.md` file; subdirs are namespaces |
 
 The middle two rows are the ones that settle the API.
+
+### The second motive: it's also the fix for a measured resident cost
+
+This note started as "pikuri can't see my commands dir". The sister
+note's catalog measurement (2026-08-16) supplies an independent second
+reason, and it's the stronger one.
+
+Two of the 12 skills measured — `wh` and `grill-me` — were
+slash-commands filed as skills. `wh` even carried `argument-hint:`, a
+command frontmatter key. Their descriptions were resident tokens spent
+**telling the model to ignore them**, on every turn, forever (`wh`'s
+read *"Only invoked manually."*). That note reaches for a
+`disable-model-invocation:` frontmatter key to withhold them. The real
+answer is that they aren't skills: a bundle the human invokes belongs on
+the human-invoked surface, where it costs nothing resident because it
+was never advertised in the first place.
+
+Both moved to `~/.claude/commands/` the same day — **and thereby became
+invisible to pikuri**, which is the regression this note closes. So the
+two notes answer each other: theirs is "how do we stop paying for a
+human-only bundle?", ours is "stop filing it as a skill", and that only
+works once pikuri reads the other directory.
+
+Worth stating plainly because it changes the priority. As "read my
+commands dir" this is a convenience with no in-repo consumer (see "No
+host today"). As "the surface that makes a whole category of skill cost
+zero", it's the cheapest of the three mechanisms that note is weighing —
+no matcher, no listener, no path-args map, no injection channel, no
+per-activation cache invalidation.
 
 
 ## The proposal, and the three places I'd change it
@@ -302,7 +333,9 @@ that spot (`pikuri-code/bin/pikuri-code:526`), so the wiring is one
 within "a `bin/` script takes the crudest handling that works".
 
 If we're not willing to add even that, the feature is speculative and
-should wait for the TUI.
+should wait for the TUI — but note that the second motive above raises
+the stakes on waiting: every day this isn't built, two bundles that used
+to be reachable from pikuri aren't.
 
 
 ## Open questions
@@ -370,7 +403,12 @@ should wait for the TUI.
   and the answer (`allowed-tools:` in the untrusted file is not a gate)
   is not reconstructible from code that never grew the feature. These
   are separate from the skill notes' shared advertise-and-when entry —
-  different axis, different decision.
+  different axis (*which surface a bundle belongs on*, not *what the
+  catalog advertises*), so separate entries that **cite each other**.
+  The crossing point is that note's question 6, and the sentence worth
+  carrying across is the one the measurement produced: a skill whose
+  description tells the model to ignore it is a bundle filed on the
+  wrong surface.
 - **Rejected** → a one-line why-not in `Pikuri::Skill::Catalog`'s
   yardoc, since "why doesn't pikuri see my `.claude/commands`?" is the
   question that lands there.

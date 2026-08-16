@@ -29,6 +29,10 @@ Related:
 - [`claude-parity.md`](claude-parity.md) — "Skill-invocation emphasis —
   measure" is the description-side rival: maybe the catalog works fine
   and the descriptions are just bad.
+- [`slash-commands.md`](slash-commands.md) — the *other surface* this
+  note's question 6 turns out to be reaching for. `wh` and `grill-me`
+  left the catalog for `~/.claude/commands/` mid-measurement; that note
+  is what makes pikuri able to see them again.
 
 
 ## The question
@@ -290,6 +294,17 @@ invocation and costs nothing resident. The catalog is now **10 skills /
 4 651 description bytes**. Keep the 12-skill figures above as the
 measurement of record: they are what the argument was derived from, and
 re-deriving against a shrinking catalog would quietly move the goalposts.
+
+**And note where they went: somewhere pikuri cannot follow.** The
+catalog scans `.pikuri/skills` / `.claude/skills` / `.agents/skills` and
+requires a directory holding `SKILL.md`, so both skills are now invisible
+to pikuri rather than cheap — the resident cost went to zero by the
+skill leaving the building. That is a fix for Claude Code and a
+regression for pikuri, and it is what
+[`slash-commands.md`](slash-commands.md) exists to close. Read the two
+together: this note's question 6 is *"how do we stop paying for a
+human-only skill?"*, and that note's answer is *"stop filing it as a
+skill"* — which only works once pikuri can read the other directory.
 Note what the shrink cost, too — `grill-me`'s description carried a
 genuine lexical model trigger (*"or mentions 'grill me'"*), so as a
 command it now fires only on `/grill-me` and no longer on the phrase in
@@ -863,6 +878,24 @@ measurements that decide them; 11–15 are content and compatibility.
    `disable-model-invocation:` is needed at all.** The key only earns its
    way in for a skill that must stay in the *catalog* (sidecar files,
    `roots` wiring) while staying out of the *prompt*.
+
+   *(c) …but "resolved outside pikuri" is doing a lot of work.* Both
+   skills are now invisible to pikuri, not cheap (see the measurement's
+   note above), so as things stand the fix is a Claude-Code fix that
+   costs pikuri the skill. **Question 6 therefore also depends on
+   [`slash-commands.md`](slash-commands.md)** — the same shape as its
+   dependence on question 7, and the fourth route to the same
+   conclusion: the answer keeps turning out to be *a path pikuri doesn't
+   expose yet*, not *a key in the frontmatter*.
+
+   Which reorders the shortlist. If commands ship, question 6 collapses
+   to the carve-out it already names — a skill needing catalog
+   membership (sidecars, `roots`) but not prompt residency — and that is
+   a genuinely narrow case, possibly empty. So
+   `disable-model-invocation:` is not "the cheaper first cut"; it is a
+   *third* cut, behind the host load path (question 7) and the command
+   registry. Worth re-asking only once both exist and something still
+   hurts.
 7. **Should the host-driven load path be built before any trigger?** R2's
    conclusion: the hand-written nudges are asking for deterministic
    loading, which is {Pikuri::Skill::Extension#schedule_load_skill} — a
@@ -1014,7 +1047,12 @@ restores?"* — no, per R7.
   one — the *what the catalog advertises, and when the body arrives*
   axis, stated here at its most general. Entries are mutable; this
   extends it in place. (`skill-cost-model.md` open question 2 settled
-  that coordination.)
+  that coordination.) **`slash-commands.md` is the exception**: it is a
+  different axis (*which surface a bundle belongs on*) and takes its own
+  entries. The two should cite each other, because question 6 is exactly
+  where the axes cross — a skill that costs resident tokens to say
+  "ignore me" is a bundle filed on the wrong surface, and that is a
+  one-line cross-reference, not a merged entry.
 - **If tier 0 is built** → the three-tier table belongs in
   {Pikuri::Skill::Renderer}'s header, which already documents the two
   renders and would gain a third; the `paths:`-implies-withhold rule to
