@@ -5,8 +5,10 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The
-tool-surface sketch is the live part; the last lifecycle question,
-what an out-of-root result becomes, is settled too.
+tool-surface sketch is the live part; the last lifecycle question, what
+an out-of-root result becomes, is settled too, as is the testing story.
+Two implementation-level questions are parked for the next session — see
+"Open — revisit in an upcoming session".
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -914,11 +916,46 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "errors are loud", with no default to break for people who never asked
   for LSP.
 
-## Not yet decided — but implementation-level, not design forks
+## Testing
 
-Everything above settles the *design*. These three are the decisions the
-first hour of coding runs into, and none of them is discussed anywhere in
-this note:
+**A fake server driven over in-process pipes, not a subprocess.** The
+client's transport is a pair of IOs; a spec hands it `IO.pipe` ends and
+plays the server side from a thread in the same process. No spawn, no
+binary to install, one backtrace instead of two.
+
+The structural implication is the part worth writing down: **the wrapper
+must not spawn in its constructor.** `ClientWrapper.new(stdin:, stdout:)`
+with a separate `.spawn(entry)` factory — the same two-phase
+construct-then-start shape {Pikuri::Mcp::Servers} already documents, so
+this is consistency rather than a seam cut for tests.
+
+Three layers, because the middle one cannot be done in-process:
+
+1. **Protocol logic → in-process pipes.** Framing, id demux, answering
+   server→client requests, the readiness gate, progress coalescing,
+   capability gating, denylist filtering, capping. This is also the only
+   way to test the failure paths that matter most, since a real server
+   will not produce them on demand: an early `[]` (finding 2), a progress
+   token that never closes (J2), a reply that never arrives, hostile
+   bytes in a `title`. Drive the fake from a thread — a spec that writes
+   more than the pipe buffer with nobody reading will deadlock.
+2. **Spawn and death → tiny real subprocesses, no LSP involved.** A
+   nonexistent command for the missing-binary raise; `sh -c 'exit 1'` for
+   child-death detection and the stderr tail; teardown through
+   {Pikuri::Finalizers}. In-process pipes give EOF but no exit status, so
+   this layer is what covers "died" as distinct from "closed".
+3. **One live-server smoke spec** against `ruby-lsp`, tagged to skip when
+   the binary is absent. Proves the stack works end to end without making
+   CI depend on it — the `ruby:4.0` image has no `ruby-lsp`, and while CI
+   already installs `ripgrep` for the Grep specs, layers 1 and 2 mean
+   nothing here *needs* that precedent followed.
+
+## Open — revisit in an upcoming session
+
+Everything above settles the *design*. These are implementation-level
+decisions rather than design forks, but the first hour of coding runs
+into them, so they are the place to start next time. (The testing story
+was the third; it is settled below.)
 
 - **Which operations the enum actually contains.** "Static, the superset
   pikuri supports" is settled; the membership is not. Claude Code ships
@@ -928,16 +965,6 @@ this note:
   argument that collapsed name→position. Likely v1: `definition`,
   `references`, `hover`, `documentSymbol`, `workspaceSymbol`. Decide
   before writing the description, since the description is the API.
-- **How this is tested, and whether CI can run it.** Every spec here
-  needs a live server subprocess, and the `ruby:4.0` CI image has no
-  `ruby-lsp` (CI already installs `ripgrep` for the Grep specs, so there
-  is precedent for adding one). The alternative is a fake server — a
-  scripted stdio responder replaying canned frames — which tests the
-  client's demux, gate, and capping without any real server, and is the
-  only way to test the *failure* paths that matter most here (early `[]`,
-  a token that never closes, a child that dies mid-request). Probably
-  both: a fake for the protocol logic, one live-server spec tagged to
-  skip when the binary is absent.
 - **The gem's trifecta contribution.** `Mcp::Extension` declares its
   legs; `pikuri-lsp` must too, and the answer is not obviously "nothing".
   No egress (the `http(s)` refusal is what buys that) and no new private
