@@ -460,8 +460,10 @@ Worth arguing with:
   `Filesystem#denied?` + root-confined + capped/grouped.
 - Book chapter when it lands (`book/language-intelligence.md`?) — the
   protocol is genuinely interesting and nothing else in pikuri teaches
-  "how does an editor know things". Two worked configs, Ruby and Java —
-  see Configuration.
+  "how does an editor know things". It also has to carry the *setup*,
+  since nothing ships wired and the user writes the server command
+  themselves: two worked configs, Ruby and Java, with every part of the
+  jdtls one explained — see Configuration.
 
 ## Configuration
 
@@ -710,6 +712,30 @@ config by having the reader add one to their own
 it, since the entry depends on which servers that reader has installed.
 The Ruby literals above are the shape the fields map onto; the chapter
 shows the YAML beside them, because that is what the reader types.
+
+Since the user writes the whole jdtls command themselves, the chapter
+owes them a default *and* what each part of it means. All four are
+evidenced by the runs above, which is what makes them explainable rather
+than cargo-cult:
+
+- **`jdtls`** — the Python launcher shipped with eclipse.jdt.ls. It execs
+  a JVM with the equinox launcher and a dozen `-D` flags; nobody should
+  hand-assemble that, so the entry names the launcher and adds only what
+  it can't guess.
+- **`-data <per-project dir>`** — the Eclipse workspace state. Override it
+  because the launcher's default is `sha1(File.basename(Dir.pwd))` under
+  a hardcoded `~/.cache`: two checkouts *named* the same collide, however
+  far apart they live. This is also the dir that makes a restart cheap
+  (J6: 78s → 7.7s), so it wants a real cache location, not `/tmp`, and
+  one per project.
+- **`JAVA_HOME`** — the JDK that *runs the server*, which is not the JDK
+  the project compiles against. The launcher hard-fails below Java 21
+  (`jdtls requires at least Java 21`) while your project may target 8;
+  a reader who conflates the two will "fix" the wrong one.
+- **`classFileContentsSupport`** — without it, every library symbol
+  answers with silence (J4). This is the one where the chapter should
+  show the failure first: a `LoggerFactory` that has no definition is a
+  better teacher than a capability flag nobody would question.
 
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
