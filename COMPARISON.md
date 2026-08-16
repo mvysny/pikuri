@@ -1388,9 +1388,12 @@ Three findings worth carrying:
    implements it. Qualified by finding 4: `paths:` is no longer unknown
    everywhere.
 4. **`paths:` is not a grok-build invention — Claude Code implements it
-   too.** Observed directly on 2026-08-16. Claude Code is closed-source,
-   so this is black-box evidence rather than a source citation, but the
-   behaviour is unambiguous: five skills under `~/.claude/skills` were
+   too.** Observed directly on 2026-08-16, on **Claude Code 2.1.233**
+   (every observation in this finding is that one version — the behaviour
+   is undocumented, so it carries no compatibility promise and a later
+   build may move it). Claude Code is closed-source, so this is black-box
+   evidence rather than a source citation, but the behaviour is
+   unambiguous: five skills under `~/.claude/skills` were
    annotated with `paths:`, and the four whose globs matched nothing read
    that session vanished from the session's skill listing, while
    `ideas-folder` (`ideas/**`) stayed — `ideas/*.md` had been read.
