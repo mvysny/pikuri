@@ -99,6 +99,17 @@ Four constraints the sketch encodes:
   and to any future picker. `Skill::Extension` owns the activation
   tracker and hands it to the listener, the `SkillTool` *and*
   `schedule_load_skill`; the catalog keeps telling the truth.
+- **`SkillTool` has two gates to fit, not one — and the second is the
+  one that gets missed.** Its `execute` lambda resolves `catalog.get(name)`
+  and then, on a miss, enumerates `catalog.list` into the error string
+  (`skill_tool.rb:57-59`). Gating only the lookup leaves the refusal
+  reciting every gated name, so `skill(name: "anything")` becomes a
+  one-call catalog dump and decision 2 is undone by its own error
+  message. The enumeration must come from the same filtered view the
+  render uses. Note this got *more* load-bearing on 2026-08-16: the
+  not-found error is now the documented recovery path for a persona
+  whose prompt carries no catalog at all, so it cannot simply be
+  emptied — it has to list the ungated names and only those.
 - **Two events fire, and they mark different moments.** The injection
   emits `Event::SystemInjected` unconditionally (`agent.rb:701`) — its
   contract is that the stream mirrors log growth, so it must not be

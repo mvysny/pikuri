@@ -269,7 +269,11 @@ conditional activation actually works*).
   announcement from the log, so the next touch must re-announce. Both the
   walked-path exclusion and the once-per-conversation rule were then
   observed in Claude Code before pikuri wrote a line of it — see
-  `COMPARISON.md` finding 4.
+  `COMPARISON.md` finding 4. **Every place that enumerates the catalog
+  is part of the change, not just the render** — including `SkillTool`'s
+  own not-found error, which lists `catalog.list` and would otherwise
+  turn one refused guess into a full catalog dump, hiding a name in the
+  prompt and reciting it in the error.
 - **`paths:` still is not access control, and now looks like it.** It
   withholds and refuses, but it restricts nothing, because **the gated
   party controls the trigger**: a model that wants a hidden skill need
