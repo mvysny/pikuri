@@ -403,10 +403,19 @@ land on its own.
    names in the tool's closure, returning "already loaded in this
    conversation" on a repeat); the only design question is what
    `clear_conversation` does to it, and the answer is obvious.
-6. **`when-to-use:` / `disable-model-invocation:` frontmatter** — noted,
-   not proposed. Both are non-standard extensions; worth knowing they
-   exist before inventing our own spelling if we ever want them. Whether
-   `when-to-use:` earns its way in is a catalog-note question.
+6. **`when-to-use:` frontmatter** — noted, not proposed. A non-standard
+   extension; worth knowing it exists before inventing our own spelling
+   if we ever want it. Whether it earns its way in is a catalog-note
+   question.
+
+   **`disable-model-invocation:` is answered and needs no key** (shipped
+   2026-08-16). The two skills this note measured as *resident tokens
+   spent telling the model to ignore them* — `wh` and `grill-me`, both
+   with "only invoked manually" descriptions — were skills filed on the
+   wrong surface. They are slash commands, which pikuri now scans from
+   `.claude/commands` and never advertises, so the cost is zero by
+   construction rather than by a key that suppresses a listing.
+   See `DECISIONS.md` `D-slash-commands`.
 7. **Compaction, when it ever exists.** The spec's Step 5 says to exempt
    skill content from pruning — losing a skill mid-conversation degrades
    the agent silently, with no error. pikuri doesn't summarize-and-

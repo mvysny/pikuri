@@ -78,6 +78,15 @@ cancel_flag = Pikuri::Agent::Control::Cancellable.new
 system_prompt = Pikuri.prompts(:'pikuri-assistant', :'agent-loop')
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 
+# Slash commands: prompt templates you invoke by typing /name, scanned from
+# .pikuri/commands / .claude/commands under the current directory and $HOME.
+# They cost nothing in the system prompt because the model is never told they
+# exist — the REPL below expands one into your own turn. Both bases are
+# unvouched here: unlike bin/pikuri-code this binary has no containment to
+# reason from, so it makes no claim about who wrote the files (the trifecta
+# banner grades them accordingly).
+command_registry = Pikuri::Command::Registry.new(search_bases: [Dir.pwd, Dir.home])
+
 # MCP servers available to the assistant. Hand-edit this array to add
 # providers — id is what the LLM references via +mcp_connect("...")+.
 # Two entry types: +StdioEntry+ for a local subprocess (argv to spawn)
@@ -167,6 +176,7 @@ begin
     c.add_tool Pikuri::Tool::WEB_SCRAPE
     c.add_tool Pikuri::Tool::FETCH
     c.add_extension mcp_ext
+    c.add_extension Pikuri::Command::Extension.new(registry: command_registry)
     c.add_extension Pikuri::SubAgent::Extension.new(personas: [Pikuri::SubAgent::RESEARCHER])
   end
 rescue Pikuri::Agent::Control::Cancellable::Cancelled
@@ -188,6 +198,10 @@ begin
   puts agent.trifecta.render
   puts
   puts 'Pikuri Assistant. Press Ctrl+C or Ctrl+D to quit.'
+  unless command_registry.empty?
+    names = command_registry.list.map { |cmd| "/#{cmd.name}#{cmd.refused? ? ' (unavailable)' : ''}" }
+    puts "Commands: #{names.sort.join(', ')}"
+  end
   if mcp_ext.servers && !mcp_ext.servers.empty?
     puts "MCP servers connected: #{mcp_ext.servers.live_ids.join(', ')}"
   end
@@ -200,6 +214,29 @@ begin
 
     message = line.chomp
     next if message.strip.empty?
+
+    # A typed /name expands into an ordinary user turn — you wrote it, the
+    # template just saved you the typing. Nothing is sent to the model until
+    # the expansion succeeds.
+    if message.start_with?('/')
+      name, arguments = message[1..].split(/\s+/, 2)
+      next if name.nil? || name.empty?
+
+      expanded =
+        begin
+          command_registry.expand(name, arguments: arguments.to_s)
+        rescue Pikuri::Command::RefusedError => e
+          puts "/#{name} is unavailable — #{e.message}"
+          next
+        end
+
+      if expanded.nil?
+        puts "No such command: /#{name}."
+        next
+      end
+
+      message = expanded
+    end
 
     run_turn(agent, message)
   end

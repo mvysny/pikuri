@@ -2,7 +2,8 @@
 
 [Agent Skills standard](https://agentskills.io/specification)
 support for the [pikuri](https://codeberg.org/mvysny/pikuri)
-AI-assistant toolkit.
+AI-assistant toolkit — plus its human-invoked counterpart, slash
+commands.
 
 Provides:
 - `Pikuri::Skill::Catalog` — discovery + validation of skill folders
@@ -13,6 +14,11 @@ Provides:
   a skill's body into the conversation on demand.
 - `Pikuri::Skill::Extension` — wires both into a `Pikuri::Agent` via
   the `c.add_extension(...)` block API.
+- `Pikuri::Command::Registry` / `Pikuri::Command::Renderer` — slash
+  commands: prompt templates *you* invoke by typing `/name`, scanned
+  from `.pikuri/commands` and `.claude/commands` under the same search
+  bases. Never shown to the model, so they cost nothing in the system
+  prompt.
 
 ## Install
 
@@ -45,6 +51,41 @@ When the catalog is non-empty, the extension's `configure` appends
 skill) and registers the `skill` tool. The LLM invokes `skill` with a
 name; the tool returns the skill's body wrapped with its base
 directory so the LLM can resolve sidecar files via `read`.
+
+## Slash commands
+
+A command is one Markdown file. The model is never told it exists —
+you invoke it by name, and what it expands to becomes *your* next
+message:
+
+```ruby
+registry = Pikuri::Command::Registry.new(
+  search_bases: [project_root, Dir.home]
+)
+
+# ~/.claude/commands/wh.md  ->  /wh
+text = registry.expand('wh', arguments: 'swingai')   # nil if no such command
+agent.run_loop(user_message: text)                   # it *is* your turn
+```
+
+`$ARGUMENTS` in the body becomes everything you typed after the name;
+`$1`…`$9` are its whitespace-separated words. Both are left alone
+inside backticks and fenced blocks, so a body that *writes about* its
+own arguments survives expansion. If the body mentions neither, what
+you typed is appended as `ARGUMENTS: …` instead of being dropped.
+
+A file's path is its name: `commands/frontend/deploy.md` is
+`/frontend:deploy`. Frontmatter is optional; `description` and
+`argument-hint` feed a menu, everything else is ignored — except
+`allowed-tools:`, which is refused, as is a body containing a
+`` !`cmd` `` directive. pikuri will not run a shell command because
+you typed a slash, and it will not silently *widen* a toolset an
+author asked to narrow. Add
+`Pikuri::Command::Extension.new(registry: registry)` to the agent so
+the trifecta report knows the commands are there.
+
+Try it in `bin/pikuri-code` or `bin/pikuri-assistant`: both list the
+commands they found at boot and dispatch a typed `/name`.
 
 ## Further reading
 

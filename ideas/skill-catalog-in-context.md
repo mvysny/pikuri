@@ -23,9 +23,10 @@ Related:
   the cheap-borrow list items 1 and 4 below come from.
 - [`skill-path-activation.md`](skill-path-activation.md) — the matcher
   mechanism `D-skill-path-activation` now commits to building.
-- [`slash-commands.md`](slash-commands.md) — the other surface; a skill
-  that costs resident tokens to say "ignore me" is a bundle filed in the
-  wrong place.
+- `DECISIONS.md` `D-slash-commands` — the other surface, **shipped
+  2026-08-16**: a skill that costs resident tokens to say "ignore me" is
+  a bundle filed in the wrong place, and `Command::Registry` is where it
+  belongs. Nothing here needs to price that case any more.
 
 
 ## Owed regardless of the `paths:` work
@@ -125,9 +126,11 @@ Related:
    {Pikuri::Skill::Extension#schedule_load_skill} — a seam that exists, is
    main-agent-only, and that no bundled `bin/` exposes.
    `D-skill-path-activation` decision 7 makes it the sanctioned home for
-   "in a Gradle project, load `gradle`", so it has three dependents (that
-   case, `disable-model-invocation:`, and the deterministic-load argument
-   generally). It is *not* the escape hatch for a gated skill any more —
+   "in a Gradle project, load `gradle`", so it has two dependents (that
+   case and the deterministic-load argument generally). It had a third,
+   `disable-model-invocation:`, which is gone: a bundle only the human
+   fires is a slash command, and those ship (`D-slash-commands`) on a
+   surface the model is never told about. It is *not* the escape hatch for a gated skill any more —
    decision 7 now gates this seam too, so the deterministic-load case
    only works for skills their author left ungated, which `gradle` is.
    Caveat and the reason it is not already done:

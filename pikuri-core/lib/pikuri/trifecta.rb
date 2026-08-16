@@ -75,9 +75,13 @@ module Pikuri
           end
         end
 
-        extra = contributions.map(&:legs).reduce(Tool::TrifectaLegs::NONE) { |acc, l| acc | l }
         tool_legs = agent.tools.to_h { |t| [t.name, t.trifecta_legs] }
-        tool_legs['(mcp)'] = extra unless extra == Tool::TrifectaLegs::NONE
+        contributions.each do |contribution|
+          next if contribution.legs == Tool::TrifectaLegs::NONE
+
+          previous = tool_legs[contribution.label] || Tool::TrifectaLegs::NONE
+          tool_legs[contribution.label] = previous | contribution.legs
+        end
 
         Node.new(label: label, tool_legs: tool_legs,
                  children: contributions.flat_map(&:children))

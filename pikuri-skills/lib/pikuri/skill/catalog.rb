@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'yaml'
-
 module Pikuri
   module Skill
     # Discovery + validation of *skills* — Markdown files with YAML
@@ -218,7 +216,7 @@ module Pikuri
         # unusable (no frontmatter, no description, unreadable).
         def parse_skill(path, parent_dir_name:)
           raw = File.read(path)
-          frontmatter, body = split_frontmatter(raw)
+          frontmatter, body = Bundle::Frontmatter.split(raw, path: path)
 
           if frontmatter.nil?
             LOGGER.warn("#{path}: no YAML frontmatter; skipped")
@@ -244,34 +242,6 @@ module Pikuri
         rescue Errno::ENOENT, Errno::EACCES => e
           LOGGER.warn("#{path}: #{e.class}: #{e.message}; skipped")
           nil
-        end
-
-        # Split a SKILL.md into +[frontmatter_hash, body_string]+.
-        # Returns +[nil, raw]+ when no detectable frontmatter block is
-        # present. On YAML parse failure, logs a warning and returns
-        # +[{}, body]+ so the caller's "missing description" path
-        # discards the skill.
-        def split_frontmatter(content)
-          normalized = content.gsub(/\r\n?/, "\n")
-          return [nil, normalized] unless normalized.start_with?("---\n")
-
-          end_marker = normalized.index("\n---", 4)
-          return [nil, normalized] unless end_marker
-
-          yaml_str = normalized[4...end_marker]
-          body = normalized[(end_marker + 4)..].to_s
-          body = body.sub(/\A\n/, '')
-
-          parsed =
-            begin
-              YAML.safe_load(yaml_str) || {}
-            rescue Psych::SyntaxError => e
-              LOGGER.warn("frontmatter YAML parse error: #{e.message}")
-              {}
-            end
-          parsed = {} unless parsed.is_a?(Hash)
-
-          [parsed, body]
         end
 
         def validate_name(name, parent_dir_name:, path:)

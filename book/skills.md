@@ -46,6 +46,51 @@ tells the model the skill exists; the `skill` tool loads the body
 when the model decides the skill applies; the body is just text
 that joins the conversation.
 
+## Two ways a bundle gets invoked
+
+A skill is *model-invoked*. Its description sits in the system
+prompt on every turn, forever, so the model can decide the skill
+applies and call `skill(name: …)`. That resident cost is what
+buys the autonomy.
+
+Some bundles never wanted it. A "generate this week's work log"
+prompt is one you fire deliberately, by name — the model has no
+business judging when it applies, and paying tokens every turn to
+tell it *not* to is the worst of both. Those are **slash
+commands**: one `.md` file under `.pikuri/commands` or
+`.claude/commands`, invoked by typing `/name`, advertised to
+nobody.
+
+```markdown
+---
+description: Generate a weekly work log from git history.
+argument-hint: <project-label>
+---
+
+Weekly log for `$ARGUMENTS`, Monday through today, from my commits.
+```
+
+Saved as `~/.claude/commands/wh.md`, that is `/wh swingai` in
+`pikuri-code`. What it expands to becomes *your* message —
+the command is a typing shortcut, not a second kind of
+instruction, which is why it lands as a user turn and not as
+the `:system` reference text a loaded skill becomes.
+
+The distinction to carry away: **who decides**. If the model
+should notice the situation and reach for it, it is a skill and
+it costs prompt tokens. If you know when you want it, it is a
+command and it costs nothing until you type it. A skill whose
+description says "only invoked manually" is a bundle filed on
+the wrong surface.
+
+pikuri will not run shell commands out of a command file, the
+way Claude Code's `` !`cmd` `` does — a `.md` that arrives with
+a cloned repo would otherwise be arbitrary code execution behind
+a keystroke. Such a file is refused outright, and so is one
+declaring `allowed-tools:`. See the
+[trifecta chapter](trifecta-detector.md) for how a command's
+bytes are graded once they are in the conversation.
+
 ## Why this chapter is a stub
 
 The honest reason: a skill is a refactor of *repetition*. The

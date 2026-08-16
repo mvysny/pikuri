@@ -79,6 +79,209 @@ design.
 
 ---
 
+## D-slash-commands — Two registries, a user turn, and no scheduling function (2026-08-16)
+
+**Status:** Accepted, shipped: `Pikuri::Command::Registry` / `Renderer` /
+`Extension` in `pikuri-skills`, wired in `bin/pikuri-code` and
+`bin/pikuri-assistant`. `ideas/slash-commands.md` is deleted with this entry.
+
+**Context.** Moving the `wh` bundle from `~/.claude/skills/wh/SKILL.md` to
+`~/.claude/commands/wh.md` made it invisible to pikuri twice over: the catalog
+scans no `commands/` dir, and requires a *directory* holding `SKILL.md`. The
+second motive is stronger and came from measuring a 12-skill catalog: two of
+those skills were slash commands filed as skills, and their descriptions were
+resident tokens spent telling the model to ignore them (`wh`'s read *"Only
+invoked manually."*). A bundle the human invokes belongs on a surface that was
+never advertised, where it costs nothing.
+
+**Decision.** A separate `Command::Registry`, scanning `.pikuri/commands` /
+`.claude/commands` under the same `Bundle::Base` search bases as the catalog.
+Its expansion lands as the **user's** turn. There is no scheduling function:
+the host holds both handles already (`registry.expand(name, arguments:)` then
+`run_loop(user_message:)` or `Interloper#inject_user_message`). Typed
+resolution, which only a host can do because nothing in the library sees all
+three namespaces, is **host built-in > command > skill**.
+
+**Alternatives rejected.**
+
+- **One catalog holding both kinds.** Rejected because "never advertise a
+  command to the model" would become a `reject { it.command? }` that a future
+  refactor drops silently — costing tokens every turn and offering the model a
+  half-working `skill(name: "wh")`. Two types, and the mistake is
+  unrepresentable. The records and the scans genuinely differ too (one `.md`
+  with `:`-joined path namespaces and an interpolatable body, vs. a directory
+  of `SKILL.md` plus sidecars).
+- **A `kind:` flag on `Skill::Extension#schedule_load_skill`.** Rejected: that
+  path injects `:system`, and every consequence is wrong here.
+  `on_user_message` would not fire (`pikuri-memory` hangs its per-turn
+  prefetch there, so a memory layer would never see `/wh`); on Anthropic a
+  `:system` block is hoisted and therefore *sticky*, turning a one-shot
+  request into standing instructions; and a `:system`-only turn has to worry
+  about `EmptyTurnError`, which an ordinary user turn does not.
+- **A `Pikuri::Slash::Menu` façade merging both registries.** Rejected for
+  now: the merge is five lines of presentation over two arrays that already
+  carry `name` + `description`, and the halves *dispatch* differently, so a
+  merged record needs a kind discriminator — at which point the library models
+  the TUI's popup. The two registries ship with deliberately parallel shapes
+  so a second host can write the merge in five lines; if two hosts write the
+  same five, the façade earns its place then.
+- **Raising on a name collision.** Rejected: `Catalog::Bundled` already
+  answers the skill-vs-skill form by keeping the first entry and warning, and
+  two collision policies in one codebase is worse than either.
+- **Letting a skill win the typed name.** Rejected on asymmetric
+  reachability: if `/wh` resolves to the skill, the *command* becomes
+  unreachable by anything — nothing else can invoke it, by design — whereas
+  the skill loses only its slash affordance and stays fully model-invocable.
+  One side of the fork drops a capability, the other drops nothing.
+- **A host built-in losing to a scanned file.** Rejected as a real hijack:
+  commands are scanned from the project root, so a cloned repo shipping
+  `.claude/commands/plan.md` would capture `/plan` — the read-only plan-mode
+  toggle — and the failure is invisible, reading as a chatty model rather than
+  a disabled gate.
+- **Parsing `argument-hint:` into slots** so the library could reject `/wh`
+  with no arguments. Rejected: it is display chrome for a menu, and a body
+  handles a missing argument better than a validator can (`wh.md` already
+  says "if no label was given, use 'swingai'").
+
+**Consequences.**
+
+- **`Registry` and `Renderer` are pure functions over disk**, testable and
+  usable with zero agent integration — which is what let two synchronous
+  `bin/` demos wire the feature before `pikuri-tui` exists.
+- **`Registry#get` carries two contracts**: `nil` for a name that isn't there
+  (an ordinary typo, fixable by retyping) and a raise for one that is there
+  but refused (a fact about a file on disk). A host written against only the
+  first dies on the second.
+- **Commands still need an `Extension`** — a declaration-only one, because a
+  surface that contributes no tool lands nowhere in the `Pikuri::Trifecta`
+  tree, and an agent holding all three legs would report two. It grades the
+  untrusted leg through `D-bundle-trust-grading`'s per-base channel.
+- **`Trifecta::Contribution` gained a `label:`.** Extension legs used to be
+  unioned into one row hardcoded as `(mcp)` — honest only while MCP was the
+  only contributor. A second one made the banner blame an MCP server that
+  wasn't wired, against `Report#attribution`'s whole purpose.
+
+## D-command-inlining-legs — No bash pre-execution, and `@path` is not a refusal (2026-08-16)
+
+**Status:** Accepted, shipped in `Command::Registry`. Graduates whether or not
+the command surface survives: *"just add bash pre-execution, Claude Code has
+it"* is the recurring temptation, and the answer is not reconstructible from
+code that never grew the feature.
+
+**Context.** Claude Code expands two more things in a command body. `` !`cmd` ``
+runs a shell command *before the prompt is sent* and inlines its stdout, gated
+only by the command file's own `allowed-tools:` frontmatter — i.e. gated by the
+untrusted file itself. `@path` inlines a file's bytes.
+
+**Decision.** Neither ships, and they get *different* handlings from the same
+premise. A body containing `` !` `` is **refused**: `Registry#get` raises
+`RefusedError`, the scan warns, and detection is deliberately over-eager
+(fence-blind, and matching `allowed_tools` beside the documented
+`allowed-tools`). `@path` is simply **not interpolated** — it passes through as
+literal text, with no warning and no refusal. `allowed-tools:` is refused on a
+command while still being ignored on a skill.
+
+**Alternatives rejected.**
+
+- **Implementing `` !`cmd` `` behind pikuri's confirmer + sandbox.** Rejected:
+  it makes a `.md` that travels with a clone into arbitrary code execution
+  triggered by typing a slash. Without it a command is *text*, and its worst
+  case is prompt injection into a turn the human deliberately asked for —
+  which is also what keeps the feature inside `pikuri-skills` instead of
+  earning its own gem. Wanting it back is a feature request, which is exactly
+  the signal to have before building the gated version.
+- **Passing the `!` line through as literal text** so the human can see it.
+  Rejected, and this reversed an earlier lean: a literal `` !`git status` ``
+  sitting in the prompt reads to the *model* as an instruction, so the likely
+  outcome is not "visibly misbehaves" but "the model runs it through the real
+  `bash` tool a beat later" — the refused behaviour, arrived at
+  unpredictably. An exception has no second reading.
+- **Refusing `@path` too.** Rejected: unlike `!` it has a harmless second
+  reading. A literal `@docs/style.md` left in the text reads as a path
+  mention, and the worst case is the model calling `read` — through the gated
+  tool, against the workspace, exactly as wanted. Detection would also have to
+  be over-eager to be safe, and `@`-shapes false-positive on the email
+  addresses in the very file that motivated the feature.
+- **Ignoring `allowed-tools:` on commands, as skills do.** Rejected: pikuri
+  fixes tools at `configure` time and cannot narrow them mid-conversation, so
+  ignoring the key runs the command with the full toolset when its author
+  asked for a fenced one. That is a *widening*, not a no-op.
+- **Refusing `allowed-tools:` on skills too**, for symmetry. Rejected on
+  compatibility asymmetry, and the two halves are only defensible together:
+  the key is one of the six official Agent Skills fields, so refusing it on
+  the shipped skill surface would break catalogs doing nothing wrong by
+  carrying a field the standard defines (`COMPARISON.md`'s finding 3 is the
+  general form — a key the host doesn't implement is advertised anyway). On
+  the command surface the key is not spec, it is Claude Code's own, and its
+  documented job is gating the pre-execution pikuri refuses.
+
+**Consequences.**
+
+- **Refusal is a scan-time fact stored on the record**, so `#refused?` and its
+  reason are free to a menu; only `#get` raises. Skipping the entry at scan
+  time instead would make it silently absent, which is the same
+  discoverability failure one layer up.
+- **`RefusedError` is host-facing**, never reaching a tool, so the
+  `"Error: …"`-string convention for model-visible failures does not apply.
+
+## D-command-substitution — Fence-aware, and the append reads the body the same way (2026-08-16)
+
+**Status:** Accepted, shipped in `Command::Renderer`.
+
+**Context.** Measured against Claude Code 2.1.233 (headless, throwaway project,
+reproduced on two models): the expansion is wrapped in
+`<command-message>` / `<command-name>` / `<command-args>`; arguments a body
+never references are appended after two blank lines as `ARGUMENTS: <raw>`; and
+`$n` indexes the argument list **0-based** while being documented and
+universally written as 1-based, so `$1` yields the second word.
+
+**Decision.** `$n` is **1-based**. An out-of-range `$n` stays **literal**, as
+it does there. Substitution skips fenced blocks and inline code spans, for
+*both* tokens — and the "body references neither" check that gates the append
+runs over the same segmentation, as one pass. The append copies Claude Code's
+exact spelling. No XML wrapper; a `(this command lives in …)` footer instead,
+and only when the directory holds a sidecar.
+
+**Alternatives rejected.**
+
+- **Matching the 0-based bug.** Rejected: nobody authored *against* it — the
+  shape it produces is a body that silently reads the wrong word, likelier
+  papered over than noticed — and matching it means matching it forever.
+- **Blanking an out-of-range `$n`.** Rejected on the same axis as everything
+  else here: blanking makes a `$1` the author never meant as a placeholder
+  silently vanish, while leaving it literal keeps the mistake visible in the
+  transcript.
+- **Substituting blindly, as the prior art does.** Rejected on the motivating
+  file: `wh.md` carries `$ARGUMENTS` and `$1` inside backticks while writing
+  *about* them, and a blind pass rewrites that sentence into one that asserts
+  something false to the model. A command emitting a shell script has its
+  `"$1"` hardcoded to one invocation the same way.
+- **A `$$` escape for authors who mean the literal.** Rejected: it only works
+  on files someone edits, and imported bundles nobody will edit are the whole
+  reason to scan someone else's directory.
+- **Fence-aware `$n` with blind `$ARGUMENTS`**, on the theory that
+  `$ARGUMENTS` is distinctive enough that a mention means a placeholder.
+  Rejected by counterexample in the same file: authors writing about commands
+  backtick both tokens.
+- **Reading the body blind for the append gate** while substituting
+  fence-aware. Rejected as a data-loss bug: `wh.md`'s every `$ARGUMENTS` is
+  backticked, so it counts as "referenced", gets no append — and gets no
+  substitution either. The typed argument disappears with no error, on the
+  most common invocation of the only command file we had.
+- **Wrapping the expansion in `<command-*>` tags.** Rejected: the prior art's
+  wrapper carries no *location*, so it does not solve the base-directory
+  problem that was the only functional argument for having one. A wrapper we
+  would have to extend anyway is a wrapper worth not having.
+
+**Consequences.**
+
+- **`` !` `` detection stays fence-blind while substitution is fence-aware**,
+  and that is not an inconsistency: a false positive in detection is a loud
+  exception on an editable file, a false positive in substitution is silent
+  corruption. Whoever "fixes" one to match the other reintroduces the bug.
+- **`wh.md` interpolates nothing and rides the append**, which is the correct
+  reading of it and the reason the gate is shared.
+
 ## D-skill-path-activation — A `paths:` skill is not in play until its path fires (2026-08-16)
 
 **Status:** Accepted; not yet implemented. `Catalog::Bundled#parse_skill`
@@ -676,7 +879,12 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 **Status:** Accepted, fully shipped: `Bundle::Base`,
 `Catalog#untrusted_level`, `SkillTool` consuming it, and the third boot
-question in `bin/pikuri-code`. `ideas/bundle-trust-grading.md` is deleted with
+question in `bin/pikuri-code`. The record lives in the shared `Pikuri::Bundle`
+namespace rather than under `Catalog` because slash commands
+(`D-slash-commands`) grade the same way from the same bases: duplicating it
+would have a host build two parallel arrays out of one pair of booleans, and
+handing `Command::Registry` a `Skill::Catalog::Base` would read as a command
+being a kind of skill. `ideas/bundle-trust-grading.md` is deleted with
 this entry; its one open thread moved to `ideas/security-open-questions.md`.
 
 **Context.** {Pikuri::Skill::SkillTool} declared `untrusted: :hard`
@@ -792,10 +1000,13 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
   host that moves the *verdict* is one whose readable set is the project root
   alone. `pikuri-code/spec/pikuri/code/dry_run_spec.rb` therefore wires no
   `SkillTool` — no answer can move a row there — and says so.
-- **Commands adopt this channel rather than inventing one.**
-  `ideas/slash-commands.md` question 5 lands on `:hard` for a command surface
-  and defers grading here; a command file is prose on the same terms a skill
-  body is.
+- **Commands adopt this channel rather than inventing one** — a command file
+  is prose on the same terms a skill body is, so `Command::Registry` takes the
+  same bases and unions the same flag, and `bin/pikuri-code` reuses the same
+  two answers (its home vouch covers `~/.claude/commands` for the same reason
+  it covers `~/.claude/skills`: the roots ride in `readable:`, never
+  `writable:`). One rule does not carry over: a *refused* command never taints,
+  because its bytes cannot reach the context at all.
 - **Left open:** folding home skill roots into a workspace's `readable:` while
   declaring that workspace trusted is the vouched-for-island problem arriving
   through the back door — `Filesystem` raises on `AllowAll` + `trusted:` for

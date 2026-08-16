@@ -1557,6 +1557,49 @@ documents `when-to-use`, `allowed-tools`, `argument-hint`,
 `license`, `compatibility` and `metadata` — every extension key except
 this one. It is shipped but unadvertised.
 
+### Slash commands (the human-invoked half)
+
+- **Claude Code**: `~/.claude/commands/*.md` (user) and
+  `.claude/commands/*.md` (project), subdirectories namespacing as
+  `/frontend:foo`. Frontmatter: `description`, `argument-hint`,
+  `allowed-tools`, `model`, `disable-model-invocation`. The body
+  interpolates `$ARGUMENTS` and `$1`…`$9`, inlines a file with `@path`,
+  and — the load-bearing one — runs a shell command with `` !`cmd` ``
+  *before the prompt is sent*, gated only by that same file's
+  `allowed-tools:`, i.e. by the untrusted file itself.
+- **grok-build**: flat `*.md` under a `commands/` directory. No harness
+  in this survey defines an `.agents/commands` convention, which is why
+  pikuri scans two subdirs and not three.
+- **pikuri**: `Command::Registry` + `Command::Renderer` in
+  `pikuri-skills`, over the same `Bundle::Base` search bases as the skill
+  catalog. Names come from the path (a frontmatter `name:` is ignored —
+  for a command the name is the *address the human types*). Frontmatter
+  is entirely optional. Neither inlining leg ships:
+  `` !`cmd` `` is refused outright and `@path` is simply left as literal
+  text (`DECISIONS.md` `D-command-inlining-legs`), and `allowed-tools:`
+  is refused too rather than silently widening a toolset its author
+  asked to narrow. `disable-model-invocation` is the *default and the
+  only* behaviour — pikuri never advertises a command to the model.
+
+**Measured against Claude Code 2.1.233** (headless, throwaway project,
+each result reproduced on two models), because three of its behaviours
+are documented nowhere:
+
+1. The expansion is **wrapped** in `<command-message>` /
+   `<command-name>` / `<command-args>`, the last omitted when no
+   arguments were typed. The wrapper carries no *location*, so it does
+   not solve sidecar-path resolution; pikuri ships a
+   `(this command lives in …)` footer instead.
+2. Arguments a body never references are **appended** after two blank
+   lines as `ARGUMENTS: <raw>`. pikuri copies that spelling verbatim, so
+   a body authored there reads identically here.
+3. `$n` is **0-based** — `/probed AAA BBB CCC` against
+   `one=[$1] two=[$2] three=[$3]` yields `one=[BBB] two=[CCC]
+   three=[$3]` — while being documented as 1-based and written as 1-based
+   by every author, including in Claude Code's own shipped command files.
+   pikuri implements 1-based (`D-command-substitution`). An out-of-range
+   `$n` stays literal there, and pikuri keeps that half.
+
 ### MCP (Model Context Protocol)
 
 - **pikuri**: `Mcp::Registry` (pure config) + `Mcp::Servers` (runtime —

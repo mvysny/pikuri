@@ -161,8 +161,9 @@ gem, landing once they stabilise.
   three reversed by watching real transcripts).
 - **[Agent Skills (stub)](skills.md).** Placeholder
   chapter — what skills are in one paragraph, a minimal `lol`
-  demo, and a TBD list. Coming back to flesh out once the
-  guide has workflows that motivate it.
+  demo, the model-invoked / human-invoked split (skills vs
+  slash commands), and a TBD list. Coming back to flesh out
+  once the guide has workflows that motivate it.
 
 ### Coda
 

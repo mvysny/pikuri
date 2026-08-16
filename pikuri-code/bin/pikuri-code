@@ -181,25 +181,32 @@ repo_sources_are_mine =
 #
 # +Dir.home+ is vouched for without asking, and the reason is a property this
 # binary can check rather than a guess about its user: the agent has no way to
-# put a skill there. Home skill roots ride in readable:, never writable:, so
+# put a bundle there. Home bundle roots ride in readable:, never writable:, so
 # write/edit refuse them; sandboxed bash gets readable dirs as *ephemeral
 # overlays*, so a write vanishes at exit and the file tools never see it; and
 # unsandboxed bash still confirms every command. Nothing lands in
-# ~/.claude/skills except by the user's own hand, which is exactly what the
-# +trusted+ flag claims. (Home as a whole is a different matter — Downloads, a
-# mail store — which is why this vouches for the skill dirs, not for $HOME.)
+# ~/.claude/skills or ~/.claude/commands except by the user's own hand, which
+# is exactly what the +trusted+ flag claims. (Home as a whole is a different
+# matter — Downloads, a mail store — which is why this vouches for the bundle
+# dirs, not for $HOME.)
 #
 # The exception is the mode where both guards are off: --yolo, or
-# --no-sandbox --no-confirm. There bash can write ~/.claude/skills for real and
+# --no-sandbox --no-confirm. There bash can write those dirs for real and
 # unwatched, so the next session would load bytes the agent authored — the one
 # self-poisoning loop this flag must not paper over.
-home_skills_are_mine = sandbox_enabled || confirm_enabled
-skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
-  search_bases: [
-    Pikuri::Bundle::Base.new(dir: project_root, trusted: repo_sources_are_mine),
-    Pikuri::Bundle::Base.new(dir: Dir.home, trusted: home_skills_are_mine)
-  ]
-)
+home_bundles_are_mine = sandbox_enabled || confirm_enabled
+bundle_bases = [
+  Pikuri::Bundle::Base.new(dir: project_root, trusted: repo_sources_are_mine),
+  Pikuri::Bundle::Base.new(dir: Dir.home, trusted: home_bundles_are_mine)
+]
+skill_catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: bundle_bases)
+
+# Slash commands: the *human*-invoked half of the same surface, scanned from
+# .pikuri/commands / .claude/commands under those same bases. Never advertised
+# to the model, so it costs no prompt tokens; the REPL below resolves a typed
+# /name against it. The vouch above covers these bytes for the same reason it
+# covers skills — command roots ride in readable:, never writable:.
+command_registry = Pikuri::Command::Registry.new(search_bases: bundle_bases)
 
 # Workspace is captured once at startup; all file-touching tools share it.
 # +project_root+ is the writable containment ceiling, the Bubblewrap
@@ -256,6 +263,7 @@ filesystem = if yolo
                 project_root:      project_root,
                 readable:          Pikuri::Code::ToolchainPaths.readable +
                                    skill_catalog.roots +
+                                   command_registry.roots +
                                    extra_readable,
                 writable:          extra_writable,
                 temp:              true,
@@ -494,6 +502,9 @@ begin
       read_only: read_only
     )
     c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+    # Declaration only: commands register no tool and render no prompt, so
+    # without this the trifecta banner would miss their untrusted leg entirely.
+    c.add_extension Pikuri::Command::Extension.new(registry: command_registry)
     # In-memory task list + four +task_*+ tools (task_create /
     # task_in_progress / task_completed / task_delete). The LLM
     # uses these to externalize a multi-step plan into a
@@ -548,6 +559,10 @@ begin
     names = skill_catalog.list.map(&:name).sort.join(', ')
     puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
   end
+  unless command_registry.empty?
+    names = command_registry.list.map { |cmd| "/#{cmd.name}#{cmd.refused? ? ' (unavailable)' : ''}" }
+    puts "Loaded #{command_registry.list.size} command(s): #{names.sort.join(', ')}."
+  end
   # Print reduced-safety status only when a layer is off. Silent at
   # defaults; loud when something the user might want to know about has
   # been disabled.
@@ -577,6 +592,34 @@ begin
     case message.strip.downcase
     when '/plan' then read_only.activate!;   next
     when '/impl' then read_only.deactivate!; next
+    end
+
+    # Slash commands, resolved *after* the built-ins above: a cloned repo
+    # shipping .claude/commands/plan.md must not capture the read-only
+    # toggle. What comes back is an ordinary user turn — the human typed it,
+    # just short — so it goes through run_turn like anything else.
+    if message.start_with?('/')
+      name, arguments = message[1..].split(/\s+/, 2)
+      next if name.nil? || name.empty?
+
+      expanded =
+        begin
+          command_registry.expand(name, arguments: arguments.to_s)
+        rescue Pikuri::Command::RefusedError => e
+          puts "/#{name} is unavailable — #{e.message}"
+          next
+        end
+
+      if expanded.nil?
+        puts "No such command: /#{name}."
+        # A skill of the same name is not a fallback: nothing here can load
+        # one (that needs an interloper this demo doesn't have), and the
+        # model can reach it on its own.
+        puts "There is a skill called '#{name}' — just ask for it in plain language." if skill_catalog.get(name)
+        next
+      end
+
+      message = expanded
     end
 
     run_turn(agent, message)

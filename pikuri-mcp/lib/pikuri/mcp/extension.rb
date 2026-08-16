@@ -132,6 +132,7 @@ module Pikuri
         return nil if @registry.empty?
 
         Pikuri::Trifecta::Contribution.new(
+          label: '(mcp)',
           legs: Pikuri::Tool::TrifectaLegs::ASSUMED.with(private: @registry.private?)
         )
       end

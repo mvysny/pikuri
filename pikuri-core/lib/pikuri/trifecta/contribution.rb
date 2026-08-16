@@ -10,7 +10,7 @@ module Pikuri
     #   Contribution.new(legs: Pikuri::Tool::TrifectaLegs::NONE, children: nodes)
     #
     #   # an MCP extension: legs no tool can declare, no children
-    #   Contribution.new(legs: assumed_with_private, children: [])
+    #   Contribution.new(label: '(mcp)', legs: assumed_with_private, children: [])
     #
     # Needed because two things in the tree are invisible to per-tool tagging:
     # a sub-agent is a whole node the tools cannot describe, and a foreign tool
@@ -19,15 +19,23 @@ module Pikuri
     #
     # Immutable.
     #
+    # @!attribute [r] label
+    #   @return [String] name of the row these +legs+ appear under in the
+    #     report, parenthesized to mark it as not-a-tool. It is what
+    #     {Pikuri::Trifecta::Report#attribution} points the reader at, so it
+    #     has to name the surface they can actually go and change — two
+    #     extensions declaring under one label would blame each other's
+    #     wiring.
     # @!attribute [r] legs
     #   @return [Pikuri::Tool::TrifectaLegs] legs this extension adds to the
     #     node it is wired into, over and above that node's own tools
     # @!attribute [r] children
     #   @return [Array<Node>] child nodes this extension introduces
-    class Contribution < Data.define(:legs, :children)
+    class Contribution < Data.define(:label, :legs, :children)
+      # @param label [String] row name for +legs+; ignored when they are +NONE+
       # @param legs [Pikuri::Tool::TrifectaLegs]
       # @param children [Array<Node>]
-      def initialize(legs: Pikuri::Tool::TrifectaLegs::NONE, children: [])
+      def initialize(label: '(extension)', legs: Pikuri::Tool::TrifectaLegs::NONE, children: [])
         super
       end
     end
