@@ -9,6 +9,18 @@ unscanned dir misses twice over. Nothing in pikuri parses a typed
 `/name` either — the only slash handling anywhere is the hardcoded
 `/plan` / `/impl` case in three `bin/` demos.
 
+**Reviewed against the code, 2026-08-16.** P1–P4 stand and every claim
+about pikuri's internals checked out. Open questions 2 and 4 closed in
+that pass, and three things the note didn't record were found and folded
+into the sections they belong to: `@path` fell through both the Copy and
+the Drop list, the catalog's *missing-`description`* hard failure was
+borrowed without the rationale that justifies it, and `Registry#get`
+turned out to carry two contracts that P3's sample only showed one of.
+The `allowed-tools:` refusal also grew the paragraph reconciling it with
+how pikuri treats the same key on a skill. **Question 1 is the only open
+item touching on-disk compatibility, and it blocks nothing** — 3, 5 and
+6 are a host's call, a sentence of yardoc, and a settled lean.
+
 **Scope.** This note owns the *human-invoked* half of the prompt-bundle
 surface: discovery of `commands/`, argument interpolation, and how a
 host dispatches one. It does **not** own anything about what the *model*
@@ -141,7 +153,7 @@ contribute no tool, and touch no system prompt — so there is nothing for
 an `Extension` to configure or bind. The host already owns both handles:
 
 ```ruby
-cmd = registry.get('wh') or return warn_unknown
+cmd = registry.get('wh') or return warn_unknown   # …and rescue Refused
 text = Pikuri::Command::Renderer.expand(cmd, arguments: 'swingai')
 
 agent.run_loop(user_message: text)          # synchronous host
@@ -152,8 +164,10 @@ Two consequences worth having:
 
 - **It's testable and usable with zero agent integration** — registry +
   renderer are pure functions over disk. `Command::Registry.new(...)`,
-  `#list`, `#get`, `#roots`, `Renderer.expand`. That's the whole gem
-  surface.
+  `#list`, `#get`, `#roots`, `#expand(name, arguments:)` (the one-call
+  form argued at the end of this section), and `Renderer.expand`. That's
+  the whole gem surface — six entries, and the `#expand` pair is one
+  delegation, not two implementations.
 - **A synchronous `bin/` host can wire it today**, without an
   interloper, which is how we'd prove the API before `pikuri-tui`
   exists (see "No host today").
@@ -204,8 +218,19 @@ Copy:
   them.
 - **`$ARGUMENTS` / `$n`.** Trivial, and the only interpolation that
   can't be replaced by prose.
-- **Lenient validation**, matching the catalog: unknown keys ignored, a
-  missing `description` the only hard failure.
+- **Lenient validation**, matching the catalog on unknown keys — ignored.
+  **But not its hard failure** (revised 2026-08-16): `Catalog::Bundled`
+  drops a skill with no `description` because for a *skill* the
+  description **is** the activation surface — the model never sees the
+  body, so a description-less skill is unusable by construction. A
+  command has no activation surface: the human types `/wh` by name, and
+  the description is chrome for the popup. Inheriting the hard failure
+  would make an imported command *silently absent from the menu* for a
+  reason that stopped applying at the surface boundary. So: warn, fall
+  back to the name as its own display string, and load it. That leaves
+  the registry with **no hard failure at all** except the two refusals
+  below — which is the right shape, since a command that parses is a
+  command the human can invoke.
 
 Drop:
 
@@ -229,6 +254,64 @@ Drop:
   full toolset when the author asked for a fenced one. That's a
   widening, not a no-op, and it's why this key doesn't get the
   ignore-unknown-keys treatment the rest of the frontmatter does.
+
+  **The asymmetry this creates, and why it stands** (spotted 2026-08-16,
+  reviewing against `COMPARISON.md`'s frontmatter table): `allowed-tools`
+  is **one of the six official Agent Skills fields**, and pikuri's row in
+  that table reads a flat *"no"* — `Catalog::Bundled#parse_skill` reads
+  `description` and `name` and drops everything else. So under this
+  proposal pikuri would **hard-refuse** the key on a command while
+  **silently ignoring** the identical key on a skill, where the same
+  widening argument applies word for word. Worth stating out loud,
+  because the widening argument alone does *not* justify the split — it
+  reaches both surfaces. What justifies it is compatibility asymmetry:
+
+  - the *skill* surface is shipped, and the key is **spec-sanctioned**,
+    so refusing it would break catalogs that are doing nothing wrong by
+    carrying a field the standard defines. `COMPARISON.md`'s finding 3
+    is the general form of the same posture — a key the host doesn't
+    implement is advertised unconditionally, everywhere — so pikuri
+    failing open on it is the herd behaviour, not an oversight.
+  - the *command* surface does not exist yet, and the key is **not
+    spec** — it is Claude Code's own, where its documented role is
+    gating `` !`cmd` `` pre-execution. Refusing costs nobody a working
+    bundle today, and refusing a gate for a feature we don't implement
+    is the coherent position.
+
+  So the rule is: refuse on the new surface, where it is free; fail open
+  on the established one, where the field is standard. If someone later
+  wants the skill side tightened, that is the sister notes' axis (what
+  the catalog does with frontmatter), not this one — but it should cite
+  this paragraph, because the two decisions are only defensible together.
+
+- **`@path` file inlining — dropped, and *not* by refusing it.** (Added
+  2026-08-16; the note previously listed this in the prior-art paragraph
+  and then decided neither way.) Unlike `` !` ``, it executes nothing —
+  but it *reads a file the untrusted `.md` chose* and inlines the bytes
+  into a user turn, at expansion time, in-process, reaching no
+  `resolve_for_read` and consulting no denylist. That is the Workspace
+  seam bypassed by a file that travels with a cloned repo: a line
+  reading `@~/.ssh/id_rsa` in a `.md` nobody opens puts the key in the
+  prompt — a leak to the provider on its own, and a handed-over payload
+  for whatever egress leg the wiring happens to have.
+
+  But the handling differs from the other two, deliberately. `!` earns a
+  raise because a literal `` !`git status` `` left in the prompt reads
+  to the model as an instruction (see below). `@path` has no such second
+  reading: a literal `@docs/style.md` sitting in the text reads as *a
+  path mention*, and the worst case is the model deciding to `read` it —
+  through the gated tool, against the workspace, exactly as we'd want.
+  So `@path` is simply **not interpolated**; it passes through as
+  literal text, with no scan-time warning and no refusal.
+
+  Which is also why detection must **not** be over-eager here, inverting
+  the rule stated below for `!`: `wh.md` contains `mavi@vaadin.com` and
+  `martin@vysny.me`, so anything hunting `@`-shapes false-positives on
+  the file that motivated this note. There is nothing to hunt — leaving
+  the character alone is the whole implementation.
+
+  This closes open question 4 as a side effect; see there.
+
 - **`disable-model-invocation`.** Inverted by default: pikuri never
   exposes commands to the model, so every command behaves as if this
   were set. That's the deliberate divergence, and it's what makes the
@@ -269,7 +352,19 @@ Design notes for whoever builds it:
   to skip fenced code blocks. Also match `allowed_tools` alongside the
   documented `allowed-tools`.
 - **Only these two.** `model:` stays an ignored key — running the right
-  prompt on the wrong model is a quality issue, not a widening.
+  prompt on the wrong model is a quality issue, not a widening. `@path`
+  is dropped by *not interpolating it*, which is a third handling, not a
+  third refusal — see the Drop list.
+- **Say both of `#get`'s contracts in one sentence, because there are
+  two** (spotted 2026-08-16): it returns **nil** for a name that isn't
+  there, and **raises** for a name that is there but refused. P3's
+  sample (`registry.get('wh') or return warn_unknown`) only shows the
+  first, so a host written from it dies on the second — and the demo
+  host in "No host today" is exactly such a host. The yardoc gets both,
+  the `bin/` branch gets the rescue, and the pair is worth a spec each.
+  The shape is deliberate rather than awkward: *absent* is an ordinary
+  outcome the human caused by typo, *refused* is a fact about a file on
+  disk that the human can't fix by retyping.
 - Later, if a host wants to grey the entry out rather than let the
   invoke raise, that's a predicate on the record (`#refused?` plus a
   reason), not a change to this behaviour.
@@ -351,19 +446,47 @@ to be reachable from pikuri aren't.
    convention in PI, mirroring `.agents/skills`? Don't add the third
    until someone confirms it exists — an invented convention is worse
    than a missing one.
+
+   **Half-answered 2026-08-16** by the survey already in `COMPARISON.md`:
+   grok-build — the harness with the widest discovery net of anyone,
+   scanning four vendors' skill dirs — grows commands from *flat `*.md`
+   under a `commands/` directory*, and nothing in that survey names an
+   `.agents/commands` anywhere. So the two-subdir answer stands with
+   evidence behind it rather than as a shrug, and the third stays
+   unbuilt.
+
+   **The half the survey can't answer is the other axis: which *search
+   bases*** — and the note never asked it. `Catalog::Bundled` takes `search_bases:` (project root,
+   `Dir.home`, …) and crosses them with its subdir list; this note names
+   subdirs everywhere and bases nowhere. It matters more here than for
+   skills, because the file that motivated the whole note lives at
+   `~/.claude/commands/wh.md` — under the **home** base, with nothing
+   project-local involved. Mirror the kwarg rather than hardcoding a
+   root: same shape, same left-to-right first-wins precedence, and the
+   motivating file is reachable on day one.
 3. **Name collision between a command and a skill.** `/wh` when both
    exist. Options: commands win in the slash namespace (they're the
    human-invoked one) with a warning; or the menu shows both with
    distinct affordances. Only bites once there's a merged menu (P4), so
    it can be decided by the host that first hits it.
 4. **Does a command body get the `<command>`-wrapper treatment?**
+   ~~Unsettled.~~ **Settled 2026-08-16, by the `@path` decision.**
    `Renderer.format_skill` wraps a skill in `<skill name= location=>`
    with a sidecar-path preamble. A command lands as a *user* turn, where
    an XML wrapper reads oddly — the human "said" this. But without one,
    a body pointing at a sidecar file has no base directory to resolve
-   against. Lean: no wrapper; append a one-line
-   `(this command lives in <dir>)` footer only when the registry sees a
-   sibling file. Unsettled.
+   against.
+
+   That second half was the only real argument for a wrapper, and
+   dropping `@path` is what answers it: a sidecar reference stays
+   literal text, the model resolves it by calling `read`, and `read`
+   needs a base directory — which the one-line footer supplies. So: **no
+   wrapper; a `(this command lives in <dir>)` footer, appended only when
+   the registry sees a sibling file** next to the `.md`. Three pieces
+   that only work together, and the third is the wiring already in the
+   "What pikuri already has" table — `Registry#roots` into
+   `Workspace::Filesystem`'s `readable:`, or the model resolves the path
+   and is then denied the read.
 5. **Is the expansion trusted or untrusted text?** `SkillTool` declares
    `untrusted: :hard` precisely because a skill is a file someone else
    wrote. A command file is the same bytes with the same provenance —
@@ -395,13 +518,20 @@ to be reachable from pikuri aren't.
   `system_prompt_snippets` or `add_tool` neighbourhood. Worth an entry
   next to the Capability seam only if a host actually wires it.
 - **`DECISIONS.md`** gets the real forks, which are P1–P3: one catalog
-  vs. two registries; `:user` vs. `:system` injection; and the dropped
-  `` !`cmd` `` leg with its threat-model reasoning. That last one
-  graduates **whether or not this feature is built** — it is the entry a
-  future reader is most likely to need, since "just add bash
-  preexecution, Claude Code has it" is the obvious recurring temptation,
-  and the answer (`allowed-tools:` in the untrusted file is not a gate)
-  is not reconstructible from code that never grew the feature. These
+  vs. two registries; `:user` vs. `:system` injection; and the two
+  dropped inlining legs — `` !`cmd` `` and `@path` — with their
+  threat-model reasoning, including why they get *different* handlings
+  (a raise vs. a literal pass-through) from the same "the file is
+  untrusted" premise. That last entry graduates **whether or not this
+  feature is built** — it is the one a future reader is most likely to
+  need, since "just add bash preexecution, Claude Code has it" is the
+  obvious recurring temptation, and the answer (`allowed-tools:` in the
+  untrusted file is not a gate) is not reconstructible from code that
+  never grew the feature. It should also carry the
+  refuse-on-commands / fail-open-on-skills asymmetry for
+  `allowed-tools:`, which is a genuine fork with a real road not taken
+  (refuse on both, and break shipped catalogs over a spec-sanctioned
+  field). These
   are separate from the skill notes' shared advertise-and-when entry —
   different axis (*which surface a bundle belongs on*, not *what the
   catalog advertises*), so separate entries that **cite each other**.
