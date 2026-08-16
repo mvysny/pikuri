@@ -443,7 +443,8 @@ Worth arguing with:
   application — **read-only navigation**. The moment it applies a
   workspace edit it needs the `Confirmer` seam and stops being closeable.
 - `Pikuri::Lsp::Registry::StdioEntry` mirroring
-  `Mcp::Registry::StdioEntry` — see Configuration below. The
+  `Mcp::Registry::StdioEntry`, plus a `Registry.from_h` bridge so hosts
+  can map their own config file onto it — see Configuration below. The
   claimed-files field is load-bearing, not decorative: it is the dispatch
   key that picks the server, per finding 1.
 - `Pikuri::Lsp::ClientWrapper` — long-lived child, id demux on a reader
@@ -635,10 +636,36 @@ root would silently let the LSP's idea of the project diverge from the
 breaks that, we learn it from a real user; jdtls imports nested projects
 from a parent root today.
 
-**Config is Ruby, and that is half the point.** The Java entry below
-computes its data directory through `Pikuri::Paths.cache`; a JSON config
-file — the thing pikuri exists as a counter-move to — cannot. Worth one
-paragraph in the chapter.
+**Where the user actually writes this.** The entry is a Ruby value
+object — that is the library API, and a host embedding pikuri can compute
+its fields (the Java `-data` path through `Pikuri::Paths.cache`, say).
+But *this particular config is machine state*: which server binaries you
+have installed, where `JAVA_HOME` points. That is the same category as
+`llm_server` and the API keys, which is why those already live in
+`~/.pikuri-examples-config.yaml` rather than in each `bin/` script.
+Making a user hand-edit a version-controlled demo script to add their
+local server paths dirties the repo and loses the edit on the next pull.
+
+So: **`Lsp::Registry.from_h`** as the bridge, and each host picks its own
+file. The demo bins read the existing YAML; `pikuri-tui` maps its own
+(much larger) config file through the same method. `from_h` is
+format-agnostic on purpose — a plain Hash in, a `Registry` out — so
+nothing in `pikuri-lsp` knows what YAML is.
+
+Two costs to accept with open eyes:
+
+- **A YAML entry cannot compute**, so the jdtls `-data` path is written
+  out literally by the user instead of derived from `Paths.cache`. The
+  alternative — pikuri injecting a default `-data` when the entry omits
+  one — is a jdtls special case inside a generic client, which J4's whole
+  point was to avoid. Interpolation syntax in the YAML is worse still:
+  that is reinventing Ruby badly, in the file format pikuri exists as a
+  counter-move to.
+- **The file changes kind.** It holds credentials today; it would then
+  also hold an argv and an env that get *spawned*. Anyone able to write
+  it could already exfiltrate the keys in it, so the trust boundary does
+  not move — but "config that runs a command" deserves the sentence, and
+  `YAML.safe_load_file` (already used) is what keeps it data.
 
 ### The two book examples
 
@@ -677,12 +704,12 @@ pikuri's `Paths` convention exists to prevent, which makes this a
 four-line demonstration of the convention rather than a paragraph
 asserting it.
 
-Both are *examples*, and neither ships wired: `bin/pikuri-code` gets an
-empty `Lsp::Registry.new(entries: [])` with these two commented above it,
-the shape its MCP block already uses. So the chapter teaches the config
-by having the reader paste one in, which is also the only honest way to
-present it — the entry depends on which servers that reader has
-installed.
+Both are *examples*, and neither ships wired — the chapter teaches the
+config by having the reader add one to their own
+`~/.pikuri-examples-config.yaml`, which is the only honest way to present
+it, since the entry depends on which servers that reader has installed.
+The Ruby literals above are the shape the fields map onto; the chapter
+shows the YAML beside them, because that is what the reader types.
 
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
@@ -748,10 +775,9 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   that is an implementation detail of the agent, not a claim about the
   code it edits — it runs against any project, so shipping a Ruby server
   wired in would be wrong for most sessions. The registry starts empty
-  and the user adds entries by hand, exactly as the MCP block above it
-  already works (there is no pikuri config file to put them in — the
-  README's pitch is that a conversation needs none, and `Paths.config` is
-  pikuri-os's `MACHINE.md` home, not a settings store). With no default
+  and the user adds entries by hand, in the demo bins' existing
+  `~/.pikuri-examples-config.yaml` rather than in the script itself (see
+  "Where the user actually writes this"). With no default
   entry, a registered-but-missing binary is a misconfiguration the user
   made deliberately, so it raises at boot like a failing
   {Pikuri::Mcp::Servers#start_one} rather than warning and degrading —
