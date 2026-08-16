@@ -232,6 +232,125 @@ actually fire?** If it's 1–3, this is noise. If a chatty glob fires
 fifteen times, tier 0 is a net loss on Anthropic.
 
 
+## Four observations (Claude, 2026-08-16)
+
+### 1. Why claim 1 holds — and why better descriptions can't fully fix it
+
+pikuri already runs this exact experiment, on a different noun.
+`Mcp::Servers` renders `<available_mcps>` with `<id>` + `<description>`
+per server and a preamble telling the model to call `mcp_connect`. Same
+shape, same position, same activation-by-judgment. The instructive part
+is that the MCP version *works* and the skill version reportedly doesn't
+— and the difference isn't the rendering, it's what's being advertised:
+
+- **An MCP server advertises a capability.** The model can tell it lacks
+  one. "I need to query Open Library and I have no tool for it" is a
+  gap the model observes directly, from a failed plan.
+- **A skill advertises a correction.** The model cannot tell it is about
+  to do something the wrong way. `cop` exists precisely because the model
+  will confidently write an `AbstractView` base class and never
+  experience a missing capability while doing it.
+
+That asymmetry predicts the observed behaviour better than "the
+descriptions are badly written", and it predicts something else: **no
+amount of description tuning closes it**, because the failure isn't that
+the model misjudged relevance — it's that the model never ran the
+relevance check, having felt no gap. It's the same reason a junior dev
+doesn't look up the style guide before writing the code.
+
+Consequences for this note: it strengthens the *structural* half of claim
+2 (a trigger that fires on something the model doesn't have to notice)
+and weakens `claude-parity.md`'s description-side rival as a *complete*
+answer, without making it wrong — sharper descriptions still help the
+cases where the model does pause to check. It also means open question 3's
+fair test should be read carefully: skills that fire on description alone
+will skew toward the capability-shaped ones (`dataviz`, `gh-auth`), and
+that's a real result, not a confound — it just doesn't generalize to the
+correction-shaped ones, which are the ones anybody bothered to nudge.
+
+### 2. Tier 0 is a security win, not only a token win — with one prerequisite
+
+Not mentioned anywhere above: **a skill is untrusted text**.
+{Pikuri::Skill::SkillTool} declares `untrusted: :hard` in its
+`trifecta_legs`, with the reasoning that a bundle travels between
+harnesses and the tool can't tell a hand-written skill from a downloaded
+`.agents/` one. A 28-entry catalog is therefore ~3.8 KB of
+attacker-influenceable prose sitting in the **system prompt** — the
+most-trusted position in the request — on every single turn, for skills
+the session will never use.
+
+And pikuri is inconsistent about this today. MCP server descriptions land
+in the same position via `<available_mcps>` and get a **pre-flight
+injection scan** — `Servers#start_one` rejects a server on
+`Verifier::InjectionDetected` before it ever reaches the LLM. Skill
+descriptions get no scan at all: `Catalog::Bundled#scan_root` parses the
+frontmatter and the text goes straight into the prompt. Same trust class,
+same position, different treatment. (The skill *body* is untrusted too,
+but it arrives as a tool result — a data position — which is where
+untrusted text belongs. The description is the one in the wrong place.)
+
+Tier 0 closes that gap almost for free: it shrinks the always-resident
+untrusted surface from free-form prose to a list of identifiers.
+
+**The prerequisite, though:** that argument only holds if names are
+*actually* constrained, and pikuri's validation is deliberately lenient —
+`Catalog::Bundled`'s header: "invalid name chars … log a warning and load
+anyway". So a `SKILL.md` can today declare a name containing arbitrary
+text, and tier 0 would render it into the prompt with the descriptions
+gone and the injection vector intact. Tier 0 therefore comes with a small
+strictness decision: enforce the standard's `^[a-z0-9]+(-[a-z0-9]+)*$` for
+*names* (still lenient about everything else), or run names through
+{Pikuri::Sanitizer}. Cheap either way, but it must be part of the same
+change, not a follow-up — and it's a mild break from the
+lenient-validation posture, which is exactly the kind of thing that
+belongs in the `DECISIONS.md` entry this note is already routing to.
+
+### 3. The enum must carry the withheld names too
+
+The tier-0-rides-the-enum rider is right, but it has a constraint worth
+stating before someone implements it the obvious way: the enum has to
+list **every** skill in the catalog, including the `paths:`-gated ones
+whose descriptions are withheld. Otherwise a promoted skill is
+un-callable — the model reads the injected description, calls
+`skill(name: "tuile")`, and the schema rejects an argument that isn't in
+its enum.
+
+Stated positively, this is what makes the two mechanisms compose instead
+of fight: **the enum is the stable tier 0 and never changes; only the
+descriptions move.** The tool schema stays byte-identical for the whole
+session, which matters more than it sounds given the caching section —
+tool schemas are part of the cached prefix, so an enum that grew on each
+activation would invalidate the cache exactly like the system prompt
+does. The withhold-descriptions-only design keeps the prefix stable and
+confines all mutation to appended injections.
+
+### 4. A third placement for question 7(a): the tool description
+
+Question 7(a) offers the enum or a system-prompt block. There's a third,
+and it's the one pikuri explicitly ruled out: put the catalog in
+{Pikuri::Skill::SkillTool}'s `description`. Its class header rejects this
+today ("the inventory … lives in the system prompt … as PI and Claude
+Code do (opencode is the outlier)") — but note that reasoning is about
+*convention*, not mechanics, and opencode v1 shipped it.
+
+For the sub-agent case it's exactly right, and for the same reason as the
+enum: a persona replaces the system prompt but inherits the tool
+verbatim, so anything carried on the tool survives. That suggests a
+cleaner end-state than "enum + prompt block": **everything skills-related
+rides the tool** — names in the enum, descriptions in the tool
+description — and the system prompt carries nothing about skills at all.
+One home, inherited correctly by construction, and the main agent's
+`<available_skills>` block disappears entirely rather than being
+duplicated.
+
+Two caveats, neither fatal: a tool description is built once at
+`configure` time, so it can't host promotions any better than the prompt
+can (promotions stay injections either way); and it would need the
+`SkillTool` header's convention argument revisited rather than ignored,
+since that sentence also needs correcting for opencode v2's move
+(`skill-load-cost.md` cheap borrow 3 — do both in one pass).
+
+
 ## Open questions
 
 1. **Is a bare name a strong enough recall cue?** Tier 0 assumes a model
@@ -304,6 +423,23 @@ fifteen times, tier 0 is a net loss on Anthropic.
   hand-written CLAUDE.md nudge is the same words in a rotting home). One
   line in {Pikuri::Skill::Catalog}'s yardoc, because the temptation
   recurs every time someone's catalog gets big.
+- **Either way**, two facts from observation 2 outlive the decision and
+  belong in the durable places now, because they're true today and
+  invisible in the code:
+  - skill descriptions are `untrusted: :hard` text resident in the
+    *system prompt*, while the equivalent MCP text gets a pre-flight
+    injection scan → the asymmetry is a `SECURITY.md` / threat-model
+    fact, not a skills-feature fact, and it is a live gap regardless of
+    whether tier 0 ever ships;
+  - lenient *name* validation is load-bearing in the wrong direction the
+    moment names are the only thing resident → one line in
+    {Pikuri::Skill::Catalog}'s validation paragraph.
+- The capability-vs-correction asymmetry (observation 1) is a *concept*,
+  not a per-symbol fact: it explains why skills need a trigger where MCP
+  servers don't, and it's the kind of thing the book's skills material
+  exists to teach. It also belongs in `COMPARISON.md`'s reasoning about
+  why every harness surveyed relies on model judgment and every one of
+  them then adds a nudge mechanism anyway.
 - The Anthropic prefix-rewrite cost of a `:system` promotion →
   {Pikuri::Skill::Extension#schedule_load_skill} yardoc, where
   `skill-load-cost.md` is already sending one sentence on the same
