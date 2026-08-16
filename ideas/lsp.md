@@ -12,9 +12,16 @@ scheme→request table, so that Java library source is readable before LSP
 3.18 exists anywhere and the Java arm can therefore be *run* rather than
 only designed; see "What a result outside the root becomes". The gem's
 trifecta legs are settled too — `:no_egress`, unconditional
-`untrusted: :hard`, `private:` riding the host — so **no design fork is
-parked any more**; what is left is implementation plus the handful of
-live-run checks flagged inline.
+`untrusted: :hard`, `private:` riding the host — and every question the
+note opened has closed (they are kept, struck, under "Questions raised").
+
+What is left is implementation, the handful of live-run checks flagged
+inline, and the four mechanics under **"Open items"** — of which two are
+genuine design work: how an opened document is kept in sync across calls
+and after the agent's own edits, and what anchors a name→position hop
+that resolves outside the workspace root. Both are shaped like the
+silent-empty traps this note spends its length defending against, so
+settle them before the tool layer.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -194,7 +201,10 @@ before feeding positions onward.
 
 **6. `references` is high-volume.** 40 hits for `resolve_for_read`: 4 lib
 call sites, 2 declarations, **34 spec hits**. Raw output is a lousy
-observation — needs lib/spec grouping and a cap, like `Grep` already does.
+observation — needs a cap and lib/spec grouping. The cap has a precedent to
+copy ({Pikuri::Workspace::Search::Grep::MAX_BYTES}, 50 KB, head-truncated
+with a marker); the **grouping does not** — `Grep` hands rg's output
+through and groups nothing, so that half is new work here.
 
 The third client reproduced that split to the exact number, uncapped and
 ungrouped. And it is not only `references`: `definition` and `hover` on
@@ -226,7 +236,10 @@ spelling of it.
 
 **9. What ruby-lsp does *not* advertise, exactly.** Finding 1 counted the
 capabilities without naming them, and the absences turn out to decide the
-operation enum. Present: `definition`, `references`, `workspaceSymbol`,
+operation enum. (The two counts differ only in units, re-checked against a
+live `initialize` in this repo: **23 capability keys, of which 20 end in
+`Provider`**; the other three are `experimental`, `positionEncoding` and
+`textDocumentSync`.) Present: `definition`, `references`, `workspaceSymbol`,
 `hover`, `documentSymbol`, `completion`, `rename`, `diagnostic`,
 `typeHierarchy` (20 providers). **Absent: `typeDefinitionProvider`,
 `implementationProvider`, `declarationProvider`,
@@ -245,6 +258,10 @@ Gradle multi-module repo (copied to a scratch dir precisely because a
 jdtls import writes `.project` / `.classpath` / `.settings/` into the
 project directory) run both cold and warm. This settles the readiness
 open question, and reverses one deferral.
+
+(The `J<n>` labels are stable ids in discovery order, cited from all over
+this note; the paragraphs below are grouped by topic instead, so they do
+not run in numeric order. Don't renumber them to tidy the sequence.)
 
 **J1. `$/progress` from jdtls is opt-in via *our* capability.** Declare
 `window.workDoneProgress: true` and tokens flow; omit it and jdtls emits
@@ -520,9 +537,21 @@ Worth arguing with:
   can be registered, *every* operation needs a routing selector, and a
   file path is the only one the model reliably has. Routing on workspace
   root fails precisely in the mixed-language repo that makes a registry
-  worth having. Keep it; explain why in the parameter description, since
-  a required `filePath` on a workspace-wide query reads as a bug
-  otherwise.
+  worth having.
+
+  **But pikuri reaches a different conclusion from the same argument**,
+  and the difference is the parameter shape, not the reasoning. Claude
+  Code's required parameter is a *position* (`line` + `character`), and a
+  position is meaningless without the file it indexes into — so for that
+  shape a required `filePath` is forced, and the wart is unavoidable.
+  Pikuri's required parameter is a **name** (see "The tool surface"),
+  which is meaningful on its own, so a missing `file` is answerable rather
+  than fatal: fan out to every registered server and merge. `file` is
+  therefore an *optional* disambiguator here — routing selector when
+  given, fan-out when absent — and that is not a rejection of the
+  argument above but its consequence under a different required
+  parameter. What the parameter description owes the model is which of
+  the two it is doing.
 - It exposes `workspaceSymbol` raw and lets the model chain it into
   `goToDefinition`. That works because the model is strong. **Pikuri's
   default is local llama.cpp**, and small local models chain multi-call
@@ -619,10 +648,22 @@ Three things replace the clock, none of them a clock:
 
 - **Die on child death.** What a timeout actually guards is not a slow
   index but a server that never becomes ready — jdtls failing a
-  dependency import, ruby-lsp's custom-bundle `bundle install` erroring.
-  Child exit is a *definite* answer: `"ruby-lsp failed to start: <stderr
-  tail>"`, an honest error rather than a guess, and it catches the common
-  case earlier than any timeout would.
+  dependency import, ruby-lsp's custom-bundle `bundle install` erroring,
+  a second session finding the `-data` directory locked. Child exit is a
+  *definite* answer, and it catches the common case earlier than any
+  timeout would. It surfaces as the tool's own
+  `"Error: ruby-lsp exited during startup: <stderr tail>"` — "errors are
+  loud", in the tool-returns-a-string half of that rule, since the model
+  can react to it.
+
+  **And it ends there: no fallback, no suggestion.** The error does not
+  say "try grep". That would be the `"still indexing, try grep"`
+  observation this section just refused, arriving by a different door: a
+  decision point handed to a small local model, which will either loop on
+  the dead server or wander off the task. Either the `lsp` tool works —
+  blocking as long as it takes — or it errors, and choosing what to do
+  next is the model's normal business, not something the failure message
+  steers.
 - **`Cancellable` must break the wait.** A blocking read never reaches a
   tool-call boundary, so `bin/pikuri-code`'s SIGINT trap would not fire —
   the wait has to poll the cancel flag. This is what makes "endless"
@@ -678,6 +719,60 @@ Two details that decide whether the deferred drain behaves:
 - **Always emit a terminal `done: true` when the wait exits**, whatever
   is parked. Otherwise a host that drew a bar keeps it up forever when
   readiness arrives without a matching `end`.
+
+### The coalescing mailbox
+
+Both of those belong in one small class rather than smeared across the
+wait loop, and its single responsibility states cleanly: **it is the
+thread boundary** — a producer thread pushes, a consumer thread drains
+the newest value per key, and the block runs on the *consumer's* thread.
+
+```ruby
+mailbox.drain(tick: 0.1) do |update|   # nil on an idle tick
+  cancellable.check!
+  break if client.ready? || client.dead?
+  emit.call(update) if update
+end
+```
+
+- **`push(key, value)`** — coalesce per key, not to one global latest.
+  jdtls can hold "Importing project" and "Building workspace" open at
+  once, and with Ruby and Java both booting there are two servers besides;
+  a single latest-value flickers between unrelated tasks. Taking the key
+  as a parameter keeps the class ignorant of the value type, so no
+  key-extractor strategy has to be injected.
+- **Terminate with `break`.** The caller must check readiness *and*
+  `Cancellable` regardless, so give it one place to do it: yield `nil` on
+  an idle tick and let plain Ruby end the loop. No `stop_when:` predicate,
+  no magic return value, and a `Cancelled` raised inside the block just
+  propagates.
+- **Not named `run_loop`** — {Pikuri::Agent#run_loop} is *the* chat loop,
+  and a second one is a permanent readability tax at every call site.
+- **A mailbox, not a queue**: no backlog exists by construction, so
+  `Thread::Queue` is the wrong primitive (it preserves exactly what this
+  discards). `Mutex` + `ConditionVariable`, ~30 lines.
+
+**Where it lives.** Its own class either way, but *inside `pikuri-lsp`*
+until a second caller exists — with one, "reusable" is a hypothesis, and
+promoting later costs nothing. Candidates worth checking when the time
+comes: vectordb corpus indexing and MCP boot probing. Both need testing
+for whether they are genuinely cross-thread or merely sequential on the
+agent thread; if sequential, there is no second caller and this correctly
+stays gem-local.
+
+Consequence accepted deliberately: progress nobody is waiting on
+surfaces no events. That is the *correct* scope, not merely the cheap
+one, in both directions — background indexing while the user types their
+first prompt has no audience, and background indexing while the model is
+mid-turn doing unrelated work has a worse-than-none audience, since a bar
+for something nobody is blocked on competes with the model's output. A
+host wanting a boot-time status bar anyway needs current-state polling on
+the extension; v1 shouldn't build it until a real TUI asks, and if this
+bites, redesign then.
+
+`title` / `message` are server-supplied strings reaching a terminal;
+defanging is the renderer's job via `Pikuri::Sanitizer`, per the
+Confirmer seam's presentation rule, so nothing new is owed here.
 
 ### What a result outside the root becomes
 
@@ -826,59 +921,7 @@ Volume is part of this, not separate from it: J7's single class was
 never the whole document — the same capping discipline finding 6 demands
 for `references`.
 
-### The coalescing mailbox
-
-Both of those belong in one small class rather than smeared across the
-wait loop, and its single responsibility states cleanly: **it is the
-thread boundary** — a producer thread pushes, a consumer thread drains
-the newest value per key, and the block runs on the *consumer's* thread.
-
-```ruby
-mailbox.drain(tick: 0.1) do |update|   # nil on an idle tick
-  cancellable.check!
-  break if client.ready? || client.dead?
-  emit.call(update) if update
-end
-```
-
-- **`push(key, value)`** — coalesce per key, not to one global latest.
-  jdtls can hold "Importing project" and "Building workspace" open at
-  once, and with Ruby and Java both booting there are two servers besides;
-  a single latest-value flickers between unrelated tasks. Taking the key
-  as a parameter keeps the class ignorant of the value type, so no
-  key-extractor strategy has to be injected.
-- **Terminate with `break`.** The caller must check readiness *and*
-  `Cancellable` regardless, so give it one place to do it: yield `nil` on
-  an idle tick and let plain Ruby end the loop. No `stop_when:` predicate,
-  no magic return value, and a `Cancelled` raised inside the block just
-  propagates.
-- **Not named `run_loop`** — {Pikuri::Agent#run_loop} is *the* chat loop,
-  and a second one is a permanent readability tax at every call site.
-- **A mailbox, not a queue**: no backlog exists by construction, so
-  `Thread::Queue` is the wrong primitive (it preserves exactly what this
-  discards). `Mutex` + `ConditionVariable`, ~30 lines.
-
-**Where it lives.** Its own class either way, but *inside `pikuri-lsp`*
-until a second caller exists — with one, "reusable" is a hypothesis, and
-promoting later costs nothing. Candidates worth checking when the time
-comes: vectordb corpus indexing and MCP boot probing. Both need testing
-for whether they are genuinely cross-thread or merely sequential on the
-agent thread; if sequential, there is no second caller and this correctly
-stays gem-local.
-
-Consequence accepted deliberately: progress nobody is waiting on
-surfaces no events. That is the *correct* scope, not merely the cheap
-one, in both directions — background indexing while the user types their
-first prompt has no audience, and background indexing while the model is
-mid-turn doing unrelated work has a worse-than-none audience, since a bar
-for something nobody is blocked on competes with the model's output. A
-host wanting a boot-time status bar anyway needs current-state polling on
-the extension; v1 shouldn't build it until a real TUI asks, and if this
-bites, redesign then.
-
-`title` / `message` are server-supplied strings reaching a terminal;
-defanging is the renderer's job via `Pikuri::Sanitizer`, per the
-Confirmer seam's presentation rule, so nothing new is owed here.
+### One root, and where the entry is written
 
 **No `root:` / `cwd:`, deliberately.** The child is spawned with cwd =
 the `Workspace` root, full stop. Both reference servers derive their
@@ -939,7 +982,7 @@ that being the correct behaviour:
 ```ruby
 Pikuri::Lsp::Registry::StdioEntry.new(
   id: 'java', files: %w[*.java],
-  command: ['jdtls', '-data', Pikuri::Paths.cache('jdtls', project_slug).to_s],
+  command: ['jdtls', '-data', Pikuri::Paths.cache.join('jdtls', project_slug).to_s],
   env: { 'JAVA_HOME' => ENV.fetch('JAVA_HOME') },
   init_options: {
     extendedClientCapabilities: { classFileContentsSupport: true }
@@ -1000,17 +1043,27 @@ finding 1's multi-server dispatch is exercised for real — `.java` and
 `.rb` routing to different servers with different capability sets — and
 the `.md` refusal is a live behaviour, not a hypothetical.
 
-## Open questions
+## Questions raised, and how they settled
 
-- **Startup cost vs. session model.** Indexing this repo dominated each
-  run's wall time. `bin/pikuri-code` is synchronous and request-scoped —
-  do we pay it lazily on first `lsp` call (a multi-second stall mid-loop),
-  eagerly at boot (slow start for sessions that never use it), or in
-  background at boot and block only on first use? Leaning the third, and
-  the no-timeout decision strengthens it: background start overlaps
-  indexing with the user typing their first prompt and the model's first
-  few turns, so the unbounded block is usually near-zero and only bites
-  the session that asks for language intelligence immediately.
+(All seven are closed; what is still open is under "Open items" below.
+They are kept because each one's *resolution* is the thing a reader will
+otherwise re-litigate — the considered-then-deferred record an `ideas/`
+note owns.)
+
+- ~~**Startup cost vs. session model.**~~ **Settled: spawn at boot,
+  index in the background, block the first call.** Indexing dominated
+  every run's wall time, and the three candidates were lazy-on-first-call,
+  eager-at-boot, and background-at-boot-blocking-on-first-use. The third
+  wins, and splits cleanly in two: **the spawn itself is synchronous at
+  boot** — it is cheap, and it is what makes a missing binary raise
+  immediately and loudly (see "Missing binary at boot") — while
+  *readiness* is what proceeds in the background. The first `lsp` call
+  then blocks until its server is fully ready, however long that takes,
+  emitting `ServerProgress` while it waits so the block is legible rather
+  than a hang. Background indexing overlaps with the user typing their
+  first prompt and the model's first few turns, so the unbounded block is
+  usually near-zero and only bites the session that asks for language
+  intelligence immediately.
 - ~~**Does the model actually use it?**~~ **Not a blocker — build it
   anyway**, but the expected payoff is uneven and the book should say so.
   For a typed language it is close to certain: Java's answer to "where is
@@ -1026,7 +1079,7 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   (finding 1); retrofitting routing plus per-server capability checks
   later would touch every operation.
 - ~~**Where does confinement live, and is it a capability question?**~~
-  **Settled — see "What a result outside the root becomes" below.** Every
+  **Settled — see "What a result outside the root becomes" above.** Every
   result is location + snippet, the scheme decides where the snippet comes
   from, and only `file:` is ever read by pikuri itself.
 - ~~**The readiness gate may not be generic.**~~ **Settled by J1–J3** —
@@ -1036,14 +1089,18 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   answers `[]`. No per-server predicate, no knob. What must not be
   forgotten is the *capability* half: `window.workDoneProgress: true`
   has to be declared or jdtls emits no progress for the gate to watch.
-- **Concurrent sessions in one repo.** Two `pikuri-code` processes on the
-  same checkout hand both servers the same state directory (jdtls's
-  `-data`, ruby-lsp's in-repo `.ruby-lsp/` custom bundle). `Paths.cache`
-  is shared-and-persistent by design; `Paths.new_temp` would fix the
+- ~~**Concurrent sessions in one repo.**~~ **Settled: keep `cache`, and
+  the loser errors.** Two `pikuri-code` processes on the same checkout
+  hand both servers the same state directory (jdtls's `-data`, ruby-lsp's
+  in-repo `.ruby-lsp/` custom bundle). `Paths.cache` is
+  shared-and-persistent by design; `Paths.new_temp` would fix the
   collision and re-index from scratch every session, which for jdtls costs
   minutes — J6 measured it at 78s cold against 7.7s warm on the same repo.
-  So: keep `cache`, accept that the second session may fail to start its
-  server and degrades to grep.
+  So: keep `cache`, and when the second session's server dies on the
+  locked directory it is exactly the child death above — that session's
+  `lsp` calls return `"Error: …"` with no fallback. **Not a degrade to
+  grep**: the tool either works or errors, and nothing in pikuri quietly
+  substitutes a weaker answer for the one that was asked for.
 - ~~**Missing binary at boot.**~~ **Settled: nothing is registered by
   default, so it may be loud.** `bin/pikuri-code` is written in Ruby, but
   that is an implementation detail of the agent, not a claim about the
@@ -1054,9 +1111,61 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   "Where the user actually writes this"). With no default
   entry, a registered-but-missing binary is a misconfiguration the user
   made deliberately, so it raises at boot like a failing
-  {Pikuri::Mcp::Servers#start_one} rather than warning and degrading —
-  "errors are loud", with no default to break for people who never asked
-  for LSP.
+  {Pikuri::Mcp::Servers#start_one} rather than warning and degrading. It
+  is the *spawn* that raises, which is why spawning stays synchronous at
+  boot while readiness does not (see "Startup cost vs. session model") —
+  an `ENOENT` is known in milliseconds and has no reason to wait for a
+  tool call to be reported. That is "errors are loud" in its raising half,
+  affordable here because there is no default wiring to break for people
+  who never asked for LSP. (A server that spawns and *then* dies is the
+  other half — the tool's `"Error: …"` string, see "Die on child death".)
+
+## Open items
+
+Four mechanics this note does not decide. The first two are real design
+work and want settling *before* the tool layer is written — both are
+shaped exactly like the silent-empty traps the rest of the note is
+careful about. The last two are missing sentences rather than forks.
+
+1. **Document synchronization across calls.** `didOpen` with the file's
+   full text is a precondition nowhere stated in the spec (the jdtls
+   corrections), and the tool does the opening because the model never
+   opens anything. Unsettled: what the *second* call does — LSP forbids
+   `didOpen` on an already-open document, so it is either `didClose` +
+   re-open or a version-bumped full-text `didChange` — and what happens
+   after the agent's own `write` / `edit` leaves the server's in-memory
+   copy stale. A stale open document answers confidently against text
+   that is no longer there, which is finding 2's false premise by a fifth
+   route. Leaning: a per-server set of open URIs, `didOpen` on first
+   touch, full-text `didChange` with an incremented version whenever the
+   file's digest moved since the last sync, no `didClose` (the set dies
+   with the child). Verify against both servers — an ignored `didChange`
+   fails silently, which is the whole problem.
+2. **What anchors a hop that resolves outside the root.** With `symbol`
+   alone, `workspace/symbol` can place the anchor in a gem file *outside*
+   the workspace root, or behind a `jdt:` URI (J5). Every position-based
+   operation then needs a document the tool is currently not allowed to
+   open: out-of-root paths are refused up front, and a `jdt:` document is
+   not on disk at all. Result *rendering* has an answer already
+   (snippet-only, the scheme table); the *anchor* does not. Three arms,
+   and they need not all get the same one: refuse with a distinct
+   message, permit a read-only `didOpen` of an out-of-root `file:` path,
+   or `didOpen` the virtual URI with the text the scheme table already
+   fetches (nvim-jdtls does the last). This is the one place where the
+   confinement boundary and the capability J8 sells pull against each
+   other directly.
+3. **Fan-out blocks on every server.** A bare-`symbol` call fans out, so
+   it waits for *all* registered servers to be ready — a Ruby-only
+   question pays jdtls's cold import (78s, J6) the first time. That
+   follows from the no-timeout rule and is probably acceptable, but it
+   should be an accepted consequence in writing rather than a surprise.
+   The cheap mitigation — fan out only to servers already ready, when any
+   are — trades completeness for latency and is its own small decision.
+4. **What the tool is constructed with.** The Sketch names only the
+   emitter handoff. It also needs the client set and a
+   `Workspace::Filesystem`: for `denied?`, the root confinement, the
+   seam-routed read behind `didOpen`, and `private?` on the trifecta
+   declaration. One line in the Sketch closes this.
 
 ## The tool surface: ten operations, and no column
 
@@ -1088,6 +1197,54 @@ concrete. Three consequences worth noting:
   encoded offset in either direction.
 - A symbol that isn't literally on the named line is a clean error
   ("`foo` not found on line 42"), not a silent wrong answer.
+
+### Does the wider enum drag `character` back in?
+
+It does not, and the check is worth writing out, because the enum grew
+after the no-column decision was taken and every operation in it is
+position-based in LSP. Sort the ten by *what the anchor is*:
+
+- **Anchor is a declaration the index knows** — `definition`,
+  `references`, `hover`, `implementation`, `supertypes`, `subtypes`,
+  `incomingCalls`, `outgoingCalls` on a named entity, plus
+  `workspaceSymbol`, which needs no anchor at all. `workspace/symbol` +
+  the exact-name filter supplies file, line *and* column. The model
+  supplies nothing positional, and `file` / `line` only narrow which
+  declaration is meant.
+- **Anchor is not a workspace symbol** — a local, a parameter, an
+  expression. `typeDefinition` on `var names = new ArrayList<String>()`
+  is the archetype (J9), and `definition` / `hover` on a local are the
+  same shape. The index cannot help, so `file` + `line` are effectively
+  required — but the *column* is still derived by locating the symbol
+  text on that line, never asked for.
+
+So `character` is never the only way to reach an anchor: with a line, the
+column is derivable from the line's text; without one, the index supplies
+both. What a column would uniquely buy is **the same identifier twice on
+one line** (`names = names.trim()`, `foo(foo)`). The answer there is the
+discipline already used for multi-server routing, not a new parameter:
+**query every occurrence on the line and merge.** Identical results
+collapse to one — the overwhelmingly common case, since repeated
+identifiers usually denote the same entity — and genuinely different
+results are returned labelled by column. At most a couple of extra round
+trips against a local child process, and the model is asked nothing.
+
+The wider enum does add a second ambiguity class, and it is worth naming
+because **a column would not have solved it either**: `prepare*` and
+`workspace/symbol` can return several exact-name items — Java overloads
+(`greet(String)` / `greet(int)`), one name defined in several classes.
+The model has no more idea which one it means than the tool does, so a
+`character` it invented would be a guess wearing a coordinate. `file` +
+`line` narrow it when the model does know; otherwise the tool runs each
+item and labels every result by its container and signature, under the
+usual cap. That is an argument *for* the name-based shape, not against
+it — the disambiguator the wider enum wants is semantic, and a column is
+not.
+
+Conclusion: parameters stay `operation`, `symbol`, optional `file`,
+optional `line`. `typeDefinition`'s parameter description must say that
+`file` + `line` are effectively required for it, since it is the one
+operation whose usual anchor is invisible to the index.
 
 Membership then follows:
 
@@ -1259,9 +1416,13 @@ binary to install, one backtrace instead of two.
 
 The structural implication is the part worth writing down: **the wrapper
 must not spawn in its constructor.** `ClientWrapper.new(stdin:, stdout:)`
-with a separate `.spawn(entry)` factory — the same two-phase
-construct-then-start shape {Pikuri::Mcp::Servers} already documents, so
-this is consistency rather than a seam cut for tests.
+with a separate `.spawn(entry)` factory. This **is** a seam cut for tests,
+and saying so is cheaper than the precedent it is tempting to claim:
+{Pikuri::Mcp::Servers} documents a two-phase lifecycle, but at the
+*collection* level (`.new` + `#start_all`), while
+{Pikuri::Mcp::ClientWrapper}`#initialize` spawns immediately. At the level
+being copied, MCP does the opposite — so the shape transfers, the
+precedent does not.
 
 Three layers, because the middle one cannot be done in-process:
 
@@ -1513,7 +1674,11 @@ configs → the book chapter (the *no configurable root* rule is the one
 that also wants a sentence in the seam entry, since it is what keeps the
 LSP's project and the `Workspace` root the same boundary);
 **direct-vs-MCP with the bridges named**, **no-timeout with its three
-replacements**, and **the scheme table** (standard-first, one hardcoded
+replacements** (plus the startup and failure policy that falls out of it:
+spawn synchronously at boot so a missing binary raises, index in the
+background, block the first call for as long as it takes, and on child
+death return `"Error: …"` with **no fallback suggestion** — the tool works
+or it errors, and never proposes grep), and **the scheme table** (standard-first, one hardcoded
 `jdt:` row, rejected alternatives: standard-only — which made the Java arm
 untestable — and a `content_request` config field; plus the deletion
 condition), and **the declared trifecta legs** — one entry for all three
