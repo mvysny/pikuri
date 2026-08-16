@@ -5,9 +5,8 @@ verified against live servers — ruby-lsp, rubocop, a shipped client, and
 now jdtls against a real Gradle multi-module repo; the direct-vs-MCP fork
 is decided in principle; the registry entry's field list and the
 progress-delivery mechanism are drafted (Configuration). The
-tool-surface sketch is the live part. Two lifecycle questions remain
-open: what a result outside the workspace root becomes, and whether
-`bin/pikuri-code` registers a Ruby server by default.
+tool-surface sketch is the live part. One lifecycle question remains
+open: what a result outside the workspace root becomes.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -678,6 +677,13 @@ pikuri's `Paths` convention exists to prevent, which makes this a
 four-line demonstration of the convention rather than a paragraph
 asserting it.
 
+Both are *examples*, and neither ships wired: `bin/pikuri-code` gets an
+empty `Lsp::Registry.new(entries: [])` with these two commented above it,
+the shape its MCP block already uses. So the chapter teaches the config
+by having the reader paste one in, which is also the only honest way to
+present it — the entry depends on which servers that reader has
+installed.
+
 The chapter gets a second payoff for free: with both entries registered,
 finding 1's multi-server dispatch is exercised for real — `.java` and
 `.rb` routing to different servers with different capability sets — and
@@ -737,11 +743,20 @@ the `.md` refusal is a live behaviour, not a hypothetical.
   minutes — J6 measured it at 78s cold against 7.7s warm on the same repo.
   So: keep `cache`, accept that the second session may fail to start its
   server and degrades to grep.
-- **Missing binary at boot.** If `bin/pikuri-code` ships a Ruby entry
-  registered *by default* — which is the only way the feature gets used —
-  then a machine without `ruby-lsp` must warn loudly and degrade, not
-  raise. That tension (registered-by-default vs. errors-are-loud) is
-  decided by whether the default entry ships, so decide that first.
+- ~~**Missing binary at boot.**~~ **Settled: nothing is registered by
+  default, so it may be loud.** `bin/pikuri-code` is written in Ruby, but
+  that is an implementation detail of the agent, not a claim about the
+  code it edits — it runs against any project, so shipping a Ruby server
+  wired in would be wrong for most sessions. The registry starts empty
+  and the user adds entries by hand, exactly as the MCP block above it
+  already works (there is no pikuri config file to put them in — the
+  README's pitch is that a conversation needs none, and `Paths.config` is
+  pikuri-os's `MACHINE.md` home, not a settings store). With no default
+  entry, a registered-but-missing binary is a misconfiguration the user
+  made deliberately, so it raises at boot like a failing
+  {Pikuri::Mcp::Servers#start_one} rather than warning and degrading —
+  "errors are loud", with no default to break for people who never asked
+  for LSP.
 
 ## Considered, deferred
 
