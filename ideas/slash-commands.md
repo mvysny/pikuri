@@ -36,10 +36,35 @@ and the question-4 footer gate, which as written gated nothing. The pass
 also caught two rotted cross-references and one finding that the file it
 described had outrun.
 
-One genuinely contested piece is left, and it is now the only thing
+**Question 3 settled 2026-08-16**, pulled forward by the decision to
+wire commands into the `bin/` demos, which need typed-`/name` resolution
+before any menu exists. Answer: **host built-in > command > skill**,
+warn on a collision, never raise — the house style, confirmed against
+`Catalog::Bundled`, which does not raise either (it keeps the
+first-listed base and warns). That pass also found a **third kind** in
+the namespace the note had only ever counted two of — `/plan` and
+`/impl` are host built-ins, not commands — and with it a real hijack: a
+cloned repo shipping `.claude/commands/plan.md` would otherwise capture
+the read-only plan-mode toggle, silently.
+
+**Question 5 turned out not to be a sentence of yardoc.** Asked properly
+(2026-08-16) it is a **detector blind spot**: a command contributes no
+tool and — under P3 as written — no extension, so a wired command
+surface lands nowhere in the `Pikuri::Trifecta` tree, and an agent
+holding all three legs reports two. The proposal is `untrusted: :hard`,
+declared through `Extension#trifecta_contribution`, which costs P3 a
+narrow amendment (a declaration-only `Command::Extension`). `:hard` is
+the *default*, not the answer: trust is graded **per source** —
+project-base bundles inherit `Workspace::Filesystem#trusted?`, home-base
+ones take a declared flag defaulting `false`. That grading channel does
+not exist yet and reaches skills too (`SkillTool` is unconditionally
+`:hard`), so it is **its own note and its own `DECISIONS.md` entry**;
+commands ship at `:hard` and adopt it when it lands.
+
+One genuinely contested piece is left, and it is still the only thing
 between this note and an implementer: **question 7** — whether
-substitution respects fenced blocks and code spans. Questions 3, 5 and 6
-remain a host's call, a sentence of yardoc, and a settled lean.
+substitution respects fenced blocks and code spans. Question 6 remains a
+settled lean.
 
 **Scope.** This note owns the *human-invoked* half of the prompt-bundle
 surface: discovery of `commands/`, argument interpolation, and how a
@@ -62,6 +87,10 @@ Related:
   measurement, and **this note's second motive** (its deferred item 6).
   See below; read that item and this note together, they answer each
   other.
+- [`bundle-trust-grading.md`](bundle-trust-grading.md) — question 5's
+  spin-off: letting a catalog declare its skills user-authored, so the
+  untrusted leg is graded per source instead of pinned at `:hard`.
+  Commands adopt that channel rather than inventing one.
 - [`claude-parity.md`](claude-parity.md) — Claude-Code parity, but for
   the *prompt*. This is a *harness* parity item; if it lands, that note
   gains nothing and this one graduates on its own.
@@ -649,11 +678,71 @@ to be reachable from pikuri aren't.
    project-local involved. Mirror the kwarg rather than hardcoding a
    root: same shape, same left-to-right first-wins precedence, and the
    motivating file is reachable on day one.
-3. **Name collision between a command and a skill.** `/wh` when both
-   exist. Options: commands win in the slash namespace (they're the
-   human-invoked one) with a warning; or the menu shows both with
-   distinct affordances. Only bites once there's a merged menu (P4), so
-   it can be decided by the host that first hits it.
+3. **Name collision in the typed slash namespace.** ~~Only bites once
+   there's a merged menu (P4), so it can be decided by the host that
+   first hits it.~~ **Settled 2026-08-16**, pulled forward because the
+   `bin/` wiring needs an answer before any menu exists.
+
+   **First, the precedent — which is not a raise.** The question isn't
+   novel: `Catalog::Bundled` already answers the *skill-vs-skill* form.
+   `scan_root` keeps the first entry seen and logs `"… is shadowed by
+   earlier entry at …"` for the loser (spec: *"on a name collision keeps
+   the first-listed base and logs a warning"*), and `bin/pikuri-code`
+   passes `search_bases: [project_root, Dir.home]`, so a project skill
+   beats a global one of the same name. No exception anywhere on that
+   path. So the house style for a name collision is **deterministic
+   winner plus a warning**, and this decision inherits it rather than
+   inventing a stricter one.
+
+   **Second — there are three kinds in that namespace, not two.**
+   `/plan` and `/impl` in `bin/pikuri-code` are neither commands nor
+   skills: they are **host built-ins**, handled by the REPL and never
+   sent to the model (they flip the shared `ReadOnly` flag). Any host
+   that grows a command registry has all three, and the note had only
+   ever considered two.
+
+   Precedence, highest first: **host built-in > command > skill.**
+
+   - **Host built-in beats a command, and this leg is load-bearing
+     rather than cosmetic.** Commands are scanned from the project root
+     (question 2), so a cloned repo carrying `.claude/commands/plan.md`
+     would otherwise capture `/plan` — and `/plan` is the read-only
+     plan-mode toggle. A repo that shadows it silently disables the gate
+     the human believes they just switched on, and the failure is
+     invisible: the agent answers a prompt instead of entering plan
+     mode, which reads as the model being chatty, not as a hijack.
+     Built-ins are a fixed, host-authored list, so they are matched
+     first and no scanned file ever enters that set. Warn at scan time
+     when a command file's name collides with one — the file is inert
+     and its author should hear about it.
+   - **Command beats a skill, on asymmetric reachability.** If `/wh`
+     resolves to the skill, the *command* becomes unreachable by
+     anything: nothing else can invoke it, by design — that is the whole
+     "costs zero prompt tokens" property. If `/wh` resolves to the
+     command, the *skill* loses nothing: it stays in
+     `<available_skills>`, the model can still load it with the `skill`
+     tool on any turn, and a merged menu still lists it. One side of
+     this fork drops a capability on the floor; the other drops nothing.
+
+   Two riders that keep the scope honest:
+
+   - **It is a precedence, not a shadow.** Unlike the catalog's
+     skill-vs-skill case, the loser here is not dropped from anything —
+     the skill is untouched and stays fully model-invocable, and only
+     its typed-slash affordance is taken. The warning has to say that,
+     or it reads as "your skill was discarded", which would be false.
+   - **This governs *typed* resolution only.** A merged `/` menu (P4) is
+     unaffected: a row already carries its own kind, so picking the
+     skill row loads the skill no matter how many commands share its
+     name. The collision exists in exactly the one place where all the
+     human handed you is a string.
+
+   Where the check lives: the host, necessarily — P1 keeps the two
+   registries apart, so nothing in the library sees both. In a `bin/`
+   script it is the existing `case` for the built-ins, then a command
+   lookup, then the catalog. If a second host writes the same three-way
+   resolution, it graduates into the `Pikuri::Slash::Menu` façade
+   alongside P4's merge — same trigger, same home.
 4. **Does a command body get the `<command>`-wrapper treatment?**
    ~~Unsettled.~~ **Settled 2026-08-16, by the `@path` decision.**
    `Renderer.format_skill` wraps a skill in `<skill name= location=>`
@@ -694,14 +783,149 @@ to be reachable from pikuri aren't.
    *not* load as a command — a subdirectory, or a file that isn't one of
    the `.md`s it scanned. A directory of nothing but commands gets no
    footer, which is the common case and the one worth keeping quiet.
-5. **Is the expansion trusted or untrusted text?** `SkillTool` declares
-   `untrusted: :hard` precisely because a skill is a file someone else
-   wrote. A command file is the same bytes with the same provenance —
-   but it arrives as a *user* turn, the most-trusted role, on the
-   human's deliberate keystroke. Is that a downgrade we're comfortable
-   with? Probably yes (the human typed `/wh`, which is consent in a way
-   a model's `skill(name:)` is not), but it should be an explicit
-   sentence somewhere, not an accident of the injection kind.
+5. **Is the expansion trusted or untrusted text?** ~~Probably a
+   downgrade we're comfortable with — the human typed `/wh`, which is
+   consent in a way a model's `skill(name:)` is not.~~ **Proposed
+   2026-08-16 — and the old lean was backwards; author's call still
+   open.** Untrusted, `:hard`, and it has to be *declared* — the same
+   `TrifectaLegs.new(private: false, untrusted: :hard,
+   egress_payload_review: :no_egress)` that `SkillTool` carries, arrived
+   at independently and landing on the identical value.
+
+   **This was never an aesthetic question — it is a detector blind
+   spot.** `Pikuri::Trifecta` builds its tree from an agent's *tools*
+   plus whatever its *extensions* contribute. A command is neither: P3
+   established that it contributes no tool, no prompt snippet and no
+   extension. So under P3 as written, a wired command surface lands in
+   that tree **nowhere**. Wire skills and the untrusted leg lights;
+   wire commands — same bytes, same `~/.claude` directory, frequently
+   the same third-party author — and nothing lights at all. An agent
+   that really holds all three legs reports two. That is precisely the
+   *under-warn* failure `Pikuri::Trifecta`'s own header owns up to, and
+   the one thing a smoke alarm may never do quietly.
+
+   The three arguments, now that the axis is the right one:
+
+   - **Provenance is identical.** `SkillTool` declares `:hard` "because
+     a skill is a file someone else wrote". A command file is a file
+     someone else wrote. Nothing about the *bytes* changed.
+   - **Consent to invoke is not evidence of having read.** The note's
+     old lean leaned on the human's keystroke. But typing `/deploy`
+     means the human chose to *run* the bundle, not that they opened it
+     — and the entire premise of scanning `.claude/commands` is that
+     bundles **travel**, arriving with a cloned repo. Nor does the
+     comparison favour commands: a skill's catalog was also assembled by
+     a human at wiring time, and that human didn't read the bodies
+     either. The distinction the lean rested on doesn't survive contact
+     with what the `untrusted` axis actually measures.
+   - **The `:user` role does not make it safer.** P2 is right that a
+     command must land as `:user` — that's the mechanics
+     (`on_user_message` fires, no Anthropic stickiness, no
+     `EmptyTurnError`). But `:user` is the **most-trusted role in the
+     conversation**, the one the model is trained to read as its
+     principal speaking. The same injected sentence carries *more*
+     authority in a command body than in a skill body, which arrives as
+     reference text. The injection kind P2 chose for good reasons is
+     what raises the taint; it cannot also be what excuses it.
+
+   **The counter-argument, which is real and does not get zeroed out**
+   (raised 2026-08-16, and it improves the note): *only a human can fire
+   a command — the model cannot — so an injection cannot reach one.*
+   True, and it is a genuine asymmetry with skills that the note had not
+   articulated. A skill is **model-selected**: the catalog is in the
+   prompt, so poisoned content already in context can steer the
+   `skill(name:)` call and cause a load. That amplification loop —
+   injection begets injection — is real for skills and **structurally
+   absent for commands**. Nothing the model can emit pulls a command
+   body into context.
+
+   It does not follow that the bytes are trusted. The axis asks whether
+   attacker-influenceable content entered the context, not who chose to
+   load it. Human-only triggering removes the attacker-steered
+   *trigger*; the *content* is still whatever the file's author wrote,
+   and the whole reason to scan `.claude/commands` is that bundles
+   arrive with a cloned repo. pikuri already refuses this inference one
+   axis over: `:human_reviewed` is declarable only when "the payload
+   *is* the reviewed artifact", because *"approving `curl` approves a
+   program, and the bytes it sends are computed after the click."*
+   Typing `/deploy` approves a program.
+
+   What settles it is that the two errors don't cost the same. The
+   trifecta never blocks — declaring `:hard` gates nothing, adds no
+   confirmer, changes no injection kind; it lights one leg in a printed
+   banner. Declaring `:none` and being wrong is a silent under-warn on
+   an agent that genuinely holds all three. `TrifectaLegs`' own yardoc
+   names over-warning as the declared bias, so the tie goes to `:hard`.
+
+   **Accepted refinement: trust by *source*, and the flag already
+   exists** (2026-08-16). `:hard` is right as the *default*, not as the
+   answer — a bundle the human wrote is trusted in fact, and the
+   registry can say so honestly. `Workspace::Filesystem#trusted?` is
+   already this exact concept, in almost these words: *"whether every
+   byte reachable here is user-authored — the opt-out from the file
+   tools' default `:hard` untrusted leg"*, defaulting `false` because
+   "cloned dependencies, fetched PR branches, saved downloads and
+   package caches" are the norm. So the rule is per source:
+
+   - **Project-base bundles inherit `fs.trusted?`.** Not a new rule —
+     the same bytes `read` would return, from the same root, with the
+     trust already declared once by the host. Declaring them differently
+     from `read` would be incoherent.
+   - **Home-base bundles take a declared flag, defaulting `false`.**
+     Home is *not* automatically user-authored: `~/.claude/skills` and
+     `~/.claude/commands` routinely hold marketplace plugins, cloned
+     collections and pasted files. Like `trusted:` and `private:`, this
+     is a declaration the framework cannot verify, so it defaults to the
+     pessimistic value and the human opts in.
+
+   Two properties worth writing down before anyone builds it. First, the
+   *"claim it only when the trusted area is the tool's entire reachable
+   set — a vouched-for island inside a broad root buys nothing"* rider
+   is satisfiable **here but not for `read`**: `read` reaches the whole
+   project root, so its trust is all-or-nothing, whereas a registry's
+   reachable set *is* the enumerable list of files it loaded at scan
+   time. That is why per-source grading is honest on this surface and
+   would not be on that one. Second, the leg is a boot-time union, so a
+   single project-base command from an untrusted repo takes the whole
+   surface to `:hard` however many trusted home commands sit beside it —
+   consistent with `|` everywhere else, and worth stating so it doesn't
+   read as a bug.
+
+   **This reaches skills, and that part is bigger than this note.**
+   `SkillTool` declares `untrusted: :hard` unconditionally today. That
+   is not a bug: `Catalog::Bundled` takes `search_bases:` and knows
+   nothing about the workspace, so it has no trust signal to consult and
+   the pessimistic default is the only honest answer available to it.
+   But it means a fully trusted workspace lights the untrusted leg for a
+   skill whose bytes `read` would report as `:none` — the same
+   inconsistency, one surface over. The real unit of work is therefore
+   **growing the opt-out channel** — a declared per-search-base trust
+   that *both* the catalog and the command registry consume — which is a
+   shipped-gem change to `pikuri-skills` and now has its own note:
+   [`bundle-trust-grading.md`](bundle-trust-grading.md). Commands should
+   not invent a private answer to
+   a question skills already have the wrong answer to; if commands ship
+   first, they ship at `:hard` and adopt the channel when it lands.
+
+   **Mechanism, and the narrow amendment to P3.** The hook already
+   exists and is documented for this exact shape:
+   `Agent::Extension#trifecta_contribution`, whose `Contribution` yardoc
+   calls it *"legs no tool can declare"* — `Pikuri::Mcp::Extension` uses
+   it for the analogous case (a foreign tool surface with no leg surface
+   of its own). It defaults to `nil` on the protocol, so an extension may
+   implement that method and nothing else.
+
+   So commands do want an `Extension` after all — a **declaration-only**
+   one, which P3 didn't foresee because it enumerated *configure*,
+   *bind*, *tool* and *prompt snippet* and stopped one short. P3's actual
+   payload is untouched: `Registry` and `Renderer` stay pure functions
+   over disk, testable with zero agent integration, and there is still no
+   scheduling function. What changes is that a host wiring commands adds
+   a `Command::Extension` that registers nothing, renders nothing and
+   binds nothing — it exists to light one leg, so the boot banner
+   `bin/pikuri-code` already prints tells the truth. Making it an object
+   rather than a host-supplied kwarg is the P1 principle again: the
+   mistake should be unrepresentable, not something each host remembers.
 6. **Should `argument_hint` be parsed or passed through?** Claude Code
    treats it as an opaque display string. Parsing it into required /
    optional slots would let the TUI validate before dispatch, and would
@@ -769,9 +993,13 @@ to be reachable from pikuri aren't.
   `grep -rn 'Command::Registry' pikuri-*/lib/` never appears in a
   `system_prompt_snippets` or `add_tool` neighbourhood. Worth an entry
   next to the Capability seam only if a host actually wires it.
-- **`DECISIONS.md`** gets the real forks, which are P1–P3: one catalog
-  vs. two registries; `:user` vs. `:system` injection; and the two
-  dropped inlining legs — `` !`cmd` `` and `@path` — with their
+- **`DECISIONS.md`** gets the real forks, which are P1–P3 plus question
+  3: one catalog vs. two registries; `:user` vs. `:system` injection;
+  the **host built-in > command > skill** precedence (roads not taken:
+  skill wins, or raise on collision — the latter rejected because
+  `Catalog::Bundled` already answers the same question with a warning,
+  and two collision policies in one codebase is worse than either); and
+  the two dropped inlining legs — `` !`cmd` `` and `@path` — with their
   threat-model reasoning, including why they get *different* handlings
   (a raise vs. a literal pass-through) from the same "the file is
   untrusted" premise. That last entry graduates **whether or not this
