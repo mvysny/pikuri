@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Add per-search-base trust to the skill catalog — `Skill::Catalog::Base(dir:, trusted:)` grades `SkillTool`'s untrusted trifecta leg over the skills a catalog actually stored, and `bin/pikuri-code` asks whether this repo's sources are your own work. See `DECISIONS.md` `D-bundle-trust-grading`.
 - Add an `occurrence` parameter to `Workspace::Edit` — replace the Nth match by position rather than padding `old_string` with context until it is unique; mutually exclusive with `replace_all`, and the match itself stays byte-exact. See `DECISIONS.md` `D-single-hunk-edit`.
 - Add the `file_list` tool — `Workspace::FileList`, the only tool that shows the model a directory *exists* (`glob` is `rg --files`, which emits files only); `path` defaults to the workspace root, `depth` to 1 and caps at 3. Wired by `Workspace::Extension` and added to the `FILE_MINER` / `GIT_REPO_RESEARCHER` recon personas. See `DECISIONS.md` `D-directory-listing`.
 - Add a boot snapshot to `Workspace::Extension` — a depth-1 `<workspace_snapshot>` listing of the workspace root, contributed as a system-prompt snippet so orientation costs zero tool calls; ~325 tokens at this repo's root, degrading to one line over 2 KB. See `DECISIONS.md` `D-directory-listing`.

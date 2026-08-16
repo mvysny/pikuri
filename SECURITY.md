@@ -98,8 +98,12 @@ running their intended code.
 - **Skills — text, not code.** Skills are Markdown + YAML
   frontmatter the user dropped under `.pikuri/skills/` /
   `.claude/skills/` / `.agents/skills/`. They don't execute; they're
-  prompts. User-vetted by definition. Treat them like any other
-  source you'd `git clone` — read before you trust.
+  prompts. Treat them like any other source you'd `git clone` — read
+  before you trust. pikuri assumes you haven't: a skill counts as
+  attacker-authored in the boot advisory unless the host says
+  otherwise for the directory it came from, which is why
+  `pikuri-code` asks whether you wrote the files under this
+  directory yourself.
 
 That's the baseline. The rest of this document is about the harder
 problem: **prompt injection of code you've already decided to

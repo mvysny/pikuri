@@ -66,9 +66,28 @@ the table:
   [`../COMPARISON.md`](../COMPARISON.md) §"Prior art deep-dive") is the
   heavyweight structural version.
 - **Prompt injection inside skill descriptions?** Skills are
-  user-installed text; current stance ([`../SECURITY.md`](../SECURITY.md)
-  §"Code trust" — skills bullet) is "user-vetted by definition."
-  A `Mcp::Verifier`-shaped pass for skills would belt-and-braces it.
+  user-installed text, and "user-vetted by definition"
+  ([`../SECURITY.md`](../SECURITY.md) §"Code trust" — skills bullet) is
+  now a claim the host makes per search base rather than an assumption
+  the framework carries: `Skill::Catalog::Base(trusted:)` defaults to
+  *not* vetted and grades the tool's untrusted leg
+  (`D-bundle-trust-grading`). That reports the exposure; it does not
+  defend against it. A `Mcp::Verifier`-shaped pass for skills would
+  belt-and-braces it.
+- **A `readable:` root outside `project_root` under `trusted: true`.**
+  `Catalog#roots` is documented to be folded into a workspace's
+  `readable:` so `read` can load skill sidecars. Do that with
+  `~/.claude/skills` on a workspace declared trusted, and `read` vouches
+  for bytes nobody vouched for — the vouched-for-island problem
+  `Filesystem#trusted?` warns about, arriving through the back door;
+  `Filesystem` already raises on `AllowAll` + `trusted:` for the same
+  reason. Latent: `bin/pikuri-code` cannot reach it, since
+  `ToolchainPaths` keeps its workspace honestly untrusted whatever the
+  user answers. It binds the first host whose readable set *is* the
+  project root — the planned TUI. Two exits: extend that raise to any
+  `readable:` root outside `project_root`, or stop folding home skill
+  roots in and lose sidecar `read` for home skills. See
+  `D-bundle-trust-grading`.
 - **Content-level defenses against `web_scrape` injection** beyond
   persona separation (provenance tags are the obvious shape).
 

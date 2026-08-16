@@ -34,6 +34,21 @@ RSpec.describe Pikuri::Skill::Catalog do
     end
   end
 
+  describe Pikuri::Skill::Catalog::Base do
+    it 'defaults trusted to false' do
+      refute described_class.new(dir: '/tmp').trusted
+    end
+
+    it 'scans identically whether a base arrives as a Base or a bare path' do
+      path = File.join(FIXTURE_ROOT, 'valid-tree')
+      wrapped = Pikuri::Skill::Catalog::Bundled.new(search_bases: [described_class.new(dir: path)])
+      bare = Pikuri::Skill::Catalog::Bundled.new(search_bases: [Pathname.new(path)])
+
+      assert_equal bare.roots, wrapped.roots
+      assert_equal bare.list.map(&:name), wrapped.list.map(&:name)
+    end
+  end
+
   describe '#roots on Bundled' do
     it 'returns the expanded skill subdirs that actually exist on disk' do
       catalog = Pikuri::Skill::Catalog::Bundled.new(

@@ -42,10 +42,12 @@ Related:
    posture was written for.
 
 2. ~~**Scan skill descriptions for injection, at MCP parity.**~~ **Moved
-   2026-08-16** to [`bundle-trust-grading.md`](bundle-trust-grading.md),
-   which owns the is-this-bundle-trusted axis whole. The scan is one
-   answer to that question rather than a catalog question, and splitting
-   it across two notes was how it stayed unanswered.
+   2026-08-16**, twice. The is-this-bundle-trusted axis it belonged to
+   shipped as `DECISIONS.md` `D-bundle-trust-grading` — which *reports*
+   the exposure (a base nobody vouched for lights the untrusted leg) and
+   deliberately does not defend against it. The scan itself is one
+   possible defense, and now lives with the other unbuilt ones in
+   [`security-open-questions.md`](security-open-questions.md) §Trifecta.
 
 3. ~~**Fix `SkillTool`'s description, which lies to a sub-agent.**~~
    **Done 2026-08-16.** The description no longer asserts that
@@ -165,7 +167,8 @@ Related:
 
 - Items 1–3 are closed: 1 dropped (its `DECISIONS.md` line landed as a
   rejected alternative on `D-skill-path-activation`), 2 moved to
-  `bundle-trust-grading.md`, 3 fixed.
+  `security-open-questions.md` once `D-bundle-trust-grading` shipped the
+  axis it hung off, 3 fixed.
 - Item 4, whichever way it lands, edits `D-skill-path-activation` in place
   (entries are mutable) rather than taking a new entry.
 - **One fact outlives every remaining item and should graduate now, since

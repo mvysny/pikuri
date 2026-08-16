@@ -47,9 +47,11 @@ module Pikuri
         - On `Error: skill '...' not found`, do NOT retry with a guessed name — the error lists every name that does exist, so load one of those or report to the user that no matching skill is installed.
       DESC
 
-      # @param catalog [Catalog] the catalog to resolve names against.
-      #   Captured by closure so the tool retains access to the same
-      #   instance even when copied into a sub-agent's tool snapshot.
+      # @param catalog [Catalog] the catalog to resolve names against, and
+      #   the source of this tool's +untrusted+ leg
+      #   ({Catalog#untrusted_level}). Captured by closure so the tool retains
+      #   access to the same instance even when copied into a sub-agent's tool
+      #   snapshot.
       # @return [SkillTool]
       def initialize(catalog:)
         super(
@@ -70,12 +72,16 @@ module Pikuri
 
             Pikuri::Skill::Renderer.format_skill(loaded)
           },
-          # Hard untrusted, no egress. A skill is a file someone else wrote — the
-          # Agent Skills standard exists precisely so bundles travel between harnesses
-          # — and loading one drops its text into the model's context verbatim. The
-          # host may well trust its own catalogue, but the tool cannot tell a
-          # hand-written skill from a downloaded +.agents/+ bundle.
-          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
+          # No egress; untrusted graded by the catalog. A skill body is prose —
+          # Markdown dropped into the model's context verbatim, exactly like a README
+          # the model +read+, with no added privilege — so the only question is whose
+          # bytes they are, and {Catalog::Base} answers it per root. Unvouched is
+          # +:hard+ and is the default, which is what a downloaded +.agents/+ bundle
+          # gets; the Agent Skills standard exists precisely so bundles travel.
+          # An executable sidecar changes nothing here: it runs only when the model
+          # invokes it through bash, where the sandbox and the confirmer gate it.
+          trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: catalog.untrusted_level,
+                                                        egress_payload_review: :no_egress)
         )
       end
     end

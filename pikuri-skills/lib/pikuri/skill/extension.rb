@@ -19,6 +19,11 @@ module Pikuri
     #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
     #   end
     #
+    # This contributes no +trifecta_contribution+ of its own, and that is
+    # not an omission: the prompt block and {#schedule_load_skill} carry the
+    # same bundles' bytes the +skill+ tool does, so they ride its +untrusted+
+    # leg, which {Catalog#untrusted_level} grades over the whole stored set.
+    #
     # +configure+ appends the prompt snippet + +skill+ tool (both inherited
     # verbatim by sub-agents via the tool snapshot); +bind+ additionally
     # captures the parent agent's interloper so a host can load a skill on

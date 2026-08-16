@@ -87,10 +87,11 @@ Related:
   measurement, and **this note's second motive** (its deferred item 6).
   See below; read that item and this note together, they answer each
   other.
-- [`bundle-trust-grading.md`](bundle-trust-grading.md) — question 5's
-  spin-off: letting a catalog declare its skills user-authored, so the
-  untrusted leg is graded per source instead of pinned at `:hard`.
-  Commands adopt that channel rather than inventing one.
+- `DECISIONS.md` `D-bundle-trust-grading` — question 5's spin-off,
+  **shipped 2026-08-16**: a catalog declares its skills user-authored per
+  search base (`Skill::Catalog::Base`), so the untrusted leg is graded
+  over what was actually loaded instead of pinned at `:hard`. Commands
+  adopt that channel rather than inventing one.
 - [`claude-parity.md`](claude-parity.md) — Claude-Code parity, but for
   the *prompt*. This is a *harness* parity item; if it lands, that note
   gains nothing and this one graduates on its own.
@@ -857,21 +858,20 @@ to be reachable from pikuri aren't.
    an agent that genuinely holds all three. `TrifectaLegs`' own yardoc
    names over-warning as the declared bias, so the tie goes to `:hard`.
 
-   **`:hard` is the default, not the answer — and the graded answer is
-   [`bundle-trust-grading.md`](bundle-trust-grading.md)'s to own**
-   (2026-08-16). A bundle the human wrote is trusted in fact, and
-   `Workspace::Filesystem#trusted?` is already that exact concept. But
-   the opt-out channel is a shipped-gem change to `pikuri-skills` that
-   `SkillTool` needs first and for the same reason, so it lives in that
-   note: what a project base inherits, what a home base must declare,
-   the union rule, and why a skill or command body is prose rather than
-   an executable. Commands adopt whatever lands there.
+   **`:hard` is the default, not the answer — and the graded answer
+   shipped for skills on 2026-08-16** as `Skill::Catalog::Base` (see
+   `DECISIONS.md` `D-bundle-trust-grading`). A bundle the human wrote is
+   trusted in fact; that entry owns what a base declares, the union over
+   the skills a catalog actually stored, why a skill or command body is
+   prose rather than an executable, and why the answer is a value the
+   host passes rather than a reach into the workspace.
 
    Two consequences for *this* note, which is all that's needed here:
 
-   - **Commands ship at `:hard` if they ship first**, and adopt the
-     channel when it lands — no private spelling of a fact skills
-     already own.
+   - **Commands take the same channel**, per source rather than per
+     harness — `Command::Registry` gets a `trusted:` per search base and
+     unions it the way the catalog does. No private spelling of a fact
+     skills already own; `:hard` remains what silence buys.
    - **A command file is prose, exactly as a skill body is.** So the
      provenance argument above needs no command-specific escape hatch:
      whatever makes project sources trustworthy makes the project's

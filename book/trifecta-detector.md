@@ -160,7 +160,13 @@ Three things it does deliberately:
 
 - **Names the contributing tools per leg**, so the line points at
   something you can go and change. "You hold egress" is a fact;
-  "you hold egress *via bash*" is an action.
+  "you hold egress *via bash*" is an action. It is also the half
+  that moves when you answer a boot question differently: tell
+  `pikuri-code` you wrote the files under this directory yourself
+  and `skill` drops out of that `untrusted(...)` list, because the
+  skills it loaded from this repo are then your own prose. The
+  verdict stays `HARD` — `read` and `bash` still hold the leg — but
+  the map stops naming a tool that isn't contributing one.
 - **Names the leg to break**, and picks the advice from the
   *cell*, not the severity — a soft verdict reached by a weakened
   untrusted leg wants different advice from one reached by a gated
@@ -186,6 +192,17 @@ what it can't.**
 (One nuance, deferred to its own section below: *whether* a tool
 reaches a sink is determined, but *where that sink can be* is a
 claim its author makes. Two axes are declared, not one.)
+
+The `:untrusted` row is "framework" in the sense that it defaults
+**on** and no tool author can quietly switch it off — but you can
+*answer* it, and the two questions `pikuri-code` asks at boot are
+exactly that. `Filesystem#trusted?` speaks for the file tools;
+`Catalog::Base(trusted:)` speaks for each place skills were loaded
+from. Both are unverifiable claims, so both default to the
+pessimistic value, and both are claims about *one reachable set*
+rather than about "the repo": a workspace that can read
+`~/.m2/repository` is honestly untrusted at the same moment the
+project's own `.pikuri/skills` beside it is honestly yours.
 
 The asymmetry is not an oversight. Whether a tool reaches a
 network sink is a property *of the tool*, and pikuri knows it.

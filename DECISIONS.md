@@ -672,6 +672,121 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 ---
 
+## D-bundle-trust-grading — Trust is per search base, and the workspace is not asked (2026-08-16)
+
+**Status:** Accepted, fully shipped: `Skill::Catalog::Base`,
+`Catalog#untrusted_level`, `SkillTool` consuming it, and the third boot
+question in `bin/pikuri-code`. `ideas/bundle-trust-grading.md` is deleted with
+this entry; its one open thread moved to `ideas/security-open-questions.md`.
+
+**Context.** {Pikuri::Skill::SkillTool} declared `untrusted: :hard`
+unconditionally, with a comment naming the gap: "the tool cannot tell a
+hand-written skill from a downloaded `.agents/` bundle." Meanwhile
+{Pikuri::Workspace::Filesystem#trusted?} lets `read` answer exactly that
+question for the file tools — and `.pikuri/skills/` lives *under the project
+root*, so one workspace could report `:none` for `read` and `:hard` for
+`skill` on the same file. The argument that collapses it is that a `SKILL.md`
+body is prose: Markdown rendered into the model's context verbatim, no added
+privilege, indistinguishable from a README the model `read`. An executable
+sidecar is the *other* axis — it runs only through bash, where the sandbox and
+confirmer gate it.
+
+Nothing here is a defense. `untrusted` is read by {Pikuri::Trifecta::Report}
+and nothing else, and the detector never blocks; this only changes what a boot
+banner prints, in the *quieter* direction. The reason to do it anyway is the
+one `Pikuri::Trifecta`'s own header names: a false alarm is what gets an
+advisory muted, and an agent printing three legs when it holds two teaches its
+operator the map is wrong.
+
+**Decision.** Trust is declared **per search base** —
+`Catalog::Base = Data.define(:dir, :trusted)`, unioned at scan time into one
+`#untrusted_level` — and the host answers it with a value, never by handing the
+catalog a `Filesystem`.
+
+Two properties carry the design. **The union is over skills actually
+*stored***, counted at the point a skill wins its name: one unvouched skill
+takes the whole catalog to `:hard` (the tool declares its legs once), but a
+base that is empty, absent, or whose skills all lost a collision costs
+nothing. That is what lets a host wire `Dir.home` untrusted unconditionally —
+it cannot know what a marketplace plugin left in `~/.claude/skills` — and still
+report `:none` for the user who has none.
+
+**And a base's trust is a claim about *that root*, not about "the repo".** This
+is what stops the obvious simplification below from being right, and
+`bin/pikuri-code` is the proof: `Code::ToolchainPaths.readable` puts
+`~/.m2/repository` and `~/.cargo/registry` in the workspace's reachable set
+permanently, so `Filesystem(trusted: true)` can never be honest there no matter
+what the user answers. Its new prompt therefore feeds the catalog and nothing
+else. `read` really can reach somebody else's bytes and its `:hard` is correct;
+the catalog reached `.pikuri/skills` under this root and nothing else, and its
+`:none` is correct too. Same question, two reachable sets, two honest answers.
+
+**Alternatives rejected.**
+
+- **Keep the unconditional `:hard`.** Rejected: it over-warns exactly the
+  operator who did the work to deserve a quiet banner, and an ignored smoke
+  alarm is the failure mode {Pikuri::Trifecta}'s own header names.
+- **Spend one repo-trust boolean on both the workspace and the catalog.** The
+  tempting simplification, since both are "is this repo mine?". Rejected: the
+  two objects reach different bytes, so a single boolean forces a lie in
+  whichever direction it is set — `true` claims `pikuri-code`'s `read` is safe
+  over `~/.cargo`, `false` reports the user's own hand-written skills as
+  attacker-authored. The fact is shared; the value each object needs is not.
+- **Derive it — have the catalog inspect a `Filesystem`.** Rejected twice
+  over. `pikuri-skills` depends on `pikuri-core` only, so it would invert the
+  dependency to answer a question the host can answer in one kwarg; and
+  `bin/pikuri-code` builds the catalog *before* the filesystem, because the
+  filesystem needs `skill_catalog.roots` in `readable:`, so `filesystem.trusted?`
+  is not even in scope at the call site.
+- **One catalog-wide flag instead of per-base.** Rejected, though not for the
+  reason it first appears: with a home dir that *stores* a skill, per-base plus
+  the union produces the same `:hard` a single flag would. The case that
+  separates them is the empty one. A host must wire `Dir.home` untrusted
+  unconditionally, and only the catalog knows whether anything was loaded from
+  it — so per-base reports `:none` for the user with no `~/.claude/skills`, and
+  no host can match that without redoing the scan itself.
+- **Per subdir rather than per base** — grading `.pikuri/skills` apart from
+  `.agents/skills` under one root. Rejected as unrepresentable: `trusted?` is
+  all-or-nothing over a root, so splitting them recreates the same-bytes
+  asymmetry this entry exists to remove. The worry that `.agents/skills` is
+  where a foreign bundle lands is real, and it is an argument about the *home*
+  base.
+- **A `--trusted` flag rather than a boot question.** Rejected by the author.
+  The counter-case is real — forgetting a flag fails *loud*, so its absence is
+  safe — but a `bin/` script is illustrative, and a flag nobody types is an
+  axis nobody meets.
+
+**Consequences.**
+
+- **A bare path in `search_bases:` still works and means `trusted: false`**, so
+  every existing call site stays correct and the unsafe value is the one you
+  get by saying nothing. The abstract `Catalog` defaults to `:hard` for the same
+  reason; `Catalog::Empty` returns `:none`, which is not a special case but the
+  union over zero skills.
+- **`bin/pikuri-code` now asks three trust questions**, and they are genuinely
+  three: sensitive bytes (`private_repo`), user-authored bytes (the new one),
+  and whether a hostile `.gitattributes` may *execute code* (`trusted_repo`).
+  Reusing the last for the second would claim `vendor/` is your own work on the
+  strength of you controlling `.git/config`.
+- **What moves in that binary is the map, not the verdict.** `read` and `bash`
+  keep the untrusted leg, so it stays `[TRIFECTA: HARD]`; what changes is that
+  `skill` leaves the `untrusted(…)` attribution and its own line reads `[]`. A
+  host that moves the *verdict* is one whose readable set is the project root
+  alone. `pikuri-code/spec/pikuri/code/dry_run_spec.rb` therefore wires no
+  `SkillTool` — no answer can move a row there — and says so.
+- **Commands adopt this channel rather than inventing one.**
+  `ideas/slash-commands.md` question 5 lands on `:hard` for a command surface
+  and defers grading here; a command file is prose on the same terms a skill
+  body is.
+- **Left open:** folding home skill roots into a workspace's `readable:` while
+  declaring that workspace trusted is the vouched-for-island problem arriving
+  through the back door — `Filesystem` raises on `AllowAll` + `trusted:` for
+  the same reason. `pikuri-code` cannot reach it (its workspace is untrusted
+  regardless), so it binds the first host whose readable set is the project
+  root. See `ideas/security-open-questions.md`.
+
+---
+
 ## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
 
 **Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering

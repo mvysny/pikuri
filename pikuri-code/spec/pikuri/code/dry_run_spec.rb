@@ -35,6 +35,15 @@ RSpec.describe 'trifecta dry run: pikuri-code' do
   # The parent's own tools, as bin/pikuri-code wires them: the file tools
   # over the workspace, plus bash. The web tools are deliberately absent — they
   # live on the sub-agent personas.
+  #
+  # The skill tool is absent too, for a different reason: its untrusted leg is
+  # graded by its catalog, but read and bash hold that leg here regardless, so
+  # no answer to the skills question can move a row in this table. Both of its
+  # readings are pinned in pikuri-skills' own trifecta_legs_spec.
+  #
+  # Note the trusted: true rows below model a workspace whose reachable set is
+  # the project root. The real binary's is not — ToolchainPaths puts dependency
+  # caches in readable: — which is why it never passes that flag.
   def parent_tools(sandbox: bubblewrap_shaped, **flags)
     fs = filesystem(**flags)
     ws = Pikuri::Workspace::Workspace.new(filesystem: fs)

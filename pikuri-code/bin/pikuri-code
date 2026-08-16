@@ -112,16 +112,6 @@ if Dir.pwd != project_root.to_s
   Dir.chdir(project_root.to_s)
 end
 
-# Skill catalog. Two search bases — the project root and +Dir.home+ —
-# under which the catalog itself scans for +.pikuri/skills+ /
-# +.claude/skills+ / +.agents/skills+. Project beats global because
-# the project base comes first. Catalog roots are folded into the
-# workspace's readable set below so the skill tool's sidecar +read+
-# flow works.
-skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
-  search_bases: [project_root, Dir.home]
-)
-
 # The private-data declaration, and the only trifecta leg the framework
 # cannot determine for itself: nothing distinguishes ~/work/my/pikuri from
 # ~/work/client-payroll by inspection, because sensitivity is a property of
@@ -148,6 +138,57 @@ private_repo =
               'content, and a way to send bytes out.'
     )
   )
+
+# The bytes-are-yours declaration, and the third of this bin's three trust
+# questions — which are genuinely three: this one asks whether the *sources*
+# here are user-authored, private_repo above asks whether they are sensitive,
+# and trusted_repo below asks whether a hostile .gitattributes can *execute
+# code*. Reusing that last one here would claim vendor/ is your own work on
+# the strength of you controlling .git/config.
+#
+# Gated on confirm_enabled unlike private_repo, and the asymmetry is the
+# failure direction: skipping this one over-warns, which is the declared bias,
+# while skipping that one fails silent. --yolo therefore lands on false for
+# free, which it must — Filesystem::AllowAll refuses the flag outright.
+#
+# The answer reaches the skill catalog and NOTHING ELSE. It deliberately does
+# not become Filesystem(trusted:), which would be dishonest here whatever you
+# answer: ToolchainPaths.readable puts ~/.m2/repository and ~/.cargo/registry
+# in the workspace's reachable set permanently, so `read` really can reach
+# somebody else's bytes and its :hard leg is correct. The catalog reached
+# .pikuri/skills under this root and nothing else, so its :none is correct
+# too. Same question, two reachable sets, two honest answers.
+repo_sources_are_mine =
+  confirm_enabled && $stdin.tty? &&
+  Pikuri::Workspace::Confirmer::Terminal.new.confirm?(
+    request: Pikuri::Workspace::Confirmer::Request.new(
+      question: 'Did you write the files under this directory yourself?',
+      detail: "#{project_root}\n\nSay yes ONLY if nothing here arrived with a clone — no " \
+              'vendored dependencies, no fetched PR branch, no pasted bundle. This grades ' \
+              'the skills loaded from this repo in the trifecta report; it blocks nothing, ' \
+              'and the file tools keep reading your dependency caches either way.'
+    )
+  )
+
+# Skill catalog. Two search bases — the project root and +Dir.home+ — under
+# which the catalog itself scans for +.pikuri/skills+ / +.claude/skills+ /
+# +.agents/skills+. Project beats global because the project base comes first.
+# Catalog roots are folded into the workspace's readable set below so the skill
+# tool's sidecar +read+ flow works.
+#
+# Built after the prompts because the project base needs their answer, and
+# before the workspace because the workspace needs its roots.
+#
+# +Dir.home+ goes in unvouched and is not prompted for: this bin cannot know
+# what a marketplace plugin or a cloned collection left in ~/.claude/skills.
+# That costs nothing until one is actually there — the catalog unions over the
+# skills it *stored*, so a user with no home skills still reports :none.
+skill_catalog = Pikuri::Skill::Catalog::Bundled.new(
+  search_bases: [
+    Pikuri::Skill::Catalog::Base.new(dir: project_root, trusted: repo_sources_are_mine),
+    Pikuri::Skill::Catalog::Base.new(dir: Dir.home)
+  ]
+)
 
 # Workspace is captured once at startup; all file-touching tools share it.
 # +project_root+ is the writable containment ceiling, the Bubblewrap
