@@ -14,8 +14,9 @@ handed the live forks to the notes below.
 
 **Scope.** This note owns the numbers and the prior art, so the other two
 can argue without re-deriving them. It does **not** decide what the
-catalog should contain (→ `skill-catalog-in-context.md`) or whether a
-`paths:` trigger should exist (→ `skill-path-activation.md`). Anything
+catalog should contain (→ `skill-catalog-in-context.md`) or how the
+now-accepted `paths:` trigger is wired (→ `skill-path-activation.md`).
+Anything
 here that turns into a fork belongs over there.
 
 Related:
@@ -244,8 +245,9 @@ the skill *into tier 1* and still makes the model spend the tool call for
 tier 2. **The trigger fixes ordering; it does not skip the round-trip** —
 independent confirmation of the split argued above. Item 3(a) *as asked*
 stays rejected here; the reframed version is a different feature and
-lives in [`skill-path-activation.md`](skill-path-activation.md), which
-also carries grok-build's implementation detail.
+was accepted as `DECISIONS.md` `D-skill-path-activation`; the build
+sketch is [`skill-path-activation.md`](skill-path-activation.md) and
+grok-build's implementation detail is in `COMPARISON.md`.
 
 Two more grok-build details in the same area:
 

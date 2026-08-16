@@ -225,7 +225,12 @@ conditional activation actually works*).
   paths a tool *walked* to (`grep` hits, listing rows) and count only
   model-supplied read/edit targets, mirroring both grok-build and pikuri's
   own **Denylist seam** distinction; a repo-wide grep would otherwise
-  activate half the catalog at once.
+  activate half the catalog at once. A skill is announced **at most once
+  per conversation**, however many matching files are touched — the
+  promotion is already in the log, and re-injecting it pays the cost
+  again for nothing. That flag clears on `Event::Reset`, which is also
+  what makes `clear_conversation` re-hide correctly: the reset drops the
+  announcement from the log, so the next touch must re-announce.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session
