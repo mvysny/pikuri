@@ -946,38 +946,86 @@ to be reachable from pikuri aren't.
    exception, it is silent corruption of the prompt. Nothing in the note
    noticed that the same rule was being carried across a sign change.
 
-   The motivating file is on both sides of it. Today's `wh.md` contains
-   `` `$1` `` in prose (a parenthetical *about* the off-by-one bug) and
-   a fenced bash block using `$(…)` and `$monday`. Invoke it as
-   `/wh swingai --since 2026-08-10` and a blind renderer rewrites the
-   parenthetical into nonsense.
+   ### Worked, against the real file (2026-08-16)
 
-   Two mitigations are already in place and shrink the problem before
-   this question is even answered:
+   Two claims in an earlier draft of this question did not survive
+   contact with actual invocations. Both are corrected below.
 
-   - **Out-of-range `$n` now passes through literal** (finding 3, as
-     revised), so the single-argument `/wh swingai` — the overwhelmingly
-     common invocation — leaves the prose alone by itself.
-   - **`$ARGUMENTS` is a distinctive token.** It essentially never
-     occurs by accident; where it appears in a body, the author meant
-     it. The exposure is `$1`…`$9` specifically, which is also exactly
-     what collides with shell positional parameters — i.e. with the
-     contents of fenced bash blocks.
+   **The corpus.** `wh.md` carries both tokens as *placeholders* and as
+   *mentions*:
 
-   Which suggests the cheapest answer is **asymmetric**: substitute
-   `$ARGUMENTS` anywhere, and make only `$n` fence-aware — skipping
-   fenced blocks and inline code spans. That is a small scanner and it
-   buys the one case that actually bites. The alternatives are a
-   `$$`/backslash escape (puts the burden on authors, and on *imported*
-   bundles nobody will edit), or blind substitution plus a scan-time
-   warning when a `$n` is found inside a fence (loud, but warns on the
-   many files where it is harmless).
+   ```
+   line 12   Invoked as `/wh $ARGUMENTS`.
+   line 14   (Read it off `$ARGUMENTS` rather than `$1` — positional expansion
+             is off by one …, so `$1` yields the *second* word and is left as
+             the literal text `$1` when only one argument was given.)
+   line 22   ```bash
+             monday=$(date -d "-$(( $(date +%u) - 1 )) days" +%Y-%m-%d)
+   ```
 
-   Note that fence-aware substitution and fence-blind `!` detection can
-   coexist without contradiction — they are answering different
-   questions about the same characters, and the asymmetry is the point,
-   not an inconsistency. Whoever builds this should write that sentence
-   into the yardoc, or the next reader will "fix" one of them.
+   **Correction 1 — the out-of-range rule saves nothing here.** The
+   draft claimed literal pass-through means "the single-argument
+   `/wh swingai` leaves the prose alone by itself". False. That was true
+   of Claude Code's *0-based* scheme, where `$1` needs two arguments to
+   be in range. We chose **1-based** (finding 3), so `$1` is in range on
+   every invocation carrying at least one argument. The rule protects
+   `$2`…`$9` and **never `$1`** — which is precisely the one authors
+   write in prose. `/wh swingai` renders line 14 as:
+
+   > (Read it off `swingai` rather than `swingai` — positional expansion
+   > is off by one …, so `swingai` yields the *second* word and is left
+   > as the literal text `swingai` when only one argument was given.)
+
+   Four hits, sentence destroyed, and it now asserts something false to
+   the model — on the most common invocation of the only command file we
+   have.
+
+   **Correction 2 — the exposure is code *spans*, not fences, and
+   `$ARGUMENTS` is not safe.** Note what the bash block does *not*
+   contain: `$(`, `$((`, `$monday` — no `$1`…`$9` at all. A `$n`
+   substituter never touches it. Meanwhile line 14 shows an author
+   writing *about* commands backticking **both** tokens, which kills the
+   draft's "`$ARGUMENTS` is distinctive, where it appears the author
+   meant it". Sometimes they meant to talk about it.
+
+   The fence risk is real but needs an ordinary *other* file — a command
+   that emits a script, whose body holds a bash fence containing
+   `deploy_to "$1" --tag "$2"`.
+
+   `/mkdeploy staging v3` hardcodes the template to one invocation,
+   silently. The author meant shell positionals.
+
+   And the irreducibly ambiguous case, which no rule gets right:
+   `` Run: `git log --author=$1` `` — same characters, same backticks,
+   opposite intent.
+
+   **The four rules on that corpus:**
+
+   | | line 12 | line 14 | bash fence | `deploy_to "$1"` |
+   |---|---|---|---|---|
+   | A. blind | fine | **destroyed** | fine | **destroyed** |
+   | B. `$n` fence-aware, `$ARGUMENTS` blind | fine | **still damaged** | fine | fixed |
+   | C. both fence-aware | unchanged | **fixed** | fine | fixed |
+   | D. blind + `$$` escape | fine | fixed *if edited* | fine | fixed *if edited* |
+
+   **Lean, revised: C — skip inline code spans and fenced blocks for
+   both tokens.** The draft's asymmetric B is wrong, and line 14 is the
+   counterexample sitting in the motivating file. D fails on the case
+   that matters most — imported bundles nobody will edit, which is the
+   whole reason to scan someone else's directory.
+
+   The residual cost of C is the ambiguous case above: a fenced `$1` the
+   author *did* mean stays literal. That failure is visible in the
+   transcript and an author can fix it by unbackticking. A's failure is
+   silent corruption of an instruction, which is the asymmetry this
+   whole question turns on.
+
+   Note that fence-**aware** substitution and fence-**blind** `!`
+   detection can coexist without contradiction — they answer different
+   questions about the same characters, and that difference is the
+   point, not an inconsistency. Whoever builds this should write the
+   sentence into the yardoc, or the next reader will "fix" one of them
+   to match the other.
 
 
 ## Graduation plan (when this settles)
