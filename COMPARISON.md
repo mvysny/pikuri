@@ -1309,6 +1309,62 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   the same folder-trust decision.
 - **ruby_llm, langchainrb**: no concept of skills.
 
+#### Frontmatter: the six standard fields, and the extension point nobody uses
+
+Verified 2026-08-16, against the spec and the same grok-build
+`SOURCE_REV` as the rest of this document. The
+[Agent Skills spec](https://agentskills.io/specification) defines
+**exactly six** frontmatter fields:
+
+| field | purpose | pikuri reads |
+| --- | --- | --- |
+| `name` | skill identifier | yes — falls back to the parent directory name |
+| `description` | what it does / when to use it | yes — the only hard requirement |
+| `license` | license identifier | no |
+| `compatibility` | free text, ≤500 chars, for a human | no |
+| `metadata` | arbitrary client key-value map | no |
+| `allowed-tools` | tools the skill may use | no |
+
+**None of the six expresses *when* a skill applies** — which is precisely
+the field every harness wanting conditional activation has had to invent.
+grok-build invents nine, all at top level (`discovery.rs:300–318`):
+`short_description`, `author`, `argument_hint`, `model`, `effort`,
+`user_invocable`, `disable_model_invocation`, `when_to_use`, `paths`.
+
+Three findings worth carrying:
+
+1. **The spec has a sanctioned extension point and grok-build declines
+   it.** `metadata` is *"an arbitrary key-value mapping … clients can use
+   this to store additional properties not defined by the Agent Skills
+   spec"*, with a recommendation to pick "reasonably unique" key names.
+   Putting nine keys at top level instead makes them not merely
+   non-standard but **off-spec**, and any could collide with a future
+   official field of the same name. The consequence for anyone adding a
+   key is a real fork: grok-build's spelling buys two-harness agreement
+   and inherits the collision risk, while `metadata: {<vendor>-<key>: …}`
+   is spec-clean and agrees with nobody. For a *newly invented*
+   predicate there is no agreement to buy, so `metadata:` wins by
+   default.
+2. **An empty `paths:` marks a skill *unconditional*, not "never".**
+   `…/skill_discovery_tracker/conditional.rs:38` gates on
+   `s.paths.as_ref().is_some_and(|p| !p.is_empty()) && …`, so `paths: []`
+   means always-listed — the opposite of what an author writing "this
+   skill matches no paths" would intend. Anyone reaching for `paths: []`
+   as a spelling for human-invoked-only is reaching for an inverted one.
+3. **Unknown keys fail open, everywhere.** pikuri's
+   `Catalog::Bundled#parse_skill` reads only `description` and `name` and
+   drops the rest; Claude Code listed a skill carrying `argument-hint:`
+   (a slash-command key, not a skill one) normally for months. A skill
+   tagged with a key the host doesn't implement is simply advertised
+   unconditionally — costing nothing and buying nothing until someone
+   implements it.
+
+`compatibility` is the nearest existing field in spirit — its own
+examples are *"Requires git, docker, jq"* and *"Designed for Claude
+Code"* — but it is free text aimed at a human judging "will this work in
+my environment". Nothing parses it, and it cannot carry a machine
+predicate.
+
 ### MCP (Model Context Protocol)
 
 - **pikuri**: `Mcp::Registry` (pure config) + `Mcp::Servers` (runtime —

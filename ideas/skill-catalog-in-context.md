@@ -902,20 +902,13 @@ compatibility.
 
    **Two answers, 2026-08-16.**
 
-   *(a) An empty `paths:` is not the spelling — and it is inverted.*
-   **Verified against grok-build source, 2026-08-16**
-   (`skill_discovery_tracker/conditional.rs:38`):
-
-   ```rust
-   s.paths.as_ref().is_some_and(|p| !p.is_empty()) && !self.activated.contains(&s.dedup_key())
-   ```
-
-   An empty list is *explicitly not gated*. So in the only shipped
-   implementation `paths: []` does not merely fail to mean "human-only" —
-   it marks the skill **unconditional**, the exact opposite. That settles
-   it on its own; the four reasons below were argued before the check and
-   stand as the design case. It is a **coincidence, not a declaration**
-   (the two
+   *(a) An empty `paths:` is not the spelling — and it is inverted.* In
+   the only shipped implementation `paths: []` marks a skill
+   **unconditional**, the exact opposite of "never" (verified
+   2026-08-16; the source and citation live in `COMPARISON.md`,
+   *Skills → Frontmatter*, finding 2). That settles it on its own; the
+   four reasons below were argued before the check and stand as the
+   design case. It is a **coincidence, not a declaration** (the two
    propositions coincide only under today's promotion rule — add a second
    trigger and `paths: []` silently stops meaning "never"); it is a
    **YAML footgun with an inverted failure**, because absent-`paths:`
@@ -1085,45 +1078,20 @@ compatibility.
     dialect. If any of them lands, they should be justified and spelled
     (grok-build's spelling) in one pass, so at least two harnesses agree.
 
-    **Verified 2026-08-16, and the dialect is worse-shaped than assumed.**
-    The Agent Skills spec defines exactly six frontmatter fields — `name`,
-    `description`, `license`, `compatibility`, `metadata`, `allowed-tools`
-    — and **none of them expresses when a skill applies.** grok-build's
-    `discovery.rs:300–318` carries nine more on top: `short_description`,
-    `author`, `argument_hint`, `model`, `effort`, `user_invocable`,
-    `disable_model_invocation`, `when_to_use`, `paths`.
-
-    The find that matters: **the spec has a sanctioned extension point and
-    grok-build ignores it.** `metadata` is *"an arbitrary key-value mapping
-    … clients can use this to store additional properties not defined by
-    the Agent Skills spec"*, with the spec recommending "reasonably unique"
-    key names to avoid collisions. grok-build put its nine at top level
-    anyway — so its extensions are not merely non-standard, they are
-    **off-spec**, and any of them could collide with a future official
-    field of the same name.
-
-    That turns the borrow into a real fork, should pikuri ever want one of
-    these keys:
-    - **grok-build's spelling** — two harnesses agree, and you inherit the
-      spec violation and the collision risk;
-    - **`metadata: {pikuri-when-to-use: …}`** — spec-clean, collision-safe,
-      and agrees with nobody.
-
-    For a key that already exists somewhere the first is arguable. For a
-    *newly invented* predicate there is no "two harnesses agree" to buy, so
-    `metadata:` wins by default — which is half of why R9 declined to
-    invent one. Also worth knowing: `compatibility` is the nearest existing
-    field in spirit (its own examples are *"Requires git, docker, jq"*,
-    *"Designed for Claude Code"*) but it is free text capped at 500 chars,
-    aimed at a human judging "will this work in my environment". Nothing
-    parses it, and it cannot carry a machine predicate.
-
-    Failure mode of any unknown key, confirmed both ways: **fail-open.**
-    `Catalog::Bundled#parse_skill` reads only `frontmatter['description']`
-    and `['name']` and drops the rest; and `wh` carried `argument-hint:` in
-    `~/.claude/skills/` for months while Claude Code listed it normally. A
-    tagged skill is simply advertised unconditionally everywhere — which
-    costs nothing and buys nothing until someone implements the key.
+    **Verified 2026-08-16, and the dialect is worse-shaped than assumed.
+    The survey graduated to `COMPARISON.md` (*Skills → Frontmatter*) —
+    read it there; only the consequence for this note is kept here.**
+    None of the spec's six fields expresses *when* a skill applies, and
+    grok-build's nine extras sit at top level even though the spec's
+    `metadata` map is the sanctioned home for exactly that. So adopting
+    any of these keys is a fork between grok-build's spelling
+    (two harnesses agree, inherit the spec violation) and
+    `metadata: {pikuri-…}` (spec-clean, agrees with nobody) — and for a
+    *newly invented* predicate there is no agreement to buy, so
+    `metadata:` wins by default. That is half of why R9 declined to
+    invent one. Unknown keys fail open everywhere, so a dialect costs
+    nothing until someone implements it — which is why this is a
+    design-cleanliness question, not a compatibility hazard.
 13. **Where do we say `paths:` is not an access control?** Per R4, the
     enum must carry every name, so a gated skill's body is loadable at
     any time — gating hides a description and restricts nothing. Correct

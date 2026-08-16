@@ -289,17 +289,17 @@ building it for skills keeps that option open at no extra cost.
    path-args map, no injection, no per-activation cache cost, no bootstrap
    hole, and the baseline stays static. Three things killed it:
 
-   - **It exists nowhere.** Verified 2026-08-16: the Agent Skills spec
-     defines six frontmatter fields (`name`, `description`, `license`,
-     `compatibility`, `metadata`, `allowed-tools`) and grok-build adds nine
-     more (`discovery.rs:300–318`). None of the fifteen expresses project
-     shape. Inventing a sixteenth to serve a saving measured at 17 % of
-     description bytes is the worst ratio on the whole list.
-   - **If it ever were wanted, it must not be a top-level key.** The spec's
-     `metadata` map is the sanctioned home for client-specific properties
-     ("reasonably unique key names"), so the spelling would be
-     `metadata: {pikuri-project-has: "build.gradle"}`. grok-build putting
-     its own nine at top level is a thing to *not* copy, not a precedent.
+   - **It exists nowhere.** Of the fifteen frontmatter fields anyone
+     defines — the spec's six plus grok-build's nine extras — not one
+     expresses project shape (survey in `COMPARISON.md`,
+     *Skills → Frontmatter*). Inventing a sixteenth to serve a saving
+     measured at 17 % of description bytes is the worst ratio on the
+     whole list.
+   - **If it ever were wanted, it must not be a top-level key** — the
+     spec's `metadata` map is the sanctioned home, so the spelling would
+     be `metadata: {pikuri-project-has: "build.gradle"}`. grok-build
+     putting its own nine at top level is a thing to *not* copy, not a
+     precedent.
    - **The host already answers it, without frontmatter.** pikuri's
      `Catalog::Bundled` takes `search_bases:`, and `.pikuri/skills` is
      scanned from the *project root* — so "this skill applies to this
@@ -383,11 +383,12 @@ building it for skills keeps that option open at no extra cost.
   path-args map and an injection channel, and it would have been **the
   first listener that *acts*** — a real invariant against the capability
   seam, and part of why the price was wrong for the prize.
-- **The frontmatter survey** → `COMPARISON.md`, which is the doc that owns
-  what others do: the spec's six fields, grok-build's nine extras, and the
-  fact that the spec's `metadata` map is the sanctioned extension point
-  grok-build declines to use. That outlives this decision entirely — it is
-  the reference anyone reaches for the next time a custom key is proposed.
+- ~~**The frontmatter survey** → `COMPARISON.md`~~ — **done 2026-08-16**,
+  as *Skills → Frontmatter: the six standard fields, and the extension
+  point nobody uses*. It outlives this decision entirely: it is the
+  reference anyone reaches for the next time a custom key is proposed,
+  and it carries the inverted-empty-`paths:` finding that this note's
+  sister used to kill `paths: []` as a spelling.
 - The path-args map (supplied vs. walked paths, and where the map lives)
   is a fact about tools, not about skills — if it gets built it belongs
   wherever that mechanism lands, and it should be cross-referenced from
