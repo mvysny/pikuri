@@ -59,9 +59,16 @@ catalog, which is the closest thing to evidence available. (Its
 accounting, not pikuri's, but the number is dominated by description
 length either way.)
 
-- **28 skills → 3.8 k tokens** of catalog, every turn. On a 1 M window
-  that's 0.4 %; on a 32 k local llama.cpp it's **12 %**, which is the
-  configuration pikuri defaults to.
+- **28 skills → 3.8 k tokens** of catalog, every turn: 1.5 % of a 256 k
+  window, ~6 % of 64 k. (An earlier draft here cited 12 % against a 32 k
+  window. Not a fair benchmark — any host doing real coding work runs
+  64 k+, and pikuri's own `/props` probe reads whatever the server
+  actually serves. The percentage is not where the argument lives.)
+
+  Where it *does* live: this is paid **every turn, by every session,
+  forever**, and it scales with skills *installed* rather than skills
+  used. A body is paid once, by the session that asked. That asymmetry is
+  the whole point and it holds at any window size.
 - Per-entry: `dataviz` ~380, `claude-api` ~360, `cop` ~310,
   `update-config` ~240, `writing-rdoc` ~210. The Agent Skills spec
   budgets **50–100 tokens per entry**. These are 3–6× over.
@@ -238,22 +245,41 @@ and exempting skill content from context compaction.
    My read: (i) + the preamble now, (ii) if a real catalog keeps
    growing, (iii) only if `when-to-use:` earns its way in for another
    reason. Explicitly *not* (iv).
-2. **Should the human path fold into the user turn instead of `:system`?**
-   Both prior-art harnesses put a human-loaded skill in the user message;
-   pikuri puts it in `:system`, which is sticky on Anthropic and
-   positional elsewhere. So the *same skill* behaves differently
-   depending on who loaded it — that's the smell, more than either
-   choice on its own. Unexercised today (no bundled binary calls
-   `schedule_load_skill`), and CLAUDE.md warns against library features
-   whose value rests on a demo's shortcut, so the honest answer may be
-   "leave it, it's documented". But *unexercised* also means *untested
-   in anger*: is a `bin/` wiring worth adding purely to find out?
-3. **One DECISIONS.md entry or two?** Recommendation: **one**, and write
-   it when this note graduates rather than waiting on
-   `lazy-skill-registration.md`. The axis is the same — *what the catalog
+2. ~~**Should the human path fold into the user turn instead of
+   `:system`?**~~ **Answered — keep `:system`.** Worth writing down,
+   because the three roles in play are easy to conflate:
+
+   | path | role | behaviour |
+   |---|---|---|
+   | `skill` tool | **tool result** (`:tool`) | positional, one-shot, identical on every provider |
+   | `schedule_load_skill` | `:system` | positional on OpenAI-family; hoisted + **sticky** on Anthropic |
+   | opencode / grok-build human path | `:user` | folded into the user turn |
+
+   So the tool path — the one that actually runs today — has no provider
+   divergence at all. The `:system` question is confined to the host
+   path, and `:user` is the wrong answer there for a reason that predates
+   this note: an interloper `:user` item fires the
+   {Pikuri::Agent::Extension#on_user_message} dispatch, so a skill body
+   would trigger memory prefetch and capture as if the human had typed
+   it. Reference text isn't a user turn — that's precisely why
+   `Control::Interloper` has two kinds. Matching opencode/grok-build here
+   would import a bug.
+
+   The residual divergence (Anthropic stickiness) is real but defensible:
+   a host-loaded skill *is* session guidance. What deserves stating
+   plainly, and currently isn't anywhere, is the **trust** consequence —
+   {Pikuri::Skill::SkillTool} declares skills `untrusted: :hard`, and the
+   `:system` path promotes that hard-untrusted text from an observation
+   to a harness-level instruction, landing in the most-trusted slot in
+   the whole prompt on Anthropic. The justification is that a host load
+   is human-chosen (a UI picker), so it's trusted by act of selection —
+   which is fine, but it's an argument nobody has written down. One
+   sentence in `schedule_load_skill`'s yardoc closes it.
+3. ~~**One DECISIONS.md entry or two?**~~ **Settled: one**, written when
+   this note graduates rather than waiting on
+   `lazy-skill-registration.md`. Same axis — *what the catalog
    advertises, and when the body arrives* — and entries are mutable, so
-   lazy registration extends it in place if it ever lands. Two entries on
-   one axis is how a reader ends up reading only half the reasoning.
+   lazy registration extends it in place if it ever lands.
 
 
 ## Cheap borrows spotted along the way
@@ -325,6 +351,11 @@ land on its own.
   pre-injection) → `DECISIONS.md`, **one** entry on the
   what-the-catalog-advertises-and-when-the-body-arrives axis; lazy
   registration extends it in place later rather than opening a second.
+- Why the host path is `:system` and not `:user` (the `on_user_message`
+  dispatch would fire on reference text), plus the trust consequence of
+  promoting hard-untrusted skill text into the system slot →
+  {Pikuri::Skill::Extension#schedule_load_skill} yardoc, one sentence
+  each.
 - The failure mode worth naming wherever this lands: Grok's pain was not
   tokens or latency, it was doing half its recon under the wrong mental
   model and having to redo it — and that wasted recon is *itself* far
