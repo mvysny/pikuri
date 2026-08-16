@@ -181,10 +181,22 @@ def on_event(event)
   return unless event.is_a?(Pikuri::Agent::Event::ToolCall)
 
   paths = PATH_ARGS[event.name]&.filter_map { |k| event.arguments[k] } or return
-  newly = @catalog.activate_for_paths(paths)
+  newly = @tracker.activate_for_paths(paths)  # NOT @catalog — see below
   @ext.announce(newly) unless newly.empty?   # → interloper.inject_system_message
 end
 ```
+
+**Correction (2026-08-16, from `skill-catalog-in-context.md` R5): the
+activation state cannot live on the catalog.** `Catalog::Bundled#initialize`
+ends with `@skills.freeze`, `@list.freeze` and `freeze`, so an
+`@catalog.activate_for_paths` would raise `FrozenError`. An earlier draft
+of the sketch above did exactly that. The state belongs in the listener
+(or a small tracker it owns), which is the better shape anyway — it keeps
+the catalog pure discovery/validation/holding, and it is what makes the
+sister note's tier-0 baseline stateless, so `clear_conversation` needs no
+`rehide` where grok-build does. Read the deep freeze as a constraint worth
+keeping, not an obstacle: any design that mutates the catalog per session
+gives it up.
 
 **The one honest gap** is walked vs. supplied paths — the distinction the
 Denylist seam already names. `Event::ToolCall#arguments` gives the path
