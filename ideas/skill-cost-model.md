@@ -356,17 +356,15 @@ and exempting skill content from context compaction.
 Independent of how the main questions settle; each is small enough to
 land on its own.
 
-1. **Enum-constrain `SkillTool`'s `name`.** {Pikuri::Tool::Parameters}
-   already has `required_enum`, and the catalog is fixed at construction,
-   so this is a one-line change that makes a hallucinated skill name
-   impossible instead of merely well-handled. The spec explicitly
-   recommends it. Note the interaction: the tool is snapshot into
-   sub-agents, so the enum must be built from the same `catalog.list` the
-   closure captures. Second interaction, spotted later: an enum of every
-   skill name **is** a names-only catalog living in the tool schema, so
-   this borrow also hands
-   [`skill-catalog-in-context.md`](skill-catalog-in-context.md)'s tier 0
-   for free. Land it first if that note goes anywhere.
+1. ~~**Enum-constrain `SkillTool`'s `name`.**~~ **Dropped 2026-08-16**,
+   with `D-skill-path-activation` decision 5: a gated skill must refuse
+   *by name* until its path fires, so an enum of the active set would be
+   rebuilt on every promotion, churning the tool schema mid-session. The
+   "hands tier 0 for free" argument died with the tier — there is no
+   names-only tier any more, a gated skill is withheld outright. Both
+   surveyed harnesses agree by construction: the one that hides skills is
+   the one that takes a free-form name. Full reasoning in
+   [`skill-catalog-in-context.md`](skill-catalog-in-context.md) item 1.
 2. **List the skill's sidecar files in the load result.** Both harnesses
    do it: opencode globs the skill dir, caps at 10, sorts, excludes
    `SKILL.md`, and emits `<skill_files>` with a "file list is sampled"
@@ -403,10 +401,12 @@ land on its own.
    names in the tool's closure, returning "already loaded in this
    conversation" on a repeat); the only design question is what
    `clear_conversation` does to it, and the answer is obvious.
-6. **`when-to-use:` frontmatter** — noted, not proposed. A non-standard
-   extension; worth knowing it exists before inventing our own spelling
-   if we ever want it. Whether it earns its way in is a catalog-note
-   question.
+6. ~~**`when-to-use:` frontmatter** — noted, not proposed.~~ **Shipped**,
+   on grok-build's spelling rather than one of our own, which is what
+   noting it bought. `Catalog::Skill` carries `when_to_use` (accepting
+   `when-to-use` or `when_to_use`), `Renderer` emits a `<when-to-use>`
+   element in the catalog entry, and `Trigger.strip_prefix` keeps it from
+   restating the description.
 
    **`disable-model-invocation:` is answered and needs no key** (shipped
    2026-08-16). The two skills this note measured as *resident tokens
