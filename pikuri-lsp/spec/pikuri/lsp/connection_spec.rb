@@ -6,7 +6,7 @@ require 'timeout'
 describe Pikuri::Lsp::Connection do
   # Yields a live connection plus the server side of its channel.
   connect = lambda do |&block|
-    channel, server = LspWire.channel
+    channel, server = Pikuri::Lsp::Testing::Wire.channel
     connection = described_class.new(**channel, server_id: 'test')
     begin
       Timeout.timeout(10) { block.call(connection, server) }

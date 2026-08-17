@@ -152,8 +152,34 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    - **No `Finalizers` coupling**, matching `Mcp::Servers`: the owner closes it,
      which will be `Lsp::Extension`'s `on_close` in step 7. A hard crash can
      therefore orphan a child — the same exposure stdio MCP has today.
-3. **The fake server + raw-byte fixtures** from the recorded runs, so a
-   serializer bug cannot hide behind a symmetric parser.
+3. ~~**The fake server + raw-byte fixtures**~~ **Landed.**
+   `Pikuri::Lsp::Testing` holds both halves: `Wire` (manual — hand-framed
+   bytes, for asserting what the client wrote and for the sequences no real
+   server performs on demand) and `FakeServer` (scripted — answers the
+   handshake for free, one block per method, `#received` / `#await` for
+   assertions, `#crash!` for a death). Neither builds what it sends through
+   pikuri's own framing or value types; going the *other* way is the point,
+   and one spec round-trips a `Position` out through `to_wire` and back in
+   through `from_wire` so an asymmetry cannot hide.
+
+   Three notes:
+
+   - **It ships, off the production load path** — `require 'pikuri/lsp/testing'`,
+     the loader ignores it, exactly as `pikuri-core` does with
+     `pikuri/testing.rb`. A host wiring the gem can then test its own
+     integration without a language server installed.
+   - **The fixtures are faithful reconstructions, not raw captures**, and
+     `pikuri-lsp/spec/fixtures/README.md` says so per file, with the finding
+     id each one pins: the throwaway clients' transcripts were never kept, so
+     what survives is the findings. Field names, counts and every recorded
+     string are theirs; whitespace, key order and ranges past the recorded
+     line are ours. The `supertypes` fixture goes further — its 14 rows are
+     this repo's real `class Tool` reopenings, so `grep` still reproduces the
+     list.
+   - `FakeServer#await` exists because `#received` legitimately lags: a client
+     call returns when its bytes are *written*, and the serving thread records
+     them a moment later. Without a barrier, every assertion on what the
+     client sent is a race.
 4. **`Registry.from_h`** — the host-config bridge; the registry and its entry
    landed with step 2, so this is what is left of the step.
 5. **Readiness gate + the coalescing mailbox + `ServerProgress`.**

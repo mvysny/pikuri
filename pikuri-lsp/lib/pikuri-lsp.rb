@@ -27,6 +27,9 @@ module Pikuri
     LOADER.tag = 'pikuri-lsp'
     LOADER.push_dir(File.expand_path('.', __dir__))
     LOADER.ignore(__FILE__)
+    # Opt-in test scaffolding (+require 'pikuri/lsp/testing'+), off the
+    # production load path — as pikuri-core does with +pikuri/testing.rb+.
+    LOADER.ignore(File.expand_path('pikuri/lsp/testing.rb', __dir__))
     LOADER.setup
     LOADER.eager_load
   end

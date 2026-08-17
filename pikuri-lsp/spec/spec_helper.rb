@@ -5,8 +5,15 @@ require 'minitest'
 require 'minitest/assertions'
 
 require 'pikuri-lsp'
+require 'pikuri/lsp/testing' # opt-in scaffolding, not loaded by pikuri-lsp boot
 
-require_relative 'support/lsp_wire'
+# Absolute so a fixture reads the same from any working directory.
+FIXTURES = File.expand_path('fixtures', __dir__)
+
+# @return [String] the fixture's bytes, exactly as recorded.
+def fixture(name)
+  File.read(File.join(FIXTURES, "#{name}.json"))
+end
 
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output.

@@ -14,7 +14,7 @@ describe Pikuri::Lsp::ClientWrapper do
   # +respawn+ hands the wrapper its next channel, which is how restart is
   # exercised without killing a real process.
   over_pipes = lambda do |entry: ruby, respawn: nil, &block|
-    channel, wire = LspWire.channel
+    channel, wire = Pikuri::Lsp::Testing::Wire.channel
     wrapper = described_class.new(entry: entry, root: '/tmp/project', respawn: respawn, **channel)
     begin
       Timeout.timeout(10) { block.call(wrapper, wire) }
@@ -130,7 +130,7 @@ describe Pikuri::Lsp::ClientWrapper do
 
   describe 'restart on death' do
     it 're-handshakes on a fresh channel and retries the call' do
-      next_channel, next_wire = LspWire.channel
+      next_channel, next_wire = Pikuri::Lsp::Testing::Wire.channel
       begin
         over_pipes.call(respawn: -> { next_channel }) do |wrapper, wire|
           start.call(wrapper, wire)
@@ -156,7 +156,7 @@ describe Pikuri::Lsp::ClientWrapper do
     end
 
     it 'gives up after MAX_ATTEMPTS and reports the last death' do
-      channels = Array.new(3) { LspWire.channel }
+      channels = Array.new(3) { Pikuri::Lsp::Testing::Wire.channel }
       begin
         wrapper = described_class.new(entry: ruby, root: '/tmp/project',
                                       respawn: -> { channels[1..].shift[0] },
