@@ -1,7 +1,12 @@
 # What skills actually cost in context — the shared evidence base
 
-Status: **measurements + settled dispositions; the open forks live in the
-sister notes.** Origin: `feedback.txt` item 3 ("skill load costs a
+Status: **measurements + settled dispositions; every fork this note fed is
+now closed** (2026-08-17 — `paths:` gating shipped and is the whole of what
+the skills surface earned; see `D-skill-path-activation`, *this is where the
+skills-surface work stops*). What keeps the note alive is the evidence base
+itself: the tier costs and the KV-cache section are cited from the decision
+and from the sister notes, and borrow 7 waits on compaction existing.
+Origin: `feedback.txt` item 3 ("skill load costs a
 turn"), which asked for one of three things: path-triggered
 auto-injection, a batch `skill` call, or at least for skill-loading to
 feel like the *expected opening move* rather than a surprise tax.
@@ -23,10 +28,9 @@ here that turns into a fork belongs over there.
 Related:
 
 - [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — *what*
-  the resident catalog advertises. Consumes the tier measurements and
-  the caching section below; also inherits this note's old open question
-  about description length, which is a what-does-an-entry-contain
-  question.
+  the resident catalog advertises. Consumed the tier measurements and the
+  caching section below, and is now down to two bullets of prose owed to
+  the book: every mechanism question on that axis closed 2026-08-17.
 - `DECISIONS.md` `D-skill-path-activation` — *when* an entry is promoted;
   shipped 2026-08-17, and it consumed the grok-build survey below.
 - [`tool-list-in-context.md`](tool-list-in-context.md) — the same
@@ -365,18 +369,29 @@ land on its own.
    surveyed harnesses agree by construction: the one that hides skills is
    the one that takes a free-form name. Full reasoning in
    [`skill-catalog-in-context.md`](skill-catalog-in-context.md) item 1.
-2. **List the skill's sidecar files in the load result.** Both harnesses
-   do it: opencode globs the skill dir, caps at 10, sorts, excludes
-   `SKILL.md`, and emits `<skill_files>` with a "file list is sampled"
-   note; grok-build rewrites relative links in the body to absolute paths.
-   pikuri currently says only "sidecar paths … are relative to
-   `<base_dir>`", which costs the model a `glob` round-trip to find out
-   there *are* none — a real round-trip, unlike the one item 3 complained
-   about. This is the borrow most directly responsive to the actual
-   feedback.
+2. ~~**List the skill's sidecar files in the load result.**~~ **Closed
+   2026-08-17**, not on its merits — it remains the borrow most directly
+   responsive to the feedback — but with the whole skills surface: `paths:`
+   gating is what this axis earned, and everything else stays unbuilt by
+   decision. See `D-skill-path-activation`, *this is where the
+   skills-surface work stops*. For the record, what it would have been:
+   opencode globs the skill dir, caps at 10, sorts, excludes `SKILL.md`,
+   and emits `<skill_files>` with a "file list is sampled" note;
+   grok-build rewrites relative links in the body to absolute paths.
+   pikuri says only "sidecar paths … are relative to `<base_dir>`", so a
+   model pays a `glob` to discover there are none.
 3. ~~**Correct the "opencode is the outlier" sentence**~~ — **done
    2026-08-16**, alongside the sub-agent fix in the same header.
-4. **Drop `<location>` from the catalog render.** The spec says outright:
+4. ~~**Drop `<location>` from the catalog render.**~~ **Shipped 2026-08-17** —
+   gone from `format_catalog` *and* `format_promotion` (one shared
+   `entry_lines`, and a promotion is an inventory entry too), with a `refute`
+   guard in `renderer_spec.rb` so re-adding it goes red. The counter-argument
+   below resolved rather than lost: `Filesystem#readable:` over
+   `catalog.roots` is load-bearing for **sidecar reads** and stays either
+   way, so what the trim narrows is only the direct-`read`-`SKILL.md`
+   fallback, which needs a catalog the `skill` tool cannot serve and
+   `Extension` cannot produce. The original case, for the record — the spec
+   says outright:
    *"If your dedicated activation tool provides the skill directory path
    in its result, you can omit `location` from the catalog."* pikuri
    emits it in both — `format_catalog`'s `<location>` **and**
@@ -392,15 +407,15 @@ land on its own.
    that works. Dropping it makes the tool the only door. Probably fine —
    the tool is auto-registered whenever the catalog is non-empty — but
    it's a real coupling, not a pure win.
-5. **Dedupe a repeated load.** {Pikuri::Skill::SkillTool} re-renders the
-   full body every time it's called, so a model that loads `cop` three
-   times pays ~2 800 tokens three times. The spec's Step 5 recommends
-   tracking activations and skipping re-injection. This is worse on
-   Anthropic, where a *host*-loaded skill is hoisted and sticky — repeat
-   loads accumulate in the system param. Cheap fix (a `Set` of loaded
-   names in the tool's closure, returning "already loaded in this
-   conversation" on a repeat); the only design question is what
-   `clear_conversation` does to it, and the answer is obvious.
+5. ~~**Dedupe a repeated load.**~~ **Closed 2026-08-17** with the rest of
+   the surface, and it had already lost its sharpest edge: the "worse on
+   Anthropic, where a host-loaded skill is hoisted and sticky" half is
+   stale, since `D-reference-text-as-user-turn` means nothing pikuri
+   appends mid-conversation is `role: :system` at all, so repeat loads no
+   longer accumulate in the system param. What remains is the plain cost —
+   {Pikuri::Skill::SkillTool} re-renders the full body per call, so loading
+   `cop` three times pays ~2 800 tokens three times, where the spec's Step
+   5 recommends tracking activations and skipping re-injection.
 6. ~~**`when-to-use:` frontmatter** — noted, not proposed.~~ **Shipped**,
    on grok-build's spelling rather than one of our own, which is what
    noting it bought. `Catalog::Skill` carries `when_to_use` (accepting

@@ -656,14 +656,47 @@ conditional activation actually works*).
   with no description".
 - **Move the catalog out of the system prompt, as grok-build does.** Its
   baseline goes into the first user message
-  (`prompt/user_message.rs`), never the prompt — a genuinely better
+  (`prompt/user_message.rs`), never the prompt — pitched as a better
   position on two counts: promotion mutates no prefix, and skill
   descriptions are `untrusted: :hard` text that would sit in a data
-  position rather than the most-trusted slot in the request. Declined for
-  now as a larger change than this decision needs; recorded because it is
-  the strongest argument against our placement and the first thing to
-  revisit. The consequence we accept is that the untrusted-description gap
-  stays open for ungated skills.
+  position rather than the most-trusted slot in the request. First
+  declined as larger than this decision needed and logged as the first
+  thing to revisit; **revisited 2026-08-17 and now declined outright**,
+  because reading the two counts against pikuri's own code shrank the
+  offer to one and a half. The prefix count is already banked:
+  `assemble_system_prompt` runs exactly twice — at construction and on
+  `clear_conversation` — and a promotion already rides the interloper, so
+  nothing mutates a prefix mid-session here either. What remains is the
+  trust position, in a sharper form than the original phrasing: the gate
+  is a token-cost mechanism, and it is accidentally deciding trust
+  placement for third-party bytes, since a *gated* skill's description
+  arrives as `role: :user` while an *ungated* skill's identical bytes
+  arrive in the system prompt. That is incoherent, but it is a tidiness
+  argument, not a finding — `D-bundle-trust-grading` reports this exposure
+  and deliberately does not defend against it, and moving the block would
+  not defend against it either; it would only relocate it. The move is
+  therefore priced as a real refactor buying no new defense. Two things a
+  reopen would still have going for it, recorded so nobody re-derives
+  them: seeding the baseline on the interloper makes one channel and one
+  renderer carry both baseline and promotion, and requiring an interloper
+  for a non-empty catalog would delete the two-branch fail-open in
+  `Extension#arm_gate` (`Activation::Open` plus its warning) outright,
+  since that branch exists only because the two live on different
+  channels. Against it, and untested: the resident block is in the
+  strongest position for instruction-following, which matters most on the
+  local models pikuri targets. The one probe we have is the handful of
+  local-model runs below, which settles nothing in either direction.
+- **Move the baseline into `SkillTool`'s description instead.** Carried as
+  an open fork in `ideas/skill-catalog-in-context.md` on the reasoning
+  that a persona replaces the system prompt but inherits the tool
+  verbatim, so the tool is the only home correct for both agent kinds.
+  Rejected: `D-no-skills-in-sub-agents` has since made "correct for both
+  agent kinds" a property pikuri does not want, so the argument inverts
+  into a hazard — a description built at `configure` time from the
+  parent's catalog would hand the inventory to any persona naming `skill`,
+  where `SkillTool#for_sub_agent`'s sealed `Activation` cannot reach it.
+  It also cannot host promotions (a description is built once), and it
+  wants the enum that decision 5 already rejected.
 - **Advertise gated skills name-only, in a sibling `<contextual_skills>`
   section, and keep them invocable.** This was the decision as first
   accepted, reversed the same day on evidence. Three things killed it.
@@ -850,6 +883,39 @@ conditional activation actually works*).
   cheap. Filtering remains the description's job — a preamble cannot rescue a
   skill whose description omits its own skip condition, which is the
   authoring half of this and belongs in the book.
+  **Weigh the evidence here as an anecdote, not a measurement** (noted
+  2026-08-17): this is a handful of runs against one model on one task, and
+  a local model's tool-calling is variable enough that separating a real
+  effect from sampling noise would take on the order of a hundred. The
+  change stands on a reason that needs no statistics — the promotion and
+  the resident block advertise the same thing and should say the same
+  thing — and the same caution applies to anything else in this repo
+  reasoning from a single local-model transcript.
+- **This is where the skills-surface work stops** (2026-08-17). Two
+  re-readings closed the remaining items as a group rather than one at a
+  time. First, the origin was thinner than the five notes it grew: the
+  complaint is `ideas/feedback.txt` item 4, *"the standing prompt is
+  heavy"*, which lists the skills catalog in an enumeration and then names
+  what is actually not worth its bytes — the tool-schema restatement and
+  the duplicated "don't mention the guidelines" material — while saying
+  the project file earns its keep. The catalog was never the item's
+  target. Second, the prior art does not support trimming it either:
+  grok-build is built for the same model that filed the complaint, and it
+  renders a full resident inventory of *every* skill budgeted at up to
+  **50 % of the context window**, names-only only as overflow. Its one
+  divergence from pikuri is position, not volume — xAI's own harness
+  spends more resident context on skills than pikuri does. So `paths:`
+  gating plus two cheap trims is the whole of what this axis earned, and
+  these stay unbuilt by decision, not by backlog: listing a skill's
+  sidecar files in the load result, and deduping a repeated load. The two
+  that did ship alongside the gate are the ones that cost nothing to
+  reason about — `<location>` left the catalog and promotion renders
+  (`format_skill` keeps it, which is the copy sidecars actually resolve
+  against), and a typed `/name` now loads a skill in `bin/pikuri-code`.
+  Note what the trim does *not* touch: `Filesystem#readable:` over
+  `catalog.roots` is load-bearing for reading a skill's **sidecar files**,
+  not merely a direct-`read` fallback for `SKILL.md` — dropping the
+  catalog path narrows that fallback without touching the roots.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session
