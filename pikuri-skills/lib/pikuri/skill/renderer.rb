@@ -2,8 +2,8 @@
 
 module Pikuri
   module Skill
-    # Turns {Catalog} / {Catalog::Skill} data into the Agent Skills XML the
-    # model actually reads. Two renders, both stateless:
+    # Turns {Catalog::Skill} data into the Agent Skills XML the model actually
+    # reads. Three renders, all stateless:
     #
     # - {format_catalog} — the +<available_skills>+ inventory for the system
     #   prompt (advertises what's loadable):
@@ -15,6 +15,11 @@ module Pikuri
     #         <location>/repo/.pikuri/skills/pdf-tools/SKILL.md</location>
     #       </skill>
     #     </available_skills>
+    #
+    # - {format_promotion} — the same inventory shape, injected mid-loop when a
+    #   touched file brings gated skills into play. Carries +<when-to-use>+
+    #   where the catalog block doesn't, since a promotion is a pitch for one
+    #   moment rather than a resident line item.
     #
     # - {format_skill} — one skill's body block, injected when the skill is
     #   loaded (by the +skill+ tool or a host-driven load):
@@ -33,14 +38,15 @@ module Pikuri
     module Renderer
       module_function
 
-      # The +<available_skills>+ inventory block, or +""+ for an empty
-      # catalog (so callers concatenate unconditionally). Leads with two
-      # blank lines; callers joining prompt sections +lstrip+ as needed.
+      # The +<available_skills>+ inventory block, or +""+ for an empty list (so
+      # callers concatenate unconditionally). Leads with two blank lines;
+      # callers joining prompt sections +lstrip+ as needed.
       #
-      # @param catalog [Pikuri::Skill::Catalog]
+      # @param skills [Array<Pikuri::Skill::Catalog::Skill>] what to advertise —
+      #   the caller has already dropped whatever it means to withhold
       # @return [String]
-      def format_catalog(catalog)
-        return '' if catalog.empty?
+      def format_catalog(skills)
+        return '' if skills.empty?
 
         lines = [
           '',
@@ -50,13 +56,25 @@ module Pikuri
           '',
           '<available_skills>'
         ]
-        catalog.list.each do |skill|
-          lines << '  <skill>'
-          lines << "    <name>#{escape_xml(skill.name)}</name>"
-          lines << "    <description>#{escape_xml(skill.description)}</description>"
-          lines << "    <location>#{escape_xml(skill.location)}</location>"
-          lines << '  </skill>'
-        end
+        skills.each { |skill| lines.concat(entry_lines(skill, trigger: false)) }
+        lines << '</available_skills>'
+        lines.join("\n")
+      end
+
+      # The mid-loop promotion block: skills a touched file just brought into
+      # play, in the same shape the catalog block uses, so the model reads it
+      # the way it reads the resident one.
+      #
+      # @param skills [Array<Pikuri::Skill::Catalog::Skill>] newly in play;
+      #   never empty (a caller with nothing to announce injects nothing)
+      # @return [String]
+      def format_promotion(skills)
+        lines = [
+          'These skills just became relevant to the files you are working with, and are now loadable:',
+          '',
+          '<available_skills>'
+        ]
+        skills.each { |skill| lines.concat(entry_lines(skill, trigger: true)) }
         lines << '</available_skills>'
         lines.join("\n")
       end
@@ -77,6 +95,22 @@ module Pikuri
           </skill>
         OUT
       end
+
+      # One +<skill>+ element. With +trigger:+, a declared +when-to-use+ rides
+      # along and {Trigger} keeps the two fields from saying the same thing
+      # twice — the description loses the tail it duplicates, the value loses
+      # the connective the tag already supplies.
+      def entry_lines(skill, trigger:)
+        show_trigger = trigger && !skill.when_to_use.nil?
+        description = show_trigger ? Trigger.strip_suffix(skill.description) : skill.description
+
+        lines = ['  <skill>', "    <name>#{escape_xml(skill.name)}</name>",
+                 "    <description>#{escape_xml(description)}</description>"]
+        lines << "    <when-to-use>#{escape_xml(Trigger.strip_prefix(skill.when_to_use))}</when-to-use>" if show_trigger
+        lines << "    <location>#{escape_xml(skill.location)}</location>"
+        lines << '  </skill>'
+      end
+      private_class_method :entry_lines
 
       # @param str [String]
       # @return [String] +str+ with XML metacharacters entity-escaped.

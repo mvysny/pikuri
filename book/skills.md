@@ -83,6 +83,44 @@ command and it costs nothing until you type it. A skill whose
 description says "only invoked manually" is a bundle filed on
 the wrong surface.
 
+## A third answer: the model decides, once the project proves relevant
+
+"Model-invoked, so it costs prompt tokens forever" has a middle
+setting. Ten skills at a couple of hundred words each is five
+kilobytes on every turn, and in any one session nine of them are
+about a language you are not writing today. A skill can name the
+files it is about:
+
+```yaml
+paths:
+  - "**/*.rb"
+  - "**/*.gemspec"
+```
+
+Now it is not in the prompt at all — not its description, not its
+name, not a placeholder saying something was left out. The first
+time the agent reads or edits a `.rb` file, its description
+appears in the conversation and the model can load it. Nothing
+happens in your Java project. `/clear` puts it back to sleep.
+
+Patterns follow `.gitignore` rules, which is a good thing to know
+before writing one: `build.gradle` with no slash matches at any
+depth, `src/main` with a slash is pinned to the project root, and
+a bare `ideas` covers everything under it. One trap: `paths: []`
+does **not** mean "never advertise" — an empty list, `["**"]`, and
+a `paths:` with nothing under it all mean *always*, because that
+is how the other harnesses reading this key behave.
+
+This is a relevance filter, not a permission: the agent can reach
+a hidden skill any time it reads a matching file, and *it* chooses
+which files to read. What it buys is a smaller prompt and fewer
+irrelevant instructions competing for attention — not containment.
+
+An inventory that grows mid-conversation may sound unsettling, but
+it is not new: `mcp_connect` already adds tools to a running agent
+the same way. What arrives here is smaller — a description, never a
+body. Loading still takes the deliberate `skill` call.
+
 pikuri will not run shell commands out of a command file, the
 way Claude Code's `` !`cmd` `` does — a `.md` that arrives with
 a cloned repo would otherwise be arbitrary code execution behind

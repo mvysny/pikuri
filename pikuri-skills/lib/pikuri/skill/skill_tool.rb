@@ -67,13 +67,11 @@ module Pikuri
                               'Must match one of the skill names you were given.'
           },
           execute: lambda { |name:|
-            # The gate is not armed yet — both lookups still go to the
-            # unfiltered catalog. Arming it is swapping them for
-            # +activation.get+ and +activation.names+, together with the
-            # render that hides a gated skill in the first place.
-            loaded = catalog.get(name)
+            loaded = activation.get(name)
             if loaded.nil?
-              available = catalog.list.map(&:name).sort
+              # The enumeration is half the gate: recite the catalog here and
+              # one refused guess dumps every name the prompt withheld.
+              available = activation.names
               list = available.empty? ? 'none' : available.join(', ')
               next "Error: skill '#{name}' not found. Available skills: #{list}."
             end

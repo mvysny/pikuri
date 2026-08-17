@@ -52,6 +52,40 @@ skill) and registers the `skill` tool. The LLM invokes `skill` with a
 name; the tool returns the skill's body wrapped with its base
 directory so the LLM can resolve sidecar files via `read`.
 
+## Skills that wait for the right project
+
+A skill only some projects need can say so in its frontmatter, and stay
+out of the prompt everywhere else:
+
+```yaml
+---
+name: writing-rdoc
+description: Writing Ruby doc comments — which level each fact belongs at.
+paths:
+  - "**/*.rb"
+  - "**/*.gemspec"
+when-to-use: >-
+  About to write or edit a # comment, or a @param/@return tag.
+---
+```
+
+Such a skill is withheld completely — no name, no description, and the
+`skill` tool refuses it exactly as it refuses a name that exists nowhere.
+The moment the agent reads, writes or edits a file matching one of the
+globs, its description arrives in the conversation and it becomes
+loadable. `/clear` hides it again.
+
+Patterns are gitignore syntax, so a slash-less pattern matches at any
+depth and a bare directory covers everything beneath it. Two things
+worth knowing before you write one:
+
+- **`paths: []` means *always advertised*, not "never"** — as does
+  `paths: ["**"]`, and a bare `paths:` with nothing under it.
+- **Give the agent an `interloper:`** (`Pikuri::Agent::Control::Interloper.new`).
+  A promotion arrives as a mid-loop injection, so without one there is
+  nowhere for it to land — pikuri then leaves every skill advertised and
+  logs a warning, rather than hiding one it could never bring back.
+
 ## Slash commands
 
 A command is one Markdown file. The model is never told it exists —

@@ -15,7 +15,8 @@ handed the live forks to the notes below.
 **Scope.** This note owns the numbers and the prior art, so the other two
 can argue without re-deriving them. It does **not** decide what the
 catalog should contain (→ `skill-catalog-in-context.md`) or how the
-now-accepted `paths:` trigger is wired (→ `skill-path-activation.md`).
+shipped `paths:` trigger is wired (→ `DECISIONS.md`
+`D-skill-path-activation`).
 Anything
 here that turns into a fork belongs over there.
 
@@ -26,8 +27,8 @@ Related:
   the caching section below; also inherits this note's old open question
   about description length, which is a what-does-an-entry-contain
   question.
-- [`skill-path-activation.md`](skill-path-activation.md) — *when* an
-  entry is promoted. Consumes the grok-build survey below.
+- `DECISIONS.md` `D-skill-path-activation` — *when* an entry is promoted;
+  shipped 2026-08-17, and it consumed the grok-build survey below.
 - [`tool-list-in-context.md`](tool-list-in-context.md) — the same
   resident-prefix arithmetic applied to tool schemas, which turn out to
   be ~4× the skill catalog.
@@ -245,8 +246,7 @@ the skill *into tier 1* and still makes the model spend the tool call for
 tier 2. **The trigger fixes ordering; it does not skip the round-trip** —
 independent confirmation of the split argued above. Item 3(a) *as asked*
 stays rejected here; the reframed version is a different feature and
-was accepted as `DECISIONS.md` `D-skill-path-activation`; the build
-sketch is [`skill-path-activation.md`](skill-path-activation.md) and
+was accepted as `DECISIONS.md` `D-skill-path-activation` and shipped;
 grok-build's implementation detail is in `COMPARISON.md`.
 
 Two more grok-build details in the same area:
@@ -301,8 +301,8 @@ and exempting skill content from context compaction.
   under `lib/` aren't component design. Also a glob→skill config table,
   which is the wall-of-JSON pikuri exists as a counter-move to. The
   reframed version — a path glob as a relevance filter that promotes a
-  withheld *catalog entry* — is a different feature and lives in
-  [`skill-path-activation.md`](skill-path-activation.md).
+  withheld *catalog entry* — is a different feature, shipped as
+  `D-skill-path-activation`.
 - **(b) batch load — already available**, via parallel tool calls. No
   new parameter.
 - **(c) "expected opening move" — a prompt/description problem, not a

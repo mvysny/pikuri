@@ -38,6 +38,9 @@ module Pikuri
     class Extension
       include Pikuri::Agent::Extension
 
+      LOGGER = Pikuri.logger_for('Skills')
+      private_constant :LOGGER
+
       # @param catalog [Pikuri::Skill::Catalog] the catalog of
       #   skills the agent may load. Required.
       # @param root [Pathname] the workspace root a touched path is resolved
@@ -53,6 +56,7 @@ module Pikuri
         @catalog = catalog
         @root = root
         @activation = Pikuri::Skill::Activation.new(catalog: catalog)
+        @gate_armed = catalog.list.any?(&:gated?)
       end
 
       # @return [Pikuri::Skill::Catalog]
@@ -61,12 +65,15 @@ module Pikuri
       # @return [Pathname]
       attr_reader :root
 
-      # @return [Pikuri::Skill::Activation] which gated skills this
-      #   conversation has in play
+      # @return [Pikuri::Skill::Activation, Pikuri::Skill::Activation::Open]
+      #   which gated skills this conversation has in play. {#configure}
+      #   downgrades it to an {Activation::Open} — no gate at all — when the
+      #   agent has no interloper to carry a promotion.
       attr_reader :activation
 
-      # Register the +skill+ tool. No-op when the catalog is empty
-      # (the +<available_skills>+ snippet is contributed by
+      # Register the +skill+ tool, and — when the agent can receive a promotion
+      # — the listener that fires one. No-op when the catalog is empty (the
+      # +<available_skills>+ snippet is contributed by
       # {#system_prompt_snippets}).
       #
       # @param c [Pikuri::Agent::Configurator]
@@ -79,18 +86,35 @@ module Pikuri
                 'when adding Pikuri::Skill::Extension — the extension auto-registers it from the catalog.'
         end
 
+        arm_gate(c.interloper)
         c.add_tool(Pikuri::Skill::SkillTool.new(activation: @activation))
+        c.add_listener(path_activation_listener) if gate_armed?
         nil
       end
 
-      # Capture the live agent's interloper so {#schedule_load_skill} can
-      # enqueue onto it from any (UI) thread. +nil+ when the agent was built
-      # without an +interloper:+ — {#schedule_load_skill} then raises.
+      # Capture the live agent's interloper so {#schedule_load_skill} and
+      # {#announce} can enqueue onto it, and the context {#announce} emits
+      # through.
       #
       # @param ctx [Pikuri::Agent::ExtensionContext]
       # @return [void]
       def bind(ctx)
         @interloper = ctx.agent.interloper
+        @ctx = ctx
+        nil
+      end
+
+      # Inject a promotion and emit {Promoted}. The listener's callback; a host
+      # driving activation itself may call it too.
+      #
+      # @param skills [Array<Pikuri::Skill::Catalog::Skill>] newly in play
+      # @param path [String] the workspace-relative path that fired them
+      # @return [void]
+      def announce(skills, path)
+        return if skills.empty?
+
+        @interloper.inject_system_message(Pikuri::Skill::Renderer.format_promotion(skills))
+        @ctx&.emit_event(Pikuri::Skill::Promoted.new(skills: skills, path: path))
         nil
       end
 
@@ -127,14 +151,16 @@ module Pikuri
       # skill is session guidance), but an honest divergence between the two
       # load paths.
       #
-      # @param name [String] a skill name from +catalog.list+; the UI
-      #   enumerates the catalog, so a miss is a host bug
-      # @raise [KeyError] if +name+ is not in the catalog
+      # @param name [String] a skill in play; the UI enumerates them, so a miss
+      #   is a host bug. A +paths:+-gated skill whose path has not fired is
+      #   *not* in play and is refused exactly as an unknown name is — the gate
+      #   is the default at every surface, the host's included.
+      # @raise [KeyError] if +name+ is not in play
       # @raise [RuntimeError] if the agent was built without an +interloper:+
       #   (nowhere to enqueue)
       # @return [Pikuri::Skill::Catalog::Skill] the scheduled skill
       def schedule_load_skill(name)
-        skill = @catalog.get(name)
+        skill = @activation.get(name)
         raise KeyError, "no skill named #{name.inspect} in the catalog" if skill.nil?
 
         raise 'schedule_load_skill needs an interloper — construct the Agent with `interloper:`' \
@@ -154,16 +180,52 @@ module Pikuri
         nil
       end
 
-      # The +<available_skills>+ catalog block (empty array for an
-      # empty catalog). {Renderer.format_catalog} returns leading blank
-      # lines; the Agent joins sections with +\n\n+, so +lstrip+ avoids
-      # doubling them.
+      # The +<available_skills>+ catalog block, carrying every *ungated* skill
+      # and no hint that anything is missing (empty array when that leaves
+      # nothing to say). {Renderer.format_catalog} returns leading blank lines;
+      # the Agent joins sections with +\n\n+, so +lstrip+ avoids doubling them.
+      #
+      # Deliberately reads the catalog rather than the {Activation}: a
+      # promotion belongs in the log, not the prompt, and
+      # {Pikuri::Agent#clear_conversation} re-assembles the prompt *before* it
+      # calls {#on_conversation_reset} — a snippet built from the activation
+      # set would rebuild carrying activations that are about to be cleared,
+      # advertising skills the +skill+ tool would then refuse.
       #
       # @return [Array<String>]
       def system_prompt_snippets
         return [] if @catalog.empty?
 
-        [Pikuri::Skill::Renderer.format_catalog(@catalog).lstrip]
+        block = Pikuri::Skill::Renderer.format_catalog(advertised)
+        block.empty? ? [] : [block.lstrip]
+      end
+
+      private
+
+      # Nothing gated ⇒ nothing to arm, and no listener worth running on every
+      # tool call. Gated but no interloper ⇒ a promotion would have nowhere to
+      # land, so the gate comes off entirely rather than hiding a skill nothing
+      # can bring back.
+      def arm_gate(interloper)
+        gated = @catalog.list.select(&:gated?)
+        @gate_armed = !gated.empty? && !interloper.nil?
+        return if gated.empty? || @gate_armed
+
+        LOGGER.warn('agent has no interloper, so a promotion would have nowhere to land — ' \
+                    "paths:-gated skills stay advertised (#{gated.map(&:name).join(', ')})")
+        @activation = Pikuri::Skill::Activation::Open.new(catalog: @catalog)
+      end
+
+      def gate_armed? = @gate_armed
+
+      def advertised = gate_armed? ? @catalog.list.reject(&:gated?) : @catalog.list
+
+      def path_activation_listener
+        Pikuri::Skill::PathActivationListener.new(
+          activation: @activation,
+          root: @root,
+          on_promote: ->(skills, path) { announce(skills, path) }
+        )
       end
     end
   end

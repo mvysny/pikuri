@@ -15,15 +15,15 @@ RSpec.describe Pikuri::Skill::Renderer do
   end
 
   describe '.format_catalog' do
-    it 'returns an empty string for an empty catalog' do
-      assert_equal '', described_class.format_catalog(Pikuri::Skill::Catalog::EMPTY)
+    it 'returns an empty string when there is nothing to advertise' do
+      assert_equal '', described_class.format_catalog([])
     end
 
     it 'emits an <available_skills> block with name/description/location' do
       catalog = Pikuri::Skill::Catalog::Bundled.new(
         search_bases: [File.join(RENDERER_FIXTURE_ROOT, 'valid-tree')]
       )
-      out = described_class.format_catalog(catalog)
+      out = described_class.format_catalog(catalog.list)
 
       assert out.include?('<available_skills>'), out
       assert out.include?('</available_skills>'), out
@@ -48,11 +48,54 @@ RSpec.describe Pikuri::Skill::Renderer do
         MD
 
         catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: [base])
-        out = described_class.format_catalog(catalog)
+        out = described_class.format_catalog(catalog.list)
         assert out.include?('&lt;out&gt;'), out
         assert out.include?('&quot;quotes&quot;'), out
         assert out.include?('&amp;'), out
       end
+    end
+  end
+
+  describe '.format_promotion' do
+    def gated(when_to_use:, description: 'Writes rdoc headers. Use when the user edits a .rb file.')
+      Pikuri::Skill::Catalog::Skill.new(
+        name: 'rdoc-writer', description: description, location: '/s/rdoc-writer/SKILL.md',
+        body: 'b', paths: ['**/*.rb'], when_to_use: when_to_use
+      )
+    end
+
+    it 'reuses the catalog block shape, so the model reads it the same way' do
+      out = described_class.format_promotion([gated(when_to_use: nil)])
+
+      assert out.include?('<available_skills>'), out
+      assert out.include?('<name>rdoc-writer</name>'), out
+      assert out.include?('<location>/s/rdoc-writer/SKILL.md</location>'), out
+      assert out.include?('just became relevant'), out
+    end
+
+    it 'carries when-to-use, de-duplicated against the description' do
+      out = described_class.format_promotion([gated(when_to_use: 'Use when: editing a .rb file.')])
+
+      assert out.include?('<description>Writes rdoc headers</description>'), out
+      assert out.include?('<when-to-use>editing a .rb file.</when-to-use>'), out
+    end
+
+    it 'keeps the description whole when no when-to-use was declared' do
+      out = described_class.format_promotion([gated(when_to_use: nil)])
+
+      assert out.include?('<description>Writes rdoc headers. Use when the user edits a .rb file.</description>'), out
+      refute out.include?('<when-to-use>'), out
+    end
+  end
+
+  describe '.format_catalog vs .format_promotion' do
+    it 'leaves when-to-use out of the resident block, which pays on every turn' do
+      skill = Pikuri::Skill::Catalog::Skill.new(
+        name: 'a', description: 'd', location: '/s/a/SKILL.md', body: 'b',
+        when_to_use: 'Use when: never.'
+      )
+
+      refute described_class.format_catalog([skill]).include?('<when-to-use>')
     end
   end
 

@@ -459,7 +459,12 @@ begin
     # run_turn below tells the user, the chat history survives, and the
     # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
-    cancellable: cancel_flag
+    cancellable: cancel_flag,
+    # This REPL never enqueues anything itself — the interloper is here so
+    # the *agent's own* mid-loop injections have somewhere to land, which is
+    # what a `paths:`-gated skill needs to be promoted when a matching file
+    # is touched. Without one, Skill::Extension leaves every skill advertised.
+    interloper: Pikuri::Agent::Control::Interloper.new
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
@@ -612,9 +617,9 @@ begin
 
       if expanded.nil?
         puts "No such command: /#{name}."
-        # A skill of the same name is not a fallback: nothing here can load
-        # one (that needs an interloper this demo doesn't have), and the
-        # model can reach it on its own.
+        # A skill of the same name is not a fallback: nothing here maps a
+        # typed /name onto a skill load, and the model can reach it on its
+        # own — including a gated one, once it touches a matching file.
         puts "There is a skill called '#{name}' — just ask for it in plain language." if skill_catalog.get(name)
         next
       end

@@ -21,8 +21,10 @@ Related:
 
 - [`skill-cost-model.md`](skill-cost-model.md) — the tier measurements and
   the cheap-borrow list items 1 and 4 below come from.
-- [`skill-path-activation.md`](skill-path-activation.md) — the matcher
-  mechanism `D-skill-path-activation` now commits to building.
+- `DECISIONS.md` `D-skill-path-activation` — the matcher mechanism,
+  **shipped 2026-08-17**: a `paths:` skill is withheld until a touched file
+  fires it. Its build note is gone; the code is `Pikuri::Skill::Activation`
+  + `PathActivationListener`.
 - `DECISIONS.md` `D-slash-commands` — the other surface, **shipped
   2026-08-16**: a skill that costs resident tokens to say "ignore me" is
   a bundle filed in the wrong place, and `Command::Registry` is where it
@@ -152,8 +154,8 @@ Related:
     moment you open a Tuile file is a UX claim, not a token claim, and it
     is the part with no counter-argument. The render must be legible in a
     TUI, not just a model-facing `<system-reminder>` — which turns
-    `skill-path-activation.md`'s two-events design (settled: a
-    `Skill::Promoted` domain event alongside `Event::SystemInjected`)
+    the shipped two-events design (a `Skill::Promoted` domain event
+    alongside `Event::SystemInjected`)
     from a rendering nicety into the feature's selling point. Strike the
     reassurance this item used to carry — *withholding costs the model's
     view, never the human's*. It held under every design **considered**

@@ -284,17 +284,15 @@ and only when the directory holds a sidecar.
 
 ## D-skill-path-activation — A `paths:` skill is not in play until its path fires (2026-08-16)
 
-**Status:** Accepted; half-built. `Catalog::Bundled#parse_skill` now reads
-`paths:` and `when-to-use:`, `Catalog::Skill#gated?` answers the predicate,
-`Skill::PathMatcher.match?` decides whether a touched file fires a pattern, and
-`Skill::Activation` holds the once-per-conversation announcement state
-that `Skill::Extension` clears on a conversation reset — but nothing
-*consults* any of it yet: no listener, and every gate surface
-(the catalog render, `SkillTool`'s lookup and its not-found enumeration,
-`schedule_load_skill`) is still ungated, so a `paths:` skill behaves exactly
-as it did before. The author's own
-`~/.claude/skills` is already annotated, which is inert for pikuri but
-*not* for Claude Code — see Consequences. Decisions 2 and 5 were
+**Status:** Accepted, shipped 2026-08-17. One qualification the decision did
+not anticipate: a promotion reaches the model only through mid-loop injection,
+so an agent built without an `interloper:` has no channel to un-hide a skill
+on. Rather than hide what nothing can bring back, the gate comes off wholesale
+there — `Skill::Activation::Open` plus a warning naming the skills that stayed
+advertised. `bin/pikuri-code` now wires an interloper for exactly this reason,
+though the REPL enqueues nothing itself. The author's own
+`~/.claude/skills` is already annotated, so the five gated skills there are
+now live for pikuri too. Decisions 2 and 5 were
 **reversed the same day they were written**, after probing Claude Code
 rather than reasoning about it; the first version is the first rejected
 alternative below, and it is there because the argument for it was good
@@ -524,14 +522,25 @@ conditional activation actually works*).
   sole path rather than a redundant one. A `force:` escape hatch on
   `schedule_load_skill` is the obvious future request; deferred until
   something concrete needs it, since the case that would have wanted it
-  (`gradle`) is a skill deliberately left ungated.
-- **A gated skill is permanently unreachable to sub-agents.** They do not
+  (`gradle`) is a skill deliberately left ungated. pikuri ships **no cap**
+  on a promotion: descriptions are already capped at 1 024 chars by the
+  standard, and the mechanism exists precisely to spend a few hundred bytes
+  at the moment they matter. grok-build's arithmetic is there if a fat
+  catalog ever wants one — 400 bytes per entry shared between description
+  and `when-to-use`, split proportionally with a 20-byte floor each, then a
+  names-only fallback row.
+- **A gated skill is unreachable to sub-agents, and now by construction.**
+  They do not
   inherit extensions, so no listener ever promotes for them, and under
   decision 5 the name will not load either. Accepted rather than fixed:
   no bundled persona wires `skill` at all, and a persona that wants one
   should name it in `tool_names:` and carry the knowledge in its own
-  system prompt. This retires the per-agent-vs-catalog-wide scope
-  question that `ideas/skill-path-activation.md` carried.
+  system prompt. Held only by accident at first — the child inherits the
+  parent's `skill` tool *instance*, so it would have resolved against the
+  parent's promotions — which is why the tool now rebuilds itself for a
+  child over `Skill::Activation::Sealed`, and the listener opts out of
+  sub-agent propagation. This retires the per-agent-vs-catalog-wide scope
+  question the build note carried.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session
