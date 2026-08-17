@@ -200,6 +200,9 @@ bundle_bases = [
   Pikuri::Bundle::Base.new(dir: Dir.home, trusted: home_bundles_are_mine)
 ]
 skill_catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: bundle_bases)
+# Held in a local (rather than built inline in the wiring block below) because
+# the REPL calls #schedule_load_skill on it to serve a typed /name.
+skill_extension = Pikuri::Skill::Extension.new(catalog: skill_catalog, root: project_root)
 
 # Slash commands: the *human*-invoked half of the same surface, scanned from
 # .pikuri/commands / .claude/commands under those same bases. Never advertised
@@ -460,10 +463,10 @@ begin
     # budget resets at the next turn boundary — so "continue" just works.
     step_limit: Pikuri::Agent::Control::StepLimit.new(max: 40),
     cancellable: cancel_flag,
-    # This REPL never enqueues anything itself — the interloper is here so
-    # the *agent's own* mid-loop injections have somewhere to land, which is
+    # Two things land here: the *agent's own* mid-loop injections, which is
     # what a `paths:`-gated skill needs to be promoted when a matching file
-    # is touched. Without one, Skill::Extension leaves every skill advertised.
+    # is touched (without one, Skill::Extension leaves every skill
+    # advertised), and this REPL's own typed-/name skill loads.
     interloper: Pikuri::Agent::Control::Interloper.new
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new
@@ -506,7 +509,7 @@ begin
       sandbox: sandbox,
       read_only: read_only
     )
-    c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog, root: project_root)
+    c.add_extension skill_extension
     # Declaration only: commands register no tool and render no prompt, so
     # without this the trifecta banner would miss their untrusted leg entirely.
     c.add_extension Pikuri::Command::Extension.new(registry: command_registry)
@@ -563,6 +566,7 @@ begin
   unless skill_catalog.empty?
     names = skill_catalog.list.map(&:name).sort.join(', ')
     puts "Loaded #{skill_catalog.list.size} skill(s): #{names}."
+    puts 'Type /<skill-name> to load one yourself; the agent can also load them on its own.'
   end
   unless command_registry.empty?
     names = command_registry.list.map { |cmd| "/#{cmd.name}#{cmd.refused? ? ' (unavailable)' : ''}" }
@@ -615,12 +619,36 @@ begin
           next
         end
 
+      # Third and last leg of the typed-/name chain (host built-in >
+      # command > skill): /cop loads the skill named cop. Deliberately
+      # argument-less — a command is a template with $ARGUMENTS to
+      # interpolate, where a skill body is fixed text, so there is nothing
+      # for an argument to do.
       if expanded.nil?
-        puts "No such command: /#{name}."
-        # A skill of the same name is not a fallback: nothing here maps a
-        # typed /name onto a skill load, and the model can reach it on its
-        # own — including a gated one, once it touches a matching file.
-        puts "There is a skill called '#{name}' — just ask for it in plain language." if skill_catalog.get(name)
+        loaded = begin
+          skill_extension.schedule_load_skill(name)
+        rescue KeyError
+          nil
+        end
+
+        if loaded.nil?
+          puts "No such command or skill: /#{name}."
+          # Human-facing only, and reading the *unfiltered* catalog on
+          # purpose: the gate refuses a not-yet-fired skill exactly as it
+          # refuses a name that exists nowhere, which is right for the model
+          # but useless to someone who just read the name in the startup
+          # banner. Nothing here reaches the conversation.
+          if skill_catalog.get(name)
+            puts "'#{name}' is installed but gated on `paths:` — it becomes loadable once a matching file is touched."
+          end
+          next
+        end
+
+        # Enqueue-only: the block is delivered at the *next* turn's start, so
+        # priming the agent costs no round-trip of its own. Running a bare
+        # turn here instead would spend a completion on an acknowledgement,
+        # which is the "surprise tax" that asked for this feature.
+        puts "Skill '#{loaded.name}' will load with your next message."
         next
       end
 

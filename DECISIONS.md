@@ -429,6 +429,24 @@ three namespaces, is **host built-in > command > skill**.
   unioned into one row hardcoded as `(mcp)` — honest only while MCP was the
   only contributor. A second one made the banner blame an MCP server that
   wasn't wired, against `Report#attribution`'s whole purpose.
+- **The chain's third leg landed 2026-08-17**, in `bin/pikuri-code` — the one
+  bundled script wiring commands *and* skills, so it is the only place the
+  full `host built-in > command > skill` order is observable. Three shapes
+  chosen there, each over a live alternative. It is **argument-less**: a
+  command is a template with `$ARGUMENTS` to interpolate, a skill body is
+  fixed text, so an argument would have nothing to do — and `/name extra`
+  silently ignoring the tail is worse than not offering it. It **enqueues
+  without running a turn**, so the body arrives with the human's next
+  message; the alternative — `run_loop(user_message: nil)`, the bare load
+  `schedule_load_skill` documents — spends a completion on an
+  acknowledgement, which is precisely the "skill load costs a turn" tax in
+  `feedback.txt` item 3 that this feature answers. And a *refused* name
+  gets a **human-only** second line naming the skill as installed-but-gated,
+  read from the unfiltered `Catalog`: decision 7 of
+  `D-skill-path-activation` makes the gate answer the model as if the name
+  existed nowhere, which is right for the model and useless to someone who
+  just read that name in the startup banner. Nothing in that branch reaches
+  the conversation, so the gate leaks nothing to the model.
 
 ## D-command-inlining-legs — No bash pre-execution, and `@path` is not a refusal (2026-08-16)
 
