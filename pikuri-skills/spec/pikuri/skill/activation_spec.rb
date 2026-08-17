@@ -99,4 +99,34 @@ RSpec.describe Pikuri::Skill::Activation do
   it 'exposes the unfiltered catalog, which keeps reporting what is installed' do
     assert_equal %w[data-viz rdoc-writer], activation.catalog.list.map(&:name)
   end
+
+  describe Pikuri::Skill::Activation::Sealed do
+    let(:sealed) { described_class.new(catalog: fake_catalog_class.new([ungated, gated])) }
+
+    it 'still loads the ungated skills' do
+      assert sealed.in_play?('data-viz')
+      assert_equal ungated, sealed.get('data-viz')
+      assert_equal ['data-viz'], sealed.names
+    end
+
+    it 'withholds a gated skill with no way to change that' do
+      refute sealed.in_play?('rdoc-writer')
+      assert_nil sealed.get('rdoc-writer')
+    end
+
+    it 'raises on an attempt to promote, naming the skills' do
+      err = assert_raises(RuntimeError) { sealed.activate([gated]) }
+      assert_match(/rdoc-writer/, err.message)
+      assert_match(/sub-agent/, err.message)
+    end
+
+    it 'refuses an unknown name exactly as a withheld one' do
+      refute sealed.in_play?('no-such-skill')
+      assert_nil sealed.get('no-such-skill')
+    end
+
+    it 'tolerates a reset, since a host may clear a conversation it holds' do
+      assert_nil sealed.reset
+    end
+  end
 end

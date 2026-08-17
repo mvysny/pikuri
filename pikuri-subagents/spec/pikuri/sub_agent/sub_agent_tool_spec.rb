@@ -153,6 +153,29 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     agent.instance_variable_get(:@extension_context)
   end
 
+  # Run one delegation with Pikuri::Agent.new stubbed, and hand back the tool
+  # list the sub-agent was actually configured with — which is where every
+  # per-child tool rebuild shows up.
+  def run_with_captured_tools(tool, name:)
+    captured_tools = nil
+    original_new = Pikuri::Agent.method(:new)
+    Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
+      original_new.call(**kwargs) do |c|
+        block&.call(c)
+        captured_tools = c.tools.dup
+      end.tap do |a|
+        a.define_singleton_method(:run_loop) { |**_| nil }
+        a.define_singleton_method(:last_assistant_content) { 'sub reply' }
+      end
+    end
+    begin
+      tool.run('name' => name, 'task' => 'go')
+      captured_tools
+    ensure
+      Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
+    end
+  end
+
   describe 'tool shape' do
     it 'returns a Pikuri::Tool named "agent" with required `name` (enum) + `task` parameters' do
       tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
@@ -414,29 +437,6 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       )
     end
 
-    # Capture the workspace SubAgentTool constructs by stashing it on
-    # the workspace_aware_tool after with_workspace fires. Helper to
-    # run one delegation and yield (received_tools, received_workspace).
-    def run_with_captured_tools(tool, name:)
-      captured_tools = nil
-      original_new = Pikuri::Agent.method(:new)
-      Pikuri::Agent.define_singleton_method(:new) do |**kwargs, &block|
-        original_new.call(**kwargs) do |c|
-          block&.call(c)
-          captured_tools = c.tools.dup
-        end.tap do |a|
-          a.define_singleton_method(:run_loop) { |**_| nil }
-          a.define_singleton_method(:last_assistant_content) { 'sub reply' }
-        end
-      end
-      begin
-        tool.run('name' => name, 'task' => 'go')
-        captured_tools
-      ensure
-        Pikuri::Agent.define_singleton_method(:new) { |**kw, &blk| original_new.call(**kw, &blk) }
-      end
-    end
-
     it 'mkdirs a fresh temp dir per invocation and uses it as project_root' do
       parent = build_parent(tools: [workspace_aware_tool, web_search_tool])
       tool = described_class.new(parent, personas: { 'investigator' => investigator_persona })
@@ -505,6 +505,59 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       ensure
         Dir.define_singleton_method(:mktmpdir, original_mktmpdir)
       end
+    end
+  end
+
+  describe 'the for_sub_agent tool hook' do
+    # A tool that must hand the child something narrower than it holds. The
+    # `narrowed` flag stands in for whatever that is — a sealed skill
+    # activation, in the one shipped implementation.
+    let(:narrowable_tool) do
+      Class.new(Pikuri::Tool) do
+        attr_reader :narrowed
+
+        def initialize(narrowed: false)
+          @narrowed = narrowed
+          super(
+            name: 'narrowable',
+            description: 'fake',
+            parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :x, 'x' },
+            execute: ->(x:) { x }
+          )
+        end
+
+        def for_sub_agent = self.class.new(narrowed: true)
+      end.new
+    end
+
+    let(:narrowable_persona) do
+      Pikuri::SubAgent::Persona.new(
+        name: 'researcher',
+        description: 'd',
+        tool_names: %w[narrowable web_search],
+        system_prompt: 's',
+        max_steps: 5
+      )
+    end
+
+    it 'rebuilds a tool that defines it, and passes the others through unchanged' do
+      parent = build_parent(tools: [narrowable_tool, web_search_tool])
+      tool = described_class.new(parent, personas: { 'researcher' => narrowable_persona })
+
+      sub_tools = run_with_captured_tools(tool, name: 'researcher')
+
+      assert sub_tools.find { |t| t.name == 'narrowable' }.narrowed,
+             'expected the child to get the narrowed copy'
+      assert_same web_search_tool, sub_tools.find { |t| t.name == 'web_search' }
+    end
+
+    it 'leaves the parent holding its own instance' do
+      parent = build_parent(tools: [narrowable_tool, web_search_tool])
+      tool = described_class.new(parent, personas: { 'researcher' => narrowable_persona })
+
+      run_with_captured_tools(tool, name: 'researcher')
+
+      refute narrowable_tool.narrowed, 'the parent must not be narrowed by spawning a child'
     end
   end
 

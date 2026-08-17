@@ -24,9 +24,10 @@ module Pikuri
     # recovery never depends on a block that may be absent.
     #
     # {Extension#configure} auto-registers this (never manually) when
-    # the catalog is non-empty. The bound catalog rides in the +execute+
-    # closure, so a sub-agent inheriting the tool resolves names against
-    # the same catalog the parent saw.
+    # the catalog is non-empty. The bound {Activation} rides in the
+    # +execute+ closure, so a sub-agent inheriting the tool resolves names
+    # against the same catalog the parent saw — but through
+    # {#for_sub_agent}, against a sealed view of it.
     #
     # The prompt pays per skill *installed*, this tool pays per skill
     # *used* — the split an outside-model review (Grok 4.6, 2026-08)
@@ -47,13 +48,16 @@ module Pikuri
         - On `Error: skill '...' not found`, do NOT retry with a guessed name — the error lists every name that does exist, so load one of those or report to the user that no matching skill is installed.
       DESC
 
-      # @param catalog [Catalog] the catalog to resolve names against, and
-      #   the source of this tool's +untrusted+ leg
+      # @param activation [Activation, Activation::Sealed] the conversation's
+      #   view of the catalog — what this tool resolves a name against, and
+      #   (through {Activation#catalog}) the source of its +untrusted+ leg
       #   ({Catalog#untrusted_level}). Captured by closure so the tool retains
       #   access to the same instance even when copied into a sub-agent's tool
-      #   snapshot.
+      #   snapshot, which is exactly what {#for_sub_agent} overrides.
       # @return [SkillTool]
-      def initialize(catalog:)
+      def initialize(activation:)
+        @activation = activation
+        catalog = activation.catalog
         super(
           name: 'skill',
           description: DESCRIPTION,
@@ -63,6 +67,10 @@ module Pikuri
                               'Must match one of the skill names you were given.'
           },
           execute: lambda { |name:|
+            # The gate is not armed yet — both lookups still go to the
+            # unfiltered catalog. Arming it is swapping them for
+            # +activation.get+ and +activation.names+, together with the
+            # render that hides a gated skill in the first place.
             loaded = catalog.get(name)
             if loaded.nil?
               available = catalog.list.map(&:name).sort
@@ -83,6 +91,19 @@ module Pikuri
           trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: catalog.untrusted_level,
                                                         egress_payload_review: :no_egress)
         )
+      end
+
+      # @return [Activation, Activation::Sealed] the view this tool resolves
+      #   names against
+      attr_reader :activation
+
+      # The copy a spawned sub-agent gets: same catalog, but a sealed
+      # {Activation::Sealed}, so a skill the parent promoted mid-run is not
+      # quietly reachable in a child that was never told its name.
+      #
+      # @return [SkillTool]
+      def for_sub_agent
+        self.class.new(activation: Pikuri::Skill::Activation::Sealed.new(catalog: @activation.catalog))
       end
     end
   end

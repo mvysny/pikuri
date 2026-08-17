@@ -31,6 +31,12 @@ module Pikuri
     # +for_sub_agent+ control hook — the three controls are a fixed set and
     # the policy is sub-agent-specific (CLAUDE.md §Conventions).
     #
+    # Two duck-typed hooks let a *tool* differ inside the child, applied in
+    # this order: +with_workspace(ws)+, only when the persona minted a temp
+    # workspace, then a no-arg +for_sub_agent+, for a tool holding state the
+    # child must see a narrower version of. A tool defining neither travels
+    # down as the same instance the parent holds.
+    #
     # No extension inheritance: the parent's {Pikuri::Agent#extensions} are
     # *not* threaded into the child. Personas are self-contained — one that
     # needs MCP / Skills ships its own wiring. This also makes recursion
@@ -169,6 +175,10 @@ module Pikuri
                 t.respond_to?(:with_workspace) ? t.with_workspace(session_workspace) : t
               end
             end
+
+            # Last, so a rebuild above is what gets narrowed: a tool holding
+            # state the child must not see hands over a narrower copy here.
+            sub_tools = sub_tools.map { |t| t.respond_to?(:for_sub_agent) ? t.for_sub_agent : t }
 
             # The budget always carries :synthesize: a sub-agent's contract
             # is "return usable text to the parent", so an exhausted run

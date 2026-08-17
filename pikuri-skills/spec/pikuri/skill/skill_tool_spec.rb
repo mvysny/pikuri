@@ -5,10 +5,11 @@ RSpec.describe Pikuri::Skill::SkillTool do
   FIXTURE_VALID_SKILL_DIR = File.join(FIXTURE_VALID_BASE, '.pikuri/skills')
 
   let(:catalog) { Pikuri::Skill::Catalog::Bundled.new(search_bases: [FIXTURE_VALID_BASE]) }
+  let(:activation) { Pikuri::Skill::Activation.new(catalog: catalog) }
 
   describe 'tool shape' do
     it 'is named "skill" and exposes a required `name` string parameter' do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
 
       assert_kind_of Pikuri::Tool, tool
       assert_equal 'skill', tool.name
@@ -18,7 +19,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
     end
 
     it "uses a static description that points to the system prompt's catalog" do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
       assert tool.description.include?('available_skills'),
              "expected static description to point the LLM at the prompt's catalog, got: #{tool.description}"
     end
@@ -27,7 +28,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
     # Extension that contributes <available_skills>, so a description promising
     # that section would send it looking for a block its prompt never carries.
     it 'never asserts the prompt carries that catalog, for the sub-agent case' do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
       text = "#{tool.description} #{tool.parameters.to_openai[:properties][:name][:description]}"
 
       refute_match(/(is|are) listed in your system prompt/, text)
@@ -39,7 +40,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
 
   describe 'execution' do
     it 'returns the skill body wrapped with the base directory when the name resolves' do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
       out = tool.run('name' => 'pdf-tools')
 
       assert out.include?('<skill name="pdf-tools"'), out
@@ -49,7 +50,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
     end
 
     it 'returns an LLM-actionable Error: string for an unknown name, listing what is available' do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
       out = tool.run('name' => 'no-such-skill')
 
       assert out.start_with?('Error:'), out
@@ -61,7 +62,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
     end
 
     it 'returns an Error: string mentioning "none" when the catalog is empty' do
-      tool = described_class.new(catalog: Pikuri::Skill::Catalog::EMPTY)
+      tool = described_class.new(activation: Pikuri::Skill::Activation.new(catalog: Pikuri::Skill::Catalog::EMPTY))
       out = tool.run('name' => 'anything')
 
       assert out.start_with?('Error:'), out
@@ -69,11 +70,42 @@ RSpec.describe Pikuri::Skill::SkillTool do
     end
 
     it 'reports a validation error for the wrong argument shape (not raised, not crashed)' do
-      tool = described_class.new(catalog: catalog)
+      tool = described_class.new(activation: activation)
       out = tool.run({})
 
       assert out.start_with?('Error:'), out
       assert out.include?('name'), out
+    end
+  end
+
+  describe '#for_sub_agent' do
+    it 'hands the child a sealed view of the same catalog' do
+      child = described_class.new(activation: activation).for_sub_agent
+
+      assert_kind_of Pikuri::Skill::Activation::Sealed, child.activation
+      assert_same catalog, child.activation.catalog
+    end
+
+    it 'is a distinct tool, so the parent keeps its own activation' do
+      parent = described_class.new(activation: activation)
+      child = parent.for_sub_agent
+
+      refute_same parent, child
+      assert_same activation, parent.activation
+    end
+
+    it 'still resolves the ungated skills the persona was told about' do
+      child = described_class.new(activation: activation).for_sub_agent
+      out = child.run('name' => 'pdf-tools')
+
+      assert out.include?('<skill name="pdf-tools"'), out
+    end
+
+    it 'is idempotent, so a re-seal is harmless' do
+      twice = described_class.new(activation: activation).for_sub_agent.for_sub_agent
+
+      assert_kind_of Pikuri::Skill::Activation::Sealed, twice.activation
+      assert_same catalog, twice.activation.catalog
     end
   end
 end

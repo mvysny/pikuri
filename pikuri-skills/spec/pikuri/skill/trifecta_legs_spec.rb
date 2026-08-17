@@ -12,7 +12,7 @@ RSpec.describe 'skill tool trifecta legs' do
 
   def untrusted_leg(*search_bases)
     catalog = Pikuri::Skill::Catalog::Bundled.new(search_bases: search_bases)
-    Pikuri::Skill::SkillTool.new(catalog: catalog).trifecta_legs.untrusted
+    Pikuri::Skill::SkillTool.new(activation: Pikuri::Skill::Activation.new(catalog: catalog)).trifecta_legs.untrusted
   end
 
   describe 'the untrusted leg' do
@@ -57,7 +57,7 @@ RSpec.describe 'skill tool trifecta legs' do
   end
 
   it 'has no egress leg and claims no private pool' do
-    tool = Pikuri::Skill::SkillTool.new(catalog: Pikuri::Skill::Catalog::EMPTY)
+    tool = Pikuri::Skill::SkillTool.new(activation: Pikuri::Skill::Activation.new(catalog: Pikuri::Skill::Catalog::EMPTY))
     assert_equal :no_egress, tool.trifecta_legs.egress_payload_review
     refute tool.trifecta_legs.private
   end

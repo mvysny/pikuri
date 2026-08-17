@@ -79,7 +79,7 @@ module Pikuri
                 'when adding Pikuri::Skill::Extension — the extension auto-registers it from the catalog.'
         end
 
-        c.add_tool(Pikuri::Skill::SkillTool.new(catalog: @catalog))
+        c.add_tool(Pikuri::Skill::SkillTool.new(activation: @activation))
         nil
       end
 

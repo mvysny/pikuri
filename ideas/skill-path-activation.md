@@ -10,15 +10,14 @@ wires into pikuri**, and the question the decision did not settle.
 **Landed (2026-08-17), inert:** `Skill::PathMatcher` (the `paths:` parse +
 normalization, and the gitignore matcher over a touched path),
 `Catalog::Skill#paths` / `#when_to_use` / `#gated?`,
-`Skill::Trigger` (the description ↔ `when-to-use` de-duplication), and
-`Skill::Activation` (the once-per-conversation announcement state,
-cleared by `Skill::Extension#on_conversation_reset`).
-`Skill::Extension.new` now also takes `root:` (an absolute `Pathname`),
-the anchor the matcher will resolve a model-supplied path against.
-Nothing consults any of it yet — no listener, and every gate surface is
-still open. **Still to build:** the `TOUCH_TOOLS` listener (including the
-lexical relative-to-root step `match?` demands), `Skill::Promoted`, and
-the three gate surfaces.
+`Skill::Trigger` (the description ↔ `when-to-use` de-duplication),
+`Skill::Activation` + `Activation::Sealed` (the once-per-conversation
+announcement state, cleared by `Skill::Extension#on_conversation_reset`;
+sealed for sub-agents via the tool-level `for_sub_agent` hook, which
+`SubAgentTool` now applies), and `Skill::Extension.new(root:)` — an
+absolute `Pathname`, the anchor the matcher resolves a model-supplied
+path against. Nothing consults any of it yet: no listener, and every gate
+surface is still open.
 
 This note used to argue the case, and carried a REJECTED banner for the
 few hours between the author's first verdict and its reversal the same
@@ -34,6 +33,61 @@ Related:
   the KV-cache analysis behind the decision's Anthropic trade.
 - [`tool-list-in-context.md`](tool-list-in-context.md) — the same matcher
   aimed at tool schemas. Shares the machinery, decides separately.
+
+
+## The remaining build, in order
+
+One commit, because a partial flip is the bad state: hiding a skill before
+anything can un-hide it strands the five gated skills in the author's own
+`~/.claude/skills` with no way back. Everything below lands together.
+
+1. **`Skill::PathActivationListener`.** `TOUCH_TOOLS = read / write / edit`
+   — never `grep` / `glob`, whose `:path` is a search *root* (the
+   **Denylist seam**'s supplied-vs-walked line, which this listener should
+   cross-reference). On `Event::ToolCall`, read the path out of
+   `event.arguments` under **both** `'path'` and `:path` (it arrives off
+   JSON). Resolve it against `Extension#root` *lexically* —
+   `expand_path` then `relative_path_from`, never `realpath`, so a `write`
+   to a file that does not exist yet still fires — and **skip** a path that
+   lands outside the root rather than raising, since `PathMatcher.match?`
+   refuses an absolute one. Then `activation.activate(matches)` and
+   announce whatever comes back.
+2. **`Skill::Promoted`** — a `Data.define(:skills, :path)` domain event with
+   a `to_s`, emitted through `ctx.emit_event`; `Code::PlanModeChanged` is
+   the model for how much to say. `path:` is load-bearing: the decision
+   accepts over-firing, so a human will see a skill appear for no visible
+   reason and needs the trigger to diagnose it.
+3. **`Extension#announce`** — `inject_system_message` with the promotion
+   render, plus the event. Enqueued at `before_tool_call` and drained at
+   `after_tool_result`, so it lands in-turn with no extra round-trip.
+4. **`Renderer.format_promotion`** — description + `when-to-use`,
+   de-duplicated through `Skill::Trigger` (its first caller).
+5. **The three gate surfaces.** `format_catalog` skips a `gated?` skill;
+   `SkillTool` swaps its two unfiltered lookups for `activation.get` and
+   `activation.names` (the *enumeration* in the not-found error is the one
+   that gets missed — leaving it recites every hidden name);
+   `schedule_load_skill` refuses a withheld name with the same `KeyError` a
+   name that exists nowhere gets.
+6. **Docs.** `D-skill-path-activation` status → implemented; CHANGELOG;
+   CLAUDE.md's bundle-surface seam gains the gate; **delete this note** —
+   its last live remainder is the open measurement below, which belongs to
+   the decision's reopen criterion 2.
+
+Deliberately *not* building: the 400-byte promotion budget (descriptions
+are capped at 1024 already, and the mechanism exists precisely to spend a
+few hundred bytes at the moment it fires — see §3 for the arithmetic if a
+fat catalog ever wants it), and a `force:` escape hatch on
+`schedule_load_skill`.
+
+**One fork to settle first.** Does the *catalog block* render `when-to-use`
+too, or only the promotion? Promotion-only leaves a resident ungated skill
+showing its description with the trigger tail intact while a promoted one
+shows the tail split out — defensible (grok-build's baseline is a different
+render), but visibly inconsistent. Rendering both everywhere is uniform and
+costs ~30 % more resident bytes on exactly the half the decision was trying
+to shrink. Recommendation: **promotion only**, so this commit does not
+quietly answer `skill-catalog-in-context.md`'s open question about what a
+resident entry contains.
 
 
 ## What pikuri already has — the whole loop, with zero core changes
@@ -93,28 +147,15 @@ tracker):
   grok-build lands from the opposite direction (it has typed tool
   outputs and still excludes bash/grep as "unparseable / incidental").
   Cross-reference the seam wherever this lands.
-- **The gate belongs to the callers, never to `Catalog#get`.** Both
-  invocation routes go through one unfiltered lookup today
-  (`SkillTool.new(catalog:)` and `schedule_load_skill` → `Catalog#get`,
-  `extension.rb:109`), and both must refuse a pending skill per
-  `D-skill-path-activation` decisions 5 and 7 — so filtering `Catalog#get`
-  looks like the one-line fix. It is the wrong one: the catalog is
-  frozen, session-less and shared, and a filtered `get` would also lie to
-  the renderer, to `bin/pikuri-code:495-497`'s installed-skills banner,
-  and to any future picker. `Skill::Extension` owns the activation
-  tracker and hands it to the listener, the `SkillTool` *and*
-  `schedule_load_skill`; the catalog keeps telling the truth.
-- **`SkillTool` has two gates to fit, not one — and the second is the
-  one that gets missed.** Its `execute` lambda resolves `catalog.get(name)`
-  and then, on a miss, enumerates `catalog.list` into the error string
-  (`skill_tool.rb:57-59`). Gating only the lookup leaves the refusal
-  reciting every gated name, so `skill(name: "anything")` becomes a
-  one-call catalog dump and decision 2 is undone by its own error
-  message. The enumeration must come from the same filtered view the
-  render uses. Note this got *more* load-bearing on 2026-08-16: the
-  not-found error is now the documented recovery path for a persona
-  whose prompt carries no catalog at all, so it cannot simply be
-  emptied — it has to list the ungated names and only those.
+- **Why `SkillTool`'s not-found error is half the gate.** Gating only the
+  lookup leaves the refusal reciting every gated name, so
+  `skill(name: "anything")` becomes a one-call catalog dump and decision 2
+  is undone by its own error message. It cannot simply be emptied either:
+  since 2026-08-16 that error is the documented recovery path for a persona
+  whose prompt carries no catalog at all, so it has to list the ungated
+  names and only those. (The other half of this constraint — that the gate
+  lives in the catalog's callers and never in `Catalog#get` — graduated into
+  `Skill::Activation`'s yardoc.)
 - **Two events fire, and they mark different moments.** The injection
   emits `Event::SystemInjected` unconditionally (`agent.rb:701`) — its
   contract is that the stream mirrors log growth, so it must not be

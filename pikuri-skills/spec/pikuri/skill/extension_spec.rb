@@ -32,6 +32,7 @@ RSpec.describe Pikuri::Skill::Extension do
 
   let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
   let(:empty_catalog) { Pikuri::Skill::Catalog::EMPTY }
+  let(:non_empty_activation) { Pikuri::Skill::Activation.new(catalog: non_empty_catalog) }
   let(:root) { Pathname.new(Dir.pwd) }
 
   let(:configurator) do
@@ -78,7 +79,7 @@ RSpec.describe Pikuri::Skill::Extension do
     end
 
     it 'raises if Pikuri::Skill::SkillTool was already pre-registered via c.add_tool' do
-      configurator.add_tool(Pikuri::Skill::SkillTool.new(catalog: non_empty_catalog))
+      configurator.add_tool(Pikuri::Skill::SkillTool.new(activation: non_empty_activation))
       ext = described_class.new(catalog: non_empty_catalog, root: root)
 
       err = assert_raises(RuntimeError) { ext.configure(configurator) }
