@@ -1,8 +1,9 @@
 # LSP client — language intelligence for the coding agent
 
-Status: **designed, ready to build.** The design is settled, the evidence is
-in, and no open question remains — the nine-item worklist this note carried
-is closed, and §"The v1 build" is the checklist to code against.
+Status: **building.** The design is settled, the evidence is in, and no open
+question remains — the nine-item worklist this note carried is closed, and
+§"The v1 build" is the checklist being coded against, step by step; a struck
+step there has landed in `pikuri-lsp/`.
 
 This note is split four ways, because the argued-and-closed part had grown to
 ~1600 lines and buried what was still to do:
@@ -14,9 +15,10 @@ This note is split four ways, because the argued-and-closed part had grown to
 | [`lsp/harness-analysis.md`](lsp/harness-analysis.md) | the three shipped harnesses' LSP tools read first-hand (Claude Code, opencode, grok-build) — the operation surface, and where they converge, differ, or are contradicted by a finding |
 | [`lsp/design.md`](lsp/design.md) | everything decided: direct-vs-MCP, the registry entry, no-timeout, progress + mailbox, the scheme table, the operation surface, document sync, protocol modeling, testing, the trifecta legs |
 
-Nothing in `lsp/design.md` has met an implementation, which is why it is
-still here rather than in `pikuri-lsp/DESIGN.md`, five `DECISIONS.md`
-entries and a book chapter. Graduation below.
+`lsp/design.md` is still here rather than split into `pikuri-lsp/DESIGN.md`,
+five `DECISIONS.md` entries and a book chapter because the build is only
+part-way: graduating a rationale whose implementation may still move is how
+a doc starts lying. Graduation map below.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
 intelligence. For Ruby I'd want go-to-definition and find-references. I
@@ -113,11 +115,17 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
 
 **Build order** (each step testable before the next exists):
 
-1. **Protocol layer + `Location` / `Position` / `Range` / `ServerProgress`
-   value types.** Framing, id demux on a reader thread, auto-reply to
-   server→client requests, both `Location` and `LocationLink` shapes
-   (finding 4), utf-16↔utf-8 offset conversion (finding 7, mandatory —
-   jdtls ignored the utf-8 offer), 1-based↔0-based at the boundary only.
+1. ~~**Protocol layer + `Location` / `Position` / `Range` / `ServerProgress`
+   value types.**~~ **Landed.** `Lsp::Connection` (framing, id demux on a
+   reader thread, `result: null` to every server→client request, no timeout,
+   `cancellable:` poll), `Location.from_wire` taking both the `Location` and
+   `LocationLink` shapes (finding 4), `PositionEncoding` for the
+   utf-16↔utf-8↔utf-32 offset arithmetic (finding 7, mandatory — jdtls
+   ignored the utf-8 offer), 1-based↔0-based in `Position` alone, and
+   `Uris` for the `file:`-or-not question every walked path asks. Two
+   deviations from the line above, both narrower than it: `Range` has no
+   `to_wire` (pikuri sends positions, never ranges), and the encoding
+   arithmetic is its own module rather than living inside `Position`.
 2. **`ClientWrapper.new(stdin:, stdout:)` + `.spawn(entry)`** — the
    constructor must not spawn, so the fake server can drive it over
    `IO.pipe`. Restart-on-death copied from `Mcp::ClientWrapper`, with the

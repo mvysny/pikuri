@@ -25,6 +25,7 @@ GEMS = %w[
   pikuri-tasks
   pikuri-mcp
   pikuri-workspace
+  pikuri-lsp
   pikuri-subagents
   pikuri-code
   pikuri-os

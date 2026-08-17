@@ -38,6 +38,13 @@ PATH
       pikuri-core (= 0.0.7)
 
 PATH
+  remote: pikuri-lsp
+  specs:
+    pikuri-lsp (0.0.7)
+      pikuri-core (= 0.0.7)
+      pikuri-workspace (= 0.0.7)
+
+PATH
   remote: pikuri-mcp
   specs:
     pikuri-mcp (0.0.7)
@@ -247,6 +254,7 @@ DEPENDENCIES
   pikuri-code!
   pikuri-core!
   pikuri-extractors!
+  pikuri-lsp!
   pikuri-mcp!
   pikuri-memory!
   pikuri-os!
@@ -296,6 +304,7 @@ CHECKSUMS
   pikuri-code (0.0.7)
   pikuri-core (0.0.7)
   pikuri-extractors (0.0.7)
+  pikuri-lsp (0.0.7)
   pikuri-mcp (0.0.7)
   pikuri-memory (0.0.7)
   pikuri-os (0.0.7)
