@@ -231,8 +231,25 @@ what grok-build does too, and it means one grep finds every injection.
   `bin/pikuri-wire-check` printing which markers survive
   `/apply-template` — is still owed, and generalizes past this bug to a
   template that drops tool messages or reorders them.
-- **pikuri-memory was presumably inert against Qwen3.6** for as long as
-  that model has been the default. Not measured retrospectively.
+- **pikuri-memory's per-turn prefetch was inert against Qwen3.6**, and is
+  now verified fixed — A/B against the live model with mem0's search
+  stubbed to canned records, everything downstream real. Replaying the old
+  `:system` delivery, the model answered *"I don't have any information
+  about your car"* about a fact sitting in the payload; through the shipped
+  path it named it. How long it had been inert was not measured
+  retrospectively.
+- **The `recall` tool was masking the broken prefetch**, which is most of
+  why this survived so long. The first run of that A/B had the model answer
+  *correctly* under the old delivery — it never saw the block, so it called
+  `recall` and got the same facts that way. The symptom was therefore not
+  "memory is broken" but "an extra tool round-trip and slightly worse
+  answers on turns where the model didn't bother." Isolating prefetch took
+  a stub that answers only the prefetch query. Worth remembering for the
+  next silent-delivery bug: a fallback path is an *alibi*, and any test of
+  an automatic tier has to disable the manual one.
+- **A working prefetch removes a round-trip.** In the verified run the
+  shipped path answered from the injected block with no tool call at all,
+  where the `:system` delivery spent a `recall` call to get nowhere.
 
 ## D-slash-commands — Two registries, a user turn, and no scheduling function (2026-08-16)
 

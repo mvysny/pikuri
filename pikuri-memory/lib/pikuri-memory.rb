@@ -21,8 +21,9 @@ module Pikuri
   #    ({Extension#system_prompt_snippets}), re-pulled on every
   #    {Pikuri::Agent#clear_conversation}.
   # 2. **Automatic prefetch** — {Extension#on_user_message} searches mem0
-  #    with the latest user message and injects a high-precision slice as
-  #    a +:system+ +<memory-context>+ block.
+  #    with the latest user message and returns a high-precision slice as a
+  #    +<memory-context>+ block, which
+  #    {Pikuri::Agent#append_reference_block} appends.
   # 3. **Explicit deepening** — the +recall+ tool.
   #
   # The same resident-vs-triggered split as +pikuri-vectordb+'s
@@ -33,10 +34,15 @@ module Pikuri
   #
   # Automatic capture + recall are safe only on an agent with no untrusted
   # ingest and no egress (the +@private+ configuration): a poisoned memory
-  # + an egress leg is the lethal trifecta. Capture feeds *user-role
-  # content only*, and recall lands as +:system+ context (never a user
-  # turn), so the recall→re-extraction feedback loop cannot form. Porting
-  # onto an egress-capable agent re-opens recall-poisoning.
+  # + an egress leg is the lethal trifecta. The recall→re-extraction
+  # feedback loop cannot form because **capture is fed the dispatch
+  # argument, never the conversation**: {Extension#on_user_message} hands
+  # {Recorder#enqueue} exactly the incoming message, and {Mem0Client#add}
+  # wraps that one string. Do not re-derive extraction input from
+  # +Chat#messages+ — a recalled block is itself a +:user+ message there
+  # (see {Pikuri::Agent#append_reference_block}), so reading the log is
+  # what would close the loop. Porting onto an egress-capable agent
+  # re-opens recall-poisoning.
   module Memory
     LOADER = Zeitwerk::Loader.new
     LOADER.tag = 'pikuri-memory'

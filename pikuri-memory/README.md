@@ -28,7 +28,7 @@ uses (`vectordb_search` + `vectordb_read`):
    construction.
 2. **Automatic prefetch** — every user turn is embedded and
    searched; a small, high-precision slice is injected as a
-   `:system` `<memory-context>` block right after the turn.
+   `<memory-context>` block right after the turn.
 3. **`recall` tool** — explicit, topic-driven deepening when the
    agent wants more than the automatic slice surfaced.
 
@@ -46,8 +46,9 @@ structural defenses keep the capture pipeline honest:
 
 - **Only the user's own words** are fed to extraction — assistant
   turns, tool results, and recalled context are never captured.
-- **Recalled context lands as `:system`**, never as a user turn, so
-  it cannot be re-extracted into a self-reinforcing feedback loop.
+- **Capture reads what you typed, never the conversation.** That is
+  what stops a recalled memory being re-extracted and re-stored, over
+  and over, until one hallucinated fact exists 800 times.
 
 Do not port memory onto an egress-capable agent without re-deriving
 the recall-poisoning mitigations.

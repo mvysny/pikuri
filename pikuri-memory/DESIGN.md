@@ -58,17 +58,31 @@ the hit in full). Memory = prefetch (auto slice) + `recall` (dig).
 
 Two invariants make the automatic tiers safe and cheap:
 
-- **Recalled context enters as a `:system`-role `<memory-context>`
-  block** — not user, not assistant, not tool. This is load-bearing on
-  two counts. (a) It keeps recall provenance-tagged as "recalled
-  reference, not new input." (b) It makes the block **excludable from the
-  next extraction pass** — the exact hinge of the user-only extraction
-  rule (see [§"Extraction-input discipline"](#extraction-input-discipline)).
-  Automatic recall + user-only extraction are two halves of one rule:
-  recall is *visible to the model, invisible to the extractor*. If the
-  injected block ever lands as a user/assistant turn, the feedback loop
-  (one hallucinated fact → 808 copies, measured in a production audit)
-  comes back — now every turn.
+- **Recalled context is invisible to the extractor.** Recall is *visible
+  to the model, invisible to the extractor* — that half of the rule is
+  what keeps the feedback loop (one hallucinated fact → 808 copies,
+  measured in a production audit) from coming back every turn. What
+  enforces it is the **call graph, not the role**: `on_user_message`
+  hands `Recorder#enqueue` its own `content` argument, and nothing in the
+  capture path ever reads `Chat#messages`.
+
+  This changed in August 2026 and the distinction now matters. The block
+  used to land as a `:system` message, and this document called that role
+  load-bearing — "excludable from the next extraction pass." It no longer
+  is: a mid-conversation `:system` message does not portably reach the
+  model (`DECISIONS.md` `D-reference-text-as-user-turn`), so the block is
+  now a `<system-reminder>`-wrapped **`:user`** message like every other
+  injection. The loop still cannot form, but the reason is narrower than
+  it was, and the trap is sharper: **deriving extraction input from the
+  conversation would now close it**, because a recalled block is a
+  user-role message in the log. Pinned by
+  `spec/pikuri/memory/extension_spec.rb`, not by prose.
+
+  Provenance tagging survives on the block's own preface
+  (`Extension#format_memory_context`), which marks the content recalled
+  reference and forbids following instructions inside it. Since the block
+  no longer differs from the human's words *by role*, that preface is now
+  the only thing separating them.
 - **Reads are cheap; the asymmetry vs writes is the whole design.**
   Embedding the query is ~0.01s warm and a Qdrant search is
   milliseconds, so per-turn prefetch sits safely *on* the interaction
@@ -173,9 +187,10 @@ What this drives:
   copies). It's a pikuri-side rule about *what we pass to `add()`*, not a
   mem0 change — portable to any future store, and the `Mem0Client#add`
   surface enforces it by only ever wrapping a single `role: "user"`
-  message. **Relies on the invariant** that recalled memories are
-  injected as `:system` context, never as user turns (see
-  [§"Retrieval"](#retrieval)).
+  message. Note what "user-role" means here: the string the *host handed
+  us this turn*, not "the user-role messages in the log". Those are no
+  longer the same set (see [§"Retrieval"](#retrieval)), and only the
+  former is safe to extract from.
 - **No special credential-exclusion rule** (deliberately omitted). The
   audit's "security leaks" (IPs, paths, config values) were all
   *system/assistant/tool*-sourced — involuntary — and user-only

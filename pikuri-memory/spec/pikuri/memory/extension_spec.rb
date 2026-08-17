@@ -253,5 +253,28 @@ describe Pikuri::Memory::Extension do
 
       ctx.close_blocks.each(&:call) # must not raise; recorder stops
     end
+
+    # The recall feedback loop (one hallucinated fact re-extracted into 800
+    # copies) is held shut by capture reading its *argument* and never the
+    # conversation. That used to be backed up by the role — a recalled block was
+    # a :system message — but since `D-reference-text-as-user-turn` the block is
+    # a :user message like any other, so this is the only thing left holding it.
+    # See DESIGN.md §"Retrieval".
+    it 'captures the turn it was handed, never the block it returns' do
+      require 'timeout'
+      client = fake_client_class.new
+      client.search_rows = [record('Martin drives a Volvo V70', score: 0.9)]
+      ext = described_class.new(client: client, user_id: 'martin', resident_persona: false)
+      ext.bind(fake_ctx_class.new)
+
+      block = ext.on_user_message(nil, 'what car do I drive?')
+
+      assert_includes block, 'Volvo V70' # the prefetch did fire
+      assert_equal 'what car do I drive?', client.await_add
+      # A second capture would mean the returned block came back around.
+      assert_raises(Timeout::Error) { client.await_add(timeout: 0.4) }
+    ensure
+      ext.recorder.close
+    end
   end
 end
