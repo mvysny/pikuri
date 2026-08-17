@@ -103,8 +103,8 @@ module Pikuri
         end
 
         # @param request [Hash] the message being answered; only its +id+ is read.
-        # @param result [Object] the +result+ member — +nil+ and +[]+ are real
-        #   answers.
+        # @param result [Hash, Array, String, Numeric, true, false, nil] the
+        #   +result+ member — +nil+ and +[]+ are real answers.
         # @return [void]
         def reply(request, result)
           send_message('jsonrpc' => '2.0', 'id' => request['id'], 'result' => result)
@@ -173,12 +173,13 @@ module Pikuri
       # one block per method, and everything the client said kept for assertions.
       #
       #   server = FakeServer.new(capabilities: { 'definitionProvider' => true })
-      #   server.on('textDocument/definition') { |params| [location_for(params)] }
-      #   server.on_json('typeHierarchy/supertypes') { File.read('…/supertypes.json') }
+      #   server.on('textDocument/definition') { |params| [{ 'uri' => params['uri'], 'range' => nil }] }
+      #   server.on_json('typeHierarchy/supertypes') { File.read('spec/fixtures/ruby_lsp_supertypes.json') }
       #   server.serve
-      #   # … drive the client …
+      #   client.start                                  # … and whatever else the example drives
+      #   server.await('initialized')                   # the last frame of the handshake
       #   server.received.map { |message| message['method'] }
-      #   # => ["initialize", "initialized", "textDocument/definition"]
+      #   # => ["initialize", "initialized"]
       #   server.stop
       #
       # An unrouted request is answered +-32601 Method not found+, which is what
@@ -194,6 +195,10 @@ module Pikuri
         # @return [Wire] the raw channel, for a sequence no route can express.
         attr_reader :wire
 
+        # @return [Hash{Symbol => IO}] the +{stdin:, stdout:}+ kwargs for
+        #   {Connection#initialize} or {ClientWrapper#initialize}.
+        attr_reader :channel
+
         # @param capabilities [Hash{String => Object}] advertised at +initialize+;
         #   the client's {ClientWrapper#supports?} reads exactly this.
         # @param server_info [Hash{String => String}, nil] +name+ / +version+.
@@ -207,14 +212,7 @@ module Pikuri
           @routes = {}
           @received = []
           @mutex = Mutex.new
-          channel, @wire = Wire.channel
-          @channel = channel
-        end
-
-        # @return [Hash{Symbol => IO}] the +{stdin:, stdout:}+ kwargs for
-        #   {Connection#initialize} or {ClientWrapper#initialize}.
-        def channel
-          @channel
+          @channel, @wire = Wire.channel
         end
 
         # Answer +method+ with whatever the block returns, serialized as the
@@ -222,7 +220,8 @@ module Pikuri
         #
         # @param method [String] e.g. +"textDocument/definition"+.
         # @yieldparam params [Hash, nil] the request's +params+.
-        # @yieldreturn [Object] the +result+ — +nil+ is an answer, not a miss.
+        # @yieldreturn [Hash, Array, String, Numeric, true, false, nil] the
+        #   +result+ member — +nil+ is an answer, not a miss.
         # @return [void]
         def on(method, &block)
           @mutex.synchronize { @routes[method] = { json: false, block: block } }
@@ -253,8 +252,9 @@ module Pikuri
           nil
         end
 
-        # Start answering. Idempotent-ish: call it once, before the client's
-        # handshake.
+        # Start the serving thread; a second call is a no-op. It has to be
+        # running before the client's handshake, which is the first thing that
+        # needs an answer.
         #
         # @return [self]
         def serve
