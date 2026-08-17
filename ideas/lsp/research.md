@@ -1,15 +1,15 @@
 # LSP client — research notes
 
 Split out of [`../lsp.md`](../lsp.md), which keeps the status and the
-worklist. This file is the lab notebook: four independent throwaway
+worklist. This file is the lab notebook: five independent throwaway
 clients, a rubygems survey, and one shipped client read off its schema.
 Nothing here is a decision — the decided design is in
 [`design.md`](design.md).
 
 **The labels are stable ids, cited from both other files.** Findings are
-numbered per source — `finding 1`–`finding 9` for the Ruby runs, `J1`–`J9`
-for jdtls — in *discovery* order, not reading order. Don't renumber them
-to tidy a sequence.
+numbered per source — `finding 1`–`finding 9` for the first Ruby runs,
+`J1`–`J9` for jdtls, `H1`–`H6` for the type-hierarchy run — in *discovery*
+order, not reading order. Don't renumber them to tidy a sequence.
 
 ## How the protocol actually works
 
@@ -493,3 +493,121 @@ Worth arguing with:
   sequences unreliably — a real reason for pikuri to collapse the
   name→position hop *inside* the tool where Claude Code doesn't.
 
+
+## Findings from a type-hierarchy run against ruby-lsp
+
+A fifth throwaway client, `ruby-lsp` 0.26.10 / Ruby 3.3.11, against this
+repo — the run worklist item 5 asked for. Ready in 5.4s behind one
+progress token, `positionEncoding: "utf-8"`, `typeHierarchyProvider: {}`
+advertised, `callHierarchyProvider` and `implementationProvider` absent
+(finding 9 reproduced). Targets were picked for known in-repo ancestry:
+`Pikuri::Tool` (14 subclasses), `Agent::Listener::Base` (4),
+`Workspace::Confirmer` (2), plus `Confirmer::Terminal` and
+`Workspace::Read` upward and `Workspace::Extension`'s `include`.
+
+Where a finding was confirmed in ruby-lsp's own source that is said so —
+those are the ones that will not change by asking differently.
+
+**H1. `typeHierarchy/subtypes` is an unimplemented stub, and the provider
+is advertised anyway.** Every call returned nothing: `Pikuri::Tool` → 0,
+`Listener::Base` → 0, `Workspace::Confirmer` → 0, from a `prepare` item
+that `supertypes` then answered correctly, so the item was valid and the
+anchor was right. The reason is in `server.rb:1203`:
+
+```ruby
+def type_hierarchy_subtypes(message)
+  # TODO: implement subtypes
+  # The current index representation doesn't allow us to find the children of an entry.
+  send_message(Result.new(id: message[:id], response: nil))
+end
+```
+
+So this is finding 2's silent-empty in its purest form — not a readiness
+problem, not an anchor problem, not fixable by indexing harder: an
+advertised capability wired to a stub. Note the reply is **`nil`, not
+`[]`**, which a parse layer has to accept. And a *capability gate cannot
+catch this*, which is the part that matters for the design: the gate reads
+`typeHierarchyProvider`, and ruby-lsp advertises it truthfully for
+`supertypes`. One provider key covers both directions, so no declaration
+distinguishes the half that works from the half that is a TODO.
+
+**H2. `supertypes` works, and namespace reopening dominates the result.**
+`supertypes(Pikuri::Workspace::Read)` → **14 results, every one named
+`Pikuri::Tool`** — one per file that reopens `class Tool` / `module Tool`
+as a namespace wrapper (`calculator.rb:4`, `fetch.rb:4`, `parameters.rb:8`,
+`brave.rb:8`, …), with the real declaration `tool.rb:35` last in the list.
+`supertypes(Confirmer::Terminal)` → 2, both `Pikuri::Workspace::Confirmer`
+(`terminal.rb:9`, the reopening; `confirmer.rb:67`, the declaration). This
+is finding 6's reopened-constant noise on a fourth operation, and the
+`Read` case is the sharper one: 14 rows carrying one fact, with the row a
+human wants ordered last. Grouping by name and preferring the file whose
+path matches the constant is the obvious pass; capping alone would cut the
+useful row.
+
+**H3. `supertypes` leaves the workspace by default, into places nobody
+checked out.** `supertypes(Pikuri::Tool)` → 6 results, all `Object`, from
+`rbs-4.1.3/core/object.rbs`, `psych/core_ext.rb`, `hashery-2.1.2`,
+`json-2.21.1` and `racc-1.8.1` (twice). Every one is out-of-root, every
+one is useless to an agent, and they arrive on a query about a class in
+the workspace. Independent support for the unconditional
+`untrusted: :hard` leg — and note *which* files: an `.rbs` core stub and
+four unrelated gems that merely reopen `Object`.
+
+**H4. Module ancestry is not walked — the specific hope, and it is a
+no.** `prepare` on `include Pikuri::Agent::Extension` resolves the module
+cleanly (1 item, `Pikuri::Agent::Extension`), and then **both**
+`supertypes` and `subtypes` return 0. So "who includes this module?" is
+unanswerable, and so is `include` / `prepend` ordering — the one thing
+worklist item 5 named as what grep genuinely cannot reconstruct. Between
+this and H1, ruby-lsp's type hierarchy answers exactly one question:
+*what is above this class?*
+
+**H5. The keyword anchor returns zero items — 6 cases out of 6.**
+`prepareTypeHierarchy` at the first non-space column of the declaration
+line returned `0 item(s)` for all six targets; at the column of the symbol
+text itself it returned exactly `1 item(s)` for all six. Measured offsets:
+`class Tool` keyword 2 / symbol 8, `class Base` 6 / 12, `class Confirmer`
+4 / 10, `class Terminal < Confirmer` 6 / 12, `class Read < Pikuri::Tool`
+4 / 10, `include Pikuri::Agent::Extension` 6 / 29 (the last segment of the
+path, which resolved fine). And `workspace/symbol`'s own
+`location.range.start.character` for `class Tool` is **2** — the keyword —
+so feeding a symbol hit's range straight back in is the failure, not a
+shortcut. This is worklist item 6 confirmed on ruby-lsp: the
+`locate(text, symbol)` helper is load-bearing, and its absence fails
+silently.
+
+**H6. `workspace/symbol` matches on the *fully qualified* name, so a bare
+namespaced class name is unreachable.** The headline number: query
+`"Confirmer"` → 25 hits, **0 of them a class or module**, 0 exact-name;
+`"Base"` → 20 hits, 0 classes; `"Terminal"` → 10 hits, 0 classes; `"Tool"`
+→ 81 hits, 14 classes, none of them `Tool` itself (they are
+`Pikuri::Tool::Search::Exa`, `Pikuri::Tool::Parameters`, …). Query the FQN
+`"Pikuri::Workspace::Confirmer"` and it works: 471 hits, 2 exact.
+
+Both halves are deliberate in the source. `workspace_symbol.rb` sets
+`name: entry.name` — the FQN — with a comment saying why ("to allow people
+to search for fully qualified names… If we only included the short name
+`Bar`, then searching for `Foo::Bar` would not return any results"), so an
+exact-name filter must compare the **last `::` segment**, never `name`.
+And `index.rb:199` scores with `DidYouMean::JaroWinkler` over the
+`::`-stripped, downcased FQN against `ENTRY_SIMILARITY_THRESHOLD = 0.7`,
+which is prefix-weighted — so a short query against a long namespaced name
+falls off a cliff:
+
+| query | indexed name | Jaro-Winkler | vs 0.7 |
+| --- | --- | --- | --- |
+| `Tool` | `pikuritool` | **0.000** | dropped |
+| `Confirmer` | `pikuriworkspaceconfirmer` | **0.455** | dropped |
+| `Terminal` | `pikuriworkspaceconfirmerterminal` | 0.460 | dropped |
+| `Base` | `pikuriagentlistenerbase` | 0.529 | dropped |
+| `Confirmer` | `@confirmer` | 0.967 | kept |
+| `Pikuri::Workspace::Confirmer` | `pikuriworkspaceconfirmer` | 1.000 | kept |
+
+So this is not ranking noise that a bigger cap would fix — the entry is
+below threshold and never returned, while a same-named *instance variable*
+scores 0.967 and is. In a codebase where every class is namespaced, that
+means a bare `symbol` never resolves a class, and the tool's answer is a
+clean "not found": finding 2's false premise reached through the design's
+own headline parameter. Finding 5 recorded `workspace/symbol` as fuzzy in
+the too-many direction; this is the too-few direction, and it is the
+consequential one.

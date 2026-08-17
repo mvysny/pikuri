@@ -625,6 +625,20 @@ locating the symbol text, and resolves a bare name through
 "collapse the name→position hop inside the tool" commitment made
 concrete. Three consequences worth noting:
 
+> **H6 holds the collapse and breaks its input.** ruby-lsp scores
+> `workspace/symbol` with Jaro-Winkler over the `::`-stripped **fully
+> qualified** name against a 0.7 threshold, so a bare `Tool` scores 0.000
+> and a bare `Confirmer` scores 0.455 — never returned, while the ivar
+> `@confirmer` scores 0.967 and is. In a codebase where every class is
+> namespaced, `symbol: "Confirmer"` therefore resolves to nothing and the
+> tool answers "not found": this note's own headline failure, reached
+> through its own headline parameter. The hop still belongs inside the
+> tool; what "a bare name" may be is worklist item 6 in
+> [`../lsp.md`](../lsp.md). Two things are settled regardless: the filter
+> compares the **last `::` segment**, never `name` (ruby-lsp reports the
+> FQN there deliberately), and this is a *below-threshold* drop, so no cap
+> or ranking tweak reaches it.
+
 - Routing still works: `file` is the server selector when given, and with
   a bare name the tool fans out to every registered server and merges —
   cheap, and correct, since a name may live in either language.
@@ -683,11 +697,10 @@ optional `line`. `typeDefinition`'s parameter description must say that
 `file` + `line` are effectively required for it, since it is the one
 operation whose usual anchor is invisible to the index.
 
-**The one mechanic this rests on, and it is only half verified.** The
-index hop has two steps, and the runs in [`research.md`](research.md)
-only prove the first:
-`workspace/symbol` + exact-name filter finds the declaration (findings 3
-and 5, J8), and then that hit must become a *position*. It is not simply
+**The one mechanic this rests on, now verified on ruby-lsp.** The index
+hop has two steps: `workspace/symbol` + exact-name filter finds the
+declaration (findings 3 and 5, J8 — and H6 for what "a name" may be), and
+then that hit must become a *position*. It is not simply
 `location.range.start`: a symbol's range routinely begins at the
 **keyword** — `class Foo` starts at `class`, `def resolve_for_read` at
 `def` — and a `definition` / `references` / `prepare*` query anchored on
@@ -701,10 +714,13 @@ which is why every throwaway client grew `locate(text, symbol)` on its
 first attempt. That costs a line read at the declaration site (routed
 through the `Workspace` seam like any other, and subject to worklist
 item 2 in [`../lsp.md`](../lsp.md) when the declaration is out of root).
-**Check it on the first live run of each server** — worklist item 6 in
-[`../lsp.md`](../lsp.md): an anchor landing on the keyword fails
-silently, and silent-empty is the failure mode this note exists to
-refuse.
+**Confirmed on ruby-lsp, 6 cases out of 6** (H5): `prepareTypeHierarchy`
+at the keyword column returned zero items every time and at the symbol's
+own column exactly one every time, and `workspace/symbol`'s range for
+`class Tool` starts at column 2 — the keyword — so feeding a hit's range
+back in *is* the failure rather than the shortcut. The helper is
+load-bearing, not a convenience. Still wants the same check against jdtls,
+which is worklist item 7 in [`../lsp.md`](../lsp.md).
 
 Membership then follows:
 
@@ -751,6 +767,15 @@ operation at all, and grepping `< Base` is exactly the unreliable thing an
 LSP hop exists to settle. Both hierarchies are valuable in both languages,
 which no other candidate on the fence can say.
 
+> **Reopened by the live run.** H1 and H4 falsify the load-bearing half of
+> the argument above: ruby-lsp's `typeHierarchy/subtypes` is an
+> unimplemented stub behind a truthfully-advertised provider, and module
+> ancestry is walked in neither direction. So Ruby's "who overrides this"
+> hole is **not** closed, and the four bullets below are read against
+> worklist item 5 in [`../lsp.md`](../lsp.md), which is where the
+> replacement decision lives. `supertypes` survives intact and on its own
+> merits (H2, H3); the `subtypes` half of the claim does not.
+
 - **Four values, not two.** Direction *is* the question — "who calls this"
   and "what does this call" are separate asks, and one lumped operation
   returning both doubles the volume for a model that wanted half. A
@@ -773,18 +798,26 @@ which no other candidate on the fence can say.
   working.** Finding 9: jdtls advertises both providers; ruby-lsp
   advertises `typeHierarchyProvider` but **not** `callHierarchyProvider`.
   So `.rb` gets `subtypes` / `supertypes` and a clean refusal on the call
-  pair, while `.java` gets all four. `subtypes` is what closes the Ruby
-  hole `implementation`'s refusal leaves open.
-- **Unverified, and it must be verified first.** Nothing in the findings
-  in [`research.md`](research.md) actually *ran* a type hierarchy — finding
-  9 only records that ruby-lsp advertises the provider. Whether
-  `typeHierarchy/subtypes` returns useful results there, and whether
-  `supertypes` walks the module ancestry (`include` / `prepend` ordering,
-  the thing grep genuinely cannot reconstruct), is the first thing to check
-  when implementing. An advertised provider that returns an empty array is
-  finding 2 wearing a fourth hat, and the book chapter must not claim
-  otherwise before a live run says so. Worklist item 5 in
-  [`../lsp.md`](../lsp.md).
+  pair, while `.java` gets all four. ~~`subtypes` is what closes the Ruby
+  hole `implementation`'s refusal leaves open.~~ **The `.rb` half is
+  wrong** — H1: one provider key covers both directions, ruby-lsp
+  advertises it for the `supertypes` it really implements, and `subtypes`
+  answers `nil` from a `# TODO`. The gate is *working* and still lets a
+  known-empty operation through, which is the one failure mode a
+  capability check was supposed to remove. Worklist item 5.
+- ~~**Unverified, and it must be verified first.**~~ **Verified — H1–H5,
+  and it went the other way.** `subtypes` returned 0 for `Pikuri::Tool`
+  (14 in-repo subclasses), `Listener::Base` and `Confirmer` alike, from
+  `prepare` items that `supertypes` then answered correctly, so the anchor
+  was right and the operation is simply a stub (H1). Module ancestry
+  returns 0 in both directions (H4), which was the specific thing worth
+  having. What does work is `supertypes` on a class — usefully, but noisily:
+  14 rows for `Read`, every one named `Pikuri::Tool`, one per file that
+  reopens the namespace, with the real declaration ordered *last* (H2), and
+  6 rows of `Object` out of rbs stubs and unrelated gems for a root class
+  (H3). Two mechanical consequences for the client: group by name and
+  prefer the declaration over reopenings rather than capping (a cap cuts
+  the useful row), and accept `nil` as well as `[]` from a hierarchy reply.
 - **Volume.** `incomingCalls` on a popular method is `references`-shaped —
   same cap and same lib/spec grouping. `outgoingCalls` is the weakest of
   the four, since the model can just `read` the body; it ships because

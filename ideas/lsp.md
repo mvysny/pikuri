@@ -41,12 +41,24 @@ Related:
 
 ## Worklist
 
-Nine items, and they divide by kind: four want a decision, five want a
-live run. **Every one of the five is shaped like the silent-empty trap
-the design spends its length refusing** — an advertised provider that
-returns `[]`, an ignored notification, an anchor on the wrong token. None
-of them fails loudly, which is why they are listed rather than left to be
-discovered.
+Nine items, and they divide by kind: six want a decision, three want a
+live run. **Every one is shaped like the silent-empty trap the design
+spends its length refusing** — an advertised provider that returns
+nothing, an ignored notification, an anchor on the wrong token, a name
+that scores below a similarity threshold. None of them fails loudly,
+which is why they are listed rather than left to be discovered.
+
+The type-hierarchy run (`research.md`, H1–H6) closed two of the five
+live-run items and **opened two decisions in their place**, now items 5
+and 6 — which is the note's own thesis landing on the note: both were
+advertised-and-empty, and neither would have been noticed by a capability
+gate. It also closed one outright, with no fork behind it: **the
+keyword-vs-symbol anchor.** `prepareTypeHierarchy` at the keyword column
+returned zero items in 6 cases out of 6 and at the symbol's own column
+returned exactly one in all 6, and `workspace/symbol`'s own range for
+`class Tool` starts at column 2 — the keyword. So the design's
+`locate(text, symbol)` helper is confirmed mandatory rather than a
+nicety, and only the jdtls half of that check is left (folded into item 7).
 
 ### Needs deciding — before the tool layer is written
 
@@ -89,28 +101,56 @@ discovered.
    seam-routed read behind `didOpen`, and `private?` on the trifecta
    declaration. One line in the Sketch closes this.
 
-### Needs a live run — hoisted out of the design, where they were inline
+### Needs deciding — opened by the type-hierarchy run
 
-5. **Does a type hierarchy actually return anything on ruby-lsp?**
-   Nothing ever ran one — finding 9 only records that the provider is
-   *advertised*. Whether `typeHierarchy/subtypes` returns useful results
-   there, and whether `supertypes` walks the module ancestry (`include` /
-   `prepend` ordering, the thing grep genuinely cannot reconstruct), is
-   the first thing to check when implementing. Four of the ten enum
-   values rest on it, and it is what closes the Ruby hole
-   `implementation`'s refusal leaves open, so the book chapter must not
-   claim it before a live run says so. (`design.md`, "The two hierarchies
-   ship in v1".)
-6. **Does the name→position hop land on the symbol or on the keyword?**
-   A `workspace/symbol` hit's range routinely begins at the *keyword* —
-   `class Foo` at `class`, `def resolve_for_read` at `def` — and a query
-   anchored there can legitimately answer nothing. The design's answer is
-   one `locate(text, symbol)` helper deriving the column at both ends,
-   but it is unverified against either server. Check it on the first live
-   run of *each*. (`design.md`, "The one mechanic this rests on".)
-7. **Is `didChange` honoured by both servers?** The sync scheme in item 1
-   is worthless if a server ignores it — and an ignored `didChange` fails
-   silently, which is the whole problem.
+5. **`subtypes` does not work on ruby-lsp, so the Ruby "who overrides
+   this" hole is still open — decide what ships.** ~~Does a type
+   hierarchy actually return anything on ruby-lsp?~~ **Run: H1–H5.**
+   `typeHierarchy/subtypes` is an unimplemented stub returning `nil`
+   behind a truthfully-advertised `typeHierarchyProvider` (H1), and module
+   ancestry is not walked in either direction (H4). `supertypes` works,
+   but only upward and only for classes. That **removes the reason the two
+   hierarchies were promoted into v1**: `design.md` argues `subtypes` is
+   what closes the hole `implementation`'s `.rb` refusal leaves open, and
+   it does not close it — Ruby still has no "who overrides this"
+   operation, and grepping `< Base` is still the only answer.
+   Consequences to settle, in order:
+   - **A capability gate cannot express this.** One provider key covers
+     both directions, so `.rb` would advertise `subtypes` and answer
+     empty — the note's own headline failure mode shipped as a feature.
+     Either the enum drops `subtypes` for now, or the dispatch table gains
+     a per-server *known-stub* list, which is a new concept the design
+     does not have.
+   - **`supertypes` earns its place on its own** (H2's `Read` → 14 rows,
+     one real), but it needs grouping by name with the declaration
+     preferred over namespace reopenings, not just a cap — a cap would cut
+     the one useful row, which sorted last in the live reply.
+   - **A `nil` result is not `[]`.** The parse layer must accept both.
+6. **A bare `symbol` cannot resolve a namespaced Ruby class — the tool's
+   required parameter needs rethinking.** Opened by H6, and it is the
+   sharpest thing the run turned up. ruby-lsp's `workspace/symbol` matches
+   Jaro-Winkler over the `::`-stripped **fully qualified** name against a
+   0.7 threshold, so `Tool` scores 0.000 against `pikuritool` and
+   `Confirmer` scores 0.455 against `pikuriworkspaceconfirmer` — both
+   below threshold, both never returned, while the instance variable
+   `@confirmer` scores 0.967 and is. Query the FQN and it works
+   (1.000). Both halves are deliberate in ruby-lsp's source, so neither
+   will change. So the design's "collapse the name→position hop inside the
+   tool" commitment holds, but its *input* cannot be a bare name for Ruby.
+   Arms: require an FQN (and say so in the parameter description, which
+   costs the model nothing since it reads `module`/`class` lines anyway);
+   or have the tool try the bare name, then retry as a suffix match over
+   the unfiltered index; or accept either and let `file` disambiguate. The
+   exact-name filter also has to compare the **last `::` segment**, never
+   `name`.
+
+### Needs a live run
+
+7. **Is `didChange` honoured by both servers, and does jdtls anchor like
+   ruby-lsp?** The sync scheme in item 1 is worthless if a server ignores
+   it — and an ignored `didChange` fails silently, which is the whole
+   problem. The keyword-vs-symbol anchor is settled for ruby-lsp (H5) and
+   still wants one jdtls check, since it is the same helper.
 8. **Does `Filesystem#denied?` have an opinion outside the root?** It is
    built for paths *under* the workspace root, and every interesting LSP
    result is outside it. Either it answers usefully for
