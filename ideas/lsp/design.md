@@ -591,6 +591,56 @@ a large file pays a parse it might have skipped. That is a local child
 process doing what it does anyway on every keystroke in an editor, and the
 alternative is a correctness bug that reports success.
 
+### Observing the agent's own edits — settled, deferred past v1
+
+grok-build syncs from the **write** path as well
+(`notify_file_changed(path, content)`, queued while the server is still
+starting), and pikuri should eventually too. The shape is decided so that
+the deferral is a scheduling choice rather than an open question:
+
+- **The event is emitted by the composite, not by the tools.**
+  `Workspace::Workspace` already owns the read-before-edit ledger — it is
+  the "what has this agent done to files" bookkeeper — and `Write` / `Edit`
+  already hold that one instance and call `mark_read` on it, so
+  `note_written(resolved)` sits beside the existing ledger calls.
+  `Workspace::Extension#bind` bridges the callback to `ctx.emit_event`,
+  exactly as {Pikuri::Tasks::Extension} arms `List#on_change` to emit
+  `ListChanged`: emission stays on the agent thread and at one call site,
+  per the capability seam. `WriteGate` is the wrong hook — it is a stateless
+  module that runs *before* the write, and a refused write must not notify.
+- **The payload is the path, not the bytes.** Every consumer that needs
+  content reads it through the `Workspace` seam anyway, and an event stream
+  other listeners also receive is no place to duplicate file contents.
+- **It must never be load-bearing.** `bash` writes files, and so do
+  `git checkout`, `sed` and any build the agent runs, so an
+  edit-notification is *structurally* incomplete. Re-opening on read stays
+  the correctness guarantee and this is enrichment on top — the same split
+  `D-walked-path-denylist` draws between `denied?` (the guarantee, fails
+  closed) and `denied_roots` glob-pruning (an optimization that may go
+  partial).
+- **The event fills a dirty set; the next `lsp` call drains it.** A 50-file
+  refactor must not mean 50 full-text re-opens and 50 jdtls rebuilds.
+  Coalescing per path bounds the work to once per LSP call and costs nothing
+  in a turn that never touches LSP. That is also the **second caller** the
+  coalescing mailbox was waiting for (see "Where it lives"), so the
+  primitive gets reused rather than rebuilt.
+- **What it buys over re-open-on-read is one measured thing**, and it is
+  worth writing down because it is not obvious: a file the agent has just
+  *created* is invisible to `workspace/symbol` until something opens it
+  (S4 — ruby-lsp indexes only what it has loaded), and under re-open-on-read
+  nothing opens it until the model asks a position question naming that exact
+  file. So `symbol`-only lookup of a just-written class fails. The other two
+  gains are softer: jdtls rebuilds ahead of the next call rather than during
+  it, and this is the precondition for diagnostics-after-edit.
+
+Deferred past v1 because it changes no interface in `pikuri-lsp` — the
+client is self-sufficient by construction — so shipping it later costs one
+listener arm and nothing else. The gem dependency it would need is present
+regardless: `pikuri-lsp` depends on `pikuri-workspace` already, for
+`denied?`, the root confinement, the seam-routed read behind the re-open,
+and `filesystem.private?` in the trifecta declaration. An LSP serves a
+*project*, and the notion of a project is what `Workspace` is.
+
 ## Questions raised, and how they settled
 
 (All seven are closed; what is still open is the worklist in

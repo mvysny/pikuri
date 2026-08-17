@@ -98,6 +98,81 @@ perform exactly is not a hop worth spending a round trip on**, and a
 coordinate the model was never shown is not a coordinate it should be
 asked to invent (see the parameter item below).
 
+## The v1 build
+
+What ships, assembled in one place because it is currently spread over three
+files. Every line has its rationale elsewhere; this is the checklist, not the
+argument.
+
+**The gem.** `pikuri-lsp`, depending on `pikuri-core` **and
+`pikuri-workspace`** — the latter is not optional: the tool needs
+`Filesystem#denied?`, the root confinement, the seam-routed read behind every
+re-open, and `filesystem.private?` for its own trifecta declaration. An LSP
+serves a *project*, and `Workspace` is what a project is in pikuri.
+
+**Build order** (each step testable before the next exists):
+
+1. **Protocol layer + `Location` / `Position` / `Range` / `ServerProgress`
+   value types.** Framing, id demux on a reader thread, auto-reply to
+   server→client requests, both `Location` and `LocationLink` shapes
+   (finding 4), utf-16↔utf-8 offset conversion (finding 7, mandatory —
+   jdtls ignored the utf-8 offer), 1-based↔0-based at the boundary only.
+2. **`ClientWrapper.new(stdin:, stdout:)` + `.spawn(entry)`** — the
+   constructor must not spawn, so the fake server can drive it over
+   `IO.pipe`. Restart-on-death copied from `Mcp::ClientWrapper`, with the
+   documented Subprocess-seam exception.
+3. **The fake server + raw-byte fixtures** from the recorded runs, so a
+   serializer bug cannot hide behind a symmetric parser.
+4. **Registry + `Registry.from_h`**, entry as below.
+5. **Readiness gate + the coalescing mailbox + `ServerProgress`.**
+   Quiescence (all progress tokens closed) plus a settle debounce, blocking
+   with no timeout, polling `Cancellable`, `window.workDoneProgress: true`
+   declared or jdtls emits nothing to watch (J1–J3).
+6. **The `lsp` tool**: ten operations, the `symbol`-anchored parameters,
+   capability gate at dispatch, re-open-on-read sync, result rendering.
+7. **`Lsp::Extension`**: `configure` builds the client set, registers the
+   tool via `Configurator#add_tool` (**not** `add_raw_tool`, or the legs go
+   invisible), arms `on_close`; `bind` hands the tool the emitter.
+   Contributes **no** `trifecta_contribution`.
+8. **Live smoke specs**, tagged to skip when the binary is absent.
+
+**The entry.**
+
+```ruby
+StdioEntry = Data.define(:id, :command, :files, :language_id, :env, :init_options)
+```
+
+`language_id:` is the new field, and it closes the hole the harness survey
+found — `didOpen` carries a `languageId` and basename globs cannot supply
+one. **Proposed:** one `language_id:` per entry rather than a glob→id map,
+because an entry *is* a server and both worked examples are single-language
+(`'ruby'`, `'java'`); a multi-language server wires two entries at the same
+command, which `id` already distinguishes. No `root:`, no
+`startup_timeout:`, no `content_request:`, no `settings:` (deferred, and
+both harnesses have one — say so honestly rather than implying nobody needs
+it).
+
+**The tool.** `operation` (enum of ten), `symbol` (required), `file` and
+`line` (optional). Column derived by `locate(text, symbol)`, never asked
+for. Rendering rules, all measured: cap and group (`findReferences` hardest
+— S9's 80,609), group `supertypes` by name preferring the declaration over
+namespace reopenings (H2), snippet-only outside the root, the scheme table
+for `jdt:`, never dereference `http(s):`, and keep *unsupported* /
+*answered-nothing* / *not-ready* three distinct strings.
+
+**Proposed for the last open call** (worklist item 2): an anchor that
+resolves outside the root is **refused with its own message** in v1. With
+`file` + `line` the ordinary shape, the anchor is in-root by construction
+almost always, and what is lost — following a hop *into* a dependency — is
+still answered by `hover` and the scheme table.
+
+**Explicitly not in v1**, each with its home: observing the agent's own
+edits (a settled shape, deferred — `design.md` §"Observing the agent's own
+edits"), diagnostics, `rename` / formatting / code actions, an `lsp_read`
+operation, and the operations left out of the enum — `subtypes` (H7/H8),
+`prepareCallHierarchy` (collapsed inside the tool), `declaration`,
+`completion`.
+
 ## Worklist
 
 Three items left, and none of them is a server-behaviour question. The
@@ -134,7 +209,9 @@ Deliverable, and the run settles which half is deliverable how:
 
 ### 2. What anchors a hop that resolves outside the root
 
-Unchanged from before, and the only remaining *confinement* question.
+**A v1 answer is proposed in "The v1 build" above** (refuse with its own
+message); this is the full fork, kept because the other two arms are what a
+reader will ask about.
 With `symbol` alone, `workspace/symbol` can place the anchor in a gem file
 outside the workspace root, or behind a `jdt:` URI (J5). Every
 position-based operation then needs a document the tool is not allowed to
@@ -150,6 +227,9 @@ message" is a defensible v1 — the capability lost is following a hop *into*
 a dependency, which `hover` and the scheme table still answer.
 
 ### 3. What the tool and the registry entry are missing
+
+**Also answered in "The v1 build" above** (`language_id:` as one field per
+entry); the reasoning is below.
 
 **The tool.** The Sketch names only the emitter handoff. It also needs the
 client set and a `Workspace::Filesystem` — for `denied?`, the root
