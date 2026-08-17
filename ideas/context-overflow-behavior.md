@@ -158,6 +158,21 @@ than something to paper over.
   `clear_conversation`, `Event::Reset`, extension `on_conversation_reset`
   (does the workspace's read-record survive a compaction?), and what
   `TokenLog` should show afterwards.
+- **What must never be pruned?** The Agent Skills spec's own
+  client-implementation guide (Step 5) says to exempt skill content from
+  pruning: losing a loaded skill mid-conversation degrades the agent
+  *silently*, with no error — the model simply stops following guidance it
+  can no longer see, which is the one failure mode CLAUDE.md's "errors are
+  loud" rule exists to prevent. Nothing to fix today (nothing prunes), but
+  it constrains strategies 3–5, and the enabling half is already in place:
+  {Pikuri::Skill::Renderer.format_skill}'s `<skill name="…">` envelope is
+  exactly the tag a compactor would key on, so don't lose it if the
+  envelope is ever restyled. The same guide recommends tracking
+  activations and skipping re-injection of an already-loaded skill —
+  {Pikuri::Skill::SkillTool} re-renders the full body per call, so loading
+  `cop` three times pays ~2 800 tokens three times. Cheap to fix, and
+  whether it's worth fixing depends on whether anything here ever
+  summarizes.
 
 
 ## Candidate strategies (agenda only — argue these later)
