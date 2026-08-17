@@ -78,12 +78,13 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
   end
 
   let(:non_empty_catalog) { fake_catalog_class.new([sample_skill]) }
+  let(:root) { Pathname.new(Dir.pwd) }
 
   it 'appends the catalog block to the system prompt when the extension is added' do
     agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                               system_prompt: 'base') do |c|
       c.add_listeners(listeners)
-      c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
+      c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog, root: root))
     end
 
     assert agent.system_prompt.start_with?('base'), agent.system_prompt
@@ -98,7 +99,7 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
     agent = Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                               system_prompt: 'base') do |c|
       c.add_listeners(listeners)
-      c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog))
+      c.add_extension(Pikuri::Skill::Extension.new(catalog: non_empty_catalog, root: root))
     end
 
     skill_tool = agent.tools.find { |t| t.is_a?(Pikuri::Skill::SkillTool) }
@@ -115,7 +116,7 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
 
   it 'binds the real agent interloper so a host can schedule a skill load' do
     interloper = Pikuri::Agent::Control::Interloper.new
-    ext = Pikuri::Skill::Extension.new(catalog: non_empty_catalog)
+    ext = Pikuri::Skill::Extension.new(catalog: non_empty_catalog, root: root)
     Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                       system_prompt: 'base',
                       interloper: interloper) do |c|

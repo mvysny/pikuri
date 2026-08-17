@@ -28,7 +28,34 @@ module Pikuri
 
       # A loaded skill record. Bodies are eager-loaded at scan time;
       # SKILL.md files are small and the tool's hot path stays IO-free.
-      Skill = Data.define(:name, :description, :location, :body)
+      #
+      # @!attribute [r] name
+      #   @return [String] the name the model loads it by
+      # @!attribute [r] description
+      #   @return [String] what it does, and (often) when to use it
+      # @!attribute [r] location
+      #   @return [String] absolute path of the SKILL.md
+      # @!attribute [r] body
+      #   @return [String] everything after the frontmatter
+      # @!attribute [r] paths
+      #   @return [Array<String>] normalized +paths:+ patterns; empty means
+      #     advertised unconditionally — see {PathSpec} before reading an empty
+      #     one as "matches nothing"
+      # @!attribute [r] when_to_use
+      #   @return [String, nil] the +when-to-use:+ trigger sentence, +nil+ when
+      #     the frontmatter carried none. Answers *is this the moment?* where
+      #     {#paths} answers *is this ecosystem in play?*; they compose.
+      Skill = Data.define(:name, :description, :location, :body, :paths, :when_to_use) do
+        # @return [Skill]
+        def initialize(name:, description:, location:, body:,
+                       paths: PathSpec::UNCONDITIONAL, when_to_use: nil)
+          super
+        end
+
+        # @return [Boolean] true when this skill stays withheld until a tool
+        #   touches a file matching {#paths}
+        def gated? = !paths.empty?
+      end
 
       # The +untrusted+ trifecta leg {SkillTool} declares.
       #
@@ -108,9 +135,11 @@ module Pikuri
       #
       # The Agent Skills standard is enforced leniently: a missing
       # +description+ is the only hard failure (skill skipped). Name/dir
-      # mismatch, oversized name/description, invalid name chars and
-      # malformed YAML log a warning and load anyway. A file with no
-      # frontmatter is skipped silently (not meant as a skill).
+      # mismatch, oversized name/description, invalid name chars, a +paths:+
+      # that is neither a string nor a list of them, and malformed YAML log a
+      # warning and load anyway. A file with no frontmatter is skipped silently
+      # (not meant as a skill). Note which way the +paths:+ failure falls: a
+      # value this class cannot read leaves the skill advertised, never hidden.
       #
       # == Trust
       #
@@ -237,11 +266,20 @@ module Pikuri
             name: name,
             description: description,
             location: path,
-            body: body
+            body: body,
+            paths: PathSpec.parse(frontmatter['paths'], path: path),
+            when_to_use: when_to_use_of(frontmatter)
           )
         rescue Errno::ENOENT, Errno::EACCES => e
           LOGGER.warn("#{path}: #{e.class}: #{e.message}; skipped")
           nil
+        end
+
+        # Both spellings: the documented hyphenated key, and the underscore
+        # slip, which would otherwise lose the field without a sound.
+        def when_to_use_of(frontmatter)
+          value = (frontmatter['when-to-use'] || frontmatter['when_to_use']).to_s.strip
+          value.empty? ? nil : value
         end
 
         def validate_name(name, parent_dir_name:, path:)

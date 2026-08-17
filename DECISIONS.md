@@ -284,8 +284,14 @@ and only when the directory holds a sidecar.
 
 ## D-skill-path-activation — A `paths:` skill is not in play until its path fires (2026-08-16)
 
-**Status:** Accepted; not yet implemented. `Catalog::Bundled#parse_skill`
-still reads only `name` and `description`. The author's own
+**Status:** Accepted; half-built. `Catalog::Bundled#parse_skill` now reads
+`paths:` and `when-to-use:`, `Catalog::Skill#gated?` answers the predicate,
+and `Skill::Activation` holds the once-per-conversation announcement state
+that `Skill::Extension` clears on a conversation reset — but nothing
+*consults* any of it yet: no matcher, no listener, and every gate surface
+(the catalog render, `SkillTool`'s lookup and its not-found enumeration,
+`schedule_load_skill`) is still ungated, so a `paths:` skill behaves exactly
+as it did before. The author's own
 `~/.claude/skills` is already annotated, which is inert for pikuri but
 *not* for Claude Code — see Consequences. Decisions 2 and 5 were
 **reversed the same day they were written**, after probing Claude Code

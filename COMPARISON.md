@@ -1293,7 +1293,7 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   lenient — a missing `description` is the sole hard failure, everything
   else warns and loads, and a file with no frontmatter is skipped
   silently. Wiring is opt-in via `c.add_extension(Skill::Extension.new
-  (catalog:))`, which on a non-empty catalog contributes the
+  (catalog:, root:))`, which on a non-empty catalog contributes the
   `<available_skills>` block (same shape as PI's) as a system-prompt
   snippet and registers the `skill` tool that loads a named body on
   demand; an empty catalog is a no-op in both. `Catalog#roots` is
@@ -1380,8 +1380,9 @@ Three findings worth carrying:
    pattern is `**` — and `None` is exactly what "unconditional" is
    spelled as internally.
 3. **Unknown keys fail open, everywhere.** pikuri's
-   `Catalog::Bundled#parse_skill` reads only `description` and `name` and
-   drops the rest; Claude Code listed a skill carrying `argument-hint:`
+   `Catalog::Bundled#parse_skill` reads `name`, `description`, `paths`
+   and `when-to-use`, and drops the rest; Claude Code listed a skill
+   carrying `argument-hint:`
    (a slash-command key, not a skill one) normally for months. A skill
    tagged with a key the host doesn't implement is simply advertised
    unconditionally — costing nothing and buying nothing until someone

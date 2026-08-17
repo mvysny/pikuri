@@ -501,7 +501,7 @@ begin
       sandbox: sandbox,
       read_only: read_only
     )
-    c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+    c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog, root: project_root)
     # Declaration only: commands register no tool and render no prompt, so
     # without this the trifecta banner would miss their untrusted leg entirely.
     c.add_extension Pikuri::Command::Extension.new(registry: command_registry)

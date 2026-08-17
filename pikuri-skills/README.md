@@ -42,7 +42,7 @@ catalog = Pikuri::Skill::Catalog::Bundled.new(
 )
 
 agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-  c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog))
+  c.add_extension(Pikuri::Skill::Extension.new(catalog: catalog, root: project_root))
 end
 ```
 

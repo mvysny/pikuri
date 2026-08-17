@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pathname'
+
 module Pikuri
   # Namespace for the Skills feature — the Agent Skills standard, as
   # {Catalog} (discovery) + {SkillTool} (load) + {Extension} (wiring).
@@ -16,7 +18,7 @@ module Pikuri
     #     search_bases: [project_root, Dir.home]
     #   )
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
-    #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
+    #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
     #   end
     #
     # This contributes no +trifecta_contribution+ of its own, and that is
@@ -30,17 +32,38 @@ module Pikuri
     # its *own* initiative via {#schedule_load_skill} — the UI-driven
     # counterpart of the +skill+ tool. Main-agent-only: sub-agents don't
     # inherit extensions.
+    #
+    # It also owns this conversation's {Activation} — which +paths:+-gated
+    # skills have fired — and clears it when the host clears the conversation.
     class Extension
       include Pikuri::Agent::Extension
 
       # @param catalog [Pikuri::Skill::Catalog] the catalog of
       #   skills the agent may load. Required.
-      def initialize(catalog:)
+      # @param root [Pathname] the workspace root a touched path is resolved
+      #   against before it is matched against a skill's +paths:+. Absolute,
+      #   because that path is model-supplied and must never be read as
+      #   relative to whatever the process's cwd happens to be.
+      # @raise [ArgumentError] if +root+ is not an absolute +Pathname+
+      def initialize(catalog:, root:)
+        unless root.is_a?(Pathname) && root.absolute?
+          raise ArgumentError, "root must be an absolute Pathname, got #{root.inspect}"
+        end
+
         @catalog = catalog
+        @root = root
+        @activation = Pikuri::Skill::Activation.new(catalog: catalog)
       end
 
       # @return [Pikuri::Skill::Catalog]
       attr_reader :catalog
+
+      # @return [Pathname]
+      attr_reader :root
+
+      # @return [Pikuri::Skill::Activation] which gated skills this
+      #   conversation has in play
+      attr_reader :activation
 
       # Register the +skill+ tool. No-op when the catalog is empty
       # (the +<available_skills>+ snippet is contributed by
@@ -76,7 +99,7 @@ module Pikuri
       # +name+ up in the catalog, renders its body identically to the tool,
       # and *enqueues* it on the interloper as a +:system+ block.
       #
-      #   ext   = Pikuri::Skill::Extension.new(catalog: catalog)
+      #   ext   = Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
       #   agent = Pikuri::Agent.new(..., interloper: interloper) { |c| c.add_extension ext }
       #   ext.schedule_load_skill('pdf-tools')    # enqueue only — nothing runs yet
       #   agent.run_loop(user_message: nil)        # bare turn: the agent reacts to the skill
@@ -119,6 +142,16 @@ module Pikuri
 
         @interloper.inject_system_message(Pikuri::Skill::Renderer.format_skill(skill))
         skill
+      end
+
+      # Re-hide the gated skills. The clear dropped their promotions from the
+      # log, so the next matching touch has to announce them again.
+      #
+      # @param ctx [Pikuri::Agent::ExtensionContext] unused; protocol signature.
+      # @return [void]
+      def on_conversation_reset(_ctx)
+        @activation.reset
+        nil
       end
 
       # The +<available_skills>+ catalog block (empty array for an

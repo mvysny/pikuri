@@ -13,7 +13,7 @@ module Pikuri
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
     #     c.add_listener Pikuri::Agent::Listener::Terminal.new
     #     c.add_tool     Pikuri::Tool::WebSearch.build
-    #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog)
+    #     c.add_extension Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
     #   end
     #
     # Extensions implement +configure(c)+ against this same type, so

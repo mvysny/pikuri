@@ -1,11 +1,22 @@
 # Path-triggered skill activation — the build sketch
 
-Status: **decided, not built.** The design, the measurements and the
+Status: **decided, half-built.** The design, the measurements and the
 roads not taken are `DECISIONS.md` `D-skill-path-activation` (accepted
 2026-08-16); the prior-art read is `COMPARISON.md` (*Skills →
 Frontmatter*, *→ How grok-build's conditional activation actually
 works*). What is left here is what neither owns: **how the mechanism
-wires into pikuri**, and four questions the decision did not settle.
+wires into pikuri**, and the question the decision did not settle.
+
+**Landed (2026-08-17), inert:** `Skill::PathSpec` (the `paths:` parse +
+normalization), `Catalog::Skill#paths` / `#when_to_use` / `#gated?`,
+`Skill::Trigger` (the description ↔ `when-to-use` de-duplication), and
+`Skill::Activation` (the once-per-conversation announcement state,
+cleared by `Skill::Extension#on_conversation_reset`).
+`Skill::Extension.new` now also takes `root:` (an absolute `Pathname`),
+the anchor the matcher will resolve a model-supplied path against.
+Nothing consults any of it yet — no matcher, no listener, and every gate
+surface is still open. **Still to build:** §2's matcher, the
+`TOUCH_TOOLS` listener, `Skill::Promoted`, and the three gate surfaces.
 
 This note used to argue the case, and carried a REJECTED banner for the
 few hours between the author's first verdict and its reversal the same
@@ -40,42 +51,34 @@ So it builds inside `pikuri-skills`. Sketch:
 
 ```ruby
 # in Skill::Extension#configure
-c.add_listener(PathActivationListener.new(catalog: @catalog, ext: self))
+c.add_listener(PathActivationListener.new(activation: @activation, root: @root, ext: self))
 
 # in the listener
 TOUCH_TOOLS = { 'read' => :path, 'write' => :path, 'edit' => :path }.freeze
 
 def on_event(event)
-  case event
-  when Pikuri::Agent::Event::Reset then @announced.clear
-  when Pikuri::Agent::Event::ToolCall
-    key = TOUCH_TOOLS[event.name] or return
-    path = event.arguments[key] or return
-    newly = match(path).reject { |s| @announced.include?(s.name) }  # NOT @catalog — frozen
-    return if newly.empty?
+  return unless event.is_a?(Pikuri::Agent::Event::ToolCall)
 
-    newly.each { |s| @announced << s.name }
-    @ext.announce(newly, path)   # inject_system_message + emit Skill::Promoted
-  end
+  key = TOUCH_TOOLS[event.name] or return
+  path = event.arguments[key] or return
+  newly = @activation.activate(match(path))   # returns only what is new
+  @ext.announce(newly, path) unless newly.empty?   # inject_system_message + emit Skill::Promoted
 end
 ```
 
-Four constraints the sketch encodes:
+Two constraints the sketch still encodes (the once-per-conversation rule
+and the state-off-the-frozen-catalog one graduated into
+`Skill::Activation`'s yardoc, and `Event::Reset` is no longer the
+listener's business — `Extension#on_conversation_reset` clears the
+tracker):
 
-- **The state cannot live on the catalog.** `Catalog::Bundled#initialize`
-  ends with `@skills.freeze`, `@list.freeze`, `freeze` (`catalog.rb:121-123`),
-  so `@catalog.activate_for_paths` raises `FrozenError`. Listener-owned
-  state is the better shape anyway — it keeps the catalog pure
-  discovery/validation/holding. Read the deep freeze as a constraint
-  worth keeping.
-- **Announce once per skill per conversation.** Without `@announced` the
-  same description is re-injected on every matching touch — a skill
-  re-introduced ten times in one session is the mechanism paying its
-  cost ten times for one delivery. The flag is what makes the injection
-  idempotent, and `Event::Reset` clearing it is what makes re-hiding
-  correct: after `clear_conversation` the log no longer holds the
-  announcement, so the next touch must re-announce. (The decision's
-  *Ships as one change* bullet carries this as an invariant.)
+- **The render must stay at baseline — ungated only — and never consult
+  the tracker.** `clear_conversation` re-assembles the system prompt
+  *before* it calls `on_conversation_reset` (`agent.rb:342` vs `:349`),
+  so a snippet built from the activation set would rebuild carrying the
+  stale activations and then have them cleared out from under it: the
+  prompt would advertise a skill the tool refuses. Promotions live in the
+  log, not the prompt, which makes the ordering moot.
 - **`TOUCH_TOOLS` is a tool allowlist, not an argument convention.**
   pikuri's tools already agree on the argument name — `read`, `write` and
   `edit` all take `:path` (`read.rb:118`, `write.rb:84`, `edit.rb:94`) —
@@ -147,28 +150,11 @@ keeps the *prior-art read* (what the mechanism is, who ships it); this is
 the *specification* half, and the two divergences at the end are pikuri's
 own. Cited as `file:line` so a later sync can re-check them.
 
-### 1. Parsing `paths:` — `discovery.rs:226–254`
+### 1. Parsing `paths:` — graduated
 
-```
-coerce_path_list(value):        # accepts a scalar OR a sequence
-  String   -> split_top_level(s, '{', '}', false)   # comma-split, brace groups protected
-  Sequence -> each string, same split, flattened
-  other    -> nil
-
-normalize_skill_paths(patterns):
-  patterns.map  { |p| p.delete_suffix('/**') }      # `src/**` -> `src`
-          .reject(&:empty?)
-  return nil if cleaned.empty? || cleaned.all? { |p| p == '**' }
-  cleaned
-```
-
-`nil` out of this pipeline *is* the internal spelling of "unconditional".
-Both `paths: []` and `paths: ["**"]` therefore mean **always advertised**,
-which is the inversion trap: an author writing "this skill matches no
-paths" gets the opposite. Keep the trailing-`/**` strip — gitignore
-semantics match a directory and its contents either way, so `src` and
-`src/**` are the same matcher, and normalizing makes the two spellings
-compare equal.
+Shipped as `Skill::PathSpec`; the rule table is now
+`pikuri-skills/spec/pikuri/skill/path_spec_spec.rb`, a case per rule, and
+the inversion trap is in the module's own yardoc.
 
 ### 2. Matching a touched path — `conditional.rs:96–124`
 
@@ -193,57 +179,15 @@ gated by an `activated` set of dedup keys, so a re-seed can re-promote
 them; `/clear` → `rehide()` clears `activated` and re-partitions
 (`conditional.rs:86`).
 
-### 3. Rendering the promotion — `listing.rs`
+### 3. Rendering the promotion — graduated
 
-Only relevant because decision 4 says a promotion carries description
-(+ `when-to-use`), so pikuri needs the same de-duplication logic the
-moment it honours both fields. **Two different helpers, matching two
-different ways** — the distinction is easy to get wrong:
-
-**`extract_trigger_suffix` (`listing.rs:431`) — substring search, tail
-cut.** Used via `SkillEntry#func_desc` (`listing.rs:71`) and applied
-**only when `when-to-use:` is present**, to cut the duplicated trigger
-back out of the description:
-
-- Ten connectives, stored pre-lowercased (`listing.rs:26–38`):
-  `use this skill when`, `use when`, `auto-invoke when`, `invoke when`,
-  `triggers on`, `trigger on`, `called when`, `must trigger when`,
-  `must invoke when`, `must be invoked when`.
-- Plain `find` over the ASCII-downcased description — **a substring match
-  anywhere**, not anchored to either end. The **earliest position** wins
-  across all ten (not the longest match, not list order).
-- The removed part is always **the whole tail**: `description[pos..]`,
-  connective included. So: a substring *search* that only ever performs an
-  end-cut — text is never excised mid-string.
-- **No word-boundary guard on this side.** `use when` matches inside
-  `use whenever`, `trigger on` inside `triggers onboarding`. (The guard
-  exists only in the other helper — an asymmetry worth preserving or
-  deliberately fixing, not copying by accident.)
-- The kept half is `trim_end`ed, then **one** trailing `.` is stripped;
-  nothing is trimmed off its front.
-- Returns nothing when either half would be empty — so a description that
-  *opens* with a connective is left whole. That is why real skills written
-  as `description: Use when …` render intact while one with a mid-sentence
-  `Use when …` gets cut.
-- Whitespace is **literal**: single ASCII spaces inside each connective, so
-  `use  when` or a newline between the two words fails to match. YAML `>-`
-  folding is safe (newlines become single spaces); a `|` literal block is
-  not. Case-insensitive but **ASCII-only** (`to_ascii_lowercase`), which is
-  also what keeps the byte offsets valid on the original string.
-
-**`strip_leading_trigger_prefix` (`listing.rs:468`) — prefix-anchored.**
-Applied to the `when-to-use:` *value* so the renderer's own `Use when:`
-label is not doubled into `Use when: Use when …`:
-
-- `strip_prefix` after `trim_start` — **start-anchored only**, never a
-  substring search; a connective mid-value is left alone.
-- **Word-boundary guarded**: reject the match if the next char is
-  alphanumeric, so `Use whenever you need X` and `Triggers onboarding
-  flow` survive. Punctuation or space is a valid boundary.
-- Then eat a run of `:`, `,` and whitespace — `Use when: doing X` →
-  `doing X`.
-- List order decides (`use this skill when` precedes `use when`), and a
-  value that is *only* a connective is returned unchanged.
+The two de-duplication helpers shipped as `Skill::Trigger.strip_suffix`
+(substring search, always an end-cut, unguarded) and
+`.strip_prefix` (start-anchored, word-boundary guarded); the asymmetry
+between them, and every rule that used to be listed here, is now a case
+in `pikuri-skills/spec/pikuri/skill/trigger_spec.rb`. Nothing calls
+either yet — they wait on the promotion render, which is the open half
+of `skill-catalog-in-context.md`.
 
 Budgets, if pikuri ever caps a promotion: description + `when-to-use`
 share 400 bytes per entry, split proportionally to their lengths with a
@@ -293,11 +237,11 @@ fully-withheld skill costs nothing while it waits.
 ## Graduation
 
 - **The exact-algorithm section is spec, not rationale** — it graduates
-  into the *specs* (a case per rule: the `paths: []` inversion, the
-  bare-directory parent walk, the opens-with-a-connective no-op, the
-  `use whenever` asymmetry) plus a short yardoc note on each helper. Do
-  not copy it into yardoc wholesale; a prose restatement of ten
-  connectives rots the day the list changes, while a spec fails loudly.
+  into the *specs* (a case per rule) plus a short yardoc note on each
+  helper. Do not copy it into yardoc wholesale; a prose restatement of
+  ten connectives rots the day the list changes, while a spec fails
+  loudly. Done for §1 and §3 (`path_spec_spec.rb`, `trigger_spec.rb`);
+  §2's parent walk is owed by whoever writes the matcher.
 - The wiring map and the `TOUCH_TOOLS` discrimination go to the
   implementation's own yardoc when it lands (the listener's class
   header), plus a cross-reference from the **Denylist seam**, which names

@@ -145,6 +145,34 @@ RSpec.describe Pikuri::Skill::Catalog do
         assert_match(/collision-b/, log)
       end
 
+      it 'reads paths: and when-to-use: off the frontmatter' do
+        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'paths-tree')])
+
+        rdoc = catalog.get('rdoc-writer')
+        assert_equal ['**/*.rb', 'lib'], rdoc.paths
+        assert rdoc.gated?
+        assert_equal 'Use when: about to write or edit a doc comment.', rdoc.when_to_use
+      end
+
+      it 'leaves a skill unconditional when it declared no paths:' do
+        catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'valid-tree')])
+
+        pdf = catalog.get('pdf-tools')
+        assert_equal [], pdf.paths
+        refute pdf.gated?
+        assert_nil pdf.when_to_use
+      end
+
+      it 'loads a skill whose paths: is unreadable, ungated, with a warning' do
+        log = captured_log do
+          catalog = described_class.new(search_bases: [File.join(FIXTURE_ROOT, 'paths-tree')])
+          refute catalog.get('unreadable-paths').gated?
+          # `**` normalizes away, so this one is ungated despite declaring paths:.
+          refute catalog.get('star-star').gated?
+        end
+        assert_match(/'paths:' must be a string or a list of strings/, log)
+      end
+
       it 'scans .pikuri before .claude before .agents within a single base' do
         Dir.mktmpdir do |base|
           %w[.pikuri/skills .claude/skills .agents/skills].each do |sub|

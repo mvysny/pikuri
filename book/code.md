@@ -288,7 +288,7 @@ agent = Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_sub_agent_tool Pikuri::Code::GitClone.new(workspace: workspace)
 
   # Four extensions — same configure/bind shape as the sub-agents chapter
-  c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog)
+  c.add_extension Pikuri::Skill::Extension.new(catalog: skill_catalog, root: project_root)
   c.add_extension Pikuri::Tasks::Extension.new
   c.add_extension Pikuri::Mcp::Extension.new(registry: mcp_registry,
                                               synthesize_descriptions: true,
