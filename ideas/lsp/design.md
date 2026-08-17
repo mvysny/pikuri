@@ -670,14 +670,28 @@ considered-then-deferred record an `ideas/` note owns.)
 
 ## The tool surface: ten operations, and no column
 
-> **Membership is being re-derived, and this section is now evidence rather
-> than derivation.** Per [`../lsp.md`](../lsp.md) §Strategy, the enum is
-> sourced from harnesses that shipped an LSP tool (Claude Code, grok-build,
-> opencode) instead of argued against what two servers implement — the
-> per-server arguments below are why individual *deviations* are justified
-> (`typeDefinition` in, per J9), not how the list is chosen. Worklist item 1
-> is that survey; two verdicts below are already contested by it
-> (`documentSymbol`'s exclusion, and the `subtypes` treatment).
+> **Membership has been re-derived, and this section is now evidence rather
+> than derivation.** Per [`../lsp.md`](../lsp.md) §Strategy the enum is
+> sourced from harnesses that shipped an LSP tool, and
+> [`harness-analysis.md`](harness-analysis.md) is that survey — read
+> first-hand from Claude Code's live schema, opencode's `tool/lsp.ts` and
+> grok-build's vendored client. **The list it lands on:**
+>
+> ```
+> goToDefinition  findReferences  hover  documentSymbol  workspaceSymbol
+> goToImplementation  incomingCalls  outgoingCalls  goToTypeDefinition
+> ```
+>
+> Three changes against what this section argues: `documentSymbol` is back
+> in (all three ship it; S10 makes it the only name→position route for a Java
+> method), the **type hierarchy is out** (no harness ships it, and H1/H4
+> already falsified the argument that promoted it), and the names are the
+> harnesses' `goTo*` spellings rather than pikuri's bare ones. What survives
+> unchanged is `goToTypeDefinition` as the single measured deviation (J9) and
+> `prepareCallHierarchy`'s exclusion — the one place pikuri narrows a 2-of-3
+> majority, because the prepare hop belongs inside the tool. The per-server
+> arguments below explain the deviations; they are no longer how the list is
+> chosen.
 
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
@@ -833,12 +847,16 @@ the two representatives, and every operation below was exercised against
 whichever of them supports it. An enum sized to the intersection would
 serve neither well.
 
-**In: `definition`, `references`, `hover`, `workspaceSymbol`,
-`typeDefinition`, `implementation`, `incomingCalls`, `outgoingCalls`,
-`supertypes`, `subtypes`.** Uniform shape, no chaining. Each needs its
-capping discipline — references grouped lib/spec (finding 6), hover and
-definition capped hardest on constants, where a reopened Ruby namespace
-yields 45 near-identical hits.
+**In: `goToDefinition`, `findReferences`, `hover`, `documentSymbol`,
+`workspaceSymbol`, `goToImplementation`, `goToTypeDefinition`,
+`incomingCalls`, `outgoingCalls`** — nine, per the survey (the earlier list
+here read `definition` / `references` / `implementation` /
+`typeDefinition` and included `supertypes` / `subtypes` while excluding
+`documentSymbol`). Uniform shape, no chaining. Each needs its capping
+discipline — references grouped lib/spec (finding 6), hover and definition
+capped hardest on constants, where a reopened Ruby namespace yields 45
+near-identical hits, and `findReferences` capped hardest of all: S9 measured
+a single call returning 80,609 locations.
 
 `typeDefinition` and `implementation` are the static-language pair, and
 J9 is why they are not redundant with `definition`:
@@ -855,8 +873,14 @@ J9 is why they are not redundant with `definition`:
   advertise it (finding 9) — so for `.rb` it is a clean refusal, which is
   the gate working, not a gap.
 
-**The two hierarchies ship in v1, as four enum values.** They were the
-strongest deferred candidates and the deferral was doing real damage: with
+**~~The two hierarchies ship in v1, as four enum values.~~ Reversed twice
+over: the *type* pair is out, the *call* pair is in as two values.** The
+type hierarchy went first to H1/H4 (below) and then to the harness survey —
+none of Claude Code, opencode or grok-build ships it. The call pair survives
+because two of the three do, minus the model-facing `prepare` hop. The
+original argument, kept because it is what a reader will otherwise
+reconstruct: they were the strongest deferred candidates and the deferral
+was doing real damage: with
 `implementation` refusing on `.rb`, Ruby had *no* "who overrides this"
 operation at all, and grepping `< Base` is exactly the unreliable thing an
 LSP hop exists to settle. Both hierarchies are valuable in both languages,

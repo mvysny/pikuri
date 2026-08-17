@@ -10,6 +10,7 @@ grown to ~1600 lines and buried the handful of things still to do:
 | --- | --- |
 | **this file** | status, the strategy, the worklist, the graduation map |
 | [`lsp/research.md`](lsp/research.md) | six live client runs, a rubygems survey, a shipped client read off its schema — the stable `finding N` / `J<n>` / `H<n>` / `S<n>` labels everything else cites |
+| [`lsp/harness-analysis.md`](lsp/harness-analysis.md) | the three shipped harnesses' LSP tools read first-hand (Claude Code, opencode, grok-build) — the operation surface, and where they converge, differ, or are contradicted by a finding |
 | [`lsp/design.md`](lsp/design.md) | everything decided: direct-vs-MCP, the registry entry, no-timeout, progress + mailbox, the scheme table, the operation surface, document sync, protocol modeling, testing, the trifecta legs |
 
 Nothing in `lsp/design.md` has met an implementation, which is why it is
@@ -43,9 +44,10 @@ Related:
 
 **Decided 2026-08-17, and it reverses how this note was being built.** The
 six runs in [`lsp/research.md`](lsp/research.md) found a genuine pattern,
-and then the pattern turned on the method: *every* server is broken in its own way, and the ways do not
-generalize. ruby-lsp advertises a type hierarchy whose `subtypes` half is a
-`# TODO` (H1); jdtls's `workspace/symbol` cannot see a method at all (S10);
+and then the pattern turned on the method: *every* server is broken in its
+own way, and the ways do not generalize. ruby-lsp advertises a type
+hierarchy whose `subtypes` half is a `# TODO` (H1); jdtls's
+`workspace/symbol` cannot see a method at all (S10);
 ruby-lsp crashes on a full-text `didChange` that jdtls accepts (S1);
 ruby-lsp's index desynchronizes from its own document because of a
 typing-speed heuristic (S2). There are LSPs for Python, Kotlin, Rust, Go
@@ -98,36 +100,12 @@ asked to invent (see the parameter item below).
 
 ## Worklist
 
-Four items left, and none of them is a server-behaviour question. The
-previous nine are closed: items 1, 7, 8 and 9 by the run below, items 3, 5
-and 6 folded into what follows, and items 2 and 4 restated.
+Three items left, and none of them is a server-behaviour question. The
+original nine are closed: items 1, 7, 8 and 9 by the document-sync run,
+items 3, 5 and 6 folded into what follows, the operation surface by the
+harness survey, and items 2 and 4 restated below.
 
-### 1. The operation surface, sourced from the harnesses
-
-`design.md`'s ten (`definition`, `references`, `hover`,
-`workspaceSymbol`, `typeDefinition`, `implementation`, `incomingCalls`,
-`outgoingCalls`, `supertypes`, `subtypes`) were argued one at a time
-against what ruby-lsp and jdtls support. Re-derive them instead from
-Claude Code's schema (already recorded in `research.md`), grok-build's,
-and opencode's, and keep the *measured* deviations. Three specifics:
-
-- **`documentSymbol` should probably come back.** It was cut for breaking
-  the uniform shape (file-keyed, not name-keyed), and S10 is the
-  counter-evidence: jdtls's `workspace/symbol` returns types only, so an
-  in-file outline is the *only* way to reach a Java method by name. Claude
-  Code ships it; grok-build should be checked.
-- **`subtypes` ships and answers honestly.** H1 has it as an unimplemented
-  stub behind a truthfully-advertised provider. Per the strategy that is
-  not pikuri's problem to model: no known-stub list, no enum surgery, and a
-  `nil` reply renders as "the server returned no results" — which is what a
-  `# TODO` deserves. The one mechanical consequence stands: **the parse
-  layer must accept `nil` as well as `[]`.**
-- **Capability gating stays** (finding 1), because it is read off the
-  handshake rather than from a table pikuri maintains — which is the
-  difference between reading a server's own declaration and cataloguing its
-  bugs.
-
-### 2. The parameter shape: `symbol` replaces `character`
+### 1. The parameter shape: `symbol` replaces `character`
 
 Deliverable, and the run settles which half is deliverable how:
 
@@ -154,7 +132,7 @@ Deliverable, and the run settles which half is deliverable how:
 - An optional `character` override is strictly additive if the derived
   column ever disagrees with what the model meant. Not v1.
 
-### 3. What anchors a hop that resolves outside the root
+### 2. What anchors a hop that resolves outside the root
 
 Unchanged from before, and the only remaining *confinement* question.
 With `symbol` alone, `workspace/symbol` can place the anchor in a gem file
@@ -166,19 +144,30 @@ refuse with a distinct message, permit a read-only `didOpen` of an
 out-of-root `file:` path, or `didOpen` the virtual URI with the text the
 scheme table already fetches (nvim-jdtls does the last).
 
-Smaller than it was: with `file` + `line` the normal shape (item 2), the
+Smaller than it was: with `file` + `line` the normal shape (item 1), the
 anchor is in-root by construction almost always, so "refuse with a distinct
 message" is a defensible v1 — the capability lost is following a hop *into*
 a dependency, which `hover` and the scheme table still answer.
 
-### 4. What the tool is constructed with
+### 3. What the tool and the registry entry are missing
 
-The Sketch names only the emitter handoff. It also needs the client set and
-a `Workspace::Filesystem` — for `denied?`, the root confinement, the
-seam-routed read behind the sync notification, and `private?` on the
-trifecta declaration (item 9's answer makes that last one load-bearing:
-the tool declares all three legs itself, so it must hold the filesystem).
-One line in the Sketch closes this.
+**The tool.** The Sketch names only the emitter handoff. It also needs the
+client set and a `Workspace::Filesystem` — for `denied?`, the root
+confinement, the seam-routed read behind the sync notification, and
+`private?` on the trifecta declaration (the closed item 9 makes that last
+one load-bearing: the tool declares all three legs itself, so it must hold
+the filesystem). One line in the Sketch closes this.
+
+**The entry needs a `languageId`, and this is the one real hole the harness
+survey found.** `didOpen` carries a `languageId` and pikuri's
+`StdioEntry#files` is a list of *basename globs*, which cannot answer what
+to put there. Both harnesses carry an extension→language-id map
+(grok-build's `extensions:`, opencode's `LANGUAGE_EXTENSIONS` with a
+`"plaintext"` fallback). Either `files:` becomes a glob→id map, or a single
+`language_id:` rides alongside it — right for a one-language server, wrong
+for the `eslint`-shaped server that claims eight extensions. Decide before
+the client is written; see
+[`lsp/harness-analysis.md`](lsp/harness-analysis.md) §"Two gaps".
 
 Also folded in here: **fan-out.** A bare-`symbol` call fans out to every
 registered server and therefore waits for all of them to be ready, so a
@@ -187,6 +176,43 @@ follows from the no-timeout rule and is acceptable — and with `file` the
 normal shape it is now the rare path rather than the default. Write it down
 as an accepted consequence; the mitigation (fan out only to servers already
 ready) trades completeness for latency and can wait for a complaint.
+
+## Closed by the harness survey
+
+Full reading in [`lsp/harness-analysis.md`](lsp/harness-analysis.md); the
+outcome, so nobody re-derives it:
+
+- **The v1 enum is nine operations, harness names verbatim** —
+  `goToDefinition`, `findReferences`, `hover`, `documentSymbol`,
+  `workspaceSymbol`, `goToImplementation`, `incomingCalls`, `outgoingCalls`,
+  `goToTypeDefinition`. Claude Code and opencode ship an identical nine
+  (near-identical tool text too, so they count as roughly one data point);
+  grok-build ships six, a strict subset.
+- **The type hierarchy is out.** No harness ships `supertypes` / `subtypes`,
+  and the argument that promoted them into v1 was already falsified (H1, H4).
+  A clean cut on the strategy's own terms; re-adding an enum value later is
+  one line.
+- **`documentSymbol` is in**, reversing `design.md`'s cut: all three ship it,
+  and S10 makes it the only route from a Java method *name* to a position.
+- **`goToTypeDefinition` is in**, the one deviation from all three, because
+  J9 measured what nothing else recovers (`var names = new ArrayList<>()`).
+- **`prepareCallHierarchy` stays out** — the one place pikuri narrows a
+  2-of-3 majority, because exposing it hands the model an opaque
+  `CallHierarchyItem` to echo back; the prepare hop runs inside the tool.
+- **Two harness habits are confirmed and adopted**: `workspaceSymbol` fans
+  out and takes no position (opencode documents `filePath` as a
+  server-selector only), and a read-only tool takes no confirmer.
+- **One convergence is rejected with evidence**: both visible harnesses
+  sync documents with version-tracked ranged whole-document `didChange`
+  events — and grok-build's `capabilities.rs` opens by describing S1's
+  failure against *Roslyn*, which is the finding independently confirmed on
+  a third server. The scheme still loses to S2 on ruby-lsp (document fresh,
+  index stale), and opencode ships a `ruby-lsp` definition, so pikuri keeps
+  its own re-open policy.
+- **Also confirmed by contrast**: nobody caps results (S9's 80,609-location
+  `references` would arrive as raw JSON in opencode), nobody gates per
+  operation, and nobody waits for indexing — the three places pikuri
+  deviates deliberately.
 
 ## Closed by the document-sync run
 
