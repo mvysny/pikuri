@@ -159,11 +159,12 @@ gem, landing once they stabilise.
   that shape its four tools — status-in-verb-name,
   id-addressed mutations, JSON-array mass-create (two of the
   three reversed by watching real transcripts).
-- **[Agent Skills (stub)](skills.md).** Placeholder
-  chapter — what skills are in one paragraph, a minimal `lol`
-  demo, the model-invoked / human-invoked split (skills vs
-  slash commands), and a TBD list. Coming back to flesh out
-  once the guide has workflows that motivate it.
+- **[Agent Skills (stub)](skills.md).** What skills are in one
+  paragraph, a minimal `lol` demo, the three ways a bundle gets
+  invoked (model-decides, you-decide, and model-decides-once-the-
+  project-proves-relevant), why a skill needs a trigger where an
+  MCP server doesn't, and how to write a description that fires.
+  Still a stub for the part that needs the reader's own itch.
 - **[The messages array is not the prompt](wire.md).** The
   debugging chapter, and the one to remember when an agent seems
   to be ignoring you. A local model's chat template — arbitrary

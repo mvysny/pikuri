@@ -4,8 +4,10 @@
 > have a workflow concrete enough to motivate Agent Skills the way
 > they deserve — coming back to flesh this out once the assistant
 > walkthrough and a few more advanced coding-agent recipes land in
-> the guide. For now: a one-paragraph "what they are," a minimal
-> `lol` demo, and a TBD list of what a fuller chapter will cover.
+> the guide. What is here already: what they are, a minimal `lol`
+> demo, the three ways a bundle gets invoked, why a skill needs a
+> trigger at all, and how to write a description that fires. What
+> is missing is the reader's own itch.
 
 ## What they are, in one paragraph
 
@@ -129,6 +131,89 @@ declaring `allowed-tools:`. See the
 [trifecta chapter](trifecta-detector.md) for how a command's
 bytes are graded once they are in the conversation.
 
+## Why a skill needs a trigger and an MCP server doesn't
+
+Connect an MCP server for your calendar and the model uses it the
+first day, unprompted, off a one-line description. Write a skill
+saying "compose components, don't subclass to share code" and it
+will read your codebase, copy whatever is next to it, and hand
+you an `AbstractPersonView` — with the skill's description
+sitting in the prompt the entire time.
+
+That is not a writing-quality problem, and tuning the wording
+does not fix it. The two advertise different things.
+
+An MCP server advertises a **capability**. The model wants to
+know what is on your calendar, has no way to find out, and a tool
+appears that does exactly that. It can *feel the gap*, so the
+description only has to name the thing that fills it.
+
+A skill usually advertises a **correction**. The model already
+has an answer it is satisfied with, and the skill's job is to say
+that answer is wrong. It cannot feel the absence of a rule it
+does not know it broke — nothing in "write a Ruby class" tells it
+that a relevance check is due. So the description has to win a
+race it is never told it is running.
+
+Corrections are also mostly **subtractive**: delete the
+tautology, never write that, cut the rationale section. That is
+the hardest shape to transmit, because the loudest competing
+signal is the code already in the context window — and an example
+can only demonstrate what is *there*. You can copy a neighbouring
+file's tag style. You cannot learn "cut your rationale section"
+from a file whose author already cut theirs. **Imitation
+transmits presence and never absence.**
+
+Which is why a subtractive rule loses to the nearest exemplar
+unless something puts it in front of the model at the moment it
+is about to break it. That moment is what a trigger is for, and
+it is why `paths:` exists on skills and has no counterpart on an
+MCP server.
+
+## Writing a description that fires
+
+The description is not documentation. It is the only thing the
+model sees until the body loads, so it is a routing decision —
+"is this my situation?" — and everything that does not help
+answer that is costing you tokens on every turn.
+
+Four rules, roughly in order of payoff.
+
+**Lead with the trigger, not a summary.** The model reads the
+description while deciding, so the deciding half goes first:
+
+```yaml
+# Loses: describes the content, and the trigger never arrives.
+description: Guidance on high-quality Ruby doc comments, covering
+  the philosophy of what belongs at each level.
+
+# Fires: names the moment, then the content.
+description: Writing or reviewing Ruby rdoc / YARD comments — which
+  level each fact belongs at, and what to delete. Read BEFORE typing
+  the comment, whenever you are about to edit a `#` comment, a
+  `@param` tag, or a class header in a `.rb` file.
+```
+
+**Cut the narrative.** No history of why you wrote the skill, no
+pitch for how useful it is. If a sentence would not change the
+model's yes-or-no, delete it.
+
+**Know which budget you are spending.** An ungated description is
+resident on every turn of every session, forever, so it has to be
+tight. A `paths:`-gated one is paid only when its glob fires, so
+it can afford to be trigger-heavy — spell out the edge cases,
+including when *not* to load. The same words are cheap in one
+place and expensive in the other.
+
+**State a ban literally, not categorically.** "Never write `Not
+thread-safe`" beats "skip the negative", and "never open with
+'This class …'" beats "avoid boilerplate openings". A categorical
+ban asks the model to first classify its own output as an
+instance of the category and only then obey — two steps where a
+literal string is one, and the classification step is the one
+that fails. Reach for the category only when you cannot enumerate
+the strings.
+
 ## Why this chapter is a stub
 
 The honest reason: a skill is a refactor of *repetition*. The
@@ -141,10 +226,10 @@ works, but it doesn't show why anyone would write a real skill.
 What a fuller chapter will cover, once the guide has the
 workflows to anchor it:
 
-- The anatomy of a `SKILL.md`: what goes in frontmatter vs the
-  body, what sidecars (scripts, templates, reference docs) are
-  used for, how the body length tradeoff plays out against
-  context window pressure.
+- The anatomy of a `SKILL.md` *body* — the description is covered
+  above, but not what sidecars (scripts, templates, reference
+  docs) are for, or how body length trades off against context
+  window pressure once the skill is loaded.
 - The Agent Skills standard itself — how `pikuri`'s
   implementation lines up with Claude Code's and `pi`'s, what's
   portable, what isn't.

@@ -687,7 +687,7 @@ conditional activation actually works*).
   local models pikuri targets. The one probe we have is the handful of
   local-model runs below, which settles nothing in either direction.
 - **Move the baseline into `SkillTool`'s description instead.** Carried as
-  an open fork in `ideas/skill-catalog-in-context.md` on the reasoning
+  an open fork for a day, on the reasoning
   that a persona replaces the system prompt but inherits the tool
   verbatim, so the tool is the only home correct for both agent kinds.
   Rejected: `D-no-skills-in-sub-agents` has since made "correct for both
@@ -717,8 +717,8 @@ conditional activation actually works*).
 - **Keep the `SkillTool` `name` argument enum-constrained** over the
   active set. Rejected as incompatible with decision 5, and the two
   surveyed harnesses agree by construction: the one that hides skills is
-  the one that takes a free-form name. This retires the enum item that
-  `ideas/skill-catalog-in-context.md` carried as owed-regardless, and
+  the one that takes a free-form name. This retires the enum item carried
+  as owed-regardless since this axis opened, and
   with it the lenient-name-validation reversal that blocked it —
   `validate_name`'s warn-and-continue posture stands, because a lenient
   name now reaches only a prompt block, never a tool schema.

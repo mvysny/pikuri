@@ -19,18 +19,19 @@ handed the live forks to the notes below.
 
 **Scope.** This note owns the numbers and the prior art, so the other two
 can argue without re-deriving them. It does **not** decide what the
-catalog should contain (→ `skill-catalog-in-context.md`) or how the
-shipped `paths:` trigger is wired (→ `DECISIONS.md`
-`D-skill-path-activation`).
+catalog should contain (→ `DECISIONS.md` `D-skill-path-activation` and
+the book's [skills chapter](../book/skills.md)) or how the shipped
+`paths:` trigger is wired (→ the same entry).
 Anything
 here that turns into a fork belongs over there.
 
 Related:
 
-- [`skill-catalog-in-context.md`](skill-catalog-in-context.md) — *what*
-  the resident catalog advertises. Consumed the tier measurements and the
-  caching section below, and is now down to two bullets of prose owed to
-  the book: every mechanism question on that axis closed 2026-08-17.
+- ~~`skill-catalog-in-context.md`~~ — *what* the resident catalog
+  advertises. Consumed the tier measurements and the caching section
+  below; **fully graduated and deleted 2026-08-17**, its mechanism
+  questions to `D-skill-path-activation` / `D-slash-commands` and its two
+  remaining concepts to the book's [skills chapter](../book/skills.md).
 - `DECISIONS.md` `D-skill-path-activation` — *when* an entry is promoted;
   shipped 2026-08-17, and it consumed the grok-build survey below.
 - [`tool-list-in-context.md`](tool-list-in-context.md) — the same
@@ -116,9 +117,9 @@ skills):
 | 1 | + `<description>` | 4 587 B → **~1.5 k tok** rendered |
 | 2 | body | 2–30 KB each, on the `skill` call |
 
-That 40:1 ratio is the load-bearing number for
-[`skill-catalog-in-context.md`](skill-catalog-in-context.md), which owns
-what to do about it.
+That 40:1 ratio is the load-bearing number behind
+`D-skill-path-activation`, which decided what to do about it (gate per
+skill on `paths:`, and reject a names-only tier).
 
 Two things follow from the tier-1 numbers here. First, the item-3 framing
 is confirmed from the other side: the expensive thing is what's resident,
@@ -367,8 +368,8 @@ land on its own.
    "hands tier 0 for free" argument died with the tier — there is no
    names-only tier any more, a gated skill is withheld outright. Both
    surveyed harnesses agree by construction: the one that hides skills is
-   the one that takes a free-form name. Full reasoning in
-   [`skill-catalog-in-context.md`](skill-catalog-in-context.md) item 1.
+   the one that takes a free-form name. Full reasoning is the matching
+   rejected alternative on `D-skill-path-activation`.
 2. ~~**List the skill's sidecar files in the load result.**~~ **Closed
    2026-08-17**, not on its merits — it remains the borrow most directly
    responsive to the feedback — but with the whole skills surface: `paths:`

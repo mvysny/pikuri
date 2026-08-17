@@ -1705,6 +1705,22 @@ documents `when-to-use`, `allowed-tools`, `argument-hint`,
 `license`, `compatibility` and `metadata` — every extension key except
 this one. It is shipped but unadvertised.
 
+**The pattern across all four is the same, and it is worth naming: every
+harness leaves the decision to model judgment, and then bolts a nudge
+mechanism on beside it.** Claude Code and grok-build ship `paths:`;
+grok-build adds `when-to-use` and a retro-fitting extractor for
+descriptions that lack it; opencode v2 moved its inventory into the
+prompt to make the listing louder. Nobody trusts the description alone,
+and nobody replaces it either. The reason is the capability/correction
+asymmetry the book's [skills chapter](book/skills.md) teaches: a tool
+description advertises a capability the model can feel the lack of, so it
+only has to name what fills the gap — while a skill mostly advertises a
+*correction*, which the model cannot miss the absence of, because
+nothing in the task tells it a relevance check is due. That is an
+asymmetry no amount of description tuning closes, which is why four
+independent harnesses converged on adding a trigger rather than on
+writing better descriptions.
+
 ### Slash commands (the human-invoked half)
 
 - **Claude Code**: `~/.claude/commands/*.md` (user) and
