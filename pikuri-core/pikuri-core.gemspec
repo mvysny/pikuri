@@ -33,9 +33,9 @@ Gem::Specification.new do |spec|
     'rubygems_mfa_required' => 'true'
   }
 
-  # pikuri-core ships as a library. The bin/pikuri-chat script in the
-  # gem payload is a dev / demo convenience — not advertised as a gem
-  # executable.
+  # pikuri-core ships as a library only. The bin/ scripts (pikuri-chat,
+  # pikuri-wire-check) are dev / demo entry points that run from a source
+  # checkout and are deliberately outside this list — not gem executables.
   spec.files = Dir[
     'lib/**/*.rb',
     'prompts/*.txt',

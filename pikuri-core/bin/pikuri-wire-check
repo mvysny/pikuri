@@ -1,0 +1,223 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / diagnostic entry point — runs from a source checkout only, and is not
+# installed by `gem install pikuri`.
+#
+# Answers one question: **is anything pikuri sends being eaten before the model
+# reads it?**
+#
+# It exists because that failure is otherwise invisible. A message pikuri
+# appends is in the HTTP payload, renders in the listener stream, and sits in
+# `Chat#messages` — every layer pikuri owns reports success — and the model can
+# still never see it, because the server renders the messages array through the
+# model's own chat template and a template may drop, merge or reorder whatever it
+# likes. That is not hypothetical: Qwen3.6's template discards every
+# system/developer message past the leading header, which silently disabled
+# pikuri's memory prefetch and skill promotions (DECISIONS.md
+# `D-reference-text-as-user-turn`).
+#
+# Two phases, because the two layers fail differently:
+#
+#   1. pikuri → the wire. A scripted turn (no server, no generation, free)
+#      through a real Agent, with a Faraday adapter recording the exact JSON.
+#   2. the wire → the model. That same messages array POSTed to llama.cpp's
+#      `/apply-template`, which renders the prompt string without generating,
+#      so we can grep it for what survived.
+#
+# Phase 2 needs llama.cpp. Elsewhere it reports that it could not ask, which is
+# the honest answer — never a clean bill of health.
+#
+# Pin Bundler to pikuri's own Gemfile so the script works through a symlink from
+# any working directory.
+ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
+
+require 'bundler/setup'
+require 'optparse'
+require 'yaml'
+require 'json'
+require 'faraday'
+
+require 'pikuri-core'
+# Opt-in scaffolding (Zeitwerk ignores it), and the point of using it here: the
+# scripted adapter means phase 1 needs no server and spends no tokens.
+require 'pikuri/testing'
+
+# Distinctive strings planted at each position that has to survive. Nonsense on
+# purpose: a template that mangles one still leaves the rest greppable, and no
+# marker can be confused for prose the model generated.
+MARKERS = {
+  'SYSPROMPT_7QK' => 'the system prompt',
+  'USERTURN_7QK' => 'the user turn',
+  'REFBLOCK_START_7QK' => 'a reference block injected at turn start',
+  'TOOLRESULT_7QK' => 'a tool result',
+  'REFBLOCK_MID_7QK' => 'a reference block injected after the tool batch'
+}.freeze
+
+examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
+examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
+
+server = examples_config['llm_server'] || 'http://localhost:8080'
+model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M'
+
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-wire-check [options]'
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('--server URL', 'llama.cpp server to ask (default from config)') { |v| server = v }
+  opts.on('--model ID', 'model whose chat template to render (default from config)') { |v| model = v }
+  opts.on('-h', '--help', 'Print this help and exit') do
+    puts opts
+    exit
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  warn e.message
+  warn parser
+  exit 2
+end
+
+# ---------------------------------------------------------------------------
+# Phase 1 — what pikuri puts on the wire
+# ---------------------------------------------------------------------------
+
+captured = []
+
+# Drive a real turn whose conversation reaches every position under test, and
+# keep each request body. The scripted adapter answers in place of a server, so
+# the request ruby_llm builds is real while nothing is dialed and nothing is
+# generated.
+def capture_request_bodies(captured, model)
+  script = Pikuri::Testing::Script.new
+  script.tool_call('calculator', expression: "1 + 1  # #{MARKERS.keys[3]}")
+  script.reply('done')
+
+  tap = Class.new(Pikuri::Testing.build_adapter(script.responses)) do
+    define_method(:call) do |env|
+      captured << JSON.parse(env.body.to_s) if env.body
+      super(env)
+    end
+  end
+
+  transport = Pikuri::Agent::ChatTransport.new(
+    model: model, provider: :openai, assume_model_exists: true,
+    api_base: 'http://wire-check.invalid/v1', api_key: 'not-needed',
+    context_window: 8192, faraday_adapter: tap
+  )
+
+  interloper = Pikuri::Agent::Control::Interloper.new
+  agent = Pikuri::Agent.new(
+    transport: transport,
+    system_prompt: "You are a wire-check fixture. #{MARKERS.keys[0]}",
+    interloper: interloper
+  ) do |c|
+    c.add_tool Pikuri::Tool::CALCULATOR
+    # Enqueue mid-turn, the way a path-activation listener does. The drain lands
+    # it once the tool batch is answered.
+    #
+    # Both reference positions are checked because they do not fail alike. Under
+    # the old `:system` delivery this one was eaten by Qwen3.6 while the
+    # turn-start block *survived* — its template merges the first **two**
+    # messages into the header when both are system, so an injection made before
+    # the first user turn slipped through and the same injection made after a
+    # tool call did not. A check that probed one position would have cleared the
+    # template.
+    c.add_listener(Class.new(Pikuri::Agent::Listener::Base) do
+      define_method(:initialize) { |i| @interloper = i }
+      define_method(:on_event) do |event|
+        @interloper.inject_system_message(MARKERS.keys[4]) if event.is_a?(Pikuri::Agent::Event::ToolCall)
+      end
+    end.new(interloper))
+  end
+
+  interloper.inject_system_message(MARKERS.keys[2])
+  agent.run_loop(user_message: "What is 1 + 1? #{MARKERS.keys[1]}")
+  agent.close
+end
+
+capture_request_bodies(captured, model)
+messages = captured.last.fetch('messages')
+
+puts 'Phase 1 — what pikuri puts on the wire'
+puts "  #{captured.size} request(s); the last one carries the whole conversation:"
+messages.each_with_index do |m, i|
+  marker = MARKERS.keys.find { |k| m['content'].to_s.include?(k) }
+  note = marker ? "  <- #{MARKERS[marker]}" : ''
+  puts format('    %<i>2d. %<role>-9s %<note>s', i: i, role: m['role'], note: note)
+end
+
+missing_on_wire = MARKERS.keys.reject { |k| messages.any? { |m| m['content'].to_s.include?(k) } }
+if missing_on_wire.empty?
+  puts '  all five positions present in the payload.'
+else
+  puts "  MISSING FROM THE PAYLOAD: #{missing_on_wire.join(', ')} — a pikuri bug, not a template one."
+end
+
+# ---------------------------------------------------------------------------
+# Phase 2 — what the model actually reads
+# ---------------------------------------------------------------------------
+
+puts
+puts "Phase 2 — what #{model} actually reads"
+
+conn = Faraday.new(url: server) { |f| f.options.timeout = 30 }
+
+rendered =
+  begin
+    res = conn.post('/apply-template') do |req|
+      req.headers['Content-Type'] = 'application/json'
+      req.body = JSON.generate(model: model, messages: messages)
+    end
+    if res.success?
+      JSON.parse(res.body)['prompt']
+    else
+      warn "  could not ask: #{server}/apply-template returned #{res.status}."
+      nil
+    end
+  rescue Faraday::Error => e
+    warn "  could not ask: #{e.class} talking to #{server}."
+    nil
+  end
+
+unless rendered
+  warn '  /apply-template is llama.cpp-only, so this is expected off it — and it'
+  warn '  is NOT a clean bill of health. Phase 1 still stands on its own.'
+  exit 0
+end
+
+eaten = MARKERS.reject { |marker, _| rendered.include?(marker) }
+MARKERS.each do |marker, what|
+  puts format('  %<verdict>-8s %<what>s', verdict: rendered.include?(marker) ? 'survives' : 'EATEN', what: what)
+end
+
+# The capability flag looks like it answers this question and does not: Qwen3.6
+# reports supports_system_role true while dropping every system message past the
+# header. Print the disagreement rather than trusting the flag.
+begin
+  props = JSON.parse(conn.get('/props', model: model).body)
+  claimed = props.dig('chat_template_caps', 'supports_system_role')
+  unless claimed.nil?
+    puts
+    puts "  /props reports supports_system_role: #{claimed}"
+    if claimed && eaten.any?
+      puts '  ...which is true only of a *leading* system message. Believe the rows above.'
+    end
+  end
+rescue StandardError
+  # Cosmetic footnote; a server that will not answer /props changes no verdict.
+end
+
+if eaten.empty?
+  puts
+  puts 'Everything pikuri sends reaches the model.'
+  exit 0
+end
+
+puts
+puts "#{eaten.size} of #{MARKERS.size} positions never reach the model."
+puts 'Nothing inside pikuri can detect this — do not route anything load-bearing'
+puts 'through an eaten position. See DECISIONS.md `D-reference-text-as-user-turn`.'
+exit 1

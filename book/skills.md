@@ -163,12 +163,10 @@ authoritative reference, and the `pikuri-skills`
 
 ## What's next
 
-The book closes on [pikuri-assistant](assistant.md),
-itself still a stub; a fleshed-out version of it — waiting on the
-vectordb and memories gems stabilising — is the natural follow-on
-to the whole guide. Until then, the vocabulary you have now
-(`Pikuri::Agent`, `Tool`, listeners, the Extension protocol,
-configure/bind, sub-agent privilege separation, the kit from
-the security chapter, MCP's verifier + synthesizer + per-agent
-`mcp_connect`) is enough to read any pikuri-* gem's sources
-directly.
+[The messages array is not the prompt](wire.md) is the
+debugging chapter, and it opens on a skills bug: a path-triggered
+promotion that fired correctly, appended correctly, and reached
+the HTTP payload correctly, while the model went on insisting it
+could only see five skills. It could. The chapter is about the
+step between your messages array and what the model actually
+reads — the one place none of your own assertions can reach.

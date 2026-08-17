@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Add `bin/pikuri-wire-check` — a dev diagnostic that records what pikuri would POST for a turn covering five positions (system prompt, user turn, reference block before and after a tool batch, tool result) and reports which survive llama.cpp's `/apply-template`, since nothing inside pikuri can see a message its model's chat template discards. See `book/wire.md`.
 - Add slash commands — `Command::Registry` + `Command::Renderer` scan `.pikuri/commands` / `.claude/commands` for `.md` prompt templates you invoke by typing `/name`, never advertised to the model and costing nothing in the system prompt; `bin/pikuri-code` and `bin/pikuri-assistant` dispatch them. See `DECISIONS.md` `D-slash-commands`.
 - Add `Trifecta::Contribution#label` — an extension's declared legs get their own row in the trifecta report instead of every contributor landing under a hardcoded `(mcp)`.
 - Add the `paths:` and `when-to-use:` frontmatter keys to the skill catalog — `Catalog::Skill#paths` / `#when_to_use` / `#gated?`, plus `Skill::PathMatcher` (the `paths:` parser and its gitignore-dialect matcher), `Skill::Activation` (which gated skills a conversation has in play) and `Skill::Trigger` (description ↔ `when-to-use` de-duplication). See `DECISIONS.md` `D-skill-path-activation`.

@@ -164,6 +164,18 @@ gem, landing once they stabilise.
   demo, the model-invoked / human-invoked split (skills vs
   slash commands), and a TBD list. Coming back to flesh out
   once the guide has workflows that motivate it.
+- **[The messages array is not the prompt](wire.md).** The
+  debugging chapter, and the one to remember when an agent seems
+  to be ignoring you. A local model's chat template — arbitrary
+  Jinja shipped inside the GGUF — is what flattens your messages
+  into the single string the model reads, and it may silently drop
+  some: Qwen3.6 discards every mid-conversation `system` message,
+  which disabled pikuri's memory prefetch and skill promotions
+  with no error at any layer. Why no assertion you can write will
+  catch it, the two taps that show you what you *sent* versus what
+  the model *read*, why a fallback path is an alibi, and why the
+  fix is a uniform `<system-reminder>`-wrapped user turn rather
+  than a per-model branch. Demo via `pikuri-wire-check`.
 
 ### Coda
 

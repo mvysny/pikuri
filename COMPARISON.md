@@ -649,8 +649,8 @@ pikuri had just found that a mid-conversation `role: system` message is
 silently discarded by some chat templates (Qwen3.6's drops every
 system/developer message past the leading one or two it merges into the
 header — the finding, the Jinja excerpt and the three-model canary table
-live in `ideas/system-message-delivery.md` pending a `DECISIONS.md`
-entry). The question asked of grok-build was narrow: what role does *it*
+are in `DECISIONS.md` `D-reference-text-as-user-turn`, and the reader-facing
+version is `book/wire.md`). The question asked of grok-build was narrow: what role does *it*
 use for mid-conversation reference text, over which APIs, and does it
 probe the model first?
 
@@ -1888,7 +1888,7 @@ more than wiring through ruby_llm's existing primitive.
    ("most providers cap this at 20") that nothing enforces and pikuri
    cannot verify. See `ideas/grok-build-cheap-borrows.md`.
 6. **Deliver every mid-conversation injection as a user turn with an XML
-   envelope** (grok-build, Claude Code) — **DECIDED, NOT YET SHIPPED**.
+   envelope** (grok-build, Claude Code) — **DONE**.
    `Control::Interloper`'s `:system` kind keeps its documented semantics
    (reference text; no `on_user_message` dispatch, no `Event::UserTurn`,
    still `Event::SystemInjected`) and changes only what it lands as:
@@ -1902,12 +1902,14 @@ more than wiring through ruby_llm's existing primitive.
    what it actually gets today is the whole block reordered to the front
    of the prompt by ruby_llm's `partition`), and a `<system-reminder>`
    may carry less weight than a real system message on models that honour
-   one. Open sub-questions — the tag name, whether the two `:user`-landing
-   interloper kinds collapse into one kind plus a `reason:` tag as
-   grok-build's `SyntheticReason` does, and whether
-   `Agent::EmptyTurnError` survives — are tracked in
-   `ideas/system-message-delivery.md`; the choice and the rejected
-   alternatives graduate to `DECISIONS.md` when the fix ships.
+   one. Shipped as `Agent#append_reference_block` with `<system-reminder>`
+   as the envelope, both interloper kinds kept (they differ in dispatch, not
+   wire role, where grok-build instead carries one role plus a nullable
+   `SyntheticReason`), and `EmptyTurnError` narrowed rather than retired.
+   Verified against the live model for both the skill-promotion and
+   memory-prefetch paths. See `DECISIONS.md`
+   `D-reference-text-as-user-turn`, and `book/wire.md` for the
+   reader-facing account.
 7. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
    `halt("done")` from `execute` ends the chat without a follow-up
