@@ -1416,12 +1416,29 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   demand; an empty catalog is a no-op in both. `Catalog#roots` is
   exposed so the host can fold the skill dirs into the workspace's
   readable set, which is what makes a skill's sidecar files reachable
-  through `read`. Nothing scans a `commands/` directory — flat `*.md`
-  slash commands are not discovered.
+  through `read`. Flat `*.md` slash commands are a *separate* registry
+  over the same search bases, never folded into the catalog — see
+  *Slash commands* below.
 - **pi**: implements the same Agent Skills standard; pikuri's
   implementation reuses pi's XML block shape so a skill folder authored
   against any compliant harness renders consistently here.
-- **opencode**: ships its own skill mechanism (related but pre-standard).
+- **opencode**: ships its own skill mechanism (related but pre-standard),
+  and **v2 moved the inventory into the prompt** — `<available_skills>`
+  renders into a system-context block (`core/src/skill/guidance.ts`,
+  `SystemContext.Key "core/skill-guidance"`); only its docs page still
+  claims the tool description carries it. Worth correcting explicitly
+  because pikuri's own `SkillTool` header used to cite opencode as the
+  outlier here: with the move, pikuri, pi, Claude Code and opencode all
+  render the listing into the prompt, and grok-build is the sole holdout
+  (it injects — see its bullet below). Its block is also *live* where
+  pikuri's is assembled once — it
+  declares `baseline` / `update` / `removed` renders, so a mid-session
+  change to the skill set arrives as a delta (*"The available skills have
+  changed. This list supersedes the previous available skills list."*),
+  and the whole block vanishes when the `skill` tool is denied. That is
+  the mechanism a hot-reload would need and the one that costs a
+  prompt-cache invalidation to run; pikuri scans at boot and doesn't watch
+  the filesystem, so it buys the cache instead.
 - **grok-build**: the widest discovery net of anyone — `.grok/skills`,
   `.agents/skills`, `.claude/skills` *and* `.cursor/skills`, at local /
   repo / user tiers, walking every directory between CWD and the repo
@@ -1442,6 +1459,63 @@ Two extension surfaces pikuri grew that the comparison set hits unevenly:
   listing until a tool reads or edits a matching file; see *How
   grok-build's conditional activation actually works* below.
 - **ruby_llm, langchainrb**: no concept of skills.
+
+#### Nobody batches the load call
+
+| harness | load tool input |
+|---|---|
+| pikuri | `name` |
+| opencode | `name` (`core/src/tool/skill.ts`) — v1 and v2 both |
+| grok-build | `skill` + optional `args` (`implementations/skills/skill.rs`), where `args` is the slash-command argument, not a batch |
+
+Three independent implementations, none of which grew a `names: []`. Weak
+evidence, but it is the only evidence available, and pikuri needs no such
+parameter anyway: ruby_llm executes *every* tool call in an assistant
+message (`chat.rb:346`, `tool_calls.each_value`), so `skill("cop")` +
+`skill("tuile")` + a `read` in one message is already one round-trip. An
+array would be a second way to do the same thing, and would make the
+pathological case — four bodies in one shot — the easier one to type.
+
+#### The *human* path is zero-round-trip everywhere — by three routes
+
+Neither surveyed harness optimizes the *model's* load path; both optimize
+the human's, and identically — by expanding the body at prompt-assembly
+time rather than routing it through a tool:
+
+- **opencode**: every skill is auto-registered as a slash command whose
+  `template` *is* the skill body (`opencode/src/command/index.ts:142`). The
+  `/skills` picker (`tui/component/dialog-skill.tsx`) injects nothing — it
+  types `/<skill> ` into the prompt input, and the body lands as the user
+  message.
+- **grok-build**: `/commit fix the build` expands into a
+  `<skill_information>` envelope appended after `<user_query>`, with a
+  `<skills_referenced>` index of name + path. Its source calls this, in so
+  many words, "the new zero-round-trip path".
+
+pikuri ships the same human path, by a different route.
+`Skill::Extension#schedule_load_skill` is the seam, and since
+`D-reference-text-as-user-turn` it too lands the body as a
+`<system-reminder>`-wrapped `:user` turn — so the `:system`-vs-`:user`
+divergence that used to be the interesting difference here has closed on
+its own. `bin/pikuri-code` wires it as the **third leg of the typed-`/name`
+chain** (host built-in > command > skill), so `/cop` loads the skill named
+`cop` after both earlier namespaces miss. Two real differences remain:
+
+- **pikuri's `/name` skill leg is deliberately argument-less.** A command
+  is a template with `$ARGUMENTS` to interpolate; a skill body is fixed
+  text, so there is nothing for an argument to do. grok-build's
+  `/commit fix the build` passes the tail through as `args` because it
+  routes both kinds through one mechanism.
+- **pikuri declines the auto-registration.** opencode makes *every* skill
+  also a command, sharing one file across both surfaces. pikuri's
+  two-registry split (`D-slash-commands`) keeps them apart: a skill is
+  model-invoked and therefore advertised, a command is human-invoked and
+  never advertised. Collapsing them would put a body pikuri charges per
+  *use* onto a surface charged per *install*. The fall-through gives the
+  human the same `/skill-name` ergonomics without that trade.
+
+Also unlike either harness, both of pikuri's doors render through the same
+`Renderer.format_skill` — one body format, two callers.
 
 #### Frontmatter: the six standard fields, and the nine invented ones
 
@@ -1720,6 +1794,22 @@ nothing in the task tells it a relevance check is due. That is an
 asymmetry no amount of description tuning closes, which is why four
 independent harnesses converged on adding a trigger rather than on
 writing better descriptions.
+
+**The spec's own client guide is behind its ecosystem on exactly this
+point.** `agentskills.io/client-implementation/adding-skills-support`
+states that *"most implementations rely on the model's own judgment as the
+activation mechanism, rather than implementing harness-side trigger
+matching or keyword detection"* — and `paths:` glob matching is
+harness-side trigger matching, shipped by two of the four surveyed
+harnesses (unadvertised in one of them). So pikuri's `paths:` gate follows
+the *implementations* rather than the guide, which is worth knowing before
+anyone cites that sentence as a reason not to gate. The same guide's two
+other recommendations pikuri does not follow are both decided on the
+record: constraining the load tool's `name` to an enum of valid skills is
+rejected in `DECISIONS.md` `D-skill-path-activation` (an enum would be
+rebuilt on every promotion, churning the tool schema mid-session), and
+exempting skill content from context compaction is moot until something
+compacts.
 
 ### Slash commands (the human-invoked half)
 

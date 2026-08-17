@@ -5,9 +5,9 @@ Status: **evidence base only; every fork this note fed is closed**
 surface earned; see `DECISIONS.md` `D-skill-path-activation`, *this is
 where the skills-surface work stops*). What keeps the file alive is not a
 question but a **debt**: the tier costs and the KV-cache section are cited
-from a sister note and neither has a durable home yet, and the prior-art
-findings below are the ones `COMPARISON.md` has not absorbed. When those
-land, delete this file.
+from a sister note and neither has a durable home yet. When they get one,
+delete this file. (The prior-art survey graduated to `COMPARISON.md`
+§Skills on 2026-08-17.)
 
 Origin: `feedback.txt` item 3 ("skill load costs a turn"), which asked for
 one of three things — path-triggered auto-injection, a batch `skill` call,
@@ -33,8 +33,8 @@ then all three settled:
   mechanism one.** Lives in [`claude-parity.md`](claude-parity.md) as its
   "Skill-invocation emphasis — measure" item.
 
-**Scope.** This note owns the numbers, and the prior art nothing else has
-absorbed yet. It does **not** decide what the catalog contains (→
+**Scope.** This note owns the numbers, and nothing else. Prior art lives in
+`COMPARISON.md` §Skills. It does **not** decide what the catalog contains (→
 `D-skill-path-activation` and the book's [skills
 chapter](../book/skills.md)) or how the shipped `paths:` trigger is wired
 (→ the same entry).
@@ -195,87 +195,6 @@ residual Anthropic invalidation on a *promotion* is logged and accepted in
 `D-skill-path-activation`'s Consequences.)
 
 
-## Prior art: the ungraduated remainder
-
-Checked against a local opencode checkout (`~/temp/opencode`,
-`4ddfa7c6`), grok-build via `gh api` on `xai-org/grok-build@main`, and
-the Agent Skills spec's own client-implementation guide. The grok-build
-`paths:` read has graduated to `COMPARISON.md` (§*How grok-build's
-conditional activation actually works*). What is left here is what
-`COMPARISON.md` §Skills still does not say.
-
-### Nobody batches the load tool
-
-| harness | tool input | notes |
-|---|---|---|
-| pikuri | `name` | |
-| opencode | `name` (`core/src/tool/skill.ts`) | v1 and v2 both |
-| grok-build | `skill` + optional `args` (`implementations/skills/skill.rs`) | `args` is the slash-command argument, not a batch |
-
-Three independent implementations, none of them grew a `names: []`. That
-is weak evidence, but it is the only evidence available, and it is the
-whole external case against ask (b).
-
-### The catalog is in the system prompt — opencode moved, and its block is live
-
-{Pikuri::Skill::SkillTool}'s header used to say the inventory lives in the
-system prompt "as PI and Claude Code do (opencode is the outlier)".
-opencode v2 renders `<available_skills>` into a system-context block
-(`core/src/skill/guidance.ts`, `SystemContext.Key "core/skill-guidance"`);
-only its docs page still claims the tool description. **Corrected in the
-header 2026-08-16** — the convention is now unanimous. `COMPARISON.md`
-§Skills still describes opencode's mechanism as "related but
-pre-standard", which predates this find.
-
-opencode's version is *live*, though, in a way pikuri's isn't: the block
-declares `baseline` / `update` / `removed` renders, so when the skill set
-changes mid-session the model gets a delta ("The available skills have
-changed. This list supersedes the previous available skills list."), and
-when the `skill` tool is denied the block vanishes entirely. pikuri
-assembles the system prompt once at construction (and on
-`clear_conversation`). Probably fine — pikuri scans at boot and doesn't
-watch the filesystem — but it's the mechanism a hot-reload would need,
-and per the caching section it is the mechanism that costs a cache.
-
-### Both harnesses make the *human* path zero-round-trip
-
-Neither harness optimizes the model's load path. Both optimize the
-human's, and they do it the same way — by expanding the body at
-prompt-assembly time:
-
-- **opencode**: every skill is auto-registered as a slash command whose
-  `template` *is* the skill body (`opencode/src/command/index.ts:142`).
-  The `/skills` picker (`tui/component/dialog-skill.tsx`) doesn't inject
-  anything — it types `/<skill> ` into the prompt input, and the body
-  lands as the user message.
-- **grok-build**: `/commit fix the build` expands into a
-  `<skill_information>` envelope appended after `<user_query>`, with a
-  `<skills_referenced>` index of name + path. The source calls it, in so
-  many words, "the new zero-round-trip path".
-
-pikuri has the seam ({Pikuri::Skill::Extension#schedule_load_skill}) and
-since `D-reference-text-as-user-turn` lands its block as a wrapped `:user`
-turn too — so the divergence that used to be interesting here (`:system`
-vs `:user`) has closed on its own. What remains genuinely different is
-that neither harness routes the body through a *tool*, and that no bundled
-pikuri `bin/` exposes the host path at all.
-
-### The spec's own guidance
-
-`agentskills.io/client-implementation/adding-skills-support` codifies the
-three tiers (catalog ~50–100 tok/skill → body <5 000 tok recommended →
-resources on demand) and says the quiet part out loud: *"Most
-implementations rely on the model's own judgment as the activation
-mechanism, rather than implementing harness-side trigger matching or
-keyword detection."* Which makes `D-skill-path-activation` a deliberate
-step away from the spec's own expectation — worth stating as such
-wherever the survey lands. Its other two recommendations are dealt with:
-constraining the tool's `name` to an enum is rejected on the record
-(`D-skill-path-activation` decision 5), and exempting skill content from
-compaction moved to
-[`context-overflow-behavior.md`](context-overflow-behavior.md).
-
-
 ## Graduation plan — what is actually left
 
 Everything else this note carried has landed. What remains:
@@ -289,11 +208,6 @@ Everything else this note carried has landed. What remains:
 - **The cache virtue** → one line in
   {Pikuri::Agent#assemble_system_prompt}'s yardoc: building once is a
   price, not a missing feature. This is the note's only lib-side debt.
-- **The prior art above** → `COMPARISON.md` §Skills, which also still says
-  *"Nothing scans a `commands/` directory — flat `*.md` slash commands are
-  not discovered"* (false since `D-slash-commands` shipped
-  `Pikuri::Command::Registry`) and calls opencode's skills "pre-standard".
-  Same pass.
 - **`feedback.txt` item 3** → cut, remaining items renumbered, and the
   settled-so-far preamble extended with the `paths:` gate.
 - **The failure mode worth naming wherever this lands:** Grok's pain was
