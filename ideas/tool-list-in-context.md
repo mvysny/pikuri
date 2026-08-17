@@ -20,12 +20,15 @@ though it shares their caching arithmetic.
 
 Related:
 
-- `DECISIONS.md` `D-skill-path-activation` — the matcher
-  and the `Event::ToolCall` plumbing this would reuse, including the
-  path-args map that is the first design problem either way.
-- [`skill-cost-model.md`](skill-cost-model.md) — the KV-cache section.
-  Read it before quoting any token count here; the expensive operation is
-  prefix *mutation*, and tool schemas sit at the very front of the prefix.
+- `DECISIONS.md` `D-skill-path-activation` — the matcher and the
+  `Event::ToolCall` plumbing this would reuse, including the path-args map
+  that is the first design problem either way. Its **Context** also carries
+  the caching arithmetic, and you should read that before quoting any token
+  count here: caching refunds prefill but never window capacity or
+  attention, and separately the expensive *operation* is prefix
+  **mutation** — which bites harder for tool schemas than for skills,
+  since schemas sit at the very front of the prefix, so gating one
+  invalidates everything.
 - `feedback.txt` item 4 ("the standing prompt is heavy — safety block +
   harness + AGENTS.md + skills catalog + tool schemas on every turn") —
   the live feedback this is the mechanism half of. Item 4's other halves
@@ -50,8 +53,8 @@ Per item: ~730 B/tool vs ~380 B/skill-description. So **the whole tool
 surface is roughly 4× the whole skill catalog** — and it is paid on the
 same terms the catalog is: resident, every turn, scaling with what's
 *installed* rather than what's *used*. (Deliberately no
-window-percentage here; `skill-cost-model.md` retracted that framing, and
-the asymmetry is the argument at any window size.)
+window-percentage here — a percentage only looks alarming on a small
+window, and the asymmetry is the argument at any window size.)
 
 
 ## …but pikuri already answers it twice, and both beat a matcher

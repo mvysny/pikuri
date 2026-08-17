@@ -504,6 +504,14 @@ module Pikuri
     # extensions' current state, so it serves both construction and
     # {#clear_conversation} (the latter refreshing dynamic sections).
     #
+    # Those two call sites are the whole list, and that is a *price* rather
+    # than a missing feature: a stable prefix is free after turn one
+    # (llama.cpp slot prefix-reuse, Anthropic's prompt cache), where amending
+    # one invalidates every cached token after the change point and
+    # re-prefills. Hence there is no amend-the-prompt seam — mid-conversation
+    # blocks go through {#append_reference_block}, which appends and
+    # invalidates nothing. See `DECISIONS.md` `D-reference-text-as-user-turn`.
+    #
     # @return [String]
     def assemble_system_prompt
       sections = @extensions.flat_map(&:system_prompt_snippets)

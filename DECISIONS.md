@@ -234,12 +234,28 @@ API reporting the change. `/props` even returns
 
 The second half of the context is that the hazard is not one template's
 quirk. Anthropic's Messages API has no mid-conversation system role at all —
-`system` is a top-level request param — so ruby_llm's provider hoists:
-`messages.partition { |msg| msg.role == :system }`. On Anthropic a
-promotion that fired at turn 5 was already being presented as though it had
-been in the original prompt. grok-build's Anthropic converter does the same
-thing, and grok-build never hits it because it has no mid-conversation
-system message to hoist (`COMPARISON.md`, *grok-build's injection channel*).
+`system` is a top-level request param — so ruby_llm's provider splits every
+`:system` message out of the array
+(`messages.partition { |msg| msg.role == :system }`) and appends each one as
+its own text block to that param (`build_system_content`).
+
+Two failures fall out of that, not one, and the second is the worse of the
+pair. The block is **mispositioned**: a promotion that fired at turn 5 is
+presented as though it had been in the original prompt. And it is
+**sticky** — the `system` param is standing instructions, in force for every
+subsequent turn, so a one-shot becomes a permanent rule. That is bad for a
+host-loaded skill; for a *per-turn* producer it compounds, because the
+messages accumulate in `Chat#messages` and every one of them partitions into
+the param on every request. pikuri-memory's prefetch is the worst case: by
+turn 20 the request carries twenty standing blocks of stale recalled facts,
+each still presented as a rule the model must follow. Nothing about
+positional delivery does that, which is why the same block landing as
+`:user` needs no Anthropic branch at all — the split moves `:system` and
+nothing else.
+
+grok-build's Anthropic converter does the same thing, and grok-build never
+hits it because it has no mid-conversation system message to split out
+(`COMPARISON.md`, *grok-build's injection channel*).
 
 **Decision.** One channel for all of it. `Agent#append_reference_block`
 appends `role: :user` with the content wrapped in
@@ -301,16 +317,17 @@ what grok-build does too, and it means one grep finds every injection.
 
 **Consequences.**
 
-- **A host-loaded skill is no longer sticky on Anthropic.** It used to be
-  hoisted into the system param and stay in force for the conversation;
+- **A host-loaded skill is no longer sticky on Anthropic.** It used to land
+  in the `system` param and stay in force for the conversation;
   `schedule_load_skill` documented that as intentional. It is now a
   positional one-shot on every provider, identical to the `skill` tool's
-  observation. Uniformity was judged worth more than the divergence, and
-  what was actually happening (the whole block silently reordered to the
-  front of the prompt) is not what the doc claimed.
+  observation. Uniformity was judged worth more than the divergence — and
+  that stickiness was a side effect of the split described above, not
+  something anyone implemented, arriving bundled with a silent reposition
+  the doc never claimed.
 - **`Agent::EmptyTurnError` survives, and got narrower.** Its trigger was a
-  `:system`-only conversation rendering `messages: []` on a hoisting
-  provider — which used to include the "bare-load a skill, then run a blank
+  `:system`-only conversation rendering `messages: []` on a provider that
+  carries `:system` in a separate field — which used to include the "bare-load a skill, then run a blank
   turn" case. A drained reference block is now a `:user` message, so that
   case completes normally; what remains is a genuinely empty conversation
   (fresh chat, blank turn). Kept rather than retired: that case is still
@@ -597,6 +614,28 @@ they work for capability-shaped skills, where the model feels a gap it
 cannot fill, and fail for correction-shaped ones like `cop`, where the
 model confidently does the wrong thing and never runs the relevance check
 at all.
+
+*Resident on every turn* survives the obvious objection — but only half of
+it does, and knowing which half is what keeps this entry from being argued
+in raw token counts. Caching means those bytes are **not** re-prefilled
+each turn: the catalog sits in the stable system prefix, so llama.cpp's
+slot prefix-reuse and Anthropic's prompt cache both skip it after turn one,
+and cloud cache reads bill at ~0.1×. The compute framing of the complaint
+is therefore simply wrong. Two costs no cache refunds, though, and they are
+the ones this decision is about. **Window capacity:** cached tokens still
+occupy KV slots, so 3.8 k tokens of a 64 k window is 3.8 k the conversation
+cannot have — on a local GPU, VRAM held for the whole session.
+**Attention:** every decoded token attends over the entire prefix, so
+twenty-eight descriptions the current task will never use are twenty-eight
+distractors competing on every single token generated. Both scale with
+catalog **size**, which is why per-entry editing — worth doing, and
+`when-to-use:` plus the `<location>` trim did it — cannot reach them, and
+only *withholding entries* can. That is the reason this entry gates rather
+than diets. For calibration at a real catalog size (Claude Code's own
+`/context`, 2026-08-16, 28 skills): 3.8 k tokens of catalog, `dataviz` ~380
+and `cop` ~310 per entry, against the Agent Skills spec's stated budget of
+50–100 tokens per entry — 3–6× over, on descriptions that had started
+carrying TRIGGER/SKIP blocks because they were doing the skill's job.
 
 **Decision.** Adopt grok-build's `paths:` frontmatter key, with pikuri's
 own placement:
