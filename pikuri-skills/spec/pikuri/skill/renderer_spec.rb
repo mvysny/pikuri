@@ -19,7 +19,7 @@ RSpec.describe Pikuri::Skill::Renderer do
       assert_equal '', described_class.format_catalog([])
     end
 
-    it 'emits an <available_skills> block with name/description/location' do
+    it 'emits an <available_skills> block with name/description' do
       catalog = Pikuri::Skill::Catalog::Bundled.new(
         search_bases: [File.join(RENDERER_FIXTURE_ROOT, 'valid-tree')]
       )
@@ -30,12 +30,23 @@ RSpec.describe Pikuri::Skill::Renderer do
       assert out.include?('<name>pdf-tools</name>'), out
       assert out.include?('<name>data-viz</name>'), out
       assert out.include?('<description>Extracts text from PDF'), out
-      assert out.include?(
-        "<location>#{File.join(RENDERER_FIXTURE_ROOT, 'valid-tree/.pikuri/skills/pdf-tools/SKILL.md')}</location>"
-      ), out
     end
 
-    it 'escapes XML metacharacters in name/description/location' do
+    # The path belongs to .format_skill alone — the standard sanctions omitting
+    # it here when the activation tool returns the directory, and it is dead
+    # weight in a resident block. Guarded, because re-adding it would be
+    # invisible in a passing suite.
+    it 'omits the skill path, which only the body block carries' do
+      catalog = Pikuri::Skill::Catalog::Bundled.new(
+        search_bases: [File.join(RENDERER_FIXTURE_ROOT, 'valid-tree')]
+      )
+      out = described_class.format_catalog(catalog.list)
+
+      refute out.include?('<location>'), out
+      refute out.include?('SKILL.md'), out
+    end
+
+    it 'escapes XML metacharacters in name/description' do
       Dir.mktmpdir do |base|
         dir = File.join(base, '.pikuri/skills/xml-skill')
         FileUtils.mkdir_p(dir)
@@ -69,8 +80,9 @@ RSpec.describe Pikuri::Skill::Renderer do
 
       assert out.include?('<available_skills>'), out
       assert out.include?('<name>rdoc-writer</name>'), out
-      assert out.include?('<location>/s/rdoc-writer/SKILL.md</location>'), out
       assert out.include?('just became relevant'), out
+      # Same shape means the same omission: a promotion is an inventory entry.
+      refute out.include?('<location>'), out
     end
 
     it 'closes with the load instruction, outranking style inferred from nearby code' do

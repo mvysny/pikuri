@@ -12,7 +12,6 @@ module Pikuri
     #       <skill>
     #         <name>pdf-tools</name>
     #         <description>Extracts text from PDFs.</description>
-    #         <location>/repo/.pikuri/skills/pdf-tools/SKILL.md</location>
     #       </skill>
     #     </available_skills>
     #
@@ -20,6 +19,13 @@ module Pikuri
     #   touched file brings gated skills into play. Carries +<when-to-use>+
     #   where the catalog block doesn't, since a promotion is a pitch for one
     #   moment rather than a resident line item.
+    #
+    # Neither inventory render carries the skill's path, only {format_skill}
+    # does — which the standard sanctions outright ("if your dedicated
+    # activation tool provides the skill directory path in its result, you can
+    # omit +location+ from the catalog"). An inventory entry is a routing
+    # decision, and a path is unusable until the body names what to read; on a
+    # 28-skill catalog the duplicate ran ~400 resident tokens.
     #
     # - {format_skill} — one skill's body block, injected when the skill is
     #   loaded (by the +skill+ tool or a host-driven load):
@@ -121,7 +127,6 @@ module Pikuri
         lines = ['  <skill>', "    <name>#{escape_xml(skill.name)}</name>",
                  "    <description>#{escape_xml(description)}</description>"]
         lines << "    <when-to-use>#{escape_xml(Trigger.strip_prefix(skill.when_to_use))}</when-to-use>" if show_trigger
-        lines << "    <location>#{escape_xml(skill.location)}</location>"
         lines << '  </skill>'
       end
       private_class_method :entry_lines
