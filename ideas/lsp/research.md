@@ -1,15 +1,16 @@
 # LSP client — research notes
 
 Split out of [`../lsp.md`](../lsp.md), which keeps the status and the
-worklist. This file is the lab notebook: five independent throwaway
+worklist. This file is the lab notebook: six independent throwaway
 clients, a rubygems survey, and one shipped client read off its schema.
 Nothing here is a decision — the decided design is in
 [`design.md`](design.md).
 
 **The labels are stable ids, cited from both other files.** Findings are
 numbered per source — `finding 1`–`finding 9` for the first Ruby runs,
-`J1`–`J9` for jdtls, `H1`–`H6` for the type-hierarchy run — in *discovery*
-order, not reading order. Don't renumber them to tidy a sequence.
+`J1`–`J9` for jdtls, `H1`–`H6` for the type-hierarchy run, `S1`–`S10` for
+the document-sync/anchor run — in *discovery* order, not reading order.
+Don't renumber them to tidy a sequence.
 
 ## How the protocol actually works
 
@@ -497,7 +498,8 @@ Worth arguing with:
 ## Findings from a type-hierarchy run against ruby-lsp
 
 A fifth throwaway client, `ruby-lsp` 0.26.10 / Ruby 3.3.11, against this
-repo — the run worklist item 5 asked for. Ready in 5.4s behind one
+repo — the run the two hierarchies' promotion was waiting on. Ready in
+5.4s behind one
 progress token, `positionEncoding: "utf-8"`, `typeHierarchyProvider: {}`
 advertised, `callHierarchyProvider` and `implementationProvider` absent
 (finding 9 reproduced). Targets were picked for known in-repo ancestry:
@@ -557,8 +559,8 @@ four unrelated gems that merely reopen `Object`.
 no.** `prepare` on `include Pikuri::Agent::Extension` resolves the module
 cleanly (1 item, `Pikuri::Agent::Extension`), and then **both**
 `supertypes` and `subtypes` return 0. So "who includes this module?" is
-unanswerable, and so is `include` / `prepend` ordering — the one thing
-worklist item 5 named as what grep genuinely cannot reconstruct. Between
+unanswerable, and so is `include` / `prepend` ordering — the one thing the
+hierarchy was promoted for, as what grep genuinely cannot reconstruct. Between
 this and H1, ruby-lsp's type hierarchy answers exactly one question:
 *what is above this class?*
 
@@ -572,9 +574,9 @@ text itself it returned exactly `1 item(s)` for all six. Measured offsets:
 path, which resolved fine). And `workspace/symbol`'s own
 `location.range.start.character` for `class Tool` is **2** — the keyword —
 so feeding a symbol hit's range straight back in is the failure, not a
-shortcut. This is worklist item 6 confirmed on ruby-lsp: the
-`locate(text, symbol)` helper is load-bearing, and its absence fails
-silently.
+shortcut. So the `locate(text, symbol)` helper is load-bearing, and its
+absence fails silently. (S8 has the jdtls half, which disagrees in both
+details and needs the same helper.)
 
 **H6. `workspace/symbol` matches on the *fully qualified* name, so a bare
 namespaced class name is unreachable.** The headline number: query
@@ -611,3 +613,122 @@ clean "not found": finding 2's false premise reached through the design's
 own headline parameter. Finding 5 recorded `workspace/symbol` as fuzzy in
 the too-many direction; this is the too-few direction, and it is the
 consequential one.
+
+## Findings from a document-sync and anchor run, both servers
+
+The run the document-sync question asked for, and the first one driving
+**both** servers from the same client: `ruby-lsp` 0.26.10 / Ruby 3.3.11
+against a throwaway two-file Ruby project, and `jdtls` 1.58 / JDK 25
+against a throwaway two-file plain-Java project (`Greeter.java` +
+`Main.java`, warm `-data`, ready in 3.1s). Both fixtures were built so a
+stale answer is distinguishable *twice over* — every edit renames a method
+**and** shifts it by three lines, so memory-vs-disk shows up in the name
+and in the position independently.
+
+Where a finding was confirmed in a server's own source that is said so;
+those are the ones that will not change by asking differently.
+
+**S1. A rangeless full-text `didChange` is honoured by jdtls and is a
+crash on ruby-lsp — same notification, same declared sync kind.** Both
+servers advertise `textDocumentSync.change: 2` (incremental). Sending the
+whole-document variant (`contentChanges: [{text: …}]`, no `range`) leaves
+jdtls's copy correctly updated, and on ruby-lsp raises inside
+`document.rb:98` — `push_edits` reads `edit[:range][:start]`
+unconditionally, so a rangeless edit is a `NoMethodError`. The document
+keeps its **old** text, and because a notification has no reply channel the
+only report is a `window/logMessage` line the client is free to ignore
+(`"Error processing textDocument/didChange: …"`). What the *model* would
+see is the next query: a position valid in the new text answers
+`-32602 InvalidLocationError` with a raw Ruby backtrace as the message.
+
+**S2. Sync the document and you can still desynchronize the index —
+ruby-lsp updates one and not the other.** A whole-document *ranged*
+change (range = 0:0 → end of file, text = the new file) is honoured by both
+servers for the document itself: `documentSymbol` reported the renamed
+method immediately. But on ruby-lsp `definition` on that same renamed
+method then returned `[]`, because method resolution goes through the index
+and the index had not moved: `workspace/symbol` still reported the *old*
+name at the *old* line. The reason is a heuristic in the server's own
+source — `RubyDocument#should_index?` reindexes only when
+`position_may_impact_declarations?(last_edit.range.start)`, and the start of
+a whole-file replace is 0:0, which in an ordinary Ruby file is the
+`# frozen_string_literal` comment, not a declaration node. So the
+optimization that makes editor typing cheap makes whole-file replacement
+invisible, and the failure is finding 2's silent empty produced *by our own
+sync scheme*.
+
+**S3. `didOpen` is not universally a precondition — it is jdtls-specific,
+and per-operation even there.** ruby-lsp answered `definition` and
+`documentSymbol` correctly for a document that was never opened, because
+`Store#get` reads the file from disk (`File.binread`, version 0) for any URI
+it does not hold. (The *index* is a separate matter — see S4.) On jdtls the
+same `definition` returned `[]` while `documentSymbol` on that same unopened
+file worked. J4's correction ("`didOpen` is a precondition nowhere stated")
+therefore holds for jdtls's semantic operations and not for ruby-lsp at
+all — one more capability that cannot be read off the handshake.
+
+**S4. On ruby-lsp the index refreshes as a *side effect of a
+documentSymbol-family request*, not from any notification.** A `.rb` file
+created after boot is invisible to `workspace/symbol` (0 hits) however long
+you wait; issue one `documentSymbol` against it and it becomes 1 exact hit.
+`server.rb:495` is why — the combined-request handler reindexes the
+document while serving `documentSymbol` / `foldingRange` / `codeLens` /
+`inlayHint`. Two consequences: an operation nobody would call for its
+result can be the only way to freshen the index, and any measurement of
+index freshness has to control for which request came first.
+
+**S5. Re-sending `didOpen` with the current disk text before every call
+works on both servers, and is the only mechanism that does.** It is
+spec-forbidden — LSP says a document must not be opened twice — and neither
+server minds: both replaced their copy wholesale, both then resolved the
+renamed symbol at its shifted position, and on ruby-lsp the index flipped
+too (new name 1 exact, old name 0). No version bookkeeping, no digest
+tracking, no `didClose`, and the text it needs is the text the tool already
+read for `locate`.
+
+**S6. `didClose` resyncs ruby-lsp and does nothing for jdtls.** On
+ruby-lsp `didClose` deletes the store entry, so the next request re-reads
+disk — the fresh name and the shifted position both came back. jdtls kept
+answering its pre-close in-memory copy: `documentSymbol` still reported the
+old method name with the disk holding the new one, and `definition` at the
+new declaration's position returned `[]`. So the close-and-forget scheme is
+not portable, which is what promotes S5 from "one option" to "the policy".
+
+**S7. The spec's own out-of-band channel is ignored by both.**
+`workspace/didChangeWatchedFiles` with a `CHANGED` event for the edited
+file changed nothing on either server while the client owned the URI.
+ruby-lsp's source states the rule outright —
+`index.handle_change(uri, content) unless @store.key?(uri)` — i.e. a
+client that has opened a document is *expected* to be the authority for it,
+which is exactly the assumption an agent that writes straight to disk
+breaks.
+
+**S8. jdtls anchors forgivingly where ruby-lsp is strict — for some
+operations.** Probing every token of `public class Greeter {` and
+`    public String greet(String name) {`: `prepareTypeHierarchy` returned
+1 item at **every** column including the `public` and `class` keywords
+(ruby-lsp returned 0 at the keyword in 6 cases out of 6, H5), while
+`definition` returned 0 at both keyword columns and 1 at the symbol's own
+column. And `workspace/symbol`'s reported column is the **symbol** column
+on jdtls (13, where `Greeter` starts) against ruby-lsp's **keyword** column
+(2). So the two servers disagree about both halves of H5, in opposite
+directions, per operation — and `locate(text, symbol)` is load-bearing on
+both, for different reasons.
+
+**S9. Anchoring on the wrong token is not merely empty — it can be
+80,609 results.** `references` at the return-type `String` of
+`public String greet(String name)` returned **80,609** locations; at the
+parameter type, the same 80,609; at `greet`, 2. Finding 6's volume problem
+has no ceiling, and a cap is not an optimization.
+
+**S10. jdtls's `workspace/symbol` returns types only, so a Java *method*
+is unreachable by name.** Query `"shout"` (a method defined in the
+fixture) → **0 hits**. Query `"greet"` → 1 hit, which is the *class*
+`Greeter` matched on a substring. `"Greeter.greet"` and `"greet(String)"`
+→ 0 each. Types work fine (`"StringUtils"` → 2, both inside jars, J8
+reproduced). This is H6's Ruby problem inverted: there a bare name missed
+because the index stores fully-qualified names, here a method name misses
+because the index stores no methods at all. The name→position collapse
+therefore cannot reach a Java method, which is the strongest argument yet
+for `documentSymbol` — the in-file outline is how you find `shout` without
+being handed a column.

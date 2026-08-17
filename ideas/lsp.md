@@ -8,9 +8,9 @@ grown to ~1600 lines and buried the handful of things still to do:
 
 | file | holds |
 | --- | --- |
-| **this file** | status, the worklist, the graduation map |
-| [`lsp/research.md`](lsp/research.md) | four live client runs, a rubygems survey, a shipped client read off its schema — the stable `finding N` / `J<n>` labels everything else cites |
-| [`lsp/design.md`](lsp/design.md) | everything decided: direct-vs-MCP, the registry entry, no-timeout, progress + mailbox, the scheme table, the ten-operation surface, protocol modeling, testing, the trifecta legs |
+| **this file** | status, the strategy, the worklist, the graduation map |
+| [`lsp/research.md`](lsp/research.md) | six live client runs, a rubygems survey, a shipped client read off its schema — the stable `finding N` / `J<n>` / `H<n>` / `S<n>` labels everything else cites |
+| [`lsp/design.md`](lsp/design.md) | everything decided: direct-vs-MCP, the registry entry, no-timeout, progress + mailbox, the scheme table, the operation surface, document sync, protocol modeling, testing, the trifecta legs |
 
 Nothing in `lsp/design.md` has met an implementation, which is why it is
 still here rather than in `pikuri-lsp/DESIGN.md`, four `DECISIONS.md`
@@ -39,125 +39,218 @@ Related:
 
 ---
 
+## Strategy: source the surface from harnesses, relay glitches honestly
+
+**Decided 2026-08-17, and it reverses how this note was being built.** The
+six runs in [`lsp/research.md`](lsp/research.md) found a genuine pattern,
+and then the pattern turned on the method: *every* server is broken in its own way, and the ways do not
+generalize. ruby-lsp advertises a type hierarchy whose `subtypes` half is a
+`# TODO` (H1); jdtls's `workspace/symbol` cannot see a method at all (S10);
+ruby-lsp crashes on a full-text `didChange` that jdtls accepts (S1);
+ruby-lsp's index desynchronizes from its own document because of a
+typing-speed heuristic (S2). There are LSPs for Python, Kotlin, Rust, Go
+and thirty other languages, each with its own list. **A catalogue of two
+servers' glitches is not a design input**, and the arms it was steering
+toward — a per-server known-stub list, per-server readiness predicates,
+per-operation workarounds — are unbounded work that gets one server right
+and says nothing about the third.
+
+So:
+
+1. **The operation surface comes from harnesses that shipped one**, not
+   from what two servers happen to implement. Claude Code's nine
+   (`research.md`, prior art), grok-build's set, opencode's — the authors
+   did this homework, and their union is both a better v1 and a stable
+   input. Deviate only where there is a *measured* reason (the
+   `typeDefinition` addition, J9).
+2. **Server glitches are relayed, not worked around.** The tool reports
+   what the server said and what it asked for; the model decides what to do
+   about it. This is not a shrug — a strong model handles "the index is
+   stale, let me try another way" routinely, and the runs show pikuri
+   cannot pre-empt the failure modes anyway.
+3. **The one thing that must not be relayed is a *lie*.** Three distinct
+   answers must stay distinct in what the model reads: *the server does not
+   support this operation*, *the server answered nothing*, and *the server
+   is not ready yet*. Collapsing them is the single most consequential
+   defect in the shipped prior art (Claude Code's
+   `No definition found. This may occur if…`, finding 2's false premise
+   verbatim), and keeping them apart is one rendering rule, not a
+   per-server anything.
+4. **No fallback steering.** An error says what failed; it never proposes
+   grep. Unchanged from `design.md`, and it is the same principle as (3):
+   report, don't decide.
+
+**And the readiness gate stays**, because it is the one case where waiting
+is strictly better than relaying: a server that is still indexing will
+answer `[]` (finding 2) and there is nothing for the model to reason about
+in an empty list. Block until ready, emit progress, let the human be the
+timeout.
+
+**Model target: 25B+, not 4B.** A 4B model cannot code, so nothing here is
+sized for one. This deletes the "small local models chain badly" argument
+wherever `design.md` leans on it (the `lsp_read` refusal, the prepare-hop
+collapse, the no-timeout decision, the name→position collapse) — each of
+those needs an honest replacement reason or needs dropping. The strongest
+surviving one is not about model capability at all: **a hop the tool can
+perform exactly is not a hop worth spending a round trip on**, and a
+coordinate the model was never shown is not a coordinate it should be
+asked to invent (see the parameter item below).
+
 ## Worklist
 
-Nine items, and they divide by kind: six want a decision, three want a
-live run. **Every one is shaped like the silent-empty trap the design
-spends its length refusing** — an advertised provider that returns
-nothing, an ignored notification, an anchor on the wrong token, a name
-that scores below a similarity threshold. None of them fails loudly,
-which is why they are listed rather than left to be discovered.
+Four items left, and none of them is a server-behaviour question. The
+previous nine are closed: items 1, 7, 8 and 9 by the run below, items 3, 5
+and 6 folded into what follows, and items 2 and 4 restated.
 
-The type-hierarchy run (`research.md`, H1–H6) closed two of the five
-live-run items and **opened two decisions in their place**, now items 5
-and 6 — which is the note's own thesis landing on the note: both were
-advertised-and-empty, and neither would have been noticed by a capability
-gate. It also closed one outright, with no fork behind it: **the
-keyword-vs-symbol anchor.** `prepareTypeHierarchy` at the keyword column
-returned zero items in 6 cases out of 6 and at the symbol's own column
-returned exactly one in all 6, and `workspace/symbol`'s own range for
-`class Tool` starts at column 2 — the keyword. So the design's
-`locate(text, symbol)` helper is confirmed mandatory rather than a
-nicety, and only the jdtls half of that check is left (folded into item 7).
+### 1. The operation surface, sourced from the harnesses
 
-### Needs deciding — before the tool layer is written
+`design.md`'s ten (`definition`, `references`, `hover`,
+`workspaceSymbol`, `typeDefinition`, `implementation`, `incomingCalls`,
+`outgoingCalls`, `supertypes`, `subtypes`) were argued one at a time
+against what ruby-lsp and jdtls support. Re-derive them instead from
+Claude Code's schema (already recorded in `research.md`), grok-build's,
+and opencode's, and keep the *measured* deviations. Three specifics:
 
-1. **Document synchronization across calls.** `didOpen` with the file's
-   full text is a precondition nowhere stated in the spec (the jdtls
-   corrections), and the tool does the opening because the model never
-   opens anything. Unsettled: what the *second* call does — LSP forbids
-   `didOpen` on an already-open document, so it is either `didClose` +
-   re-open or a version-bumped full-text `didChange` — and what happens
-   after the agent's own `write` / `edit` leaves the server's in-memory
-   copy stale. A stale open document answers confidently against text
-   that is no longer there, which is finding 2's false premise by a fifth
-   route. Leaning: a per-server set of open URIs, `didOpen` on first
-   touch, full-text `didChange` with an incremented version whenever the
-   file's digest moved since the last sync, no `didClose` (the set dies
-   with the child). Verification is item 7.
-2. **What anchors a hop that resolves outside the root.** With `symbol`
-   alone, `workspace/symbol` can place the anchor in a gem file *outside*
-   the workspace root, or behind a `jdt:` URI (J5). Every position-based
-   operation then needs a document the tool is currently not allowed to
-   open: out-of-root paths are refused up front, and a `jdt:` document is
-   not on disk at all. Result *rendering* has an answer already
-   (snippet-only, the scheme table); the *anchor* does not. Three arms,
-   and they need not all get the same one: refuse with a distinct
-   message, permit a read-only `didOpen` of an out-of-root `file:` path,
-   or `didOpen` the virtual URI with the text the scheme table already
-   fetches (nvim-jdtls does the last). This is the one place where the
-   confinement boundary and the capability J8 sells pull against each
-   other directly.
-3. **Fan-out blocks on every server.** A bare-`symbol` call fans out, so
-   it waits for *all* registered servers to be ready — a Ruby-only
-   question pays jdtls's cold import (78s, J6) the first time. That
-   follows from the no-timeout rule and is probably acceptable, but it
-   should be an accepted consequence in writing rather than a surprise.
-   The cheap mitigation — fan out only to servers already ready, when any
-   are — trades completeness for latency and is its own small decision.
-4. **What the tool is constructed with.** The Sketch names only the
-   emitter handoff. It also needs the client set and a
-   `Workspace::Filesystem`: for `denied?`, the root confinement, the
-   seam-routed read behind `didOpen`, and `private?` on the trifecta
-   declaration. One line in the Sketch closes this.
+- **`documentSymbol` should probably come back.** It was cut for breaking
+  the uniform shape (file-keyed, not name-keyed), and S10 is the
+  counter-evidence: jdtls's `workspace/symbol` returns types only, so an
+  in-file outline is the *only* way to reach a Java method by name. Claude
+  Code ships it; grok-build should be checked.
+- **`subtypes` ships and answers honestly.** H1 has it as an unimplemented
+  stub behind a truthfully-advertised provider. Per the strategy that is
+  not pikuri's problem to model: no known-stub list, no enum surgery, and a
+  `nil` reply renders as "the server returned no results" — which is what a
+  `# TODO` deserves. The one mechanical consequence stands: **the parse
+  layer must accept `nil` as well as `[]`.**
+- **Capability gating stays** (finding 1), because it is read off the
+  handshake rather than from a table pikuri maintains — which is the
+  difference between reading a server's own declaration and cataloguing its
+  bugs.
 
-### Needs deciding — opened by the type-hierarchy run
+### 2. The parameter shape: `symbol` replaces `character`
 
-5. **`subtypes` does not work on ruby-lsp, so the Ruby "who overrides
-   this" hole is still open — decide what ships.** ~~Does a type
-   hierarchy actually return anything on ruby-lsp?~~ **Run: H1–H5.**
-   `typeHierarchy/subtypes` is an unimplemented stub returning `nil`
-   behind a truthfully-advertised `typeHierarchyProvider` (H1), and module
-   ancestry is not walked in either direction (H4). `supertypes` works,
-   but only upward and only for classes. That **removes the reason the two
-   hierarchies were promoted into v1**: `design.md` argues `subtypes` is
-   what closes the hole `implementation`'s `.rb` refusal leaves open, and
-   it does not close it — Ruby still has no "who overrides this"
-   operation, and grepping `< Base` is still the only answer.
-   Consequences to settle, in order:
-   - **A capability gate cannot express this.** One provider key covers
-     both directions, so `.rb` would advertise `subtypes` and answer
-     empty — the note's own headline failure mode shipped as a feature.
-     Either the enum drops `subtypes` for now, or the dispatch table gains
-     a per-server *known-stub* list, which is a new concept the design
-     does not have.
-   - **`supertypes` earns its place on its own** (H2's `Read` → 14 rows,
-     one real), but it needs grouping by name with the declaration
-     preferred over namespace reopenings, not just a cap — a cap would cut
-     the one useful row, which sorted last in the live reply.
-   - **A `nil` result is not `[]`.** The parse layer must accept both.
-6. **A bare `symbol` cannot resolve a namespaced Ruby class — the tool's
-   required parameter needs rethinking.** Opened by H6, and it is the
-   sharpest thing the run turned up. ruby-lsp's `workspace/symbol` matches
-   Jaro-Winkler over the `::`-stripped **fully qualified** name against a
-   0.7 threshold, so `Tool` scores 0.000 against `pikuritool` and
-   `Confirmer` scores 0.455 against `pikuriworkspaceconfirmer` — both
-   below threshold, both never returned, while the instance variable
-   `@confirmer` scores 0.967 and is. Query the FQN and it works
-   (1.000). Both halves are deliberate in ruby-lsp's source, so neither
-   will change. So the design's "collapse the name→position hop inside the
-   tool" commitment holds, but its *input* cannot be a bare name for Ruby.
-   Arms: require an FQN (and say so in the parameter description, which
-   costs the model nothing since it reads `module`/`class` lines anyway);
-   or have the tool try the bare name, then retry as a suffix match over
-   the unfiltered index; or accept either and let `file` disambiguate. The
-   exact-name filter also has to compare the **last `::` segment**, never
-   `name`.
+Deliverable, and the run settles which half is deliverable how:
 
-### Needs a live run
+- **`symbol` + `file` + `line` → the column, derived by the tool.** One
+  line read, one string search, no index and no server involvement. This
+  works on every server that will ever be wired, and it is the whole point:
+  **nothing in the model's input contains a column.** `Read` prints
+  line→text, `grep` prints `file:line:text`; producing a column means
+  counting characters in a line the model saw as prose, exactly right, with
+  tabs and multibyte. Being wrong is not an error — S8 has `definition`
+  answering 0 at a keyword column, and S9 has `references` seven columns
+  off returning **80,609** results instead of 2.
+- **`symbol` alone → position via `workspace/symbol`** is the half that is
+  *not* reliable, in opposite directions per server: H6 (a bare namespaced
+  Ruby class scores below ruby-lsp's 0.7 Jaro-Winkler threshold and is never
+  returned) and S10 (jdtls indexes no methods, so a Java method name is
+  unreachable). Ship it as a best-effort convenience that reports honestly
+  when it resolves nothing, and let `file` + `line` be the shape the tool
+  description actually teaches.
+- Two mechanical rules survive from the runs: the exact-name filter
+  compares the **last `::` segment**, never `name` (H6, deliberate in
+  ruby-lsp's source), and `locate(text, symbol)` is mandatory on both
+  servers for different reasons (H5 strict, S8 strict-per-operation).
+- An optional `character` override is strictly additive if the derived
+  column ever disagrees with what the model meant. Not v1.
 
-7. **Is `didChange` honoured by both servers, and does jdtls anchor like
-   ruby-lsp?** The sync scheme in item 1 is worthless if a server ignores
-   it — and an ignored `didChange` fails silently, which is the whole
-   problem. The keyword-vs-symbol anchor is settled for ruby-lsp (H5) and
-   still wants one jdtls check, since it is the same helper.
-8. **Does `Filesystem#denied?` have an opinion outside the root?** It is
-   built for paths *under* the workspace root, and every interesting LSP
-   result is outside it. Either it answers usefully for
-   `~/.local/share/…/gems/` or root confinement is carrying that boundary
-   alone — and the `D-walked-path-denylist` rule needs to know which.
-9. **Confirm `Lsp::Extension` contributes no trifecta legs**, now that
-   the tool declares all three, or the same legs land on the map twice.
+### 3. What anchors a hop that resolves outside the root
+
+Unchanged from before, and the only remaining *confinement* question.
+With `symbol` alone, `workspace/symbol` can place the anchor in a gem file
+outside the workspace root, or behind a `jdt:` URI (J5). Every
+position-based operation then needs a document the tool is not allowed to
+open. Result *rendering* has an answer (snippet-only, the scheme table);
+the *anchor* does not. Three arms, and they need not all get the same one:
+refuse with a distinct message, permit a read-only `didOpen` of an
+out-of-root `file:` path, or `didOpen` the virtual URI with the text the
+scheme table already fetches (nvim-jdtls does the last).
+
+Smaller than it was: with `file` + `line` the normal shape (item 2), the
+anchor is in-root by construction almost always, so "refuse with a distinct
+message" is a defensible v1 — the capability lost is following a hop *into*
+a dependency, which `hover` and the scheme table still answer.
+
+### 4. What the tool is constructed with
+
+The Sketch names only the emitter handoff. It also needs the client set and
+a `Workspace::Filesystem` — for `denied?`, the root confinement, the
+seam-routed read behind the sync notification, and `private?` on the
+trifecta declaration (item 9's answer makes that last one load-bearing:
+the tool declares all three legs itself, so it must hold the filesystem).
+One line in the Sketch closes this.
+
+Also folded in here: **fan-out.** A bare-`symbol` call fans out to every
+registered server and therefore waits for all of them to be ready, so a
+Ruby-only question pays jdtls's cold import (78s, J6) the first time. That
+follows from the no-timeout rule and is acceptable — and with `file` the
+normal shape it is now the rare path rather than the default. Write it down
+as an accepted consequence; the mitigation (fan out only to servers already
+ready) trades completeness for latency and can wait for a complaint.
+
+## Closed by the document-sync run
+
+Recorded here rather than deleted, because each one's *resolution* is what
+a reader would otherwise re-litigate. Findings `S1`–`S10` in
+[`lsp/research.md`](lsp/research.md); the settled policy is in
+[`lsp/design.md`](lsp/design.md) §"Document synchronization".
+
+- ~~**Document synchronization across calls**~~ (was items 1 and 7).
+  **Settled, and the leaning was wrong.** The leaned scheme — a per-server
+  open-URI set, `didOpen` on first touch, full-text `didChange` with an
+  incremented version when the digest moved — fails on the first server it
+  meets: ruby-lsp declares incremental sync and *crashes* on a rangeless
+  full-text change, reporting it only to `window/logMessage` (S1). The
+  ranged variant is honoured, and then desynchronizes the *index* from the
+  document it just updated (S2), so `definition` answers `[]` for a symbol
+  the server can see. What works on both servers is the thing the spec
+  forbids: **re-send `didOpen` with the current disk text before every
+  call** (S5) — no versions, no digests, no `didClose` (which resyncs
+  ruby-lsp and does nothing for jdtls, S6). The reason it is sound rather
+  than merely lucky is that **pikuri has no unsaved buffers**: `write` and
+  `edit` land on disk immediately, so the tool never owns state the disk
+  lacks, and the spec's own out-of-band channel
+  (`workspace/didChangeWatchedFiles`) is ignored precisely because a client
+  that opened a document is *presumed* to be its authority (S7).
+- ~~**Does jdtls anchor like ruby-lsp?**~~ **No, and not uniformly within
+  itself** (S8): `prepareTypeHierarchy` answers from any column on the
+  declaration line including the keywords, while `definition` answers 0 at
+  a keyword column, and `workspace/symbol` reports the *symbol* column
+  where ruby-lsp reports the *keyword* column. `locate(text, symbol)` is
+  load-bearing on both servers; the per-server reasons are not worth
+  modeling.
+- ~~**Does `Filesystem#denied?` have an opinion outside the root?**~~ (was
+  item 8). **Only under `AllowAll`, and that is fine.** Measured against
+  the real classes: the scoped `Filesystem` — `bin/pikuri-code`'s wiring —
+  has `denied_roots == []` and answers `denied?(path) == false` for
+  *everything*, in-root and out, while `resolve_for_read` raises for every
+  out-of-root path. `AllowAll` answers `true` for `~/.ssh`, `~/.ssh/id_*`
+  and `/etc/shadow` and `false` for gem paths, `~/.m2/repository` and a
+  nonexistent path, symlink-resolving first and never raising.
+
+  So: **root confinement carries the out-of-root boundary alone**, and the
+  `denied?` pass is load-bearing exactly where it was designed to be — the
+  container wiring, where an LSP result *could* name a credential path and
+  nothing else would stop it. `design.md`'s sentence "`Filesystem#denied?`
+  still applies" is true but weaker than it reads; keep the pass (it is
+  cheap, exact and fails closed) and stop implying it filters gem paths.
+- ~~**Does `Lsp::Extension` contribute trifecta legs?**~~ (was item 9).
+  **No — it must not override `trifecta_contribution` at all**, and the
+  base class already returns `nil`, so this costs nothing. Three mechanics
+  make it definite: an extension registers a real `Pikuri::Tool` through
+  `Configurator#add_tool` at *configure* time (the `Tasks::Extension`
+  shape), which lands it in `agent.tools`, so `Trifecta.build` reads its
+  `trifecta_legs` directly — `add_raw_tool` is the leg-invisible path and
+  is only for MCP's and sub-agents' synthesized `RubyLLM::Tool`s. A
+  contribution's legs are *unioned* per label, and `legs | legs == legs`
+  (verified), so a duplicate declaration would not move the verdict —
+  the harm is the map: a `(lsp)` row would appear beside the `lsp` row
+  carrying the same three legs, and `Contribution#label` is what
+  `Report#attribution` points the reader at, so it would blame the
+  extension for a declaration living on the tool. And an MCP-shaped
+  `ASSUMED` contribution would actively *widen* the answer —
+  `legs | ASSUMED` flips egress to `:unreviewed` / `:attacker_reachable`
+  (verified) — which is the opposite of the measured truth.
 
 ## Graduation
 
@@ -166,23 +259,30 @@ and "empty result ≠ no definition" lessons → book chapter (both are
 better taught with the observation that a shipped client gets the second
 one wrong, and the second is sharper for J3's contrast — one server
 defers, the other answers `[]`, and only one of them can be trusted);
-the three silent-empty traps (pre-index query, an undeclared
-`classFileContentsSupport`, a fuzzy `workspace/symbol` hit) → one book
-section, since they are the same lesson wearing three hats; per-symbol
-rationale → yardoc on `Lsp::ClientWrapper` / the
-tool, including why the `operation` enum is static while gating happens
-at dispatch; the walked-path-filtering and Subprocess-exception
-invariants → a `CLAUDE.md` seam entry; the entry's field-by-field
-rationale → yardoc on `Lsp::Registry::StdioEntry`, and the two worked
-configs → the book chapter (the *no configurable root* rule is the one
-that also wants a sentence in the seam entry, since it is what keeps the
-LSP's project and the `Workspace` root the same boundary);
+the silent-empty traps (pre-index query, an undeclared
+`classFileContentsSupport`, a fuzzy `workspace/symbol` hit, an advertised
+provider wired to a `# TODO`) → one book section, since they are the same
+lesson wearing four hats; **the document-sync policy** → yardoc on the
+client plus a book paragraph, because "an agent is not an editor: it has no
+unsaved buffers, so it must not own documents" is the whole reason the
+spec-forbidden re-open is the right answer; per-symbol
+rationale → yardoc on `Lsp::ClientWrapper` / the tool, including why the
+`operation` enum is static while gating happens at dispatch; the
+walked-path-filtering and Subprocess-exception invariants → a `CLAUDE.md`
+seam entry; the entry's field-by-field rationale → yardoc on
+`Lsp::Registry::StdioEntry`, and the two worked configs → the book chapter
+(the *no configurable root* rule is the one that also wants a sentence in
+the seam entry, since it is what keeps the LSP's project and the
+`Workspace` root the same boundary);
 **direct-vs-MCP with the bridges named**, **no-timeout with its three
 replacements** (plus the startup and failure policy that falls out of it:
 spawn synchronously at boot so a missing binary raises, index in the
 background, block the first call for as long as it takes, and on child
 death return `"Error: …"` with **no fallback suggestion** — the tool works
-or it errors, and never proposes grep), and **the scheme table** (standard-first, one hardcoded
+or it errors, and never proposes grep), **the harness-sourced operation
+surface with relay-don't-work-around as its rule** (rejected: a per-server
+known-stub list; per-server readiness predicates; an enum sized to what two
+servers implement), and **the scheme table** (standard-first, one hardcoded
 `jdt:` row, rejected alternatives: standard-only — which made the Java arm
 untestable — and a `content_request` config field; plus the deletion
 condition), and **the declared trifecta legs** — one entry for all three
@@ -192,11 +292,12 @@ vetted-destination argument; inheriting MCP's `ASSUMED` on the shared
 foreign-stdio-binary shape) and unconditional `untrusted: :hard` (rejected:
 riding `filesystem.trusted?` the way {Pikuri::Workspace::Read} does;
 confining results to the root to earn `:none`), **with the trusted-checkout
-verdict flip stated as a consequence** → four new `DECISIONS.md` entries
+verdict flip stated as a consequence** → five new `DECISIONS.md` entries
 (suggested slugs `lsp-direct-not-mcp`, `lsp-no-startup-timeout`,
-`lsp-scheme-fallback`, `lsp-trifecta-legs`, with the usual prefix); the
-threat model itself, including the unsandboxed-child asymmetry against
-`Code::Bash` → `pikuri-lsp/DESIGN.md`; the COMPARISON.md LSP column → `✅`.
+`lsp-operation-surface`, `lsp-scheme-fallback`, `lsp-trifecta-legs`, with
+the usual prefix); the threat model itself, including the
+unsandboxed-child asymmetry against `Code::Bash` → `pikuri-lsp/DESIGN.md`;
+the COMPARISON.md LSP column → `✅`.
 Then delete this file **and the whole `lsp/` folder with it**, plus the
 superseded LSP bullets in `coding-agent.md` and `claude-parity.md`.
 

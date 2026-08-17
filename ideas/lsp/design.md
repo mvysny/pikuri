@@ -121,10 +121,11 @@ outside the root becomes".
 — ruby-lsp indexes this repo in seconds, a cold jdtls import is minutes —
 is a trap twice over. No value is defensible (30s is wrong for Java, 300s
 is wrong for Ruby), and what it buys is a `"still indexing, try grep"`
-observation, which is a *decision point* handed to a small local model:
-retry, wait, or give up, and it cannot express "wait" as a tool call
-anyway. This is finding 6's name→position argument again — pikuri
-collapses hops the model would chain badly. So the first call blocks
+observation — which is not information but a *decision point*: retry, wait,
+or give up, and "wait" is the correct answer while being the one thing no
+tool call can express. Relaying an empty index state is the one case where
+waiting beats relaying, because there is nothing in `[]` to reason about
+(see [`../lsp.md`](../lsp.md) §Strategy, point 4). So the first call blocks
 until the server is ready, however long that is. The LLM can wait
 endlessly; the human decides otherwise via Ctrl+C.
 
@@ -142,9 +143,9 @@ Three things replace the clock, none of them a clock:
 
   **And it ends there: no fallback, no suggestion.** The error does not
   say "try grep". That would be the `"still indexing, try grep"`
-  observation this section just refused, arriving by a different door: a
-  decision point handed to a small local model, which will either loop on
-  the dead server or wander off the task. Either the `lsp` tool works —
+  observation this section just refused, arriving by a different door — a
+  failure message that *steers*, when the model is the one holding the task
+  and the tool is not. Either the `lsp` tool works —
   blocking as long as it takes — or it errors, and choosing what to do
   next is the model's normal business, not something the failure message
   steers.
@@ -282,6 +283,17 @@ hard refusal.
   applies** — an LSP hit under a denied root must not leak just because
   the server walked to it, which is `D-walked-path-denylist` doing
   precisely its job.
+
+  Measured, so the strength of that last sentence is not overstated
+  (worklist item 8, now closed): under the *scoped* `Filesystem` that
+  `bin/pikuri-code` wires, `denied?` is a constant `false` and
+  `denied_roots` is empty — so **root confinement carries the out-of-root
+  boundary alone**, and the `denied?` pass filters nothing there. It earns
+  its place under `AllowAll` (the container wiring), where it answers `true`
+  for `~/.ssh` and `/etc/shadow`, `false` for gem and `~/.m2` paths, and
+  symlink-resolves first. Keep the pass — it is cheap, exact, never raises
+  and fails closed — but the thing it guards is a credential path an LSP
+  result could name, not a dependency checkout.
 - **Custom schemes — standard first, with one hardcoded fallback.** A
   `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
   is a *handle, not a locator*: an index into jdtls's own view of the
@@ -370,10 +382,11 @@ hard refusal.
 
   **Still no `lsp_read` tool.** The tempting shape — a tool taking a URI
   and returning its text — would reintroduce exactly the chaining hop
-  collapsed everywhere else in this note, because small local models chain
-  badly, and would hand the model a 300-character `jdt:` URI to hold and
-  decide about. The `lsp` tool inlines content itself, on the same path
-  for both the standard request and the fallback. And when explicit
+  collapsed everywhere else in this note, spending a round trip on something
+  the tool can do exactly, and would hand the model a 300-character `jdt:`
+  URI to hold and decide about (J9: they encode the whole classpath entry).
+  The `lsp` tool inlines content itself, on the same path for both the
+  standard request and the fallback. And when explicit
   loading is eventually wanted it lands as **another `operation` enum
   entry, not a second tool** — free to defer because the enum is static
   and hardcoded (finding 1). The question to answer *then*: automatic
@@ -527,6 +540,57 @@ finding 1's multi-server dispatch is exercised for real — `.java` and
 `.rb` routing to different servers with different capability sets — and
 the `.md` refusal is a live behaviour, not a hypothetical.
 
+## Document synchronization: an agent is not an editor
+
+**Before every position-based call, re-send `textDocument/didOpen` with the
+file's current disk text.** No open-URI set, no version counter, no digest
+comparison, no `didClose`. That is the whole policy, and it is deliberately
+the thing the spec forbids ("a document must not be opened twice").
+
+The reason it is sound rather than lucky: **pikuri has no unsaved
+buffers.** An editor owns text the disk does not have, which is why LSP's
+sync model exists at all; `write` and `edit` land on disk immediately, so
+the disk is always the truth and the server's copy is only ever a cache of
+it. Re-opening is how you say "here is the truth again", and the text it
+needs is the text the tool already read for `locate`.
+
+Everything else was measured and does not work (S1–S7 in
+[`research.md`](research.md)):
+
+- **A full-text `didChange` is not portable.** Both servers declare
+  `textDocumentSync.change: 2`; jdtls accepts the rangeless whole-document
+  variant, and ruby-lsp raises inside `push_edits` (it reads
+  `edit[:range][:start]` unconditionally). A notification has no reply
+  channel, so the only report is a `window/logMessage` line — the failure
+  is invisible to a client that does not read the server's log, and the
+  document silently keeps its old text (S1).
+- **Syncing the document does not sync the index.** The *ranged*
+  whole-document change is honoured by both, and on ruby-lsp it leaves the
+  index behind: `documentSymbol` reports the new name while `definition`
+  on it answers `[]`, because resolution goes through the index and
+  `RubyDocument#should_index?` only reindexes when the edit's *start
+  position* looks like a declaration — and a whole-file replace starts at
+  0:0, on the leading comment (S2). A sync scheme that produces finding 2's
+  silent empty is worse than none.
+- **`didClose` is half a mechanism.** It resyncs ruby-lsp (the store entry
+  is dropped, the next request re-reads disk) and does nothing for jdtls,
+  which kept answering its pre-close copy (S6).
+- **The spec's own out-of-band channel is ignored by both.**
+  `workspace/didChangeWatchedFiles` changed nothing while the client owned
+  the URI — ruby-lsp's source says why (`unless @store.key?(uri)`): a client
+  that opened a document is *presumed* to be its authority (S7). Which is
+  the assumption to avoid triggering, not to work around.
+- **`didOpen` is not universally required, so this costs nothing where it
+  is not needed.** ruby-lsp reads any unopened URI straight off disk
+  (`Store#get` → `File.binread`); jdtls needs the open for `definition` but
+  not for `documentSymbol` (S3). Re-opening every time is correct on both
+  and asks neither which it is.
+
+One cost, named: re-opening re-parses the file on every call, so a call on
+a large file pays a parse it might have skipped. That is a local child
+process doing what it does anyway on every keystroke in an editor, and the
+alternative is a correctness bug that reports success.
+
 ## Questions raised, and how they settled
 
 (All seven are closed; what is still open is the worklist in
@@ -606,14 +670,27 @@ considered-then-deferred record an `ideas/` note owns.)
 
 ## The tool surface: ten operations, and no column
 
+> **Membership is being re-derived, and this section is now evidence rather
+> than derivation.** Per [`../lsp.md`](../lsp.md) §Strategy, the enum is
+> sourced from harnesses that shipped an LSP tool (Claude Code, grok-build,
+> opencode) instead of argued against what two servers implement — the
+> per-server arguments below are why individual *deviations* are justified
+> (`typeDefinition` in, per J9), not how the list is chosen. Worklist item 1
+> is that survey; two verdicts below are already contested by it
+> (`documentSymbol`'s exclusion, and the `subtypes` treatment).
+
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
 
-**pikuri never asks the model for a column.** Claude Code requires
-`line` *and* `character`; getting a column right means counting
-characters inside a line, which a strong model does and a local 4B model
-does not. Nothing hands the model that coordinate either: `Read` prints
-line numbers, `grep` prints `file:line:text`, neither prints columns.
+**pikuri never asks the model for a column** — and the reason is not model
+capability (the target is 25B+; the arithmetic is not the problem). It is
+that **nothing in the model's input contains a column**: `Read` prints
+line→text, `grep` prints `file:line:text`, neither prints columns. So a
+column can only be *invented* by counting characters in a line the model
+saw as prose, exactly right, with tabs and multibyte — and being wrong is
+not an error. S8 has `definition` answering 0 from a keyword column, and S9
+has `references` seven columns off returning **80,609** results instead of
+2. Meanwhile the tool can derive the column exactly from one line of text.
 (Evidence from the throwaway clients: every one of them grew a
 `locate(text, symbol)` helper on the first attempt, because supplying
 columns by hand was intolerable even by hand.)
@@ -623,7 +700,20 @@ So the parameters are **`symbol` (required), `file` and `line`
 locating the symbol text, and resolves a bare name through
 `workspace/symbol` + an exact-name filter (finding 5). That is the
 "collapse the name→position hop inside the tool" commitment made
-concrete. Three consequences worth noting:
+concrete.
+
+> **The two halves are not equally deliverable, and v1 says so.**
+> `symbol` + `file` + `line` → column is pure local text search: no index,
+> no server, works everywhere. `symbol` *alone* → position depends on
+> `workspace/symbol`, which fails in opposite directions on the two servers
+> measured — H6 (a bare namespaced Ruby class scores below ruby-lsp's 0.7
+> threshold) and S10 (jdtls indexes no methods at all, so `"shout"` returns
+> 0 hits and `"greet"` returns the *class*). So the index route ships as a
+> best-effort convenience that reports honestly when it resolves nothing,
+> and `file` + `line` is the shape the tool description teaches. See
+> worklist item 2 in [`../lsp.md`](../lsp.md).
+
+Three consequences worth noting:
 
 > **H6 holds the collapse and breaks its input.** ruby-lsp scores
 > `workspace/symbol` with Jaro-Winkler over the `::`-stripped **fully
@@ -633,8 +723,10 @@ concrete. Three consequences worth noting:
 > namespaced, `symbol: "Confirmer"` therefore resolves to nothing and the
 > tool answers "not found": this note's own headline failure, reached
 > through its own headline parameter. The hop still belongs inside the
-> tool; what "a bare name" may be is worklist item 6 in
-> [`../lsp.md`](../lsp.md). Two things are settled regardless: the filter
+> tool; what "a bare name" may be is worklist item 2 in
+> [`../lsp.md`](../lsp.md), and S10 adds the other half — jdtls indexes no
+> methods, so a bare name cannot reach a Java method at all. Two things are
+> settled regardless: the filter
 > compares the **last `::` segment**, never `name` (ruby-lsp reports the
 > FQN there deliberately), and this is a *below-threshold* drop, so no cap
 > or ranking tweak reaches it.
@@ -719,8 +811,11 @@ at the keyword column returned zero items every time and at the symbol's
 own column exactly one every time, and `workspace/symbol`'s range for
 `class Tool` starts at column 2 — the keyword — so feeding a hit's range
 back in *is* the failure rather than the shortcut. The helper is
-load-bearing, not a convenience. Still wants the same check against jdtls,
-which is worklist item 7 in [`../lsp.md`](../lsp.md).
+load-bearing, not a convenience. **And on jdtls too, for different reasons
+per operation** (S8): `definition` answers 0 from a keyword column there as
+well, while `prepareTypeHierarchy` answers from any column on the line, and
+`workspace/symbol` reports the *symbol* column where ruby-lsp reports the
+keyword. Two servers, opposite details, same helper.
 
 Membership then follows:
 
@@ -771,10 +866,17 @@ which no other candidate on the fence can say.
 > the argument above: ruby-lsp's `typeHierarchy/subtypes` is an
 > unimplemented stub behind a truthfully-advertised provider, and module
 > ancestry is walked in neither direction. So Ruby's "who overrides this"
-> hole is **not** closed, and the four bullets below are read against
-> worklist item 5 in [`../lsp.md`](../lsp.md), which is where the
-> replacement decision lives. `supertypes` survives intact and on its own
-> merits (H2, H3); the `subtypes` half of the claim does not.
+> hole is **not** closed, and the promotion argument above loses its
+> load-bearing half; `supertypes` survives intact and on its own merits
+> (H2, H3).
+>
+> **Resolved by the strategy, not by an enum change** ([`../lsp.md`](../lsp.md)
+> §Strategy): `subtypes` ships, and when ruby-lsp answers `nil` from its
+> `# TODO` the tool reports that the server returned no results. The arm
+> considered and dropped was a per-server *known-stub list* — pikuri
+> tracking which advertised capabilities are lies — which is precisely the
+> unbounded per-server catalogue the strategy refuses. One mechanical
+> consequence remains: the parse layer accepts `nil` as well as `[]`.
 
 - **Four values, not two.** Direction *is* the question — "who calls this"
   and "what does this call" are separate asks, and one lumped operation
@@ -804,7 +906,9 @@ which no other candidate on the fence can say.
   advertises it for the `supertypes` it really implements, and `subtypes`
   answers `nil` from a `# TODO`. The gate is *working* and still lets a
   known-empty operation through, which is the one failure mode a
-  capability check was supposed to remove. Worklist item 5.
+  capability check was supposed to remove — and the answer is to relay the
+  empty result honestly rather than to model the lie (see the resolution
+  above).
 - ~~**Unverified, and it must be verified first.**~~ **Verified — H1–H5,
   and it went the other way.** `subtypes` returned 0 for `Pikuri::Tool`
   (14 in-repo subclasses), `Listener::Base` and `Confirmer` alike, from
@@ -842,6 +946,13 @@ of exact-match-first ordering and a hard cap.
   genuinely does outline it. The reach-into-dependencies argument that
   might seem to save it belongs to `workspaceSymbol`: `documentSymbol`
   takes a single `textDocument: {uri}` and searches nothing.
+
+  > **Contested by S10, and probably wrong.** jdtls's `workspace/symbol`
+  > returns *types only* — a method defined in the fixture returns 0 hits by
+  > name — so for Java the in-file outline is the only way to turn a method
+  > name into a position, and the `grep` substitute does not survive
+  > overloads or a `Foo.Bar` nested type. Claude Code ships it. Decide with
+  > worklist item 1.
 - **`declaration`** — marginal against `definition` in both languages
   (C-style header/impl splits are the case it exists for).
 
@@ -1081,8 +1192,28 @@ because its tools synthesize as raw `RubyLLM::Tool`s with no leg surface
 host answer, a constant, and `:no_egress`. That composes comfortably at a
 `trifecta_legs:` declaration site on the tool, the way
 {Pikuri::Workspace::Read} does it, and awkwardly at the extension. So: on
-the tool, with the extension contributing nothing — confirm that, or the
-same legs get counted twice.
+the tool, with the extension contributing nothing.
+
+**Confirmed against the real classes** (worklist item 9, now closed), and
+the mechanism matters because it is easy to get accidentally wrong.
+`Lsp::Extension` must **not** override `trifecta_contribution` — the base
+`Agent::Extension` already returns `nil`, so this is a non-action rather
+than a suppression. What makes it safe is that the extension registers the
+tool through `Configurator#add_tool` at *configure* time (the
+`Tasks::Extension` shape), which puts it in `agent.tools`, where
+`Trifecta.build` reads `trifecta_legs` directly. The leg-invisible path is
+`ExtensionContext#add_raw_tool`, and it exists for MCP's and sub-agents'
+synthesized `RubyLLM::Tool`s — using it here is what would force the legs
+back onto the extension. Two measured details on why a duplicate
+declaration is not merely redundant: contributions are unioned per label
+and `legs | legs == legs`, so the *verdict* would not move — but the map
+would grow a `(lsp)` row beside the `lsp` row carrying the same three legs,
+and `Contribution#label` is what `Report#attribution` points the reader at,
+so it would blame the extension's wiring for a declaration living on the
+tool. And an MCP-shaped `ASSUMED` contribution would *widen* the answer
+outright: `legs | ASSUMED` flips egress to
+`:unreviewed` / `:attacker_reachable`, the opposite of what §Egress
+concludes.
 
 **Four sentences the DESIGN.md owes about the *absent* egress leg, none of
 them a tag:**
@@ -1112,10 +1243,9 @@ out to `bundle install`. The answer is "not sandboxed, deliberately, and
 here is why" — but written down, because someone who knows about the
 sandbox will otherwise find it themselves and read it as an oversight.
 
-**This leaves two verification tasks**, both for the implementation
-session and neither a design fork: whether `Filesystem#denied?` has an
-opinion outside the root, and whether `Lsp::Extension` really contributes
-no legs. They are worklist items 8 and 9 in [`../lsp.md`](../lsp.md).
+**Both verification tasks are done** — `Filesystem#denied?` outside the
+root (see §"What a result outside the root becomes") and the declaration
+site (just above). Neither changed a leg.
 
 ## Considered, deferred
 
