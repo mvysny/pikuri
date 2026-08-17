@@ -142,11 +142,22 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
 StdioEntry = Data.define(:id, :command, :files, :language_id, :env, :init_options)
 ```
 
-`language_id:` is the new field, and it closes the hole the harness survey
-found — `didOpen` carries a `languageId` and basename globs cannot supply
-one. **Proposed:** one `language_id:` per entry rather than a glob→id map,
-because an entry *is* a server and both worked examples are single-language
-(`'ruby'`, `'java'`); a multi-language server wires two entries at the same
+`language_id:` closes the hole the harness survey found — `didOpen` carries
+a `languageId` and basename globs cannot supply one — but it is **optional,
+with a built-in extension→id table behind it**, which is what S11 argues.
+The value's origin is the LSP spec's *language identifiers* table (VS Code's
+list, adopted by the spec and open-ended, since the field is a plain string
+on the wire), so pikuri ships the well-known rows — the ones that are not
+simply the extension: `.rb`→`ruby`, `.java`→`java`, `.py`→`python`,
+`.rs`→`rust`, `.cs`→`csharp`, `.ts`→`typescript`, … — and the entry's
+field overrides them for anything unlisted. **Not required**, because S11 measured
+that jdtls ignores the field entirely and ruby-lsp falls through to `:ruby`
+for anything it does not recognize, while the two values it *does* recognize
+wrongly (`erb`, `rbs`) return `nil` and zero symbols in silence. Asking a
+user to type a string that only hurts when it is *plausible* is the worst
+shape available; a table cannot make that mistake, and the Ruby book example
+stays three lines. One field per entry rather than a glob→id map, since an
+entry *is* a server; a multi-language server wires two entries at the same
 command, which `id` already distinguishes. No `root:`, no
 `startup_timeout:`, no `content_request:`, no `settings:` (deferred, and
 both harnesses have one — say so honestly rather than implying nobody needs

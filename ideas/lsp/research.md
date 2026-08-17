@@ -8,8 +8,8 @@ Nothing here is a decision — the decided design is in
 
 **The labels are stable ids, cited from both other files.** Findings are
 numbered per source — `finding 1`–`finding 9` for the first Ruby runs,
-`J1`–`J9` for jdtls, `H1`–`H10` for the two type-hierarchy runs, `S1`–`S10`
-for the document-sync/anchor run — in *discovery* order, not reading order.
+`J1`–`J9` for jdtls, `H1`–`H10` for the two hierarchy runs, `S1`–`S11` for
+the document-sync/anchor runs — in *discovery* order, not reading order.
 Don't renumber them to tidy a sequence.
 
 ## How the protocol actually works
@@ -781,3 +781,17 @@ variable declarations in `App.java`. `references(Panel)` → 3, two of them
 which hit is a subtype, the caller cannot filter without re-reading each
 file, and the signal-to-noise only worsens with a widely-used base class
 (finding 6, S9).
+
+**S11. `languageId` is ignored by jdtls, and on ruby-lsp only a
+*recognized* wrong value hurts.** Same `.rb` file re-opened under five
+ids: `ruby`, `python` and `x-nonsense` all answered `definition` and
+`documentSymbol` identically, while **`erb` and `rbs` returned `nil` and
+zero symbols** — silently, no error. The reason is in `server.rb`'s
+`text_document_did_open`, which selects a document class (`erb`/`eruby` →
+`:erb`, `rbs` → `:rbs`, everything else → `:ruby`), so an unknown id falls
+through to the right parser and a *known* one picks the wrong parser. jdtls
+ignored the field outright: `java`, `python` and `x-nonsense` were
+indistinguishable on a `.java` file. So the risk is inverted from the
+obvious reading — garbage is safe, plausible-but-wrong is fatal and quiet —
+which argues for pikuri deriving the value from a built-in table rather than
+asking a user to type it.
