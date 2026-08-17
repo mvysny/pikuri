@@ -122,6 +122,75 @@ RSpec.describe Pikuri::Testing do
     agent&.close
   end
 
+  # What the fake transport is uniquely good for: asserting the *payload*, not
+  # just the events. An interloper injection appended between an assistant's
+  # tool_calls message and the tool message answering it is rejected by OpenAI
+  # and Anthropic, and silently mangled by a local chat template — and no
+  # event-level assertion can see it, because the listener order looks right
+  # either way.
+  describe 'message order on the wire' do
+    # Serves the scripted responses and keeps every request body, so a spec can
+    # read exactly what the provider would have received.
+    def recording_transport(captured, &script_block)
+      script = Pikuri::Testing::Script.new
+      script_block.call(script)
+      base = Pikuri::Testing.build_adapter(script.responses)
+      recorder = Class.new(base) do
+        define_method(:call) do |env|
+          captured << JSON.parse(env.body.to_s)
+          super(env)
+        end
+      end
+      Pikuri::Agent::ChatTransport.new(
+        model: 'fake-model', provider: :openai, assume_model_exists: true,
+        api_base: 'http://fake.invalid/v1', api_key: 'not-needed',
+        context_window: 8192, faraday_adapter: recorder
+      )
+    end
+
+    it 'keeps an injected :system message out of a tool call/result pair' do
+      captured = []
+      interloper = Pikuri::Agent::Control::Interloper.new
+      transport = recording_transport(captured) do |llm|
+        llm.tool_call('calculator', expression: '2 + 2')
+        llm.reply('The answer is 4.')
+      end
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent',
+                                interloper: interloper) do |c|
+        c.add_tool Pikuri::Tool::CALCULATOR
+        # Enqueue from inside the turn, the way a path-activation listener does.
+        c.add_listener(Class.new(Pikuri::Agent::Listener::Base) do
+          define_method(:initialize) { |i| @interloper = i }
+          define_method(:on_event) do |event|
+            @interloper.inject_system_message('reference text') if event.is_a?(Pikuri::Agent::Event::ToolCall)
+          end
+        end.new(interloper))
+      end
+
+      agent.run_loop(user_message: 'What is 2 + 2?')
+
+      roles = captured.last['messages'].map { |m| m['role'] }
+      assert_equal %w[system user assistant tool system], roles
+      assert_equal 'reference text', captured.last['messages'].last['content']
+    ensure
+      agent&.close
+    end
+
+    it 'sends a :system message as the system role, not OpenAI\'s newer developer role' do
+      captured = []
+      transport = recording_transport(captured) { |llm| llm.reply('hi') }
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+
+      agent.run_loop(user_message: 'hi')
+
+      # A local llama.cpp hands the role straight to the model's chat template,
+      # and no Qwen/Llama template has seen `developer`.
+      assert_equal 'system', captured.first['messages'].first['role']
+    ensure
+      agent&.close
+    end
+  end
+
   it 'raises a clear error when the script runs dry' do
     listener = capture_class.new
     # Only one turn scripted, but a tool_call forces a second request.

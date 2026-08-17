@@ -17,8 +17,8 @@ module Pikuri
       # injection delivered mid-loop (+mid_loop: true+, drained from
       # {Control::Interloper}). The flag lets a listener treating
       # +UserTurn+ as a turn boundary tell a fresh turn from an in-loop
-      # injection. Emitted by {Agent#run_loop} at turn start, and by
-      # +after_tool_result+ when an interloper item drains in.
+      # injection. Emitted by {Agent#run_loop} at turn start, and when an
+      # interloper item drains in after a tool batch.
       UserTurn = Data.define(:content, :mid_loop) do
         # @param content [String] user-supplied text
         # @param mid_loop [Boolean] +true+ when drained from

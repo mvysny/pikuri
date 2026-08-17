@@ -794,8 +794,13 @@ RSpec.describe Pikuri::Agent do
     end
   end
 
-  describe 'interloper drain on after_tool_result' do
+  describe 'interloper drain once a tool batch is complete' do
     let(:interloper) { Pikuri::Agent::Control::Interloper.new }
+
+    # ruby_llm fires +after_message+ once per appended message; the drain rides
+    # the tool-result one, never +after_tool_result+ (which fires *before* the
+    # result message exists — see Agent#tool_batch_complete?).
+    let(:tool_result_message) { Struct.new(:role, :tool_call_id).new(:tool, 'call_1') }
 
     it 'drains the queue and appends each item as a user-role message + Event::UserTurn(mid_loop: true)' do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
@@ -804,7 +809,7 @@ RSpec.describe Pikuri::Agent do
       interloper.inject_user_message('first')
       interloper.inject_user_message('second')
 
-      fake_chat.fire(:after_tool_result, 'observation')
+      fake_chat.fire(:after_message, tool_result_message)
 
       assert_equal(
         [
@@ -826,7 +831,7 @@ RSpec.describe Pikuri::Agent do
       Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
                         system_prompt: 's') { |c| c.add_listener recorder }
 
-      fake_chat.fire(:after_tool_result, 'observation') # must not raise
+      fake_chat.fire(:after_message, tool_result_message) # must not raise
 
       assert_equal [], fake_chat.added_messages
     end
@@ -837,11 +842,25 @@ RSpec.describe Pikuri::Agent do
                         interloper: interloper) { |c| c.add_listener recorder }
       interloper.inject_user_message('only once')
 
-      fake_chat.fire(:after_tool_result, 'a')
-      fake_chat.fire(:after_tool_result, 'b')
-      fake_chat.fire(:after_tool_result, 'c')
+      3.times { fake_chat.fire(:after_message, tool_result_message) }
 
       assert_equal [{ role: :user, content: 'only once' }], fake_chat.added_messages
+    end
+
+    # The regression this drain point exists for: an assistant message carrying
+    # tool_calls and the tool messages answering it are one unit on the wire.
+    it 'does not drain on the assistant message that opened the batch' do
+      Pikuri::Agent.new(transport: Pikuri::Agent::ChatTransport.new(model: 'm'),
+                        system_prompt: 's',
+                        interloper: interloper) { |c| c.add_listener recorder }
+      interloper.inject_system_message('reference text')
+
+      opener = Struct.new(:role, :tool_calls, :content, :thinking, :input_tokens, :output_tokens,
+                          :cached_tokens, :cache_creation_tokens, :thinking_tokens, :model_id)
+                     .new(:assistant, { 'call_1' => :whatever }, nil, nil, 1, 1, nil, nil, nil, 'm')
+      fake_chat.fire(:after_message, opener)
+
+      assert_equal [], fake_chat.added_messages
     end
   end
 
@@ -949,7 +968,7 @@ RSpec.describe Pikuri::Agent do
                         interloper: interloper) { |c| c.add_extension ext }
       interloper.inject_user_message('interloped question')
 
-      fake_chat.fire(:after_tool_result, 'observation')
+      fake_chat.fire(:after_message, Struct.new(:role, :tool_call_id).new(:tool, 'call_1'))
 
       assert_equal 'interloped question', ext.calls[0][1]
       assert_equal(

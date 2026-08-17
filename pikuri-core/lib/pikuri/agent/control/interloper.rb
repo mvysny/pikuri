@@ -6,7 +6,7 @@ module Pikuri
       # Mid-loop host→agent injection queue. A host (TUI, web client)
       # constructs an +Interloper+, passes it to {Agent#initialize} via
       # +interloper:+, and enqueues from any thread while the agent runs. The
-      # +Agent+ drains it at the next +after_tool_result+ boundary — the only
+      # +Agent+ drains it once the running tool batch is answered — the only
       # point in ruby_llm's loop where conversation state is consistent — and
       # the next round-trip reacts to what was injected.
       #
@@ -30,9 +30,13 @@ module Pikuri
       #
       # == Delivery boundary
       #
-      # Delivery is at +after_tool_result+, *not* the LLM HTTP call: an
+      # Delivery is at the end of a tool batch, *not* the LLM HTTP call: an
       # injection made mid-response takes effect on the *next* round-trip, once
-      # the model has committed to the current response's tool calls. Same
+      # the model has committed to the current response's tool calls. Never
+      # *inside* a batch — an assistant message carrying tool_calls and the
+      # +:tool+ messages answering it are one unit on the wire, and a message
+      # appended between them is rejected or mangled (see
+      # {Agent#tool_batch_complete?}). Same
       # "gentle" semantic {Control::Cancellable} promises — the cleanest
       # cross-provider point (no in-flight subprocess, no half-built response).
       # Controls are reset only at turn start, never on a mid-loop injection,
@@ -129,7 +133,7 @@ module Pikuri
         end
 
         # Atomically take and remove all pending items. Called by {Agent}'s
-        # +after_tool_result+ wiring. Returns +[]+ when empty (the hot path) —
+        # +after_message+ wiring, once a tool batch is complete. Returns +[]+ when empty (the hot path) —
         # an empty drain does *not* fire {#on_change}; a drain that empties a
         # non-empty queue fires it with +0+, outside the lock.
         #

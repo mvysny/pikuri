@@ -30,8 +30,8 @@ module Pikuri
     # read of a path that does not exist, or a write the human then rejects,
     # promotes anyway. Deliberate: over-firing costs a few hundred bytes,
     # under-firing withholds the skill at the moment it was wanted. It is also
-    # what buys the in-turn landing — an enqueue here drains at the following
-    # +after_tool_result+, with no extra round-trip.
+    # what buys the in-turn landing — an enqueue here drains as soon as the
+    # running tool batch is answered, with no extra round-trip.
     #
     # The path is model-supplied, so it is resolved against +root+ *lexically*
     # — no +realpath+, or a +write+ to a file that does not exist yet would

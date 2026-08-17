@@ -21,8 +21,8 @@ module Pikuri
   # 2. **Controls** ({Control::StepLimit}, {Control::Cancellable},
   #    {Control::Interloper}) — host-facing signal holders the +Agent+
   #    reads at fixed boundaries: +tick!+/+check!+ on every
-  #    +before_tool_call+, +reset!+ at turn start, +drain!+ on every
-  #    +after_tool_result+.
+  #    +before_tool_call+, +reset!+ at turn start, +drain!+ once each tool
+  #    batch is answered.
   #
   # "What fires when" is one grep for +@listeners.emit+ (loop narration)
   # plus the capability calls in {ExtensionContext} (domain events).
@@ -97,7 +97,7 @@ module Pikuri
     #   or +nil+ for none (no way to stop a running turn but killing the
     #   process).
     # @param interloper [Control::Interloper, nil] mid-loop user-input queue
-    #   drained at every +after_tool_result+ (each item becomes an
+    #   drained once each tool batch is answered (each item becomes an
     #   {Event::UserTurn} with +mid_loop: true+), or +nil+ for none.
     # @param id [String] unique id; empty for the main agent, persona-rooted
     #   for sub-agents (+"researcher 0"+, ...). Distinct from a persona's
@@ -275,7 +275,7 @@ module Pikuri
 
       # Deliver host-scheduled injections (e.g. a UI-loaded skill) before the
       # first complete, so a freshly-scheduled block lands this turn rather
-      # than only at the next after_tool_result — ordered ahead of the user
+      # than only after the next tool batch — ordered ahead of the user
       # message appended below.
       drain_interloper if @interloper
 
@@ -449,6 +449,7 @@ module Pikuri
       # complete callback→event map.
       @chat.after_message do |msg|
         emit_after_message(msg)
+        drain_interloper if @interloper && tool_batch_complete?(msg)
       end
       @chat.before_tool_call do |tc|
         @listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
@@ -457,7 +458,6 @@ module Pikuri
       end
       @chat.after_tool_result do |result|
         @listeners.emit(Event::ToolResult.new(content: result))
-        drain_interloper if @interloper
       end
 
       # Context-window cap on the stream before any Tokens event; re-fires
@@ -580,6 +580,13 @@ module Pikuri
         c.public_send("#{slug}_api_base=", transport.api_base) unless transport.api_base.nil?
         c.public_send("#{slug}_api_key=", transport.api_key) unless transport.api_key.nil?
         c.faraday_adapter = transport.faraday_adapter if transport.faraday_adapter
+        # ruby_llm defaults an OpenAI-family `:system` message to the newer
+        # `developer` role. OpenAI treats the two alike, but a local
+        # llama.cpp hands the role straight to the model's chat template,
+        # and a Qwen/Llama template has never seen `developer` — the system
+        # prompt then arrives under a role token the model was not trained
+        # on. pikuri targets local servers first, so ask for `system`.
+        c.openai_use_system_role = true if c.respond_to?(:openai_use_system_role=)
       end
     end
 
@@ -640,6 +647,32 @@ module Pikuri
     #
     # @param msg [RubyLLM::Message]
     # @return [void]
+    # Whether +msg+ closed a tool batch — the only mid-turn moment an injected
+    # message may be appended.
+    #
+    # An assistant message carrying +tool_calls+ and the +:tool+ messages
+    # answering it are one indivisible unit on the wire: OpenAI rejects a
+    # +tool+ message that does not follow its call, Anthropic requires the
+    # results to open the very next message, and a local chat template groups
+    # them into one block. Anything appended between the two halves is
+    # therefore either an error or, worse, silently mangled prose — which is
+    # what draining at ruby_llm's +after_tool_result+ did, since that fires
+    # *before* the result message is added.
+    #
+    # @param msg [RubyLLM::Message]
+    # @return [Boolean] true when +msg+ is the last tool result its assistant
+    #   message was waiting for (so parallel calls drain once, at the end)
+    def tool_batch_complete?(msg)
+      return false unless msg.role == :tool
+
+      messages = @chat.messages
+      opener_index = messages.rindex { |m| m.role == :assistant && m.tool_calls&.any? }
+      return true if opener_index.nil?
+
+      answered = messages[(opener_index + 1)..].filter_map { |m| m.tool_call_id if m.role == :tool }
+      messages[opener_index].tool_calls.each_key.all? { |id| answered.include?(id) }
+    end
+
     def emit_after_message(msg)
       return unless msg.role == :assistant
 
