@@ -99,7 +99,12 @@ Related:
    reopen criterion 2 on the decision, and measurable with a throwaway
    listener over `Event::ToolCall`. The mechanism shipped 2026-08-17, so
    this is now a measurement *on the shipped thing* rather than a
-   pre-flight one — cheaper, not harder.
+   pre-flight one — cheaper, not harder. **First datapoint** (2026-08-17):
+   one `read` fired two promotions, of which one (`tuile`, globbing
+   `**/*.rb`) was irrelevant to the task — the deliberate over-firing
+   {Pikuri::Skill::Promoted} documents, and the model did decline to load
+   it. Counting needs no listener now: `Listener::Terminal` prints
+   `Promoted` through its generic arm, so a transcript is the measurement.
 
 6. ~~**Is a bare name a strong enough recall cue, on a *local* model?**~~
    **Moot 2026-08-16** — there is no name-only tier any more; a gated
@@ -110,15 +115,31 @@ Related:
    in the system prompt it was primed on? Every number and anecdote
    behind this family of notes came from Claude Code over a catalog
    authored for Claude Code — none of it is evidence about llama.cpp.
-   **Half of this is now answered** (2026-08-17): the *delivery* half was
-   a real bug, not a model failing — Qwen3.6's template ate every
-   mid-conversation `:system` message, and `D-reference-text-as-user-turn`
-   fixed it (the story is `book/wire.md`). So the block now demonstrably
-   reaches the model. What stands is only the behavioural half: **given
-   that it arrives, does a local model act on it** the way Claude Code
-   acts on a description it was primed on? Cheapest probe: touch a file a
-   gated skill globs and see whether the local model calls `skill`
-   unprompted. No code required.
+   **Answered 2026-08-17**, in four stages, on
+   `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` against a scratch repo holding one
+   deliberately badly-documented Ruby file:
+
+   - *Delivered* ✓ — but only after a real bug. Qwen3.6's template ate
+     every mid-conversation `:system` message; `D-reference-text-as-user-turn`
+     fixed it (`book/wire.md` tells it).
+   - *Attended* ✓ — the model named the promoted skill in its own reasoning,
+     which it could only have learned from the injected block.
+   - *Invoked* ✗ **→** ✓ — first run it resolved to load, then read a
+     neighbouring source file instead and imitated it. Cause: the promotion
+     announced mere availability while the resident catalog carried an
+     imperative. Fixed in `Renderer.format_promotion`; two runs since load
+     the skill unprompted and decline the irrelevant co-promoted one.
+   - *Applied* ~50%, and the **shape of the miss is the finding**. Sorted by
+     what each rule asks: additive rules ("lead with an example", "name a
+     concrete type") landed 2/2; subtractive rules ("omit the tautology",
+     "no referrer lists", "cut the wall") landed 1/5. The single subtractive
+     win was the only one stated as a *literal* banned string ("Not
+     thread-safe" is noise); the four losses are *categorical* and need the
+     model to classify its own output as an instance.
+
+   So the mechanism is sound and nothing further in pikuri can move this —
+   the residual is model capability plus skill authoring, and it graduates
+   to the two book bullets below rather than to code.
 
 7. **Does a trigger-first description fire without a nudge?** Running
    *observationally* rather than as a formal experiment, because it no
@@ -134,7 +155,11 @@ Related:
    whether
    `writing-rdoc` gets loaded when Ruby docs are written, now that
    `paths:` puts its description in front of the model at the right moment
-   and nothing else asks for it.
+   and nothing else asks for it. **Partly answered by item 6's runs**: a
+   trigger-first description does fire without a nudge on a local model —
+   but only once the promotion block carries the load instruction. With
+   the availability-only wording it did not, so "trigger-first" was never
+   the binding variable it looked like.
 
 
 ## Still-open content questions
@@ -215,13 +240,27 @@ Related:
   the model can feel the lack of, while a skill advertises a *correction*
   the model cannot — which is why skills need a trigger where MCP servers
   do not, and why no amount of description tuning fully closes the gap.
+  **Item 6 sharpened this into something measurable:** a correction is
+  overwhelmingly *subtractive* ("delete this", "never write that"), and
+  subtractive instructions lose to a concrete exemplar sitting in the same
+  context — which is also why imitation can never carry them, since
+  **absence is not demonstrable**. You can copy a neighbour's tag style;
+  you cannot learn "cut your rationale section" from a file whose author
+  already cut theirs.
   That belongs in the book's skills material, and in `COMPARISON.md`'s
   reasoning about why every harness surveyed relies on model judgment and
   then adds a nudge mechanism anyway.
 - The **authoring guidance** — lead with the trigger, cut the narrative,
   and note that a gated description is paid only on activation (so it can
   afford to be trigger-heavy) while an ungated one is resident forever (so
-  it must be tight) — is advice to skill *authors*, so it belongs wherever
+  it must be tight) — now has a fourth rule with a measurement behind it:
+  **state a ban literally, never categorically.** Item 6's one subtractive
+  rule that survived contact with a local model was the one naming the
+  exact forbidden string; the four phrased as categories ("a tautology",
+  "a referrer list") all lost, because they ask the model to classify its
+  own output before it can obey. Prefer "never write `Not thread-safe`"
+  over "skip the negative". All of this is advice to skill *authors*, so
+  it belongs wherever
   the book teaches skill authoring, not in a yardoc nobody writing a
   `SKILL.md` will read.
 - When items 1–4 land and the measurements are taken, **this note is

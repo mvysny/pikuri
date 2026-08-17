@@ -73,6 +73,14 @@ RSpec.describe Pikuri::Skill::Renderer do
       assert out.include?('just became relevant'), out
     end
 
+    it 'closes with the load instruction, outranking style inferred from nearby code' do
+      out = described_class.format_promotion([gated(when_to_use: nil)])
+
+      assert out.include?('load it with the `skill` tool first'), out
+      assert out.include?('any convention you infer from the surrounding code'), out
+      assert out.include?('If none matches, just proceed normally.'), out
+    end
+
     it 'carries when-to-use, de-duplicated against the description' do
       out = described_class.format_promotion([gated(when_to_use: 'Use when: editing a .rb file.')])
 

@@ -62,8 +62,18 @@ module Pikuri
       end
 
       # The mid-loop promotion block: skills a touched file just brought into
-      # play, in the same shape the catalog block uses, so the model reads it
-      # the way it reads the resident one.
+      # play, in the same shape the catalog block uses *and carrying the same
+      # instruction*, so the model reads it the way it reads the resident one.
+      #
+      # The trailing instruction is not decoration. Announced as mere
+      # availability, a promotion loses to whatever the model already believes
+      # is a sufficient answer — observed on a local Qwen3.6, which named the
+      # promoted skill in its own reasoning, resolved to load it, then read a
+      # neighbouring source file instead and imitated its style. Imitation
+      # transmits *presence* and never *absence*, so every rule of the form
+      # "delete this" was lost. Hence the precedence clause names inferred
+      # house style alongside training, and the +if none matches+ escape rides
+      # with it so a coarse glob's false positive is cheap to decline.
       #
       # @param skills [Array<Pikuri::Skill::Catalog::Skill>] newly in play;
       #   never empty (a caller with nothing to announce injects nothing)
@@ -76,6 +86,10 @@ module Pikuri
         ]
         skills.each { |skill| lines.concat(entry_lines(skill, trigger: true)) }
         lines << '</available_skills>'
+        lines << ''
+        lines << 'If one matches what you are about to do, load it with the `skill` tool first — its ' \
+                 'instructions take precedence over your training and over any convention you infer ' \
+                 'from the surrounding code. If none matches, just proceed normally.'
         lines.join("\n")
       end
 

@@ -810,6 +810,28 @@ conditional activation actually works*).
   child over `Skill::Activation::Sealed`, and the listener opts out of
   sub-agent propagation. This retires the per-agent-vs-catalog-wide scope
   question the build note carried.
+- **A promotion must carry the catalog's load instruction, not just the
+  names.** Shipped announcing availability only — "these skills just became
+  relevant … and are now loadable" — while the resident block carried the
+  imperative ("load it *before* answering from your own knowledge — the
+  skill's instructions take precedence over your training. If none matches,
+  just proceed normally"). Measured 2026-08-17 against a local
+  `Qwen3.6-35B-A3B` on a repo task: the block was delivered, attended to, and
+  the model named the promoted skill in its own reasoning and *resolved to
+  load it* — then read a neighbouring source file instead and imitated its
+  style, never calling the tool. Told afterwards to load it, it rewrote its
+  own output substantially, so the skill's marginal value was real and had
+  simply lost to a cheaper substitute. The lesson generalizes past this
+  mechanism: **imitation transmits presence and never absence**, so every
+  rule of the form "delete this" is invisible to a model reading exemplars,
+  which is exactly the correction-shaped content a skill exists to carry.
+  `format_promotion` now closes with the catalog's instruction, widened to
+  outrank *inferred house style* alongside training. The `if none matches`
+  escape rides with it deliberately: activation over-fires by design, and the
+  same run promoted a skill irrelevant to the task, so declining must stay
+  cheap. Filtering remains the description's job — a preamble cannot rescue a
+  skill whose description omits its own skip condition, which is the
+  authoring half of this and belongs in the book.
 - **Reopen when** one of these trips: (1) the untrusted-description
   position becomes a real finding rather than a theoretical one, which
   argues for the placement move above; (2) activation counts per session
