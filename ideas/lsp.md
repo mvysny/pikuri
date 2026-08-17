@@ -157,9 +157,11 @@ field overrides them for anything unlisted.
 the table is consulted once per entry, against its first extension-bearing
 glob (`*.rb` → `ruby`), and every file that entry claims is opened under that
 id. Coherent because an entry *is* one server for one language, and it keeps
-`Rakefile` / `Gemfile` / `Dockerfile` rows out of the table entirely. **Not required**, because S11 measured
-that jdtls ignores the field entirely and ruby-lsp falls through to `:ruby`
-for anything it does not recognize, while the two values it *does* recognize
+`Rakefile` / `Gemfile` / `Dockerfile` rows out of the table entirely.
+
+**The field is not required**, because S11 measured that jdtls ignores it
+entirely and ruby-lsp falls through to `:ruby` for anything it does not
+recognize, while the two values it *does* recognize
 wrongly (`erb`, `rbs`) return `nil` and zero symbols in silence. Asking a
 user to type a string that only hurts when it is *plausible* is the worst
 shape available; a table cannot make that mistake, and the Ruby book example
