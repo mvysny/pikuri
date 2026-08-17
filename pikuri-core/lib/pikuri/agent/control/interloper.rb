@@ -15,14 +15,18 @@ module Pikuri
       # Each item carries a {Item#kind}, driving how {Agent#drain_interloper}
       # lands it:
       #
-      # - +:user+ ({#inject_user_message}) — a mid-loop user turn: appended as
-      #   +role: :user+, emits +Event::UserTurn(mid_loop: true)+, and runs the
+      # - +:user+ ({#inject_user_message}) — a mid-loop user turn: appended
+      #   verbatim, emits +Event::UserTurn(mid_loop: true)+, and runs the
       #   {Extension#on_user_message} dispatch (prefetch/record like an initial
       #   turn).
       # - +:system+ ({#inject_system_message}) — host-supplied reference text
-      #   (a loaded skill, retrieved context): appended as +role: :system+,
-      #   emits +Event::SystemInjected+, and runs *no* +on_user_message+
-      #   dispatch and no +UserTurn+ (it's not a user turn).
+      #   (a loaded skill, retrieved context): appended wrapped in
+      #   +<system-reminder>+, emits +Event::SystemInjected+, and runs *no*
+      #   +on_user_message+ dispatch and no +UserTurn+ (it's not a user turn).
+      #
+      # Both reach the wire as +role: :user+ — the kinds differ in dispatch and
+      # envelope, not in role. +:system+ names the *role the text plays*, and
+      # {Agent#append_reference_block} says why the wire role can't match it.
       #
       # Groundwork for downstream TUI/web hosts: the bundled +bin/pikuri-*+ do
       # not wire one (stdin is synchronous). A host running the agent on a
@@ -103,8 +107,9 @@ module Pikuri
         # other retrieved context injected on the host's own initiative, not a
         # user turn (any thread; +Mutex+-guarded). Fires {#on_change}.
         #
-        # @param content [String] non-blank system-role text (e.g. a rendered
-        #   skill block)
+        # @param content [String] non-blank reference text (e.g. a rendered
+        #   skill block); an own semantic tag is kept, the +<system-reminder>+
+        #   envelope nests around it
         # @raise [ArgumentError] if +content+ is +nil+/blank
         # @return [void]
         def inject_system_message(content)

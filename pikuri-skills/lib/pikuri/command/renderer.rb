@@ -17,10 +17,10 @@ module Pikuri
     #   expand(cmd, arguments: 'swingai')
     #   # => "Read the label off `$ARGUMENTS`.\n\n\nARGUMENTS: swingai"
     #
-    # The result is a user message, never a +:system+ block: +/wh swingai+ is
-    # the human's request typed short, so +on_user_message+ must fire (a memory
-    # layer that never sees it is a silent hole), and a one-shot request must
-    # not go sticky the way a hoisted +:system+ block does on Anthropic.
+    # The result is a *plain* user message — the interloper's +:user+ kind, not
+    # its +:system+ one: +/wh swingai+ is the human's request typed short, so
+    # +on_user_message+ must fire (a memory layer that never sees it is a silent
+    # hole) and it must not arrive wrapped as reference text.
     #
     #   agent.run_loop(user_message: text)       # synchronous host
     #   interloper.inject_user_message(text)     # async host, mid-loop

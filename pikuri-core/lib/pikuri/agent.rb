@@ -50,25 +50,37 @@ module Pikuri
     LOGGER = Pikuri.logger_for('Agent')
     private_constant :LOGGER
 
+    # Envelope wrapped around every injected reference block by
+    # {#append_reference_block}. +system-reminder+ is Claude Code's and
+    # grok-build's tag, deliberately — an in-distribution envelope the model has
+    # seen in training beats a pikuri-flavoured one it has to infer.
+    REFERENCE_TAG = 'system-reminder'
+    private_constant :REFERENCE_TAG
+
     # Provider slugs (matched against +@chat.model.provider+) that hoist every
     # +:system+ message out of the request's +messages+ array into a separate
     # top-level field — Anthropic's +system+ param, Bedrock's +system+ blocks.
-    # For them an all-+:system+ conversation renders +messages: []+ and the API
-    # 400s, so {#run_loop} raises {EmptyTurnError}; every other provider keeps
-    # +:system+ inside the array (OpenAI, Gemini) and completes the turn.
+    # For them a conversation holding nothing but the system prompt renders
+    # +messages: []+ and the API 400s, so {#run_loop} raises {EmptyTurnError};
+    # every other provider keeps +:system+ inside the array (OpenAI, Gemini) and
+    # completes the turn.
     SYSTEM_HOISTING_PROVIDERS = %w[anthropic bedrock].freeze
     private_constant :SYSTEM_HOISTING_PROVIDERS
 
-    # A blank turn was requested against a conversation holding only +:system+
-    # messages, on a provider that can't send one (see
+    # A blank turn was requested against a conversation holding nothing but the
+    # assembled system prompt, on a provider that can't send one (see
     # {SYSTEM_HOISTING_PROVIDERS}):
     #
-    #   agent.run_loop(user_message: nil)   # a skill-only chat, backend Anthropic
+    #   agent.run_loop(user_message: nil)   # fresh chat, backend Anthropic
     #   # => EmptyTurnError; the host catches it and prompts for a real message
     #
-    # Content-neutral by design: the +:system+-only block may be a host-loaded
-    # skill, injected memory, or retrieved docs, so {#provider} is all it
-    # carries — the host owns any user-facing wording.
+    # Narrow by construction: every *injected* block lands as +role: :user+
+    # ({#append_reference_block}), so a skill-only or memory-only bare load has
+    # a message to complete against and never reaches here. What remains is a
+    # genuinely empty conversation.
+    #
+    # Content-neutral: {#provider} is all it carries — the host owns any
+    # user-facing wording.
     class EmptyTurnError < StandardError
       # @return [String] the resolved provider slug that can't complete the turn
       attr_reader :provider
@@ -236,11 +248,11 @@ module Pikuri
     # +complete+s the chat. Output is the listeners' job; subsequent calls
     # build on the same history.
     #
-    # A blank +user_message+ whose conversation still holds only +:system+
-    # messages (a fresh chat, or a skill-only bare-load) is provider-split:
-    # providers that can't complete it raise {EmptyTurnError}, the rest run the
-    # turn against that +:system+-only history. A blank turn *mid-conversation*
-    # always proceeds — real turns remain to answer.
+    # A blank +user_message+ against a conversation holding nothing but the
+    # system prompt is provider-split: providers that can't complete it raise
+    # {EmptyTurnError}, the rest run the turn against that history. A blank turn
+    # *mid-conversation* always proceeds — real turns remain to answer, and a
+    # drained injection is itself one.
     #
     # Step-limit and cancellation trips are handled per the class header's
     # "Step-exhaustion policy" / "Cancellation rescue".
@@ -264,7 +276,7 @@ module Pikuri
     #   {Event::Cancelled} is emitted first)
     # @raise [Control::StepLimit::Exceeded] if the budget tripped under the
     #   +:raise+ policy
-    # @raise [EmptyTurnError] on a blank turn against a +:system+-only
+    # @raise [EmptyTurnError] on a blank turn against a prompt-only
     #   conversation when the provider hoists +:system+ (see above)
     # @return [nil] after a turn runs
     def run_loop(user_message: nil, transport: nil)
@@ -280,11 +292,10 @@ module Pikuri
       drain_interloper if @interloper
 
       blank = user_message.nil? || user_message.to_s.strip.empty?
-      # A blank turn against a :system-only conversation (fresh, or a
-      # skill-only bare-load) can't run on a system-hoisting provider (see
-      # EmptyTurnError); elsewhere it completes against that history, so a
-      # host-loaded skill gets its chance to act. Mid-conversation blanks fall
-      # through everywhere — real turns remain to answer.
+      # A hoisting provider would send `messages: []` here (see EmptyTurnError).
+      # The drain above is what usually saves this case: an injected block is a
+      # :user message, so a skill-only bare load has something to complete
+      # against and falls through.
       if blank && @chat.messages.all? { |m| m.role == :system } &&
          SYSTEM_HOISTING_PROVIDERS.include?(@chat.model.provider.to_s)
         raise EmptyTurnError, @chat.model.provider
@@ -322,12 +333,12 @@ module Pikuri
     # teardown handlers), everything stays alive; nothing is re-probed or
     # re-connected. Resets, in order:
     #
-    # 1. Chat history (+Chat#reset_messages!+, which also drops the
-    #    mid-conversation +:system+ memory injections), then re-applies a
-    #    freshly **re-assembled** prompt — {#assemble_system_prompt} re-pulls
-    #    every extension's snippets, so dynamic sections refresh (a resident
-    #    memory persona, a re-read +MACHINE.md+). Callbacks and tool
-    #    registrations on the reused +@chat+ are untouched.
+    # 1. Chat history (+Chat#reset_messages!+, which also drops every injected
+    #    reference block), then re-applies a freshly **re-assembled** prompt —
+    #    {#assemble_system_prompt} re-pulls every extension's snippets, so
+    #    dynamic sections refresh (a resident memory persona, a re-read
+    #    +MACHINE.md+). Callbacks and tool registrations on the reused +@chat+
+    #    are untouched.
     # 2. Controls — step/cancellation reset, interloper queue drained (stale
     #    mid-loop input must not leak forward), cached synth answer dropped.
     # 3. Listeners — a single {Event::Reset} so they reset display state.
@@ -591,18 +602,12 @@ module Pikuri
     end
 
     # Fire {Extension#on_user_message} on every extension, appending any
-    # returned text as a +role: :system+ message right after the user turn
-    # it annotates (the caller appends the +:user+ message first). The system
-    # role is load-bearing — it tags the block as recalled reference, not new
-    # input, and keeps it excludable from a later extraction pass. Each
-    # injection also emits {Event::SystemInjected} so the stream mirrors the
-    # log growth.
+    # returned text via {#append_reference_block} right after the user turn it
+    # annotates (the caller appends the +:user+ message first).
     #
-    # The single place the chat log grows by a memory block. Fired from
-    # {#run_loop} (initial turn) and {#drain_interloper} (interlopers). Called
-    # unconditionally — the {Extension} no-op default returns +nil+ (injects
-    # nothing), so opting out means leaving the default, not omitting the
-    # method.
+    # Called unconditionally — the {Extension} no-op default returns +nil+
+    # (injects nothing), so opting out means leaving the default, not omitting
+    # the method.
     #
     # @param content [String] the incoming user message
     # @return [void]
@@ -611,10 +616,52 @@ module Pikuri
         message = ext.on_user_message(@extension_context, content)
         next unless message.is_a?(String) && !message.strip.empty?
 
-        block = message.strip
-        @chat.add_message(role: :system, content: block)
-        @listeners.emit(Event::SystemInjected.new(content: block))
+        append_reference_block(message.strip)
       end
+      nil
+    end
+
+    # Append host-originated reference text — a memory block, a loaded skill, a
+    # path-activation promotion, retrieved context — and emit
+    # {Event::SystemInjected}. Lands as a +role: :user+ message wrapped in
+    # +<system-reminder>+:
+    #
+    #   append_reference_block('<memory-context>…</memory-context>')
+    #   # the chat log grows by one :user message:
+    #   #   <system-reminder>
+    #   #   <memory-context>…</memory-context>
+    #   #   </system-reminder>
+    #
+    # The event carries the block *unwrapped* — the envelope is wire plumbing,
+    # and a listener rendering the tag would be showing the reader framing they
+    # did not write.
+    #
+    # == Implementation details
+    #
+    # +:user+ rather than +:system+ because a mid-conversation +:system+ message
+    # is not portable: Qwen3.6's chat template silently drops every one past the
+    # leading header, and providers that hoist (Anthropic, Bedrock — see
+    # {SYSTEM_HOISTING_PROVIDERS}) reorder it to the front of the prompt, so the
+    # block is presented as though it had always been there. Neither failure is
+    # visible from anything pikuri can observe: the message is in the payload,
+    # the listener stream renders it, the history holds it. See +DECISIONS.md+
+    # +D-reference-text-as-user-turn+.
+    #
+    # A closing tag inside +content+ is escaped, so injected text (a file, a web
+    # page, an MCP tool's description) cannot close the envelope early and have
+    # what follows read as conversation.
+    #
+    # @param content [String] the block to inject, already stripped; callers
+    #   with their own semantic tag (+<memory-context>+) keep it — the envelope
+    #   nests around it
+    # @return [void]
+    def append_reference_block(content)
+      close = "</#{REFERENCE_TAG}>"
+      # Block form, not a replacement String: gsub reads `\&`, `\1` etc. out of
+      # the latter, so a tag carrying one would be mangled rather than escaped.
+      body = content.gsub(close) { "<\\/#{REFERENCE_TAG}>" }
+      @chat.add_message(role: :user, content: "<#{REFERENCE_TAG}>\n#{body}\n#{close}")
+      @listeners.emit(Event::SystemInjected.new(content: content))
       nil
     end
 
@@ -709,15 +756,18 @@ module Pikuri
     # Drain the interloper queue, landing each item per its
     # {Control::Interloper::Item#kind}:
     #
-    # - +:user+ — append +role: :user+, emit {Event::UserTurn} (+mid_loop:
-    #   true+), then run the {Extension#on_user_message} dispatch (so mid-loop
-    #   injections are prefetched + recorded like initial turns). The dispatch
-    #   runs *after* the +:user+ append so an injected +<memory-context>+ lands
-    #   as +:system+ right behind the turn it annotates.
-    # - +:system+ — append +role: :system+ and emit {Event::SystemInjected};
-    #   no +on_user_message+ dispatch, no +UserTurn+ (reference text, not a
-    #   user turn) — the same shape as {#dispatch_ext_on_user_message}'s own
-    #   memory injection.
+    # - +:user+ — append +role: :user+ verbatim, emit {Event::UserTurn}
+    #   (+mid_loop: true+), then run the {Extension#on_user_message} dispatch
+    #   (so mid-loop injections are prefetched + recorded like initial turns).
+    #   The dispatch runs *after* the append so an injected +<memory-context>+
+    #   lands right behind the turn it annotates.
+    # - +:system+ — {#append_reference_block}: reference text, so no
+    #   +on_user_message+ dispatch and no +UserTurn+.
+    #
+    # Both kinds reach the wire as +role: :user+ and differ in dispatch and in
+    # the envelope — only the +:system+ kind is wrapped. That is the whole
+    # distinction, and it is why the queue keeps two kinds rather than a
+    # +wrap:+ flag.
     #
     # @return [void]
     # @raise [RuntimeError] on an unknown item kind (a bug — only the two
@@ -730,8 +780,7 @@ module Pikuri
           @listeners.emit(Event::UserTurn.new(content: item.content, mid_loop: true))
           dispatch_ext_on_user_message(item.content)
         when :system
-          @chat.add_message(role: :system, content: item.content)
-          @listeners.emit(Event::SystemInjected.new(content: item.content))
+          append_reference_block(item.content)
         else
           raise "unknown interloper item kind: #{item.kind.inspect}"
         end

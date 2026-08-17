@@ -28,13 +28,15 @@ module Pikuri
         end
       end
 
-      # A +role: :system+ block an {Extension#on_user_message} hook
-      # injected into the chat log (recalled memory, retrieved snippets) —
-      # tagged system so the model reads it as background, not new user
-      # input. Carries the injected text verbatim. Emitted by
-      # {Agent#dispatch_ext_on_user_message} at the site that grows the
-      # chat log, once per extension returning a non-empty block, so the
-      # stream mirrors what the model actually sees.
+      # A reference block injected into the chat log — recalled memory, a
+      # host-loaded skill, a path-activation promotion, retrieved snippets.
+      # Carries the block *unwrapped*, without the +<system-reminder>+
+      # envelope {Agent#append_reference_block} sends it under, so a listener
+      # renders what the host wrote rather than pikuri's framing.
+      #
+      # Named for the *role it plays* (background reference, not new user
+      # input), not the wire role it lands under — which is +:user+, because a
+      # mid-conversation +:system+ message is unportable.
       SystemInjected = Data.define(:content)
 
       # Assistant reasoning ("thinking") block, from +thinking.text+ on a

@@ -148,7 +148,7 @@ RSpec.describe Pikuri::Testing do
       )
     end
 
-    it 'keeps an injected :system message out of a tool call/result pair' do
+    it 'keeps an injected reference block out of a tool call/result pair, as a wrapped :user turn' do
       captured = []
       interloper = Pikuri::Agent::Control::Interloper.new
       transport = recording_transport(captured) do |llm|
@@ -169,9 +169,17 @@ RSpec.describe Pikuri::Testing do
 
       agent.run_loop(user_message: 'What is 2 + 2?')
 
-      roles = captured.last['messages'].map { |m| m['role'] }
-      assert_equal %w[system user assistant tool system], roles
-      assert_equal 'reference text', captured.last['messages'].last['content']
+      messages = captured.last['messages']
+      roles = messages.map { |m| m['role'] }
+      # The block lands *after* the :tool message answering the call, never
+      # between the assistant's tool_calls and that result.
+      assert_equal %w[system user assistant tool user], roles
+      # Exactly one system message, and it is the prompt at index 0. This is the
+      # assertion the eaten-injection bug needed: a mid-conversation :system
+      # message is in the payload, renders in the listener stream, and sits in
+      # the history — and some chat templates never show it to the model.
+      assert_equal 0, roles.rindex('system')
+      assert_equal "<system-reminder>\nreference text\n</system-reminder>", messages.last['content']
     ensure
       agent&.close
     end

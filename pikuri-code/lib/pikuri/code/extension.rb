@@ -60,7 +60,7 @@ module Pikuri
         </plan_mode>
       PROMPT
 
-      # One-line per-turn re-assertion, injected as a +:system+ message while
+      # One-line per-turn re-assertion, injected as a reference block while
       # plan mode is active (see {#on_user_message}). Deliberately tiny — it
       # lands at the uncached tail, while the substantive prose lives cached in
       # {PLAN_MODE_PROMPT}. Inlined rather than in +prompts/+ because it's one
@@ -146,8 +146,8 @@ module Pikuri
         nil
       end
 
-      # Inject {PLAN_MODE_REMINDER} as a +:system+ message on every turn plan
-      # mode is active — the soft half of the defense, re-asserting the posture
+      # Inject {PLAN_MODE_REMINDER} on every turn plan mode is active — the
+      # soft half of the defense, re-asserting the posture
       # even when the *host* engaged it and the model never saw a tool call.
       # +nil+ (inject nothing) when plan mode is off or unwired.
       #

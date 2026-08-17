@@ -209,10 +209,13 @@ module Pikuri
         gated.first(@prefetch_k)
       end
 
-      # Format the prefetch slice as a +:system+-framed block. The preface
-      # marks it recalled reference (not new input) and forbids following
-      # instructions embedded in it — provenance framing + system-role
-      # placement is what keeps recall from becoming an injection vector.
+      # Format the prefetch slice as a +<memory-context>+ block, which
+      # {Pikuri::Agent#append_reference_block} then wraps and appends. The
+      # preface marks it recalled reference (not new input) and forbids
+      # following instructions embedded in it — since the block lands as a
+      # +:user+ message, that framing is *all* that separates recall from the
+      # human's own words, and it is what keeps recall from becoming an
+      # injection vector.
       # It says "matched the latest message", not "everything about the
       # user": the slice is a relevance-filtered subset (a vector search
       # keyed to the current turn, see {#prefetch}), and mislabeling it as

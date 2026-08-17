@@ -59,8 +59,10 @@ module Pikuri
       def bind(ctx); end
 
       # Optional per-turn hook fired after a user message is added to the
-      # chat. Default no-op returning +nil+; override and return a {String}
-      # to inject it as a +:system+ message after the user turn.
+      # chat. Default no-op returning +nil+; override and return a {String} to
+      # have it appended after the user turn as a +<system-reminder>+ reference
+      # block (see {Agent#append_reference_block} for the envelope and why it
+      # is not a +:system+ message).
       #
       # The Agent only ever *appends* the returned block at the tail — never
       # rewrites or removes an earlier one, which would bust the provider

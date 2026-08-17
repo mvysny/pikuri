@@ -121,7 +121,7 @@ module Pikuri
       # Schedule a skill for injection into the conversation on the host's
       # own initiative — the UI-driven counterpart of the +skill+ tool. Looks
       # +name+ up in the catalog, renders its body identically to the tool,
-      # and *enqueues* it on the interloper as a +:system+ block.
+      # and *enqueues* it on the interloper as a reference block.
       #
       #   ext   = Pikuri::Skill::Extension.new(catalog: catalog, root: project_root)
       #   agent = Pikuri::Agent.new(..., interloper: interloper) { |c| c.add_extension ext }
@@ -136,20 +136,13 @@ module Pikuri
       # the loop is then run:
       #
       # * bare load — +run_loop(user_message: nil)+: the agent reacts to the
-      #   skill alone and says something — except on a system-hoisting provider,
-      #   where a +:system+-only turn raises {Pikuri::Agent::EmptyTurnError} (the
-      #   skill is still enqueued, so the host just prompts for a message).
+      #   skill alone and says something.
       # * load + message — +run_loop(user_message: text)+: the skill block
       #   and the message both land before the model responds.
       #
-      # Provider note: injected as +:system+, so on the default (llama.cpp /
-      # OpenAI-family) the block sits positionally where it was loaded — a
-      # one-shot, like the tool. On Anthropic every +:system+ message is
-      # hoisted into the top-level system param, so a host-loaded skill is
-      # *sticky*: it stays in force for the rest of the conversation, unlike
-      # the tool's one-shot observation. Intended (a deliberately loaded
-      # skill is session guidance), but an honest divergence between the two
-      # load paths.
+      # Either way the block sits positionally where it was loaded, on every
+      # provider — a one-shot, exactly like the +skill+ tool's observation.
+      # ({Pikuri::Agent#append_reference_block} is what makes that uniform.)
       #
       # @param name [String] a skill in play; the UI enumerates them, so a miss
       #   is a host bug. A +paths:+-gated skill whose path has not fired is

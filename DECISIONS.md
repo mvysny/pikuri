@@ -79,6 +79,156 @@ design.
 
 ---
 
+## D-reference-text-as-user-turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
+
+**Status:** Accepted, shipped 2026-08-17.
+
+**Context.** Everything pikuri appends to a live conversation on its own
+initiative — pikuri-memory's per-turn prefetch, a host-loaded skill body
+(`Skill::Extension#schedule_load_skill`), a `paths:` promotion
+(`Skill::PathActivationListener`), plan mode's per-turn re-assertion, and
+the retrieved-context injections vectordb RAG was heading toward — landed as
+`add_message(role: :system)`. On 2026-08-17 that was measured against the
+author's own llama.cpp router with `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`
+and found to reach the model **not at all**. The chat template ships inside
+the GGUF, the server runs `--jinja`, and its render loop is:
+
+```jinja
+{%- set num_sys = 0 %}
+{%- if messages[0].role == 'system' or messages[0].role == 'developer' %}
+    …merge messages[0] (and messages[1] if also system) into one header…
+    {%- set num_sys = 2 %}   {# or 1 #}
+{%- endif %}
+{%- for message in messages %}
+    {%- if loop.index0 >= num_sys and message.role != "system" and message.role != "developer" %}
+```
+
+Every system/developer message past the leading one or two is skipped. Not
+rejected, not warned about — absent from the string the model reads.
+`POST /apply-template` is the ground truth (it renders a `messages` array
+and returns the prompt, no generation), and a canary of
+`[system, user, system("PIKURI_CANARY")]` shows this is a *newer-template*
+behaviour rather than a Qwen family trait:
+
+| model | mid-conversation `system` survives |
+|---|---|
+| `bartowski/Qwen2.5-7B-Instruct-GGUF:Q5_K_M` | yes |
+| `unsloth/Qwen3-4B-Instruct-2507-GGUF:Q5_K_M` | yes |
+| `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M` | **no** |
+
+Live A/B on the real model, same conversation, only the injection role
+changed: as `:system` the model named five loadable skills; as `:user` it
+named all seven, including the two the promotion had just added. The
+mechanism was correct end to end — only the delivery role was wrong.
+
+Two properties make this the worst class of bug and are why the decision is
+uniform rather than adaptive. **It is silent**: the message is in the HTTP
+payload, the listener stream renders it, `Chat#messages` holds it — every
+layer pikuri can observe says "delivered", and the model then reads as dumb
+or stubborn. And **it flips when you change models**, with nothing in the
+API reporting the change. `/props` even returns
+`chat_template_caps.supports_system_role: true` for Qwen3.6 — true for a
+*leading* system message, useless for this question. Do not build on it.
+
+The second half of the context is that the hazard is not one template's
+quirk. Anthropic's Messages API has no mid-conversation system role at all —
+`system` is a top-level request param — so ruby_llm's provider hoists:
+`messages.partition { |msg| msg.role == :system }`. On Anthropic a
+promotion that fired at turn 5 was already being presented as though it had
+been in the original prompt. grok-build's Anthropic converter does the same
+thing, and grok-build never hits it because it has no mid-conversation
+system message to hoist (`COMPARISON.md`, *grok-build's injection channel*).
+
+**Decision.** One channel for all of it. `Agent#append_reference_block`
+appends `role: :user` with the content wrapped in
+`<system-reminder>…</system-reminder>`, and every producer routes through
+it — the `Extension#on_user_message` dispatch and the interloper's
+`:system` kind alike. `Control::Interloper` keeps both kinds: they now
+differ in *dispatch and envelope*, not in wire role, which is exactly the
+distinction worth keeping (a `:user` item is a turn and fires
+`on_user_message`; a `:system` item is reference text and does not).
+`Event::SystemInjected` keeps its name — it names the role the text
+*plays* — and carries the block **unwrapped**, because the envelope is wire
+plumbing and a listener showing it would render framing the host never
+wrote. A closing tag inside the content is escaped, so an injected file,
+web page or MCP description cannot close the envelope early and have what
+follows read as conversation.
+
+`<system-reminder>` is Claude Code's tag and grok-build's, taken
+deliberately: an in-distribution envelope the model has seen in training
+beats a pikuri-flavoured one it has to infer. A caller's own semantic tag
+(`<memory-context>`) is kept and the envelope nests around it — nesting is
+what grok-build does too, and it means one grep finds every injection.
+
+**Alternatives rejected.**
+
+- **Probe the template at boot and adapt** — canary `/apply-template`, use
+  `:system` where it survives and `:user` where it doesn't. Rejected on
+  three counts. A probe **cannot be authoritative**: `/apply-template` is
+  llama.cpp-only, so there is always a default for "couldn't ask", and it
+  has to be the option that cannot fail silently — at which point the
+  probe only buys the *other* branch. **A branch taken rarely rots**: the
+  `:system` path would run on Qwen2.5 and the `:user` path on Qwen3.6, and
+  neither is exercised where the other lives. And the failure it guards is
+  silent, where every other failure mode in pikuri is loud. The strongest
+  version of this argument is that a real system message may carry more
+  weight on models that honour one — true, untested, and not worth a
+  silent-failure mode to chase.
+- **Merge the block into the leading system prompt** (grok-build's memory
+  path). Prefix mutation kills the KV cache on every injection, which is
+  the exact cost `D-skill-path-activation` weighed and accepted *not*
+  paying. grok-build can afford it for memory alone because it searches
+  **once** per session and then refuses to re-score for precisely this
+  reason; pikuri's prefetch is per-turn, so the same write would invalidate
+  the cache every turn.
+- **Hoist a subset** — keep `:user` for per-turn blocks, merge the
+  once-per-conversation ones. There is no qualifying subset: a host-loaded
+  skill and a path promotion are mid-conversation *by nature* (that is what
+  makes them injections rather than prompt snippets), and memory and RAG
+  are re-scored per turn. The one genuinely static case,
+  `Workspace::Extension`'s boot snapshot, is already a
+  `system_prompt_snippets` contribution and was never an injection.
+- **A pikuri-flavoured envelope tag.** Out of distribution for no gain.
+- **Collapse the two interloper kinds into one plus a `wrap:` flag.**
+  Considered because both now land as `:user`. Declined: the kinds differ
+  in dispatch semantics (a user turn fires `on_user_message` and emits
+  `UserTurn`), and a boolean at the call site is a worse name for that than
+  the kind is. grok-build reaches the same shape from the other direction —
+  one role plus a nullable `SyntheticReason` tag, interrogated by
+  `starts_prompt_turn()` / `is_real_user_turn`.
+
+**Consequences.**
+
+- **A host-loaded skill is no longer sticky on Anthropic.** It used to be
+  hoisted into the system param and stay in force for the conversation;
+  `schedule_load_skill` documented that as intentional. It is now a
+  positional one-shot on every provider, identical to the `skill` tool's
+  observation. Uniformity was judged worth more than the divergence, and
+  what was actually happening (the whole block silently reordered to the
+  front of the prompt) is not what the doc claimed.
+- **`Agent::EmptyTurnError` survives, and got narrower.** Its trigger was a
+  `:system`-only conversation rendering `messages: []` on a hoisting
+  provider — which used to include the "bare-load a skill, then run a blank
+  turn" case. A drained reference block is now a `:user` message, so that
+  case completes normally; what remains is a genuinely empty conversation
+  (fresh chat, blank turn). Kept rather than retired: that case is still
+  reachable and still a 400.
+- **Two consecutive `:user` messages are now routine** — the turn plus its
+  reference block. Fine on OpenAI-family and on a chat template (two
+  `<|im_start|>user` blocks); grok-build ships the same shape against the
+  Anthropic Messages API without merging.
+- **The offline pin is `pikuri-core/spec/pikuri/testing_spec.rb`**, whose
+  wire-format specs assert role names *and message order* in the recorded
+  request body — including that the only `system` message is at index 0.
+  No assertion inside pikuri could have caught the original bug, because
+  every layer pikuri owns reported success; the payload is the lowest layer
+  it can see, so that is where the pin goes. The online half — a
+  `bin/pikuri-wire-check` printing which markers survive
+  `/apply-template` — is still owed, and generalizes past this bug to a
+  template that drops tool messages or reorders them.
+- **pikuri-memory was presumably inert against Qwen3.6** for as long as
+  that model has been the default. Not measured retrospectively.
+
 ## D-slash-commands — Two registries, a user turn, and no scheduling function (2026-08-16)
 
 **Status:** Accepted, shipped: `Pikuri::Command::Registry` / `Renderer` /
