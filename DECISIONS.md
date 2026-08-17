@@ -79,6 +79,103 @@ design.
 
 ---
 
+## D-no-skills-in-sub-agents — A persona's brief is complete on arrival; no catalog, no `skill` tool (2026-08-17)
+
+**Status:** Accepted; no code change. The plumbing that already enforces it
+stays exactly as it is (see the third rejected alternative).
+
+**Context.** Two halves of "does a sub-agent get skills?" were settled by
+different accidents, and neither was settled on purpose.
+
+The `<available_skills>` block is contributed by `Skill::Extension`, and
+sub-agents don't inherit extensions — a blanket rule whose headline
+rationale is privilege separation (`book/subagents.md`). So the block's
+absence is a *consequence* of a rule argued for other reasons.
+
+The `skill` **tool** is the open half. Tools reach a child by name:
+`SubAgentTool` filters `parent.tools` by `persona.tool_names`, so a persona
+naming `skill` would get it, and `SkillTool#for_sub_agent` already rebuilds
+it over `Skill::Activation::Sealed` for exactly that case. Nothing has ever
+asked — all four bundled personas (`RESEARCHER`, `FILE_MINER`,
+`GIT_REPO_RESEARCHER`, `LIBRARIAN`) name narrow toolsets and no `skill`. The
+mechanism is *prepared*, never *active*, and the question of whether it
+should be has been answered by omission. This entry answers it deliberately.
+
+**Decision.** A sub-agent receives no skills: no catalog in its system
+prompt, and no `skill` tool. A persona that needs domain instructions carries
+them in its own `system_prompt:`, which is the sanctioned route and the only
+one.
+
+**Why.** Privilege separation is *not* the argument here, and saying so
+matters — a skill body is text, not a capability, so handing one to a child
+breaches no boundary the no-inheritance rule protects. The case stands on
+three other legs.
+
+- **A persona is a closed brief, not a general agent.** The child gets
+  `persona.system_prompt` *verbatim* — not appended to the parent's, which is
+  invisible to it. {Pikuri::SubAgent::Persona}'s whole premise is that it is
+  the single source of truth for what the child is. An agent that can pull in
+  instructions its brief never mentioned is an agent whose brief is no longer
+  complete, which trades a property that makes personas auditable for a
+  convenience nobody has asked for. pikuri ships **no general-purpose
+  persona**; every one is narrow enough that its full instruction set fits in
+  the prompt its author wrote.
+- **A skill body assumes a toolset the persona may not hold.** Skills are
+  written against a general harness and say so: `SkillTool::DESCRIPTION`
+  tells the model the loaded skill "may reference helper scripts and files in
+  its base directory — use the `read` tool." That is dead advice for
+  `RESEARCHER` (three network-read tools, no workspace) and worse than dead
+  for `LIBRARIAN` (two corpus tools) — it spends context and invites a call
+  that can only fail. Skills also bind to *ecosystems* rather than tasks:
+  `writing-rdoc` fires on `**/*.rb`, which tells an agent whose job is
+  retrieval from a vector corpus nothing it can act on.
+- **Determinism.** A child reachable by the parent's promotions has a surface
+  that depends on which files the parent happened to read — two identical
+  `agent(name: 'file_miner', task: …)` calls in one session would see
+  different skills because of unrelated earlier work. `Activation::Sealed`
+  exists to prevent this; this entry is why it is welded shut rather than
+  merely defaulted.
+
+**Alternatives rejected.**
+
+- **Let a persona opt in by naming `skill` in `tool_names:`.** Costs nothing
+  to allow — the plumbing works today and the sealed view already narrows it
+  correctly (ungated skills only). Rejected as the *posture*, not as an
+  impossibility: it remains one word away the moment a persona has a real use
+  for it. What it lacks is a case. "The author might add a skill later" is
+  not one — that skill's content belongs in `system_prompt:`, where it is
+  chosen rather than matched.
+- **Thread extensions into the child so it gets the catalog block too.** Not
+  on the table: that reverses the blanket no-inheritance rule, whose
+  rationale is a security boundary (`tool_names:` is the child's entire
+  surface, so a prompt-injected `RESEARCHER` has no `bash` to call) that has
+  nothing to do with skills and should not be relitigated through them.
+- **Delete the sub-agent plumbing as dead code** — `SkillTool#for_sub_agent`,
+  `Activation::Sealed`, `PathActivationListener#for_sub_agent → nil`. It is
+  unexercised by every bundled wiring, so it reads as dead. It is not dead —
+  it is the *enforcement* of this decision for the opt-in path deliberately
+  left open. Delete it and the next persona to name `skill` silently inherits
+  the parent's promotions, which is precisely the accident
+  `D-skill-path-activation` had to fix once already (it "held only by
+  accident at first"). Unexercised guards against a future wiring are worth
+  their lines.
+
+**Consequences.**
+
+- **The `paths:` gate is unreachable downward by construction**, which
+  `D-skill-path-activation` records as accepted-rather-than-fixed. This entry
+  is why it was accepted.
+- **{Pikuri::SubAgent::Persona}'s yardoc is the place a persona author will
+  look** and is currently silent in both directions; it should carry the
+  one-line form of this decision, so it reads as one story with
+  `SkillTool`'s header (which already carries the tool-side half).
+- **Reopen when** a persona has a concrete need — a general-purpose sub-agent
+  (there is none today), or one whose instructions genuinely vary per project
+  in a way `system_prompt:` cannot cover. The cheapest move then is the first
+  rejected alternative, not new machinery.
+
+---
+
 ## D-reference-text-as-user-turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
 
 **Status:** Accepted, shipped 2026-08-17, and confirmed the same day through

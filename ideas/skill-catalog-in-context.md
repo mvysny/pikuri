@@ -72,8 +72,12 @@ Related:
    the prompt) is real and needs rebutting rather than ignoring, and
    opencode v2 moved *to* the prompt, not away. For it: a persona replaces
    the system prompt but inherits the tool verbatim, so the tool is the
-   only home correct for both agent kinds — it fixes item 3's bug by
-   construction rather than by editing a string.
+   only home correct for both agent kinds — it would have fixed item
+   3's bug by construction rather than by editing a string. **That
+   argument has since weakened** (2026-08-17): item 3 *was* fixed by
+   editing a string, and `SkillTool`'s class header now spells out the
+   convention rebuttal this item asked for — so what is left for the
+   move is structural tidiness, not a live bug.
 
    Two caveats: a tool description is built once at `configure` time, so
    it cannot host promotions any better than a prompt can (those stay
@@ -92,8 +96,10 @@ Related:
 
 5. **How many activations does a real session fire?** Decides whether the
    Anthropic prefix-rewrite trade is noise (1–3) or real (fifteen). It is
-   reopen criterion 2 on the decision, and measurable today with a
-   throwaway listener over `Event::ToolCall` — before any of it ships.
+   reopen criterion 2 on the decision, and measurable with a throwaway
+   listener over `Event::ToolCall`. The mechanism shipped 2026-08-17, so
+   this is now a measurement *on the shipped thing* rather than a
+   pre-flight one — cheaper, not harder.
 
 6. ~~**Is a bare name a strong enough recall cue, on a *local* model?**~~
    **Moot 2026-08-16** — there is no name-only tier any more; a gated
@@ -104,18 +110,28 @@ Related:
    in the system prompt it was primed on? Every number and anecdote
    behind this family of notes came from Claude Code over a catalog
    authored for Claude Code — none of it is evidence about llama.cpp.
-   Cheapest probe: hand-inject a promotion block mid-conversation and see
-   whether the local model calls `skill`. No code required.
+   **Half of this is now answered** (2026-08-17): the *delivery* half was
+   a real bug, not a model failing — Qwen3.6's template ate every
+   mid-conversation `:system` message, and `D-reference-text-as-user-turn`
+   fixed it (the story is `book/wire.md`). So the block now demonstrably
+   reaches the model. What stands is only the behavioural half: **given
+   that it arrives, does a local model act on it** the way Claude Code
+   acts on a description it was primed on? Cheapest probe: touch a file a
+   gated skill globs and see whether the local model calls `skill`
+   unprompted. No code required.
 
 7. **Does a trigger-first description fire without a nudge?** Running
    *observationally* rather than as a formal experiment, because it no
    longer gates a decision. `writing-rdoc` was rewritten trigger-first;
-   `writing-javadoc` keeps the old content-summary shape; both doc nudges
+   both doc nudges
    were removed from the author's global CLAUDE.md (`dotfiles-claude`
-   `ff8e41c`, revert to restore). The formal A/B is compromised — the two
-   skills are gated on different ecosystems, and the author works in Ruby
-   far more than Java, so the control gets a fraction of the treatment's
-   opportunities. What is worth watching in normal work: whether
+   `ff8e41c`, revert to restore) — that half still holds. **The control
+   is gone, though** (noticed 2026-08-17): `writing-javadoc` no longer
+   keeps the old content-summary shape — it now carries the same
+   `TRIGGER —` prefix, its own `paths:` and a `when-to-use:` block,
+   exactly like `writing-rdoc`. There is no A/B left to compromise;
+   both arms are the treatment. What is worth watching in normal work:
+   whether
    `writing-rdoc` gets loaded when Ruby docs are written, now that
    `paths:` puts its description in front of the model at the right moment
    and nothing else asks for it.
@@ -166,6 +182,15 @@ Related:
     weaken the UX claim, it sharpens it — the `Skill::Promoted` render is
     now the feature's sole human-facing surface, not a nicer alternative
     to one.
+
+    **Smaller than it reads, as of 2026-08-17.** A human already sees the
+    promotion in every bundled binary: `Listener::Terminal`'s generic
+    `else` arm renders any gem domain event through its own `to_s`, so
+    `Skill::Promoted` prints `· skills available: writing-rdoc (matched
+    lib/pikuri/agent.rb)` with no case arm anywhere. So the UX floor is
+    met and the open part is only whether a *richer* host — a TUI —
+    earns a styled arm of its own. Not nothing, but not the feature's
+    missing half either.
 
 
 ## Graduation plan for what is left
