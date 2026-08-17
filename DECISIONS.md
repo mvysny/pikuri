@@ -327,8 +327,9 @@ what grok-build does too, and it means one grep finds every injection.
   the doc never claimed.
 - **`Agent::EmptyTurnError` survives, and got narrower.** Its trigger was a
   `:system`-only conversation rendering `messages: []` on a provider that
-  carries `:system` in a separate field — which used to include the "bare-load a skill, then run a blank
-  turn" case. A drained reference block is now a `:user` message, so that
+  carries `:system` in a separate field — which used to include the
+  "bare-load a skill, then run a blank turn" case. A drained reference
+  block is now a `:user` message, so that
   case completes normally; what remains is a genuinely empty conversation
   (fresh chat, blank turn). Kept rather than retired: that case is still
   reachable and still a 400.
