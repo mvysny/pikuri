@@ -48,7 +48,7 @@ module Pikuri
       private_constant :LOGGER
 
       # Total {#request} attempts, including the first — 3 means one normal try
-      # plus two restart-then-retry rounds. Copied from {Pikuri::Mcp::ClientWrapper}.
+      # plus two restart-then-retry rounds.
       MAX_ATTEMPTS = 3
 
       # Lines of the child's stderr kept for {#stderr_tail}. jdtls is chatty;
@@ -93,8 +93,8 @@ module Pikuri
 
       # The server cannot answer: it never started, it exited, or it stopped
       # answering and restarts did not bring it back. The message carries the
-      # exit status and {#stderr_tail}; the +lsp+ tool turns it into an
-      # +"Error: …"+ observation and — deliberately — suggests nothing else.
+      # exit status and {#stderr_tail}, which is everything a caller needs to
+      # report the failure — and nothing that steers what to do instead.
       class ServerDied < StandardError; end
 
       # +window/logMessage+ +type+ → logger level. Level 1 is where ruby-lsp
@@ -125,9 +125,8 @@ module Pikuri
         end
       end
 
-      # @param entry [Registry::StdioEntry]
-      # @param root [String, Pathname]
-      # @return [Hash{Symbol => Object}] +{stdin:, stdout:, stderr:, wait_thread:}+
+      # @return [Hash{Symbol => Object}] the {#initialize} channel kwargs:
+      #   +{stdin:, stdout:, stderr:, wait_thread:}+.
       # @raise [ServerDied] when the binary cannot be executed.
       def self.spawn_child(entry, root)
         stdin, stdout, stderr, wait_thread =
@@ -292,8 +291,6 @@ module Pikuri
 
       private
 
-      # Take ownership of a channel: connection, log-message handler, the
-      # caller's handlers, and a stderr drain.
       def adopt(stdin:, stdout:, stderr: nil, wait_thread: nil)
         close_stderr
         @wait_thread = wait_thread
@@ -363,10 +360,9 @@ module Pikuri
       def say_goodbye
         return unless @connection.alive?
 
-        # The shutdown reply is never awaited. Waiting is what a server wedged
-        # mid-index turns into a hung teardown, and the grace it was supposed to
-        # buy — time to persist before dying — is already {#reap_child}'s, where
-        # the thing being waited for is the process actually leaving.
+        # The shutdown reply is never awaited: a server wedged mid-index would
+        # turn teardown into a hang, and the grace it would buy — time to persist
+        # before dying — is already {#reap_child}'s, waiting on the real signal.
         @connection.send_request('shutdown')
         @connection.notify('exit')
       rescue StandardError => e

@@ -19,8 +19,8 @@ module Pikuri
     #   registry.entry_for('Gemfile').id               # => "ruby"
     #   registry.entry_for('README.md')                # => nil
     #
-    # A Ruby server is two facts; the Java one exercises the rest, and each part
-    # of it earns its place — see the book's setup chapter.
+    # A Ruby server is two facts, +command+ and +files+; the Java one exercises
+    # every remaining field.
     class Registry
       # Extension → LSP language identifier, for entries that don't spell out a
       # +language_id:+. Only the +didOpen+ notification uses it, and a server

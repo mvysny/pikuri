@@ -139,9 +139,9 @@ module Pikuri
       end
 
       # Send a request and deliberately *not* wait for its answer, for the one
-      # caller that does not care: teardown, where +shutdown+ must reach the
-      # server ahead of +exit+ but its reply changes nothing. The answer, if it
-      # comes, is dropped as an unknown id.
+      # case where the answer changes nothing: teardown, where +shutdown+ must
+      # reach the server ahead of +exit+. A reply that does arrive is dropped as
+      # an unknown id.
       #
       # @param method [String] e.g. +"shutdown"+.
       # @param params [Hash]
@@ -266,12 +266,19 @@ module Pikuri
         end
         die!('server closed stdout (EOF)')
       rescue Closed => e
-        LOGGER.error("#{@server_id}: reader stopped — #{e.message}")
+        report_reader_stopped(e.message)
         die!(e.message)
       rescue StandardError => e
-        reason = "#{e.class}: #{e.message}"
-        LOGGER.error("#{@server_id}: reader stopped — #{reason}")
-        die!(reason)
+        report_reader_stopped("#{e.class}: #{e.message}")
+        die!("#{e.class}: #{e.message}")
+      end
+
+      # A reader that stops *after* {#close} pulled its IO out from under it is
+      # the teardown working, so it says so at debug; anything else is the
+      # channel dying on its own and belongs in the log at error.
+      def report_reader_stopped(reason)
+        line = "#{@server_id}: reader stopped — #{reason}"
+        @state.synchronize { @closed } ? LOGGER.debug(line) : LOGGER.error(line)
       end
 
       # @return [Hash, nil] the parsed message, or +nil+ at a clean EOF.
