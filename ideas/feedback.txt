@@ -6,10 +6,15 @@ pikuri-tui-code harness, on the pikuri-tui-code codebase.
 
 The verdict below is a snapshot of that moment. Items are cut from the
 list as they settle, and the remainder renumbered; the reasoning lands
-in DECISIONS.md. Settled so far: the directory listing (shipped as
+in DECISIONS.md. Cite an item by its *name* as well as its number when
+you reference one from elsewhere — the numbers move as items are cut.
+Settled so far: the directory listing (shipped as
 file_list + the boot snapshot — D-directory-listing), the calculator
 (kept — D-keep-calculator), the edit tool's shape (occurrence: N shipped,
-no batch or patch sibling — D-single-hunk-edit).
+no batch or patch sibling — D-single-hunk-edit), the skill-load round-trip
+("skill load costs a turn" — `paths:` gating shipped, batching was already
+free via parallel tool calls, and the rest of the surface is closed by
+decision — D-skill-path-activation).
 
 The "What works" section is also gone. Praise has no fork to log, so it
 graduated to the yardoc of each symbol it confirmed, phrased as what not
@@ -50,16 +55,7 @@ What I'd change
    already have this idea in the gradle/maven skills; a generic LSP
    tool would pay rent here.
 
-3. Skill load costs a turn.
-
-   Before any UI work I'm supposed to load `cop` and `tuile`. That's
-   correct and also a round-trip. Either auto-inject those two when the
-   path is `lib/**/*.rb` in this repo, or let me request several skills
-   in one call and have them land before I start reading. (If I can
-   already batch `skill` with other tools, that's enough — I just need
-   it to be the expected opening move, not a surprise tax.)
-
-4. The standing prompt is heavy.
+3. The standing prompt is heavy.
 
    Safety block + harness + AGENTS.md + skills catalog + tool schemas
    on every turn is a lot of prefix. AGENTS.md is worth it for *this*

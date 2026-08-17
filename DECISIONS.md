@@ -934,8 +934,10 @@ conditional activation actually works*).
 - **This is where the skills-surface work stops** (2026-08-17). Two
   re-readings closed the remaining items as a group rather than one at a
   time. First, the origin was thinner than the five notes it grew: the
-  complaint is `ideas/feedback.txt` item 4, *"the standing prompt is
-  heavy"*, which lists the skills catalog in an enumeration and then names
+  complaint is `ideas/feedback.txt` *"the standing prompt is heavy"*
+  (item 3 since this entry cut item 3, *"skill load costs a turn"*, the
+  origin of the notes themselves), which lists the skills catalog in an
+  enumeration and then names
   what is actually not worth its bytes — the tool-schema restatement and
   the duplicated "don't mention the guidelines" material — while saying
   the project file earns its keep. The catalog was never the item's

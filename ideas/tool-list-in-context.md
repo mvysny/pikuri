@@ -29,9 +29,9 @@ Related:
   **mutation** — which bites harder for tool schemas than for skills,
   since schemas sit at the very front of the prefix, so gating one
   invalidates everything.
-- `feedback.txt` item 4 ("the standing prompt is heavy — safety block +
+- `feedback.txt` item 3, *"the standing prompt is heavy"* ("safety block +
   harness + AGENTS.md + skills catalog + tool schemas on every turn") —
-  the live feedback this is the mechanism half of. Item 4's other halves
+  the live feedback this is the mechanism half of. Its other halves
   (the tool-schema restatement in prose, the duplicated
   don't-mention-the-guidelines material) are prompt-editing, not gating,
   and are not this note's business.
@@ -153,5 +153,6 @@ longer declared is a shape some providers reject. **Gating is add-only.**
 - The measurement (30 tools ≈ 22 KB of schema prose, ~4× the skill
   catalog) is worth keeping wherever the entry lands — it is the reason
   anyone raises this, and re-deriving it is a half-hour.
-- `feedback.txt` item 4 stays open on its prompt-editing half regardless;
-  cut only the tool-schema-residency clause if this settles first.
+- `feedback.txt` *"the standing prompt is heavy"* stays open on its
+  prompt-editing half regardless; cut only the tool-schema-residency
+  clause if this settles first.

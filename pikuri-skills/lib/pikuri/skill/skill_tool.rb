@@ -30,9 +30,13 @@ module Pikuri
     # {#for_sub_agent}, against a sealed view of it.
     #
     # The prompt pays per skill *installed*, this tool pays per skill
-    # *used* — the split an outside-model review (Grok 4.6, 2026-08)
-    # picked out over dumping every body up front. Pre-injecting bodies
-    # to save the round-trip trades the cheap axis for the expensive one.
+    # *used*, and the ratio is why: a `skill(name:)` call is ~30 output
+    # tokens once, where `cop` + `tuile` resident are ~4 000 input tokens
+    # for the rest of the conversation. Roughly 100:1 — so every mechanism
+    # for shaving the round-trip (pre-injecting bodies, a `names:` batch)
+    # makes the expensive axis worse. A `paths:` trigger is therefore a
+    # relevance filter on the catalog *entry*, never a body preloader; see
+    # `DECISIONS.md` `D-skill-path-activation`.
     class SkillTool < Pikuri::Tool
       # Description shown to the LLM (opencode-shape; inventory omitted —
       # see the class header).

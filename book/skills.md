@@ -170,6 +170,16 @@ is about to break it. That moment is what a trigger is for, and
 it is why `paths:` exists on skills and has no counterpart on an
 MCP server.
 
+And what firing late costs is not the round-trip. It is the work
+already done under the wrong model: an agent that reads a dozen
+files, sketches an `AbstractPersonView`, and *then* meets the rule
+has to throw the sketch away — and that discarded reasoning is far
+more context than the skill body would ever have cost. Which is
+why the fixes worth reaching for are the free ones, a description
+that leads with the moment and a trigger that arrives before the
+recon starts. Pre-loading bodies to save the round-trip spends
+resident tokens in every session to buy back one turn in a few.
+
 ## Writing a description that fires
 
 The description is not documentation. It is the only thing the
