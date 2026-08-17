@@ -680,18 +680,30 @@ considered-then-deferred record an `ideas/` note owns.)
 > ```
 > goToDefinition  findReferences  hover  documentSymbol  workspaceSymbol
 > goToImplementation  incomingCalls  outgoingCalls  goToTypeDefinition
+> supertypes
 > ```
 >
-> Three changes against what this section argues: `documentSymbol` is back
-> in (all three ship it; S10 makes it the only name→position route for a Java
-> method), the **type hierarchy is out** (no harness ships it, and H1/H4
-> already falsified the argument that promoted it), and the names are the
-> harnesses' `goTo*` spellings rather than pikuri's bare ones. What survives
-> unchanged is `goToTypeDefinition` as the single measured deviation (J9) and
-> `prepareCallHierarchy`'s exclusion — the one place pikuri narrows a 2-of-3
-> majority, because the prepare hop belongs inside the tool. The per-server
-> arguments below explain the deviations; they are no longer how the list is
-> chosen.
+> Changes against what this section argues: `documentSymbol` is back in (all
+> three ship it; S10 makes it the only name→position route for a Java
+> method), **`subtypes` is out and `supertypes` stays** (H7–H10, below), and
+> the names are the harnesses' `goTo*` spellings rather than pikuri's
+> bare ones. `goToTypeDefinition` survives as a measured deviation (J9), and
+> `prepareCallHierarchy` stays excluded — the one place pikuri narrows a
+> 2-of-3 majority, because the prepare hop belongs inside the tool. The
+> per-server arguments below explain the deviations; they are no longer how
+> the list is chosen.
+>
+> **The `subtypes` / `supertypes` split, measured.** `goToImplementation` is
+> the better answer to "list all subtypes" on jdtls — transitive in one call
+> for an abstract type (3 descendants where `subtypes` returned 1) and
+> working on concrete classes too (H7/H8) — so `subtypes` is not merely
+> unshipped by every harness, it is dominated by an operation already in the
+> enum, and on ruby-lsp it is a `# TODO` (H1). `supertypes` is the opposite
+> case: it works on **both** servers (H2, H9), and its value is the *chain*
+> (`FancyPanel → Panel → Widget → Object`, one call per level), which the
+> tool walks internally rather than making the model chain. Note that the
+> walk reaches jar URIs routinely (H9's `Object`), so the scheme table is on
+> the hierarchy path and not only on `definition`'s.
 
 Membership could not be settled on its own — it falls out of the
 parameter shape, which is the more consequential half.
@@ -762,7 +774,7 @@ after the no-column decision was taken and every operation in it is
 position-based in LSP. Sort the ten by *what the anchor is*:
 
 - **Anchor is a declaration the index knows** — `definition`,
-  `references`, `hover`, `implementation`, `supertypes`, `subtypes`,
+  `references`, `hover`, `implementation`, `supertypes`,
   `incomingCalls`, `outgoingCalls` on a named entity, plus
   `workspaceSymbol`, which needs no anchor at all. `workspace/symbol` +
   the exact-name filter supplies file, line *and* column. The model
@@ -849,10 +861,10 @@ serve neither well.
 
 **In: `goToDefinition`, `findReferences`, `hover`, `documentSymbol`,
 `workspaceSymbol`, `goToImplementation`, `goToTypeDefinition`,
-`incomingCalls`, `outgoingCalls`** — nine, per the survey (the earlier list
-here read `definition` / `references` / `implementation` /
-`typeDefinition` and included `supertypes` / `subtypes` while excluding
-`documentSymbol`). Uniform shape, no chaining. Each needs its capping
+`incomingCalls`, `outgoingCalls`, `supertypes`** — ten (the earlier list
+here read `definition` / `references` / `implementation` / `typeDefinition`,
+included `subtypes`, and excluded `documentSymbol`). Uniform shape, no
+chaining. Each needs its capping
 discipline — references grouped lib/spec (finding 6), hover and definition
 capped hardest on constants, where a reopened Ruby namespace yields 45
 near-identical hits, and `findReferences` capped hardest of all: S9 measured
@@ -873,12 +885,14 @@ J9 is why they are not redundant with `definition`:
   advertise it (finding 9) — so for `.rb` it is a clean refusal, which is
   the gate working, not a gap.
 
-**~~The two hierarchies ship in v1, as four enum values.~~ Reversed twice
-over: the *type* pair is out, the *call* pair is in as two values.** The
-type hierarchy went first to H1/H4 (below) and then to the harness survey —
-none of Claude Code, opencode or grok-build ships it. The call pair survives
-because two of the three do, minus the model-facing `prepare` hop. The
-original argument, kept because it is what a reader will otherwise
+**~~The two hierarchies ship in v1, as four enum values.~~ Three of the
+four survive: the call pair, and `supertypes`.** `subtypes` went first to H1
+(a ruby-lsp stub), then to the harness survey (nobody ships it), and finally
+to H7/H8 — `goToImplementation` answers the same question better on jdtls, so
+it is dominated rather than merely absent. `supertypes` earns its place on
+H2 + H9 (both servers, no substitute for the chain), and the call pair on
+two of three harnesses shipping it, minus the model-facing `prepare` hop.
+The original argument, kept because it is what a reader will otherwise
 reconstruct: they were the strongest deferred candidates and the deferral
 was doing real damage: with
 `implementation` refusing on `.rb`, Ruby had *no* "who overrides this"
@@ -894,13 +908,15 @@ which no other candidate on the fence can say.
 > load-bearing half; `supertypes` survives intact and on its own merits
 > (H2, H3).
 >
-> **Resolved by the strategy, not by an enum change** ([`../lsp.md`](../lsp.md)
-> §Strategy): `subtypes` ships, and when ruby-lsp answers `nil` from its
-> `# TODO` the tool reports that the server returned no results. The arm
-> considered and dropped was a per-server *known-stub list* — pikuri
+> **Resolved by dropping `subtypes`, not by modelling the stub.** The arm
+> considered and rejected was a per-server *known-stub list* — pikuri
 > tracking which advertised capabilities are lies — which is precisely the
-> unbounded per-server catalogue the strategy refuses. One mechanical
-> consequence remains: the parse layer accepts `nil` as well as `[]`.
+> unbounded per-server catalogue [`../lsp.md`](../lsp.md) §Strategy refuses.
+> What retired the operation instead was H7/H8: `goToImplementation` answers
+> the same question better on the one server whose `subtypes` works, so
+> nothing is lost by cutting it. One mechanical consequence survives for
+> `supertypes`, whose reply shape is the same: the parse layer accepts `nil`
+> as well as `[]`.
 
 - **Four values, not two.** Direction *is* the question — "who calls this"
   and "what does this call" are separate asks, and one lumped operation
@@ -923,16 +939,15 @@ which no other candidate on the fence can say.
 - **The capability gate splits them per language, and that is the gate
   working.** Finding 9: jdtls advertises both providers; ruby-lsp
   advertises `typeHierarchyProvider` but **not** `callHierarchyProvider`.
-  So `.rb` gets `subtypes` / `supertypes` and a clean refusal on the call
-  pair, while `.java` gets all four. ~~`subtypes` is what closes the Ruby
-  hole `implementation`'s refusal leaves open.~~ **The `.rb` half is
-  wrong** — H1: one provider key covers both directions, ruby-lsp
-  advertises it for the `supertypes` it really implements, and `subtypes`
-  answers `nil` from a `# TODO`. The gate is *working* and still lets a
-  known-empty operation through, which is the one failure mode a
-  capability check was supposed to remove — and the answer is to relay the
-  empty result honestly rather than to model the lie (see the resolution
-  above).
+  So `.rb` gets `supertypes` and a clean refusal on the call pair, while
+  `.java` gets all three. ~~`subtypes` is what closes the Ruby hole
+  `implementation`'s refusal leaves open.~~ **That half was wrong** — H1:
+  one provider key covers both directions, ruby-lsp advertises it for the
+  `supertypes` it really implements, and `subtypes` answers `nil` from a
+  `# TODO`. The gate is *working* and still lets a known-empty operation
+  through, which is the one failure mode a capability check was supposed to
+  remove; with `subtypes` cut (H7/H8) the case no longer arises, and where it
+  would, the answer is to relay the empty result rather than model the lie.
 - ~~**Unverified, and it must be verified first.**~~ **Verified — H1–H5,
   and it went the other way.** `subtypes` returned 0 for `Pikuri::Tool`
   (14 in-repo subclasses), `Listener::Base` and `Confirmer` alike, from

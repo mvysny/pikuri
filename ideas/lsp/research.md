@@ -8,8 +8,8 @@ Nothing here is a decision — the decided design is in
 
 **The labels are stable ids, cited from both other files.** Findings are
 numbered per source — `finding 1`–`finding 9` for the first Ruby runs,
-`J1`–`J9` for jdtls, `H1`–`H6` for the type-hierarchy run, `S1`–`S10` for
-the document-sync/anchor run — in *discovery* order, not reading order.
+`J1`–`J9` for jdtls, `H1`–`H10` for the two type-hierarchy runs, `S1`–`S10`
+for the document-sync/anchor run — in *discovery* order, not reading order.
 Don't renumber them to tidy a sequence.
 
 ## How the protocol actually works
@@ -732,3 +732,52 @@ because the index stores no methods at all. The name→position collapse
 therefore cannot reach a Java method, which is the strongest argument yet
 for `documentSymbol` — the in-file outline is how you find `shout` without
 being handed a column.
+
+## Findings from a type-hierarchy run against jdtls
+
+The other half of the H family, and the run that decides whether the two
+hierarchy operations ship. `jdtls` 1.58 / JDK 25, warm `-data`, ready in
+3.1s, against a six-file UI-shaped fixture built for the argument:
+`Widget` (abstract) ← `Panel` ← {`FancyPanel`, `Button`}, `Clickable`
+(interface) ← `Button`, plus an `App` that declares three `Widget`
+variables so a reference count has something to be noisy with.
+`typeHierarchyProvider: true` and `implementationProvider: true` both
+advertised.
+
+**H7. `goToImplementation` answers "list all subtypes" — transitively, in
+one call, and on concrete classes too.** Measured by declaration kind:
+concrete class `Panel` → 2 (`FancyPanel`, `Button`); abstract class
+`Widget` → **3** (`Panel`, `FancyPanel`, `Button`); interface `Clickable`
+→ 1 (`Button`); concrete method `paint` → 2 overriders. The concrete-class
+row is the surprising one — `implementation` is usually described as an
+interface/abstract-method operation, and Eclipse answers it for an ordinary
+class hierarchy as well, which is the deep-UI case (`JPanel` is concrete).
+
+**H8. `typeHierarchy/subtypes` works on jdtls and is *strictly weaker* than
+H7 for the same question.** `Widget` → **1** result (`Panel`, the direct
+child only) against `implementation`'s 3; `Panel` → 2. Transitive descent
+costs one round trip per level: a second call on the returned `Panel` item
+then yields `Button` and `FancyPanel`. So the operation is not broken here
+the way it is on ruby-lsp (H1) — it is simply the worse of two available
+answers, and the better one is already in the enum. Combined with H1 that
+leaves **no server on which `subtypes` is the best available answer**.
+
+**H9. `supertypes` works and is the one hierarchy operation with no
+substitute.** From `FancyPanel`: level 1 → `Panel`, level 2 → `Widget`,
+level 3 → `Object`, one call per level. `goToDefinition` on the name after
+`extends` answers *one* level for free (the supertype is written in the
+source), so the value is specifically the **chain** — which a tool can walk
+internally, unlike a model that would have to read each file to find the
+next `extends`. Note where level 3 landed: `Object` came back as a virtual
+jar URI (`…%3Cjava.lang%28Object.class`), so an ancestor walk reaches
+non-`file:` results routinely and the scheme table is on this path, not just
+on `definition`'s.
+
+**H10. `findReferences` is not a substitute, with a ratio.**
+`references(Widget)` → 4 hits, of which exactly **one**
+(`Panel.java:1:27`) is the `extends` site; the other three are `Widget`
+variable declarations in `App.java`. `references(Panel)` → 3, two of them
+`extends` sites and one a constructor call. Nothing in the reply labels
+which hit is a subtype, the caller cannot filter without re-reading each
+file, and the signal-to-noise only worsens with a widely-used base class
+(finding 6, S9).

@@ -5,12 +5,14 @@ The survey worklist item 1 asked for, and the input the note's strategy
 from: three harnesses that shipped a model-facing LSP tool, read
 first-hand rather than recalled.
 
-Nothing here is a live run — no server was spawned for this file. It is a
-reading of three implementations, and the point is that **their authors
-already paid for the per-server learning pikuri refuses to keep
-cataloguing**. Where a harness's code contradicts a finding in
-[`research.md`](research.md), that is called out rather than smoothed over,
-because those are the places a decision is actually being made.
+The survey itself spawned no server: this is a reading of three
+implementations, and the point is that **their authors already paid for the
+per-server learning pikuri refuses to keep cataloguing**. (It did trigger
+one run — the `subtypes` question below was too close to call from absence
+alone, so H7–H10 in [`research.md`](research.md) settled it.) Where a
+harness's code contradicts a finding there, that is called out rather than
+smoothed over, because those are the places a decision is actually being
+made.
 
 Provenance, so a later reader knows what was read:
 
@@ -30,6 +32,7 @@ Provenance, so a later reader knows what was read:
 | `goToImplementation` | ✅ | ✅ | ✅ |
 | `prepareCallHierarchy` / `incomingCalls` / `outgoingCalls` | ✅ | ✅ | — |
 | `typeDefinition`, `declaration`, type hierarchy | — | — | — |
+| (pikuri adds `goToTypeDefinition` + `supertypes` on measured evidence) | | | |
 | rename / format / codeAction / completion | — | — | — |
 | diagnostics as a *tool* | — | — | — (surfaced as reminders instead) |
 | required params | `operation` + `filePath` + `line` + `character` | same | `operation` only; rest validated per operation |
@@ -61,13 +64,12 @@ Union is Claude Code's nine; intersection is grok-build's six. Two facts
 decide the middle:
 
 - **No harness ships a type hierarchy.** `supertypes` / `subtypes` appear
-  in none of the three. `design.md` promoted them into v1 on the argument
-  that `subtypes` closes Ruby's "who overrides this" hole, which H1 then
-  falsified (an advertised provider wired to a `# TODO`) and H4 finished off
-  (module ancestry unwalked in either direction). With the promotion
-  argument gone and no harness precedent to inherit, **drop both from v1**.
-  That is a clean cut on the strategy's own terms, not a per-server
-  workaround, and re-adding an enum value later is one line.
+  in none of the three, which retires the argument that promoted them (H1
+  and H4 had already taken its Ruby half). But "no harness ships it" is an
+  absence of precedent, not evidence of uselessness, and a *measured* reason
+  can still put an operation back — so the two halves were probed against
+  jdtls before cutting, and they came apart (H7–H10, and the section below).
+  **`subtypes` out, `supertypes` in as a tenth value.**
 - **No harness ships `typeDefinition`** either — and this one stays anyway,
   because J9 is a *measured* deviation of exactly the kind the strategy
   allows: on `var names = new ArrayList<String>()`, `definition` gives the
@@ -76,15 +78,16 @@ decide the middle:
   omission was already flagged in `research.md` as the sharpest lesson of
   its Java run.
 
-Recommended v1 surface — **nine operations, harness names kept verbatim**
-so they match what a model has seen everywhere else:
+Recommended v1 surface — **ten operations, harness names kept verbatim**
+where they exist, so they match what a model has seen everywhere else:
 
 ```
 goToDefinition  findReferences  hover  documentSymbol  workspaceSymbol
 goToImplementation  incomingCalls  outgoingCalls  goToTypeDefinition
+supertypes
 ```
 
-Three notes on that list:
+Four notes on that list:
 
 - **`documentSymbol` is back in**, reversing `design.md`'s cut. All three
   harnesses ship it, and S10 is the independent reason: jdtls's
@@ -104,7 +107,19 @@ Three notes on that list:
   `goToDefinition` / `goToImplementation`, so use those and make the
   deviation `goToTypeDefinition` by analogy. The naming convention in
   [`../../CLAUDE.md`](../../CLAUDE.md) is untouched — this is an `operation`
-  enum value, not a tool name.
+  enum value, not a tool name. `supertypes` keeps the LSP method's own name
+  because no harness has one to copy.
+- **`supertypes` is the second measured deviation, and `subtypes` is the
+  one operation an absence of precedent did *not* decide.** Probed against
+  jdtls rather than cut on the survey alone: `goToImplementation` answers
+  "list all subtypes" better than the hierarchy does — transitively in one
+  call for an abstract type (3 descendants against `subtypes`' 1) and on
+  concrete classes too (H7/H8) — so `subtypes` is dominated by an operation
+  already in the list, on the only server where it works at all. `supertypes`
+  goes the other way: it works on **both** servers (H2, H9) and the *chain*
+  has no substitute, since `goToDefinition` on the name after `extends`
+  answers a single level. The tool walks the chain internally, which is the
+  collapse-the-hop move no harness makes.
 
 ## Where all three converge, and pikuri should follow
 

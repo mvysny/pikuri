@@ -182,16 +182,34 @@ ready) trades completeness for latency and can wait for a complaint.
 Full reading in [`lsp/harness-analysis.md`](lsp/harness-analysis.md); the
 outcome, so nobody re-derives it:
 
-- **The v1 enum is nine operations, harness names verbatim** —
+- **The v1 enum is ten operations, harness names verbatim plus one** —
   `goToDefinition`, `findReferences`, `hover`, `documentSymbol`,
   `workspaceSymbol`, `goToImplementation`, `incomingCalls`, `outgoingCalls`,
-  `goToTypeDefinition`. Claude Code and opencode ship an identical nine
-  (near-identical tool text too, so they count as roughly one data point);
-  grok-build ships six, a strict subset.
-- **The type hierarchy is out.** No harness ships `supertypes` / `subtypes`,
-  and the argument that promoted them into v1 was already falsified (H1, H4).
-  A clean cut on the strategy's own terms; re-adding an enum value later is
-  one line.
+  `goToTypeDefinition`, `supertypes`. Claude Code and opencode ship an
+  identical nine (near-identical tool text too, so they count as roughly one
+  data point); grok-build ships six, a strict subset; the last two are
+  measured deviations.
+- **`subtypes` is out — and the reason is now measured, not merely an
+  absence.** H7/H8: on jdtls, `goToImplementation` answers "list all
+  subtypes" **transitively in one call** (abstract `Widget` → all 3
+  descendants) and works on *concrete* classes too (`Panel` → 2), while
+  `typeHierarchy/subtypes` returns the direct children only (`Widget` → 1)
+  and needs one round trip per level. On ruby-lsp it is the `# TODO` (H1).
+  So there is **no server on which `subtypes` is the best available
+  answer**, and the question that motivated it is already served by an
+  operation in the enum. `findReferences` is *not* the substitute — H10 has
+  exactly 1 of 4 hits being the `extends` site, unlabelled.
+- **`supertypes` is in, as the tenth.** It is the one hierarchy operation
+  that works on **both** servers (H2 on ruby-lsp, H9 on jdtls), and the one
+  with no substitute: `goToDefinition` on the name after `extends` answers a
+  single level, whereas the *chain* takes one call per level — which the tool
+  walks internally, the same collapse `workspace/symbol` and `prepare*` get.
+  Marginal cost is one enum value and one dispatch arm, because the
+  prepare-then-fetch machinery is already required by the call pair. Two
+  known consequences: H2's grouping pass is mandatory (14 rows of namespace
+  reopenings for one Ruby class, declaration ordered last), and an ancestor
+  walk reaches jar URIs routinely (H9's `Object`), so the scheme table is on
+  this path too.
 - **`documentSymbol` is in**, reversing `design.md`'s cut: all three ship it,
   and S10 makes it the only route from a Java method *name* to a position.
 - **`goToTypeDefinition` is in**, the one deviation from all three, because
