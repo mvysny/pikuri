@@ -6,7 +6,7 @@ worklist. Everything here is decided; the evidence it rests on lives in
 `J4`, …).
 
 None of it has met an implementation yet, which is why it is still in
-`ideas/` rather than in `pikuri-lsp/DESIGN.md`, four `DECISIONS.md`
+`ideas/` rather than in `pikuri-lsp/DESIGN.md`, five `DECISIONS.md`
 entries and a book chapter — see the graduation map in
 [`../lsp.md`](../lsp.md).
 
@@ -808,7 +808,7 @@ concrete.
 > 0 hits and `"greet"` returns the *class*). So the index route ships as a
 > best-effort convenience that reports honestly when it resolves nothing,
 > and `file` + `line` is the shape the tool description teaches. See
-> worklist item 2 in [`../lsp.md`](../lsp.md).
+> [`../lsp.md`](../lsp.md) §"The forks behind the v1 calls".
 
 Three consequences worth noting:
 
@@ -820,9 +820,9 @@ Three consequences worth noting:
 > namespaced, `symbol: "Confirmer"` therefore resolves to nothing and the
 > tool answers "not found": this note's own headline failure, reached
 > through its own headline parameter. The hop still belongs inside the
-> tool; what "a bare name" may be is worklist item 2 in
-> [`../lsp.md`](../lsp.md), and S10 adds the other half — jdtls indexes no
-> methods, so a bare name cannot reach a Java method at all. Two things are
+> tool; what "a bare name" may be is settled in [`../lsp.md`](../lsp.md)
+> §"The forks behind the v1 calls", and S10 adds the other half — jdtls
+> indexes no methods, so a bare name cannot reach a Java method at all. Two things are
 > settled regardless: the filter
 > compares the **last `::` segment**, never `name` (ruby-lsp reports the
 > FQN there deliberately), and this is a *below-threshold* drop, so no cap
@@ -1061,8 +1061,9 @@ of exact-match-first ordering and a hard cap.
   > returns *types only* — a method defined in the fixture returns 0 hits by
   > name — so for Java the in-file outline is the only way to turn a method
   > name into a position, and the `grep` substitute does not survive
-  > overloads or a `Foo.Bar` nested type. Claude Code ships it. Decide with
-  > worklist item 1.
+  > overloads or a `Foo.Bar` nested type. Claude Code ships it, and the
+  > survey agreed — it is **in** the v1 enum; see
+  > [`harness-analysis.md`](harness-analysis.md).
 - **`declaration`** — marginal against `definition` in both languages
   (C-style header/impl splits are the case it exists for).
 

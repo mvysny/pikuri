@@ -1,6 +1,6 @@
 # LSP client — what the shipped harnesses expose
 
-The survey worklist item 1 asked for, and the input the note's strategy
+The survey the note's worklist asked for, and the input its strategy
 ([`../lsp.md`](../lsp.md) §Strategy) says the operation surface must come
 from: three harnesses that shipped a model-facing LSP tool, read
 first-hand rather than recalled.

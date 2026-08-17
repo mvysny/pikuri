@@ -1,20 +1,21 @@
 # LSP client — language intelligence for the coding agent
 
-Status: **investigated, not built.** The design is settled and the
-evidence is in; what is left is implementation plus the worklist below.
+Status: **designed, ready to build.** The design is settled, the evidence is
+in, and no open question remains — the nine-item worklist this note carried
+is closed, and §"The v1 build" is the checklist to code against.
 
-This note is split three ways, because the argued-and-closed part had
-grown to ~1600 lines and buried the handful of things still to do:
+This note is split four ways, because the argued-and-closed part had grown to
+~1600 lines and buried what was still to do:
 
 | file | holds |
 | --- | --- |
-| **this file** | status, the strategy, the worklist, the graduation map |
-| [`lsp/research.md`](lsp/research.md) | six live client runs, a rubygems survey, a shipped client read off its schema — the stable `finding N` / `J<n>` / `H<n>` / `S<n>` labels everything else cites |
+| **this file** | status, the strategy, the v1 build checklist, the decided forks, the graduation map |
+| [`lsp/research.md`](lsp/research.md) | live client runs against both reference servers, a rubygems survey, a shipped client read off its schema — the stable `finding N` / `J<n>` / `H<n>` / `S<n>` labels everything else cites |
 | [`lsp/harness-analysis.md`](lsp/harness-analysis.md) | the three shipped harnesses' LSP tools read first-hand (Claude Code, opencode, grok-build) — the operation surface, and where they converge, differ, or are contradicted by a finding |
 | [`lsp/design.md`](lsp/design.md) | everything decided: direct-vs-MCP, the registry entry, no-timeout, progress + mailbox, the scheme table, the operation surface, document sync, protocol modeling, testing, the trifecta legs |
 
 Nothing in `lsp/design.md` has met an implementation, which is why it is
-still here rather than in `pikuri-lsp/DESIGN.md`, four `DECISIONS.md`
+still here rather than in `pikuri-lsp/DESIGN.md`, five `DECISIONS.md`
 entries and a book chapter. Graduation below.
 
 Origin: [`feedback.txt`](feedback.txt) item 2 — "No language
@@ -178,8 +179,8 @@ namespace reopenings (H2), snippet-only outside the root, the scheme table
 for `jdt:`, never dereference `http(s):`, and keep *unsupported* /
 *answered-nothing* / *not-ready* three distinct strings.
 
-**Proposed for the last open call** (worklist item 2): an anchor that
-resolves outside the root is **refused with its own message** in v1. With
+**An anchor that resolves outside the root is refused with its own
+message** in v1 (the fork, and the two arms not taken, are below). With
 `file` + `line` the ordinary shape, the anchor is in-root by construction
 almost always, and what is lost — following a hop *into* a dependency — is
 still answered by `hover` and the scheme table.
@@ -191,12 +192,13 @@ operation, and the operations left out of the enum — `subtypes` (H7/H8),
 `prepareCallHierarchy` (collapsed inside the tool), `declaration`,
 `completion`.
 
-## Worklist
+## The forks behind the v1 calls
 
-Three items left, and none of them is a server-behaviour question. The
-original nine are closed: items 1, 7, 8 and 9 by the document-sync run,
-items 3, 5 and 6 folded into what follows, the operation surface by the
-harness survey, and items 2 and 4 restated below.
+The worklist, now that every item on it is decided — kept because each
+fork's *alternatives* are what a reader would otherwise re-litigate, which is
+what an `ideas/` note owns. The original nine closed as: 1, 7, 8 and 9 by the
+document-sync run, 5 and 6 by the hierarchy runs and the harness survey, 3
+folded into fan-out below, and 2 and 4 answered in §"The v1 build".
 
 ### 1. The parameter shape: `symbol` replaces `character`
 
@@ -227,9 +229,9 @@ Deliverable, and the run settles which half is deliverable how:
 
 ### 2. What anchors a hop that resolves outside the root
 
-**A v1 answer is proposed in "The v1 build" above** (refuse with its own
-message); this is the full fork, kept because the other two arms are what a
-reader will ask about.
+**Decided in "The v1 build" above** — refuse with its own message. This is
+the full fork, kept because the other two arms are what a reader will ask
+about.
 With `symbol` alone, `workspace/symbol` can place the anchor in a gem file
 outside the workspace root, or behind a `jdt:` URI (J5). Every
 position-based operation then needs a document the tool is not allowed to
@@ -246,8 +248,8 @@ a dependency, which `hover` and the scheme table still answer.
 
 ### 3. What the tool and the registry entry are missing
 
-**Also answered in "The v1 build" above** (`language_id:` as one field per
-entry); the reasoning is below.
+**Answered in "The v1 build" above** — the entry's field table, with
+`language_id:` optional behind a built-in table; the reasoning is below.
 
 **The tool.** The Sketch names only the emitter handoff. It also needs the
 client set and a `Workspace::Filesystem` — for `denied?`, the root
