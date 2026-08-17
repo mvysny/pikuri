@@ -1,10 +1,31 @@
 # Mid-conversation `:system` messages are eaten by some chat templates
 
-Status: **finding verified beyond doubt, fix undecided.** Measured 2026-08-17
-against the author's own llama.cpp router (`mavi-fw:8080`) with
-`unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`. Nothing has been changed in response
-yet — two *adjacent* bugs were fixed the same day (see *Already fixed*), and
-neither of them was this one.
+Status: **finding verified beyond doubt; Option A chosen 2026-08-17, not yet
+implemented.** Measured 2026-08-17 against the author's own llama.cpp router
+(`mavi-fw:8080`) with `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`. Nothing has been
+changed in response yet — two *adjacent* bugs were fixed the same day (see
+*Already fixed*), and neither of them was this one.
+
+**The decision: Option A, uniform `:user` + XML envelope. No detector, no
+per-model branch, no subset hoisted into the system prompt.** Settled after
+reading grok-build, which reaches the same shape independently across three
+wire formats — 15 `SyntheticReason`-tagged synthetic *user* turns, zero
+mid-conversation `System` items, no chat-template probe anywhere. That
+analysis is written up in `COMPARISON.md` §"grok-build's injection channel:
+every synthetic turn is a user turn"; the pikuri-side commitment is A-tier
+#6 in the same file. What remains open here is the sub-questions below, and
+the two graduation targets: the `DECISIONS.md` entry and the CLAUDE.md seam
+line.
+
+*Why no subset gets hoisted:* every candidate is either mid-conversation by
+nature (a host-loaded skill body, a path-activation promotion) or re-scored
+per turn (memory prefetch, RAG context). Writing either into the leading
+system message mutates the cached prefix — the cost `D-skill-path-activation`
+already weighed and declined. grok-build hoists exactly one thing, memory,
+and only because it searches *once* per session and then never re-scores;
+pikuri's per-turn prefetch forecloses that trade. A subset would also
+reintroduce Option A's argument 1 — a branch taken rarely is a branch that
+rots.
 
 **The finding in one line:** every `role: :system` message pikuri appends
 *after* the system prompt is silently discarded by Qwen3.6's chat template.

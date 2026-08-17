@@ -115,10 +115,19 @@ cheap half and would transfer to `StepLimit` on its own.
   Anthropic, Google, Bedrock, etc.
 - **opencode**: built on Vercel AI SDK. Adding a provider is one entry in
   `BUNDLED_PROVIDERS` (`src/provider/provider.ts:93–118`).
-- **grok-build**: first-party by construction — the transport talks to xAI's
-  own backend, with OAuth-in-browser on first launch and custom-model config
-  as the escape hatch (its user guide's custom-models page). The abstraction
-  it *does* invest in is the opposite direction: **ACP** (Agent Client
+- **grok-build**: **three wire formats behind one `ApiBackend` enum**
+  (`xai-grok-sampling-types/src/types.rs:1013`) — Chat Completions
+  (`/v1/chat/completions`, the default), the OpenAI Responses API
+  (`/v1/responses`), and the **Anthropic Messages API** (`/v1/messages`) —
+  each with its own converter under
+  `xai-grok-sampling-types/src/conversation/`. The backend is chosen
+  per provider: `[model_providers.<id>]` takes `base_url` + `api_backend`
+  + `extra_headers` + `context_window` + an auth command
+  (`xai-grok-shell/src/agent/model_providers.rs:8`), and a model inherits
+  its provider's connection defaults. So xAI is the *default* (OAuth-in-
+  browser on first launch), not the only reachable backend — pointing it
+  at a local llama.cpp is a config block, not a fork. The abstraction it
+  invests most in is the opposite direction: **ACP** (Agent Client
   Protocol) as the outward interface, so the same runtime serves the TUI, a
   headless `-p` invocation, `grok agent stdio`, and an editor plugin over one
   session/notification protocol.
@@ -617,21 +626,129 @@ pikuri-memory's capture step has exactly the same before-or-after
 question.
 
 A second grok-build channel pikuri has no equivalent for:
-**system reminders** — `<system-reminder>` blocks appended to *tool
-output* on the way back to the model, either by the tool itself (an empty
-file read) or by cross-cutting reminders registered on the registry
-(fresh LSP diagnostics, newly discovered skills, a completed background
-task, a nudge to use `todo_write` after N turns without one). It is a
-control channel that costs nothing when quiet, and it lets the harness
-tell the model something without a user turn or a system-prompt rewrite.
-Pikuri's nearest thing is `Control::Interloper`'s `:system` kind, which
-is host-driven and lands as a message rather than riding an observation.
+**reminders riding tool output** — `<system-reminder>` blocks appended to
+a tool's *observation* on the way back to the model, either by the tool
+itself (an empty file read) or by cross-cutting reminders registered on
+the registry (fresh LSP diagnostics, newly discovered skills, a completed
+background task, a nudge to use `todo_write` after N turns without one).
+It is a control channel that costs nothing when quiet, and it lets the
+harness tell the model something without spending a turn at all. Note
+this is genuinely a *second* channel: grok-build also injects standalone
+reminder **messages**, and those are user turns — see below.
 
 The four bundled listeners (`Terminal`, `InMemoryEventList`, `TokenLog`,
 `RateLimited`) demonstrate the surface: TUI rendering, test capture,
 running token accounting, and pacing for shared cloud quotas. None are
 "the" listener — they're examples of the shape new sinks (a web UI,
 a JSON log) would take.
+
+### grok-build's injection channel: every synthetic turn is a user turn
+
+Read in August 2026 against `xai-org/grok-build` at `SOURCE_REV`, because
+pikuri had just found that a mid-conversation `role: system` message is
+silently discarded by some chat templates (Qwen3.6's drops every
+system/developer message past the leading one or two it merges into the
+header — the finding, the Jinja excerpt and the three-model canary table
+live in `ideas/system-message-delivery.md` pending a `DECISIONS.md`
+entry). The question asked of grok-build was narrow: what role does *it*
+use for mid-conversation reference text, over which APIs, and does it
+probe the model first?
+
+**There is no mid-conversation system message anywhere in grok-build.**
+The conversation is a `Vec<ConversationItem>` of
+`System | User | Assistant | ToolResult | BackendToolCall | Reasoning`
+(`xai-grok-sampling-types/src/conversation.rs:70`), and `SystemItem`'s
+doc is one line — *"System instructions/prompt"*. Every production
+construction of `ConversationItem::system(…)` is index 0 of some request:
+the main conversation's prompt (`install_system_prompt`,
+`xai-chat-state/src/conversation_util.rs:40`), a subagent's own prompt,
+or the leading prompt of a **separate nested one-shot call** (goal
+evaluator, session summary, recap, memory-dream, two-pass compaction,
+the auto-mode permission classifier). None appends.
+
+What it has instead is **15 tagged synthetic user kinds** —
+`SyntheticReason` (`conversation.rs:119`), each with a constructor that
+builds a `UserItem`: `CompactionMeta`, `SystemReminder`,
+`ProjectInstructions` (its AGENTS.md/CLAUDE.md load), `AutoContinue`,
+`AutoRecovery`, `Interjection`, `AgentMessage`, `TaskCompleted`,
+`SubagentCompleted`, `NotificationDrain`, `GoalSummary`,
+`GoalClassifierNudge`, `SchedulerFired`, `StopHookFeedback`,
+`WorkingDirectorySwitch`. That set covers everything pikuri injects as
+`:system` today — a host-loaded skill body, a memory prefetch, a
+path-activation promotion, retrieved RAG context — plus ten cases pikuri
+has no equivalent for. The generic sink is 19 call sites deep and wraps
+as it pushes (`acp_session_impl/reminders.rs:546`), escaping a nested
+closing tag so injected content cannot forge the envelope:
+
+```rust
+let content = content.replace(&format!("</{tag}>"), &format!("<\\/{tag}>"));
+let message = ConversationItem::system_reminder(format!("<{tag}>\n{content}\n</{tag}>"));
+self.chat_state_handle.push_user_message(message);
+```
+
+Four consequences, each of which answers a question pikuri was holding
+open:
+
+- **The tag, not a second role, is what distinguishes a synthetic turn
+  from a real one.** `SyntheticReason` is a nullable field on `UserItem`,
+  and consumers interrogate it: `starts_prompt_turn()`,
+  `extract_last_real_user_query`, `is_real_user_turn`, and the parent-ask
+  scan that skips synthetics so they don't burn lookback
+  (`implementations/grok_build/task/mod.rs:114`). One role plus a reason
+  tag, not two roles.
+- **The Anthropic backend hoists unconditionally, so position is not
+  preserved there anyway.** `MessageRole` is `User | Assistant` only —
+  no system variant exists in the Messages API — and a `System` item
+  anywhere in the sequence is flushed onto the top-level `system` param
+  (`conversation/messages.rs:168`). Lossless for grok-build *because* it
+  never has a mid-conversation one. The other two converters are
+  positional: `System → Role::System` wherever it sits, no hoist, no
+  warning. ruby_llm does the same thing — its Anthropic provider is
+  `messages.partition { |msg| msg.role == :system }` — so pikuri's
+  chronological injection already arrives at Anthropic reordered to the
+  front, presented as if it had been part of the original prompt.
+- **There is no detector, and nothing that needs one.** No
+  `/apply-template`, no `/props`, no chat-template introspection; the
+  vendored MiniJinja renders *tool descriptions*, not prompts. Nor is
+  there an empty-messages guard on the Messages path, which grok-build
+  can afford because every wake path (scheduler, task-completed,
+  notification drain, goal summary) is a synthetic *user* message — there
+  is always something to complete against.
+- **The capability is exposed to third parties and unused.** The turn-hook
+  wire protocol lets a workspace server ask for an injection as
+  `System | Developer | User` (`xai-tool-protocol/src/turn_hook.rs:155`),
+  and only the `User` variant carries an example — *"(e.g. a
+  `<system-reminder>`-wrapped message)"*. grok-build's own workspace
+  answers `HookReply::default()` — no injections — on every phase.
+
+The one exception is memory, and it goes to the **system prompt**, not
+mid-conversation: `inject_memory_reminder`
+(`xai-chat-state/src/actor/request_builder.rs:189`) upserts a
+`<memory-context>` block into `items.first()`'s `SystemItem` on the first
+turn, after which `conversation_has_memory_context` short-circuits
+forever — the reason stated in the source being that *"a re-scored block
+would mutate the system-prompt prefix and bust the KV cache for the whole
+downstream conversation."* Post-compaction recovery of the same content
+goes back through the reminder path as a user message. So grok-build takes
+the merge-into-the-prompt option pikuri rejected, but bounded to a single
+write that never repeats.
+
+**What it means.** grok-build is a second independent implementation that
+supports every backend where the mid-conversation-`system` hazard exists
+and is immune only because nothing ever constructs the dangerous item.
+Claude Code's `<system-reminder>` shape is the third data point. Neither
+writes down *why* — grok-build has no comment explaining the choice, and
+the unused `System`/`Developer` hook variants suggest it was never
+litigated. The convergence is probably not "models dropped system
+support because harnesses tagged user turns" so much as the reverse:
+Anthropic's Messages API never *had* a mid-conversation system role, so
+any harness spanning providers needs a non-system channel for reference
+text, the `<tag>`-in-a-user-turn convention grew to fill it, and models
+are now trained on enough of it that it carries real weight. Either way
+the operative fact is the same, and it is the one worth recording: **the
+portable channel for mid-conversation reference text is a user turn with
+an XML envelope.** Pikuri is moving to it wholesale — see the A-tier
+entry below.
 
 ---
 
@@ -942,7 +1059,7 @@ warnings.
 - **Sub-agent toolset narrowing** — *shipped* via personas; see
   §"Sub-agents" above.
 - **opencode's `(permission-name, glob-pattern)` ruleset shape** if
-  `Confirmer` ever expands beyond binary approve/deny (C-tier #14 in
+  `Confirmer` ever expands beyond binary approve/deny (C-tier #15 in
   §"Ideas to borrow").
 - **PI's credential-dir deny-read defaults** (`~/.ssh`, `~/.aws`,
   `~/.gnupg`) — a `Workspace::Filesystem` default denylist gives some
@@ -1698,6 +1815,17 @@ still make a session findable later) and the **confirm-before-write
 review panel**, which is the `Confirmer` seam applied to memory writes —
 a place pikuri's memory capture currently writes unattended.
 
+A third difference is in *when* recall is delivered, and it is not
+cosmetic. grok-build searches memory **once**, on the first turn, and
+upserts the block into the leading system prompt, never re-scoring it
+because that would bust the KV-cache prefix (see §"grok-build's injection
+channel"). Pikuri prefetches **per turn**, which is the better product —
+recall tracks what the conversation is currently about — but it forecloses
+the system-prompt home: a re-scored block written into the prefix every
+turn would invalidate the cache on every turn. Per-turn recall and
+prefix-resident recall are mutually exclusive, and pikuri chose the one
+that has to ride an injected message.
+
 **Takeaway.** Both Skills and MCP are extension surfaces pikuri added
 deliberately — Skills for "give the agent static text knowledge that
 loads on demand" and MCP for "expose third-party tool servers the user
@@ -1759,7 +1887,28 @@ more than wiring through ruby_llm's existing primitive.
    what `.clamp` enforces, and `web_search` states a cap
    ("most providers cap this at 20") that nothing enforces and pikuri
    cannot verify. See `ideas/grok-build-cheap-borrows.md`.
-6. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
+6. **Deliver every mid-conversation injection as a user turn with an XML
+   envelope** (grok-build, Claude Code) — **DECIDED, NOT YET SHIPPED**.
+   `Control::Interloper`'s `:system` kind keeps its documented semantics
+   (reference text; no `on_user_message` dispatch, no `Event::UserTurn`,
+   still `Event::SystemInjected`) and changes only what it lands as:
+   `add_message(:user)` wrapped in a tag. No probe, no per-model branch,
+   and **no subset hoisted into the system prompt** — every candidate
+   (a host-loaded skill body, a path-activation promotion, per-turn memory
+   recall, retrieved RAG context) is either mid-conversation by nature or
+   re-scored per turn, so hoisting would mutate the cached prefix. The
+   costs, accepted: a host-loaded skill stops being *sticky* on
+   Anthropic (`schedule_load_skill` documents stickiness as intentional —
+   what it actually gets today is the whole block reordered to the front
+   of the prompt by ruby_llm's `partition`), and a `<system-reminder>`
+   may carry less weight than a real system message on models that honour
+   one. Open sub-questions — the tag name, whether the two `:user`-landing
+   interloper kinds collapse into one kind plus a `reason:` tag as
+   grok-build's `SyntheticReason` does, and whether
+   `Agent::EmptyTurnError` survives — are tracked in
+   `ideas/system-message-delivery.md`; the choice and the rejected
+   alternatives graduate to `DECISIONS.md` when the fix ships.
+7. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
    `halt("done")` from `execute` ends the chat without a follow-up
    model call. Pikuri's synthetic-tool factory already passes any
@@ -1769,7 +1918,7 @@ more than wiring through ruby_llm's existing primitive.
 
 ### B-tier — worth it but more invasive
 
-7. **Over-cap tool output: truncate the middle, spill to disk** (all of
+8. **Over-cap tool output: truncate the middle, spill to disk** (all of
    PI, opencode, grok-build). Per-tool byte caps already exist in
    `Bash` / `Read` / `WebScrape`; the missing pieces are writing the
    overflow to a `Paths.new_temp` file and returning the path so the
@@ -1777,13 +1926,13 @@ more than wiring through ruby_llm's existing primitive.
    a build's error summary lives at the end, so head-only truncation
    discards the answer. Cross-cutting version tracked in
    `ideas/security-open-questions.md` §"Output-size DoS and cost".
-8. **Tool dependency expressions** (grok-build's `requires_expr`). A
+9. **Tool dependency expressions** (grok-build's `requires_expr`). A
    tool declares which other tools it needs — grok-build's `task`
    requires the kinds that retrieve and kill its results — and the
    registry validates it when the toolset is finalized. Pikuri has no
    guard on an incoherent `Persona#tool_names` or `bin/pikuri-*`
    wiring; the failure surfaces as model confusion at runtime instead.
-9. **Folder-trust gate before repo-supplied config** (grok-build,
+10. **Folder-trust gate before repo-supplied config** (grok-build,
    Claude Code). `Skill::Catalog::Bundled` scans `.pikuri/skills`,
    `.claude/skills` and `.agents/skills` under the project root, so a
    cloned repository's skill names and descriptions reach the system
@@ -1792,22 +1941,22 @@ more than wiring through ruby_llm's existing primitive.
    resolved once per workspace. grok-build's refinement worth copying:
    a "there were no repo configs" allow is never cached, so a skill
    that appears after a `git pull` is re-checked.
-10. **Per-segment display of chained shell commands in `Confirmer`**
+11. **Per-segment display of chained shell commands in `Confirmer`**
     (grok-build). Split the command on `&&`, `||`, `;`, `|` and
     newlines and show the human the segments; refuse to split — and say
     so — on subshells, `$(…)`, backticks, or control flow. Pure
     presentation, lands in the confirmer where presentation belongs,
     and directly serves the anti-fatigue argument in the book's
     [security chapter](book/security.md).
-11. **Method-signature introspection as a Parameters fallback** (ruby_llm).
+12. **Method-signature introspection as a Parameters fallback** (ruby_llm).
    When a tool's `execute` Proc has typed kwargs, derive the schema
    automatically. Trade-off: descriptions still need to live somewhere — so
    this saves typing only for the dumbest tools. Keep the explicit builder as
    the primary path.
-12. **Tool descriptions in separate `.txt` files** (opencode pattern). Easier
+13. **Tool descriptions in separate `.txt` files** (opencode pattern). Easier
    to iterate on a multi-paragraph description without touching Ruby. Wait
    until any single description gets long enough to be awkward in a heredoc.
-13. **One-class-many-functions tools** (langchainrb's `define_function`
+14. **One-class-many-functions tools** (langchainrb's `define_function`
    pattern, where a `MovieInfoTool` class exposes both `search_movie` and
    `get_movie_details` as separate function entries). Reduces boilerplate
    when a single capability really does have multiple operations. Today
@@ -1818,7 +1967,7 @@ more than wiring through ruby_llm's existing primitive.
 
 ### C-tier — only when scope changes
 
-14. **Permission system with glob rules** (opencode, grok-build). Pikuri
+15. **Permission system with glob rules** (opencode, grok-build). Pikuri
     ships `Workspace` + `Confirmer` as v1; the three-action `allow` /
     `deny` / `ask` glob model is the right next step once friction shows
     up. Tracked in `ideas/coding-agent.md`. grok-build is the richer
@@ -1827,14 +1976,14 @@ more than wiring through ruby_llm's existing primitive.
     *exclusions* (`tee`, `cargo check`, `rg --pre`, and any `git` command
     whose local config installs an executable hook) are the part worth
     reading before writing any auto-approval logic.
-15. **Stall detection for `StepLimit`** (grok-build's goal mode). Its
+16. **Stall detection for `StepLimit`** (grok-build's goal mode). Its
     supervisor fingerprints the remaining gaps after each attempt and
     trips when two consecutive attempts produce an identical
     fingerprint — the model is looping, not converging. The full goal
     subsystem is out of scope; the fingerprint alone is a better
     exhaustion signal than a step count, and would compose with the
     existing `on_exhausted: :synthesize` path.
-16. **Content-hash anchors as an edit-addressing arm** (grok-build's
+17. **Content-hash anchors as an edit-addressing arm** (grok-build's
     `hashline_*`). A third answer alongside unique-string matching and
     patch-with-context: `read` returns `LINE:HASH→CONTENT`, `edit`
     addresses by anchor, a stale anchor fails loudly and the error
@@ -1844,62 +1993,62 @@ more than wiring through ruby_llm's existing primitive.
     payload size ever displaces call count as the problem — but note
     grok-build ships the scheme as a *parameter* with a benchmark
     harness, so the question isn't settled there either.
-17. **Deferred MCP tool loading via search** (grok-build's
+18. **Deferred MCP tool loading via search** (grok-build's
     `search_tool` / `use_tool`). A keyword index over the MCP catalog
     plus one meta-dispatch tool, instead of every schema in the window.
     Same goal as pikuri's `mcp_connect` with a different lever; scales
     better when one server exposes a hundred tools.
-18. **Markdown-plus-SQLite memory substrate** (grok-build). Greppable,
+19. **Markdown-plus-SQLite memory substrate** (grok-build). Greppable,
     human-editable files with an FTS5 index and optional vector search
     when an embedder is configured, versus `pikuri-memory`'s mem0
     sidecar. Arguably the more pikuri-shaped answer on privacy and
     auditability grounds; not worth churning a shipped gem over, but
     the no-LLM-call automatic save and the confirm-before-write review
     panel are separable and cheap.
-19. **Structured event stream** — **DONE**. The `Agent::Event` sealed
+20. **Structured event stream** — **DONE**. The `Agent::Event` sealed
    hierarchy + four bundled listeners covers the surface that was a
    `puts`-only path in the previous writeup. New rendering sinks (web
    UI, JSON log, TUI) plug in by subclassing `Listener::Base`.
-20. **Streaming deltas** — **DONE**. Opt-in via `Agent.new(streaming:
+21. **Streaming deltas** — **DONE**. Opt-in via `Agent.new(streaming:
     true)`; per-chunk `{Thinking,Assistant}Delta` events flow alongside
     the message-level bookends and propagate to sub-agents and the
     synthesizer consistently. The bundled `Terminal` listener still
     renders on message bookends; a delta-rendering listener is the
     straightforward next step.
-21. **Pluggable Operations interfaces** (pi). Lets a `bash` tool delegate to
+22. **Pluggable Operations interfaces** (pi). Lets a `bash` tool delegate to
     SSH/sandbox/cloud. Pikuri's `Subprocess.spawn` chokepoint is the
     seam where this would hook in; today it only spawns local.
-22. **Multi-provider abstraction** — **DONE** via the ruby_llm
+23. **Multi-provider abstraction** — **DONE** via the ruby_llm
     migration. Switching pikuri from llama.cpp/OpenAI-shape to
     Anthropic / Gemini / Bedrock / Ollama / etc. is a one-block edit
     in each `bin/pikuri-*`'s `RubyLLM.configure`. No library code change.
-23. **Vector search / RAG primitives** (langchainrb). Pikuri is an agent,
+24. **Vector search / RAG primitives** (langchainrb). Pikuri is an agent,
     not a RAG framework — out of scope by design. If a future binary
     needs RAG, it can compose `langchainrb`'s vector stores externally
     rather than pulling that scope into pikuri itself.
 
 ### Out of scope
 
-24. **Effect-based service architecture** (opencode). Massively too heavy
+25. **Effect-based service architecture** (opencode). Massively too heavy
     for a project this size.
-25. **LSP integration** (opencode, grok-build). Deferred under
+26. **LSP integration** (opencode, grok-build). Deferred under
     "Coding-agent deferrals" until a concrete use case shows up.
     grok-build's variant is worth knowing about — a full LSP client
     manager whose diagnostics ride back to the model as a
     `<system-reminder>` appended to tool output after an edit — but the
     dependency (a running language server per project) is exactly the
     weight pikuri is avoiding.
-26. **Steering / follow-up message queues** (pi). Pikuri's
+27. **Steering / follow-up message queues** (pi). Pikuri's
     `Control::Interloper` already covers the mid-loop-injection case
     that motivated this idea in `bin/pikuri-code`'s REPL; a richer
     pi-style queue model is unmotivated today.
-27. **Persistent / resumable subagent sessions** (opencode, grok-build).
+28. **Persistent / resumable subagent sessions** (opencode, grok-build).
     Requires a session store. Not worth it for one feature.
     grok-build adds **git-worktree isolation** for a child that writes,
     which is the natural companion; pikuri's `GIT_REPO_RESEARCHER`
     already does the throwaway-workspace half for read-only children,
     and no pikuri persona writes.
-28. **Parallel toolsets as an A/B harness** (grok-build). Registering
+29. **Parallel toolsets as an A/B harness** (grok-build). Registering
     several interchangeable implementations of each capability — its
     own, plus ports of codex's and opencode's — and selecting per
     session is the right design *if you are tuning a model against tool
@@ -1907,7 +2056,7 @@ more than wiring through ruby_llm's existing primitive.
     one implementation per capability and spend the complexity budget
     elsewhere. See §"grok-build's registry" for the three mechanisms
     from it that *are* worth having on their own.
-29. **In-process kernel sandbox** (grok-build's Landlock / Seatbelt
+30. **In-process kernel sandbox** (grok-build's Landlock / Seatbelt
     applied at startup). It covers the agent's own filesystem calls, not
     just the shell subprocess — strictly stronger than pikuri's
     bubblewrap-around-`Bash`. But pikuri's file tools run in-process as
