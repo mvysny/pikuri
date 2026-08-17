@@ -136,41 +136,39 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    Contributes **no** `trifecta_contribution`.
 8. **Live smoke specs**, tagged to skip when the binary is absent.
 
-**The entry.**
+**The entry.** `Pikuri::Lsp::Registry::StdioEntry`, a `Data.define`. Types
+are yardoc-exact; the *why* for each field is
+[`lsp/design.md`](lsp/design.md) §Configuration, and the two worked literals
+(including what every part of the jdtls command means) are §"The two book
+examples".
 
 ```ruby
 StdioEntry = Data.define(:id, :command, :files, :language_id, :env, :init_options)
 ```
 
-`language_id:` closes the hole the harness survey found — `didOpen` carries
-a `languageId` and basename globs cannot supply one — but it is **optional,
-with a built-in extension→id table behind it**, which is what S11 argues.
-The value's origin is the LSP spec's *language identifiers* table (VS Code's
-list, adopted by the spec and open-ended, since the field is a plain string
-on the wire), so pikuri ships the well-known rows — the ones that are not
-simply the extension: `.rb`→`ruby`, `.java`→`java`, `.py`→`python`,
-`.rs`→`rust`, `.cs`→`csharp`, `.ts`→`typescript`, … — and the entry's
-field overrides them for anything unlisted.
+| field | type | req? | what it is | `ruby-lsp` | `jdtls` |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `String` | ✅ | this server's name in log lines, restart messages, the degrade string, and `ServerProgress#server_id`. Never model-facing — the model names no server. Duplicates raise. | `'ruby'` | `'java'` |
+| `command` | `Array<String>` | ✅ | argv, `Subprocess.spawn` convention (the documented seam exception). Spawned with cwd = the `Workspace` root, always. | `%w[ruby-lsp]` | `['jdtls', '-data', Paths.cache.join('jdtls', slug).to_s]` |
+| `files` | `Array<String>` | ✅ | the dispatch key: globs matched against the **basename**, first match in declaration order wins, no overlap detection. Globs not extensions, because `Rakefile` has none. | `%w[*.rb *.rake *.gemspec Rakefile Gemfile]` | `%w[*.java]` |
+| `language_id` | `String, nil` | — | the `languageId` every `didOpen` carries. `nil` derives it from a built-in table via the entry's first extension-bearing glob — per *entry*, not per file. Values are the LSP spec's language identifiers. | `nil` → `'ruby'` | `nil` → `'java'` |
+| `env` | `Hash{String=>String}` | — | merged over the inherited environment; the legitimate per-child channel of the "Environment is not a secret store" seam. Carries `JAVA_HOME` here, not a token. | `{}` | `{ 'JAVA_HOME' => ENV.fetch('JAVA_HOME') }` |
+| `init_options` | `Hash, nil` | — | passed verbatim as `initializationOptions` at handshake time; pikuri never parses it. The home for outbound per-server glue. | `nil` | `{ extendedClientCapabilities: { classFileContentsSupport: true } }` |
 
-**The default is derived from the *entry*, not from the file being opened.**
-`files:` holds basename globs, so a `Rakefile` has no extension to look up;
-the table is consulted once per entry, against its first extension-bearing
-glob (`*.rb` → `ruby`), and every file that entry claims is opened under that
-id. Coherent because an entry *is* one server for one language, and it keeps
-`Rakefile` / `Gemfile` / `Dockerfile` rows out of the table entirely.
+So a Ruby entry is three lines and two facts (`command`, `files`), and the
+Java one exercises the rest — each for a reason the reader can check by
+deleting it: without `-data` two same-named checkouts collide in a hardcoded
+`~/.cache`, without `JAVA_HOME` the launcher hard-fails below Java 21, and
+without `classFileContentsSupport` every library symbol answers with silence
+(J4).
 
-**The field is not required**, because S11 measured that jdtls ignores it
-entirely and ruby-lsp falls through to `:ruby` for anything it does not
-recognize, while the two values it *does* recognize
-wrongly (`erb`, `rbs`) return `nil` and zero symbols in silence. Asking a
-user to type a string that only hurts when it is *plausible* is the worst
-shape available; a table cannot make that mistake, and the Ruby book example
-stays three lines. One field per entry rather than a glob→id map, since an
-entry *is* a server; a multi-language server wires two entries at the same
-command, which `id` already distinguishes. No `root:`, no
-`startup_timeout:`, no `content_request:`, no `settings:` (deferred, and
-both harnesses have one — say so honestly rather than implying nobody needs
-it).
+**Deliberately absent, each a decision rather than an omission:** no `root:`
+/ `cwd:` (one root, so the LSP's project and the confinement boundary cannot
+diverge), no `startup_timeout:` (no value is defensible; child death is the
+real signal), no `content_request:` (a protocol method is code, not config —
+pikuri hardcodes the one-row scheme table instead), and no `settings:` yet —
+deferred, though both harnesses ship one, so say that rather than implying
+nobody needs it.
 
 **The tool.** `operation` (enum of ten), `symbol` (required), `file` and
 `line` (optional). Column derived by `locate(text, symbol)`, never asked

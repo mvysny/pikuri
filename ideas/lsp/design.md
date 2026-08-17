@@ -74,11 +74,13 @@ Rejected anyway, for four reasons:
 ## Configuration
 
 Launch argv plus the files a server claims is indeed the spine, and for
-Ruby that is the entire entry. Two more fields earn their place, and two
-that look obligatory must *not* exist.
+Ruby that is the entire entry. Three more fields earn their place, and two
+that look obligatory must *not* exist. (The field table with both worked
+values is in [`../lsp.md`](../lsp.md) §"The v1 build"; the *why* for each is
+here.)
 
 ```ruby
-StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
+StdioEntry = Data.define(:id, :command, :files, :language_id, :env, :init_options)
 ```
 
 - **`id`** — `"ruby"`, `"java"`. Unlike MCP's id this is *not* a
@@ -93,6 +95,25 @@ StdioEntry = Data.define(:id, :command, :files, :env, :init_options)
   someone opens a `Rakefile`. First match in declaration order wins; no
   overlap detection (computing glob overlap is real work to prevent a
   misconfiguration nobody has made yet).
+- **`language_id`** — the string `didOpen` carries, and the only field whose
+  default is *computed*: `nil` means "look me up", and the lookup consults a
+  built-in table (`.rb` → `ruby`, `.py` → `python`, `.cs` → `csharp`, … —
+  the ids that are not simply the extension) **once per entry, against its
+  first extension-bearing glob**, not per file. Per-entry because `files:` holds
+  basename globs and a `Rakefile` has no extension to look up; every file an
+  entry claims is then opened under that one id, which is coherent given that
+  an entry *is* one server for one language.
+
+  The values come from the LSP spec's *language identifiers* table — in
+  practice VS Code's list, which the spec adopted and left open-ended, since
+  the field is a plain string on the wire. **It is optional rather than
+  required, and that is S11's doing.** jdtls ignores the field outright, and
+  ruby-lsp falls through to `:ruby` for anything it does not recognize — so a
+  garbage value is harmless while the two values it *does* recognize (`erb`,
+  `rbs`) select a different parser and make every query return `nil` and zero
+  symbols, silently. A string that only hurts when the user guesses
+  *plausibly* is the worst thing to demand of them; a table cannot make that
+  mistake, and it keeps the Ruby example at three lines.
 - **`env`** — merged over the inherited environment, exactly
   `StdioEntry#env`'s role in MCP: the legitimate per-child channel of the
   "Environment is not a secret store" seam. Here it carries `JAVA_HOME`
