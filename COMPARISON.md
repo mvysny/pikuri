@@ -1405,6 +1405,36 @@ Three findings worth carrying:
    precisely: withheld until a touched file matches, then promoted
    description-and-all.
 
+   **The pattern dialect is gitignore's, on both harnesses — measured
+   2026-08-17.** grok-build's `skill_matches_any`
+   (`skill_discovery_tracker/conditional.rs:96–121`, `main`) hands every
+   pattern to an unmodified `ignore::gitignore::GitignoreBuilder` rooted at
+   cwd and matches with `matched_path_or_any_parents`; `coerce_path_list`'s
+   own doc comment says a `{a,b}` group is left intact *"for the gitignore
+   matcher to expand"*. Claude Code 2.1.233 was then probed black-box —
+   throwaway gated skills in a scratch project, each body revealing a magic
+   word, the model told to *invoke* the skill and report the verbatim result.
+   That invoke-or-error signal is the sound one: asking the model whether a
+   skill was "available" contradicted itself across identical runs.
+
+   | `paths:` | file read | Claude Code | rule |
+   | --- | --- | --- | --- |
+   | `probeleaf` | `unrelated/file.txt` | `Unknown skill` | the gate holds |
+   | `probeleaf` | `probeleaf/file.txt` | activated | a direct hit fires |
+   | `probeleaf` | `nested/probeleaf/file.txt` | activated | **a slash-less pattern floats to any depth** |
+   | `/probeleaf` | `nested/probeleaf/file.txt` | `Unknown skill` | a leading slash roots it |
+   | `nested/probeleaf` | `deep/nested/probeleaf/x.txt` | `Unknown skill` | a slash *anywhere* roots it |
+   | `{alpha,beta}/**` | `beta/x.txt` | activated | a brace group expands |
+
+   Two things that dialect is not. It is not **minimatch**, which is what
+   Cursor's `globs:` and GitHub Copilot's `applyTo:` — the same idea under
+   two other names — take: there `*` never crosses a `/`, so `foo` covers
+   neither `nested/foo/` nor anything beneath the directory, and a pattern
+   copied in from either under-matches here. And it is not **git's own**
+   gitignore either: git treats `{a,b}` literally (a `.gitignore` of
+   `{a,b}/**` hides nothing under `git check-ignore`, while `rg` hides both
+   directories), so the brace row above is specifically ripgrep's flavour.
+
    **"Hidden" means unreachable, not merely unlisted.** Probed the same
    day: `skill(name: "writing-javadoc")` — on disk, valid frontmatter,
    `**/*.java` never touched — returned `Unknown skill: writing-javadoc`,

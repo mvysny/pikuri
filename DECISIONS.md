@@ -286,9 +286,10 @@ and only when the directory holds a sidecar.
 
 **Status:** Accepted; half-built. `Catalog::Bundled#parse_skill` now reads
 `paths:` and `when-to-use:`, `Catalog::Skill#gated?` answers the predicate,
-and `Skill::Activation` holds the once-per-conversation announcement state
+`Skill::PathMatcher.match?` decides whether a touched file fires a pattern, and
+`Skill::Activation` holds the once-per-conversation announcement state
 that `Skill::Extension` clears on a conversation reset — but nothing
-*consults* any of it yet: no matcher, no listener, and every gate surface
+*consults* any of it yet: no listener, and every gate surface
 (the catalog render, `SkillTool`'s lookup and its not-found enumeration,
 `schedule_load_skill`) is still ungated, so a `paths:` skill behaves exactly
 as it did before. The author's own

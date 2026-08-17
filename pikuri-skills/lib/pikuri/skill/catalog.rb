@@ -39,7 +39,7 @@ module Pikuri
       #   @return [String] everything after the frontmatter
       # @!attribute [r] paths
       #   @return [Array<String>] normalized +paths:+ patterns; empty means
-      #     advertised unconditionally — see {PathSpec} before reading an empty
+      #     advertised unconditionally — see {PathMatcher} before reading an empty
       #     one as "matches nothing"
       # @!attribute [r] when_to_use
       #   @return [String, nil] the +when-to-use:+ trigger sentence, +nil+ when
@@ -48,7 +48,7 @@ module Pikuri
       Skill = Data.define(:name, :description, :location, :body, :paths, :when_to_use) do
         # @return [Skill]
         def initialize(name:, description:, location:, body:,
-                       paths: PathSpec::UNCONDITIONAL, when_to_use: nil)
+                       paths: PathMatcher::UNCONDITIONAL, when_to_use: nil)
           super
         end
 
@@ -267,7 +267,7 @@ module Pikuri
             description: description,
             location: path,
             body: body,
-            paths: PathSpec.parse(frontmatter['paths'], path: path),
+            paths: PathMatcher.parse(frontmatter['paths'], path: path),
             when_to_use: when_to_use_of(frontmatter)
           )
         rescue Errno::ENOENT, Errno::EACCES => e

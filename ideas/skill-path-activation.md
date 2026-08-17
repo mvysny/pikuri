@@ -7,16 +7,18 @@ Frontmatter*, *→ How grok-build's conditional activation actually
 works*). What is left here is what neither owns: **how the mechanism
 wires into pikuri**, and the question the decision did not settle.
 
-**Landed (2026-08-17), inert:** `Skill::PathSpec` (the `paths:` parse +
-normalization), `Catalog::Skill#paths` / `#when_to_use` / `#gated?`,
+**Landed (2026-08-17), inert:** `Skill::PathMatcher` (the `paths:` parse +
+normalization, and the gitignore matcher over a touched path),
+`Catalog::Skill#paths` / `#when_to_use` / `#gated?`,
 `Skill::Trigger` (the description ↔ `when-to-use` de-duplication), and
 `Skill::Activation` (the once-per-conversation announcement state,
 cleared by `Skill::Extension#on_conversation_reset`).
 `Skill::Extension.new` now also takes `root:` (an absolute `Pathname`),
 the anchor the matcher will resolve a model-supplied path against.
-Nothing consults any of it yet — no matcher, no listener, and every gate
-surface is still open. **Still to build:** §2's matcher, the
-`TOUCH_TOOLS` listener, `Skill::Promoted`, and the three gate surfaces.
+Nothing consults any of it yet — no listener, and every gate surface is
+still open. **Still to build:** the `TOUCH_TOOLS` listener (including the
+lexical relative-to-root step `match?` demands), `Skill::Promoted`, and
+the three gate surfaces.
 
 This note used to argue the case, and carried a REJECTED banner for the
 few hours between the author's first verdict and its reversal the same
@@ -152,27 +154,27 @@ own. Cited as `file:line` so a later sync can re-check them.
 
 ### 1. Parsing `paths:` — graduated
 
-Shipped as `Skill::PathSpec`; the rule table is now
-`pikuri-skills/spec/pikuri/skill/path_spec_spec.rb`, a case per rule, and
+Shipped as `Skill::PathMatcher`; the rule table is now
+`pikuri-skills/spec/pikuri/skill/path_matcher_spec.rb`, a case per rule, and
 the inversion trap is in the module's own yardoc.
 
-### 2. Matching a touched path — `conditional.rs:96–124`
+### 2. Matching a touched path — graduated
 
-Gitignore syntax, built relative to cwd, one matcher per skill:
+Shipped as `Skill::PathMatcher.match?`: `File.fnmatch?` with
+`FNM_PATHNAME | FNM_EXTGLOB | FNM_DOTMATCH` over the touched path **and
+each of its ancestors**, which is the ancestor walk grok-build gets from
+`matched_path_or_any_parents` and a plain `fnmatch` does not do. No gem —
+`pathspec` is git-faithful and so treats `{a,b}` as literal text, which
+both harnesses expand. The rule table is
+`pikuri-skills/spec/pikuri/skill/path_matcher_spec.rb`, cross-checked
+pattern-by-pattern against ripgrep's own gitignore engine, and the
+dialect evidence for both harnesses is `COMPARISON.md` finding 4.
 
-1. Feed every pattern to a `GitignoreBuilder` rooted at cwd (a pattern
-   that fails to parse is silently skipped; a builder that fails to build
-   makes the skill match nothing).
-2. Make the touched path **relative to cwd lexically first**
-   (`strip_prefix`) — deliberately *before* any canonicalization, so a
-   not-yet-created file (a `write` target) still matches. Only on prefix
-   mismatch does it canonicalize and retry, which is the symlinked-cwd
-   case.
-3. Match with `matched_path_or_any_parents(rel, /* is_dir */ false)` —
-   the *or-any-parents* walk is what makes a bare directory pattern
-   (`ideas`, `src`) match every file beneath it. A plain `File.fnmatch`
-   does **not** do this; Ruby's nearest equivalent is matching the path
-   and each of its ancestors in turn.
+What is *not* graduated is the caller's half: the touched path must be
+made relative to the workspace root **lexically** (never
+`realpath`-first) so a `write` to a not-yet-created file still matches,
+and `match?` raises on an absolute path to force that. `Skill::Extension`
+already takes the `root:` anchor for it.
 
 Activation is sticky and session-scoped: matched skills stay in `held`,
 gated by an `activated` set of dedup keys, so a re-seed can re-promote
@@ -240,7 +242,7 @@ fully-withheld skill costs nothing while it waits.
   into the *specs* (a case per rule) plus a short yardoc note on each
   helper. Do not copy it into yardoc wholesale; a prose restatement of
   ten connectives rots the day the list changes, while a spec fails
-  loudly. Done for §1 and §3 (`path_spec_spec.rb`, `trigger_spec.rb`);
+  loudly. Done for §1 and §3 (`path_matcher_spec.rb`, `trigger_spec.rb`);
   §2's parent walk is owed by whoever writes the matcher.
 - The wiring map and the `TOUCH_TOOLS` discrimination go to the
   implementation's own yardoc when it lands (the listener's class

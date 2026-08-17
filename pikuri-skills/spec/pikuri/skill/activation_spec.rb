@@ -16,7 +16,7 @@ RSpec.describe Pikuri::Skill::Activation do
     end
   end
 
-  def skill(name, paths: Pikuri::Skill::PathSpec::UNCONDITIONAL)
+  def skill(name, paths: Pikuri::Skill::PathMatcher::UNCONDITIONAL)
     Pikuri::Skill::Catalog::Skill.new(
       name: name,
       description: "#{name} description.",
