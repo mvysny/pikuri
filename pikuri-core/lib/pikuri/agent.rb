@@ -57,19 +57,25 @@ module Pikuri
     REFERENCE_TAG = 'system-reminder'
     private_constant :REFERENCE_TAG
 
-    # Provider slugs (matched against +@chat.model.provider+) that hoist every
-    # +:system+ message out of the request's +messages+ array into a separate
-    # top-level field — Anthropic's +system+ param, Bedrock's +system+ blocks.
-    # For them a conversation holding nothing but the system prompt renders
-    # +messages: []+ and the API 400s, so {#run_loop} raises {EmptyTurnError};
-    # every other provider keeps +:system+ inside the array (OpenAI, Gemini) and
-    # completes the turn.
-    SYSTEM_HOISTING_PROVIDERS = %w[anthropic bedrock].freeze
-    private_constant :SYSTEM_HOISTING_PROVIDERS
+    # Provider slugs (matched against +@chat.model.provider+) whose wire format
+    # carries system content in a top-level request field rather than as an
+    # element of +messages+ — Anthropic's +system+ param, Bedrock's +system+
+    # blocks. ruby_llm's provider splits it out at payload-render time
+    # (+messages.partition { |m| m.role == :system }+), so a conversation
+    # holding nothing but the system prompt renders +messages: []+ and the API
+    # 400s — see {EmptyTurnError}. Everywhere else +:system+ is an ordinary
+    # array element (OpenAI, Gemini) and that same conversation is a legal
+    # one-message request.
+    #
+    # Only +:system+ moves — a placement difference in the payload, not a
+    # rewrite of what pikuri appended, so the +:user+ blocks of
+    # {#append_reference_block} ride through untouched on every provider here.
+    SEPARATE_SYSTEM_FIELD_PROVIDERS = %w[anthropic bedrock].freeze
+    private_constant :SEPARATE_SYSTEM_FIELD_PROVIDERS
 
     # A blank turn was requested against a conversation holding nothing but the
-    # assembled system prompt, on a provider that can't send one (see
-    # {SYSTEM_HOISTING_PROVIDERS}):
+    # assembled system prompt, on a provider that would render that as
+    # +messages: []+ (see {SEPARATE_SYSTEM_FIELD_PROVIDERS}):
     #
     #   agent.run_loop(user_message: nil)   # fresh chat, backend Anthropic
     #   # => EmptyTurnError; the host catches it and prompts for a real message
@@ -277,7 +283,8 @@ module Pikuri
     # @raise [Control::StepLimit::Exceeded] if the budget tripped under the
     #   +:raise+ policy
     # @raise [EmptyTurnError] on a blank turn against a prompt-only
-    #   conversation when the provider hoists +:system+ (see above)
+    #   conversation when the provider carries +:system+ outside +messages+
+    #   (see above)
     # @return [nil] after a turn runs
     def run_loop(user_message: nil, transport: nil)
       apply_transport!(transport) if transport
@@ -292,12 +299,12 @@ module Pikuri
       drain_interloper if @interloper
 
       blank = user_message.nil? || user_message.to_s.strip.empty?
-      # A hoisting provider would send `messages: []` here (see EmptyTurnError).
+      # These providers would send `messages: []` here (see EmptyTurnError).
       # The drain above is what usually saves this case: an injected block is a
       # :user message, so a skill-only bare load has something to complete
       # against and falls through.
       if blank && @chat.messages.all? { |m| m.role == :system } &&
-         SYSTEM_HOISTING_PROVIDERS.include?(@chat.model.provider.to_s)
+         SEPARATE_SYSTEM_FIELD_PROVIDERS.include?(@chat.model.provider.to_s)
         raise EmptyTurnError, @chat.model.provider
       end
 
@@ -640,11 +647,12 @@ module Pikuri
     #
     # +:user+ rather than +:system+ because a mid-conversation +:system+ message
     # is not portable: Qwen3.6's chat template silently drops every one past the
-    # leading header, and providers that hoist (Anthropic, Bedrock — see
-    # {SYSTEM_HOISTING_PROVIDERS}) reorder it to the front of the prompt, so the
-    # block is presented as though it had always been there. Neither failure is
-    # visible from anything pikuri can observe: the message is in the payload,
-    # the listener stream renders it, the history holds it. See +DECISIONS.md+
+    # leading header, and providers carrying +:system+ in a separate field
+    # (Anthropic, Bedrock — see {SEPARATE_SYSTEM_FIELD_PROVIDERS}) merge it into
+    # the standing system prompt, so the block is presented as though it had
+    # always been there and stays in force. Neither failure is visible from
+    # anything pikuri can observe: the message is in the payload, the listener
+    # stream renders it, the history holds it. See +DECISIONS.md+
     # +D-reference-text-as-user-turn+.
     #
     # A closing tag inside +content+ is escaped, so injected text (a file, a web

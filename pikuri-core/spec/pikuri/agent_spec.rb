@@ -14,7 +14,7 @@ RSpec.describe Pikuri::Agent do
   # +#model+ (carrying a +provider+ slug +run_loop+'s empty-turn split
   # keys off), so the fake mirrors that. Built per-instance so a spec can
   # flip +fake_chat.model.provider+ without leaking across examples;
-  # defaults to +'openai'+ (a non-system-hoisting provider).
+  # defaults to +'openai'+ (which carries +:system+ inside +messages+).
   let(:fake_chat_class) do
     Class.new do
       attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages, :stream_block, :model
@@ -512,10 +512,11 @@ RSpec.describe Pikuri::Agent do
     describe 'blank input against a :system-only conversation is provider-split' do
       # A blank message with nothing but :system messages to complete against
       # (a fresh chat, or a skill-only bare-load) can't run on a provider that
-      # hoists :system out of the messages array — it would send messages: []
-      # and 400 — so run_loop raises EmptyTurnError there. Providers that keep
-      # :system in the array complete the turn instead. (Mid-conversation bare
-      # turns proceed everywhere; covered under the host-driven-load specs.)
+      # carries :system in a top-level field rather than in messages — it would
+      # send messages: [] and 400 — so run_loop raises EmptyTurnError there.
+      # Providers that keep :system in the array complete the turn instead.
+      # (Mid-conversation bare turns proceed everywhere; covered under the
+      # host-driven-load specs.)
       #
       # Force eager construction so the ContextCap event emitted at
       # construction time doesn't get attributed to run_loop's
@@ -525,7 +526,7 @@ RSpec.describe Pikuri::Agent do
                           system_prompt: 's') { |c| c.add_listener recorder }
       end
 
-      describe 'on a system-hoisting provider (Anthropic/Bedrock)' do
+      describe 'on a provider carrying :system in a separate field (Anthropic/Bedrock)' do
         before { fake_chat.model.provider = 'anthropic' }
 
         it 'raises EmptyTurnError on nil and never reaches the chat or listeners' do
@@ -550,7 +551,7 @@ RSpec.describe Pikuri::Agent do
       end
 
       describe 'on a provider that keeps :system in the messages array (OpenAI/Gemini)' do
-        # fake_chat defaults to the non-hoisting 'openai' provider.
+        # fake_chat defaults to 'openai', which keeps :system in the array.
         it 'runs the bare turn against the :system-only history, appending nothing' do
           assert_nil agent.run_loop(user_message: nil)
           assert_equal 1, fake_chat.completes
@@ -611,7 +612,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal [], fake_chat.added_messages # nothing appended; completes against history
       end
 
-      it 'bare-loads a skill then runs the turn on a non-hoisting provider' do
+      it 'bare-loads a skill then runs the turn where :system stays in the array' do
         interloper.inject_system_message('<skill>load</skill>')
 
         assert_nil agent.run_loop(user_message: nil)
@@ -624,7 +625,7 @@ RSpec.describe Pikuri::Agent do
         assert_equal ['<skill>load</skill>'], injected.map(&:content)
       end
 
-      it 'bare-loads a skill and completes on a system-hoisting provider too' do
+      it 'bare-loads a skill and completes on a separate-system-field provider too' do
         fake_chat.model.provider = 'anthropic'
         interloper.inject_system_message('<skill>load</skill>')
 
