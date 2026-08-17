@@ -81,7 +81,12 @@ design.
 
 ## D-reference-text-as-user-turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
 
-**Status:** Accepted, shipped 2026-08-17.
+**Status:** Accepted, shipped 2026-08-17, and confirmed the same day through
+the shipped path — `bin/pikuri-code` against
+`unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`, where the model now reports the two
+skills a `paths:` promotion had just put in play. The A/B below was a
+hand-patched probe (`ext.announce` redefined on the singleton); this is the
+library doing it.
 
 **Context.** Everything pikuri appends to a live conversation on its own
 initiative — pikuri-memory's per-turn prefetch, a host-loaded skill body
