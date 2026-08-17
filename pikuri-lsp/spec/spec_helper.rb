@@ -6,6 +6,8 @@ require 'minitest/assertions'
 
 require 'pikuri-lsp'
 
+require_relative 'support/lsp_wire'
+
 # Silence Pikuri's default $stderr logging for the suite so production
 # log lines don't bleed into rspec output.
 Pikuri.log_io = File.open(File::NULL, 'w')

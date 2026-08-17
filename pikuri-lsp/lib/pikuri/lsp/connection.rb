@@ -138,6 +138,21 @@ module Pikuri
         await(id, method, cancellable)
       end
 
+      # Send a request and deliberately *not* wait for its answer, for the one
+      # caller that does not care: teardown, where +shutdown+ must reach the
+      # server ahead of +exit+ but its reply changes nothing. The answer, if it
+      # comes, is dropped as an unknown id.
+      #
+      # @param method [String] e.g. +"shutdown"+.
+      # @param params [Hash]
+      # @return [Integer] the id it went out with.
+      # @raise [Closed] if the channel is already gone or the write fails.
+      def send_request(method, params = {})
+        id = next_id!
+        write(jsonrpc: '2.0', id: id, method: method, params: params)
+        id
+      end
+
       # Send a notification — no id, no reply, returns as soon as the bytes are
       # written.
       #
@@ -198,14 +213,18 @@ module Pikuri
 
       private
 
-      def register_request
+      def next_id!
         @state.synchronize do
           raise Closed, "#{@server_id}: #{@dead}" if @dead
 
-          id = (@next_id += 1)
-          @pending[id] = nil
-          id
+          @next_id += 1
         end
+      end
+
+      def register_request
+        id = next_id!
+        @state.synchronize { @pending[id] = nil }
+        id
       end
 
       def await(id, method, cancellable)

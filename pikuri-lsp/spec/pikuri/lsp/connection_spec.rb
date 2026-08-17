@@ -4,50 +4,10 @@ require 'json'
 require 'timeout'
 
 describe Pikuri::Lsp::Connection do
-  # The server side of the pipe pair, framing bytes by hand: a parser bug that
-  # the gem's own serializer agrees with would be invisible if both ends shared
-  # code (ideas/lsp/design.md §Testing).
-  wire = Class.new do
-    def initialize(read, write)
-      @read = read
-      @write = write
-    end
-
-    # @return [Hash] the next message the client wrote.
-    def take
-      headers = {}
-      while (line = @read.readline("\r\n").chomp("\r\n")) != ''
-        key, value = line.split(':', 2)
-        headers[key.strip.downcase] = value.strip
-      end
-      JSON.parse(@read.read(Integer(headers.fetch('content-length'))))
-    end
-
-    def send_raw(body)
-      @write.write("Content-Length: #{body.bytesize}\r\n\r\n#{body}")
-      @write.flush
-    end
-
-    def send_message(hash)
-      send_raw(JSON.generate(hash))
-    end
-
-    def reply(request, result)
-      send_message('jsonrpc' => '2.0', 'id' => request['id'], 'result' => result)
-    end
-
-    def close
-      @write.close unless @write.closed?
-      @read.close unless @read.closed?
-    end
-  end
-
   # Yields a live connection plus the server side of its channel.
   connect = lambda do |&block|
-    to_server = IO.pipe
-    to_client = IO.pipe
-    connection = described_class.new(stdin: to_server[1], stdout: to_client[0], server_id: 'test')
-    server = wire.new(to_server[0], to_client[1])
+    channel, server = LspWire.channel
+    connection = described_class.new(**channel, server_id: 'test')
     begin
       Timeout.timeout(10) { block.call(connection, server) }
     ensure
@@ -206,6 +166,23 @@ describe Pikuri::Lsp::Connection do
       assert thread.alive?, 'no clock may end the wait — only an answer, a death, or a cancel'
       server.reply(request, [])
       assert_equal [], thread.value
+    end
+  end
+
+  it 'sends a fire-and-forget request without waiting, and drops the late answer' do
+    connect.call do |connection, server|
+      id = connection.send_request('shutdown')
+      connection.notify('exit')
+      shutdown = server.take
+      goodbye = server.take
+      server.reply(shutdown, nil) # arrives with nobody waiting
+
+      assert_equal ['shutdown', id], [shutdown['method'], shutdown['id']]
+      assert_equal 'exit', goodbye['method'], 'ordering is the whole point of sending it synchronously'
+
+      pending = Thread.new { connection.request('textDocument/hover') }
+      server.reply(server.take, 'ok')
+      assert_equal 'ok', pending.value, 'the dropped answer must not confuse the next one'
     end
   end
 

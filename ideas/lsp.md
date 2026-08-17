@@ -126,13 +126,36 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    deviations from the line above, both narrower than it: `Range` has no
    `to_wire` (pikuri sends positions, never ranges), and the encoding
    arithmetic is its own module rather than living inside `Position`.
-2. **`ClientWrapper.new(stdin:, stdout:)` + `.spawn(entry)`** — the
-   constructor must not spawn, so the fake server can drive it over
-   `IO.pipe`. Restart-on-death copied from `Mcp::ClientWrapper`, with the
-   documented Subprocess-seam exception.
+2. ~~**`ClientWrapper.new(stdin:, stdout:)` + `.spawn(entry)`**~~ **Landed.**
+   The constructor adopts a channel and starts reading; `#start` is the
+   handshake, so a fake server drives a wrapper over `IO.pipe` with no binary
+   in sight. Restart-on-death is `Mcp::ClientWrapper`'s shape (`MAX_ATTEMPTS`
+   = 3), reached through an injected `respawn:` — which is also what makes
+   restart testable in-process. Also landed: the declared client capabilities
+   (the four measured ones), `#supports?` reading *this* workspace's
+   `initialize` response, the negotiated `position_encoding`, the stderr tail
+   that says *why* a child died, and teardown (`shutdown` + `exit`, then
+   SIGTERM to the process group).
+
+   Three deviations, all narrower than the line above:
+
+   - **The entry came forward from step 4.** `.spawn(entry)` needs one, so
+     `Registry` + `StdioEntry` + the extension→language-id table + basename-glob
+     dispatch (`#claims?` / `#entry_for`) landed here. Step 4 is now
+     `Registry.from_h` alone.
+   - **`Connection#send_request`** was added for teardown: `shutdown` must
+     reach the server *before* `exit`, and its reply changes nothing. The first
+     cut awaited the reply on a thread with a grace period, which cost that
+     grace on every close where a server never answers — the wait for the
+     process to actually leave is `reap_child`'s, and that is the only clock
+     teardown needs.
+   - **No `Finalizers` coupling**, matching `Mcp::Servers`: the owner closes it,
+     which will be `Lsp::Extension`'s `on_close` in step 7. A hard crash can
+     therefore orphan a child — the same exposure stdio MCP has today.
 3. **The fake server + raw-byte fixtures** from the recorded runs, so a
    serializer bug cannot hide behind a symmetric parser.
-4. **Registry + `Registry.from_h`**, entry as below.
+4. **`Registry.from_h`** — the host-config bridge; the registry and its entry
+   landed with step 2, so this is what is left of the step.
 5. **Readiness gate + the coalescing mailbox + `ServerProgress`.**
    Quiescence (all progress tokens closed) plus a settle debounce, blocking
    with no timeout, polling `Cancellable`, `window.workDoneProgress: true`
