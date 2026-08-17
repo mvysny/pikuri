@@ -822,9 +822,9 @@ Three consequences worth noting:
 > through its own headline parameter. The hop still belongs inside the
 > tool; what "a bare name" may be is settled in [`../lsp.md`](../lsp.md)
 > §"The forks behind the v1 calls", and S10 adds the other half — jdtls
-> indexes no methods, so a bare name cannot reach a Java method at all. Two things are
-> settled regardless: the filter
-> compares the **last `::` segment**, never `name` (ruby-lsp reports the
+> indexes no methods, so a bare name cannot reach a Java method at all. Two
+> things are settled regardless: the filter compares the **last `::`
+> segment**, never `name` (ruby-lsp reports the
 > FQN there deliberately), and this is a *below-threshold* drop, so no cap
 > or ranking tweak reaches it.
 
