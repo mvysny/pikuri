@@ -150,7 +150,14 @@ list, adopted by the spec and open-ended, since the field is a plain string
 on the wire), so pikuri ships the well-known rows — the ones that are not
 simply the extension: `.rb`→`ruby`, `.java`→`java`, `.py`→`python`,
 `.rs`→`rust`, `.cs`→`csharp`, `.ts`→`typescript`, … — and the entry's
-field overrides them for anything unlisted. **Not required**, because S11 measured
+field overrides them for anything unlisted.
+
+**The default is derived from the *entry*, not from the file being opened.**
+`files:` holds basename globs, so a `Rakefile` has no extension to look up;
+the table is consulted once per entry, against its first extension-bearing
+glob (`*.rb` → `ruby`), and every file that entry claims is opened under that
+id. Coherent because an entry *is* one server for one language, and it keeps
+`Rakefile` / `Gemfile` / `Dockerfile` rows out of the table entirely. **Not required**, because S11 measured
 that jdtls ignores the field entirely and ruby-lsp falls through to `:ruby`
 for anything it does not recognize, while the two values it *does* recognize
 wrongly (`erb`, `rbs`) return `nil` and zero symbols in silence. Asking a
