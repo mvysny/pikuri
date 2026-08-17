@@ -457,8 +457,8 @@ three namespaces, is **host built-in > command > skill**.
   without running a turn**, so the body arrives with the human's next
   message; the alternative — `run_loop(user_message: nil)`, the bare load
   `schedule_load_skill` documents — spends a completion on an
-  acknowledgement, which is precisely the "skill load costs a turn" tax in
-  `feedback.txt` item 3 that this feature answers. And a *refused* name
+  acknowledgement, which is precisely the tax `feedback.txt`'s *"skill load
+  costs a turn"* reported, and that this feature answers. And a *refused* name
   gets a **human-only** second line naming the skill as installed-but-gated,
   read from the unfiltered `Catalog`: decision 7 of
   `D-skill-path-activation` makes the gate answer the model as if the name
@@ -934,10 +934,10 @@ conditional activation actually works*).
 - **This is where the skills-surface work stops** (2026-08-17). Two
   re-readings closed the remaining items as a group rather than one at a
   time. First, the origin was thinner than the five notes it grew: the
-  complaint is `ideas/feedback.txt` *"the standing prompt is heavy"*
-  (item 3 since this entry cut item 3, *"skill load costs a turn"*, the
-  origin of the notes themselves), which lists the skills catalog in an
-  enumeration and then names
+  complaint is `ideas/feedback.txt`'s *"the standing prompt is heavy"* —
+  not *"skill load costs a turn"*, which is what the notes grew from and is
+  cut with this entry — and it lists the skills catalog in an enumeration
+  and then names
   what is actually not worth its bytes — the tool-schema restatement and
   the duplicated "don't mention the guidelines" material — while saying
   the project file earns its keep. The catalog was never the item's
@@ -1049,7 +1049,8 @@ than silently stops applying, and deleted the moment the fix ships
 ## D-single-hunk-edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
 
 **Status:** Accepted and shipped. `Workspace::Edit` gains `occurrence:`;
-no second edit tool ships. `ideas/feedback.txt` item 2 is cut with this
+no second edit tool ships. `ideas/feedback.txt`'s *"edit is search-replace
+only"* is cut with this
 entry.
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring: *"`edit` is
@@ -1156,7 +1157,8 @@ second edit tool.
 ## D-keep-calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
 
 **Status:** Accepted; no code change. `calculator` stays wired in all ten
-`bin/pikuri-*` demos. `ideas/feedback.txt` item 6 is cut with this entry.
+`bin/pikuri-*` demos. `ideas/feedback.txt`'s *"`calculator` is a smell"* is
+cut with this entry.
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring: *"`calculator` is a
 smell. If the model can't add, a tool won't save it; if it can, bash/python
@@ -1454,7 +1456,7 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
 **Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering
 refusal, the `file_list` tool, and the depth-1 boot snapshot on
 `Workspace::Extension`. `ideas/directory-listing.md` is deleted with this
-entry, and `ideas/feedback.txt` item 1 is cut.
+entry, and `ideas/feedback.txt`'s *"a real directory listing"* is cut.
 
 **Context.** Grok 4.6, reviewing a coding-agent wiring, opened where every
 model opens — orienting in the repo — and reported: *"`glob *` gave me ten

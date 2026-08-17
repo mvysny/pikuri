@@ -35,7 +35,8 @@ Related:
   becomes a common annoyance.
 - **LSP tool.** ~~Deferred until there's a concrete use case beyond
   "opencode has one."~~ **Superseded by [`lsp.md`](lsp.md)** — the use
-  case arrived (`feedback.txt` item 2), the protocol is investigated and
+  case arrived (`feedback.txt`'s *"no language intelligence"*), the
+  protocol is investigated and
   the direct-vs-MCP fork is decided there. Delete this bullet when that
   note graduates.
 - **Streaming output from bash.** `Code::Bash` returns a single
