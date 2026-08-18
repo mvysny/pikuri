@@ -24,6 +24,7 @@ require 'pikuri-skills'
 require 'pikuri-tasks'
 require 'pikuri-workspace'
 require 'pikuri-mcp'
+require 'pikuri-lsp'
 require 'pikuri-subagents'
 require 'pikuri-code'
 
@@ -416,6 +417,18 @@ read_only = Pikuri::Workspace::ReadOnly.new(
 mcp_registry = Pikuri::Mcp::Registry.new(entries: [
 ])
 
+# Language servers, from the shared example config rather than from this
+# script: an entry names a binary on *this* machine (and, for jdtls, a
+# JAVA_HOME and a data directory), which a version-controlled demo cannot
+# know and a user would lose on the next pull. Absent key ⇒ no servers ⇒
+# no `lsp` tool.
+#
+#   lsp_servers:
+#     ruby:
+#       command: [ruby-lsp]
+#       files:   ['*.rb', '*.rake', '*.gemspec', Rakefile, Gemfile]
+lsp_registry = Pikuri::Lsp::Registry.from_h(examples_config['lsp_servers'])
+
 # Run one agent turn, trapping SIGINT only for the duration of the turn.
 # Ctrl+C during a turn flips the agent's Cancellable flag — the next
 # tool-call boundary raises Cancelled, which we rescue below to return to
@@ -525,6 +538,18 @@ begin
       registry: mcp_registry,
       synthesize_descriptions: true,
       verify_mcp_servers: true
+    )
+    # Language intelligence, when this machine has a server for the
+    # project's languages: which binaries you have installed is machine
+    # state, so the entries live in the same YAML the LLM connection does
+    # (`lsp_servers:`, see Pikuri::Lsp::Registry.from_h for the shape).
+    # No config ⇒ no tool at all; configured ⇒ nothing is spawned until a
+    # call needs it, and the first one blocks for as long as the server's
+    # index takes. Takes the raw filesystem, not the Workspace composite:
+    # it reads files to send them to the server and marks nothing read.
+    c.add_extension Pikuri::Lsp::Extension.new(
+      registry: lsp_registry,
+      filesystem: filesystem
     )
     # Privilege-separated read-only sub-agents along both recon axes:
     # FILE_MINER (read/grep/glob) for code/fs lookups, RESEARCHER

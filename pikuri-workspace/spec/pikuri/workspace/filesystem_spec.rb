@@ -154,6 +154,35 @@ RSpec.describe Pikuri::Workspace::Filesystem do
       FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
     end
 
+    it 'takes a Pathname as readily as a String (the alias reads the same either way)' do
+      # A caller holding a Pathname used to hit NoMethodError here rather than
+      # a rewrite: the alias asked a Pathname for #start_with?.
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+
+      assert_equal ws.resolve_for_read('/tmp/foo.txt'), ws.resolve_for_read(Pathname.new('/tmp/foo.txt'))
+      assert_equal ws.resolve_for_read('sub/a.rb'), ws.resolve_for_read(Pathname.new('sub/a.rb'))
+      assert_equal ws.temp, ws.resolve_for_read(Pathname.new('/tmp'))
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
+    it 'leaves a project that itself lives under /tmp alone (the sandbox re-binds it there)' do
+      # bwrap binds temp at /tmp first, then the workspace roots on top, so
+      # inside the subprocess /tmp/<root> is the real project. Rewriting it
+      # host-side sent every absolute in-root path into an empty playground —
+      # which is what an LSP result, always absolute, is made of.
+      ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      File.write(root + 'here.rb', 'x')
+      inside = (root + 'here.rb').to_s
+      assert inside.start_with?('/tmp/'), 'fixture root must be under /tmp for this to mean anything'
+
+      assert_equal root + 'here.rb', ws.resolve_for_read(inside)
+      # …while /tmp outside the project still aliases.
+      assert_equal ws.temp + 'foo.txt', ws.resolve_for_read('/tmp/foo.txt')
+    ensure
+      FileUtils.remove_entry(ws.temp.to_s) if ws&.temp&.exist?
+    end
+
     it 'rewrites exactly /tmp to the host temp dir' do
       ws = described_class.new(project_root: root, temp: true, alias_tmp_to_temp: true)
       assert_equal ws.temp, ws.resolve_for_read('/tmp')

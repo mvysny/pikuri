@@ -282,6 +282,24 @@ describe Pikuri::Lsp::LspTool do
         assert_empty fakes['ruby'].received.select { |message| message['method'] == 'textDocument/didChange' }
       end
     end
+
+    it 'sends the real file under a workspace that aliases /tmp to its playground' do
+      # bin/pikuri-code wires alias_tmp_to_temp whenever the sandbox is on, and
+      # a spec root lives under /tmp — so resolving the *resolved* path a second
+      # time rewrote it into the agent's empty playground. The document the
+      # server indexes has to be the one on disk.
+      aliasing = lambda do |root|
+        Pikuri::Workspace::Filesystem.new(project_root: root, temp: true, alias_tmp_to_temp: true)
+      end
+      wired.call(files: { 'read.rb' => read_rb }, filesystem: aliasing) do |tool, fakes|
+        fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'x' } }
+
+        tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+
+        opened = fakes['ruby'].received.find { |message| message['method'] == 'textDocument/didOpen' }
+        assert_equal read_rb, opened.dig('params', 'textDocument', 'text')
+      end
+    end
   end
 
   describe 'a bare name, resolved through the index' do

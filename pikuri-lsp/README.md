@@ -10,12 +10,12 @@ diagnostics push, no rename, no workspace edits. The gem is named after
 what it refuses to become: the moment it applies an edit it needs the
 `Confirmer` seam and stops being a closeable, auditable piece.
 
-> **Status: under construction.** The protocol layer, the client
-> lifecycle, the configuration, the readiness gate, the `lsp` tool and
-> the agent extension are all in (the table below), so one
-> `c.add_extension` wires the tool onto an agent. What is missing is the
-> documentation pass — no book chapter, no `DESIGN.md`, and the gem is
-> not in the `pikuri` metagem yet.
+> **Status: young.** Everything below is in and wired — `bin/pikuri-code`
+> builds its registry from the `lsp_servers:` key of
+> `~/.pikuri-examples-config.yaml`, and one `c.add_extension` does the same
+> for any other host. What is still missing is the writing: no book chapter
+> and no `DESIGN.md` yet, so the design rationale lives in `ideas/lsp.md`
+> until it graduates.
 
 ## What is here
 

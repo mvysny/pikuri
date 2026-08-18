@@ -212,7 +212,7 @@ module Pikuri
       # Resolve a user path against the read-set (readable ∪ writable). Returned
       # Pathname is absolute and may not exist; the caller checks existence.
       #
-      # @param path [String]
+      # @param path [String, Pathname]
       # @return [Pathname]
       # @raise [Error] if the resolved path falls outside every root
       def resolve_for_read(path)
@@ -221,7 +221,7 @@ module Pikuri
 
       # Resolve a user path against the write-set.
       #
-      # @param path [String]
+      # @param path [String, Pathname]
       # @return [Pathname]
       # @raise [Error] if the resolved path falls outside every writable root
       def resolve_for_write(path)
@@ -320,12 +320,39 @@ module Pikuri
       # Rewrite +/tmp+ / +/tmp/foo+ inputs to land under {#temp} when
       # {#alias_tmp_to_temp} is set; other inputs pass through. In the base
       # class so {AllowAll} inherits it.
+      #
+      # Coerces first: a caller re-resolving a path it already resolved hands
+      # back a Pathname, and the whole rest of {#resolve} takes one happily.
       def apply_tmp_alias(path)
+        path = path.to_s
         return path unless @alias_tmp_to_temp
+        return path if tmp_shadowing_root?(path)
         return @temp.to_s if path == '/tmp'
         return File.join(@temp.to_s, path[5..]) if path.start_with?('/tmp/')
 
         path
+      end
+
+      # Whether +path+ lies under a workspace root that itself lives under
+      # +/tmp+ — a project checked out in +/tmp/scratch+, say.
+      #
+      # Those are exactly the paths the rewrite must leave alone. The sandbox
+      # binds {#temp} at +/tmp+ *before* it binds the workspace roots, so a root
+      # under +/tmp+ is re-bound over the playground and the subprocess sees the
+      # real project at its own name; rewriting it host-side would make the file
+      # tools and +bash+ disagree about what +/tmp/scratch/lib/a.rb+ means, and
+      # send every absolute in-root path into an empty playground. Lexical on
+      # purpose — it decides only *whether* to rewrite, and {#resolve} still
+      # realpaths and re-checks containment afterwards, so no symlink escapes
+      # through here.
+      #
+      # @param path [String]
+      # @return [Boolean]
+      def tmp_shadowing_root?(path)
+        @readable.any? do |root|
+          root = root.to_s
+          root.start_with?('/tmp/') && (path == root || path.start_with?("#{root}/"))
+        end
       end
 
       # Unrestricted variant of {Filesystem}: every path resolves, except paths
@@ -409,14 +436,14 @@ module Pikuri
           @readable = @writable.dup
         end
 
-        # @param path [String]
+        # @param path [String, Pathname]
         # @return [Pathname]
         # @raise [Error] if the resolved path lands under the credential denylist.
         def resolve_for_read(path)
           resolve_unrestricted(path)
         end
 
-        # @param path [String]
+        # @param path [String, Pathname]
         # @return [Pathname]
         # @raise [Error] if the resolved path lands under the credential denylist.
         def resolve_for_write(path)

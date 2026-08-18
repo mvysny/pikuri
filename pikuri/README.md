@@ -20,6 +20,7 @@ Transitively installs:
 - [`pikuri-skills`](../pikuri-skills/README.md) — Agent Skills support
 - [`pikuri-workspace`](../pikuri-workspace/README.md) — filesystem tools
 - [`pikuri-code`](../pikuri-code/README.md) — Bash + `bin/pikuri-code`
+- [`pikuri-lsp`](../pikuri-lsp/README.md) — read-only code navigation via a language server
 - [`pikuri-mcp`](../pikuri-mcp/README.md) — MCP support
 - [`pikuri-subagents`](../pikuri-subagents/README.md) — `agent` tool + bundled personas + `bin/pikuri-minions`
 - [`pikuri-assistant`](../pikuri-assistant/README.md) — `bin/pikuri-assistant`

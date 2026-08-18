@@ -1,9 +1,13 @@
 # LSP client — language intelligence for the coding agent
 
-Status: **building.** The design is settled, the evidence is in, and no open
-question remains — the nine-item worklist this note carried is closed, and
-§"The v1 build" is the checklist being coded against, step by step; a struck
-step there has landed in `pikuri-lsp/`.
+Status: **built and wired; graduating.** Every step of §"The v1 build" has
+landed in `pikuri-lsp/`, `bin/pikuri-code` wires the extension from the
+`lsp_servers:` key of `~/.pikuri-examples-config.yaml`, and the gem is in the
+metagem. What keeps this note alive is the *writing*: `pikuri-lsp/DESIGN.md`,
+the five `DECISIONS.md` entries and the book chapter listed under
+§Graduation. Already done from that map: the `CLAUDE.md` seam entry (§Seams,
+"LSP seam"), the `COMPARISON.md` column, and
+`DECISIONS.md` `D-de-bundlerized-children`, which came out of step 10.
 
 This note is split four ways, because the argued-and-closed part had grown to
 ~1600 lines and buried what was still to do:
@@ -38,8 +42,8 @@ Related:
 - `Pikuri::Mcp::ClientWrapper` — the existing long-lived stdio JSON-RPC
   child, restart-on-death and all. The shape to copy.
 - [`../COMPARISON.md`](../COMPARISON.md) §"Available tools" — the LSP
-  column is `—` for pikuri, `✅` for opencode and grok-build. Update
-  when this ships.
+  column, `✅` since this shipped. Its deferred-list item 26 now records
+  the two pieces of grok-build's client pikuri still declines.
 
 ---
 

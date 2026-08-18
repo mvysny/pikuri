@@ -81,6 +81,10 @@ in:
   - [`pikuri-code`](pikuri-code/README.md) — `Bash` + the in-repo
     coding-agent binary. **Read the security notes before pointing
     it at anything sensitive.**
+  - [`pikuri-lsp`](pikuri-lsp/README.md) — read-only code
+    navigation (go-to-definition, find-references, call and type
+    hierarchies) through a language server you already have
+    installed.
   - [`pikuri-mcp`](pikuri-mcp/README.md) — [Model Context
     Protocol](https://modelcontextprotocol.io) support.
   - [`pikuri-subagents`](pikuri-subagents/README.md) — the `agent`
@@ -89,13 +93,20 @@ in:
     vector search + agentic RAG: `vectordb_search` /
     `vectordb_read` / `vectordb_reindex`, the `LIBRARIAN` persona,
     and the `pikuri-corpus` demo (a no-egress recall agent).
-  - [`pikuri-memory`](pikuri-memory/README.md) — name-reservation
-    placeholder for an upcoming durable "memories" extension; no
-    library code yet.
+  - [`pikuri-memory`](pikuri-memory/README.md) — durable
+    cross-conversation memory backed by mem0: the `recall` tool,
+    per-turn prefetch and capture, and the `pikuri-memory` demo.
+  - [`pikuri-os`](pikuri-os/README.md) — an offline,
+    network-severed whole-machine helper: desktop-index search,
+    a `MACHINE.md` resident memory, and `bin/pikuri-os`.
+  - [`pikuri-thunderbird`](pikuri-thunderbird/README.md) — the
+    local Thunderbird profile as five read-only mail/calendar
+    tools plus two human-gated hand-offs. No network, no
+    autonomous send.
   - [`pikuri-assistant`](pikuri-assistant/README.md) — MCP-aware
     demo binary.
   - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all twelve.
+    `gem install pikuri` pulls in all fifteen.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,

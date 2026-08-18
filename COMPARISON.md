@@ -248,7 +248,7 @@ end. See `pikuri-mcp/lib/pikuri/mcp/servers.rb` for the rationale.
 
 | | calc | shell/bash | read | write | edit | grep | glob | search | scrape/fetch | sub-agent | skill | mcp | todo/plan | LSP | vector/RAG |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pikuri | ✅ | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ glob + file_list | ✅ web_search | ✅ web_scrape + fetch | ✅ | ✅ Agent Skills standard | ✅ stdio + HTTP | — | — | — |
+| pikuri | ✅ | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ glob + file_list | ✅ web_search | ✅ web_scrape + fetch | ✅ | ✅ Agent Skills standard | ✅ stdio + HTTP | ✅ task_* + plan mode | ✅ lsp | ✅ vectordb_* |
 | ruby_llm | — (SDK only — no bundled tools) | | | | | | | | | | | | | | |
 | langchainrb | ✅ | — | ✅ file_system | ✅ file_system | — | — | — | ✅ google_search / tavily | — | — | — | — | — | — | ✅ vectorsearch (Chroma, Pinecone, Pgvector, Weaviate, Qdrant, Milvus, Elasticsearch, Hnswlib) + DB, NewsRetriever, Weather, Wikipedia, RubyCodeInterpreter |
 | pi | — | ✅ bash | ✅ read | ✅ write | ✅ edit | ✅ grep | ✅ find | — | — | — (extension) | ✅ via extensions | — | — (extension) | — | — |
@@ -286,20 +286,23 @@ server exposes a hundred tools. `use_tool` even carries a corrective for
 the predictable failure: hand it a *native* tool name and it answers
 "call it directly" instead of the generic not-an-MCP-tool error.
 
-The pikuri row reflects the union of three bundled binaries:
+The pikuri row is the union of what the bundled binaries wire:
 `bin/pikuri-chat` wires calc + web_search + web_scrape + fetch +
 sub_agent; `bin/pikuri-code` wires the file/shell stack (read, write,
-edit, grep, glob, bash) plus the same web/calc/sub_agent set as
-auxiliaries; `bin/pikuri-assistant` adds the MCP connector on top of
-the chat tool set. Three binaries on a shared `Agent` + `Tool` core.
+edit, grep, glob, bash) plus tasks, plan mode, MCP and — when this
+machine has a language server configured — `lsp`; `bin/pikuri-assistant`
+adds the MCP connector on top of the chat tool set; `bin/pikuri-corpus`
+wires the vectordb tools. All of them sit on a shared `Agent` + `Tool`
+core.
 
 **Takeaway.** Pikuri now covers the *general-purpose*, *coding-agent*,
 and *MCP-augmented assistant* tool surfaces from one codebase, with
-Skills bridging static text knowledge between them. The remaining gaps
-versus opencode are todo/plan tools and LSP — both deliberately
-deferred (see `ideas/coding-agent.md`). The gap versus
-langchainrb is vector search / RAG — out of scope by design; pikuri is
-an agent, not a RAG framework.
+Skills bridging static text knowledge between them, and the two gaps
+this table used to record against opencode — todo/plan tools and LSP —
+are closed. What pikuri still declines is the write half of an LSP
+(rename, formatting, code actions, diagnostics), which is where a
+read-only navigator would need the `Confirmer` seam and stop having a
+closeable threat model.
 
 ### Edit addressing: grok-build ships all three arms, and measures them
 
@@ -2139,13 +2142,14 @@ more than wiring through ruby_llm's existing primitive.
 
 25. **Effect-based service architecture** (opencode). Massively too heavy
     for a project this size.
-26. **LSP integration** (opencode, grok-build). Deferred under
-    "Coding-agent deferrals" until a concrete use case shows up.
-    grok-build's variant is worth knowing about — a full LSP client
-    manager whose diagnostics ride back to the model as a
-    `<system-reminder>` appended to tool output after an edit — but the
-    dependency (a running language server per project) is exactly the
-    weight pikuri is avoiding.
+26. ~~**LSP integration** (opencode, grok-build).~~ **Shipped** as
+    `pikuri-lsp` — ten read-only operations anchored on a symbol rather
+    than a column, started on first use so an unconfigured host pays
+    nothing. Two pieces of grok-build's variant are still *not* borrowed:
+    diagnostics riding back as a `<system-reminder>` after an edit, and
+    syncing documents from the write path. Both are recorded as deferred
+    in `ideas/lsp.md`; pikuri re-opens the document on every call
+    instead, which needs no edit notification to be correct.
 27. **Steering / follow-up message queues** (pi). Pikuri's
     `Control::Interloper` already covers the mid-loop-injection case
     that motivated this idea in `bin/pikuri-code`'s REPL; a richer

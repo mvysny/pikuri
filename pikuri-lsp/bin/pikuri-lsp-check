@@ -135,11 +135,7 @@ puts "Project: #{root}"
 puts "Anchor:  #{path.delete_prefix("#{root}/")}:#{line}:#{column} #{symbol}"
 puts
 
-# Unbundled, because this script runs under `bundler/setup` and a language
-# server that is a gem binary refuses to start inside a bundle that does not
-# list it ("can't find executable ruby-lsp for gem ruby-lsp"). A real host has
-# the same problem and no equivalent escape hatch — see the note this prints.
-client = Bundler.with_unbundled_env { Pikuri::Lsp::ClientWrapper.spawn(entry, root: root) }
+client = Pikuri::Lsp::ClientWrapper.spawn(entry, root: root)
 logged = []
 client.on_notification { |method, params| logged << [method, params] }
 

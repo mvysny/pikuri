@@ -123,6 +123,7 @@ PATH
       pikuri-code (= 0.0.7)
       pikuri-core (= 0.0.7)
       pikuri-extractors (= 0.0.7)
+      pikuri-lsp (= 0.0.7)
       pikuri-mcp (= 0.0.7)
       pikuri-memory (= 0.0.7)
       pikuri-os (= 0.0.7)
