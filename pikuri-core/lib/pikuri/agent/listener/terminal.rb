@@ -144,38 +144,36 @@ module Pikuri
           @at_line_start = true
         end
 
-        # A gem domain event, defanged and dimmed. {Event::Transient} ones
-        # rewrite one line instead of appending, because a progress stream at a
-        # tenth of a second would otherwise bury the conversation.
+        # A gem domain event, defanged and dimmed — an {Event::Transient} one
+        # rewriting a single line rather than appending to the log.
         #
         # @param event [Object] any event variant this listener does not style.
         # @return [void]
         def domain_event(event)
           text = Sanitizer.sanitize(event.to_s.gsub(/\s+/, ' ').strip).text
-          return println(indent(Rainbow("· #{text}").color(85, 85, 85))) unless transient?(event)
+          return dim_line(text) unless event.is_a?(Event::Transient)
 
           transient(text, done: event.done)
         end
 
-        # @param event [Object]
-        # @return [Boolean]
-        def transient?(event)
-          event.is_a?(Event::Transient)
+        # @param text [String] sanitized and flattened.
+        # @return [void]
+        def dim_line(text)
+          println(indent(Rainbow("· #{text}").color(85, 85, 85)))
         end
 
-        # Rewrite the transient line, or retire it.
+        # Rewrite the in-place line, or retire it.
         #
-        # Piped output gets the final state only, on a line of its own: +\r+ into
-        # a file is one unreadable mega-line, and a cold index emits hundreds of
-        # updates. The text is cut to the window so a wrapped line does not leave
-        # the tail of its predecessor behind the carriage return.
+        # Off a terminal it degrades to the final state only, as an ordinary line:
+        # a stream of +\r+ into a file is one unreadable mega-line, and a cold
+        # index emits hundreds of updates.
         #
-        # @param text [String] already sanitized and flattened.
-        # @param done [Boolean] the sequence is over.
+        # @param text [String] sanitized and flattened.
+        # @param done [Boolean] the sequence is over, so the line goes away.
         # @return [void]
         def transient(text, done:)
           unless $stdout.tty?
-            println(indent(Rainbow("· #{text}").color(85, 85, 85))) if done
+            dim_line(text) if done
             return
           end
 
@@ -199,8 +197,11 @@ module Pikuri
           @at_line_start = true
         end
 
+        # Fit +text+ in one row, because a line that wraps leaves its tail behind
+        # the carriage return that was supposed to erase it.
+        #
         # @param text [String]
-        # @return [String] +text+ within one terminal row.
+        # @return [String]
         def cut(text)
           width = begin
             $stdout.winsize[1]

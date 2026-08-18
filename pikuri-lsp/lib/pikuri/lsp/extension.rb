@@ -17,11 +17,9 @@ module Pikuri
     #
     # == Implementation details
     #
-    # +configure+ registers through {Pikuri::Agent::Configurator#add_tool} rather
-    # than +add_raw_tool+, or the tool's trifecta legs would never be read; the
-    # extension itself declares none, since the legs live on the tool that has the
-    # filesystem to answer them. Nothing spawns here — {Servers} starts a child on
-    # first use — so +on_close+ is armed for children that may not exist yet.
+    # There is deliberately no +trifecta_contribution+: the legs belong to the
+    # tool, which holds the filesystem that answers them, and a second declaration
+    # here would only put the extension's name on the report row.
     class Extension
       include Pikuri::Agent::Extension
 
@@ -41,6 +39,9 @@ module Pikuri
       #   registry was empty.
       attr_reader :servers
 
+      # Build the {Servers} runtime, arm its teardown, register the tool — in that
+      # order, so +close+ is armed before any call can spawn a child.
+      #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
       def configure(c)

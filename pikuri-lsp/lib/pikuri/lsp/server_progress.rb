@@ -49,8 +49,8 @@ module Pikuri
       # @return [String] one line, server first — two servers index at once, so
       #   whoever reads it needs to know whose bar moved.
       def to_s
-        detail = [percentage && "#{percentage}%", message, done && 'done'].select { |part| part }
-        ([title] + detail).join(' — ').then { |text| "#{server_id}: #{text}" }
+        detail = [percentage && "#{percentage}%", message, (done ? 'done' : nil)].compact
+        "#{server_id}: #{([title] + detail).join(' — ')}"
       end
     end
   end

@@ -132,10 +132,9 @@ module Pikuri
       #   end
       #
       # The contract is two methods, both of which a +Data.define+ already
-      # answers: +#to_s+ is the whole rendering (a listener never inspects the
-      # fields — that is what keeps core ignorant of a gem's payload), and
-      # +#done+ says the sequence is over and its line may go away. Nothing in
-      # the loop emits one; gems do, via {ExtensionContext#emit_event}.
+      # answers: +#to_s+ is the whole rendering — a listener never inspects the
+      # fields, which is what keeps core ignorant of a gem's payload — and
+      # +#done+ says the sequence is over and its line may go away.
       module Transient
       end
 
