@@ -103,6 +103,133 @@ module Pikuri
         end
       end
 
+      # The fields a {StdioEntry} accepts from a config file — everything but
+      # +id+, which is the key it is written under.
+      ENTRY_FIELDS = %i[command files language_id env init_options].freeze
+
+      # Builds a registry out of a plain Hash, so a host can map its own config
+      # file onto one — which is where this belongs, because *which language
+      # servers you have installed* is machine state, like an API key. The demo
+      # scripts read the YAML they already keep keys in:
+      #
+      #   # ~/.pikuri-examples-config.yaml
+      #   lsp_servers:
+      #     ruby:
+      #       command: [ruby-lsp]
+      #       files: ["*.rb", "*.rake", "*.gemspec", Rakefile, Gemfile]
+      #     java:
+      #       command: [jdtls, -data, /home/me/.cache/pikuri/jdtls/my-app]
+      #       files: ["*.java"]
+      #       env:
+      #         JAVA_HOME: /usr/lib/jvm/java-21
+      #       init_options:
+      #         extendedClientCapabilities:
+      #           classFileContentsSupport: true
+      #
+      #   Registry.from_h(YAML.safe_load_file(path)['lsp_servers'])
+      #
+      # Nothing here knows what YAML is; a host reading TOML, JSON or its own
+      # settings object uses the same method. Keyed by server id rather than
+      # holding a list of +{id: …}+ Hashes, which makes the duplicate
+      # {#initialize} refuses unwritable; insertion order is dispatch order.
+      #
+      # Two things a config file cannot do, both visible above. It cannot
+      # *compute*, so jdtls's +-data+ path is spelled out rather than derived
+      # from {Pikuri::Paths.cache} — a host that wants it computed builds the
+      # {StdioEntry} in Ruby, which is equally first-class. And it cannot be
+      # type-checked by the person writing it, so every field is validated here
+      # rather than coerced: a mistyped +env+ is otherwise a jdtls that
+      # hard-fails below Java 21, and a mistyped +init_options+ is every Java
+      # library symbol answering with silence.
+      #
+      # @param config [Hash{String, Symbol => Hash}, nil] server id → that
+      #   server's {StdioEntry} fields, with String or Symbol keys. +nil+ — what
+      #   a host reading an absent config key gets — yields an empty registry,
+      #   so no caller needs a +|| {}+.
+      # @return [Registry]
+      # @raise [ArgumentError] on an unknown field, a field of the wrong type,
+      #   or anything {StdioEntry} itself refuses (an unguessable
+      #   +language_id+, an empty +id+).
+      def self.from_h(config)
+        new(entries: (config || {}).map { |id, fields| entry_from_h(id.to_s, fields) })
+      end
+
+      # One +id => fields+ pair as a {StdioEntry}.
+      #
+      # @param id [String] the key it was written under.
+      # @param fields [Hash] its config fields.
+      # @return [StdioEntry]
+      # @raise [ArgumentError] as {from_h}.
+      def self.entry_from_h(id, fields)
+        unless fields.is_a?(Hash)
+          raise ArgumentError, "lsp server #{id.inspect}: expected a Hash of fields, got #{fields.inspect}"
+        end
+
+        fields = fields.transform_keys(&:to_sym)
+        unknown = fields.keys - ENTRY_FIELDS
+        unless unknown.empty?
+          raise ArgumentError, "lsp server #{id.inspect}: unknown field(s) #{unknown.join(', ')} — " \
+                               "known fields are #{ENTRY_FIELDS.join(', ')}"
+        end
+
+        StdioEntry.new(
+          id: id,
+          command: string_list(id, :command, fields[:command]),
+          files: string_list(id, :files, fields[:files]),
+          language_id: typed(id, :language_id, fields[:language_id], String),
+          env: string_hash(id, fields[:env]),
+          init_options: typed(id, :init_options, fields[:init_options], Hash)
+        )
+      end
+
+      # @param id [String] the server id, for the message.
+      # @param field [Symbol] the field name, for the message.
+      # @param value [Object] the configured value.
+      # @return [Array<String>]
+      # @raise [ArgumentError] unless +value+ is a non-empty Array of Strings.
+      def self.string_list(id, field, value)
+        return value if value.is_a?(Array) && !value.empty? && value.all?(String)
+
+        raise ArgumentError,
+              "lsp server #{id.inspect}: #{field} must be a non-empty list of strings, got #{value.inspect}"
+      end
+
+      # @param id [String] the server id, for the message.
+      # @param value [Object] the configured +env+, or +nil+.
+      # @return [Hash{String => String}] empty when +nil+.
+      # @raise [ArgumentError] unless every key and value is a String; a child
+      #   environment holds strings, and an unquoted +PORT: 8080+ is the way in.
+      def self.string_hash(id, value)
+        return {} if value.nil?
+
+        unless value.is_a?(Hash)
+          raise ArgumentError, "lsp server #{id.inspect}: env must be a mapping, got #{value.inspect}"
+        end
+
+        value.to_h do |name, setting|
+          unless setting.is_a?(String)
+            raise ArgumentError,
+                  "lsp server #{id.inspect}: env #{name} must be a String, got #{setting.inspect}"
+          end
+
+          [name.to_s, setting]
+        end
+      end
+
+      # @param id [String] the server id, for the message.
+      # @param field [Symbol] the field name, for the message.
+      # @param value [Object] the configured value.
+      # @param type [Class] what it must be when given.
+      # @return [Object, nil] +value+, unchanged.
+      # @raise [ArgumentError] unless +value+ is +nil+ or a +type+.
+      def self.typed(id, field, value, type)
+        return value if value.nil? || value.is_a?(type)
+
+        raise ArgumentError, "lsp server #{id.inspect}: #{field} must be a #{type}, got #{value.inspect}"
+      end
+
+      private_class_method :entry_from_h, :string_list, :string_hash, :typed
+
       # LSP language id for a +files:+ list.
       #
       # @param files [Array<String>] basename globs.

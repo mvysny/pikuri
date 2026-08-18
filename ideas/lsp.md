@@ -180,8 +180,16 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      call returns when its bytes are *written*, and the serving thread records
      them a moment later. Without a barrier, every assertion on what the
      client sent is a race.
-4. **`Registry.from_h`** — the host-config bridge; the registry and its entry
-   landed with step 2, so this is what is left of the step.
+4. ~~**`Registry.from_h`**~~ **Landed.** The host-config bridge, and all that
+   was left of the step once step 2 pulled the registry forward. A Hash keyed
+   by server **id** → entry fields, so the duplicate `Registry#initialize`
+   refuses is unwritable and insertion order is dispatch order; format-agnostic
+   as decided, so the demo bins' YAML and a TUI's own settings object go through
+   the same method. Two deviations, both narrower than the line above: every
+   field is **validated rather than coerced** (a mistyped `env` is a jdtls that
+   hard-fails below Java 21, a mistyped `init_options` is J4's silence — both
+   invisible at the point of the typo), and `nil` reads as no servers, so a host
+   reading an absent config key needs no `|| {}`.
 5. **Readiness gate + the coalescing mailbox + `ServerProgress`.**
    Quiescence (all progress tokens closed) plus a settle debounce, blocking
    with no timeout, polling `Cancellable`, `window.workDoneProgress: true`

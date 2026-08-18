@@ -10,10 +10,9 @@ diagnostics push, no rename, no workspace edits. The gem is named after
 what it refuses to become: the moment it applies an edit it needs the
 `Confirmer` seam and stops being a closeable, auditable piece.
 
-> **Status: under construction.** The protocol layer is in
-> (`Pikuri::Lsp::Connection` plus the coordinate value types); the client
-> lifecycle, the registry, the readiness gate and the `lsp` tool are
-> not. Nothing is wired into an agent yet.
+> **Status: under construction.** The protocol layer, the client
+> lifecycle and the configuration are in (the table below); the readiness
+> gate and the `lsp` tool are not. Nothing is wired into an agent yet.
 
 ## What is here
 
@@ -25,6 +24,9 @@ what it refuses to become: the moment it applies an edit it needs the
 | `Pikuri::Lsp::Location` | both wire shapes (`Location` and `LocationLink`) behind one value type |
 | `Pikuri::Lsp::Uris` | `file:` URI ↔ path, and the scheme sniff that says "this result is not a file at all" |
 | `Pikuri::Lsp::ServerProgress` | the domain event a host draws a progress bar from while a cold index runs |
+| `Pikuri::Lsp::ClientWrapper` | one server's lifecycle: spawn, handshake, what it advertises, restart after a death, teardown |
+| `Pikuri::Lsp::Registry` | which servers exist, which files each claims, and `.from_h` to build that from a host's own config file |
+| `Pikuri::Lsp::Testing` | a scripted fake server and a hand-framed wire, so a host can test its integration with no language server installed (`require 'pikuri/lsp/testing'`) |
 
 ## Three rules it is built to
 
