@@ -116,6 +116,15 @@ absorb protocol drift. Their pitch is correct, too: a semantic answer costs
 - **Teaching mandate.** A small LSP client is a good book chapter about how
   editors actually work. "Install this Go binary" teaches nothing.
 
+**Rejected: depending on `language_server-protocol`.** The one plausible
+Ruby dependency, and it is a *protocol SDK*, not a client: framing plus typed
+structures, no lifecycle, no id correlation, no spawn, and an `Io::Reader`
+shaped as a blocking whole-stream callback loop for a server's main loop. It
+would have supplied forty lines of framing whose reader shape pikuri then
+fights. Nothing else on rubygems is a client at all — `lsp-client` is a
+35-byte empty placeholder, and every other promising name is a *server*,
+because LSP clients live in editors and editors are not written in Ruby.
+
 **Consequence.** Protocol drift is pikuri's problem now. That is what
 `bin/pikuri-lsp-check` is for — a human-run diagnostic that re-measures the
 findings in `pikuri-lsp/DESIGN.md` §Measurements against a live server and
@@ -331,6 +340,94 @@ a bounded snippet per result keeps `definition` usable
 (`J-class-file-contents`'s 22 KB × the 45 hits `F-reference-volume`
 measured), while an explicit operation is how the model asks for a whole
 document.
+
+---
+
+## D-lsp-document-sync — Re-open the document on every call; never send an edit stream (2026-08-18)
+
+**Status:** Accepted, shipped. The policy and its mechanics are
+{Pikuri::Lsp::ClientWrapper#open_document}; the measurements behind it are the
+`S-` family in `pikuri-lsp/DESIGN.md` §Measurements; the teaching version is
+`book/lsp.md`.
+
+**Context.** LSP's document model assumes the client is a text editor: you
+`didOpen` a document, stream `didChange` edits as a human types, and the server
+holds a buffer the disk may not have seen for hours. An agent inverts that at
+the root — `write` and `edit` land on disk immediately, so the tool never owns
+text the disk lacks. Yet the servers still presume that *a client which opened a
+URI is that document's authority* (`S-watched-files-ignored`, stated outright in
+ruby-lsp's source), which is exactly the assumption an agent writing straight to
+disk breaks.
+
+**Decision.** Re-send `textDocument/didOpen` with the file's current disk text
+before every position-based call (`S-reopen-works`). No open-URI set, no version
+counter, no digest, no `didClose`. This is spec-forbidden — *a document must not
+be opened twice* — and neither reference server minds.
+
+**Why the spec-legal alternatives all lost, one measurement each.**
+
+- **Rejected: a rangeless whole-document `didChange`.** The obvious "here is the
+  new text" move leaves jdtls correctly updated and *crashes* inside ruby-lsp,
+  which advertises incremental sync and reads `edit[:range][:start]`
+  unconditionally (`S-rangeless-didchange-crash`). The document keeps its old
+  text, a notification has no reply channel, and the only report is a
+  `window/logMessage` line — what the model sees is the next query failing with
+  a raw backtrace. Both visible harnesses sync this way, and grok-build's own
+  `capabilities.rs` opens by describing the same failure against *Roslyn*: the
+  finding independently confirmed on a third server.
+- **Rejected: the ranged whole-document `didChange`.** Honoured by both servers
+  for the document, and then it desynchronizes ruby-lsp's *index* from the
+  document it just updated (`S-index-desync`): `documentSymbol` reports the
+  renamed method while `definition` on it returns `[]`. `RubyDocument#should_index?`
+  reindexes only when the edit's start position looks like a declaration, and a
+  whole-file replace starts at 0:0 — the `frozen_string_literal` comment. The
+  optimization that makes editor typing cheap makes whole-file replacement
+  invisible.
+- **Rejected: `didClose` and forget.** Drops ruby-lsp's store entry so the next
+  request re-reads disk, and does nothing at all on jdtls, which keeps answering
+  its pre-close copy (`S-didclose-ruby-only`). Not portable, which is what
+  promotes re-opening from an option to the policy.
+- **Rejected: `workspace/didChangeWatchedFiles`.** The spec's own out-of-band
+  "the disk changed" channel changed nothing on either server while the client
+  held the URI (`S-watched-files-ignored`).
+- **Rejected: version or digest bookkeeping on top of the re-open.** There is
+  nothing to reconcile when the text always comes from disk, and the bytes are
+  already in hand: they are the text the tool read to derive the column.
+
+**Consequence.** The policy rests on server behaviour rather than on the
+specification, so it is pinned by a probe rather than by a reading:
+`bin/pikuri-lsp-check`'s `S-reopen-works` and `S-rangeless-didchange-crash`
+rows re-measure it against the server actually installed.
+
+**Consequence — observing the agent's own edits is deferred, not open.**
+grok-build also syncs from the *write* path (`notify_file_changed(path,
+content)`), and pikuri should eventually too; the shape is settled so the
+deferral is a scheduling choice:
+
+- The event is emitted by `Workspace::Workspace`, beside the read-before-edit
+  ledger it already owns, and bridged to `ctx.emit_event` in
+  `Workspace::Extension#bind` — the `Tasks::Extension` shape. `WriteGate` is the
+  wrong hook: it is stateless, it runs *before* the write, and a refused write
+  must not notify.
+- The payload is the path, never the bytes; every consumer reads content through
+  the `Workspace` seam anyway.
+- It must never be load-bearing. `bash`, `git checkout` and any build the agent
+  runs also write files, so an edit notification is *structurally* incomplete —
+  re-opening on read stays the correctness guarantee, the same split
+  `D-walked-path-denylist` draws between `denied?` and `denied_roots` pruning.
+- The event fills a dirty set the next `lsp` call drains, coalesced per path, so
+  a 50-file refactor is not 50 re-opens; that is also the second caller
+  `Lsp::Mailbox` was waiting for.
+- What it buys over re-open-on-read is one measured thing: a file the agent has
+  just *created* is invisible to `workspace/symbol` until something opens it
+  (`S-index-follows-didopen`), and under re-open-on-read nothing opens it until
+  the model asks a position question naming that exact file — so symbol-only
+  lookup of a just-written class fails. The other gains are softer: jdtls
+  rebuilds ahead of the next call rather than during it, and this is the
+  precondition for surfacing diagnostics after an edit, which all three
+  harnesses do *without* a diagnostics tool (also deferred, per
+  `D-lsp-operation-surface`). It changes no `pikuri-lsp` interface, so shipping
+  it later costs one listener arm.
 
 ---
 

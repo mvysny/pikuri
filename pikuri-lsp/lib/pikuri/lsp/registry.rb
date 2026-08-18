@@ -76,7 +76,11 @@ module Pikuri
       #   @return [Hash, nil] +initializationOptions+, passed verbatim at
       #     handshake time and never parsed by pikuri — the home for outbound
       #     per-server glue, e.g. jdtls's +classFileContentsSupport+, without
-      #     which every library symbol answers with silence.
+      #     which every library symbol answers with silence. There is
+      #     deliberately no sibling +settings:+ field for answering the
+      #     server's +workspace/configuration+ requests: {Connection} replies
+      #     +null+ to every server-initiated request, and both reference
+      #     servers tolerate that.
       StdioEntry = Data.define(:id, :command, :files, :language_id, :env, :init_options) do
         # @raise [ArgumentError] on an empty +id+ / +command+ / +files+, or when
         #   +language_id:+ is omitted and no glob in +files+ carries an

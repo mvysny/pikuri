@@ -14,8 +14,8 @@ unread path).
 
 Related:
 
-- [`coding-agent.md`](coding-agent.md) — the LSP-tool deferral appears
-  in both; this note's not-backported list points at it.
+- [`coding-agent.md`](coding-agent.md) — the sibling deferral list for
+  `bin/pikuri-code`; this note's not-backported list points at it.
 - [`security-open-questions.md`](security-open-questions.md) — the
   security-posture preamble decision below is a prompt-shaped facet of
   that note's threat-model framing.
@@ -58,9 +58,9 @@ Related:
   already carries the multi-step trigger *and* the skip-single-step
   off-switch). The externalized, user-visible checklist is the better
   form; adding the prose too would be redundant.
-- **LSP tool / scheduling / monitoring / background daemon.** LSP is no
-  longer deferred here — it has its own note, [`lsp.md`](lsp.md)
-  (investigated, direct client over a bridge); scheduling and
+- **Scheduling / monitoring / background daemon.** LSP is no longer on
+  this list at all — it shipped as `pikuri-lsp` (a direct client rather
+  than an MCP bridge, `D-lsp-direct-not-mcp`); scheduling and
   monitoring are the far end of Claude's tool list and assume a daemon
   mode pikuri doesn't have (it's synchronous and request-scoped — see
   the Linux-first / out-of-scope notes in

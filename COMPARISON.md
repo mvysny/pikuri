@@ -2148,8 +2148,9 @@ more than wiring through ruby_llm's existing primitive.
     nothing. Two pieces of grok-build's variant are still *not* borrowed:
     diagnostics riding back as a `<system-reminder>` after an edit, and
     syncing documents from the write path. Both are recorded as deferred
-    in `ideas/lsp.md`; pikuri re-opens the document on every call
-    instead, which needs no edit notification to be correct.
+    in `DECISIONS.md` `D-lsp-document-sync`; pikuri re-opens the document
+    on every call instead, which needs no edit notification to be
+    correct.
 27. **Steering / follow-up message queues** (pi). Pikuri's
     `Control::Interloper` already covers the mid-loop-injection case
     that motivated this idea in `bin/pikuri-code`'s REPL; a richer
