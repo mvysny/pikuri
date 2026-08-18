@@ -230,11 +230,79 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      title — a `ServerProgress` carries no token, so a host keys its bars by
      title and the gate has to agree. `readiness:` is injectable purely so a
      spec can shorten the settle; production passes nothing.
-6. **The `lsp` tool**: ten operations, the `symbol`-anchored parameters,
-   capability gate at dispatch, re-open-on-read sync, result rendering.
-7. **`Lsp::Extension`**: `configure` builds the client set, registers the
+6. ~~**The `lsp` tool**: ten operations, the `symbol`-anchored parameters,
+   capability gate at dispatch, re-open-on-read sync, result rendering.~~
+   **Landed.** `LspTool` (the schema, the description, the legs, the emitter
+   handoff) over `Navigator` (route → gate → wait → re-open → ask → render),
+   with `Operation`'s ten-value table, `Anchor` (the derived column and the
+   index route), `Sources` (URI identity, the scheme table, snippet text) and
+   `Renderer` (caps, the source/tests split, the ancestry collapse). Every
+   rendering rule the line above lists is in, and the whole stack is driven
+   in-process from scripted fake servers — including the failure paths a real
+   server will not produce on demand.
+
+   Nine deviations, and the first two are scope rather than design:
+
+   - **The client set came forward from step 7.** A tool needs live clients, so
+     `Lsp::Servers` — one `ClientWrapper` per entry, spawned at boot, plus
+     basename routing — landed here. Step 7 is now the extension alone, and its
+     `configure` is three lines over this class.
+   - **The re-open is a `ClientWrapper` method**, not tool code:
+     `#open_document(path, text)`, with the whole measured policy in its yardoc,
+     which is where the graduation map was already sending it. The tool decides
+     *when* (once per document per call); the client owns *what it means*.
+   - **`locate` has no any-occurrence fallback.** Only matches bounded by
+     non-identifier characters count, so `greet` never matches inside
+     `greeting`. An unbounded fallback would anchor the query on a *different*
+     name and the server would answer confidently about it — worse than the
+     empty answer, and the one failure this parameter shape exists to avoid.
+   - **`file` without `line` is answerable, which the plan did not say.** The
+     index route restricted to that file, and when the index has no entry
+     (a Java method, S10; a short Ruby name, H6) the first bounded occurrence
+     in the file, under a note saying which line was used and why. It is the
+     honest middle between the two shapes item 1 describes, and it is the
+     shape a model reaches for after a `grep` that printed no line number.
+   - **A snippet is one line, not "the range plus a few lines of context".**
+     45 hits × 3 lines is the volume problem the cap exists for, and the
+     operation that returns prose is `hover`. An out-of-root row also keeps a
+     bare *basename* rather than nothing: H3's six rows of `Object` from four
+     unrelated gems are indistinguishable noise without one, and a basename is
+     provenance that still cannot be opened.
+   - **The out-of-root refusal is a *lexical* root test**, not "does
+     `resolve_for_read` raise". Under `AllowAll` — the container wiring — it
+     never raises, so the arm this note chose would have been a no-op exactly
+     where the trifecta answer leans on it. The boundary that matters is the
+     server's own `rootUri` anyway: outside it a server answers about a file it
+     does not consider part of the project, which is a *different* lie from the
+     one the gate prevents.
+   - **A reply pikuri cannot parse is relayed too**, which is the relay rule
+     reaching further than the note stated: the wire types raise `KeyError` for a
+     location missing its `range` and `ArgumentError` for a `definition` that
+     answered a bare String, and a turn dying on a backtrace nobody reads is the
+     precise failure the stance exists to prevent. It is the server's bug, so it
+     goes back as a sentence naming the operation and the shape.
+   - **The tool description says nothing about *results*, only about
+     mechanics** (decided 2026-08-18, in review). Two sentences an earlier draft
+     had are gone: that the first call waits for the index, and that an
+     unsupported operation refuses cleanly. The model has no notion of time, so
+     the only content in the first is an implied promise that results are now
+     complete — and a fully-started server can still be broken, which is exactly
+     what the model must stay free to notice. The second it learns from the
+     refusal itself. What survives is how to anchor a call and what shapes the
+     answer arrives in; the error strings carry the rest, which is what makes
+     them worth their length.
+   - **"Not ready yet" never has to be said, so the third distinct string is
+     the death report.** The gate blocks instead of relaying, so the three that
+     must stay apart are *unsupported* (a `Refusal` naming the missing
+     capability), *answered nothing* ("that is what it said, not proof that none
+     exist") and *could not be asked* ("the ruby server died while its index was
+     building"). Related: a fan-out labels its blocks `From the <id> server:`,
+     so an entry's `id` does reach the model after all — what survives is that
+     the model never *supplies* one.
+7. **`Lsp::Extension`**: `configure` builds the `Servers` set, registers the
    tool via `Configurator#add_tool` (**not** `add_raw_tool`, or the legs go
-   invisible), arms `on_close`; `bind` hands the tool the emitter.
+   invisible), arms `on_close`; `bind` hands the tool the emitter
+   (`tool.on_progress = ->(progress) { ctx.emit_event(progress) }`).
    Contributes **no** `trifecta_contribution`.
 8. **Live smoke specs**, tagged to skip when the binary is absent.
 

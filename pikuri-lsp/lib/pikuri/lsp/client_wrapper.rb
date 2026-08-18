@@ -42,6 +42,14 @@ module Pikuri
     # so a restart also puts {#ready?} back to +false+ and the next
     # {#wait_until_ready} waits the new child out from scratch.
     #
+    # == Documents: an agent is not an editor, so it re-opens
+    #
+    # {#open_document} re-sends +textDocument/didOpen+ with the file's current
+    # disk text before every position-based call. No open-URI set, no version
+    # comparison, no +didClose+ — and yes, that is the thing the spec forbids
+    # ("a document must not be opened twice"). See {#open_document} for why every
+    # spec-legal alternative was measured and rejected.
+    #
     # == The Subprocess-seam exception
     #
     # +Subprocess.spawn+ is one-shot (stdin closed, output merged, read to EOF)
@@ -192,6 +200,7 @@ module Pikuri
         @stderr_io = nil
         @tail_mutex = Mutex.new
         @started = false
+        @document_version = 0
         @closed = false
         @readiness = readiness || Readiness.new(server_id: entry.id)
         adopt(stdin: stdin, stdout: stdout, stderr: stderr, wait_thread: wait_thread)
@@ -238,6 +247,58 @@ module Pikuri
       # @raise [ServerDied] when the server is gone and restarts did not help.
       def notify(method, params = {})
         with_restart(nil) { @connection.notify(method, params) }
+      end
+
+      # Tell the server what this file says *now*, by re-opening it.
+      #
+      #   client.open_document(path, filesystem.resolve_for_read(path).read)
+      #
+      # This is the whole document-sync policy, and it is sound rather than lucky
+      # because **pikuri has no unsaved buffers**. An editor owns text the disk
+      # does not have, which is the only reason LSP's sync model exists; +write+
+      # and +edit+ land on disk immediately, so the disk is always the truth and
+      # the server's copy is only ever a cache of it. Re-opening is how you say
+      # "here is the truth again", and the text it needs is the text the tool has
+      # already read to locate the symbol.
+      #
+      # Every spec-legal alternative was measured and each fails on a *different*
+      # server:
+      #
+      # * A **rangeless whole-document +didChange+** is accepted by jdtls and
+      #   raises inside ruby-lsp's +push_edits+, which reads +edit[:range][:start]+
+      #   unconditionally. A notification has no reply channel, so the only report
+      #   is a +window/logMessage+ line — the document silently keeps its old text.
+      # * The **ranged** whole-document change is honoured by both, and then
+      #   desynchronizes ruby-lsp's *index* from the document it just updated:
+      #   +RubyDocument#should_index?+ reindexes only when the edit's start
+      #   position looks like a declaration, and a whole-file replace starts at
+      #   0:0 — the +frozen_string_literal+ comment. +documentSymbol+ then reports
+      #   the new name while +definition+ answers +[]+ for it.
+      # * **+didClose+** resyncs ruby-lsp (its store entry is dropped, so the next
+      #   request re-reads disk) and does nothing for jdtls, which keeps answering
+      #   its pre-close copy.
+      # * The spec's own out-of-band channel, +didChangeWatchedFiles+, is ignored
+      #   by both *for a URI the client has opened* — a client that opened a
+      #   document is presumed to be its authority, which is exactly the
+      #   assumption an agent writing straight to disk breaks.
+      #
+      # Re-opening was the only mechanism that worked on both servers, refreshing
+      # document *and* index. The cost, named: the server re-parses the file on
+      # every call. That is a local child process doing what it does on every
+      # keystroke in an editor, and the alternative is a correctness bug that
+      # reports success.
+      #
+      # @param path [String, Pathname] absolute path of the document; the +file:+
+      #   URI is derived from it.
+      # @param text [String] its current contents, read through the +Workspace+
+      #   seam by the caller.
+      # @return [void]
+      # @raise [ServerDied] when the server is gone and restarts did not help.
+      def open_document(path, text)
+        @document_version += 1
+        notify('textDocument/didOpen',
+               { textDocument: { uri: Uris.for_path(path), languageId: @entry.language_id,
+                                 version: @document_version, text: text } })
       end
 
       # Register a server-notification handler, kept across restarts and

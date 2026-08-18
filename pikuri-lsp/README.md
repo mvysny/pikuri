@@ -11,8 +11,10 @@ what it refuses to become: the moment it applies an edit it needs the
 `Confirmer` seam and stops being a closeable, auditable piece.
 
 > **Status: under construction.** The protocol layer, the client
-> lifecycle, the configuration and the readiness gate are in (the table
-> below); the `lsp` tool is not. Nothing is wired into an agent yet.
+> lifecycle, the configuration, the readiness gate and the `lsp` tool
+> itself are in (the table below). What is missing is the agent
+> extension, so nothing is wired into an agent yet — a host would have
+> to build `Lsp::Servers` and the tool by hand.
 
 ## What is here
 
@@ -28,7 +30,26 @@ what it refuses to become: the moment it applies an edit it needs the
 | `Pikuri::Lsp::Registry` | which servers exist, which files each claims, and `.from_h` to build that from a host's own config file |
 | `Pikuri::Lsp::Readiness` | the indexing gate: no progress token open and nothing said for a moment, blocking with no timeout so a mid-index query cannot be answered wrongly |
 | `Pikuri::Lsp::Mailbox` | the thread boundary the gate needs — newest value per key, so a three-minute wait reports current state instead of replaying a backlog |
+| `Pikuri::Lsp::Servers` | one live client per registry entry, spawned at boot so a missing binary is a startup error, plus the routing that picks the server a file belongs to |
+| `Pikuri::Lsp::LspTool` | the `lsp` tool: ten operations, `symbol` + optional `file`/`line`, and never a column — see below |
 | `Pikuri::Lsp::Testing` | a scripted fake server and a hand-framed wire, so a host can test its integration with no language server installed (`require 'pikuri/lsp/testing'`) |
+
+## The tool, in one paragraph
+
+One tool with an `operation` enum of ten values —
+`goToDefinition`, `findReferences`, `hover`, `documentSymbol`,
+`workspaceSymbol`, `goToImplementation`, `goToTypeDefinition`,
+`incomingCalls`, `outgoingCalls`, `supertypes`. The model passes a
+`symbol` and, ideally, the `file` and `line` it read it on; **the column
+is derived from that line's text and never asked for**, because nothing
+the model has seen contains one and a column off by seven turned one
+measured `findReferences` into 80,609 results. A bare `symbol` is looked
+up in every server's index instead — best effort, honestly reported when
+it resolves nothing. Multi-hop operations (the call pair, the ancestor
+chain) run their `prepare` and their per-level walk inside the tool, so
+the model never holds an opaque protocol item. Results are capped and
+grouped, a result inside a dependency archive is fetched and shown as its
+type name, and a remote URI is printed but never fetched.
 
 ## Three rules it is built to
 

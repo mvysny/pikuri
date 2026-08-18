@@ -13,7 +13,7 @@ module Pikuri
   # moment it applies an edit it needs the +Confirmer+ seam and stops being a
   # gem you can audit in one sitting.
   #
-  # Two layers, and start reading at the first:
+  # Three layers, and start reading at the first:
   #
   # * {Lsp::Connection} is the *protocol* — JSON-RPC over one IO pair, and
   #   nothing of LSP's vocabulary.
@@ -22,6 +22,9 @@ module Pikuri
   #   should never see them. Coordinates cross it exactly once: 1-based line and
   #   character column inside pikuri, 0-based and {Lsp::PositionEncoding}-encoded
   #   outside.
+  # * {Lsp::LspTool} over {Lsp::Navigator} is the *policy* — which server answers
+  #   a file, whether it advertised the operation, whether its index is built yet,
+  #   and how much of what it said is worth rendering.
   module Lsp
     LOADER = Zeitwerk::Loader.new
     LOADER.tag = 'pikuri-lsp'
