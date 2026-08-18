@@ -26,10 +26,9 @@ module Pikuri
     # +bash -c+ (no +-l+) — no profile/rc sourcing. +timeout(1)+ from GNU
     # coreutils handles the SIGTERM-then-SIGKILL race (Ruby's +Timeout.timeout+
     # can't reliably kill subprocesses); +--kill-after=5s+ gives 5s to handle
-    # SIGTERM before SIGKILL. The environment is "de-bundlerized" first — pikuri
-    # usually runs under Bundler, which would otherwise leak +BUNDLE_GEMFILE+ /
-    # +RUBYOPT+ / … so a +bundle exec+ against another project picks up
-    # *pikuri's* Gemfile. See {.subprocess_env} / {.bundler_clean_delta}.
+    # SIGTERM before SIGKILL. The environment is de-bundlerized first, or a
+    # +bundle exec+ against another project would pick up *pikuri's* Gemfile.
+    # See {.subprocess_env} and {Pikuri::BundlerEnv}.
     #
     # == Timeout detection
     #
@@ -276,23 +275,18 @@ module Pikuri
       end
       private_class_method :compose_request
 
-      # Environment for the bash subprocess: the "de-bundlerized" base
-      # ({.bundler_clean_delta}), then git hardening ({.git_hardening_delta}),
-      # then the filesystem's git identity ({Pikuri::Workspace::Filesystem#env}).
-      # The three deltas touch disjoint keys (bundler vars / +GIT_CONFIG_*+ /
-      # +GIT_AUTHOR_*+ + +GIT_COMMITTER_*+), so merge order is immaterial.
-      #
-      # De-bundlerizing matters because pikuri usually boots under Bundler,
-      # which rewrites +BUNDLE_GEMFILE+ / +RUBYOPT+ / +GEM_*+ / +PATH+ in the
-      # process env (stashing originals under +BUNDLER_ORIG_*+). Those inherit
-      # into every subprocess, so a +bundle exec rspec+ the agent runs in
-      # *another* project would resolve against PIKURI's Gemfile and die.
+      # Environment for the bash subprocess: the de-bundlerized base
+      # ({Pikuri::BundlerEnv.clean_delta}), then git hardening
+      # ({.git_hardening_delta}), then the filesystem's git identity
+      # ({Pikuri::Workspace::Filesystem#env}). The three deltas touch disjoint
+      # keys (bundler vars / +GIT_CONFIG_*+ / +GIT_AUTHOR_*+ +
+      # +GIT_COMMITTER_*+), so merge order is immaterial.
       #
       # @param filesystem [Pikuri::Workspace::Filesystem]
       # @return [Hash{String=>(String,nil)}] +env:+ delta for
       #   {Pikuri::Subprocess.spawn} (a +nil+ value unsets the key).
       def self.subprocess_env(filesystem)
-        bundler_clean_delta.merge(git_hardening_delta).merge(filesystem.env)
+        Pikuri::BundlerEnv.clean_delta.merge(git_hardening_delta).merge(filesystem.env)
       end
       private_class_method :subprocess_env
 
@@ -322,44 +316,6 @@ module Pikuri
         delta
       end
       private_class_method :git_hardening_delta
-
-      # The delta that, merged onto the current (bundler-polluted) +ENV+,
-      # reconstructs +Bundler.unbundled_env+ — the environment before
-      # +bundler/setup+ ran. That restores each +BUNDLER_ORIG_*+ backup (so a
-      # host-level +GEM_HOME+/+GEM_PATH+ from an apt-installed Ruby passes
-      # through — not a blanket +GEM_*+ wipe) while dropping the bundler-only
-      # vars. Diffed against live +ENV+ because +spawn+'s +env:+ is additive:
-      # changed/added keys carry the clean value, bundler-injected keys absent
-      # from the clean env map to +nil+ (which +Open3.popen2e+ unsets).
-      #
-      # Empty when pikuri runs without Bundler (gem-installed, or a host that
-      # never required +bundler/setup+) — the child inherits env unchanged.
-      #
-      # @return [Hash{String=>(String,nil)}]
-      def self.bundler_clean_delta
-        return {} unless defined?(Bundler) && Bundler.respond_to?(:unbundled_env)
-
-        env_delta(current: ENV.to_h, clean: Bundler.unbundled_env)
-      end
-      private_class_method :bundler_clean_delta
-
-      # Pure diff between two environment hashes: the additive delta that,
-      # applied to +current+ via {Pikuri::Subprocess.spawn}'s +env:+,
-      # yields +clean+. A key whose value differs (or is new in +clean+)
-      # carries the +clean+ value; a key present in +current+ but absent
-      # from +clean+ maps to +nil+ (which +Open3.popen2e+ unsets). Keys
-      # equal in both are omitted, keeping the delta minimal.
-      #
-      # @param current [Hash{String=>String}]
-      # @param clean [Hash{String=>String}]
-      # @return [Hash{String=>(String,nil)}]
-      def self.env_delta(current:, clean:)
-        delta = {}
-        clean.each { |k, v| delta[k] = v unless current[k] == v }
-        current.each_key { |k| delta[k] = nil unless clean.key?(k) }
-        delta
-      end
-      private_class_method :env_delta
 
       # Neutralize control bytes for the *observation* echo (+"$ ..."+ in the
       # tool result) — without this a model could craft +command: "\rrm -rf

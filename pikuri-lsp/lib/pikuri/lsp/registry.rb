@@ -68,7 +68,7 @@ module Pikuri
       #     everything pikuri has met.
       # @!attribute [r] env
       #   @return [Hash{String => String}] extra environment for the child,
-      #     merged over the inherited environment, e.g.
+      #     merged over the de-bundlerized environment ({Pikuri::BundlerEnv}), e.g.
       #     +{"JAVA_HOME" => "/usr/lib/jvm/java-21"}+. Frozen, defaults to +{}+.
       #     The legitimate per-child credential channel of the "environment is
       #     not a secret store" seam.

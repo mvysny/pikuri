@@ -51,6 +51,22 @@ describe 'Pikuri::Lsp::ClientWrapper over a real child' do
     end
   end
 
+  it 'de-bundlerizes the child, or ruby-lsp resolves out of pikuri\'s own bundle' do
+    skip 'not running under bundler' unless ENV['BUNDLE_GEMFILE']
+
+    spawned.call do |client|
+      assert_nil client.request('pikuri/environment', {})['bundle_gemfile']
+    end
+  end
+
+  it 'lets the entry\'s own env win over the de-bundlerizing correction' do
+    skip 'not running under bundler' unless ENV['BUNDLE_GEMFILE']
+
+    spawned.call(entry.call(env: { 'BUNDLE_GEMFILE' => '/mine/Gemfile' })) do |client|
+      assert_equal '/mine/Gemfile', client.request('pikuri/environment', {})['bundle_gemfile']
+    end
+  end
+
   it 'carries a request and its reply across the pipe pair' do
     spawned.call do |client|
       uri = 'file:///tmp/read.rb'

@@ -55,10 +55,11 @@ module Pikuri
     #   directly — no implicit shell (caller wraps in +'bash', '-c', cmd+ when
     #   shell interpretation is wanted).
     # @param chdir [String, Pathname] working directory
-    # @param env [Hash{String=>String}] extra env vars for the child; it
+    # @param env [Hash{String=>(String,nil)}] extra env vars for the child; it
     #   otherwise inherits the parent's full environment (default +{}+, pure
-    #   inheritance). {Code::Bash} uses it to thread host git identity into a
-    #   sandboxed bash whose config files would otherwise be stripped.
+    #   inheritance). A +nil+ value *unsets* that variable, which is how
+    #   {Pikuri::BundlerEnv} hands back the environment pikuri's own boot
+    #   rewrote.
     # @return [Subprocess] handle — call {#wait} to block and read output.
     def self.spawn(*argv, chdir:, env: {})
       stdin, io, wait_thr = Open3.popen2e(env, *argv, chdir: chdir.to_s, pgroup: true)

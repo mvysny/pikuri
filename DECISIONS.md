@@ -79,6 +79,53 @@ design.
 
 ---
 
+## D-de-bundlerized-children — Every long-lived child is de-bundlerized; no unset sentinel in config (2026-08-18)
+
+**Status:** Accepted, shipped. `Pikuri::BundlerEnv` in pikuri-core; applied by
+`Code::Bash`, `Mcp::ClientWrapper` and `Lsp::ClientWrapper`.
+
+**Context.** pikuri boots under `bundler/setup`, and Bundler implements that by
+rewriting the process environment — injecting `BUNDLE_GEMFILE` / `RUBYOPT`,
+repointing `GEM_HOME` / `GEM_PATH`, prepending the bundle's bin dir to `PATH`,
+and stashing each original under `BUNDLER_ORIG_*`. Children inherit all of it.
+`Code::Bash` hit this first (a `bundle exec` the agent runs in *another*
+project resolves against pikuri's Gemfile and dies) and fixed it privately.
+`pikuri-lsp` then hit the same wall from a different angle: `ruby-lsp` refuses
+to start at all — "can't find executable ruby-lsp for gem ruby-lsp" — unless
+pikuri's own Gemfile happens to list it. A Ruby-written stdio MCP server has
+the identical exposure and nobody had noticed.
+
+**Decision.** The correction is pikuri's job, not the user's: every long-lived
+child is spawned over `BundlerEnv.clean_delta`, with the entry's own `env:`
+merged *over* it. `StdioEntry#env` stays `Hash{String=>String}` and learns no
+unset sentinel.
+
+**Why.** The child serves the *target project*, not pikuri, so it must see the
+environment the user had before pikuri started. And this is a *restoration*,
+not a filter: it undoes pikuri's own boot and nothing the user set, which is
+why it doesn't breach the "environment is not a secret store" seam.
+
+**Rejected: let `env:` express an unset, and document it as the user's job.**
+The `bin/pikuri-lsp-check` workaround (`Bundler.with_unbundled_env`) is
+available to a `bin/` script and not to a library host, so the first draft of
+this fork asked config to carry it. Three problems. It is *incomplete* —
+Bundler **changed** variables it did not invent, so deleting `BUNDLE_GEMFILE`
+and `RUBYOPT` leaves the rewritten `PATH` and `GEM_HOME` in place; the delta
+restores them from `BUNDLER_ORIG_*`, which a hand-written list cannot. It puts
+pikuri-internal knowledge (that pikuri boots under Bundler at all) into the
+user's config file, as boilerplate every Ruby-server wiring must copy. And it
+would have fixed the LSP arm while leaving the identical MCP arm broken.
+
+**Rejected: `FOO => ""` as the unset spelling.** Considered because a config
+file "cannot express nil". It can — YAML has `FOO:` and `FOO: null`, JSON has
+`null` — and the sentinel would collide with a real, different POSIX value:
+set-but-empty is not unset, and `RUBYOPT=""` is itself a legitimate setting
+(very nearly the fix for the case that raised this). Ruby's own spawn family
+already spells removal as `nil`, and `BundlerEnv` relies on it, so a second
+spelling would need a translation layer where none exists today.
+
+---
+
 ## D-no-skills-in-sub-agents — A persona's brief is complete on arrival; no catalog, no `skill` tool (2026-08-17)
 
 **Status:** Accepted; no code change. The plumbing that already enforces it

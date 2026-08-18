@@ -144,7 +144,8 @@ module Pikuri
       # @raise [ServerDied] when the binary cannot be executed.
       def self.spawn_child(entry, root)
         stdin, stdout, stderr, wait_thread =
-          Open3.popen3(entry.env, *entry.command, chdir: root.to_s, pgroup: true)
+          Open3.popen3(Pikuri::BundlerEnv.clean_delta.merge(entry.env),
+                       *entry.command, chdir: root.to_s, pgroup: true)
         LOGGER.info("#{entry.id}: spawned #{entry.command.join(' ')} (pid #{wait_thread.pid}) in #{root}")
         { stdin: stdin, stdout: stdout, stderr: stderr, wait_thread: wait_thread }
       rescue SystemCallError => e

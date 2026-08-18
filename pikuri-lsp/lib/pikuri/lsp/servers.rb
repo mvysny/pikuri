@@ -69,13 +69,24 @@ module Pikuri
       # The registered entries this project has files for — the relevance question
       # answered without spawning anything.
       #
-      # Scanned once, then memoized. The first entry claiming a basename wins,
-      # exactly as {Registry#entry_for} decides, so an entry shadowed by an
-      # earlier one is never activated by files it would not be asked about.
+      # Rescanned while the answer is *incomplete*, memoized once every
+      # registered entry is accounted for. A project gains its first +.java+
+      # file mid-session — the agent wrote it — and a scan memoized at the first
+      # call would leave jdtls out of every later fan-out, which the model reads
+      # as "no such symbol" rather than "nobody asked". A walk costs ~4 ms on
+      # this repo against a path that is about to block on a whole index, so
+      # paying it until the answer stops changing is free; once every entry is
+      # relevant nothing can invalidate it and the walk stops.
+      #
+      # The first entry claiming a basename wins, exactly as
+      # {Registry#entry_for} decides, so an entry shadowed by an earlier one is
+      # never activated by files it would not be asked about.
       #
       # @return [Array<Registry::StdioEntry>] in declaration order.
       def active_entries
-        @active ||= relevant_entries
+        return @active if @active && @active.size == @registry.entries.size
+
+        @active = relevant_entries
       end
 
       # The server that answers for +path+, started if it was not running.
@@ -123,10 +134,27 @@ module Pikuri
       def client(entry)
         # A raising spawn stays unmemoized on purpose: installing the missing
         # binary mid-session then recovers, and re-learning an ENOENT is free.
-        @clients[entry.id] ||= begin
+        started = @clients[entry.id] ||= begin
           LOGGER.info("#{entry.id}: starting on first use")
           @spawn.call(entry)
         end
+        note_relevant(entry)
+        started
+      end
+
+      # A started server is relevant by construction: the file that routed here
+      # is the evidence {#relevant_entries} goes walking for. That outranks the
+      # walk, which skips dot-directories and symlinks — without this, a server
+      # started for +.hidden/Foo.java+ would be rescanned for, never found, and
+      # left out of every fan-out.
+      #
+      # @param entry [Registry::StdioEntry]
+      # @return [void]
+      def note_relevant(entry)
+        return if @active.nil? || @active.include?(entry)
+
+        @active = @registry.entries.select { |e| e == entry || @active.include?(e) }
+        nil
       end
 
       # One pruned walk, stopping as soon as every entry is accounted for.

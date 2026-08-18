@@ -20,10 +20,11 @@
 #                   group, not outlive it.
 #   --stderr TEXT   write TEXT to stderr at startup, for the stderr tail.
 #
-# Answers, beyond the handshake: +pikuri/environment+ reports the cwd and a
-# marker read from the environment (which is how a spec sees that +chdir:+ and
-# +env:+ arrived), +textDocument/definition+ answers one canned location, and
-# anything else is refused as -32601 the way a real server refuses.
+# Answers, beyond the handshake: +pikuri/environment+ reports the cwd, a marker
+# read from the environment (which is how a spec sees that +chdir:+ and +env:+
+# arrived) and +BUNDLE_GEMFILE+ (how it sees that the child was de-bundlerized);
+# +textDocument/definition+ answers one canned location, and anything else is
+# refused as -32601 the way a real server refuses.
 
 require 'json'
 
@@ -121,7 +122,8 @@ loop do
     reply(id, 'capabilities' => CAPABILITIES.merge('positionEncoding' => encoding),
               'serverInfo' => { 'name' => 'fake_lsp_server' })
   when 'pikuri/environment'
-    reply(id, 'cwd' => Dir.pwd, 'marker' => ENV.fetch('PIKURI_FAKE_MARKER', nil))
+    reply(id, 'cwd' => Dir.pwd, 'marker' => ENV.fetch('PIKURI_FAKE_MARKER', nil),
+              'bundle_gemfile' => ENV.fetch('BUNDLE_GEMFILE', nil))
   when 'textDocument/definition'
     uri = message.dig('params', 'textDocument', 'uri')
     reply(id, 'uri' => uri,

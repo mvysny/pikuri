@@ -96,12 +96,35 @@ describe Pikuri::Lsp::Servers do
       end
     end
 
-    it 'scans once, so a second fan-out re-walks nothing' do
+    it 'rescans while incomplete, so a file the agent just wrote joins the fan-out' do
       built.call(%w[lib/agent.rb]) do |servers, _spawned, root|
         assert_equal %w[ruby], servers.active_entries.map(&:id)
         File.write(File.join(root, 'App.java'), '')
 
+        assert_equal %w[ruby java], servers.active_entries.map(&:id)
+      end
+    end
+
+    it 'stops rescanning once every registered entry is relevant' do
+      built.call(%w[lib/agent.rb App.java]) do |servers, _spawned, root|
+        assert_equal %w[ruby java], servers.active_entries.map(&:id)
+        File.delete(File.join(root, 'App.java'))
+
+        # A rescan would drop java; the memo is what keeps the answer stable —
+        # and what stops the walk from running on every fan-out forever.
+        assert_equal %w[ruby java], servers.active_entries.map(&:id)
+      end
+    end
+
+    it 'keeps a server the walk cannot see but a call already started' do
+      # The walk skips dot-directories, so nothing in the project *it* sees
+      # claims java. Having answered for the file is the better evidence.
+      built.call(%w[lib/agent.rb .hidden/App.java]) do |servers|
         assert_equal %w[ruby], servers.active_entries.map(&:id)
+        servers.client_for('.hidden/App.java')
+
+        assert_equal %w[ruby java], servers.active_entries.map(&:id)
+        assert_equal %w[ruby java], servers.active.map { |client| client.entry.id }
       end
     end
 

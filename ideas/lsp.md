@@ -326,10 +326,19 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      anchor file *proves* relevance — no project walk at all); the
      bare-`symbol` path still starts every candidate, which is why "candidate"
      must mean project-scoped rather than everything registered.
-   - **So relevance is computed once, on the fan-out path, memoized** — a
-     pruned walk honouring `denied_roots` (or `Workspace::Search::Glob`),
-     short-circuiting per entry. It costs nothing measurable on a path that is
-     about to block for a whole index, and **boot does zero work.**
+   - **So relevance is computed on the fan-out path** — a pruned walk
+     honouring `denied_roots` (or `Workspace::Search::Glob`), short-circuiting
+     per entry. It costs nothing measurable on a path that is about to block
+     for a whole index, and **boot does zero work.** *Amended 2026-08-18:*
+     memoizing it *once* was wrong. A project gains its first `.java` file
+     mid-session — the agent wrote it — and a first-call scan would leave jdtls
+     out of every later fan-out, which the model reads as "no such symbol"
+     rather than "nobody asked" (rule 3's fourth, undisclosed answer). The walk
+     measured 3.7 ms on this repo, so it is **repeated while the answer is
+     incomplete** and memoized only once every registered entry is relevant;
+     a server a `file`-anchored call already started counts as relevant
+     without a walk, which is also the one thing that beats the walk's own
+     blind spots (a dot-directory, a symlink).
    - `Navigator`'s `raise Refusal, 'no language server is running' if
      @servers.empty?` inverts under lazy start — nothing is ever started, so
      every call would refuse. It becomes a *registry* emptiness check.
@@ -421,14 +430,13 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
       A host that boots under `bundler/setup` hands `BUNDLE_GEMFILE` and
       `RUBYOPT` to the child, and `ruby-lsp` then refuses to run at all
       ("can't find executable ruby-lsp for gem ruby-lsp") unless the agent's
-      own Gemfile happens to list it. The check script wraps its spawn in
-      `Bundler.with_unbundled_env`, which a `bin/` script may do; a library
-      host cannot, and `StdioEntry#env` cannot express it either, because its
-      validator takes `Hash{String=>String}` and *unsetting* a variable needs
-      a `nil`. **Open**: either `env:` learns that `nil` removes a variable, or
-      this becomes a documented note for whoever wires a Ruby server. Nothing
-      in pikuri filters `ENV` and nothing should start — this is the
-      per-child channel's job.
+      own Gemfile happens to list it. **Closed 2026-08-18, and neither arm the
+      note proposed won**: config was the wrong layer. `Code::Bash` had solved
+      this privately long ago, so the fix is its mechanism promoted to
+      `Pikuri::BundlerEnv` in core — every long-lived child (bash, MCP, LSP) is
+      spawned over the de-bundlerized delta, with the entry's `env:` merged
+      over it. See `DECISIONS.md` `D-de-bundlerized-children` for why an
+      `env: nil` knob and a `FOO: ""` sentinel both lost.
 
 **The entry.** `Pikuri::Lsp::Registry::StdioEntry`, a `Data.define`. Types
 are yardoc-exact; the *why* for each field is

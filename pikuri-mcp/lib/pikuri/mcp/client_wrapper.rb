@@ -172,7 +172,9 @@ module Pikuri
           MCP::Client::Stdio.new(
             command: @entry.command.first,
             args: @entry.command.drop(1),
-            env: @entry.env
+            # De-bundlerized, or a Ruby-written server resolves its own gems
+            # out of *pikuri's* bundle. The entry's own env wins over it.
+            env: Pikuri::BundlerEnv.clean_delta.merge(@entry.env)
           )
         when Registry::HttpEntry
           MCP::Client::HTTP.new(url: @entry.url, headers: @entry.headers)

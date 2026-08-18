@@ -238,51 +238,6 @@ RSpec.describe Pikuri::Code::Bash do
     end
   end
 
-  describe '.env_delta (pure bundler-env diff)' do
-    # The subprocess must not inherit the BUNDLE_*/RUBYOPT pollution
-    # pikuri's own boot injected, or a `bundle exec` the agent runs in
-    # another project resolves against pikuri's Gemfile. env_delta is the
-    # pure diff that turns the polluted ENV back into Bundler.unbundled_env.
-
-    it 'unsets a bundler-injected var the clean env lacks (nil ⇒ removed in child)' do
-      delta = described_class.send(:env_delta,
-                                   current: { 'BUNDLE_GEMFILE' => '/pikuri/Gemfile', 'PATH' => '/bin' },
-                                   clean:   { 'PATH' => '/bin' })
-
-      assert delta.key?('BUNDLE_GEMFILE'), 'expected BUNDLE_GEMFILE in the delta'
-      assert_nil delta['BUNDLE_GEMFILE'], 'expected BUNDLE_GEMFILE unset (nil) in the child'
-    end
-
-    it 'restores a host value the clean env changed (apt-ruby GEM_HOME, not a blanket GEM_* wipe)' do
-      delta = described_class.send(:env_delta,
-                                   current: { 'GEM_HOME' => '/proj/.bundle/ruby' },
-                                   clean:   { 'GEM_HOME' => '/home/u/.gem' })
-
-      assert_equal '/home/u/.gem', delta['GEM_HOME']
-    end
-
-    it 'omits keys both envs share (minimal delta)' do
-      delta = described_class.send(:env_delta,
-                                   current: { 'PATH' => '/bin', 'HOME' => '/home/u' },
-                                   clean:   { 'PATH' => '/bin', 'HOME' => '/home/u' })
-
-      assert_equal({}, delta)
-    end
-  end
-
-  describe '.bundler_clean_delta' do
-    it 'is empty when Bundler is absent (gem-installed / no bundler/setup)' do
-      # Specs run under bundler, so Bundler is defined here. Swap it out
-      # for a stand-in WITHOUT #unbundled_env to drive the no-bundler path.
-      saved = Object.send(:remove_const, :Bundler)
-      Object.const_set(:Bundler, Module.new)
-      assert_equal({}, described_class.send(:bundler_clean_delta))
-    ensure
-      Object.send(:remove_const, :Bundler)
-      Object.const_set(:Bundler, saved)
-    end
-  end
-
   describe '.git_hardening_delta (git config-execution hardening)' do
     # Even a read-only `git diff`/`status` runs whatever the repo config
     # directs (core.fsmonitor); these keys force the GIT_CONFIG_* env
@@ -323,6 +278,9 @@ RSpec.describe Pikuri::Code::Bash do
       assert env.key?('GIT_CONFIG_COUNT')
       assert_includes env.values, 'core.fsmonitor'
       assert_includes env.values, 'false'
+      # The de-bundlerized base (Pikuri::BundlerEnv) is merged in too, or a
+      # `bundle exec` in another project resolves against pikuri's Gemfile.
+      assert_equal Pikuri::BundlerEnv.clean_delta.keys - env.keys, []
     end
   end
 

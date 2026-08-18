@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Fix a Bundler-booted pikuri leaking `BUNDLE_GEMFILE` / `RUBYOPT` / `GEM_*` / `PATH` into its stdio MCP servers, where a Ruby-written server resolved its gems out of *pikuri's* bundle — `Pikuri::BundlerEnv` (extracted from `Code::Bash`, which already de-bundlerized `bash`) now corrects every long-lived child. See `DECISIONS.md` `D-de-bundlerized-children`.
 - Add `Agent::Event::Transient` — a marker a gem's own progress event includes so `Listener::Terminal` rewrites one line in place instead of logging every update, showing only the final state when stdout is not a terminal.
 - Add `bin/pikuri-wire-check` — a dev diagnostic that records what pikuri would POST for a turn covering five positions (system prompt, user turn, reference block before and after a tool batch, tool result) and reports which survive llama.cpp's `/apply-template`, since nothing inside pikuri can see a message its model's chat template discards. See `book/wire.md`.
 - Add slash commands — `Command::Registry` + `Command::Renderer` scan `.pikuri/commands` / `.claude/commands` for `.md` prompt templates you invoke by typing `/name`, never advertised to the model and costing nothing in the system prompt; `bin/pikuri-code` and `bin/pikuri-assistant` dispatch them. See `DECISIONS.md` `D-slash-commands`.

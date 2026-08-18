@@ -21,10 +21,11 @@ module Pikuri
     #
     # +env+ is the stdio counterpart of {HttpEntry}'s +headers:+ — the right
     # place for a server's auth token (+{"GITHUB_TOKEN" => "..."}+) rather than
-    # baking secrets into argv; the +mcp+ gem merges it over the inherited
-    # environment (this is the *legitimate* per-child credential channel of the
-    # "Environment is not a secret store" seam). Excluded from the cache
-    # fingerprint ({Cache#transport_descriptor}) so secrets never hit disk.
+    # baking secrets into argv; the +mcp+ gem merges it over what
+    # {Pikuri::BundlerEnv} hands it (this is the *legitimate* per-child
+    # credential channel of the "Environment is not a secret store" seam).
+    # Excluded from the cache fingerprint ({Cache#transport_descriptor}) so
+    # secrets never hit disk.
     #
     # @!attribute [r] id
     #   @return [String] short identifier the LLM uses to refer to this
@@ -34,8 +35,8 @@ module Pikuri
     #     e.g. +["npx", "mcp-maven-deps"]+.
     # @!attribute [r] env
     #   @return [Hash{String => String}] extra environment variables for
-    #     the spawned process, merged over the inherited environment.
-    #     Frozen. Defaults to an empty hash.
+    #     the spawned process, merged over the de-bundlerized environment
+    #     ({Pikuri::BundlerEnv}). Frozen. Defaults to an empty hash.
     # @!attribute [r] private
     #   @return [Boolean] this server reaches data worth exfiltrating — a Notion
     #     workspace, a mail account, an internal wiki. Declared per entry

@@ -168,6 +168,22 @@ RSpec.describe Pikuri::Mcp::ClientWrapper do
     end
   end
 
+  describe 'the child environment' do
+    it 'de-bundlerizes it, or a Ruby-written server resolves gems out of pikuri\'s bundle' do
+      skip 'not running under bundler' unless ENV['BUNDLE_GEMFILE']
+
+      wrapper = described_class.new(fresh_entry)
+      env = wrapper.instance_variable_get(:@transport).env
+
+      assert env.key?('BUNDLE_GEMFILE'), 'expected the bundler correction in the spawn env'
+      assert_nil env['BUNDLE_GEMFILE'], 'expected BUNDLE_GEMFILE unset in the child'
+      # The entry's own env merges *over* this; that precedence is pinned in
+      # pikuri-lsp's real-child spec, where a spawn survives overriding it.
+    ensure
+      wrapper&.close
+    end
+  end
+
   describe '#close' do
     it 'is idempotent' do
       wrapper = described_class.new(fresh_entry)
