@@ -6,7 +6,10 @@ project has to respect, and the measurements the whole design rests on.
 
 Per-symbol truth lives in the yardoc ({Pikuri::Lsp::ClientWrapper},
 {Pikuri::Lsp::LspTool}, {Pikuri::Lsp::Registry::StdioEntry}); the forks —
-what was rejected on the way here — live in `DECISIONS.md`.
+what was rejected on the way here — live in `DECISIONS.md`, as
+`D-lsp-direct-not-mcp`, `D-lsp-operation-surface`,
+`D-lsp-no-startup-timeout`, `D-lsp-scheme-fallback` and
+`D-lsp-trifecta-legs`.
 
 ## What it does
 
@@ -14,9 +17,13 @@ One tool, `lsp`, with ten read-only operations. A call names an
 `operation`, a `symbol`, and usually a `file` and `line`; the tool derives
 the column itself, routes to the server that claims the file, waits for
 that server's index if it is still building, re-opens the document with the
-bytes on disk, asks, and renders. Servers start on **first use**, so a host
+bytes on disk, asks, and renders. Servers start on **first use**, and no call is ever
+on a clock (`D-lsp-no-startup-timeout`), so a host
 that ships the gem without configuring one pays nothing, and a registered
 server for a language the project does not contain is never launched.
+
+The enum is static and hardcoded, sourced from the harnesses that shipped
+one rather than from what two servers implement (`D-lsp-operation-surface`).
 
 Nothing here writes: no rename, no formatting, no code actions, no
 diagnostics. That is what keeps the threat model closeable — the moment the
@@ -50,9 +57,11 @@ server-private URI — `jdt://contents/slf4j-api-2.0.18.jar/…`
 server* for its own text. An `http(s):` URI is printed, never dereferenced:
 the URI was chosen by the server, so fetching it would be egress with the
 payload in the path. Adding a row is a protocol decision, in code, not a
-config field.
+config field (`D-lsp-scheme-fallback`).
 
 ## Threat model: the lethal trifecta
+
+The forks behind every line of this are `D-lsp-trifecta-legs`.
 
 ```ruby
 Tool::TrifectaLegs.new(

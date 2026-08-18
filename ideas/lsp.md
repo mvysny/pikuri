@@ -3,9 +3,11 @@
 Status: **built and wired; graduating.** Every step of §"The v1 build" has
 landed in `pikuri-lsp/`, `bin/pikuri-code` wires the extension from the
 `lsp_servers:` key of `~/.pikuri-examples-config.yaml`, and the gem is in the
-metagem. What keeps this note alive is the *writing* still owed: the five
-`DECISIONS.md` entries and the book chapter listed under §Graduation.
-Already done from that map: `pikuri-lsp/DESIGN.md` (threat model, the three
+metagem. What keeps this note alive is the *writing* still owed: the book chapter
+listed under §Graduation.
+Already done from that map: the five `DECISIONS.md` entries
+(`D-lsp-direct-not-mcp`, `-operation-surface`, `-no-startup-timeout`,
+`-scheme-fallback`, `-trifecta-legs`), `pikuri-lsp/DESIGN.md` (threat model, the three
 boundaries, and **the measurements — every finding from `lsp/research.md`,
 renamed from `S1`-style numbers to `S-rangeless-didchange-crash`-style slugs
 and re-cited across the specs, the fixtures and the check script**), the

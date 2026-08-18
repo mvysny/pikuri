@@ -79,6 +79,328 @@ design.
 
 ---
 
+## D-lsp-direct-not-mcp — Write the LSP client; don't bridge one through MCP (2026-08-18)
+
+**Status:** Accepted, shipped as `pikuri-lsp`.
+
+**Context.** `pikuri-mcp` already exists, and maintained LSP↔MCP bridges do
+too: isaacphi/mcp-language-server, Tritlo/lsp-mcp, bug-ops/mcpls,
+ProfessioneIT/lsp-mcp-server. Wiring one would have been a *registry entry*
+— config, not code — buying every language at once and letting someone else
+absorb protocol drift. Their pitch is correct, too: a semantic answer costs
+~50–200 tokens against dumping a file at the model.
+
+**Decision.** A direct stdio JSON-RPC client, in its own gem, reusing
+`Mcp::ClientWrapper`'s restart discipline rather than its transport.
+
+**Why — four reasons, and the first is the one that generalizes.**
+
+- **The transport is not the hard part.** Both paths terminate at the same
+  `ruby-lsp` process over the same stdio JSON-RPC; the bridge adds a hop and
+  a process. The actual difficulties — indexing readiness, capability
+  gating, name→position, result capping, coordinate conversion — get solved
+  somewhere either way, and through a bridge you inherit someone else's
+  answers to all five with no way to correct them.
+- **Two seams cannot be delegated at all.** `F-definition-candidates` and
+  `F-reference-volume`: denylist filtering of walked paths, root
+  confinement, and volume capping are post-processing pikuri must write
+  regardless. At which point most of a client exists anyway, and the extra
+  process is still being paid for.
+- **It inverts the bounded-gem rule.** A direct client has a closeable
+  threat model — read-only, no network, one long-lived child
+  (`pikuri-lsp/DESIGN.md`). A third-party bridge is an opaque Go/TS/Rust
+  binary with its own network posture and supply chain: widening the threat
+  model to save ~200 lines of Ruby, in a project whose bar is "small enough
+  to audit in an evening", and dragging a non-Ruby toolchain into a Ruby
+  monorepo.
+- **Teaching mandate.** A small LSP client is a good book chapter about how
+  editors actually work. "Install this Go binary" teaches nothing.
+
+**Consequence.** Protocol drift is pikuri's problem now. That is what
+`bin/pikuri-lsp-check` is for — a human-run diagnostic that re-measures the
+findings in `pikuri-lsp/DESIGN.md` §Measurements against a live server and
+reports *ok* / *DRIFT* / *no answer*, rather than a spec that goes green by
+skipping.
+
+---
+
+## D-lsp-operation-surface — Ten operations from shipped harnesses; relay server glitches, never work around them (2026-08-18)
+
+**Status:** Accepted, shipped. The enum is static and hardcoded in
+{Pikuri::Lsp::Operation}; adding or removing a value is one line, so this is
+a floor rather than a ceiling.
+
+**Context.** Six live runs against ruby-lsp and jdtls found a real pattern,
+and then the pattern turned on the method that produced it: *every server is
+broken in its own way, and the ways do not generalize.* ruby-lsp advertises
+a type hierarchy whose `subtypes` half is a `# TODO` (`H-subtypes-stub`);
+jdtls's `workspace/symbol` cannot see a method at all
+(`S-jdtls-types-only`); ruby-lsp crashes on a full-text `didChange` that
+jdtls accepts (`S-rangeless-didchange-crash`); ruby-lsp's index
+desynchronizes from its own document because of a typing-speed heuristic
+(`S-index-desync`). There are language servers for thirty other languages,
+each with its own list.
+
+**Decision.** Two rules, and they are the same rule twice.
+
+1. **The operation surface comes from harnesses that shipped one**, not from
+   what two servers happen to implement. Claude Code and opencode ship an
+   identical nine (near-identical tool text too, so they count as roughly
+   one data point); grok-build ships six, a strict subset. pikuri ships that
+   union plus two *measured* additions and one collapse:
+   `goToTypeDefinition` (`J-type-definition-recovers-var`: with
+   `var names = new ArrayList<>()` the type appears nowhere in the source,
+   so nothing else recovers it), `supertypes` (`H-supertypes-no-substitute`
+   — the one hierarchy operation that works on both servers, and the *chain*
+   is what has no substitute), and `prepareCallHierarchy` run inside the
+   tool rather than exposed.
+2. **Server glitches are relayed, not worked around.** The tool reports what
+   the server said and what it was asked; the model decides what to do about
+   it. Three answers must stay distinct in what the model reads: *the server
+   does not support this operation*, *the server answered nothing*, and *the
+   server could not be asked*. Collapsing them is the most consequential
+   defect in the shipped prior art — Claude Code's
+   `No definition found. This may occur if…` is `F-empty-before-index`'s
+   false premise verbatim.
+
+**Rejected: an enum sized to what the two reference servers implement.**
+That is a catalogue of two servers' glitches, and it says nothing about the
+third. It also gets the answer wrong in both directions: `documentSymbol`
+would have been cut (all three harnesses ship it, and `S-jdtls-types-only`
+makes it the only route from a Java method *name* to a position), while
+`subtypes` would have been kept.
+
+**Rejected: a per-server known-stub list.** The obvious fix for
+`H-subtypes-stub` — record that ruby-lsp advertises `typeHierarchyProvider`
+but implements only half of it. It is unbounded work that gets one server
+right, and a capability gate provably cannot catch the case anyway: one
+provider key covers both directions, and ruby-lsp advertises it *truthfully*
+for the half that works. With `subtypes` cut the case no longer arises, and
+where it would, the answer is to relay the empty result.
+
+**Rejected: per-server readiness predicates.** Closed by
+`J-jdtls-defers-replies`: jdtls defers its replies during an import instead
+of answering `[]`, so a false-early gate is harmless there and essential
+against ruby-lsp. One generic quiescence-plus-debounce gate covers both, and
+the feared config knob is not needed.
+
+**Rejected: `subtypes` as an eleventh operation.** It went first to
+`H-subtypes-stub`, then to the harness survey (nobody ships it), and finally
+to `H-implementation-is-transitive` / `H-subtypes-direct-only`: on jdtls,
+`goToImplementation` answers "list all subtypes" transitively in one call
+and works on concrete classes, while `typeHierarchy/subtypes` returns the
+direct children only. So there is **no server on which `subtypes` is the
+best available answer**, and `findReferences` is not the substitute either
+(`H-references-not-substitute`: exactly 1 of 4 hits was the `extends` site,
+unlabelled).
+
+**Rejected: exposing `prepareCallHierarchy`.** The one place pikuri narrows
+a 2-of-3 majority. Exposing it hands the model an opaque
+`CallHierarchyItem` to echo back; the prepare hop runs inside the tool, the
+same collapse `workspace/symbol` gets.
+
+**Also out, recorded so nobody re-proposes them:** `declaration` (marginal
+against `definition` outside C-style header/impl splits), `completion` (an
+agent writes whole files rather than completing at a cursor), and the whole
+write half — `rename`, formatting, code actions — which needs the
+`Confirmer` seam and ends the closeable threat model. Diagnostics are
+deferred rather than rejected: all three harnesses surface them *without* a
+diagnostics tool, as reminders appended to tool output.
+
+---
+
+## D-lsp-no-startup-timeout — No clock anywhere; block on the index and let the human be the timeout (2026-08-18)
+
+**Status:** Accepted, shipped. One half of the original decision — *spawn
+at boot* — was reversed before shipping; see Consequences.
+
+**Context.** ruby-lsp indexes this repo in seconds; a cold jdtls import of a
+Gradle multi-module project took 78 seconds (`J-warm-start`), during which
+every request went unanswered until the backlog flushed
+(`J-jdtls-defers-replies`). The obvious fifth registry field is
+`startup_timeout:`.
+
+**Decision.** No `startup_timeout:`, and no timeout at all. The first call
+blocks until its server is ready, however long that takes.
+
+**Why.** No value is defensible — 30s is wrong for Java, 300s is wrong for
+Ruby — and what a timeout buys is a `"still indexing, try grep"`
+observation, which is not information but a *decision point*: retry, wait,
+or give up. "Wait" is the correct answer and the one thing no tool call can
+express. Relaying an empty index state is the single case where waiting
+beats relaying, because there is nothing in `[]` to reason about — and
+`F-empty-before-index` is what an un-gated client hands the model instead: a
+*successful* empty answer, from which it concludes the symbol has no
+definition.
+
+**Three things replace the clock, none of them a clock.**
+
+- **Die on child death.** What a timeout actually guards is not a slow index
+  but a server that never becomes ready: jdtls failing a dependency import,
+  ruby-lsp's custom-bundle `bundle install` erroring, a second session
+  finding the `-data` directory locked. Child exit is a *definite* answer
+  and catches the common case earlier than any clock would.
+- **`Cancellable` breaks the wait.** A blocking read never reaches a
+  tool-call boundary, so a host's SIGINT trap would not fire; the wait polls
+  the cancel flag. This is what makes "endless" acceptable — the human is
+  the timeout, through a mechanism pikuri already has.
+- **Progress is a domain event.** A silent three-minute stall is
+  indistinguishable from a hang for the person watching. Not optional once
+  the clock is gone.
+
+**Rejected: a failure message that steers.** The death report says what
+failed and stops: it never says "try grep". That would be the
+`"still indexing, try grep"` observation arriving by a different door — a
+failure message deciding the task's next step, when the model is the one
+holding the task.
+
+**Consequences.** *Spawn synchronously at boot* was the original companion
+to this — cheap, and it made a missing binary raise immediately and loudly.
+It was reversed on 2026-08-18 in favour of starting a server on **first
+use**: a registry is machine state (which binaries you have installed), so
+an unconditional boot spawn starts a JVM and a 78-second import in projects
+containing no Java at all. Missing-binary loudness moves with it — first use
+reports `"Error: cannot spawn ruby-lsp: …"` and the model relays it to the
+human, which is one policy instead of two. What the reversal does *not*
+touch is what this entry is about: indexing proceeds in the background and
+the first call blocks, unbounded.
+
+---
+
+## D-lsp-scheme-fallback — Standard first, one hardcoded `jdt:` row, and never dereference a URI the server chose (2026-08-18)
+
+**Status:** Accepted, shipped as `Lsp::Sources::SCHEME_REQUESTS`, which
+holds exactly one row.
+
+**Context.** A result is not always a file. jdtls answers a library
+definition with
+`jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
+(`J-library-is-not-a-file`) — a *handle, not a locator*, an index into that
+server's own view of the classpath, closer to a file descriptor than a path
+and meaningless to anything else. **There is no standard "read this URI"
+request in the LSP that ships today, and no way to discover a server's
+non-standard one**: `language_server-protocol` 3.17.0.6 does not mention
+`textDocumentContent`, and jdtls, `zipfile:`, `deno:` and `sourcekit-lsp:`
+each invented their own, documented in prose and announced nowhere on the
+wire.
+
+**Decision.** Every result renders as location + snippet, and the URI scheme
+decides where the snippet comes from. Three tiers: `file:` is read through
+the `Workspace` seam (with `Filesystem#denied?` applied, since a result is a
+*walked* path — `D-walked-path-denylist`); a custom scheme is asked of the
+**server that issued it**, standard 3.18 `textDocumentContent` first and one
+hardcoded row second; `http(s):` and everything else is printed as text,
+never dereferenced. A scheme with no row gets an inline reason, never a bare
+count.
+
+**Why the `http(s):` refusal is load-bearing rather than decorative.**
+Fetching a URI the *server* chose would hand the gem an
+attacker-influenceable egress leg, with the request itself as the
+exfiltration channel — the data rides in the path. A dependency that names a
+URL in its source map would break the gem's entire claim. pikuri already has
+`fetch` and `web_scrape` for network reads a human asked for. The table may
+therefore never gain a row that reaches the network; every row is a JSON-RPC
+request to a child pikuri already spawned over a pipe it already owns, which
+is what `D-lsp-trifecta-legs` leans on.
+
+**Rejected: standard-only, no fallback row.** The principled position — the
+protocol layer stays server-agnostic — and it makes the Java arm untestable
+in practice: without the row, `J-init-options-required` and
+`J-class-file-contents` compose into "library navigation returns a polite
+refusal", which is the capability the typed half of the target was for.
+
+**Rejected: a `content_request:` config field.** The same fallback,
+parameterized: two arcane coupled strings the user must get right, in a file
+format pikuri exists as a counter-move to. A protocol method is code, not
+config — grok-build's C#-specific `solution/open` escape hatch is the same
+mistake in a different costume. The table is a different animal: the user
+writes nothing, it is named after a server rather than parameterized over
+all of them, and it carries a **written deletion condition — delete the
+`jdt:` row the day jdtls advertises `textDocumentContent`**, at which point
+the standard path above it takes over with no other edit.
+
+**Rejected: an `lsp_read` operation or tool.** The tempting shape — hand
+back a URI, let the model ask for its text — reintroduces exactly the
+chaining hop collapsed everywhere else, spends a round trip on something the
+tool can do exactly, and hands the model a ~300-character `jdt:` URI to hold
+and reason about. The tool inlines content itself, on the same path for both
+the standard request and the fallback. If explicit loading is ever wanted it
+lands as another `operation` enum value, not a second tool — and the
+question to answer *then* is that inlining and explicit reads are not rivals:
+a bounded snippet per result keeps `definition` usable
+(`J-class-file-contents`'s 22 KB × the 45 hits `F-reference-volume`
+measured), while an explicit operation is how the model asks for a whole
+document.
+
+---
+
+## D-lsp-trifecta-legs — `:no_egress` despite a child that goes online, and `untrusted: :hard` unconditionally (2026-08-18)
+
+**Status:** Accepted, shipped on the tool. The posture as it stands is
+`pikuri-lsp/DESIGN.md` §"Threat model"; this entry is the forks.
+
+**Context.** `Mcp::Extension` declares `ASSUMED` unconditionally, and both
+gems spawn a user-configured foreign stdio binary with inherited env and no
+sandbox — so "why doesn't `lsp` declare what `mcp` declares?" is a fair
+question with a non-obvious answer. One declaration, three axes, questioned
+once.
+
+**Decision.** `private:` rides the host's answer, `untrusted: :hard`
+unconditionally, `egress_payload_review: :no_egress` — declared on the
+*tool*, with `Lsp::Extension` contributing nothing.
+
+**Rejected: tagging egress on the vetted-destination argument.** The
+tempting version is that a well-behaved server only fetches from a vetted
+set of hosts (jdtls pulling a jar from Maven Central), which is too weak to
+tag. That argument must not be written down, because it argues for the
+opposite of its conclusion: `D-egress-axis-shape` rejected a
+`:safe_vetted_set` rung outright, so "vetted destination" is a *rung* and
+the phrasing lands `lsp` on the map as `:tool_vouched` + `:unreviewed`
+forever. It is also untrue — the hosts come from the project's
+`build.gradle` / `settings.xml`, so they are project-controlled. The
+argument that survives is the one that entry used to drop
+`egress_human_author`: a seat whose outbound bytes do not originate in the
+model's choosing holds no leg to grade.
+
+**Rejected: inheriting MCP's `ASSUMED` on the shared foreign-binary shape.**
+The distinction that breaks the parity is that **an MCP server contributes
+model-callable tools with model-supplied arguments; an LSP server
+contributes none.** One pikuri-authored tool, fixed schema, and pikuri
+chooses every JSON-RPC request that leaves — no foreign tool surface, hence
+nothing undeclarable. Declaring `ASSUMED` anyway would actively *widen* the
+answer: `legs | ASSUMED` flips egress to `:unreviewed` /
+`:attacker_reachable` (verified), the opposite of the measured truth.
+
+**Rejected: riding `filesystem.trusted?` the way {Pikuri::Workspace::Read}
+does.** `read` declares `untrusted: filesystem.trusted? ? :none : :hard`,
+and that works because the vouching and the reach are the same set: the host
+asked a human whether this checkout is trusted, and `read` is confined to
+the checkout. `lsp` is not — the index reaches the whole bundle, jars and
+the JDK (`J-index-reaches-jars`), and `H-ancestry-leaves-root` has a query
+about a workspace class answering out of four unrelated gems. A user who
+said "yes, I trust this repo" made a claim about the code they checked out,
+not about four hundred transitive jars, nor a `-sources.jar` nobody has ever
+diffed. Riding `trusted?` would stretch a human's answer past the question
+they were asked.
+
+**Rejected: confining results to the root to earn `:none`.** The first thing
+someone will propose when the map goes loud. It deletes
+`J-index-reaches-jars` — searching inside jars, the one thing grep can never
+do — so the tag is *the price of the capability*, not a defect to engineer
+away.
+
+**Consequence, stated because a user will otherwise meet it as an
+unexplained alarm.** On an untrusted checkout nothing changes; `read` is
+already `:hard` there. On a **trusted** one, adding `lsp` to a wiring that
+holds `fetch` or `web_search` lights the untrusted leg and can flip the
+trifecta verdict, because `read` declares `:none` there and `lsp` does not.
+That is correct rather than unfortunate — the jars were never vouched for,
+and a trusted repo with a poisoned dependency is the realistic attack — and
+`D-egress-axis-shape` already blesses declaring a true axis for the map's
+sake when no verdict moves. This is the stronger case, where one does.
+
+---
+
 ## D-de-bundlerized-children — Every long-lived child is de-bundlerized; no unset sentinel in config (2026-08-18)
 
 **Status:** Accepted, shipped. `Pikuri::BundlerEnv` in pikuri-core; applied by
