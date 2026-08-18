@@ -280,7 +280,10 @@ module Pikuri
       # keeps the block legible rather than a hang. What ends a wait instead is
       # readiness, the child's death, or +cancellable+ — the human as the
       # timeout. A server that dies waiting is restarted and waited on again,
-      # {MAX_ATTEMPTS} times, because a fresh child indexes from nothing.
+      # {MAX_ATTEMPTS} times, because a fresh child indexes from nothing — but a
+      # replacement that cannot get through its *handshake* ends the attempt
+      # there and then, so a misconfigured server costs one respawn rather than
+      # a spawn per attempt.
       #
       # @param cancellable [Pikuri::Agent::Control::Cancellable, nil]
       # @yieldparam progress [ServerProgress] on the *calling* thread, which is

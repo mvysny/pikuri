@@ -218,7 +218,13 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      `with_restart` path a dying request takes, so a jdtls that dies importing
      is respawned and waited out again, `MAX_ATTEMPTS` times, before
      `ServerDied`. Without that a server could only ever be revived by a
-     *request*, which the gate stands in front of.
+     *request*, which the gate stands in front of. It cannot become a spawn
+     storm: a wrong `command:` never reaches here (`ENOENT` and a
+     dies-on-handshake binary both raise at boot, before an agent exists), the
+     retry is capped at three, and a replacement that fails its handshake raises
+     out of the loop on the first try rather than spending the other two — the
+     wait checks liveness *before* readiness, so a child that died without ever
+     announcing a task is a death rather than a quiet server that must be ready.
    - **`SETTLE = 1.5s`**, above the 0.9s gap J2 measured, and the terminal
      `done: true` covers **open tokens ∪ what this wait showed**, keyed by
      title — a `ServerProgress` carries no token, so a host keys its bars by

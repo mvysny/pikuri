@@ -244,6 +244,41 @@ describe Pikuri::Lsp::ClientWrapper do
       end
     end
 
+    it 'never calls a dead child ready, however quiet it went' do
+      over_pipes.call(readiness: gate.call) do |wrapper, wire|
+        start.call(wrapper, wire)
+        wire.close                # dies without ever announcing a single task
+        sleep settle * 2          # ... and is therefore "quiet"
+
+        error = assert_raises(died) { wrapper.wait_until_ready }
+        assert_includes error.message, 'index', 'a silent corpse is not a built index'
+      end
+    end
+
+    it 'stops restarting a child that cannot even handshake' do
+      spawns = 0
+      channels = Array.new(4) { Pikuri::Lsp::Testing::Wire.channel }
+      # Every replacement dies the moment it is spoken to, so a client that kept
+      # trying would spawn forever against a misconfigured server.
+      respawn = lambda do
+        spawns += 1
+        channel, wire = channels[spawns]
+        Thread.new { wire.close }
+        channel
+      end
+      begin
+        over_pipes.call(readiness: gate.call, respawn: respawn) do |wrapper, wire|
+          start.call(wrapper, wire)
+          wire.close
+
+          assert_raises(died) { wrapper.wait_until_ready }
+          assert_equal 1, spawns, 'a failed handshake ends the attempt; it does not spend the other two'
+        end
+      ensure
+        channels.each { |_, wire| wire.close }
+      end
+    end
+
     it 'waits the fresh child out from scratch after a restart' do
       next_channel, next_wire = Pikuri::Lsp::Testing::Wire.channel
       # A wider window than the others: the closing assertion has to land

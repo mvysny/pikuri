@@ -121,8 +121,10 @@ module Pikuri
         shown = []
         @mailbox.drain(tick: TICK) do |progress|
           cancellable&.check!
-          break true if ready?
+          # Liveness first: a child that died without ever announcing a task is
+          # *quiet*, and quiet is half of what this gate calls ready.
           break false unless alive.call
+          break true if ready?
           next unless progress
 
           progress.done ? shown.delete(progress.title) : shown |= [progress.title]
