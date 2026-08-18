@@ -308,12 +308,127 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      building"). Related: a fan-out labels its blocks `From the <id> server:`,
      so an entry's `id` does reach the model after all — what survives is that
      the model never *supplies* one.
-7. **`Lsp::Extension`**: `configure` builds the `Servers` set, registers the
-   tool via `Configurator#add_tool` (**not** `add_raw_tool`, or the legs go
-   invisible), arms `on_close`; `bind` hands the tool the emitter
+7. ~~**Lazy start, and the relevance rule that comes with it**~~ **Landed**
+   (decided
+   2026-08-18, and it reverses step 2's "spawn synchronously at boot"). A
+   server starts on **first use**, not at boot: jdtls in a Ruby project is a
+   JVM and a 78s import for a language the project does not contain, which is
+   erratic behaviour rather than a cost. What changes:
+
+   - `Servers#start_all` goes away. `#client_for(path)` spawns-and-memoizes,
+     and `#all` becomes an **active** set — the registered entries claiming at
+     least one file in the project — which it spawns on demand.
+   - **Laziness alone is not enough, because the capability gate needs a live
+     handshake.** `Navigator` partitions `@servers.all` on
+     `ClientWrapper#supports?`, which reads *this* workspace's `initialize`
+     response, so a fan-out cannot decide who to ask without starting them. The
+     `file`-anchored path is where laziness pays in full (one server, and the
+     anchor file *proves* relevance — no project walk at all); the
+     bare-`symbol` path still starts every candidate, which is why "candidate"
+     must mean project-scoped rather than everything registered.
+   - **So relevance is computed once, on the fan-out path, memoized** — a
+     pruned walk honouring `denied_roots` (or `Workspace::Search::Glob`),
+     short-circuiting per entry. It costs nothing measurable on a path that is
+     about to block for a whole index, and **boot does zero work.**
+   - `Navigator`'s `raise Refusal, 'no language server is running' if
+     @servers.empty?` inverts under lazy start — nothing is ever started, so
+     every call would refuse. It becomes a *registry* emptiness check.
+   - `#client_for` can now raise `ServerDied` mid-call, so `Navigator` grows
+     that relay arm — the same string shape as the existing death-mid-request
+     one.
+   - **Missing-binary loudness is dropped, deliberately.** See
+     `lsp/design.md` §"Missing binary at boot", reversed there: first use
+     reports `"Error: cannot spawn ruby-lsp: …"` (already
+     `ClientWrapper.spawn_child`'s wording) and the model relays it to the
+     human. One policy instead of two — identical to the already-decided
+     die-on-child-death arm — and the boot-raise was only ever defensible
+     while spawning was eager. This also dissolves the asymmetry against
+     `Mcp::Servers#start_all`'s log-and-drop: with no boot spawn there is no
+     boot failure to compare.
+8. ~~**`Lsp::Extension`**~~ **Landed.** `configure` builds the `Servers` set (constructing
+   only — nothing spawns), registers the tool via `Configurator#add_tool`
+   (**not** `add_raw_tool`, or the legs go invisible), arms `on_close`; `bind`
+   hands the tool the emitter
    (`tool.on_progress = ->(progress) { ctx.emit_event(progress) }`).
-   Contributes **no** `trifecta_contribution`.
-8. **Live smoke specs**, tagged to skip when the binary is absent.
+   Contributes **no** `trifecta_contribution`. `Mcp::Extension#configure` is
+   the shape verbatim, including `return if @registry.empty?` and the
+   construct → arm `on_close` → *(no longer)* start ordering.
+9. ~~**Progress has to render, which is a `pikuri-core` change**~~ **Landed**
+   (decided 2026-08-18). `ServerProgress` exists because a 78s block must be legible,
+   and today nothing renders it: it defines no `to_s`, so
+   `Listener::Terminal`'s generic domain-event arm prints
+   `· #<data Pikuri::Lsp::ServerProgress …>` — and that arm does not
+   `Sanitizer`-defang, though `ServerProgress`'s own yardoc delegates the
+   defanging to whoever renders it. Three edits:
+
+   - **`ServerProgress#to_s`**, the `Code::PlanModeChanged` /
+     `Skill::Promoted` precedent — they define one *because* the arm is
+     generic.
+   - **The generic arm sanitizes, unconditionally.** Not an LSP fix: every
+     gem domain event's `to_s` can carry foreign text (skill names off disk,
+     MCP descriptions, server-supplied titles), and `truncate_tool_result`
+     is one `Sanitizer.sanitize(…).text` call away already.
+   - **A transient arm**, because at `Readiness::TICK` 0.1s a cold import is
+     hundreds of scrollback lines. Core must recognize "this replaces its
+     predecessor" without knowing `pikuri-lsp` exists, so: an
+     `Event::Transient` marker module in core with a two-method contract
+     (`to_s` for the text, `done` for retire-the-line), which
+     `ServerProgress` includes; `Terminal` prints it with `\r` and no
+     newline through the existing `@at_line_start` machine and clears on
+     `done`. Two deliberate simplifications: **not a tty ⇒ only the `done`
+     event prints** (a `\r` stream into a pipe is one unreadable mega-line),
+     and **one transient line, last-writer-wins** rather than one per server
+     — two concurrent bars needs ANSI cursor movement the demo listener does
+     not earn, and `server_id` is in the text.
+10. ~~**Tests, split by what each can actually prove**~~ **Landed** (decided 2026-08-18;
+    the earlier plan was one line, "live smoke specs, tagged to skip when the
+    binary is absent"). **No real language server becomes a test
+    dependency.** ruby-lsp is cheap to *start* — pure Ruby, no JVM — but its
+    dependency closure would enter the monorepo `Gemfile.lock`, so one of its
+    releases can redden CI for work unrelated to LSP; it cannot be made to
+    reproduce the failure modes this design is built on; and it does nothing
+    for the jdtls half, so the real-server leg stays half-covered either way.
+
+    - **10a — a dummy server binary, in CI.** `Lsp::Testing::FakeServer` runs
+      in-process over `IO.pipe`, so it covers framing, demux and the value
+      types but never `Open3.popen3` with argv/env/`chdir`/`pgroup`, real
+      process death, SIGTERM-to-the-group teardown, the reap, the stderr tail,
+      or restart-on-death against a real pid — which is the whole reason
+      `lsp/client_wrapper.rb` is a `Subprocess` seam exception. That leg is
+      ~60 lines in `spec/support/`: read framed JSON on stdin, answer a canned
+      handshake, plus flags to die on the third request or exit without
+      answering. Zero dependencies, deterministic, and it can be *told* to
+      misbehave.
+    - **10b — `bin/pikuri-lsp-check`, never in CI.** Something must still
+      re-validate S1/S2/S5 and the *reconstructed* fixtures against a real
+      server, and a skip-when-absent spec is the worst home for it: it reports
+      green by staying silent. `bin/pikuri-wire-check` is the precedent — a
+      dev diagnostic that says "I could not ask" rather than passing. Run by a
+      human after a server upgrade. Six probes, each naming the decision it
+      guards, and each reporting *ok* / *DRIFT* / *no answer*.
+
+    **What building the two halves found**, both of which are why the split was
+    worth it:
+
+    - **A clean shutdown stranded the helpers a server forked.** `reap_child`
+      only signalled the process group when the child *ignored* `exit`, so the
+      group sweep that `pgroup: true` exists for never ran on the happy path —
+      exactly the case jdtls's forked helpers are in. The dummy's
+      `--fork-helper` caught it in one run; nothing the in-process fake can do
+      would have. Fixed: the leader is stopped, then the group is swept
+      regardless.
+    - **pikuri's own bundler environment leaks into a Ruby language server.**
+      A host that boots under `bundler/setup` hands `BUNDLE_GEMFILE` and
+      `RUBYOPT` to the child, and `ruby-lsp` then refuses to run at all
+      ("can't find executable ruby-lsp for gem ruby-lsp") unless the agent's
+      own Gemfile happens to list it. The check script wraps its spawn in
+      `Bundler.with_unbundled_env`, which a `bin/` script may do; a library
+      host cannot, and `StdioEntry#env` cannot express it either, because its
+      validator takes `Hash{String=>String}` and *unsetting* a variable needs
+      a `nil`. **Open**: either `env:` learns that `nil` removes a variable, or
+      this becomes a documented note for whoever wires a Ruby server. Nothing
+      in pikuri filters `ENV` and nothing should start — this is the
+      per-child channel's job.
 
 **The entry.** `Pikuri::Lsp::Registry::StdioEntry`, a `Data.define`. Types
 are yardoc-exact; the *why* for each field is
@@ -449,12 +564,21 @@ the client is written; see
 [`lsp/harness-analysis.md`](lsp/harness-analysis.md) §"Two gaps".
 
 Also folded in here: **fan-out.** A bare-`symbol` call fans out to every
-registered server and therefore waits for all of them to be ready, so a
-Ruby-only question pays jdtls's cold import (78s, J6) the first time. That
-follows from the no-timeout rule and is acceptable — and with `file` the
-normal shape it is now the rare path rather than the default. Write it down
-as an accepted consequence; the mitigation (fan out only to servers already
-ready) trades completeness for latency and can wait for a complaint.
+**project-relevant** server and therefore waits for all of them to be ready,
+so a question in a mixed Ruby/Java repo pays jdtls's cold import (78s, J6) the
+first time. That follows from the no-timeout rule and is acceptable — and with
+`file` the normal shape it is the rare path rather than the default.
+
+*Amended by step 7's lazy start:* "every registered server" was the original
+wording, and under a **global** registry — which is what
+`lsp/design.md` §"Where the user actually writes this" settled on, since which
+binaries you have installed is machine state — it meant a pure-Ruby project
+paying for the `java` entry its owner added once, in every session. Relevance
+is now project-scoped, so the sentence is about a repo that really does
+contain both. The rejected mitigation stands and its reason is sharper: fanning
+out only to servers *already started* would make the same query answer
+differently depending on what an earlier call happened to touch, which is worse
+than latency.
 
 ## Closed by the harness survey
 

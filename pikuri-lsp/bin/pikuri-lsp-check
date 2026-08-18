@@ -1,0 +1,272 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Dev / diagnostic entry point — runs from a source checkout only, and is not
+# installed by `gem install pikuri`.
+#
+# Answers one question: **do the measurements pikuri-lsp's design rests on still
+# hold against the server you have installed today?**
+#
+# It exists because the alternative reports a lie. The specs cover the client
+# against a fake and a dummy binary, both of which behave the way pikuri expects
+# by construction — so nothing in the suite would notice a server release that
+# stopped crashing on a full-text `didChange`, started indexing methods, or
+# changed the shape of a reply. A live spec tagged to skip when the binary is
+# absent is worse than nothing: it reports green by staying silent, and the CI
+# image has no language server.
+#
+# So the probes live here instead, and this script reports three outcomes per
+# probe, never two:
+#
+#   ok       — the finding still holds; the design decision resting on it stands
+#   DRIFT    — the server no longer behaves that way; go re-read the decision
+#   no answer — the probe could not be run here, and says why
+#
+# A DRIFT is not a failure. It is an invitation to revisit a choice that was
+# right when it was measured; each probe names the decision it guards. Exits 1
+# when anything drifted, so a wrapper can notice.
+#
+# Usage:
+#
+#   bin/pikuri-lsp-check                       # ruby-lsp against this checkout
+#   bin/pikuri-lsp-check --server java --root ~/some/maven-project
+#   bin/pikuri-lsp-check --anchor lib/foo.rb:12:Foo
+#
+# Servers come from `~/.pikuri-examples-config.yaml` (`lsp_servers:`, the shape
+# {Pikuri::Lsp::Registry.from_h} takes) when it has any, and otherwise from a
+# built-in `ruby-lsp` entry — so the common case needs no config at all.
+
+require 'bundler/setup'
+require 'optparse'
+require 'yaml'
+require 'pikuri-lsp'
+
+root = Dir.pwd
+server_id = nil
+anchor = nil
+parser = OptionParser.new do |opts|
+  opts.banner = 'Usage: pikuri-lsp-check [options]'
+  opts.on('--root PATH', 'Project to index (default: the working directory).') { |v| root = File.expand_path(v) }
+  opts.on('--server ID', 'Which configured server to probe (default: the first).') { |v| server_id = v }
+  opts.on('--anchor FILE:LINE:SYMBOL', 'What to ask about (default: a class ' \
+                                       'declaration found by scanning).') do |v|
+    anchor = v
+  end
+  opts.on('-h', '--help') do
+    puts opts
+    exit 0
+  end
+end
+parser.parse!
+
+CONFIG_PATH = File.expand_path('~/.pikuri-examples-config.yaml')
+
+# @return [Pikuri::Lsp::Registry]
+def registry_from_config
+  config = File.exist?(CONFIG_PATH) ? (YAML.safe_load_file(CONFIG_PATH) || {}) : {}
+  configured = Pikuri::Lsp::Registry.from_h(config['lsp_servers'])
+  return configured unless configured.empty?
+
+  puts "No lsp_servers: in #{CONFIG_PATH} — falling back to a built-in ruby-lsp entry."
+  Pikuri::Lsp::Registry.new(entries: [
+    Pikuri::Lsp::Registry::StdioEntry.new(id: 'ruby', command: %w[ruby-lsp],
+                                          files: %w[*.rb *.rake *.gemspec Rakefile Gemfile])
+  ])
+end
+
+# The anchor: a declaration line, because that is what the hierarchy operations
+# need and it is the one shape every probe can share.
+#
+# @return [Array(String, Integer, String)] path, 1-based line, symbol.
+def discover_anchor(entry, root)
+  Dir.glob('**/*', base: root).each do |relative|
+    next unless entry.claims?(relative)
+
+    path = File.join(root, relative)
+    next unless File.file?(path)
+
+    File.foreach(path).with_index(1) do |line, number|
+      # Deliberately crude: any language's `class Foo` / `class Foo {`.
+      match = line.match(/^\s*(?:public\s+|final\s+|abstract\s+)*class\s+([A-Z]\w*)/)
+      return [path, number, match[1]] if match
+    end
+  end
+  nil
+end
+
+# @return [Array(String, Integer, String)]
+def parse_anchor(spec, root)
+  path, line, symbol = spec.split(':', 3)
+  raise "--anchor wants FILE:LINE:SYMBOL, got #{spec.inspect}" if symbol.nil?
+
+  [File.expand_path(path, root), Integer(line), symbol]
+end
+
+# One probe's verdict. +decision+ names what rests on it, so a DRIFT line tells
+# the reader where to go next.
+Probe = Struct.new(:name, :decision, :verdict, :detail) do
+  def to_s
+    mark = { ok: '  ok      ', drift: '  DRIFT   ', unknown: '  no answer' }.fetch(verdict)
+    "#{mark} #{name}\n             #{detail}\n             guards: #{decision}"
+  end
+end
+
+PROBES = []
+
+def probe(name, decision)
+  verdict, detail = yield
+  PROBES << Probe.new(name, decision, verdict, detail)
+rescue StandardError => e
+  PROBES << Probe.new(name, decision, :unknown, "the probe itself raised #{e.class}: #{e.message}")
+end
+
+entry = server_id ? registry_from_config.entries.find { |e| e.id == server_id } : registry_from_config.entries.first
+abort("no server #{server_id.inspect} in #{CONFIG_PATH}") if entry.nil?
+
+located = anchor ? parse_anchor(anchor, root) : discover_anchor(entry, root)
+abort("found no class declaration under #{root} that #{entry.id} claims — pass --anchor") if located.nil?
+path, line, symbol = located
+text = File.read(path)
+column = Pikuri::Lsp::Anchor.locate(text.lines[line - 1].chomp, symbol).first
+abort("#{symbol.inspect} is not on line #{line} of #{path}") if column.nil?
+
+puts "Server:  #{entry.id} (#{entry.command.join(' ')})"
+puts "Project: #{root}"
+puts "Anchor:  #{path.delete_prefix("#{root}/")}:#{line}:#{column} #{symbol}"
+puts
+
+# Unbundled, because this script runs under `bundler/setup` and a language
+# server that is a gem binary refuses to start inside a bundle that does not
+# list it ("can't find executable ruby-lsp for gem ruby-lsp"). A real host has
+# the same problem and no equivalent escape hatch — see the note this prints.
+client = Bundler.with_unbundled_env { Pikuri::Lsp::ClientWrapper.spawn(entry, root: root) }
+logged = []
+client.on_notification { |method, params| logged << [method, params] }
+
+begin
+  # Same rule as the Terminal listener: a rewritten line is for a terminal, and
+  # a redirected run gets one line per state instead of a hundred escape codes.
+  puts 'Waiting for the index (no timeout — Ctrl+C to give up)'
+  client.wait_until_ready do |progress|
+    print("\r\e[K#{progress}") if $stdout.tty?
+  end
+  print "\r\e[K" if $stdout.tty?
+  puts 'index ready.'
+  puts
+
+  position = Pikuri::Lsp::Position.new(line: line, column: column)
+  params = lambda do
+    { textDocument: { uri: Pikuri::Lsp::Uris.for_path(path) },
+      position: position.to_wire(line_text: text.lines[line - 1].chomp,
+                                 encoding: client.position_encoding) }
+  end
+  reopen = -> { client.open_document(path, File.read(path)) }
+
+  probe('the encoding offer is honoured (finding 7)',
+        'PositionEncoding exists at all: pikuri converts when it is not') do
+    if client.position_encoding == 'utf-8'
+      [:ok, 'the server took the utf-8 offer, so offsets need no conversion']
+    else
+      [:ok, "the server kept #{client.position_encoding}, which is why the conversion is not optional"]
+    end
+  end
+
+  probe('re-opening the same document before every call is accepted (S5)',
+        'the document-sync policy: re-open on read, no didChange, no didClose') do
+    reopen.call
+    first = client.request('textDocument/definition', params.call)
+    reopen.call
+    second = client.request('textDocument/definition', params.call)
+    if first == second
+      [:ok, "two calls, two didOpens, the same answer (#{Array(first).length} location(s))"]
+    else
+      [:drift, "the second answer differs from the first: #{first.inspect} vs #{second.inspect}"]
+    end
+  end
+
+  probe('a rangeless full-text didChange still breaks the server (S1)',
+        'why pikuri re-opens instead of sending didChange') do
+    logged.clear
+    client.notify('textDocument/didChange',
+                  textDocument: { uri: Pikuri::Lsp::Uris.for_path(path), version: 2 },
+                  contentChanges: [{ text: text }])
+    sleep 1
+    complaint = logged.find { |method, p| method == 'window/logMessage' && p['type'].to_i <= 2 }
+    answered = begin
+      reopen.call
+      !Array(client.request('textDocument/definition', params.call)).empty?
+    rescue StandardError
+      false
+    end
+    if complaint
+      [:ok, "the server reported it to window/logMessage: #{complaint.last['message'].to_s.lines.first.to_s.strip}"]
+    elsif answered
+      [:drift, 'no complaint, and the server still answers — the spec-legal form may be usable now']
+    else
+      [:unknown, 'no log message, and the server stopped answering; cause not established']
+    end
+  end
+
+  probe('a bare name may score below the index threshold (H6)',
+        'why symbol-only lookup is best-effort and file+line is what the tool teaches') do
+    if client.supports?('workspaceSymbolProvider')
+      hits = Array(client.request('workspace/symbol', { query: symbol }))
+      names = hits.map { |hit| hit['name'] }
+      if names.any? { |name| Pikuri::Lsp::SymbolName.matches?(name, symbol) }
+        [:ok, "#{symbol.inspect} was returned by the index (#{hits.length} hit(s)) — " \
+              'the route works here, which the design already treats as luck rather than contract']
+      else
+        [:ok, "the index returned #{hits.length} hit(s) and none is #{symbol.inspect}: " \
+              "#{names.first(5).inspect}"]
+      end
+    else
+      [:unknown, 'this server advertises no workspaceSymbolProvider']
+    end
+  end
+
+  probe('the operations the enum names are advertised here',
+        'the capability gate at dispatch, per workspace') do
+    missing = Pikuri::Lsp::Operation::ALL.reject { |op| client.supports?(op.capability) }
+    if missing.empty?
+      [:ok, "all #{Pikuri::Lsp::Operation::ALL.length} operations are advertised"]
+    else
+      [:ok, "not advertised here: #{missing.map(&:name).join(', ')} — " \
+            'the gate refuses these cleanly rather than relaying a protocol error']
+    end
+  end
+
+  probe('an advertised provider actually answers (H1: the # TODO trap)',
+        'relay-do-not-work-around: no per-server known-stub list') do
+    unless client.supports?('typeHierarchyProvider')
+      next [:unknown, 'no typeHierarchyProvider advertised, so there is nothing to catch lying']
+    end
+
+    reopen.call
+    prepared = Array(client.request('textDocument/prepareTypeHierarchy', params.call))
+    if prepared.empty?
+      [:ok, "prepare answered nothing for #{symbol.inspect}; an empty answer is not a stub"]
+    else
+      supertypes = Array(client.request('typeHierarchy/supertypes', { item: prepared.first }))
+      subtypes = begin
+        Array(client.request('typeHierarchy/subtypes', { item: prepared.first }))
+      rescue Pikuri::Lsp::Connection::ServerError => e
+        "refused: #{e.message}"
+      end
+      [:ok, "supertypes: #{supertypes.length} row(s); subtypes: #{subtypes.is_a?(String) ? subtypes : "#{subtypes.length} row(s)"}"]
+    end
+  end
+ensure
+  client.close
+end
+
+puts 'Probes'
+puts '------'
+PROBES.each { |result| puts result }
+puts
+
+drifted = PROBES.count { |result| result.verdict == :drift }
+unknown = PROBES.count { |result| result.verdict == :unknown }
+puts "#{PROBES.length} probes: #{PROBES.length - drifted - unknown} ok, #{drifted} drifted, " \
+     "#{unknown} unanswered."
+puts 'A DRIFT means a measurement the design rests on no longer holds — re-read the decision it guards.' if drifted.positive?
+exit(drifted.positive? ? 1 : 0)

@@ -483,6 +483,15 @@ module Pikuri
 
       def reap_child
         return unless @wait_thread
+
+        stop_leader
+        # Swept even when the leader left on its own: a server that honours
+        # +exit+ still strands the helpers it forked, and the group is the only
+        # handle on those.
+        signal_group('TERM')
+      end
+
+      def stop_leader
         return unless @wait_thread.alive?
         return if @wait_thread.join(CLOSE_GRACE)
 

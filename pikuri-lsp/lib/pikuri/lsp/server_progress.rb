@@ -7,7 +7,13 @@ module Pikuri
     #
     #   progress = ServerProgress.new(server_id: 'java', title: 'Initialize Workspace',
     #                                 message: 'Importing gradle project', percentage: 40)
-    #   progress.with(message: nil, percentage: nil, done: true)
+    #   progress.to_s   # => "java: Initialize Workspace — 40% — Importing gradle project"
+    #   progress.with(message: nil, percentage: nil, done: true).to_s
+    #                   # => "java: Initialize Workspace — done"
+    #
+    # It is a {Pikuri::Agent::Event::Transient}, so a chrome that can rewrite a
+    # line replaces the previous update rather than logging it — a cold import
+    # emits hundreds.
     #
     # It exists because pikuri removed the clock: the first call blocks until
     # the server is ready — 7s warm, 78s for a cold jdtls import — and a silent
@@ -34,8 +40,17 @@ module Pikuri
     #   @return [Boolean] the task is over and its bar should go away. Defaults
     #     to +false+.
     ServerProgress = Data.define(:server_id, :title, :message, :percentage, :done) do
+      include Pikuri::Agent::Event::Transient
+
       def initialize(server_id:, title:, message: nil, percentage: nil, done: false)
         super
+      end
+
+      # @return [String] one line, server first — two servers index at once, so
+      #   whoever reads it needs to know whose bar moved.
+      def to_s
+        detail = [percentage && "#{percentage}%", message, done && 'done'].select { |part| part }
+        ([title] + detail).join(' — ').then { |text| "#{server_id}: #{text}" }
       end
     end
   end

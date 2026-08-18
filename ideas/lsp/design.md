@@ -681,11 +681,16 @@ considered-then-deferred record an `ideas/` note owns.)
   index in the background, block the first call.** Indexing dominated
   every run's wall time, and the three candidates were lazy-on-first-call,
   eager-at-boot, and background-at-boot-blocking-on-first-use. The third
-  wins, and splits cleanly in two: **the spawn itself is synchronous at
-  boot** — it is cheap, and it is what makes a missing binary raise
-  immediately and loudly (see "Missing binary at boot") — while
-  *readiness* is what proceeds in the background. The first `lsp` call
-  then blocks until its server is fully ready, however long that takes,
+  wins — **and its "at boot" half was reversed on 2026-08-18** in favour
+  of *at first use* (`../lsp.md` step 7): a global registry plus an
+  unconditional boot spawn starts jdtls in projects containing no Java at
+  all. What the reversal does *not* touch is the part this entry was
+  really about — that indexing proceeds in the background and the first
+  call blocks. The original wording follows. ~~**The spawn itself is
+  synchronous at boot** — it is cheap, and it is what makes a missing
+  binary raise immediately and loudly (see "Missing binary at boot")~~ —
+  while *readiness* is what proceeds in the background. The first `lsp`
+  call then blocks until its server is fully ready, however long that takes,
   emitting `ServerProgress` while it waits so the block is legible rather
   than a hang. Background indexing overlaps with the user typing their
   first prompt and the model's first few turns, so the unbounded block is
@@ -728,8 +733,25 @@ considered-then-deferred record an `ideas/` note owns.)
   `lsp` calls return `"Error: …"` with no fallback. **Not a degrade to
   grep**: the tool either works or errors, and nothing in pikuri quietly
   substitutes a weaker answer for the one that was asked for.
-- ~~**Missing binary at boot.**~~ **Settled: nothing is registered by
-  default, so it may be loud.** `bin/pikuri-code` is written in Ruby, but
+- ~~**Missing binary at boot.**~~ **REVERSED 2026-08-18 — there is no
+  boot spawn any more, so there is no boot raise.** A server starts on
+  **first use** (`../lsp.md` step 7): starting jdtls eagerly in a Ruby
+  project is a JVM and a 78s import for a language the project does not
+  contain. The loudness this entry bought is replaced by the *first-use*
+  report — `"Error: cannot spawn ruby-lsp: …"`, already
+  `ClientWrapper.spawn_child`'s wording, relayed by the model to the human —
+  which collapses two policies into one, since a server that spawns and
+  *then* dies was always going to be reported that way (see "Die on child
+  death"). The considered alternative was a boot-time PATH/executable check
+  that raises without spawning: cheap, but it re-breaks the case that
+  motivated the reversal, because an uninstalled jdtls would then abort a
+  Ruby-only session — and limiting the check to project-relevant entries
+  drags a project walk back into boot, which is the work lazy start exists
+  to delete. What survives as a warning-only option is logging an
+  unresolvable `command:` at boot; nothing fatal. The original reasoning
+  follows, because it explains why the raise was ever right.
+
+  ~~**Settled: nothing is registered by default, so it may be loud.**~~ `bin/pikuri-code` is written in Ruby, but
   that is an implementation detail of the agent, not a claim about the
   code it edits — it runs against any project, so shipping a Ruby server
   wired in would be wrong for most sessions. The registry starts empty
@@ -1174,7 +1196,22 @@ Three layers, because the middle one cannot be done in-process:
    {Pikuri::Finalizers}. In-process pipes give EOF but no exit status, so
    this layer is what covers "died" as distinct from "closed".
 3. **Live-server smoke specs**, each tagged to skip when its binary is
-   absent. `ruby-lsp` against this repo proves the stack end to end
+   absent. **Amended 2026-08-18 — this layer splits, and no real server
+   becomes a test dependency** (`../lsp.md` step 10). The half that runs in
+   CI is a *dummy* server binary of our own, ~60 lines in `spec/support/`
+   speaking framed JSON on stdin, because it reaches what layer 2's
+   `sh -c` cannot — a real handshake through a real `popen3`, plus
+   restart-on-death and a stderr tail against a live pid — and because it
+   can be *told* to die on the third request, which no real server can.
+   The half that does not run in CI stops pretending to be a spec and
+   becomes `bin/pikuri-lsp-check`, the `bin/pikuri-wire-check` shape: a
+   dev diagnostic that re-validates S1/S2/S5 and the reconstructed
+   fixtures against a real server and reports what it *could not* ask
+   instead of passing silently. The reasoning below is why the live arm
+   was never coverage; what changes is that a skipped spec reports green,
+   and a script reports "I could not ask".
+
+   ~~The original framing:~~ `ruby-lsp` against this repo proves the stack end to end
    without making CI depend on it — the `ruby:4.0` image has no
    `ruby-lsp`, and while CI already installs `ripgrep` for the Grep specs,
    layers 1 and 2 mean nothing here *needs* that precedent followed.

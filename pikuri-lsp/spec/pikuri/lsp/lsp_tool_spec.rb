@@ -35,26 +35,28 @@ describe Pikuri::Lsp::LspTool do
       end
       root = File.realpath(tmp)
       fs = filesystem ? filesystem.call(root) : Pikuri::Workspace::Filesystem.new(project_root: root)
-      fakes = {}
       entries = servers.map do |id, spec|
         Pikuri::Lsp::Registry::StdioEntry.new(id: id, command: [id], files: spec[:files])
+      end
+      # The fakes are serving before the block runs — an example scripts one, or
+      # pushes a notification at a client that has not connected yet, without
+      # having to make a call first. The *clients* stay lazy, which is the
+      # behaviour under test.
+      fakes = servers.to_h do |id, spec|
+        [id, testing::FakeServer.new(capabilities: spec[:capabilities] || {}).serve]
       end
       runtime = Pikuri::Lsp::Servers.new(
         registry: Pikuri::Lsp::Registry.new(entries: entries), root: root,
         spawn: lambda do |entry|
-          fake = testing::FakeServer.new(capabilities: servers[entry.id][:capabilities] || {})
-          fakes[entry.id] = fake
-          fake.serve
           Pikuri::Lsp::ClientWrapper.new(
-            entry: entry, root: root, **fake.channel,
+            entry: entry, root: root, **fakes[entry.id].channel,
             readiness: Pikuri::Lsp::Readiness.new(server_id: entry.id, settle: settle)
           ).start
         end
       )
       begin
-        runtime.start_all
         tool = described_class.new(servers: runtime, filesystem: fs)
-        Timeout.timeout(20) { block.call(tool, fakes, root) }
+        Timeout.timeout(20) { block.call(tool, fakes, root, runtime) }
       ensure
         runtime.close
         fakes.each_value(&:stop)
@@ -114,10 +116,16 @@ describe Pikuri::Lsp::LspTool do
 
     it 'reports a server that died indexing as a death, not as an empty answer' do
       wired.call(files: { 'read.rb' => read_rb }, settle: 5) do |tool, fakes|
-        fakes['ruby'].notify('$/progress', 'token' => 'boot',
-                                           'value' => { 'kind' => 'begin', 'title' => 'Indexing' })
-        sleep 0.15
-        Thread.new { fakes['ruby'].crash! }
+        fake = fakes['ruby']
+        # Keyed off the handshake rather than a sleep: the client is spawned by
+        # the call below, so the index must look busy *after* it connects and
+        # die while the gate is still waiting.
+        Thread.new do
+          fake.await('initialize')
+          fake.notify('$/progress', 'token' => 'boot',
+                                    'value' => { 'kind' => 'begin', 'title' => 'Indexing' })
+          fake.crash!
+        end
 
         answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
 
@@ -374,7 +382,8 @@ describe Pikuri::Lsp::LspTool do
       capabilities = all_capabilities.reject { |key, _| key == 'workspaceSymbolProvider' }
       servers = { 'ruby' => ruby_server.call,
                   'java' => { files: %w[*.java], capabilities: capabilities } }
-      wired.call(files: { 'a.rb' => "class A\n" }, servers: servers) do |tool, fakes, root|
+      files = { 'a.rb' => "class A\n", 'B.java' => "class B {}\n" }
+      wired.call(files: files, servers: servers) do |tool, fakes, root|
         fakes['ruby'].on('workspace/symbol') do |_params|
           [{ 'name' => 'A', 'kind' => 5, 'location' => at.call("file://#{root}/a.rb", 0) }]
         end
@@ -383,6 +392,48 @@ describe Pikuri::Lsp::LspTool do
 
         assert_match(/the java server does not support workspaceSymbol/, answer)
         assert_match(%r{a\.rb:1}, answer)
+      end
+    end
+  end
+
+  describe 'lazy start' do
+    it 'starts no server until a call needs one, and then only the claiming one' do
+      servers = { 'ruby' => ruby_server.call,
+                  'java' => { files: %w[*.java], capabilities: all_capabilities } }
+      files = { 'read.rb' => read_rb, 'B.java' => "class B {}\n" }
+      wired.call(files: files, servers: servers) do |tool, fakes, root, runtime|
+        assert_empty runtime.started_ids, 'wiring the tool must not spawn anything'
+
+        fakes['ruby'].on('textDocument/definition') { |_params| at.call("file://#{root}/read.rb", 2) }
+        tool.run('operation' => 'goToDefinition', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+
+        assert_equal %w[ruby], runtime.started_ids
+      end
+    end
+
+    it 'never starts a server for a language this project has no files in' do
+      servers = { 'ruby' => ruby_server.call,
+                  'java' => { files: %w[*.java], capabilities: all_capabilities } }
+      wired.call(files: { 'a.rb' => "class A\n" }, servers: servers) do |tool, fakes, root, runtime|
+        fakes['ruby'].on('workspace/symbol') do |_params|
+          [{ 'name' => 'A', 'kind' => 5, 'location' => at.call("file://#{root}/a.rb", 0) }]
+        end
+
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A')
+
+        assert_equal %w[ruby], runtime.started_ids
+        refute_match(/java/, answer, 'a server with nothing to say here is not mentioned')
+        assert_match(%r{a\.rb:1}, answer)
+      end
+    end
+
+    it 'says which servers are configured when none of them has files here' do
+      wired.call(files: { 'README.md' => "# hi\n" }) do |tool, _fakes, _root, runtime|
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A')
+
+        assert_match(/no configured language server has files in this project/, answer)
+        assert_match(/configured: ruby/, answer)
+        assert_empty runtime.started_ids
       end
     end
   end

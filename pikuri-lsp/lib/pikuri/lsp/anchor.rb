@@ -223,7 +223,7 @@ module Pikuri
       # either language, and this is the only route that does not need one.
       def self.in_index(servers, filesystem, symbol, ready)
         notes = []
-        hits = servers.all.flat_map do |client|
+        hits = servers.active.flat_map do |client|
           unless client.supports?('workspaceSymbolProvider')
             notes << "the #{client.entry.id} server cannot search by name (no workspaceSymbolProvider), " \
                      'so its files were not considered.'

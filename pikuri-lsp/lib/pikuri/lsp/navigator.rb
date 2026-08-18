@@ -80,7 +80,7 @@ module Pikuri
         renderer = Renderer.new(sources: Sources.new(filesystem: @filesystem))
         @ready = []
         @texts = {}
-        raise Refusal, 'no language server is running' if @servers.empty?
+        raise Refusal, 'no language server is configured' if @servers.empty?
 
         dispatch(op, symbol, file, line, renderer)
       rescue Refusal, Pikuri::Workspace::Filesystem::Error, ClientWrapper::ServerDied => e
@@ -100,11 +100,16 @@ module Pikuri
       end
 
       # +workspaceSymbol+ takes no position at all, so every server that can search
-      # is asked. Fanning out costs the *first* call every server's remaining index
-      # time — the accepted price of a question that names no file.
+      # is asked. Fanning out starts each of them and costs the *first* call their
+      # remaining index time — the accepted price of a question that names no file,
+      # and why {Servers#active} narrows the set to servers the project has files
+      # for.
       def fan_out(operation, symbol, renderer)
-        usable, refusing = @servers.all.partition { |client| client.supports?(operation.capability) }
-        raise Refusal, unsupported_message(operation, @servers.all) if usable.empty?
+        clients = @servers.active
+        raise Refusal, no_relevant_server_message if clients.empty?
+
+        usable, refusing = clients.partition { |client| client.supports?(operation.capability) }
+        raise Refusal, unsupported_message(operation, clients) if usable.empty?
 
         refusing.each { |client| renderer.note(cannot_answer(operation, client)) }
         blocks = usable.map do |client|
@@ -303,6 +308,12 @@ module Pikuri
 
       def cannot_answer(operation, client)
         "the #{client.entry.id} server does not support #{operation.name}, so its files were not searched."
+      end
+
+      def no_relevant_server_message
+        ids = @servers.registry.entries.map(&:id)
+        "no configured language server has files in this project (configured: #{ids.join(', ')}) — " \
+          'name a file to ask a specific one'
       end
     end
   end

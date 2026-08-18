@@ -11,10 +11,11 @@ what it refuses to become: the moment it applies an edit it needs the
 `Confirmer` seam and stops being a closeable, auditable piece.
 
 > **Status: under construction.** The protocol layer, the client
-> lifecycle, the configuration, the readiness gate and the `lsp` tool
-> itself are in (the table below). What is missing is the agent
-> extension, so nothing is wired into an agent yet — a host would have
-> to build `Lsp::Servers` and the tool by hand.
+> lifecycle, the configuration, the readiness gate, the `lsp` tool and
+> the agent extension are all in (the table below), so one
+> `c.add_extension` wires the tool onto an agent. What is missing is the
+> documentation pass — no book chapter, no `DESIGN.md`, and the gem is
+> not in the `pikuri` metagem yet.
 
 ## What is here
 
@@ -30,9 +31,17 @@ what it refuses to become: the moment it applies an edit it needs the
 | `Pikuri::Lsp::Registry` | which servers exist, which files each claims, and `.from_h` to build that from a host's own config file |
 | `Pikuri::Lsp::Readiness` | the indexing gate: no progress token open and nothing said for a moment, blocking with no timeout so a mid-index query cannot be answered wrongly |
 | `Pikuri::Lsp::Mailbox` | the thread boundary the gate needs — newest value per key, so a three-minute wait reports current state instead of replaying a backlog |
-| `Pikuri::Lsp::Servers` | one live client per registry entry, spawned at boot so a missing binary is a startup error, plus the routing that picks the server a file belongs to |
+| `Pikuri::Lsp::Servers` | one client per registry entry, started on first use, plus the routing that picks the server a file belongs to |
 | `Pikuri::Lsp::LspTool` | the `lsp` tool: ten operations, `symbol` + optional `file`/`line`, and never a column — see below |
+| `Pikuri::Lsp::Extension` | wires the tool onto an agent, arms the teardown, and points the progress events at the agent's event stream |
 | `Pikuri::Lsp::Testing` | a scripted fake server and a hand-framed wire, so a host can test its integration with no language server installed (`require 'pikuri/lsp/testing'`) |
+
+`bin/pikuri-lsp-check` is a dev diagnostic, not part of the gem: it runs
+the measurements this design rests on against the language server you
+actually have installed, and reports *ok* / *DRIFT* / *could not ask* per
+probe. Run it after a server upgrade — the specs cannot catch a server
+that changed its mind.
+
 
 ## The tool, in one paragraph
 
