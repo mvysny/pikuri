@@ -9,7 +9,7 @@ The survey itself spawned no server: this is a reading of three
 implementations, and the point is that **their authors already paid for the
 per-server learning pikuri refuses to keep cataloguing**. (It did trigger
 one run — the `subtypes` question below was too close to call from absence
-alone, so H7–H10 in [`research.md`](research.md) settled it.) Where a
+alone, so H-implementation-is-transitive–H-references-not-substitute in [`research.md`](research.md) settled it.) Where a
 harness's code contradicts a finding there, that is called out rather than
 smoothed over, because those are the places a decision is actually being
 made.
@@ -43,7 +43,7 @@ Provenance, so a later reader knows what was read:
 | result cap / grouping | count header only, no cap | none | none |
 | per-operation capability gate | — (leaks `Method not found`) | — | — (surfaces as `LSP error: …`) |
 | no-server-for-this-file | `No LSP server available for file type: .md` | `No LSP server available for this file type.` | `No LSP server configured for <path>` |
-| indexing-readiness gate | partial — one path ignores it (finding 2) | — | — (ready == handshake done, not indexed) |
+| indexing-readiness gate | partial — one path ignores it (F-empty-before-index) | — | — (ready == handshake done, not indexed) |
 | document sync | not visible | read disk every call; `didOpen` if new else versioned `didChange` | same, plus `notify_file_changed` from the write path |
 | change shape | not visible | **ranged** if server declared incremental, else rangeless | **ranged** if incremental, else rangeless |
 | `didChangeWatchedFiles` | not visible | sent alongside every open/change | — |
@@ -64,14 +64,14 @@ Union is Claude Code's nine; intersection is grok-build's six. Two facts
 decide the middle:
 
 - **No harness ships a type hierarchy.** `supertypes` / `subtypes` appear
-  in none of the three, which retires the argument that promoted them (H1
-  and H4 had already taken its Ruby half). But "no harness ships it" is an
+  in none of the three, which retires the argument that promoted them (H-subtypes-stub
+  and H-no-module-ancestry had already taken its Ruby half). But "no harness ships it" is an
   absence of precedent, not evidence of uselessness, and a *measured* reason
   can still put an operation back — so the two halves were probed against
-  jdtls before cutting, and they came apart (H7–H10, and the section below).
+  jdtls before cutting, and they came apart (H-implementation-is-transitive–H-references-not-substitute, and the section below).
   **`subtypes` out, `supertypes` in as a tenth value.**
 - **No harness ships `typeDefinition`** either — and this one stays anyway,
-  because J9 is a *measured* deviation of exactly the kind the strategy
+  because J-type-definition-recovers-var is a *measured* deviation of exactly the kind the strategy
   allows: on `var names = new ArrayList<String>()`, `definition` gives the
   local declaration and `typeDefinition` gives `java.util.ArrayList`, a type
   written nowhere in the source. Nothing else recovers it. Claude Code's
@@ -90,7 +90,7 @@ supertypes
 Four notes on that list:
 
 - **`documentSymbol` is back in**, reversing `design.md`'s cut. All three
-  harnesses ship it, and S10 is the independent reason: jdtls's
+  harnesses ship it, and S-jdtls-types-only is the independent reason: jdtls's
   `workspace/symbol` returns *types only*, so an in-file outline is the only
   way to turn a Java method name into a position. The
   `grep '^\s*(def|class|module)'` substitute that justified cutting it does
@@ -114,9 +114,9 @@ Four notes on that list:
   jdtls rather than cut on the survey alone: `goToImplementation` answers
   "list all subtypes" better than the hierarchy does — transitively in one
   call for an abstract type (3 descendants against `subtypes`' 1) and on
-  concrete classes too (H7/H8) — so `subtypes` is dominated by an operation
+  concrete classes too (H-implementation-is-transitive/H-subtypes-direct-only) — so `subtypes` is dominated by an operation
   already in the list, on the only server where it works at all. `supertypes`
-  goes the other way: it works on **both** servers (H2, H9) and the *chain*
+  goes the other way: it works on **both** servers (H-namespace-reopenings, H-supertypes-no-substitute) and the *chain*
   has no substitute, since `goToDefinition` on the name after `extends`
   answers a single level. The tool walks the chain internally, which is the
   collapse-the-hop move no harness makes.
@@ -162,19 +162,19 @@ sync. grok-build's `capabilities.rs` even opens with the scar:
 > ended up sending Roslyn a change event the protocol says must carry a
 > range.
 
-That is **S1 confirmed on a third server** (Roslyn, where the failure is
+That is **S-rangeless-didchange-crash confirmed on a third server** (Roslyn, where the failure is
 worse than ruby-lsp's — it "tears its request queue down"), and it is the
 best possible evidence that the finding generalizes. So the *lesson* is
 shared. The *scheme* still must not be copied, for a reason both harnesses
 had no way to hit:
 
-- S2 measured that ruby-lsp honours exactly this ranged whole-document
+- S-index-desync measured that ruby-lsp honours exactly this ranged whole-document
   change for the **document** and then leaves its **index** behind, because
   reindexing is gated on `position_may_impact_declarations?(edit.range.start)`
   and the start of a whole-file replacement is 0:0 — a comment in any
   ordinary Ruby file. `definition` then answers `[]` for a symbol the
-  server can see, which is finding 2's false premise.
-- S7 measured that the `didChangeWatchedFiles` opencode helpfully sends
+  server can see, which is F-empty-before-index's false premise.
+- S-watched-files-ignored measured that the `didChangeWatchedFiles` opencode helpfully sends
   alongside is **ignored for a URI the client has opened** — ruby-lsp's
   source says so outright (`unless @store.key?(uri)`), so the belt-and-braces
   notification does not rescue it.
@@ -186,7 +186,7 @@ had no way to hit:
   name's definition.
 
 pikuri's policy stays the measured one — **re-send `didOpen` with the
-current disk text before every call** (S5, works on both servers, refreshes
+current disk text before every call** (S-reopen-works, works on both servers, refreshes
 document *and* index, no version bookkeeping) — with `didClose` + `didOpen`
 as the spec-legal fallback if some future server rejects a duplicate open.
 The harness scheme is what you build when the client might hold unsaved
@@ -195,8 +195,8 @@ buffers; pikuri never does.
 **And the indexing-readiness gate.** grok-build's "ready" means the
 `initialize` round-trip completed, not that the server has indexed
 anything, and Claude Code has a gate that one path ignores. Against a
-server that defers its replies (jdtls, J3) that is fine; against ruby-lsp
-it is finding 2 exactly. Keep pikuri's quiescence-plus-debounce gate — it
+server that defers its replies (jdtls, J-jdtls-defers-replies) that is fine; against ruby-lsp
+it is F-empty-before-index exactly. Keep pikuri's quiescence-plus-debounce gate — it
 is the one place where waiting beats relaying.
 
 ## Where they disagree with each other
@@ -219,9 +219,9 @@ on its own evidence:
   `symbol` is its anchor and `file` is a disambiguator.
 - **Output shape.** Raw JSON (opencode), compact `path:line:col` lines
   (grok-build), grouped-by-file with a count (Claude Code). Nobody caps and
-  nobody snippets. pikuri caps and groups deliberately — S9 has a single
+  nobody snippets. pikuri caps and groups deliberately — S-wrong-anchor-explodes has a single
   `references` call returning **80,609** locations, which as raw LSP JSON
-  is a context-window incident, and finding 6 / H2 have the Ruby
+  is a context-window incident, and F-reference-volume / H-namespace-reopenings have the Ruby
   reopened-namespace shapes.
 - **Who supplies the registry.** opencode bundles ~20 server definitions
   and installs binaries; grok-build requires a hand-written JSON file;

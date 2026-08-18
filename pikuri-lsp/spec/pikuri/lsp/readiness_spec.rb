@@ -6,7 +6,7 @@ require 'timeout'
 describe Pikuri::Lsp::Readiness do
   cancelled = Pikuri::Agent::Control::Cancellable::Cancelled
 
-  # jdtls's own $/progress lifecycle, replayed from the recorded frames (J1, J2).
+  # jdtls's own $/progress lifecycle, replayed from the recorded frames (J-progress-opt-in, J-readiness-edge).
   progress = lambda do |name|
     JSON.parse(fixture("jdtls_progress_#{name}"))['params']
   end

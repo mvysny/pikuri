@@ -599,7 +599,7 @@ describe Pikuri::Lsp::LspTool do
       servers = { 'java' => { files: %w[*.java], capabilities: java_capabilities } }
       wired.call(files: { 'Main.java' => "class Main { LoggerFactory f; }\n" }, servers: servers) do |tool, fakes|
         fakes['java'].on('textDocument/definition') { |_params| [at.call(jdt_uri, 1, 0, 5)] }
-        # J7: this request answers a bare String, where the 3.18 request answers {text:}.
+        # J-class-file-contents: this request answers a bare String, where the 3.18 request answers {text:}.
         fakes['java'].on('java/classFileContents') { |_params| "package org.slf4j;\npublic class LoggerFactory {\n" }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'LoggerFactory',

@@ -39,7 +39,7 @@ describe Pikuri::Lsp::Testing::FakeServer do
 
       assert_equal 'utf-8', client.position_encoding, 'ruby-lsp accepts the utf-8 offer'
       assert client.supports?('typeHierarchyProvider'), 'advertised as {} — which is not false'
-      refute client.supports?('typeDefinitionProvider'), 'absent in this workspace, per finding 9'
+      refute client.supports?('typeDefinitionProvider'), 'absent in this workspace, per F-unadvertised-providers'
       refute client.supports?('callHierarchyProvider')
       assert_equal 'Ruby LSP', client.server_info['name']
     end
@@ -83,7 +83,7 @@ describe Pikuri::Lsp::Testing::FakeServer do
       assert_equal JSON.parse(fixture('jdtls_definition_jdt_uri')).first['uri'], uri
 
       contents = client.request('java/classFileContents')
-      assert_kind_of String, contents, 'J7: a bare String where the spec suggests an object'
+      assert_kind_of String, contents, 'J-class-file-contents: a bare String where the spec suggests an object'
       assert_includes contents, 'public final class LoggerFactory'
     end
   end
@@ -116,7 +116,7 @@ describe Pikuri::Lsp::Testing::FakeServer do
       assert_equal %w[begin report end], kinds
 
       method, params = seen.pop
-      assert_equal 'language/status', method, 'J1: the readiness signal outside the spec'
+      assert_equal 'language/status', method, 'J-progress-opt-in: the readiness signal outside the spec'
       assert_equal 'OK', params['message']
     end
   end

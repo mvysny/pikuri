@@ -3,11 +3,18 @@
 Status: **built and wired; graduating.** Every step of §"The v1 build" has
 landed in `pikuri-lsp/`, `bin/pikuri-code` wires the extension from the
 `lsp_servers:` key of `~/.pikuri-examples-config.yaml`, and the gem is in the
-metagem. What keeps this note alive is the *writing*: `pikuri-lsp/DESIGN.md`,
-the five `DECISIONS.md` entries and the book chapter listed under
-§Graduation. Already done from that map: the `CLAUDE.md` seam entry (§Seams,
-"LSP seam"), the `COMPARISON.md` column, and
+metagem. What keeps this note alive is the *writing* still owed: the five
+`DECISIONS.md` entries and the book chapter listed under §Graduation.
+Already done from that map: `pikuri-lsp/DESIGN.md` (threat model, the three
+boundaries, and **the measurements — every finding from `lsp/research.md`,
+renamed from `S1`-style numbers to `S-rangeless-didchange-crash`-style slugs
+and re-cited across the specs, the fixtures and the check script**), the
+`CLAUDE.md` seam entry (§Seams, "LSP seam"), the `COMPARISON.md` column, and
 `DECISIONS.md` `D-de-bundlerized-children`, which came out of step 10.
+
+`lsp/research.md` is therefore spent except for the protocol mechanics the
+book chapter still wants — what remains durable about it now lives in
+DESIGN.md §Measurements.
 
 This note is split four ways, because the argued-and-closed part had grown to
 ~1600 lines and buried what was still to do:
@@ -53,11 +60,11 @@ Related:
 six runs in [`lsp/research.md`](lsp/research.md) found a genuine pattern,
 and then the pattern turned on the method: *every* server is broken in its
 own way, and the ways do not generalize. ruby-lsp advertises a type
-hierarchy whose `subtypes` half is a `# TODO` (H1); jdtls's
-`workspace/symbol` cannot see a method at all (S10);
-ruby-lsp crashes on a full-text `didChange` that jdtls accepts (S1);
+hierarchy whose `subtypes` half is a `# TODO` (H-subtypes-stub); jdtls's
+`workspace/symbol` cannot see a method at all (S-jdtls-types-only);
+ruby-lsp crashes on a full-text `didChange` that jdtls accepts (S-rangeless-didchange-crash);
 ruby-lsp's index desynchronizes from its own document because of a
-typing-speed heuristic (S2). There are LSPs for Python, Kotlin, Rust, Go
+typing-speed heuristic (S-index-desync). There are LSPs for Python, Kotlin, Rust, Go
 and thirty other languages, each with its own list. **A catalogue of two
 servers' glitches is not a design input**, and the arms it was steering
 toward — a per-server known-stub list, per-server readiness predicates,
@@ -71,7 +78,7 @@ So:
    (`research.md`, prior art), grok-build's set, opencode's — the authors
    did this homework, and their union is both a better v1 and a stable
    input. Deviate only where there is a *measured* reason (the
-   `typeDefinition` addition, J9).
+   `typeDefinition` addition, J-type-definition-recovers-var).
 2. **Server glitches are relayed, not worked around.** The tool reports
    what the server said and what it asked for; the model decides what to do
    about it. This is not a shrug — a strong model handles "the index is
@@ -82,7 +89,7 @@ So:
    support this operation*, *the server answered nothing*, and *the server
    is not ready yet*. Collapsing them is the single most consequential
    defect in the shipped prior art (Claude Code's
-   `No definition found. This may occur if…`, finding 2's false premise
+   `No definition found. This may occur if…`, F-empty-before-index's false premise
    verbatim), and keeping them apart is one rendering rule, not a
    per-server anything.
 4. **No fallback steering.** An error says what failed; it never proposes
@@ -91,7 +98,7 @@ So:
 
 **And the readiness gate stays**, because it is the one case where waiting
 is strictly better than relaying: a server that is still indexing will
-answer `[]` (finding 2) and there is nothing for the model to reason about
+answer `[]` (F-empty-before-index) and there is nothing for the model to reason about
 in an empty list. Block until ready, emit progress, let the human be the
 timeout.
 
@@ -123,8 +130,8 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    value types.**~~ **Landed.** `Lsp::Connection` (framing, id demux on a
    reader thread, `result: null` to every server→client request, no timeout,
    `cancellable:` poll), `Location.from_wire` taking both the `Location` and
-   `LocationLink` shapes (finding 4), `PositionEncoding` for the
-   utf-16↔utf-8↔utf-32 offset arithmetic (finding 7, mandatory — jdtls
+   `LocationLink` shapes (F-two-location-shapes), `PositionEncoding` for the
+   utf-16↔utf-8↔utf-32 offset arithmetic (F-position-encoding, mandatory — jdtls
    ignored the utf-8 offer), 1-based↔0-based in `Position` alone, and
    `Uris` for the `file:`-or-not question every walked path asks. Two
    deviations from the line above, both narrower than it: `Range` has no
@@ -191,7 +198,7 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    as decided, so the demo bins' YAML and a TUI's own settings object go through
    the same method. Two deviations, both narrower than the line above: every
    field is **validated rather than coerced** (a mistyped `env` is a jdtls that
-   hard-fails below Java 21, a mistyped `init_options` is J4's silence — both
+   hard-fails below Java 21, a mistyped `init_options` is J-init-options-required's silence — both
    invisible at the point of the typo), and `nil` reads as no servers, so a host
    reading an absent config key needs no `|| {}`.
 5. ~~**Readiness gate + the coalescing mailbox + `ServerProgress`.**~~
@@ -229,7 +236,7 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      out of the loop on the first try rather than spending the other two — the
      wait checks liveness *before* readiness, so a child that died without ever
      announcing a task is a death rather than a quiet server that must be ready.
-   - **`SETTLE = 1.5s`**, above the 0.9s gap J2 measured, and the terminal
+   - **`SETTLE = 1.5s`**, above the 0.9s gap J-readiness-edge measured, and the terminal
      `done: true` covers **open tokens ∪ what this wait showed**, keyed by
      title — a `ServerProgress` carries no token, so a host keys its bars by
      title and the gate has to agree. `readiness:` is injectable purely so a
@@ -262,14 +269,14 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      empty answer, and the one failure this parameter shape exists to avoid.
    - **`file` without `line` is answerable, which the plan did not say.** The
      index route restricted to that file, and when the index has no entry
-     (a Java method, S10; a short Ruby name, H6) the first bounded occurrence
+     (a Java method, S-jdtls-types-only; a short Ruby name, H-qualified-name-match) the first bounded occurrence
      in the file, under a note saying which line was used and why. It is the
      honest middle between the two shapes item 1 describes, and it is the
      shape a model reaches for after a `grep` that printed no line number.
    - **A snippet is one line, not "the range plus a few lines of context".**
      45 hits × 3 lines is the volume problem the cap exists for, and the
      operation that returns prose is `hover`. An out-of-root row also keeps a
-     bare *basename* rather than nothing: H3's six rows of `Object` from four
+     bare *basename* rather than nothing: H-ancestry-leaves-root's six rows of `Object` from four
      unrelated gems are indistinguishable noise without one, and a basename is
      provenance that still cannot be opened.
    - **The out-of-root refusal is a *lexical* root test**, not "does
@@ -413,7 +420,7 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
       answering. Zero dependencies, deterministic, and it can be *told* to
       misbehave.
     - **10b — `bin/pikuri-lsp-check`, never in CI.** Something must still
-      re-validate S1/S2/S5 and the *reconstructed* fixtures against a real
+      re-validate S-rangeless-didchange-crash/S-index-desync/S-reopen-works and the *reconstructed* fixtures against a real
       server, and a skip-when-absent spec is the worst home for it: it reports
       green by staying silent. `bin/pikuri-wire-check` is the precedent — a
       dev diagnostic that says "I could not ask" rather than passing. Run by a
@@ -466,7 +473,7 @@ Java one exercises the rest — each for a reason the reader can check by
 deleting it: without `-data` two same-named checkouts collide in a hardcoded
 `~/.cache`, without `JAVA_HOME` the launcher hard-fails below Java 21, and
 without `classFileContentsSupport` every library symbol answers with silence
-(J4).
+(J-init-options-required).
 
 **Deliberately absent, each a decision rather than an omission:** no `root:`
 / `cwd:` (one root, so the LSP's project and the confinement boundary cannot
@@ -479,8 +486,8 @@ nobody needs it.
 **The tool.** `operation` (enum of ten), `symbol` (required), `file` and
 `line` (optional). Column derived by `locate(text, symbol)`, never asked
 for. Rendering rules, all measured: cap and group (`findReferences` hardest
-— S9's 80,609), group `supertypes` by name preferring the declaration over
-namespace reopenings (H2), a path outside the root only where the workspace
+— S-wrong-anchor-explodes's 80,609), group `supertypes` by name preferring the declaration over
+namespace reopenings (H-namespace-reopenings), a path outside the root only where the workspace
 would read it (see step 6's deviations), the scheme table
 for `jdt:`, never dereference `http(s):`, and keep *unsupported* /
 *answered-nothing* / *not-ready* three distinct strings.
@@ -494,7 +501,7 @@ still answered by `hover` and the scheme table.
 **Explicitly not in v1**, each with its home: observing the agent's own
 edits (a settled shape, deferred — `design.md` §"Observing the agent's own
 edits"), diagnostics, `rename` / formatting / code actions, an `lsp_read`
-operation, and the operations left out of the enum — `subtypes` (H7/H8),
+operation, and the operations left out of the enum — `subtypes` (H-implementation-is-transitive/H-subtypes-direct-only),
 `prepareCallHierarchy` (collapsed inside the tool), `declaration`,
 `completion`.
 
@@ -516,20 +523,20 @@ Deliverable, and the run settles which half is deliverable how:
   **nothing in the model's input contains a column.** `Read` prints
   line→text, `grep` prints `file:line:text`; producing a column means
   counting characters in a line the model saw as prose, exactly right, with
-  tabs and multibyte. Being wrong is not an error — S8 has `definition`
-  answering 0 at a keyword column, and S9 has `references` seven columns
+  tabs and multibyte. Being wrong is not an error — S-anchor-strictness has `definition`
+  answering 0 at a keyword column, and S-wrong-anchor-explodes has `references` seven columns
   off returning **80,609** results instead of 2.
 - **`symbol` alone → position via `workspace/symbol`** is the half that is
-  *not* reliable, in opposite directions per server: H6 (a bare namespaced
+  *not* reliable, in opposite directions per server: H-qualified-name-match (a bare namespaced
   Ruby class scores below ruby-lsp's 0.7 Jaro-Winkler threshold and is never
-  returned) and S10 (jdtls indexes no methods, so a Java method name is
+  returned) and S-jdtls-types-only (jdtls indexes no methods, so a Java method name is
   unreachable). Ship it as a best-effort convenience that reports honestly
   when it resolves nothing, and let `file` + `line` be the shape the tool
   description actually teaches.
 - Two mechanical rules survive from the runs: the exact-name filter
-  compares the **last `::` segment**, never `name` (H6, deliberate in
+  compares the **last `::` segment**, never `name` (H-qualified-name-match, deliberate in
   ruby-lsp's source), and `locate(text, symbol)` is mandatory on both
-  servers for different reasons (H5 strict, S8 strict-per-operation).
+  servers for different reasons (H-keyword-anchor-empty strict, S-anchor-strictness strict-per-operation).
 - An optional `character` override is strictly additive if the derived
   column ever disagrees with what the model meant. Not v1.
 
@@ -539,7 +546,7 @@ Deliverable, and the run settles which half is deliverable how:
 the full fork, kept because the other two arms are what a reader will ask
 about.
 With `symbol` alone, `workspace/symbol` can place the anchor in a gem file
-outside the workspace root, or behind a `jdt:` URI (J5). Every
+outside the workspace root, or behind a `jdt:` URI (J-library-is-not-a-file). Every
 position-based operation then needs a document the tool is not allowed to
 open. Result *rendering* has an answer (snippet-only, the scheme table);
 the *anchor* does not. Three arms, and they need not all get the same one:
@@ -577,7 +584,7 @@ the client is written; see
 
 Also folded in here: **fan-out.** A bare-`symbol` call fans out to every
 **project-relevant** server and therefore waits for all of them to be ready,
-so a question in a mixed Ruby/Java repo pays jdtls's cold import (78s, J6) the
+so a question in a mixed Ruby/Java repo pays jdtls's cold import (78s, J-warm-start) the
 first time. That follows from the no-timeout rule and is acceptable — and with
 `file` the normal shape it is the rare path rather than the default.
 
@@ -605,30 +612,30 @@ outcome, so nobody re-derives it:
   data point); grok-build ships six, a strict subset; the last two are
   measured deviations.
 - **`subtypes` is out — and the reason is now measured, not merely an
-  absence.** H7/H8: on jdtls, `goToImplementation` answers "list all
+  absence.** H-implementation-is-transitive/H-subtypes-direct-only: on jdtls, `goToImplementation` answers "list all
   subtypes" **transitively in one call** (abstract `Widget` → all 3
   descendants) and works on *concrete* classes too (`Panel` → 2), while
   `typeHierarchy/subtypes` returns the direct children only (`Widget` → 1)
-  and needs one round trip per level. On ruby-lsp it is the `# TODO` (H1).
+  and needs one round trip per level. On ruby-lsp it is the `# TODO` (H-subtypes-stub).
   So there is **no server on which `subtypes` is the best available
   answer**, and the question that motivated it is already served by an
-  operation in the enum. `findReferences` is *not* the substitute — H10 has
+  operation in the enum. `findReferences` is *not* the substitute — H-references-not-substitute has
   exactly 1 of 4 hits being the `extends` site, unlabelled.
 - **`supertypes` is in, as the tenth.** It is the one hierarchy operation
-  that works on **both** servers (H2 on ruby-lsp, H9 on jdtls), and the one
+  that works on **both** servers (H-namespace-reopenings on ruby-lsp, H-supertypes-no-substitute on jdtls), and the one
   with no substitute: `goToDefinition` on the name after `extends` answers a
   single level, whereas the *chain* takes one call per level — which the tool
   walks internally, the same collapse `workspace/symbol` and `prepare*` get.
   Marginal cost is one enum value and one dispatch arm, because the
   prepare-then-fetch machinery is already required by the call pair. Two
-  known consequences: H2's grouping pass is mandatory (14 rows of namespace
+  known consequences: H-namespace-reopenings's grouping pass is mandatory (14 rows of namespace
   reopenings for one Ruby class, declaration ordered last), and an ancestor
-  walk reaches jar URIs routinely (H9's `Object`), so the scheme table is on
+  walk reaches jar URIs routinely (H-supertypes-no-substitute's `Object`), so the scheme table is on
   this path too.
 - **`documentSymbol` is in**, reversing `design.md`'s cut: all three ship it,
-  and S10 makes it the only route from a Java method *name* to a position.
+  and S-jdtls-types-only makes it the only route from a Java method *name* to a position.
 - **`goToTypeDefinition` is in**, the one deviation from all three, because
-  J9 measured what nothing else recovers (`var names = new ArrayList<>()`).
+  J-type-definition-recovers-var measured what nothing else recovers (`var names = new ArrayList<>()`).
 - **`prepareCallHierarchy` stays out** — the one place pikuri narrows a
   2-of-3 majority, because exposing it hands the model an opaque
   `CallHierarchyItem` to echo back; the prepare hop runs inside the tool.
@@ -637,12 +644,12 @@ outcome, so nobody re-derives it:
   server-selector only), and a read-only tool takes no confirmer.
 - **One convergence is rejected with evidence**: both visible harnesses
   sync documents with version-tracked ranged whole-document `didChange`
-  events — and grok-build's `capabilities.rs` opens by describing S1's
+  events — and grok-build's `capabilities.rs` opens by describing S-rangeless-didchange-crash's
   failure against *Roslyn*, which is the finding independently confirmed on
-  a third server. The scheme still loses to S2 on ruby-lsp (document fresh,
+  a third server. The scheme still loses to S-index-desync on ruby-lsp (document fresh,
   index stale), and opencode ships a `ruby-lsp` definition, so pikuri keeps
   its own re-open policy.
-- **Also confirmed by contrast**: nobody caps results (S9's 80,609-location
+- **Also confirmed by contrast**: nobody caps results (S-wrong-anchor-explodes's 80,609-location
   `references` would arrive as raw JSON in opencode), nobody gates per
   operation, and nobody waits for indexing — the three places pikuri
   deviates deliberately.
@@ -650,7 +657,7 @@ outcome, so nobody re-derives it:
 ## Closed by the document-sync run
 
 Recorded here rather than deleted, because each one's *resolution* is what
-a reader would otherwise re-litigate. Findings `S1`–`S10` in
+a reader would otherwise re-litigate. Findings `S-rangeless-didchange-crash`–`S-jdtls-types-only` in
 [`lsp/research.md`](lsp/research.md); the settled policy is in
 [`lsp/design.md`](lsp/design.md) §"Document synchronization".
 
@@ -659,20 +666,20 @@ a reader would otherwise re-litigate. Findings `S1`–`S10` in
   open-URI set, `didOpen` on first touch, full-text `didChange` with an
   incremented version when the digest moved — fails on the first server it
   meets: ruby-lsp declares incremental sync and *crashes* on a rangeless
-  full-text change, reporting it only to `window/logMessage` (S1). The
+  full-text change, reporting it only to `window/logMessage` (S-rangeless-didchange-crash). The
   ranged variant is honoured, and then desynchronizes the *index* from the
-  document it just updated (S2), so `definition` answers `[]` for a symbol
+  document it just updated (S-index-desync), so `definition` answers `[]` for a symbol
   the server can see. What works on both servers is the thing the spec
   forbids: **re-send `didOpen` with the current disk text before every
-  call** (S5) — no versions, no digests, no `didClose` (which resyncs
-  ruby-lsp and does nothing for jdtls, S6). The reason it is sound rather
+  call** (S-reopen-works) — no versions, no digests, no `didClose` (which resyncs
+  ruby-lsp and does nothing for jdtls, S-didclose-ruby-only). The reason it is sound rather
   than merely lucky is that **pikuri has no unsaved buffers**: `write` and
   `edit` land on disk immediately, so the tool never owns state the disk
   lacks, and the spec's own out-of-band channel
   (`workspace/didChangeWatchedFiles`) is ignored precisely because a client
-  that opened a document is *presumed* to be its authority (S7).
+  that opened a document is *presumed* to be its authority (S-watched-files-ignored).
 - ~~**Does jdtls anchor like ruby-lsp?**~~ **No, and not uniformly within
-  itself** (S8): `prepareTypeHierarchy` answers from any column on the
+  itself** (S-anchor-strictness): `prepareTypeHierarchy` answers from any column on the
   declaration line including the keywords, while `definition` answers 0 at
   a keyword column, and `workspace/symbol` reports the *symbol* column
   where ruby-lsp reports the *keyword* column. `locate(text, symbol)` is
@@ -716,7 +723,7 @@ a reader would otherwise re-litigate. Findings `S1`–`S10` in
 When built: protocol mechanics + the "capabilities are per-workspace"
 and "empty result ≠ no definition" lessons → book chapter (both are
 better taught with the observation that a shipped client gets the second
-one wrong, and the second is sharper for J3's contrast — one server
+one wrong, and the second is sharper for J-jdtls-defers-replies's contrast — one server
 defers, the other answers `[]`, and only one of them can be trusted);
 the silent-empty traps (pre-index query, an undeclared
 `classFileContentsSupport`, a fuzzy `workspace/symbol` hit, an advertised
@@ -754,9 +761,9 @@ confining results to the root to earn `:none`), **with the trusted-checkout
 verdict flip stated as a consequence** → five new `DECISIONS.md` entries
 (suggested slugs `lsp-direct-not-mcp`, `lsp-no-startup-timeout`,
 `lsp-operation-surface`, `lsp-scheme-fallback`, `lsp-trifecta-legs`, with
-the usual prefix); the threat model itself, including the
+the usual prefix); ~~the threat model itself, including the
 unsandboxed-child asymmetry against `Code::Bash` → `pikuri-lsp/DESIGN.md`;
-the COMPARISON.md LSP column → `✅`.
+the COMPARISON.md LSP column → `✅`.~~ **Both done** (2026-08-18).
 Then delete this file **and the whole `lsp/` folder with it**, plus the
 superseded LSP bullets in `coding-agent.md` and `claude-parity.md`.
 

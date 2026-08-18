@@ -158,7 +158,7 @@ begin
   end
   reopen = -> { client.open_document(path, File.read(path)) }
 
-  probe('the encoding offer is honoured (finding 7)',
+  probe('the encoding offer is honoured (F-position-encoding)',
         'PositionEncoding exists at all: pikuri converts when it is not') do
     if client.position_encoding == 'utf-8'
       [:ok, 'the server took the utf-8 offer, so offsets need no conversion']
@@ -167,7 +167,7 @@ begin
     end
   end
 
-  probe('re-opening the same document before every call is accepted (S5)',
+  probe('re-opening the same document before every call is accepted (S-reopen-works)',
         'the document-sync policy: re-open on read, no didChange, no didClose') do
     reopen.call
     first = client.request('textDocument/definition', params.call)
@@ -180,7 +180,7 @@ begin
     end
   end
 
-  probe('a rangeless full-text didChange still breaks the server (S1)',
+  probe('a rangeless full-text didChange still breaks the server (S-rangeless-didchange-crash)',
         'why pikuri re-opens instead of sending didChange') do
     logged.clear
     client.notify('textDocument/didChange',
@@ -203,7 +203,7 @@ begin
     end
   end
 
-  probe('a bare name may score below the index threshold (H6)',
+  probe('a bare name may score below the index threshold (H-qualified-name-match)',
         'why symbol-only lookup is best-effort and file+line is what the tool teaches') do
     if client.supports?('workspaceSymbolProvider')
       hits = Array(client.request('workspace/symbol', { query: symbol }))
@@ -231,7 +231,7 @@ begin
     end
   end
 
-  probe('an advertised provider actually answers (H1: the # TODO trap)',
+  probe('an advertised provider actually answers (H-subtypes-stub: the # TODO trap)',
         'relay-do-not-work-around: no per-server known-stub list') do
     unless client.supports?('typeHierarchyProvider')
       next [:unknown, 'no typeHierarchyProvider advertised, so there is nothing to catch lying']

@@ -3,7 +3,7 @@
 describe Pikuri::Lsp::Position do
   utf8 = Pikuri::Lsp::PositionEncoding::UTF8
   utf16 = Pikuri::Lsp::PositionEncoding::UTF16
-  # The line at pikuri-workspace/lib/pikuri/workspace/read.rb:165 (finding 3).
+  # The line at pikuri-workspace/lib/pikuri/workspace/read.rb:165 (F-definition-candidates).
   text = '    workspace.resolve_for_read(path)'
 
   describe '.from_wire' do

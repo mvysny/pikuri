@@ -13,9 +13,9 @@ what it refuses to become: the moment it applies an edit it needs the
 > **Status: young.** Everything below is in and wired — `bin/pikuri-code`
 > builds its registry from the `lsp_servers:` key of
 > `~/.pikuri-examples-config.yaml`, and one `c.add_extension` does the same
-> for any other host. What is still missing is the writing: no book chapter
-> and no `DESIGN.md` yet, so the design rationale lives in `ideas/lsp.md`
-> until it graduates.
+> for any other host. [`DESIGN.md`](DESIGN.md) carries the threat model and
+> the measurements every call here rests on; what is still missing is the
+> book chapter and the `DECISIONS.md` entries for the forks.
 
 ## What is here
 
