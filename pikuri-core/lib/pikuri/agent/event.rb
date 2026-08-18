@@ -122,6 +122,23 @@ module Pikuri
       # recovery follows; the caller returns control to the user.
       Cancelled = Data.define
 
+      # Marks a *domain* event whose successor **replaces** it rather than adding
+      # to a log: an indexing bar, a download percentage. A chrome that can
+      # rewrite a line does; one that cannot shows only the final state.
+      #
+      #   Progress = Data.define(:title, :done) do
+      #     include Pikuri::Agent::Event::Transient
+      #     def to_s = done ? "#{title} — done" : title
+      #   end
+      #
+      # The contract is two methods, both of which a +Data.define+ already
+      # answers: +#to_s+ is the whole rendering (a listener never inspects the
+      # fields — that is what keeps core ignorant of a gem's payload), and
+      # +#done+ says the sequence is over and its line may go away. Nothing in
+      # the loop emits one; gems do, via {ExtensionContext#emit_event}.
+      module Transient
+      end
+
       # The conversation was cleared by {Agent#clear_conversation}: history
       # is back to the system prompt, controls are reset, and each
       # extension's {Extension#on_conversation_reset} has run. Emitted

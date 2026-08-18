@@ -15,6 +15,7 @@ helper) and `pikuri-thunderbird` (local mail + calendar) — and the
 lethal-trifecta detector turns a wiring into a map the host prints at
 boot.
 
+- Add `Agent::Event::Transient` — a marker a gem's own progress event includes so `Listener::Terminal` rewrites one line in place instead of logging every update, showing only the final state when stdout is not a terminal.
 - Add `bin/pikuri-wire-check` — a dev diagnostic that records what pikuri would POST for a turn covering five positions (system prompt, user turn, reference block before and after a tool batch, tool result) and reports which survive llama.cpp's `/apply-template`, since nothing inside pikuri can see a message its model's chat template discards. See `book/wire.md`.
 - Add slash commands — `Command::Registry` + `Command::Renderer` scan `.pikuri/commands` / `.claude/commands` for `.md` prompt templates you invoke by typing `/name`, never advertised to the model and costing nothing in the system prompt; `bin/pikuri-code` and `bin/pikuri-assistant` dispatch them. See `DECISIONS.md` `D-slash-commands`.
 - Add `Trifecta::Contribution#label` — an extension's declared legs get their own row in the trifecta report instead of every contributor landing under a hardcoded `(mcp)`.
@@ -50,6 +51,7 @@ boot.
 - Add `Pikuri::Code::Extension` — one-call wiring for the pikuri-code-only pieces.
 - Add Reline to the example REPLs for history and line editing; `pikuri-workspace` now declares the `reline` dependency Ruby 4.0 dropped from its defaults.
 - The guide moves from `docs/guide/` to `book/`, and its chapters are named rather than numbered (`book/security.md`, `book/tasks.md`), with `book/README.md` owning the order.
+- Fix a gem domain event's `to_s` reaching the terminal undefanged in `Listener::Terminal` — the generic arm now routes it through `Pikuri::Sanitizer` as tool results already were, since that text can come from a filename, a skill or a subprocess.
 - Fix reference text vanishing before it reached the model: a mid-conversation `:system` message is dropped whole by newer chat templates (Qwen3.6 discards every one past the leading header) and merged into the standing system prompt by Anthropic, so pikuri-memory's prefetch, host-loaded skills and `paths:` promotions now land as a `<system-reminder>`-wrapped `:user` turn. See `DECISIONS.md` `D-reference-text-as-user-turn`.
 - Fix every `:system` message going out under OpenAI's newer `developer` role, ruby_llm's default: a local llama.cpp hands the role straight to the model's chat template, which has never seen it, so the system prompt arrived mislabelled. `Agent#build_context` now asks for `system`.
 - Fix a mid-loop interloper injection landing *between* an assistant's `tool_calls` message and the `tool` message answering it — invalid on OpenAI and Anthropic, and mangled by a local chat template. The drain moved off ruby_llm's `after_tool_result` (which fires before the result message is added) to the completion of the tool batch.
