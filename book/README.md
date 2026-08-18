@@ -150,6 +150,20 @@ gem, landing once they stabilise.
   the worked example, plus npx- and pip-based community MCPs,
   Playwright with its open-web surface, and the full threat
   model for `pikuri-mcp`.
+- **[Language intelligence](lsp.md).** The questions grep cannot
+  answer — where is this defined, who calls it, what does it
+  inherit from — asked of the language server your editor already
+  talks to. LSP in sixty seconds, then the chapter with the
+  densest collection of *silent* failures in the book: a
+  successful empty answer from a server that has not read your
+  project yet, capabilities that differ per workspace rather than
+  per binary, an advertised provider wired to a `# TODO`, and a
+  document model that assumes the client is an editor with unsaved
+  buffers when an agent has none. Why the tool never asks the
+  model for a column, why it keeps "unsupported", "nothing" and
+  "not ready" as three sentences, and why an index that reaches
+  your dependency jars is nobody's trusted input. Demo via
+  `pikuri-code` plus a language server you already have.
 
 ### Shorter chapters, across both tracks
 

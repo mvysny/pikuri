@@ -500,13 +500,12 @@ still ship a poisoned response on a later call.
 
 ## What's next
 
-[Task tracking](tasks.md) covers `pikuri-tasks`
-— the in-memory task list that lets the model externalize a
-multi-step plan into a structured slot it sees on every turn.
-[Skills (stub)](skills.md) closes the guide
-with [Agent Skills](https://agentskills.io/specification),
-currently a forward-pointer until the guide has enough concrete
-workflows to motivate a real example.
+[Language intelligence](lsp.md) closes the code track by giving the
+agent the one thing grep cannot supply: a parser with a project-wide
+index, borrowed from the language server your editor already runs. It is
+also the sharpest study in the book of a foreign process answering an
+agent's question with a well-formed lie — and of keeping "I cannot
+answer" from rendering as "there is nothing there".
 
 The vocabulary you have now (`Pikuri::Agent`, `Tool`, listeners,
 the Extension protocol with its worked examples, configure/bind,

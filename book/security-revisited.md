@@ -208,7 +208,8 @@ host. That's a longer list than it looks.
   needs to be installed and version-aligned with your host. A
   coding agent that can't run your build is barely one.
 - **LSPs, if you rely on them.** Language servers run inside,
-  not on your host.
+  not on your host — see [language intelligence](lsp.md) for what
+  one costs to wire up in the first place.
 - **Caches and UID/GID.** Bind-mount `~/.gradle`, `~/.m2`,
   `~/.cargo`, `~/.npm` and you share host caches with the agent's
   runtime (mild trust delegation, inert content); leave them out
