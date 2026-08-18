@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'timeout'
 
 describe Pikuri::Lsp::ClientWrapper do
@@ -13,9 +14,10 @@ describe Pikuri::Lsp::ClientWrapper do
   # A wrapper wired to a fake server over pipes — no binary, no handshake yet.
   # +respawn+ hands the wrapper its next channel, which is how restart is
   # exercised without killing a real process.
-  over_pipes = lambda do |entry: ruby, respawn: nil, &block|
+  over_pipes = lambda do |entry: ruby, respawn: nil, readiness: nil, &block|
     channel, wire = Pikuri::Lsp::Testing::Wire.channel
-    wrapper = described_class.new(entry: entry, root: '/tmp/project', respawn: respawn, **channel)
+    wrapper = described_class.new(entry: entry, root: '/tmp/project', respawn: respawn,
+                                 readiness: readiness, **channel)
     begin
       Timeout.timeout(10) { block.call(wrapper, wire) }
     ensure
@@ -179,6 +181,94 @@ describe Pikuri::Lsp::ClientWrapper do
       ensure
         wrapper&.close
         channels.each { |_, wire| wire.close }
+      end
+    end
+  end
+
+  describe 'the indexing gate' do
+    # The production settle is 1.5s; a spec asserting the gate's own rule is
+    # readiness_spec's job, so these only need it to elapse at all.
+    settle = 0.05
+    gate = -> { Pikuri::Lsp::Readiness.new(server_id: 'ruby', settle: settle) }
+    progress = lambda do |name|
+      JSON.parse(fixture("jdtls_progress_#{name}"))['params']
+    end
+
+    it 'is shut while the server has work open, and opens when it goes quiet' do
+      over_pipes.call(readiness: gate.call) do |wrapper, wire|
+        start.call(wrapper, wire)
+        opened = Queue.new
+        wrapper.on_notification { |method, _| opened << method }
+
+        wire.notify('$/progress', progress.call('begin'))
+        opened.pop
+        refute wrapper.ready?, 'the server said it is importing'
+
+        wire.notify('$/progress', progress.call('end'))
+        opened.pop
+        sleep settle * 2
+
+        assert wrapper.ready?
+      end
+    end
+
+    it 'blocks the caller until the index is built, relaying what the server says' do
+      over_pipes.call(readiness: gate.call) do |wrapper, wire|
+        start.call(wrapper, wire)
+        wire.notify('$/progress', progress.call('begin'))
+        seen = []
+        waiter = Thread.new { wrapper.wait_until_ready { |update| seen << update } }
+
+        # Not ready until the server says so, whatever the caller would prefer.
+        sleep settle * 4
+        assert waiter.alive?, 'a cold import is minutes, and there is no timeout'
+        wire.notify('$/progress', progress.call('end'))
+
+        assert_equal true, waiter.value
+        assert_equal 'ruby', seen.first.server_id, 'the entry id, so a host can key its bars'
+        assert_equal 'Initialize Workspace', seen.first.title
+        assert seen.last.done
+      end
+    end
+
+    it 'reports the death of a server that dies indexing, with its last words' do
+      over_pipes.call(readiness: gate.call) do |wrapper, wire|
+        start.call(wrapper, wire)
+        wire.notify('$/progress', progress.call('begin'))
+        waiter = Thread.new { wrapper.wait_until_ready { |_update| nil } }
+        sleep settle * 2
+        wire.close
+
+        error = assert_raises(died) { waiter.value }
+        assert_includes error.message, 'index'
+      end
+    end
+
+    it 'waits the fresh child out from scratch after a restart' do
+      next_channel, next_wire = Pikuri::Lsp::Testing::Wire.channel
+      # A wider window than the others: the closing assertion has to land
+      # *inside* the settle the restart started, and only slack keeps that
+      # from depending on the machine's mood.
+      slow = Pikuri::Lsp::Readiness.new(server_id: 'ruby', settle: 0.3)
+      begin
+        over_pipes.call(readiness: slow, respawn: -> { next_channel }) do |wrapper, wire|
+          start.call(wrapper, wire)
+          wire.notify('$/progress', progress.call('begin'))
+          wire.notify('$/progress', progress.call('end'))
+          sleep 0.6
+          assert wrapper.ready?, 'the first child finished its index'
+
+          thread = Thread.new { wrapper.request('textDocument/definition') }
+          wire.take
+          wire.close
+          next_wire.handshake
+          next_wire.reply(next_wire.take, [])
+          thread.value
+
+          refute wrapper.ready?, "a fresh server's index is empty, whatever the old one had done"
+        end
+      ensure
+        next_wire.close
       end
     end
   end

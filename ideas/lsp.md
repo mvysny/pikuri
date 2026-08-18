@@ -190,10 +190,40 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    hard-fails below Java 21, a mistyped `init_options` is J4's silence — both
    invisible at the point of the typo), and `nil` reads as no servers, so a host
    reading an absent config key needs no `|| {}`.
-5. **Readiness gate + the coalescing mailbox + `ServerProgress`.**
-   Quiescence (all progress tokens closed) plus a settle debounce, blocking
-   with no timeout, polling `Cancellable`, `window.workDoneProgress: true`
-   declared or jdtls emits nothing to watch (J1–J3).
+5. ~~**Readiness gate + the coalescing mailbox + `ServerProgress`.**~~
+   **Landed.** `Lsp::Mailbox` (the thread boundary: latest-value-per-key,
+   `drain(tick:)` yielding `nil` on an idle tick and ending on the caller's
+   `break`) and `Lsp::Readiness` (quiescence plus a `SETTLE` debounce, blocking
+   with no timeout, polling `Cancellable`). `ServerProgress` and
+   `window.workDoneProgress: true` landed with steps 1 and 2, so what was left
+   was the gate around them.
+
+   Four deviations, all narrower than the line above:
+
+   - **The gate is composed into `ClientWrapper`**, which delegates `#ready?`
+     and `#wait_until_ready`, rather than standing beside it for the tool to
+     pair up. Two reasons, both structural: a restart must reset the gate (a
+     fresh child indexes from nothing) and only the wrapper knows a restart
+     happened; and a free-standing gate would make the tool hold a second
+     server-keyed Hash alongside its clients. `Readiness` still knows nothing
+     about the wrapper — it takes `server_id:`, an `alive:` probe and a
+     `settle:`, so its specs need no client at all.
+   - **The wait loop lives in `Readiness#wait`, not at the tool's call site**,
+     and the emitter arrives as its block. So `design.md`'s snippet reads
+     `client.wait_until_ready(cancellable:) { |p| emit.call(p) }` at the call
+     site, and the *one* emission site the capability seam wants is still the
+     agent thread's.
+   - **A death mid-wait is a restart, not an error.** The wait exits false when
+     the child dies and `ClientWrapper` feeds that through the same
+     `with_restart` path a dying request takes, so a jdtls that dies importing
+     is respawned and waited out again, `MAX_ATTEMPTS` times, before
+     `ServerDied`. Without that a server could only ever be revived by a
+     *request*, which the gate stands in front of.
+   - **`SETTLE = 1.5s`**, above the 0.9s gap J2 measured, and the terminal
+     `done: true` covers **open tokens ∪ what this wait showed**, keyed by
+     title — a `ServerProgress` carries no token, so a host keys its bars by
+     title and the gate has to agree. `readiness:` is injectable purely so a
+     spec can shorten the settle; production passes nothing.
 6. **The `lsp` tool**: ten operations, the `symbol`-anchored parameters,
    capability gate at dispatch, re-open-on-read sync, result rendering.
 7. **`Lsp::Extension`**: `configure` builds the client set, registers the

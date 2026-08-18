@@ -11,8 +11,13 @@ module Pikuri
     #   client = ClientWrapper.spawn(entry, root: filesystem.project_root)
     #   client.supports?('definitionProvider')   # => true
     #   client.position_encoding                 # => "utf-8"  (ruby-lsp; jdtls stays utf-16)
+    #   client.wait_until_ready { |progress| emitter.call(progress) }
     #   client.request('textDocument/definition', params, cancellable: cancellable)
     #   client.close
+    #
+    # {#wait_until_ready} before the first request is not optional politeness:
+    # ruby-lsp answers a mid-index query with a successful +[]+, which an agent
+    # reads as "no definition exists". See {Readiness}.
     #
     # {.spawn} raises rather than returning a half-live object, so a missing
     # binary or a server that dies during its handshake is a boot-time failure
@@ -34,7 +39,8 @@ module Pikuri
     # {ServerDied}; a wrapper built with no +respawn:+ (a test over pipes) raises
     # on the first death instead. Documents need no replay — pikuri re-sends
     # +didOpen+ before every call anyway — but a fresh server's *index* is empty,
-    # so a caller that cares about readiness re-establishes it after a restart.
+    # so a restart also puts {#ready?} back to +false+ and the next
+    # {#wait_until_ready} waits the new child out from scratch.
     #
     # == The Subprocess-seam exception
     #
@@ -172,7 +178,11 @@ module Pikuri
       # @param respawn [Proc, nil] returns the kwargs for a fresh child
       #   (+{stdin:, stdout:, stderr:, wait_thread:}+). Without it, a dead
       #   channel is terminal — see the class's restart note.
-      def initialize(entry:, root:, stdin:, stdout:, stderr: nil, wait_thread: nil, respawn: nil)
+      # @param readiness [Readiness, nil] the indexing gate, which this
+      #   subscribes to the server's notifications. Injectable so a spec can
+      #   shorten the settle window; production passes nothing.
+      def initialize(entry:, root:, stdin:, stdout:, stderr: nil, wait_thread: nil, respawn: nil,
+                     readiness: nil)
         @entry = entry
         @root = File.expand_path(root.to_s)
         @respawn = respawn
@@ -183,7 +193,9 @@ module Pikuri
         @tail_mutex = Mutex.new
         @started = false
         @closed = false
+        @readiness = readiness || Readiness.new(server_id: entry.id)
         adopt(stdin: stdin, stdout: stdout, stderr: stderr, wait_thread: wait_thread)
+        on_notification { |method, params| @readiness.observe(method, params) }
       end
 
       # Run the LSP handshake: +initialize+, then +initialized+.
@@ -249,6 +261,41 @@ module Pikuri
       def supports?(name)
         value = @capabilities[name]
         !value.nil? && value != false
+      end
+
+      # @return [Boolean] whether the server has finished indexing — see
+      #   {Readiness} for what that means and why it is one rule for every
+      #   server. A request sent while this is +false+ is answered wrongly by
+      #   ruby-lsp and not at all by jdtls.
+      def ready?
+        @readiness.ready?
+      end
+
+      # Block until the index is built, yielding progress while it is not.
+      #
+      #   client.wait_until_ready(cancellable: cancellable) { |progress| emitter.call(progress) }
+      #
+      # There is no timeout: a cold jdtls import is minutes, no number separates
+      # a slow index from a hung one, and the yielded {ServerProgress} is what
+      # keeps the block legible rather than a hang. What ends a wait instead is
+      # readiness, the child's death, or +cancellable+ — the human as the
+      # timeout. A server that dies waiting is restarted and waited on again,
+      # {MAX_ATTEMPTS} times, because a fresh child indexes from nothing.
+      #
+      # @param cancellable [Pikuri::Agent::Control::Cancellable, nil]
+      # @yieldparam progress [ServerProgress] on the *calling* thread, which is
+      #   what makes it safe to emit as an agent event.
+      # @return [true]
+      # @raise [ServerDied] when the server died indexing and restarts did not
+      #   get it further.
+      # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] on cancellation.
+      def wait_until_ready(cancellable: nil, &progress)
+        progress ||= ->(_update) {}
+        with_restart(cancellable) do
+          next true if @readiness.wait(cancellable: cancellable, alive: -> { alive? }, &progress)
+
+          raise Connection::Closed, 'died while its index was building'
+        end
       end
 
       # @return [Boolean] whether a request could still be answered.
@@ -354,6 +401,7 @@ module Pikuri
         @connection.close
         reap_child
         adopt(**@respawn.call)
+        @readiness.reset!
         handshake(cancellable)
       end
 
