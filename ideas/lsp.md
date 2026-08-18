@@ -241,7 +241,7 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
    in-process from scripted fake servers — including the failure paths a real
    server will not produce on demand.
 
-   Nine deviations, and the first two are scope rather than design:
+   Ten deviations, and the first two are scope rather than design:
 
    - **The client set came forward from step 7.** A tool needs live clients, so
      `Lsp::Servers` — one `ClientWrapper` per entry, spawned at boot, plus
@@ -291,6 +291,15 @@ serves a *project*, and `Workspace` is what a project is in pikuri.
      refusal itself. What survives is how to anchor a call and what shapes the
      answer arrives in; the error strings carry the rest, which is what makes
      them worth their length.
+   - **Out-of-root results carry a path where the workspace would read one**
+     (decided 2026-08-18, in review). `design.md`'s snippet-only rule is true
+     under root confinement and false under `AllowAll`: `bin/pikuri-code --yolo`
+     and `bin/pikuri-os` open a gem checkout happily, so suppressing the path
+     there deletes a capability the wiring granted, and the description's "a
+     file you cannot open" was simply not universal. `Sources` asks
+     `resolve_for_read` per path instead — the path where it would open, the
+     basename where it would not. The legs do not move: `untrusted: :hard` is
+     already unconditional *because* results reach outside the root.
    - **"Not ready yet" never has to be said, so the third distinct string is
      the death report.** The gate blocks instead of relaying, so the three that
      must stay apart are *unsupported* (a `Refusal` naming the missing
@@ -344,7 +353,8 @@ nobody needs it.
 `line` (optional). Column derived by `locate(text, symbol)`, never asked
 for. Rendering rules, all measured: cap and group (`findReferences` hardest
 — S9's 80,609), group `supertypes` by name preferring the declaration over
-namespace reopenings (H2), snippet-only outside the root, the scheme table
+namespace reopenings (H2), a path outside the root only where the workspace
+would read it (see step 6's deviations), the scheme table
 for `jdt:`, never dereference `http(s):`, and keep *unsupported* /
 *answered-nothing* / *not-ready* three distinct strings.
 

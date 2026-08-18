@@ -20,9 +20,12 @@ module Pikuri
     # 1. **+file:+ — the only scheme pikuri reads itself.** In-root results carry
     #    the workspace-relative path, and the read goes through the +Workspace+
     #    seam. Out-of-root results (the 45 gem hits one +goToDefinition+ on a
-    #    constant returned) are snippet-only under a bare basename: a path the
-    #    model cannot open is a dead-end citation, but "what does this library
-    #    method do" is a top reason to want LSP at all. Every +file:+ URI takes a
+    #    constant returned) always carry the line of code — "what does this library
+    #    method do" is a top reason to want LSP at all — and carry a **path only
+    #    when this workspace would read that file**, which is a per-wiring answer:
+    #    +AllowAll+ (the +--yolo+ and OS-agent wirings) opens a gem checkout
+    #    happily, a root-confined one refuses it, and quoting a path the +read+
+    #    tool will reject is a dead-end citation. Every +file:+ URI takes a
     #    {#denied?} pass first — a result is a *walked* path, so nothing else stops
     #    an index hit under +~/.ssh+ from being quoted.
     # 2. **A server-private scheme — standard first, one hardcoded row behind
@@ -67,21 +70,23 @@ module Pikuri
         @filesystem = filesystem
         @root = filesystem.project_root.to_s
         @memo = {}
+        @readable = {}
         @fetches = 0
       end
 
       # What to call this URI in a rendered row.
       #
       # @param uri [String] as the server sent it.
-      # @return [String] a workspace-relative path, a bare basename for a file
-      #   outside the root, +"org.slf4j.LoggerFactory (slf4j-api-2.0.18.jar)"+ for
-      #   a +jdt:+ handle, or the URI itself — truncated, since a real +jdt:+ URI
-      #   runs to ~300 characters of encoded classpath and must never be shown
-      #   raw.
+      # @return [String] a workspace-relative path in-root; the absolute path for a
+      #   file outside the root this workspace would still read, or a bare basename
+      #   for one it would refuse; +"org.slf4j.LoggerFactory
+      #   (slf4j-api-2.0.18.jar)"+ for a +jdt:+ handle; else the URI itself,
+      #   truncated — a real +jdt:+ URI runs to ~300 characters of encoded
+      #   classpath and must never be shown raw.
       def label_for(uri)
         path = Uris.to_path(uri)
         return relative(path) if path && in_root?(path)
-        return "outside the workspace: #{File.basename(path)}" if path
+        return out_of_root_label(path) if path
 
         scheme = Uris.scheme(uri)
         return jdt_label(uri) if scheme == 'jdt'
@@ -210,6 +215,25 @@ module Pikuri
 
       def in_root?(path)
         path == @root || path.start_with?("#{@root}/")
+      end
+
+      # Outside the root the label is the *actionable* form: the path where this
+      # workspace would open the file, its basename where it would not. Suppressing
+      # a readable path would delete a capability the wiring granted; printing an
+      # unreadable one invites a refused read.
+      def out_of_root_label(path)
+        readable?(path) ? path : "outside the workspace: #{File.basename(path)}"
+      end
+
+      def readable?(path)
+        @readable.fetch(path) do
+          @readable[path] = begin
+            @filesystem.resolve_for_read(path)
+            true
+          rescue Pikuri::Workspace::Filesystem::Error
+            false
+          end
+        end
       end
 
       def relative(path)

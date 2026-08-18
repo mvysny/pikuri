@@ -61,7 +61,7 @@ module Pikuri
         - `symbol` on its own searches every configured server's index instead. Best effort: a short name is matched against fully qualified ones and can score below a server's own threshold, and some servers index types but no methods.
         - Servers are configured per file type. A file type nothing claims is refused, never guessed at.
         - Results are capped and grouped, references and callers most aggressively; a truncation marker means there was more.
-        - A server's index reaches outside the project, so a result may name a file you cannot open (shown without a path) or a type inside a dependency archive (shown as its type name with the archive it came from).
+        - A server's index reaches outside the project, so a result may live in a dependency rather than in your code. Such a result always carries its line of code, and carries a path when this workspace can read that file — otherwise just the file's name, or the type's name and the archive it came from.
 
         Operations:
         #{Operation::ALL.map { |operation| "- #{operation.name} — #{operation.summary}" }.join("\n")}

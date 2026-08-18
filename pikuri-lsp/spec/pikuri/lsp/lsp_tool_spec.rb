@@ -598,7 +598,26 @@ describe Pikuri::Lsp::LspTool do
       end
     end
 
-    it 'renders an out-of-root file result without a path it cannot open' do
+    it 'renders the real path when this workspace would read the file' do
+      # AllowAll — the --yolo and OS-agent wirings — opens a gem checkout happily,
+      # so suppressing the path would delete a capability the wiring granted.
+      allow_all = ->(root) { Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root) }
+      wired.call(files: { 'read.rb' => read_rb }, filesystem: allow_all) do |tool, fakes|
+        Dir.mktmpdir do |other|
+          elsewhere = File.join(File.realpath(other), 'filesystem.rb')
+          File.write(elsewhere, "def resolve_for_read(path)\n")
+          fakes['ruby'].on('textDocument/definition') { |_params| [at.call("file://#{elsewhere}", 0)] }
+
+          answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
+                            'file' => 'read.rb', 'line' => 4)
+
+          assert_match(/#{Regexp.escape(elsewhere)}:1  def resolve_for_read/, answer)
+          refute_match(/outside the workspace/, answer)
+        end
+      end
+    end
+
+    it 'renders an out-of-root file result without a path this workspace would refuse' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
         Dir.mktmpdir do |other|
           File.write(File.join(other, 'filesystem.rb'), "def resolve_for_read(path)\n")

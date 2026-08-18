@@ -298,9 +298,17 @@ hard refusal.
 - **`file:` — the only scheme pikuri reads itself.** In-root results go
   through the `Workspace` seam and also carry the path, because the model
   can usefully `read` more of it. Out-of-root results (the 45 `Faraday`
-  hits under `gems/`) come back as snippet-only: a path the model cannot
-  open is a dead-end citation, and "what does this library method do" is
-  one of the top reasons to want LSP at all. **`Filesystem#denied?` still
+  hits under `gems/`) always come back with the line of code — "what does
+  this library method do" is one of the top reasons to want LSP at all —
+  and with a **path only where the workspace would read that file**.
+  *Refined 2026-08-18, during the build:* the original rule was
+  snippet-only, on the grounds that a path the model cannot open is a
+  dead-end citation. True under root confinement, and false under
+  `AllowAll` — the `--yolo` and OS-agent wirings open a gem checkout
+  happily, so suppressing the path there deletes a capability the wiring
+  granted. `Sources` asks `resolve_for_read` per path and renders the
+  actionable form: the path where it would open, the basename where it
+  would not. **`Filesystem#denied?` still
   applies** — an LSP hit under a denied root must not leak just because
   the server walked to it, which is `D-walked-path-denylist` doing
   precisely its job.
