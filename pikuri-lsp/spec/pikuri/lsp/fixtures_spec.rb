@@ -138,7 +138,7 @@ describe 'recorded server payloads' do
       refute java.key?('declarationProvider'), 'neither server has it, which is why it is out of the enum'
     end
 
-    it 'both advertise incremental sync, which is the claim S-rangeless-didchange-crash disproves' do
+    it 'both advertise incremental sync, so a rangeless didChange was never ours to send' do
       assert_equal 2, ruby.dig('textDocumentSync', 'change')
       assert_equal 2, java.dig('textDocumentSync', 'change')
     end

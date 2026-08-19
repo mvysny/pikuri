@@ -364,17 +364,27 @@ before every position-based call (`S-reopen-works`). No open-URI set, no version
 counter, no digest, no `didClose`. This is spec-forbidden — *a document must not
 be opened twice* — and neither reference server minds.
 
-**Why the spec-legal alternatives all lost, one measurement each.**
+**Why the alternatives all lost, one measurement each.** The first is not
+spec-legal and the rest are.
 
-- **Rejected: a rangeless whole-document `didChange`.** The obvious "here is the
-  new text" move leaves jdtls correctly updated and *crashes* inside ruby-lsp,
-  which advertises incremental sync and reads `edit[:range][:start]`
+- **Rejected: a rangeless whole-document `didChange` — and it was never ours to
+  send.** The obvious "here is the new text" move leaves jdtls correctly updated
+  and *crashes* inside ruby-lsp, which reads `edit[:range][:start]`
   unconditionally (`S-rangeless-didchange-crash`). The document keeps its old
   text, a notification has no reply channel, and the only report is a
   `window/logMessage` line — what the model sees is the next query failing with
   a raw backtrace. Both visible harnesses sync this way, and grok-build's own
   `capabilities.rs` opens by describing the same failure against *Roslyn*: the
-  finding independently confirmed on a third server.
+  finding independently confirmed on a third server. But the reason it loses is
+  the contract, not the crash. Both servers advertise **incremental** sync, and
+  `TextDocumentSyncKind` is the *server's* declaration of which arm of the union
+  it accepts — a client must support both so it can comply with either, never
+  pick. Shopify closed that report three times (ruby-lsp #575, #1273, #3148; in
+  #1273 the reporter wrote the ycmd client and came round to it), so a server
+  that started tolerating the shape would still not make it usable. That is also
+  why it is the one finding `bin/pikuri-lsp-check` does **not** probe: the
+  response to a message the server never agreed to accept is undefined, so no
+  outcome could inform this decision.
 - **Rejected: the ranged whole-document `didChange`.** Honoured by both servers
   for the document, and then it desynchronizes ruby-lsp's *index* from the
   document it just updated (`S-index-desync`): `documentSymbol` reports the
@@ -396,8 +406,8 @@ be opened twice* — and neither reference server minds.
 
 **Consequence.** The policy rests on server behaviour rather than on the
 specification, so it is pinned by a probe rather than by a reading:
-`bin/pikuri-lsp-check`'s `S-reopen-works` and `S-rangeless-didchange-crash`
-rows re-measure it against the server actually installed.
+`bin/pikuri-lsp-check`'s `S-reopen-works` row re-measures it against the
+server actually installed.
 
 **Consequence — observing the agent's own edits is deferred, not open.**
 grok-build also syncs from the *write* path (`notify_file_changed(path,

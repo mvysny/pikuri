@@ -302,15 +302,20 @@ unsaved buffers, ever. So the tool never owns text the disk lacks — and
 the correct thing to send is not an edit stream at all.
 
 Getting there took a measurement run per candidate, and every
-spec-legal option lost:
+option lost:
 
 - **A rangeless whole-document `didChange`** — the obvious "here is the
   file's new text" move — leaves jdtls correctly updated and **crashes
-  inside ruby-lsp**, which advertises incremental sync and reads
-  `edit[:range][:start]` unconditionally. The document keeps its *old*
-  text. A notification has no reply channel, so the only report is a
-  `window/logMessage` line; what the model sees is the next query
-  failing with a raw Ruby backtrace.
+  inside ruby-lsp**, which reads `edit[:range][:start]` unconditionally.
+  The document keeps its *old* text. A notification has no reply channel,
+  so the only report is a `window/logMessage` line; what the model sees is
+  the next query failing with a raw Ruby backtrace. But the crash is not
+  really why it loses: **this shape was never ours to send.** Both servers
+  advertise *incremental* sync, and `TextDocumentSyncKind` is how a server
+  declares which of the two shapes it accepts — a client has to support
+  both precisely so it can comply with whichever it is handed, and pick
+  neither. Shopify has closed that bug report three times, once from the
+  author of a client who then agreed with them.
 - **The ranged whole-document change** is honoured by both — and then
   desynchronizes ruby-lsp's *index* from the document it just updated:
   `documentSymbol` reports the renamed method while `definition` on that
@@ -566,9 +571,9 @@ after what it refuses to become.**
 ## The diagnostic, and why the specs cannot replace it
 
 Every measurement in this chapter is a claim about software that ships new
-versions. `subtypes` might get implemented. ruby-lsp might stop crashing
-on a rangeless `didChange`. jdtls might index methods. Each of those would
-quietly invalidate a design decision.
+versions. `subtypes` might get implemented. jdtls might index methods. A
+server might start advertising a provider it used to omit. Each of those
+would quietly invalidate a design decision.
 
 The specs cannot notice. They run the client against a fake server and a
 dummy binary, both of which behave the way pikuri expects *by
@@ -590,11 +595,6 @@ Probes
   ok       re-opening the same document before every call is accepted (S-reopen-works)
              two calls, two didOpens, the same answer (4 location(s))
              guards: the document-sync policy: re-open on read, no didChange, no didClose
-  ok       a rangeless full-text didChange still breaks the server (S-rangeless-didchange-crash)
-             the server reported it to window/logMessage: Error processing
-             textDocument/didChange: … document.rb:98:in `push_edits':
-             undefined method `[]' for nil (NoMethodError)
-             guards: why pikuri re-opens instead of sending didChange
   ok       a bare name may score below the index threshold (H-qualified-name-match)
              the index returned 23 hit(s) and none is "Bash"
              guards: why symbol-only lookup is best-effort and file+line is what the tool teaches
@@ -606,7 +606,7 @@ Probes
              supertypes: 20 row(s); subtypes: 0 row(s)
              guards: relay-do-not-work-around: no per-server known-stub list
 
-6 probes: 6 ok, 0 drifted, 0 unanswered.
+5 probes: 5 ok, 0 drifted, 0 unanswered.
 ```
 
 `ok` means the finding still holds. `DRIFT` means the server changed its

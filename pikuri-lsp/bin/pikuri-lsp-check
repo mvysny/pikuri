@@ -10,8 +10,8 @@
 # It exists because the alternative reports a lie. The specs cover the client
 # against a fake and a dummy binary, both of which behave the way pikuri expects
 # by construction — so nothing in the suite would notice a server release that
-# stopped crashing on a full-text `didChange`, started indexing methods, or
-# changed the shape of a reply. A live spec tagged to skip when the binary is
+# started indexing methods, implemented a provider it used to stub, or changed
+# the shape of a reply. A live spec tagged to skip when the binary is
 # absent is worse than nothing: it reports green by staying silent, and the CI
 # image has no language server.
 #
@@ -136,8 +136,6 @@ puts "Anchor:  #{path.delete_prefix("#{root}/")}:#{line}:#{column} #{symbol}"
 puts
 
 client = Pikuri::Lsp::ClientWrapper.spawn(entry, root: root)
-logged = []
-client.on_notification { |method, params| logged << [method, params] }
 
 begin
   # Same rule as the Terminal listener: a rewritten line is for a terminal, and
@@ -177,29 +175,6 @@ begin
       [:ok, "two calls, two didOpens, the same answer (#{Array(first).length} location(s))"]
     else
       [:drift, "the second answer differs from the first: #{first.inspect} vs #{second.inspect}"]
-    end
-  end
-
-  probe('a rangeless full-text didChange still breaks the server (S-rangeless-didchange-crash)',
-        'why pikuri re-opens instead of sending didChange') do
-    logged.clear
-    client.notify('textDocument/didChange',
-                  textDocument: { uri: Pikuri::Lsp::Uris.for_path(path), version: 2 },
-                  contentChanges: [{ text: text }])
-    sleep 1
-    complaint = logged.find { |method, p| method == 'window/logMessage' && p['type'].to_i <= 2 }
-    answered = begin
-      reopen.call
-      !Array(client.request('textDocument/definition', params.call)).empty?
-    rescue StandardError
-      false
-    end
-    if complaint
-      [:ok, "the server reported it to window/logMessage: #{complaint.last['message'].to_s.lines.first.to_s.strip}"]
-    elsif answered
-      [:drift, 'no complaint, and the server still answers — the spec-legal form may be usable now']
-    else
-      [:unknown, 'no log message, and the server stopped answering; cause not established']
     end
   end
 

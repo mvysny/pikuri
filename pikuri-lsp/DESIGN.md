@@ -182,8 +182,10 @@ project it serves rather than from pikuri's own bundle.
 Every design call above, and every one in `DECISIONS.md`, rests on these.
 They are cited by id from the specs, the reconstructed fixtures
 (`spec/fixtures/README.md`) and `bin/pikuri-lsp-check`, which re-measures
-six of them against a live server and reports *ok* / *DRIFT* / *no answer*
-— run it after a server upgrade.
+five of them against a live server and reports *ok* / *DRIFT* / *no answer*
+— run it after a server upgrade. A finding about a message pikuri may not
+send is not among them: see `S-rangeless-didchange-crash` for why probing
+undefined behaviour cannot inform a decision.
 
 Ids are stable and never renumbered; the families mark which run produced
 the finding. Where a finding was confirmed in a server's own source it says
@@ -390,13 +392,28 @@ signal-to-noise only worsens with a widely-used base class.
 The fixture renames a method **and** shifts it by three lines, so
 memory-vs-disk shows up in the name and in the position independently.
 
-**S-rangeless-didchange-crash.** Both servers advertise incremental sync.
-The rangeless whole-document `didChange` leaves jdtls correctly updated and
-raises inside ruby-lsp's `document.rb:98` (`push_edits` reads
-`edit[:range][:start]` unconditionally). The document keeps its **old**
-text, and since a notification has no reply channel the only report is a
-`window/logMessage` line — what the *model* sees is the next query failing
-with a raw Ruby backtrace.
+**S-rangeless-didchange-crash.** Both servers advertise *incremental* sync,
+so the rangeless whole-document `didChange` is a shape neither one asked
+for. jdtls tolerates it and updates correctly; ruby-lsp raises inside
+`document.rb:98` (`push_edits` reads `edit[:range][:start]`
+unconditionally), keeps its **old** text, and — a notification having no
+reply channel — reports only a `window/logMessage` line, so what the *model*
+sees is the next query failing with a raw Ruby backtrace.
+
+This is a measurement of *our* misuse, not of a server bug. Which arm of the
+`TextDocumentContentChangeEvent` union travels is the **server's** call,
+declared as `TextDocumentSyncKind`; a client must support both so it can
+comply with either, and may not substitute the one it prefers. Shopify has
+closed that report three times — ruby-lsp
+[#575](https://github.com/Shopify/ruby-lsp/issues/575),
+[#1273](https://github.com/Shopify/ruby-lsp/issues/1273),
+[#3148](https://github.com/Shopify/ruby-lsp/issues/3148), and in #1273 the
+reporter was the author of the ycmd client and ended up agreeing. Kept as a
+finding because it is what a naive port of the editor mechanism does, and
+deliberately **not** probed by `bin/pikuri-lsp-check`: the response to a
+message the server never agreed to accept is undefined, so no outcome can
+inform a decision, and an "it works now" reading would mean only that this
+one server tolerates what the contract still forbids.
 
 **S-index-desync.** The *ranged* whole-document change is honoured by both
 for the document itself, and then desynchronizes ruby-lsp's index from it:

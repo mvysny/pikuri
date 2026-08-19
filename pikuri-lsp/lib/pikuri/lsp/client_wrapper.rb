@@ -47,8 +47,8 @@ module Pikuri
     # {#open_document} re-sends +textDocument/didOpen+ with the file's current
     # disk text before every position-based call. No open-URI set, no version
     # comparison, no +didClose+ — and yes, that is the thing the spec forbids
-    # ("a document must not be opened twice"). See {#open_document} for why every
-    # spec-legal alternative was measured and rejected.
+    # ("a document must not be opened twice"). See {#open_document} for why each
+    # alternative was measured and rejected.
     #
     # == The Subprocess-seam exception
     #
@@ -262,13 +262,15 @@ module Pikuri
       # "here is the truth again", and the text it needs is the text the tool has
       # already read to locate the symbol.
       #
-      # Every spec-legal alternative was measured and each fails on a *different*
-      # server:
+      # Every alternative was measured and each fails differently:
       #
-      # * A **rangeless whole-document +didChange+** is accepted by jdtls and
-      #   raises inside ruby-lsp's +push_edits+, which reads +edit[:range][:start]+
-      #   unconditionally. A notification has no reply channel, so the only report
-      #   is a +window/logMessage+ line — the document silently keeps its old text.
+      # * A **rangeless whole-document +didChange+** is not ours to send: both
+      #   servers advertise *incremental* sync, and +TextDocumentSyncKind+ is the
+      #   server's declaration of which shape it accepts. jdtls tolerates it;
+      #   ruby-lsp raises inside +push_edits+, which reads +edit[:range][:start]+
+      #   unconditionally, and a notification has no reply channel, so the only
+      #   report is a +window/logMessage+ line while the document keeps its old
+      #   text.
       # * The **ranged** whole-document change is honoured by both, and then
       #   desynchronizes ruby-lsp's *index* from the document it just updated:
       #   +RubyDocument#should_index?+ reindexes only when the edit's start
