@@ -24,7 +24,9 @@ module Pikuri
     #    +[]+ to reason about. No timeout: a cold Java import measured 78 seconds,
     #    no number separates that from a hang, and progress events plus
     #    +cancellable+ make the human the timeout.
-    # 4. **Re-open the document** ({ClientWrapper#open_document}).
+    # 4. **Re-open the document** ({ClientWrapper#open_document}), and hand it
+    #    back once every reply is in ({#release_documents}) — the pair is per
+    #    *call*, because one call can ask several questions about one document.
     # 5. **Ask and render**, running the +prepare+ hop and the per-level walk here
     #    so the model issues one call and never holds an opaque protocol item.
     #
@@ -59,6 +61,7 @@ module Pikuri
         @cancellable = cancellable
         @ready = []
         @texts = {}
+        @opened = []
       end
 
       # Answer one call.
@@ -80,6 +83,7 @@ module Pikuri
         renderer = Renderer.new(sources: Sources.new(filesystem: @filesystem))
         @ready = []
         @texts = {}
+        @opened = []
         raise Refusal, 'no language server is configured' if @servers.empty?
 
         dispatch(op, symbol, file, line, renderer)
@@ -87,6 +91,8 @@ module Pikuri
         "Error: #{e.message}"
       rescue Connection::ServerError => e
         "Error: the language server refused #{operation}: #{e.message}"
+      ensure
+        release_documents
       end
 
       private
@@ -283,8 +289,22 @@ module Pikuri
       # The re-open, once per document per call, with the text on disk *now*.
       def open_document(client, resolved)
         uri = Uris.for_path(resolved)
-        client.open_document(resolved.to_s, text_of(resolved)) unless @texts.key?(resolved.to_s)
+        unless @texts.key?(resolved.to_s)
+          client.open_document(resolved.to_s, text_of(resolved))
+          @opened << [client, resolved.to_s]
+        end
         uri
+      end
+
+      # Give back every document this call opened, once every reply is in.
+      #
+      # Per *call*, not per request: +supertypes+ and the call-hierarchy operations
+      # ask several questions about one document, and a close after the first would
+      # drop it under the rest.
+      def release_documents
+        opened = @opened
+        @opened = []
+        opened.each { |client, path| client.close_document(path) }
       end
 
       # Through the seam, always: the text a +didOpen+ carries is a read of a

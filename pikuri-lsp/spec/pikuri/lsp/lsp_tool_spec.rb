@@ -283,6 +283,55 @@ describe Pikuri::Lsp::LspTool do
       end
     end
 
+    # The spec caps a document's open count at one and wants the pair, so the
+    # close is owed rather than measured. What the order proves is the *timing*:
+    # a server free to answer requests concurrently must not see the close before
+    # the request it brackets.
+    it 'closes the document it opened, after the reply and not before' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
+        fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'x' } }
+
+        tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+        fakes['ruby'].await('textDocument/didClose')
+
+        lifecycle = fakes['ruby'].received.map { |message| message['method'] }
+                                .grep(%r{^textDocument/})
+        assert_equal %w[textDocument/didOpen textDocument/hover textDocument/didClose], lifecycle
+      end
+    end
+
+    # Closing per *request* would hand the per-level walk a document the server
+    # had already dropped, so the pair brackets the whole call.
+    it 'opens and closes once for a call that asks several questions' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes, root|
+        uri = "file://#{root}/read.rb"
+        item = ->(name) { { 'name' => name, 'kind' => 5, 'uri' => uri, 'range' => wire_range.call(2, 0, 5) } }
+        fakes['ruby'].on('textDocument/prepareTypeHierarchy') { |_params| [item.call('Read')] }
+        fakes['ruby'].on('typeHierarchy/supertypes') { |_params| [item.call('Object')] }
+
+        tool.run('operation' => 'supertypes', 'symbol' => 'Read', 'file' => 'read.rb', 'line' => 3)
+        fakes['ruby'].await('textDocument/didClose')
+
+        methods = fakes['ruby'].received.map { |message| message['method'] }
+        assert_equal 1, methods.count('textDocument/didOpen')
+        assert_equal 1, methods.count('textDocument/didClose')
+        assert_operator methods.index('textDocument/didClose'), :>,
+                        methods.rindex('typeHierarchy/supertypes'),
+                        'the close must follow the last request against the document'
+      end
+    end
+
+    it 'still gives the document back when the server refuses the request' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
+        fakes['ruby'].refuse('textDocument/hover')
+
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+
+        assert_match(/^Error: /, answer)
+        refute_nil fakes['ruby'].await('textDocument/didClose'), 'the ensure owes the close either way'
+      end
+    end
+
     it 'sends the real file under a workspace that aliases /tmp to its playground' do
       # bin/pikuri-code wires alias_tmp_to_temp whenever the sandbox is on, and
       # a spec root lives under /tmp — so resolving the *resolved* path a second

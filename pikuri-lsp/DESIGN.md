@@ -441,7 +441,10 @@ both replace their copy wholesale, both resolve the renamed symbol at its
 shifted position, and ruby-lsp's index flips too. It is spec-forbidden (a
 document must not be opened twice) and neither server minds. No versions,
 no digests, and the text it needs is the text the tool already read to
-derive the column.
+derive the column. What pikuri does *not* take from "neither server minds"
+is permission to skip the matching `didClose` — the close is owed by the
+contract rather than earned by a measurement, so it is sent per call and
+is the one piece of this policy no probe re-measures (`D-lsp-document-sync`).
 
 **S-didclose-ruby-only.** `didClose` drops ruby-lsp's store entry so the
 next request re-reads disk; jdtls keeps answering its pre-close copy. The

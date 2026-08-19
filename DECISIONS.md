@@ -343,12 +343,14 @@ document.
 
 ---
 
-## D-lsp-document-sync — Re-open the document on every call; never send an edit stream (2026-08-18)
+## D-lsp-document-sync — Re-open the document around every call; never send an edit stream (2026-08-18, revised 2026-08-19)
 
 **Status:** Accepted, shipped. The policy and its mechanics are
-{Pikuri::Lsp::ClientWrapper#open_document}; the measurements behind it are the
+{Pikuri::Lsp::ClientWrapper#open_document} and
+{Pikuri::Lsp::ClientWrapper#close_document}; the measurements behind it are the
 `S-` family in `pikuri-lsp/DESIGN.md` §Measurements; the teaching version is
-`book/lsp.md`.
+`book/lsp.md`. Revised 2026-08-19 to send the `didClose` the original decision
+declined — see *Balancing the open* below.
 
 **Context.** LSP's document model assumes the client is a text editor: you
 `didOpen` a document, stream `didChange` edits as a human types, and the server
@@ -360,9 +362,11 @@ ruby-lsp's source), which is exactly the assumption an agent writing straight to
 disk breaks.
 
 **Decision.** Re-send `textDocument/didOpen` with the file's current disk text
-before every position-based call (`S-reopen-works`). No open-URI set, no version
-counter, no digest, no `didClose`. This is spec-forbidden — *a document must not
-be opened twice* — and neither reference server minds.
+before every position-based call, and `textDocument/didClose` once that call's
+last reply is in (`S-reopen-works`). No open-URI set, no version counter, no
+digest. Re-opening a document already open is spec-forbidden — *a document must
+not be opened twice* — and neither reference server minds; balancing the pair
+per call is what keeps that the only deviation.
 
 **Why the alternatives all lost, one measurement each.** The first is not
 spec-legal and the rest are.
@@ -404,10 +408,44 @@ spec-legal and the rest are.
   nothing to reconcile when the text always comes from disk, and the bytes are
   already in hand: they are the text the tool read to derive the column.
 
-**Consequence.** The policy rests on server behaviour rather than on the
+**Balancing the open.** The first version of this decision sent no `didClose`,
+on the grounds that neither reference server needed one: ruby-lsp drops its
+store entry and jdtls ignores the close outright (`S-didclose-ruby-only`), so
+the close bought nothing measurable. That reasoning was the wrong shape. The
+spec caps a document's open count at one and asks for the pair, and a client
+that only ever opens is not relying on a measurement — it is relying on two
+servers' *tolerance*, which no amount of testing on more servers can turn into
+a guarantee. A pyls or gopls that trusted the count could leak a document per
+call, answer from a stale buffer, or block; measuring three more servers would
+only postpone the question. So the close is sent because it is owed.
+
+**Rejected: closing per request rather than per call.** `supertypes` and the
+call-hierarchy operations issue a `prepare` hop and then a request per level
+against one document, so a close after each request would hand the later ones a
+document the server had already dropped. The pair brackets the whole
+`Navigator#navigate`, in an `ensure`, so a refusal or a death still balances.
+
+**Rejected: firing the close alongside the request.** "Immediately" has to mean
+*after the reply*, not concurrently with it. ruby-lsp happens to be safe either
+way — one worker thread, one incoming queue, strict order — but that is one
+server's implementation detail, and a server answering requests in parallel
+could process the close first and answer about a document it had just dropped.
+Since `request` already blocks for its reply, waiting costs nothing.
+
+**Rejected: restarting a dead child to deliver the close.** Every other
+notification here retries through `with_restart`; this one must not. A dead
+child holds no open documents and a respawned one never received the matching
+`didOpen`, so a retry would deliver a close that only the new process finds
+confusing. `close_document` checks liveness, swallows `Connection::Closed`, and
+never raises — it runs from an `ensure`, where raising would replace a served
+answer with a teardown failure.
+
+**Consequence.** The re-open half rests on server behaviour rather than on the
 specification, so it is pinned by a probe rather than by a reading:
 `bin/pikuri-lsp-check`'s `S-reopen-works` row re-measures it against the
-server actually installed.
+server actually installed, opening and closing as the library does. The close
+half needs no probe — it is a contract, not a measurement, and the specs pin
+the ordering against the fake server.
 
 **Consequence — observing the agent's own edits is deferred, not open.**
 grok-build also syncs from the *write* path (`notify_file_changed(path,

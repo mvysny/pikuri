@@ -44,11 +44,12 @@ module Pikuri
     #
     # == Documents: an agent is not an editor, so it re-opens
     #
-    # {#open_document} re-sends +textDocument/didOpen+ with the file's current
-    # disk text before every position-based call. No open-URI set, no version
-    # comparison, no +didClose+ — and yes, that is the thing the spec forbids
-    # ("a document must not be opened twice"). See {#open_document} for why each
-    # alternative was measured and rejected.
+    # {#open_document} sends +textDocument/didOpen+ with the file's current disk
+    # text before every position-based call, and {#close_document} hands it back
+    # when the call is done. No open-URI set and no version comparison — the pair
+    # is per call, which is also what keeps it correct across a restart, since a
+    # respawned child inherits no open documents. See {#open_document} for why
+    # each alternative to re-opening was measured and rejected.
     #
     # == The Subprocess-seam exception
     #
@@ -277,9 +278,11 @@ module Pikuri
       #   position looks like a declaration, and a whole-file replace starts at
       #   0:0 — the +frozen_string_literal+ comment. +documentSymbol+ then reports
       #   the new name while +definition+ answers +[]+ for it.
-      # * **+didClose+** resyncs ruby-lsp (its store entry is dropped, so the next
-      #   request re-reads disk) and does nothing for jdtls, which keeps answering
-      #   its pre-close copy.
+      # * **+didClose+ alone**, as the way to refresh: it resyncs ruby-lsp (its
+      #   store entry is dropped, so the next request re-reads disk) and does
+      #   nothing for jdtls, which keeps answering its pre-close copy. Rejected as
+      #   the *mechanism* — {#close_document} still sends it, to balance the open
+      #   rather than to refresh anything.
       # * The spec's own out-of-band channel, +didChangeWatchedFiles+, is ignored
       #   by both *for a URI the client has opened* — a client that opened a
       #   document is presumed to be its authority, which is exactly the
@@ -302,6 +305,27 @@ module Pikuri
         notify('textDocument/didOpen',
                { textDocument: { uri: Uris.for_path(path), languageId: @entry.language_id,
                                  version: @document_version, text: text } })
+      end
+
+      # Hand the document back, so the server returns to reading it from disk.
+      #
+      # Balances {#open_document} (+D-lsp-document-sync+), and must go out *after*
+      # the reply to the request it brackets: a server that answers concurrently
+      # can otherwise process the close first and answer about a document it has
+      # just dropped.
+      #
+      # Alone among the notifications here it neither restarts nor raises — a
+      # respawned child never received the +didOpen+ this balances, so there is
+      # nothing for a retry to reach.
+      #
+      # @param path [String, Pathname] the document opened earlier.
+      # @return [void]
+      def close_document(path)
+        return unless alive?
+
+        @connection.notify('textDocument/didClose', { textDocument: { uri: Uris.for_path(path) } })
+      rescue Connection::Closed => e
+        LOGGER.debug("#{@entry.id}: could not close #{path}: #{e.message}")
       end
 
       # Register a server-notification handler, kept across restarts and

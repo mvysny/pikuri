@@ -325,7 +325,7 @@ option lost:
   line 0, column 0, which is the `frozen_string_literal` comment. **The
   optimization that makes editor typing cheap makes whole-file
   replacement invisible.**
-- **`didClose` and forget** drops ruby-lsp's copy so the next request
+- **`didClose` and forget**, as the refresh mechanism, drops ruby-lsp's copy so the next request
   re-reads disk, and does nothing at all on jdtls, which keeps answering
   its pre-close copy.
 - **`workspace/didChangeWatchedFiles`**, the spec's own out-of-band "the
@@ -337,10 +337,29 @@ option lost:
 
 What works on both servers is the thing the spec forbids: **re-send
 `didOpen` with the file's current disk text before every call.** No
-versions, no digests, no `didClose`. Both servers replace their copy
-wholesale, both resolve a renamed symbol at its shifted position, and
-ruby-lsp's index flips over too. The spec says a document must not be
-opened twice; neither server minds.
+versions, no digests. Both servers replace their copy wholesale, both
+resolve a renamed symbol at its shifted position, and ruby-lsp's index
+flips over too. The spec says a document must not be opened twice; neither
+server minds.
+
+That "neither server minds" is worth being uneasy about, and it is why the
+matching **`didClose` is sent** even though no measurement asked for it.
+The spec caps a document's open count at one and wants the pair; a client
+that only ever opens is not resting on a measurement but on two servers'
+tolerance, and no number of additional servers tested converts tolerance
+into a guarantee. A server that trusted the count could leak a document per
+call, or answer from a buffer it should have dropped. So the close is sent
+because it is owed — and the deviation shrinks to one, re-opening a
+document that is already open.
+
+Two details in that close are the kind protocol code gets wrong. It goes
+out **after the reply**, not alongside the request: ruby-lsp happens to be
+safe either way because it runs a single worker thread, but a server
+answering in parallel could process the close first and answer about a
+document it had just dropped. And it brackets the whole *call*, not each
+request — `supertypes` asks a `prepare` hop and then one request per level
+about the same document, so closing after the first would sabotage the
+rest.
 
 It is also nearly free, and that is not luck: the text pikuri sends is the
 text it already read to work out the column, which the next section
@@ -592,9 +611,9 @@ Probes
   ok       the encoding offer is honoured (F-position-encoding)
              the server took the utf-8 offer, so offsets need no conversion
              guards: PositionEncoding exists at all: pikuri converts when it is not
-  ok       re-opening the same document before every call is accepted (S-reopen-works)
-             two calls, two didOpens, the same answer (4 location(s))
-             guards: the document-sync policy: re-open on read, no didChange, no didClose
+  ok       open / ask / close, twice over, gives the same answer (S-reopen-works)
+             two open/close rounds, the same answer (4 location(s))
+             guards: the document-sync policy: re-open on read, never didChange, and close what was opened
   ok       a bare name may score below the index threshold (H-qualified-name-match)
              the index returned 23 hit(s) and none is "Bash"
              guards: why symbol-only lookup is best-effort and file+line is what the tool teaches

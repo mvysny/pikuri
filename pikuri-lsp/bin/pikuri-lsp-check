@@ -155,6 +155,7 @@ begin
                                  encoding: client.position_encoding) }
   end
   reopen = -> { client.open_document(path, File.read(path)) }
+  release = -> { client.close_document(path) }
 
   probe('the encoding offer is honoured (F-position-encoding)',
         'PositionEncoding exists at all: pikuri converts when it is not') do
@@ -165,14 +166,16 @@ begin
     end
   end
 
-  probe('re-opening the same document before every call is accepted (S-reopen-works)',
-        'the document-sync policy: re-open on read, no didChange, no didClose') do
+  probe('open / ask / close, twice over, gives the same answer (S-reopen-works)',
+        'the document-sync policy: re-open on read, never didChange, and close what was opened') do
     reopen.call
     first = client.request('textDocument/definition', params.call)
+    release.call
     reopen.call
     second = client.request('textDocument/definition', params.call)
+    release.call
     if first == second
-      [:ok, "two calls, two didOpens, the same answer (#{Array(first).length} location(s))"]
+      [:ok, "two open/close rounds, the same answer (#{Array(first).length} location(s))"]
     else
       [:drift, "the second answer differs from the first: #{first.inspect} vs #{second.inspect}"]
     end
@@ -213,17 +216,23 @@ begin
     end
 
     reopen.call
-    prepared = Array(client.request('textDocument/prepareTypeHierarchy', params.call))
-    if prepared.empty?
-      [:ok, "prepare answered nothing for #{symbol.inspect}; an empty answer is not a stub"]
-    else
-      supertypes = Array(client.request('typeHierarchy/supertypes', { item: prepared.first }))
-      subtypes = begin
-        Array(client.request('typeHierarchy/subtypes', { item: prepared.first }))
-      rescue Pikuri::Lsp::Connection::ServerError => e
-        "refused: #{e.message}"
+    # Closed after the last of the three requests, not after the first: the walk
+    # below asks about a document an earlier close would have dropped.
+    begin
+      prepared = Array(client.request('textDocument/prepareTypeHierarchy', params.call))
+      if prepared.empty?
+        [:ok, "prepare answered nothing for #{symbol.inspect}; an empty answer is not a stub"]
+      else
+        supertypes = Array(client.request('typeHierarchy/supertypes', { item: prepared.first }))
+        subtypes = begin
+          Array(client.request('typeHierarchy/subtypes', { item: prepared.first }))
+        rescue Pikuri::Lsp::Connection::ServerError => e
+          "refused: #{e.message}"
+        end
+        [:ok, "supertypes: #{supertypes.length} row(s); subtypes: #{subtypes.is_a?(String) ? subtypes : "#{subtypes.length} row(s)"}"]
       end
-      [:ok, "supertypes: #{supertypes.length} row(s); subtypes: #{subtypes.is_a?(String) ? subtypes : "#{subtypes.length} row(s)"}"]
+    ensure
+      release.call
     end
   end
 ensure
