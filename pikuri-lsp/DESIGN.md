@@ -465,3 +465,20 @@ anything unknown, so garbage is safe and plausible-but-wrong is fatal and
 quiet. jdtls ignores the field outright. That inversion is why pikuri
 derives the value from a built-in table instead of asking a user to type
 it.
+
+### R — the `lsp` tool driven end-to-end, `ruby-lsp` 0.26.10 over this monorepo
+
+A fourth run, and the first through the *tool* rather than the protocol: a
+throwaway driver built `LspTool` over a real `Servers` and called all ten
+operations, so `Navigator` dispatch, `Anchor`, `Sources` and `Renderer` were
+in the path. The F / J / H / S runs all probed the client beneath that, which
+is why a rendering fault survived them.
+
+**R-same-line-references.** `references(resolve_for_read)` returned two
+locations on one line — `def resolve_for_read(path) = @filesystem.resolve_for_read(path)`,
+a declaration and a call — and they rendered as two byte-identical rows,
+counted twice in the header and charged twice against the group cap. pikuri
+prints no column by design, so column-distinct results are row-identical, and
+the dedupe has to be on the rendered row: `Location` identity does not
+collapse them. Not specific to endless-method style — any `foo(foo(x))`, or a
+declaration whose body re-invokes it on one line, does the same.

@@ -503,6 +503,23 @@ describe Pikuri::Lsp::LspTool do
       end
     end
 
+    # Two references on one line, differing only in the column pikuri never
+    # prints (R-same-line-references) — so deduping on Location identity would
+    # leave both rows standing.
+    it 'collapses two results on one line, which render as the same row' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes, root|
+        fakes['ruby'].on('textDocument/references') do |_params|
+          [at.call("file://#{root}/read.rb", 4, 8, 24), at.call("file://#{root}/read.rb", 4, 30, 46)]
+        end
+
+        answer = tool.run('operation' => 'findReferences', 'symbol' => 'resolve_for_read',
+                          'file' => 'read.rb', 'line' => 5)
+
+        assert_match(/findReferences "resolve_for_read" — 1 result$/, answer.lines.first.chomp)
+        assert_equal 1, answer.scan(/read\.rb:5/).length, 'one row, not two identical ones'
+      end
+    end
+
     it 'includes the declaration in a references answer' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes, root|
         fakes['ruby'].on('textDocument/references') { |_params| [at.call("file://#{root}/read.rb", 3)] }

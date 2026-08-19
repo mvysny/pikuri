@@ -84,6 +84,10 @@ module Pikuri
       # Location-shaped answers: definition, references, implementation,
       # typeDefinition.
       #
+      # Deduplicated on the rendered row rather than on the +Location+: pikuri
+      # prints no column, so two results differing only in column are one row —
+      # and each copy would spend a slot of the cap {#body} hands out.
+      #
       # @param list [Array<Location>] parsed results, in the server's order.
       # @param operation [Operation]
       # @param symbol [String] what was asked about, for the header.
@@ -93,6 +97,7 @@ module Pikuri
       def locations(list, operation:, symbol:, client:)
         rows = list.reject { |location| @sources.denied?(location.uri) }
                    .map { |location| location_row(location, client) }
+                   .uniq
         return nothing(operation: operation, symbol: symbol) if rows.empty?
 
         compose(operation, symbol, rows, 'result')
