@@ -43,6 +43,14 @@ actually have installed, and reports *ok* / *DRIFT* / *could not ask* per
 probe. Run it after a server upgrade — the specs cannot catch a server
 that changed its mind.
 
+It probes two layers, because a fault in one is invisible from the other.
+By default it drives the protocol client. `--drive` drives the `lsp` tool
+instead: it prints the observation the model would read for every
+operation, then checks what a rendered answer owes — no repeated rows,
+every printed path openable. That is the layer where `Navigator`, `Anchor`,
+`Sources` and `Renderer` live, and a duplicate-row bug that every protocol
+probe passed through is what put it there.
+
 
 ## The tool, in one paragraph
 

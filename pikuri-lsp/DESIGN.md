@@ -182,10 +182,13 @@ project it serves rather than from pikuri's own bundle.
 Every design call above, and every one in `DECISIONS.md`, rests on these.
 They are cited by id from the specs, the reconstructed fixtures
 (`spec/fixtures/README.md`) and `bin/pikuri-lsp-check`, which re-measures
-five of them against a live server and reports *ok* / *DRIFT* / *no answer*
-— run it after a server upgrade. A finding about a message pikuri may not
-send is not among them: see `S-rangeless-didchange-crash` for why probing
-undefined behaviour cannot inform a decision.
+them against a live server and reports *ok* / *DRIFT* / *no answer* — run it
+after a server upgrade. Five through the protocol client, and the two R
+findings with `--drive`, which asks the same questions through the `lsp`
+tool, because a fault in `Renderer` is invisible from below it. A finding
+about a message pikuri may not send is in neither pass: see
+`S-rangeless-didchange-crash` for why probing undefined behaviour cannot
+inform a decision.
 
 Ids are stable and never renumbered; the families mark which run produced
 the finding. Where a finding was confirmed in a server's own source it says
@@ -488,11 +491,34 @@ it.
 
 ### R — the `lsp` tool driven end-to-end, `ruby-lsp` 0.26.10 over this monorepo
 
-A fourth run, and the first through the *tool* rather than the protocol: a
-throwaway driver built `LspTool` over a real `Servers` and called all ten
-operations, so `Navigator` dispatch, `Anchor`, `Sources` and `Renderer` were
-in the path. The F / J / H / S runs all probed the client beneath that, which
-is why a rendering fault survived them.
+A fourth run, and the first through the *tool* rather than the protocol:
+`LspTool` over a real `Servers`, called across all ten operations, so
+`Navigator` dispatch, `Anchor`, `Sources` and `Renderer` were in the path.
+The F / J / H / S runs all probed the client beneath that, which is why a
+rendering fault survived them. Both findings here were *spotted* through the
+tool and then isolated with raw requests, which is what `--drive` exists to
+repeat: `bin/pikuri-lsp-check --drive` re-measures them.
+
+**R-hover-not-on-a-def-line.** `hover` on ruby-lsp answers where a name is
+*used*, and on a constant wherever it appears — but not on the `def` line of
+the method it names. Five anchors, one server, one run: a method
+declaration → `nil`; the same method at a call site → 561 bytes; `class
+Sources` on its own declaration line → 2,752 bytes; a constant reference →
+1,011 bytes; a local variable → `nil`. So it is not "declarations are
+silent" (a class declaration is the richest answer of the five) but
+specifically a method's own name at its definition, which has no receiver to
+resolve.
+
+That is the anchor an agent reaches for first. Asked to document a method,
+the natural line to name is the one holding `def`, and on this server it is
+the single position that answers nothing — while the tool's honest report
+("the server answered no results … not proof that none exist") gives the
+model no hint that a call site would have worked. Deliberately **not** fixed
+in the `hover` summary the model reads: this is one server's behaviour, jdtls
+answers hover on a method declaration, and a per-server hint in a shared
+description is the known-stub list `D-lsp-operation-surface` refuses. The
+route that does work project-wide is `documentSymbol`, already the documented
+answer for a method a project-wide index does not hold.
 
 **R-same-line-references.** `references(resolve_for_read)` returned two
 locations on one line — `def resolve_for_read(path) = @filesystem.resolve_for_read(path)`,

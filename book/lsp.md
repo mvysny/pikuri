@@ -642,6 +642,30 @@ If that shape feels familiar, it is the same one as the wire check in
 guard a **silent** failure in a layer you do not own, and neither can be
 covered by an assertion on your own side of the boundary.
 
+### The other layer, and how it announced itself
+
+Every probe above talks to the *protocol client*. That turned out to be
+half the surface. Driving the `lsp` tool end to end — the same questions,
+but through `Navigator`, `Anchor`, `Sources` and `Renderer`, reading what
+the *model* would read — immediately turned up something no protocol probe
+could see: `findReferences` printing two byte-identical rows, because a
+line holding both a declaration and a call yields two locations that differ
+only in the column pikuri never prints. Both rows counted in the header,
+and both spent a slot of the cap, which bites hardest exactly when the
+answer is long.
+
+The lesson generalizes past this bug. A probe is blind to everything
+*above* the layer it drives, and a rendering fault is invisible from
+underneath: the protocol traffic was perfectly correct. So the diagnostic
+grew a second mode, `--drive`, which asks every operation through the tool
+and then checks what a rendered answer owes rather than what the server
+said — no repeated rows, every printed path one this workspace can open.
+Point it at a method declaration and it also re-measures the quietest
+finding here: on ruby-lsp, `hover` answers at a call site, answers on a
+class declaration, and answers *nothing* on the `def` line of the method
+it names — which is the first place an agent asked to document a method
+will look.
+
 ## The takeaway, portable to any harness
 
 - **An empty success is the worst answer a tool can give a model.** Keep
