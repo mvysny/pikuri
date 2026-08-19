@@ -30,6 +30,24 @@ module Pikuri
     # building. Everything else the server said is passed through as it came,
     # glitches included: pikuri cannot pre-empt thirty servers' failure modes, and
     # a capable model handles "that looks stale, let me ask another way" routinely.
+    #
+    # == The one edit made to a server's prose
+    #
+    # Hover answers prose rather than rows, so its paths reach none of the
+    # {Sources} passes every other result goes through — a +**Definitions**+ link
+    # into a denied root prints exactly what the walked-path denylist exists to
+    # stop. Each +file:+ URI is rewritten to the citation the other nine
+    # operations print, keeping its markdown link only where +resolve_for_read+
+    # would open the file:
+    #
+    #   in:  [version.rb](file:///home/m/proj/lib/version.rb#L9,3-9,20)
+    #   out: [version.rb](lib/version.rb:9)            — a path +read+ opens
+    #        outside the workspace: version.rb         — a read here is refused
+    #        [a path this workspace will not read]     — denied
+    #
+    # That is a denylist obligation, not a style preference: the
+    # passed-through-as-it-came rule above is about not pre-empting a server's
+    # *failure modes*, and holds for every byte that is not a +file:+ URI.
     class Renderer
       # Bytes one observation may reach before it is head-truncated with a
       # marker. Half of what a grep answer is allowed, because these rows carry
@@ -47,6 +65,20 @@ module Pikuri
       # therefore worth having — up to a point that is not "45 documentation links
       # ahead of the docstring".
       MAX_HOVER_BYTES = 3 * 1024
+
+      # A +file:+ URI as it appears inside hover prose, bounded by whitespace and
+      # by the delimiters markdown puts around a URI. That such a bound exists is
+      # why the scan is +file:+-only: a +jdt:+ URI carries a whole classpath entry
+      # in its query and has no reliable end inside a sentence.
+      FILE_URI = %r{file://[^\s)\]<>"']+}
+
+      # The markdown link ruby-lsp builds its +**Definitions**+ line from.
+      LINKED_FILE_URI = /\[([^\]\n]*)\]\((#{FILE_URI})\)/
+
+      # What a citation this workspace will not read collapses to. A denied result
+      # is dropped outright in a row; hover is prose, so something has to stand
+      # where the path was.
+      DENIED_CITATION = '[a path this workspace will not read]'
 
       # LSP's +SymbolKind+, so a row says +class+ rather than +5+.
       SYMBOL_KINDS = {
@@ -110,6 +142,10 @@ module Pikuri
       def hover(reply, operation:, symbol:)
         text = hover_text(reply.is_a?(Hash) ? reply['contents'] : reply).strip
         return nothing(operation: operation, symbol: symbol) if text.empty?
+
+        # Before the truncation, so {MAX_HOVER_BYTES} is spent on documentation
+        # rather than on absolute paths.
+        text = rewrite_file_uris(text)
 
         kept, marker = Pikuri::Workspace::Search::Utils.head_truncate(
           text, max_bytes: MAX_HOVER_BYTES, hint: 'the rest is documentation the server holds'
@@ -375,6 +411,42 @@ module Pikuri
         when Hash then contents['value'].to_s
         else ''
         end
+      end
+
+      # Links first, so the bare pass only ever sees a URI that arrived naked.
+      def rewrite_file_uris(text)
+        text.gsub(LINKED_FILE_URI) { linked_citation(Regexp.last_match(1), Regexp.last_match(2)) }
+            .gsub(FILE_URI) { bare_citation(Regexp.last_match(0)) }
+      end
+
+      def linked_citation(text, uri)
+        label, linkable = citation(uri)
+        linkable ? "[#{text}](#{label})" : label
+      end
+
+      # A URI the server wrote into a sentence rather than a link, so it may carry
+      # the sentence's punctuation — which is not part of the path.
+      def bare_citation(uri)
+        trailing = uri[/[.,;:]+\z/].to_s
+        citation(uri.delete_suffix(trailing)).first + trailing
+      end
+
+      # Never invent a link that was not there, and never keep one whose target
+      # +read+ would refuse — a citation the model cannot act on is the dead end
+      # {Sources} exists to avoid.
+      #
+      # @param uri [String] a +file:+ URI, fragment and all.
+      # @return [Array(String, Boolean)] what to print, and whether it may be a
+      #   link target.
+      def citation(uri)
+        path_uri, _, fragment = uri.partition('#')
+        return [DENIED_CITATION, false] if @sources.denied?(path_uri)
+
+        label = @sources.label_for(path_uri)
+        return [label, false] unless @sources.actionable?(path_uri)
+
+        line = fragment[/\AL?(\d+)/, 1]
+        [line ? "#{label}:#{line}" : label, true]
       end
     end
   end

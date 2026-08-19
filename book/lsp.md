@@ -501,6 +501,19 @@ where the workspace could actually open it. Elsewhere the row keeps a bare
 basename, which is why `Object` above reads `outside the workspace:
 compat.rb:20`: provenance the model can see and cannot turn into a read.
 
+That obligation follows the paths into *prose*, which is the part worth
+watching for in your own tooling. `hover` is the one operation that answers
+markdown rather than rows, and ruby-lsp fills its answer with editor-shaped
+links — `[version.rb](file:///home/you/proj/lib/version.rb#L9,3-9,20)`, a
+VS Code convention down to the column numbers. Those are walked paths too,
+arriving in a shape the row path never sees, so every `file:` URI in the
+blob is rewritten to the same `lib/version.rb:9` citation a row carries —
+keeping its link only where the workspace would open the file, and
+collapsing to a refusal where it would not. It is the same check; what
+changed is that the answer stopped being a list and started being a
+paragraph, and a check written against rows would have quietly stopped
+applying.
+
 The sharper point is about *trust*, and it will change a verdict on your
 own wiring. A language server's index does not stop at your project. It
 reaches the whole bundle, the JDK, four hundred transitive jars — one

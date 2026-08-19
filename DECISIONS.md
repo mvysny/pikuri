@@ -343,6 +343,74 @@ document.
 
 ---
 
+## D-lsp-hover-file-uris — Rewrite the `file:` URIs inside hover prose; link only what `read` would open (2026-08-19)
+
+**Status:** Accepted, shipped as `Lsp::Renderer#rewrite_file_uris`.
+
+**Context.** `hover` is the only one of the ten operations whose answer is
+*prose* rather than rows. The other nine come back as `Location` /
+`SymbolInformation` / `CallHierarchyItem` structures, and every one of them
+renders through `Sources#label_for` and `Sources#denied?`. Hover's `contents`
+is one opaque markdown string — the server has already flattened its own
+structure into it, so there is no link list to walk. ruby-lsp fills that
+string with VS Code file links:
+
+```
+**Definitions**: [version.rb](file:///home/m/proj/lib/version.rb#L9,3-9,20)
+```
+
+Three things are wrong with passing that through. It is a **walked path that
+reaches no `denied?` pass** (`D-walked-path-denylist`), so a definition
+inside a credential root prints its absolute path. It is a **dead-end
+citation** — the `read` tool takes neither a URI nor a `#Lline,col` fragment
+— while nine other operations spent their design on printing a path the
+model can act on. And it is **expensive**: hover's whole value is quoting a
+class comment, `MAX_HOVER_BYTES` is 3 KB, and each link burns ~90 bytes of
+absolute path ahead of the documentation.
+
+**Decision.** Every `file:` URI in the blob is rewritten, before the
+truncation so the cap is spent on prose. Denied → a bracketed refusal, the
+link dropped whole. Readable → the `label_for` citation with the fragment's
+line, `path:line`, keeping its markdown link. Neither → the label alone
+(`outside the workspace: entry.rb`), no link. A URI that arrived bare stays
+bare. The rule in both directions: **never invent a link that was not there,
+never keep one whose target `read` would refuse.**
+
+**Rejected: pass it through as it came.** The renderer's own stated posture
+(`D-lsp-operation-surface`) — pikuri cannot pre-empt thirty servers' failure
+modes, so it relays glitches rather than smoothing them. That rule is about
+a server's *behaviour*, though, and this is pikuri's own denylist obligation
+arriving through a shape the row path does not cover. The rule still holds
+for every byte that is not a `file:` URI.
+
+**Rejected: parse ruby-lsp's `**Definitions**` line.** It knows the most
+about the markdown and generalizes the least: the heading is ruby-lsp's own
+invention, gopls emits no links at all, rust-analyzer emits different ones.
+A scan keyed on the *scheme* treats all thirty servers alike and no-ops on a
+server that emits nothing.
+
+**Rejected: a bare or backticked citation, dropping the link.** Cheaper
+still, and consistent with how a row cites. The link earns its ~15 bytes by
+saying *this is a file that exists* — and once the refused and denied cases
+degrade to plain text, link-presence carries the same signal `label_for`
+already encodes, rather than a second one to learn.
+
+**Rejected: keeping the `#L9,3-9,20` fragment.** It is VS Code's convention
+for an editor that will place a cursor, and it carries **columns** — which
+the whole tool refuses (`symbol`, never a column) and which produced a real
+bug: two results differing only in column rendered as one row and counted
+twice (`R-same-line-references`). A model finds the symbol on the line.
+
+**Rejected: extending the scan to `jdt:`.** `Sources` can already label one
+(`java.lang.String (rt.jar)`), so the objection is not semantic — it is that
+a `jdt:` URI carries an entire classpath entry in its query, runs to ~300
+characters and has **no reliable end inside a sentence**, where a `file:`
+URI stops at whitespace or `)`. `http(s):` stays untouched for a different
+reason: a URL in a docstring is prose, not a result, and it is never
+dereferenced either way (`D-lsp-scheme-fallback`).
+
+---
+
 ## D-lsp-document-sync — Re-open the document around every call; never send an edit stream (2026-08-18, revised 2026-08-19)
 
 **Status:** Accepted, shipped. The policy and its mechanics are

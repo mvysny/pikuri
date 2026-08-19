@@ -103,6 +103,19 @@ module Pikuri
         !path.nil? && in_root?(path)
       end
 
+      # Whether this workspace would actually open the document behind a +file:+
+      # URI — what decides whether a citation may carry a *link*, since a link to
+      # a path the +read+ tool refuses is the dead-end citation this class exists
+      # to avoid. Includes the {#denied?} pass, so it is safe to ask on its own.
+      #
+      # @param uri [String]
+      # @return [Boolean] +false+ for any non-+file:+ URI: a jar entry is not a
+      #   path, so nothing here can open one.
+      def actionable?(uri)
+        path = Uris.to_path(uri)
+        !path.nil? && !@filesystem.denied?(path) && readable?(path)
+      end
+
       # Whether this URI must be dropped rather than rendered.
       #
       # A result is a path the *server* walked to, so it reaches no
