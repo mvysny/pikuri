@@ -28,6 +28,12 @@ Siblings already in the repo:
   **dynamic confidentiality** enforcement (private in → sever egress).
   This note is its **integrity** counterpart (untrusted in → sever
   control). Same per-context, structural spirit; opposite axis.
+- [`templated-subagent-replies.md`](templated-subagent-replies.md) —
+  §"Shape 4 — Declassification = schema-narrowing" below, promoted to
+  standalone: the narrow return type *without* handles or a
+  `VariableStore`, so it costs a post-processing step at an existing
+  choke point rather than the machinery that shelved this note. If that
+  one graduates, cut Shape 4 here to a pointer.
 
 ## The idea, in one paragraph
 
