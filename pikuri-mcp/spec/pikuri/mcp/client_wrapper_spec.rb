@@ -14,7 +14,7 @@ RSpec.describe Pikuri::Mcp::ClientWrapper do
   # block lands at the top level and collides with the same-named
   # constant in +servers_spec.rb+.
   def test_server_command
-    ['bundle', 'exec', 'ruby', File.expand_path('../../support/test_mcp_server.rb', __dir__)]
+    TestServer.command
   end
 
   def fresh_entry
@@ -29,7 +29,7 @@ RSpec.describe Pikuri::Mcp::ClientWrapper do
     Tempfile.create('pikuri-flaky-marker') do |f|
       marker = f.path
       File.delete(marker) if File.exist?(marker)
-      cmd = ['env', "PIKURI_TEST_FLAKY_MARKER=#{marker}", *test_server_command]
+      cmd = TestServer.command('PIKURI_TEST_FLAKY_MARKER' => marker)
       entry = Pikuri::Mcp::Registry::StdioEntry.new(id: 'test', command: cmd)
       wrapper = described_class.new(entry)
       begin

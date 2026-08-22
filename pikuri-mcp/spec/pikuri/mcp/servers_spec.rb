@@ -11,7 +11,7 @@ require 'set'
 # Each spec spawns its own +Mcp::Servers+ so a server crash / close in
 # one example can't leak into the next.
 RSpec.describe Pikuri::Mcp::Servers do
-  TEST_SERVER_COMMAND = ['bundle', 'exec', 'ruby', File.expand_path('../../support/test_mcp_server.rb', __dir__)].freeze
+  TEST_SERVER_COMMAND = TestServer.command.freeze
 
   def fresh_registry
     Pikuri::Mcp::Registry.new(entries: [
@@ -339,7 +339,7 @@ RSpec.describe Pikuri::Mcp::Servers do
   # +#resolve_description+ would otherwise bottom out at +serverInfo.name+.
   describe 'description synthesis via synthesizer:' do
     def no_instructions_registry
-      cmd = ['env', 'PIKURI_TEST_SKIP_INSTRUCTIONS=1', *TEST_SERVER_COMMAND]
+      cmd = TestServer.command('PIKURI_TEST_SKIP_INSTRUCTIONS' => '1')
       Pikuri::Mcp::Registry.new(entries: [
         Pikuri::Mcp::Registry::StdioEntry.new(id: 'test', command: cmd)
       ])
