@@ -119,9 +119,14 @@ describe Pikuri::Lsp::LspTool do
         fake = fakes['ruby']
         # Keyed off the handshake rather than a sleep: the client is spawned by
         # the call below, so the index must look busy *after* it connects and
-        # die while the gate is still waiting.
+        # die while the gate is still waiting. Awaited on +initialized+, not on
+        # +initialize+: {FakeServer} records a message *before* it answers it, so
+        # awaiting the request itself can crash the wire while the reply is still
+        # unwritten — and the client then reports a death during *startup*, which
+        # is the other answer this example exists to keep distinct. The client
+        # sends +initialized+ only once that reply is in hand.
         Thread.new do
-          fake.await('initialize')
+          fake.await('initialized')
           fake.notify('$/progress', 'token' => 'boot',
                                     'value' => { 'kind' => 'begin', 'title' => 'Indexing' })
           fake.crash!
