@@ -39,7 +39,19 @@ module Pikuri
 
       # C0/C1 control bytes (except the ones {.escape} turns into +\n+) — invalid
       # in an ICS value and a structure-injection vector; stripped outright.
-      CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/n
+      #
+      # A +String#delete+ byte set, not a regexp: {.escape} strips these from the
+      # *binary* copy of the value, keeping the strip byte-wise (every byte here
+      # is ASCII, so it can never bite into a multibyte sequence) without a
+      # +/n+-flagged regexp meeting a UTF-8 string. Ruby warns on that pairing
+      # ("historical binary regexp match"), and an interpreter warning goes to the
+      # raw +$stderr+, bypassing +Pikuri.log_io+ and painting over a TUI's screen
+      # — one accented character in a title was enough. Dropping the +/n+ instead
+      # would have made the strip character-wise and raise +ArgumentError+ on
+      # invalid UTF-8, which {CalendarCreate} then reports as a bad date.
+      #
+      # @return [String] a +String#delete+ character set.
+      CONTROL = "\x00-\x08\x0b\x0c\x0e-\x1f\x7f"
 
       # Build the +.ics+ document for one event.
       #
@@ -103,7 +115,7 @@ module Pikuri
         # Block form: the returned strings are used literally, sidestepping
         # gsub's backreference interpretation of a replacement String. Backslash
         # first, so the escapes introduced below aren't themselves re-escaped.
-        value.to_s.gsub(CONTROL, '')
+        value.to_s.b.delete(CONTROL).force_encoding(Encoding::UTF_8)
              .gsub('\\') { '\\\\' }
              .gsub(';') { '\\;' }
              .gsub(',') { '\\,' }

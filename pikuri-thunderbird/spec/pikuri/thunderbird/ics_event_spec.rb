@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'stringio'
 require 'time'
 
 describe Pikuri::Thunderbird::IcsEvent do
@@ -63,6 +64,30 @@ describe Pikuri::Thunderbird::IcsEvent do
   it 'strips raw control bytes' do
     out = build(title: "a\x07b\x00c", start: Time.parse('2026-07-20 14:00'))
     assert_match(/^SUMMARY:abc\r$/, out)
+  end
+
+  # The one non-ASCII example, and it asserts content *and* silence together on
+  # purpose: Ruby emits the /n-vs-UTF-8 warning once per Regexp object, so a
+  # separate accented example would burn it and let a regressed escape() slip
+  # past the stderr guard. Nothing else in this gem's specs builds an ICS with
+  # non-ASCII text, so this is the first — and only — build that could warn.
+  it 'passes non-ASCII text through verbatim, with no interpreter warning' do
+    prior = $stderr
+    $stderr = StringIO.new
+    begin
+      out = build(title: 'Stretnutie s Máriou', start: Time.parse('2026-07-20 14:00'),
+                  location: "Zasadačka č.\x013")
+      captured = $stderr.string
+    ensure
+      $stderr = prior
+    end
+
+    assert_match(/^SUMMARY:Stretnutie s Máriou\r$/, out)
+    assert_match(/^LOCATION:Zasadačka č.3\r$/, out)
+    assert_equal Encoding::UTF_8, out.encoding
+    # A /n-flagged regexp meeting a UTF-8 string warns straight to the raw
+    # $stderr, which lands on a TUI's screen instead of in its log window.
+    assert_equal '', captured
   end
 
   it 'omits LOCATION and DESCRIPTION when blank' do
