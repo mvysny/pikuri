@@ -29,12 +29,22 @@ Related:
   **mutation** — which bites harder for tool schemas than for skills,
   since schemas sit at the very front of the prefix, so gating one
   invalidates everything.
-- `feedback.txt` item 3, *"the standing prompt is heavy"* ("safety block +
-  harness + AGENTS.md + skills catalog + tool schemas on every turn") —
-  the live feedback this is the mechanism half of. Its other halves
-  (the tool-schema restatement in prose, the duplicated
-  don't-mention-the-guidelines material) are prompt-editing, not gating,
-  and are not this note's business.
+- **The origin complaint**, from the 2026-08 in-harness review (Grok 4.6;
+  it lived in `ideas/feedback.txt`, deleted 2026-08-25 once its last item
+  closed): *"the standing prompt is heavy — safety block + harness +
+  AGENTS.md + skills catalog + tool schemas on every turn."* Only the
+  tool-schema clause reaches this note, and it is the whole reason the
+  note exists. The skills-catalog clause was answered by
+  `D-skill-path-activation`. The other two halves the review named — a
+  tool-schema restatement in prose, and duplicated
+  don't-mention-the-guidelines material — were prompt-editing rather than
+  gating, and on inspection (2026-08-25) describe nothing pikuri ships:
+  `pikuri-code/prompts/coding-system-prompt.txt` and
+  `pikuri-core/prompts/agent-loop.txt` name no wired tool (the standing
+  convention, which has its own grep tripwire) and carry no
+  guidelines-secrecy material. Closed by observation, not by work — most
+  likely the reviewer was reading its own vendor preamble. Nothing of
+  that item is open anywhere but here.
 
 
 ## The prize is genuinely bigger than the skills one
@@ -153,6 +163,3 @@ longer declared is a shape some providers reject. **Gating is add-only.**
 - The measurement (30 tools ≈ 22 KB of schema prose, ~4× the skill
   catalog) is worth keeping wherever the entry lands — it is the reason
   anyone raises this, and re-deriving it is a half-hour.
-- `feedback.txt` *"the standing prompt is heavy"* stays open on its
-  prompt-editing half regardless; cut only the tool-schema-residency
-  clause if this settles first.

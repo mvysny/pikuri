@@ -1,8 +1,25 @@
 # Telling the *model* how much context it has spent
 
-Status: **idea, not built.** Origin: `feedback.txt` item 1 ("no 'where am
-I in context?' signal"), which asked for a budget line on *every* turn.
-That framing is rejected below; what survives is much smaller.
+Status: **idea, not built — and the shape that started it is now refused
+outright.** Origin: the 2026-08 in-harness review (Grok 4.6; it lived in
+`ideas/feedback.txt`, deleted 2026-08-25 once its last item closed),
+whose headline ask was a readout on *every* turn: *"I can't see token
+use... a small budget line on each turn (~40% context used) would change
+behavior."* The author refused that on 2026-08-25 — watching the budget
+is the human operator's job, and the readout that already ships is
+enough (see *What already ships* below, and the operator-discipline
+thesis in [`context-overflow-behavior.md`](context-overflow-behavior.md)).
+So the per-turn line is **dead, not deferred**; the reasons are kept
+under *Why the per-turn line is wrong* because they are why, not
+history.
+
+What stays open is the much smaller question this note argues its way
+down to: one late warning, for the autonomous legs no operator is
+watching. That remains blocked on
+[`context-overflow-behavior.md`](context-overflow-behavior.md), which is
+also the note that draws the operator-discipline line between the
+interactive agent (where the refusal is clearly right) and those legs
+(where it can't reach).
 
 The human-facing half of this already ships. The open question is whether
 to add a model-facing half, and — after arguing it out — the answer is at
@@ -259,10 +276,12 @@ host anyone will actually use.
 ## Graduation plan
 
 Blocked on [`context-overflow-behavior.md`](context-overflow-behavior.md)
-— see above. Once that's settled, the fork here is real (per-turn vs. late-only vs. nothing), so
-this earns a `DECISIONS.md` entry whenever it lands — including the "tell
-it nothing" branch, which is a legitimate outcome and would otherwise get
-re-proposed every time someone rereads the feedback file.
+— see above. Once that's settled, the fork here is real (late-only vs.
+nothing — the per-turn arm is already refused, see the status note), so
+this earns a `DECISIONS.md` entry whenever it lands, including the "tell
+it nothing" branch, which is a legitimate outcome. Write the entry only
+then: today's refusal kills one *shape*, and an entry claiming the whole
+axis is settled would be wrong about the autonomous legs.
 
 - Decision + rejected alternatives → `DECISIONS.md`.
 - The `nil`-cap ⇒ no-line rule, and the once-per-band hysteresis → yardoc
@@ -271,8 +290,6 @@ re-proposed every time someone rereads the feedback file.
 - The fact-plus-consequence argument — why the message text is a function
   of the overflow policy — → that entry's rationale, since it is the
   reason the fork exists at all.
-- Then cut item 1 from `feedback.txt`, renumber the remainder, and add
-  the settled line to its header note.
 
 The **sensor** can graduate ahead of all that, if a human-facing warning
 is wanted for its own sake: no `DECISIONS.md` entry (no fork — a
