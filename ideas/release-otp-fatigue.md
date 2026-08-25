@@ -169,6 +169,22 @@ against: rubygems.org accepts a code from the preceding window as well
 than 30 s. Treat that as margin that turns a marginal run into a
 successful one, never as budget to spend.
 
+**Where the margin actually gets spent: clock skew.** Step 3 computes
+the window boundary from the *release machine's* clock, but the code
+is read off the *authenticator's*. If the two disagree by δ, the task
+waits for the wrong boundary and hands the pushes a code with `30 − δ`
+seconds left rather than 30. This is the one assumption in the design
+that fails silently — nothing reports a skewed clock, the release just
+gets flakier.
+
+It is tolerated rather than fixed, and comfortably: an ~8 s push phase
+in a 30 s window absorbs **up to ~20 s of skew** before the budget is
+threatened, and TOTP drift tolerance roughly doubles that. Any machine
+running NTP is nowhere near it. Worth knowing as the reason the
+generous margin is not over-engineering — it is what buys the right to
+compute the boundary locally instead of asking the human to watch the
+authenticator.
+
 ### What survives from the parallel-execution notes
 
 Most of the earlier implementation caution evaporates with step 5. Two
