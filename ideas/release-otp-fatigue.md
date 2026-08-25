@@ -35,6 +35,14 @@ covers 3–5 consecutive gem pushes** — as many as fit before its ~30 s
 window rolls; then the next code covers the next 3–5. rubygems.org
 does not burn a code on first use.
 
+**Do not read 3–5 as a cost-per-push.** That figure was measured under
+today's procedure, where each iteration is *prompt → human pastes →
+build the next gem → upload*. It is dominated by paste latency and
+build time; the upload itself is **sub-half-second**. 3–5 is therefore
+a lower bound on how many pushes a window can hold, not a measure of
+what a push costs — a distinction that turns out to decide the fan-out
+width (see *Choosing the width*).
+
 This is the pivot the whole file turns on, so it is worth stating what
 it kills and what it unlocks:
 
@@ -109,8 +117,9 @@ rather than repaired mid-flight.
    authenticator against a stopwatch.
 4. **Push everything inside that window, budget ≤20 s.** One code
    covers the whole release, and ordering is free to ignore per the
-   finding above. See *Choosing the width* below — the fan-out width
-   is derived from the budget, not picked first.
+   finding above. With builds already done, sixteen uploads cost
+   under 8 s even serially, so a modest 4-wide fan-out leaves the
+   budget mostly headroom — see *Choosing the width*.
 5. **No mid-flight re-prompt. No self-healing.** If the window is
    blown, some pushes fail; the task reports exactly which gems landed
    and exits non-zero. **The recovery is re-running it** — which step
@@ -127,18 +136,32 @@ rather than repaired mid-flight.
 
 ### Choosing the width
 
-**4-wide probably does not fit a 20 s budget.** Working from the
-author's own measurement of 3–5 pushes per 30 s window — call it 6–10 s
-per push — sixteen gems four-wide is four sequential batches, ≈24–40 s.
-Over budget, and over the window.
+**The budget is not tight — it was never close.** Once the two slow
+steps are lifted out of the window, what remains is the wire time of
+sixteen small uploads at under half a second each: **under 8 seconds
+even fully serial.** Step 1 is doing double duty here — moving the
+builds ahead of the push phase is not only fail-fast, it is what keeps
+the window clear.
 
-Pushes are latency-bound rather than bandwidth-bound (the gems are
-small), so width should scale close to linearly: **8-wide is two
-batches, ≈12–20 s; 16-wide is one batch, ≈6–10 s.** Derive the width
-from the budget and measure it on the first release that uses this,
-rather than fixing it at 4 up front. If 16-wide is polite enough to
-rubygems.org — sixteen small uploads is not abusive — one batch is both
-the fastest and the simplest thing to reason about.
+So the width is chosen for **margin, not throughput**:
+
+- **4-wide is ample** — roughly 2 s of wire time, leaving the 20 s
+  budget almost entirely as headroom.
+- Going 8- or 16-wide buys nothing. The earlier draft of this note
+  argued for them from a 6–10 s per-push estimate derived by
+  misreading 3–5-per-window as a cost-per-push; corrected above.
+- The parallelism now exists to absorb a **straggler** — one slow
+  upload, a TCP retry, a server hiccup — rather than to fit the
+  window. Four-wide means a single 5 s outlier costs 5 s, not 5 s
+  added to a critical path that was already near the limit.
+
+**A useful consequence: serial still works.** With the whole push
+phase under 8 s, one OTP code covers the release even with no
+concurrency at all. That makes parallelism a *robustness* choice, not
+a *load-bearing* one — so if fanning out complicates error reporting
+or the per-gem landed/skipped/failed summary, dropping to serial is a
+legitimate simplification that still delivers the single-prompt goal.
+Worth knowing before writing the concurrency.
 
 There is also free headroom worth knowing about but **not** designing
 against: rubygems.org accepts a code from the preceding window as well
@@ -327,14 +350,11 @@ instead of restating the list.
 
 Both load-bearing questions are settled; what is left is small.
 
-- **What width actually hits the budget?** Reasoned above as 8- or
-  16-wide from a 6–10 s per-push estimate, but that estimate is
-  derived from a memory of 3–5 pushes per window, not a timing. Time
-  one push on the next release and pick the width from it.
-- **Is 16 concurrent pushes rude to rubygems.org?** Sixteen small
-  uploads from one account is not obviously abusive, but if there is a
-  published rate limit it should set the ceiling rather than the
-  budget doing it.
+- **Confirm the sub-half-second upload with one timing.** The budget
+  has enormous margin if it holds, and the whole design leans on it.
+  It is an observation, not a measurement — time one push on the next
+  release. If it is wildly off, revisit the width; nothing else in the
+  design moves.
 - **Does the ownership pre-flight need an authenticated call?** The
   squatting check wants "does this name exist and do we own it",
   which may need the owners API rather than a public version lookup —
