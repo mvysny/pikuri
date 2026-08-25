@@ -79,6 +79,117 @@ design.
 
 ---
 
+## D-release-one-otp — One OTP code for sixteen pushes; stdin only, and re-run to recover (2026-08-25)
+
+**Status:** Accepted; implemented 2026-08-25 in the top-level `Rakefile`
+(`rake release`). Graduated from `ideas/release-otp-fatigue.md`, now retired.
+
+**Context.** A release pushes sixteen gems, and at rubygems.org MFA level
+`ui_and_api` every `gem push` is challenged — so a release meant sixteen
+interactive OTP prompts. Worse than the tedium was the failure mode: a push
+that failed partway through the fan-out (an expired code, a typo, a network
+blip) aborted the task with the earlier gems already public and unyankable,
+and the documented recovery was to burn a version number and release the next
+patch.
+
+Two questions decided the design, and both were settled rather than assumed:
+
+- **A TOTP code is not single-use.** The maintainer's past releases spent one
+  code on 3–5 consecutive pushes. So nothing needs to pay for freshness, and
+  one code can authorize an entire release that fits inside one window.
+- **Push order is not enforced.** rubygems.org's `Pusher` never inspects
+  dependencies; `Dependency` carries an `unresolved_name` column for a
+  dependency naming a gem it has never seen, and `Rubygem`'s
+  `after_create :update_unresolved` resolves those once the name appears. The
+  `GEMS` list keeps its topological order as documentation of the real
+  dependency graph, but it no longer constrains scheduling.
+
+**Decision.** Do everything slow and everything fallible *before* asking for
+the code, then spend one deliberately fresh window on uploads alone: build all
+sixteen gems, pre-flight them against rubygems.org, sleep to the next TOTP
+boundary with narration, take one code on stdin, and push two-wide with the
+code passed to each child through `GEM_HOST_OTP_CODE` and its stdin closed.
+
+The load-bearing half is that **every step is idempotent**, which is what lets
+the push phase carry no OTP state at all. There is no mid-flight re-prompt and
+no carry-forward retry because *the recovery for anything is re-running the
+task*: an already-published version is skipped and reported, and an applied
+bump / existing commit / existing tag are passed over. That also turns the
+pre-flight into a squatting check — "this exact version is already published"
+(benign, a resumed run) and "this name is owned by someone else" (not benign)
+are deliberately two questions, and the second refuses the release up front
+rather than surfacing as a 403 deep in the fan-out.
+
+**Alternatives rejected.**
+
+- **Generating the code locally with `rotp`** — mint from a TOTP seed in
+  `pass`, zero prompts, fully unattended. Genuinely attractive once
+  reusability made it free of waiting. **Killed on cost/benefit:** it wants a
+  gem dependency, a secret-store integration, and the TOTP seed living on the
+  release machine beside the API key — a real collapse of the two factors —
+  to buy the difference between *one* prompt and none. Kept as a contingency
+  with a defined trigger: the push phase not fitting inside a single window,
+  at which point no single-code scheme survives. Current margin is roughly 4×.
+  Even then it is not the next rung — a parent-owned code with a
+  carry-forward retry costs a couple of extra prompts and no dependency.
+- **Dropping the account to MFA level `ui_and_gem_signin`** — zero prompts,
+  zero code. **Killed** because it buys exactly what `rotp` buys while
+  weakening authentication, and `rotp` already lost on a much smaller cost. If
+  it is ever revisited, the caveat is load-bearing: a push-only key scoped to
+  `pikuri-*` with an expiry set at creation, deleted after the release.
+- **Supplying the code through the environment** (`GEM_HOST_OTP_CODE=… rake
+  release`) — the obvious non-interactive shape, and **the trap worth
+  recording** because it looks like it should work and silently makes things
+  worse. Each `gem push` runs as a separate child; when the exported code goes
+  stale each child independently discovers it, prompts, retries, succeeds, and
+  throws the fresh code away on exit — so from the first expiry you get one
+  prompt per *gem*. Beyond that it loses on ordering even when it works: a
+  code handed over upfront starts dying immediately, forcing the task to build
+  while the clock runs or to refuse. Asking on stdin *after* the slow phases
+  inverts exactly that. Its only remaining claim was unattended operation,
+  which it serves badly — a code pasted into a shell needs the same human a
+  prompt does. Not to be confused with the plumbing: each child still receives
+  the code *through* `GEM_HOST_OTP_CODE`. That is how it reaches the child,
+  not an interface for supplying it.
+- **Trusted Publishing (OIDC)** — the real end state: rubygems.org exchanges a
+  short-lived CI token for a push token, so there is no long-lived API key and
+  no OTP at all. **Deferred, not rejected.** rubygems.org supports GitHub
+  Actions and GitLab CI, not Woodpecker, so today it means a GitHub mirror
+  whose only job is the release workflow — a values call for a deliberately
+  Codeberg-hosted project, not a technical one. Nothing here conflicts with
+  it: an idempotent build-then-fan-out task is the same task a workflow would
+  run, minus the OTP handling.
+- **Sleeping only when the current window is short** — measure, and skip the
+  wait in the ~3 runs out of 4 that already have room. **Killed** as
+  optimising the wrong thing: a release is rare enough that a mean 15 s costs
+  nothing, and the wait is not idle — it is exactly when the human fetches
+  their authenticator. The conditional version also needs a threshold covering
+  paste latency as well as push time, and can strand the human mid-paste with
+  "that code is too stale, try again".
+
+**Consequences.**
+
+- The boundary is computed from the release machine's clock while the code is
+  read off the authenticator's; a disagreement of *d* seconds hands the pushes
+  a window of `30 − d`. This is the one assumption that **fails silently** —
+  nothing reports a skewed clock. It is tolerated rather than fixed, and the
+  generous margin is what buys it: a push phase of a few seconds inside a 30 s
+  window absorbs well over 20 s of skew, and rubygems.org's TOTP drift
+  tolerance roughly doubles that. Recorded at `wait_for_fresh_otp_window`.
+- The fan-out width (two) is not load-bearing. With the builds hoisted out,
+  each upload is well under a second, so the concurrency absorbs a straggler
+  rather than fitting a budget; serial would also work. The sub-second figure
+  is an observation, not a timing — worth confirming on the first real release.
+- The bump commit now carries `Gemfile.lock`, which pins every path gem's
+  version and so is rewritten by bundler the moment the constant changes.
+  Committing only `version.rb` left the lock dirty after every release and the
+  tag pointing at a tree whose lock disagreed with its own gemspecs.
+- `rake release` accepts `DRY_RUN=1`, which runs the pre-flight, the bump, the
+  builds, the window wait and the prompt for real and reverts the bump on the
+  way out. A release is irreversible — a pushed gem can be yanked, but its
+  version number is spent forever — so the rehearsal is what makes changing
+  this task safe.
+
 ## D-lsp-direct-not-mcp — Write the LSP client; don't bridge one through MCP (2026-08-18)
 
 **Status:** Accepted, shipped as `pikuri-lsp`.

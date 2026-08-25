@@ -2,3 +2,6 @@
 /vendor/bundle/
 .yardoc/
 doc/
+
+# Built by `rake release`; artifacts, never tracked.
+*.gem
