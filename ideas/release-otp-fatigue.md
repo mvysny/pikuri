@@ -86,54 +86,76 @@ resolve the fresh versions. Pushing the metagem last never protected
 against that either (indexing is asynchronous regardless), so
 parallelism takes nothing away.
 
-## The chosen strategy
+## The solution to implement
 
-Build locally, then fan out in parallel inside a **single fresh OTP
-window**, and make every step idempotent so a blown window is retried
-rather than repaired mid-flight.
+Build and verify everything up front, then spend one deliberately
+fresh OTP window on uploads alone. Seven steps; the ordering is the
+design.
 
-1. **Build all sixteen first, push nothing.** A gemspec error in gem
-   14 must be found before gem 1 is public. Building is offline and
-   cheap; make it a phase with its own failure exit.
-2. **Pre-flight the whole set against rubygems.org**, before the
-   first push:
-   - *Version already published?* Report it and skip that gem. On a
-     resumed run this is the expected case and is what makes retry
-     safe.
-   - *Name exists but we are not an owner?* This is the squatting
-     signal worth alarming on — and it is a **different check from
-     the one above**. An already-published version under a name you
-     own is benign (a resumed run); a name in `GEMS` owned by someone
-     else is not, and `gem push` would only surface it as a 403 deep
-     in the fan-out. Checking ownership up front turns that into a
-     pre-flight refusal.
-3. **Take the code with enough window left to spend it.** TOTP
-   windows are aligned to the Unix epoch, so the task can compute
-   `30 - (Time.now.to_i % 30)` — how much of the current code's life
-   remains. Ask for a code, measure on arrival, and if too little is
-   left for the budget, sleep to the boundary and ask once more.
-   **The task enforces the timing — never the human**, who cannot be
-   asked to eyeball an authenticator against a stopwatch. The code
-   arrives on **stdin** — the ordering this depends on is the whole
-   subject of *Supplying the code* below.
-4. **Push everything inside that window, budget ≤20 s.** One code
-   covers the whole release, and ordering is free to ignore per the
-   finding above. With builds already done, sixteen uploads cost
-   under 8 s even serially, so a modest 4-wide fan-out leaves the
-   budget mostly headroom — see *Choosing the width*.
-5. **No mid-flight re-prompt. No self-healing.** If the window is
-   blown, some pushes fail; the task reports exactly which gems landed
-   and exits non-zero. **The recovery is re-running it** — which step
-   2 already made safe and cheap. This is the whole payoff of the
-   idempotency work: the retry story *replaces* the re-prompt story,
-   and with it goes the parent-owned OTP state machine, the
-   output-scraping needed to tell an MFA rejection from a real
-   failure, and the risk of children fighting over a TTY.
-6. **Idempotent tail.** A re-run must sail through a bump that is
-   already applied, a commit that already exists and a tag that
-   already exists, rather than raising. With that,
-   `CONTRIBUTING.md`'s "bump to the next patch version and release
-   that" recovery advice gets deleted, not followed.
+1. **Build all sixteen gems. Push nothing.** A gemspec error in gem 14
+   must surface before gem 1 is public. This is also what keeps the
+   OTP window clear: building is the slow part, and it happens before
+   the clock matters.
+2. **Pre-flight the whole set against rubygems.org.** Two distinct
+   checks:
+   - *This exact version already published?* Report it, skip that
+     gem. On a resumed run this is the expected case, and it is what
+     makes retry safe rather than destructive.
+   - *Name exists but we are not an owner?* Refuse the release. This
+     is the squatting signal, and it is **not** the same check as the
+     one above — an already-published version under a name you own is
+     benign, whereas a `GEMS` entry owned by someone else is not, and
+     `gem push` would otherwise surface it as a 403 partway through
+     the fan-out.
+3. **Sleep to the next TOTP boundary, narrating it.** "Waiting 12 s
+   for a fresh OTP window — have your authenticator ready." The wait
+   is not dead time: it is the human's preparation window, and it
+   guarantees the code entered has its full ~30 s ahead of it.
+4. **Ask for the code on stdin.** One prompt, one paste, at the moment
+   a fresh code is vended.
+5. **Push, two in parallel.** Pass the code to each `gem push` child
+   via `GEM_HOST_OTP_CODE`; close the children's stdin so none can
+   silently block on a prompt of its own. Order is free to ignore
+   (see the finding above), so the fan-out needs no dependency
+   reasoning.
+6. **Report per-gem, exit non-zero if anything failed.** A
+   landed/skipped/failed line per gem. **The recovery is re-running
+   the task** — never a mid-flight re-prompt, which is what steps 1–2
+   bought and what keeps the parent free of OTP state.
+7. **Idempotent tail.** A re-run must sail through a bump already
+   applied, a commit that already exists and a tag that already
+   exists. With that, `CONTRIBUTING.md`'s "bump to the next patch
+   version and release that" recovery advice gets deleted rather than
+   followed.
+
+### Why the sleep is unconditional
+
+An earlier draft of this note argued for sleeping only when the
+current window is too short to spend — measure, and skip the wait in
+the ~3 runs out of 4 that already have room. **That was optimising the
+wrong thing.**
+
+A release happens rarely, so a mean 15 s wait costs nothing; and the
+wait is not idle in any case, because it is exactly when the human
+fetches their authenticator. Against that, the conditional version
+wants a threshold that has to account for paste latency as well as
+push time, and it can strand the human mid-paste with "that code is
+too stale, wait and try again" — a wasted paste in service of saving
+seconds nobody was counting. Unconditional is one code path, always
+yields the maximum window, and turns the only wait in the procedure
+into preparation time.
+
+### On the fan-out width
+
+**Two-wide, and the number barely matters.** With builds hoisted out
+and each upload under half a second, sixteen gems cost ~4 s two-wide
+and under 8 s fully serial — either way a small fraction of the
+window. The parallelism is there to absorb a straggler (one slow
+upload, a TCP retry), not to fit the budget, so anything from serial
+to 4-wide is defensible and two is a fine, polite default. If
+concurrency ever complicates the per-gem reporting in step 6, dropping
+to serial is a legitimate simplification that still delivers the
+one-prompt goal.
 
 ### Supplying the code: stdin, and only stdin
 
@@ -155,16 +177,12 @@ all sixteen, run the pre-flight — then ask for the code. The human's
 attention is needed exactly once, at the end, for one paste, and the
 task can freely re-ask because stdin is right there.
 
-Two refinements worth building in:
-
-- **Don't sleep pre-emptively.** Ask immediately once the pre-flight
-  is done; measure the remaining window when the paste *arrives*. With
-  an ~8 s budget in a 30 s window, roughly three runs in four already
-  have enough room and pay no wait at all. Only the unlucky quarter
-  sleeps — and never more than ~8 s.
-- **Say what is happening during the sleep.** "Only 4 s of this code's
-  window left — waiting 4 s for the next one" is the difference
-  between a deliberate pause and a hung release.
+The refinement that matters: **narrate the sleep.** "Waiting 12 s for
+a fresh OTP window — have your authenticator ready" is the difference
+between a deliberate pause and a hung release, and it is what turns the
+wait into the human's preparation time. (Whether to sleep at all when
+the current window is already roomy is settled under *Why the sleep is
+unconditional* — it is not.)
 
 **The env-var path is dropped**, not kept as an opt-in. Beyond the
 cycle above, it loses on ordering even when it works: a code supplied
@@ -196,71 +214,40 @@ env var is internal wiring, not an interface, and the distinction is
 worth keeping straight so the knob does not get re-added by someone
 noticing the task sets a variable it refuses to read.
 
-### Choosing the width
+### Margin: drift and clock skew
 
-**The budget is not tight — it was never close.** Once the two slow
-steps are lifted out of the window, what remains is the wire time of
-sixteen small uploads at under half a second each: **under 8 seconds
-even fully serial.** Step 1 is doing double duty here — moving the
-builds ahead of the push phase is not only fail-fast, it is what keeps
-the window clear.
-
-So the width is chosen for **margin, not throughput**:
-
-- **4-wide is ample** — roughly 2 s of wire time, leaving the 20 s
-  budget almost entirely as headroom.
-- Going 8- or 16-wide buys nothing. The earlier draft of this note
-  argued for them from a 6–10 s per-push estimate derived by
-  misreading 3–5-per-window as a cost-per-push; corrected above.
-- The parallelism now exists to absorb a **straggler** — one slow
-  upload, a TCP retry, a server hiccup — rather than to fit the
-  window. Four-wide means a single 5 s outlier costs 5 s, not 5 s
-  added to a critical path that was already near the limit.
-
-**A useful consequence: serial still works.** With the whole push
-phase under 8 s, one OTP code covers the release even with no
-concurrency at all. That makes parallelism a *robustness* choice, not
-a *load-bearing* one — so if fanning out complicates error reporting
-or the per-gem landed/skipped/failed summary, dropping to serial is a
-legitimate simplification that still delivers the single-prompt goal.
-Worth knowing before writing the concurrency.
-
-There is also free headroom worth knowing about but **not** designing
-against: rubygems.org accepts a code from the preceding window as well
-(standard TOTP drift tolerance), so the real validity is nearer 60 s
-than 30 s. Treat that as margin that turns a marginal run into a
-successful one, never as budget to spend.
+Free headroom worth knowing about but **not** designing against:
+rubygems.org accepts a code from the preceding window as well (standard
+TOTP drift tolerance), so real validity is nearer 60 s than 30 s. Treat
+it as what turns a marginal run into a successful one, never as budget
+to spend.
 
 **Where the margin actually gets spent: clock skew.** Step 3 computes
-the window boundary from the *release machine's* clock, but the code
-is read off the *authenticator's*. If the two disagree by δ, the task
-waits for the wrong boundary and hands the pushes a code with `30 − δ`
-seconds left rather than 30. This is the one assumption in the design
-that fails silently — nothing reports a skewed clock, the release just
-gets flakier.
+the boundary from the *release machine's* clock, but the code is read
+off the *authenticator's*. If the two disagree by δ, the task waits for
+the wrong boundary and hands the pushes a code with `30 − δ` seconds
+left. This is the one assumption in the design that **fails silently** —
+nothing reports a skewed clock, the release just gets flakier.
 
-It is tolerated rather than fixed, and comfortably: an ~8 s push phase
-in a 30 s window absorbs **up to ~20 s of skew** before the budget is
-threatened, and TOTP drift tolerance roughly doubles that. Any machine
-running NTP is nowhere near it. Worth knowing as the reason the
-generous margin is not over-engineering — it is what buys the right to
-compute the boundary locally instead of asking the human to watch the
+Tolerated rather than fixed, and comfortably: a ~4 s push phase in a
+30 s window absorbs well over 20 s of skew before the budget is
+threatened, and drift tolerance roughly doubles that. Any machine
+running NTP is nowhere near it. This is the reason the generous margin
+is not over-engineering — it is what buys the right to compute the
+boundary locally instead of asking the human to watch the
 authenticator.
 
-### What survives from the parallel-execution notes
+### Implementation notes for the fan-out
 
-Most of the earlier implementation caution evaporates with step 5. Two
-things remain:
-
-- **Close the children's stdin.** Not to arbitrate a re-prompt any
-  more, but so a `gem push` that decides to self-heal cannot silently
-  block the run waiting on a prompt nobody is watching. It should fail
-  fast instead.
+- **Close the children's stdin.** `gem push` self-heals by prompting
+  (see *The trap* below); a child blocking on a prompt nobody is
+  watching would hang the release silently. It must fail fast instead.
 - **Pass the code by environment, never argv** — it should not appear
   in the process table.
-
-Children may otherwise inherit stdout; the parent needs only exit
-statuses and a per-gem landed/skipped/failed summary.
+- Children may otherwise inherit stdout; the parent needs only exit
+  statuses and the per-gem summary of step 6.
+- A failure inside a batch must not abort its siblings mid-flight.
+  Collect results, report, and let the re-run finish the rest.
 
 ## What the tooling actually offers (grounded)
 
