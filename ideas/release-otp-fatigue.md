@@ -401,10 +401,14 @@ steal.
   entire content — are not needed. Sixteen prompts to one, no secret
   on disk, MFA level untouched, and *less* machinery than option 1
   alone would have required.
-- **Option 3 (`rotp`) is not needed.** It was the way to reach zero
-  prompts; one prompt per release is close enough that a TOTP seed on
-  the release machine is not worth buying it. Revisit only if the
-  release ever needs to run unattended.
+- **Option 3 (`rotp`) is a contingency, not a fallback to keep warm.**
+  It is materially more complex than a stdin prompt — a gem
+  dependency, a secret-store integration, and a TOTP seed living on
+  the release machine next to the API key (the factor collapse noted
+  under the option itself). One prompt per release does not justify
+  any of that, so it is not built alongside; it is built only if stdin
+  proves *fundamentally* unworkable. Which needs a real trigger, not a
+  vague misgiving — see below.
 - **Option 4 (MFA downgrade) is dead.** It weakens authentication to
   buy what option 3 buys, and option 3 already lost on a much smaller
   cost.
@@ -413,6 +417,36 @@ steal.
   chosen strategy does not conflict with it: an idempotent,
   build-then-fan-out release task is the same task a CI workflow would
   run, minus the OTP handling.
+
+## What would make stdin fundamentally unworkable
+
+Recorded so the `rotp` contingency has a trigger rather than an
+escape hatch. There is exactly one:
+
+**The push phase cannot be made to fit inside a single window.** Every
+other objection to stdin is an inconvenience with a cheaper answer;
+this one is structural. If sixteen uploads genuinely need more than
+~30 s, no single-code scheme survives — you are back to several
+prompts, and only a minting scheme can supply fresh codes mid-run
+without asking again. Current estimate is ~8 s against a 30 s window,
+so this is roughly a **4× margin**; it would take the sub-half-second
+upload observation being badly wrong, or the gem count growing several
+fold, to threaten it.
+
+Two things that look like triggers and are not:
+
+- *Unattended operation.* Real answer is option 5 (trusted
+  publishing), which removes the credential entirely rather than
+  moving it onto the release machine. `rotp` is the worse unattended
+  answer, not the fallback one.
+- *An occasional short window.* Handled already: the task measures on
+  paste and re-asks after a ≤8 s sleep.
+
+And if the one real trigger does fire, **`rotp` is still not the next
+rung** — option 1's parent-owned carry-forward is. It costs a couple of
+extra prompts on a long release and nothing else; no dependency, no
+seed on disk. Escalate stdin → carry-forward → minting, in that order,
+and most likely never past the first.
 
 ## Also noticed while reading (unrelated, worth fixing)
 
