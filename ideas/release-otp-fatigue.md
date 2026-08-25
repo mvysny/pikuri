@@ -107,14 +107,15 @@ rather than repaired mid-flight.
      else is not, and `gem push` would only surface it as a 403 deep
      in the fan-out. Checking ownership up front turns that into a
      pre-flight refusal.
-3. **Start the push phase at the top of a fresh OTP window.** TOTP
+3. **Take the code with enough window left to spend it.** TOTP
    windows are aligned to the Unix epoch, so the task can compute
-   `30 - (Time.now.to_i % 30)` and know exactly how much of the
-   current code's life is left. Prompt for a code; if too little
-   window remains for the budget, sleep to the boundary and re-prompt
-   so the code entered is one just vended. **The task enforces the
-   timing — never the human**, who cannot be asked to eyeball an
-   authenticator against a stopwatch.
+   `30 - (Time.now.to_i % 30)` — how much of the current code's life
+   remains. Ask for a code, measure on arrival, and if too little is
+   left for the budget, sleep to the boundary and ask once more.
+   **The task enforces the timing — never the human**, who cannot be
+   asked to eyeball an authenticator against a stopwatch. How the
+   code arrives decides whether this is even possible — see
+   *Supplying the code* below.
 4. **Push everything inside that window, budget ≤20 s.** One code
    covers the whole release, and ordering is free to ignore per the
    finding above. With builds already done, sixteen uploads cost
@@ -133,6 +134,55 @@ rather than repaired mid-flight.
    already exists, rather than raising. With that,
    `CONTRIBUTING.md`'s "bump to the next patch version and release
    that" recovery advice gets deleted, not followed.
+
+### Supplying the code: a chicken-and-egg in the env-var path
+
+Handing the code in **upfront** as `GEM_HOST_OTP_CODE=… rake release`
+looks like the tidy non-interactive option and quietly breaks step 3.
+The task cannot wait for a fresh window, because the code it was
+already given expires at that boundary; and it cannot ask for a
+replacement, because the whole point of the env var was that nobody is
+watching. It can only spend what it holds, however little life is left
+— which is precisely the flaky, silent short-window failure step 3
+exists to prevent.
+
+The escape is to notice that **the ordering is the bug, not the
+waiting**. Prompt for the code *after* the wait rather than before,
+and the cycle does not form.
+
+**The interactive path (default).** Do every slow thing first — build
+all sixteen, run the pre-flight — then ask for the code. The human's
+attention is needed exactly once, at the end, for one paste, and the
+task can freely re-ask because stdin is right there.
+
+Two refinements worth building in:
+
+- **Don't sleep pre-emptively.** Ask immediately once the pre-flight
+  is done; measure the remaining window when the paste *arrives*. With
+  an ~8 s budget in a 30 s window, roughly three runs in four already
+  have enough room and pay no wait at all. Only the unlucky quarter
+  sleeps — and never more than ~8 s.
+- **Say what is happening during the sleep.** "Only 4 s of this code's
+  window left — waiting 4 s for the next one" is the difference
+  between a deliberate pause and a hung release.
+
+**The env-var path (opt-in, for automation).** Keep it, but it must
+**refuse rather than gamble**: measure the remaining window at startup,
+and if it is under budget, exit non-zero *before building or pushing
+anything*, reporting how many seconds to wait before re-running. A
+re-run is one up-arrow, and the failure costs nothing because it
+happens before the first push.
+
+**The forgiving hybrid** is probably what to build: accept the env var
+if present and still fat enough to spend; otherwise fall back to the
+interactive prompt when stdin is a TTY, and refuse with the wait time
+when it is not.
+
+Worth noting this is one more small argument for option 3 (`rotp`),
+which sidesteps the whole question by minting the code at the boundary
+itself. Still not enough to reopen it — but if a fully unattended
+release is ever wanted, this is the second reason it would win, and the
+env-var path is not a substitute for it.
 
 ### Choosing the width
 
