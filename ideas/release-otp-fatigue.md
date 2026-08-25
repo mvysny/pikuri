@@ -113,9 +113,9 @@ rather than repaired mid-flight.
    remains. Ask for a code, measure on arrival, and if too little is
    left for the budget, sleep to the boundary and ask once more.
    **The task enforces the timing — never the human**, who cannot be
-   asked to eyeball an authenticator against a stopwatch. How the
-   code arrives decides whether this is even possible — see
-   *Supplying the code* below.
+   asked to eyeball an authenticator against a stopwatch. The code
+   arrives on **stdin** — the ordering this depends on is the whole
+   subject of *Supplying the code* below.
 4. **Push everything inside that window, budget ≤20 s.** One code
    covers the whole release, and ordering is free to ignore per the
    finding above. With builds already done, sixteen uploads cost
@@ -135,7 +135,7 @@ rather than repaired mid-flight.
    `CONTRIBUTING.md`'s "bump to the next patch version and release
    that" recovery advice gets deleted, not followed.
 
-### Supplying the code: a chicken-and-egg in the env-var path
+### Supplying the code: stdin, and only stdin
 
 Handing the code in **upfront** as `GEM_HOST_OTP_CODE=… rake release`
 looks like the tidy non-interactive option and quietly breaks step 3.
@@ -166,23 +166,35 @@ Two refinements worth building in:
   window left — waiting 4 s for the next one" is the difference
   between a deliberate pause and a hung release.
 
-**The env-var path (opt-in, for automation).** Keep it, but it must
-**refuse rather than gamble**: measure the remaining window at startup,
-and if it is under budget, exit non-zero *before building or pushing
-anything*, reporting how many seconds to wait before re-running. A
-re-run is one up-arrow, and the failure costs nothing because it
-happens before the first push.
+**The env-var path is dropped**, not kept as an opt-in. Beyond the
+cycle above, it loses on ordering even when it works: a code supplied
+upfront starts dying immediately, so the task must either build *while
+the clock runs* — spending window on work that had no need to be inside
+it — or refuse and make you re-run. The stdin path inverts exactly
+that. The machine does its slow work first and only then asks, which
+means **the human prepares for the window while the build is already
+finished**: grab the code, paste it, and every one of the next thirty
+seconds is available for uploads. There is no arrangement of the
+env-var path that recovers this, because the code always arrives before
+the work instead of after it.
 
-**The forgiving hybrid** is probably what to build: accept the env var
-if present and still fat enough to spend; otherwise fall back to the
-interactive prompt when stdin is a TTY, and refuse with the wait time
-when it is not.
+That leaves nothing for it to be good at. Its only remaining claim is
+unattended operation, and it is a poor answer there too — a code pasted
+into a shell needs the same human as a prompt does. Genuinely
+unattended releases want option 3 (`rotp`, minting at the boundary) or
+option 5 (trusted publishing, no OTP at all); the env var satisfies
+neither while adding a second code path, its own refuse-with-wait-time
+failure mode, and a config knob the project's own "no knobs not needed
+for the next concrete step" rule would reject. **One supply path:
+stdin.**
 
-Worth noting this is one more small argument for option 3 (`rotp`),
-which sidesteps the whole question by minting the code at the boundary
-itself. Still not enough to reopen it — but if a fully unattended
-release is ever wanted, this is the second reason it would win, and the
-env-var path is not a substitute for it.
+**Do not confuse the supply path with the plumbing.** The parent still
+hands the code to each `gem push` child through `GEM_HOST_OTP_CODE` —
+that is the documented way to pass it and stays. What is dropped is
+`GEM_HOST_OTP_CODE` as a *user-facing input to the release task*. The
+env var is internal wiring, not an interface, and the distinction is
+worth keeping straight so the knob does not get re-added by someone
+noticing the task sets a variable it refuses to read.
 
 ### Choosing the width
 
