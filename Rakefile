@@ -188,6 +188,11 @@ def wait_for_fresh_otp_window
   wait = OTP_PERIOD - (Time.now.to_i % OTP_PERIOD)
   puts "\n==> Waiting #{wait}s for a fresh OTP window — have your authenticator ready."
   sleep wait
+  monotonic
+end
+
+def monotonic
+  Process.clock_gettime(Process::CLOCK_MONOTONIC)
 end
 
 # Ask for the OTP code on stdin.
@@ -325,8 +330,9 @@ task :release do
   end
 
   unless to_push.empty?
-    wait_for_fresh_otp_window
+    window_start = wait_for_fresh_otp_window
     otp = ask_otp
+    paste_took = monotonic - window_start
 
     puts "\n==> #{dry ? 'Would push' : 'Pushing'} #{to_push.size} gems, #{PUSH_CONCURRENCY} at a time"
     # Each child is handed the code through the environment (never
@@ -334,17 +340,21 @@ task :release do
     # closed. `gem push` self-heals a rejected code by prompting and
     # retrying; with nobody watching, that would hang the release
     # silently, so it must hit EOF and fail fast instead.
+    push_start = monotonic
     outcomes = in_parallel(to_push, PUSH_CONCURRENCY) do |dir|
       gem_file = File.basename(Dir.glob(File.join(dir, '*.gem')).first)
-      next [true, "would push #{gem_file}"] if dry
+      next [true, "would push #{gem_file}", 0.0] if dry
 
+      started = monotonic
       out, status = Open3.capture2e(
         { 'GEM_HOST_OTP_CODE' => otp },
         'gem', 'push', gem_file,
         chdir: dir, stdin_data: ''
       )
-      [status.success?, out.strip]
+      [status.success?, out.strip, monotonic - started]
     end
+    push_took = monotonic - push_start
+    window_left = OTP_PERIOD - (monotonic - window_start)
   else
     outcomes = {}
   end
@@ -354,12 +364,29 @@ task :release do
     if skipped.include?(name)
       [name, "skipped — #{verdicts[name][1]}"]
     elsif outcomes[name]&.first
-      [name, dry ? 'would push' : 'pushed']
+      [name, format('%s (%.2fs)', dry ? 'would push' : 'pushed', outcomes[name][2])]
     else
-      [name, "FAILED — #{outcomes[name]&.last&.lines&.last&.strip}"]
+      [name, "FAILED — #{outcomes[name] && outcomes[name][1].to_s.lines.last&.strip}"]
     end
   end
   report(rows)
+
+  # The measurement the whole single-code design rests on: did the
+  # uploads fit inside one OTP window, and by how much? Printed every
+  # release so the margin is observed rather than assumed — and so a
+  # failure caused by overrunning the window says so in as many words
+  # instead of looking like sixteen unrelated rejections.
+  unless to_push.empty?
+    puts "\n==> OTP window#{dry ? ' (rehearsal — nothing was uploaded, so the push time is not a measurement)' : ''}"
+    accounting = format('%.1fs to paste, %.1fs to push %d gems %d-wide',
+                        paste_took, push_took, to_push.size, PUSH_CONCURRENCY)
+    verdict = if window_left.negative?
+                format('OVERRAN the %ds window by %.1fs', OTP_PERIOD, -window_left)
+              else
+                format('%.1fs of the %ds window left', window_left, OTP_PERIOD)
+              end
+    puts "    #{accounting} — #{verdict}"
+  end
 
   failed = to_push.reject { |name| outcomes[name]&.first }
   unless failed.empty?
