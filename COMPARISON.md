@@ -755,6 +755,287 @@ entry below.
 
 ---
 
+## Conversation persistence and resume
+
+Surveyed August 2026 for issue #1 (`Agent#export_history` /
+`#load_history!`), because an exported conversation is written to disk
+and is therefore a *file format*, not a return value — and every harness
+here has already had to answer the same questions. Five systems read at
+the source: **Claude Code** (its own transcripts on the author's
+machine, ~370 files, CLI `2.1.220`–`2.1.247`), **opencode** (`5f5ea53`),
+**grok-build** (`9684fa3`), **PI** (`1defa15`) and **hermes-agent**
+(`cced6fa`). pikuri's own design work lives in
+`ideas/history-round-trip.md`; this section is only what the others do.
+
+| | container | ground truth | tool call ↔ result | attachments | per-msg tokens | schema version |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Claude Code** | JSONL, one file per session, append-only | the JSONL itself | separate records, `id` ↔ `tool_use_id`, wire shape verbatim **plus** a parallel internal `toolUseResult` | base64 inline, duplicated into both shapes | yes, full `usage` + a `cost-state` rollup record | none (a CLI build `version` only) |
+| **opencode** | SQLite; one row per *part* | the DB | one `tool` part, `state` transitions `pending→running→completed\|error` in place | base64 `data:` URI inline (5 MiB cap); `@file` text refs stay paths and re-read | yes, plus denormalized session columns | none per record; 30+ SQL migrations |
+| **grok-build** | dir per session: append-only `updates.jsonl` + derived `chat_history.jsonl` + N sidecar JSONs | `updates.jsonl` (the wire/event log) | separate items linked by `tool_call_id` | base64 inline, 1.5 MB cap, strip-invalid-on-load | no — per **turn**, on a `TurnCompleted` event | `schema_version` on checkpoints only |
+| **PI** (shipped) | JSONL, one file per session | the JSONL | call inside the assistant message, result a separate entry | base64 inline | yes, on the message | `version` 1→2→3 with real migrations |
+| **hermes-agent** | single SQLite `state.db` | the DB | plain columns | base64 inline | yes | `SCHEMA_VERSION = 26`, additive |
+
+### The one thing all five agree on: repair dangling tool calls on the way *out*
+
+An assistant turn carrying tool calls plus the results answering it is
+one indivisible unit on the wire; an orphan on either side is a hard 400
+from OpenAI and Anthropic alike. Every system surveyed handles the
+interrupted case, every one of them repairs when *building the request*
+and leaves the stored record untouched:
+
+- **opencode** — any part still `pending`/`running` becomes a synthetic
+  `output-error` while assembling the payload, with the reason in a code
+  comment: *"Anthropic/Claude APIs require every tool_use to have a
+  corresponding tool_result"* (`session/message-v2.ts:349`). Notably it
+  runs **no** boot-time reconciliation after a SIGKILL — the read-time
+  rule is sufficient precisely because the constraint is enforced on
+  every request regardless of what is on disk.
+- **grok-build** — `repair_dangling_tool_calls` splices a synthetic
+  result (*"cancelled by the user (tool `X` was not executed)"*) into the
+  derived cache, and `dedup_duplicate_tool_results` handles the opposite
+  race: a cancelled call whose real result lands late, giving two results
+  for one id — keep the last (`conversation.rs:2144`, `:2258`).
+- **hermes-agent** — `repair_message_sequence` drops orphans at replay;
+  the stored transcript stays untouched (`agent_runtime_helpers.py:562`).
+- **PI** (in-flight) — the most elaborate: commit *intent* before running
+  the effect, in a `ToolStartedRecord` carrying a pre-reserved
+  `resultEntryId` and `replay: "never" | "safe"`. On restart a `"safe"`
+  (read-only) call re-executes with the persisted arguments; anything
+  else gets a synthetic `"interrupted"` result under the reserved id
+  (`session/types.ts:150`). Nothing unsafe runs twice, and every call
+  ends with a result.
+- **PI** (shipped) is the counter-example proving the rule: it has no
+  repair at all, replays the dangling call as-is, and depends on the
+  provider tolerating it.
+
+### Nobody versions the record; evolution is additive-only
+
+The most useful negative result in the survey. **No system carries a
+per-record schema version it migrates on.**
+
+- **Claude Code** stamps the CLI build (`"version":"2.1.233"`) on every
+  record, not a format version. Envelope keys are byte-identical between
+  a `2.1.220` transcript and a `2.1.247` one.
+- **opencode**'s `SessionTable.version` is likewise the installing app
+  version. Its 30-odd SQL migrations add columns and backfill them; a
+  grep for `json_set`/`json_remove`/`json_insert` across all of them
+  finds **none** — the stored JSON blob's shape has only ever grown.
+- **grok-build** achieves the same with `#[serde(default)]` on every
+  post-v1 field, doc comments stating the intent (*"`None` for sessions
+  created before this field was added"*), and `deny_unknown_fields`
+  applied **only** to tool-argument schemas and wire protocols, never to
+  a session type.
+- **PI** shipped is the exception — a real `CURRENT_SESSION_VERSION = 3`
+  with ordered in-place migrations — and its own rewrite keeps the idea
+  while adding what shipped code lacks: *"version > current → refuse to
+  open (older binary, newer session)"* (`harness.md:2734`).
+
+Two refinements worth more than the headline:
+
+**Split strictness by consequence, not uniformly.** grok-build's general
+chat loader skips a bad line, quarantines the file to `*.jsonl.corrupt`
+and warns — availability matters more there. Its *compaction
+checkpoints* hard-refuse an unknown `schema_version` (`replay.rs:380`),
+because a wrong load silently replaces what the model sees. Same
+codebase, opposite policies, chosen by what getting it wrong costs.
+
+**An unknown enum value must decode to the inert variant.** grok-build's
+`GoalStatus` maps anything unrecognized to `UserPaused` via a custom
+`Deserialize`, with the reason in the doc comment: *"a corrupt or
+forward-version snapshot can never resurrect as a self-driving goal"*
+(`goal_tracker.rs:8`). Fail-safe defaults, applied to serialization.
+
+### Strict-on-load: PI reversed itself
+
+The clearest evidence available, because it is one project's before and
+after. PI's **shipped** loader try/catches each line and silently skips
+what won't parse (*"Skip malformed lines"*, `session-manager.ts:299`),
+with a second comment conceding the liability: *"Session files are
+parsed without validation; old versions, forks, or hand-edited files can
+contain messages with null/missing content"*. Its **in-flight rewrite**
+does the opposite — strict field-by-field decoding, `JsonlDecodeError`
+on any bad record, and the whole session fails to load.
+
+The one carve-out is worth copying verbatim: a **torn last line** from a
+crash mid-append is normal, not corruption, so it is repaired by
+truncating to the last valid line (`jsonl/storage.ts:84`) while interior
+corruption still throws. The write side pairs with it —
+`publishFileAtomically`, temp file plus atomic rename.
+
+opencode is the cautionary tale here: its import path validates with a
+hard-throwing decoder *and* is non-transactional, inserting the session
+row before looping over messages — so a bad record partway through
+leaves a half-imported session with no rollback (`cli/cmd/import.ts:196`).
+
+### Tree, linear, or append-only log — the rewind question
+
+Three genuinely different containers, and the choice is about whether
+history can be *edited*:
+
+- **Claude Code: a real tree.** Every conversation record carries
+  `uuid` + `parentUuid`, and branch points are common in practice —
+  scanning sampled transcripts found shared parents in about two-thirds
+  of the larger files, one with eleven. A `last-prompt` record's
+  `leafUuid` names the active tip. Editing a message or regenerating
+  appends a new branch; the abandoned one is never deleted.
+- **PI (shipped): also a tree** — `SessionEntryBase.parentId`, with
+  `getBranch`/`getTree` on the read API.
+- **grok-build: append-only log plus markers.** `updates.jsonl` is never
+  truncated; a rewind appends a `RewindMarker` and a replay algorithm
+  interprets it.
+- **opencode: linear, with a hard delete.** Revert stores only a marker
+  and restores a filesystem snapshot — fully undoable — until the next
+  turn supersedes it, at which point `cleanup` actually deletes the
+  reverted-away messages. No branching model, no tombstones.
+
+Claude Code also splits records into **two disjoint kinds**: tree nodes
+(carrying `uuid`/`parentUuid`) and unparented *current-state* records
+(`mode`, `permission-mode`, `last-prompt`, `ai-title`, `cost-state`,
+`queue-operation`) that are last-one-wins on replay. One append-only
+stream, two semantics, and a reader reconstructing message history can
+ignore the second kind entirely.
+
+Its records are also finer-grained than an API message: an assistant
+turn with thinking + tool_use + text is **three** JSONL lines chained by
+`parentUuid`, never one record with a three-element content array.
+
+### Where out-of-band state goes: four answers
+
+Nobody folds everything into the transcript, and nobody leaves it all
+out:
+
+- **grok-build — a file per subsystem** in the session dir:
+  `goal/state.json`, `plan.json`, `plan_mode.json`, `signals.json`,
+  `announcement_state.json`, plus `summary.json` for cwd/model/sandbox/
+  title. Folder trust is not session-scoped at all — a global
+  `~/.grok/trusted_folders.toml` keyed by path.
+- **Claude Code — unparented records in the same file** (see above),
+  plus a sibling `~/.claude/file-history/<session>/` holding versioned
+  file backups outside the JSONL.
+- **opencode — typed columns on the session row**: `permission` ruleset,
+  `directory`, `agent`, `model`, with todos in their own table.
+- **PI — an opaque slot inside the transcript.** `CustomEntry` /
+  `CustomMessageEntry` are documented as exactly that: *"Persist
+  extension state across session reloads"* (`session-manager.ts:104`).
+  Its shipped session model otherwise persists the conversation and its
+  cost and **nothing else** — no todos, no permission grants, no
+  file-read state.
+
+The rule that reconciles all four: **state whose lifecycle matches the
+conversation may ride in the conversation; state with a different
+lifecycle must not.** Folder trust is the clinching case — a trust
+decision has to outlive any one session, so a session file would be the
+wrong home.
+
+### The system prompt is regenerated, never replayed
+
+Four of five. Claude Code stores no `role: "system"` record anywhere
+(confirmed across every sampled transcript). grok-build never persists a
+`System` chunk. opencode builds the prompt fresh each turn. PI recomputes
+it per load — and adds the refinement the others lack: it persists an
+explicit *override* when one was set
+(`OperationStartedRecord.intent.systemPromptOverride`), separating "the
+prompt is assembled from current state" from "someone deliberately
+pinned this text". Only hermes-agent stores the prompt, deduped through
+a `system_prompts(hash→prompt)` table — a storage trick for auditing,
+not a replay source.
+
+Claude Code does something more interesting with the *rest* of what it
+injects mid-conversation: every injection is its own typed, parented
+`attachment` record — `skill_listing`, `task_reminder`,
+`total_tokens_reminder`, `deferred_tools_delta`, `command_permissions`,
+`edited_text_file`, `agent_listing_delta`, `queued_command`. So the
+prompt is regenerated, but each individual thing the harness slipped
+into the conversation stays durably logged *and distinguishable* after
+the fact, rather than dissolving into opaque user text.
+
+### Attachments: everyone inlines base64; nobody has a blob store
+
+Unanimous, and the caps are the only variation: opencode 5 MiB per
+image, grok-build 1.5 MB with a re-encode-if-over normalizer. None of
+the five writes attachment bytes to a sidecar file or a content-addressed
+store.
+
+Two wrinkles worth knowing:
+
+- **opencode is not uniform about it.** Pasted images and tool-result
+  media inline as `data:` URIs, but an `@file` mention of a *text* file
+  stores `file://<path>` and re-reads live content at every send — so a
+  resumed session is only self-contained for some part types. This reads
+  as drift rather than design.
+- **grok-build strips invalid images on load**, rather than ignoring
+  them, so a stale poison image cannot 400 every subsequent turn
+  (`replay.rs:405`).
+- **Claude Code stores the bytes twice** — once in the wire-shaped
+  `message.content` and again in the internal `toolUseResult` — which is
+  the cost of keeping both shapes.
+
+### Reasoning signatures: verbatim, and scoped to the producing model
+
+Every system preserves provider-opaque reasoning state byte-for-byte,
+and the field names say what they are for: PI's `thinkingSignature`
+(*"Provider-specific opaque or serialized reasoning replay data"*) plus
+`redacted` for safety-filtered blocks whose encrypted payload still has
+to ride along for multi-turn continuity; grok-build's
+`ReasoningContent { text, encrypted, id }` (*"Encrypted reasoning
+content (Responses API only). This can be passed back to the API"*);
+hermes' Codex-specific `codex_reasoning_items`, explicitly exempted from
+message-merging so the encrypted chain isn't corrupted; Claude Code's
+opaque ~400-char `signature` on every thinking block.
+
+**The subtlety is that a signature is only valid for the model that
+produced it.** opencode degrades a reasoning part to plain text and
+drops the provider metadata when a session resumes under a different
+model (`message-v2.ts:362`). It also preserves an *empty-text* separator
+part on purpose, because dropping it "shifts signed thinking positions"
+for Anthropic adaptive thinking (`:262`) — the signature can cover
+position, not just content.
+
+grok-build keeps reasoning as a **sibling item** rather than nested in
+the assistant message, for two stated reasons: parallel tool calls
+produce N reasoning blocks that would clobber each other under
+last-write-wins, and preserving the model's interleaved
+`[reasoning, tool_call, reasoning, …]` order byte-stably is what lets
+the server-side prefix KV-cache hit (`conversation.rs:87`).
+
+### Ground truth vs derived cache
+
+The pattern shared by the two most-evolved systems, and it reframes what
+an exported history *is*:
+
+**grok-build** treats the append-only wire/event log as authoritative and
+the model-facing transcript as a rebuildable cache — `chat_history.jsonl`
+is regenerated from `updates.jsonl` whenever its format version is stale
+or the file is empty, via temp-file-then-rename. Its own export code says
+so: *"Uses `updates.jsonl` (ACP SessionNotifications) as the source of
+truth, not `chat_history.jsonl` which is only for LLM API calls"*
+(`session/export.rs:1`). Compaction never truncates the log — it appends
+a checkpoint marker pointing at a sidecar file, so the system can
+reconstruct *either* the compacted view or the raw one from the same log.
+
+**Claude Code** is the same shape with the roles less separated: the
+JSONL is the record, and what goes to the model is derived from it by
+walking the branch.
+
+The corollary for a *message-list* format like pikuri's: it is the
+derived artifact, not the record. Which lowers its stability bar rather
+than raising it — if the host keeps an event log, a bad export is
+regenerable.
+
+### Sub-agent conversations
+
+Claude Code keeps them in physically separate files —
+`<session>/subagents/agent-<id>.jsonl` plus a small
+`agent-<id>.meta.json` carrying `agentType`, `toolUseId` (linking back to
+the spawning tool call in the parent transcript) and `spawnDepth`. Every
+record inside carries `isSidechain: true` and its own `parentUuid` tree
+rooted at `null`. So the flag exists, but it partitions files rather than
+interleaving one stream — the main transcript's size stays proportional
+to the main conversation, and a viewer can skip loading sub-agent detail
+unless asked.
+
+---
+
 ## Error handling
 
 | | Tool argv malformed | Tool execute failure (recoverable) | Tool execute failure (bug) |
@@ -2204,3 +2485,30 @@ more than wiring through ruby_llm's existing primitive.
   activation actually works* was read later, against `main` at
   `5163763` — `crates/codegen/xai-grok-tools/src/{types/skill_discovery_tracker/{conditional,listing,mod}.rs,implementations/skills/discovery.rs,reminders/skill_discovery.rs}`
   and `crates/codegen/xai-grok-agent/src/prompt/skills.rs`
+
+*Conversation persistence and resume* (August 2026) was read against
+newer revisions, since the earlier paths had moved:
+
+- opencode at `5f5ea53` — `packages/schema/src/v1/session.ts`,
+  `packages/core/src/session/sql.ts`, `packages/core/src/database/migration/`,
+  `packages/opencode/src/session/{message-v2,processor,prompt,revert}.ts`,
+  `packages/opencode/src/storage/storage.ts`,
+  `packages/opencode/src/cli/cmd/{import,export}.ts`
+- grok-build at `9684fa3` — `crates/codegen/xai-grok-shell/src/session/`
+  (`persistence.rs`, `storage/mod.rs`, `storage/jsonl/mod.rs`,
+  `helpers/replay.rs`, `compaction.rs`, `export.rs`, `image_normalize.rs`,
+  `goal_tracker.rs`), `crates/codegen/xai-grok-shell/src/extensions/notification.rs`,
+  `crates/codegen/xai-grok-sampling-types/src/conversation.rs`,
+  `crates/codegen/xai-grok-workspace/src/trust.rs`
+- pi at `1defa15` — `packages/coding-agent/src/core/session-manager.ts`,
+  `packages/ai/src/types.ts`, and the unshipped rewrite under
+  `packages/agent/src/harness/session/` + `packages/agent/docs/harness.md`
+- hermes-agent at `cced6fa` — `hermes_state_common.py`, `hermes_state.py`,
+  `hermes_state_schema.py`, `agent/agent_runtime_helpers.py`,
+  `agent/memory_manager.py`, `tools/memory_tool.py`
+- Claude Code — no source available; read from its own transcripts on the
+  author's machine (`~/.claude/projects/**/*.jsonl`, ~370 files, CLI
+  `2.1.220`–`2.1.247`) plus `~/.claude/file-history/`. One claim
+  (compaction record shape) rests on strings extracted from the shipped
+  binary rather than an observed record, and is marked as such in the
+  section.
