@@ -81,4 +81,4 @@ An expired OTP code costs a re-run, not a version number. This is why
 the task never re-prompts mid-push — retry is the recovery.
 
 Why one code covers sixteen pushes, and why it is typed rather than
-passed in the environment: `DECISIONS.md` `D-release-one-otp`.
+passed in the environment: `DECISIONS.md` `D_release_one_otp`.

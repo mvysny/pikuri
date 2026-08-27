@@ -25,8 +25,8 @@ Related long-form notes (the entries below that already grew one):
 
 - `book/trifecta-detector.md` + {Pikuri::Trifecta} — the static
   capability-presence check, **shipped**, with nothing outstanding; its
-  forks are `D-egress-axis-shape`, `D-trifecta-map-orphans`,
-  `D-write-custody-axis` and `D-no-static-poisoned-flag`.
+  forks are `D_egress_axis_shape`, `D_trifecta_map_orphans`,
+  `D_write_custody_axis` and `D_no_static_poisoned_flag`.
 - [`private-context-taint.md`](private-context-taint.md) — the runtime
   private-in → sever-egress enforcement (and the long-form home of the
   egress-allowlist idea below).
@@ -71,7 +71,7 @@ the table:
   now a claim the host makes per search base rather than an assumption
   the framework carries: `Bundle::Base(trusted:)` defaults to
   *not* vetted and grades the tool's untrusted leg
-  (`D-bundle-trust-grading`). That reports the exposure; it does not
+  (`D_bundle_trust_grading`). That reports the exposure; it does not
   defend against it. A `Mcp::Verifier`-shaped pass for skills would
   belt-and-braces it.
 - **A `readable:` root outside `project_root` under `trusted: true`.**
@@ -87,7 +87,7 @@ the table:
   project root — the planned TUI. Two exits: extend that raise to any
   `readable:` root outside `project_root`, or stop folding home skill
   roots in and lose sidecar `read` for home skills. See
-  `D-bundle-trust-grading`.
+  `D_bundle_trust_grading`.
 - **Content-level defenses against `web_scrape` injection** beyond
   persona separation (provenance tags are the obvious shape).
 

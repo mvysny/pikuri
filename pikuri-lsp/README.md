@@ -15,7 +15,7 @@ what it refuses to become: the moment it applies an edit it needs the
 > `~/.pikuri-examples-config.yaml`, and one `c.add_extension` does the same
 > for any other host. [`DESIGN.md`](DESIGN.md) carries the threat model and
 > the measurements every call here rests on, `DECISIONS.md` the five forks
-> (`D-lsp-*`), and [the language-intelligence chapter](../book/lsp.md) the
+> (`D_lsp_*`), and [the language-intelligence chapter](../book/lsp.md) the
 > teaching walk-through.
 
 ## What is here

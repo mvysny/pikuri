@@ -74,7 +74,7 @@ module Pikuri
       # {BLOB_JOIN_MIN}'s twin, in the only gap available: above a full git
       # SHA-1 (40), below a 32-byte key in base32 (52) or hex (64). Accepts one
       # irreducible false positive — a lone SHA-256 checksum warns, since a
-      # 256-bit hash and a 256-bit key are the same string (+D-blob-spotter-alphabets+).
+      # 256-bit hash and a 256-bit key are the same string (+D_blob_spotter_alphabets+).
       SINGLE_CLASS_JOIN_MIN = 48
 
       # The outcome of checking one compose request.

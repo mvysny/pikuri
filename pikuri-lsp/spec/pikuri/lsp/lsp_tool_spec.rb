@@ -558,7 +558,7 @@ describe Pikuri::Lsp::LspTool do
     end
 
     # Two references on one line, differing only in the column pikuri never
-    # prints (R-same-line-references) — so deduping on Location identity would
+    # prints (R_same_line_references) — so deduping on Location identity would
     # leave both rows standing.
     it 'collapses two results on one line, which render as the same row' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes, root|
@@ -670,7 +670,7 @@ describe Pikuri::Lsp::LspTool do
       servers = { 'java' => { files: %w[*.java], capabilities: java_capabilities } }
       wired.call(files: { 'Main.java' => "class Main { LoggerFactory f; }\n" }, servers: servers) do |tool, fakes|
         fakes['java'].on('textDocument/definition') { |_params| [at.call(jdt_uri, 1, 0, 5)] }
-        # J-class-file-contents: this request answers a bare String, where the 3.18 request answers {text:}.
+        # J_class_file_contents: this request answers a bare String, where the 3.18 request answers {text:}.
         fakes['java'].on('java/classFileContents') { |_params| "package org.slf4j;\npublic class LoggerFactory {\n" }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'LoggerFactory',

@@ -11,7 +11,7 @@ this installs a headless chat.
 Implemented in **pikuri-core**; this note now holds only the *deferred* work.
 The choices made — fake the HTTP backend not the agent, the reverted two-phase
 `new`/`configure` split, and why the white-box `fake_chat` is never exported —
-are [`DECISIONS.md`](../DECISIONS.md) `D-fake-transport`.
+are [`DECISIONS.md`](../DECISIONS.md) `D_fake_transport`.
 Design rationale + usage live at their final homes — see {Pikuri::Testing}
 (the builder + scripting model + limitations), {Pikuri::Agent::ChatTransport}'s
 `faraday_adapter` attribute (the generic HTTP seam), and

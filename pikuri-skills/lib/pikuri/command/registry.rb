@@ -61,7 +61,7 @@ module Pikuri
     # Detection is over-eager on purpose and does *not* skip fenced blocks —
     # the inverse of what {Renderer} does to the same characters, which is not
     # an inconsistency; see there. Rationale for both refusals:
-    # +DECISIONS.md+ +D-command-inlining-legs+.
+    # +DECISIONS.md+ +D_command_inlining_legs+.
     #
     # == Trust
     #

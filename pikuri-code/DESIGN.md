@@ -220,7 +220,7 @@ shaped this way:
   losing side of the enumeration game (`gio`, `gdbus`, `systemd-run`, five
   lines of Python on the socket are one channel) and would manufacture
   false comfort. Removing the *authority* needs no list. See
-  `DECISIONS.md` `D-headless-os-agent`, which also records what this costs
+  `DECISIONS.md` `D_headless_os_agent`, which also records what this costs
   (`systemctl --user`, rootless `docker`) and what survives (the system
   bus, `journalctl`, `gsettings get`).
 - **Abstract sockets need no mask.** `@/tmp/.X11-unix/X0` and friends are
@@ -269,7 +269,7 @@ Two further residuals, both human-gated and neither silent:
 - **The system bus stays bound** — `systemctl status` needs it. A transient
   unit there is polkit-gated, and polkit raises an *authentication dialog
   on the user's desktop* (observed while testing this). That's the
-  `D-no-agent-sudo` hand-off working, not a bypass: loud, and it needs the
+  `D_no_agent_sudo` hand-off working, not a bypass: loud, and it needs the
   user's password.
 - **Deferred execution via a confirmed write** — `~/.bashrc`,
   `~/.config/autostart/*.desktop`, `crontab` — runs later, outside the

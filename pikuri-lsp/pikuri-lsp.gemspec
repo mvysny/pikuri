@@ -49,7 +49,7 @@ Gem::Specification.new do |spec|
 
   # Not optional: an LSP serves a *project*, and a project is a
   # +Workspace+ in pikuri. The tool needs +Filesystem#denied?+ for the
-  # walked paths a server hands back (+D-walked-path-denylist+), the
+  # walked paths a server hands back (+D_walked_path_denylist+), the
   # root confinement that keeps the server's project and the
   # confinement boundary the same boundary, the seam-routed read behind
   # every document re-open, and +Filesystem#private?+ for its own

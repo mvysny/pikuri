@@ -29,7 +29,7 @@
 # Two layers, because a fault at one is invisible from the other. By default the
 # probes drive the *protocol* client. `--drive` drives the `lsp` **tool** instead,
 # printing what the model would read for every operation and checking the
-# properties the rendered answer owes — which is how the R-family findings were
+# properties the rendered answer owes — which is how the `R_` findings were
 # found, and what no protocol probe could have caught.
 #
 # Usage:
@@ -63,7 +63,7 @@ parser = OptionParser.new do |opts|
   end
   opts.on('--drive', 'Probe through the `lsp` tool instead of the protocol: ' \
                      'print what the model would read for every operation, and ' \
-                     'check the R-family findings.') do
+                     'check the R_ findings.') do
     drive = true
   end
   opts.on('-h', '--help') do
@@ -172,7 +172,7 @@ end
 #
 # The probes above drive the protocol client, so none of them can see a fault in
 # +Navigator+ dispatch, +Anchor+, +Sources+ or +Renderer+ — which is where both
-# R-family findings were spotted. One server (the +--server+ one), because a
+# +R_+ findings were spotted. One server (the +--server+ one), because a
 # readable report beats an exhaustive one.
 #
 # @return [void]
@@ -219,7 +219,7 @@ def drive_probes(entry:, root:, path:, line:, symbol:)
     end
   end
 
-  probe('no rendered answer repeats a row (R-same-line-references)',
+  probe('no rendered answer repeats a row (R_same_line_references)',
         "Renderer#locations deduping on the row, since pikuri prints no column") do
     repeated = answers.filter_map do |name, answer|
       rows = answer.lines.select { |row| row.match?(/\A {2}\S/) }.map(&:rstrip)
@@ -248,7 +248,7 @@ def drive_probes(entry:, root:, path:, line:, symbol:)
     end
   end
 
-  probe('hover stays silent on a method\'s own def line (R-hover-not-on-a-def-line)',
+  probe('hover stays silent on a method\'s own def line (R_hover_not_on_a_def_line)',
         'why documentSymbol, not hover, is the route to a method') do
     declaration = File.readlines(path)[line - 1].to_s.match?(/^\s*def\s+(self\.)?#{Regexp.escape(symbol)}\b/)
     answered = !answers['hover'].to_s.start_with?('The server answered no results')
@@ -307,7 +307,7 @@ begin
   reopen = -> { client.open_document(path, File.read(path)) }
   release = -> { client.close_document(path) }
 
-  probe('the encoding offer is honoured (F-position-encoding)',
+  probe('the encoding offer is honoured (F_position_encoding)',
         'PositionEncoding exists at all: pikuri converts when it is not') do
     if client.position_encoding == 'utf-8'
       [:ok, 'the server took the utf-8 offer, so offsets need no conversion']
@@ -316,7 +316,7 @@ begin
     end
   end
 
-  probe('open / ask / close, twice over, gives the same answer (S-reopen-works)',
+  probe('open / ask / close, twice over, gives the same answer (S_reopen_works)',
         'the document-sync policy: re-open on read, never didChange, and close what was opened') do
     reopen.call
     first = client.request('textDocument/definition', params.call)
@@ -331,7 +331,7 @@ begin
     end
   end
 
-  probe('a bare name may score below the index threshold (H-qualified-name-match)',
+  probe('a bare name may score below the index threshold (H_qualified_name_match)',
         'why symbol-only lookup is best-effort and file+line is what the tool teaches') do
     if client.supports?('workspaceSymbolProvider')
       hits = Array(client.request('workspace/symbol', { query: symbol }))
@@ -359,7 +359,7 @@ begin
     end
   end
 
-  probe('an advertised provider actually answers (H-subtypes-stub: the # TODO trap)',
+  probe('an advertised provider actually answers (H_subtypes_stub: the # TODO trap)',
         'relay-do-not-work-around: no per-server known-stub list') do
     unless client.supports?('typeHierarchyProvider')
       next [:unknown, 'no typeHierarchyProvider advertised, so there is nothing to catch lying']

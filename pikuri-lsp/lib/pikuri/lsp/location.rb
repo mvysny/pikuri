@@ -15,7 +15,7 @@ module Pikuri
     #
     # A result is a *walked* path — the model never supplied it — so it reaches
     # no +resolve_for_read+, and every consumer owes it a
-    # +Filesystem#denied?+ pass plus root confinement (+D-walked-path-denylist+).
+    # +Filesystem#denied?+ pass plus root confinement (+D_walked_path_denylist+).
     # {#path} returning +nil+ is the other half of that: a +jdt:+ URI inside a
     # jar can be neither denylist-checked nor read, and has to be rendered from
     # content the server hands over.

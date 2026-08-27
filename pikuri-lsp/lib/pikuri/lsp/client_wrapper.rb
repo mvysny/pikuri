@@ -309,7 +309,7 @@ module Pikuri
 
       # Hand the document back, so the server returns to reading it from disk.
       #
-      # Balances {#open_document} (+D-lsp-document-sync+), and must go out *after*
+      # Balances {#open_document} (+D_lsp_document_sync+), and must go out *after*
       # the reply to the request it brackets: a server that answers concurrently
       # can otherwise process the close first and answer about a document it has
       # just dropped.

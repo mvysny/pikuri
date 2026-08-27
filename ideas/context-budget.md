@@ -185,7 +185,7 @@ the window — would get one reading, taken before the run started.
 
 ### Unknown cap ⇒ no line at all
 
-Per `D-context-window-sources`, the cap is `nil` for anything but
+Per `D_context_window_sources`, the cap is `nil` for anything but
 llama.cpp or an explicit `ChatTransport#context_window`. A threshold
 feature needs a denominator, so with no cap there is no band to cross and
 nothing to emit. Never invent a denominator, and never emit a bare "56k

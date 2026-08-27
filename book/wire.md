@@ -134,7 +134,7 @@ the model is resourceful.
 
 pikuri talks HTTP through Faraday, and a `ChatTransport` lets you
 substitute the adapter — the same seam the scripted test transport is
-built on (`DECISIONS.md` `D-fake-transport`). So recording every
+built on (`DECISIONS.md` `D_fake_transport`). So recording every
 outgoing request is a subclass that peeks and delegates:
 
 ```ruby
@@ -292,7 +292,7 @@ content has to be escaped so a hostile document cannot end the envelope
 early and have the rest read as conversation. pikuri does both in
 `Agent#append_reference_block`; the reasoning is in
 [the security chapter](security.md)'s terms, and the decision is
-recorded as `D-reference-text-as-user-turn`.
+recorded as `D_reference_text_as_user_turn`.
 
 ## The takeaway, portable to any harness
 

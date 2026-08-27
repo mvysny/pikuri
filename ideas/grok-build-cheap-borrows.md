@@ -61,7 +61,7 @@ replace_all on a substring that avoids them.
 
 This costs one extra normalized `include?` on a path that has already
 failed, touches no write path, needs no remap, and keeps the
-byte-for-byte doctrine `D-single-hunk-edit` is built on. It turns a
+byte-for-byte doctrine `D_single_hunk_edit` is built on. It turns a
 mystifying loop into a self-correcting one, which is the whole value —
 the repair was never the point.
 

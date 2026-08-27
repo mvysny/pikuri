@@ -191,7 +191,7 @@ Three things about that rule earned their way in by measurement:
   seconds, and any timeout short enough to be useful as a liveness check
   is short enough to abort that. What replaces it: progress events the
   host renders, and Ctrl+C — **the human is the timeout**
-  (`D-lsp-no-startup-timeout`). Warm, that same project came up in 7.7s,
+  (`D_lsp_no_startup_timeout`). Warm, that same project came up in 7.7s,
   which is why a server's data directory belongs in a persistent cache
   rather than a per-run temp dir.
 
@@ -590,7 +590,7 @@ no teardown — so shipping the gem costs a host that never configures a
 server exactly nothing. Servers start on **first use**, not at boot, so a
 registered-but-missing binary is reported by the call that needed it, and
 a pure-Ruby project never launches the `java` entry its owner added once.
-The child is spawned de-bundlerized (`D-de-bundlerized-children`), so a
+The child is spawned de-bundlerized (`D_de_bundlerized_children`), so a
 Ruby language server resolves gems from *your* project rather than from
 pikuri's own bundle.
 
@@ -621,20 +621,20 @@ $ ruby pikuri-lsp/bin/pikuri-lsp-check
 
 Probes
 ------
-  ok       the encoding offer is honoured (F-position-encoding)
+  ok       the encoding offer is honoured (F_position_encoding)
              the server took the utf-8 offer, so offsets need no conversion
              guards: PositionEncoding exists at all: pikuri converts when it is not
-  ok       open / ask / close, twice over, gives the same answer (S-reopen-works)
+  ok       open / ask / close, twice over, gives the same answer (S_reopen_works)
              two open/close rounds, the same answer (4 location(s))
              guards: the document-sync policy: re-open on read, never didChange, and close what was opened
-  ok       a bare name may score below the index threshold (H-qualified-name-match)
+  ok       a bare name may score below the index threshold (H_qualified_name_match)
              the index returned 23 hit(s) and none is "Bash"
              guards: why symbol-only lookup is best-effort and file+line is what the tool teaches
   ok       the operations the enum names are advertised here
              not advertised here: goToImplementation, goToTypeDefinition,
              incomingCalls, outgoingCalls — the gate refuses these cleanly
              guards: the capability gate at dispatch, per workspace
-  ok       an advertised provider actually answers (H-subtypes-stub: the # TODO trap)
+  ok       an advertised provider actually answers (H_subtypes_stub: the # TODO trap)
              supertypes: 20 row(s); subtypes: 0 row(s)
              guards: relay-do-not-work-around: no per-server known-stub list
 
@@ -646,7 +646,7 @@ mind and a decision wants re-reading — an invitation, not a failure, which
 is why each probe names the decision it guards. `no answer` means the
 probe could not run here and says why, because "absence of evidence" is
 not something a diagnostic should round to a clean bill of health. Every
-finding id in that output (`F-`, `J-`, `H-`, `S-`) is a paragraph in
+finding id in that output (`F_`, `J_`, `H_`, `S_`) is a paragraph in
 `pikuri-lsp/DESIGN.md`, cited from the specs and the fixtures too, so a
 drift leads somewhere.
 

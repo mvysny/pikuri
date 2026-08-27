@@ -36,7 +36,7 @@ module Pikuri
     # for shaving the round-trip (pre-injecting bodies, a `names:` batch)
     # makes the expensive axis worse. A `paths:` trigger is therefore a
     # relevance filter on the catalog *entry*, never a body preloader; see
-    # `DECISIONS.md` `D-skill-path-activation`.
+    # `DECISIONS.md` `D_skill_path_activation`.
     class SkillTool < Pikuri::Tool
       # Description shown to the LLM (opencode-shape; inventory omitted —
       # see the class header).

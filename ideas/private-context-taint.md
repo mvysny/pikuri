@@ -65,7 +65,7 @@ tracks `:untrusted` alongside `:private`. What each one buys differs:
 Worth having because it is the one question the static detector cannot
 answer. At boot it can only say a wiring *could* read untrusted content, and
 a declared "this agent stays clean" was rejected for being both derivable and
-silence-able (`D-no-static-poisoned-flag`). Observation needs no declaration,
+silence-able (`D_no_static_poisoned_flag`). Observation needs no declaration,
 which is exactly why the badge is cheap where the static flag was not.
 
 ## The structural insight: who controls the destination

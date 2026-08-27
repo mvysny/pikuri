@@ -308,7 +308,7 @@ closeable threat model.
 
 Pikuri has settled how an `edit` call *names* the place it edits — a
 unique string, with `occurrence: N` to escape the uniqueness tax, and no
-batch or patch sibling (`DECISIONS.md` `D-single-hunk-edit`). The
+batch or patch sibling (`DECISIONS.md` `D_single_hunk_edit`). The
 candidate answers are usually framed as two: match a unique string
 (Claude Code, opencode, pikuri) or ship a patch format with line context
 (codex's `apply_patch`). grok-build ships **both, plus a third**, and
@@ -343,7 +343,7 @@ Three properties fall out that neither of the usual two arms has:
 - **Batches are validated against the pre-edit snapshot and applied
   atomically bottom-up** — one bad anchor rejects the whole batch, and
   overlapping ranges are refused. Pikuri ships no batch tool
-  (`D-single-hunk-edit`), and the sweep behind that decision is worth
+  (`D_single_hunk_edit`), and the sweep behind that decision is worth
   restating here: grok-build maintains *four* interchangeable
   `ToolKind::Edit` implementations and benchmarks them, and batching is
   not among the four. Where a batch does appear it is as a *property of
@@ -412,7 +412,7 @@ transfer at all.
   rewrite every smart quote in the file behind a "1 occurrence"
   confirmation. Retrying a failed match against a normalized copy and
   naming the offending codepoint costs nothing and keeps the
-  byte-for-byte contract (`D-single-hunk-edit`) intact. See
+  byte-for-byte contract (`D_single_hunk_edit`) intact. See
   `ideas/grok-build-cheap-borrows.md`.
 
 ---
@@ -652,7 +652,7 @@ pikuri had just found that a mid-conversation `role: system` message is
 silently discarded by some chat templates (Qwen3.6's drops every
 system/developer message past the leading one or two it merges into the
 header — the finding, the Jinja excerpt and the three-model canary table
-are in `DECISIONS.md` `D-reference-text-as-user-turn`, and the reader-facing
+are in `DECISIONS.md` `D_reference_text_as_user_turn`, and the reader-facing
 version is `book/wire.md`). The question asked of grok-build was narrow: what role does *it*
 use for mid-conversation reference text, over which APIs, and does it
 probe the model first?
@@ -1497,7 +1497,7 @@ time rather than routing it through a tool:
 
 pikuri ships the same human path, by a different route.
 `Skill::Extension#schedule_load_skill` is the seam, and since
-`D-reference-text-as-user-turn` it too lands the body as a
+`D_reference_text_as_user_turn` it too lands the body as a
 `<system-reminder>`-wrapped `:user` turn — so the `:system`-vs-`:user`
 divergence that used to be the interesting difference here has closed on
 its own. `bin/pikuri-code` wires it as the **third leg of the typed-`/name`
@@ -1511,7 +1511,7 @@ chain** (host built-in > command > skill), so `/cop` loads the skill named
   routes both kinds through one mechanism.
 - **pikuri declines the auto-registration.** opencode makes *every* skill
   also a command, sharing one file across both surfaces. pikuri's
-  two-registry split (`D-slash-commands`) keeps them apart: a skill is
+  two-registry split (`D_slash_commands`) keeps them apart: a skill is
   model-invoked and therefore advertised, a command is human-invoked and
   never advertised. Collapsing them would put a body pikuri charges per
   *use* onto a surface charged per *install*. The fall-through gives the
@@ -1809,7 +1809,7 @@ the *implementations* rather than the guide, which is worth knowing before
 anyone cites that sentence as a reason not to gate. The same guide's two
 other recommendations pikuri does not follow are both decided on the
 record: constraining the load tool's `name` to an enum of valid skills is
-rejected in `DECISIONS.md` `D-skill-path-activation` (an enum would be
+rejected in `DECISIONS.md` `D_skill_path_activation` (an enum would be
 rebuilt on every promotion, churning the tool schema mid-session), and
 exempting skill content from context compaction is moot until something
 compacts.
@@ -1833,7 +1833,7 @@ compacts.
   for a command the name is the *address the human types*). Frontmatter
   is entirely optional. Neither inlining leg ships:
   `` !`cmd` `` is refused outright and `@path` is simply left as literal
-  text (`DECISIONS.md` `D-command-inlining-legs`), and `allowed-tools:`
+  text (`DECISIONS.md` `D_command_inlining_legs`), and `allowed-tools:`
   is refused too rather than silently widening a toolset its author
   asked to narrow. `disable-model-invocation` is the *default and the
   only* behaviour — pikuri never advertises a command to the model.
@@ -1854,7 +1854,7 @@ are documented nowhere:
    `one=[$1] two=[$2] three=[$3]` yields `one=[BBB] two=[CCC]
    three=[$3]` — while being documented as 1-based and written as 1-based
    by every author, including in Claude Code's own shipped command files.
-   pikuri implements 1-based (`D-command-substitution`). An out-of-range
+   pikuri implements 1-based (`D_command_substitution`). An out-of-range
    `$n` stays literal there, and pikuri keeps that half.
 
 ### MCP (Model Context Protocol)
@@ -2017,7 +2017,7 @@ more than wiring through ruby_llm's existing primitive.
    `SyntheticReason`), and `EmptyTurnError` narrowed rather than retired.
    Verified against the live model for both the skill-promotion and
    memory-prefetch paths. See `DECISIONS.md`
-   `D-reference-text-as-user-turn`, and `book/wire.md` for the
+   `D_reference_text_as_user_turn`, and `book/wire.md` for the
    reader-facing account.
 7. **Tool-emitted `:halt` signal** — **FREE NOW**. ruby_llm's
    `RubyLLM::Tool::Halt` lets a tool short-circuit: returning
@@ -2100,7 +2100,7 @@ more than wiring through ruby_llm's existing primitive.
     addresses by anchor, a stale anchor fails loudly and the error
     carries fresh anchors so the model retries without re-reading.
     Rejected for now as line-range-with-the-staleness-hole-closed
-    (`DECISIONS.md` `D-single-hunk-edit`), and the arm to read first if
+    (`DECISIONS.md` `D_single_hunk_edit`), and the arm to read first if
     payload size ever displaces call count as the problem — but note
     grok-build ships the scheme as a *parameter* with a benchmark
     harness, so the question isn't settled there either.
@@ -2148,7 +2148,7 @@ more than wiring through ruby_llm's existing primitive.
     nothing. Two pieces of grok-build's variant are still *not* borrowed:
     diagnostics riding back as a `<system-reminder>` after an edit, and
     syncing documents from the write path. Both are recorded as deferred
-    in `DECISIONS.md` `D-lsp-document-sync`; pikuri re-opens the document
+    in `DECISIONS.md` `D_lsp_document_sync`; pikuri re-opens the document
     on every call instead, which needs no edit notification to be
     correct.
 27. **Steering / follow-up message queues** (pi). Pikuri's

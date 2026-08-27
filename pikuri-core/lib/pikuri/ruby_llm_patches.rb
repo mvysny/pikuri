@@ -9,7 +9,7 @@ module Pikuri
   # we know when to delete it. Reopening a third-party class is last resort —
   # here only because the defect is on the live chat path and the release cadence
   # isn't ours. Patching rather than dropping the dependency is the standing
-  # policy — `DECISIONS.md` +D-keep-ruby-llm+.
+  # policy — `DECISIONS.md` +D_keep_ruby_llm+.
   #
   # == The streaming error-parse crash (ruby_llm #837)
   #

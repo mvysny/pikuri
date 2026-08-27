@@ -32,8 +32,8 @@ neighbor:
 - **vs. `SECURITY.md`.** A shipped defense stays there. Only the fork
   ("rejected X because it widens the surface") comes here.
 
-**Format.** One entry per decision. The ID is a slug, not a number: `D-`
-plus a 1–4-word kebab hint at the subject (`D-per-process-temp`), so a
+**Format.** One entry per decision. The ID is a slug, not a number: `D_`
+plus a 1–4-word snake_case hint at the subject (`D_per_process_temp`), so a
 citation carries meaning on its own. The `(date)` on the heading is
 *decided* provenance, not a log position — git owns the edit history, so
 don't narrate how an entry used to read. Keep each entry tight: context,
@@ -52,10 +52,10 @@ it.
 **Newest first.** Entries run reverse-chronologically by decided date, so a
 scan hits recent decisions first.
 
-**Never read wholesale.** `grep '^## D-' DECISIONS.md` is the index; there
+**Never read wholesale.** `grep '^## D_' DECISIONS.md` is the index; there
 is no ToC (same discipline as `ls ideas/`). Cite an entry by slug. Grep
-tripwire: every `D-<slug>` referenced anywhere in the repo must exist as a
-`^## D-` heading here.
+tripwire: every `D_<slug>` referenced anywhere in the repo must exist as a
+`^## D_` heading here.
 
 **Entries are mutable — edit in place, don't append addendums.** Each entry
 is the single coherent home for one *live* decision; keep it current as the
@@ -79,7 +79,7 @@ design.
 
 ---
 
-## D-release-one-otp — One OTP code for sixteen pushes; stdin only, and re-run to recover (2026-08-25)
+## D_release_one_otp — One OTP code for sixteen pushes; stdin only, and re-run to recover (2026-08-25)
 
 **Status:** Accepted; implemented 2026-08-25 in the top-level `Rakefile`
 (`rake release`). Graduated from `ideas/release-otp-fatigue.md`, now retired.
@@ -190,7 +190,7 @@ rather than surfacing as a 403 deep in the fan-out.
   version number is spent forever — so the rehearsal is what makes changing
   this task safe.
 
-## D-lsp-direct-not-mcp — Write the LSP client; don't bridge one through MCP (2026-08-18)
+## D_lsp_direct_not_mcp — Write the LSP client; don't bridge one through MCP (2026-08-18)
 
 **Status:** Accepted, shipped as `pikuri-lsp`.
 
@@ -212,8 +212,8 @@ absorb protocol drift. Their pitch is correct, too: a semantic answer costs
   gating, name→position, result capping, coordinate conversion — get solved
   somewhere either way, and through a bridge you inherit someone else's
   answers to all five with no way to correct them.
-- **Two seams cannot be delegated at all.** `F-definition-candidates` and
-  `F-reference-volume`: denylist filtering of walked paths, root
+- **Two seams cannot be delegated at all.** `F_definition_candidates` and
+  `F_reference_volume`: denylist filtering of walked paths, root
   confinement, and volume capping are post-processing pikuri must write
   regardless. At which point most of a client exists anyway, and the extra
   process is still being paid for.
@@ -244,7 +244,7 @@ skipping.
 
 ---
 
-## D-lsp-operation-surface — Ten operations from shipped harnesses; relay server glitches, never work around them (2026-08-18)
+## D_lsp_operation_surface — Ten operations from shipped harnesses; relay server glitches, never work around them (2026-08-18)
 
 **Status:** Accepted, shipped. The enum is static and hardcoded in
 {Pikuri::Lsp::Operation}; adding or removing a value is one line, so this is
@@ -253,12 +253,12 @@ a floor rather than a ceiling.
 **Context.** Six live runs against ruby-lsp and jdtls found a real pattern,
 and then the pattern turned on the method that produced it: *every server is
 broken in its own way, and the ways do not generalize.* ruby-lsp advertises
-a type hierarchy whose `subtypes` half is a `# TODO` (`H-subtypes-stub`);
+a type hierarchy whose `subtypes` half is a `# TODO` (`H_subtypes_stub`);
 jdtls's `workspace/symbol` cannot see a method at all
-(`S-jdtls-types-only`); ruby-lsp crashes on a full-text `didChange` that
-jdtls accepts (`S-rangeless-didchange-crash`); ruby-lsp's index
+(`S_jdtls_types_only`); ruby-lsp crashes on a full-text `didChange` that
+jdtls accepts (`S_rangeless_didchange_crash`); ruby-lsp's index
 desynchronizes from its own document because of a typing-speed heuristic
-(`S-index-desync`). There are language servers for thirty other languages,
+(`S_index_desync`). There are language servers for thirty other languages,
 each with its own list.
 
 **Decision.** Two rules, and they are the same rule twice.
@@ -268,9 +268,9 @@ each with its own list.
    identical nine (near-identical tool text too, so they count as roughly
    one data point); grok-build ships six, a strict subset. pikuri ships that
    union plus two *measured* additions and one collapse:
-   `goToTypeDefinition` (`J-type-definition-recovers-var`: with
+   `goToTypeDefinition` (`J_type_definition_recovers_var`: with
    `var names = new ArrayList<>()` the type appears nowhere in the source,
-   so nothing else recovers it), `supertypes` (`H-supertypes-no-substitute`
+   so nothing else recovers it), `supertypes` (`H_supertypes_no_substitute`
    — the one hierarchy operation that works on both servers, and the *chain*
    is what has no substitute), and `prepareCallHierarchy` run inside the
    tool rather than exposed.
@@ -280,18 +280,18 @@ each with its own list.
    does not support this operation*, *the server answered nothing*, and *the
    server could not be asked*. Collapsing them is the most consequential
    defect in the shipped prior art — Claude Code's
-   `No definition found. This may occur if…` is `F-empty-before-index`'s
+   `No definition found. This may occur if…` is `F_empty_before_index`'s
    false premise verbatim.
 
 **Rejected: an enum sized to what the two reference servers implement.**
 That is a catalogue of two servers' glitches, and it says nothing about the
 third. It also gets the answer wrong in both directions: `documentSymbol`
-would have been cut (all three harnesses ship it, and `S-jdtls-types-only`
+would have been cut (all three harnesses ship it, and `S_jdtls_types_only`
 makes it the only route from a Java method *name* to a position), while
 `subtypes` would have been kept.
 
 **Rejected: a per-server known-stub list.** The obvious fix for
-`H-subtypes-stub` — record that ruby-lsp advertises `typeHierarchyProvider`
+`H_subtypes_stub` — record that ruby-lsp advertises `typeHierarchyProvider`
 but implements only half of it. It is unbounded work that gets one server
 right, and a capability gate provably cannot catch the case anyway: one
 provider key covers both directions, and ruby-lsp advertises it *truthfully*
@@ -299,19 +299,19 @@ for the half that works. With `subtypes` cut the case no longer arises, and
 where it would, the answer is to relay the empty result.
 
 **Rejected: per-server readiness predicates.** Closed by
-`J-jdtls-defers-replies`: jdtls defers its replies during an import instead
+`J_jdtls_defers_replies`: jdtls defers its replies during an import instead
 of answering `[]`, so a false-early gate is harmless there and essential
 against ruby-lsp. One generic quiescence-plus-debounce gate covers both, and
 the feared config knob is not needed.
 
 **Rejected: `subtypes` as an eleventh operation.** It went first to
-`H-subtypes-stub`, then to the harness survey (nobody ships it), and finally
-to `H-implementation-is-transitive` / `H-subtypes-direct-only`: on jdtls,
+`H_subtypes_stub`, then to the harness survey (nobody ships it), and finally
+to `H_implementation_is_transitive` / `H_subtypes_direct_only`: on jdtls,
 `goToImplementation` answers "list all subtypes" transitively in one call
 and works on concrete classes, while `typeHierarchy/subtypes` returns the
 direct children only. So there is **no server on which `subtypes` is the
 best available answer**, and `findReferences` is not the substitute either
-(`H-references-not-substitute`: exactly 1 of 4 hits was the `extends` site,
+(`H_references_not_substitute`: exactly 1 of 4 hits was the `extends` site,
 unlabelled).
 
 **Rejected: exposing `prepareCallHierarchy`.** The one place pikuri narrows
@@ -329,15 +329,15 @@ diagnostics tool, as reminders appended to tool output.
 
 ---
 
-## D-lsp-no-startup-timeout — No clock anywhere; block on the index and let the human be the timeout (2026-08-18)
+## D_lsp_no_startup_timeout — No clock anywhere; block on the index and let the human be the timeout (2026-08-18)
 
 **Status:** Accepted, shipped. One half of the original decision — *spawn
 at boot* — was reversed before shipping; see Consequences.
 
 **Context.** ruby-lsp indexes this repo in seconds; a cold jdtls import of a
-Gradle multi-module project took 78 seconds (`J-warm-start`), during which
+Gradle multi-module project took 78 seconds (`J_warm_start`), during which
 every request went unanswered until the backlog flushed
-(`J-jdtls-defers-replies`). The obvious fifth registry field is
+(`J_jdtls_defers_replies`). The obvious fifth registry field is
 `startup_timeout:`.
 
 **Decision.** No `startup_timeout:`, and no timeout at all. The first call
@@ -349,7 +349,7 @@ observation, which is not information but a *decision point*: retry, wait,
 or give up. "Wait" is the correct answer and the one thing no tool call can
 express. Relaying an empty index state is the single case where waiting
 beats relaying, because there is nothing in `[]` to reason about — and
-`F-empty-before-index` is what an un-gated client hands the model instead: a
+`F_empty_before_index` is what an un-gated client hands the model instead: a
 *successful* empty answer, from which it concludes the symbol has no
 definition.
 
@@ -387,7 +387,7 @@ the first call blocks, unbounded.
 
 ---
 
-## D-lsp-scheme-fallback — Standard first, one hardcoded `jdt:` row, and never dereference a URI the server chose (2026-08-18)
+## D_lsp_scheme_fallback — Standard first, one hardcoded `jdt:` row, and never dereference a URI the server chose (2026-08-18)
 
 **Status:** Accepted, shipped as `Lsp::Sources::SCHEME_REQUESTS`, which
 holds exactly one row.
@@ -395,7 +395,7 @@ holds exactly one row.
 **Context.** A result is not always a file. jdtls answers a library
 definition with
 `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`
-(`J-library-is-not-a-file`) — a *handle, not a locator*, an index into that
+(`J_library_is_not_a_file`) — a *handle, not a locator*, an index into that
 server's own view of the classpath, closer to a file descriptor than a path
 and meaningless to anything else. **There is no standard "read this URI"
 request in the LSP that ships today, and no way to discover a server's
@@ -407,7 +407,7 @@ wire.
 **Decision.** Every result renders as location + snippet, and the URI scheme
 decides where the snippet comes from. Three tiers: `file:` is read through
 the `Workspace` seam (with `Filesystem#denied?` applied, since a result is a
-*walked* path — `D-walked-path-denylist`); a custom scheme is asked of the
+*walked* path — `D_walked_path_denylist`); a custom scheme is asked of the
 **server that issued it**, standard 3.18 `textDocumentContent` first and one
 hardcoded row second; `http(s):` and everything else is printed as text,
 never dereferenced. A scheme with no row gets an inline reason, never a bare
@@ -421,12 +421,12 @@ URL in its source map would break the gem's entire claim. pikuri already has
 `fetch` and `web_scrape` for network reads a human asked for. The table may
 therefore never gain a row that reaches the network; every row is a JSON-RPC
 request to a child pikuri already spawned over a pipe it already owns, which
-is what `D-lsp-trifecta-legs` leans on.
+is what `D_lsp_trifecta_legs` leans on.
 
 **Rejected: standard-only, no fallback row.** The principled position — the
 protocol layer stays server-agnostic — and it makes the Java arm untestable
-in practice: without the row, `J-init-options-required` and
-`J-class-file-contents` compose into "library navigation returns a polite
+in practice: without the row, `J_init_options_required` and
+`J_class_file_contents` compose into "library navigation returns a polite
 refusal", which is the capability the typed half of the target was for.
 
 **Rejected: a `content_request:` config field.** The same fallback,
@@ -448,13 +448,13 @@ the standard request and the fallback. If explicit loading is ever wanted it
 lands as another `operation` enum value, not a second tool — and the
 question to answer *then* is that inlining and explicit reads are not rivals:
 a bounded snippet per result keeps `definition` usable
-(`J-class-file-contents`'s 22 KB × the 45 hits `F-reference-volume`
+(`J_class_file_contents`'s 22 KB × the 45 hits `F_reference_volume`
 measured), while an explicit operation is how the model asks for a whole
 document.
 
 ---
 
-## D-lsp-hover-file-uris — Rewrite the `file:` URIs inside hover prose; link only what `read` would open (2026-08-19)
+## D_lsp_hover_file_uris — Rewrite the `file:` URIs inside hover prose; link only what `read` would open (2026-08-19)
 
 **Status:** Accepted, shipped as `Lsp::Renderer#rewrite_file_uris`.
 
@@ -471,7 +471,7 @@ string with VS Code file links:
 ```
 
 Three things are wrong with passing that through. It is a **walked path that
-reaches no `denied?` pass** (`D-walked-path-denylist`), so a definition
+reaches no `denied?` pass** (`D_walked_path_denylist`), so a definition
 inside a credential root prints its absolute path. It is a **dead-end
 citation** — the `read` tool takes neither a URI nor a `#Lline,col` fragment
 — while nine other operations spent their design on printing a path the
@@ -488,7 +488,7 @@ bare. The rule in both directions: **never invent a link that was not there,
 never keep one whose target `read` would refuse.**
 
 **Rejected: pass it through as it came.** The renderer's own stated posture
-(`D-lsp-operation-surface`) — pikuri cannot pre-empt thirty servers' failure
+(`D_lsp_operation_surface`) — pikuri cannot pre-empt thirty servers' failure
 modes, so it relays glitches rather than smoothing them. That rule is about
 a server's *behaviour*, though, and this is pikuri's own denylist obligation
 arriving through a shape the row path does not cover. The rule still holds
@@ -510,7 +510,7 @@ already encodes, rather than a second one to learn.
 for an editor that will place a cursor, and it carries **columns** — which
 the whole tool refuses (`symbol`, never a column) and which produced a real
 bug: two results differing only in column rendered as one row and counted
-twice (`R-same-line-references`). A model finds the symbol on the line.
+twice (`R_same_line_references`). A model finds the symbol on the line.
 
 **Rejected: extending the scan to `jdt:`.** `Sources` can already label one
 (`java.lang.String (rt.jar)`), so the objection is not semantic — it is that
@@ -518,16 +518,16 @@ a `jdt:` URI carries an entire classpath entry in its query, runs to ~300
 characters and has **no reliable end inside a sentence**, where a `file:`
 URI stops at whitespace or `)`. `http(s):` stays untouched for a different
 reason: a URL in a docstring is prose, not a result, and it is never
-dereferenced either way (`D-lsp-scheme-fallback`).
+dereferenced either way (`D_lsp_scheme_fallback`).
 
 ---
 
-## D-lsp-document-sync — Re-open the document around every call; never send an edit stream (2026-08-18, revised 2026-08-19)
+## D_lsp_document_sync — Re-open the document around every call; never send an edit stream (2026-08-18, revised 2026-08-19)
 
 **Status:** Accepted, shipped. The policy and its mechanics are
 {Pikuri::Lsp::ClientWrapper#open_document} and
 {Pikuri::Lsp::ClientWrapper#close_document}; the measurements behind it are the
-`S-` family in `pikuri-lsp/DESIGN.md` §Measurements; the teaching version is
+`S_` family in `pikuri-lsp/DESIGN.md` §Measurements; the teaching version is
 `book/lsp.md`. Revised 2026-08-19 to send the `didClose` the original decision
 declined — see *Balancing the open* below.
 
@@ -536,13 +536,13 @@ declined — see *Balancing the open* below.
 holds a buffer the disk may not have seen for hours. An agent inverts that at
 the root — `write` and `edit` land on disk immediately, so the tool never owns
 text the disk lacks. Yet the servers still presume that *a client which opened a
-URI is that document's authority* (`S-watched-files-ignored`, stated outright in
+URI is that document's authority* (`S_watched_files_ignored`, stated outright in
 ruby-lsp's source), which is exactly the assumption an agent writing straight to
 disk breaks.
 
 **Decision.** Re-send `textDocument/didOpen` with the file's current disk text
 before every position-based call, and `textDocument/didClose` once that call's
-last reply is in (`S-reopen-works`). No open-URI set, no version counter, no
+last reply is in (`S_reopen_works`). No open-URI set, no version counter, no
 digest. Re-opening a document already open is spec-forbidden — *a document must
 not be opened twice* — and neither reference server minds; balancing the pair
 per call is what keeps that the only deviation.
@@ -553,7 +553,7 @@ spec-legal and the rest are.
 - **Rejected: a rangeless whole-document `didChange` — and it was never ours to
   send.** The obvious "here is the new text" move leaves jdtls correctly updated
   and *crashes* inside ruby-lsp, which reads `edit[:range][:start]`
-  unconditionally (`S-rangeless-didchange-crash`). The document keeps its old
+  unconditionally (`S_rangeless_didchange_crash`). The document keeps its old
   text, a notification has no reply channel, and the only report is a
   `window/logMessage` line — what the model sees is the next query failing with
   a raw backtrace. Both visible harnesses sync this way, and grok-build's own
@@ -570,7 +570,7 @@ spec-legal and the rest are.
   outcome could inform this decision.
 - **Rejected: the ranged whole-document `didChange`.** Honoured by both servers
   for the document, and then it desynchronizes ruby-lsp's *index* from the
-  document it just updated (`S-index-desync`): `documentSymbol` reports the
+  document it just updated (`S_index_desync`): `documentSymbol` reports the
   renamed method while `definition` on it returns `[]`. `RubyDocument#should_index?`
   reindexes only when the edit's start position looks like a declaration, and a
   whole-file replace starts at 0:0 — the `frozen_string_literal` comment. The
@@ -578,18 +578,18 @@ spec-legal and the rest are.
   invisible.
 - **Rejected: `didClose` and forget.** Drops ruby-lsp's store entry so the next
   request re-reads disk, and does nothing at all on jdtls, which keeps answering
-  its pre-close copy (`S-didclose-ruby-only`). Not portable, which is what
+  its pre-close copy (`S_didclose_ruby_only`). Not portable, which is what
   promotes re-opening from an option to the policy.
 - **Rejected: `workspace/didChangeWatchedFiles`.** The spec's own out-of-band
   "the disk changed" channel changed nothing on either server while the client
-  held the URI (`S-watched-files-ignored`).
+  held the URI (`S_watched_files_ignored`).
 - **Rejected: version or digest bookkeeping on top of the re-open.** There is
   nothing to reconcile when the text always comes from disk, and the bytes are
   already in hand: they are the text the tool read to derive the column.
 
 **Balancing the open.** The first version of this decision sent no `didClose`,
 on the grounds that neither reference server needed one: ruby-lsp drops its
-store entry and jdtls ignores the close outright (`S-didclose-ruby-only`), so
+store entry and jdtls ignores the close outright (`S_didclose_ruby_only`), so
 the close bought nothing measurable. That reasoning was the wrong shape. The
 spec caps a document's open count at one and asks for the pair, and a client
 that only ever opens is not relying on a measurement — it is relying on two
@@ -621,7 +621,7 @@ answer with a teardown failure.
 
 **Consequence.** The re-open half rests on server behaviour rather than on the
 specification, so it is pinned by a probe rather than by a reading:
-`bin/pikuri-lsp-check`'s `S-reopen-works` row re-measures it against the
+`bin/pikuri-lsp-check`'s `S_reopen_works` row re-measures it against the
 server actually installed, opening and closing as the library does. The close
 half needs no probe — it is a contract, not a measurement, and the specs pin
 the ordering against the fake server.
@@ -641,24 +641,24 @@ deferral is a scheduling choice:
 - It must never be load-bearing. `bash`, `git checkout` and any build the agent
   runs also write files, so an edit notification is *structurally* incomplete —
   re-opening on read stays the correctness guarantee, the same split
-  `D-walked-path-denylist` draws between `denied?` and `denied_roots` pruning.
+  `D_walked_path_denylist` draws between `denied?` and `denied_roots` pruning.
 - The event fills a dirty set the next `lsp` call drains, coalesced per path, so
   a 50-file refactor is not 50 re-opens; that is also the second caller
   `Lsp::Mailbox` was waiting for.
 - What it buys over re-open-on-read is one measured thing: a file the agent has
   just *created* is invisible to `workspace/symbol` until something opens it
-  (`S-index-follows-didopen`), and under re-open-on-read nothing opens it until
+  (`S_index_follows_didopen`), and under re-open-on-read nothing opens it until
   the model asks a position question naming that exact file — so symbol-only
   lookup of a just-written class fails. The other gains are softer: jdtls
   rebuilds ahead of the next call rather than during it, and this is the
   precondition for surfacing diagnostics after an edit, which all three
   harnesses do *without* a diagnostics tool (also deferred, per
-  `D-lsp-operation-surface`). It changes no `pikuri-lsp` interface, so shipping
+  `D_lsp_operation_surface`). It changes no `pikuri-lsp` interface, so shipping
   it later costs one listener arm.
 
 ---
 
-## D-lsp-trifecta-legs — `:no_egress` despite a child that goes online, and `untrusted: :hard` unconditionally (2026-08-18)
+## D_lsp_trifecta_legs — `:no_egress` despite a child that goes online, and `untrusted: :hard` unconditionally (2026-08-18)
 
 **Status:** Accepted, shipped on the tool. The posture as it stands is
 `pikuri-lsp/DESIGN.md` §"Threat model"; this entry is the forks.
@@ -677,7 +677,7 @@ unconditionally, `egress_payload_review: :no_egress` — declared on the
 tempting version is that a well-behaved server only fetches from a vetted
 set of hosts (jdtls pulling a jar from Maven Central), which is too weak to
 tag. That argument must not be written down, because it argues for the
-opposite of its conclusion: `D-egress-axis-shape` rejected a
+opposite of its conclusion: `D_egress_axis_shape` rejected a
 `:safe_vetted_set` rung outright, so "vetted destination" is a *rung* and
 the phrasing lands `lsp` on the map as `:tool_vouched` + `:unreviewed`
 forever. It is also untrue — the hosts come from the project's
@@ -700,7 +700,7 @@ does.** `read` declares `untrusted: filesystem.trusted? ? :none : :hard`,
 and that works because the vouching and the reach are the same set: the host
 asked a human whether this checkout is trusted, and `read` is confined to
 the checkout. `lsp` is not — the index reaches the whole bundle, jars and
-the JDK (`J-index-reaches-jars`), and `H-ancestry-leaves-root` has a query
+the JDK (`J_index_reaches_jars`), and `H_ancestry_leaves_root` has a query
 about a workspace class answering out of four unrelated gems. A user who
 said "yes, I trust this repo" made a claim about the code they checked out,
 not about four hundred transitive jars, nor a `-sources.jar` nobody has ever
@@ -709,7 +709,7 @@ they were asked.
 
 **Rejected: confining results to the root to earn `:none`.** The first thing
 someone will propose when the map goes loud. It deletes
-`J-index-reaches-jars` — searching inside jars, the one thing grep can never
+`J_index_reaches_jars` — searching inside jars, the one thing grep can never
 do — so the tag is *the price of the capability*, not a defect to engineer
 away.
 
@@ -720,12 +720,12 @@ holds `fetch` or `web_search` lights the untrusted leg and can flip the
 trifecta verdict, because `read` declares `:none` there and `lsp` does not.
 That is correct rather than unfortunate — the jars were never vouched for,
 and a trusted repo with a poisoned dependency is the realistic attack — and
-`D-egress-axis-shape` already blesses declaring a true axis for the map's
+`D_egress_axis_shape` already blesses declaring a true axis for the map's
 sake when no verdict moves. This is the stronger case, where one does.
 
 ---
 
-## D-de-bundlerized-children — Every long-lived child is de-bundlerized; no unset sentinel in config (2026-08-18)
+## D_de_bundlerized_children — Every long-lived child is de-bundlerized; no unset sentinel in config (2026-08-18)
 
 **Status:** Accepted, shipped. `Pikuri::BundlerEnv` in pikuri-core; applied by
 `Code::Bash`, `Mcp::ClientWrapper` and `Lsp::ClientWrapper`.
@@ -772,7 +772,7 @@ spelling would need a translation layer where none exists today.
 
 ---
 
-## D-no-skills-in-sub-agents — A persona's brief is complete on arrival; no catalog, no `skill` tool (2026-08-17)
+## D_no_skills_in_sub_agents — A persona's brief is complete on arrival; no catalog, no `skill` tool (2026-08-17)
 
 **Status:** Accepted; no code change. The plumbing that already enforces it
 stays exactly as it is (see the third rejected alternative).
@@ -849,14 +849,14 @@ three other legs.
   it is the *enforcement* of this decision for the opt-in path deliberately
   left open. Delete it and the next persona to name `skill` silently inherits
   the parent's promotions, which is precisely the accident
-  `D-skill-path-activation` had to fix once already (it "held only by
+  `D_skill_path_activation` had to fix once already (it "held only by
   accident at first"). Unexercised guards against a future wiring are worth
   their lines.
 
 **Consequences.**
 
 - **The `paths:` gate is unreachable downward by construction**, which
-  `D-skill-path-activation` records as accepted-rather-than-fixed. This entry
+  `D_skill_path_activation` records as accepted-rather-than-fixed. This entry
   is why it was accepted.
 - **{Pikuri::SubAgent::Persona}'s yardoc is the place a persona author will
   look** and is currently silent in both directions; it should carry the
@@ -869,7 +869,7 @@ three other legs.
 
 ---
 
-## D-reference-text-as-user-turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
+## D_reference_text_as_user_turn — Mid-conversation reference text is a wrapped `:user` turn, never `:system` (2026-08-17)
 
 **Status:** Accepted, shipped 2026-08-17, and confirmed the same day through
 the shipped path — `bin/pikuri-code` against
@@ -987,7 +987,7 @@ what grok-build does too, and it means one grep finds every injection.
   silent-failure mode to chase.
 - **Merge the block into the leading system prompt** (grok-build's memory
   path). Prefix mutation kills the KV cache on every injection, which is
-  the exact cost `D-skill-path-activation` weighed and accepted *not*
+  the exact cost `D_skill_path_activation` weighed and accepted *not*
   paying. grok-build can afford it for memory alone because it searches
   **once** per session and then refuses to re-score for precisely this
   reason; pikuri's prefetch is per-turn, so the same write would invalidate
@@ -1059,7 +1059,7 @@ what grok-build does too, and it means one grep finds every injection.
   shipped path answered from the injected block with no tool call at all,
   where the `:system` delivery spent a `recall` call to get nowhere.
 
-## D-slash-commands — Two registries, a user turn, and no scheduling function (2026-08-16)
+## D_slash_commands — Two registries, a user turn, and no scheduling function (2026-08-16)
 
 **Status:** Accepted, shipped: `Pikuri::Command::Registry` / `Renderer` /
 `Extension` in `pikuri-skills`, wired in `bin/pikuri-code` and
@@ -1135,7 +1135,7 @@ three namespaces, is **host built-in > command > skill**.
 - **Commands still need an `Extension`** — a declaration-only one, because a
   surface that contributes no tool lands nowhere in the `Pikuri::Trifecta`
   tree, and an agent holding all three legs would report two. It grades the
-  untrusted leg through `D-bundle-trust-grading`'s per-base channel.
+  untrusted leg through `D_bundle_trust_grading`'s per-base channel.
 - **`Trifecta::Contribution` gained a `label:`.** Extension legs used to be
   unioned into one row hardcoded as `(mcp)` — honest only while MCP was the
   only contributor. A second one made the banner blame an MCP server that
@@ -1154,12 +1154,12 @@ three namespaces, is **host built-in > command > skill**.
   costs a turn"* reported, and that this feature answers. And a *refused* name
   gets a **human-only** second line naming the skill as installed-but-gated,
   read from the unfiltered `Catalog`: decision 7 of
-  `D-skill-path-activation` makes the gate answer the model as if the name
+  `D_skill_path_activation` makes the gate answer the model as if the name
   existed nowhere, which is right for the model and useless to someone who
   just read that name in the startup banner. Nothing in that branch reaches
   the conversation, so the gate leaks nothing to the model.
 
-## D-command-inlining-legs — No bash pre-execution, and `@path` is not a refusal (2026-08-16)
+## D_command_inlining_legs — No bash pre-execution, and `@path` is not a refusal (2026-08-16)
 
 **Status:** Accepted, shipped in `Command::Registry`. Graduates whether or not
 the command surface survives: *"just add bash pre-execution, Claude Code has
@@ -1222,7 +1222,7 @@ command while still being ignored on a skill.
 - **`RefusedError` is host-facing**, never reaching a tool, so the
   `"Error: …"`-string convention for model-visible failures does not apply.
 
-## D-command-substitution — Fence-aware, and the append reads the body the same way (2026-08-16)
+## D_command_substitution — Fence-aware, and the append reads the body the same way (2026-08-16)
 
 **Status:** Accepted, shipped in `Command::Renderer`.
 
@@ -1280,7 +1280,7 @@ and only when the directory holds a sidecar.
 - **`wh.md` interpolates nothing and rides the append**, which is the correct
   reading of it and the reason the gate is shared.
 
-## D-skill-path-activation — A `paths:` skill is not in play until its path fires (2026-08-16)
+## D_skill_path_activation — A `paths:` skill is not in play until its path fires (2026-08-16)
 
 **Status:** Accepted, shipped 2026-08-17. One qualification the decision did
 not anticipate: a promotion reaches the model only through mid-loop injection,
@@ -1405,7 +1405,7 @@ conditional activation actually works*).
   placement for third-party bytes, since a *gated* skill's description
   arrives as `role: :user` while an *ungated* skill's identical bytes
   arrive in the system prompt. That is incoherent, but it is a tidiness
-  argument, not a finding — `D-bundle-trust-grading` reports this exposure
+  argument, not a finding — `D_bundle_trust_grading` reports this exposure
   and deliberately does not defend against it, and moving the block would
   not defend against it either; it would only relocate it. The move is
   therefore priced as a real refactor buying no new defense. Two things a
@@ -1423,7 +1423,7 @@ conditional activation actually works*).
   an open fork for a day, on the reasoning
   that a persona replaces the system prompt but inherits the tool
   verbatim, so the tool is the only home correct for both agent kinds.
-  Rejected: `D-no-skills-in-sub-agents` has since made "correct for both
+  Rejected: `D_no_skills_in_sub_agents` has since made "correct for both
   agent kinds" a property pikuri does not want, so the argument inverts
   into a hazard — a description built at `configure` time from the
   parent's catalog would hand the inventory to any persona naming `skill`,
@@ -1659,7 +1659,7 @@ conditional activation actually works*).
 
 ---
 
-## D-keep-ruby-llm — Decline the piece, keep the gem (2026-08-16)
+## D_keep_ruby_llm — Decline the piece, keep the gem (2026-08-16)
 
 **Status:** Accepted; nothing to implement. Reviewed against the reopen
 criteria below on 2026-08-16 and reaffirmed.
@@ -1675,7 +1675,7 @@ rather than a shrug.
 
 **Decision.** Keep ruby_llm as the chat transport. Where its direction
 fights ours, **decline the piece, keep the gem** — the pattern already set by
-`D-context-window-sources`, which refuses ruby_llm's model registry for a
+`D_context_window_sources`, which refuses ruby_llm's model registry for a
 `/props` probe without touching the dependency. A defect on our path gets an
 upstream issue plus a small monkeypatch, guarded so it fails at boot rather
 than silently stops applying, and deleted the moment the fix ships
@@ -1706,7 +1706,7 @@ than silently stops applying, and deleted the moment the fix ships
   opposite direction: it hand-rolls `net/http` inside a large
   Stainless-generated SDK. That adds a second HTTP path to a
   Faraday-everywhere process, is not code anyone reads end-to-end, and
-  **deletes `Pikuri::Testing`** outright (see `D-fake-transport`), forcing a
+  **deletes `Pikuri::Testing`** outright (see `D_fake_transport`), forcing a
   new fake harness across every gem's specs. Vendor backing pays for a
   moving API surface; ours is frozen.
 - **Wrapping the leaked `RubyLLM` value types** to make a future swap cheap.
@@ -1739,7 +1739,7 @@ than silently stops applying, and deleted the moment the fix ships
 
 ---
 
-## D-single-hunk-edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
+## D_single_hunk_edit — `occurrence` pays the uniqueness tax; no batch tool, no patch tool (2026-08-15)
 
 **Status:** Accepted and shipped. `Workspace::Edit` gains `occurrence:`;
 no second edit tool ships. `ideas/feedback.txt`'s *"edit is search-replace
@@ -1847,7 +1847,7 @@ second edit tool.
 
 ---
 
-## D-keep-calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
+## D_keep_calculator — The unconfirmed arithmetic path, kept even where bash exists (2026-08-15)
 
 **Status:** Accepted; no code change. `calculator` stays wired in all ten
 `bin/pikuri-*` demos. `ideas/feedback.txt`'s *"`calculator` is a smell"* is
@@ -1870,7 +1870,7 @@ shell.
   `pikuri-corpus`, `pikuri-minions`, `pikuri-openlibrary`, `pikuri-assistant` —
   "bash/python already exist" is simply false, and there is no fallback at all:
   a mail agent totalling invoice amounts, `LIBRARIAN` computing a percentage
-  over corpus hits. This is `D-directory-listing`'s asymmetry again, and the
+  over corpus hits. This is `D_directory_listing`'s asymmetry again, and the
   same one-liner settles it: **Claude Code and opencode are single binaries
   that always have bash; pikuri is a set of gems that frequently isn't wired
   with one.** Composability is the product, so pikuri can't assume the shell.
@@ -1922,7 +1922,7 @@ shell.
 
 ---
 
-## D-walked-path-denylist — Two layers, and the cheap one is never the guarantee (2026-08-15)
+## D_walked_path_denylist — Two layers, and the cheap one is never the guarantee (2026-08-15)
 
 **Status:** Accepted, shipped. `Filesystem#denied?` plus `rg --glob` pruning
 across `Listing` / `Search::Glob` / `Search::Grep`.
@@ -2003,13 +2003,13 @@ and `grep` with the pruning stubbed out to pin that layer 1 alone still holds.
 
 ---
 
-## D-bundle-trust-grading — Trust is per search base, and the workspace is not asked (2026-08-16)
+## D_bundle_trust_grading — Trust is per search base, and the workspace is not asked (2026-08-16)
 
 **Status:** Accepted, fully shipped: `Bundle::Base`,
 `Catalog#untrusted_level`, `SkillTool` consuming it, and the third boot
 question in `bin/pikuri-code`. The record lives in the shared `Pikuri::Bundle`
 namespace rather than under `Catalog` because slash commands
-(`D-slash-commands`) grade the same way from the same bases: duplicating it
+(`D_slash_commands`) grade the same way from the same bases: duplicating it
 would have a host build two parallel arrays out of one pair of booleans, and
 handing `Command::Registry` a `Skill::Catalog::Base` would read as a command
 being a kind of skill. `ideas/bundle-trust-grading.md` is deleted with
@@ -2144,7 +2144,7 @@ the catalog reached `.pikuri/skills` under this root and nothing else, and its
 
 ---
 
-## D-directory-listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
+## D_directory_listing — Directories are not glob's job, and `read` self-heals (2026-08-15)
 
 **Status:** Accepted, fully shipped: `Workspace::Listing`, `read`'s recovering
 refusal, the `file_list` tool, and the depth-1 boot snapshot on
@@ -2330,7 +2330,7 @@ Rejected, all of them consequences of wanting a second level:
 
 ---
 
-## D-no-static-poisoned-flag — No declared `poisoned:` on a node (2026-08-12)
+## D_no_static_poisoned_flag — No declared `poisoned:` on a node (2026-08-12)
 
 **Status:** Accepted (won't build); no code change. Closes the last open
 question in `ideas/trifecta-detector.md`, which is deleted with this entry —
@@ -2391,7 +2391,7 @@ it. A detector whose alarms can be declared away is a detector nobody trusts.
 
 ---
 
-## D-write-custody-axis — No synced-folder egress axis on writes (2026-08-12)
+## D_write_custody_axis — No synced-folder egress axis on writes (2026-08-12)
 
 **Status:** Accepted (won't build); no code change. The gap it leaves is
 stated at {Pikuri::Workspace::Write}'s `trifecta_legs:` declaration site and
@@ -2403,7 +2403,7 @@ local write is not an external sink, and the observation reports an outcome
 rather than the file's bytes. But a workspace root that *replicates* — a
 `~/Dropbox`, a Nextcloud folder, a team Drive — plausibly turns a write into
 egress, and nothing declares it. The gap sat parked as the "custody
-question" through `D-egress-axis-shape`, which cited it as a reason not to
+question" through `D_egress_axis_shape`, which cited it as a reason not to
 name the destination axis `egress_target_server`. Two findings close it.
 
 **Decision.** No custody axis, no synced-folder declaration. Writes keep
@@ -2454,7 +2454,7 @@ additive, so that can only ever harden a verdict.
   "one step safer" feeling. Rejected: the feeling was custody, not
   readability, and grading it on the readability axis would put a
   *not-a-leg* case above the bottom rung — the same error
-  `D-egress-axis-shape` rejected for `egress_human_author`.
+  `D_egress_axis_shape` rejected for `egress_human_author`.
 - **Putting git on the axis.** A write into a working tree egresses nothing;
   a `push` does, and a push is `bash`, already tagged from the sandbox. What
   makes the Dropbox case interesting is that replication is **ambient** — no
@@ -2468,7 +2468,7 @@ additive, so that can only ever harden a verdict.
   silence in a detector whose whole credibility rests on a tag meaning what
   it says.
 - **Shipping the knob anyway, since it's cheap.** Rejected on the
-  axis-with-no-consumer rule `D-trifecta-map-orphans` applied to
+  axis-with-no-consumer rule `D_trifecta_map_orphans` applied to
   `Report#unreachable_tools`: no wiring in this repo points a workspace at a
   synced folder, so it would change no verdict today, and the day one does,
   the contribution hook already covers it without a core axis.
@@ -2490,7 +2490,7 @@ additive, so that can only ever harden a verdict.
 
 ---
 
-## D-trifecta-map-orphans — A tool nothing can call gets no line on the map (2026-08-12)
+## D_trifecta_map_orphans — A tool nothing can call gets no line on the map (2026-08-12)
 
 **Status:** Accepted; no code change — the silence is what
 {Pikuri::Trifecta.build} already produces, now pinned by
@@ -2551,7 +2551,7 @@ muted.
 
 ---
 
-## D-egress-axis-shape — Two orthogonal egress axes, no invented persona (2026-08-12)
+## D_egress_axis_shape — Two orthogonal egress axes, no invented persona (2026-08-12)
 
 **Status:** Accepted; implemented 2026-08-12 in
 {Pikuri::Tool::TrifectaLegs}. Folds in two earlier forks that never had a
@@ -2606,7 +2606,7 @@ shipped wiring's verdict changed.
   cannot be read back.
 - **`egress_target_server`.** Rejected: a mail recipient is not a server,
   and the then-open custody question had synced folders as candidate sinks
-  (settled since, as `D-write-custody-axis`).
+  (settled since, as `D_write_custody_axis`).
 - **Folding both axes into one lattice.** Rejected: neither dominates the
   other. A reviewed send to an attacker's inbox and an unreviewed query to a
   vouched engine are different animals, and a single scale would have to
@@ -2647,7 +2647,7 @@ shipped wiring's verdict changed.
 
 ---
 
-## D-blob-spotter-alphabets — Single-alphabet encodings count, at their own longer thresholds (2026-08-08)
+## D_blob_spotter_alphabets — Single-alphabet encodings count, at their own longer thresholds (2026-08-08)
 
 **Status:** Accepted; implemented 2026-08-08 in
 {Pikuri::Thunderbird::ComposeGuard}. Supersedes an inline "hex and base32
@@ -2699,7 +2699,7 @@ are the thing being looked for. The guard's character is unchanged — a
 paste / dumb-attack guard, not an exfil control; widening the alphabets
 raises the attacker's cost by one token of prompt.
 
-## D-headless-os-agent — No app launching, and the sandbox masks the session's IPC surface (2026-08-06)
+## D_headless_os_agent — No app launching, and the sandbox masks the session's IPC surface (2026-08-06)
 
 **Status:** Accepted. The mask ships in
 {Pikuri::Code::Bash::Sandbox::FullFsNoNet::SESSION_IPC_MASKS}; app launching
@@ -2768,7 +2768,7 @@ legitimate wants those sockets.
   `Bubblewrap::DENIED_CONTAINER_SOCKETS`; mechanically easy — `--ro-bind
   /dev/null <socket>` masks one cleanly). Rejected on the **error-signal**
   argument that already decided the real `/dev` and
-  `D-permission-wall-handoff`: a user outside the `docker` group — the common
+  `D_permission_wall_handoff`: a user outside the `docker` group — the common
   case, and the reason rootless docker exists — gets an honest `EACCES` from
   the untouched socket, which tells the model *and* the human exactly what is
   true. Masking it trades that for a confusing `ENOENT`, and then both waste
@@ -2791,7 +2791,7 @@ legitimate wants those sockets.
 - Residual paths out, all human-gated and none silent: the **system** bus
   stays bound (`systemctl status` needs it) — a transient unit there is
   polkit-gated and pops an *authentication dialog on the user's desktop*
-  (observed; it is loud, and consistent with `D-no-agent-sudo`); **deferred
+  (observed; it is loud, and consistent with `D_no_agent_sudo`); **deferred
   execution** via a confirmed write (`~/.bashrc`, `~/.config/autostart/*`,
   `crontab`), which the write confirmer shows as a diff; and **rootful**
   container sockets, left visible on purpose so the denial is honest — see
@@ -2802,10 +2802,10 @@ legitimate wants those sockets.
 - `Bubblewrap` needs no change: it binds an allowlist that never included
   `/run/user`, so the coding agent never had the channel.
 
-## D-no-agent-sudo — Privileged actions are a human hand-off, never agent-held root (2026-08-06)
+## D_no_agent_sudo — Privileged actions are a human hand-off, never agent-held root (2026-08-06)
 
 **Status:** Accepted. Already the shipped behaviour on both legs (the
-`EACCES` read hand-off of `D-permission-wall-handoff`, and
+`EACCES` read hand-off of `D_permission_wall_handoff`, and
 {Pikuri::Workspace::WriteGate}'s "sudo it yourself" short-circuit for an
 unwritable write). The 2026-08-06 addition is one prompt clause splitting
 *read* hand-offs (paste the output back) from *state-change* hand-offs
@@ -2848,7 +2848,7 @@ ordinary next user turn.
   denylist to maintain — "the files worth confirming are simply the ones
   you can actually write." Grant root and *every* file becomes writable,
   the argument evaporates, and the denylist we deliberately avoided has to
-  be built. `D-permission-wall-handoff` rests on the same precondition:
+  be built. `D_permission_wall_handoff` rests on the same precondition:
   root turns its wall into a suggestion.
 - **polkit / `run0` / `pkexec`** — the strongest form, since the auth prompt
   renders in the desktop's trusted UI and pikuri never touches the
@@ -2876,7 +2876,7 @@ ordinary next user turn.
 - **Probing with a doomed command first is fine.** The same run spent two
   steps discovering the dpkg lock was unwritable before escalating. Left
   as-is deliberately: it's the honest-`EACCES` path working, and the
-  opposite of `D-permission-wall-handoff`'s open caveat (escalating *too*
+  opposite of `D_permission_wall_handoff`'s open caveat (escalating *too*
   fast, before gathering the partial picture).
 - **Package availability works offline.** apt's package lists are local, so
   `apt-cache policy` names the exact candidate version with the network
@@ -2888,7 +2888,7 @@ ordinary next user turn.
 
 ---
 
-## D-context-window-sources — The `/props` probe, never ruby_llm's model registry (2026-08-04)
+## D_context_window_sources — The `/props` probe, never ruby_llm's model registry (2026-08-04)
 
 **Status:** Accepted; the behaviour has always shipped this way
 ({Pikuri::Agent::ContextWindowDetector}). Logged 2026-08-04 when the
@@ -2922,7 +2922,7 @@ failure path is a debug log rather than a raise.
 
 ---
 
-## D-permission-wall-handoff — An honest `EACCES` beats prompt guidance (2026-07-18)
+## D_permission_wall_handoff — An honest `EACCES` beats prompt guidance (2026-07-18)
 
 **Status:** Accepted; the read-vs-mutate sub-bullets were removed in
 `f917226`. Validated live 2026-07-18 ("Is my SSD healthy?").
@@ -2966,7 +2966,7 @@ paste-back ask — unprompted, and reaching for the NVMe-specific tool first.
 
 ---
 
-## D-fake-transport — Fake the HTTP backend, not the agent (2026-07-18)
+## D_fake_transport — Fake the HTTP backend, not the agent (2026-07-18)
 
 **Status:** Accepted; shipped for single-agent 2026-07-17
 ({Pikuri::Testing}), export boundary settled 2026-07-18. Graduated from
@@ -3018,11 +3018,11 @@ Mechanics + limitations: {Pikuri::Testing}.
 - Faking at the Faraday-adapter level constrains any future LLM-client
   swap: a Faraday-native replacement keeps this seam, one that hand-rolls
   `net/http` deletes it and forces a new fake harness across every gem's
-  specs. See `D-keep-ruby-llm`.
+  specs. See `D_keep_ruby_llm`.
 
 ---
 
-## D-per-process-temp — Two named `Paths` methods, not `cache(session:)` (2026-07-14)
+## D_per_process_temp — Two named `Paths` methods, not `cache(session:)` (2026-07-14)
 
 **Status:** Accepted; implemented 2026-07-14 (`Paths.new_temp` +
 `Paths.sweep_stale_temps!`). Graduated from `ideas/session-scoped-store.md`,

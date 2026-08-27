@@ -70,7 +70,7 @@ Two invariants make the automatic tiers safe and cheap:
   used to land as a `:system` message, and this document called that role
   load-bearing — "excludable from the next extraction pass." It no longer
   is: a mid-conversation `:system` message does not portably reach the
-  model (`DECISIONS.md` `D-reference-text-as-user-turn`), so the block is
+  model (`DECISIONS.md` `D_reference_text_as_user_turn`), so the block is
   now a `<system-reminder>`-wrapped **`:user`** message like every other
   injection. The loop still cannot form, but the reason is narrower than
   it was, and the trap is sharper: **deriving extraction input from the

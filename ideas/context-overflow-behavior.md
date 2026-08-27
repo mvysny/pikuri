@@ -152,7 +152,7 @@ than something to paper over.
 - **Recover before or after the raise?** Reacting to
   `ContextLengthExceededError` is simple but late (the request already
   failed and the turn is half-built); acting on a threshold *before* it
-  needs a trustworthy cap, which per `D-context-window-sources` most
+  needs a trustworthy cap, which per `D_context_window_sources` most
   wirings don't have.
 - **Is a compacted conversation still the same conversation?** Bears on
   `clear_conversation`, `Event::Reset`, extension `on_conversation_reset`
@@ -203,7 +203,7 @@ than 3.
   already lives.
 - {Pikuri::Agent#clear_conversation} — the existing "start over" path any
   compaction has to stay coherent with.
-- `D-context-window-sources` — why a cap is often `nil`, which constrains
+- `D_context_window_sources` — why a cap is often `nil`, which constrains
   every threshold-based option.
 - `book/tasks.md` mentions the overflow raise in passing; if behaviour
   changes, that line needs a look.

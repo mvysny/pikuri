@@ -510,7 +510,7 @@ module Pikuri
     # one invalidates every cached token after the change point and
     # re-prefills. Hence there is no amend-the-prompt seam — mid-conversation
     # blocks go through {#append_reference_block}, which appends and
-    # invalidates nothing. See `DECISIONS.md` `D-reference-text-as-user-turn`.
+    # invalidates nothing. See `DECISIONS.md` `D_reference_text_as_user_turn`.
     #
     # @return [String]
     def assemble_system_prompt
@@ -661,7 +661,7 @@ module Pikuri
     # always been there and stays in force. Neither failure is visible from
     # anything pikuri can observe: the message is in the payload, the listener
     # stream renders it, the history holds it. See +DECISIONS.md+
-    # +D-reference-text-as-user-turn+.
+    # +D_reference_text_as_user_turn+.
     #
     # A closing tag inside +content+ is escaped, so injected text (a file, a web
     # page, an MCP tool's description) cannot close the envelope early and have

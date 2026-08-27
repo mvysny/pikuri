@@ -60,7 +60,7 @@ Related:
   form; adding the prose too would be redundant.
 - **Scheduling / monitoring / background daemon.** LSP is no longer on
   this list at all — it shipped as `pikuri-lsp` (a direct client rather
-  than an MCP bridge, `D-lsp-direct-not-mcp`); scheduling and
+  than an MCP bridge, `D_lsp_direct_not_mcp`); scheduling and
   monitoring are the far end of Claude's tool list and assume a daemon
   mode pikuri doesn't have (it's synchronous and request-scoped — see
   the Linux-first / out-of-scope notes in

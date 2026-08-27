@@ -204,7 +204,7 @@ module Pikuri
       #
       # **Keep this out of {DESCRIPTION}.** It is error recovery, not a
       # documented capability: teaching +read+ as a second way to list hands
-      # the model a two-tools-no-criterion coin flip (+D-directory-listing+).
+      # the model a two-tools-no-criterion coin flip (+D_directory_listing+).
       #
       # Never marks the read ledger — a directory can't be edited, so counting
       # it would clear the read-before-edit gate for a path nobody read.

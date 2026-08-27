@@ -66,7 +66,7 @@ its rationale, read:
 - **The permission-wall hand-off needs no explicit read-vs-mutate
   guidance — an honest `EACCES` is enough.** Settled; validated
   2026-07-18. See [`DECISIONS.md`](../DECISIONS.md)
-  `D-permission-wall-handoff`, which carries the trimmed sub-bullets
+  `D_permission_wall_handoff`, which carries the trimmed sub-bullets
   (**don't re-add them**), the real-`/dev` precondition that makes it
   work, and the one caveat still open (the model escalates straight to
   `sudo` without gathering the partial non-root picture first).
@@ -99,8 +99,8 @@ declined against the offline, small-enough-to-audit posture.
   file), so this stays a pure UX question.
   Two neighbours are no longer on this list, both decided in
   [`DECISIONS.md`](../DECISIONS.md): package *installation* →
-  `D-no-agent-sudo` (privileged actions are always a human hand-off; the
-  hand-off already ships), and **app launching** → `D-headless-os-agent`
+  `D_no_agent_sudo` (privileged actions are always a human hand-off; the
+  hand-off already ships), and **app launching** → `D_headless_os_agent`
   (declined as an exfil channel — the session bus spawns outside every
   namespace, so launching defeated `--unshare-net`; the sandbox now masks
   the session's IPC surface, which is *why* nothing legitimate wants those

@@ -7,7 +7,7 @@ require 'json'
 describe 'recorded server payloads' do
   parse = ->(name) { JSON.parse(fixture(name), quirks_mode: true) }
 
-  describe 'ruby-lsp answering textDocument/definition (F-definition-candidates, F-two-location-shapes)' do
+  describe 'ruby-lsp answering textDocument/definition (F_definition_candidates, F_two_location_shapes)' do
     locations = Pikuri::Lsp::Location.list_from_wire(parse.call('ruby_lsp_definition_location_link'))
 
     it 'parses the LocationLink shape it chose over plain Location' do
@@ -26,7 +26,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'jdtls answering with a jar-internal URI (J-library-is-not-a-file, J-type-definition-recovers-var)' do
+  describe 'jdtls answering with a jar-internal URI (J_library_is_not_a_file, J_type_definition_recovers_var)' do
     location = Pikuri::Lsp::Location.list_from_wire(parse.call('jdtls_definition_jdt_uri')).first
 
     it 'refuses to pretend it is a file' do
@@ -41,7 +41,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'jdtls answering java/classFileContents (J-class-file-contents)' do
+  describe 'jdtls answering java/classFileContents (J_class_file_contents)' do
     it 'is a bare String, so nothing may assume the object the spec suggests' do
       contents = parse.call('jdtls_class_file_contents')
 
@@ -52,7 +52,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'ruby-lsp answering typeHierarchy/subtypes (H-subtypes-stub)' do
+  describe 'ruby-lsp answering typeHierarchy/subtypes (H_subtypes_stub)' do
     it 'answers null, not [], from an advertised provider wired to a TODO' do
       result = parse.call('ruby_lsp_subtypes_null')
 
@@ -61,7 +61,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'ruby-lsp answering typeHierarchy/supertypes (H-namespace-reopenings)' do
+  describe 'ruby-lsp answering typeHierarchy/supertypes (H_namespace_reopenings)' do
     items = parse.call('ruby_lsp_supertypes')
 
     it 'is 14 rows carrying one fact, with the row a human wants ordered last' do
@@ -79,7 +79,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'ruby-lsp reporting a crashed didChange (S-rangeless-didchange-crash)' do
+  describe 'ruby-lsp reporting a crashed didChange (S_rangeless_didchange_crash)' do
     it 'carries a raw Ruby backtrace as the error message, intact' do
       body = parse.call('ruby_lsp_invalid_location_error')
       error = Pikuri::Lsp::Connection::ServerError.new('textDocument/definition', body.fetch('error'))
@@ -98,7 +98,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'jdtls narrating a cold start (J-progress-opt-in, J-readiness-edge)' do
+  describe 'jdtls narrating a cold start (J_progress_opt_in, J_readiness_edge)' do
     frames = %w[jdtls_progress_begin jdtls_progress_report jdtls_progress_end].map { |name| parse.call(name) }
 
     it 'holds one long-lived token across begin, report and end' do
@@ -119,7 +119,7 @@ describe 'recorded server payloads' do
     end
   end
 
-  describe 'the two initialize results (F-capabilities-per-workspace, F-unadvertised-providers, J-progress-opt-in)' do
+  describe 'the two initialize results (F_capabilities_per_workspace, F_unadvertised_providers, J_progress_opt_in)' do
     ruby = parse.call('ruby_lsp_initialize_result').fetch('capabilities')
     java = parse.call('jdtls_initialize_result').fetch('capabilities')
 
@@ -130,7 +130,7 @@ describe 'recorded server payloads' do
 
     it 'disagree about which operations exist at all' do
       %w[typeDefinitionProvider implementationProvider callHierarchyProvider declarationProvider].each do |absent|
-        refute ruby.key?(absent), "#{absent} is absent from ruby-lsp in this workspace (F-unadvertised-providers)"
+        refute ruby.key?(absent), "#{absent} is absent from ruby-lsp in this workspace (F_unadvertised_providers)"
       end
       %w[typeDefinitionProvider implementationProvider callHierarchyProvider].each do |present|
         assert java[present], "#{present} is jdtls's to answer"

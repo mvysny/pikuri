@@ -4,7 +4,7 @@ Status: **idea, not built.** Runtime counterpart to the (static,
 boot-time) trifecta detector, which shipped — `book/trifecta-detector.md`
 for what it measures. This note is the poisoned-*now* half; the
 poisoned-*capable* half is the detector's untrusted leg, and a declared
-per-node flag was rejected (`D-no-static-poisoned-flag`). The *has-read*
+per-node flag was rejected (`D_no_static_poisoned_flag`). The *has-read*
 badge between them rides
 [`private-context-taint.md`](private-context-taint.md). `ComposeGuard` and
 the graded egress axis are both shipped; see
@@ -98,7 +98,7 @@ never a silent context wipe that lets the user walk straight back in.
   have ~zero honest *authored* use, so the tripwire justifies a
   teardown-advice response. A base64 blob
   ({Pikuri::Thunderbird::ComposeGuard#body_blob_note},
-  `D-blob-spotter-alphabets`) *does* have honest
+  `D_blob_spotter_alphabets`) *does* have honest
   uses (a pasted cert/token), so it's only a soft warn — different tier,
   different response. Don't conflate them.
 

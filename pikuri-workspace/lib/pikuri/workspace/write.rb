@@ -101,7 +101,7 @@ module Pikuri
           # keeps one owner, so it is no leg at all; an off-owner root (team
           # Drive, public link) is real egress, unknowable to the framework, and
           # the host that knows declares it via Extension#trifecta_contribution
-          # (`D-write-custody-axis`).
+          # (`D_write_custody_axis`).
           trifecta_legs: Tool::TrifectaLegs::NONE
         )
       end

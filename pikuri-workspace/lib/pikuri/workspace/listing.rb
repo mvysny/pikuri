@@ -39,7 +39,7 @@ module Pikuri
     # can't silently vanish from the answer. The price is a caller-visible one:
     # nothing evaluates +.gitignore+ here, so everything shows except +.git/+ —
     # +ls+ behaviour, and the one place the file tools diverge on gitignore.
-    # Full argument in +DECISIONS.md+ +D-directory-listing+.
+    # Full argument in +DECISIONS.md+ +D_directory_listing+.
     module Listing
       # @return [Integer] hard byte cap on rendered output. Same value as
       #   {Search::Glob::MAX_BYTES}; re-declared rather than cross-referenced

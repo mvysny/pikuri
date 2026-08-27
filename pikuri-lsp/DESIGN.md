@@ -7,9 +7,9 @@ project has to respect, and the measurements the whole design rests on.
 Per-symbol truth lives in the yardoc ({Pikuri::Lsp::ClientWrapper},
 {Pikuri::Lsp::LspTool}, {Pikuri::Lsp::Registry::StdioEntry}); the forks —
 what was rejected on the way here — live in `DECISIONS.md`, as
-`D-lsp-direct-not-mcp`, `D-lsp-operation-surface`,
-`D-lsp-no-startup-timeout`, `D-lsp-scheme-fallback` and
-`D-lsp-trifecta-legs`.
+`D_lsp_direct_not_mcp`, `D_lsp_operation_surface`,
+`D_lsp_no_startup_timeout`, `D_lsp_scheme_fallback` and
+`D_lsp_trifecta_legs`.
 
 ## What it does
 
@@ -18,12 +18,12 @@ One tool, `lsp`, with ten read-only operations. A call names an
 the column itself, routes to the server that claims the file, waits for
 that server's index if it is still building, re-opens the document with the
 bytes on disk, asks, and renders. Servers start on **first use**, and no call is ever
-on a clock (`D-lsp-no-startup-timeout`), so a host
+on a clock (`D_lsp_no_startup_timeout`), so a host
 that ships the gem without configuring one pays nothing, and a registered
 server for a language the project does not contain is never launched.
 
 The enum is static and hardcoded, sourced from the harnesses that shipped
-one rather than from what two servers implement (`D-lsp-operation-surface`).
+one rather than from what two servers implement (`D_lsp_operation_surface`).
 
 Nothing here writes: no rename, no formatting, no code actions, no
 diagnostics. That is what keeps the threat model closeable — the moment the
@@ -42,7 +42,7 @@ confinement boundary. One value, one boundary.
 
 **Every result is a walked path.** Nothing a server returns was supplied by
 the model, so no `resolve_for_read` call stands in front of it —
-`D-walked-path-denylist` territory. Every row passes
+`D_walked_path_denylist` territory. Every row passes
 `Filesystem#denied?` before it is rendered ({Pikuri::Lsp::Sources} and the
 four enumerating arms of {Pikuri::Lsp::Renderer}), which fails closed and,
 under the container wiring, is the only thing between an indexed
@@ -52,16 +52,16 @@ which is provenance the model cannot turn into a read.
 
 **pikuri reads `file:` and nothing else.** A result can arrive as a
 server-private URI — `jdt://contents/slf4j-api-2.0.18.jar/…`
-(`J-library-is-not-a-file`) — and exactly one row of
+(`J_library_is_not_a_file`) — and exactly one row of
 `Sources::SCHEME_REQUESTS` maps a scheme to the request that asks *that
 server* for its own text. An `http(s):` URI is printed, never dereferenced:
 the URI was chosen by the server, so fetching it would be egress with the
 payload in the path. Adding a row is a protocol decision, in code, not a
-config field (`D-lsp-scheme-fallback`).
+config field (`D_lsp_scheme_fallback`).
 
 ## Threat model: the lethal trifecta
 
-The forks behind every line of this are `D-lsp-trifecta-legs`.
+The forks behind every line of this are `D_lsp_trifecta_legs`.
 
 ```ruby
 Tool::TrifectaLegs.new(
@@ -84,7 +84,7 @@ declaration that lives on the tool.
 The model supplies `operation`, `symbol`, `file` and `line`, and none of it
 reaches a socket — it reaches an in-memory index. A seat whose outbound
 bytes do not originate in the model's choosing holds no leg to grade, which
-is the same reasoning `D-egress-axis-shape` used to drop
+is the same reasoning `D_egress_axis_shape` used to drop
 `egress_human_author`. Four sentences the reader is owed, none of them a
 tag:
 
@@ -123,8 +123,8 @@ reach are the same set: the host asked a human whether this checkout is
 trusted, and `read` is confined to the checkout.
 
 `lsp` is not. The server's index reaches outside the root by design — the
-whole bundle, jars, the JDK (`J-index-reaches-jars` sells that as the
-feature), and `H-ancestry-leaves-root` shows a query about a workspace
+whole bundle, jars, the JDK (`J_index_reaches_jars` sells that as the
+feature), and `H_ancestry_leaves_root` shows a query about a workspace
 class answering out of four unrelated gems. The `jdt:` row widens it once
 more, pulling text out of a **jar**, the one place this gem reads bytes the
 user never checked out. A user who answered "yes, I trust this repo" made a
@@ -133,8 +133,8 @@ jars Maven resolved, nor a `-sources.jar` nobody has ever diffed. No
 question the host currently asks has an answer that could honestly turn
 this leg off, so it is a constant.
 
-Nor is the exposure theoretical: `F-hover-on-constants` has one `hover`
-returning an entire yardoc class comment, and `J-class-file-contents` has
+Nor is the exposure theoretical: `F_hover_on_constants` has one `hover`
+returning an entire yardoc class comment, and `J_class_file_contents` has
 22,639 bytes of attached source arriving from a jar. **Quoting third-party
 prose into the context in bulk is this gem's marquee feature, not an edge
 case of it** — and a sources jar is the cheapest place in a dependency tree
@@ -187,7 +187,7 @@ after a server upgrade. Five through the protocol client, and the two R
 findings with `--drive`, which asks the same questions through the `lsp`
 tool, because a fault in `Renderer` is invisible from below it. A finding
 about a message pikuri may not send is in neither pass: see
-`S-rangeless-didchange-crash` for why probing undefined behaviour cannot
+`S_rangeless_didchange_crash` for why probing undefined behaviour cannot
 inform a decision.
 
 Ids are stable and never renumbered; the families mark which run produced
@@ -202,55 +202,55 @@ rather than captures.
 Later re-run through a third, independent client (Claude Code's own LSP
 tool) against the same repo and server version.
 
-**F-capabilities-per-workspace.** The same `ruby-lsp` binary advertises
+**F_capabilities_per_workspace.** The same `ruby-lsp` binary advertises
 different capabilities in different projects: no formatting provider here
 purely because pikuri's `Gemfile` has no rubocop ("Auto detected formatter:
 none"), and that row flips in a rubocop-bundled project. Capability
 knowledge must come from *this* workspace's `initialize` response, never
 from a matrix keyed on the binary.
 
-**F-empty-before-index.** A `textDocument/definition` fired right after
+**F_empty_before_index.** A `textDocument/definition` fired right after
 `initialized` returned `{"result":[]}` — a *successful* empty answer, with
 the indexing `$/progress` `begin` arriving afterwards. For an agent this is
 the worst failure mode available: the model concludes the symbol has no
 definition. Non-uniform per method, too — `references` did return results
 pre-index in that same run.
 
-**F-definition-candidates.** Ruby dispatch is dynamic, so `definition` on
+**F_definition_candidates.** Ruby dispatch is dynamic, so `definition` on
 `workspace.resolve_for_read(path)` returned four hits: both overrides *and*
 two copies inside a released gem of the very file being edited. A ranked
 list of candidates, never "the definition" — and the out-of-root half is
 what makes the walked-path gate load-bearing.
 
-**F-two-location-shapes.** ruby-lsp answers with `LocationLink`
+**F_two_location_shapes.** ruby-lsp answers with `LocationLink`
 (`targetUri` / `targetSelectionRange`), not plain `Location`; servers choose
 by the `linkSupport` capability the client declares. Parse both.
 
-**F-fuzzy-workspace-symbol.** Query `resolve_for_read` returned
+**F_fuzzy_workspace_symbol.** Query `resolve_for_read` returned
 `resolve_for_write`, `resolve` and `oversized_root_refusal` — matched on
 scattered letters. Any name→position hop must filter for exact-name hits
 before feeding a position onward.
 
-**F-reference-volume.** 40 hits for `resolve_for_read`: 4 lib call sites, 2
+**F_reference_volume.** 40 hits for `resolve_for_read`: 4 lib call sites, 2
 declarations, **34 spec hits**. Reproduced to the exact number by the third
 client, uncapped and ungrouped. `definition` and `hover` on a *constant*
 are worse — every file reopening `module Faraday` is a definition of it, so
 one call returned 45 locations.
 
-**F-position-encoding.** Offer `general.positionEncodings:
+**F_position_encoding.** Offer `general.positionEncodings:
 ["utf-8","utf-16"]` and ruby-lsp picks `utf-8`, removing the UTF-16
 code-unit conversion. jdtls ignores the offer entirely and answers
 `positionEncoding: nil`, staying on the 3.17 utf-16 default — so the
 conversion is mandatory code exercised by one of the two shipped examples,
 not a fallback for a hypothetical server.
 
-**F-hover-on-constants.** `hover` on `Pikuri::FileType` returned the
+**F_hover_on_constants.** `hover` on `Pikuri::FileType` returned the
 constant, a definition link and the *entire* yardoc class comment; `hover`
 on a `def` line returned nothing at all. ruby-lsp resolves documentation
 through its constant index, so hover's value is split down the middle — on
 a constant it answers "what is this class for?" in one call.
 
-**F-unadvertised-providers.** ruby-lsp advertises 23 capability keys, 20 of
+**F_unadvertised_providers.** ruby-lsp advertises 23 capability keys, 20 of
 them providers. **Absent:** `typeDefinition`, `implementation`,
 `declaration`, `callHierarchy` — and calling one anyway returns
 `Method not found: textDocument/typeDefinition`, the raw protocol error a
@@ -263,12 +263,12 @@ Three fixtures: a two-file plain-Java project, and a copy of the
 scratch dir precisely because a jdtls import writes `.project` /
 `.classpath` / `.settings/` into the project directory).
 
-**J-progress-opt-in.** Declare `window.workDoneProgress: true` and tokens
+**J_progress_opt_in.** Declare `window.workDoneProgress: true` and tokens
 flow; omit it and jdtls emits **zero** `$/progress` messages, narrating
 startup only through `language/status`, a custom notification outside the
 spec. The readiness signal is contingent on what the client asked for.
 
-**J-readiness-edge.** A cold Gradle import held one `Initialize Workspace`
+**J_readiness_edge.** A cold Gradle import held one `Initialize Workspace`
 token open from 2.08s to 76.43s — a good edge. But it is bracketed by
 transient tokens: the plain project produced eight, several opening and
 closing inside the same millisecond, and there **all** tokens closed 0.9s
@@ -276,20 +276,20 @@ before the server could answer. "No tokens open" is a false ready-edge; the
 settle debounce is what makes the rule usable, and a debounce is not a
 timeout — it never abandons the wait.
 
-**J-jdtls-defers-replies.** Every `definition` sent during that 74-second
+**J_jdtls_defers_replies.** Every `definition` sent during that 74-second
 import got *no response at all*; the backlog flushed at 77.87s with correct
-answers. `F-empty-before-index` is a ruby-lsp behaviour, not LSP's — and
+answers. `F_empty_before_index` is a ruby-lsp behaviour, not LSP's — and
 since a false-early gate is harmless against a server that defers and
 essential against one that lies, one generic quiescence gate covers both.
 
-**J-init-options-required.** Navigation to any library symbol returned
+**J_init_options_required.** Navigation to any library symbol returned
 `0 location(s)` — silently, with empty diagnostics, so the classpath was
 fine. jdtls withholds library definitions unless the client declares
 `initializationOptions.extendedClientCapabilities.classFileContentsSupport`,
 another non-spec extension. Declaring it flips `LoggerFactory` from nothing
 to a hit in the same warm 7.7s.
 
-**J-library-is-not-a-file.** That hit came back as
+**J_library_is_not_a_file.** That hit came back as
 `jdt://contents/slf4j-api-2.0.18.jar/org.slf4j/LoggerFactory.java?=…`, a
 virtual URI. `Filesystem#denied?` cannot be applied to it and the model
 cannot `read` it, so for non-`file:` results the tool must return *content*
@@ -297,24 +297,24 @@ or forfeit library navigation. The URI itself runs to ~300 characters, its
 query string encoding the whole classpath entry — never show one to the
 model.
 
-**J-class-file-contents.** `java/classFileContents` answered that URI in
+**J_class_file_contents.** `java/classFileContents` answered that URI in
 10ms with **22,639 bytes**, the complete attached source from the sources
 jar. Two consequences: the reply is a bare String, not the `{text:}` object
 a spec-shaped request returns, so the parse layer accepts both; and a whole
 class is far too much for one observation.
 
-**J-warm-start.** Same repo, same `-data`: 78s cold, 7.7s warm. That is why
+**J_warm_start.** Same repo, same `-data`: 78s cold, 7.7s warm. That is why
 the data directory belongs in `Paths.cache` (shared, persistent) rather
 than `Paths.new_temp`.
 
-**J-index-reaches-jars.** `workspace/symbol("StringUtils")` returned 5
+**J_index_reaches_jars.** `workspace/symbol("StringUtils")` returned 5
 hits, every one a `jdt:` URI inside a binary jar. The decisive case is
 `ArrayUtils`, which appears nowhere in the source and is never imported: 2
 hits anyway. Grep over the project finds nothing and grep over `~/.m2`
 finds unreadable binary. Prefix queries work and are noisy (`StringUt` → 11
-hits), which is `F-fuzzy-workspace-symbol` confirmed on a second server.
+hits), which is `F_fuzzy_workspace_symbol` confirmed on a second server.
 
-**J-type-definition-recovers-var.** With `var names = new
+**J_type_definition_recovers_var.** With `var names = new
 ArrayList<String>()`, `typeDefinition(names)` → `java.util.ArrayList` while
 `definition(names)` → the local declaration. Different answers to different
 questions, and with `var` the type appears nowhere in the source, so
@@ -323,41 +323,41 @@ implementor and works at method level too.
 
 ### H — type hierarchy, both servers
 
-ruby-lsp against this repo (`H-subtypes-stub` … `H-qualified-name-match`),
+ruby-lsp against this repo (`H_subtypes_stub` … `H_qualified_name_match`),
 then jdtls 1.58 against a six-file UI-shaped fixture built for the
 argument: `Widget` (abstract) ← `Panel` ← {`FancyPanel`, `Button`},
 `Clickable` (interface) ← `Button`.
 
-**H-subtypes-stub.** Every ruby-lsp `typeHierarchy/subtypes` call returned
+**H_subtypes_stub.** Every ruby-lsp `typeHierarchy/subtypes` call returned
 nothing, from `prepare` items that `supertypes` then answered correctly.
 The reason is in `server.rb:1203`: `# TODO: implement subtypes`, replying
 `nil`. An advertised capability wired to a stub — and **a capability gate
 cannot catch it**, because one provider key covers both directions and
 ruby-lsp advertises it truthfully for the half that works.
 
-**H-namespace-reopenings.** `supertypes(Pikuri::Workspace::Read)` → **14
+**H_namespace_reopenings.** `supertypes(Pikuri::Workspace::Read)` → **14
 results, every one named `Pikuri::Tool`**, one per file that reopens the
 namespace, with the real declaration ordered *last*. Grouping by name and
 preferring the declaration is mandatory; capping alone cuts the useful row.
 
-**H-ancestry-leaves-root.** `supertypes(Pikuri::Tool)` → 6 results, all
+**H_ancestry_leaves_root.** `supertypes(Pikuri::Tool)` → 6 results, all
 `Object`, out of an `.rbs` core stub and four unrelated gems that merely
 reopen `Object`. Out-of-root, useless, and arriving from a query about a
 workspace class.
 
-**H-no-module-ancestry.** `prepare` on `include Pikuri::Agent::Extension`
+**H_no_module_ancestry.** `prepare` on `include Pikuri::Agent::Extension`
 resolves the module cleanly, and then **both** directions return 0. "Who
 includes this module?" is unanswerable, and so is `include`/`prepend`
 ordering — the one thing the hierarchy was promoted for.
 
-**H-keyword-anchor-empty.** `prepareTypeHierarchy` at the first non-space
+**H_keyword_anchor_empty.** `prepareTypeHierarchy` at the first non-space
 column of a declaration line returned 0 items in 6 cases out of 6; at the
 column of the symbol text itself, exactly 1 in all six. And
 `workspace/symbol`'s own reported column for `class Tool` is **2** — the
 keyword — so feeding a symbol hit's range straight back in is the failure,
 not the shortcut.
 
-**H-qualified-name-match.** `workspace/symbol` indexes the *fully
+**H_qualified_name_match.** `workspace/symbol` indexes the *fully
 qualified* name, so `"Confirmer"` → 25 hits, **0 of them a class**;
 `"Tool"` → 81 hits, none of them `Tool` itself. Both halves are deliberate
 in the source: `workspace_symbol.rb` sets `name: entry.name` (the FQN), and
@@ -366,26 +366,26 @@ in the source: `workspace_symbol.rb` sets `name: entry.name` (the FQN), and
 query against a long namespaced name falls off a cliff. An exact-name
 filter must compare the **last `::` segment**, never `name`.
 
-**H-implementation-is-transitive.** On jdtls, `goToImplementation` answers
+**H_implementation_is_transitive.** On jdtls, `goToImplementation` answers
 "list all subtypes" transitively in one call, and on concrete classes too:
 `Panel` → 2, abstract `Widget` → **3**, interface `Clickable` → 1, concrete
 method `paint` → 2 overriders. The concrete-class row is the surprising one
 and the deep-UI case.
 
-**H-subtypes-direct-only.** jdtls's `typeHierarchy/subtypes` works but is
+**H_subtypes_direct_only.** jdtls's `typeHierarchy/subtypes` works but is
 *strictly weaker* for the same question: `Widget` → **1** (the direct child)
 against `implementation`'s 3, with one round trip per level to descend.
-Combined with `H-subtypes-stub`, there is **no server on which `subtypes`
+Combined with `H_subtypes_stub`, there is **no server on which `subtypes`
 is the best available answer**.
 
-**H-supertypes-no-substitute.** From `FancyPanel`: `Panel`, then `Widget`,
+**H_supertypes_no_substitute.** From `FancyPanel`: `Panel`, then `Widget`,
 then `Object`, one call per level. `goToDefinition` on the name after
 `extends` answers one level for free, so the value is specifically the
 *chain*, which a tool can walk internally. Note where level 3 landed —
 `Object` came back as a jar URI, so an ancestor walk reaches non-`file:`
 results routinely.
 
-**H-references-not-substitute.** `references(Widget)` → 4 hits, of which
+**H_references_not_substitute.** `references(Widget)` → 4 hits, of which
 exactly **one** is the `extends` site; the rest are variable declarations.
 Nothing in the reply labels which hit is a subtype, and the
 signal-to-noise only worsens with a widely-used base class.
@@ -395,7 +395,7 @@ signal-to-noise only worsens with a widely-used base class.
 The fixture renames a method **and** shifts it by three lines, so
 memory-vs-disk shows up in the name and in the position independently.
 
-**S-rangeless-didchange-crash.** Both servers advertise *incremental* sync,
+**S_rangeless_didchange_crash.** Both servers advertise *incremental* sync,
 so the rangeless whole-document `didChange` is a shape neither one asked
 for. jdtls tolerates it and updates correctly; ruby-lsp raises inside
 `document.rb:98` (`push_edits` reads `edit[:range][:start]`
@@ -418,7 +418,7 @@ message the server never agreed to accept is undefined, so no outcome can
 inform a decision, and an "it works now" reading would mean only that this
 one server tolerates what the contract still forbids.
 
-**S-index-desync.** The *ranged* whole-document change is honoured by both
+**S_index_desync.** The *ranged* whole-document change is honoured by both
 for the document itself, and then desynchronizes ruby-lsp's index from it:
 `documentSymbol` reports the renamed method while `definition` on that same
 method returns `[]`. `RubyDocument#should_index?` reindexes only when the
@@ -426,19 +426,19 @@ edit's start position looks like a declaration, and a whole-file replace
 starts at 0:0 — the `frozen_string_literal` comment. The optimization that
 makes editor typing cheap makes whole-file replacement invisible.
 
-**S-didopen-jdtls-only.** ruby-lsp answers `definition` and
+**S_didopen_jdtls_only.** ruby-lsp answers `definition` and
 `documentSymbol` for a document that was never opened, because `Store#get`
 reads from disk for any URI it does not hold. On jdtls the same `definition`
 returned `[]` while `documentSymbol` worked — so the precondition is
 per-server *and* per-operation, and readable off no handshake.
 
-**S-index-follows-didopen.** On ruby-lsp a `.rb` file created after boot is
+**S_index_follows_didopen.** On ruby-lsp a `.rb` file created after boot is
 invisible to `workspace/symbol` however long you wait; one `documentSymbol`
 against it makes it a hit, because `server.rb:495` reindexes while serving
 that request family. An operation nobody would call for its result can be
 the only way to freshen the index.
 
-**S-reopen-works.** Re-sending `didOpen` with the current disk text before
+**S_reopen_works.** Re-sending `didOpen` with the current disk text before
 every call works on **both** servers and is the only mechanism that does:
 both replace their copy wholesale, both resolve the renamed symbol at its
 shifted position, and ruby-lsp's index flips too. It is spec-forbidden (a
@@ -447,40 +447,40 @@ no digests, and the text it needs is the text the tool already read to
 derive the column. What pikuri does *not* take from "neither server minds"
 is permission to skip the matching `didClose` — the close is owed by the
 contract rather than earned by a measurement, so it is sent per call and
-is the one piece of this policy no probe re-measures (`D-lsp-document-sync`).
+is the one piece of this policy no probe re-measures (`D_lsp_document_sync`).
 
-**S-didclose-ruby-only.** `didClose` drops ruby-lsp's store entry so the
+**S_didclose_ruby_only.** `didClose` drops ruby-lsp's store entry so the
 next request re-reads disk; jdtls keeps answering its pre-close copy. The
 close-and-forget scheme is not portable, which is what promotes
-`S-reopen-works` from an option to the policy.
+`S_reopen_works` from an option to the policy.
 
-**S-watched-files-ignored.** `workspace/didChangeWatchedFiles` changed
+**S_watched_files_ignored.** `workspace/didChangeWatchedFiles` changed
 nothing on either server while the client owned the URI. ruby-lsp's source
 states the rule outright — `index.handle_change(uri, content) unless
 @store.key?(uri)` — a client that opened a document is presumed to be its
 authority, which is exactly the assumption an agent writing straight to
 disk breaks.
 
-**S-anchor-strictness.** Probing every token of a Java declaration:
+**S_anchor_strictness.** Probing every token of a Java declaration:
 `prepareTypeHierarchy` returned 1 item at **every** column including the
-keywords (ruby-lsp returns 0 at the keyword, `H-keyword-anchor-empty`),
+keywords (ruby-lsp returns 0 at the keyword, `H_keyword_anchor_empty`),
 while `definition` returned 0 at both keyword columns. And
 `workspace/symbol`'s reported column is the *symbol* column on jdtls
 against ruby-lsp's *keyword* column. The two servers disagree about both
 halves, in opposite directions, per operation.
 
-**S-wrong-anchor-explodes.** `references` at the return type of
+**S_wrong_anchor_explodes.** `references` at the return type of
 `public String greet(String name)` returned **80,609** locations; at the
 parameter type, the same 80,609; at `greet`, 2. The volume problem has no
 ceiling, and a cap is not an optimization.
 
-**S-jdtls-types-only.** jdtls's `workspace/symbol` returns types only:
+**S_jdtls_types_only.** jdtls's `workspace/symbol` returns types only:
 `"shout"` (a method in the fixture) → **0 hits**; `"greet"` → 1 hit, which
-is the *class* matched on a substring. This is `H-qualified-name-match`
+is the *class* matched on a substring. This is `H_qualified_name_match`
 inverted — there a bare name misses because the index stores FQNs, here a
 method name misses because the index stores no methods at all.
 
-**S-language-id-ignored.** The same `.rb` file re-opened under five
+**S_language_id_ignored.** The same `.rb` file re-opened under five
 `languageId`s: `ruby`, `python` and `x-nonsense` behaved identically, while
 **`erb` and `rbs` returned `nil` and zero symbols**, silently. ruby-lsp
 selects a document class by id and falls through to the Ruby parser for
@@ -499,7 +499,7 @@ rendering fault survived them. Both findings here were *spotted* through the
 tool and then isolated with raw requests, which is what `--drive` exists to
 repeat: `bin/pikuri-lsp-check --drive` re-measures them.
 
-**R-hover-not-on-a-def-line.** `hover` on ruby-lsp answers where a name is
+**R_hover_not_on_a_def_line.** `hover` on ruby-lsp answers where a name is
 *used*, and on a constant wherever it appears — but not on the `def` line of
 the method it names. Five anchors, one server, one run: a method
 declaration → `nil`; the same method at a call site → 561 bytes; `class
@@ -516,11 +516,11 @@ the single position that answers nothing — while the tool's honest report
 model no hint that a call site would have worked. Deliberately **not** fixed
 in the `hover` summary the model reads: this is one server's behaviour, jdtls
 answers hover on a method declaration, and a per-server hint in a shared
-description is the known-stub list `D-lsp-operation-surface` refuses. The
+description is the known-stub list `D_lsp_operation_surface` refuses. The
 route that does work project-wide is `documentSymbol`, already the documented
 answer for a method a project-wide index does not hold.
 
-**R-same-line-references.** `references(resolve_for_read)` returned two
+**R_same_line_references.** `references(resolve_for_read)` returned two
 locations on one line — `def resolve_for_read(path) = @filesystem.resolve_for_read(path)`,
 a declaration and a call — and they rendered as two byte-identical rows,
 counted twice in the header and charged twice against the group cap. pikuri

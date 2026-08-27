@@ -81,7 +81,7 @@ RSpec.describe 'Pikuri::Trifecta.build' do
 
   it 'leaves a tool nothing can call off the map entirely' do
     # An orphan: registered on the sub-agent pool, named by no persona, so no
-    # node claims it. The silence is the decision (D-trifecta-map-orphans) —
+    # node claims it. The silence is the decision (D_trifecta_map_orphans) —
     # pinned here so a later reader does not mistake it for a gap and "fix" it.
     agent = agent_with do |c|
       c.add_tool reading('read')

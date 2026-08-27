@@ -68,7 +68,7 @@ module Pikuri
         # absence of a capability rather than one, and it can never explain a
         # verdict. The reverse direction *is* a bug and fails loudly elsewhere —
         # {Pikuri::SubAgent::Extension#configure} raises on a persona naming an
-        # unregistered tool. See +D-trifecta-map-orphans+.
+        # unregistered tool. See +D_trifecta_map_orphans+.
         contributions = agent.extensions.filter_map do |ext|
           if ext.respond_to?(:trifecta_contribution)
             ext.trifecta_contribution(agent.tools + agent.sub_agent_tools)

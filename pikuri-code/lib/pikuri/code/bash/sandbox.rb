@@ -495,7 +495,7 @@ module Pikuri
           # this isn't a cut. Abstract-namespace sockets (+@/tmp/.X11-unix/X0+)
           # need no mask — the unshared netns already scopes them. Measurements and
           # the residual paths in +pikuri-code/DESIGN.md+; the capability trade in
-          # +DECISIONS.md+ +D-headless-os-agent+.
+          # +DECISIONS.md+ +D_headless_os_agent+.
           SESSION_IPC_MASKS = begin
             dirs = [ENV['XDG_RUNTIME_DIR'], "/run/user/#{Process.uid}", X11_SOCKET_DIR].compact.uniq
             masks = dirs.select { |d| File.directory?(d) }.flat_map { |d| ['--tmpfs', d] }
