@@ -120,6 +120,8 @@ module Pikuri
             @context_window_cap = cap
           in Event::Reset
             reset_snapshot
+          in Event::HistoryLoaded(tokens:)
+            seed_snapshot(tokens)
           else
             # Every other variant: no-op.
           end
@@ -144,6 +146,29 @@ module Pikuri
           @msg = 0
           @context_window_size = 0
           @status_line = ''
+          @on_status_line&.call(@id, @status_line)
+          nil
+        end
+
+        # Restore the running size from a conversation just loaded off disk
+        # ({Event::HistoryLoaded}), which always arrives right after the
+        # {Event::Reset} that zeroed it. Without this the footer reads +0.0k+
+        # against 40k of restored history until the next reply corrects it.
+        #
+        # The message counter deliberately stays at zero: it counts replies
+        # *this* session, and restored turns did not happen here. A history
+        # exported without usage (+tokens+ +nil+) leaves the zeroed snapshot
+        # alone rather than inventing a number.
+        #
+        # @param tokens [Event::Tokens, nil] usage of the last restored
+        #   assistant message.
+        # @return [void]
+        def seed_snapshot(tokens)
+          return if tokens.nil?
+
+          @context_window_size = tokens.input.to_i + tokens.cached.to_i +
+                                 tokens.cache_creation.to_i + tokens.output.to_i
+          @status_line = "restored: ctx=#{format_ctx}"
           @on_status_line&.call(@id, @status_line)
           nil
         end

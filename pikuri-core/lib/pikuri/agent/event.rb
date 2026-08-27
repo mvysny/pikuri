@@ -145,6 +145,23 @@ module Pikuri
       # reset display state; extension-owned state is signalled by the
       # extensions' own domain events, not here. No payload.
       Reset = Data.define
+
+      # A saved conversation was restored by {Agent#load_history!}. Always
+      # follows a {Reset}, which is the part that clears display state — this
+      # one says the conversation is *not* empty after all, and carries what a
+      # listener needs to stop lying about it.
+      #
+      # +tokens+ is the last assistant message's usage as recorded when the
+      # conversation was exported, so a running context readout can pick up
+      # where it left off instead of showing +0+ against 40k of restored
+      # history. +nil+ when the history holds no assistant turn, or was
+      # exported without usage.
+      #
+      # @!attribute [r] messages
+      #   @return [Integer] how many messages were restored
+      # @!attribute [r] tokens
+      #   @return [Tokens, nil] usage of the last restored assistant message
+      HistoryLoaded = Data.define(:messages, :tokens)
     end
   end
 end

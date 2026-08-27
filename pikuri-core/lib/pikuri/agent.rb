@@ -314,7 +314,7 @@ module Pikuri
         # *after* the user turn it annotates. (+ask+ bundles append+complete
         # atomically, leaving no seam to inject between; the halves run
         # explicitly instead.)
-        @chat.add_message(role: :user, content: user_message)
+        track_message(@chat.add_message(role: :user, content: user_message))
         @listeners.emit(Event::UserTurn.new(content: user_message, mid_loop: false))
         dispatch_ext_on_user_message(user_message)
       end
@@ -357,6 +357,7 @@ module Pikuri
     # @return [void]
     def clear_conversation
       @chat.reset_messages!
+      @message_meta.clear
       @system_prompt = assemble_system_prompt
       @chat.with_instructions(@system_prompt)
       @synth_answer = nil
@@ -366,6 +367,89 @@ module Pikuri
       @listeners.emit(Event::Reset.new)
       @extensions.each { |ext| ext.on_conversation_reset(@extension_context) }
       nil
+    end
+
+    # Snapshot the conversation as a {History} — the round-trip partner of
+    # {#load_history!}, and the supported way for a host to persist a
+    # conversation without reaching into the underlying chat.
+    #
+    #   agent.export_history.save(dir)          # a folder per conversation
+    #   File.write(f, agent.export_history.to_json)   # or one self-contained file
+    #
+    # The system prompt is excluded — {#load_history!} re-assembles it, so a
+    # resumed conversation gets today's, not the one that was current when it
+    # was saved.
+    #
+    # Attachment bytes are read here, eagerly, so the snapshot still shows
+    # what the model saw after the file has changed on disk.
+    #
+    # @return [History]
+    def export_history
+      exported = @chat.messages.reject { |m| m.role == :system }.map do |msg|
+        meta = @message_meta[msg] || { id: History.mint_id, kind: 'user' }
+        History::Message.from_ruby_llm(msg, id: meta[:id], kind: meta[:kind])
+      end
+      History.new(messages: exported)
+    end
+
+    # Replace the conversation with a saved one, keeping every bit of wiring
+    # — tools, listeners, extensions, model — in place.
+    #
+    #   agent.load_history!(History.load(dir))
+    #
+    # Runs {#clear_conversation} first, so controls reset and extensions see
+    # {Extension#on_conversation_reset} exactly as they would on a host
+    # "/clear"; the system prompt is re-assembled from current state. Then
+    # emits {Event::HistoryLoaded} — {Event::Reset} alone would tell listeners
+    # the conversation is empty, which it no longer is.
+    #
+    # Safe to call repeatedly on a long-lived agent: switching conversations
+    # in a shell is exactly this, once per switch, and nothing survives across
+    # one. Like the rest of {Agent}, it must not race a running {#run_loop}.
+    #
+    # == What is restored, and what is not
+    #
+    # Messages, tool calls and their results, thinking, attachments, per-message
+    # usage. **Not** state living outside the conversation: a workspace's
+    # read-before-edit marks, promoted skills, a task list. A resumed
+    # conversation whose transcript says a file was read will still be asked
+    # to read it again before editing — which is right, since the file may
+    # have changed while the conversation sat on disk.
+    #
+    # Two repairs happen on the way in, both because a stored conversation can
+    # describe something a provider will not accept:
+    #
+    # - A tool call whose result never arrived gets a synthesized one
+    #   ({History#repair_interrupted_tool_calls}).
+    # - A thinking signature from a *different* model is dropped, keeping the
+    #   text. Signatures are attestations the issuing model validates, so
+    #   replaying one after a model switch is a 400.
+    #
+    # @param history [History] from {#export_history}, {History.parse} or
+    #   {History.load} — already validated by whichever door it came through.
+    # @return [Integer] how many messages were restored.
+    # @raise [ArgumentError] if given anything but a {History}; the parsing
+    #   doors are where untrusted input belongs.
+    def load_history!(history)
+      unless history.is_a?(History)
+        raise ArgumentError, "expected a Pikuri::Agent::History, got #{history.class} — " \
+                             'use History.parse / History.load to build one from stored bytes'
+      end
+
+      clear_conversation
+      current_model = @chat.model&.id
+      repaired = history.repair_interrupted_tool_calls
+      repaired.messages.each do |m|
+        keep = m.thinking.nil? || m.model_id.nil? || m.model_id == current_model
+        track_message(@chat.add_message(m.to_ruby_llm(keep_signature: keep)), kind: m.kind, id: m.id)
+      end
+
+      last = repaired.messages.reverse.find { |m| m.role == 'assistant' && m.tokens }
+      @listeners.emit(Event::HistoryLoaded.new(
+                        messages: repaired.messages.size,
+                        tokens: last && Event::Tokens.new(**last.tokens.to_h, model_id: last.model_id)
+                      ))
+      repaired.messages.size
     end
 
     # Release agent-owned resources: fire every handler registered via
@@ -465,7 +549,14 @@ module Pikuri
       # +Chat#complete+, not a registered hook.) With the +@listeners.emit+
       # calls in {#run_loop}/{#dispatch_ext_on_user_message}, this is the
       # complete callback→event map.
+      # Identity-keyed, so nothing can drift out of alignment with
+      # +@chat.messages+ the way a parallel array would: a message pikuri
+      # never saw is simply absent here, and {#export_history} mints it an id
+      # rather than silently pairing it with someone else's.
+      @message_meta = {}.compare_by_identity
+
       @chat.after_message do |msg|
+        track_message(msg)
         emit_after_message(msg)
         drain_interloper if @interloper && tool_batch_complete?(msg)
       end
@@ -676,9 +767,26 @@ module Pikuri
       # Block form, not a replacement String: gsub reads `\&`, `\1` etc. out of
       # the latter, so a tag carrying one would be mangled rather than escaped.
       body = content.gsub(close) { "<\\/#{REFERENCE_TAG}>" }
-      @chat.add_message(role: :user, content: "<#{REFERENCE_TAG}>\n#{body}\n#{close}")
+      # Tagged +reference+ so a restored conversation can tell pikuri's own
+      # injection from something the human typed — both land as +:user+.
+      track_message(@chat.add_message(role: :user, content: "<#{REFERENCE_TAG}>\n#{body}\n#{close}"),
+                    kind: 'reference')
       @listeners.emit(Event::SystemInjected.new(content: content))
       nil
+    end
+
+    # Remember pikuri's own identity for a message just added to the chat, so
+    # {#export_history} can hand out a stable id and say whether a +:user+
+    # message was typed or injected. Neither field ever reaches a provider.
+    #
+    # @param msg [RubyLLM::Message] as returned by +Chat#add_message+.
+    # @param kind [String] one of {History::KINDS}.
+    # @param id [String, nil] an existing id to preserve (restoring a saved
+    #   conversation); +nil+ mints a fresh one.
+    # @return [RubyLLM::Message] +msg+, so call sites can wrap in place.
+    def track_message(msg, kind: 'user', id: nil)
+      @message_meta[msg] = { id: id || History.mint_id, kind: kind } unless msg.role == :system
+      msg
     end
 
     # Build the per-chunk block passed to +Chat#complete+. Each call converts

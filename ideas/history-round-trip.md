@@ -295,9 +295,25 @@ it mid-turn; a history format must respect it across a *save/load*
 boundary, and it is the strongest argument for validation-on-load:
 
 > **Referential integrity is part of the schema.** Every `tool_call_id`
-> on a `:tool` message must match a `ToolCall#id` in the nearest
-> preceding assistant message, and every issued call must be answered.
+> on a `:tool` message must match a `ToolCall#id` issued by a preceding
+> assistant message, and no call may be answered twice.
 > `History.from_h` raises on a violation, naming the offending id.
+
+**Refined while implementing — the two directions are not symmetric,
+and an earlier draft of this note had them contradicting each other.**
+It said `from_h` must refuse a history where "every issued call must be
+answered", *and* that `load_history!` repairs an unanswered call by
+synthesizing a result. Both cannot hold: a validator that refuses the
+dangling case means the repair can never run, because the file never
+parses. The crash case would be the one thing unloadable.
+
+The split that actually works, and is what shipped:
+
+| | | |
+|---|---|---|
+| result with no call | **refuse** in `from_h` | unrepairable — you cannot invent the call it answers |
+| one call answered twice | **refuse** in `from_h` | in a live race that's a dedup; in a *file* it is corruption |
+| call with no result | **legal on disk**, repaired at load | exactly what a killed process leaves behind |
 
 Something has to enforce this because *hosts will hand-edit these files*
 (that is half the point of readable JSON) and because a truncating
@@ -455,23 +471,31 @@ that stored a reference silently loses it. That rules out the obvious
 shortcut of generating them in `export_history`. Two workable
 mechanisms:
 
-- **A side table on `Agent`**, index-aligned with `@chat.messages`,
-  appended wherever a message enters. Two paths cover it today:
-  ruby_llm's `after_message` fires for assistant messages (`chat.rb:230`)
-  *and* tool results (`chat.rb:385`), while user turns come through
-  `agent.rb`'s own `add_message` calls (`:317`, `:679`). Fragile in one
-  specific way: if ruby_llm ever adds a message by a third path, the
-  array desynchronizes from `messages` **silently**, which is the worst
-  failure shape available. Needs an assertion that the lengths match at
-  export.
+- **A side table on `Agent`**, appended wherever a message enters. Two
+  paths cover it: ruby_llm's `after_message` fires for assistant messages
+  (`chat.rb:230`) *and* tool results (`chat.rb:385`), while user turns
+  come through `agent.rb`'s own `add_message` calls.
 - **Deterministic content-hash ids** (role + content + tool calls +
   index). No side table, nothing to desync, stable across exports of an
   unchanged conversation — but every stored reference silently changes
   the day we change what goes into the hash, i.e. on a pikuri upgrade.
 
-**Lean: minted-and-stored.** References here cross artifacts (event log
+**Built: minted-and-stored.** References here cross artifacts (event log
 ↔ history) and persist on disk, so a reference that quietly changes
-meaning across a version bump is worse than a length assertion.
+meaning across a version bump is the worse failure.
+
+**Implementation note — the desync hazard turned out to be avoidable.**
+This section originally proposed an array *index-aligned* with
+`@chat.messages`, and worried at length that a message entering by some
+third path would silently shift every id by one, needing a length
+assertion at export as a tripwire. That was solving the wrong problem.
+The map is keyed by **object identity**
+(`{}.compare_by_identity`, `agent.rb`'s `@message_meta`), so alignment
+is not a thing that can be wrong: a message pikuri never saw is simply
+*absent*, and `export_history` mints it a fresh id rather than pairing
+it with someone else's. No assertion, no tripwire, no failure mode to
+document. Index alignment was a worse design that came with a
+mitigation; identity keying removes the need for one.
 
 **Shape: monotonic and lexicographically sortable** (ULID / UUIDv7),
 following opencode — ordering falls out of the id itself with no
@@ -630,7 +654,14 @@ stored name be machine-chosen without lying about provenance.
    worst, content-addressed so they can never collide or corrupt
    anything. If it ever matters, the answer is `rm`, or a host-side
    cleanup — not a pikuri feature.
-5. **In-memory: eager bytes, always.** `History::Attachment` holds the
+5. **Bytes are re-tagged binary on construction** — found by the
+   round-trip test, which failed on content that was byte-identical.
+   The same PNG arrives as `UTF-8` when read from a source file and as
+   `ASCII-8BIT` out of base64, and two differently-tagged copies of one
+   image are not `==` in Ruby. Since `==` *is* the property the whole
+   two-mode design rests on, `Attachment#initialize` normalizes with
+   `bytes.b`. A quiet trap: everything looks right until you compare.
+6. **In-memory: eager bytes, always.** `History::Attachment` holds the
    actual bytes, whichever door it came in through. The tempting
    alternative — a `History` loaded from a folder holding lazy
    *references* — reintroduces exactly the (a) failure this design
