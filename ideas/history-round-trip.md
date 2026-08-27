@@ -129,6 +129,8 @@ end
 History::Message = Data.define(
   :id,            # local identifier, minted at creation — see below
   :role,          # "user" | "assistant" | "tool"  (never "system")
+  :kind,          # "user" | "reference" — local only, never sent
+
   :content,       # String, or History::Content when attachments are in play
   :tool_calls,    # [History::ToolCall], ordered — [] when none
   :tool_call_id,  # String on a :tool message, nil otherwise
@@ -707,6 +709,93 @@ can grow an `extensions:` key; a top-level *array* — the issue's shape —
 cannot). **That alone settles envelope-vs-array.**
 
 
+## Container: one JSON object, not JSONL — yet
+
+Settled (author, 2026-08-27). The question was whether to write JSONL
+from the start so that v2 can simply append instead of overwriting.
+
+**First, the measurement that removes the pressure.** Whole-file
+rewrite, `JSON.generate` plus temp-file-and-rename, mean of ten:
+
+| conversation | file | per turn |
+|---|---|---|
+| 200 messages @ 1.8 KB | 0.39 MB | **1.9 ms** |
+| 2000 messages @ 1.8 KB | 3.86 MB | **15.7 ms** |
+
+Against a turn that spends seconds on the model, that is 0.05–0.5%. The
+write-often/read-rarely instinct is right about the access *pattern* and
+wrong about the constant. And 2000 messages is already well past where
+context management forces a compaction, so the second row is a
+worst-case that shouldn't occur.
+
+**Rejected outright: "store the whole history as one line, so it's
+trivially JSONL too."** It is valid JSONL, but its record type is *an
+entire history*. The first append makes line 1 an
+envelope-containing-every-message and lines 2..N bare messages — the
+file is permanently bimodal, every reader handles both record types
+forever, and the property that makes JSONL worth having (one line, one
+record) never holds. It also costs diffability *today*: a single-line
+blob is one wholly-changed line in `git diff`, where pretty JSON and
+real JSONL both show a turn as added lines.
+
+**Deferred, not rejected: real JSONL** (a header record, then one record
+per message — PI's `SessionHeader` shape, grok-build's
+`SessionUpdateEnvelope`). It costs ~25 lines of writer + reader and buys
+a v2 append that changes nothing about the format. The reason to wait is
+that a single JSON object keeps **`History` ↔ file 1:1**: `to_json` and
+`parse` are literal inverses, the round-trip test is
+`parse(to_json) == history`, and the golden fixture *is* the format.
+Header-plus-records makes the file an *encoding* of the value, owned by
+a writer and a reader that can each be wrong on their own. For a v1
+whose whole thesis is a small auditable value type, not having that
+layer is the feature.
+
+**The escape hatch, which is why deferring is safe.** Going to JSONL
+later is **not** a version bump and **not** a migration — it is a sniff:
+
+> if the whole file parses as a single JSON object, it is the v1
+> container; otherwise read it as JSONL.
+
+Three lines, no rewrite of anything on disk, every file ever written
+stays readable. That is what makes this a reversible decision rather
+than a bet, and it is the condition under which "don't build it yet"
+is actually correct rather than merely cheap.
+
+**If append does become real, the rules are already known** — write
+them down here so nobody re-derives the segmented-array idea from
+scratch:
+
+- **It is JSONL, not numbered `1.json` / `2.json` segments.** Each
+  segment would be a JSON *array*, so appending to one means either
+  rewriting it (defeating the purpose) or omitting the closing `]` and
+  repairing on read — which is JSONL, reinvented, plus a rotation
+  threshold, a naming scheme, an ordering rule and a which-segment-is-
+  current question that JSONL does not have.
+- **The reader tolerates a torn last line** (crash mid-append: drop it,
+  keep everything before) and the writer appends whole lines. PI's
+  pattern (`jsonl/storage.ts:84`), and the reason it needs one.
+- **Note what is lost.** Whole-file rewrite plus atomic rename
+  guarantees the file on disk is *always* a complete valid history;
+  there is no torn state to detect. Append trades that guarantee for
+  O(1) writes. For a **derived** artifact — which this is, see below —
+  always-consistent is worth more than always-cheap.
+
+**And the deeper reason the pressure is misplaced.** grok-build's
+finding was that the append-only log is *ground truth* and the
+model-facing transcript is a rebuildable cache; pikuri-web independently
+planned the same split (`log.jsonl` for events beside `messages.json`
+rewritten per turn). The append-log the instinct is reaching for already
+exists — one layer up, owned by the shell, carrying events. `History` is
+the derived snapshot, and a derived snapshot *wants* wholesale rewrite,
+because that is what keeps it consistent with itself.
+
+Write amplification, meanwhile, is already handled where it actually
+mattered: the expensive bytes are attachments, and content-addressed
+sidecars mean an unchanged image is skipped rather than re-encoded.
+Re-serializing 400 KB of text per turn is noise; re-encoding 5 MB of
+base64 per turn would not have been.
+
+
 ## Stability: what "the format doesn't change" has to mean
 
 Writing `version: 1` is the easy part. The policy is the part that
@@ -879,10 +968,33 @@ guard, and its diff is what a version bump has to justify.
 - **Injected reference blocks** (`append_reference_block`, `agent.rb:674`)
   are ordinary `:user` messages wrapped in `<system-reminder>`, so they
   round-trip for free — but they come back *stale* (yesterday's memory
-  prefetch, yesterday's promoted skill). Fine, or should the export tag
-  them so a host can drop/refresh them? Tagging means a field that only
-  pikuri understands, which argues for leaving them opaque. Lean: leave
-  them; note it in yardoc.
+  prefetch, yesterday's promoted skill).
+
+  **Lean reversed by the survey (2026-08-27).** The earlier lean was
+  "leave them opaque; tagging means a field only pikuri understands".
+  Claude Code does the opposite and it is clearly better: every
+  mid-conversation injection is its own **typed** record —
+  `skill_listing`, `task_reminder`, `total_tokens_reminder`,
+  `deferred_tools_delta`, `command_permissions`, `edited_text_file`,
+  `agent_listing_delta`, `queued_command`. The system prompt is still
+  regenerated, but each thing the harness slipped into the conversation
+  stays durably logged *and distinguishable* rather than dissolving into
+  opaque user text — so a resumed conversation can tell a stale skill
+  listing from something the human actually typed, and drop or refresh
+  it.
+
+  pikuri already knows the difference at injection time: that is exactly
+  what `Event::SystemInjected` reports, and what the interloper's
+  `:system` kind means. So the cost is one **non-wire** field on
+  `History::Message` — `kind: "user" | "reference"`, never sent to a
+  provider, sitting beside `id` as the second field that exists purely
+  for local reasoning. Cheap, and it is the difference between a resumed
+  conversation that can clean up after itself and one that can't.
+
+  (Whether the *variant* is carried too — memory prefetch vs. promoted
+  skill vs. host-loaded reference — is a further step. Claude Code
+  carries it; pikuri's `Event::SystemInjected` currently does not, so
+  that would need a change upstream of the format. Not v1.)
 - ~~**`id` / timestamps / a title.**~~ Settled by the consumer survey:
   **the shell's envelope, not ours.** pikuri-web already plans exactly
   that — a `meta.json` holding title, `created_at`, `updated_at`, model,
