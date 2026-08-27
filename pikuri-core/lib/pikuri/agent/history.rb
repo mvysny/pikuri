@@ -45,7 +45,7 @@ module Pikuri
     #
     # The container is one JSON object, not JSONL. Should append ever be worth
     # it, going to JSONL is a *sniff* (does the whole file parse as one
-    # object?) rather than a version bump — see +ideas/history-round-trip.md+.
+    # object?) rather than a version bump — see +DECISIONS.md+ +D_history_container+.
     class History < Data.define(:version, :messages)
       # Bumped only for a change an old reader could not survive; an added
       # optional key is not one (readers ignore unknown keys). A file claiming

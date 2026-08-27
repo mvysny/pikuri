@@ -203,6 +203,18 @@ than 3.
   already lives.
 - {Pikuri::Agent#clear_conversation} — the existing "start over" path any
   compaction has to stay coherent with.
+- {Pikuri::Agent#load_history!} + {Pikuri::Agent::History} (shipped
+  2026-08-27, `D_history_*`) — **the natural actuator if this note ever
+  chooses summarize-in-place.** "Export, shorten, reload" is exactly the
+  shape, and the machinery now exists. What it does *not* answer is the
+  policy question that blocks it: a compactor has to slice a conversation
+  without splitting an assistant `tool_calls` turn from the `:tool`
+  messages answering it, and `History` only *validates* that pairing —
+  it will happily refuse a badly-sliced result rather than tell you where
+  to cut. Note also that `load_history!` deliberately restores the
+  conversation and not the session, which is one concrete answer to this
+  note's open "does the workspace's read-record survive a compaction?"
+  (today: no).
 - `D_context_window_sources` — why a cap is often `nil`, which constrains
   every threshold-based option.
 - `book/tasks.md` mentions the overflow raise in passing; if behaviour

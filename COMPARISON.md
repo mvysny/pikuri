@@ -765,7 +765,8 @@ the source: **Claude Code** (its own transcripts on the author's
 machine, ~370 files, CLI `2.1.220`–`2.1.247`), **opencode** (`5f5ea53`),
 **grok-build** (`9684fa3`), **PI** (`1defa15`) and **hermes-agent**
 (`cced6fa`). pikuri's own design work lives in
-`ideas/history-round-trip.md`; this section is only what the others do.
+`DECISIONS.md` (the five `D_history_*` entries); this section is only
+what the others do.
 
 | | container | ground truth | tool call ↔ result | attachments | per-msg tokens | schema version |
 | --- | --- | --- | --- | --- | --- | --- |
