@@ -588,24 +588,30 @@ stored name be machine-chosen without lying about provenance.
    often it was read, and a free integrity check at load. Worth keeping
    for those reasons alone.
 
-   *(Sub-question, cosmetic only: "the same folder" flat, or a fixed
-   `attachments/` segment inside it? The invariant is identical — one
-   fixed location, resolved-and-compared. Flat keeps `ls` honest for a
-   two-image conversation; a subdir keeps `history.json` findable when
-   there are fifty. Either is fine; pick when writing it.)*
+   **Settled (author, 2026-08-27): a fixed `attachments/` segment**, so
+   the folder is `history.json` + `attachments/<name>`. The invariant is
+   unchanged — one fixed location, resolved-and-compared — and
+   `history.json` stays findable next to fifty images.
 3. **`save` is not atomic.** Crash between files and you have a JSON
    pointing at bytes that aren't there. **Attachments first, `history.json`
    last** — the JSON is the commit point, so a torn save leaves unreferenced
    garbage (harmless) rather than a dangling reference (broken). Load
    raises on a missing or digest-mismatched file; it never degrades to
    "attachment omitted".
-4. **Re-saving.** A host that saves after every turn re-saves the whole
-   conversation each time. Content-addressing makes that idempotent —
-   skip any file already present with the right digest. Open: does `save`
-   *sweep* attachments no longer referenced? Lean **no** — pikuri writes
-   into the folder, it doesn't own everything in it, and deleting files
-   a user may have dropped there is a worse failure than leaving an
-   orphan. Say so in yardoc.
+4. **Re-saving, and orphans.** A host that saves after every turn
+   re-saves the whole conversation each time. Content-addressing makes
+   that idempotent — skip any file already present with the right digest.
+
+   An **orphan** appears when the history *shrinks* between saves —
+   compaction drops old turns, or a host trims them — leaving
+   `attachments/` holding files nothing references any more.
+
+   **Settled (author, 2026-08-27): `save` never deletes.** pikuri writes
+   into that folder, it does not own everything in it, and deleting a
+   file a human dropped there is a worse failure than leaving an orphan.
+   The middle ground it takes instead: **report, don't sweep** — `save`
+   returns (or logs) the attachment files it found unreferenced, so the
+   host can decide. Nothing is destroyed by us; nobody is blind either.
 5. **In-memory: eager bytes, always.** `History::Attachment` holds the
    actual bytes, whichever door it came in through. The tempting
    alternative — a `History` loaded from a folder holding lazy
@@ -1006,9 +1012,29 @@ guard, and its diff is what a version bump has to justify.
   whose history references `web_search` is loaded by a shell that
   doesn't wire it (`Q_tool_set_drift`, line 280). That is a real hazard
   for us — a restored history can name tools the agent no longer has —
-  and it is worth deciding whether `load_history!` should *warn* on it.
-  Cheap version: it already has the tool list and the history; a mismatch
-  is a `FallbackNotice`-shaped observation, not a refusal.
+  and I raised whether `load_history!` should *warn* on it.
+
+  **Settled (author, 2026-08-27): stay silent.** A recorded tool call is
+  never re-executed — it is just history, a record that the harness of
+  the day had that tool wired. The only live risk is that the model,
+  seeing a worked example of `web_search` in its context, tries to call
+  it again on the next turn; and ruby_llm already handles that
+  gracefully one layer down (`chat.rb:389`):
+
+  ```ruby
+  tool = tools[tool_call.name.to_sym]
+  if tool.nil?
+    return { error: "Model tried to call unavailable tool `#{tool_call.name}`. " \
+                    "Available tools: #{tools.keys.to_json}." }
+  end
+  ```
+
+  That becomes the next observation and **names the tools the model does
+  have**, so it self-corrects. A load-time warning would duplicate a
+  recovery that already works better: it fires only if the model
+  actually tries, and it tells the model what to use instead. The tool
+  list stays a *shell* concern (pikuri-web's `meta.json`), where a
+  picker may still want to show "saved by a different harness".
 - **Must `load_history!` survive being called dozens of times on one
   long-lived agent?** Yes — confirmed, and it is the primary use.
   pikuri-web runs **one process-wide `Agent`** (`bin/pikuri-web-chat:130`;
@@ -1026,15 +1052,22 @@ guard, and its diff is what a version bump has to justify.
   (`Q_switch_while_busy`, line 216). That matches the issue's "not
   designed for concurrent `run_loop`" and means `load_history!` may
   document itself as not thread-safe rather than growing a lock.
-- **Where does it live** — `Pikuri::Agent::History` in `pikuri-core`,
-  next to `Event`/`Control`? Almost certainly yes; it is Agent surface
-  and both shells depend on core regardless.
-- **Does `load_history!` fire `Event::Reset`?** It resets controls like
-  `clear_conversation` does, so listeners must clear display state — but
-  `Reset` means "empty conversation" to a listener, which is now a lie.
-  Probably `Event::Reset` *then* an `Event::HistoryLoaded(messages:, tokens:)`,
-  with the usual no-op-on-unknown-variant contract covering listeners
-  that don't care.
+- ~~**Where does it live**~~ Settled: **`Pikuri::Agent::History`** in
+  `pikuri-core`, next to `Event` / `Control`. It is Agent surface, and
+  both shells depend on core regardless.
+- ~~**Does `load_history!` fire `Event::Reset`?**~~ Settled: **`Reset`,
+  then `Event::HistoryLoaded`.** `Reset` alone makes listeners clear
+  display state, which is right, but it also *means* "empty
+  conversation" to a listener — a lie after a load. The second event
+  carries what a listener needs to be honest again, including the token
+  counts that reseed `TokenLog`'s `ctx=` readout (the one field in the
+  format justified purely by a downstream need). Listeners that don't
+  care no-op on the unknown variant, per the standing contract.
+- ~~**`system_prompt_override:`**~~ **Deferred** (author, 2026-08-27).
+  PI's split is the right one and the field name is settled if we ever
+  want it; nothing in either shell pins a prompt today, so v1 ships
+  without it. Additive when needed — a new optional key is exactly the
+  change the version policy above says keeps `version: 1`.
 
 
 ## Considered, then set aside
