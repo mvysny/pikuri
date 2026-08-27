@@ -606,12 +606,30 @@ stored name be machine-chosen without lying about provenance.
    compaction drops old turns, or a host trims them — leaving
    `attachments/` holding files nothing references any more.
 
-   **Settled (author, 2026-08-27): `save` never deletes.** pikuri writes
-   into that folder, it does not own everything in it, and deleting a
-   file a human dropped there is a worse failure than leaving an orphan.
-   The middle ground it takes instead: **report, don't sweep** — `save`
-   returns (or logs) the attachment files it found unreferenced, so the
-   host can decide. Nothing is destroyed by us; nobody is blind either.
+   **Settled (author, 2026-08-27): `save` never deletes, and does not
+   report either — orphans simply rot there.** pikuri writes into that
+   folder, it does not own everything in it, and deleting a file a human
+   dropped there is a worse failure than leaving an orphan.
+
+   An earlier draft kept a middle ground — `save` returns the files it
+   found unreferenced, so a host could decide. Dropped, because nothing
+   consumes it: a return value no caller reads is the "just in case"
+   surface this project declines by default, and the *only* reason it
+   existed was to justify the scan that produces it.
+
+   Which is the real win here, and worth stating as the invariant:
+   **`save` only ever writes; it never enumerates the folder to reason
+   about what is in it.** The one read it does is a `stat` per
+   *referenced* attachment (skip if already present with the right
+   digest) — bounded by the history, never by the directory. So a folder
+   holding a thousand stale files costs exactly nothing per save.
+
+   The honest cost, recorded so nobody is surprised: orphans accumulate
+   silently and nothing will ever mention them. Bounded by the
+   attachments a single conversation actually produced — a few MB at
+   worst, content-addressed so they can never collide or corrupt
+   anything. If it ever matters, the answer is `rm`, or a host-side
+   cleanup — not a pikuri feature.
 5. **In-memory: eager bytes, always.** `History::Attachment` holds the
    actual bytes, whichever door it came in through. The tempting
    alternative — a `History` loaded from a folder holding lazy
