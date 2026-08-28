@@ -53,7 +53,10 @@ module Pikuri
     # top of itself.
     #
     # A factory — a *new* dir each call (hence +new_+, not a memoized accessor
-    # like {.cache}); the caller memoizes if it wants one stable dir.
+    # like {.cache}); a caller memoizes if it wants one stable dir, but per
+    # *consumer*, not per process. Memoizing one at process scope and handing it
+    # to several agents puts two writers on one path — the collision this exists
+    # to prevent, moved inside the process.
     #
     # @return [Pathname] absolute, symlink-resolved path of the freshly-made dir
     def self.new_temp

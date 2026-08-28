@@ -85,10 +85,14 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
 5. **`Listener::Terminal` — leave it.** Scrambled stdout is a `bin/` script's
    problem, and the standing rule is that a demo's shortcuts are not pikuri
    policy: a TUI with per-tab buffers doesn't have this problem at all.
-6. **`Paths.new_temp` — docs only, probably done.** It is a factory, so there is
-   no collision; the trap is a host memoizing one dir at process scope and
-   handing it to ten agents. Worth one clause in its docstring ("and per
-   agent"), not a code change.
+6. **`Paths.new_temp` — done (2026-08-28), docs only as predicted.** It is a
+   factory, so there is no collision; the trap was a host memoizing one dir at
+   process scope and handing it to ten agents, and the old docstring's "the
+   caller memoizes if it wants one stable dir" read as blanket permission to do
+   exactly that. It now says *per consumer, not per process*. Both live callers
+   were already correct (each memoizes per instance), so nothing needed fixing
+   — which is the answer item 4 wishes it had had, since the same trap there
+   was a real bug waiting in `Extension` reuse.
 7. **`SubAgentTool`'s id counters and `GitClone`'s sandbox memo — leave.** Both
    are unguarded, both only reachable if you share a tool that is
    `P_one_agent` for stronger reasons anyway.
