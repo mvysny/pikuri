@@ -63,12 +63,14 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
    interruptible (needs three concurrent agents to matter), and bounding the
    wait so a backed-up provider is skipped (only sensible with ≥2 providers
    wired).
-3. **MCP and LSP — accepted as one-agent-only.** Both hold unguarded client
-   hashes and a `#close` that kills children another caller could be mid-request
-   on, so ten agents over one project means ten sets of child processes. A
-   shared pool behind a lock is buildable and simply isn't built; the cost is
-   real (jdtls twice is not free) but nobody has paid it yet. Revisit when a
-   host actually runs a multi-tab coding agent.
+3. **MCP and LSP — closed, one-agent-only on purpose (2026-08-28).** Both hold
+   unguarded client hashes and a `#close` that kills children another caller
+   could be mid-request on, so ten agents over one project would mean ten sets
+   of child processes. A shared pool behind a lock is buildable and stays
+   unbuilt, because the demand isn't there: both are *coding* tooling, coding is
+   TUI work, and a TUI is one agent. The cost of being wrong is bounded and
+   visible (jdtls twice is slow, not incorrect), so reopen if it ever bites
+   rather than building for a host nobody has asked for.
 4. **`Gloda` / `Calendar` — one instance per agent, or one lock.** The
    freshness rebuild swaps the connection under a concurrent query. Sharing one
    behind a lock would be *better* than one-per-agent (the ~1 s FTS5 rebuild
@@ -87,14 +89,6 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
 
 ## Still open, not per-tool
 
-- **Should the cross-agent `UrlCache` / `Engines::CACHE` flow be examined by
-  the taint work?** Agent B's search can be answered from agent A's cached
-  result. Almost certainly fine — it is a public search engine's answer to the
-  same query, and the cache is already cross-*process* — but it is a real
-  cross-agent information flow and `ideas/private-context-taint.md` is where
-  that question lives. Cheap to settle: probably one sentence there saying
-  public-URL content is nobody's private context, which is what
-  `Pikuri::UrlCache` now claims.
 - **What would a spec for any of this look like?** Partly answered by item 2:
   the cancellation specs drive two real threads and assert a *cut-short*, which
   is deterministic in a way "did they race?" never is. What is still unwritten

@@ -199,6 +199,34 @@ house rule "grow by adding listeners/controls, don't complicate the
 tools." The alternative is coupling the egress tools to the taint
 state directly. **Not decided.**
 
+### Constraint on either answer: sever *before* the tool body runs
+
+Whichever way Q3 goes, enforcement has to refuse the call, not clean up
+after it. The reason is {Pikuri::UrlCache}: `fetch`, `web_scrape` and
+`web_search` each hold their cache in a **class-level constant**, so it is
+one on-disk store (`~/.cache/pikuri/url_cache/<tool>/<sha256-of-key>.txt`,
+2 h TTL) shared by every agent in the process *and* every pikuri process on
+the machine. The write happens inside the tool body, just downstream of the
+HTTP call. Sever first and nothing private-derived is ever written; let the
+call happen and redact the response instead, and a private-derived query
+string has already been hashed onto disk alongside its result. Cheap to
+honour now, expensive to discover later.
+
+Given that ordering, the shared cache does **not** undermine the per-node
+taint model, which is worth stating because a process-wide store under a
+per-context model looks like a hole (checked 2026-08-28, from
+`ideas/concurrent-tool-use.md`):
+
+- **Out:** a tainted agent's egress is severed, so it never populates the
+  cache.
+- **In:** a hit requires presenting the exact key, so a reader must already
+  hold the query or URL it is asking about. The residual is a weak
+  existence oracle — a result that looks staler than now — on a string the
+  reader already knew.
+- **Poisoning:** agent A caching attacker bytes from URL U just means B
+  gets A's copy of what U was going to serve B anyway; the TTL, if
+  anything, *reduces* the attacker's ability to vary payload per victim.
+
 ## Open: docs rollout (the *what*, not yet the *how*)
 
 - The killed-fetch-whitelist reason — the `github.com` /
