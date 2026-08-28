@@ -26,6 +26,15 @@ describe Pikuri::Thunderbird::Gloda do
     path
   end
 
+  # Simulate Thunderbird indexing a new message into the live file, which bumps
+  # the change counter the freshness check reads.
+  def add_message(dir, id, body: 'a zebra appeared')
+    src = SQLite3::Database.new(File.join(dir, 'global-messages-db.sqlite'))
+    src.execute('INSERT INTO messagesText_content VALUES (?,?,?,?,?,?)', [id, body, 'Z', '', 'Eve', 'me'])
+    src.execute('INSERT INTO messages VALUES (?,1,1600000000000000,?,0)', [id, "<#{id}@x>"])
+    src.close
+  end
+
   def with_gloda(**kw)
     Dir.mktmpdir do |dir|
       gloda = Gloda.new(gloda_path: make_gloda(dir, **kw), cache_dir: File.join(dir, 'cache'))
@@ -59,15 +68,52 @@ describe Pikuri::Thunderbird::Gloda do
     with_gloda(rows: 1) do |gloda, dir|
       assert_equal 1, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
 
-      # simulate Thunderbird indexing a new message into the live file
-      src = SQLite3::Database.new(File.join(dir, 'global-messages-db.sqlite'))
-      src.execute("INSERT INTO messagesText_content VALUES (99,'a zebra appeared','Z','','Eve','me')")
-      src.execute('INSERT INTO messages VALUES (99,1,1600000000000000,\'<z@x>\',0)')
-      src.close
+      add_message(dir, 99)
 
       # a fresh with_fresh_db sees it (re-snapshot + reindex fired)
       assert_equal 2, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
       assert_equal 1, gloda.with_fresh_db { |db| db.get_first_value("SELECT count(*) FROM fts WHERE fts MATCH 'zebra'") }
+    end
+  end
+
+  # P_shared_locked, asserted on the *outcome* rather than on a schedule: a
+  # reader parks inside its block while a second caller tries to rebuild. Drop
+  # the lock and the rebuild's #close lands on the handle the reader is still
+  # holding, so its query raises on a closed database. Under the lock the
+  # rebuild cannot start at all, which is what the join-timeout proves.
+  it 'holds the lock across the block, so a rebuild cannot close a live reader' do
+    with_gloda(rows: 1) do |gloda, dir|
+      held = Queue.new
+      release = Queue.new
+      outcome = nil
+
+      reader = Thread.new do
+        gloda.with_fresh_db do |db|
+          held << :ready
+          release.pop
+          outcome = db.get_first_value('SELECT count(*) FROM messages')
+        rescue SQLite3::Exception => e
+          outcome = e
+        end
+      end
+
+      held.pop
+      add_message(dir, 99) # move the generation, so the next call must rebuild
+      rebuilder = Thread.new { gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') } }
+      refute rebuilder.join(0.3), 'rebuild ran while a reader held the connection'
+      release << :go
+      [reader, rebuilder].each(&:join)
+
+      assert_equal 1, outcome, "reader saw #{outcome.inspect} instead of its snapshot's row count"
+    end
+  end
+
+  it 'reopens after a co-owner closes, rather than failing' do
+    with_gloda(rows: 2) do |gloda|
+      assert_equal 2, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
+      gloda.close # what one agent's on_close does while another still holds it
+      assert_equal 2, gloda.with_fresh_db { |db| db.get_first_value('SELECT count(*) FROM messages') }
+      assert_equal 2, gloda.with_fresh_db { |db| db.get_first_value("SELECT count(*) FROM fts WHERE fts MATCH 'body'") }
     end
   end
 end

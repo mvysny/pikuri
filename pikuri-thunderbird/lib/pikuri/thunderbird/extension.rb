@@ -44,6 +44,19 @@ module Pikuri
     # stores and sends/imports nothing itself (+DESIGN.md+,
     # +ideas/thunderbird.md+).
     #
+    # == One instance per agent
+    #
+    # An instance mints its own snapshot base and owns the {Gloda} / {Calendar}
+    # it builds (closing them on the agent's +on_close+), so handing one
+    # extension to two agents puts two backends on one snapshot path, where
+    # they +cp -f+ under each other's open fd. Give each agent its own
+    # extension. To share the ~1 s index rebuild between agents instead, share
+    # the *backend*: both are +P_shared_locked+ (see {Gloda}'s +== Sharing+),
+    # so a host builds one and registers the tools on their +backend:+ keyword
+    # itself. There is deliberately no +gloda:+ keyword here — the seam would
+    # have to hand this class's +on_close+ ownership back to the host, and no
+    # host has asked yet.
+    #
     # The extension also contributes the surface's prompt guidance via
     # {#system_prompt_snippets} (the Os/Code precedent), so a host prompt stays
     # a thin identity base and adding the extension brings the tools *and* their

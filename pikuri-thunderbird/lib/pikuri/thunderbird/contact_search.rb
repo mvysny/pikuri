@@ -16,8 +16,8 @@ module Pikuri
     # sender of received mail can surface, so the human reviewing the To field
     # stays the last line (same posture as {ComposeGuard}).
     #
-    # Sharing: +P_one_agent+ — no state of its own, but the {Gloda} backend it
-    # queries is; see its +== Sharing+.
+    # Sharing: +P_shared_locked+ — no state of its own, and the {Gloda}
+    # backend it queries locks; see that class's +== Sharing+.
     class ContactSearch < Pikuri::Tool
       # @return [Integer] default / max candidates returned (a short
       #   disambiguation list, not a mailbox scan).

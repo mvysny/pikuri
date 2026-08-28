@@ -18,11 +18,12 @@ production.
 For the record, so the list below has a baseline. 35 tools:
 
 - **`P_stateless`** (4) — `calculator`, both `fileindex_*`, `recall`.
-- **`P_shared_locked`** (6) — the three `vectordb_*`, both plan-mode tools,
-  `web_search`.
+- **`P_shared_locked`** (6, now 11) — the three `vectordb_*`, both plan-mode
+  tools, `web_search`; plus the five Thunderbird read tools, which item 4
+  moved.
 - **`P_shared_benign`** (2) — `fetch`, `web_scrape` (the on-disk `UrlCache`).
-- **`P_one_agent`** (23) — the file tools, `bash`, `git_clone`, the four
-  `task_*`, `skill`, `lsp`, `mcp_connect`, `agent`, all seven
+- **`P_one_agent`** (23, now 18) — the file tools, `bash`, `git_clone`, the
+  four `task_*`, `skill`, `lsp`, `mcp_connect`, `agent`, and two of the seven
   `thunderbird_*`.
 
 The interesting result is that a tool is a value object holding a `Proc`, so
@@ -71,11 +72,16 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
    TUI work, and a TUI is one agent. The cost of being wrong is bounded and
    visible (jdtls twice is slow, not incorrect), so reopen if it ever bites
    rather than building for a host nobody has asked for.
-4. **`Gloda` / `Calendar` — one instance per agent, or one lock.** The
-   freshness rebuild swaps the connection under a concurrent query. Sharing one
-   behind a lock would be *better* than one-per-agent (the ~1 s FTS5 rebuild
-   would be paid once, not N times), so this is the case where the improvement
-   buys something measurable rather than just safety.
+4. **`Gloda` / `Calendar` — done (2026-08-28), now `P_shared_locked`.** A
+   `Mutex` closes the rebuild-swaps-the-connection race, and sharing became the
+   *better* wiring rather than merely the safe one. Everything durable landed
+   elsewhere: the contracts in each class's `== Sharing`, the
+   why-a-lock-here-but-not-for-item-3 fork in `DECISIONS.md`
+   `D_gloda_locks_mcp_does_not`. One thing the sweep got wrong and is worth
+   remembering while reading the rest of this list: the documented race was not
+   the real hazard — `Extension` *reuse* was, where two backends land on one
+   snapshot path and `cp -f` under each other's open fd. The postures were a
+   map of races; they did not point at the lifecycle bug next to them.
 5. **`Listener::Terminal` — leave it.** Scrambled stdout is a `bin/` script's
    problem, and the standing rule is that a demo's shortcuts are not pikuri
    policy: a TUI with per-tab buffers doesn't have this problem at all.

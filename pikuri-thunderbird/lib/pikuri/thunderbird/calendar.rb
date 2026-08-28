@@ -34,8 +34,13 @@ module Pikuri
     #
     # {#close} closes the snapshot connections.
     #
-    # Sharing: +P_one_agent+, as {Gloda} — a freshness rebuild replaces the
-    # connection a concurrent query would be using.
+    # == Sharing
+    #
+    # +P_shared_locked+, on {Gloda}'s terms and for its reasons — see that
+    # class's +== Sharing+ for the contracts (lock spans the query, no
+    # re-entry, {#close} needs no refcount, +cache_dir+ stays unshared). The
+    # only difference is shape: this class has no +with_fresh_db+ seam, so the
+    # guard sits on each public query instead of one chokepoint.
     class Calendar
       LOGGER = Pikuri.logger_for('Thunderbird::Calendar')
 
@@ -58,6 +63,7 @@ module Pikuri
         end
         @conns = {}
         @generations = {}
+        @lock = Mutex.new
       end
 
       # @return [Boolean] whether any calendar store exists on disk (the
@@ -69,8 +75,10 @@ module Pikuri
       #   means every calendar is memory-only (Offline Support off); the
       #   tool turns that into a self-fixing observation.
       def event_count
-        ensure_fresh
-        @conns.values.sum { |db| db.get_first_value('SELECT count(*) FROM cal_events').to_i }
+        @lock.synchronize do
+          ensure_fresh
+          @conns.values.sum { |db| db.get_first_value('SELECT count(*) FROM cal_events').to_i }
+        end
       end
 
       # Search events by title / description / location.
@@ -102,9 +110,13 @@ module Pikuri
       # @return [Array<Hash>] +[{event_id:, title:, start: Time, end: Time,
       #   all_day: Boolean, recurring: Boolean, start_tz:, end_tz:, location:}, …]+
       def search(query:, limit:, after: nil, before: nil, recurring: nil)
-        ensure_fresh
         words = query.to_s.scan(/[[:alnum:]]+/).map { |w| fold(w) }
-        rows = @conns.values.flat_map { |db| search_db(db, words:, after:, before:) }
+        # Only the fetch is guarded — the folding and ranking below run on
+        # materialized rows and touch no connection.
+        rows = @lock.synchronize do
+          ensure_fresh
+          @conns.values.flat_map { |db| search_db(db, words:, after:, before:) }
+        end
         # Group on the *base* UID (see #base_uid), not the raw id, so Google's
         # this-and-following splits fold into one series instead of 20+ hits.
         series = rows.group_by { |h| base_uid(h[:event_id]) }.map { |_uid, group| fold_series(group) }
@@ -130,26 +142,33 @@ module Pikuri
       # @return [Hash, nil] the search shape plus +:description+, +:status+,
       #   and +:attendees+ (see {#attendees}), or +nil+ if not found.
       def read(event_id:)
-        ensure_fresh
-        @conns.each_value do |db|
-          # A recurring UID has several rows (master + occurrence exceptions);
-          # prefer the master (recurrence_id NULL sorts first) for a stable read.
-          row = db.execute(<<~SQL, [event_id]).first
-            SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, ical_status
-            FROM cal_events WHERE id = ?
-            ORDER BY (recurrence_id IS NOT NULL) LIMIT 1
-          SQL
-          next unless row
+        @lock.synchronize do
+          ensure_fresh
+          @conns.each_value do |db|
+            # A recurring UID has several rows (master + occurrence exceptions);
+            # prefer the master (recurrence_id NULL sorts first) for a stable read.
+            row = db.execute(<<~SQL, [event_id]).first
+              SELECT id, title, event_start, event_end, event_start_tz, event_end_tz, flags, ical_status
+              FROM cal_events WHERE id = ?
+              ORDER BY (recurrence_id IS NOT NULL) LIMIT 1
+            SQL
+            next unless row
 
-          return build_event(row).merge(properties(db, event_id), attendees: attendees(db, event_id))
+            return build_event(row).merge(properties(db, event_id), attendees: attendees(db, event_id))
+          end
         end
         nil
       end
 
+      # Idempotent, and safe while another agent shares this instance — the
+      # next query reopens.
+      #
       # @return [void]
       def close
-        @conns.each_value(&:close)
-        @conns.clear
+        @lock.synchronize do
+          @conns.each_value(&:close)
+          @conns.clear
+        end
       end
 
       private

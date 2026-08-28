@@ -39,26 +39,40 @@ module Pikuri
     # fire mid-conversation (desirable: the views then see new mail). See
     # {DatabaseSnapshot}.
     #
-    # Immutable (holds no external state beyond its own snapshot/connection);
-    # {#close} is required for orderly teardown.
+    # Holds no external state beyond its own snapshot + connection, but {#close}
+    # is required for orderly teardown.
     #
-    # Sharing: +P_one_agent+ — {#with_fresh_db} can swap the snapshot and
-    # rebuild the FTS5 index mid-call, so a concurrent query would be reading a
-    # connection this one is replacing, and the generation counter guarding that
-    # is unguarded. One instance per agent (the copy is per-process already, see
-    # {Pikuri::Paths.new_temp}); serializing behind a lock would also work and
-    # would then share the rebuild cost.
+    # == Sharing
+    #
+    # +P_shared_locked+, and sharing beats one-per-agent: the snapshot copy and
+    # the ~1 s FTS5 rebuild are then paid once for the machine, not once each.
+    # Three contracts come with that:
+    #
+    # * The lock is held **across the caller's block**. Releasing it at the
+    #   +yield+ would hand out exactly the connection a rebuild then closes, so
+    #   a rebuild parks a second agent for ~1 s — the cost it would have paid
+    #   alone anyway; every other query is local SQLite.
+    # * A view may therefore never nest {#with_fresh_db} inside another (the
+    #   guard is a +Mutex+, not a +Monitor+).
+    # * {#close} needs no refcount: it drops the fd, and the next
+    #   {#with_fresh_db} reopens the same copy. A co-owner pays a rebuild,
+    #   never a failure.
+    #
+    # The +cache_dir+ is what must stay unshared — two instances over one
+    # snapshot path +cp -f+ under each other's open fd.
     class Gloda
       LOGGER = Pikuri.logger_for('Thunderbird::Gloda')
 
       # @param gloda_path [String] path to +global-messages-db.sqlite+.
-      # @param cache_dir [String] private 0700 dir for the snapshot copy.
+      # @param cache_dir [String] private 0700 dir for the snapshot copy. Must
+      #   be this instance's alone — see the +== Sharing+ section.
       # @return [Gloda]
       def initialize(gloda_path:, cache_dir:)
         @source = gloda_path
         @snapshot = DatabaseSnapshot.new(source: gloda_path, dir: cache_dir)
         @db = nil
         @indexed_generation = nil
+        @lock = Mutex.new
       end
 
       # @return [Boolean] whether the Gloda index file exists (the mail /
@@ -72,33 +86,48 @@ module Pikuri
       #
       #   gloda.with_fresh_db { |db| db.execute('SELECT count(*) FROM messages') }
       #
+      # The lock spans the block, so the yielded connection cannot be swapped
+      # mid-query and the block must not re-enter (see +== Sharing+).
+      #
       # @yield [SQLite3::Database] the fresh snapshot connection.
       # @return [Object] the block's value.
       def with_fresh_db
-        ensure_fresh
-        yield @db
+        @lock.synchronize do
+          ensure_fresh
+          yield @db
+        end
       end
 
       # Close the snapshot connection (the snapshot dir itself is
-      # finalizer-reaped). Idempotent.
+      # finalizer-reaped). Idempotent, and safe while another agent shares this
+      # instance — the next {#with_fresh_db} reopens.
       #
       # @return [void]
       def close
-        @db&.close
-        @db = nil
+        @lock.synchronize { close! }
       end
 
       private
 
+      # {#close} without the lock — the form the already-holding callers use;
+      # +Mutex+ is not reentrant.
+      #
+      # @return [void]
+      def close!
+        @db&.close
+        @db = nil
+      end
+
       # (Re)take the snapshot + rebuild the FTS5 index iff the live Gloda
-      # generation differs from what the current index was built from.
+      # generation differs from what the current index was built from. Callers
+      # hold the lock.
       #
       # @return [void]
       def ensure_fresh
         live = DatabaseSnapshot.change_counter(@source)
         return if @db && @indexed_generation && live == @indexed_generation
 
-        close # release the fd before cp overwrites the copy in place
+        close! # release the fd before cp overwrites the copy in place
         @snapshot.refresh
         open_and_index
         @indexed_generation = @snapshot.generation

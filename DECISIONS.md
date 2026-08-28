@@ -79,6 +79,81 @@ design.
 
 ---
 
+## D_gloda_locks_mcp_does_not — A lock where it is one method, one-agent-only where it is a pool (2026-08-28)
+
+**Status:** Accepted; implemented 2026-08-28. {Pikuri::Thunderbird::Gloda}
+and {Pikuri::Thunderbird::Calendar} are `P_shared_locked`; MCP and LSP stay
+`P_one_agent`. The postures and their contracts live in each class's
+`== Sharing`.
+
+**Context.** `D_tool_sharing_postures` left a per-tool list of "should this
+one be improved?" Two items looked identical — an unguarded collaborator
+that a second agent would corrupt — and got opposite answers on the same
+day, which is exactly the kind of split that reads as inconsistency later.
+
+Nothing in `lib/` runs two agents concurrently, so *demand* cannot be the
+discriminator: it is equally absent for both.
+
+**Decision.** The discriminator is the **size of the fix**, not the size of
+the win.
+
+Gloda's entire hazard is one method. `#with_fresh_db` closes the
+connection, re-copies the snapshot and rebuilds the FTS5 index, so a
+concurrent reader holds a handle the rebuild is closing. A `Mutex` around
+that method and `#close` is the whole fix, and `#close` turns out to be
+*already* benign under sharing — it drops the fd and the next call reopens
+the same copy, so a co-owner pays a rebuild rather than a failure. That is
+why no refcount is needed, and why the change is five lines rather than a
+lifecycle.
+
+MCP and LSP need a **pool**: refcounted child processes, and a `#close`
+that must not kill another caller's in-flight JSON-RPC request. There is
+no five-line version. So they stay one-agent-only, on the reasoning in
+`ideas/concurrent-tool-use.md` — both are coding tooling, coding is TUI
+work, and a TUI is one agent; being wrong is slow (jdtls twice), never
+incorrect.
+
+The win is worth naming because it is not merely safety: sharing one Gloda
+pays the multi-hundred-MB snapshot copy and the ~1 s index rebuild once for
+the machine instead of once per agent — and the rebuild is not rare, since
+Gloda's change counter bumps on read/star/tag flips during ordinary triage.
+
+**Alternatives rejected.**
+
+- **Close item 4 as `P_one_agent` too, for symmetry with MCP/LSP.** The
+  honest competitor, and the one the house rules lean toward — five lines
+  nothing exercises is speculative work for a host nobody has asked for.
+  It loses because the asymmetry above is real: declining a *pool* and
+  declining a *mutex* are not the same refusal, and pretending they are
+  would have made the eventual multi-agent host pay a redesign for what a
+  keyword and a lock buy now. The regression guard is the spec: it fails
+  with the lock removed (verified), so the lock is not decoration.
+- **A process-wide `Gloda.for(path:)` registry, refcounted.** The shape
+  that "share the rebuild" first suggests. Rejected on two counts: it
+  reintroduces the hidden cross-agent global that `D_per_process_temp`
+  removed, and the refcount it exists to provide is unnecessary once
+  `#close` is benign. Sharing is expressed by *handing the same object to
+  both agents*, which needs no registry.
+- **An `Extension.new(gloda:)` injection seam, now.** Deferred, not
+  refused. The seam has to hand `on_close` ownership back to the host, and
+  that is a lifecycle decision worth making with a real host in front of
+  it. Until then a host that wants sharing builds the backend and registers
+  the tools on their existing `backend:` keyword itself — no new API. Left
+  as a stated non-feature in {Pikuri::Thunderbird::Extension}'s yardoc so
+  the next reader doesn't re-derive the question.
+- **Giving `Calendar` a `with_fresh_dbs` seam to match Gloda's.** Pure
+  symmetry; it would restructure three working methods to make two classes
+  rhyme. The guard sits on each public query instead, and the class doc
+  says so.
+
+**Consequences.** The five Thunderbird read tools inherit
+`P_shared_locked` from their backend. `thunderbird_mail_compose` stays
+`P_one_agent` on its *own* account — the human at the compose window is the
+serialization point — which is the `D_tool_sharing_postures` rule that the
+two axes stay independent, now with a worked example.
+
+---
+
 ## D_tool_cancellation — An interruptible sleep on the token, opted into per tool (2026-08-28)
 
 **Status:** Accepted; implemented 2026-08-28 as

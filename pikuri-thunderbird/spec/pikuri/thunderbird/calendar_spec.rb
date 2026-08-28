@@ -58,6 +58,17 @@ describe Pikuri::Thunderbird::Calendar do
     end
   end
 
+  # P_shared_locked: one agent's on_close must not strand a co-owner, so #close
+  # only drops the connections and the next query reopens them.
+  it 'reopens after a co-owner closes, rather than failing' do
+    with_calendar do |cal|
+      assert_equal 4, cal.event_count
+      cal.close
+      assert_equal 4, cal.event_count
+      assert_equal 'Team standup', cal.read(event_id: 'e1')[:title]
+    end
+  end
+
   it 'counts cached events' do
     with_calendar { |cal| assert_equal 4, cal.event_count }
     Dir.mktmpdir do |dir|
