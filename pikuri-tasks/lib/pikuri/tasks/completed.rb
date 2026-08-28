@@ -6,6 +6,9 @@ module Pikuri
     # +completed+. Same shape as {InProgress} (status in the tool name,
     # item addressed by numeric +#id+). Returns {List#render}; a bad id
     # returns +"Error: no such task id"+ plus the current list.
+    #
+    # Sharing: +P_one_agent+ — closes over one agent's {List}; see its
+    # +== Sharing+.
     class Completed < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

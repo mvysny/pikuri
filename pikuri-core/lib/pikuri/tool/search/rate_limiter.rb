@@ -14,11 +14,35 @@ module Pikuri
       # without running the block — so a rate-limited or bot-blocked provider
       # isn't hammered with retries.
       #
-      # The mutex is held across the block, so concurrent callers serialize —
-      # what {DuckDuckGo} needs to keep its IP-spacing throttle correct under
-      # concurrent agents. Uses wall-clock {Time.now}, not monotonic: the
-      # intervals (1s–5min) are well above any NTP step, and {Time.now} keeps
-      # tests fakeable with Timecop.
+      # Uses wall-clock {Time.now}, not monotonic: the intervals (1s–5min) are
+      # well above any NTP step, and {Time.now} keeps tests fakeable with
+      # Timecop.
+      #
+      # == Sharing
+      #
+      # +P_shared_locked+, and sharing is *mandatory*: a limiter must be scoped
+      # to the resource it protects, which here is one egress IP and one API
+      # key's quota — never one agent. Hence each provider holds its limiter in
+      # a class-level constant, so every agent in the VM queues behind the same
+      # one. Per-agent limiters would let ten agents fire ten simultaneous
+      # requests from one IP and earn exactly the ban this class exists to
+      # avoid. (Contrast {Pikuri::Agent::Listener::RateLimited}, which paces one
+      # renderer's repaints and is therefore per listener chain.)
+      #
+      # Two consequences of that scope, both correct and both surprising:
+      #
+      # * **It is a global queue, not just a pacer.** The mutex is held across
+      #   the block — the HTTP call included — so ten agents searching at once
+      #   serialize. A thread parked in +Mutex#synchronize+ has no timeout and
+      #   no queue position, and {Pikuri::Agent::Control::Cancellable} cannot
+      #   reach it: a user cancel is observed only after this call returns.
+      # * **The circuit breaker is global too.** One agent tripping the
+      #   provider's soft-block puts every other agent into the same cooldown.
+      #   Right, because the block is IP-wide and the others were blocked
+      #   anyway — but from the host's side nine agents lose a provider for
+      #   something the tenth did.
+      #
+      # Thread-safe.
       class RateLimiter
         # @param min_interval [Float] minimum seconds between consecutive
         #   block invocations. {#call} sleeps if a previous call was more

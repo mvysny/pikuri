@@ -29,7 +29,9 @@ module Pikuri
     # (see +ideas/thunderbird.md+), so the whole capability waits rather than risk
     # it. A self-authored event with no attendees can't invite anyone.
     #
-    # Thread-safety: not thread-safe.
+    # Sharing: +P_one_agent+ — it holds a {Profile} and writes an +.ics+ per
+    # call. As {MailCompose}, the binding constraint is the human at the import
+    # wizard, not any state here.
     class CalendarCreate < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Thunderbird::CalendarCreate')
 

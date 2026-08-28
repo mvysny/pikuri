@@ -37,6 +37,13 @@ module Pikuri
     # makes the expensive axis worse. A `paths:` trigger is therefore a
     # relevance filter on the catalog *entry*, never a body preloader; see
     # `DECISIONS.md` `D_skill_path_activation`.
+    #
+    # Sharing: +P_one_agent+ — the {Activation} it resolves through is *this*
+    # conversation's set of fired +paths:+ gates, and a promotion one agent
+    # earned must not hand the name to an agent that was never told it. That
+    # {Activation} is itself thread-safe, which is exactly the case where
+    # thread-safety is no licence to share. {#for_sub_agent} hands a child a
+    # sealed view rather than this one.
     class SkillTool < Pikuri::Tool
       # Description shown to the LLM (opencode-shape; inventory omitted —
       # see the class header).

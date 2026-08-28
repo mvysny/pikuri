@@ -20,6 +20,12 @@ module Pikuri
       #
       # A mid-run +RuntimeError+ (network, embedder 5xx, backend down) comes back
       # as an +"Error: ..."+ observation, not an exploded turn.
+      #
+      # Sharing: +P_shared_locked+ — {Backend#replace_source} is atomic per
+      # source, so a concurrent {Search} never sees a zero-chunk gap and two
+      # concurrent reindexes converge on the same state. They also each pay the
+      # full embedding cost, so one agent's refresh blocking on another's is
+      # wasted money, not a wrong answer.
       class Reindex < Pikuri::Tool
         # @return [String] static description shown to the LLM,
         #   opencode-shape (summary + +Usage:+ bullets).

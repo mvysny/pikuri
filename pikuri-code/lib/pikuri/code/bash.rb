@@ -54,6 +54,19 @@ module Pikuri
     # model must redirect fds to genuinely background: +cmd >/dev/null 2>&1 &+.
     # Such commands stay in our pgroup and get SIGTERM on pikuri exit via
     # {Pikuri::Subprocess.cleanup!}; +nohup+ / +setsid+ plus redirection opt out.
+    #
+    # == Sharing
+    #
+    # +P_one_agent+, but only because of the {Pikuri::Workspace::Confirmer}: with
+    # a shared {Confirmer::Terminal} two agents fight over one human's
+    # keystrokes. In substance this tool is stateless — every call spawns its
+    # own subprocess, and the {Pikuri::Workspace::Filesystem}, {Bash::Sandbox}
+    # and +passive_detector+ it holds are immutable — so under
+    # {Confirmer::AutoApprove} nothing stops one instance serving every agent.
+    #
+    # Concurrency the *commands* create is not pikuri's to serialize: ten agents
+    # running +bundle install+ in one workspace will corrupt each other's work
+    # exactly as ten shells would.
     class Bash < Pikuri::Tool
       # @return [Logger]
       LOGGER = Pikuri.logger_for('Bash')

@@ -58,6 +58,10 @@ module Pikuri
       # hands back a one-level listing of the root's entries so the model can
       # pick a subdir as +path+ and retry with no extra call (see
       # {Utils.oversized_root_refusal}).
+      #
+      # Sharing: +P_one_agent+ — as {Pikuri::Workspace::FileList}: no state of
+      # its own, but the {Pikuri::Workspace::Workspace} it searches is one
+      # agent's tree. +with_workspace+ rebinds a copy.
       class Glob < Pikuri::Tool
         # @return [Integer] hard byte cap on combined rg output. Same value as
         #   {Grep::MAX_BYTES}; re-declared rather than cross-referenced because

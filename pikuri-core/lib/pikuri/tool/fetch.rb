@@ -109,6 +109,11 @@ module Pikuri
     # OpenAI tool-call shape. Use for raw textual payloads (JSON, CSV,
     # +robots.txt+, source files); use {Tool::WEB_SCRAPE} for rendered pages.
     #
+    # Sharing: +P_shared_benign+ — no per-agent state, but {Fetch::CACHE} is
+    # process-wide (and on disk, so cross-process too): agent B's +fetch+ can
+    # be answered from agent A's download within the TTL. See
+    # {Pikuri::UrlCache} for the race and why it's harmless.
+    #
     # @return [Tool]
     FETCH = new(
       name: 'fetch',

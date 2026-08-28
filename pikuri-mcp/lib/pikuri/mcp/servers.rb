@@ -54,6 +54,18 @@ module Pikuri
   # native tools is deliberately not extended to MCP tools in v1; MCP-side
   # validation catches bad input, and the provenance prefix + audit log are the
   # compensating transparency.
+  #
+  # == Sharing
+  #
+  # +P_one_agent+ today, and accepted as such: one wiring, one agent. The
+  # +@wrappers+ / +@tools_cache+ / +@live_ids+ hashes are unguarded, and
+  # {#close} tears down child processes another agent might be mid-call on.
+  # {View} is the only sanctioned second reference, and it is a read-only facade
+  # onto the root that alone owns +#close+.
+  #
+  # Nothing about MCP itself demands this — a pool of servers behind a lock
+  # would serve N agents, and each agent needs only its own {Connect} set. It
+  # simply isn't built, so ten agents means ten sets of children.
   class Servers
     LOGGER = Pikuri.logger_for('Mcp::Servers')
     private_constant :LOGGER
@@ -362,6 +374,12 @@ module Pikuri
     # tools are already in the toolset). Each agent owns its own instance and
     # set — activation never propagates parent↔sub-agent (the no-inherit rule,
     # {Pikuri::SubAgent::SubAgentTool}).
+    #
+    # Sharing: +P_one_agent+ — the activation +Set+ answers "already connected"
+    # for *one* toolset, and the {Pikuri::Agent::ExtensionContext} it registers
+    # through belongs to one agent. Shared, it would tell agent B a server is
+    # connected while B's toolset lacks the tools. The {Servers} behind it is
+    # the shareable half.
     class Connect < Pikuri::Tool
       DESCRIPTION = <<~DESC
         Connect to an MCP (Model Context Protocol) server, adding its tools to your toolset for the rest of this conversation.

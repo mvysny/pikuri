@@ -41,6 +41,14 @@ require 'pikuri-extractors'
 examples_config_path = File.expand_path('~/.pikuri-examples-config.yaml')
 examples_config = File.exist?(examples_config_path) ? (YAML.safe_load_file(examples_config_path) || {}) : {}
 
+# The search keys moved under the `search:` block: a stale top-level key here
+# would just be ignored, silently meaning "no Brave".
+stale_search_keys = examples_config.keys & %w[brave_search_api_key exa_api_key]
+unless stale_search_keys.empty?
+  abort "#{examples_config_path}: #{stale_search_keys.join(' / ')} moved under the " \
+        '`search:` key (search: {brave_key:, exa_key:, engines: [...]}) — see book/chat.md'
+end
+
 server = examples_config['llm_server'] || 'http://localhost:8080'
 model = examples_config['llm_model'] || 'unsloth/Qwen3.6-35B-A3B-GGUF'
 streaming = false
@@ -168,10 +176,7 @@ begin
   ) do |c|
     c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: streaming)
     c.add_listener Pikuri::Agent::Listener::TokenLog.new
-    c.add_tool Pikuri::Tool::WebSearch.build(
-      brave_key: examples_config['brave_search_api_key'],
-      exa_key: examples_config['exa_api_key']
-    )
+    c.add_tool Pikuri::Tool::WebSearch.from_h(examples_config['search'])
     c.add_tool Pikuri::Tool::CALCULATOR
     c.add_tool Pikuri::Tool::WEB_SCRAPE
     c.add_tool Pikuri::Tool::FETCH

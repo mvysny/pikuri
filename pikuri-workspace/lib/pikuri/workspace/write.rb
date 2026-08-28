@@ -46,6 +46,11 @@ module Pikuri
     # +git add lib/new/dir/foo.rb+ mental model). If +mkdir_p+ succeeds but the
     # write fails, an empty dir is left — accepted for v1 (users have git). No
     # atomic temp+rename; plain +File.write+ — crash safety is "the user has git".
+    #
+    # Sharing: +P_one_agent+ — it consults one {Workspace}'s read record. The
+    # {Confirmer} is the sharper limit, though: {Confirmer::Terminal} cannot
+    # serve two agents at once (see its own +== Sharing+), and a shared
+    # {ReadOnly} makes read-only a VM-wide posture rather than this agent's.
     class Write < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.

@@ -36,6 +36,13 @@ module Pikuri
     # the project relativizes to a +../..+ form — still unique). Each workspace
     # owns its own record, so a read in one (a sub-agent's temp clone) never
     # satisfies an edit in another.
+    #
+    # Sharing: +P_one_agent+ — the read record is one conversation's, and
+    # {#clear_reads} is tied to that conversation's reset. Two agents on one
+    # composite would satisfy each other's read-before-edit gate: agent B could
+    # {Edit} a file only agent A had read, which is the gate failing open.
+    # {Filesystem} underneath is immutable policy and shares freely; give each
+    # agent its own +Workspace+ over the same +Filesystem+.
     class Workspace
       extend Forwardable
 

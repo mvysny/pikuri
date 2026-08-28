@@ -31,6 +31,12 @@ module Pikuri
       # Single-param surface (+query:+ only, no +top_k:+/+reranker:+ toggle):
       # retrieval depth and rerank choice are host policy baked into {Extension},
       # not something the LLM should tune mid-conversation.
+      #
+      # Sharing: +P_shared_locked+, and sharing is what you want — an index is
+      # expensive to build and is the same corpus for every agent, so ten
+      # agents over one {Backend} is the intended shape. {Backend::InMemory}
+      # locks; the server backends serialize on their own side; the embedder
+      # and reranker are stateless HTTP.
       class Search < Pikuri::Tool
         LOGGER = Pikuri.logger_for('VectorDb::Tools::Search')
 

@@ -18,6 +18,9 @@ module Pikuri
     # self-fixing observation telling the user the one-click fix rather than a
     # bare "no results" — and the same fact rides the description, so the LLM
     # can advise proactively before any empty search.
+    #
+    # Sharing: +P_one_agent+ — no state of its own, but the {Calendar} backend
+    # it queries is; see its +== Sharing+.
     class CalendarSearch < Pikuri::Tool
       DEFAULT_LIMIT = 15
       MAX_LIMIT = 50

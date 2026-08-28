@@ -19,6 +19,9 @@ module Pikuri
     # +offset+ / +limit+ page exactly as in {Pikuri::Workspace::Read},
     # windowed through {Pikuri::Extractor.extract_paged} (a +StringIO+ over
     # the stored text) with the same +cat -n+ + trailer, caps, and markers.
+    #
+    # Sharing: +P_stateless+ — the backend is a stateless module over a
+    # read-only index, so one instance serves any number of agents.
     class FileindexRead < Pikuri::Tool
       # @return [Integer] default +limit+ (lines per call); the shared
       #   page default, so it matches +read+.

@@ -79,6 +79,230 @@ design.
 
 ---
 
+## D_tool_sharing_postures — A yardoc posture per tool, not a machine-readable field (2026-08-28)
+
+**Status:** Accepted; implemented 2026-08-28 as a `Sharing:` line (or
+`== Sharing` section) on every tool, with the vocabulary defined once in
+{Pikuri::Tool} and the threading contract in {Pikuri::Agent}. The
+CLAUDE.md *Conventions* bullet carries the invariant and its grep tripwire.
+
+**Context.** A host wanting ten agents in one Ruby VM has to know, per
+tool, whether one instance may serve all ten. Nothing answered it.
+`Tool::CALCULATOR` obviously can (it is a shared constant, so there is no
+other way); `Tool::WebSearch` looked like the interesting case and turned
+out not to be, because its throttle state is neither per agent nor per
+instance (see `D_rate_limiter_scope`); and the genuinely dangerous cases
+were not tools at all. The house style had the *habit* without the
+convention — four files saying four different things ("Agent-thread-confined",
+"Thread-safe (the one backend that locks)", "Thread-safe.", "frozen,
+session-less and shared") and thirty-odd saying nothing.
+
+Nothing in `lib/` runs two agents concurrently today, so every failure here
+is a host's, discovered in production. That is exactly the argument for
+writing the answer down per tool rather than finding it per bug: these
+failures are silent — a wrong observation, a lost keystroke — never a raise.
+
+**Decision.** Two halves.
+
+**`Agent` is thread-unsafe, and that is the whole guarantee.** The caller
+prevents concurrent access by whatever means it likes — a thread per agent,
+a mutex around every call, an actor mailbox. Deliberately *not*
+"agent-thread-confined": a confinement guarantee is stronger, and it would
+invite keying state off `Thread.current`, which nothing here supports since
+an agent may legitimately be driven from a different thread on each turn.
+{Control::Cancellable} and {Control::Interloper} stay the two sanctioned
+cross-thread doors, which is why they carry locks and the agent does not.
+
+**Every tool declares one of four postures**, in its yardoc, naming the
+collaborator that owns the state: `P_stateless`, `P_shared_locked`,
+`P_shared_benign` (an unprotected race the doc argues is harmless), and
+`P_one_agent`. Because agents serialize their own calls, "may a second
+agent have this?" and "is this reachable from two threads?" are one
+question — which is what makes a single per-tool answer sufficient.
+
+Two things the vocabulary is shaped to prevent. **`P_one_agent` is a fine
+answer, not a defect** — most of what a tool knows is one conversation's
+business, and MCP, LSP and the terminal confirmer are accepted as
+one-agent-only today. And **the two axes stay independent**:
+`Skill::Activation` locks *and* is per-agent, so thread-safety is never a
+licence to share.
+
+**Alternatives rejected.**
+
+- **A machine-readable `Tool#sharing` field, alongside `trifecta_legs`.**
+  The tempting one, and it will be proposed again: same shape, computed at
+  construction, same "wiring time is when you know". It fails the test the
+  legs pass — the legs have a *consumer*, {Pikuri::Trifecta}, which renders
+  a report a human acts on. A `sharing:` field has none. A host cannot
+  enforce it (it holds the tool, so it has already decided) and the
+  framework cannot check it, because a tool does not know its agent. It
+  would be a comment with a type signature and a second place to drift.
+  Reopen if a consumer appears — a `Configurator` that refuses a
+  `P_one_agent` tool already wired elsewhere would need the tool to know its
+  agent first.
+- **A `== Sharing` section on every tool, uniformly.** The original ask. It
+  loses to the `writing-rdoc` rule that a header fronting a one-line
+  contract *is* the noise: for most tools the honest answer is one line
+  deferring to a collaborator, and thirty near-identical section headers
+  would train readers to skip the five that carry real findings. So the
+  posture is universal and the *heading* is earned — `== Sharing` where the
+  story runs long (`Bash`, `WebSearch`, `Confirmer::Terminal`, `LspTool`,
+  `Mcp::Servers`, `Tasks::List`), a one-line tail elsewhere. Coverage is
+  greppable either way.
+- **Making the shared constants per-agent factories** (`Tool.calculator`
+  instead of `Tool::CALCULATOR`). Moots the question for exactly three
+  tools, costs the readability the constants buy, and says nothing about the
+  tools a host constructs — which is where all the state actually lives.
+- **Locking everything so any tool may be shared.** Mutexes on
+  `Tasks::List`, the workspace read record, the MCP wrapper hash. It would
+  make sharing *safe* without making it *correct*: a shared task list still
+  lets agent A complete agent B's plan. The first failure is semantic, and a
+  lock cannot fix a semantic failure.
+- **Leaving it to a spec.** `rake test` is single-threaded, and a race that
+  reproduces one run in fifty is worse than no test. What is testable is
+  *structure* (a limiter constant is class-level; one workspace's read record
+  does not answer for another's), and that is not what a host needs told.
+
+**Consequences.** Nothing enforces the postures, so the doc is the whole
+contract — a `P_one_agent` tool wired twice fails silently, exactly as
+before, only now the reader was warned. The sweep also surfaced four things
+a threaded host would hit, none of them in a `Tool`, and sorting them
+taught the more useful lesson: `Paths.new_temp` (per *process*, so a host
+memoizing "the" temp dir hands ten agents one scratch space) and `Agent`
+itself are real, while `Confirmer::Terminal` (two agents interleave prompts
+and either can consume the other's keystroke) and `Listener::Terminal`
+(scrambled stdout) are **demo chrome, not defects** — both exist for
+pikuri's own single-threaded `bin/` scripts, and a real host implements
+those seams itself. Proposing a `Confirmer::Serialized` decorator for the
+first was library work whose value rested entirely on a demo's shortcut,
+which CLAUDE.md's `bin/` doctrine exists to prevent; the fix was to say so
+in the class doc. So a posture on a demo-only class states a *limit of that
+class*, never a backlog item. Open items live in
+`ideas/concurrent-tool-use.md`.
+
+## D_rate_limiter_scope — A limiter is scoped to the resource it protects, never to the agent (2026-08-28)
+
+**Status:** Accepted; already the implementation
+({Pikuri::Tool::Search::DuckDuckGo::LIMITER} and its siblings are
+class-level constants) — logged 2026-08-28 because the fork is invisible in
+the code and a per-agent limiter is the plausible "fix" someone reaches for.
+
+**Context.** "Is the DDG rate limiter per agent or per tool instance?" is
+the natural question and both answers are wrong. What the limiter protects
+is one egress IP (DuckDuckGo bans IPs that hammer the HTML endpoint) and one
+API key's quota (free-tier Brave meters 1 req/s per key). Neither is a
+property of an agent, and neither is a property of an `Engines` instance —
+a host that builds one cascade per agent has not changed how many requests
+leave the machine.
+
+**Decision.** Scope a limiter to the resource, which here means a
+class-level constant per provider: every agent in the VM queues behind the
+same limiter, whether hosts share one `web_search` tool or build ten.
+`Pikuri::Agent::Listener::RateLimited` is the same rule pointing the other
+way — it paces one renderer's repaints, a per-listener resource, so
+`for_sub_agent` mints a fresh one per child.
+
+**Alternatives rejected.**
+
+- **A limiter per agent** (or per `Engines`). Ten agents would fire ten
+  simultaneous requests from one IP and earn precisely the ban the class
+  exists to avoid. It is not a tuning choice; it defeats the mechanism.
+- **A limiter per process, in a registry keyed by provider.** What the
+  class-level constant already is, with indirection and a lookup.
+- **Widening the scope to the machine** (a lock file, so two pikuri
+  processes pace each other). Correct in principle — the IP is shared across
+  processes too — and deferred: it buys a rarer collision at the cost of
+  file-locking on the search path, and nothing has reported a ban from
+  running two pikuris.
+
+**Consequences.** Two, both documented on {Search::RateLimiter} and both
+surprising the first time. The mutex is held **across the HTTP call**, so it
+is a global queue, not just a pacer: ten agents searching at once serialize,
+and a thread parked in `Mutex#synchronize` has no timeout, no queue position
+and is unreachable by `Control::Cancellable` — a user cancel is observed
+only after the call returns. And the circuit breaker is global, so one agent
+tripping a soft-block cools the provider down for all ten (right, since the
+block is IP-wide, but it reads as nine agents punished for the tenth's
+search). Whether the stall deserves a `try_lock`-and-fall-through-the-cascade
+fix is open in `ideas/concurrent-tool-use.md`.
+
+## D_search_engine_selection — The engine list is a validated set, and DuckDuckGo lost its exemption (2026-08-27)
+
+**Status:** Accepted; implemented 2026-08-27 as
+{Pikuri::Tool::Search::Engines.resolve} / `.config_from_h` +
+`Tool::WebSearch.from_h`, wired from the `search:` block of
+`~/.pikuri-examples-config.yaml`.
+
+**Context.** `Engines#initialize` seeded the cascade with
+`[DuckDuckGo.new]` and only ever *appended* keyed providers, so DuckDuckGo
+was unconditional — and it is the provider most worth turning off. It is
+the one that gets bot-blocked and rate-limited, and the one whose privacy
+story is weakest for anyone who went and paid Brave (DDG relays web results
+over Bing, so the query still reaches Microsoft). A host with a Brave key
+could add Brave; it could not stop half its searches going to DDG anyway,
+because the cascade shuffles.
+
+**Decision.** An explicit `engines:` selection, validated at both host
+entry points, plus a `search:` config block grouping it with the keys it
+depends on:
+
+```yaml
+search:
+  brave_key: BSA...
+  exa_key: xyz
+  engines: [brave]
+```
+
+Four rules carry it. **`engines:` is a set, not a preference order** — it
+normalizes to `ENGINE_NAMES` order and the per-call shuffle stands.
+**Absent `engines:` means "whatever the keys say"** — DuckDuckGo plus every
+provider whose key is present, which is exactly the old behavior, so a
+keyless host still gets DuckDuckGo and no config file is required to chat.
+**An engine named without its key is refused**, as is an empty list, a
+repeat, and an unknown name; a key supplied without naming its engine is
+*fine* (parking a key you are not using today is not a mistake). And **the
+allowlist is closed at three** — the `web_search` leg is
+`egress_destination: :tool_vouched` on the strength of pikuri owning the
+destination set, and a config file picking from a hardcoded list of three
+keeps that claim true where a `url:` field would have voided it.
+
+**Alternatives rejected.**
+
+- **An ordered preference list** (try Brave, fall back to DDG). It reads
+  like the obvious meaning of `[brave, duckduckgo]`, which is exactly why
+  the set had to be documented loudly — but it is a different feature. The
+  shuffle exists to spread quota across providers that each meter you, and
+  priority order would concentrate every query on the head of the list
+  until it exhausts. A host that wants Brave only can say so in one word.
+- **A `disable_duckduckgo:` boolean.** Solves today's ask and nothing else;
+  a fourth provider makes it two booleans, then three. A list of names
+  states the whole selection in one place and its error messages can
+  enumerate what is valid.
+- **Requiring `engines:` explicitly.** Loud, but it puts a mandatory config
+  file in front of a first chat, against the project's "start slowly"
+  positioning — and the derived default is not a guess, it is what the keys
+  already said.
+- **Coercing bad input instead of raising** (drop unknown names, silently
+  ignore an engine with no key). The failure mode is worse search results
+  weeks later, with nothing in the log saying why. Same argument as
+  {Pikuri::Lsp::Registry.from_h}: a config file cannot be type-checked by
+  the person writing it, so it is validated on the way in.
+- **Reading keys from `ENV`.** Standing rule, unchanged: CLAUDE.md
+  "Environment is not a secret store".
+- **Leaving the keys top-level and adding only `search_engines:`.** No
+  migration to pay for, but it splits three settings that are only
+  meaningful together, and the pairing is what makes an
+  engine-without-a-key refusal legible at the point of writing.
+
+**Consequences.** Moving `brave_search_api_key` / `exa_api_key` under
+`search:` breaks existing config files, and an unrecognized top-level key
+is *silently ignored* by every bin — the failure would read as "Brave
+quietly stopped working". So each bin that wires search carries a
+three-line guard aborting on a stale top-level key; it is a migration
+tripwire, deletable once no config file in the wild has one. Order in
+`engines:` will keep looking like priority to anyone who has not read the
+docs, which is a cost the set accepts.
+
 ## D_history_value_type — A conversation leaves as a typed value, not a bag of hashes (2026-08-27)
 
 **Status:** Accepted; implemented 2026-08-27 as {Pikuri::Agent::History} +

@@ -8,8 +8,11 @@ Self-contained "operate on a directory tree" toolkit:
   project root + explicit readable / writable prefix lists, with an
   optional ephemeral temp playground. Rejects `..`-escapes and
   symlinks that resolve outside the configured roots.
-- `Pikuri::Workspace::Confirmer` — abstract base + `AUTO_APPROVE` /
-  `TERMINAL` for user-state mutations.
+- `Pikuri::Workspace::Confirmer` — abstract base for approving
+  user-state mutations, plus `AUTO_APPROVE` (headless) and `Terminal`
+  (stdin/stdout). `Terminal` is written for pikuri's own single-threaded
+  demo scripts — a real app implements this seam itself and reads
+  `Terminal` as the worked example.
 - Five file tools: `Pikuri::Workspace::Read`,
   `Pikuri::Workspace::Write`, `Pikuri::Workspace::Edit`,
   `Pikuri::Workspace::Grep`, `Pikuri::Workspace::Glob`.
@@ -31,6 +34,7 @@ require 'pikuri-core'
 require 'pikuri-workspace'
 
 workspace = Pikuri::Workspace::Filesystem.new(project_root: Dir.pwd)
+# Fine for a script like this one; write your own for a real app.
 confirmer = Pikuri::Workspace::Confirmer::Terminal.new
 
 agent = Pikuri::Agent.new(

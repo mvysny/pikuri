@@ -12,6 +12,9 @@ module Pikuri
     # list on one near-miss byte — a stray quote or trailing comma; an id
     # is two digits it just read back). Returns {List#render}; a bad id
     # returns +"Error: no such task id"+ plus the current list.
+    #
+    # Sharing: +P_one_agent+ — closes over one agent's {List}; see its
+    # +== Sharing+.
     class InProgress < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

@@ -8,6 +8,9 @@ module Pikuri
     # distinction the tool names carry, not the list. A deleted id is never
     # reused ({List#add}). Returns {List#render}; a bad id returns
     # +"Error: no such task id"+ plus the current list.
+    #
+    # Sharing: +P_one_agent+ — closes over one agent's {List}; see its
+    # +== Sharing+.
     class Delete < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

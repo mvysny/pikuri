@@ -11,6 +11,11 @@ module Pikuri
     # on and the observation steers a refine-and-re-present, never an edit. The
     # LLM-authored plan is passed as the request +detail+, so the Confirmer
     # neutralizes it before display.
+    #
+    # Sharing: as {EnterPlanMode} — +P_shared_locked+ on the flag, and sharing
+    # it makes plan mode VM-wide. The {Pikuri::Workspace::Confirmer} pulls the
+    # other way ({Confirmer::Terminal} is +P_one_agent+), so a shared instance
+    # is only as shareable as the confirmer behind it.
     class ExitPlanMode < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC

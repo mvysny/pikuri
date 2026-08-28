@@ -7,6 +7,9 @@ module Pikuri
     # returns the full decoded body (Gloda has already MIME-decoded and
     # HTML-stripped it, so no markup noise) plus headers and attachment
     # names. Inbound-only.
+    #
+    # Sharing: +P_one_agent+ — no state of its own, but the {Gloda} backend it
+    # queries is; see its +== Sharing+.
     class MailRead < Pikuri::Tool
       # @return [Integer] hard cap on the body bytes returned (a runaway
       #   50k-char body would swamp the context).

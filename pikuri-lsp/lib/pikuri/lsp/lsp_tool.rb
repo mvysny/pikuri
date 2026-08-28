@@ -39,6 +39,19 @@ module Pikuri
     #
     # +private:+ is inherited from the workspace, never claimed here: the host
     # already asked the human whether this project is private.
+    #
+    # == Sharing
+    #
+    # +P_one_agent+, and accepted as such: one wiring, one agent. Three things
+    # bind it — a per-agent {Pikuri::Agent::Control::Cancellable}, a mutable
+    # +on_progress+ hook installed after construction, and {Servers}, whose
+    # open-document bookkeeping assumes one caller (a second agent's
+    # +didClose+ can land on a document the first is still asking about).
+    #
+    # Ten agents over one project therefore means ten registries and ten sets
+    # of child processes, which is the honest cost of not having built a shared
+    # server pool. Nothing here refuses the sharing; it just goes wrong
+    # quietly, so don't.
     class LspTool < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions; the operation list is generated from

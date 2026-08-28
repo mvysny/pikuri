@@ -37,6 +37,12 @@ module Pikuri
     # the sub-agent-only pool and never runs — it's replaced via
     # {#with_workspace} when a +git_repo_researcher+ session starts, so eager
     # construction would pay the +bwrap+ probe cost on every boot for nothing.
+    #
+    # Sharing: +P_one_agent+ — an instance is bound to one session's temp
+    # workspace, which is the whole point (a clone-RCE's blast radius is *that*
+    # throwaway tree). +with_workspace+ mints the per-session copy. The lazy
+    # sandbox memo is unguarded, so a shared instance could also pay the +bwrap+
+    # probe twice.
     class GitClone < Pikuri::Tool
       # URL schemes accepted. +https+ first (TLS) and +http+ as a
       # fallback for the rare public mirror. All other schemes are

@@ -67,6 +67,10 @@ module Pikuri
     # Webpage download + Markdown conversion tool — a thin wrapper over
     # {Tool::WebScrape.visit} in OpenAI tool-call shape.
     #
+    # Sharing: +P_shared_benign+ — as {Tool::FETCH}: no per-agent state, but
+    # {WebScrape::CACHE} is process-wide and on disk, so one agent's scrape
+    # answers another's within the TTL. See {Pikuri::UrlCache}.
+    #
     # @return [Tool]
     WEB_SCRAPE = new(
       name: 'web_scrape',

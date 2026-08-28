@@ -28,14 +28,18 @@ module Pikuri
     # {Pikuri::Agent}, shared by closure into all four task tools so every
     # mutation hits the same instance.
     #
-    # Agent-thread-confined: the loop dispatches tool calls sequentially,
-    # so there's no locking. Other threads (a UI rendering the list) must
-    # not touch a +List+ directly — they consume the {ListChanged} events
-    # {Extension#bind} wires onto the listener stream, whose +items+
-    # payload is an immutable snapshot safe to hand across threads.
-    #
     # Not persisted: dropped when the +Agent+ is collected, matching the
     # gem's "in-memory only" scope.
+    #
+    # == Sharing
+    #
+    # +P_one_agent+ — this is one conversation's plan, so two agents on one
+    # list would read and complete each other's tasks. Unguarded, and it needs
+    # no lock because its only caller is the agent whose tool calls are already
+    # serialized. Another thread (a UI rendering the list) must not touch a
+    # +List+ directly: it consumes the {ListChanged} events {Extension#bind}
+    # wires onto the listener stream, whose +items+ payload is an immutable
+    # snapshot safe to hand across threads.
     class List
       # @return [List]
       def initialize

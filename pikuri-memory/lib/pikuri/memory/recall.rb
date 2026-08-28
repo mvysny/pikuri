@@ -19,6 +19,14 @@ module Pikuri
     # newer-about-the-same-thing as current. Resolution lives in the
     # model's reasoning, not the store (DESIGN.md §"Supersede recall:
     # resolution is the consumer's job").
+    #
+    # Sharing: +P_stateless+ in pikuri's own state — the topic is an argument
+    # and the namespace is fixed at construction. Two agents sharing a
+    # +user_id+ *should* see each other's memories: durable cross-conversation
+    # recall is the gem's whole point. The caveat sits one level down —
+    # {Mem0Client} memoizes a Faraday connection and concurrent requests
+    # through one are untested here, so give each agent its own client if you
+    # fan out; they still share the store.
     class Recall < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Memory::Recall')
 

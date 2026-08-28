@@ -15,6 +15,9 @@ module Pikuri
     # with an +"Error: ..."+ string and adds nothing — the LLM resends a
     # corrected batch, and never has to reconcile a half-applied list. On
     # success returns {List#render}.
+    #
+    # Sharing: +P_one_agent+ — closes over one agent's {List}; see its
+    # +== Sharing+.
     class Create < Pikuri::Tool
       # @return [String] static description shown to the LLM,
       #   opencode-shape (summary + +Usage:+ bullets).

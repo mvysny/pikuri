@@ -65,6 +65,10 @@ module Pikuri
       # back a one-level listing of the root's entries so the model can pick a
       # subdir as +path+ and retry with no extra call (see
       # {Utils.oversized_root_refusal}).
+      #
+      # Sharing: +P_one_agent+, as {Glob} — stateless in itself, bound to one
+      # agent's {Pikuri::Workspace::Workspace}. Each call shells out to a fresh
+      # +rg+, so concurrent searches don't interact.
       class Grep < Pikuri::Tool
         # @return [Integer] hard byte cap on combined rg output. Same value as
         #   {Read::MAX_BYTES}.

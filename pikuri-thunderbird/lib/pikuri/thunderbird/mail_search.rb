@@ -7,6 +7,9 @@ module Pikuri
     # capability pair is +thunderbird_mail_read+, which fetches a hit's full
     # body by the +id:+ handle this tool returns (parent-document retrieval,
     # like corpus search→read).
+    #
+    # Sharing: +P_one_agent+ — no state of its own, but the {Gloda} backend it
+    # queries is; see its +== Sharing+.
     class MailSearch < Pikuri::Tool
       # @return [Integer] default / max hits returned. The cap protects the
       #   host's context budget (a snippet-laden page is dear on a small local

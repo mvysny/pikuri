@@ -6,6 +6,9 @@ module Pikuri
     # search→read pair. Given an +event_id+ from
     # +thunderbird_calendar_search+, returns the full event: when, where,
     # status, attendees (with RSVP), and description. Inbound-only.
+    #
+    # Sharing: +P_one_agent+ — no state of its own, but the {Calendar} backend
+    # it queries is; see its +== Sharing+.
     class CalendarRead < Pikuri::Tool
       # @return [Integer] max attendees listed individually; beyond it the list
       #   truncates to a per-status tally so a 169-guest all-hands can't flood

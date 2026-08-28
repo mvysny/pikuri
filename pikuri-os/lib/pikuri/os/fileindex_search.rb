@@ -19,6 +19,9 @@ module Pikuri
     # the file for full content / other matches. It sees inside PDFs and
     # office docs (indexed at extract time), and being an index lookup is
     # cheap to run repeatedly.
+    #
+    # Sharing: +P_stateless+ — the backend is a stateless module and each call
+    # shells out to its own query, so one instance serves any number of agents.
     class FileindexSearch < Pikuri::Tool
       # @return [Integer] default / max matching files returned.
       DEFAULT_LIMIT = 10

@@ -17,9 +17,13 @@ module Pikuri
   # metadata; a stale entry is overwritten on the next {#fetch} with that key.
   # +rm -rf+ the directory to clear it.
   #
-  # If two callers race on the same cold key, both compute and both write the
-  # same file — the accepted tradeoff for keeping this a few dozen lines (worst
-  # case: a duplicate fetch).
+  # Sharing: +P_shared_benign+ — an instance holds only its TTL and directory,
+  # and every tool that owns one holds it in a class-level constant, so all
+  # agents (and other pikuri processes) hit the same files. If two callers race
+  # on the same cold key, both compute and both write the same bytes — the
+  # accepted tradeoff for keeping this a few dozen lines (worst case: a
+  # duplicate fetch). The cross-agent flow is deliberate: a public URL's content
+  # is nobody's private context.
   class UrlCache
     # Root dir for per-tool cache subdirs, per XDG:
     # +$XDG_CACHE_HOME/pikuri/url_cache+ or +~/.cache/pikuri/url_cache+. Each

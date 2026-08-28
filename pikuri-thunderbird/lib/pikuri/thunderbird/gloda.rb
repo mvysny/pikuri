@@ -40,7 +40,14 @@ module Pikuri
     # {DatabaseSnapshot}.
     #
     # Immutable (holds no external state beyond its own snapshot/connection);
-    # {#close} is required for orderly teardown. Not thread-safe.
+    # {#close} is required for orderly teardown.
+    #
+    # Sharing: +P_one_agent+ — {#with_fresh_db} can swap the snapshot and
+    # rebuild the FTS5 index mid-call, so a concurrent query would be reading a
+    # connection this one is replacing, and the generation counter guarding that
+    # is unguarded. One instance per agent (the copy is per-process already, see
+    # {Pikuri::Paths.new_temp}); serializing behind a lock would also work and
+    # would then share the rebuild cost.
     class Gloda
       LOGGER = Pikuri.logger_for('Thunderbird::Gloda')
 

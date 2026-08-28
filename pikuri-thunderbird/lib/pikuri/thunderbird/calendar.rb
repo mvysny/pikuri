@@ -32,7 +32,10 @@ module Pikuri
     # UTC {Time}s + the tz string + an +all_day+ flag; presentation (local
     # display, all-day date rendering) is the tool's job.
     #
-    # {#close} closes the snapshot connections. Not thread-safe.
+    # {#close} closes the snapshot connections.
+    #
+    # Sharing: +P_one_agent+, as {Gloda} — a freshness rebuild replaces the
+    # connection a concurrent query would be using.
     class Calendar
       LOGGER = Pikuri.logger_for('Thunderbird::Calendar')
 

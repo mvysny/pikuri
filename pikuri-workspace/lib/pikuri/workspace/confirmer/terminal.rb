@@ -7,7 +7,16 @@ require 'tmpdir'
 module Pikuri
   module Workspace
     class Confirmer
-      # Stdin/stdout implementation. Renders the request as up to several lines
+      # Stdin/stdout implementation, written for pikuri's own single-threaded
+      # +bin/+ scripts — **not a component to build a host on**. A real host
+      # (TUI, web) owns its screen and its event loop, so it cannot have a
+      # library class calling +puts+ and +gets+ behind its back; it writes its
+      # own {Confirmer} and this is the worked example to read while doing it.
+      # The one piece to carry over is not the chrome but the warning-gated
+      # retype below — everything else is a terminal's answer to a problem your
+      # UI will answer differently.
+      #
+      # Renders the request as up to several lines
       # (a leading +puts+ separates it from any streamed output above):
       #
       # 1. a bold-yellow warning block (one line per {Pikuri::Sanitizer::Warning})
@@ -41,6 +50,20 @@ module Pikuri
       # *structurally* forbid a rubber-stamp +y+ on a clean task — the pure
       # no-rubber-stamp author seat is a richer-UI invariant; the warning-gated
       # retype is the terminal's partial answer.
+      #
+      # == Sharing
+      #
+      # +P_one_agent+, and no lock is coming: this is the demo chrome, and one
+      # script is one agent. Two agents prompting at once would interleave their
+      # blocks on one terminal, and whichever +gets+ runs first reads the answer
+      # — so agent A could consume the +y+ meant for agent B and approve a
+      # command nobody read. There is no state to corrupt; the contended
+      # resource is the terminal and the human at it.
+      #
+      # That queue belongs to whoever owns the screen, and it needs more than a
+      # mutex — it has to say *which* agent is asking. Which is the same
+      # sentence as the paragraph at the top: a multi-agent host writes its own
+      # confirmer.
       class Terminal < Confirmer
         LOGGER = Pikuri.logger_for('Workspace::Confirmer')
 

@@ -58,6 +58,11 @@ module Pikuri
     # (nothing in the registry claims it — the {Pikuri::FileType.binary?}
     # heuristic catches archives/artifacts with no extension list), offset past
     # EOF.
+    #
+    # Sharing: +P_one_agent+ — every successful read marks the path on its
+    # {Workspace}, which *is* the read-before-edit gate's state, so a shared
+    # instance would let one agent's read unlock another's {Edit}. +with_workspace+
+    # rebinds a copy when a sub-agent needs a different tree.
     class Read < Pikuri::Tool
       # These alias the +PAGE_*+ constants on {Pikuri::Extractor} (one source of
       # truth, shared with +VectorDb::Tools::Read+).

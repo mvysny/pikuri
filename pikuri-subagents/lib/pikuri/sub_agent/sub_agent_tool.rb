@@ -47,6 +47,12 @@ module Pikuri
     # — persona-name root + a per-persona monotonic counter — threaded to
     # {Pikuri::Agent::ListenerList#for_sub_agent(id:)} so renderers can
     # label output.
+    #
+    # Sharing: +P_one_agent+ — it *is* one agent's delegation seat, closing
+    # over that agent's {Pikuri::Agent::ExtensionContext}, its cancellable and
+    # its tool set. The id counters are an unguarded +Hash+ too, so a shared
+    # instance could hand two children the same +"researcher 0"+. Children run
+    # inline on the caller's thread, so a fan-out here is sequential today.
     class SubAgentTool < Pikuri::Tool
       # OS-toolchain prefixes folded into the +readable:+ list of a
       # per-invocation temp workspace (when +persona.needs_temp_workspace?+),

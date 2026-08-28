@@ -16,8 +16,11 @@ module Pikuri
     # or look-alike recipients are dropped/flagged) plus plain-text-only bodies
     # (no hidden content, no remote beacons) plus the human's own pre-send review.
     #
-    # Thread-safety: as {Gloda}, not thread-safe (the shared backend is queried
-    # for the novelty check).
+    # Sharing: +P_one_agent+ — the {ComposeGuard}'s novelty check queries the
+    # {Gloda} backend, so this inherits its posture. Each call launches its own
+    # compose window, and the human at that window is the real serialization
+    # point: two agents composing at once means two windows and no way to tell
+    # which agent asked for which.
     class MailCompose < Pikuri::Tool
       LOGGER = Pikuri.logger_for('Thunderbird::MailCompose')
 

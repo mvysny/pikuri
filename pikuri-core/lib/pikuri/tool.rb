@@ -32,6 +32,38 @@ module Pikuri
   # {#run} catches {Parameters#validate} failures into +"Error: ..."+; the
   # +execute+ Proc follows the same convention for its own recoverable failures
   # and lets bugs raise.
+  #
+  # == Sharing: may one instance serve two agents?
+  #
+  # {Pikuri::Agent} is thread-unsafe, so a host running ten agents in one VM
+  # serializes each agent's own calls — usually a thread apiece. That makes
+  # "may a second agent have this tool?" and "is this reachable from two
+  # threads?" one question. Every tool answers it, as a +Sharing:+ tail or a
+  # +== Sharing+ section, naming one posture:
+  #
+  # * *P_stateless* — no mutable state. Share freely.
+  # * *P_shared_locked* — process-wide mutable state under a lock. Sharing is
+  #   intended, and for anything pacing a shared *external* resource it is
+  #   mandatory: a per-agent {Search::RateLimiter} would let ten agents fire
+  #   ten simultaneous requests from one IP and earn the ban it exists to
+  #   avoid.
+  # * *P_shared_benign* — unprotected process-wide state whose race is
+  #   harmless; the doc names the race ({Pikuri::UrlCache}: both callers
+  #   compute a cold key and write identical bytes).
+  # * *P_one_agent* — agent-scoped state, so exactly one agent. It needs no
+  #   lock because its only caller is that agent, whose calls are already
+  #   serialized; wire it twice and you lose that for free. And the first
+  #   failure isn't a race but a correctness bug — agent A would read agent B's
+  #   facts single-threaded too.
+  #
+  # +P_one_agent+ is a fine answer, not a defect: most of what a tool knows is
+  # one conversation's business. Nothing enforces it, so the doc *is* the
+  # contract. The two axes stay independent — a {Skill::Activation} locks *and*
+  # is per-agent, so "thread-safe" is no licence to share.
+  #
+  # A +Tool+ is a value object holding a +Proc+, so its posture is its
+  # collaborators': each tool names the one that owns the state, which is also
+  # where any lock lives.
   class Tool
     # @return [String] function name advertised to the LLM
     attr_reader :name

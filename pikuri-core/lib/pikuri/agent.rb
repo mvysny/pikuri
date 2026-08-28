@@ -46,6 +46,32 @@ module Pikuri
   # {Event::Cancelled} and re-raises — no synthesizer fallback (cancel
   # means drop everything). {Control::Cancellable#reset!} at each turn
   # start lets the same instance take a fresh turn afterwards.
+  #
+  # == Threading
+  #
+  # **Thread-unsafe** — and that is the whole guarantee, deliberately no
+  # stronger. +@chat+, the message-identity map and the +on_close+ list are
+  # plain unguarded state, and {#run_loop} is not re-entrant, so a second
+  # thread calling in mid-turn corrupts the conversation rather than raising.
+  # Preventing concurrent access is the caller's job, by any means: one thread
+  # per agent, a mutex around every call, an actor mailbox. Nothing here is
+  # *confined* to a particular thread — an +Agent+ may be driven from a
+  # different thread on each turn, so never key anything about it off
+  # +Thread.current+.
+  #
+  # Several agents in one VM is then the easy case, one thread each:
+  #
+  #   agents.map { |a| Thread.new { a.run_loop(user_message: task_for(a)) } }.each(&:join)
+  #
+  # Two {Control}s are the sanctioned doors *in* from another thread, which is
+  # why they carry locks and the agent does not: {Control::Cancellable} (stop
+  # the turn) and {Control::Interloper} (queue a mid-turn message, delivered at
+  # the next tool-batch boundary). Every other method needs the caller's own
+  # serialization.
+  #
+  # Tools inherit nothing from this: an instance handed to two agents is
+  # reachable from both, so each declares its own posture (see
+  # {Pikuri::Tool}'s +== Sharing+).
   class Agent
     LOGGER = Pikuri.logger_for('Agent')
     private_constant :LOGGER

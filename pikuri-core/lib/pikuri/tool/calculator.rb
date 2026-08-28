@@ -216,6 +216,9 @@ module Pikuri
     # every interpreter that isn't must stay off the passive allowlist. See
     # +DECISIONS.md+ +D_keep_calculator+.
     #
+    # Sharing: +P_stateless+ — arithmetic over the argument, no I/O, no state.
+    # Hand this one constant to every agent in the VM.
+    #
     # @return [Tool]
     CALCULATOR = new(
       name: 'calculator',

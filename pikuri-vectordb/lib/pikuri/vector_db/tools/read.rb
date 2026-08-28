@@ -37,6 +37,10 @@ module Pikuri
       # the {Indexer} uses, so a read matches what was indexed exactly (modulo
       # later edits), +"--- Page N ---"+ markers included. Images / binaries /
       # vanished file / malformed PDF come back as +"Error: ..."+, not raises.
+      #
+      # Sharing: +P_shared_locked+, as {Search} — a locked {Backend} plus an
+      # immutable root, and no read record to keep (unlike
+      # {Pikuri::Workspace::Read}, nothing here gates an edit).
       class Read < Pikuri::Tool
         # @return [Integer] default value of the +limit+ parameter
         #   (number of lines returned per call). Aliases the shared

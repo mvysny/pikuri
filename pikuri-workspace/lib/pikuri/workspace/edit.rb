@@ -57,6 +57,10 @@ module Pikuri
     # +occurrence+ below 1 or past the match count · missing / directory /
     # binary file · not read this conversation (the gate, after the binary
     # refusal) · workspace boundary / EACCES.
+    #
+    # Sharing: +P_one_agent+ — the "not read this conversation" refusal reads
+    # one {Workspace}'s record, so sharing an instance widens *whose* read
+    # counts. As {Write} for the {ReadOnly} flag.
     class Edit < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.

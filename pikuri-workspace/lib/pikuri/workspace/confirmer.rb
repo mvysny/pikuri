@@ -15,9 +15,18 @@ module Pikuri
     #
     # * {Terminal} — the human *chrome*: shows the request and reads the answer.
     #   In +confirmer/terminal.rb+ so this seam file stays free of rendering deps.
+    #   Written for pikuri's own single-threaded +bin/+ scripts and best read as
+    #   the worked example — a TUI or web host implements this seam itself.
     # * {AutoApprove} — the headless stance: ignores the request and
     #   blanket-approves (+--yolo+ / dev-container). Request-independent, so it
     #   encodes no policy either.
+    #
+    # Sharing is per implementation, and the two shipped ones differ:
+    # {AutoApprove} is +P_stateless+ and shares freely, while {Terminal} is
+    # +P_one_agent+ because concurrent agents fight over one human's keystrokes.
+    # A confirmer written for a multi-agent host owns that queueing — and owns
+    # naming which agent is asking, which is why the queue can't usefully live
+    # down here.
     #
     # Content classification ("is this bash command provably passive, skip the
     # prompt?") deliberately does *not* live here — it's a tool concern

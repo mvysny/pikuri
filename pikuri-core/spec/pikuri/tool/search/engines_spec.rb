@@ -33,6 +33,113 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#providers' do
     assert_equal 'B-key', by_label['Brave'].instance_variable_get(:@api_key)
     assert_equal 'E-key', by_label['Exa'].instance_variable_get(:@api_key)
   end
+
+  it 'drops DuckDuckGo when an explicit selection omits it' do
+    engines = described_class.new(engines: [:brave], brave_key: 'fake-key')
+    assert_equal %w[Brave], engines.providers.map(&:label)
+  end
+
+  it 'ignores a supplied key that the selection does not name' do
+    engines = described_class.new(engines: %w[duckduckgo], brave_key: 'fake-key', exa_key: 'fake-key')
+    assert_equal %w[DuckDuckGo], engines.providers.map(&:label)
+  end
+
+  it 'refuses a selection naming an engine whose key is missing' do
+    error = assert_raises(ArgumentError) { described_class.new(engines: [:exa], brave_key: 'fake-key') }
+    assert_match(/exa needs exa_key/, error.message)
+  end
+end
+
+RSpec.describe Pikuri::Tool::Search::Engines, '.resolve' do
+  it 'derives the set from the keys when no selection is given' do
+    assert_equal %i[duckduckgo], described_class.resolve(engines: nil)
+    assert_equal %i[duckduckgo brave], described_class.resolve(engines: nil, brave_key: 'B')
+    assert_equal %i[duckduckgo brave exa], described_class.resolve(engines: nil, brave_key: 'B', exa_key: 'E')
+  end
+
+  it 'treats a blank key as absent when deriving the set' do
+    assert_equal %i[duckduckgo], described_class.resolve(engines: nil, brave_key: '   ')
+  end
+
+  it 'accepts String and Symbol names, case-insensitively' do
+    assert_equal %i[duckduckgo brave], described_class.resolve(engines: ['DuckDuckGo', :Brave], brave_key: 'B')
+  end
+
+  it 'normalizes an explicit list to canonical order, so it reads as a set' do
+    resolved = described_class.resolve(engines: %w[exa brave duckduckgo], brave_key: 'B', exa_key: 'E')
+    assert_equal %i[duckduckgo brave exa], resolved
+  end
+
+  it 'accepts a keyed engine alone, without DuckDuckGo' do
+    assert_equal %i[brave], described_class.resolve(engines: %w[brave], brave_key: 'B')
+  end
+
+  it 'refuses an empty selection' do
+    error = assert_raises(ArgumentError) { described_class.resolve(engines: []) }
+    assert_match(/non-empty list of engine names/, error.message)
+  end
+
+  it 'refuses a selection that is not a list, without echoing it' do
+    error = assert_raises(ArgumentError) { described_class.resolve(engines: 'BSA-secret') }
+    assert_match(/non-empty list of engine names/, error.message)
+    assert_match(/got String/, error.message)
+    refute_includes error.message, 'BSA-secret'
+  end
+
+  it 'refuses an unknown engine name and names the known ones' do
+    error = assert_raises(ArgumentError) { described_class.resolve(engines: %w[duckduckgo googel]) }
+    assert_match(/unknown engine\(s\) googel/, error.message)
+    assert_match(/known engines are duckduckgo, brave, exa/, error.message)
+  end
+
+  it 'refuses a repeated engine, which would weight the shuffle' do
+    error = assert_raises(ArgumentError) do
+      described_class.resolve(engines: %w[brave Brave], brave_key: 'B')
+    end
+    assert_match(/brave listed more than once/, error.message)
+  end
+
+  it 'refuses a keyed engine whose key is blank, naming the keyword to supply' do
+    error = assert_raises(ArgumentError) { described_class.resolve(engines: %w[brave exa], brave_key: '  ') }
+    assert_match(/brave needs brave_key/, error.message)
+    assert_match(/exa needs exa_key/, error.message)
+  end
+
+  it 'accepts a key for an engine left out of the selection' do
+    assert_equal %i[duckduckgo], described_class.resolve(engines: %w[duckduckgo], exa_key: 'E')
+  end
+end
+
+RSpec.describe Pikuri::Tool::Search::Engines, '.config_from_h' do
+  it 'maps a config block onto the constructor keywords' do
+    config = { 'brave_key' => 'B', 'exa_key' => 'E', 'engines' => %w[brave] }
+    assert_equal({ brave_key: 'B', exa_key: 'E', engines: %w[brave] }, described_class.config_from_h(config))
+  end
+
+  it 'accepts Symbol keys too' do
+    assert_equal({ engines: %w[brave] }, described_class.config_from_h(engines: %w[brave]))
+  end
+
+  it 'maps an absent block to empty keywords, so no caller needs a fallback' do
+    assert_equal({}, described_class.config_from_h(nil))
+  end
+
+  it 'refuses a block that is not a Hash' do
+    error = assert_raises(ArgumentError) { described_class.config_from_h('brave') }
+    assert_match(/expected a Hash of engines, brave_key, exa_key/, error.message)
+  end
+
+  it 'refuses an unknown field, which a typo would otherwise silently drop' do
+    error = assert_raises(ArgumentError) { described_class.config_from_h('brave_api_key' => 'B') }
+    assert_match(/unknown field\(s\) brave_api_key/, error.message)
+    assert_match(/known fields are engines, brave_key, exa_key/, error.message)
+  end
+
+  it 'refuses a key field that is not a String, without echoing its value' do
+    error = assert_raises(ArgumentError) { described_class.config_from_h('brave_key' => %w[secret]) }
+    assert_match(/brave_key must be a String, got Array/, error.message)
+    refute_includes error.message, 'secret'
+  end
 end
 
 RSpec.describe Pikuri::Tool::Search::Engines, '#search' do

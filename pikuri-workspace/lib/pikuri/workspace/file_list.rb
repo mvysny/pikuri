@@ -27,6 +27,11 @@ module Pikuri
     # dead-ending (see {Search::Utils.oversized_root_refusal}). A +depth+ over
     # {Listing::MAX_DEPTH} is clamped, not refused — the answer is still the
     # one asked for, just shallower.
+    #
+    # Sharing: +P_one_agent+ — it never touches the read record, so nothing
+    # races; what makes it one agent's is the {Workspace} it enumerates, since
+    # that is one agent's project view (a sub-agent's clone differs).
+    # +with_workspace+ rebinds a copy.
     class FileList < Pikuri::Tool
       # Description shown to the LLM (opencode-shape). Per-parameter constraints
       # live in the parameter descriptions.

@@ -9,6 +9,11 @@ module Pikuri
     # key binding / slash command. Entry is just as often host-initiated as
     # model-driven — either way the flag is the single source of truth. (It
     # gates Write/Edit, not Bash — see {Pikuri::Workspace::ReadOnly}.)
+    #
+    # Sharing: +P_shared_locked+ — the flag it flips is thread-safe, so nothing
+    # breaks. Decide the *semantics* on purpose, though: agents sharing one flag
+    # share one plan mode, so this agent entering it disables writes for all of
+    # them. Per-agent plan mode means a {Pikuri::Workspace::ReadOnly} each.
     class EnterPlanMode < Pikuri::Tool
       # @return [String]
       DESCRIPTION = <<~DESC
