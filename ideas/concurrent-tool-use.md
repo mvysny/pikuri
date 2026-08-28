@@ -3,8 +3,9 @@
 Status: **open**, narrowed. The *documentation* half shipped 2026-08-28: every
 tool now declares one of four postures, `Agent` says it is thread-unsafe, and
 the two forks are logged as `DECISIONS.md` `D_tool_sharing_postures` +
-`D_rate_limiter_scope`. Read those first — this note keeps only what is still
-undecided.
+`D_rate_limiter_scope`. Items 1 and 2 closed the same day —
+`D_tool_cancellation` came out of the second. Read those first; this note keeps
+only what is still undecided.
 
 What remains is the author's second question: *now that every tool has a
 posture, which ones should we improve?* Nothing in `lib/` runs two agents
@@ -51,15 +52,17 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
    doctrine's actual goal), there is only one consumer so DRY isn't the
    question, and it is the only place the warning-gated retype — security
    logic a real host must reimplement — is demonstrated.
-2. **`Search::RateLimiter` — the stall is worth a look.** The mutex is held
-   across the HTTP call, so ten agents serialize into a 20 s+ wait that
-   `Cancellable` cannot break. Three options: leave it (correct, and the result
-   cache means the second agent asking the same thing never reaches the
-   limiter); `Mutex#try_lock` and raise `Unavailable` so the cascade falls
-   through to another provider, turning a stall into a fallback — cheap, and
-   the cascade exists for exactly this; or separate the pacing sleep from the
-   request so only the bookkeeping is under lock (more surgery, keeps the
-   pacing exact). Leaning on the middle one.
+2. **`Search::RateLimiter` — done (2026-08-28), differently than planned.** The
+   note's original lean was `try_lock` + fall through the cascade; that is
+   *wrong* and stays recorded as such, because the no-config default is
+   DuckDuckGo alone, so there is nothing to fall through to and "wait 2 s"
+   would have become "search failed". The shipped answer is
+   `Cancellable#sleep`: the pacing wait is now interruptible, so a queued agent
+   can abandon it on a user cancel. See `DECISIONS.md` `D_tool_cancellation`.
+   Two pieces deliberately left undone — making the *mutex acquisition*
+   interruptible (needs three concurrent agents to matter), and bounding the
+   wait so a backed-up provider is skipped (only sensible with ≥2 providers
+   wired).
 3. **MCP and LSP — accepted as one-agent-only.** Both hold unguarded client
    hashes and a `#close` that kills children another caller could be mid-request
    on, so ten agents over one project means ten sets of child processes. A
@@ -92,18 +95,17 @@ Ordered by whether I'd act. Each is "leave it" until someone says otherwise —
   that question lives. Cheap to settle: probably one sentence there saying
   public-URL content is nobody's private context, which is what
   `Pikuri::UrlCache` now claims.
-- **What would a spec for any of this look like?** `rake test` is
-  single-threaded and a race that reproduces one run in fifty is worse than no
-  test. The testable part is *structure* — a limiter constant is class-level,
-  one `Workspace`'s read record does not answer for another's — which guards
-  against a future refactor moving a limiter onto an instance. Worth writing if
-  and only if we act on item 2.
+- **What would a spec for any of this look like?** Partly answered by item 2:
+  the cancellation specs drive two real threads and assert a *cut-short*, which
+  is deterministic in a way "did they race?" never is. What is still unwritten
+  is a structural guard — that a limiter constant stays class-level, that one
+  `Workspace`'s read record does not answer for another's — which is what would
+  catch a future refactor quietly moving a limiter onto an instance.
 
 ## Graduation
 
 The vocabulary, the postures and the rate-limiter rule are already in their
 durable homes (yardoc + CLAUDE.md + the two `D_` entries). What is left here is
 a decision list; each item graduates into the fix's own home when it is acted
-on — item 1 into `ideas/more-confirmers.md`, item 2 into
-{Pikuri::Tool::Search::RateLimiter}'s yardoc plus a line on
-`D_rate_limiter_scope`. Delete this file when the last item is settled.
+on — item 1 landed in `Confirmer::Terminal`'s own yardoc, item 2 in
+`D_tool_cancellation`. Delete this file when the last item is settled.

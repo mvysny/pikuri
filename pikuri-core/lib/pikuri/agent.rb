@@ -567,7 +567,10 @@ module Pikuri
 
       @chat = build_chat(@transport)
       @chat.with_instructions(@system_prompt)
-      @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool) }
+      # One context per agent, so an opting-in +execute+ never has to nil-check
+      # what it was handed.
+      context = Tool::ExecuteContext.new(cancellable: @cancellable || Control::Cancellable::NEVER)
+      @tools.each { |t| @chat.with_tool(t.to_ruby_llm_tool(context: context)) }
 
       # Wire @chat for the event stream and controls via ruby_llm's three
       # registered callbacks. (The per-chunk streaming callback is separate

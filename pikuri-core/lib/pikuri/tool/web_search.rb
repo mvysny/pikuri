@@ -30,7 +30,10 @@ module Pikuri
     #
     # The consequence a host should plan for is latency, not corruption: see
     # {Search::RateLimiter} for the serialization and the shared circuit
-    # breaker.
+    # breaker. Which is why this is the one bundled tool that opts into the
+    # per-call {Tool::ExecuteContext} (see {Pikuri::Tool}'s +== Cancellation+):
+    # an agent queued behind another agent's pacing wait can abandon it, even
+    # though the tool itself may be shared.
     module WebSearch
       # Description shown to the LLM, opencode-shape (summary + +Usage:+).
       #
@@ -78,7 +81,12 @@ module Pikuri
                                'Maximum number of result entries to return. ' \
                                'Defaults to 10; most providers cap this at 20.'
           },
-          execute: ->(query:, max_results: 10) { cascade.search(query, max_results: max_results) },
+          # +wants_context:+ opts in to the per-call {Tool::ExecuteContext}, so
+          # a shared instance still honours whichever agent is waiting.
+          wants_context: true,
+          execute: lambda { |query:, max_results: 10, context:|
+            cascade.search(query, max_results: max_results, cancellable: context.cancellable)
+          },
           # Snippets are written by whoever ranks for the query, and the query
           # string itself leaves the machine — a search is an outbound channel
           # even though nothing is "sent". Nobody reviews that query, hence

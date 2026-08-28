@@ -79,6 +79,116 @@ design.
 
 ---
 
+## D_tool_cancellation — An interruptible sleep on the token, opted into per tool (2026-08-28)
+
+**Status:** Accepted; implemented 2026-08-28 as
+{Pikuri::Agent::Control::Cancellable#sleep} + `Cancellable::NEVER`, a
+`cancellable:` argument through `Tool#run` / `#to_ruby_llm_tool`, and
+`web_search` as the first consumer (the {Pikuri::Tool::Search::RateLimiter}
+pacing wait).
+
+**Context.** Cancellation only fired at `before_tool_call`, so a tool that had
+already started could not be interrupted at all. The sharpest case is the
+search rate limiter: it holds its mutex across the HTTP call, so under
+concurrent agents a queued one waits out everyone ahead of it with a user
+cancel sitting unread. Graduated from `ideas/concurrent-tool-use.md` item 2,
+whose first proposal — reserve a time slot instead of holding the lock — was
+dropped as a complicated way to get at a simpler problem.
+
+**Decision.** `Cancellable` grows an interruptible `#sleep(seconds)` that
+raises `Cancelled` if the flag trips while waiting, and code that paces or
+polls waits through it instead of `Kernel#sleep`. Tools opt in with
+`wants_context: true` plus a `context:` keyword on their `execute` Proc;
+`Tool#run` then passes a `Tool::ExecuteContext` — a `Data` type carrying
+`cancellable` today and whatever a later call needs to know about *this
+invocation*.
+
+Per *call*, not per construction, and that is the load-bearing half:
+`#to_ruby_llm_tool` mints a fresh wrapper per agent, so even a tool shared
+between ten agents (`web_search` is `P_shared_locked`) honours whichever one is
+actually waiting. Constructor injection — which is what `pikuri-lsp` already
+does — cannot express that, because a shared tool would hold one agent's token.
+
+The token is always a real object, defaulting to `Cancellable::NEVER` (a frozen
+never-tripping instance) rather than `nil`, so there is one wait path instead of
+a `cancellable ? … : …` branch at every site, and an `execute` never nil-checks
+what it was handed. `NEVER` is frozen so a stray `cancel!` on it raises rather
+than silently cancelling every agent that defaulted to it.
+
+**Alternatives rejected.**
+
+- **A `ConditionVariable` instead of polling.** The textbook answer: exact
+  wake-up, no latency, no wasted timer ticks. It loses on one hard constraint —
+  `cancel!` is documented as callable from a **SIGINT trap**, and taking a
+  `Mutex` in trap context raises `ThreadError`. A CV wake-up wants the
+  signalling side to lock and broadcast. Polling puts the cost on the waiting
+  side and keeps `cancel!` a bare flag write, preserving the class's existing
+  "a plain boolean suffices under MRI" argument. The price is ≤`SLICE_SECONDS`
+  (100 ms) of cancel latency, which no human perceives.
+- **Handing every tool's `execute` a `cancellable:`.** Uniform, no per-tool
+  decision to get wrong. Rejected on scope: a token only reaches *waits*, and
+  `lib/` has four real sleeps. Everything else that blocks is blocked in **IO** —
+  Faraday reads, `Subprocess#wait`, sqlite — which no token can interrupt
+  (`bash` needs a SIGTERM to the child, not a flag). Handing all 35 tools one
+  would advertise an interruptibility most of them cannot honor, and ~25 have
+  nothing to cancel at all.
+- **A thread-local `Thread.current[:pikuri_cancellable]` set around the tool
+  call.** The idiomatic-looking Ruby answer, and it directly contradicts the
+  contract in `D_tool_sharing_postures`: `Agent` is thread-unsafe but *not*
+  thread-confined, so nothing may key off `Thread.current`. It also dies the
+  moment a tool spawns a thread of its own, and it is action-at-a-distance in a
+  codebase that injects every collaborator explicitly.
+- **Inferring the opt-in from the Proc's signature** (`execute.parameters.any?
+  { |kind, name| name == :cancellable }`). Written that way first: zero churn,
+  and impossible to desync from the lambda. It reads as magic at the one place
+  a reader goes to understand the tool contract, and the reflection is doing
+  work a boolean states plainly. The desync it protects against turns out to be
+  a non-issue, because `context:` is a *required* keyword: flag without keyword
+  and keyword without flag are both `ArgumentError` on the first call.
+- **Putting the arguments inside the context too** (`context.args[:query]`, one
+  object carrying everything). The tidier shape, and rejected on a measurement:
+  `Parameters#validate` returns only the keys the model sent and applies **no**
+  defaults, so 18 of the 36 bundled `execute` lambdas declare theirs in the
+  signature (`max_results: 10`, `limit: DEFAULT_LIMIT`). Folding arguments in
+  strands every one of them, and rewriting 36 lambdas to `ctx.args[:foo]` costs
+  the kwarg ergonomics that make a tool definition readable. Reopen if
+  `Parameters` ever grows a real `default:`, which would remove the blocker and
+  is worth having for its own sake.
+- **Passing the context to *every* `execute`, no opt-in.** The simplest possible
+  contract, at the price of 25 tools declaring a parameter they ignore and a
+  breaking change for every downstream tool.
+- **A new `InterruptedError` for tools to raise.** `Cancelled` already is the
+  vocabulary: `run_loop` rescues it, emits `Event::Cancelled` and re-raises, and
+  ruby_llm rescues nothing on the tool path (`RubyLLM::Tool#call` and
+  `Chat#execute_tool` both let it through), so a raise from inside a tool
+  reaches the loop unaided. A second exception would need the same handling
+  everywhere and distinguishes nothing a caller acts on.
+- **A keyword rather than a positional for `Tool#run`'s second parameter.**
+  Written that way first, and it broke ~16 specs across two gems. Give that
+  method *any* keyword and Ruby 3
+  re-reads the bare hash in `tool.run('text' => 'hi')` as keywords, so `args`
+  arrives empty at every existing call site — including downstream ones nothing
+  here would catch. A positional optional second parameter keeps every caller
+  working verbatim. `#to_ruby_llm_tool` keeps a keyword, because it previously
+  took no arguments at all and has no bare-hash call sites to break.
+- **Making the mutex *acquisition* interruptible too**, by polling
+  `Mutex#try_lock` with explicit `lock`/`unlock`. `cancellable:` covers the
+  pacing wait, which is what the lock *holder* is doing; a caller still parked
+  waiting to acquire cannot observe its own cancel. Deferred — it needs three
+  concurrent agents to matter, and every agent that cancels already releases
+  early and drains the queue faster.
+
+**Consequences.** The cascade treats `Cancelled` as fatal rather than as a
+provider failure: it is not caught by the `Unavailable` rescue, so no other
+provider is tried and nothing is cached. That is intended — cancel means stop,
+not "try Brave instead". A cancel landing mid-tool-batch leaves the chat holding
+an assistant `tool_calls` message with no `:tool` reply, which the next turn
+would send to the provider; that hazard is **pre-existing** (`check!` already
+fires before each call in a batch) and `Agent::History` already synthesizes
+`INTERRUPTED_RESULT` for the on-disk shape, but making cancellation reachable
+from more places makes it likelier. Left open in
+`ideas/concurrent-tool-use.md`.
+
 ## D_tool_sharing_postures — A yardoc posture per tool, not a machine-readable field (2026-08-28)
 
 **Status:** Accepted; implemented 2026-08-28 as a `Sharing:` line (or

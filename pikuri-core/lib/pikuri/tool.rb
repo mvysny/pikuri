@@ -64,6 +64,31 @@ module Pikuri
   # A +Tool+ is a value object holding a +Proc+, so its posture is its
   # collaborators': each tool names the one that owns the state, which is also
   # where any lock lives.
+  #
+  # The one way to break the premise from outside pikuri: ruby_llm's
+  # +tool_concurrency+ config (default +false+) makes +Chat+ run a tool batch on
+  # threads, so a *single* agent would enter its own +P_one_agent+ tools
+  # concurrently. Leave it off.
+  #
+  # == Cancellation
+  #
+  # A tool that *waits* can opt into being interrupted: pass
+  # +wants_context: true+ and take a +context:+ keyword, then wait through
+  # {Pikuri::Agent::Control::Cancellable#sleep} on the {ExecuteContext} handed
+  # in.
+  #
+  #   wants_context: true,
+  #   execute: ->(query:, context:) { backend.search(query, cancellable: context.cancellable) }
+  #
+  # Opt-in rather than universal because most tools have nothing to cancel, and
+  # because a token only reaches *waits* — a tool blocked in IO (a Faraday read,
+  # +Subprocess#wait+) stays uninterruptible however many tokens it holds.
+  #
+  # Per *call*, not per construction, and that is the point: {#to_ruby_llm_tool}
+  # mints a fresh wrapper per agent, so even a +P_shared_locked+ tool shared by
+  # ten agents honours whichever one is actually waiting. The context is always
+  # a real object ({ExecuteContext.default}, whose cancellation never trips,
+  # when the host wired none), so an +execute+ never nil-checks it.
   class Tool
     # @return [String] function name advertised to the LLM
     attr_reader :name
@@ -101,25 +126,49 @@ module Pikuri
     #   workspace, the sandbox, the confirmer) is already a kwarg of the tool
     #   that uses it. Defaults to {TrifectaLegs::ASSUMED} — an undeclared tool is
     #   presumed hostile on both axes the framework could have determined.
+    # @param wants_context [Boolean] when +true+, {#run} additionally passes a
+    #   +context:+ keyword carrying this call's {ExecuteContext} — so +execute+
+    #   must declare one. Declared rather than inferred from the Proc, and both
+    #   halves are mandatory, so either without the other is an +ArgumentError+
+    #   on the first call rather than a silent +nil+.
     # @return [Tool]
-    def initialize(name:, description:, parameters:, execute:, trifecta_legs: TrifectaLegs::ASSUMED)
+    def initialize(name:, description:, parameters:, execute:,
+                   trifecta_legs: TrifectaLegs::ASSUMED, wants_context: false)
       @name = name
       @description = description
       @parameters = parameters
       @execute = execute
       @trifecta_legs = trifecta_legs
+      @wants_context = wants_context
     end
+
+    # @return [Boolean] whether {#run} hands +execute+ a +context:+ keyword
+    #   carrying the {ExecuteContext} for this call. Declared at construction,
+    #   never inferred from the Proc's signature — see the +== Cancellation+
+    #   section.
+    attr_reader :wants_context
 
     # Validate +args+ against {#parameters} and forward them as kwargs to
     # {#execute}. Validation failures come back as +"Error: <message>"+ Strings
     # for the next observation; everything else bubbles up.
     #
     # @param args [Hash] raw arguments supplied by the LLM
+    # @param context [ExecuteContext] this invocation's environment, forwarded
+    #   as a +context:+ keyword only when {#wants_context}. Never part of
+    #   +args+ — the LLM cannot supply it, since {Parameters#validate} refuses
+    #   unknown keys. Positional against the house style on purpose: give this
+    #   method *any* keyword and Ruby 3 re-reads the bare hash in
+    #   +run('text' => 'hi')+ as keywords, so +args+ arrives empty at every
+    #   existing call site.
     # @return [String, RubyLLM::Content] tool observation — validation failures
     #   always +"Error: ..."+; success is whatever +execute+ returns.
-    def run(args)
+    def run(args, context = ExecuteContext.default)
       validated = @parameters.validate(args)
-      @execute.call(**validated)
+      if @wants_context
+        @execute.call(**validated, context: context)
+      else
+        @execute.call(**validated)
+      end
     rescue Tool::Parameters::ValidationError => e
       "Error: #{e.message}"
     end
@@ -128,8 +177,13 @@ module Pikuri
     # +RubyLLM::Chat#with_tool+ accepts. ruby_llm instantiates it and routes
     # tool calls through +#execute(**args)+, which delegates to {#run}.
     #
+    # A wrapper is per *agent* even when this +Tool+ is shared between several,
+    # which is what lets it close over one agent's cancellation token.
+    #
+    # @param context [ExecuteContext] passed to {#run} on every call; see the
+    #   +== Cancellation+ section.
     # @return [Class] anonymous +RubyLLM::Tool+ subclass
-    def to_ruby_llm_tool
+    def to_ruby_llm_tool(context: ExecuteContext.default)
       pikuri_tool = self
       schema      = @parameters.to_openai
       tool_name   = @name
@@ -140,7 +194,7 @@ module Pikuri
         params(schema)
 
         define_singleton_method(:name) { tool_name }
-        define_method(:execute) { |**args| pikuri_tool.run(args) }
+        define_method(:execute) { |**args| pikuri_tool.run(args, context) }
       end
     end
   end

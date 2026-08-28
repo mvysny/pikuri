@@ -240,10 +240,17 @@ module Pikuri
         #
         # @param query [String] search query
         # @param max_results [Integer] maximum result entries
+        # @param cancellable [Pikuri::Agent::Control::Cancellable, nil] handed
+        #   to each provider so its {RateLimiter} pacing wait is interruptible.
+        #   A cache hit never reaches a provider, so it never waits at all.
         # @return [String] Markdown result list, or +"Error: ..."+ when all
         #   providers are exhausted
         # @raise [ArgumentError] if the query is empty after normalization
-        def search(query, max_results:)
+        # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] if
+        #   +cancellable+ trips while a provider is pacing. It is *not* caught
+        #   as a provider failure — the cascade stops rather than trying the
+        #   next one, and nothing is cached.
+        def search(query, max_results:, cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
           cleaned = query.to_s.strip.gsub(/\s+/, ' ')
           raise ArgumentError, 'query is empty' if cleaned.empty?
 
@@ -257,7 +264,7 @@ module Pikuri
             results = nil
             chosen = nil
             current_providers.shuffle.each do |provider|
-              results = provider.search(cleaned, max_results: max_results)
+              results = provider.search(cleaned, max_results: max_results, cancellable: cancellable)
               chosen = provider
               break
             rescue Unavailable => e

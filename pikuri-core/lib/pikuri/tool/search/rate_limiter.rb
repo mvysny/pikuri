@@ -33,9 +33,14 @@ module Pikuri
       #
       # * **It is a global queue, not just a pacer.** The mutex is held across
       #   the block — the HTTP call included — so ten agents searching at once
-      #   serialize. A thread parked in +Mutex#synchronize+ has no timeout and
-      #   no queue position, and {Pikuri::Agent::Control::Cancellable} cannot
-      #   reach it: a user cancel is observed only after this call returns.
+      #   serialize, with no timeout and no queue position. +cancellable:+
+      #   covers the *pacing wait*, which is what the lock holder is doing; a
+      #   caller still parked in +Mutex#synchronize+ waiting to acquire cannot
+      #   observe its own cancel. It does still benefit, because every agent
+      #   that cancels releases early and drains the queue faster. Making the
+      #   acquisition itself interruptible means polling +Mutex#try_lock+ with
+      #   explicit +lock+/+unlock+ — deliberately not built for a
+      #   three-concurrent-agent case nothing has yet.
       # * **The circuit breaker is global too.** One agent tripping the
       #   provider's soft-block puts every other agent into the same cooldown.
       #   Right, because the block is IP-wide and the others were blocked
@@ -63,11 +68,25 @@ module Pikuri
         # {Engines::Unavailable}, cooldown is armed and the exception re-raised;
         # any other exception bubbles up without arming cooldown.
         #
+        # The pacing wait happens *through* +cancellable+, so the calling agent
+        # can abandon it on a user cancel. It is a per-call argument rather than
+        # constructor state because one limiter serves every agent in the VM
+        # (see +== Sharing+) while a token belongs to one of them — and it is
+        # always a real token, defaulting to
+        # {Pikuri::Agent::Control::Cancellable::NEVER} rather than +nil+, so
+        # there is one wait path instead of two.
+        #
+        # @param cancellable [Pikuri::Agent::Control::Cancellable] waited
+        #   through instead of +Kernel#sleep+.
         # @yieldreturn [Object] passed through
         # @return [Object] whatever the block returned
         # @raise [Engines::Unavailable] re-raised from the block, or raised
         #   directly when the limiter is in cooldown
-        def call
+        # @raise [Pikuri::Agent::Control::Cancellable::Cancelled] if
+        #   +cancellable+ trips before or during the pacing wait; the block does
+        #   not run and the mutex is released, so the agents queued behind this
+        #   one advance immediately.
+        def call(cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
           @mutex.synchronize do
             now = Time.now
             if @cooldown_until && now < @cooldown_until
@@ -77,7 +96,7 @@ module Pikuri
 
             if @last_call_at
               elapsed = now - @last_call_at
-              sleep_for(@min_interval - elapsed) if elapsed < @min_interval
+              cancellable.sleep(@min_interval - elapsed) if elapsed < @min_interval
             end
             @last_call_at = Time.now
 
@@ -90,16 +109,6 @@ module Pikuri
           end
         end
 
-        # Sleep for +seconds+. A private method so tests can override it on one
-        # instance (to advance a frozen Timecop clock) without monkey-patching
-        # global +sleep+.
-        #
-        # @param seconds [Float] non-negative duration
-        # @return [void]
-        def sleep_for(seconds)
-          sleep(seconds)
-        end
-        private :sleep_for
       end
     end
   end

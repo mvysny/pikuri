@@ -49,6 +49,71 @@ RSpec.describe Pikuri::Tool do
     end
   end
 
+  describe 'cancellation opt-in' do
+    def tool_with(execute, wants_context: false)
+      described_class.new(
+        name: 't', description: 't',
+        parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :text, 't' },
+        execute: execute, wants_context: wants_context
+      )
+    end
+
+    def context_with(cancellable)
+      Pikuri::Tool::ExecuteContext.new(cancellable: cancellable)
+    end
+
+    it 'defaults to not wanting a context' do
+      refute tool_with(->(text:) { text }).wants_context
+    end
+
+    it 'hands an opting-in execute the context it was called with' do
+      seen = nil
+      tool = tool_with(->(text:, context:) { seen = context; text }, wants_context: true)
+      ctx = context_with(Pikuri::Agent::Control::Cancellable.new)
+      tool.run({ 'text' => 'hi' }, ctx)
+      assert_same ctx, seen
+    end
+
+    it 'defaults to a context whose cancellation never trips, not nil' do
+      seen = :unset
+      tool = tool_with(->(text:, context:) { seen = context; text }, wants_context: true)
+      tool.run('text' => 'hi')
+      assert_same Pikuri::Agent::Control::Cancellable::NEVER, seen.cancellable
+    end
+
+    it 'never passes the keyword to a tool that did not declare it' do
+      # An unknown keyword would raise ArgumentError, so a clean return is the
+      # assertion.
+      assert_equal 'hi', tool_with(->(text:) { text })
+                         .run({ 'text' => 'hi' }, context_with(Pikuri::Agent::Control::Cancellable.new))
+    end
+
+    it 'fails loudly when the flag and the signature disagree' do
+      # Both directions are ArgumentError on the first call — the reason the
+      # flag is safe to declare by hand.
+      assert_raises(ArgumentError) { tool_with(->(text:) { text }, wants_context: true).run('text' => 'hi') }
+      assert_raises(ArgumentError) { tool_with(->(text:, context:) { [text, context] }).run('text' => 'hi') }
+    end
+
+    it 'refuses a context the LLM tries to supply as an argument' do
+      result = tool_with(->(text:, context:) { [text, context] }, wants_context: true)
+               .run('text' => 'hi', 'context' => 'pwned')
+      assert result.start_with?('Error:'), "expected a validation error, got #{result.inspect}"
+    end
+
+    it 'gives each agent its own wrapper around one shared tool' do
+      seen = []
+      tool = tool_with(->(text:, context:) { seen << context.cancellable; text }, wants_context: true)
+      a = Pikuri::Agent::Control::Cancellable.new
+      b = Pikuri::Agent::Control::Cancellable.new
+
+      tool.to_ruby_llm_tool(context: context_with(a)).new.execute(text: 'x')
+      tool.to_ruby_llm_tool(context: context_with(b)).new.execute(text: 'y')
+
+      assert_equal [a, b], seen
+    end
+  end
+
   describe '#to_ruby_llm_tool' do
     # Same shape ruby_llm's Chat will see: it does `klass.new` and then routes
     # tool calls through `instance.call(args)`. We bypass Chat here and drive

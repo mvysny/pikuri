@@ -154,13 +154,14 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   end
 
   # Synthetic providers are plain modules exposing the same duck type the
-  # real provider instances do — +.search(query, max_results:)+ + +.label+ —
-  # so the cascade drives them identically.
+  # real provider instances do — +.search(query, max_results:, cancellable:)+
+  # + +.label+ — so the cascade drives them identically.
   let(:good) do
     parent = self
     Module.new do
       define_singleton_method(:label) { 'Good' }
-      define_singleton_method(:search) do |query, max_results:|
+      define_singleton_method(:search) do |query, max_results:, cancellable: nil|
+        _ = cancellable
         parent.good_result(query, max_results)
       end
     end
@@ -170,8 +171,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     Module.new do
       def self.label = 'Bad'
 
-      def self.search(_query, max_results:)
-        _ = max_results
+      def self.search(_query, max_results:, cancellable: nil)
+        _ = [max_results, cancellable]
         raise Pikuri::Tool::Search::Engines::Unavailable, 'rate-limited'
       end
     end
@@ -206,7 +207,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   it 'renders an empty result list as the standard no-results stub' do
     empty = Module.new do
       def self.label = 'Empty'
-      def self.search(_q, max_results:) = (_ = max_results; [])
+      def self.search(_q, max_results:, cancellable: nil) = (_ = [max_results, cancellable]; [])
     end
     assert_equal "## Search Results\n\nNo results found.", engine_with([empty]).search('ruby', max_results: 10)
   end
@@ -221,8 +222,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     boom = Module.new do
       def self.label = 'Boom'
 
-      def self.search(_query, max_results:)
-        _ = max_results
+      def self.search(_query, max_results:, cancellable: nil)
+        _ = [max_results, cancellable]
         raise 'network kaboom'
       end
     end
@@ -236,7 +237,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     seen = nil
     spy = Module.new
     spy.define_singleton_method(:label) { 'Spy' }
-    spy.define_singleton_method(:search) do |q, max_results:|
+    spy.define_singleton_method(:search) do |q, max_results:, cancellable: nil|
+        _ = cancellable
       seen = q
       [Pikuri::Tool::Search::Result.new(url: 'https://example.com', title: "ok (#{max_results})", body: '')]
     end
@@ -255,7 +257,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
       calls = 0
       once = Module.new
       once.define_singleton_method(:label) { 'Once' }
-      once.define_singleton_method(:search) do |q, max_results:|
+      once.define_singleton_method(:search) do |q, max_results:, cancellable: nil|
+        _ = cancellable
         calls += 1
         [Pikuri::Tool::Search::Result.new(url: 'https://example.com', title: "ok: #{q} (#{max_results})", body: '')]
       end
@@ -289,7 +292,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
     Module.new do
       def self.label = 'Pair'
 
-      def self.search(query, max_results:)
+      def self.search(query, max_results:, cancellable: nil)
+        _ = cancellable
         _ = max_results
         [
           Pikuri::Tool::Search::Result.new(url: 'https://example.com/a', title: 'Result A', body: "body a — about #{query}"),
@@ -353,7 +357,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, 'logging' do
     other = Module.new do
       def self.label = 'Other'
 
-      def self.search(_query, max_results:)
+      def self.search(_query, max_results:, cancellable: nil)
+        _ = cancellable
         _ = max_results
         [Pikuri::Tool::Search::Result.new(url: 'https://example.com/only', title: 'Only', body: 'body')]
       end

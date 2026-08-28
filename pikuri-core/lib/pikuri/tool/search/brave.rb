@@ -58,14 +58,17 @@ module Pikuri
         #
         # @param query [String] search query (already normalized)
         # @param max_results [Integer] max entries; Brave's +count+ (1..20)
+        # @param cancellable [Pikuri::Agent::Control::Cancellable] makes
+        #   {LIMITER}'s pacing wait interruptible; see {RateLimiter#call}.
         # @return [Array<Result>] hits, possibly empty when Brave matched nothing
         # @raise [Engines::Unavailable] on HTTP 429 or 5xx (the cascade falls
         #   back), or if {LIMITER} is in cooldown. Other non-2xx (401/403 bad
         #   key) bubble up as +RuntimeError+.
         # @raise [RuntimeError] for non-rate-limit HTTP failures, or a
         #   zero-result response that isn't a recognized empty-results payload.
-        def search(query, max_results: DEFAULT_MAX_RESULTS)
-          LIMITER.call do
+        def search(query, max_results: DEFAULT_MAX_RESULTS,
+                   cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
+          LIMITER.call(cancellable: cancellable) do
             response = Faraday.get(
               ENDPOINT,
               { q: query, count: max_results },

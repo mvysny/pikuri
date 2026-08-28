@@ -46,14 +46,17 @@ module Pikuri
         #
         # @param query [String] search query (already normalized)
         # @param max_results [Integer] max result entries
+        # @param cancellable [Pikuri::Agent::Control::Cancellable] makes
+        #   {LIMITER}'s pacing wait interruptible; see {RateLimiter#call}.
         # @return [Array<Result>] hits, possibly empty when DDG matched nothing
         # @raise [Engines::Unavailable] on a soft-block (anomaly/CAPTCHA page) or
         #   HTTP 429/5xx (the cascade falls back), or if {LIMITER} is in cooldown.
         # @raise [RuntimeError] on other HTTP failures or an unrecognized
         #   empty-results layout. A genuine empty-results page is not an error;
         #   see {.parse}.
-        def search(query, max_results: DEFAULT_MAX_RESULTS)
-          LIMITER.call do
+        def search(query, max_results: DEFAULT_MAX_RESULTS,
+                   cancellable: Pikuri::Agent::Control::Cancellable::NEVER)
+          LIMITER.call(cancellable: cancellable) do
             response = Faraday.get(ENDPOINT, { q: query }, { 'User-Agent' => USER_AGENT })
             unless response.success?
               if response.status == 429 || response.status >= 500

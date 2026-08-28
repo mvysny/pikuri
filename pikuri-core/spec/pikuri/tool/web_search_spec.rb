@@ -30,8 +30,8 @@ RSpec.describe 'Pikuri::Tool::WebSearch.build' do
       originals = [Pikuri::Tool::Search::DuckDuckGo, Pikuri::Tool::Search::Brave, Pikuri::Tool::Search::Exa]
                   .to_h { |provider| [provider, provider.instance_method(:search)] }
       originals.each_key do |provider|
-        provider.define_method(:search) do |_query, max_results:|
-          _ = max_results
+        provider.define_method(:search) do |_query, max_results:, cancellable: nil|
+          _ = [max_results, cancellable]
           calls << label
           []
         end
@@ -91,7 +91,8 @@ RSpec.describe 'Pikuri::Tool::WebSearch.build' do
       original = Pikuri::Tool::Search::DuckDuckGo.instance_method(:search)
       @calls = []
       calls = @calls
-      Pikuri::Tool::Search::DuckDuckGo.define_method(:search) do |query, max_results:|
+      Pikuri::Tool::Search::DuckDuckGo.define_method(:search) do |query, max_results:, cancellable: nil|
+        _ = cancellable
         calls << { query: query, max_results: max_results }
         [Pikuri::Tool::Search::Result.new(
           url: 'https://example.com',

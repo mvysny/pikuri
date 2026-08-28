@@ -19,6 +19,12 @@ module Pikuri
       # (the response lands, then the next boundary trips), nor is an in-flight
       # tool (notably +Bash+). Both are the intentional "gentle cancel" v1 scope.
       #
+      # {#sleep} widens that boundary by one case: code *waiting* inside a tool
+      # can wait through this instead of +Kernel#sleep+ and become
+      # interruptible. It reaches waits only — a thread blocked in IO (a Faraday
+      # read, +Subprocess#wait+) is still uninterruptible, so most of a tool's
+      # blocking is untouched by design.
+      #
       # == Sub-agent semantics
       #
       # Cancellation is a global "stop the whole tree" signal — the +agent+ tool
@@ -39,9 +45,27 @@ module Pikuri
           end
         end
 
+        # Longest a {#sleep} stays unresponsive to a {#cancel!}: it wakes on
+        # this cadence to re-check the flag. Polling rather than a
+        # +ConditionVariable+ because {#cancel!} must stay callable from a
+        # SIGINT trap, where taking a +Mutex+ raises +ThreadError+ — so the
+        # waking side pays, and the signalling side stays a bare flag write.
+        #
+        # @return [Float] seconds
+        SLICE_SECONDS = 0.1
+
         def initialize
           @cancelled = false
         end
+
+        # A token that never trips — the null object for code that structurally
+        # needs one (a {#sleep} to wait through, a +cancellable:+ parameter) when
+        # the host wired no cancellation. Frozen, so a stray {#cancel!} raises
+        # +FrozenError+ rather than silently cancelling every agent that
+        # defaulted to it. Defined below {#initialize} so +@cancelled+ is set.
+        #
+        # @return [Cancellable]
+        NEVER = new.freeze
 
         # Flip the flag. Safe off the loop thread and idempotent. Takes effect
         # at the next {#check!} — see the class header for the gentle-cancel
@@ -65,6 +89,33 @@ module Pikuri
         # @raise [Cancelled] when {#cancel!} has been called since {#reset!}
         def check!
           raise Cancelled if @cancelled
+        end
+
+        # Wait +seconds+, cutting the wait short with {Cancelled} if {#cancel!}
+        # lands while waiting — the drop-in for +Kernel#sleep+ anywhere a tool
+        # paces or polls:
+        #
+        #   cancellable.sleep(2.0)   # returns after 2s, or raises on a cancel
+        #
+        # Checks the flag before waiting at all, so an already-cancelled token
+        # raises without a delay, and a non-positive +seconds+ is still a
+        # cancellation check rather than a no-op. Wakes every {SLICE_SECONDS} to
+        # look, so a cancel is honoured within that.
+        #
+        # @param seconds [Float] how long to wait; +<= 0+ returns at once.
+        # @return [void]
+        # @raise [Cancelled] if {#cancel!} has been called, before or during
+        #   the wait.
+        def sleep(seconds)
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+          loop do
+            check!
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            return if remaining <= 0
+
+            # Kernel., or this recurses into itself.
+            Kernel.sleep([remaining, SLICE_SECONDS].min)
+          end
         end
 
         # Reset the flag to armed. Called by {Agent} at each turn start so a
