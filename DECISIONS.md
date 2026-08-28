@@ -108,10 +108,9 @@ lifecycle.
 
 MCP and LSP need a **pool**: refcounted child processes, and a `#close`
 that must not kill another caller's in-flight JSON-RPC request. There is
-no five-line version. So they stay one-agent-only, on the reasoning in
-`ideas/concurrent-tool-use.md` — both are coding tooling, coding is TUI
-work, and a TUI is one agent; being wrong is slow (jdtls twice), never
-incorrect.
+no five-line version. So they stay one-agent-only: both are coding tooling,
+coding is TUI work, and a TUI is one agent; being wrong is slow (jdtls
+twice), never incorrect.
 
 The win is worth naming because it is not merely safety: sharing one Gloda
 pays the multi-hundred-MB snapshot copy and the ~1 s index rebuild once for
@@ -262,7 +261,7 @@ would send to the provider; that hazard is **pre-existing** (`check!` already
 fires before each call in a batch) and `Agent::History` already synthesizes
 `INTERRUPTED_RESULT` for the on-disk shape, but making cancellation reachable
 from more places makes it likelier. Left open in
-`ideas/concurrent-tool-use.md`.
+[`ideas/cancel-mid-tool-batch.md`](ideas/cancel-mid-tool-batch.md).
 
 ## D_tool_sharing_postures — A yardoc posture per tool, not a machine-readable field (2026-08-28)
 
@@ -361,9 +360,13 @@ pikuri's own single-threaded `bin/` scripts, and a real host implements
 those seams itself. Proposing a `Confirmer::Serialized` decorator for the
 first was library work whose value rested entirely on a demo's shortcut,
 which CLAUDE.md's `bin/` doctrine exists to prevent; the fix was to say so
-in the class doc. So a posture on a demo-only class states a *limit of that
-class*, never a backlog item. Open items live in
-`ideas/concurrent-tool-use.md`.
+in the class doc. Deleting `Confirmer::Terminal` outright, or inlining it
+into `bin/pikuri-code`, was rejected on the same doctrine read the other
+way: 237 lines inside the demo makes the demo *less* readable, which is what
+the doctrine is actually for, and it is the only place the warning-gated
+retype — security logic a real host must reimplement — is demonstrated. So a
+posture on a demo-only class states a *limit of that class*, never a backlog
+item.
 
 ## D_rate_limiter_scope — A limiter is scoped to the resource it protects, never to the agent (2026-08-28)
 
@@ -408,8 +411,14 @@ and is unreachable by `Control::Cancellable` — a user cancel is observed
 only after the call returns. And the circuit breaker is global, so one agent
 tripping a soft-block cools the provider down for all ten (right, since the
 block is IP-wide, but it reads as nine agents punished for the tenth's
-search). Whether the stall deserves a `try_lock`-and-fall-through-the-cascade
-fix is open in `ideas/concurrent-tool-use.md`.
+search). The stall does **not** deserve the obvious
+`try_lock`-and-fall-through-the-cascade fix (settled 2026-08-28): the
+no-config default is DuckDuckGo alone, so there is nothing to fall through
+*to*, and the fix would turn "wait 2 s" into "search failed". What shipped
+instead is an interruptible pacing wait (`D_tool_cancellation`), which lets a
+queued agent abandon the wait on a cancel without inventing a failure.
+Bounding the wait so a backed-up provider is *skipped* stays deferred — it is
+only coherent with two or more providers wired.
 
 ## D_search_engine_selection — The engine list is a validated set, and DuckDuckGo lost its exemption (2026-08-27)
 

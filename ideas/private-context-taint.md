@@ -214,8 +214,7 @@ honour now, expensive to discover later.
 
 Given that ordering, the shared cache does **not** undermine the per-node
 taint model, which is worth stating because a process-wide store under a
-per-context model looks like a hole (checked 2026-08-28, from
-`ideas/concurrent-tool-use.md`):
+per-context model looks like a hole (checked 2026-08-28):
 
 - **Out:** a tainted agent's egress is severed, so it never populates the
   cache.
