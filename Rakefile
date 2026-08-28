@@ -4,6 +4,9 @@ require 'json'
 require 'net/http'
 require 'open3'
 
+# Executable form of CLAUDE.md's seam tripwires — see tasks/tripwires.rake.
+Dir.glob(File.expand_path('tasks/*.rake', __dir__)).sort.each { |f| load f }
+
 # Top-level Rakefile for the pikuri monorepo. The release task bumps
 # every gem's VERSION constant in lockstep, builds each gem, and
 # pushes each to rubygems.org — same shape Rails (rails/rails) uses
