@@ -79,6 +79,113 @@ design.
 
 ---
 
+## D_unwound_batch_repair — Answer the dangling calls on the way out, don't prevent the damage (2026-08-28)
+
+**Status:** Accepted; implemented 2026-08-28 as an `ensure` on
+{Pikuri::Agent#run_loop} calling a private `repair_dangling_tool_calls!`, four
+public `*_RESULT` constants on `Agent`, and
+`pikuri-core/spec/pikuri/agent/unwind_repair_spec.rb`. Graduated from
+`ideas/unwind-mid-tool-batch.md` (deleted).
+
+**Context.** ruby_llm's `complete_once` appends the assistant `tool_calls`
+message *before* running any tool, so anything unwinding out of a batch leaves
+calls that no `:tool` message answers. OpenAI and Anthropic reject that with a
+400; a local llama.cpp feeds it to the chat template and the model improvises
+— the same loud-on-cloud / silent-on-local split as
+`D_reference_text_as_user_turn`.
+
+Four sources, and the first is the one that shapes the decision: **any**
+exception out of a tool, which "errors are loud" deliberately lets propagate —
+a bug in tool code, a corrupt file, a library blowing up. Then
+`Cancellable::Cancelled` (from `before_tool_call`, from `Cancellable#sleep`
+inside a tool, or out of a sub-agent sharing the token),
+`StepLimit::Exceeded` from `tick!`, and `Interrupt` in a host that doesn't
+trap SIGINT.
+
+It was already shipping. `bin/pikuri-chat`'s `run_turn` rescues `Cancelled` and
+returns to the `> ` prompt with the agent intact, so Ctrl+C during a batch
+poisons the next message; and the seven `bin/` scripts running
+`on_exhausted: :synthesize` answer from the salvage path and return *normally*,
+leaving the same wreckage behind. An earlier draft of the idea note asserted
+the opposite ("they exit, or they `clear_conversation`") — worth recording,
+because the same reflex will say it again.
+
+**Decision.** An `ensure` on `run_loop` appends a `:tool` observation for every
+call the last assistant turn left unanswered, then the exception propagates
+untouched. The first unanswered call is told what went wrong; the ones behind
+it are told they never ran.
+
+`ensure` rather than a clause on each `rescue` is the load-bearing part. It
+catches sources nobody enumerated (`Interrupt` is not a `StandardError`), it is
+a no-op on the success path, and it runs *after* the `:synthesize` rescue body
+— so {Pikuri::Agent::Synthesizer.build_prompt} still reads the unrepaired
+history that its documented drop-calls-with-no-result pass expects, and the
+salvage answer does not change. The one wrinkle: Ruby restores `$!` once a
+rescue clause completes normally, so that branch hands its exception across in
+a local.
+
+Splitting culprit from skipped is worth the extra constant because telling a
+call that never started "you failed" invites a retry of something that was
+never attempted. It rests on `tool_calls` being insertion-ordered and ruby_llm
+iterating it with `each_value` — true only while `tool_concurrency` stays off,
+which `D_tool_sharing_postures` already asks for on separate grounds.
+
+**Alternatives rejected.**
+
+- **Prevent the damage: raise only where the conversation is well-formed.**
+  Have `before_tool_call` observe the flag instead of raising, have the
+  per-agent wrapper from `to_ruby_llm_tool` turn a `Cancelled` into an
+  observation and short-circuit the batch's remaining calls, and raise from
+  `after_message` when `tool_batch_complete?`. Nothing is ever synthesized:
+  every call gets a real result, and the invariant collapses to one sentence.
+  It was the leading candidate until the scope question was asked properly. It
+  only covers cancellation — a `NoMethodError` in tool code still dangles the
+  batch, so the repair path has to exist anyway and this becomes a second
+  mechanism sitting on top of it. And it makes cancel *less* responsive: cancel
+  latency becomes "when the current tool returns", which forecloses the
+  direction we want, where a long-running tool blocked in IO polls the flag and
+  aborts itself. (`RubyLLM::Tool::Halt` is the same idea wearing ruby_llm's own
+  API, and loses for the same two reasons.)
+- **Repair at turn start instead**, symmetric with the load path. Strictly
+  later: the damaged chat is observable to the host in between (an
+  `export_history`, a listener, a UI redraw), and the cause — which is what
+  makes the message worth reading — is no longer in hand by then.
+- **Reuse {Pikuri::Agent::History#repair_interrupted_tool_calls}.** It solves
+  this shape and is already specced. But it walks `History::Message`, whose
+  `role` is a `String` where ruby_llm's is a `Symbol`, and it carries
+  interleaving logic for an arbitrary stored file that a live chat cannot need
+  — the damage there is always the tail. A duck-typed shared helper with a
+  String/Symbol trap in it is worse than two tail scans. Its generic
+  `INTERRUPTED_RESULT` also stays put: the load path genuinely cannot tell a
+  killed process from a cancel, and here the cause is known.
+- **Drop the damaged tail** — delete the opener and its partial results, ending
+  at the last clean boundary. Cheap, invents nothing. It erases that the model
+  ever decided to call the tool, and "you tried this and it failed" is the most
+  useful thing to carry into the next turn.
+- **Refuse loudly** — a named error on the next `run_loop` telling the host to
+  reset. Hands the host a conversation it cannot use and no way to fix it in
+  place.
+- **Nothing, and document that a damaged agent must be reset.** Puts the burden
+  on every host, and fails at the provider rather than at the mistake — which
+  on a local model means it does not fail at all, it just goes strange.
+- **Sanitizing the exception message** before it lands in the conversation. It
+  can carry attacker-controlled bytes (a filename off a scraped page, an HTTP
+  body). Not a new leg: {Pikuri::Tool#run}'s own `"Error: …"` and tools' HTTP
+  error strings already put exactly those there, and a model cannot react to a
+  failure it is not told about. Class and message, never a backtrace.
+
+**Consequences.** `Agent` gained four public constants, on the same reasoning
+that makes `History::INTERRUPTED_RESULT` public: a renderer has to be able to
+tell a synthesized observation from a real one. Each is also emitted as an
+`Event::ToolResult`, so the listener stream stays consistent with
+`@chat.messages` and a host can display what was appended — at the cost of
+rendering identically to a result a tool really returned, which the wording of
+the constants is what distinguishes. `Testing::Script` gained `tool_batch`, the
+multi-call verb any batch-boundary spec needs. Dangling calls with *no*
+in-flight exception raise: that is pikuri having lost a batch on a turn that
+succeeded, and an `ensure` with no exception to clobber is a safe place to be
+loud.
+
 ## D_gloda_locks_mcp_does_not — A lock where it is one method, one-agent-only where it is a pool (2026-08-28)
 
 **Status:** Accepted; implemented 2026-08-28. {Pikuri::Thunderbird::Gloda}
@@ -256,12 +363,11 @@ than silently cancelling every agent that defaulted to it.
 provider failure: it is not caught by the `Unavailable` rescue, so no other
 provider is tried and nothing is cached. That is intended — cancel means stop,
 not "try Brave instead". A cancel landing mid-tool-batch leaves the chat holding
-an assistant `tool_calls` message with no `:tool` reply, which the next turn
-would send to the provider; that hazard is **pre-existing** (`check!` already
-fires before each call in a batch) and `Agent::History` already synthesizes
-`INTERRUPTED_RESULT` for the on-disk shape, but making cancellation reachable
-from more places makes it likelier. Left open in
-[`ideas/cancel-mid-tool-batch.md`](ideas/cancel-mid-tool-batch.md).
+an assistant `tool_calls` message with no `:tool` reply; that hazard is
+**pre-existing** (`check!` already fires before each call in a batch), but
+making cancellation reachable from more places makes it likelier. Settled by
+`D_unwound_batch_repair`, which found the real scope — any exception out of a
+tool does the same thing.
 
 ## D_tool_sharing_postures — A yardoc posture per tool, not a machine-readable field (2026-08-28)
 

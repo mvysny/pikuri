@@ -126,6 +126,24 @@ module Pikuri
       end
     end
 
+    # What {#run_loop} answers a tool call with when its batch unwound — see
+    # +== Repairing an unwound tool batch+. Public so a renderer can tell one
+    # from a real observation, as {History::INTERRUPTED_RESULT} is for the
+    # on-disk shape.
+    #
+    # Paired per cause: the first unanswered call is the one that raised or was
+    # about to, the rest never started, and telling a skipped call "you failed"
+    # invites a pointless retry. A tool failure has no constant — it reports
+    # +"Error: <class>: <message>"+, the shape {Tool#run} already returns for a
+    # validation failure.
+    CANCELLED_RESULT = '[Cancelled by the user]'
+    # @see CANCELLED_RESULT
+    CANCELLED_SKIPPED_RESULT = '[Not executed — the user cancelled this turn]'
+    # @see CANCELLED_RESULT
+    STEP_BUDGET_RESULT = '[Not executed — step budget exhausted]'
+    # @see CANCELLED_RESULT
+    FAILED_SKIPPED_RESULT = '[Not executed — a previous tool call in this batch failed]'
+
     # @param transport [ChatTransport] model-resolution bundle (+model+ /
     #   +provider+ / +assume_model_exists+ and, off the global server,
     #   +api_base+ / +api_key+). A +nil+ +transport.model+ is filled from
@@ -300,6 +318,26 @@ module Pikuri
     # *not* re-baselined: same conversation, new model, so message count and
     # running context size carry over. +nil+ keeps the current model.
     #
+    # == Repairing an unwound tool batch
+    #
+    # ruby_llm appends the assistant +tool_calls+ message *before* running any
+    # of them, so anything unwinding out of the batch — a tool raising, a
+    # {Control::Cancellable::Cancelled}, a tripped budget, an untrapped
+    # +Interrupt+ — leaves calls no +:tool+ message answers. OpenAI and
+    # Anthropic 400 on that; a local llama.cpp feeds it to the chat template
+    # and the model improvises. So an +ensure+ answers each dangling call
+    # ({#repair_dangling_tool_calls!}) and the exception then propagates: a
+    # host that keeps the conversation gets one it can still send.
+    #
+    # +ensure+ rather than a clause per +rescue+, because it also catches what
+    # nobody enumerated (+Interrupt+ is no +StandardError+) and it runs *after*
+    # the +:synthesize+ rescue body, leaving {Synthesizer.build_prompt} the
+    # unrepaired history its drop-calls-with-no-result pass expects.
+    #
+    # Unlike {History#repair_interrupted_tool_calls} — the load path, where a
+    # killed process leaves no clue and {History::INTERRUPTED_RESULT} has to be
+    # generic — the cause is in hand here and picks the wording.
+    #
     # @param user_message [String, nil] the turn's request; +nil+/blank runs a
     #   bare turn (see above)
     # @param transport [ChatTransport, nil] when non-+nil+ and structurally
@@ -357,8 +395,14 @@ module Pikuri
     rescue Control::StepLimit::Exceeded => e
       raise unless @step_limit&.on_exhausted == :synthesize
 
+      # Ruby restores +$!+ once a rescue clause completes normally, so the
+      # +ensure+ below would see no cause for this one unwind. Assigned before
+      # the synth runs, so a synth that raises doesn't displace the real reason.
+      exhausted = e
       @synth_answer = Synthesizer.run_synthesizer(@extension_context, @chat.messages, user_message)
       nil
+    ensure
+      repair_dangling_tool_calls!(exhausted || $!)
     end
 
     # Return the agent to a fresh-conversation state without tearing down
@@ -816,6 +860,67 @@ module Pikuri
     def track_message(msg, kind: 'user', id: nil)
       @message_meta[msg] = { id: id || History.mint_id, kind: kind } unless msg.role == :system
       msg
+    end
+
+    # Answer every call the last assistant turn left unanswered, emitting each
+    # synthesized observation as an {Event::ToolResult} so a host can show what
+    # it appended. Rationale in {#run_loop}'s +== Repairing an unwound tool
+    # batch+.
+    #
+    # Order carries the first-vs-rest split ({CANCELLED_RESULT}): +tool_calls+
+    # is insertion-ordered and ruby_llm runs it with +each_value+, so the first
+    # gap is the culprit — true only while +tool_concurrency+ stays off, which
+    # {Pikuri::Tool}'s +== Sharing+ asks for on separate grounds.
+    #
+    # Not {History#repair_interrupted_tool_calls}: damage here is always the
+    # tail, and that walk is over +History::Message+, whose +role+ is a +String+
+    # where ruby_llm's is a +Symbol+.
+    #
+    # @param cause [Exception, nil] what the turn is unwinding with; +nil+ on
+    #   the success path, where nothing dangles.
+    # @return [void]
+    # @raise [RuntimeError] if calls dangle with no +cause+ — pikuri lost a
+    #   batch on a turn that succeeded. Safe to raise from an +ensure+ here
+    #   precisely because there is no in-flight exception to clobber.
+    def repair_dangling_tool_calls!(cause)
+      messages = @chat.messages
+      opener_index = messages.rindex { |m| m.role == :assistant && m.tool_calls&.any? }
+      return if opener_index.nil?
+
+      answered = messages[(opener_index + 1)..].filter_map { |m| m.tool_call_id if m.role == :tool }
+      dangling = messages[opener_index].tool_calls.each_value.reject { |c| answered.include?(c.id) }
+      return if dangling.empty?
+
+      if cause.nil?
+        raise 'unanswered tool calls on a turn that did not unwind: ' \
+              "#{dangling.map { |c| "#{c.name}(#{c.id})" }.join(', ')}"
+      end
+
+      culprit, skipped = unanswered_results(cause)
+      dangling.each_with_index do |call, i|
+        content = i.zero? ? culprit : skipped
+        track_message(@chat.add_message(role: :tool, content: content, tool_call_id: call.id))
+        @listeners.emit(Event::ToolResult.new(content: content))
+      end
+      LOGGER.warn { "answered #{dangling.size} dangling tool call(s) after #{cause.class}" }
+      nil
+    end
+
+    # @param cause [Exception]
+    # @return [Array(String, String)] what the call that raised (or was about
+    #   to) is told, then what the calls behind it that never started are told.
+    #   See {CANCELLED_RESULT}.
+    def unanswered_results(cause)
+      case cause
+      when Control::Cancellable::Cancelled then [CANCELLED_RESULT, CANCELLED_SKIPPED_RESULT]
+      # An exhausted budget singles no call out.
+      when Control::StepLimit::Exceeded then [STEP_BUDGET_RESULT, STEP_BUDGET_RESULT]
+      # Deliberately unsanitized: the message can carry untrusted bytes (a
+      # filename off a scraped page), which {Tool#run}'s own +"Error: ..."+
+      # already puts in the conversation — and a model cannot react to a
+      # failure it is not told about.
+      else ["Error: #{cause.class}: #{cause.message}", FAILED_SKIPPED_RESULT]
+      end
     end
 
     # Build the per-chunk block passed to +Chat#complete+. Each call converts

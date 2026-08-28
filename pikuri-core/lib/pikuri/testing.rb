@@ -169,13 +169,29 @@ module Pikuri
       #   into the wire call
       # @return [self]
       def tool_call(name, **arguments)
-        @tool_call_seq += 1
-        call = {
-          'id' => "call_#{@tool_call_seq}",
-          'type' => 'function',
-          'function' => { 'name' => name, 'arguments' => JSON.generate(arguments) }
-        }
-        @responses << { json: assistant_body(content: nil, tool_calls: [call]) }
+        tool_batch([name, arguments])
+      end
+
+      # Queue an assistant turn that calls several tools at once — one
+      # +tool_calls+ array, the shape a provider sends when the model batches.
+      # ruby_llm runs them in order, each answered by its own +:tool+ message.
+      #
+      #   llm.tool_batch(['calculator', { expression: '1 + 1' }],
+      #                  ['calculator', { expression: '2 + 2' }])
+      #
+      # What a spec needs to exercise anything treating a batch as a unit — the
+      # interloper's drain boundary, or which call a mid-batch unwind blames.
+      #
+      # @param calls [Array<Array(String, Hash)>] +[name, arguments]+ pairs, in
+      #   the order the model asked for them
+      # @return [self]
+      def tool_batch(*calls)
+        wire = calls.map do |name, arguments|
+          @tool_call_seq += 1
+          { 'id' => "call_#{@tool_call_seq}", 'type' => 'function',
+            'function' => { 'name' => name, 'arguments' => JSON.generate(arguments || {}) } }
+        end
+        @responses << { json: assistant_body(content: nil, tool_calls: wire) }
         self
       end
 
