@@ -352,8 +352,7 @@ The recognized keys:
 | `llm_server` | all scripts | LLM server base URL; a trailing `/v1` is optional (`https://api.x.ai` and `https://api.x.ai/v1` both work) |
 | `llm_model` | all scripts | chat model identifier |
 | `llm_api_key` | all scripts | API key for a hosted provider; omit for a keyless local server |
-| `brave_search_api_key` | chat, code, assistant | enables Brave web search (below) |
-| `exa_api_key` | chat, code, assistant | enables Exa web search (below) |
+| `search` | chat, code, assistant, os | the search block: `brave_key`, `exa_key`, `engines` (below) |
 | `embed_model` | corpus, memory | embedding model |
 | `extraction_model` | memory | mem0 extraction model |
 | `reranker_model`, `reranker_server` | corpus | reranker model / its server |
@@ -364,15 +363,44 @@ security switch you'd never want silently persisted in a file.
 
 ## Search providers and their privacy trade-offs
 
-`web_search` is a cascade across whichever providers you have
-configured. The orchestration lives in
+`web_search` is a cascade across whichever providers you selected. The
+orchestration lives in
 `pikuri-core/lib/pikuri/tool/search/engines.rb`; each provider's
 privacy posture is documented in detail at the top of its source
 file.
 
-### DuckDuckGo (default, no setup)
+### Choosing which engines run
 
-Always available — no API key, no registration. Pikuri scrapes the
+The `engines:` list under `search:` names the engines you want, out of
+`duckduckgo`, `brave` and `exa`:
+
+```yaml
+search:
+  brave_key: your-key-here
+  exa_key: xyz            # parked: a key you don't list is simply unused
+  engines: [brave]        # only Brave runs
+```
+
+Two things to know about it. **It is a set, not a preference order** —
+the cascade picks at random per query, so `[brave, duckduckgo]` sends
+roughly half your searches to each, and does *not* mean "Brave first".
+That randomness is deliberate: every paid provider meters you, so
+spreading queries stretches the free tiers. If you want one engine,
+list one engine.
+
+And **naming an engine whose key you haven't supplied is an error**,
+not a shrug — the scripts refuse to start rather than quietly search
+with fewer engines than you asked for. So is an empty list, a repeat,
+and a name that isn't one of the three.
+
+Leave `engines:` out and you get the old behavior: DuckDuckGo plus
+whichever keyed providers you configured.
+
+### DuckDuckGo (the no-setup default)
+
+No API key, no registration — the only engine that works with no
+config file at all, which is why it runs unless your `engines:` list
+says otherwise. Pikuri scrapes the
 public HTML endpoint at `html.duckduckgo.com`. DuckDuckGo's policy
 is that they don't save your IP alongside searches, don't sell
 personal information, and proxy the request so downstream content
@@ -395,20 +423,23 @@ is available on their Enterprise plan).
 To enable it, register for a free API key at
 <https://api-dashboard.search.brave.com> — the "Data for Search"
 tier gives you 1 query/sec and ~2k queries/month at no cost. Then
-add it to your config file under `brave_search_api_key`:
+add it to your config file under `search:`:
 
 ```yaml
-brave_search_api_key: your-key-here
+search:
+  brave_key: your-key-here
 ```
 
 Once the key is present, Brave joins the cascade and may be chosen
-over DuckDuckGo for any given query. See
+over DuckDuckGo for any given query — add `engines: [brave]` to leave
+DuckDuckGo out entirely. See
 `pikuri-core/lib/pikuri/tool/search/brave.rb`.
 
 ### Exa (paid, weakest privacy)
 
 Optional. Exa is a paid neural-search API; activate it by adding an
-`exa_api_key` to your config file. Be aware that Exa's Terms grant them a *perpetual,
+`exa_key` under `search:` and listing `exa` in `engines:` (or leaving
+`engines:` out). Be aware that Exa's Terms grant them a *perpetual,
 irrevocable, sub-licensable* license over the queries you submit,
 and their privacy policy explicitly says queries are used for
 training. Don't enable Exa if your search history would be
@@ -421,12 +452,23 @@ privacy posture.
 
 1. Run `llama-server` locally (Steps 2–3 above).
 2. Register a free Brave Search API key and put it in
-   `~/.pikuri-examples-config.yaml` under `brave_search_api_key`.
-3. Leave Exa unset.
+   `~/.pikuri-examples-config.yaml` under `search: brave_key:`.
+3. Set `engines: [brave]`, so nothing falls back to DuckDuckGo (and
+   therefore Bing) behind your back.
+4. Leave Exa unset.
+
+```yaml
+search:
+  brave_key: your-key-here
+  engines: [brave]
+```
 
 With this configuration, your prompts never leave your machine,
-and your search queries hit Brave under a clear
-no-training-on-queries commitment.
+and *every* search query hits Brave under a clear
+no-training-on-queries commitment. The trade-off is that Brave's free
+tier is ~2k queries/month with no second engine to absorb the
+overflow: when it's exhausted, `web_search` returns an error instead
+of quietly asking someone else.
 
 ## Next chapter — sub-agents
 
