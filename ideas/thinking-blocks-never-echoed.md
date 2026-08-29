@@ -155,9 +155,10 @@ one is a real fork:
   also invalidates every existing cache prefix.
 - **It does not actually fix the round trip.** ruby_llm loses signatures,
   collapses multi-block turns into one, and drops `redacted_thinking`
-  blocks — the three upstream defects catalogued in
-  `ideas/ruby-llm-thinking-round-trip.md`. Enabling thinking would start
-  *sending* blocks, and some would be the malformed shapes that earn the real 400
+  blocks — three upstream defects, filed as
+  [ruby_llm#895](https://github.com/crmne/ruby_llm/issues/895) and
+  [#896](https://github.com/crmne/ruby_llm/issues/896). Enabling thinking would
+  start *sending* blocks, and some would be the malformed shapes that earn the real 400
   ("`thinking` or `redacted_thinking` blocks in the latest assistant
   message cannot be modified"). **Turning this on before upstream is fixed
   could convert a silent degradation into a hard failure.**
@@ -197,6 +198,8 @@ Sketch of the options, unargued:
   entry. `D_thinking_block_replay` exists because the last thinking-related
   behaviour rode into `D_history_load_repairs` as a footnote and stayed
   wrong there for two months.
-- The three ruby_llm round-trip bugs are upstream's and are catalogued in
-  `ideas/ruby-llm-thinking-round-trip.md` — file them from there, once, not
-  twice.
+- The three ruby_llm round-trip bugs are upstream's and already filed —
+  [#895](https://github.com/crmne/ruby_llm/issues/895) (Anthropic replays a
+  display-omitted block as `redacted_thinking`) and
+  [#896](https://github.com/crmne/ruby_llm/issues/896) (`Thinking` cannot hold a
+  turn's block sequence). Cite those; don't re-derive them.

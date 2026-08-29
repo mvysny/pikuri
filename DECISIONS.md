@@ -182,8 +182,10 @@ provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
   a display-omitted block re-serializes as `redacted_thinking`, multi-block
   turns collapse and lose all but the first signature, and a `redacted_thinking`
   block alongside a `thinking` one is dropped. All three are real and all three
-  are upstream's; none of them blocks this, because pikuri sends no thinking to
-  Anthropic at all.
+  are upstream's — filed as
+  [ruby_llm#895](https://github.com/crmne/ruby_llm/issues/895) and
+  [#896](https://github.com/crmne/ruby_llm/issues/896) — and none of them blocks
+  this, because pikuri sends no thinking to Anthropic at all.
 - **Emitting a warning or event when thinking is dropped.** Duplicates a
   recovery nobody can act on, for the same reason the tool-set-drift warning
   above was declined.
