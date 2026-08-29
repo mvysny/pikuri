@@ -72,10 +72,24 @@ module Tripwires
     end
   end
 
+  # True for a file the prose scans must skip rather than read as text.
+  #
+  # The repo tracks binary assets since the mascot landed (+assets/kuri.png+),
+  # and a PNG's bytes are not valid UTF-8 — +Regexp#match?+ raises
+  # +ArgumentError+ on them, taking the whole run down. The sniff is git's own
+  # heuristic (a NUL byte in the first block means binary), deliberately *not*
+  # +valid_encoding?+: a genuine *text* file with a broken encoding should
+  # still blow up loudly rather than be dropped from the scan, per this file's
+  # rule that a green tripwire which scanned nothing is the worst outcome.
+  def self.binary?(path)
+    File.open(path, 'rb') { |f| f.read(8000).to_s.include?("\0") }
+  end
+
   # "path:line: text" for every line matching +pattern+.
   def self.hits(pattern, files:, code_only: false)
     files.flat_map do |path|
       next [] unless File.file?(path)
+      next [] if binary?(path)
 
       lines = code_only ? code_lines(path) : all_lines(path)
       lines.filter_map do |line, index|
@@ -103,7 +117,7 @@ module Tripwires
   # +placeholders+ is for text that looks like a slug and is not — today
   # only +D_xxx+, the stand-in in CLAUDE.md's CHANGELOG rule.
   def self.dangling_slugs(pattern, heading:, doc:, files:, placeholders: [])
-    cited = files.select { |f| File.file?(f) }
+    cited = files.select { |f| File.file?(f) && !binary?(f) }
                  .flat_map { |f| File.read(f, encoding: 'UTF-8').scan(pattern) }
                  .reject { |_slug, glob| glob == '*' }
                  .map(&:first).uniq - placeholders

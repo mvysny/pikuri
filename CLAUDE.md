@@ -132,6 +132,11 @@ entry file, and (where relevant) `bin/` + `prompts/`. Top-level `Gemfile`
 wires every gem via `gemspec path: '<gem>'`; top-level `Rakefile` fans
 out `rake test` and orchestrates `rake release VERSION=x.y.z` in lockstep.
 
+`assets/` holds **Kuri**, the mascot — a pika; `kuri.svg` is the master
+(transparent, tight `viewBox`) and `kuri.png` its raster. Hosts render
+their own icons from it and own how they get a background; the drawing
+and its anatomy rule live in `DECISIONS.md` `D_kuri_mascot`.
+
 **"The book"** = the `book/` folder; `book/README.md` is the ToC.
 "The book" and "the guide" both mean there. (Renamed from
 `docs/guide/` in July 2026.)

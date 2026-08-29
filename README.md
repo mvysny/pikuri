@@ -2,6 +2,8 @@
 
 [![status](https://ci.codeberg.org/api/badges/17229/status.svg)](https://ci.codeberg.org/repos/17229)
 
+<img src="assets/kuri.svg" alt="Kuri, pikuri's mascot — a pika" align="right" width="150">
+
 > *"Once men turned their thinking over to machines in the hope that
 > this would set them free. But that only permitted other men with
 > machines to enslave them."*
@@ -17,6 +19,13 @@ decides to call a network tool. The smallest demo binary is
 of the family adds skills, task tracking, MCP, filesystem tools, a
 full in-repo coding agent, and local-corpus vector search à la
 carte.
+
+That's **Kuri** on the right — a pika, which is a real animal: a
+palm-sized relative of the rabbit that lives in alpine rockslides,
+spends the summer stacking cut grass into a pile under a rock, spends
+the winter eating it, and never leaves its own mountain. He gathers
+what he needs, keeps it where he can see it, and shouts at anything
+that comes close. It seemed about right.
 
 **Use the machine. Own it, and understand it — so no one with a
 machine owns you.**

@@ -79,6 +79,99 @@ design.
 
 ---
 
+## D_kuri_mascot — pikuri's mascot is a pika named Kuri, in a grey Talus coat (2026-08-29)
+
+**Status:** Accepted, shipped 2026-08-29 as `assets/kuri.svg` +
+`assets/kuri.png`, shown in `README.md`. The *icons* built from him are
+downstream and belong to whichever host needs them; pikuri-web was the
+first to build a set, and records its own icon decisions on its own side.
+(Foreign decision slugs are deliberately not cited here — `T_decision_slugs`
+holds every `D_` in this repo to a heading in this file, and a library
+should not know a shell's decision ids anyway.)
+
+**Context.** pikuri-web needed a PWA icon and discovered pikuri had no
+mascot at all. Picking one is a decision for *this* repo, not for a
+shell: it is the project's face, it will outlive any one front-end, and
+every host that wants an icon renders it from the same drawing.
+
+**Decision.** **Kuri, a pika** — *Ochotona*, a palm-sized lagomorph of
+alpine rockslides. The animal is the project's own argument, told as an
+animal rather than a paragraph: it does not migrate and does not
+hibernate; it spends the summer clipping grass into a haypile under a
+rock and the winter living on what it stored; it sits up on its boulder
+and gives a sharp alarm call before anything gets close. That is the
+local corpus, the offline posture and the confirmer, in one creature.
+The name was already inside the project's own — *pi‑ku‑ri* — so the
+mascot hands the name a folk etymology it can keep.
+
+He is drawn flat and geometric, head-on, in the **Talus** coat: fur
+`#a89c8e`, inner ear `#786d61`, muzzle `#ded5c8`, ink `#26241f` — the
+grey-brown of the scree he hides in. `assets/kuri.svg` is the master and
+is **transparent**, with a tight `viewBox` on the art's own bounding
+square so a host can scale it into any frame without a transform.
+
+**The anatomy rule, because the first draft got it wrong.** Ears that
+are small, high and clear of the skull read as a **teddy bear** — which
+is exactly what the first render produced, and it was not obvious until
+it was drawn at 512px. A pika's ears are *large* and sit on the **sides**
+of the head, at roughly 8 and 4 o'clock, overlapping it. Those, a muzzle
+kept well under half the face, and whiskers are the three tells. Any
+future pose keeps them or stops being a pika.
+
+**Rejected: three other mascots and one anti-mascot.** All were drawn
+before choosing, because a mascot argument settled in prose picks the
+best *sentence* rather than the best drawing.
+
+- **A spark in a sealed jar.** Draws the containment posture directly —
+  the sandbox, the severed network, the read-before-edit gate. Dropped
+  because "in a jar" reads as *trapped* rather than *safe*, the wrong
+  note for a tool asking to be trusted, and because it is two objects at
+  32px.
+- **A ruby firefly** — a beetle whose shell is a cut ruby, carrying its
+  own light. Says Ruby without shipping another faceted stone. Dropped
+  because red is the *error* colour in pikuri's palette, and spending it
+  on the mascot means red stops meaning "something went wrong".
+- **A hooded keeper with a lamp**, the README's Dune epigraph as a
+  character. The strongest silhouette of the set. Dropped on the owner's
+  call: a faceless hooded figure reads cryptic and a step further,
+  occult, which is a cold face for a project whose premise is teaching —
+  **and the mascot is deliberately not a Dune reference.** The epigraph
+  stays in the README; it does not get a body.
+- **A pulse-line mark and no mascot at all** — flat, one jolt, flat, for
+  ぴくり, "a small twitch". Flawless at 16px, one colour, nothing to keep
+  on-model. Kept in reserve rather than rejected: a mark and a mascot are
+  not exclusive, and this is what to reach for if a one-ink or
+  eight-pixel rendering is ever needed.
+
+**Rejected: seven other coats, and the warm ones were the hard call.**
+Eight were drawn as one SVG with four values swapped, so the comparison
+was the colour and nothing else. **Ember** (`#dd9046`) was the initial
+recommendation and the runner-up: warm, cuddly, close enough to the send
+gold that an icon would rhyme with the UI. It lost because warmth is
+generic — Ember reads as *a friendly shape in a brand colour*, where
+Talus reads as *this animal*. **Send gold** (`#e8b339`) is the literal
+brand token and the brightest on a dark ground, and invites the
+electric-rodent comparison. **Cinnamon** is the most realistic and the
+least brand-y. **Tool teal** is the most logo-like and no pika was ever
+that colour. Accent blue, slate-and-gold and bone were also drawn; bone
+wins 16px and then vanishes on a white tab strip.
+
+**Consequences.** Talus is a **mid grey, and that is the one thing it
+costs**: there is no ground it reliably contrasts against, so any host
+rendering him small has to supply one. That is a host's decision, not
+this repo's — pikuri-web pays it by putting every icon it ships on an
+opaque plate. At README and book sizes no plate is needed: mid grey holds
+on both a white and a dark page, which is why `assets/kuri.png` is
+transparent too.
+
+There is deliberately **no generator script and no second pose**. The
+mascot changes about as often as a logo does, and a monorepo with no
+build step should not grow one for it; a sleeping Kuri for an empty
+state, or a one-colour Kuri, gets drawn from this head-on sit if and
+when something actually needs it.
+
+---
+
 ## D_model_owns_thinking — Send no thinking configuration; the model's own default stands (2026-08-29)
 
 **Status:** Accepted 2026-08-29; describes shipped behaviour, no code change.
