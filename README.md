@@ -27,9 +27,6 @@ the winter eating it, and never leaves its own mountain. He gathers
 what he needs, keeps it where he can see it, and shouts at anything
 that comes close. It seemed about right.
 
-**Use the machine. Own it, and understand it — so no one with a
-machine owns you.**
-
 ## Install
 
 ```sh
