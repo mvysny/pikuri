@@ -79,6 +79,101 @@ design.
 
 ---
 
+## D_model_owns_thinking — Send no thinking configuration; the model's own default stands (2026-08-29)
+
+**Status:** Accepted 2026-08-29; describes shipped behaviour, no code change.
+Companion to `D_thinking_block_replay`, which owns what happens to a thinking
+block pikuri has already *stored*.
+
+**Context.** pikuri sets no thinking / reasoning parameter on any request.
+`with_thinking` appears nowhere in the repo, and `Agent` exposes no
+`attr_reader :chat`, so the Chat is sealed behind the loop seam and a host
+cannot set one either. Until now that was an *accident* — an invariant with no
+decision behind it, discovered while working `D_thinking_block_replay`. This
+entry is the decision it never had.
+
+**What "no parameter" actually resolves to.** Omitting the parameter takes the
+model's own default, and on models that support thinking that default is on:
+OpenAI reasoning models always reason and an omitted `reasoning_effort` takes
+the provider's default rather than its floor; Gemini 2.5 Pro cannot disable
+thinking and 2.5 Flash defaults to it; Anthropic Opus 5 and Sonnet 5 are on by
+default, Fable 5 and Mythos 5 always (`{type: "disabled"}` is a 400 there); and
+on the local llama.cpp pikuri actually wires, the chat template decides —
+Qwen3's `enable_thinking` defaults true, DeepSeek-R1 reasons unconditionally.
+The one band where omitting means *off* is Anthropic's Opus 4.8 / 4.7 / 4.6 and
+Sonnet 4.6, which need an explicit `{type: "adaptive"}`.
+
+**Decision.** Send nothing. The model's default stands, whatever it is.
+
+**The posture is the decision, not the outcome.** "Thinking ends up on" is a
+property of today's lineup, not a guarantee — the 4.6–4.8 band is the
+counter-example, and defaults move. What pikuri commits to is *not overriding
+the server's own default*, the same posture as the connection seam (a per-chat
+`RubyLLM::Context`, never a process-global `RubyLLM.configure`) and
+`openai_use_system_role` (adapt to what the local server actually is). It stays
+right when a model's default flips, and on a local-first stack the chat
+template — not pikuri — is what knows whether the served model reasons.
+
+**Request-side config and block replay are independent everywhere but one
+place.** Sending no thinking config must not mean "never echo a stored thinking
+block back", and on three of ruby_llm's four protocols it doesn't: `converse`
+(`chat.rb:187`), `gemini` (`:157`) and `chat_completions` (`:393`) all key the
+replay off the stored message. Only the `anthropic` protocol gates it on the
+outgoing request's config (`:344`, `:378`), so there — and only there — pikuri's
+default silently also means "never replay", including on a tool-use turn where
+Anthropic documents echoing back as *required*. That is upstream's bug, filed as
+[ruby_llm#897](https://github.com/crmne/ruby_llm/issues/897); it does not argue
+against this decision, because Converse serves the same Claude models and
+already replays without consulting the request.
+
+**Unreachable today.** Every shipped wiring is `ChatTransport.from_openai_server`
+(provider `:openai`), so nothing pikuri ships routes through the gated protocol.
+The defect is latent, for a host that constructs `ChatTransport.new(provider:
+:anthropic, ...)` itself.
+
+**Alternatives rejected.**
+
+- **Turn thinking on globally**, one `with_thinking` at `Agent` construction.
+  Wrong layer: `Thinking::Config` is effort/budget and ruby_llm maps it
+  per-provider, so on the wired `:openai` leg it becomes `reasoning_effort` —
+  meaningful to a harmony/GPT-OSS template, inert to a Qwen3 one that gates
+  thinking through `enable_thinking` instead. It would also change cost and
+  latency on every host on a default nobody opted into, and on Anthropic it
+  invalidates every existing cache prefix, since the thinking configuration is
+  rendered into the prompt itself. It buys no correctness on the leg pikuri
+  actually rides, whose replay is already ungated.
+- **A `thinking:` field on `ChatTransport`.** The right layer — thinking-vs-not
+  is exactly the per-model-per-server fact that value object exists to keep
+  together, and it would leave llama.cpp untouched. Declined for now only
+  because it has no caller: a knob with no host asking for it. Reopen when one
+  does, or when #897 lands and an Anthropic wiring ships.
+- **Explicitly disable it** so the behaviour is intentional rather than
+  emergent. Not expressible: `Thinking::Config#enabled?` is `!effort.nil? ||
+  !budget.nil?`, and the Anthropic path returns no payload at all for effort
+  `'none'` — ruby_llm has no way to emit `thinking: {type: "disabled"}`. A trap
+  even if it did: rejected outright on Fable 5 / Mythos 5, and on Opus 5 with
+  thinking off the model leaks tool calls into visible text on tool-heavy
+  workloads.
+- **Pick a default per model id**, from a table pikuri owns. That table is a
+  registry of other vendors' defaults, wrong the day a model ships and silently
+  wrong thereafter — the JSON-config wall pikuri is the counter-move to. It is
+  also the same class of thing `D_context_window_sources` already declined in
+  favour of a live probe.
+
+**Consequences.**
+
+- No opt-in is safe on the Anthropic leg until
+  [#895](https://github.com/crmne/ruby_llm/issues/895),
+  [#896](https://github.com/crmne/ruby_llm/issues/896) and
+  [#897](https://github.com/crmne/ruby_llm/issues/897) land: #897 alone would
+  start *sending* the malformed shapes the other two describe, turning a silent
+  degradation into a hard 400.
+- pikuri surfaces reasoning it cannot always replay — `Event::ThinkingDelta`
+  and `Tokens#thinking` render it live. On the wired `:openai` leg nothing is
+  lost; on a hypothetical Anthropic one it would be, until #897.
+
+---
+
 ## D_thinking_block_replay — Drop the whole thinking block on a model switch, and only from the wire (2026-08-29)
 
 **Status:** Accepted; implemented 2026-08-29. See
@@ -97,8 +192,8 @@ thinking block is *silently ignored*, costing only input tokens — while the
 400 that does exist is for **modified** blocks in the latest assistant
 message, which is precisely the shape a stripped signature produces. And the
 repair is unreachable on Anthropic anyway: pikuri never calls
-`Chat#with_thinking` and seals the Chat behind the loop seam, so ruby_llm's
-Anthropic serializer emits no thinking block at all.
+`Chat#with_thinking` (`D_model_owns_thinking`) and seals the Chat behind the
+loop seam, so ruby_llm's Anthropic serializer emits no thinking block at all.
 
 Where the repair *is* live — the OpenAI-compatible path, whose
 `format_thinking` is ungated, and which Grok also travels since ruby_llm's
@@ -184,8 +279,10 @@ provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
   block alongside a `thinking` one is dropped. All three are real and all three
   are upstream's — filed as
   [ruby_llm#895](https://github.com/crmne/ruby_llm/issues/895) and
-  [#896](https://github.com/crmne/ruby_llm/issues/896) — and none of them blocks
-  this, because pikuri sends no thinking to Anthropic at all.
+  [#896](https://github.com/crmne/ruby_llm/issues/896), joined by
+  [#897](https://github.com/crmne/ruby_llm/issues/897) for the gate that is the
+  proximate reason the serializer emits nothing — and none of them blocks this,
+  because pikuri sends no thinking to Anthropic at all.
 - **Emitting a warning or event when thinking is dropped.** Duplicates a
   recovery nobody can act on, for the same reason the tool-set-drift warning
   above was declined.
