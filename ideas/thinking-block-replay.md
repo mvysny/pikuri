@@ -9,19 +9,25 @@ note is superseded rather than refined.
 The note used to ask *"is dropping the signature the right repair?"*.
 Research says the honest question is:
 
-> **The stated rationale is factually wrong, and the mechanism it justifies
-> is unreachable on the provider it exists to protect.**
+> **The stated rationale is factually wrong; the mechanism it justifies is
+> unreachable on the provider it exists to protect; and on the provider it
+> *does* reach, it repairs the one field nobody reads while leaving the
+> one field they do.**
 
 Found while designing pikuri-web's per-conversation model picker
 (`../pikuri-web/ideas/per-conversation-model.md`) — that shell needs
 `run_loop(transport:)` to be safe on a *reopened* conversation, which is
 exactly the path `load_history!`'s signature repair sits on.
 
+Four corrections, in order of how much they move the decision:
+Correction 1 (the 400 premise is false) and Correction 4 (the provider
+survey) are the load-bearing ones; 2 and 3 mostly retire arguments.
+
 A separate, larger defect fell out of the same research and now lives in
 its own note: `ideas/thinking-blocks-never-echoed.md`. **Read that one
 first if you only read one** — it is a live bug on every Anthropic
-tool-use turn, where this note is about a resume-time repair that
-currently does nothing.
+tool-use turn, where this note is about a resume-time repair whose damage
+is confined to the local path.
 
 
 ## Why this is a note and not an edit
@@ -190,7 +196,80 @@ OpenRouter / LiteLLM / vLLM / DeepSeek-shaped backends that populate
 `reasoning_signature`, and `ChatTransport` is provider-generic.
 
 Any option below should be evaluated against *that* consumer, not against
-Anthropic.
+Anthropic. Correction 4 surveys what those consumers actually do.
+
+
+## Correction 4 — llama.cpp is not a no-op: it ignores the signature and reads the text
+
+The previous draft dismissed the local path in its opening paragraph:
+*"`from_openai_server` against llama.cpp yields no signature at all, so
+keep-vs-drop is a no-op there."* Half right, and the wrong half is the
+one that matters.
+
+**Anthropic is the only provider pikuri can reach that has a signature
+concept on the wire pikuri uses.** Surveyed 2026-08-29:
+
+| provider | `reasoning_signature` on input | reasoning **text** on input |
+|---|---|---|
+| Anthropic (via ruby_llm) | never sent — thinking is disabled (Correction 3) | never sent either |
+| llama.cpp | no such concept; unknown field, dropped | **read and replayed into the prompt**, template-dependent |
+| xAI / Grok (chat completions) | no signature on this surface | probably ignored — *unverified* |
+
+**llama.cpp.** From `common/chat.cpp`, in the OpenAI-compat *input*
+parser (`common_chat_msgs_parse_oaicompat`):
+
+```cpp
+if (message.contains("reasoning_content")) {
+    msg.reasoning_content = message.at("reasoning_content");
+}
+```
+
+`grep -c signature common/chat.cpp` → **0**. There is no signature
+concept anywhere in it, so `reasoning_signature` is simply an
+unrecognized key: the parser reads named fields and never rejects
+unknowns. But `reasoning_content` *is* read from a client-supplied
+assistant message and re-injected per template — as a `thinking` block,
+as `msg["thinking"]`, or under an explicit comment *"According to the
+prompt formatting guide, we need to preserve reasoning_content"*. Other
+templates `adjusted.erase("reasoning_content")` instead. Whether it
+reaches the prompt is a property of the template, not of the request.
+Separately, `--reasoning-preserve` / the `supports_preserve_reasoning`
+template capability governs whether reasoning is kept for the *full*
+history or only the last assistant message.
+
+**xAI / Grok.** ruby_llm has a dedicated provider, but `XAI < OpenAI` and
+`XAI::Chat` overrides only `format_role` and `format_content` — **not**
+`format_messages` or `format_thinking`. So pikuri sends the same ungated
+`reasoning` + `reasoning_content` + `reasoning_signature` triple to
+`/v1/chat/completions`. xAI's actual replay mechanism is Responses-API
+only and encrypted (`include: ["reasoning.encrypted_content"]`), so there
+is no chat-completions signature to validate. On grok-4.6 what comes back
+is *summarized* reasoning, the same shape as Anthropic's
+`display: "summarized"`. **Not verified:** what xAI does with an
+unexpected `reasoning_content` on an input message — assume ignored, but
+nobody has checked.
+
+### The consequence, and why it is the strongest argument in this note
+
+pikuri drops the signature and **always keeps the text** (`history.rb:216`
+— `text:` is unconditional). Line that up with the table: on llama.cpp,
+the one backend *confirmed* to consume the field, a resumed conversation
+after a model switch replays the **previous** model's reasoning into the
+new model's prompt, attributed to it — and the current repair does
+nothing about it, because it only ever touched the signature.
+
+So the survey collapses to one sentence:
+
+> **On every backend pikuri can reach, dropping the signature accomplishes
+> nothing, while the reasoning text — the part backends actually consume —
+> is replayed regardless.**
+
+That argument is **provider-independent**. It does not rest on Anthropic's
+docs, on Correction 1's 400 finding, or on any claim about signature
+validity. It closes the last worry about option 1: that dropping the
+whole block might be over-fitted to one vendor's instruction. It isn't —
+it is the only option that touches the field that any reachable backend
+reads.
 
 
 ## What the repair would do, if it ran
@@ -270,15 +349,18 @@ Re-ordered and re-justified. Not yet argued to a conclusion.
    later.
 1. **Repair the whole block, not the signature.** Replace
    `keep_signature:` with `keep_thinking:`; false emits `thinking: nil`.
-   Still the best mechanism, but **re-justified**: it is what Anthropic
-   instructs on a switch, it removes a block-modification pattern, and it
-   is simpler than what is there — *not* because it dodges a 400. The old
-   open sub-question (is dropping legal for a prior assistant turn
-   carrying `tool_calls`?) is answered by the three-way rule in Correction
-   1 plus the 400's scoping to "the latest assistant message": a loaded
-   history's turns are completed prior turns, so omitting is *Allowed*.
-   Still interacts with `repair_interrupted_tool_calls`, which synthesizes
-   exactly that shape.
+   Still the best mechanism, and now **re-justified twice over**. The
+   provider-independent reason is Correction 4's: it is the only option
+   that touches the reasoning *text*, which is the only part any reachable
+   backend actually reads. The vendor-specific reason is Correction 1's:
+   it is what Anthropic instructs on a switch, and it removes a
+   block-modification pattern. Neither reason is "it dodges a 400" — that
+   was the old justification and it was false. The old open sub-question
+   (is dropping legal for a prior assistant turn carrying `tool_calls`?)
+   is answered by the three-way rule in Correction 1 plus the 400's
+   scoping to "the latest assistant message": a loaded history's turns are
+   completed prior turns, so omitting is *Allowed*. Still interacts with
+   `repair_interrupted_tool_calls`, which synthesizes exactly that shape.
 2. **Move the repair to request-build time** (or additionally into
    `apply_transport!`), matching both the survey finding the decision
    already cites and Anthropic's own per-request phrasing. **Promoted** —
@@ -294,20 +376,28 @@ Re-ordered and re-justified. Not yet argued to a conclusion.
    pikuri sees anything (§above), the honest repair may not live in
    `load_history!` at all. A faithful `RubyLLM::Thinking` — an ordered
    list of typed blocks — would make options 1–3 nearly moot.
-5. **Do nothing, and say so.** Now the *most* defensible it has ever been,
-   because Correction 3 shows the mechanism is unreachable on Anthropic
-   and only reaches non-llama.cpp OpenAI-compatible backends. But it still
+5. **Do nothing, and say so.** Correction 3 made this look defensible —
+   the mechanism is unreachable on Anthropic — but Correction 4 **takes
+   that back**: the local llama.cpp path is not a no-op, it is the one
+   backend confirmed to read the field pikuri never repairs. "Do nothing"
+   now means knowingly replaying a foreign model's reasoning on the
+   default local setup. Kept only so the reasoning is on record; it also
    cannot be chosen while Correction 1's falsehood stands in three files —
    option 0 is not optional.
 
 Options 0–3 are independent and can land separately. 0 is free. 1 is the
-smallest real change and fixes the most.
+smallest real change and fixes the most — and after Correction 4 it is the
+only one whose case does not depend on a single vendor.
 
 **The old "one afternoon with a key" plan is retired.** Three of the four
-rows in the table above cannot be produced by pikuri at all today, so a
-live repro would be measuring ruby_llm, not pikuri. If someone does spend
-an afternoon, spend it on `ideas/thinking-blocks-never-echoed.md`, where
-the wire shape is real.
+rows in the *hypothetical* table cannot be produced by pikuri at all
+today, so an Anthropic repro would be measuring ruby_llm, not pikuri.
+Correction 4 replaces it with a cheaper and more useful experiment: run a
+local llama.cpp with a `supports_preserve_reasoning` template, resume a
+history under a different model id, and dump the rendered prompt to see
+the previous model's reasoning arrive as the new model's. No key needed.
+If someone does want to spend a key, spend it on
+`ideas/thinking-blocks-never-echoed.md`, where the wire shape is real.
 
 
 ## Where the nuggets go at graduation
@@ -317,8 +407,9 @@ the wire shape is real.
   `D_history_load_repairs` — the whole point of this note is that the
   behaviour outgrew being that decision's footnote. Cross-link the two,
   and edit the existing paragraph down to a pointer. **The rejected
-  alternatives now include Corrections 1–3 themselves**: the 400 premise,
-  the endpoint-identity fork, and the belief that this was an Anthropic
+  alternatives now include Corrections 1–4 themselves**: the 400 premise,
+  the endpoint-identity fork, the belief that the local path was a
+  no-op, and the belief that this was an Anthropic
   problem. All three are exactly the kind of plausible-and-wrong a future
   reader would re-derive.
 - The per-symbol contract ("what happens to a thinking block whose model
@@ -329,5 +420,15 @@ the wire shape is real.
   `**Breaking:**` CHANGELOG line with the migration.
 - If the repair moves to request-build time, that is a **loop-seam**
   fact → CLAUDE.md *Seams*.
+- **Correction 4's provider survey is verified behaviour, not scratchpad
+  reasoning, so it must not die with this note.** "llama.cpp reads
+  `reasoning_content` off an input assistant message and re-injects it
+  per template; it has no signature concept" is exactly the sort of fact
+  someone will otherwise re-derive from C++ source a year from now. Home:
+  the yardoc on whatever carries the repair after option 1 lands
+  (`History::Message#to_ruby_llm`), with the *why* — that the text is the
+  field backends read — in the `DECISIONS.md` entry. The per-provider
+  table itself belongs in the entry, not in CLAUDE.md, which owns
+  invariants rather than surveys.
 - The three ruby_llm round-trip bugs are **upstream's** — file them there
   and cite the issues here.
