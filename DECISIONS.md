@@ -101,7 +101,9 @@ repair is unreachable on Anthropic anyway: pikuri never calls
 Anthropic serializer emits no thinking block at all.
 
 Where the repair *is* live — the OpenAI-compatible path, whose
-`format_thinking` is ungated — it repairs the wrong field. llama.cpp reads
+`format_thinking` is ungated, and which Grok also travels since ruby_llm's
+`XAI < OpenAI` overrides only `format_role` and `format_content` — it repairs
+the wrong field. llama.cpp reads
 `reasoning_content` off an input assistant message and hands it to the chat
 template; it has **no signature concept whatsoever**. Measured against
 `unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`: the signature is always nil, and the
@@ -163,7 +165,9 @@ provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
   Anthropic explicitly recommends it.
 - **Key the test on the transport rather than `model_id`**, recording
   `api_base` per message. Its evidence was one bug report about *rewriting
-  proxies* (Bifrost/LiteLLM), against a docs statement that signatures are
+  proxies* — [openclaw#92019](https://github.com/openclaw/openclaw/issues/92019),
+  whose "endpoint-specific" claim is the reporter's own diagnosis and names
+  Bifrost and LiteLLM — against a docs statement that signatures are
   portable across the Claude API, Bedrock and Vertex. A live probe shows model
   ids echo verbatim on llama.cpp, and under this decision a weak identity test
   can only misfire same-model, in the safe direction — losing the model's own

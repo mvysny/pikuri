@@ -5,11 +5,11 @@ measured 2026-08-29 against ruby_llm 1.16.0; the wire shape is confirmed
 offline, the *consequence* is inferred from Anthropic's docs and wants one
 afternoon against a real endpoint to close.
 
-Split out of `ideas/thinking-block-replay.md`, which found this while
-investigating something smaller. That note is about a resume-time repair
-that currently does nothing; **this is a bug on every Anthropic tool-use
-turn, resumed or not.** Different scope, different urgency, so it gets its
-own file.
+Found while investigating something smaller, which shipped as
+`DECISIONS.md` `D_thinking_block_replay` (withhold a thinking block from a
+model that did not produce it). That was a resume-time repair; **this is a
+bug on every Anthropic tool-use turn, resumed or not.** Different scope,
+different urgency, so it kept its own file when that one graduated.
 
 
 ## The shape of it
@@ -117,9 +117,9 @@ surfaces thinking it then throws away.
 
 ## Confirming it
 
-This is the note that actually earns an afternoon with a key, because
-unlike `thinking-block-replay.md` the wire shape here is real and
-reachable today.
+This is the note that actually earns an afternoon with a key: the wire
+shape is real and reachable today, which is more than could be said for
+the replay question that turned this one up.
 
 Against `claude-opus-5` (thinking on by default), a two-step tool-use
 conversation through a normal `Agent`:
@@ -156,9 +156,8 @@ one is a real fork:
 - **It does not actually fix the round trip.** ruby_llm loses signatures,
   collapses multi-block turns into one, and drops `redacted_thinking`
   blocks — the three upstream defects catalogued in
-  `ideas/thinking-block-replay.md` §*ruby_llm cannot round-trip an
-  Anthropic turn at all*. Enabling thinking would start *sending* blocks,
-  and some of them would be the malformed shapes that earn the real 400
+  `ideas/ruby-llm-thinking-round-trip.md`. Enabling thinking would start
+  *sending* blocks, and some would be the malformed shapes that earn the real 400
   ("`thinking` or `redacted_thinking` blocks in the latest assistant
   message cannot be modified"). **Turning this on before upstream is fixed
   could convert a silent degradation into a hard failure.**
@@ -194,8 +193,10 @@ Sketch of the options, unargued:
   already owns the "must travel together on the same server" rationale.
 - Whatever step 2 measures → the entry's evidence, and a
   `pikuri-core/DESIGN.md` line if it turns out to shape the loop.
-- **Do not** let this end up as a paragraph inside
-  `D_history_load_repairs`. That is the mistake
-  `ideas/thinking-block-replay.md` exists to unwind.
-- The three ruby_llm round-trip bugs are upstream's, and are catalogued in
-  `ideas/thinking-block-replay.md` — file them from there, once, not twice.
+- **Do not** let this end up as a paragraph inside another decision's
+  entry. `D_thinking_block_replay` exists because the last thinking-related
+  behaviour rode into `D_history_load_repairs` as a footnote and stayed
+  wrong there for two months.
+- The three ruby_llm round-trip bugs are upstream's and are catalogued in
+  `ideas/ruby-llm-thinking-round-trip.md` — file them from there, once, not
+  twice.
