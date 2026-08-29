@@ -79,6 +79,113 @@ design.
 
 ---
 
+## D_thinking_block_replay — Drop the whole thinking block on a model switch, and only from the wire (2026-08-29)
+
+**Status:** Accepted; implemented 2026-08-29. See
+{Pikuri::Agent#load_history!}, {Pikuri::Agent#apply_transport!},
+{Pikuri::Agent::History::Message#to_ruby_llm}. Supersedes the thinking-signature
+paragraph in `D_history_load_repairs`, which rode in as a corollary and was
+wrong on both halves.
+
+**Context.** A resumed or mid-session-switched conversation can carry an
+assistant turn whose reasoning was produced by a *different* model. The
+previous behaviour dropped that turn's thinking **signature** and kept its
+text, on the stated grounds that "replaying one after a switch is a 400".
+
+Two things are wrong with that. Anthropic documents the opposite — a foreign
+thinking block is *silently ignored*, costing only input tokens — while the
+400 that does exist is for **modified** blocks in the latest assistant
+message, which is precisely the shape a stripped signature produces. And the
+repair is unreachable on Anthropic anyway: pikuri never calls
+`Chat#with_thinking` and seals the Chat behind the loop seam, so ruby_llm's
+Anthropic serializer emits no thinking block at all.
+
+Where the repair *is* live — the OpenAI-compatible path, whose
+`format_thinking` is ungated — it repairs the wrong field. llama.cpp reads
+`reasoning_content` off an input assistant message and hands it to the chat
+template; it has **no signature concept whatsoever**. Measured against
+`unsloth/Qwen3.6-35B-A3B-GGUF:Q4_K_M`: the signature is always nil, and the
+text is populated with raw first-person chain of thought. So on the default
+local backend the old repair dropped a field that never exists and forwarded
+the reasoning it should have dropped.
+
+**Decision.** When a message's recorded `model_id` does not match the agent's
+current model, drop its thinking block **entirely** — text and signature both
+— from what goes to the provider, while the message and the stored record keep
+it. `Message#to_ruby_llm` takes `keep_thinking:` in place of `keep_signature:`.
+
+**The whole block is the only portable unit.** The text/signature split is an
+Anthropic implementation detail, and an inverted one: there the signature *is*
+the reasoning (encrypted) and the text is a lossy summary that is empty by
+default, while on llama.cpp the text is the substance and no signature exists.
+"This turn's reasoning" is the only thing that means the same on every backend.
+
+**The scrub runs at both points model identity can change** — `load_history!`
+and `apply_transport!`. Load time provably cannot cover a mid-session switch,
+which is the more damaging case: `Chat#with_model` preserves history, so today
+the foreign reasoning is replayed on that turn and every turn after it. This
+costs no request-build hook and does not touch the loop seam: `with_model` has
+exactly one call site inside `apply_transport!`, with exactly one caller, so
+identity changes only at construction (no history yet), load, or switch.
+
+**Dropping is a correctness fix here, not the cost optimization it is for
+Anthropic.** Anthropic's stated reason for stripping on a switch is that the
+receiving model ignores the blocks anyway — it can say that because signatures
+let its server detect and discard them. Nothing on the local path does, so the
+foreign reasoning lands in the prompt. It also lands in a *self-attributive*
+slot: templates place a thinking block where the model treats the contents as
+its own working state, so the model is told it already reasoned that way and
+continues from there, carrying register and rejected branches with it.
+
+**Unknown provenance drops.** `model_id: nil` previously kept the block. Under
+the old rationale (avoid an invalid signature) that was harmless; under the
+attribution rationale unknown is indistinguishable from foreign, so assume the
+worst rather than silently corrupt.
+
+**Retention rides `@message_meta`, so the record stays faithful.** Scrubbing
+`@chat` alone would mean a load-under-a-different-model followed by a save
+writes the reasoning out of existence — a record that degrades every time it is
+opened, which is the opposite of what this decision's parent promises.
+`track_message` already keeps an identity-keyed side map of per-message data no
+provider sees (`id`, `kind`); stripped thinking is the same kind of thing, and
+`export_history` prefers the map. Wire sees nothing, disk keeps everything.
+
+**Alternatives rejected.**
+
+- **Keep dropping only the signature.** The status quo. Repairs a field that
+  is nil on the local path and never sent on the Anthropic one, while
+  forwarding the reasoning text that backends actually read. It also produces
+  a *modified* block, which is the one shape Anthropic documents as a 400.
+- **Never replay thinking at all**, deleting the identity test outright.
+  Simpler, and tempting once you know the Anthropic path sends nothing. But
+  the entire case against replay is false attribution, and none of it applies
+  when the model has not changed — same-model continuity works today and
+  Anthropic explicitly recommends it.
+- **Key the test on the transport rather than `model_id`**, recording
+  `api_base` per message. Its evidence was one bug report about *rewriting
+  proxies* (Bifrost/LiteLLM), against a docs statement that signatures are
+  portable across the Claude API, Bedrock and Vertex. A live probe shows model
+  ids echo verbatim on llama.cpp, and under this decision a weak identity test
+  can only misfire same-model, in the safe direction — losing the model's own
+  reasoning, never injecting a foreign one. Not worth a `History` schema
+  change. Reopen if a rewriting proxy enters the picture.
+- **Scrub at request-build time** instead of at the two identity-change
+  points. The only variant that would keep `@chat` itself whole, but it needs a
+  hook into `Chat#complete` that the loop seam says is ruby_llm's. The side-map
+  retention above gets the same guarantee for free.
+- **Fixing ruby_llm first.** Its `Thinking` type is one text plus one
+  signature, so it cannot represent an Anthropic turn's ordered block sequence:
+  a display-omitted block re-serializes as `redacted_thinking`, multi-block
+  turns collapse and lose all but the first signature, and a `redacted_thinking`
+  block alongside a `thinking` one is dropped. All three are real and all three
+  are upstream's; none of them blocks this, because pikuri sends no thinking to
+  Anthropic at all.
+- **Emitting a warning or event when thinking is dropped.** Duplicates a
+  recovery nobody can act on, for the same reason the tool-set-drift warning
+  above was declined.
+
+---
+
 ## D_unwound_batch_repair — Answer the dangling calls on the way out, don't prevent the damage (2026-08-28)
 
 **Status:** Accepted; implemented 2026-08-28 as an `ensure` on
@@ -894,10 +1001,10 @@ make the crash case the one thing unloadable. What ships:
 | one call answered twice | refuse | a live race would dedup; in a *file* it is corruption |
 | call with no result | legal, repaired at load | what a killed process leaves behind |
 
-**A thinking signature is dropped when the model changed**, keeping its text.
-Signatures are attestations the issuing model validates, so replaying one
-after a switch is a 400 — and pikuri makes that likely, not exotic, since
-`ModelSwitched` ships and the whole point of resume is that time passed.
+**A thinking block is dropped when the model changed** — the whole block, and
+at both points identity can change, not just at load. That rode in here as a
+corollary with a rationale that did not survive checking; it now has its own
+entry, `D_thinking_block_replay`.
 
 **A tool the agent no longer wires draws no warning.** A recorded call is
 never re-executed; it is a record of the harness that made it. The only live

@@ -82,10 +82,15 @@ module Pikuri
       # repeats it, and providers reject a pair that does not match.
       ToolCall = Data.define(:id, :name, :arguments)
 
-      # An assistant reasoning block. +signature+ is a provider-opaque
-      # attestation, valid **only for the model that produced it** — replaying
-      # one to a different model is a 400, so {Agent#load_history!} drops it
-      # when the message's +model_id+ is not the agent's current model.
+      # An assistant reasoning block, as the provider reported it.
+      #
+      # The two fields are not symmetric, and which one carries the substance
+      # flips by provider: on Anthropic +signature+ is the full reasoning,
+      # encrypted, and +text+ a summary that is empty by default; on an
+      # OpenAI-compatible server +text+ is the reasoning itself and
+      # +signature+ is usually absent. So the whole block, never one field, is
+      # what {Agent} withholds from a model that did not produce it — see
+      # +DECISIONS.md+ +D_thinking_block_replay+.
       Thinking = Data.define(:text, :signature)
 
       # Per-message token usage, as the provider reported it. Carried so a
@@ -198,22 +203,26 @@ module Pikuri
 
         # Rebuild the +RubyLLM::Message+ this was taken from.
         #
-        # @param keep_signature [Boolean] +false+ drops the thinking
-        #   signature, keeping its text — what the caller passes when the
-        #   agent's model is no longer the one that signed it.
+        # @param keep_thinking [Boolean] +false+ replays the turn without its
+        #   {Thinking} block at all — what {Agent} passes for a turn some
+        #   *other* model produced, since a thinking block lands in a slot the
+        #   receiving model reads as its own scratchpad. Dropped from the
+        #   *message*, not from the record: {Agent#export_history} still
+        #   writes it. See +DECISIONS.md+ +D_thinking_block_replay+.
         # @return [RubyLLM::Message]
-        def to_ruby_llm(keep_signature: true)
+        def to_ruby_llm(keep_thinking: true)
           calls = tool_calls.to_h do |c|
             [c.id, RubyLLM::ToolCall.new(id: c.id, name: c.name, arguments: c.arguments)]
           end
+          replayed = thinking if keep_thinking
           RubyLLM::Message.new(
             role: role.to_sym,
             content: ruby_llm_content,
             tool_calls: calls.empty? ? nil : calls,
             tool_call_id: tool_call_id,
             model_id: model_id,
-            thinking: thinking && RubyLLM::Thinking.build(
-              text: thinking.text, signature: keep_signature ? thinking.signature : nil
+            thinking: replayed && RubyLLM::Thinking.build(
+              text: replayed.text, signature: replayed.signature
             ),
             tokens: tokens && RubyLLM::Tokens.build(**tokens.to_h)
           )

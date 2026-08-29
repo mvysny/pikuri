@@ -453,11 +453,16 @@ module Pikuri
     # Attachment bytes are read here, eagerly, so the snapshot still shows
     # what the model saw after the file has changed on disk.
     #
+    # A thinking block withheld from the conversation because another model
+    # produced it is restored here from the message's metadata, so the record
+    # survives any number of load/save cycles under a switched model.
+    #
     # @return [History]
     def export_history
       exported = @chat.messages.reject { |m| m.role == :system }.map do |msg|
         meta = @message_meta[msg] || { id: History.mint_id, kind: 'user' }
-        History::Message.from_ruby_llm(msg, id: meta[:id], kind: meta[:kind])
+        exported_msg = History::Message.from_ruby_llm(msg, id: meta[:id], kind: meta[:kind])
+        meta[:thinking] ? exported_msg.with(thinking: meta[:thinking]) : exported_msg
       end
       History.new(messages: exported)
     end
@@ -491,9 +496,11 @@ module Pikuri
     #
     # - A tool call whose result never arrived gets a synthesized one
     #   ({History#repair_interrupted_tool_calls}).
-    # - A thinking signature from a *different* model is dropped, keeping the
-    #   text. Signatures are attestations the issuing model validates, so
-    #   replaying one after a model switch is a 400.
+    # - A turn produced by a *different* model loses its whole thinking block
+    #   — a foreign one lands in a slot the receiving model reads as its own
+    #   scratchpad. Withheld from the conversation only; {#export_history}
+    #   still writes it. {#apply_transport!} repeats this for a switch that
+    #   happens later. See +DECISIONS.md+ +D_thinking_block_replay+.
     #
     # @param history [History] from {#export_history}, {History.parse} or
     #   {History.load} — already validated by whichever door it came through.
@@ -510,8 +517,9 @@ module Pikuri
       current_model = @chat.model&.id
       repaired = history.repair_interrupted_tool_calls
       repaired.messages.each do |m|
-        keep = m.thinking.nil? || m.model_id.nil? || m.model_id == current_model
-        track_message(@chat.add_message(m.to_ruby_llm(keep_signature: keep)), kind: m.kind, id: m.id)
+        keep = keep_thinking?(m.thinking, m.model_id, current_model)
+        track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),
+                      kind: m.kind, id: m.id, thinking: (m.thinking unless keep))
       end
 
       last = repaired.messages.reverse.find { |m| m.role == 'assistant' && m.tokens }
@@ -711,6 +719,10 @@ module Pikuri
     # +Chat#with_model+ keeps history and callbacks. Emits
     # {Event::ModelSwitched}, then re-resolves and re-emits the cap.
     #
+    # Because the history is kept, every turn in it is now potentially from
+    # another model, so {#strip_foreign_thinking!} runs before the event —
+    # {#load_history!}'s repair only covers a conversation that arrives stale.
+    #
     # == Cross-server switches
     #
     # +with_model+ re-resolves against the chat's existing connection, so it
@@ -731,6 +743,7 @@ module Pikuri
       @chat.with_context(build_context(filled)) if filled.connection_overrides? || old.connection_overrides?
       @chat.with_model(filled.model, provider: filled.provider, assume_exists: filled.assume_model_exists)
       @transport = filled
+      strip_foreign_thinking!
       @listeners.emit(Event::ModelSwitched.new(from: old, to: filled))
       detect_and_emit_context_cap!
     end
@@ -849,17 +862,77 @@ module Pikuri
     end
 
     # Remember pikuri's own identity for a message just added to the chat, so
-    # {#export_history} can hand out a stable id and say whether a +:user+
-    # message was typed or injected. Neither field ever reaches a provider.
+    # {#export_history} can hand out a stable id, say whether a +:user+ message
+    # was typed or injected, and put back a thinking block the conversation is
+    # not replaying. None of it ever reaches a provider.
+    #
+    # Keyed on the message *object*, so a caller that rebuilds one must move
+    # its entry across — see {#strip_foreign_thinking!}.
     #
     # @param msg [RubyLLM::Message] as returned by +Chat#add_message+.
     # @param kind [String] one of {History::KINDS}.
     # @param id [String, nil] an existing id to preserve (restoring a saved
     #   conversation); +nil+ mints a fresh one.
+    # @param thinking [History::Thinking, nil] a block withheld from +msg+
+    #   because another model produced it, kept so the export stays faithful.
     # @return [RubyLLM::Message] +msg+, so call sites can wrap in place.
-    def track_message(msg, kind: 'user', id: nil)
-      @message_meta[msg] = { id: id || History.mint_id, kind: kind } unless msg.role == :system
+    def track_message(msg, kind: 'user', id: nil, thinking: nil)
+      unless msg.role == :system
+        @message_meta[msg] = { id: id || History.mint_id, kind: kind, thinking: thinking }
+      end
       msg
+    end
+
+    # Whether a turn's thinking may be replayed to +current+ — true only where
+    # this model demonstrably produced it.
+    #
+    # Unknown provenance counts as foreign: a +model_id+ nobody recorded is
+    # indistinguishable from another model's, and attributing one model's
+    # reasoning to another is the failure this guards against.
+    #
+    # The two ids come from different places — +current+ is what pikuri
+    # *requested*, +model_id+ what the server *reported* — so a backend that
+    # does not echo the requested id back makes every turn look foreign. That
+    # only ever over-drops (a model loses its own reasoning; none is ever
+    # attributed to another), which is why the weaker test is tolerated; the
+    # fakes in +Pikuri::Testing+ are themselves such a backend. Measured
+    # echoing verbatim on llama.cpp — see +DECISIONS.md+
+    # +D_thinking_block_replay+.
+    #
+    # @param thinking [History::Thinking, RubyLLM::Thinking, nil]
+    # @param model_id [String, nil] who produced the turn.
+    # @param current [String, nil] the agent's model now.
+    # @return [Boolean]
+    def keep_thinking?(thinking, model_id, current)
+      thinking.nil? || (!model_id.nil? && model_id == current)
+    end
+
+    # Withhold every thinking block the current model did not produce from the
+    # live conversation, parking it in +@message_meta+ so {#export_history}
+    # still writes it.
+    #
+    # {#load_history!} covers a conversation that arrives stale; this covers
+    # one that goes stale under a running agent, which +Chat#with_model+ leaves
+    # untouched. +RubyLLM::Message+ has no thinking writer, so a stripped turn
+    # is a rebuilt object and its metadata is re-keyed onto the replacement.
+    #
+    # @return [void]
+    def strip_foreign_thinking!
+      current = @chat.model&.id
+      @chat.messages.map! do |msg|
+        next msg if keep_thinking?(msg.thinking, msg.model_id, current)
+
+        meta = @message_meta.delete(msg) || { id: History.mint_id, kind: 'user' }
+        stripped = RubyLLM::Message.new(
+          role: msg.role, content: msg.content, tool_calls: msg.tool_calls,
+          tool_call_id: msg.tool_call_id, model_id: msg.model_id,
+          tokens: msg.tokens, raw: msg.raw, thinking: nil
+        )
+        @message_meta[stripped] = meta.merge(
+          thinking: History::Thinking.new(text: msg.thinking.text, signature: msg.thinking.signature)
+        )
+        stripped
+      end
     end
 
     # Answer every call the last assistant turn left unanswered, emitting each

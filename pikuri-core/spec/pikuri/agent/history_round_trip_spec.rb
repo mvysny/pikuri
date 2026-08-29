@@ -9,7 +9,7 @@ require 'pikuri/testing' # opt-in scaffolding, not loaded by pikuri-core boot
 # whole property is pinned offline.
 RSpec.describe 'Pikuri::Agent history round trip' do
   # Records every outbound request body, then serves the scripted replies.
-  def recording_transport(captured, &script_block)
+  def recording_transport(captured, model: 'fake-model', &script_block)
     script = Pikuri::Testing::Script.new
     script_block.call(script)
     base = Pikuri::Testing.build_adapter(script.responses)
@@ -20,7 +20,7 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       end
     end
     Pikuri::Agent::ChatTransport.new(
-      model: 'fake-model', provider: :openai, assume_model_exists: true,
+      model: model, provider: :openai, assume_model_exists: true,
       api_base: 'http://fake.invalid/v1', api_key: 'not-needed',
       context_window: 8192, faraday_adapter: recorder
     )
@@ -67,6 +67,110 @@ RSpec.describe 'Pikuri::Agent history round trip' do
     assert_equal final_body(reload: false), captured.last
   ensure
     agent&.close
+  end
+
+  # A thinking block belongs to the model that produced it: replayed to another
+  # one it lands in a slot the receiver reads as its own scratchpad. So it is
+  # withheld from the *wire* while staying in the *record*.
+  # See DECISIONS.md D_thinking_block_replay.
+  describe 'thinking blocks and a model switch' do
+    H = Pikuri::Agent::History unless defined?(H)
+
+    def history_from(model_id)
+      H.new(messages: [
+              H::Message.new(id: 'm1', role: 'user', content: 'hi'),
+              H::Message.new(id: 'm2', role: 'assistant', content: 'hello', model_id: model_id,
+                             thinking: H::Thinking.new(text: 'private reasoning', signature: 'SIG'))
+            ])
+    end
+
+    # The assistant turn as the provider saw it on the next request.
+    def replayed_assistant(captured)
+      captured.last['messages'].find { |m| m['role'] == 'assistant' }
+    end
+
+    it 'withholds a foreign turn\'s thinking from the wire' do
+      captured = []
+      transport = recording_transport(captured) { |llm| llm.reply('ok') }
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.load_history!(history_from('some-other-model'))
+      agent.run_loop(user_message: 'and?')
+
+      msg = replayed_assistant(captured)
+      assert_equal 'hello', msg['content']
+      refute msg.key?('reasoning_content'), 'foreign reasoning reached the provider'
+      refute msg.key?('reasoning_signature')
+    end
+
+    it "replays the same model's own thinking, since attribution still holds" do
+      captured = []
+      transport = recording_transport(captured) { |llm| llm.reply('ok') }
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.load_history!(history_from('fake-model'))
+      agent.run_loop(user_message: 'and?')
+
+      assert_equal 'private reasoning', replayed_assistant(captured)['reasoning_content']
+    end
+
+    it 'treats unrecorded provenance as foreign rather than assuming a match' do
+      captured = []
+      transport = recording_transport(captured) { |llm| llm.reply('ok') }
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.load_history!(history_from(nil))
+      agent.run_loop(user_message: 'and?')
+
+      refute replayed_assistant(captured).key?('reasoning_content')
+    end
+
+    it 'keeps a withheld block in the record, so save/load cycles do not erode it' do
+      transport = recording_transport([]) { |llm| llm.reply('ok') }
+      agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test agent')
+      agent.load_history!(history_from('some-other-model'))
+
+      2.times do
+        exported = agent.export_history.messages.find { |m| m.role == 'assistant' }
+        assert_equal 'private reasoning', exported.thinking.text
+        assert_equal 'SIG', exported.thinking.signature
+        agent.load_history!(agent.export_history)
+      end
+    ensure
+      agent&.close
+    end
+
+    it 'strips thinking on a switch mid-conversation, which load time cannot cover' do
+      captured = []
+      first = recording_transport(captured) { |llm| llm.reply('ok') }
+      agent = Pikuri::Agent.new(transport: first, system_prompt: 'test agent')
+      agent.load_history!(history_from('fake-model'))
+      agent.run_loop(user_message: 'and?')
+      assert_equal 'private reasoning', replayed_assistant(captured)['reasoning_content'],
+                   'precondition: its own model replays it'
+
+      second = recording_transport(captured, model: 'other-fake-model') { |llm| llm.reply('ok') }
+      agent.run_loop(user_message: 'still?', transport: second)
+
+      refute replayed_assistant(captured).key?('reasoning_content')
+      # and the record still has it, re-keyed onto the rebuilt message
+      assert_equal 'private reasoning',
+                   agent.export_history.messages.find { |m| m.role == 'assistant' }.thinking.text
+    ensure
+      agent&.close
+    end
+
+    it 'keeps message ids stable when a switch rebuilds the message' do
+      captured = []
+      agent = Pikuri::Agent.new(transport: recording_transport(captured) { |llm| llm.reply('ok') },
+                                system_prompt: 'test agent')
+      agent.load_history!(history_from('fake-model'))
+      before = agent.export_history.messages.map(&:id)
+
+      second = recording_transport(captured, model: 'other-fake-model') { |llm| llm.reply('ok') }
+      agent.run_loop(user_message: 'switch', transport: second)
+
+      assert_equal before, agent.export_history.messages.map(&:id).first(before.size)
+    ensure
+      agent&.close
+    end
   end
 
   describe 'what the export carries' do
@@ -170,40 +274,6 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       restored = agent.export_history
       assert_equal 'c1', restored.messages.last.tool_call_id
       assert_equal Pikuri::Agent::History::INTERRUPTED_RESULT, restored.messages.last.content
-    end
-
-    it 'drops a thinking signature minted by a different model, keeping the text' do
-      history = Pikuri::Agent::History.new(messages: [
-                                             Pikuri::Agent::History::Message.new(
-                                               id: 'm1', role: 'assistant', content: 'hi',
-                                               model_id: 'some-other-model',
-                                               thinking: Pikuri::Agent::History::Thinking.new(
-                                                 text: 'ponder', signature: 'SIG=='
-                                               )
-                                             )
-                                           ])
-
-      agent.load_history!(history)
-
-      thinking = agent.export_history.messages.first.thinking
-      assert_equal 'ponder', thinking.text
-      assert_nil thinking.signature
-    end
-
-    it 'keeps the signature when the model still matches' do
-      history = Pikuri::Agent::History.new(messages: [
-                                             Pikuri::Agent::History::Message.new(
-                                               id: 'm1', role: 'assistant', content: 'hi',
-                                               model_id: 'fake-model',
-                                               thinking: Pikuri::Agent::History::Thinking.new(
-                                                 text: 'ponder', signature: 'SIG=='
-                                               )
-                                             )
-                                           ])
-
-      agent.load_history!(history)
-
-      assert_equal 'SIG==', agent.export_history.messages.first.thinking.signature
     end
 
     it 'emits Reset then HistoryLoaded, so a listener stops reporting an empty conversation' do
