@@ -1277,7 +1277,12 @@ rather than surfacing as a 403 deep in the fan-out.
   release machine beside the API key — a real collapse of the two factors —
   to buy the difference between *one* prompt and none. Kept as a contingency
   with a defined trigger: the push phase not fitting inside a single window,
-  at which point no single-code scheme survives. Current margin is roughly 4×.
+  at which point no single-code scheme survives. Measured margin at v0.1.0 is
+  **1.7×**, not the 4× estimated here before a release had ever been timed:
+  sixteen gems pushed two-wide took 14.8s against a usable 25.6s (the 30s
+  window less 4.4s of paste), leaving 10.9s. The trigger is therefore nearer
+  than it looked, but the cheap lever — widening `PUSH_CONCURRENCY` — comes
+  first, since the same uploads run 29.3s serial and would already overrun.
   Even then it is not the next rung — a parent-owned code with a
   carry-forward retry costs a couple of extra prompts and no dependency.
 - **Dropping the account to MFA level `ui_and_gem_signin`** — zero prompts,

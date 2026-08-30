@@ -56,12 +56,21 @@ RUBYGEMS_HOST = 'https://rubygems.org'
 # push to is owned by somebody else — the squatting check.
 EXPECTED_OWNER = 'mavi'
 
-# How many +gem push+ children run at once. The number is not load
-# bearing: with the builds already done, each upload is well under a
-# second, so sixteen gems cost a few seconds two-wide and under ten
-# fully serial — a small fraction of the OTP window either way. The
-# concurrency is here to absorb a straggler (a slow upload, a TCP
-# retry), not to fit a budget.
+# How many +gem push+ children run at once.
+#
+# Two-wide is load bearing, which the estimate this comment used to
+# carry had backwards. Measured at the v0.1.0 release, sixteen gems:
+# each upload took 1.03–2.50s (mean 1.83s), so the phase ran 14.8s
+# two-wide and left 10.9s of the window. Fully serial it would have
+# been 29.3s — the sum of those same times — against a budget of
+# 25.6s (the 30s window less 4.4s spent pasting the code), i.e. an
+# overrun. The estimate that said otherwise assumed uploads "well
+# under a second"; they are roughly 2–5x that.
+#
+# So the concurrency is fitting a budget, not just absorbing a
+# straggler, and widening it is the first lever if a future release
+# gets close. See +D_release_one_otp+ for the point past which no
+# single-code scheme survives at all.
 PUSH_CONCURRENCY = 2
 
 # TOTP period in seconds, per RFC 6238 and what rubygems.org uses.
@@ -183,10 +192,12 @@ end
 # is read off the *authenticator's*. A disagreement of d seconds hands
 # the pushes a window of (30 - d) — the one assumption here that fails
 # silently, since nothing reports a skewed clock. It is tolerated
-# rather than fixed: a push phase of a few seconds inside a 30s window
-# absorbs well over 20s of skew, and rubygems.org's TOTP drift
-# tolerance roughly doubles that. Any machine running NTP is nowhere
-# near it.
+# rather than fixed: the v0.1.0 release left 10.9s of its window
+# unspent, so that much skew is absorbed outright, and rubygems.org's
+# TOTP drift tolerance roughly doubles that. Any machine running NTP
+# is nowhere near it. Note this is the measured ~10s, not the "well
+# over 20s" an earlier estimate here claimed — the headroom is real
+# but thinner than advertised.
 def wait_for_fresh_otp_window
   wait = OTP_PERIOD - (Time.now.to_i % OTP_PERIOD)
   puts "\n==> Waiting #{wait}s for a fresh OTP window — have your authenticator ready."

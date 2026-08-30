@@ -64,7 +64,10 @@ OTP code covers every push:
 5. **Wait** for the top of the next TOTP window, announcing it — that
    pause is your cue to fetch your authenticator.
 6. **Ask** for one OTP code on stdin.
-7. **Push** two gems at a time, spending that one code.
+7. **Push** two gems at a time, spending that one code. At v0.1.0
+   that took 14.8s for sixteen gems and left 10.9s of the window —
+   the task prints this accounting every release, so a shrinking
+   margin is visible rather than inferred.
 8. **Report** every gem as pushed / skipped / failed, and **tag**
    `vx.y.z` if nothing failed.
 
