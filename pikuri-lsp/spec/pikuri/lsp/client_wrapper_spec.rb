@@ -314,7 +314,10 @@ describe Pikuri::Lsp::ClientWrapper do
         start.call(wrapper, wire)
         closer = Thread.new { wrapper.close }
         shutdown = wire.take
-        wire.reply(shutdown, nil)
+        # Deliberately unanswered: #close writes shutdown and exit back to back
+        # and then closes the channel without awaiting the reply, so a reply
+        # here is a write into a pipe whose read end is being closed on the
+        # other thread — EPIPE whenever the closer wins the race.
         goodbye = wire.take
         closer.join
 
