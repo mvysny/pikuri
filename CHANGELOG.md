@@ -8,7 +8,7 @@ restate. Versioning is semver as documented in
 reconstructed from git history in August 2026, after those releases had
 shipped without one.
 
-## [Unreleased]
+## [0.1.0] - 2026-08-30
 
 Two offline agents graduate into gems — `pikuri-os` (whole-machine
 helper) and `pikuri-thunderbird` (local mail + calendar) — and
