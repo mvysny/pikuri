@@ -6,5 +6,5 @@ module Pikuri
   # additions to the public surface (+Pikuri::Tool+ / +Pikuri::Agent+ /
   # listeners / bundled tools), major for breaking changes to that
   # surface or to the +bin/pikuri-*+ CLIs.
-  VERSION = '0.0.7'
+  VERSION = '0.1.0'
 end
