@@ -3,10 +3,13 @@
 ## Tests
 
 ```sh
-bundle exec rake test
+bundle exec rake check
 ```
 
-`rake test` fans out `rspec` across every gem in the monorepo
+`rake check` (also the default task, so bare `bundle exec rake` works
+too) runs the full verification: the spec suites, then the `tripwires`
+doc-invariant checks CI enforces. `rake test` is the spec half alone —
+it fans out `rspec` across every gem in the monorepo
 (`pikuri-core/spec/`, `pikuri-skills/spec/`, etc.) — same shape
 Rails (rails/rails) uses for its multi-gem monorepo. To run a
 single gem's specs in isolation:
@@ -27,7 +30,7 @@ enforce push order, so the fan-out ignores it.
 
 Pre-flight:
 
-- `bundle exec rake test` is green across the whole monorepo.
+- `bundle exec rake check` is green across the whole monorepo.
 - Working tree clean (a version bump left by an earlier failed run
   is tolerated).
 - You are signed in to rubygems.org as a pusher for the `pikuri-*`

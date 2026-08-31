@@ -195,10 +195,11 @@ have the problem. Library behaviour is defined by `lib/` and its yardoc.
 
 ## CI
 
-Woodpecker CI runs `rake test` then `rake tripwires` on push / PR /
-manual (`.woodpecker.yml`, dashboard
+Woodpecker CI runs `rake check` (= `test` then `tripwires`; also the
+`default` task, per the cross-repo standard) on push / PR / manual
+(`.woodpecker.yml`, dashboard
 <https://ci.codeberg.org/repos/17229>). The `ruby:4.0` image lacks
 `ripgrep`, so the config installs it (the Grep tool's specs need `rg`).
-Both tasks run as an unprivileged user — root would bypass the permission
+Everything runs as an unprivileged user — root would bypass the permission
 bits the workspace specs assert. Gem deps cache in Hetzner Object
 Storage, keyed on `Gemfile.lock`.

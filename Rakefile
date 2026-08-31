@@ -91,7 +91,14 @@ task :test do
   raise "Specs failed in: #{failed.join(', ')}" unless failed.empty?
 end
 
-task default: :test
+# The cross-repo standard entry point: `bundle exec rake check` (or bare
+# `bundle exec rake`) runs the full verification. Prerequisite order keeps
+# the CI invariant — tripwires run *after* the specs, so a drifted doc
+# invariant never masks a real test failure.
+desc 'Full check: specs across every gem, then the CLAUDE.md tripwires'
+task check: %i[test tripwires]
+
+task default: :check
 
 # --- release helpers -------------------------------------------------
 
