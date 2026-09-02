@@ -38,6 +38,24 @@ Each needs a live install or a comm-central read; none blocks what ships.
 
 ## Deferred work
 
+- **A correspondent allowlist** — restrict mail search/read to senders and
+  recipients matching an address or domain, so a host can scope the mailbox
+  instead of promising a scope in its prompt. The first host to want it is
+  `bin/pikuri-briefing --with-mail` (`DECISIONS.md` `D_briefing_with_mail`),
+  whose prompt asks for "correspondence with that customer" while the search
+  reaches everything Gloda indexed — a prompt promise, not an enforced
+  boundary, and unlike the corpus's `trusted:` declaration this would be a
+  real filter rather than a label. Two notes on its shape, so they are not
+  re-derived: the filter belongs **inside the Gloda query, never as a
+  post-filter over results** (results are ranked and capped, so dropping rows
+  afterwards spends the cap on mail that is then discarded, and a scoped
+  search quietly returns less than it should); and the `contacts` surface is
+  its name→address resolver, which is part of why `surfaces:` keeps contacts
+  separable (`D_thunderbird_surfaces`). Deferred on purpose — the honest
+  whole-mailbox reading is what makes the severity lesson in
+  `book/trifecta-detector.md` land — so build it when a week of real use
+  makes the pool intolerable, and record it in `DESIGN.md` (it narrows the
+  read surface) plus a `D_` entry if a fork turns out to be real.
 - **`attendees` on calendar-create** — gated on the CalDAV-invite question above.
 - **Attachments on compose** — the author-not-approver draft doesn't need them,
   and a path/URL reopens the staging problem.

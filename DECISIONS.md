@@ -84,9 +84,10 @@ design.
 **Status:** Accepted, shipped: `--with-mail` in `pikuri-rag/bin/pikuri-briefing`,
 `prompts/pikuri-briefing-mail.txt`, the reworded no-egress paragraph in
 `prompts/pikuri-briefing.txt`, the `#mail_wired?` check, and the two-legged
-boot paragraph. The extension half is `D_thunderbird_surfaces`. What is still
-open in `ideas/briefing.md`: the correspondent allowlist (deliberately
-deferred) and the `book/trifecta-detector.md` section this now makes writable.
+boot paragraph. The extension half is `D_thunderbird_surfaces`, and the
+two-run lesson is `book/trifecta-detector.md` §"One flag, one extra leg, and
+the same verdict". One piece stays deliberately unbuilt — the correspondent
+allowlist, now tracked in `ideas/thunderbird.md`'s deferred work.
 
 **Context.** Stage 0 (`D_briefing_wiring`) is the first pikuri agent holding
 exactly *one* trifecta leg. Stage 1 adds read-only local mail, so presence
@@ -178,9 +179,9 @@ query, is deferred until a week of real use makes the pool intolerable.
 **Status:** Accepted, shipped: `Thunderbird::Extension.new(surfaces:)`,
 `#mail_wired?`, and the per-surface `SURFACE_USAGE` split of the usage
 snippet. The consumer this was built for — `bin/pikuri-briefing --with-mail`,
-the two-legged Stage 1 of `ideas/briefing.md` — is **not** built yet, and its
-own forks (the flag, and the binary raising where this extension deliberately
-carries on) stay open in that note.
+the two-legged reading of the briefing agent — shipped alongside it; its own
+forks (the flag, and the binary raising where this extension deliberately
+carries on) are `D_briefing_with_mail`.
 
 **Context.** `#configure` wired all five inbound tools whenever their stores
 existed: mail search + read + contact search on a Gloda index, both calendar
@@ -205,7 +206,7 @@ the failure nobody notices. Three sub-decisions carry the weight:
   standalone, and it has a second life as the resolver behind `MailCompose`'s
   recipient-novelty warn — so the resolver stays built whenever the index is
   there, while the *tool* follows the surface. Keeping it separable is also
-  what a later correspondent allowlist would need (`ideas/briefing.md`).
+  what a later correspondent allowlist would need (`ideas/thunderbird.md`).
 - **The usage snippet follows what was *wired*, not what was asked.** One
   `SURFACE_USAGE` paragraph per wired surface, each carrying its own
   untrusted-content clause, plus the shared search discipline that stayed in
@@ -260,9 +261,11 @@ be false by the host's own choice.
 ## D_briefing_wiring — `bin/pikuri-briefing` hardcodes the two declarations and watches by default, inverting its sibling twice (2026-09-02)
 
 **Status:** Accepted, shipped: `pikuri-rag/bin/pikuri-briefing` plus
-`pikuri-rag/prompts/pikuri-briefing.txt`. The remaining half of
-`ideas/briefing.md` — the two-stage trifecta chapter (`book/briefing.md`)
-and the Stage 1 correspondent allowlist — is still open in that note.
+`pikuri-rag/prompts/pikuri-briefing.txt`. Stage 1 shipped after it as
+`D_briefing_with_mail`, and the two-stage lesson landed as a section of
+`book/trifecta-detector.md` rather than the chapter this once planned. The
+correspondent allowlist is the one piece still deliberately unbuilt
+(`ideas/thunderbird.md`).
 
 **Context.** A user gathers meeting notes from every customer by hand and
 wants an agent to prepare them for the next meeting. They are strict: no
@@ -343,8 +346,8 @@ inconsistency.
   is where the fix went instead, and `rag_find` is what the notes corpus
   actually wanted.
 - **A `write` tool over the notes folder.** Kept out for a reason
-  independent of everything above: in `ideas/briefing.md`'s Stage 1, an
-  agent that reads untrusted mail and writes into the store the corpus
+  independent of everything above: once the agent reads mail as well
+  (`D_briefing_with_mail`), an agent that reads untrusted mail and writes into the store the corpus
   declares *trusted* is a **laundering pipe** — a hostile e-mail's content
   lands in a note, the watcher indexes it within seconds, and it is
   retrieved as vouched content from then on, surviving into sessions with no
@@ -387,8 +390,8 @@ inconsistency.
   are `git clone`d; a date on the note's first line survives a read but not
   necessarily a search hit, since only the chunk containing it carries it.)
 - Stage 1 — adding read-only Thunderbird, which moves the agent from one leg
-  to two and changes the human's obligations completely — stays in
-  `ideas/briefing.md` along with the chapter that would teach it.
+  to two and changes the human's obligations completely — shipped as
+  `D_briefing_with_mail`, taught in `book/trifecta-detector.md`.
 
 ## D_rag_gem — Hybrid retrieval is a new gem on top of the vector primitive, composed at the `Backend` (2026-09-02)
 
@@ -437,7 +440,7 @@ rerank-then-render tail is shared rather than cloned.
 
 **Context.** `vectordb_search` answers *precision*: top-k chunks, reranked,
 a snippet each. A small corpus of short notes where any omission matters
-(`ideas/briefing.md`'s hand-curated customer notes) asks two questions
+(the briefing agent's hand-curated customer notes) asks two questions
 cosine retrieval structurally cannot answer. *Completeness* — "every note
 mentioning Acme" — because top-k is a sample and cosine has no calibrated
 zero, so no cutoff can be documented as a promise. *Exactness* — "invoice
@@ -520,7 +523,7 @@ on. The two extensions are mutually exclusive on one agent.
   corpus-shape precondition ("the agent reads them in full") becomes a
   usage line on `rag_find`.
 - **`grep` + `file_list` from `pikuri-workspace` bolted onto the corpus
-  agent.** `ideas/briefing.md` worked this through and it composes
+  agent.** The briefing wiring worked this through and it composes
   (identical relative paths, no confirmer needed); rejected there because it
   patches a retrieval shortcoming from outside the gem that owns retrieval,
   `file_list` composes only over a flat corpus, and it has no stemming.
@@ -542,10 +545,10 @@ on. The two extensions are mutually exclusive on one agent.
 - `ideas/vectordb-deferrals.md`'s recall-mode bullet is deleted when the
   gem lands; two gems each promising completeness in different ways is the
   duplication the doc rules exist to prevent.
-- `ideas/briefing.md`'s Stage 0 wires `Rag::Extension`; its "ship search +
-  read only and see whether the gap bites" plan is retired, since the
-  consensus predicts it bites on the first "everything about Acme". Its
-  open question "one collection or one per customer" dissolves.
+- The briefing agent's Stage 0 wires `Rag::Extension` (`D_briefing_wiring`);
+  its "ship search + read only and see whether the gap bites" plan is retired,
+  since the consensus predicts it bites on the first "everything about Acme".
+  Its open question "one collection or one per customer" dissolves.
   `pikuri-briefing` moves to `pikuri-rag/bin/`.
 - `LIBRARIAN` names `vectordb_*` tools and cannot be reused over the new
   family; a `rag_*` persona, if ever wanted, is a new persona in the new gem.

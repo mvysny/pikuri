@@ -28,10 +28,14 @@ Related, already worked out:
   `FILE_MINER`.
 - Likely home: the `pikuri-assistant` gem — same precedent as `LIBRARIAN`
   and `GIT_REPO_RESEARCHER` ([`CLAUDE.md`](../CLAUDE.md) inventory).
-- [`briefing.md`](briefing.md) — a candidate *first member*: a
-  one-legged (private-only) notes agent, and the week-long prototype
-  this note says the federation is waiting on. Not `@private` — see
-  there for why.
+- `bin/pikuri-briefing` (`DECISIONS.md` `D_briefing_wiring` +
+  `D_briefing_with_mail`, walk-through in `book/rag.md`) — a candidate
+  *first member*, and the week-long prototype this note says the
+  federation is waiting on: a one-legged (private-only) notes agent,
+  or two-legged with `--with-mail`. It is `@customers` / `@accounts`,
+  **not `@private`** — the pool is customer-relationship records
+  rather than durable personal memory, and with mail wired it carries
+  an untrusted leg `@private` must not have.
 
 ## The idea
 
