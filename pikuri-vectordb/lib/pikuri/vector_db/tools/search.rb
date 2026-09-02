@@ -32,6 +32,16 @@ module Pikuri
       # retrieval depth and rerank choice are host policy baked into {Extension},
       # not something the LLM should tune mid-conversation.
       #
+      # == Who declares the legs
+      #
+      # Whether the retrieved chunks are confidential, and whether they are
+      # bytes pikuri did not write, are properties of the *corpus* — so they
+      # arrive pre-derived in +legs:+ from {Extension}'s +private:+ /
+      # +trusted:+ (the same shape {Pikuri::Workspace::Read} takes from its
+      # {Pikuri::Workspace::Filesystem}), and both default to the pessimistic
+      # value. The egress axis is not declared but structural: the query never
+      # leaves the machine, which is the whole point of local retrieval.
+      #
       # Sharing: +P_shared_locked+, and sharing is what you want — an index is
       # expensive to build and is the same corpus for every agent, so ten
       # agents over one {Backend} is the intended shape. {Backend::InMemory}
@@ -73,8 +83,13 @@ module Pikuri
         # @param reranker [#rerank, nil] optional. +nil+ skips
         #   reranking and retrieves {FINAL_K} from the backend
         #   directly.
+        # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
+        #   declaration, derived by {Extension} from its
+        #   +private:+ / +trusted:+ flags (see "Who declares
+        #   the legs"). Required — a default here would be a
+        #   second copy of that derivation.
         # @return [Search]
-        def initialize(embedder:, backend:, reranker: nil)
+        def initialize(embedder:, backend:, legs:, reranker: nil)
           super(
             name: 'vectordb_search',
             description: DESCRIPTION,
@@ -90,16 +105,7 @@ module Pikuri
                 query: query
               )
             },
-            # Hard untrusted: a corpus is a pile of documents pikuri did not
-            # write, and web-sourced corpora are the common case. No egress —
-            # the query never leaves the machine, which is the whole point of
-            # local retrieval.
-            #
-            # No private leg: there is no per-corpus declaration yet, so this
-            # stays the quiet default rather than guessing. A private corpus is
-            # under-warned; see +private:+ on {Pikuri::Workspace::Filesystem}
-            # for the shape it would take.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
+            trifecta_legs: legs
           )
         end
 

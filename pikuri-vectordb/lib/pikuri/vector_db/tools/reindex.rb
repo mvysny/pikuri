@@ -21,6 +21,22 @@ module Pikuri
       # A mid-run +RuntimeError+ (network, embedder 5xx, backend down) comes back
       # as an +"Error: ..."+ observation, not an exploded turn.
       #
+      # == No trifecta legs, whatever the corpus is
+      #
+      # {Pikuri::Tool::TrifectaLegs::NONE}, independent of {Extension}'s
+      # +private:+ / +trusted:+ declaration — the {Search} / {Read} case does
+      # not apply here. The observation is a chunk count, a "no indexable
+      # files" line, or an infrastructure error; per-file failures — the only
+      # place a corpus-authored filename or an extractor's stderr would surface
+      # — go to the logger and never reach the model. No corpus bytes, no
+      # filenames, and no model-chosen query: {Pikuri::Workspace::Write}'s
+      # case (the observation is an outcome), not +glob+'s.
+      #
+      # Residual, left as is: an embedder or backend error message could echo a
+      # fragment of the chunk it choked on — an infrastructure failure the model
+      # did not steer, carrying at most part of one chunk. Revisit on a concrete
+      # attack vector, not a symmetry argument.
+      #
       # Sharing: +P_shared_locked+ — {Backend#replace_source} is atomic per
       # source, so a concurrent {Search} never sees a zero-chunk gap and two
       # concurrent reindexes converge on the same state. They also each pay the
@@ -52,9 +68,7 @@ module Pikuri
             execute: lambda {
               Reindex.execute(indexer: indexer)
             },
-            # Hard untrusted: the observation reports what was indexed, and filenames
-            # are corpus-authored. No egress — indexing is local.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
+            trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
           )
         end
 

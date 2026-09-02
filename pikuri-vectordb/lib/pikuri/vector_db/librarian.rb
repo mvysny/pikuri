@@ -23,6 +23,13 @@ module Pikuri
     # {Tools::Read}). Corpus content is the threat — see SECURITY.md and
     # +book/trifecta-detector.md+.
     #
+    # That reason holds for an *untrusted* corpus. Over one the host declared
+    # {Extension#trusted?}, the untrusted leg is already +:none+, so there is
+    # nothing to summarize away — and the private leg propagates up through a
+    # sub-agent at full strength — which makes the quarantine a context-hygiene
+    # device (chunks and full documents stay out of the parent's window) rather
+    # than a security boundary. Still worth wiring for that; just not for this.
+    #
     # Opt-in via +SubAgent::Extension.new(personas: [LIBRARIAN])+; same precedent
     # as +Pikuri::Code::GIT_REPO_RESEARCHER+ — the constant lives with the gem
     # shipping its required tool, not in pikuri-subagents.

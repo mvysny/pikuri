@@ -117,7 +117,8 @@ describe Pikuri::VectorDb::Extension do
     end
 
     it 'raises if vectordb_search has been pre-registered' do
-      pre = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
+      pre = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend,
+                                                legs: Pikuri::Tool::TrifectaLegs::NONE)
       configurator.add_tool(pre)
 
       err = assert_raises(RuntimeError) do
@@ -127,7 +128,8 @@ describe Pikuri::VectorDb::Extension do
     end
 
     it 'raises if vectordb_read has been pre-registered' do
-      pre = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root)
+      pre = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root,
+                                              legs: Pikuri::Tool::TrifectaLegs::NONE)
       configurator.add_tool(pre)
 
       err = assert_raises(RuntimeError) do

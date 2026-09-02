@@ -14,19 +14,18 @@ Related:
 - [`assistant.md`](assistant.md) — the federation this would be a member
   of. This note is a candidate *first member* and the "prototype someone
   uses for a week" that note says the federation is waiting on.
-- [`vectordb-trust-declaration.md`](vectordb-trust-declaration.md) —
-  the implementation plan for the per-corpus `private:` / `trusted:`
-  declaration this note motivates.
+- `DECISIONS.md` `D_corpus_trust_declaration` — the per-corpus
+  `private:` / `trusted:` declaration this note motivated, now shipped.
 - [`vectordb-deferrals.md`](vectordb-deferrals.md) — the per-tool pool
-  choice and multi-source indexing, both of which interact with the
-  declaration proposed below.
+  choice and multi-source indexing, both of which interact with that
+  declaration.
 - `book/trifecta-detector.md` §"Who declares each leg" — the table this
   note leans on: untrusted and egress are the framework's, private is
   the user's.
 - `DECISIONS.md` `D_lsp_trifecta_legs`, `D_bundle_trust_grading`,
   `D_no_static_poisoned_flag` — the three entries checked for a
-  contradiction with the declaration (§"Does a per-corpus declaration
-  contradict an earlier decision?"). None found.
+  contradiction with the declaration. None found; the check is recorded
+  in `D_corpus_trust_declaration`.
 
 ## Stage 0 — the one-legged agent
 
@@ -36,21 +35,18 @@ memory gem.
 
 ### What the user says vs. what the detector says
 
-The user: "one leg, *private*." The detector as the vectordb tools
-stand today: "1 of 3 legs (untrusted); no private leg found." The tools
-hardcode `private: false, untrusted: :hard` (`tools/search.rb`,
-`tools/read.rb`, `tools/reindex.rb`), and the comment on `Search`
-already admits the gap: *"No private leg: there is no per-corpus
-declaration yet, so this stays the quiet default rather than guessing. A
-private corpus is under-warned; see `private:` on `Filesystem` for the
-shape it would take."*
+The user: "one leg, *private*." The detector, before the corpus could
+declare itself: "1 of 3 legs (untrusted); no private leg found." Both
+agreed the agent was one-legged and disagreed on *which* leg, which is
+exactly the "who declares" split — untrusted defaults on and only the
+user can answer it, private defaults off and only the user can turn it
+on.
 
-Both agree the agent is one-legged. They disagree on *which* leg, and
-that disagreement is exactly the "who declares" split: untrusted
-defaults on and only the user can answer it; private defaults off and
-only the user can turn it on. `Workspace::Filesystem` has both knobs.
-The corpus has neither. That is the one library change this idea earns
-— see the next section.
+That was the one library change this idea earned, and it has shipped:
+`Extension.new(private: true, trusted: true)` now prints *"1 of 3 legs
+(private)"* (`D_corpus_trust_declaration`). What is left for this note
+is the *wiring* — which values this agent passes, and the persona
+obligations below that make `trusted: true` honest.
 
 ### What a purely private agent buys, and what it makes redundant
 
@@ -98,94 +94,24 @@ definition is *reviewed in the form the model will read it*, and the
 recipe for received documents is convert with pikuri's extractor, read
 the text, index the text, keep the original out of the corpus — or put
 received documents in a second corpus declared untrusted and accept a
-two-legged agent. Worked out in
-[`vectordb-trust-declaration.md`](vectordb-trust-declaration.md)
-§"What `trusted: true` means"; for Stage 0 the one-line rule is: **the
-trusted corpus holds only what the user typed or reviewed as text.**
+two-legged agent. The flag's three clauses are
+`Extension#trusted?`'s yardoc and `book/vectordb.md`'s; for Stage 0 the
+one-line rule is: **the trusted corpus holds only what the user typed or
+reviewed as text.**
 
-## The library change: a per-corpus `private:` / `trusted:` declaration
+## The library change: shipped
 
-(Work items, specs and the `D_` entry outline live in
-[`vectordb-trust-declaration.md`](vectordb-trust-declaration.md); this
-section keeps the reasoning.)
+The per-corpus `private:` / `trusted:` declaration this note motivated
+landed as `VectorDb::Extension.new(private:, trusted:)`, with the two
+reading tools deriving their legs from it and `vectordb_reindex`
+declaring none. The reasoning, the flag's three-clause definition, the
+five rejected forks and the deferred boot-time reconcile all live in
+`DECISIONS.md` `D_corpus_trust_declaration`; the reader-facing half is
+`book/vectordb.md` §"Why this agent can't leak your corpus".
 
-The tools cannot decide by themselves whether the content they store is
-untrusted — a corpus is a folder, and whether a folder holds the user's
-own words or a web crawl is a property of the data, not the tool. So the
-host declares it, once, on the object that owns the corpus root:
-
-```ruby
-Pikuri::VectorDb::Extension.new(backend:, source: notes_dir, private: true, trusted: true)
-```
-
-and `#configure` builds the three tools with
-`TrifectaLegs.new(private: private, untrusted: trusted ? :none : :hard,
-egress_payload_review: :no_egress)` — the exact shape
-`Workspace::Read` uses (`untrusted: filesystem.trusted? ? :none : :hard`).
-Defaults stay `private: false, trusted: false`, so every existing wiring
-prints what it prints today.
-
-### Does a per-corpus declaration contradict an earlier decision?
-
-Checked three entries. **No contradiction; two of them are the
-precedent, and the third supplies the test the corpus passes.**
-
-- **`D_bundle_trust_grading`** is the precedent in shape: trust is
-  declared *per search base* as a plain value (`Bundle::Base(dir:,
-  trusted:)`), the host answers it, and the tool derives its untrusted
-  leg from the union. The entry also states the principle that decides
-  this note: *"a base's trust is a claim about that root, not about
-  'the repo'"* — same question, different reachable sets, different
-  honest answers. A corpus root is one more reachable set with its own
-  honest answer.
-- **`D_lsp_trifecta_legs`** *rejected* riding `trusted?` for `lsp`, and
-  the reason is the test to apply here: riding a human's answer works
-  only when *"the vouching and the reach are the same set."* `read` is
-  confined to the checkout the human vouched for; `lsp` reaches jars and
-  the JDK the human was never asked about. For the corpus, the vouching
-  and the reach *are* the same set: `Indexer` walks exactly `source`
-  (one root in v1), `vectordb_search` returns only chunks that walk
-  produced, and `vectordb_read` is rooted at `indexer.root`. Nothing
-  the tools can return came from outside the folder the host vouched
-  for. The corpus is the `read` case, not the `lsp` case.
-- **`D_no_static_poisoned_flag`** rejects a declared `poisoned:` on an
-  *agent node*, because that flag would restate a derived value (the
-  untrusted *strength*) and, set to `false`, would silence egress
-  propagation — a true alarm declared away. A per-corpus `trusted:` is
-  a different kind of thing: it is the *input* the derivation starts
-  from (who authored these bytes), which is precisely the axis the
-  "who declares" table says the framework cannot determine and the
-  user must supply. It does not touch propagation, it does not silence
-  a computed result, and it is the same category as the two knobs that
-  already exist. The entry's "change the wiring, not the label" applies
-  to the poisoned axis and stays true.
-
-Two consequences from those entries to carry into the implementation:
-
-- **`Filesystem` refuses `trusted: true` on `AllowAll`** because a
-  vouched island inside an unbounded reach buys nothing. The corpus has
-  no `AllowAll` analogue in v1 — one bounded root — so no guard is
-  needed *yet*. It becomes needed the day **multi-source indexing**
-  ([`vectordb-deferrals.md`](vectordb-deferrals.md)) lands: then trust
-  is per source, the union is over *sources actually indexed* (the
-  `Bundle::Base` rule — one unvouched root takes the whole collection
-  to `:hard`), and a `TrifectaLegs` declared once at tool construction
-  has to be computed from the source list, not a single boolean. Design
-  the multi-source API with the per-source `trusted:` in it from day
-  one rather than retrofitting.
-- **This is not a defense.** Same caveat `D_bundle_trust_grading`
-  spells out: `untrusted` is read by `Trifecta::Report` and nothing
-  else, the detector never blocks, and this only changes what a banner
-  prints — in the quieter direction. The reason to do it anyway is the
-  same: an agent printing the *wrong* leg teaches its operator the map
-  is wrong, and this is the first real corpus where "mine and
-  confidential" is the honest answer.
-
-Where the parameter goes: `Extension.new`, since it is the host-facing
-constructor and owns `source`. Whether it is then threaded into the
-three tools as two booleans or as a pre-built `TrifectaLegs` is an
-implementation nit; the tool yardoc comment quoted above gets replaced
-by the derivation.
+What stays open for *this* note is the wiring: which values a
+meeting-prep agent passes (both `true`), whether that is a constant or a
+boot question (§"Open questions"), and the persona obligations above.
 
 ## Stage 1 — add Thunderbird, read-only, correspondence with that customer
 
@@ -296,11 +222,8 @@ brief. In Stage 0 the same feature is merely the convenience tax
 
 ## Graduation homes
 
-- The per-corpus declaration → `VectorDb::Extension` yardoc (the
-  `@param`s) + the tool legs' derivation comment; the *why it does not
-  contradict `D_lsp_trifecta_legs`* → a `D_corpus_trust_declaration`
-  entry, or a paragraph appended to `D_bundle_trust_grading` if it
-  reads as the same decision applied once more.
+- ~~The per-corpus declaration~~ — done: `VectorDb::Extension` yardoc,
+  the derived legs, `D_corpus_trust_declaration`, `book/vectordb.md`.
 - The two-stage teaching example → the book, beside the detector
   chapter.
 - The persona + corpus layout convention → the persona's yardoc + the

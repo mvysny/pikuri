@@ -10,7 +10,9 @@ shipped without one.
 
 ## [Unreleased]
 
+- Add `private:` / `trusted:` to `VectorDb::Extension.new` — `vectordb_search` and `vectordb_read` derive their trifecta legs from the declaration instead of hardcoding untrusted-hard / no-private, the way the file tools derive theirs from `Workspace::Filesystem`; `bin/pikuri-corpus` takes both as flags. See `DECISIONS.md` `D_corpus_trust_declaration`.
 - Add `Agent::Listener::Terminal::TOOL_COLOR` — the demo chrome's tool-call / tool-result lines and the terminal confirmer's diff hunk headers render in Kuri's coat tan (`#c1a586`, an absolute RGB) instead of terminal cyan, the same hex pikuri-tui and pikuri-web paint their tool lines. See `DECISIONS.md` `D_kuri_mascot`.
+- Fix `vectordb_reindex` declaring an untrusted leg — its observation is a chunk count, never corpus content, so it now declares no legs, like `write`.
 
 ## [0.1.0] - 2026-08-30
 

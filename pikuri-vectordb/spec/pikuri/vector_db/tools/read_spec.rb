@@ -32,12 +32,14 @@ describe Pikuri::VectorDb::Tools::Read do
 
   describe 'as a Pikuri::Tool' do
     it 'is named vectordb_read' do
-      tool = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root)
+      tool = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root,
+                                               legs: Pikuri::Tool::TrifectaLegs::NONE)
       assert_equal 'vectordb_read', tool.name
     end
 
     it 'advertises source as required and offset/limit as optional integers' do
-      schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root).parameters.to_openai
+      schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root,
+                                                 legs: Pikuri::Tool::TrifectaLegs::NONE).parameters.to_openai
       assert_equal %w[source], schema[:required]
       assert_equal 'string', schema[:properties][:source][:type]
       assert_equal 'integer', schema[:properties][:offset][:type]

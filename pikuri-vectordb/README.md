@@ -16,10 +16,19 @@ require 'pikuri-vectordb'
 Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
   c.add_extension Pikuri::VectorDb::Extension.new(
     backend: Pikuri::VectorDb::Backend::InMemory.new,
-    source:  '~/notes'
+    source:  '~/notes',
+    private: true,   # these documents are worth exfiltrating
+    trusted: true    # and every one of them is yours
   )
 end
 ```
+
+Those last two are what the corpus tells the lethal-trifecta map about
+itself; both default off, so leaving them out prints the pessimistic
+reading. `trusted: true` is a bigger claim than it looks — read
+`Extension#trusted?` (or the guide's
+[vector-DB chapter](../book/vectordb.md)) before you make it about a
+folder holding PDFs or shared with anyone.
 
 ## What you get
 

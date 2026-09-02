@@ -75,7 +75,14 @@ Only the deferrals stay here.
   a checked-out repo + a downloads folder) is deferred — it needs a
   source-list API and a provenance story for which root a hit came
   from. Referenced from `VectorDb::Extension` / `Indexer` yardoc
-  (that yardoc is the source of truth).
+  (that yardoc is the source of truth). **The per-source `trusted:` /
+  `private:` flag is part of that API** — design it in from day one
+  rather than retrofitting: trust becomes per source, the union follows
+  the `Bundle::Base` rule (one unvouched root indexed into the
+  collection takes the whole tool set to `:hard`; `private` is true if
+  any root claims it), and the legs are computed from the source list at
+  `#configure` rather than from a single boolean. See `DECISIONS.md`
+  `D_corpus_trust_declaration`.
 - **Additional reranker backends.** Only `Reranker::LlamaServer`
   ships. Because it speaks the same `/v1/rerank` wire format as
   Cohere's hosted reranker, a `Reranker::Cohere` (or any other

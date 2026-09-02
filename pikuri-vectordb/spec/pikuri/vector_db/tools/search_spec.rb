@@ -55,12 +55,14 @@ describe Pikuri::VectorDb::Tools::Search do
 
   describe 'as a Pikuri::Tool' do
     it 'is named vectordb_search' do
-      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
+      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend,
+                                                 legs: Pikuri::Tool::TrifectaLegs::NONE)
       assert_equal 'vectordb_search', tool.name
     end
 
     it 'declares a single required-string query parameter' do
-      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend)
+      tool = Pikuri::VectorDb::Tools::Search.new(embedder: fake_embedder, backend: backend,
+                                                 legs: Pikuri::Tool::TrifectaLegs::NONE)
       schema = tool.parameters.to_openai
       assert_equal ['query'], schema[:required]
       props = schema[:properties]

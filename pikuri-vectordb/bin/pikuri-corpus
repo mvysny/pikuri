@@ -9,12 +9,17 @@
 # document in full by its source path) and `calculator`. It has NO
 # egress — no web search, no page fetch — by design: the corpus may hold
 # private data, and an agent that can read it must not also be able to
-# send it out. That single rule keeps all three legs of the lethal
-# trifecta off this agent (the security chapter), and is why a prompt-injected
-# document has no hand to act with — vectordb_search and vectordb_read
-# are both inbound-only. The default corpus is the +book/+
+# send it out. That single rule keeps the lethal trifecta off this agent
+# (the security chapter) no matter what the corpus holds, and is why a
+# prompt-injected document has no hand to act with — vectordb_search and
+# vectordb_read are both inbound-only. The default corpus is the +book/+
 # directory inside this checkout, so the reader can ask the agent about
 # the very book they're reading.
+#
+# What the corpus *is* — confidential? your own writing? — is the host's
+# to declare, and --private / --trusted below do it. They move only what
+# the printed map says, which is the point: with no egress leg the verdict
+# stays silent either way.
 #
 # The privilege-separated `LIBRARIAN` persona is bundled by this gem but
 # deliberately NOT wired here — it earns its keep only under an agent
@@ -26,6 +31,7 @@
 ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../../Gemfile', __dir__)
 
 require 'bundler/setup'
+require 'digest'
 require 'optparse'
 require 'yaml'
 require 'reline' # line editing + history for the interactive prompt
@@ -56,6 +62,13 @@ streaming       = false
 watch           = false
 use_qdrant      = false
 use_chroma      = false
+# The corpus's trifecta declaration, both off by default — see
+# Pikuri::VectorDb::Extension#private? / #trusted?. Flags rather than
+# hardcoded values because --source points this demo at your own folder:
+# trusted: true is honest for the bundled book/ (pikuri wrote it) and a lie
+# for an arbitrary path, so the default run prints the pessimistic map.
+corpus_private  = false
+corpus_trusted  = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-corpus [options] [initial message...]'
@@ -64,6 +77,8 @@ parser = OptionParser.new do |opts|
   opts.on('--no-reranker', 'Skip the reranker; use vector-only top-k') { use_reranker = false }
   opts.on('--source PATH', "Corpus path to index (default: #{source})") { |v| source = v }
   opts.on('--watch', 'Keep the index live: reindex files as they change on disk (auto-watch daemon)') { watch = true }
+  opts.on('--private', 'Declare the corpus as holding sensitive data (adds the private trifecta leg to the printed map)') { corpus_private = true }
+  opts.on('--trusted', 'Declare every source in the corpus as your own, reviewed in the form the model reads it (drops the untrusted leg) — read Extension#trusted? before using this on your own folder') { corpus_trusted = true }
   opts.on('--qdrant', 'Persist the index in a self-managed Qdrant container (requires docker) instead of in-RAM InMemory — the recommended persistent backend') { use_qdrant = true }
   opts.on('--chroma', 'Persist the index in a self-managed ChromaDB container (requires docker) instead of in-RAM InMemory') { use_chroma = true }
   opts.on('-h', '--help', 'Print this help and exit') do
@@ -155,9 +170,17 @@ server_class, engine_flag =
   else [Pikuri::VectorDb::Server::InMemory, nil]
   end
 
+# One collection per corpus root, not one fixed name: a persistent backend
+# keeps whatever it was given, so a shared name would serve yesterday's
+# --source under today's --private / --trusted declaration (the collection
+# clause of Extension#trusted?). Collections under the old fixed name are
+# orphaned, not migrated — a reindex rebuilds in minutes.
+corpus_key = File.exist?(source) ? File.realpath(source) : File.expand_path(source)
+collection = "pikuri-corpus-#{Digest::SHA256.hexdigest(corpus_key)[0, 12]}"
+
 begin
   server  = server_class.ensure_running
-  backend = server.client(collection: 'pikuri-corpus')
+  backend = server.client(collection: collection)
 rescue StandardError => e
   warn "Could not start #{server_class.name.split('::').last}: #{e.message}"
   warn "Is docker installed and running? Drop #{engine_flag} to use the in-memory backend." if engine_flag
@@ -176,7 +199,9 @@ vectordb_ext = Pikuri::VectorDb::Extension.new(
   backend:  backend,
   source:   source,
   embedder: embedder,
-  reranker: reranker
+  reranker: reranker,
+  private:  corpus_private,
+  trusted:  corpus_trusted
 )
 
 # Run one agent turn, trapping SIGINT only for the duration of the turn.

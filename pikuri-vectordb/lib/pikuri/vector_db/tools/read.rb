@@ -68,8 +68,13 @@ module Pikuri
         #   implementation; consulted for the membership gate.
         # @param root [Pathname] the corpus root — {Indexer#root}.
         #   Relative +source+ paths resolve against it.
+        # @param legs [Pikuri::Tool::TrifectaLegs] the corpus's
+        #   declaration, derived by {Extension} from its
+        #   +private:+ / +trusted:+ flags — the same value
+        #   {Search} carries (see its "Who declares the legs").
+        #   Required, for the same reason.
         # @return [Read]
-        def initialize(backend:, root:)
+        def initialize(backend:, root:, legs:)
           super(
             name: 'vectordb_read',
             description: DESCRIPTION,
@@ -88,7 +93,7 @@ module Pikuri
               Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
             },
             # As {Search}: corpus bytes into the context, nothing outbound.
-            trifecta_legs: Pikuri::Tool::TrifectaLegs.new(private: false, untrusted: :hard, egress_payload_review: :no_egress)
+            trifecta_legs: legs
           )
         end
 

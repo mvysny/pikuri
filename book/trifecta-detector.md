@@ -214,7 +214,13 @@ you declare it, on the workspace rather than on each tool:
 Pikuri::Workspace::Filesystem.new(project_root: root, private: true)
 ```
 
-and the file tools reading through that workspace inherit it.
+and the file tools reading through that workspace inherit it. A
+workspace is not the only object that owns a reachable set of
+documents: `VectorDb::Extension.new(source:, private:, trusted:)` takes
+the same pair of answers for an indexed corpus, and `vectordb_search` /
+`vectordb_read` derive their legs from it the same way
+([the vector-DB chapter](vectordb.md#why-this-agent-cant-leak-your-corpus)
+has the before-and-after map).
 
 Two consequences worth sitting with:
 
