@@ -14,6 +14,22 @@
 # security chapter explains why that is an inert agent rather than a
 # quiet one. Walk-through: book/rag.md.
 #
+# `--with-mail` IS THE SECOND STAGE, AND IT IS A CONTROLLED EXPERIMENT.
+# It adds read-only local mail, so the agent goes from one leg to two
+# (`2 of 3 legs (private, untrusted)`) while the verdict stays silent —
+# no egress, so presence never completed a trifecta. Run both in one
+# sitting: the map's count moves, the meaning-carrying half of the
+# advisory says nothing new, and what actually changed is what *you*
+# owe every claim in the brief. That is the lesson, and the flag exists
+# so the diff is one word rather than two binaries.
+#
+# The flag *raises* when mail could not be wired, inverting the
+# extension's own deliberate fail-open (no Thunderbird profile, or no
+# Gloda index ⇒ log at info and carry on). Right default for a general
+# host; wrong here, because this binary has just told you it added a
+# private + untrusted leg, and a boot map reading `1 of 3` under
+# `--with-mail` would leave you believing you ran the second stage.
+#
 # LOCAL INFERENCE IS THIS AGENT'S FIRST INVARIANT, not a preference. The
 # trifecta model does not count the inference provider as egress; a user
 # who says "these notes stay on my machine" does. Point it at a cloud
@@ -53,6 +69,9 @@ require 'pikuri-rag'
 # clause before you do that: a rendered PDF is a proxy for the bytes the
 # model reads.
 require 'pikuri-pdf'
+# Also checkout-mode-only (not in this gem's gemspec): the read-only mail
+# surface --with-mail wires. Nothing is registered unless the flag is on.
+require 'pikuri-thunderbird'
 
 # Example-only config: the LLM connection + provider API keys live verbatim
 # in a YAML file the user owns — no CLI flags, never the environment (see
@@ -76,6 +95,7 @@ source          = File.expand_path('~/notes')
 # disk. Keep the index live by default.
 watch           = true
 use_qdrant      = false
+with_mail       = false
 
 parser = OptionParser.new do |opts|
   opts.banner = 'Usage: pikuri-briefing [options] [initial message...]'
@@ -84,6 +104,10 @@ parser = OptionParser.new do |opts|
   opts.on('--source PATH', "Notes folder to index (default: #{source})") { |v| source = v }
   opts.on('--no-watch', 'Do not keep the index live; index once at boot instead') { watch = false }
   opts.on('--no-reranker', 'Skip the reranker; use the fused top-k') { use_reranker = false }
+  opts.on('--with-mail',
+          'Also read your local Thunderbird mail and contacts (read-only). Adds the ' \
+          'untrusted leg: the agent goes from 1 of 3 to 2 of 3 legs, and the private ' \
+          'pool becomes your whole mailbox. Fails if mail cannot be wired') { with_mail = true }
   opts.on('--qdrant',
           'Persist the index in a self-managed Qdrant container (requires docker) ' \
           'plus a keyword index under the pikuri cache, so a corpus indexed once ' \
@@ -131,7 +155,15 @@ Pikuri::Extractors::PDF.register
 
 cancel_flag = Pikuri::Agent::Control::Cancellable.new
 
-system_prompt = Pikuri.prompts(:'pikuri-briefing', :'agent-loop')
+# One shared prompt for both stages, plus a fragment appended under the
+# flag — so the base cannot drift between the two readings, and neither
+# stage's prompt claims a source the agent has no way to reach. (The mail
+# surface's own search-and-ground discipline arrives with the extension,
+# not from here; the fragment owns only what no gem can know — that one
+# source is the user's own writing and the other is not.)
+system_prompt = Pikuri.prompts(*[:'pikuri-briefing',
+                                 (:'pikuri-briefing-mail' if with_mail),
+                                 :'agent-loop'].compact)
 system_prompt += "\n\nCurrent date: #{Time.now.strftime('%Y-%m-%d')}"
 system_prompt += "\nIndexed notes folder: #{source}"
 
@@ -200,6 +232,14 @@ ensure
   trap('INT', prev_trap || 'DEFAULT')
 end
 
+# Mail and contacts, never the calendar: "which meeting is coming up"
+# would be genuinely useful and is exactly the scope creep to resist
+# until asked, and a calendar is a third private surface an injected
+# message could make the agent query. Contacts is in because the sharp
+# mail filters want an address, and free-text on a customer's name finds
+# every message that merely mentions them.
+tb_ext = with_mail ? Pikuri::Thunderbird::Extension.new(surfaces: %i[mail contacts]) : nil
+
 agent = Pikuri::Agent.new(
   transport: Pikuri::Agent::ChatTransport.new(
     model: model,
@@ -210,18 +250,34 @@ agent = Pikuri::Agent.new(
   # :synthesize — a Q&A agent, as bin/pikuri-corpus. A brief assembled
   # from what was gathered beats a raised budget error. The ceiling is
   # higher than the corpus demo's because a brief legitimately reads
-  # several notes in full after listing them.
-  step_limit: Pikuri::Agent::Control::StepLimit.new(max: 30, on_exhausted: :synthesize),
+  # several notes in full after listing them — and higher again with
+  # mail, which is a second set to enumerate before any of it is read.
+  step_limit: Pikuri::Agent::Control::StepLimit.new(max: with_mail ? 45 : 30,
+                                                    on_exhausted: :synthesize),
   cancellable: cancel_flag,
   streaming: false
 ) do |c|
   c.add_listener Pikuri::Agent::Listener::Terminal.new(streaming: false)
   c.add_listener Pikuri::Agent::Listener::TokenLog.new
-  # The corpus tools and nothing else. No web, no bash, no mail, no
-  # memory gem: the notes folder *is* the durable memory here, written
-  # by hand, already distilled — auto-extracting from it would summarize
-  # a summary. Nothing to add without giving up the one-legged story.
+  # The corpus tools, plus read-only mail under --with-mail, and nothing
+  # else. No web, no bash, no memory gem: the notes folder *is* the
+  # durable memory here, written by hand, already distilled —
+  # auto-extracting from it would summarize a summary. Under --with-mail
+  # memory would be worse than redundant: it would carry facts distilled
+  # from untrusted mail into every later conversation, unattributed.
   c.add_extension rag_ext
+  c.add_extension tb_ext if tb_ext
+end
+
+# The inversion the header explains: asking for mail and silently not
+# getting it would leave the boot map reading `1 of 3` under a flag whose
+# whole purpose is the second leg. Loud, with the two causes named.
+if with_mail && !tb_ext.mail_wired?
+  agent.close
+  warn 'Could not wire mail: no Thunderbird profile found, or the profile has no Gloda index.'
+  warn 'Enable Thunderbird\'s global search (Preferences → General → Enable Global Search'
+  warn 'and Indexer), let it index, and try again — or drop --with-mail for the notes-only agent.'
+  exit 2
 end
 
 watcher = watch ? Pikuri::VectorDb::Watcher.new(indexer: rag_ext.indexer).start : nil
@@ -244,7 +300,8 @@ begin
   # an explicit ask instead.
   puts agent.trifecta.render
   puts
-  puts 'Pikuri Briefing: prepares you for a customer meeting from your own notes (no internet access).'
+  puts 'Pikuri Briefing: prepares you for a customer meeting from your own notes' \
+       "#{with_mail ? ' and your local mail' : ''} (no internet access)."
   puts "Notes: #{source}"
   # The claim this binary just made on the user's behalf, in words. One
   # puts beside the map: cheap, and it cannot fail silent the way a
@@ -252,6 +309,21 @@ begin
   puts "Indexing #{source} as PRIVATE and TRUSTED — that means: you reviewed every note in the"
   puts '  form the model reads it, nobody else writes into that folder, and the index holds'
   puts '  nothing but what that folder put there. Paste nothing from a customer; paraphrase.'
+  # The map above just moved from 1 of 3 legs to 2 of 3 and its verdict
+  # stayed silent, which is correct and says nothing about what changed
+  # for *you*. On a silent verdict the advisory prints presence only — no
+  # attribution, no advice — so these four lines are the only place the
+  # obligation change is stated. Same reason the TRUSTED claim above is
+  # words rather than a map row.
+  if with_mail
+    puts
+    puts 'MAIL IS ON, and this is the two-legged reading. Two things it changes:'
+    puts '  The pool is your WHOLE MAILBOX and address book, not your correspondence with one'
+    puts '  customer — that is a promise in the prompt, not a boundary anything enforces.'
+    puts '  And a message is text somebody else wrote, so a brief can now be steered by one.'
+    puts '  Nothing can leave this machine either way, so the trifecta is still broken; what'
+    puts '  changed is that a claim from mail is one you may have to check out of band.'
+  end
   puts "Backend: #{use_qdrant ? 'Qdrant (persistent)' : 'InMemory (RAM-only)'}, " \
        "keyword index: #{store == Pikuri::Rag::Backend::Fts5::MEMORY_STORE ? 'in-memory' : store}"
   indexed = rag_ext.backend.count

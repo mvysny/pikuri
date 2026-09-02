@@ -79,6 +79,100 @@ design.
 
 ---
 
+## D_briefing_with_mail — One binary with a `--with-mail` flag that raises, not a second binary (2026-09-02)
+
+**Status:** Accepted, shipped: `--with-mail` in `pikuri-rag/bin/pikuri-briefing`,
+`prompts/pikuri-briefing-mail.txt`, the reworded no-egress paragraph in
+`prompts/pikuri-briefing.txt`, the `#mail_wired?` check, and the two-legged
+boot paragraph. The extension half is `D_thunderbird_surfaces`. What is still
+open in `ideas/briefing.md`: the correspondent allowlist (deliberately
+deferred) and the `book/trifecta-detector.md` section this now makes writable.
+
+**Context.** Stage 0 (`D_briefing_wiring`) is the first pikuri agent holding
+exactly *one* trifecta leg. Stage 1 adds read-only local mail, so presence
+moves 1 → 2 (`private` + `untrusted: :hard`) while the verdict stays silent —
+no egress, so nothing completed a trifecta. The pair is the book's missing
+worked example of what the untrusted leg means *on its own*, which only works
+if a reader can run both readings in one sitting.
+
+**Decision, fork by fork.**
+
+- ***A flag on the one binary, not a second binary.*** The experiment *is* the
+  diff, so it should cost one word; two binaries cannot be diffed at runtime
+  and would duplicate the brief's whole method to vary one paragraph. This
+  does not contradict `D_briefing_wiring`'s refusal to make `private:` /
+  `trusted:` flags: those are human *assertions* about a folder, where a
+  forgotten flag fails silent, and `--with-mail` adds *tools that declare
+  their own legs* — the map moves on its own, and the default stays the
+  pessimistic reading. **A wiring cannot lie the way a declaration can.**
+- ***The flag raises when mail could not be wired.***
+  `Thunderbird::Extension#configure` deliberately fails open and quiet (no
+  profile, or no Gloda index ⇒ log at `info`, register nothing, the agent
+  still constructs), which is right for a general host and wrong here: the
+  boot map would read `1 of 3` under a flag whose entire purpose is the second
+  leg, and the reader would believe they had run Stage 1. So the binary reads
+  `#mail_wired?` after `Agent.new` returns and exits 2 naming both causes.
+  This is the third place this binary deliberately disagrees with a sibling's
+  default, and the reason is the same one every time: a demo whose lesson is
+  the boot map must never print a map that is wrong.
+- ***Mail + contacts, never the calendar.*** Contacts is in because the sharp
+  mail filters (`from:` / `to:`) want an address, and free-text on a
+  customer's name matches every message that merely mentions them — a worse
+  brief *and* a wider read than a scoped one. The calendar is out even though
+  it would answer "which meeting is coming up": that is the question the user
+  did not ask, and a third private surface an injected message could query.
+- ***One shared prompt plus an appended fragment.*** The base is reworded to
+  what is true in *both* stages ("no way to reach the internet and no way to
+  send anything anywhere" — the old text also claimed "no mail", which the
+  flag falsified), and the fragment lands only under the flag. The fragment
+  owns exactly what no gem can know: that one source is the user's own
+  writing and the other is not. The mail surface's own search discipline and
+  untrusted-content guard arrive with the extension.
+- ***The step ceiling rises to 45 under the flag*** (30 without): a brief now
+  has two sets to enumerate before any of it is read. Exhaustion is not
+  silent — `Agent::Synthesizer` emits `Event::FallbackNotice` — but the
+  synthesized brief itself never mentions it.
+
+**Alternatives rejected.**
+
+- **Cite mail the way notes are cited and stop there.** The existing prompt
+  demands a quote and a source for anything actionable, which reads like
+  enough. It is not: a citation says *where* a claim came from, not what the
+  reader owes it. A note is the user's own writing, recognizable at a glance;
+  a message is attacker-authorable text needing an out-of-band check. So the
+  fragment demands the *kind* per claim and forbids merging a note and a
+  message into one sentence — "they agreed to 10% (acme-2026-08-14.md, and
+  their mail of 22 August)" hides that half of it is unvouched.
+- **Let the brief report absence over mail the way it does over notes.**
+  Rejected because the guarantees differ: `rag_find` lists every matching
+  note with no cutoff, while a mail search returns ranked matches up to a cap
+  and Gloda never indexes Junk/Trash (`pikuri-thunderbird/DESIGN.md`). The
+  search tool is already honest about its own page (it fetches `limit + 1` and
+  the header says whether more exist), so what was missing was the *brief's*
+  rule: report what you searched and did not find, never "they never wrote
+  about it".
+- **A `write` tool, or "draft the follow-up e-mail".** Still refused, and
+  Stage 1 sharpens why. `D_briefing_wiring` rejected `write` as a laundering
+  pipe from the untrusted pool into the vouched one; Stage 1 shows the pipe
+  never depended on a tool, because a user pasting a customer's mail into a
+  note moves those bytes across by hand, undetectably. That makes the
+  paraphrase rule load-bearing for a second reason and the tool permanently
+  unnecessary rather than merely deferred. A draft feature would additionally
+  be `ideas/assistant.md`'s author→approver slope, one click from egress.
+- **Auto-memory under the flag.** Worse than redundant: it would carry facts
+  distilled from untrusted mail into every later conversation, unattributed —
+  precisely the attribution the fragment exists to enforce.
+
+**Consequences.** "Correspondence with that customer" remains a *prompt
+promise*, not an enforced boundary: the private pool is the whole mailbox and
+address book. That is deliberate — the honest reading is what makes the
+severity lesson land, and the boot paragraph says it in words because the
+detector cannot (a silent verdict prints presence only: no attribution, no
+advice). The enforcing filter, a correspondent allowlist inside the Gloda
+query, is deferred until a week of real use makes the pool intolerable.
+
+---
+
 ## D_thunderbird_surfaces — A narrowing `surfaces:` on the extension, not a hand-wiring host (2026-09-02)
 
 **Status:** Accepted, shipped: `Thunderbird::Extension.new(surfaces:)`,
