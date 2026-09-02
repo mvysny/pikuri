@@ -156,8 +156,10 @@ gem, landing once they stabilise.
   loud/soft/silent, the structural test for whether a human gate
   counts (**does the human see the bytes, or a proxy for them?**),
   how legs propagate across a delegation, and how to tag a tool you
-  write yourself. Worked example: one binary, three verdicts, two
-  declarations.
+  write yourself. Two worked examples: one binary with three
+  verdicts on two declarations, and one flag that adds a leg without
+  moving the verdict — where everything that changed for the human
+  sits outside what the detector grades.
 - **[MCPs revisited: containerised servers](mcp-revisited.md).**
   The harder MCP shapes: the official GitHub MCP in Docker as
   the worked example, plus npx- and pip-based community MCPs,

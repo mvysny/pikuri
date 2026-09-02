@@ -12,7 +12,10 @@ private data* and hands you something you'd run on a Monday morning.
 Every demo so far has indexed the pikuri book, your own repo, or your
 machine. This one wants your notes folder. The agent it builds has no
 internet, no mail, no shell — it reads your notes and talks to you,
-and that is the whole of it.
+and that is the whole of it. (It grows a second source later, behind
+an explicit flag, and that is the
+[detector chapter](trifecta-detector.md)'s worked example rather than
+this one's.)
 
 ## Two questions the vector DB cannot answer
 
@@ -341,8 +344,8 @@ pikuri-briefing [:private]
 
 **One leg.** Private data, unambiguously — every note is a record of a
 customer relationship. Untrusted input: no, because you wrote every
-byte. Egress: no, because there is no web search, no page fetch, no
-mail, no shell.
+byte. Egress: no, because nothing here can send anything anywhere —
+no web search, no page fetch, no shell.
 
 And a private leg *alone is inert*. Private data with no exit and no
 untrusted input is a personal tool, not an attack surface. No
@@ -407,17 +410,23 @@ something, you write a note. (This is the only place in the book where
 the answer to "should I add `pikuri-memory`?" is a flat no.)
 
 **No write tool.** Not because writing is dangerous in general, but
-because of what it would become. Suppose you later add read-only mail
-to this agent — the natural next step, and one this book's
-[OS-assistant chapter](os-assistant.md) already explores in a
-different shape. Now an agent that reads untrusted mail can write into
-the folder your whole setup declares *trusted*. A hostile e-mail's
-content lands in a note, the watcher indexes it within seconds, and it
-is retrieved as vouched content from then on — surviving into sessions
-with no mail wired at all. A corrupted brief bounded to one
-conversation becomes durable corpus poisoning, and **the detector says
-nothing**, because `write` carries no trifecta leg at all. That one
-needed reasoning rather than the map.
+because of what it would become. This agent *can* read your mail — the
+`--with-mail` flag wires it read-only, and the
+[detector chapter](trifecta-detector.md) runs that as its second
+worked example. Give it a write tool as well and an agent reading
+untrusted mail can write into the folder your whole setup declares
+*trusted*. A hostile e-mail's content lands in a note, the watcher
+indexes it within seconds, and it is retrieved as vouched content from
+then on — surviving into sessions with no mail wired at all. A
+corrupted brief bounded to one conversation becomes durable corpus
+poisoning, and **the detector says nothing**, because `write` carries
+no trifecta leg at all. That one needed reasoning rather than the map.
+
+There is a version of that pipe no tool decision can close, and it is
+worth knowing about now: *you* pasting a customer's e-mail into a note
+moves the same bytes from a source nobody vouched for into a folder
+everything treats as vouched, by hand, with nothing able to tell
+afterwards. That is why the paraphrase rule keeps coming back.
 
 Which is also the honest trade to record about mail: the
 hand-curation you already do — reading correspondence, deciding what

@@ -28,10 +28,10 @@ about a leg that you can ask about any harness you build.
 ## Prerequisites
 
 The [security chapter](security.md) for the trifecta itself, plus
-the [OS-assistant](os-assistant.md) and [coding-agent](code.md)
-chapters, whose wirings are the worked examples here. No new
-binary and nothing to install: the detector is already running in
-every demo you've started.
+the [OS-assistant](os-assistant.md), [coding-agent](code.md) and
+[hybrid-retrieval](rag.md) chapters, whose wirings are the worked
+examples here. No new binary and nothing to install: the detector
+is already running in every demo you've started.
 
 ## The decision procedure, automated
 
@@ -593,6 +593,145 @@ regardless, so the claim stops being honest and the untrusted leg
 comes back hard. All four readings are pinned in
 `pikuri-code/spec/pikuri/code/dry_run_spec.rb`, so a wiring change
 that moves a verdict fails the build.
+
+## One flag, one extra leg, and the same verdict
+
+`pikuri-code` moved its verdict on two declarations, and every
+reading had egress present. So the model's other half is still
+untaught: what the **untrusted leg means on its own**, arriving at
+an agent that did not have it. For that you want the briefing agent
+from the [hybrid-retrieval chapter](rag.md) — the book's only
+one-legged wiring — and its flag:
+
+```
+./pikuri-rag/bin/pikuri-briefing --source ~/notes
+./pikuri-rag/bin/pikuri-briefing --source ~/notes --with-mail
+```
+
+The first is the agent you already met: your hand-written meeting
+notes, nothing else.
+
+```
+Trifecta: pikuri-briefing — 1 of 3 legs (private); no untrusted/egress leg found.
+
+pikuri-briefing [:private]
+  rag_search [:private]
+  rag_find [:private]
+  rag_read [:private]
+  rag_reindex []
+```
+
+The second adds read-only local mail and a contact lookup — no
+send, no drafts, nothing that leaves the machine:
+
+```
+Trifecta: pikuri-briefing — 2 of 3 legs (private, untrusted); no egress leg found.
+
+pikuri-briefing [:private, :untrusted_hard]
+  rag_search [:private]
+  rag_find [:private]
+  rag_read [:private]
+  rag_reindex []
+  thunderbird_mail_search [:private, :untrusted_hard]
+  thunderbird_mail_read [:private, :untrusted_hard]
+  thunderbird_contact_search [:private, :untrusted_hard]
+```
+
+Presence went from one leg to two. The verdict did not move: still
+silent, because two legs are not three and nothing here can send.
+And that is the whole lesson — **everything that actually changed
+about running this agent is outside what the detector grades.**
+
+### What the silent line does not say
+
+Compare the two first lines. Both are the shape the
+["Reading the advisory"](#reading-the-advisory) section described:
+on a silent verdict you get presence and nothing else — no attribution
+naming which tool brought which leg, no *break a leg* advice, no
+footer pointing you at this chapter. The map's rows moved and its
+count moved; the sentence a human actually reads got one word
+longer.
+
+That is correct behaviour, not a gap to fix. The detector grades
+capability presence, and presence is exactly what it reported. But
+it means the second command's real consequences have to reach you
+some other way — which is why that binary prints four lines of
+prose beside the map saying what the pool now is. A map row cannot
+carry them.
+
+### What changed, then
+
+**Injection became possible, and the harm is a corrupted brief.**
+Nothing can exfiltrate: no egress leg, no write tool. But a brief
+is a decision input, and a hostile message can make it say *the
+customer agreed to the discount*. Bounded harm, real harm.
+
+**A citation stopped being enough.** The one-legged agent already
+quoted and cited every note, and that was sufficient because a
+citation and a check were the same act: you wrote the note, you
+recognise it at a glance. A message is text somebody else wrote and
+sent you, so a claim drawn from one may need checking out of band.
+Same citation, different obligation — which is why the two-legged
+prompt demands the *kind* per claim and forbids merging a note and
+a message into one sentence. "They agreed to 10% (acme-2026-08-14.md,
+and their mail of 22 August)" hides that half of it is unvouched.
+
+**Absence stopped being reportable the same way.** Over the notes
+the agent can list every one that mentions a thing, so "there is no
+note about pricing" is a claim it can stand behind. A mail search
+returns ranked matches up to a cap, and mail you junked or deleted
+is not searchable at all — so the honest form is "I found no mail
+from them about pricing since March", and never the upgrade to
+"they never wrote about it".
+
+### Severity moved twice, invisibly
+
+Two changes in that second wiring never reach the map at all, and
+they pull in opposite directions.
+
+The private pool jumped from *notes about customers* to **the whole
+mailbox and address book**. "Correspondence with that customer" is
+what the prompt asks for; the search reaches everything Thunderbird
+indexed. That is a prompt promise, not an enforced boundary, and
+shipping it that way is deliberate — the honest reading is what
+makes this section's point land.
+
+Meanwhile the wiring is *narrower* than it could be: the mail gem
+bundles five inbound tools, and the flag takes three. The calendar
+is off, though it would answer "which meeting is coming up".
+
+Neither shows, and the reason is arithmetic:
+`thunderbird_mail_search` alone declares `private` and
+`untrusted: :hard`, and a node's legs are the **union** of its
+tools'. Union is idempotent, so every later tool declaring the same
+legs is free — five surfaces or two, the count and the advisory are
+identical. This is the
+["A leg's presence is binary"](#a-legs-presence-is-binary-its-strength-is-not)
+section seen from both sides in one wiring, and it is the same
+idempotence as the [OS-assistant chapter](os-assistant.md)'s Part 3,
+where *adding* a leg-holder to an already-assembled trifecta moves
+nothing either.
+
+### The pipe the map will never see
+
+One more, because it is the one people get wrong. The briefing
+agent has no write tool, for the reason the
+[hybrid-retrieval chapter](rag.md) gives: an agent that reads
+untrusted mail and can write into the notes folder turns a
+corrupted brief into durable corpus poisoning, and `write` carries
+no leg, so the detector would say nothing.
+
+Now notice that *you* are the same pipe. Paste a customer's e-mail
+into a note and those bytes move from a source nobody vouched for
+into a folder everything treats as vouched — by hand, undetectably,
+and permanently. No tool decision closes that one. It is why the
+paraphrase rule is stated in the prompt, printed at boot, and
+repeated here.
+
+So: a silent verdict is not a clean bill of health, and this is the
+cleanest demonstration in the book. Run both commands, read both
+maps, and notice that the detector was right about everything it
+claimed and silent about everything that changed.
 
 ## Tagging your own tool
 
