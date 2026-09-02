@@ -53,6 +53,56 @@ Only the deferrals stay here.
   retrieval shipped instead as the `vectordb_read` tool — the
   agent reads the whole source document on a clean hit, rather
   than the chunker stitching parent context onto every chunk.)
+- **A document-level recall mode.** Today `vectordb_search` answers
+  *precision*: top-k chunks, reranked, each snippet capped at
+  `Search::SNIPPET_LENGTH`. That is the right shape for a corpus of long
+  documents and the wrong one for a pile of short notes, where the
+  snippet is a lossy intermediate the agent discards — it reads the whole
+  document anyway via `vectordb_read`. What that corpus wants is the
+  complement: **rank documents rather than chunks and return only their
+  `source` paths**, so the agent gets a wide, cheap candidate list and
+  reads what it wants in full. A hundred filenames cost less context than
+  three chunks.
+
+  Motivated by [`briefing.md`](briefing.md), whose flat notes corpus needs
+  two things vector search structurally cannot give: **completeness**
+  ("every note mentioning Acme" — top-k is a sample, and a timeline with
+  one silently missing note is worse than none) and **ordering by date**
+  (chunks carry no dates; the `source` path does). The workaround was to
+  bolt `grep` + `file_list` from `pikuri-workspace` onto that agent —
+  which patches a retrieval shortcoming from outside the gem that owns
+  retrieval. Fix it here instead.
+
+  Four forks to settle when it is built:
+
+  - **Cutoff, or genuinely everything?** Cosine has no natural zero, so
+    "find everything" either returns every indexed source ranked (honest,
+    and over a small corpus perfectly usable — it is `file_list` ordered
+    by relevance) or keeps a cutoff and can still miss. Only the first can
+    claim completeness; the tool has to say which it promises, because
+    "probably everything" is the reading that makes a brief quietly wrong.
+  - **How chunk scores aggregate to a document.** Max, mean or sum over
+    the document's chunks — the classic passage-to-document problem. Max
+    is the usual answer and the defensible one: a note with a single
+    dead-on chunk should beat one that is vaguely on-topic throughout.
+  - **Reranker bypass.** The reranker is the precision device and reorders
+    *snippets*; a recall mode has none to reorder, so it skips the
+    reranker entirely. State that rather than leaving it to be discovered
+    from a latency measurement.
+  - **The corpus-shape precondition.** "The agent reads them in full" only
+    holds while documents are short. Over a corpus of 100-page PDFs a list
+    of fifty filenames is useless. So this is a mode a host opts into
+    knowing its corpus, never a new default.
+
+  **What it does not fix: exact-string search.** "invoice #4471" is a
+  token an embedder ranks badly however wide the net, and a document
+  containing the literal string can rank below one merely discussing
+  invoices. Nothing in pikuri complements the embedder here
+  (`book/vectordb.md`: "no keyword index underneath, no inverted file, no
+  fuzzy match"), so hybrid retrieval — BM25 beside the vectors, or `grep`
+  wired alongside — is its own deferral, and the honest thing to reach for
+  if that specific gap is what bites.
+
 - **Onyx as a separate gem.** Onyx is a product (UI + connector
   framework + scheduler), not a vector DB. If pikuri wants Google
   Drive / Slack / Jira RAG, the right shape is `pikuri-onyx` —

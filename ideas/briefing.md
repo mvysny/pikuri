@@ -18,7 +18,9 @@ Related:
   `private:` / `trusted:` declaration this note motivated, now shipped.
 - [`vectordb-deferrals.md`](vectordb-deferrals.md) — the per-tool pool
   choice and multi-source indexing, both of which interact with that
-  declaration.
+  declaration, and the **document-level recall mode** this note motivated
+  (§"No workspace either"): the retrieval gap that would otherwise be
+  patched from outside the gem.
 - `book/trifecta-detector.md` §"Who declares each leg" — the table this
   note leans on: untrusted and egress are the framework's, private is
   the user's.
@@ -264,6 +266,15 @@ belongs to the coda and this must not pre-empt it.
 **No gem.** No novel threat model, no cohesive lib code — the
 `pikuri-computer` shape (CLAUDE.md §"Working on this codebase").
 
+**`--watch` on by default**, inverting `bin/pikuri-corpus` a second time.
+There the manual `vectordb_reindex` *is* the teaching device; here a note
+dropped in since the last index is a silent hole in a brief, and
+`vectordb_read`'s membership gate rejects it outright ("is not in the
+indexed corpus … run `vectordb_reindex` to refresh") — loud and
+actionable, which is the right shape, but baffling for a user whose note
+plainly exists on disk. Belongs in the same `DECISIONS.md` entry as the
+declarations, since it is the same inversion for the same kind of reason.
+
 ### No `KEEPER` persona
 
 The tempting shape — a bundled persona beside `LIBRARIAN` for the corpus
@@ -299,6 +310,85 @@ and it arrives with a gem question this note does not have to answer
 yet: a persona naming both `vectordb_*` and `thunderbird_*` tools has no
 home that can own it without one gem depending on the other.
 
+### No workspace either — and the reason is not "write is dangerous"
+
+Wiring `pikuri-workspace` over the notes root is the obvious next
+thought, since the workspace root *would be* the corpus root. `grep` and
+`file_list` buy the two things vector search structurally cannot:
+**exactness** ("which note mentions invoice #4471" — pure geometry over
+meaning vectors has no fallback) and **completeness** ("every note
+mentioning Acme" — top-k is a sample, and a timeline with one silently
+missing note is worse than no timeline, because the agent cannot know).
+
+The mechanics were checked, and they compose more cleanly than expected
+— with two constraints worth keeping either way:
+
+- **`grep` composes with `vectordb_read` byte-for-byte.** `Search::Grep`
+  emits `./`-stripped workspace-relative paths; `Chunk.source` is
+  relative to the corpus root and `Backend#source_indexed?` is exact
+  string equality — identical strings when the two roots are the same. No
+  shim, no path translation.
+- **`vectordb_read` takes a path, not an id**, and its gate is *is this
+  source indexed*, not *did search return it this turn*. So a grep hit is
+  readable with no prior search; the tool's own description
+  under-promises.
+- **`Read` must not be wired.** `VectorDb::Extension` registers all three
+  of its tools unconditionally and refuses pre-registration, so adding
+  `Workspace::Read` *guarantees* two readers doing one job. Settled by
+  construction, not by preference.
+- **Read-only costs no confirmer.** The Confirmer seam binds `Write` and
+  `Bash`; `Search::Grep` and `FileList` take a workspace and nothing
+  else, so Stage 0 would keep *"no confirmer, no sandbox, no gate"*
+  intact. It needs hand-registration on a bare `Workspace.new(filesystem:)`
+  — `Workspace::Extension` requires a `confirmer:` and brings `Write` /
+  `Edit` along as a unit (`TOOL_CLASSES`, which raises if you
+  pre-register any of them).
+- **`file_list` composes only over a *flat* corpus.** `Listing` renders
+  an indented tree of bare names, so on a nested corpus the model must
+  reassemble `dir/name` to feed `vectordb_read`, and it will sometimes
+  get that wrong.
+- **No new reachable bytes** — only new ways to *locate* bytes
+  `vectordb_read` could already open. So no new leg *and* no new pool,
+  which is a stronger claim than "the verdict doesn't move".
+
+**And it still stays out, because the diagnosis is that this patches the
+wrong gem.** Reaching into `pikuri-workspace` to complement retrieval
+fixes a retrieval shortcoming from outside the gem that owns retrieval.
+What this corpus actually wants is a **document-level recall mode** on
+`vectordb_search` — rank documents, return their `source` paths only,
+let the agent read what it wants in full. That is cheaper (a hundred
+filenames cost less context than three chunks), composes with
+`vectordb_read` by construction, needs no second gem, and carries no
+flat-corpus dependency. Filed with its four forks in
+[`vectordb-deferrals.md`](vectordb-deferrals.md).
+
+So Stage 0 ships **search + read only**, and the demo is what reveals
+whether the gap actually bites. Building the workaround while knowing
+where the real fix goes is worse than shipping without either. One
+residual to watch: a recall mode does **not** fix exact-string search, so
+`grep` stays the fallback if that specific gap — and only that one — is
+what hurts.
+
+**The write half stays out for its own reasons**, untouched by any of the
+above. In Stage 1 an agent that reads untrusted mail and writes into the
+store the corpus declares trusted is a **laundering pipe**: a hostile
+e-mail's content lands in a note, the `Watcher` indexes it within
+seconds, and it is retrieved as *vouched* content from then on —
+surviving into Stage 0 sessions with no mail wired at all. That converts
+Stage 1's recorded harm, a corrupted brief bounded to one conversation,
+into durable corpus poisoning. **And the detector says nothing:** `write`
+carries no leg at all (`book/trifecta-detector.md` puts the line
+"between `glob`, which carries it, and `write`, which doesn't"), so the
+verdict never moves and this needed reasoning rather than the map.
+
+Which is §Stage 1's own argument arriving by another road. The notes
+folder *is* the durable memory, so a `write` tool over it **is** the
+auto-memory Stage 1 rules out, and the hand-curation it would automate
+away is the human-author step that makes `trusted: true` honest. If it is
+ever wanted, the honest shape is the `@notes` / `@mail` split, not a
+`read_only:` flag on one binary — a flag can be forgotten and leaves two
+tools advertised that always refuse; a split cannot.
+
 ### The two declarations are wiring constants
 
 This closes the old open question, and the reason is stronger than "that
@@ -333,17 +423,32 @@ once it is written — citing the prefixed form before the heading exists
 trips `T_decision_slugs`), because the forks are real and because the
 choice **inverts the sibling binary's**: a reader comparing
 `bin/pikuri-corpus` with `bin/pikuri-briefing` will otherwise read the
-difference as an inconsistency. Three forks for that one entry: constant
-vs. flag vs. boot question; main prompt vs. a `KEEPER` persona; and a
-chapter vs. a section of the detector chapter.
+difference as an inconsistency — twice, since `--watch` inverts it too.
+Five forks for that one entry: constant vs. flag vs. boot question;
+`--watch` on vs. off; main prompt vs. a `KEEPER` persona; a chapter vs. a
+section of the detector chapter; and search-and-read-only vs. `grep` +
+`file_list` from `pikuri-workspace`.
 
 ### The layout convention, so "last discussed" is answerable
 
-Chunks carry `source` and a content hash, no dates. The date has to live
-in the path or the frontmatter — `customers/acme/2026-08-14.md` — and
-the prompt has to know to read it off the `source`. A documented
-convention, not a feature. (A `mtime`-derived date would be wrong the
-first time the notes are `git clone`d.)
+Chunks carry `source` and a content hash, no dates, so the date has to
+live somewhere the model reads — and **the requirement is the filename,
+not a folder structure.** `acme-2026-08-14.md` in one flat folder is
+enough, because `source` rides every search hit and every read — and
+name-before-date is the better order of the two, because in a flat folder
+it groups a customer's notes together for the access pattern that
+actually dominates ("everything about Acme"), while the date stays just
+as readable off the string.
+`customers/acme/2026-08-14.md` is one instance of that, not the ask: a
+convention that requires reorganizing the notes is a convention the user
+won't adopt, and the flat filename buys the same thing for free. The
+prompt has to know to read the date off the `source` either way. A
+documented convention, not a feature.
+
+(A `mtime`-derived date would be wrong the first time the notes are
+`git clone`d. A date on the note's *first line* also works but weakly —
+only the one chunk that happens to contain it carries it, so it survives
+a `vectordb_read` and not necessarily a search hit.)
 
 ## The slope to watch
 
@@ -361,8 +466,12 @@ brief. In Stage 0 the same feature is merely the convenience tax
   folder, or can one collection hold all customers?** One collection is
   simpler and `vectordb_search` with the customer's name in the query
   probably suffices; but a per-customer collection would make
-  "everything about Acme" a `read` of a folder listing rather than a
-  search. Try the simple thing first.
+  "everything about Acme" a listing rather than a search. Try the simple
+  thing first — and note that the recall mode in
+  [`vectordb-deferrals.md`](vectordb-deferrals.md) would **dissolve this
+  outright**, since "everything about Acme" becomes one query returning
+  every matching `source`. Another reason to try that before asking the
+  user to restructure their notes.
 - **The correspondent allowlist — address, domain, or Thunderbird
   address-book membership?** Domain is the natural unit for a
   customer; address-book membership would let Thunderbird own the
@@ -384,7 +493,11 @@ brief. In Stage 0 the same feature is merely the convenience tax
   invariant and *paste nothing; paraphrase*).
 - The correspondent allowlist → `pikuri-thunderbird/DESIGN.md` (it
   changes the read allowlist) + a `D_` entry if a fork is real — once
-  it is built, which is deliberately not now. This is the only piece
-  that keeps this note alive after the rest lands.
+  it is built, which is deliberately not now.
+- ~~The document-level recall mode~~ — already filed, in
+  [`vectordb-deferrals.md`](vectordb-deferrals.md), which outlives this
+  note. Nothing to carry at graduation beyond the pointer above.
+
+Those two deferrals are what keep this note alive after the rest lands.
 - The "not `@private`" point → [`assistant.md`](assistant.md)'s roster
   section, when that note graduates.
