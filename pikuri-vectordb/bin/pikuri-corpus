@@ -23,8 +23,8 @@
 #
 # The privilege-separated `LIBRARIAN` persona is bundled by this gem but
 # deliberately NOT wired here — it earns its keep only under an agent
-# that *does* have egress (the chapter-7 assistant), where the corpus
-# must be quarantined in a sub-agent. See book/vectordb.md.
+# that *does* have egress (the assistant in `book/assistant.md`), where
+# the corpus must be quarantined in a sub-agent. See book/vectordb.md.
 #
 # Same Bundler bootstrap pattern as the other bundled bins so callers
 # don't need the `bundle exec` ceremony.

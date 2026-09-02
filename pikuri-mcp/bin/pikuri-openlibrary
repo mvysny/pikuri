@@ -8,8 +8,8 @@
 # Open Library catalogue reader (https://github.com/8enSmith/mcp-open-library)
 # running inside a locally-built Docker container.
 #
-# The registry below is HARDCODED on purpose. This binary exists so the
-# chapter-5 reader can watch the pikuri-mcp machinery fire end-to-end
+# The registry below is HARDCODED on purpose. This binary exists so that
+# chapter's reader can watch the pikuri-mcp machinery fire end-to-end
 # (verifier pass, synthesizer pass, `mcp_connect` activation) without
 # first editing anything. The "hand-edit your own registry" lesson lives
 # in `pikuri-assistant`, which keeps an empty registry slot for that.
