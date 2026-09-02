@@ -79,6 +79,90 @@ design.
 
 ---
 
+## D_thunderbird_surfaces — A narrowing `surfaces:` on the extension, not a hand-wiring host (2026-09-02)
+
+**Status:** Accepted, shipped: `Thunderbird::Extension.new(surfaces:)`,
+`#mail_wired?`, and the per-surface `SURFACE_USAGE` split of the usage
+snippet. The consumer this was built for — `bin/pikuri-briefing --with-mail`,
+the two-legged Stage 1 of `ideas/briefing.md` — is **not** built yet, and its
+own forks (the flag, and the binary raising where this extension deliberately
+carries on) stay open in that note.
+
+**Context.** `#configure` wired all five inbound tools whenever their stores
+existed: mail search + read + contact search on a Gloda index, both calendar
+tools on a profile. The first host to want *less* is a briefing agent over a
+user's hand-written customer notes that adds read-only mail — it wants the
+mailbox and neither the whole address book nor the calendar, because each is
+one more surface an injected mail can make the agent query over the user's
+private pool. Nothing in the extension could express that.
+
+**Decision.** A `surfaces:` keyword taking a subset of
+`SURFACES = %i[mail contacts calendar]`, defaulting to all three (every
+existing host's behaviour, byte for byte), with an unknown name raising —
+a typo must not silently deliver a *narrower* pool than asked for, which is
+the failure nobody notices. Three sub-decisions carry the weight:
+
+- **Not an `allow_` name.** That prefix is this class's marker for granting an
+  *egress* leg (`allow_compose_mail`, `allow_create_calendar_event`), and
+  reads as "capability grant" for exactly that reason. A knob that *narrows*
+  an inbound read surface must not read alike.
+- **Contacts is its own surface, not part of mail.** It rides Gloda like the
+  mail tools, but it is a pure read of the entire address book, useful
+  standalone, and it has a second life as the resolver behind `MailCompose`'s
+  recipient-novelty warn — so the resolver stays built whenever the index is
+  there, while the *tool* follows the surface. Keeping it separable is also
+  what a later correspondent allowlist would need (`ideas/briefing.md`).
+- **The usage snippet follows what was *wired*, not what was asked.** One
+  `SURFACE_USAGE` paragraph per wired surface, each carrying its own
+  untrusted-content clause, plus the shared search discipline that stayed in
+  `INBOUND_USAGE`. Without this the knob's first use would have handed the
+  model a prompt claiming a calendar it had no tool for — the same
+  prompt-versus-wiring drift the constant lives in the extension to prevent,
+  running in the other direction.
+
+**Alternatives rejected.**
+
+- **Let the host hand-wire `Gloda` + `MailSearch` + `MailRead` itself** — six
+  lines, no library change, and the seam already exists (both backends are
+  `P_shared_locked` and take a `backend:`). Rejected because it bypasses the
+  one thing this class claims to guarantee: that adding the extension brings
+  the tools *and* their injection guard in lockstep. A hand-wiring host has to
+  remember `INBOUND_USAGE` and `gloda.close`, and becomes the template the
+  next host copies. `CLAUDE.md`'s "a `bin/` script is simple on purpose"
+  licenses crude *handling* — a synchronous read, an `exit 1` — not
+  re-opening a safeguard. The demand is not host-specific either: mail without
+  the calendar pool is what any two-legged reader wants.
+- **A `gloda:` keyword so a host builds and shares the backend** — the
+  documented way to share the ~1 s index rebuild between agents, and it would
+  incidentally allow narrowing. Rejected for the reason already in that
+  yardoc: the seam hands this class's `on_close` ownership back to the host,
+  and no host has asked. Narrowing does not need it.
+- **Grade the narrowing on the trifecta map instead of documenting it.**
+  Tempting, because the knob's whole value is a smaller private pool — but
+  presence is a *union* of per-tool legs and `thunderbird_mail_search` alone
+  already declares `private + untrusted: :hard`, so the narrowed and full
+  wirings print the same advisory and the same leg count; only the per-tool
+  rows differ. Representing pool *size* would mean a severity axis the
+  detector deliberately does not have (`D_egress_axis_shape`,
+  `D_no_static_poisoned_flag`), and `book/trifecta-detector.md`
+  §"A leg's presence is binary. Its strength is not." is the standing answer.
+  So the knob's benefit is real and unmeasured, and a host relying on it owes
+  its user a sentence naming what the pool *is*. Same idempotence, opposite
+  direction, as `book/os-assistant.md` Part 3 adding a leg-holder to an
+  already-assembled trifecta.
+
+**Consequences.** `#mail_wired?` exists because requesting a surface is not
+getting it: no Gloda index means no mail tools however loudly `surfaces:`
+asked, and `#configure` reports that at `info` and carries on. That fail-open
+is right for a general host and wrong for one whose boot text just told a user
+it added a private + untrusted leg, so such a host reads `#mail_wired?` after
+`Agent.new` returns and fails loud. Named "wired" rather than "available"
+because `Gloda#available?` answers whether an *index* exists, where this
+answers whether the *leg attached* — and with `surfaces:` the second can now
+be false by the host's own choice.
+
+---
+
 ## D_briefing_wiring — `bin/pikuri-briefing` hardcodes the two declarations and watches by default, inverting its sibling twice (2026-09-02)
 
 **Status:** Accepted, shipped: `pikuri-rag/bin/pikuri-briefing` plus

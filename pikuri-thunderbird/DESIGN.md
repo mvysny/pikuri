@@ -38,6 +38,17 @@ and 2 but no way to send anything anywhere, so a prompt injection buried in a
 message body has no exfiltration channel. That is the "trifecta broken by
 construction" posture `bin/pikuri-corpus` and `bin/pikuri-memory` demo.
 
+A host can also take *fewer* than five: `Extension.new(surfaces: %i[mail])`
+wires the mailbox and neither the address book nor the calendar. That changes
+nothing about legs 1 and 2 — mail search alone carries both, and presence is a
+union — so the trifecta map prints the same advisory and the same leg count
+either way. What it buys is severity: each surface is one more thing an
+injected message can make the agent query over the private pool, and three
+fewer query surfaces is three fewer. Since the detector cannot show that
+(`DECISIONS.md` `D_thunderbird_surfaces`), a host that narrows owes its user a
+sentence naming what the remaining pool actually is — "your whole mailbox", not
+"your correspondence with this customer".
+
 The bundled `bin/pikuri-thunderbird` deliberately goes one step further — it
 wires both outbound `allow_` flags to demo the *whole* surface — so it does
 carry leg 3. But that leg is human-gated: compose can only open a Thunderbird

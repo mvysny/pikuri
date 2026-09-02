@@ -57,6 +57,88 @@ describe Pikuri::Thunderbird::Extension do
     end
   end
 
+  it 'wires only the mail tools when surfaces: %i[mail]' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      write_calendar(dir)
+      Dir.mktmpdir do |cache|
+        c = FakeConfigurator.new
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: %i[mail])
+        ext.configure(c)
+        assert_equal %w[thunderbird_mail_search thunderbird_mail_read].sort,
+                     c.tools.map(&:name).sort
+        assert_equal 1, c.closers.size, 'no calendar backend was opened'
+        assert ext.mail_wired?
+      end
+    end
+  end
+
+  # The case a knob added without a spec gets wrong quietly: #configure
+  # discovers a profile and wires per surface, so a mail-only host on a box
+  # with no Gloda index must end up with *nothing* — not a bare calendar.
+  it 'wires nothing when the only requested surface has no store' do
+    Dir.mktmpdir do |dir|
+      write_calendar(dir) # profile + calendar, no Gloda file
+      Dir.mktmpdir do |cache|
+        c = FakeConfigurator.new
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: %i[mail])
+        ext.configure(c)
+        assert_empty c.tools
+        refute ext.mail_wired?
+        assert_empty ext.system_prompt_snippets, 'nothing wired ⇒ nothing claimed'
+      end
+    end
+  end
+
+  it 'reports mail_wired? false when mail was not requested, index or no index' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: %i[contacts])
+        ext.configure(FakeConfigurator.new)
+        refute ext.mail_wired?
+      end
+    end
+  end
+
+  it 'raises on an unknown surface name rather than narrowing silently' do
+    Dir.mktmpdir do |cache|
+      err = assert_raises(ArgumentError) { Extension.new(cache_dir: cache, surfaces: %i[mail mailbox]) }
+      assert_match(/mailbox/, err.message)
+    end
+  end
+
+  it 'describes only the wired surfaces in the usage snippet' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      write_calendar(dir)
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: %i[mail])
+        ext.configure(FakeConfigurator.new)
+        snippet = ext.system_prompt_snippets.first
+        assert_match(/local Thunderbird mail/, snippet)
+        assert_match(/untrusted/, snippet)
+        assert_match(/Search before you answer/, snippet, 'shared discipline still contributed')
+        refute_match(/calendar/, snippet)
+        refute_match(/contacts/, snippet)
+      end
+    end
+  end
+
+  it 'claims no inbound surface when only an outbound tool is wired' do
+    Dir.mktmpdir do |dir|
+      write_gloda(dir)
+      Dir.mktmpdir do |cache|
+        ext = Extension.new(profile_dir: dir, cache_dir: cache, surfaces: [],
+                            allow_compose_mail: true)
+        ext.configure(FakeConfigurator.new)
+        snippet = ext.system_prompt_snippets.first
+        assert_match(/hand it off to Thunderbird/, snippet)
+        refute_match(/Search before you answer/, snippet)
+      end
+    end
+  end
+
   it 'wires contact search on Gloda presence, not the compose flag' do
     Dir.mktmpdir do |dir|
       write_gloda(dir)
