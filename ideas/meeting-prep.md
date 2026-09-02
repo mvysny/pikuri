@@ -90,6 +90,19 @@ and `Bundle::Base(trusted:)`; same posture — the human asserts, the
 framework records, the detector reports. Worth one sentence in the
 persona docs: *paste nothing; paraphrase.*
 
+And "own words" is not the whole of it. A received document — the
+customer's deck, the contract they sent — is not vouched for by having
+*read* it: a rendered PDF hides white-on-white text, comments and
+metadata that extraction surfaces for the model. The flag's real
+definition is *reviewed in the form the model will read it*, and the
+recipe for received documents is convert with pikuri's extractor, read
+the text, index the text, keep the original out of the corpus — or put
+received documents in a second corpus declared untrusted and accept a
+two-legged agent. Worked out in
+[`vectordb-trust-declaration.md`](vectordb-trust-declaration.md)
+§"What `trusted: true` means"; for Stage 0 the one-line rule is: **the
+trusted corpus holds only what the user typed or reviewed as text.**
+
 ## The library change: a per-corpus `private:` / `trusted:` declaration
 
 (Work items, specs and the `D_` entry outline live in
@@ -207,6 +220,12 @@ the two stages side by side.
   injected or wandering model can surface unrelated private mail into
   the brief. This is the second library change the idea might earn,
   and unlike the first it is a real filter, not a label.
+- **The same split exists without Thunderbird.** Received documents the
+  user wants searchable but will not review as text (§"Is `trusted:
+  true` honest") are the mail case in miniature: a second corpus,
+  declared untrusted, on a two-legged sibling — `@notes` trusted,
+  `@received` not. Whether the untrusted source is a mailbox or a folder
+  of customer decks, the shape and the human's obligations are the same.
 - **Wire only mail search + mail read.** The extension bundles five
   inbound tools; calendar and contacts add private pool for no briefing
   value the user asked for. (Calendar *would* answer "which meeting
