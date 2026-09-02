@@ -7,8 +7,9 @@ module Pikuri
   class Agent
     module Listener
       # Terminal renderer for the normalized event stream: dim grey reasoning,
-      # assistant Markdown printed raw, cyan tool-call/result lines, yellow
-      # fallback notice, red cancelled, magenta model-switch.
+      # assistant Markdown printed raw, tool-call/result lines in Kuri's coat
+      # ({TOOL_COLOR}), yellow fallback notice, red cancelled, magenta
+      # model-switch.
       # {Event::UserTurn} / {Event::Tokens} / {Event::ContextCap} are silent
       # (echo, or {TokenLog}'s business); {Event::SystemInjected} renders dim
       # grey with a +⊕+ marker. Any unrecognized event — notably a gem
@@ -40,6 +41,15 @@ module Pikuri
         # truncated with a marker reporting the original byte size (so a
         # 200-char return is distinguishable from a 50KB dump).
         MAX_TOOL_RESULT_CHARS = 200
+
+        # Color of the +→ call+ / += result+ lines: Kuri's Talus coat
+        # (+assets/kuri.svg+) with the chroma lifted, because the coat verbatim
+        # (+#a89c8e+, 13% saturation) lands on the dim reasoning grey's
+        # lightness and reads as a second shade of it. An absolute RGB rather
+        # than a named ANSI color, so a remapped terminal palette can't repaint
+        # pikuri's own color — the same hex the tui and web shells paint.
+        # @return [String]
+        TOOL_COLOR = '#c1a586'
 
         # Padding for a sub-agent's stream. Absolute, not additive — sub-agent
         # recursion is blocked (the sub-agent's toolset excludes +sub_agent+),
@@ -98,9 +108,9 @@ module Pikuri
             println(indent(Rainbow("⊕ #{content}").color(85, 85, 85)))
           in Event::ToolCall(name:, arguments:)
             args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
-            println(indent(Rainbow("→ #{name}(#{args})").cyan))
+            println(indent(Rainbow("→ #{name}(#{args})").color(TOOL_COLOR)))
           in Event::ToolResult(content:)
-            println(indent(Rainbow("= #{truncate_tool_result(content)}").cyan))
+            println(indent(Rainbow("= #{truncate_tool_result(content)}").color(TOOL_COLOR)))
           in Event::ModelSwitched(from:, to:)
             println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
           in Event::FallbackNotice(reason:)

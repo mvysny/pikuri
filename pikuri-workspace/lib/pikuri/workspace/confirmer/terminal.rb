@@ -71,6 +71,11 @@ module Pikuri
         # whole-file rewrite from scrolling the terminal off-screen.
         DIFF_MAX_LINES = 300
 
+        # Color of a +@@ hunk @@+ header: machinery, so it wears the same coat
+        # tan the tool-call lines do.
+        # @return [String]
+        HUNK_COLOR = Pikuri::Agent::Listener::Terminal::TOOL_COLOR
+
         # @param request [Request]
         # @return [Approved, Rejected]
         def ask(request:)
@@ -153,7 +158,7 @@ module Pikuri
             puts(case body[0]
                  when '+' then Rainbow(body).green
                  when '-' then Rainbow(body).red
-                 when '@' then Rainbow(body).cyan
+                 when '@' then Rainbow(body).color(HUNK_COLOR)
                  else Rainbow(body).dimgray
                  end)
           end

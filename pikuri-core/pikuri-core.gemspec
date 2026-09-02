@@ -56,7 +56,7 @@ Gem::Specification.new do |spec|
   # providers (Brave, DuckDuckGo) to extract results from HTML responses.
   spec.add_dependency 'nokogiri',         '~> 1.19'
 
-  # ANSI color for terminal output (reasoning dim, tool calls cyan, …)
+  # ANSI color for terminal output (reasoning dim, tool calls tan, …)
   # in the agent loop.
   spec.add_dependency 'rainbow',          '~> 3.1'
 

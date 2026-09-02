@@ -164,6 +164,19 @@ opaque plate. At README and book sizes no plate is needed: mid grey holds
 on both a white and a dark page, which is why `assets/kuri.png` is
 transparent too.
 
+**The coat also colors the demo chrome** (2026-09-02): the tool-call /
+tool-result lines and the confirmer's diff hunk headers were terminal
+cyan, which is nobody's color — the shells had already moved their own
+tool token onto the coat, so the library's demo renderer follows.
+`Listener::Terminal::TOOL_COLOR` is `#c1a586`, the coat's hue with the
+chroma lifted, and **not the swatch verbatim**: at 13% saturation
+`#a89c8e` lands on the dim reasoning grey's lightness and reads as a
+second shade of it. It is an absolute RGB rather than a named ANSI
+color, which is the same trade the shells make — a terminal that remaps
+cyan cannot be asked to carry pikuri's own color — and the trade is
+worth it only for *this* token; the notice/error/cancel accents stay
+named and keep tracking the user's palette.
+
 There is deliberately **no generator script and no second pose**. The
 mascot changes about as often as a logo does, and a monorepo with no
 build step should not grow one for it; a sleeping Kuri for an empty

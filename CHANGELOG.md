@@ -8,6 +8,10 @@ restate. Versioning is semver as documented in
 reconstructed from git history in August 2026, after those releases had
 shipped without one.
 
+## [Unreleased]
+
+- Add `Agent::Listener::Terminal::TOOL_COLOR` — the demo chrome's tool-call / tool-result lines and the terminal confirmer's diff hunk headers render in Kuri's coat tan (`#c1a586`, an absolute RGB) instead of terminal cyan, the same hex pikuri-tui and pikuri-web paint their tool lines. See `DECISIONS.md` `D_kuri_mascot`.
+
 ## [0.1.0] - 2026-08-30
 
 Two offline agents graduate into gems — `pikuri-os` (whole-machine
