@@ -43,27 +43,34 @@ module Pikuri
       # full embedding cost, so one agent's refresh blocking on another's is
       # wasted money, not a wrong answer.
       class Reindex < Pikuri::Tool
-        # @return [String] static description shown to the LLM,
-        #   opencode-shape (summary + +Usage:+ bullets).
-        DESCRIPTION = <<~DESC
-          Build or rebuild the document index from the corpus on disk, from scratch.
+        # The description shown to the LLM, opencode-shape (summary + +Usage:+
+        # bullets), naming the sibling search tool by +family+.
+        #
+        # @param family [String] the shared tool-name prefix, e.g. +"vectordb"+.
+        # @return [String]
+        def self.description(family: Read::DEFAULT_FAMILY)
+          <<~DESC
+            Build or rebuild the document index from the corpus on disk, from scratch.
 
-          Usage:
-          - The corpus is NOT indexed automatically. If `vectordb_search` returns nothing, the index may be empty — call this to build it.
-          - Call it when the user asks to index, reindex, or refresh the corpus (e.g. after they've added or changed files). Do not call it as a reflexive "refresh just in case" before every search.
-          - This is SLOW: walks every source file, embeds every chunk, replaces the entire index. Minutes against local embedders.
-          - Takes no arguments. Returns a one-line summary when indexing completes; the agent is blocked for the duration.
-        DESC
+            Usage:
+            - The corpus is NOT indexed automatically. If `#{family}_search` returns nothing, the index may be empty — call this to build it.
+            - Call it when the user asks to index, reindex, or refresh the corpus (e.g. after they've added or changed files). Do not call it as a reflexive "refresh just in case" before every search.
+            - This is SLOW: walks every source file, embeds every chunk, replaces the entire index. Minutes against local embedders.
+            - Takes no arguments. Returns a one-line summary when indexing completes; the agent is blocked for the duration.
+          DESC
+        end
 
         # @param indexer [Indexer] the indexer to call +#reindex!+
         #   on. Captured by the +execute+ closure so the tool can
         #   be registered against the same instance the
         #   {Extension} built at boot.
+        # @param family [String] the tool-name prefix, as on {Read#initialize}:
+        #   the tool is +"#{family}_reindex"+.
         # @return [Reindex]
-        def initialize(indexer:)
+        def initialize(indexer:, family: Read::DEFAULT_FAMILY)
           super(
-            name: 'vectordb_reindex',
-            description: DESCRIPTION,
+            name: "#{family}_reindex",
+            description: Reindex.description(family: family),
             parameters: Pikuri::Tool::Parameters.build { |_p| }, # zero params
             execute: lambda {
               Reindex.execute(indexer: indexer)

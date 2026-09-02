@@ -53,7 +53,12 @@ Only the deferrals stay here.
   retrieval shipped instead as the `vectordb_read` tool — the
   agent reads the whole source document on a clean hit, rather
   than the chunker stitching parent context onto every chunk.)
-- **A document-level recall mode.** Today `vectordb_search` answers
+- **A document-level recall mode — superseded by [`rag.md`](rag.md)
+  (2026-09-02).** Cosine cannot promise completeness however the output is
+  shaped; the answer is a keyword index beside the vectors, shipped as
+  `pikuri-rag`'s `rag_find`. This bullet stays only until that gem lands,
+  then is deleted; the text below is the pre-decision reasoning. Today
+  `vectordb_search` answers
   *precision*: top-k chunks, reranked, each snippet capped at
   `Search::SNIPPET_LENGTH`. That is the right shape for a corpus of long
   documents and the wrong one for a pile of short notes, where the

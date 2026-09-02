@@ -52,17 +52,25 @@ module Pikuri
         #   marker.
         MAX_BYTES_LABEL = "#{Pikuri::Extractor::PAGE_MAX_BYTES / 1024} KB"
 
-        # @return [String] static description shown to the LLM,
-        #   opencode-shape (summary + +Usage:+ bullets).
-        DESCRIPTION = <<~DESC
-          Read a full indexed document by its `source` path (the citation from vectordb_search).
+        # @return [String] the tool-name prefix the default tool set shares.
+        DEFAULT_FAMILY = 'vectordb'
 
-          Usage:
-          - Use after vectordb_search surfaces a clean hit you want in full, instead of re-querying for more fragments of the same document.
-          - `source` must be a path a vectordb_search result returned; you cannot read arbitrary files, only indexed documents.
-          - Large documents are paged: when the output ends in `Use offset=N to continue`, call again with that offset.
-          - Reading a whole document spends context — read the one or two best hits in full, not every result.
-        DESC
+        # The description shown to the LLM, opencode-shape (summary + +Usage:+
+        # bullets), naming the sibling tools by +family+.
+        #
+        # @param family [String] the shared tool-name prefix, e.g. +"vectordb"+.
+        # @return [String]
+        def self.description(family: DEFAULT_FAMILY)
+          <<~DESC
+            Read a full indexed document by its `source` path (the citation from #{family}_search).
+
+            Usage:
+            - Use after #{family}_search surfaces a clean hit you want in full, instead of re-querying for more fragments of the same document.
+            - `source` must be a path a #{family}_search result returned; you cannot read arbitrary files, only indexed documents.
+            - Large documents are paged: when the output ends in `Use offset=N to continue`, call again with that offset.
+            - Reading a whole document spends context — read the one or two best hits in full, not every result.
+          DESC
+        end
 
         # @param backend [#source_indexed?] any {Backend}
         #   implementation; consulted for the membership gate.
@@ -73,11 +81,16 @@ module Pikuri
         #   +private:+ / +trusted:+ flags — the same value
         #   {Search} carries (see its "Who declares the legs").
         #   Required, for the same reason.
+        # @param family [String] the tool-name prefix: the tool is
+        #   +"#{family}_read"+ and its description and error strings
+        #   name +"#{family}_search"+ / +"#{family}_reindex"+ as its
+        #   siblings. Another gem's tool set over the same corpus
+        #   plumbing reuses this class under its own prefix.
         # @return [Read]
-        def initialize(backend:, root:, legs:)
+        def initialize(backend:, root:, legs:, family: DEFAULT_FAMILY)
           super(
-            name: 'vectordb_read',
-            description: DESCRIPTION,
+            name: "#{family}_read",
+            description: Read.description(family: family),
             parameters: Pikuri::Tool::Parameters.build { |p|
               p.required_string :source,
                                 'Source path from a vectordb_search result, ' \
@@ -90,7 +103,8 @@ module Pikuri
                                  "#{DEFAULT_LIMIT}, e.g. 500."
             },
             execute: lambda { |source:, offset: 1, limit: DEFAULT_LIMIT|
-              Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
+              Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit,
+                        family: family)
             },
             # As {Search}: corpus bytes into the context, nothing outbound.
             trifecta_legs: legs
@@ -107,15 +121,17 @@ module Pikuri
         # @param source [String] the source path as supplied by the LLM
         # @param offset [Integer] 1-indexed line to start at
         # @param limit [Integer] maximum lines to return
+        # @param family [String] the tool-name prefix the error strings use
+        #   to name the sibling search / reindex tools.
         # @return [String] tool observation — the windowed text or an
         #   +"Error: ..."+ string.
-        def self.read(backend:, root:, source:, offset:, limit:)
+        def self.read(backend:, root:, source:, offset:, limit:, family: DEFAULT_FAMILY)
           return "Error: offset must be >= 1, got #{offset}" if offset < 1
           return "Error: limit must be >= 1, got #{limit}"   if limit < 1
 
           unless backend.source_indexed?(source)
             return "Error: \"#{source}\" is not in the indexed corpus. " \
-                   'Use vectordb_search to find a source path, then read that.'
+                   "Use #{family}_search to find a source path, then read that."
           end
 
           resolved = root.join(source).expand_path
@@ -126,7 +142,7 @@ module Pikuri
           render(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit), source: source)
         rescue Errno::ENOENT
           "Error: indexed document \"#{source}\" is no longer on disk; the index may be stale " \
-            '(run vectordb_reindex to refresh).'
+            "(run #{family}_reindex to refresh)."
         rescue ArgumentError => e
           # read_as_text refusing an image / binary / directory.
           "Error: cannot read \"#{source}\" as text: #{e.message}"

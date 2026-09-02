@@ -38,6 +38,11 @@ module Pikuri
     # The last four exist for incremental reindex + auto-watch; nuke-and-reload
     # uses only the first four.
     #
+    # Because it is a duck, the protocol is *decoratable*: a wrapper that
+    # delegates all eight calls to an inner backend and does something extra on
+    # the writes (mirror every chunk into a second index, say) is a backend to
+    # {Indexer}, {Watcher} and the tools alike, with no change to any of them.
+    #
     # == Vector-dim contract
     #
     # The first +#upsert+ establishes the vector dim for the backend's lifetime;

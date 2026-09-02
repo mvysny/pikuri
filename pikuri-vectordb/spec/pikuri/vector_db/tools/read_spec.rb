@@ -37,6 +37,14 @@ describe Pikuri::VectorDb::Tools::Read do
       assert_equal 'vectordb_read', tool.name
     end
 
+    it 'takes another family prefix, renaming itself and every sibling it mentions' do
+      tool = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root,
+                                               legs: Pikuri::Tool::TrifectaLegs::NONE, family: 'rag')
+      assert_equal 'rag_read', tool.name
+      assert_includes tool.description, 'rag_search'
+      refute_includes tool.description, 'vectordb'
+    end
+
     it 'advertises source as required and offset/limit as optional integers' do
       schema = Pikuri::VectorDb::Tools::Read.new(backend: backend, root: root,
                                                  legs: Pikuri::Tool::TrifectaLegs::NONE).parameters.to_openai
@@ -57,6 +65,18 @@ describe Pikuri::VectorDb::Tools::Read do
       File.write(root + 'present.md', 'on disk but not indexed')
       result = read(source: 'present.md')
       assert_match(/is not in the indexed corpus/, result)
+    end
+
+    it 'names the sibling search tool by the default family' do
+      assert_includes read(source: 'nope.md'), 'Use vectordb_search'
+    end
+
+    it 'names the sibling tools by another family when asked' do
+      result = Pikuri::VectorDb::Tools::Read.read(
+        backend: backend, root: root, source: 'nope.md', offset: 1, limit: 10, family: 'rag'
+      )
+      assert_includes result, 'Use rag_search'
+      refute_includes result, 'vectordb'
     end
   end
 
@@ -139,6 +159,16 @@ describe Pikuri::VectorDb::Tools::Read do
       File.delete(root + 'gone.md')
       result = read(source: 'gone.md')
       assert_match(/no longer on disk/, result)
+      assert_includes result, 'run vectordb_reindex'
+    end
+
+    it 'points a stale entry at the reindex tool of the given family' do
+      index_file('gone.md', 'temporary')
+      File.delete(root + 'gone.md')
+      result = Pikuri::VectorDb::Tools::Read.read(
+        backend: backend, root: root, source: 'gone.md', offset: 1, limit: 10, family: 'rag'
+      )
+      assert_includes result, 'run rag_reindex'
     end
 
     it 'refuses a binary indexed document as an Error string' do

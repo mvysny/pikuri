@@ -138,11 +138,7 @@ module Pikuri
         @chunker  = chunker  || Chunker::FixedWindow.new(size: 512, overlap: 50)
         @private  = private
         @trusted  = trusted
-        @legs = Pikuri::Tool::TrifectaLegs.new(
-          private: private,
-          untrusted: trusted ? :none : :hard,
-          egress_payload_review: :no_egress
-        )
+        @legs = CorpusLegs.derive(private: private, trusted: trusted)
         @indexer = Indexer.new(
           backend:  @backend,
           source:   source,

@@ -28,6 +28,13 @@ describe Pikuri::VectorDb::Tools::Reindex do
       assert_equal 'vectordb_reindex', tool.name
     end
 
+    it 'takes another family prefix, renaming itself and the search tool it mentions' do
+      tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer, family: 'rag')
+      assert_equal 'rag_reindex', tool.name
+      assert_includes tool.description, 'rag_search'
+      refute_includes tool.description, 'vectordb'
+    end
+
     it 'declares no parameters' do
       tool = Pikuri::VectorDb::Tools::Reindex.new(indexer: stub_indexer)
       schema = tool.parameters.to_openai

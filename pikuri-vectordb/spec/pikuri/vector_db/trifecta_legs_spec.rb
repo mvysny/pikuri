@@ -42,6 +42,22 @@ RSpec.describe 'vectordb tool trifecta legs' do
     c.tools.to_h { |t| [t.name, t] }
   end
 
+  describe 'CorpusLegs.derive — the one mapping every corpus tool set shares' do
+    it 'maps the pessimistic defaults to hard-untrusted, not private, no egress' do
+      legs = Pikuri::VectorDb::CorpusLegs.derive(private: false, trusted: false)
+      assert_equal :hard, legs.untrusted
+      refute legs.private
+      assert_equal :no_egress, legs.egress_payload_review
+    end
+
+    it 'maps the vouched-for private corpus to private, no untrusted, no egress' do
+      legs = Pikuri::VectorDb::CorpusLegs.derive(private: true, trusted: true)
+      assert_equal :none, legs.untrusted
+      assert legs.private
+      assert_equal :no_egress, legs.egress_payload_review
+    end
+  end
+
   describe 'Extension#private? / #trusted?' do
     it 'defaults both off — the framework declares neither for you' do
       ext = extension

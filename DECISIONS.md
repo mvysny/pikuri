@@ -79,6 +79,124 @@ design.
 
 ---
 
+## D_rag_gem — Hybrid retrieval is a new gem on top of the vector primitive, composed at the `Backend` (2026-09-02)
+
+**Status:** Accepted; the gem is not yet built. Shipped so far: the three
+seams in `pikuri-vectordb` the gem needs — `family:` on `Tools::Read` /
+`Tools::Reindex`, `VectorDb::CorpusLegs.derive`, and the `Backend` yardoc
+naming the protocol decoratable. The plan lives in `ideas/rag.md` until it
+lands.
+
+**Context.** `vectordb_search` answers *precision*: top-k chunks, reranked,
+a snippet each. A small corpus of short notes where any omission matters
+(`ideas/briefing.md`'s hand-curated customer notes) asks two questions
+cosine retrieval structurally cannot answer. *Completeness* — "every note
+mentioning Acme" — because top-k is a sample and cosine has no calibrated
+zero, so no cutoff can be documented as a promise. *Exactness* — "invoice
+#4471", a customer's name — because proper nouns, IDs and rare tokens are
+what embedders rank badly, and the note holding the literal string can rank
+below one merely discussing invoices. Neither is a shortcoming to patch on
+the vector side: the field's settled answer is hybrid retrieval, a keyword
+index (BM25 / full-text) beside the vectors, fused by reciprocal rank — and a
+keyword *listing* where the question is a set rather than a ranking. The
+sqlite3 gem already in the lockfile ships FTS5 with a working `porter`
+tokenizer, so the keyword half costs no new dependency.
+
+**Decision.** A new gem, `pikuri-rag`, depending on `pikuri-vectordb` and
+consuming only its documented ducks (`Backend`, `Embedder`, `Chunker`,
+`Indexer`, `Watcher`, `Reranker`, `Tools::Read` / `Tools::Reindex` under
+`family: 'rag'`). It ships one `rag_*` tool family — `rag_search` (hybrid
+top-k, fused, optionally reranked), `rag_find` (every matching document by
+stemmed token match: `source`, match count, size; no cutoff), `rag_read`,
+`rag_reindex` — and a **`Backend` decorator** that delegates the whole
+protocol to an inner vector backend and mirrors every write into an FTS5
+table, so the vectordb `Indexer` and `Watcher` are reused byte-for-byte:
+one extraction per file, one hash, one manifest. English-only stemming
+(FTS5's built-in `porter`), documented as a current limitation.
+`pikuri-vectordb` is repositioned in the same move — from "agentic RAG" to
+*topical retrieval over long documents*, the primitive the system is built
+on. The two extensions are mutually exclusive on one agent.
+
+**Alternatives rejected.**
+
+- **FTS5 inside `pikuri-vectordb`.** Genuinely close — a hundred lines
+  behind the same `Backend` seam, and CLAUDE.md's bounded-gem rule admits a
+  gem on cohesive lib code *or* a novel threat model, so this was never
+  forbidden. Rejected on three grounds: a `vectordb_find` that never touches
+  a vector, backed by SQLite, is the moment the gem stops being what its
+  name says (name a gem after what it refuses to become — `pikuri-vectordb`
+  refuses to become a retrieval system, `pikuri-rag` refuses to become a
+  connector platform); the two tool sets are exclusive, not additive, and
+  two exclusive extensions in one gem hides that in a pre-registration guard
+  where two gems show it at the dependency line; and the split keeps
+  `pikuri-vectordb/DESIGN.md`'s closed threat model closed. The new gem's
+  threat model is *not* novel (same corpus legs, inbound-only, same
+  membership gate on the reader) — it qualifies on cohesive lib code alone,
+  and its header says so rather than inventing a DESIGN.md it has not earned.
+- **A composite `Indexer`** — a `Rag::Indexer` wrapping SQLite plus the
+  vectordb `Indexer`, handed to the `Watcher` (which is duck-typed over five
+  methods, so this needs no vectordb change either). Rejected as the larger
+  cut: the vectordb `Indexer` extracts, chunks, hashes and embeds inside
+  private methods and hands finished `Chunk`s to the backend, so a sibling
+  indexer re-reads and re-extracts every file and has to merge two
+  `reconcile_plan` manifests. The decorator gets one extraction and one
+  manifest for free, and because its rows *are* the `Chunk`s, fusion is
+  textbook reciprocal rank over chunk ids and the existing `Reranker`
+  composes on the fused list unchanged.
+- **One tool with a `mode:` flag** instead of `rag_search` + `rag_find`.
+  Rejected: the two make different promises (relevance ordering vs.
+  completeness) with different output shapes (snippets vs. a listing), and
+  a model choosing between them by flag value is a model reading a
+  parameter description instead of a tool name.
+- **A document-level recall mode on the vector index** — rank documents by
+  aggregated chunk score, return every `source`. This was the deferral
+  `ideas/vectordb-deferrals.md` carried. Rejected because it is honest but
+  useless for the question: cosine cannot say *which* documents mention
+  Acme however the output is shaped, so "every indexed source ranked" is a
+  file listing ordered by relevance. Its four forks dissolve under FTS:
+  cutoff-vs-everything becomes boolean match, chunk-to-document aggregation
+  becomes `GROUP BY source`, the reranker bypass is automatic, and the
+  corpus-shape precondition ("the agent reads them in full") becomes a
+  usage line on `rag_find`.
+- **`grep` + `file_list` from `pikuri-workspace` bolted onto the corpus
+  agent.** `ideas/briefing.md` worked this through and it composes
+  (identical relative paths, no confirmer needed); rejected there because it
+  patches a retrieval shortcoming from outside the gem that owns retrieval,
+  `file_list` composes only over a flat corpus, and it has no stemming.
+- **Multi-language stemming now.** Stock FTS5 has no Snowball and the
+  prebuilt gem cannot load a tokenizer extension, so other languages mean
+  stemming in Ruby before indexing and on the query (Snowball via
+  `ruby-stemmer`; per token, run every configured stemmer and index the
+  union of stems — Slovak and Czech are not in Snowball at all). Deferred,
+  not rejected: the seam is a `stemmer:` duck on the extension, default a
+  no-op leaving `porter` in charge. Not a `languages:` array — the
+  knob-shaped version of the same thing.
+- **`trigram` as the default tokenizer** — language-agnostic and
+  inflection-tolerant as a substring match. Rejected as default: it matches
+  inside longer words and needs three-character terms; it stays the named
+  fallback for a language Snowball lacks.
+
+**Consequences.**
+
+- `ideas/vectordb-deferrals.md`'s recall-mode bullet is deleted when the
+  gem lands; two gems each promising completeness in different ways is the
+  duplication the doc rules exist to prevent.
+- `ideas/briefing.md`'s Stage 0 wires `Rag::Extension`; its "ship search +
+  read only and see whether the gap bites" plan is retired, since the
+  consensus predicts it bites on the first "everything about Acme". Its
+  open question "one collection or one per customer" dissolves.
+  `pikuri-briefing` moves to `pikuri-rag/bin/`.
+- `LIBRARIAN` names `vectordb_*` tools and cannot be reused over the new
+  family; a `rag_*` persona, if ever wanted, is a new persona in the new gem.
+- Pre-registration guards both ways: `Rag::Extension` refuses any
+  `vectordb_*` or `rag_*` name already registered, and `VectorDb::Extension`
+  learns to refuse `rag_*`, so exclusivity holds whichever the host wires
+  second.
+- The three "agentic RAG" phrasings (CLAUDE.md inventory, the extension
+  header, the gemspec summary) are reworded to the primitive framing, and
+  `book/vectordb.md` gains a pointer where it says "no keyword index
+  underneath".
+
 ## D_corpus_trust_declaration — The corpus declares `private:` / `trusted:`; the tools derive, and `reindex` declares nothing (2026-09-02)
 
 **Status:** Accepted, fully shipped: `VectorDb::Extension#private?` /
