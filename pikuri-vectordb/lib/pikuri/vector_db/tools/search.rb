@@ -135,27 +135,40 @@ module Pikuri
         end
 
         # Attempt the rerank; on any reranker +RuntimeError+, WARN and return the
-        # vector-only ordering. On success each {Backend::Result} carries the
-        # reranker's relevance score (via +Data#with+, replacing cosine) so the
-        # printed number matches the rerank order; the fallback keeps cosine. See
-        # "Which score is shown".
+        # candidate ordering unchanged. On success each {Backend::Result} carries
+        # the reranker's relevance score (via +Data#with+, replacing whatever the
+        # candidate arrived with) so the printed number matches the rerank order.
+        # See "Which score is shown".
         #
+        # Public, with {.format_observation}: the two are the rerank-then-render
+        # tail of the search pipeline, reusable by any tool set over this corpus
+        # plumbing under its own +family:+ prefix. +candidates+ need not have
+        # come from a vector search.
+        #
+        # @param reranker [#rerank]
+        # @param query [String]
+        # @param candidates [Array<Backend::Result>] best first.
         # @return [Array<Backend::Result>] reranked (score = rerank relevance) or
-        #   fallback (score = cosine).
+        #   the input unchanged.
         def self.reranked_or_fallback(reranker:, query:, candidates:)
           documents = candidates.map { |c| c.chunk.text }
           hits = reranker.rerank(query: query, documents: documents)
           hits.map { |h| candidates[h.index]&.with(score: h.score) }.compact
         rescue RuntimeError => e
-          LOGGER.warn("reranker outage; falling back to vector-only top-k: #{e.message}")
+          # Not "vector-only": the candidates may be a fused list, and this line
+          # is the only thing a person reads while diagnosing an outage.
+          LOGGER.warn("reranker outage; falling back to the candidate ordering: #{e.message}")
           candidates
         end
-        private_class_method :reranked_or_fallback
 
         # Format the results as a header + numbered +source (score=X.XX)+ blocks
         # with the snippet below, truncated at {SNIPPET_LENGTH} with +...+. The
         # +score+ is whatever the caller stored (see "Which score is shown");
-        # +%.2f+ handles both scales, including negative rerank logits.
+        # +%.2f+ handles every scale, including negative rerank logits and the
+        # small fused-rank values +pikuri-rag+ passes in.
+        #
+        # Public as the other half of the reusable tail — see
+        # {.reranked_or_fallback}.
         #
         # @param results [Array<Backend::Result>]
         # @return [String]
@@ -169,7 +182,6 @@ module Pikuri
           end.join("\n\n")
           header + body
         end
-        private_class_method :format_observation
       end
     end
   end

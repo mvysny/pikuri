@@ -147,5 +147,23 @@ describe Pikuri::VectorDb::Extension do
       end
       assert_match(/vectordb_reindex cannot be pre-registered/, err.message)
     end
+
+    it 'raises if a rag_* tool has been pre-registered' do
+      # pikuri-rag's tool set replaces this one over the same corpus, so
+      # wiring both on one agent must fail whichever goes second. Built here
+      # as a bare Pikuri::Tool rather than by requiring pikuri-rag, which
+      # would be a dependency in the wrong direction.
+      pre = Pikuri::Tool.new(
+        name: 'rag_search', description: 'stand-in for pikuri-rag',
+        parameters: Pikuri::Tool::Parameters.build { |_p| }, execute: -> { '' }
+      )
+      configurator.add_tool(pre)
+
+      err = assert_raises(RuntimeError) do
+        build_extension.configure(configurator)
+      end
+      assert_match(/rag_search cannot be pre-registered/, err.message)
+      assert_match(/wire one or the other/, err.message)
+    end
   end
 end

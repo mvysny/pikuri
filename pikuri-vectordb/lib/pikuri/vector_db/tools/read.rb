@@ -56,7 +56,9 @@ module Pikuri
         DEFAULT_FAMILY = 'vectordb'
 
         # The description shown to the LLM, opencode-shape (summary + +Usage:+
-        # bullets), naming the sibling tools by +family+.
+        # bullets), naming the sibling tools by +family+ — every one of them
+        # derived from it, so a second family's read tool cannot end up
+        # pointing the model at this one's search.
         #
         # @param family [String] the shared tool-name prefix, e.g. +"vectordb"+.
         # @return [String]
@@ -67,6 +69,7 @@ module Pikuri
             Usage:
             - Use after #{family}_search surfaces a clean hit you want in full, instead of re-querying for more fragments of the same document.
             - `source` must be a path a #{family}_search result returned; you cannot read arbitrary files, only indexed documents.
+            - A path from any other #{family}_ result — a listing, say — works just as well: the check is whether the document is indexed, not which tool printed it.
             - Large documents are paged: when the output ends in `Use offset=N to continue`, call again with that offset.
             - Reading a whole document spends context — read the one or two best hits in full, not every result.
           DESC
@@ -93,7 +96,7 @@ module Pikuri
             description: Read.description(family: family),
             parameters: Pikuri::Tool::Parameters.build { |p|
               p.required_string :source,
-                                'Source path from a vectordb_search result, ' \
+                                "Source path from a #{family}_search result, " \
                                 'e.g. "notes/cooking.md".'
               p.optional_integer :offset,
                                  'Line to start reading from (1-indexed). ' \

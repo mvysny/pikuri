@@ -16,7 +16,8 @@ Gem::Specification.new do |spec|
     pulls in pikuri-core, pikuri-extractors, pikuri-pdf,
     pikuri-skills, pikuri-tasks, pikuri-memory, pikuri-workspace,
     pikuri-code, pikuri-lsp, pikuri-mcp, pikuri-subagents,
-    pikuri-vectordb, pikuri-assistant, and pikuri-os in one shot, and
+    pikuri-vectordb, pikuri-rag, pikuri-assistant, and pikuri-os in one
+    shot, and
     +require 'pikuri'+ boots all of them.
 
     Privacy-conscious users who want a minimal dependency tree to
@@ -58,6 +59,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'pikuri-memory',     "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-os',         "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-pdf',        "= #{Pikuri::VERSION}"
+  spec.add_dependency 'pikuri-rag',        "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-skills',     "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-subagents',  "= #{Pikuri::VERSION}"
   spec.add_dependency 'pikuri-tasks',      "= #{Pikuri::VERSION}"

@@ -258,6 +258,29 @@ module Tripwires
     ),
 
     Check.new(
+      'T_fts_match_via_query',
+      'Only the keyword store talks SQL, and Query is the only builder of a MATCH term.',
+      # Two halves of one seam. +MATCH+ may appear only in the store that owns
+      # the connection — the composite above it holds two stores and no SQL;
+      # and +Query+ must stay the only place a phrase term is minted, since
+      # that quoting is what makes FTS5 syntax inert in model text.
+      #
+      # The second pattern matches the *quote-wrapping of an interpolated
+      # value* — +%("#{...}")+ or +"\"#{...}\""+ — not +Query+'s +gsub+, which
+      # is unreachable code (tokenizing already drops every +"+) and so would
+      # make this half pass on zero hits.
+      lambda {
+        rag = Dir.glob('pikuri-rag/lib/**/*.rb').sort
+        confined(/\bMATCH\b/,
+                 allowed: ['pikuri-rag/lib/pikuri/rag/backend/fts5.rb'],
+                 files: rag, code_only: true) +
+          confined(/%\("#\{|\\"#\{/,
+                   allowed: ['pikuri-rag/lib/pikuri/rag/query.rb'],
+                   files: rag, code_only: true)
+      }
+    ),
+
+    Check.new(
       'T_paths_xdg',
       'Cache and temp paths go through Paths, never ENV directly.',
       -> {
@@ -274,7 +297,7 @@ module Tripwires
       -> {
         tools = %w[bash write read grep glob file_list edit agent calculator
                    web_search web_scrape fetch recall skill mcp_connect].join('|')
-        pattern = /`(#{tools}|task_[a-z]+|vectordb_[a-z]+)`/
+        pattern = /`(#{tools}|task_[a-z]+|vectordb_[a-z]+|rag_[a-z]+)`/
         files = Dir.glob('*/prompts/*.txt').reject { |f| File.basename(f).start_with?('persona-') }
         hits(pattern, files: files.sort)
       }

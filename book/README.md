@@ -72,6 +72,19 @@ gem, landing once they stabilise.
   privilege-separated `LIBRARIAN` persona, for an agent that
   *does* have egress, is deferred to the universal-assistant
   chapter.)
+- **[Hybrid retrieval: the questions vectors can't answer](rag.md).**
+  The two questions pure geometry cannot answer — *completeness*
+  ("every note mentioning Acme": top-k is a sample and cosine has no
+  calibrated zero) and *exactness* ("invoice #4471": rare tokens are
+  what embedders rank worst) — and the field's settled fix, a keyword
+  index beside the vectors. BM25, reciprocal rank fusion and why not
+  a weighted sum, the backend decorator that reuses the whole
+  indexing pipeline, and why "indexed" has to mean *both* stores hold
+  it. Also the first chapter that points you at your own real private
+  data: demo via `pikuri-briefing`, the **one-legged agent** — private
+  data, no untrusted input, no egress — which briefs you on a customer
+  from your own notes, and where the interesting choices are which gems
+  *not* to wire.
 - **[Memories](memories.md).** Durable facts the agent keeps
   across conversations, paired with the vector DB for
   recall. The three retrieval tiers (resident persona / automatic

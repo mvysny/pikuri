@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+require 'spec_helper'
+
+describe Pikuri::Rag::Tools::Search do
+  let(:vectors) { Pikuri::VectorDb::Backend::InMemory.new }
+  let(:hybrid) do
+    Pikuri::Rag::Backend::Hybrid.new(vectors: vectors,
+                                     keywords: Pikuri::Rag::Backend::Fts5.new)
+  end
+
+  # Deterministic embedder: every query embeds to the same vector, which is
+  # +acme.md:0+'s, so the vector leg's rank-1 hit is known.
+  let(:embedder) do
+    fake = Object.new
+    fake.define_singleton_method(:embed) { |texts| texts.map { [1.0, 0.0] } }
+    fake
+  end
+
+  def chunk(id, source, text)
+    Pikuri::VectorDb::Chunk.new(id: id, source: source, text: text,
+                                metadata: { offset: 0, hash: 'h' })
+  end
+
+  def populate
+    hybrid.upsert(
+      chunks: [
+        chunk('acme.md:0', 'acme.md', 'Acme agreed to hold list pricing through Q1.'),
+        chunk('notes.md:0', 'notes.md', 'Invoice 4471 is still outstanding.'),
+        chunk('other.md:0', 'other.md', 'Unrelated risotto technique.')
+      ],
+      vectors: [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]
+    )
+  end
+
+  def execute(query: 'what did we agree about pricing?', reranker: nil)
+    Pikuri::Rag::Tools::Search.execute(
+      embedder: embedder, backend: hybrid, reranker: reranker, query: query
+    )
+  end
+
+  after { hybrid.close }
+
+  describe 'as a Pikuri::Tool' do
+    let(:tool) do
+      Pikuri::Rag::Tools::Search.new(embedder: embedder, backend: hybrid,
+                                     legs: Pikuri::Tool::TrifectaLegs::NONE)
+    end
+
+    it 'is named rag_search' do
+      assert_equal 'rag_search', tool.name
+    end
+
+    it 'takes only a query' do
+      assert_equal ['query'], tool.parameters.to_openai[:properties].keys.map(&:to_s)
+    end
+
+    it 'points the model at rag_find for the completeness question' do
+      assert_includes tool.description, 'rag_find'
+    end
+
+    it 'carries the corpus legs it was handed' do
+      legs = Pikuri::VectorDb::CorpusLegs.derive(private: true, trusted: false)
+      built = Pikuri::Rag::Tools::Search.new(embedder: embedder, backend: hybrid, legs: legs)
+      assert built.trifecta_legs.private
+      assert_equal :hard, built.trifecta_legs.untrusted
+      assert_equal :no_egress, built.trifecta_legs.egress_payload_review
+    end
+  end
+
+  describe '.fuse' do
+    def result(id, score)
+      Pikuri::VectorDb::Backend::Result.new(chunk: chunk(id, id, id), score: score)
+    end
+
+    it 'ranks a chunk both legs found above either leg\'s exclusive rank-1' do
+      a = result('a', 0.99)
+      b = result('b', 0.10)
+      c = result('c', 0.50)
+      fused = Pikuri::Rag::Tools::Search.fuse([a, b], [b, c])
+      assert_equal %w[b a c], fused.map { |r| r.chunk.id }
+    end
+
+    it 'replaces each score with the fused one' do
+      a = result('a', 0.99)
+      fused = Pikuri::Rag::Tools::Search.fuse([a], [a])
+      assert_in_delta 2.0 / 61, fused.first.score, 1e-9
+    end
+
+    it 'tolerates an empty leg' do
+      a = result('a', 0.99)
+      assert_equal ['a'], Pikuri::Rag::Tools::Search.fuse([a], []).map { |r| r.chunk.id }
+    end
+
+    it 'is empty when both legs are' do
+      assert_equal [], Pikuri::Rag::Tools::Search.fuse([], [])
+    end
+  end
+
+  describe 'the hybrid pipeline' do
+    it 'surfaces a keyword-only hit the vector leg ranked last' do
+      populate
+      out = execute(query: 'invoice 4471')
+      assert_includes out, 'notes.md'
+    end
+
+    it 'formats as vectordb_search does — numbered source + score + snippet' do
+      populate
+      out = execute
+      assert_match(/\AFound \d+ match/, out)
+      assert_match(/\[1\] \S+ \(score=\d\.\d\d\)/, out)
+    end
+
+    it 'says so when the corpus has nothing' do
+      assert_equal 'No matches found in the indexed corpus.', execute
+    end
+
+    it 'refuses an empty query without touching the backend' do
+      assert_equal 'Error: query is empty', execute(query: '   ')
+    end
+
+    it 'runs the vector leg alone when the query has no searchable tokens' do
+      populate
+      out = execute(query: '???')
+      assert_includes out, 'acme.md'
+    end
+
+    it 'caps the observation at FINAL_K results' do
+      chunks = (1..12).map { |i| chunk("d#{i}.md:0", "d#{i}.md", "Pricing note number #{i}.") }
+      hybrid.upsert(chunks: chunks, vectors: chunks.map { |_c| [1.0, 0.0] })
+      out = execute(query: 'pricing')
+      assert_equal Pikuri::Rag::Tools::Search::FINAL_K, out.scan(/^\[\d+\] /).length
+    end
+  end
+
+  describe 'the optional reranker' do
+    it 'reorders the fused candidates and shows the rerank score' do
+      populate
+      reranker = Object.new
+      reranker.define_singleton_method(:rerank) do |query:, documents:|
+        # Reverse the fused order, so the assertion cannot pass by accident.
+        documents.each_index.reverse_each.map.with_index do |source_index, rank|
+          Pikuri::VectorDb::Reranker::Hit.new(index: source_index, score: 10.0 - rank)
+        end
+      end
+      out = execute(reranker: reranker)
+      assert_includes out, '(score=10.00)'
+    end
+
+    it 'falls back to the fused ordering on a reranker outage' do
+      populate
+      reranker = Object.new
+      reranker.define_singleton_method(:rerank) { |**| raise RuntimeError, 'reranker down' }
+      out = execute(reranker: reranker)
+      assert_match(/\AFound \d+ match/, out)
+    end
+  end
+end

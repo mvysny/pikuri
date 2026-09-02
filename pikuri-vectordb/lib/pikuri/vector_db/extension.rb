@@ -2,7 +2,7 @@
 
 module Pikuri
   module VectorDb
-    # The host-facing API: wire local-corpus vector search + agentic RAG onto a
+    # The host-facing API: wire topical retrieval over a local corpus onto a
     # {Pikuri::Agent} via +c.add_extension+ in the +Agent.new+ block.
     #
     #   Pikuri::Agent.new(transport: ..., system_prompt: ...) do |c|
@@ -21,6 +21,19 @@ module Pikuri
     # On +configure+ it registers three tools ({Tools::Search} +
     # {Tools::Read} + {Tools::Reindex}) and nothing else. It does *not* index:
     # when/whether to populate the corpus is host policy.
+    #
+    # == This is the primitive, not a retrieval system
+    #
+    # What ships here is *topical* retrieval: pure geometry over meaning
+    # vectors, which answers "what is this document about?" and structurally
+    # cannot answer completeness ("every note mentioning Acme" — top-k is a
+    # sample, and cosine has no calibrated zero to cut at) or exactness
+    # ("invoice #4471" — rare tokens are what embedders rank worst). Those
+    # need a keyword index beside the vectors, which is +pikuri-rag+: it
+    # decorates whatever +backend:+ you pass here and ships +rag_search+ /
+    # +rag_find+ over the same corpus. The two extensions are **mutually
+    # exclusive on one agent** — {#configure} refuses a pre-registered
+    # +rag_*+ tool, and {Pikuri::Rag::Extension} refuses +vectordb_*+.
     #
     # == The host owns population
     #
@@ -148,13 +161,24 @@ module Pikuri
       end
 
       # Register {Tools::Search} + {Tools::Read} + {Tools::Reindex} onto +c+; does
-      # not index. Raises if any of the three names is pre-registered — the
-      # extension is their single owner, and a duplicate would point at a
-      # different Indexer / Embedder / backend.
+      # not index.
       #
       # @param c [Pikuri::Agent::Configurator]
       # @return [void]
+      # @raise [RuntimeError] if any of the three names is pre-registered — the
+      #   extension is their single owner, and a duplicate would point at a
+      #   different Indexer / Embedder / backend — or if any +rag_*+ tool is,
+      #   since +pikuri-rag+ is the alternative to this extension rather than a
+      #   companion (see "This is the primitive").
       def configure(c)
+        c.tools.each do |tool|
+          next unless tool.name.start_with?('rag_')
+
+          raise "#{tool.name} cannot be pre-registered when adding " \
+                'Pikuri::VectorDb::Extension — the rag_* tool set (Pikuri::Rag::Extension) ' \
+                'replaces this one over the same corpus; wire one or the other.'
+        end
+
         %w[vectordb_search vectordb_read vectordb_reindex].each do |name|
           next unless c.tools.any? { |t| t.name == name }
 

@@ -10,11 +10,18 @@ shipped without one.
 
 ## [Unreleased]
 
+- Add `pikuri-rag` — hybrid retrieval over a local corpus as four tools: `rag_search` (a vector leg and an FTS5 keyword leg fused by reciprocal rank, optionally reranked), `rag_find` (every document containing the stemmed terms, no cutoff), plus `rag_read` / `rag_reindex` from pikuri-vectordb under `family: 'rag'`. See `book/rag.md` and `DECISIONS.md` `D_rag_gem`.
+- Add `Rag::Backend::Fts5` — the keyword store, chunks in an SQLite FTS5 table with `#keyword_query` (bm25 top-k) and `#find` (every document holding all the terms); usable on its own, and the only class in the gem that speaks SQL.
+- Add `Rag::Backend::Hybrid` — a `VectorDb::Backend` holding a vector store and a keyword store, fanning writes out to both and keeping their reads separate, so the vectordb `Indexer` and `Watcher` fill both from one walk.
+- Add `Rag::Query.terms` / `.any` — the only builder of FTS5 `MATCH` input, emitting each token as a quoted phrase term so the query language is inert in model text. See `DECISIONS.md` `D_rag_gem`.
+- Add `bin/pikuri-briefing` — a no-egress agent over your own hand-written meeting notes that holds exactly one trifecta leg, with `private:` / `trusted:` hardcoded and the watcher on by default, inverting `bin/pikuri-corpus` twice. See `DECISIONS.md` `D_briefing_wiring`.
+- Add public `VectorDb::Tools::Search.reranked_or_fallback` and `.format_observation` — the rerank-then-render tail a `family:`-prefixed tool set over the same corpus plumbing reuses instead of cloning.
 - Add `family:` to `VectorDb::Tools::Read.new` / `Tools::Reindex.new` (default `"vectordb"`) — the tool is named `<family>_read` / `<family>_reindex` and its description and error strings name the sibling tools under the same prefix, so another gem's tool set over the same corpus plumbing reuses both classes. See `DECISIONS.md` `D_rag_gem`.
 - Add `VectorDb::CorpusLegs.derive(private:, trusted:)` — the single mapping from a corpus's declaration to the `TrifectaLegs` its reading tools carry, which `VectorDb::Extension` now calls instead of building the legs inline.
 - Add `private:` / `trusted:` to `VectorDb::Extension.new` — `vectordb_search` and `vectordb_read` derive their trifecta legs from the declaration instead of hardcoding untrusted-hard / no-private, the way the file tools derive theirs from `Workspace::Filesystem`; `bin/pikuri-corpus` takes both as flags. See `DECISIONS.md` `D_corpus_trust_declaration`.
 - Add `Agent::Listener::Terminal::TOOL_COLOR` — the demo chrome's tool-call / tool-result lines and the terminal confirmer's diff hunk headers render in Kuri's coat tan (`#c1a586`, an absolute RGB) instead of terminal cyan, the same hex pikuri-tui and pikuri-web paint their tool lines. See `DECISIONS.md` `D_kuri_mascot`.
 - Fix `require 'pikuri'` not booting pikuri-lsp — the metagem depended on it but never required it, so `gem install pikuri` installed the `lsp` tool and `require 'pikuri'` left `Pikuri::Lsp` undefined.
+- Fix `VectorDb::Extension#configure` accepting a pre-registered `rag_*` tool — the two tool sets replace each other over one corpus, so both extensions now refuse the other's names whichever is wired second.
 - Fix `vectordb_reindex` declaring an untrusted leg — its observation is a chunk count, never corpus content, so it now declares no legs, like `write`.
 
 ## [0.1.0] - 2026-08-30

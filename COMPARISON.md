@@ -2200,6 +2200,14 @@ if an embedder is configured) is exactly the degradation story
 `pikuri-vectordb` has to tell anyway. Worth revisiting; not worth
 churning a shipped gem over.
 
+*Partly answered since:* `pikuri-rag` shipped the FTS5 half for the
+*corpus* side, though as a peer rather than a ladder — both legs always
+run and are fused by reciprocal rank, because it was built for retrieval
+quality rather than for degrading gracefully without an embedder. The
+ladder shape grok-build uses is still the unbuilt idea here, and it would
+be a cheap one: the decorator already holds a working keyword index that
+answers with no model at all.
+
 Two mechanisms are cheap and orthogonal to the substrate: the
 **no-LLM-call automatic save** (metadata summaries cost nothing and
 still make a session findable later) and the **confirm-before-write

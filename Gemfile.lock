@@ -75,6 +75,13 @@ PATH
       pikuri-core (= 0.1.0)
 
 PATH
+  remote: pikuri-rag
+  specs:
+    pikuri-rag (0.1.0)
+      pikuri-vectordb (= 0.1.0)
+      sqlite3 (~> 2.9)
+
+PATH
   remote: pikuri-skills
   specs:
     pikuri-skills (0.1.0)
@@ -128,6 +135,7 @@ PATH
       pikuri-memory (= 0.1.0)
       pikuri-os (= 0.1.0)
       pikuri-pdf (= 0.1.0)
+      pikuri-rag (= 0.1.0)
       pikuri-skills (= 0.1.0)
       pikuri-subagents (= 0.1.0)
       pikuri-tasks (= 0.1.0)
@@ -258,6 +266,7 @@ DEPENDENCIES
   pikuri-memory!
   pikuri-os!
   pikuri-pdf!
+  pikuri-rag!
   pikuri-skills!
   pikuri-subagents!
   pikuri-tasks!
@@ -309,6 +318,7 @@ CHECKSUMS
   pikuri-memory (0.1.0)
   pikuri-os (0.1.0)
   pikuri-pdf (0.1.0)
+  pikuri-rag (0.1.0)
   pikuri-skills (0.1.0)
   pikuri-subagents (0.1.0)
   pikuri-tasks (0.1.0)

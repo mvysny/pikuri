@@ -43,6 +43,12 @@ describe Pikuri::VectorDb::Tools::Read do
       assert_equal 'rag_read', tool.name
       assert_includes tool.description, 'rag_search'
       refute_includes tool.description, 'vectordb'
+      # The +source+ parameter description names a sibling too, and it is the
+      # easy one to leave hardcoded — a rag_read pointing the model at
+      # vectordb_search names a tool that agent does not have.
+      source_doc = tool.parameters.to_openai[:properties][:source][:description]
+      assert_includes source_doc, 'rag_search'
+      refute_includes source_doc, 'vectordb'
     end
 
     it 'advertises source as required and offset/limit as optional integers' do

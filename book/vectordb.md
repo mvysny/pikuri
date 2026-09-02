@@ -46,6 +46,13 @@ two vectors and ignores their length. That's it: there is no
 keyword index underneath, no inverted file, no fuzzy match. It's
 pure geometry over meaning vectors.
 
+That last sentence is a real limit, not just a description, and
+[the next chapter](rag.md) is about the two questions it makes
+unanswerable — "every note mentioning Acme" and "which note has
+invoice #4471". Read this one first: hybrid retrieval is this
+pipeline plus a keyword index, and the keyword index only makes
+sense once you know what the vectors are doing.
+
 **Reranker (optional).** A cross-encoder reranker is a second,
 heavier model that takes the query and a candidate chunk *together*
 and produces a single relevance score. It's slower than the
@@ -690,13 +697,20 @@ itself current.
 
 ## What's next
 
-`pikuri-vectordb` gives the agent recall *over a corpus the user
-indexed*. The next chapter — [memories](memories.md) — is the
-other half: recall *of facts the agent learned across earlier
-conversations*. The two pair naturally inside
+`pikuri-vectordb` is the retrieval *primitive*, and it answers one
+kind of question well. The next chapter —
+[hybrid retrieval](rag.md) — is what you add when the corpus is
+your own short notes rather than long documents, and the questions
+turn into "*every* note about Acme" and "which note has invoice
+#4471". Both are questions pure geometry cannot answer, and the fix
+is a keyword index beside the vectors.
+
+After that comes [memories](memories.md), the other half of recall:
+facts the agent learned across earlier conversations rather than a
+corpus you indexed. The two pair naturally inside
 `pikuri-assistant` — the privacy-conscious assistant binary
 the universal-assistant chapter walks through, with vector search over your notes plus
 persistent memories about you across sessions — but each is
 introduced on its own first.
 
-→ Continue to [Memories](memories.md).
+→ Continue to [Hybrid retrieval: the questions vectors can't answer](rag.md).

@@ -1,11 +1,20 @@
 # pikuri-vectordb
 
-Local-corpus vector search + agentic RAG for the
+Topical retrieval over a local corpus for the
 [pikuri](https://codeberg.org/mvysny/pikuri) AI-assistant toolkit:
 semantic recall over a pile of files you point it at — your notes,
 your docs, your contracts — where the *agent* decides when to
 retrieve, same Thought → Tool-call → Observation loop as every other
 tool.
+
+This is the retrieval **primitive**, and what it answers is
+*precision*: the top few chunks on the topic you asked about. Two
+other questions need a keyword index beside the vectors —
+*completeness* ("every note mentioning Acme", where top-k is a sample)
+and *exactness* ("invoice #4471", where rare tokens are what embedders
+rank worst). That is [`pikuri-rag`](../pikuri-rag/README.md), which
+decorates whatever `backend:` you pass here and replaces this
+extension's tool set with its own.
 
 Wire it onto a `pikuri-core` agent the same way as `pikuri-tasks` /
 `pikuri-memory` — `c.add_extension` inside the `Agent.new` block:

@@ -95,10 +95,16 @@ in:
     Protocol](https://modelcontextprotocol.io) support.
   - [`pikuri-subagents`](pikuri-subagents/README.md) — the `agent`
     tool + `Persona` record + the `pikuri-minions` fan-out demo.
-  - [`pikuri-vectordb`](pikuri-vectordb/README.md) — local-corpus
-    vector search + agentic RAG: `vectordb_search` /
-    `vectordb_read` / `vectordb_reindex`, the `LIBRARIAN` persona,
-    and the `pikuri-corpus` demo (a no-egress recall agent).
+  - [`pikuri-vectordb`](pikuri-vectordb/README.md) — topical
+    retrieval over a local corpus, the vector-search primitive:
+    `vectordb_search` / `vectordb_read` / `vectordb_reindex`, the
+    `LIBRARIAN` persona, and the `pikuri-corpus` demo (a no-egress
+    recall agent).
+  - [`pikuri-rag`](pikuri-rag/README.md) — hybrid retrieval on that
+    primitive: a keyword index beside the vectors, so `rag_search`
+    also finds an invoice number and `rag_find` lists *every*
+    matching document. Demo: `pikuri-briefing`, which briefs you on
+    a customer from your own notes.
   - [`pikuri-memory`](pikuri-memory/README.md) — durable
     cross-conversation memory backed by mem0: the `recall` tool,
     per-turn prefetch and capture, and the `pikuri-memory` demo.
@@ -112,7 +118,7 @@ in:
   - [`pikuri-assistant`](pikuri-assistant/README.md) — MCP-aware
     demo binary.
   - [`pikuri`](pikuri/README.md) — convenience metagem:
-    `gem install pikuri` pulls in all fifteen.
+    `gem install pikuri` pulls in all sixteen.
 
 For browsable API docs, run `bundle exec yard` inside any gem
 directory (output is gitignored) — or, once gems are published,

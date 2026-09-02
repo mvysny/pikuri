@@ -8,11 +8,16 @@ Gem::Specification.new do |spec|
   spec.authors     = ['Martin Vysny']
   spec.email       = ['martin@vysny.me']
 
-  spec.summary     = 'Local-corpus vector search + agentic RAG for pikuri.'
+  spec.summary     = 'Topical retrieval over a local corpus for pikuri: the vector-search primitive.'
   spec.description = <<~DESC
     pikuri-vectordb gives a pikuri-core agent a +vectordb_search+
     tool over a local document corpus — agentic search, the agent
-    decides when to retrieve. Ships a swappable backend (a
+    decides when to retrieve. This is the retrieval *primitive*:
+    topical recall over long documents, pure geometry over meaning
+    vectors. Completeness ("every note mentioning Acme") and
+    exactness ("invoice #4471") need a keyword index beside the
+    vectors, which is +pikuri-rag+ — it decorates whatever backend
+    you pass here. Ships a swappable backend (a
     pure-Ruby +Backend::InMemory+ for teaching, plus thin
     +Backend::Qdrant+ / +Backend::Chroma+ HTTP clients for
     persistence — Qdrant recommended), a chunker, an
