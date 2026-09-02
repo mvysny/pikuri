@@ -28,6 +28,10 @@ Related, already worked out:
   `FILE_MINER`.
 - Likely home: the `pikuri-assistant` gem — same precedent as `LIBRARIAN`
   and `GIT_REPO_RESEARCHER` ([`CLAUDE.md`](../CLAUDE.md) inventory).
+- [`meeting-prep.md`](meeting-prep.md) — a candidate *first member*: a
+  one-legged (private-only) notes agent, and the week-long prototype
+  this note says the federation is waiting on. Not `@private` — see
+  there for why.
 
 ## The idea
 
