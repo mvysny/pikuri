@@ -1,6 +1,11 @@
 # Tool summary lines: the tool composes its own one-line display form
 
-Status: **brainstorm — nothing built, hold the implementation.** Requested
+Status: **brainstorm — nothing built, hold the implementation.**
+Implementability checked 2026-09-07 against ruby_llm 1.16 and every shipped
+tool (see *Survey* and *Verified against ruby_llm*): feasible without a
+ruby_llm patch; the first-required default covers 25 of 34 tools and the
+other 9 need a per-tool override, which is why `describe_call` is a method
+on `Tool`. Requested
 by pikuri-tui (its `ideas/hide-thinking-and-tool-calls.md`, Part 2), which
 wants its transcript to show `Write(lib/foo.rb)` / `Returned 23 search
 results` instead of the argument dump and the 200-char result excerpt — and
@@ -136,11 +141,12 @@ Caveat — multimodal observations. `content_like?` is `is_a?(Content)`, so a
 
 Lean (a).
 
-### `O_describe_hook` — a callable on the `Tool`
+### `O_describe_hook` — an overridable method on the `Tool`
 
 ```ruby
-Pikuri::Tool.new(name: 'bash', …,
-  describe_result: ->(content) { "exit #{content[/^exit (\d+)/, 1]}, #{content.lines.size} lines" })
+class Bash < Pikuri::Tool
+  def describe_result(content) = "exit #{content[/^exit (\d+)/, 1]}, #{content.lines.size} lines"
+end
 ```
 
 Purely additive, no return-type change, no `Content` question. But the hook
@@ -148,12 +154,48 @@ sees only the flattened `content`, so it is `O_renderer_parses` moved one
 layer down: less duplication, same fragility. Still the right tool for two
 jobs: (1) a tool whose summary genuinely *is* a function of the content
 (`calculator`: the value); (2) the **call side**, where there is nothing to
-return yet — `describe_call: ->(arguments) { arguments[:path] }` for a tool
-whose primary argument is not its first required parameter.
+return yet — `describe_call(arguments)` for a tool whose primary argument is
+not its first required parameter (see the survey below for the nine that
+need it).
+
+A *method*, not a `describe_call:` kwarg lambda: 33 of the 34 shipped tools
+are already `Pikuri::Tool` subclasses, `for_sub_agent` / `with_workspace`
+are the precedent for per-subclass methods, and two of the overrides need
+the tool's own state (`task_*` looks a title up in its `list:`).
 
 **Lean: both.** `Tool::Result` (or `Observation`) for result summaries that
-need structure, `describe_call:` as an override on the call side, and the
-generic defaults below covering everything that declares neither.
+need structure, `describe_call` overridden on the call side, and the
+defaults in `Tool` covering everything that declares neither.
+
+### Verified against ruby_llm 1.16 (2026-09-07)
+
+- `Chat#execute_tool_with_callbacks` runs `after_tool_result` with the
+  **raw** return object; `add_tool_result_message` `to_s`es it afterwards
+  (`chat.rb` L374–387). The rich return needs no patch. `Tool::Halt` has the
+  identical shape (`attr_reader :content`; `to_s = content.to_s`).
+- `content_like?` is `is_a?(Content) || is_a?(Content::Raw)`, so option (a)
+  under `Q_content_wrapping` stands: a `Result` may wrap a `String` only.
+- **`after_tool_result` receives the result alone — no `tool_call`.** So
+  putting `name:` / `tool_call_id:` on `Event::ToolResult` needs a pairing
+  mechanism after all. Two: (i) `before_tool_call` stashes the call and
+  `after_tool_result` reads it — the same single-slot trick, valid under the
+  `tool_concurrency: off` contract `Tool`'s `== Sharing` already imposes;
+  (ii) set `instrumenter` on pikuri's per-chat `RubyLLM::Context` config —
+  ruby_llm wraps every tool run in
+  `instrument('tool_call.ruby_llm', payload)` whose payload carries
+  `tool_call`, `tool` and `result` together, so ruby_llm does the pairing
+  and it survives concurrency; but the instrumenter sees *every* ruby_llm
+  event (completions, HTTP) and must pass them through. Lean **(i)**,
+  documented at the stash; (ii) is the reopen path if concurrency ever goes
+  on. Either way the event gets `name:` — the assumption moves from three
+  renderers into one place in `Agent`.
+- An unavailable tool makes `execute_tool` return a **`Hash`**
+  (`{error: "Model tried to call unavailable tool …"}`), which reaches
+  `after_tool_result` as-is. The default summary must handle a `Hash` with
+  `:error` (pass the message through), not only `String` / `Content`.
+- `Tool#run` already turns a validation failure into an `"Error: …"`
+  `String` before `execute` runs, so a tool's `describe_result` never sees
+  its own validation error; the default `Error:` pass-through covers it.
 
 ## The call side: display name + primary argument
 
@@ -164,12 +206,62 @@ case:
   server and may carry `-` / `.` (ruby_llm sanitizes to `_`); treat any
   non-alphanumeric run as a word break. Lives in core so the three renderers
   agree.
-- `Tool#primary_argument(arguments)` — the value of the **first required
-  parameter**. `Parameters` keeps declaration order (`@properties` is an
-  insertion-ordered Hash) and a `@required` list, so this needs only a reader
-  on `Parameters` (`#required` is private today). Falls back to the first
-  optional parameter, then `nil` (a no-arg tool renders `EnterPlanMode`).
-  Overridable with `describe_call:`.
+- `Tool#describe_call(arguments)` — a **method on `Tool`**, default
+  implementation = the value of the **first required parameter**.
+  `Parameters` keeps declaration order (`@properties` is an insertion-ordered
+  Hash) and a `@required` list, so this needs only a reader on `Parameters`
+  (`#required` is private today). A tool with no required parameter renders
+  the *supplied* arguments as `k=v` (capped); a no-arg tool renders bare
+  (`EnterPlanMode`). A tool that wants something else **overrides the
+  method** — the survey below is why it is a method and not a
+  `describe_call:` kwarg.
+
+### Survey: the first-required rule against every shipped tool (2026-09-07)
+
+34 shipped tools (`grep -rn "name: '" pikuri-*/lib`, minus personas and LSP
+operations). 33 are `Pikuri::Tool` *subclasses* calling `super(name: …)`;
+the lone `Tool.new` is `WebSearch.build`, which needs no override. So an
+overridable method reaches every tool that needs one, and `for_sub_agent` /
+`with_workspace` are already the precedent for per-subclass methods on a
+tool.
+
+**Works as-is (25):** `bash` (command), `git_clone` (url), `mcp_connect`
+(id), `recall` (topic), `fileindex_read` (path), `fileindex_search` /
+`rag_search` / `vectordb_search` / `thunderbird_contact_search` (query),
+`rag_find` (terms), `skill` (name), `thunderbird_calendar_create` (title),
+`thunderbird_calendar_read` (event_id) and `thunderbird_mail_read`
+(message_id) — opaque ids, but nothing better exists before execution;
+`thunderbird_mail_compose` (to), `calculator` (expression), `fetch` /
+`web_scrape` (url), `web_search` (query), `vectordb_read` (source), `read` /
+`write` / `edit` (path), `glob` / `grep` (pattern), `enter_plan_mode` /
+`vectordb_reindex` (no params).
+
+**Needs an override (9)** — a quarter of the fleet, so the override ships
+in the same release as the default, not later:
+
+| tool | first required | problem | override |
+|---|---|---|---|
+| `exit_plan_mode` | `plan` | the whole Markdown plan | render bare `ExitPlanMode` (the plan is shown by the confirmer) |
+| `lsp` | `operation` (enum) | `Lsp(references)` says nothing | `"#{operation} #{symbol}"` — two args |
+| `agent` | `name` (enum) | `Agent(researcher)` is thin | `"#{name}: #{task}"`, task capped |
+| `task_completed` / `task_in_progress` / `task_delete` | `id` (integer) | `TaskCompleted(3)` | look the title up in the `list:` the tool holds — **needs tool state**, which a kwarg lambda could only reach by closing over it |
+| `task_create` | `items` (array) | an `Array#to_s` dump | `"#{items.size} items"` or the first item |
+| `thunderbird_mail_search` / `thunderbird_calendar_search` | *none* — every parameter optional | the note's "first optional" is `query`, which the model may not have passed | the no-required default: supplied args as `k=v` (`from=bob after=2026-09`) |
+| `file_list` | *none* | `FileList()` when `path` is omitted | the tool knows its default is the root: render `.` |
+
+Nice-to-have, not needed: `read` with `offset`/`limit` as `path:100-200`;
+`glob` / `grep` appending ` in <path>` when supplied.
+
+**CamelCase warts**, for the record: `lsp` → `Lsp`, `vectordb_search` →
+`VectordbSearch`, `fileindex_read` → `FileindexRead`, `rag_search` →
+`RagSearch`. Deterministic beats pretty (this is the Zeitwerk-inflector
+problem again); a per-tool `display_name` override is a nit-pick, not a
+need. One real question is the MCP namespace: `Mcp::Servers` names tools
+`"#{server_id}__#{tool}"`, and a word-break rule flattens
+`openlibrary__search_books` to `OpenlibrarySearchBooks`, losing the server
+boundary. Options: keep flat; or render `__` as `::`
+(`Openlibrary::SearchBooks`), which reads natively to the Ruby-dev audience.
+`Q_mcp_display_name`.
 
 ## Event changes
 
@@ -198,6 +290,13 @@ carry the generic default. Lean: **don't persist** for v1; the loss is one
 line of nicety on old conversations, and adding a field to the message
 schema is a migration.
 
+Third emit site: pikuri-web's `HistoryReplay` builds `ToolCall` /
+`ToolResult` from a saved `History` with no `Tool` in hand. The new fields
+therefore need `Data.define` defaults (a keyword-defaulting `initialize`),
+and a replayed line shows the CamelCased name plus the generic defaults —
+or the replay is handed the agent's toolset so it can call `describe_call`.
+Same fallback the *unavailable tool* case uses, so it costs nothing extra.
+
 ## Defaults for tools that declare nothing
 
 Every MCP tool and every third-party `Pikuri::Tool` gets a tolerable line for
@@ -206,8 +305,8 @@ free:
 | part | default |
 |---|---|
 | display name | CamelCase(`name`) |
-| argument | first required parameter's value, one line, capped |
-| result summary | `Returned N bytes` (`N lines` when multi-line); `Returned <mime>, N kB` for a `RubyLLM::Content`; an `Error: …` content passes through as its first line |
+| argument | first required parameter's value, one line, capped; no required parameter → supplied args as `k=v`; no parameters → bare name |
+| result summary | `Returned N bytes` (`N lines` when multi-line); `Returned <mime>, N kB` for a `RubyLLM::Content`; an `Error: …` content passes through as its first line; ruby_llm's unavailable-tool `Hash` passes its `:error` through |
 
 ## Shipped tools — first cut of summaries
 
@@ -228,14 +327,14 @@ tool we ship, not to fix wording.
 | `calculator` | expression | the value — computed by code, so it *is* structural |
 | `skill` | name | `Loaded 3.1 kB` |
 | `agent` | agent name (not the task) | `Answered, 1.2 kB` |
-| `task_*` | title | `3 tasks, 1 done` |
+| `task_*` | title (looked up from the `id` the model passes) | `3 tasks, 1 done` |
 | `mcp_connect` | server id | `Connected, 14 tools` |
 | `rag_search` / `vectordb_search` / `recall` | query | `Found 8 hits` |
 | `thunderbird_mail_search` | query | `Found 8 messages` |
 | `thunderbird_mail_compose` / `calendar_create` | recipient / title | `Handed to Thunderbird` |
 | `enter_plan_mode` / `exit_plan_mode` | — | `Plan mode on` / `off` |
 | `git_clone` | url | `Cloned, 412 files` |
-| `lsp` | the operation | `N results` |
+| `lsp` | operation + symbol (`references Foo`) | `N results` |
 
 Note `edit` / `write` **do** return a summary rather than `nil`: the
 Terminal listener has no diff view, so the count is its whole result line. A
@@ -288,9 +387,13 @@ the tool's.
   Lean strings.
 - `Q_persist_summary` — store `summary` on the `tool` history message? Lean
   no for v1.
-- Should `ToolResult` carry `name:` or `tool_call_id:`? Either kills the
-  ordering assumption; `name:` is what a renderer wants, `tool_call_id:` is
-  what concurrency needs. Possibly both.
+- Should `ToolResult` carry `name:` or `tool_call_id:`? `name:` is what a
+  renderer wants, `tool_call_id:` is what concurrency needs. Possibly both.
+  Note that neither kills the ordering assumption by itself — see *Verified
+  against ruby_llm*: the callback has no call, so the agent pairs by stash
+  (i) or by instrumenter (ii).
+- `Q_mcp_display_name` — flatten `server__tool` to one CamelCase word, or
+  render the `__` as `::` (`Openlibrary::SearchBooks`).
 - Argument cap width, and whether the cap is the agent's (one truth) or the
   renderer's (knows its width). Lean renderer.
 
@@ -298,7 +401,7 @@ the tool's.
 
 Delete this note. Graduation homes (per `CLAUDE.md`):
 
-- **DECISIONS.md** — `D_tool_summary_by_tool`: the tool composes its summary
+- **DECISIONS.md** — a "tool summary by tool" entry: the tool composes its summary
   in code, never the model (prompt injection) and never the renderer
   (structure is gone after flattening); rejected `O_llm_narrates` and
   `O_renderer_parses`; the `Result`-vs-`Observation` naming call and the
