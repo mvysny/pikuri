@@ -10,6 +10,7 @@ shipped without one.
 
 ## [Unreleased]
 
+- Add functions and constants to `calculator` — `Tool::Calculator::FUNCTIONS` (sin cos tan asin acos atan atan2 hypot sqrt exp log log10 log2 floor ceil abs radians degrees) and `CONSTANTS` (pi, e), each accepted bare or under an optional `math.` prefix. See `DECISIONS.md` `D_calculator_functions`.
 - Add `pikuri-rag` — hybrid retrieval over a local corpus as four tools: `rag_search` (a vector leg and an FTS5 keyword leg fused by reciprocal rank, optionally reranked), `rag_find` (every document containing the stemmed terms, no cutoff), plus `rag_read` / `rag_reindex` from pikuri-vectordb under `family: 'rag'`. See `book/rag.md` and `DECISIONS.md` `D_rag_gem`.
 - Add `Rag::Backend::Fts5` — the keyword store, chunks in an SQLite FTS5 table with `#keyword_query` (bm25 top-k) and `#find` (every document holding all the terms); usable on its own, and the only class in the gem that speaks SQL.
 - Add `Rag::Backend::Hybrid` — a `VectorDb::Backend` holding a vector store and a keyword store, fanning writes out to both and keeping their reads separate, so the vectordb `Indexer` and `Watcher` fill both from one walk.
