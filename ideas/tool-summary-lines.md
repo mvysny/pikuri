@@ -113,25 +113,27 @@ unchanged with **no ruby_llm patch**, and pikuri's existing
 and puts it on the event. ruby_llm's own `Tool::Halt` (a wrapper whose
 `.content` ruby_llm unwraps) is precedent for a rich return.
 
-Naming. The proposal is the `ToolResult` family — `Pikuri::Tool::Result`
-in the house nesting (`Tool::Parameters`, `Tool::ExecuteContext`,
-`Tool::TrifectaLegs`). The one cost: pikuri would then have two things
-called "tool result" — `Tool::Result` (what `execute` returns) and
-`Agent::Event::ToolResult` (what listeners see). They are adjacent in the
-data flow and the event carries the return's fields, so the shared name may
-read as *the same thing at two stages*, which is roughly true — but rdoc
-and specs will need to say which they mean. Kept as an alternative:
-**`Pikuri::Tool::Observation`**, which is the word `Tool#execute`'s rdoc
-already uses for the return value and collides with nothing. Pick one at
-implementation time; `Q_result_name`.
+Naming — **decided 2026-09-07: `Pikuri::Tool::Result`**, in the house
+nesting (`Tool::Parameters`, `Tool::ExecuteContext`, `Tool::TrifectaLegs`).
+Rejected `Tool::Observation`: although it is the word `Tool#execute`'s rdoc
+uses, "observation" reads as something the call keeps producing, where
+"result" is finite — the call is over. The cost accepted: two things called
+"tool result", `Tool::Result` (what `execute` returns) and
+`Agent::Event::ToolResult` (what listeners see). They are the same thing at
+two stages and the event carries the return's fields; rdoc and specs say
+which they mean.
 
-Caveat — multimodal observations. `content_like?` is `is_a?(Content)`, so a
-`Result` wrapping a `RubyLLM::Content` (the PNG a `read` returns) would be
-`to_s`'d into garbage. Options, `Q_content_wrapping`:
+Content — **decided 2026-09-07: a `Result` holds a `String` only** (option
+(a) below). A tool returning `RubyLLM::Content` (the PNG a `read` returns)
+keeps returning it bare and gets the generic default summary; multimodal
+observations are rare and `Returned image/png, 40 kB` is fine. The
+governing rule: **touch no ruby_llm internal** — no `content_like?` patch,
+no unwrap-and-stash in the wrapper. The only ruby_llm behaviour relied on
+is the public one `Tool::Halt` also rides: a non-`Content` payload is
+stored via `to_s`. If a richer return is ever needed, `Result` grows a
+field (say `attachments:`) and pikuri's own wrapper unwraps it — never a
+patch. The roads not taken, for the DECISIONS entry:
 
-- (a) a `Result` may only hold a `String`; a tool returning `Content` keeps
-  returning it bare and gets the generic default summary. Multimodal
-  observations are rare (image reads); `Returned image/png, 40 kB` is fine.
 - (b) pikuri's `to_ruby_llm_tool` wrapper unwraps the `Result` *before*
   ruby_llm sees it, returning `.content` and stashing `.summary` in a
   per-call slot the `after_tool_result` callback reads. Works for `Content`
@@ -139,8 +141,6 @@ Caveat — multimodal observations. `content_like?` is `is_a?(Content)`, so a
   moment `tool_concurrency` goes on.
 - (c) extend `content_like?` via `ruby_llm_patches.rb`. Smallest code,
   another monkey-patch to carry across ruby_llm bumps.
-
-Lean (a).
 
 ### `O_describe_hook` — an overridable method on the `Tool`
 
@@ -286,14 +286,18 @@ events stay plain serializable `Data` (pikuri-web ships them over SSE;
 "Model tried to call unavailable tool" error) has no `Tool` to reference —
 the agent falls back to CamelCasing the raw name.
 
-`ToolResult` should also gain **`name:`** (or `tool_call_id:`). Today every
-renderer pairs a result with its call by strict call→result ordering — the
-single-slot trick pikuri-tui's `@pending_formatter` and `agent.rb` L945 both
-document as holding only while `tool_concurrency` is off. The summary work
-touches every emit site anyway; naming the result on the event removes the
-assumption for free. The second emit site — the dangling-call repair in
-`Agent` (~L976, `INTERRUPTED_RESULT`) — gets a fixed summary
-(`Interrupted`).
+**Decided 2026-09-07: both `ToolCall` and `ToolResult` carry `name:` and
+`tool_call_id:`.** Today every renderer pairs a result with its call by
+strict call→result ordering — the single-slot trick pikuri-tui's
+`@pending_formatter` and `agent.rb` L945 both document as holding only while
+`tool_concurrency` is off. With the id on both events a renderer pairs by
+key and the ordering assumption leaves the renderers; inside `Agent` it
+survives only at the one stash that pairs ruby_llm's call-less
+`after_tool_result` with its `before_tool_call` (see *Verified against
+ruby_llm*). `tc.id` is available in `before_tool_call`; the stash supplies
+it to the result event. The second emit site — the dangling-call repair in
+`Agent` (~L976, `INTERRUPTED_RESULT`) — has the call in hand and gets a
+fixed summary (`Interrupted`).
 
 `History` does not store summaries (`Q_persist_summary`). A reloaded
 conversation's `ToolResult`s are synthesized from `tool` messages and would
@@ -370,9 +374,11 @@ the tool's.
   (`Listener::Terminal` already uses it for other lines; pikuri-web adds
   `html_escape` on top; pikuri-tui parses ANSI via `StyledString.parse`, so it
   is the most exposed of the three).
-- **Cap the argument.** A `command` can be a 4 kB script and a `content` a
-  whole file. One line, ~60 columns, `…`. The full text is in the confirmer
-  block when confirm is on.
+- **Cap the argument — the renderer's job** (decided 2026-09-07). A
+  `command` can be a 4 kB script and a `content` a whole file; the event
+  carries the full one-line string and each renderer truncates to its own
+  width with `…`, since only it knows that width. The full text is in the
+  confirmer block when confirm is on.
 - **Summaries are code.** A `describe_*` hook or a `Result` is authored by
   the tool's programmer, never assembled from model output. A tool that
   wanted to put an LLM-written sentence in `summary:` would be violating
@@ -390,21 +396,15 @@ the tool's.
 
 ## Open questions
 
-- `Q_result_name` — `Tool::Result` (proposed) vs `Tool::Observation`
-  (matches existing rdoc vocabulary, no collision with `Event::ToolResult`).
-- `Q_content_wrapping` — (a) `String`-only `Result`, `Content` stays bare;
-  (b) unwrap in the wrapper with a slot; (c) patch `content_like?`. Lean (a).
+Settled 2026-09-07 (recorded in place above): `Tool::Result` over
+`Observation`; `String`-only `Result`, no ruby_llm internals touched; both
+events carry `name:` + `tool_call_id:`; the argument cap is the renderer's.
+Still open:
+
 - `Q_event_shape` — precomputed strings on the events vs a `tool:` reference.
   Lean strings.
 - `Q_persist_summary` — store `summary` on the `tool` history message? Lean
   no for v1.
-- Should `ToolResult` carry `name:` or `tool_call_id:`? `name:` is what a
-  renderer wants, `tool_call_id:` is what concurrency needs. Possibly both.
-  Note that neither kills the ordering assumption by itself — see *Verified
-  against ruby_llm*: the callback has no call, so the agent pairs by stash
-  (i) or by instrumenter (ii).
-- Argument cap width, and whether the cap is the agent's (one truth) or the
-  renderer's (knows its width). Lean renderer.
 
 ## When this is done
 
