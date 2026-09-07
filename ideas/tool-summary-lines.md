@@ -5,7 +5,8 @@ Implementability checked 2026-09-07 against ruby_llm 1.16 and every shipped
 tool (see *Survey* and *Verified against ruby_llm*): feasible without a
 ruby_llm patch; the first-required default covers 25 of 34 tools and the
 other 9 need a per-tool override, which is why `describe_call` is a method
-on `Tool`. Requested
+on `Tool`. Settled the same day: the nine overrides, `LSP` as the one
+display-name override, MCP names as `Server::Tool`. Requested
 by pikuri-tui (its `ideas/hide-thinking-and-tool-calls.md`, Part 2), which
 wants its transcript to show `Write(lib/foo.rb)` / `Returned 23 search
 results` instead of the argument dump and the 200-char result excerpt — and
@@ -202,10 +203,25 @@ defaults in `Tool` covering everything that declares neither.
 Computable from what `Tool` already knows, so no per-tool work in the common
 case:
 
-- `Tool#display_name` — CamelCase of `name`. MCP tool names arrive from a
-  server and may carry `-` / `.` (ruby_llm sanitizes to `_`); treat any
-  non-alphanumeric run as a word break. Lives in core so the three renderers
-  agree.
+- `Tool.display_name_for(name)` — a module-level function, CamelCase of a
+  raw tool name, and `Tool#display_name`, an **overridable method**
+  defaulting to it. The function is what the agent falls back to when it has
+  no `Tool` in hand (an MCP tool, which bypasses `Pikuri::Tool`; ruby_llm's
+  unavailable-tool error; pikuri-web's `HistoryReplay`), so every naming
+  rule lives in the function, never on an instance:
+  - split on `__` first — that is `Mcp::Servers`' server separator — and
+    join the CamelCased halves with `::`: `openlibrary__search_books` →
+    `Openlibrary::SearchBooks`. Decided 2026-09-07: the boundary is worth
+    keeping and `::` reads natively to the Ruby-dev audience;
+  - within a segment, any non-alphanumeric run is a word break (MCP names
+    may carry `-` / `.`; ruby_llm sanitizes to `_`).
+
+  The one override: `LspTool#display_name` returns `LSP` (decided
+  2026-09-07 — `Lsp` reads as a word, `LSP` as the acronym it is). It rides
+  the same per-subclass-method mechanism as `describe_call`, so it costs a
+  line; a replayed or unavailable `lsp` still renders `Lsp`, which is
+  acceptable. `VectordbSearch` / `FileindexRead` / `RagSearch` stay as the
+  function produces them.
 - `Tool#describe_call(arguments)` — a **method on `Tool`**, default
   implementation = the value of the **first required parameter**.
   `Parameters` keeps declaration order (`@properties` is an insertion-ordered
@@ -252,16 +268,11 @@ in the same release as the default, not later:
 Nice-to-have, not needed: `read` with `offset`/`limit` as `path:100-200`;
 `glob` / `grep` appending ` in <path>` when supplied.
 
-**CamelCase warts**, for the record: `lsp` → `Lsp`, `vectordb_search` →
-`VectordbSearch`, `fileindex_read` → `FileindexRead`, `rag_search` →
-`RagSearch`. Deterministic beats pretty (this is the Zeitwerk-inflector
-problem again); a per-tool `display_name` override is a nit-pick, not a
-need. One real question is the MCP namespace: `Mcp::Servers` names tools
-`"#{server_id}__#{tool}"`, and a word-break rule flattens
-`openlibrary__search_books` to `OpenlibrarySearchBooks`, losing the server
-boundary. Options: keep flat; or render `__` as `::`
-(`Openlibrary::SearchBooks`), which reads natively to the Ruby-dev audience.
-`Q_mcp_display_name`.
+**CamelCase warts**, for the record: `vectordb_search` → `VectordbSearch`,
+`fileindex_read` → `FileindexRead`, `rag_search` → `RagSearch` — accepted;
+deterministic beats pretty (this is the Zeitwerk-inflector problem again).
+`lsp` → `Lsp` was the one wart judged worth the override (`LSP`), and the
+MCP `__` separator the one worth a rule (`::`); both decided above.
 
 ## Event changes
 
@@ -304,7 +315,7 @@ free:
 
 | part | default |
 |---|---|
-| display name | CamelCase(`name`) |
+| display name | CamelCase(`name`); an MCP `server__tool` renders `Server::Tool` |
 | argument | first required parameter's value, one line, capped; no required parameter → supplied args as `k=v`; no parameters → bare name |
 | result summary | `Returned N bytes` (`N lines` when multi-line); `Returned <mime>, N kB` for a `RubyLLM::Content`; an `Error: …` content passes through as its first line; ruby_llm's unavailable-tool `Hash` passes its `:error` through |
 
@@ -392,8 +403,6 @@ the tool's.
   Note that neither kills the ordering assumption by itself — see *Verified
   against ruby_llm*: the callback has no call, so the agent pairs by stash
   (i) or by instrumenter (ii).
-- `Q_mcp_display_name` — flatten `server__tool` to one CamelCase word, or
-  render the `__` as `::` (`Openlibrary::SearchBooks`).
 - Argument cap width, and whether the cap is the agent's (one truth) or the
   renderer's (knows its width). Lean renderer.
 
@@ -408,7 +417,9 @@ Delete this note. Graduation homes (per `CLAUDE.md`):
   `Content` decision as consequences.
 - **yardoc** — `Tool::Result` (or `Observation`) rdoc carrying the
   structural-never-excerpted rule and the "summaries are code" rule;
-  `Tool#display_name` / `#primary_argument`; the new event fields.
+  `Tool.display_name_for` (the `__` → `::` rule) / `Tool#display_name` /
+  `Tool#describe_call` / `#describe_result` with the per-tool overrides; the
+  new event fields.
 - **CLAUDE.md** — a Seam entry: renderers style the three strings and
   sanitize them; they do not compose them.
 - **book** — the rendering chapter, if it shows the transcript lines.
