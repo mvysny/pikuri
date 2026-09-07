@@ -57,15 +57,16 @@ module Pikuri
         )
       end
 
-      # @return [Pikuri::Tool::Result, String] the hits as a
-      #   {Pikuri::Tool::Result} (+"Found 8 messages"+ — the count only: a
-      #   subject line is whatever the sender wrote), or a bare +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the hits (+"Found 8 messages"+ — the
+      #   count only: a subject line is whatever the sender wrote), or
+      #   {Pikuri::Tool::Result.error}.
       def self.run_search(backend:, query:, from:, to:, subject:, after:, before:, folder:, limit:)
         # Refuse a match-everything call: with no query and no filter this
         # would dump the whole mailbox newest-first. Every real request has at
         # least one criterion — steer the model to name one.
         if [query, from, to, subject, after, before, folder].all? { |v| v.to_s.strip.empty? }
-          return 'Error: give at least one of query, from, to, subject, after, before, or folder to search for.'
+          return Pikuri::Tool::Result.error('give at least one of query, from, to, subject, ' \
+                                            'after, before, or folder to search for.')
         end
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
@@ -92,7 +93,7 @@ module Pikuri
           summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'message')}#{'+' if has_more}"
         )
       rescue ArgumentError => e
-        "Error: bad date filter (#{e.message})."
+        Pikuri::Tool::Result.error("bad date filter (#{e.message}).")
       end
 
       # The leading line: affirm completeness when every match fit ("all

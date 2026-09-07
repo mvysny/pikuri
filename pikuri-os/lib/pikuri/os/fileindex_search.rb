@@ -88,12 +88,11 @@ module Pikuri
       # @param query [String]
       # @param limit [Integer]
       # @param backend [Module] the file-index backend to query
-      # @return [Pikuri::Tool::Result, String] the hits + disclaimer as a
-      #   {Pikuri::Tool::Result} (+"Found 8 files"+); a bare +"Error: ..."+ for a
-      #   backend failure
+      # @return [Pikuri::Tool::Result] the hits + disclaimer (+"Found 8
+      #   files"+), or {Pikuri::Tool::Result.error} for a backend failure
       def self.search(query:, backend:, limit: DEFAULT_LIMIT)
         q = query.to_s.strip
-        return 'Error: empty query.' if q.empty?
+        return Pikuri::Tool::Result.error('empty query.') if q.empty?
 
         limit = clamp(limit, 1, MAX_LIMIT)
         hits = backend.search(query: q, limit: limit)
@@ -111,7 +110,7 @@ module Pikuri
         # the shape that overflows the model's context; share the success
         # path's ceiling.
         content, marker = head_truncate(e.message)
-        "Error: #{backend.label}: #{content}#{marker}"
+        Pikuri::Tool::Result.error("#{backend.label}: #{content}#{marker}")
       end
 
       # @return [String] +"<path>"+ or +"<path>\n  <snippet>"+

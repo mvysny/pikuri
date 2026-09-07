@@ -44,15 +44,26 @@ module Pikuri
   # The tool owns all three, because at +execute+ time it still holds the
   # structure it is about to flatten for the model — 23 result structs, a line
   # count, an exit status — which no renderer can recover from the Markdown it
-  # gets. {#display_name} and {#describe_call} answer the call side; the result
-  # side is a {Result} returned from +execute+, or {#describe_result} where the
-  # flattened content suffices. Each default is mechanical
+  # gets. {#display_name} and {#describe_call} answer the call side;
+  # {Result#summary} answers the result side. Each default is mechanical
   # ({.display_name_for}, the first required parameter, {.describe_content}), so
   # a tool declaring nothing — every MCP tool, every third-party +Tool+ — still
   # renders.
   #
   # Never the *model*: a narrated status line is steerable through a fetched
   # page. {Result} carries the two rules a summary obeys.
+  #
+  # == One return type
+  #
+  # An +execute+ returns a {Result}, always — the observation plus its display
+  # line, with {Result.error} for a recoverable failure. {#run} enforces it,
+  # wrapping a bare String from a third-party +Tool+ rather than refusing it.
+  #
+  # There is no second success shape to choose between: an *attachment*
+  # observation (the image {Pikuri::Workspace::Read} answers for a PNG) is a
+  # +Result+ whose {Result#content} is a +RubyLLM::Content+, and the sole place
+  # that distinction is visible is the four-line wrapper in
+  # {#to_ruby_llm_tool}, which no tool reads.
   #
   # == Sharing: may one instance serve two agents?
   #
@@ -124,11 +135,7 @@ module Pikuri
     attr_reader :parameters
 
     # @return [Proc] callable invoked with validated keyword arguments,
-    #   returning the observation — usually a +String+; a {Result} to carry a
-    #   display line beside it (see +== Display lines+); or a
-    #   +RubyLLM::Content+ with attachments for multimodal observations (e.g.
-    #   {Pikuri::Workspace::Read} on a PNG), which +RubyLLM::Chat+ turns into
-    #   the right image/document blocks.
+    #   returning the observation as a {Result} — see +== One return type+.
     attr_reader :execute
 
     # @return [Tool::TrifectaLegs] which lethal-trifecta legs this tool
@@ -140,9 +147,8 @@ module Pikuri
     #   to decide when to call the tool
     # @param parameters [Tool::Parameters] declared schema
     # @param execute [Proc] callable invoked with validated keyword arguments,
-    #   returning a +String+, a {Result} or a +RubyLLM::Content+ (see
-    #   {#execute}). Recoverable failures return +"Error: <message>"+ rather
-    #   than raise.
+    #   returning a {Result} (see {#execute}). Recoverable failures answer
+    #   {Result.error} rather than raise.
     # @param trifecta_legs [Tool::TrifectaLegs] legs this tool contributes.
     #   Compute them here rather than at a later resolution pass: construction
     #   *is* wiring time, since every collaborator that decides a leg (the
@@ -349,20 +355,13 @@ module Pikuri
     end
 
     # The display line for an observation this tool returned as a bare String —
-    # {.describe_content} by default. Override where the summary genuinely *is*
-    # a function of the content (+calculator+: the computed value); where it is
-    # a function of structure the content has already lost, return a {Result}
-    # from +execute+ instead.
-    #
-    # @param content [String, RubyLLM::Content] what +execute+ returned
-    # @return [String] one line
-    def describe_result(content)
-      Tool.describe_content(content)
-    end
-
     # Validate +args+ against {#parameters} and forward them as kwargs to
-    # {#execute}. Validation failures come back as +"Error: <message>"+ Strings
-    # for the next observation; everything else bubbles up.
+    # {#execute}, always answering a {Result}. Validation failures come back as
+    # {Result.error} for the next observation; everything else bubbles up.
+    #
+    # A bare String from +execute+ is wrapped here, with
+    # {.describe_content}'s generic display line — that is the floor a
+    # third-party +Tool+ subclass lands on, not a shape pikuri's own tools use.
     #
     # @param args [Hash] raw arguments supplied by the LLM
     # @param context [ExecuteContext] this invocation's environment, forwarded
@@ -372,17 +371,17 @@ module Pikuri
     #   method *any* keyword and Ruby 3 re-reads the bare hash in
     #   +run('text' => 'hi')+ as keywords, so +args+ arrives empty at every
     #   existing call site.
-    # @return [String, Result, RubyLLM::Content] tool observation — validation
-    #   failures always +"Error: ..."+; success is whatever +execute+ returns.
+    # @return [Result] tool observation.
     def run(args, context = ExecuteContext.default)
       validated = @parameters.validate(args)
-      if @wants_context
-        @execute.call(**validated, context: context)
-      else
-        @execute.call(**validated)
-      end
+      raw = if @wants_context
+              @execute.call(**validated, context: context)
+            else
+              @execute.call(**validated)
+            end
+      raw.is_a?(Result) ? raw : Result.new(content: raw, summary: Tool.describe_content(raw))
     rescue Tool::Parameters::ValidationError => e
-      "Error: #{e.message}"
+      Result.error(e.message)
     end
 
     # Build a synthetic +RubyLLM::Tool+ subclass wrapping this Tool — what
@@ -395,6 +394,24 @@ module Pikuri
     # The wrapper instance answers +#pikuri_tool+ with this Tool, so a holder of
     # ruby_llm's +Chat#tools+ table can get from a called name back to
     # {#display_name} / {#describe_call}.
+    #
+    # == The one place a Result is unwrapped
+    #
+    # ruby_llm hands the *same* value to +after_tool_result+ and to the +:tool+
+    # message it builds, where the test is +content_like?+ — an +is_a?+ against
+    # +RubyLLM::Content+ that a {Result} cannot pass. So an attachment
+    # {Result#content} is handed over bare and its display line is derived
+    # ({.describe_content}: mime plus size, which is all the structure there
+    # is); text keeps the +Result+, so {Result#summary} reaches the listeners
+    # verbatim. Those two lines below are the whole boundary — {#run} answers a
+    # +Result+ either way, and no tool sees this.
+    #
+    # Do not "simplify" it by teaching {Result#to_s} to answer the
+    # +RubyLLM::Content+: ruby_llm's +tool_payload.to_s+ would pass it through
+    # and the attachment would survive, but a +to_s+ that breaks its contract
+    # renders as +#<Pikuri::Tool::Result:0x…>+ under interpolation and raises
+    # +TypeError+ under +String()+ — silently, in whichever caller reaches it
+    # first.
     #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.
@@ -410,7 +427,10 @@ module Pikuri
         params(schema)
 
         define_singleton_method(:name) { tool_name }
-        define_method(:execute) { |**args| pikuri_tool.run(args, context) }
+        define_method(:execute) do |**args|
+          result = pikuri_tool.run(args, context)
+          result.attachment? ? result.content : result
+        end
         define_method(:pikuri_tool) { pikuri_tool }
       end
     end

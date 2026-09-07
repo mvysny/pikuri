@@ -70,15 +70,15 @@ module Pikuri
 
       # @param recurrence [String, nil] +"recurring"+, +"single"+, or +nil+ for
       #   both (mapped to the backend's tri-state +recurring:+ flag).
-      # @return [Pikuri::Tool::Result, String] the events as a
-      #   {Pikuri::Tool::Result} (+"Found 8 events"+), or a bare +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the events (+"Found 8 events"+), or
+      #   {Pikuri::Tool::Result.error}.
       def self.run_search(backend:, query:, after:, before:, recurrence: nil, limit:)
         # Refuse a match-everything call: with no query and no date bound this
         # would dump every cached event. "What's on my calendar" should name a
         # span — steer the model to add after/before (e.g. this week). A lone
         # recurrence filter is still too broad to stand in for a span.
         if [query, after, before].all? { |v| v.to_s.strip.empty? }
-          return 'Error: give a query and/or a date range (after/before) to search for'
+          return Pikuri::Tool::Result.error('give a query and/or a date range (after/before) to search for')
         end
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
@@ -101,7 +101,7 @@ module Pikuri
           summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'event')}#{'+' if has_more}"
         )
       rescue ArgumentError => e
-        "Error: bad date filter (#{e.message})."
+        Pikuri::Tool::Result.error("bad date filter (#{e.message}).")
       end
 
       # The leading line: affirm completeness when every event fit ("all

@@ -147,15 +147,15 @@ module Pikuri
         #   +.gitignore+'d files are listed too. Defaults to false.
         # @return [String]
         def self.search(workspace:, pattern:, path:, include_gitignored: false)
-          return 'Error: empty pattern.' if pattern.empty?
+          return Tool::Result.error('empty pattern.') if pattern.empty?
 
           search_target = '.'
           resolved_root = workspace.project_root
           if path
             resolved = workspace.resolve_for_read(path)
-            return "Error: path not found: #{path}" unless resolved.exist?
+            return Tool::Result.error("path not found: #{path}") unless resolved.exist?
             if resolved.file?
-              return "Error: #{path} is a file, not a directory; use the read tool to view it."
+              return Tool::Result.error("#{path} is a file, not a directory; use the read tool to view it.")
             end
 
             resolved_root = resolved
@@ -165,7 +165,7 @@ module Pikuri
 
           if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
                                                      verb: 'list'))
-            return refusal
+            return Tool::Result.error(refusal)
           end
 
           argv = build_argv(path: search_target, include_gitignored: include_gitignored,
@@ -181,10 +181,10 @@ module Pikuri
           when 1
             no_match_message(pattern: pattern, path: path)
           else
-            "Error: ripgrep: #{truncate_error(result.output, exit_code)}"
+            Tool::Result.error("ripgrep: #{truncate_error(result.output, exit_code)}")
           end
         rescue Filesystem::Error => e
-          "Error: #{e.message}"
+          Tool::Result.error(e.message)
         end
 
         # @return [Integer] flags for {File.fnmatch?}: +FNM_PATHNAME+ for

@@ -224,14 +224,14 @@ module Pikuri
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
-      # @return [Pikuri::Tool::Result, String] the transcript as a
-      #   {Pikuri::Tool::Result} (+"exit 0, 41 lines"+) once the command ran; a
-      #   bare +"Error: ..."+ on a rejection, a timeout or bad inputs
+      # @return [Pikuri::Tool::Result] the transcript (+"exit 0, 41 lines"+)
+      #   once the command ran, or {Pikuri::Tool::Result.error} on a rejection,
+      #   a timeout or bad inputs
       def self.run(filesystem:, confirmer:, command:, description:, timeout:,
                    sandbox: Sandbox::NONE, passive_detector: nil)
-        return 'Error: empty bash command.' if command.strip.empty?
-        return "Error: timeout must be >= 1, got #{timeout}" if timeout < 1
-        return "Error: timeout must be <= #{MAX_TIMEOUT}, got #{timeout}" if timeout > MAX_TIMEOUT
+        return Pikuri::Tool::Result.error('empty bash command.') if command.strip.empty?
+        return Pikuri::Tool::Result.error("timeout must be >= 1, got #{timeout}") if timeout < 1
+        return Pikuri::Tool::Result.error("timeout must be <= #{MAX_TIMEOUT}, got #{timeout}") if timeout > MAX_TIMEOUT
 
         # A command the detector deems passive (provably observe-only) runs
         # without a prompt; everything else is confirmed by the human.
@@ -239,9 +239,9 @@ module Pikuri
           request = compose_request(command: command, description: description, timeout: timeout)
           case confirmer.ask(request: request)
           in Pikuri::Workspace::Confirmer::Rejected(reason:)
-            msg = +'Error: user declined the bash command.'
+            msg = +'user declined the bash command.'
             msg << " Reason: #{reason}" if reason && !reason.empty?
-            return msg
+            return Pikuri::Tool::Result.error(msg)
           in Pikuri::Workspace::Confirmer::Approved
             # fall through to execution (the command is non-editable, so the
             # approved detail is the same command we already hold)
@@ -261,8 +261,8 @@ module Pikuri
         # 124 (GNU SIGTERM), 137 (GNU SIGKILL), 125 (uutils-coreutils
         # 0.2.2 bug when --kill-after is set). See class header.
         if exit_code == 124 || exit_code == 137 || exit_code == 125
-          "Error: command timed out after #{timeout}s (sent SIGTERM, then SIGKILL).\n\n" \
-            "$ #{visible(command)}\n#{output}"
+          Pikuri::Tool::Result.error("command timed out after #{timeout}s (sent SIGTERM, then SIGKILL).\n\n" \
+                                     "$ #{visible(command)}\n#{output}")
         else
           Pikuri::Tool::Result.new(
             content: "$ #{visible(command)}\n#{output}\n\nexit status: #{exit_code}",

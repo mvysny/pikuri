@@ -54,14 +54,13 @@ module Pikuri
 
       # @param list [List]
       # @param id [Integer]
-      # @return [Pikuri::Tool::Result, String] the rendered list as a
-      #   {Pikuri::Tool::Result} (+"3 tasks, 1 done"+); a bare +"Error: ..."+ for
-      #   an id the list does not hold
+      # @return [Pikuri::Tool::Result] the rendered list (+"3 tasks, 1 done"+),
+      #   or {Pikuri::Tool::Result.error} for an id the list does not hold
       def self.execute(list:, id:)
         list.set_status(id: id, status: 'completed')
         Pikuri::Tool::Result.new(content: list.render, summary: list.summary)
       rescue ItemNotFound
-        "Error: no such task id: #{id}. Current list:\n#{list.render}"
+        Pikuri::Tool::Result.error("no such task id: #{id}. Current list:\n#{list.render}")
       end
     end
   end

@@ -68,14 +68,13 @@ module Pikuri
       # @param read_only [Pikuri::Workspace::ReadOnly]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param plan [String] the LLM-authored plan to show the user
-      # @return [Pikuri::Tool::Result, String] tool observation — a
-      #   {Pikuri::Tool::Result} (+"Plan mode off"+ / +"Plan not approved"+)
-      #   once the user has answered; a bare +"Error: ..."+ when there was no
-      #   plan mode to exit
+      # @return [Pikuri::Tool::Result] +"Plan mode off"+ / +"Plan not
+      #   approved"+ once the user has answered, or
+      #   {Pikuri::Tool::Result.error} when there was no plan mode to exit
       def self.run(read_only:, confirmer:, plan:)
         unless read_only.active?
-          return 'Error: not in plan mode, so there is nothing to exit. ' \
-                 'Proceed with the work directly.'
+          return Pikuri::Tool::Result.error('not in plan mode, so there is nothing to exit. ' \
+                                            'Proceed with the work directly.')
         end
 
         request = Pikuri::Workspace::Confirmer::Request.new(

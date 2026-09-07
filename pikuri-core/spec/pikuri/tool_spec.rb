@@ -21,10 +21,10 @@ RSpec.describe Pikuri::Tool do
 
   describe '#run' do
     it 'validates and forwards kwargs to the execute Proc' do
-      assert_equal 'echo: hi', tool.run('text' => 'hi')
+      assert_equal 'echo: hi', tool.run('text' => 'hi').content
     end
 
-    it 'returns an "Error: ..." string for invalid arguments and does not call execute' do
+    it 'answers Result.error for invalid arguments and does not call execute' do
       called = false
       tool_with_spy = described_class.new(
         name: 'spy',
@@ -33,8 +33,9 @@ RSpec.describe Pikuri::Tool do
         execute: ->(text:) { called = true; text }
       )
       result = tool_with_spy.run({})
-      assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
-      assert_includes result, '`text`'
+      assert result.error?, "expected a Result.error, got #{result.inspect}"
+      assert_includes result.content, '`text`'
+      assert_equal result.summary, result.content.lines.first.strip
       refute called, 'execute must not be called when validation fails'
     end
 
@@ -86,6 +87,7 @@ RSpec.describe Pikuri::Tool do
       # assertion.
       assert_equal 'hi', tool_with(->(text:) { text })
                          .run({ 'text' => 'hi' }, context_with(Pikuri::Agent::Control::Cancellable.new))
+                         .content
     end
 
     it 'fails loudly when the flag and the signature disagree' do
@@ -98,7 +100,7 @@ RSpec.describe Pikuri::Tool do
     it 'refuses a context the LLM tries to supply as an argument' do
       result = tool_with(->(text:, context:) { [text, context] }, wants_context: true)
                .run('text' => 'hi', 'context' => 'pwned')
-      assert result.start_with?('Error:'), "expected a validation error, got #{result.inspect}"
+      assert result.error?, "expected a validation error, got #{result.inspect}"
     end
 
     it 'gives each agent its own wrapper around one shared tool' do
@@ -133,7 +135,7 @@ RSpec.describe Pikuri::Tool do
     end
 
     it 'routes a valid Chat#call through to the execute Proc' do
-      assert_equal 'echo: hello', rl_tool.new.call('text' => 'hello')
+      assert_equal 'echo: hello', rl_tool.new.call('text' => 'hello').content
     end
 
     it 'lets pikuri\'s validator (not ruby_llm\'s) produce the LLM-facing error' do
@@ -145,16 +147,16 @@ RSpec.describe Pikuri::Tool do
       ).to_ruby_llm_tool
 
       missing = typed.new.call({})
-      assert missing.start_with?('Error:'), "expected pikuri-style error, got #{missing.inspect}"
-      assert_includes missing, 'Missing required parameter `count`'
+      assert missing.error?, "expected pikuri-style error, got #{missing.inspect}"
+      assert_includes missing.content, 'Missing required parameter `count`'
 
       mistyped = typed.new.call('count' => 'banana')
-      assert mistyped.start_with?('Error:'), "expected pikuri-style error, got #{mistyped.inspect}"
-      assert_includes mistyped, '`count`'
-      assert_includes mistyped, 'integer'
+      assert mistyped.error?, "expected pikuri-style error, got #{mistyped.inspect}"
+      assert_includes mistyped.content, '`count`'
+      assert_includes mistyped.content, 'integer'
 
       misspelled = typed.new.call('counts' => 1)
-      assert_includes misspelled, 'Did you mean `count`?'
+      assert_includes misspelled.content, 'Did you mean `count`?'
     end
   end
 end

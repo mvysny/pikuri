@@ -81,8 +81,8 @@ RSpec.describe Pikuri::Skill::SkillTool do
       tool = described_class.new(activation: activation)
       out = tool.run({})
 
-      assert out.start_with?('Error:'), out
-      assert out.include?('name'), out
+      assert out.error?, out.inspect
+      assert out.content.include?('name'), out.content
     end
   end
 

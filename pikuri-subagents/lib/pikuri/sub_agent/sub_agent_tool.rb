@@ -148,9 +148,9 @@ module Pikuri
               in Pikuri::Workspace::Confirmer::Approved(new_request_detail:)
                 task = new_request_detail
               in Pikuri::Workspace::Confirmer::Rejected(reason:)
-                msg = +"Error: user declined delegation to #{name}."
+                msg = +"user declined delegation to #{name}."
                 msg << " Reason: #{reason}" if reason && !reason.empty?
-                return msg
+                return Pikuri::Tool::Result.error(msg)
               end
             end
 

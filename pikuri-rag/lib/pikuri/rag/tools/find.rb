@@ -88,14 +88,13 @@ module Pikuri
         # @param backend [#find]
         # @param root [Pathname]
         # @param terms [String] as supplied by the LLM.
-        # @return [Pikuri::Tool::Result, String] the listing as a
-        #   {Pikuri::Tool::Result} (+"Found 8 documents"+), or a bare
-        #   +"Error: ..."+.
+        # @return [Pikuri::Tool::Result] the listing (+"Found 8 documents"+),
+        #   or {Pikuri::Tool::Result.error}.
         def self.execute(backend:, root:, terms:)
           phrases = Pikuri::Rag::Query.terms(terms)
           if phrases.empty?
-            return "Error: no searchable terms in #{terms.to_s.strip.inspect} — " \
-                   'pass a word, a name or an id.'
+            return Pikuri::Tool::Result.error("no searchable terms in #{terms.to_s.strip.inspect} — " \
+                                              'pass a word, a name or an id.')
           end
 
           listed = phrases.join(' ')

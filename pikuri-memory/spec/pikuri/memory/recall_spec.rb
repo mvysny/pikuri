@@ -65,11 +65,11 @@ describe Pikuri::Memory::Recall do
     client = fake_client_class.new(error: RuntimeError.new('mem0 down'))
     out = described_class.execute(client: client, user_id: 'u', topic: 'x')
 
-    assert_match(/\AError: memory recall failed: mem0 down/, out)
+    assert_match(/\AError: memory recall failed: mem0 down/, out.content)
   end
 
   it 'rejects a blank topic' do
     out = described_class.execute(client: fake_client_class.new, user_id: 'u', topic: '  ')
-    assert_equal 'Error: topic is empty', out
+    assert_equal 'Error: topic is empty', out.content
   end
 end

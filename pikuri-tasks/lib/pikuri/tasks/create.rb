@@ -64,26 +64,28 @@ module Pikuri
       # @param list [List]
       # @param items [Array<String>] raw +items+ argument from the LLM
       #   (already type-validated by {Pikuri::Tool::Parameters}).
-      # @return [Pikuri::Tool::Result, String] {List#render} as a
-      #   {Pikuri::Tool::Result} (+"3 tasks, 1 done"+) on success, or a bare
-      #   +"Error: ..."+ string the LLM can react to.
+      # @return [Pikuri::Tool::Result] {List#render} (+"3 tasks, 1 done"+) on
+      #   success, or {Pikuri::Tool::Result.error} the LLM can react to.
       def self.execute(list:, items:)
-        return 'Error: task_create requires at least one item' if items.empty?
+        return Pikuri::Tool::Result.error('task_create requires at least one item') if items.empty?
 
         cleaned = items.map(&:strip)
         blank = cleaned.index('')
-        return "Error: blank item at index #{blank} — every element must be non-blank task text" if blank
+        if blank
+          return Pikuri::Tool::Result.error("blank item at index #{blank} — every element " \
+                                            'must be non-blank task text')
+        end
 
         seen_in_batch = {}
         cleaned.each do |c|
-          return "Error: duplicate item in batch: '#{c}'" if seen_in_batch[c]
+          return Pikuri::Tool::Result.error("duplicate item in batch: '#{c}'") if seen_in_batch[c]
 
           seen_in_batch[c] = true
         end
 
         existing = list.items.map(&:content)
         clash = cleaned.find { |c| existing.include?(c) }
-        return "Error: task already exists: '#{clash}'" if clash
+        return Pikuri::Tool::Result.error("task already exists: '#{clash}'") if clash
 
         cleaned.each { |c| list.add(c) }
         Pikuri::Tool::Result.new(content: list.render, summary: list.summary)

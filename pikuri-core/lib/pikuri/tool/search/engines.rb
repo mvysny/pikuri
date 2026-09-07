@@ -286,7 +286,7 @@ module Pikuri
             summary: "Returned #{Pikuri::Tool.pluralize(count_rendered(result), 'search result')}"
           )
         rescue Unavailable => e
-          "Error: #{e.message}"
+          Pikuri::Tool::Result.error(e.message)
         end
 
         private

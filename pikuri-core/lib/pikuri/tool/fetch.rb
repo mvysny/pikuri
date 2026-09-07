@@ -57,16 +57,15 @@ module Pikuri
       # @param url [String] absolute HTTP(S) URL
       # @param max_chars [Integer] body cap, clamped to +[1, {MAX_MAX_CHARS}]+;
       #   default {DEFAULT_MAX_CHARS}. Over the cap, output is cut with a marker.
-      # @return [Tool::Result, String] the body, possibly truncated, as a
-      #   {Pikuri::Tool::Result} (+"Fetched 4.2 kB"+); a bare +"Error: ..."+ on
-      #   a recoverable failure
+      # @return [Tool::Result] the body, possibly truncated (+"Fetched 4.2 kB"+),
+      #   or {Pikuri::Tool::Result.error} on a recoverable failure
       def self.fetch(url, max_chars: DEFAULT_MAX_CHARS)
         max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
         body = cache.fetch(url) { download(url) }
         Tool::Result.new(content: truncate(body, max_chars),
                          summary: Scraper.transfer_summary(verb: 'Fetched', full: body, max_chars: max_chars))
       rescue Scraper::FetchError => e
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       end
 
       # GET +url+ and verify the content-type is textual. Always hits the

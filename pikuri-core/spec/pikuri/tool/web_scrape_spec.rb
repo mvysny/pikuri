@@ -45,7 +45,7 @@ RSpec.describe Pikuri::Tool::WebScrape, '.visit' do
     assert_includes result, 'truncated at 10 of 100'
   end
 
-  it 'returns an "Error: ..." string when Scraper raises FetchError' do
+  it 'answers Result.error when Scraper raises FetchError' do
     stub_visit { |url| raise Pikuri::Tool::Scraper::FetchError, "HTTP 403 fetching #{url}: forbidden" }
     result = described_class.visit('https://example.com/page').to_s
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
@@ -92,15 +92,15 @@ RSpec.describe 'Pikuri::Tool::WEB_SCRAPE' do
     assert_equal 'web_scrape', Pikuri::Tool::WEB_SCRAPE.name
   end
 
-  it 'returns an "Error: ..." string when Scraper raises FetchError, instead of crashing the agent loop' do
+  it 'answers Result.error when Scraper raises FetchError, instead of crashing the agent loop' do
     original = Pikuri::Tool::Scraper.method(:visit)
     Pikuri::Tool::Scraper.singleton_class.define_method(:visit) do |url|
       raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found"
     end
     begin
       result = Pikuri::Tool::WEB_SCRAPE.run('url' => 'https://example.com/missing')
-      assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
-      assert_includes result, 'HTTP 404'
+      assert result.error?, "expected a Result.error, got #{result.inspect}"
+      assert_includes result.content, 'HTTP 404'
     ensure
       Pikuri::Tool::Scraper.singleton_class.define_method(:visit, original)
     end

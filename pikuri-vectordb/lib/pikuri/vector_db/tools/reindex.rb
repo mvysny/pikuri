@@ -83,9 +83,8 @@ module Pikuri
         # a Pikuri::Tool wrapper.
         #
         # @param indexer [Indexer]
-        # @return [Pikuri::Tool::Result, String] the observation as a
-        #   {Pikuri::Tool::Result} (+"Indexed 412 chunks"+), or a bare
-        #   +"Error: ..."+ string.
+        # @return [Pikuri::Tool::Result] the observation (+"Indexed 412
+        #   chunks"+), or {Pikuri::Tool::Result.error}.
         def self.execute(indexer:)
           total = indexer.reindex!
           content =
@@ -97,7 +96,7 @@ module Pikuri
           Pikuri::Tool::Result.new(content: content,
                                    summary: "Indexed #{Pikuri::Tool.pluralize(total, 'chunk')}")
         rescue RuntimeError => e
-          "Error: reindex failed: #{e.message}"
+          Pikuri::Tool::Result.error("reindex failed: #{e.message}")
         end
       end
     end

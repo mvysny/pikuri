@@ -81,11 +81,10 @@ module Pikuri
       # @param client [Mem0Client]
       # @param user_id [String]
       # @param topic [String]
-      # @return [Pikuri::Tool::Result, String] the formatted observation as a
-      #   {Pikuri::Tool::Result} (+"Recalled 3 memories"+), or a bare
-      #   +"Error: ..."+ observation.
+      # @return [Pikuri::Tool::Result] the formatted observation (+"Recalled 3
+      #   memories"+), or {Pikuri::Tool::Result.error}.
       def self.execute(client:, user_id:, topic:)
-        return 'Error: topic is empty' if topic.nil? || topic.strip.empty?
+        return Pikuri::Tool::Result.error('topic is empty') if topic.nil? || topic.strip.empty?
 
         records = client.search(query: topic, user_id: user_id, top_k: TOP_K)
         if records.empty?
@@ -96,7 +95,7 @@ module Pikuri
         format_observation(records)
       rescue RuntimeError => e
         LOGGER.warn("recall failed: #{e.message}")
-        "Error: memory recall failed: #{e.message}"
+        Pikuri::Tool::Result.error("memory recall failed: #{e.message}")
       end
 
       # Format the recalled memories as a header + one line per memory,

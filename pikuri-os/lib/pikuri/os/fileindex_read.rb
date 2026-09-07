@@ -74,17 +74,17 @@ module Pikuri
       # @param backend [Module] the file-index backend to read from
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] max lines
-      # @return [Pikuri::Tool::Result, String] the cat-n windowed text as a
-      #   {Pikuri::Tool::Result} (+"Read 214 lines"+), or a bare +"Error: ..."+
+      # @return [Pikuri::Tool::Result] the cat-n windowed text (+"Read 214
+      #   lines"+), or {Pikuri::Tool::Result.error}
       def self.read(path:, backend:, offset: 1, limit: DEFAULT_LIMIT)
-        return "Error: offset must be >= 1, got #{offset}" if offset < 1
-        return "Error: limit must be >= 1, got #{limit}"   if limit < 1
+        return Pikuri::Tool::Result.error("offset must be >= 1, got #{offset}") if offset < 1
+        return Pikuri::Tool::Result.error("limit must be >= 1, got #{limit}") if limit < 1
 
         text = backend.read_text(path)
         if text.nil?
-          return "Error: #{path} is not in the index (only indexed folders are " \
-                 'available; PDFs and office docs are included). For a live or ' \
-                 'system text file, use the read tool.'
+          return Pikuri::Tool::Result.error("#{path} is not in the index (only indexed folders are " \
+                                            'available; PDFs and office docs are included). For a live or ' \
+                                            'system text file, use the read tool.')
         end
 
         page = Pikuri::Extractor.extract_paged(
@@ -97,14 +97,17 @@ module Pikuri
       # mirroring {Pikuri::Workspace::Read}'s formatting.
       #
       # @param page [Pikuri::Extractor::Page]
-      # @return [Pikuri::Tool::Result, String] the window, carrying +"Read N
-      #   lines"+; a bare +"Error: ..."+ / empty-file note otherwise
+      # @return [Pikuri::Tool::Result] the window (+"Read N lines"+), the
+      #   no-indexed-text note, or {Pikuri::Tool::Result.error}
       def self.render_page(page)
-        return '(No indexed text for this file.)' if page.total_lines.zero?
+        if page.total_lines.zero?
+          note = '(No indexed text for this file.)'
+          return Pikuri::Tool::Result.new(content: note, summary: note)
+        end
 
         if page.lines.empty?
-          return "Error: offset #{page.start_line} is beyond end of file " \
-                 "(#{page.total_lines} lines total)"
+          return Pikuri::Tool::Result.error("offset #{page.start_line} is beyond end of file " \
+                                            "(#{page.total_lines} lines total)")
         end
 
         last = page.start_line + page.lines.length - 1

@@ -283,7 +283,7 @@ describe Pikuri::Lsp::LspTool do
           answer = tool.run('operation' => 'hover', 'symbol' => 'call',
                             'file' => File.join(File.realpath(other), 'elsewhere.rb'), 'line' => 1)
 
-          assert_match(/is outside the workspace root the language servers index/, answer)
+          assert_match(/is outside the workspace root the language servers index/, answer.content)
           assert_empty fakes['ruby'].received.select { |message| message['method'] == 'textDocument/didOpen' }
         end
       end

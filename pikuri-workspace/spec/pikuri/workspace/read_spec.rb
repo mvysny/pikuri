@@ -241,18 +241,20 @@ RSpec.describe Pikuri::Workspace::Read do
       path
     end
 
-    it 'returns a RubyLLM::Content with the file attached and a metadata note' do
+    it 'answers a Result whose content is a RubyLLM::Content with the file attached' do
       path = write_image('shot.png', PNG_MAGIC)
 
       result = described_class.read(workspace: workspace, path: 'shot.png', offset: 1, limit: 2000)
 
-      assert_kind_of RubyLLM::Content, result
-      assert_equal 1, result.attachments.length
-      attachment = result.attachments.first
+      assert result.attachment?, "expected an attachment Result, got #{result.inspect}"
+      content = result.content
+      assert_kind_of RubyLLM::Content, content
+      assert_equal 1, content.attachments.length
+      attachment = content.attachments.first
       assert_equal path.to_s, attachment.source.to_s
       assert_equal 'image/png', attachment.mime_type
-      assert_includes result.text, 'Read image: shot.png'
-      assert_includes result.text, "(#{path.size} bytes, image/png)"
+      assert_includes content.text, 'Read image: shot.png'
+      assert_includes content.text, "(#{path.size} bytes, image/png)"
     end
 
     it 'refuses images larger than MAX_IMAGE_BYTES with an Error string the model can react to' do
@@ -274,7 +276,7 @@ RSpec.describe Pikuri::Workspace::Read do
 
       result = described_class.read(workspace: workspace, path: 'nul.png', offset: 1, limit: 2000)
 
-      assert_kind_of RubyLLM::Content, result
+      assert_kind_of RubyLLM::Content, result.content
     end
 
     it 'leaves non-image binaries (no magic) on the binary refusal path' do

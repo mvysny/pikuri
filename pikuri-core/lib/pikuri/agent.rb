@@ -665,7 +665,7 @@ module Pikuri
         tool = pikuri_tool_for(tc.name)
         display_name = tool ? tool.display_name : Tool.display_name_for(tc.name)
         argument = tool ? tool.describe_call(tc.arguments) : Tool.describe_arguments(tc.arguments)
-        @pending_tool_call = { tool_call_id: tc.id, name: tc.name, tool: tool, summary: nil }
+        @pending_tool_call = { tool_call_id: tc.id, name: tc.name, summary: nil }
         record_tool_call_lines(tc.id, display_name: display_name, argument: argument)
         @listeners.emit(Event::ToolCall.new(
                           tool_call_id: tc.id, name: tc.name, arguments: tc.arguments,
@@ -676,7 +676,7 @@ module Pikuri
       end
       @chat.after_tool_result do |result|
         pending = @pending_tool_call || {}
-        summary = summarize_tool_result(result, pending[:tool])
+        summary = summarize_tool_result(result)
         pending[:summary] = summary
         @listeners.emit(Event::ToolResult.new(
                           tool_call_id: pending[:tool_call_id], name: pending[:name],
@@ -968,14 +968,17 @@ module Pikuri
       nil
     end
 
+    # A {Pikuri::Tool} answers its own summary; everything else is derived. The
+    # +else+ is not a pikuri tool falling back — it is the three payloads that
+    # never went through {Pikuri::Tool#run}: an MCP tool's String, ruby_llm's
+    # unavailable-tool +Hash+, and an attachment +RubyLLM::Content+ the wrapper
+    # unwrapped ({Pikuri::Tool#to_ruby_llm_tool}).
+    #
     # @param result [Pikuri::Tool::Result, String, RubyLLM::Content, Hash] what
-    #   the tool returned.
-    # @param tool [Pikuri::Tool, nil] the tool that ran, when there was one.
+    #   ruby_llm handed +after_tool_result+.
     # @return [String] the one-line result summary for the listener stream.
-    def summarize_tool_result(result, tool)
-      return result.summary if result.is_a?(Tool::Result)
-
-      tool ? tool.describe_result(result) : Tool.describe_content(result)
+    def summarize_tool_result(result)
+      result.is_a?(Tool::Result) ? result.summary : Tool.describe_content(result)
     end
 
     # Whether a turn's thinking may be replayed to +current+ — true only where

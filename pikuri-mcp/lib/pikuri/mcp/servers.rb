@@ -410,11 +410,13 @@ module Pikuri
           execute: lambda { |id:|
             unless servers.live_ids.include?(id)
               available = servers.live_ids.empty? ? 'none' : servers.live_ids.join(', ')
-              next "Error: unknown MCP server id #{id.inspect}. Available: #{available}."
+              next Pikuri::Tool::Result.error("unknown MCP server id #{id.inspect}. " \
+                                              "Available: #{available}.")
             end
 
             if activated.include?(id)
-              next "Error: server '#{id}' is already connected; its tools are in your toolset, call them directly."
+              next Pikuri::Tool::Result.error("server '#{id}' is already connected; its tools " \
+                                              'are in your toolset, call them directly.')
             end
 
             count = servers.register_tools_with_agent(id, ctx)

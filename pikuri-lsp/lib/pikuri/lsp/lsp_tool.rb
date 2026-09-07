@@ -165,9 +165,9 @@ module Pikuri
       # @param symbol [String]
       # @param file [String, nil]
       # @param line [Integer, nil]
-      # @return [Pikuri::Tool::Result, String] the observation — a
-      #   {Pikuri::Tool::Result} (+"3 results"+) from the renderer, or a bare
-      #   +"Error: ..."+ when the call was refused.
+      # @return [Pikuri::Tool::Result] the renderer's observation (+"3
+      #   results"+), or {Pikuri::Tool::Result.error} when the call was
+      #   refused.
       def navigate(operation:, symbol:, file: nil, line: nil)
         Navigator.new(servers: @servers, filesystem: @filesystem,
                       on_progress: @on_progress, cancellable: @cancellable)

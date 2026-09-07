@@ -121,12 +121,19 @@ RSpec.describe 'Pikuri::Tool display lines' do
     end
   end
 
-  describe '#display_name / #describe_result defaults' do
-    it 'derive from the name and the observation' do
-      echo = tool('web_search')
+  describe 'the mechanical defaults' do
+    it 'derive the display name from the tool name' do
+      assert_equal 'WebSearch', tool('web_search').display_name
+    end
 
-      assert_equal 'WebSearch', echo.display_name
-      assert_equal 'Returned 2 bytes', echo.describe_result('ok')
+    it 'derive a summary for a bare String an execute returned' do
+      echo = Pikuri::Tool.new(
+        name: 'echo', description: 'Echoes.',
+        parameters: Pikuri::Tool::Parameters.build { |p| p.required_string :text, 't' },
+        execute: ->(text:) { text }
+      )
+
+      assert_equal 'Returned 2 bytes', echo.run('text' => 'ok').summary
     end
   end
 

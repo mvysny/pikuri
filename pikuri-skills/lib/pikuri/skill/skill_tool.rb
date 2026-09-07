@@ -84,7 +84,8 @@ module Pikuri
               # one refused guess dumps every name the prompt withheld.
               available = activation.names
               list = available.empty? ? 'none' : available.join(', ')
-              next "Error: skill '#{name}' not found. Available skills: #{list}."
+              next Pikuri::Tool::Result.error("skill '#{name}' not found. " \
+                                              "Available skills: #{list}.")
             end
 
             body = Pikuri::Skill::Renderer.format_skill(loaded)

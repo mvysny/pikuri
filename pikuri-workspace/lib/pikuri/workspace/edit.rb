@@ -148,33 +148,36 @@ module Pikuri
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirmer [Confirmer, nil] see {#initialize} (default +nil+).
-      # @return [Tool::Result, String] the observation — a
-      #   {Pikuri::Tool::Result} (+"Added 2 lines, removed 3 lines"+) once the
-      #   edit lands, a bare +"Error: ..."+ or the confirmer's decline
-      #   otherwise. The counts are exact without a differ: the replaced text
-      #   and its substitute are both arguments.
+      # @return [Tool::Result] +"Added 2 lines, removed 3 lines"+ once the edit
+      #   lands; {Pikuri::Tool::Result.error} for a refusal or the confirmer's
+      #   decline. The counts are exact without a differ: the replaced text and
+      #   its substitute are both arguments.
       def self.edit(workspace:, path:, old_string:, new_string:, replace_all:,
                     occurrence: nil, read_only: nil, confirmer: nil)
-        return "Error: cannot edit #{path} — #{read_only.message}" if read_only&.active?
+        return Tool::Result.error("cannot edit #{path} — #{read_only.message}") if read_only&.active?
 
-        return 'Error: old_string is empty; use the write tool to create or overwrite a file.' if old_string.empty?
-        return 'Error: old_string and new_string are identical — this edit is a no-op.' if old_string == new_string
+        if old_string.empty?
+          return Tool::Result.error('old_string is empty; use the write tool to create or overwrite a file.')
+        end
+        if old_string == new_string
+          return Tool::Result.error('old_string and new_string are identical — this edit is a no-op.')
+        end
 
         if occurrence && replace_all
-          return 'Error: occurrence and replace_all are mutually exclusive; ' \
-                 'drop one — occurrence picks a single match, replace_all takes them all.'
+          return Tool::Result.error('occurrence and replace_all are mutually exclusive; ' \
+                                    'drop one — occurrence picks a single match, replace_all takes them all.')
         end
-        return "Error: occurrence must be 1 or greater, got #{occurrence}." if occurrence && occurrence < 1
+        return Tool::Result.error("occurrence must be 1 or greater, got #{occurrence}.") if occurrence && occurrence < 1
 
         resolved = workspace.resolve_for_write(path)
-        return "Error: file not found: #{path}" unless resolved.exist?
-        return "Error: #{path} is a directory" if resolved.directory?
+        return Tool::Result.error("file not found: #{path}") unless resolved.exist?
+        return Tool::Result.error("#{path} is a directory") if resolved.directory?
 
-        return "Error: cannot edit binary file: #{path}" if Pikuri::FileType.binary?(resolved)
+        return Tool::Result.error("cannot edit binary file: #{path}") if Pikuri::FileType.binary?(resolved)
 
         unless workspace.read?(resolved)
-          return "Error: #{path} has not been read this conversation; use the read tool " \
-                 'first so the edit applies to the current bytes.'
+          return Tool::Result.error("#{path} has not been read this conversation; use the read tool " \
+                                    'first so the edit applies to the current bytes.')
         end
 
         raw = resolved.binread
@@ -186,19 +189,19 @@ module Pikuri
 
         occurrences = content.scan(needle).size
         if occurrences.zero?
-          return "Error: old_string not found in #{path}. It must match the file " \
-                 'exactly, including whitespace and indentation; re-read with the ' \
-                 'read tool if uncertain.'
+          return Tool::Result.error("old_string not found in #{path}. It must match the file " \
+                                    'exactly, including whitespace and indentation; re-read with the ' \
+                                    'read tool if uncertain.')
         end
         if occurrence && occurrence > occurrences
-          return "Error: old_string matches #{occurrences} time#{occurrences == 1 ? '' : 's'} " \
-                 "in #{path}, so occurrence #{occurrence} does not exist."
+          return Tool::Result.error("old_string matches #{occurrences} time#{occurrences == 1 ? '' : 's'} " \
+                                    "in #{path}, so occurrence #{occurrence} does not exist.")
         end
         if occurrences > 1 && !replace_all && !occurrence
-          return "Error: old_string matches #{occurrences} times in #{path}. " \
-                 'Set occurrence=N to replace just the Nth, set replace_all=true ' \
-                 'to replace all of them, or provide more surrounding context to ' \
-                 'make the match unique.'
+          return Tool::Result.error("old_string matches #{occurrences} times in #{path}. " \
+                                    'Set occurrence=N to replace just the Nth, set replace_all=true ' \
+                                    'to replace all of them, or provide more surrounding context to ' \
+                                    'make the match unique.')
         end
 
         new_content =
@@ -242,9 +245,9 @@ module Pikuri
                    "removed #{Pikuri::Tool.pluralize(needle.lines.size * replaced, 'line')}"
         )
       rescue Filesystem::Error => e
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       rescue Errno::EACCES => e
-        "Error: cannot edit #{path}: #{e.message}"
+        Tool::Result.error("cannot edit #{path}: #{e.message}")
       end
 
       # Force a String to BINARY and collapse +\r\n+ → +\n+ so matching/

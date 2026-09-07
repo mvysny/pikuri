@@ -75,13 +75,12 @@ module Pikuri
       # pre-send checklist plus any guard notes. A body that fails closed, or a
       # hand-off that can't reach Thunderbird, comes back as +"Error: …"+.
       #
-      # @return [Pikuri::Tool::Result, String] the checklist as a
-      #   {Pikuri::Tool::Result} (+"Handed to Thunderbird"+ — pikuri sent
-      #   nothing, and the line must not suggest otherwise), or a bare
-      #   +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the checklist (+"Handed to Thunderbird"+
+      #   — pikuri sent nothing, and the line must not suggest otherwise), or
+      #   {Pikuri::Tool::Result.error}.
       def compose(to:, body:, subject:, cc:, bcc:)
         verdict = @guard.check(to:, body:, cc:, bcc:, subject:)
-        return "Error: #{verdict.error}" unless verdict.ok
+        return Pikuri::Tool::Result.error("#{verdict.error}") unless verdict.ok
 
         uri = MailtoUri.build(to: verdict.to, cc: verdict.cc, bcc: verdict.bcc,
                               subject: verdict.subject, body: verdict.body)
@@ -89,7 +88,7 @@ module Pikuri
         Pikuri::Tool::Result.new(content: [CHECKLIST, *verdict.notes].join("\n\n"),
                                  summary: 'Handed to Thunderbird')
       rescue Launcher::Error => e
-        "Error: #{e.message}"
+        Pikuri::Tool::Result.error("#{e.message}")
       end
     end
   end

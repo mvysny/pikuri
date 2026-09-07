@@ -101,7 +101,7 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
     assert_includes result, "truncated at #{Pikuri::Tool::Fetch::MAX_MAX_CHARS} of 200000"
   end
 
-  it 'returns an "Error: ..." string when Scraper.fetch raises FetchError' do
+  it 'answers Result.error when Scraper.fetch raises FetchError' do
     stub_fetch { |url, **| raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found" }
     result = described_class.fetch('https://example.com/missing').to_s
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
@@ -184,15 +184,15 @@ RSpec.describe 'Pikuri::Tool::FETCH' do
     assert_equal 'fetch', Pikuri::Tool::FETCH.name
   end
 
-  it 'returns an "Error: ..." string when Scraper.fetch raises FetchError, instead of crashing the agent loop' do
+  it 'answers Result.error when Scraper.fetch raises FetchError, instead of crashing the agent loop' do
     original = Pikuri::Tool::Scraper.method(:fetch)
     Pikuri::Tool::Scraper.singleton_class.define_method(:fetch) do |url, **|
       raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found"
     end
     begin
       result = Pikuri::Tool::FETCH.run('url' => 'https://example.com/missing')
-      assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
-      assert_includes result, 'HTTP 404'
+      assert result.error?, "expected a Result.error, got #{result.inspect}"
+      assert_includes result.content, 'HTTP 404'
     ensure
       Pikuri::Tool::Scraper.singleton_class.define_method(:fetch, original)
     end

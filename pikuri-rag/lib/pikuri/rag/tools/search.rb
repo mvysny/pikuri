@@ -124,11 +124,10 @@ module Pikuri
         # @param backend [#query, #keyword_query]
         # @param reranker [#rerank, nil]
         # @param query [String]
-        # @return [Pikuri::Tool::Result, String] the formatted observation as a
-        #   {Pikuri::Tool::Result} (+"Found 8 matches"+), or a bare
-        #   +"Error: ..."+.
+        # @return [Pikuri::Tool::Result] the formatted observation (+"Found 8
+        #   matches"+), or {Pikuri::Tool::Result.error}.
         def self.execute(embedder:, backend:, reranker:, query:)
-          return 'Error: query is empty' if query.nil? || query.strip.empty?
+          return Pikuri::Tool::Result.error('query is empty') if query.nil? || query.strip.empty?
 
           vector_hits = backend.query(vector: embedder.embed([query]).first, top_k: CANDIDATE_K)
           match = Pikuri::Rag::Query.any(query)

@@ -46,11 +46,11 @@ module Pikuri
         )
       end
 
-      # @return [Pikuri::Tool::Result, String] the formatted event as a
-      #   {Pikuri::Tool::Result} (+"Read 1 event"+), or a bare +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the formatted event (+"Read 1 event"+),
+      #   or {Pikuri::Tool::Result.error}.
       def self.run_read(backend:, event_id:)
         ev = backend.read(event_id:)
-        return "Error: no event found with id #{event_id.inspect}." unless ev
+        return Pikuri::Tool::Result.error("no event found with id #{event_id.inspect}.") unless ev
 
         desc = ev[:description].to_s.strip
         detail = [

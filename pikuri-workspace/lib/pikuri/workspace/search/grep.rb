@@ -172,17 +172,17 @@ module Pikuri
         # @return [String]
         def self.search(workspace:, pattern:, path:, glob:, case_insensitive:, output_mode:,
                         include_gitignored: false)
-          return 'Error: empty pattern.' if pattern.empty?
+          return Tool::Result.error('empty pattern.') if pattern.empty?
           unless OUTPUT_MODES.include?(output_mode)
-            return "Error: output_mode must be one of #{OUTPUT_MODES.join(', ')}, " \
-                   "got #{output_mode.inspect}."
+            return Tool::Result.error("output_mode must be one of #{OUTPUT_MODES.join(', ')}, " \
+                                      "got #{output_mode.inspect}.")
           end
 
           search_target = '.'
           resolved_root = workspace.project_root
           if path
             resolved = workspace.resolve_for_read(path)
-            return "Error: path not found: #{path}" unless resolved.exist?
+            return Tool::Result.error("path not found: #{path}") unless resolved.exist?
 
             resolved_root = resolved
             rel = resolved.relative_path_from(workspace.project_root).to_s
@@ -191,7 +191,7 @@ module Pikuri
 
           if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
                                                      verb: 'search'))
-            return refusal
+            return Tool::Result.error(refusal)
           end
 
           denied_prefixes = Utils.denied_prefixes(filesystem: workspace.filesystem,
@@ -213,10 +213,10 @@ module Pikuri
           when 1
             no_match_message(pattern: pattern, path: path)
           else
-            "Error: ripgrep: #{truncate_error(result.output, exit_code)}"
+            Tool::Result.error("ripgrep: #{truncate_error(result.output, exit_code)}")
           end
         rescue Filesystem::Error => e
-          "Error: #{e.message}"
+          Tool::Result.error(e.message)
         end
 
         # Build the +rg+ argv. Path is always passed (defaults to +.+) — see the
