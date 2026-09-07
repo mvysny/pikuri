@@ -83,15 +83,19 @@ module Pikuri
         # a Pikuri::Tool wrapper.
         #
         # @param indexer [Indexer]
-        # @return [String] observation; either a success summary
-        #   or an +"Error: ..."+ string.
+        # @return [Pikuri::Tool::Result, String] the observation as a
+        #   {Pikuri::Tool::Result} (+"Indexed 412 chunks"+), or a bare
+        #   +"Error: ..."+ string.
         def self.execute(indexer:)
           total = indexer.reindex!
-          if total.zero?
-            'Reindexed: 0 chunks. No indexable files were found across the configured sources.'
-          else
-            "Reindexed: #{total} chunk(s) now in the index."
-          end
+          content =
+            if total.zero?
+              'Reindexed: 0 chunks. No indexable files were found across the configured sources.'
+            else
+              "Reindexed: #{total} chunk(s) now in the index."
+            end
+          Pikuri::Tool::Result.new(content: content,
+                                   summary: "Indexed #{Pikuri::Tool.pluralize(total, 'chunk')}")
         rescue RuntimeError => e
           "Error: reindex failed: #{e.message}"
         end

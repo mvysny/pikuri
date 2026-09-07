@@ -80,7 +80,23 @@ module Pikuri
       # One tool call the assistant asked for. +id+ is the provider's own
       # identifier and is load-bearing — the +tool+ message answering this call
       # repeats it, and providers reject a pair that does not match.
-      ToolCall = Data.define(:id, :name, :arguments)
+      #
+      # +display_name+ and +argument+ are the chrome's display line for the call
+      # (+"Write"+ / +"lib/foo.rb"+), local to pikuri like {Message#id}: no
+      # provider is shown either. They are stored because a later wiring may no
+      # longer have the tool that composed them — a removed extension, a
+      # renamed MCP server — and +nil+ (a pre-summary file) falls back to
+      # {Pikuri::Tool.display_name_for} / {Pikuri::Tool.describe_arguments}.
+      ToolCall = Data.define(:id, :name, :arguments, :display_name, :argument) do
+        # @param id [String] the provider's tool-call id
+        # @param name [String] the tool name
+        # @param arguments [Hash] arguments as the model sent them
+        # @param display_name [String, nil] see {Pikuri::Tool#display_name}
+        # @param argument [String, nil] see {Pikuri::Tool#describe_call}
+        def initialize(id:, name:, arguments: {}, display_name: nil, argument: nil)
+          super
+        end
+      end
 
       # An assistant reasoning block, as the provider reported it.
       #
@@ -142,7 +158,7 @@ module Pikuri
       # {Attachment} in +attachments+.
       Message = Data.define(
         :id, :role, :kind, :content, :attachments,
-        :tool_calls, :tool_call_id, :model_id, :thinking, :tokens
+        :tool_calls, :tool_call_id, :model_id, :thinking, :tokens, :summary
       ) do
         # @param id [String] see {History.mint_id}
         # @param role [String] one of {ROLES}
@@ -155,8 +171,13 @@ module Pikuri
         # @param model_id [String, nil] which model produced this
         # @param thinking [Thinking, nil]
         # @param tokens [Tokens, nil]
+        # @param summary [String, nil] a +tool+ message's display line
+        #   (+"Returned 23 search results"+) — local to pikuri like {#id}, and
+        #   stored because it was computed from structure the +content+ no
+        #   longer holds, so nothing can recompute it on load. +nil+ (a
+        #   pre-summary file) falls back to {Pikuri::Tool.describe_content}.
         def initialize(id:, role:, content:, kind: 'user', attachments: [], tool_calls: [],
-                       tool_call_id: nil, model_id: nil, thinking: nil, tokens: nil)
+                       tool_call_id: nil, model_id: nil, thinking: nil, tokens: nil, summary: nil)
           super
         end
 
@@ -170,13 +191,20 @@ module Pikuri
         # @param msg [RubyLLM::Message] must not be +role: :system+.
         # @param id [String] see {History.mint_id}.
         # @param kind [String] one of {KINDS}.
+        # @param summary [String, nil] see {Message#summary}.
+        # @param tool_call_lines [Hash{String=>Hash}] display strings per call
+        #   id, +{id => {display_name:, argument:}}+ — what {Agent} recorded as
+        #   each call went out; an id it has nothing for stores +nil+s.
         # @return [Message]
-        def self.from_ruby_llm(msg, id:, kind: 'user')
+        def self.from_ruby_llm(msg, id:, kind: 'user', summary: nil, tool_call_lines: {})
           text, attachments = split_content(msg.content)
           new(
             id: id, role: msg.role.to_s, kind: kind, content: text, attachments: attachments,
+            summary: summary,
             tool_calls: (msg.tool_calls || {}).values.map do |c|
-              ToolCall.new(id: c.id, name: c.name, arguments: c.arguments || {})
+              lines = tool_call_lines[c.id] || {}
+              ToolCall.new(id: c.id, name: c.name, arguments: c.arguments || {},
+                           display_name: lines[:display_name], argument: lines[:argument])
             end,
             tool_call_id: msg.tool_call_id,
             model_id: msg.model_id,
@@ -364,7 +392,8 @@ module Pikuri
             tool_call_id: tool_call_id,
             model_id: raw['model_id'],
             thinking: thinking_from_h(raw['thinking'], index, id),
-            tokens: tokens_from_h(raw['tokens'], index, id)
+            tokens: tokens_from_h(raw['tokens'], index, id),
+            summary: display_string(raw['summary'], index, id, 'summary')
           )
         end
 
@@ -386,7 +415,18 @@ module Pikuri
           args = raw['arguments'] || {}
           raise Error, "message #{index} (#{id}): tool_call #{call_id} arguments must be a Hash" unless args.is_a?(Hash)
 
-          ToolCall.new(id: call_id, name: raw['name'], arguments: args)
+          ToolCall.new(id: call_id, name: raw['name'], arguments: args,
+                       display_name: display_string(raw['display_name'], index, id, 'display_name'),
+                       argument: display_string(raw['argument'], index, id, 'argument'))
+        end
+
+        # A stored display string: absent reads as +nil+ (an older file, or a
+        # wiring that had no tool to ask), present must be a String.
+        def display_string(value, index, id, name)
+          return nil if value.nil?
+          return value if value.is_a?(String)
+
+          raise Error, "message #{index} (#{id}): #{name} must be a String, got #{value.class}"
         end
 
         def thinking_from_h(raw, index, id)
@@ -600,7 +640,8 @@ module Pikuri
           answered = messages[(i + 1)..].take_while { |n| n.role == 'tool' }.map(&:tool_call_id)
           pending = m.tool_calls.reject { |c| answered.include?(c.id) }.map do |call|
             repaired = true
-            Message.new(id: History.mint_id, role: 'tool', tool_call_id: call.id, content: INTERRUPTED_RESULT)
+            Message.new(id: History.mint_id, role: 'tool', tool_call_id: call.id,
+                        content: INTERRUPTED_RESULT, summary: INTERRUPTED_SUMMARY)
           end
         end
         out.concat(pending)
@@ -620,11 +661,22 @@ module Pikuri
           'content' => msg.content
         }
         h['attachments'] = msg.attachments.map { |a| attachment_to_h(a, inline) } unless msg.attachments.empty?
-        h['tool_calls'] = msg.tool_calls.map { |c| c.to_h.transform_keys(&:to_s) } unless msg.tool_calls.empty?
+        h['tool_calls'] = msg.tool_calls.map { |c| tool_call_to_h(c) } unless msg.tool_calls.empty?
         h['tool_call_id'] = msg.tool_call_id if msg.tool_call_id
+        h['summary'] = msg.summary if msg.summary
         h['model_id'] = msg.model_id if msg.model_id
         h['thinking'] = compact_h(msg.thinking) if msg.thinking
         h['tokens'] = compact_h(msg.tokens) if msg.tokens
+        h
+      end
+
+      # Drops an absent display string rather than writing +null+, so a file
+      # written before summaries existed and one written by a wiring that had
+      # no tool to ask are the same bytes.
+      def tool_call_to_h(call)
+        h = { 'id' => call.id, 'name' => call.name, 'arguments' => call.arguments }
+        h['display_name'] = call.display_name if call.display_name
+        h['argument'] = call.argument if call.argument
         h
       end
 

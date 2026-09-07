@@ -131,7 +131,7 @@ describe 'thunderbird_contact_search' do
   describe 'the tool' do
     it 'renders ranked Name <addr> candidates with a familiarity signal' do
       with_contacts do |contacts|
-        out = ContactSearch.new(backend: contacts).run('query' => 'martin')
+        out = ContactSearch.new(backend: contacts).run('query' => 'martin').to_s
         assert_match(/contacts \(best first\)/, out)
         assert_match(/Martin Vysny <martin@vysny\.me>/, out)
         assert_match(/established contact/, out)          # has Sent history
@@ -142,7 +142,7 @@ describe 'thunderbird_contact_search' do
 
     it 'reports no match plainly' do
       with_contacts do |contacts|
-        assert_match(/No contacts found/, ContactSearch.new(backend: contacts).run('query' => 'zzznobody'))
+        assert_match(/No contacts found/, ContactSearch.new(backend: contacts).run('query' => 'zzznobody').to_s)
       end
     end
   end

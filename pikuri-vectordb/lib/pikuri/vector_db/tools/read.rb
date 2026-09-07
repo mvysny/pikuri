@@ -126,7 +126,8 @@ module Pikuri
         # @param limit [Integer] maximum lines to return
         # @param family [String] the tool-name prefix the error strings use
         #   to name the sibling search / reindex tools.
-        # @return [String] tool observation — the windowed text or an
+        # @return [Pikuri::Tool::Result, String] tool observation — the windowed
+        #   text as a {Pikuri::Tool::Result} (+"Read 214 lines"+), or a bare
         #   +"Error: ..."+ string.
         def self.read(backend:, root:, source:, offset:, limit:, family: DEFAULT_FAMILY)
           return "Error: offset must be >= 1, got #{offset}" if offset < 1
@@ -178,7 +179,8 @@ module Pikuri
         # @param page [Pikuri::Extractor::Page]
         # @param source [String] the citation, used in the empty /
         #   end-of-document messages.
-        # @return [String]
+        # @return [Pikuri::Tool::Result, String] the window, carrying +"Read 214
+        #   lines"+; a bare +"Error: ..."+ / empty-document note otherwise
         def self.render(page, source:)
           if page.lines.empty?
             return "(#{source} is empty)" if page.total_lines.zero?
@@ -200,7 +202,8 @@ module Pikuri
               "(End of #{source} — #{page.total_lines} lines.)"
             end
 
-          "#{body}\n\n#{trailer}"
+          Pikuri::Tool::Result.new(content: "#{body}\n\n#{trailer}",
+                                   summary: "Read #{Pikuri::Tool.pluralize(page.lines.length, 'line')}")
         end
         private_class_method :render
       end

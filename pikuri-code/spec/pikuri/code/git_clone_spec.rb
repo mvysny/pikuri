@@ -14,27 +14,27 @@ RSpec.describe Pikuri::Code::GitClone do
 
   describe 'URL validation' do
     it 'rejects ssh:// URLs (history of arg-injection RCE — see class header)' do
-      result = tool.run('url' => 'ssh://git@example.com/repo.git')
+      result = tool.run('url' => 'ssh://git@example.com/repo.git').to_s
       assert_match(/Error: only https \/ http URLs are accepted/, result)
     end
 
     it 'rejects git:// URLs (insecure, no auth)' do
-      result = tool.run('url' => 'git://example.com/repo.git')
+      result = tool.run('url' => 'git://example.com/repo.git').to_s
       assert_match(/Error: only https \/ http URLs are accepted/, result)
     end
 
     it 'rejects file:// URLs (symlink-based local file reads — see CVE-2022-39253)' do
-      result = tool.run('url' => 'file:///tmp/repo')
+      result = tool.run('url' => 'file:///tmp/repo').to_s
       assert_match(/Error: only https \/ http URLs are accepted/, result)
     end
 
     it 'rejects URLs with no host' do
-      result = tool.run('url' => 'https://')
+      result = tool.run('url' => 'https://').to_s
       assert_match(/Error: URL must include a host/, result)
     end
 
     it 'reports malformed URLs as Error: rather than raising' do
-      result = tool.run('url' => 'not a url')
+      result = tool.run('url' => 'not a url').to_s
       assert_match(/Error:/, result)
     end
   end
@@ -61,7 +61,7 @@ RSpec.describe Pikuri::Code::GitClone do
 
     it 'spawns git clone --depth 1 --no-recurse-submodules --quiet -- URL TARGET in the workspace' do
       stub_subprocess(spawn_result_status: 0) do |received_argv|
-        result = tool.run('url' => 'https://github.com/example/sample-repo.git')
+        result = tool.run('url' => 'https://github.com/example/sample-repo.git').to_s
 
         argv = received_argv.call
         refute_nil argv
@@ -91,21 +91,21 @@ RSpec.describe Pikuri::Code::GitClone do
 
     it 'reports exit code 124 / 137 / 125 as a timeout error' do
       stub_subprocess(spawn_result_status: 124, output: 'fatal: too slow\n') do |_|
-        result = tool.run('url' => 'https://github.com/example/repo')
+        result = tool.run('url' => 'https://github.com/example/repo').to_s
         assert_match(/Error: git clone timed out/, result)
       end
     end
 
     it 'reports a non-timeout non-zero exit as a clone failure' do
       stub_subprocess(spawn_result_status: 128, output: 'fatal: repository not found\n') do |_|
-        result = tool.run('url' => 'https://github.com/example/nope')
+        result = tool.run('url' => 'https://github.com/example/nope').to_s
         assert_match(/Error: git clone failed \(exit 128\)/, result)
       end
     end
 
     it 'refuses to clone over an existing target directory' do
       (root + 'existing').mkdir
-      result = tool.run('url' => 'https://github.com/example/existing.git')
+      result = tool.run('url' => 'https://github.com/example/existing.git').to_s
       assert_match(/Error: target directory "existing" already exists/, result)
     end
   end

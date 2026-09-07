@@ -224,7 +224,9 @@ module Pikuri
       # @param command [String] raw command as supplied by the LLM
       # @param description [String, nil] optional short label for the user
       # @param timeout [Integer] seconds before SIGTERM is sent
-      # @return [String]
+      # @return [Pikuri::Tool::Result, String] the transcript as a
+      #   {Pikuri::Tool::Result} (+"exit 0, 41 lines"+) once the command ran; a
+      #   bare +"Error: ..."+ on a rejection, a timeout or bad inputs
       def self.run(filesystem:, confirmer:, command:, description:, timeout:,
                    sandbox: Sandbox::NONE, passive_detector: nil)
         return 'Error: empty bash command.' if command.strip.empty?
@@ -262,7 +264,10 @@ module Pikuri
           "Error: command timed out after #{timeout}s (sent SIGTERM, then SIGKILL).\n\n" \
             "$ #{visible(command)}\n#{output}"
         else
-          "$ #{visible(command)}\n#{output}\n\nexit status: #{exit_code}"
+          Pikuri::Tool::Result.new(
+            content: "$ #{visible(command)}\n#{output}\n\nexit status: #{exit_code}",
+            summary: "exit #{exit_code}, #{Pikuri::Tool.pluralize(output.lines.size, 'line')}"
+          )
         end
       end
 

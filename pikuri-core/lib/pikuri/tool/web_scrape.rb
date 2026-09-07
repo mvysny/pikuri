@@ -39,12 +39,15 @@ module Pikuri
       # @param url [String] absolute HTTP(S) URL
       # @param max_chars [Integer] Markdown cap, clamped to +[1, {MAX_MAX_CHARS}]+;
       #   default {DEFAULT_MAX_CHARS}. Over the cap, output is cut with a marker.
-      # @return [String] Markdown, possibly truncated, or +"Error: ..."+ on a
-      #   recoverable fetch failure
+      # @return [Tool::Result, String] the Markdown, possibly truncated, as a
+      #   {Pikuri::Tool::Result} (+"Scraped 12.4 kB"+); a bare +"Error: ..."+ on
+      #   a recoverable fetch failure
       def self.visit(url, max_chars: DEFAULT_MAX_CHARS)
         max_chars = max_chars.clamp(1, MAX_MAX_CHARS)
         markdown = cache.fetch(url) { Scraper.visit(url) }
-        truncate(markdown, max_chars)
+        Tool::Result.new(content: truncate(markdown, max_chars),
+                         summary: Scraper.transfer_summary(verb: 'Scraped', full: markdown,
+                                                           max_chars: max_chars))
       rescue Scraper::FetchError => e
         "Error: #{e.message}"
       end

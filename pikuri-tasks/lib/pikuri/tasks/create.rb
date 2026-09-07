@@ -50,12 +50,22 @@ module Pikuri
         )
       end
 
+      # The batch's size rather than an +Array#to_s+ dump of every item.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        items = arguments['items'] || arguments[:items]
+        items.is_a?(Array) ? Pikuri::Tool.pluralize(items.size, 'item') : Pikuri::Tool.describe_arguments(arguments)
+      end
+
       # Validate and apply the batch.
       #
       # @param list [List]
       # @param items [Array<String>] raw +items+ argument from the LLM
       #   (already type-validated by {Pikuri::Tool::Parameters}).
-      # @return [String] either {List#render} on success or an
+      # @return [Pikuri::Tool::Result, String] {List#render} as a
+      #   {Pikuri::Tool::Result} (+"3 tasks, 1 done"+) on success, or a bare
       #   +"Error: ..."+ string the LLM can react to.
       def self.execute(list:, items:)
         return 'Error: task_create requires at least one item' if items.empty?
@@ -76,7 +86,7 @@ module Pikuri
         return "Error: task already exists: '#{clash}'" if clash
 
         cleaned.each { |c| list.add(c) }
-        list.render
+        Pikuri::Tool::Result.new(content: list.render, summary: list.summary)
       end
     end
   end

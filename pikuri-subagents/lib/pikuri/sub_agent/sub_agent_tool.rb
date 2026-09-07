@@ -206,12 +206,27 @@ module Pikuri
             end
             begin
               sub.run_loop(user_message: task)
-              sub.last_assistant_content
+              answer = sub.last_assistant_content.to_s
+              Pikuri::Tool::Result.new(
+                content: answer,
+                summary: "Answered, #{Pikuri::Tool.format_bytes(answer.bytesize)}"
+              )
             ensure
               sub.close
             end
           }
         )
+      end
+
+      # Both arguments, because the persona name alone (+Agent(researcher)+)
+      # says nothing about what was delegated.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        name = arguments['name'] || arguments[:name]
+        task = arguments['task'] || arguments[:task]
+        Pikuri::Tool.one_line([name, task].compact.join(': '))
       end
 
       # Build the +<available_agents>+ system-prompt snippet from a personas

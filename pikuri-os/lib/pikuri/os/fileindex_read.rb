@@ -74,7 +74,8 @@ module Pikuri
       # @param backend [Module] the file-index backend to read from
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] max lines
-      # @return [String] the cat-n windowed text, or +"Error: ..."+
+      # @return [Pikuri::Tool::Result, String] the cat-n windowed text as a
+      #   {Pikuri::Tool::Result} (+"Read 214 lines"+), or a bare +"Error: ..."+
       def self.read(path:, backend:, offset: 1, limit: DEFAULT_LIMIT)
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
@@ -96,7 +97,8 @@ module Pikuri
       # mirroring {Pikuri::Workspace::Read}'s formatting.
       #
       # @param page [Pikuri::Extractor::Page]
-      # @return [String]
+      # @return [Pikuri::Tool::Result, String] the window, carrying +"Read N
+      #   lines"+; a bare +"Error: ..."+ / empty-file note otherwise
       def self.render_page(page)
         return '(No indexed text for this file.)' if page.total_lines.zero?
 
@@ -121,7 +123,8 @@ module Pikuri
             "(End of file - total #{page.total_lines} lines)"
           end
 
-        "#{body}\n\n#{trailer}"
+        Pikuri::Tool::Result.new(content: "#{body}\n\n#{trailer}",
+                                 summary: "Read #{Pikuri::Tool.pluralize(page.lines.length, 'line')}")
       end
       private_class_method :render_page
     end

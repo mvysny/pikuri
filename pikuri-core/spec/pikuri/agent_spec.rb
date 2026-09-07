@@ -20,7 +20,9 @@ RSpec.describe Pikuri::Agent do
       attr_reader :tools, :asks, :messages, :instructions, :hooks, :added_messages, :stream_block, :model
 
       define_method(:initialize) do
-        @tools = []
+        # Keyed by tool name, holding instances — the shape of
+        # +RubyLLM::Chat#tools+, which +Agent+ looks a call's tool up in.
+        @tools = {}
         @asks = []
         @messages = []
         @added_messages = []
@@ -35,7 +37,8 @@ RSpec.describe Pikuri::Agent do
       end
 
       def with_tool(tool)
-        @tools << tool
+        instance = tool.is_a?(Class) ? tool.new : tool
+        @tools[instance.name.to_sym] = instance
         self
       end
 
@@ -157,8 +160,8 @@ RSpec.describe Pikuri::Agent do
 
       assert_equal 'be terse', fake_chat.instructions
       assert_equal 1, fake_chat.tools.size
-      wired = fake_chat.tools.first
-      assert_operator wired, :<, RubyLLM::Tool
+      wired = fake_chat.tools.values.first
+      assert_operator wired.class, :<, RubyLLM::Tool
       assert_equal 't', wired.name
     end
 
@@ -690,17 +693,24 @@ RSpec.describe Pikuri::Agent do
       assert_equal before, recorder.events.size
     end
 
-    it 'forwards tool calls as ToolCall with name and arguments' do
+    it 'forwards tool calls as ToolCall, falling back to the mechanical display strings' do
+      # No tool of that name is wired, which is also the shape of ruby_llm's
+      # unavailable-tool error and of an MCP tool.
       fake_chat.fire(:before_tool_call, tool_call)
 
       assert_includes recorder.events,
-                      Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' })
+                      Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: 'echo',
+                                                         arguments: { 'text' => 'hi' },
+                                                         display_name: 'Echo', argument: 'text=hi')
     end
 
-    it 'forwards tool results as ToolResult' do
+    it 'forwards tool results as ToolResult, pairing them with the call by id' do
+      fake_chat.fire(:before_tool_call, tool_call)
       fake_chat.fire(:after_tool_result, '42')
 
-      assert_includes recorder.events, Pikuri::Agent::Event::ToolResult.new(content: '42')
+      assert_includes recorder.events,
+                      Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 'echo',
+                                                           content: '42', summary: 'Returned 2 bytes')
     end
 
     it 'does not pass a streaming block when streaming: defaults to false' do
@@ -1204,7 +1214,7 @@ RSpec.describe Pikuri::Agent do
 
         # No tools on the synth, and the synth's answer wins
         # last_assistant_content.
-        assert_equal [], synth_chat.tools
+        assert_empty synth_chat.tools
         assert_equal 'rescued answer', agent.last_assistant_content
       end
 
@@ -1415,7 +1425,7 @@ RSpec.describe Pikuri::Agent do
       end
 
       assert_equal 1, fake_chat.tools.size
-      assert_equal 'tt', fake_chat.tools.first.name
+      assert_equal 'tt', fake_chat.tools.values.first.name
     end
 
     it 'lets the block add multiple tools at once via c.add_tools' do
@@ -1430,7 +1440,7 @@ RSpec.describe Pikuri::Agent do
         c.add_tools([tool, second_tool])
       end
 
-      assert_equal %w[tt uu], fake_chat.tools.map(&:name)
+      assert_equal %w[tt uu], fake_chat.tools.values.map(&:name)
     end
 
     it 'lets the block add listeners via c.add_listener; ContextCap reaches them' do

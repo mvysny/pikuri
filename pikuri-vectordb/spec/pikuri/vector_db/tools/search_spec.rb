@@ -46,7 +46,13 @@ describe Pikuri::VectorDb::Tools::Search do
     backend.upsert(chunks: chunks, vectors: vectors)
   end
 
+  # +.to_s+ because the observation is a Pikuri::Tool::Result; the display
+  # line has its own tests below.
   def execute(query: 'how to cook risotto?', reranker: nil)
+    result(query: query, reranker: reranker).to_s
+  end
+
+  def result(query: 'how to cook risotto?', reranker: nil)
     Pikuri::VectorDb::Tools::Search.execute(
       embedder: fake_embedder, backend: backend,
       reranker: reranker, query: query
@@ -96,6 +102,24 @@ describe Pikuri::VectorDb::Tools::Search do
       execute
 
       assert_equal Pikuri::VectorDb::Tools::Search::FINAL_K, executed_top_k
+    end
+  end
+
+  describe 'the display line' do
+    before { populate_backend }
+
+    it 'counts the matches and never carries corpus text' do
+      display = result.summary
+
+      assert_equal 'Found 3 matches', display
+      refute_includes display, 'Rice should be added gradually'
+    end
+
+    it 'says zero rather than going silent on an empty corpus' do
+      assert_equal 'Found 0 matches',
+                   Pikuri::VectorDb::Tools::Search.execute(embedder: fake_embedder,
+                                                           backend: Pikuri::VectorDb::Backend::InMemory.new,
+                                                           reranker: nil, query: 'anything').summary
     end
   end
 

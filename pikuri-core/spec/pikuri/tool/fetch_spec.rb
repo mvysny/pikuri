@@ -48,27 +48,27 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
 
   it 'returns the body verbatim for text/plain' do
     stub_fetched(body: 'hello world', content_type: 'text/plain')
-    assert_equal 'hello world', described_class.fetch('https://example.com/x.txt')
+    assert_equal 'hello world', described_class.fetch('https://example.com/x.txt').to_s
   end
 
   it 'returns the body verbatim for text/html (no Markdown extraction)' do
     stub_fetched(body: '<html><body>hi</body></html>', content_type: 'text/html')
-    assert_equal '<html><body>hi</body></html>', described_class.fetch('https://example.com')
+    assert_equal '<html><body>hi</body></html>', described_class.fetch('https://example.com').to_s
   end
 
   it 'accepts application/json' do
     stub_fetched(body: '{"k":"v"}', content_type: 'application/json')
-    assert_equal '{"k":"v"}', described_class.fetch('https://example.com/api')
+    assert_equal '{"k":"v"}', described_class.fetch('https://example.com/api').to_s
   end
 
   it 'accepts application/xml' do
     stub_fetched(body: '<root/>', content_type: 'application/xml')
-    assert_equal '<root/>', described_class.fetch('https://example.com/feed')
+    assert_equal '<root/>', described_class.fetch('https://example.com/feed').to_s
   end
 
   it 'refuses application/pdf with an error string' do
     stub_fetched(body: '%PDF-1.4...', content_type: 'application/pdf')
-    result = described_class.fetch('https://example.com/doc.pdf')
+    result = described_class.fetch('https://example.com/doc.pdf').to_s
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
     assert_includes result, 'application/pdf'
     assert_includes result, 'web_scrape'
@@ -76,34 +76,34 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
 
   it 'refuses image/png with an error string' do
     stub_fetched(body: "\x89PNG\r\n", content_type: 'image/png')
-    result = described_class.fetch('https://example.com/x.png')
+    result = described_class.fetch('https://example.com/x.png').to_s
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
     assert_includes result, 'image/png'
   end
 
   it 'refuses application/octet-stream with an error string' do
     stub_fetched(body: 'binary', content_type: 'application/octet-stream')
-    result = described_class.fetch('https://example.com/blob')
+    result = described_class.fetch('https://example.com/blob').to_s
     assert result.start_with?('Error:')
     assert_includes result, 'application/octet-stream'
   end
 
   it 'truncates output above max_chars and appends a marker noting the original length' do
     stub_fetched(body: 'a' * 100, content_type: 'text/plain')
-    result = described_class.fetch('https://example.com', max_chars: 10)
+    result = described_class.fetch('https://example.com', max_chars: 10).to_s
     assert result.start_with?('aaaaaaaaaa')
     assert_includes result, 'truncated at 10 of 100'
   end
 
   it 'clamps max_chars to MAX_MAX_CHARS' do
     stub_fetched(body: 'a' * 200_000, content_type: 'text/plain')
-    result = described_class.fetch('https://example.com', max_chars: 10_000_000)
+    result = described_class.fetch('https://example.com', max_chars: 10_000_000).to_s
     assert_includes result, "truncated at #{Pikuri::Tool::Fetch::MAX_MAX_CHARS} of 200000"
   end
 
   it 'returns an "Error: ..." string when Scraper.fetch raises FetchError' do
     stub_fetch { |url, **| raise Pikuri::Tool::Scraper::FetchError, "HTTP 404 fetching #{url}: not found" }
-    result = described_class.fetch('https://example.com/missing')
+    result = described_class.fetch('https://example.com/missing').to_s
     assert result.start_with?('Error:'), "expected error string, got #{result.inspect}"
     assert_includes result, 'HTTP 404'
     assert_includes result, 'https://example.com/missing'
@@ -111,7 +111,7 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
 
   it 'lets non-FetchError exceptions bubble up so bugs stay visible' do
     stub_fetch { |_url, **| raise 'parser regression' }
-    err = assert_raises(RuntimeError) { described_class.fetch('https://example.com') }
+    err = assert_raises(RuntimeError) { described_class.fetch('https://example.com').to_s }
     assert_equal 'parser regression', err.message
   end
 
@@ -152,8 +152,8 @@ RSpec.describe Pikuri::Tool::Fetch, '.fetch' do
         calls += 1
         fetched_class.new(body: 'cached body', content_type: 'text/plain', url: url)
       end
-      assert_equal 'cached body', described_class.fetch('https://example.com')
-      assert_equal 'cached body', described_class.fetch('https://example.com')
+      assert_equal 'cached body', described_class.fetch('https://example.com').to_s
+      assert_equal 'cached body', described_class.fetch('https://example.com').to_s
       assert_equal 1, calls, 'second call should be served from cache'
     end
   end

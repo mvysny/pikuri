@@ -66,15 +66,38 @@ module Pikuri
       # {ThinkingDelta}; consume {Assistant} for the authoritative text.
       AssistantDelta = Data.define(:content)
 
-      # A tool the LLM requested but hasn't observed yet. +arguments+ is
-      # the raw hash ruby_llm parsed from the model's +tool_calls+ JSON —
-      # unvalidated. Emitted by +before_tool_call+.
-      ToolCall = Data.define(:name, :arguments)
+      # A tool the LLM requested but hasn't observed yet:
+      #
+      #   #  → Write(lib/shared/config.rb)
+      #   #    display_name    argument
+      #
+      # +arguments+ is the raw hash ruby_llm parsed from the model's
+      # +tool_calls+ JSON — unvalidated; +display_name+ and +argument+ are the
+      # display strings the tool composed ({Tool#display_name} /
+      # {Tool#describe_call}), so every chrome prints the same line and only
+      # styles, caps and defangs it. An +argument+ of +""+ renders the call
+      # bare — +EnterPlanMode+, not +EnterPlanMode()+.
+      #
+      # Strings rather than a +tool:+ reference a renderer could query: these
+      # events are plain serializable +Data+ (pikuri-web ships them over SSE, a
+      # history replay synthesizes them), and three cases have no
+      # {Pikuri::Tool} at all — an MCP tool, ruby_llm's unavailable-tool error,
+      # a replayed conversation.
+      #
+      # Emitted by +before_tool_call+.
+      ToolCall = Data.define(:tool_call_id, :name, :arguments, :display_name, :argument)
 
-      # The observation a tool produced ({Tool#run}'s return). Recoverable
-      # failures arrive as +"Error: ..."+ strings, not exceptions. Emitted
-      # by +after_tool_result+.
-      ToolResult = Data.define(:content)
+      # The observation a tool produced ({Tool#run}'s return), plus the
+      # one-line +summary+ a chrome shows in its place (+"Returned 23 search
+      # results"+). Recoverable failures arrive as +"Error: ..."+ strings, not
+      # exceptions, and their summary is that message.
+      #
+      # +tool_call_id+ pairs this with its {ToolCall} by key, so a renderer
+      # needs no assumption about call→result ordering.
+      #
+      # Emitted by +after_tool_result+, and by {Agent#run_loop}'s
+      # dangling-call repair (summary +"Interrupted"+).
+      ToolResult = Data.define(:tool_call_id, :name, :content, :summary)
 
       # Provider-reported token usage for one assistant turn, off a
       # +RubyLLM::Message+'s +tokens+ block. Emitted by +after_message+ on

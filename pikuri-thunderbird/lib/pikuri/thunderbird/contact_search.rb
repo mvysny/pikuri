@@ -53,14 +53,21 @@ module Pikuri
         )
       end
 
-      # @return [String] formatted ranked candidates or a no-match line.
+      # @return [Pikuri::Tool::Result] the ranked candidates as a
+      #   {Pikuri::Tool::Result} (+"Found 3 contacts"+), or the no-match line.
       def self.run_search(backend:, query:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         candidates = backend.resolve(query:, limit:)
-        return "No contacts found matching #{query.inspect}." if candidates.empty?
+        if candidates.empty?
+          return Pikuri::Tool::Result.new(content: "No contacts found matching #{query.inspect}.",
+                                          summary: 'Found 0 contacts')
+        end
 
         header = "#{candidates.size} contact#{candidates.size == 1 ? '' : 's'} (best first):"
-        [header, *candidates.map { |c| render(c) }].join("\n\n")
+        Pikuri::Tool::Result.new(
+          content: [header, *candidates.map { |c| render(c) }].join("\n\n"),
+          summary: "Found #{Pikuri::Tool.pluralize(candidates.size, 'contact')}"
+        )
       end
 
       # @param c [Hash] one candidate from {Gloda::Contacts#resolve}.

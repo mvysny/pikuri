@@ -190,7 +190,9 @@ def drive_probes(entry:, root:, path:, line:, symbol:)
       args = { 'operation' => operation.name, 'symbol' => symbol }
       args['file'] = relative unless operation.anchor == :query
       args['line'] = line if operation.anchor == :position
-      [operation.name, tool.run(args)]
+      # +.to_s+: the tool answers a Pikuri::Tool::Result, and every probe
+      # below reads the rendered observation.
+      [operation.name, tool.run(args).to_s]
     end
   ensure
     servers.close

@@ -27,7 +27,7 @@ RSpec.describe 'Workspace::Read on a registered PDF extractor' do
   end
 
   def read(path, offset: 1, limit: 2000)
-    Pikuri::Workspace::Read.read(workspace: workspace, path: path, offset: offset, limit: limit)
+    Pikuri::Workspace::Read.read(workspace: workspace, path: path, offset: offset, limit: limit).to_s
   end
 
   def write_pdf(rel, *page_texts)

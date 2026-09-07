@@ -81,12 +81,17 @@ module Pikuri
       # @param client [Mem0Client]
       # @param user_id [String]
       # @param topic [String]
-      # @return [String] formatted observation.
+      # @return [Pikuri::Tool::Result, String] the formatted observation as a
+      #   {Pikuri::Tool::Result} (+"Recalled 3 memories"+), or a bare
+      #   +"Error: ..."+ observation.
       def self.execute(client:, user_id:, topic:)
         return 'Error: topic is empty' if topic.nil? || topic.strip.empty?
 
         records = client.search(query: topic, user_id: user_id, top_k: TOP_K)
-        return 'No relevant memories found.' if records.empty?
+        if records.empty?
+          return Pikuri::Tool::Result.new(content: 'No relevant memories found.',
+                                          summary: 'Recalled 0 memories')
+        end
 
         format_observation(records)
       rescue RuntimeError => e
@@ -99,7 +104,9 @@ module Pikuri
       # recency when two memories about the same thing conflict.
       #
       # @param records [Array<Record>]
-      # @return [String]
+      # @return [Pikuri::Tool::Result] the observation, carrying +"Recalled 3
+      #   memories"+ — the count only: a memory's text is exactly the
+      #   attacker-authorable content a status line must not echo.
       def self.format_observation(records)
         header = "Recalled #{records.length} " \
                  "memor#{records.length == 1 ? 'y' : 'ies'}:\n"
@@ -107,7 +114,10 @@ module Pikuri
           when_ = r.created_label ? "(#{r.created_label}) " : ''
           "- #{when_}#{r.text}"
         end.join("\n")
-        header + body
+        Pikuri::Tool::Result.new(
+          content: header + body,
+          summary: "Recalled #{Pikuri::Tool.pluralize(records.length, 'memory', 'memories')}"
+        )
       end
       private_class_method :format_observation
     end

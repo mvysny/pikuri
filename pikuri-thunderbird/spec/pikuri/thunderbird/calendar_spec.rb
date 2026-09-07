@@ -344,7 +344,7 @@ describe Pikuri::Thunderbird::Calendar do
 
   it 'renders the organizer + attendees block with RSVP words' do
     with_calendar do |cal|
-      out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'e1')
+      out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'e1').to_s
       assert_includes out, 'Organizer: Ann Boss <ann@example.com>'
       assert_includes out, 'Attendees (2):'
       assert_includes out, '- Vysny, Martin <martin@example.com> — accepted'
@@ -371,7 +371,7 @@ describe Pikuri::Thunderbird::Calendar do
       db.close
       cal = Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'c'))
       begin
-        out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'big')
+        out = Pikuri::Thunderbird::CalendarRead.run_read(backend: cal, event_id: 'big').to_s
         assert_includes out, 'Attendees (50):'
         assert_equal 40, out.lines.count { |l| l.start_with?('  - ') }
         assert_includes out, '… and 10 more (50 accepted)'

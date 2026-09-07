@@ -87,7 +87,9 @@ module Pikuri
       # A bad date comes back as +"Error: …"+; so does a hand-off that can't
       # reach Thunderbird.
       #
-      # @return [String] the observation.
+      # @return [Pikuri::Tool::Result, String] the checklist as a
+      #   {Pikuri::Tool::Result} (+"Handed to Thunderbird"+ — the wizard, not
+      #   pikuri, imports it), or a bare +"Error: …"+.
       def create(title:, start:, finish:, all_day:, location:, description:)
         start_t = DateHelpers.parse_time(start) or return 'Error: a start date/time is required.'
         finish_t = DateHelpers.parse_time(finish)
@@ -95,7 +97,7 @@ module Pikuri
         ics = IcsEvent.build(title:, start: start_t, finish: finish_t, all_day:,
                              location:, description:)
         @launcher.launch(stage(ics))
-        CHECKLIST
+        Pikuri::Tool::Result.new(content: CHECKLIST, summary: 'Handed to Thunderbird')
       rescue ArgumentError => e
         "Error: bad date (#{e.message})."
       rescue Launcher::Error => e

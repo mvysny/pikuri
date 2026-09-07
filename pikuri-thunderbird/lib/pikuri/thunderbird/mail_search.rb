@@ -57,7 +57,9 @@ module Pikuri
         )
       end
 
-      # @return [String] formatted hits, a no-match line, or +"Error: …"+.
+      # @return [Pikuri::Tool::Result, String] the hits as a
+      #   {Pikuri::Tool::Result} (+"Found 8 messages"+ — the count only: a
+      #   subject line is whatever the sender wrote), or a bare +"Error: …"+.
       def self.run_search(backend:, query:, from:, to:, subject:, after:, before:, folder:, limit:)
         # Refuse a match-everything call: with no query and no filter this
         # would dump the whole mailbox newest-first. Every real request has at
@@ -78,13 +80,17 @@ module Pikuri
         hits = backend.search(query:, limit: limit + 1, from:, to:, subject:,
                               after: after_t, before: before_t, folder:)
         if hits.empty?
-          return query.to_s.strip.empty? ? 'No mail matched those filters.' \
-                                         : "No matching mail found for #{query.inspect}."
+          empty = query.to_s.strip.empty? ? 'No mail matched those filters.' \
+                                          : "No matching mail found for #{query.inspect}."
+          return Pikuri::Tool::Result.new(content: empty, summary: 'Found 0 messages')
         end
 
         has_more = hits.size > limit
         hits = hits.first(limit)
-        [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n")
+        Pikuri::Tool::Result.new(
+          content: [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n"),
+          summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'message')}#{'+' if has_more}"
+        )
       rescue ArgumentError => e
         "Error: bad date filter (#{e.message})."
       end

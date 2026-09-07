@@ -157,8 +157,10 @@ RSpec.describe Pikuri::Agent::Listener::TokenLog do
       [
         Pikuri::Agent::Event::UserTurn.new(content: 'hi'),
         Pikuri::Agent::Event::Assistant.new(content: 'reply'),
-        Pikuri::Agent::Event::ToolCall.new(name: 't', arguments: {}),
-        Pikuri::Agent::Event::ToolResult.new(content: 'r'),
+        Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: 't', arguments: {},
+                                           display_name: 'T', argument: ''),
+        Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 't', content: 'r',
+                                             summary: 'Returned 1 bytes'),
         Pikuri::Agent::Event::Thinking.new(content: 'pondering'),
         Pikuri::Agent::Event::FallbackNotice.new(reason: 'why'),
         Pikuri::Agent::Event::Cancelled.new

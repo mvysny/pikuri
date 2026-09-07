@@ -26,6 +26,8 @@ module Pikuri
       # @param list [List]
       # @return [Delete]
       def initialize(list:)
+        # Kept, not only closed over: {#describe_call} looks the task's title up.
+        @list = list
         super(
           name: 'task_delete',
           description: DESCRIPTION,
@@ -42,12 +44,23 @@ module Pikuri
         )
       end
 
+      # The task's title rather than the integer id the model passes —
+      # +TaskCompleted(3)+ names nothing a reader recognizes.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        Pikuri::Tool.one_line(@list.label_for(arguments['id'] || arguments[:id]))
+      end
+
       # @param list [List]
       # @param id [Integer]
-      # @return [String]
+      # @return [Pikuri::Tool::Result, String] the rendered list as a
+      #   {Pikuri::Tool::Result} (+"3 tasks, 1 done"+); a bare +"Error: ..."+ for
+      #   an id the list does not hold
       def self.execute(list:, id:)
         list.delete(id)
-        list.render
+        Pikuri::Tool::Result.new(content: list.render, summary: list.summary)
       rescue ItemNotFound
         "Error: no such task id: #{id}. Current list:\n#{list.render}"
       end

@@ -81,6 +81,16 @@ module Pikuri
         )
       end
 
+      # The workspace root renders as +.+ rather than as nothing: +path+ is
+      # optional and the model usually omits it, which the generic default
+      # would show as a bare +FileList+.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        Pikuri::Tool.one_line((arguments['path'] || arguments[:path] || '.').to_s)
+      end
+
       # A new {FileList} bound to +workspace+. Used by
       # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
       # +workspace_factory:+, so paths resolve against the sub-agent's root.
@@ -97,7 +107,9 @@ module Pikuri
       # @param path [String, nil] raw path from the LLM; +nil+ means the
       #   workspace root
       # @param depth [Integer] levels to descend
-      # @return [String] the listing, +"(Empty directory)"+, or +"Error: ..."+
+      # @return [Tool::Result, String] the listing as a
+      #   {Pikuri::Tool::Result} (+"Listed 31 entries"+), or a bare
+      #   +"Error: ..."+
       def self.list(workspace:, path:, depth:)
         return "Error: depth must be >= 1, got #{depth}" if depth < 1
 
@@ -110,8 +122,11 @@ module Pikuri
           return refusal
         end
 
-        listing = Listing.render(resolved, filesystem: workspace.filesystem, depth: depth)
-        listing.empty? ? '(Empty directory)' : listing
+        listing, entries = Listing.render_with_count(resolved, filesystem: workspace.filesystem, depth: depth)
+        return Tool::Result.new(content: '(Empty directory)', summary: 'Listed 0 entries') if listing.empty?
+
+        Tool::Result.new(content: listing,
+                         summary: "Listed #{Pikuri::Tool.pluralize(entries, 'entry', 'entries')}")
       rescue Filesystem::Error => e
         "Error: #{e.message}"
       rescue SystemCallError => e

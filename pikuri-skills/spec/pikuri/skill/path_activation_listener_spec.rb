@@ -36,7 +36,9 @@ RSpec.describe Pikuri::Skill::PathActivationListener do
   end
 
   def touch(tool, arguments)
-    listener.on_event(Pikuri::Agent::Event::ToolCall.new(name: tool, arguments: arguments))
+    listener.on_event(Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: tool, arguments: arguments,
+                                                     display_name: Pikuri::Tool.display_name_for(tool),
+                                                     argument: ''))
   end
 
   describe 'which tool calls count' do

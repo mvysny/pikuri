@@ -88,18 +88,24 @@ module Pikuri
       # @param query [String]
       # @param limit [Integer]
       # @param backend [Module] the file-index backend to query
-      # @return [String] formatted hits + disclaimer, a no-match message,
-      #   or +"Error: ..."+
+      # @return [Pikuri::Tool::Result, String] the hits + disclaimer as a
+      #   {Pikuri::Tool::Result} (+"Found 8 files"+); a bare +"Error: ..."+ for a
+      #   backend failure
       def self.search(query:, backend:, limit: DEFAULT_LIMIT)
         q = query.to_s.strip
         return 'Error: empty query.' if q.empty?
 
         limit = clamp(limit, 1, MAX_LIMIT)
         hits = backend.search(query: q, limit: limit)
-        return no_match_message(q) if hits.empty?
+        if hits.empty?
+          return Pikuri::Tool::Result.new(content: no_match_message(q), summary: 'Found 0 files')
+        end
 
         content, marker = head_truncate(hits.map { |hit| render_hit(hit) }.join("\n"))
-        [content.chomp, '', disclaimer(hits.size) + marker].join("\n")
+        Pikuri::Tool::Result.new(
+          content: [content.chomp, '', disclaimer(hits.size) + marker].join("\n"),
+          summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'file')}"
+        )
       rescue backend::CommandError => e
         # Cap the error too — a raw subprocess error returned verbatim is
         # the shape that overflows the model's context; share the success

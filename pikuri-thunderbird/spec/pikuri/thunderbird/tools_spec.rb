@@ -46,13 +46,13 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
         tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
-        out = tool.run('query' => 'invoice')
+        out = tool.run('query' => 'invoice').to_s
         assert_match(/1 match/, out)
         assert_match(/id: <a@x>/, out)
         assert_match(/Invoice 2024/, out)
 
-        assert_match(/No matching mail/, tool.run('query' => 'zzzznope'))
-        assert_match(/Error: bad date/, tool.run('query' => 'invoice', 'after' => 'not-a-date'))
+        assert_match(/No matching mail/, tool.run('query' => 'zzzznope').to_s)
+        assert_match(/Error: bad date/, tool.run('query' => 'invoice', 'after' => 'not-a-date').to_s)
         g.close
       end
     end
@@ -61,10 +61,10 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
         tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
-        out = tool.run('from' => 'acme.com')
+        out = tool.run('from' => 'acme.com').to_s
         assert_match(/1 match/, out)
         assert_match(/Invoice 2024/, out)
-        assert_match(/No mail matched those filters/, tool.run('from' => 'nobody@nowhere'))
+        assert_match(/No mail matched those filters/, tool.run('from' => 'nobody@nowhere').to_s)
         g.close
       end
     end
@@ -73,8 +73,8 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
         tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
-        assert_match(/Error: give at least one/, tool.run({}))
-        assert_match(/Error: give at least one/, tool.run('query' => '  ', 'from' => ''))
+        assert_match(/Error: give at least one/, tool.run({}).to_s)
+        assert_match(/Error: give at least one/, tool.run('query' => '  ', 'from' => '').to_s)
         g.close
       end
     end
@@ -97,11 +97,40 @@ describe 'pikuri-thunderbird tools' do
         g = Pikuri::Thunderbird::Gloda.new(gloda_path: path, cache_dir: File.join(dir, 'gc'))
         tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
 
-        capped = tool.run('query' => 'invoice', 'limit' => 1)
+        capped = tool.run('query' => 'invoice', 'limit' => 1).to_s
         assert_match(/more exist/, capped)
         assert_match(/raise limit/, capped)
 
-        assert_match(/all shown/, tool.run('query' => 'invoice', 'limit' => 10))
+        assert_match(/all shown/, tool.run('query' => 'invoice', 'limit' => 10).to_s)
+        g.close
+      end
+    end
+  end
+
+  describe 'the display line' do
+    it 'counts the hits and never carries a subject line' do
+      Dir.mktmpdir do |dir|
+        g = gloda(dir)
+        tool = Pikuri::Thunderbird::MailSearch.new(backend: mail(g))
+
+        result = tool.run('query' => 'invoice')
+
+        assert_equal 'Found 1 message', result.summary
+        refute_includes result.summary, 'Invoice 2024'
+        # Every parameter is optional, so the generic no-required default applies.
+        assert_equal 'query=invoice', tool.describe_call('query' => 'invoice')
+        assert_equal 'ThunderbirdMailSearch', tool.display_name
+        assert_equal 'Found 0 messages', tool.run('query' => 'zzzznope').summary
+        g.close
+      end
+    end
+
+    it 'reports a read message by size, since a subject is whatever the sender wrote' do
+      Dir.mktmpdir do |dir|
+        g = gloda(dir)
+        result = Pikuri::Thunderbird::MailRead.new(backend: mail(g)).run('message_id' => '<a@x>')
+
+        assert_match(/\ARead \d+(\.\d+)? (B|kB|MB)\z/, result.summary)
         g.close
       end
     end
@@ -112,11 +141,11 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         g = gloda(dir)
         tool = Pikuri::Thunderbird::MailRead.new(backend: mail(g))
-        out = tool.run('message_id' => '<a@x>')
+        out = tool.run('message_id' => '<a@x>').to_s
         assert_match(/Subject: Invoice 2024/, out)
         assert_match(/invoice attached/, out)
         assert_match(/Attachments: invoice.pdf/, out)
-        assert_match(/Error: no message/, tool.run('message_id' => '<nope@x>'))
+        assert_match(/Error: no message/, tool.run('message_id' => '<nope@x>').to_s)
         g.close
       end
     end
@@ -127,7 +156,7 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         c = calendar(dir)
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
-        out = tool.run('query' => 'standup')
+        out = tool.run('query' => 'standup').to_s
         assert_match(/Team standup/, out)
         assert_match(/id: e1/, out)
         assert_match(/where: Zoom/, out)
@@ -139,10 +168,10 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         c = calendar(dir)
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
-        out = tool.run('after' => '2026-05-01', 'before' => '2026-05-01')
+        out = tool.run('after' => '2026-05-01', 'before' => '2026-05-01').to_s
         assert_match(/Team standup/, out)
         assert_match(/No events found in that date range/,
-                     tool.run('after' => '2030-01-01', 'before' => '2030-01-01'))
+                     tool.run('after' => '2030-01-01', 'before' => '2030-01-01').to_s)
         c.close
       end
     end
@@ -151,7 +180,7 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         c = calendar(dir)
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
-        assert_match(/Error: give a query and\/or a date range/, tool.run({}))
+        assert_match(/Error: give a query and\/or a date range/, tool.run({}).to_s)
         c.close
       end
     end
@@ -173,11 +202,11 @@ describe 'pikuri-thunderbird tools' do
         c = Pikuri::Thunderbird::Calendar.new(calendar_dbs: [path], cache_dir: File.join(dir, 'cc'))
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
 
-        capped = tool.run('query' => 'standup', 'limit' => 1)
+        capped = tool.run('query' => 'standup', 'limit' => 1).to_s
         assert_match(/more exist/, capped)
         assert_match(/raise limit/, capped)
 
-        assert_match(/all shown/, tool.run('query' => 'standup', 'limit' => 10))
+        assert_match(/all shown/, tool.run('query' => 'standup', 'limit' => 10).to_s)
         c.close
       end
     end
@@ -186,7 +215,7 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         c = calendar(dir, []) # no calendar stores on disk
         tool = Pikuri::Thunderbird::CalendarSearch.new(backend: c)
-        assert_match(/Offline Support/, tool.run('query' => 'anything'))
+        assert_match(/Offline Support/, tool.run('query' => 'anything').to_s)
         c.close
       end
     end
@@ -197,11 +226,11 @@ describe 'pikuri-thunderbird tools' do
       Dir.mktmpdir do |dir|
         c = calendar(dir)
         tool = Pikuri::Thunderbird::CalendarRead.new(backend: c)
-        out = tool.run('event_id' => 'e1')
+        out = tool.run('event_id' => 'e1').to_s
         assert_match(/Title: Team standup/, out)
         assert_match(/Where: Zoom/, out)
         assert_match(/daily sync/, out)
-        assert_match(/Error: no event/, tool.run('event_id' => 'nope'))
+        assert_match(/Error: no event/, tool.run('event_id' => 'nope').to_s)
         c.close
       end
     end

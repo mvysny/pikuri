@@ -87,7 +87,9 @@ module Pikuri
               next "Error: skill '#{name}' not found. Available skills: #{list}."
             end
 
-            Pikuri::Skill::Renderer.format_skill(loaded)
+            body = Pikuri::Skill::Renderer.format_skill(loaded)
+            Pikuri::Tool::Result.new(content: body,
+                                     summary: "Loaded #{Pikuri::Tool.format_bytes(body.bytesize)}")
           },
           # No egress; untrusted graded by the catalog. A skill body is prose —
           # Markdown dropped into the model's context verbatim, exactly like a README

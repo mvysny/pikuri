@@ -22,7 +22,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'returns cat-n formatted content followed by an EOF trailer' do
       write_file('hello.txt', "alpha\nbeta\ngamma\n")
 
-      result = described_class.read(workspace: workspace, path: 'hello.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'hello.txt', offset: 1, limit: 2000).to_s
 
       expected = "     1\talpha\n     2\tbeta\n     3\tgamma\n\n(End of file - total 3 lines)"
       assert_equal expected, result
@@ -31,7 +31,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'preserves trailing whitespace on individual lines' do
       write_file('trail.txt', "alpha  \nbeta\n")
 
-      result = described_class.read(workspace: workspace, path: 'trail.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'trail.txt', offset: 1, limit: 2000).to_s
 
       assert_includes result, "     1\talpha  "
     end
@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'skips the first offset-1 lines' do
       write_file('skip.txt', (1..5).map { |n| "line #{n}" }.join("\n") + "\n")
 
-      result = described_class.read(workspace: workspace, path: 'skip.txt', offset: 3, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'skip.txt', offset: 3, limit: 2000).to_s
 
       assert_includes result, "     3\tline 3"
       assert_includes result, "     5\tline 5"
@@ -51,7 +51,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'caps at limit and emits an actionable continuation marker' do
       write_file('big.txt', (1..10).map { |n| "L#{n}" }.join("\n") + "\n")
 
-      result = described_class.read(workspace: workspace, path: 'big.txt', offset: 1, limit: 3)
+      result = described_class.read(workspace: workspace, path: 'big.txt', offset: 1, limit: 3).to_s
 
       assert_includes result, "     3\tL3"
       refute_includes result, 'L4'
@@ -61,7 +61,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'returns an error when offset is past EOF' do
       write_file('short.txt', "one\ntwo\n")
 
-      result = described_class.read(workspace: workspace, path: 'short.txt', offset: 99, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'short.txt', offset: 99, limit: 2000).to_s
 
       assert_equal 'Error: offset 99 is beyond end of file (2 lines total)', result
     end
@@ -69,7 +69,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'rejects offset < 1' do
       write_file('any.txt', "x\n")
 
-      result = described_class.read(workspace: workspace, path: 'any.txt', offset: 0, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'any.txt', offset: 0, limit: 2000).to_s
 
       assert_equal 'Error: offset must be >= 1, got 0', result
     end
@@ -77,7 +77,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'rejects limit < 1' do
       write_file('any.txt', "x\n")
 
-      result = described_class.read(workspace: workspace, path: 'any.txt', offset: 1, limit: 0)
+      result = described_class.read(workspace: workspace, path: 'any.txt', offset: 1, limit: 0).to_s
 
       assert_equal 'Error: limit must be >= 1, got 0', result
     end
@@ -87,7 +87,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'returns "(Empty file)" rather than an awkward EOF marker' do
       write_file('empty.txt', '')
 
-      result = described_class.read(workspace: workspace, path: 'empty.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'empty.txt', offset: 1, limit: 2000).to_s
 
       assert_equal '(Empty file)', result
     end
@@ -98,7 +98,7 @@ RSpec.describe Pikuri::Workspace::Read do
       long = 'x' * (Pikuri::Workspace::Read::MAX_LINE_LENGTH + 50)
       write_file('long.txt', "#{long}\nshort\n")
 
-      result = described_class.read(workspace: workspace, path: 'long.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'long.txt', offset: 1, limit: 2000).to_s
 
       assert_includes result, Pikuri::Workspace::Read::LINE_TRUNCATION_MARKER
       # The truncated payload should be exactly MAX_LINE_LENGTH x's followed
@@ -116,7 +116,7 @@ RSpec.describe Pikuri::Workspace::Read do
       content = (1..80).map { bulky_line }.join("\n") + "\n"
       write_file('bulky.txt', content)
 
-      result = described_class.read(workspace: workspace, path: 'bulky.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'bulky.txt', offset: 1, limit: 2000).to_s
 
       assert_includes result, "Output capped at #{Pikuri::Workspace::Read::MAX_BYTES_LABEL}."
       assert_match(/Use offset=\d+ to continue\./, result)
@@ -128,7 +128,7 @@ RSpec.describe Pikuri::Workspace::Read do
       FileUtils.mkdir_p(root + 'subdir/nested')
       write_file('subdir/a.rb', 'x' * 1024)
 
-      result = described_class.read(workspace: workspace, path: 'subdir', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'subdir', offset: 1, limit: 2000).to_s
 
       assert_equal "Error: subdir is a directory, not a file. It contains " \
                    "(directories end with `/`):\nnested/  [empty]\na.rb  1.0K", result
@@ -137,7 +137,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'says so plainly when the directory is empty' do
       FileUtils.mkdir_p(root + 'hollow')
 
-      result = described_class.read(workspace: workspace, path: 'hollow', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'hollow', offset: 1, limit: 2000).to_s
 
       assert_equal 'Error: hollow is a directory, not a file. It is empty.', result
     end
@@ -154,7 +154,7 @@ RSpec.describe Pikuri::Workspace::Read do
     end
 
     it 'refuses missing files' do
-      result = described_class.read(workspace: workspace, path: 'nope.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'nope.txt', offset: 1, limit: 2000).to_s
 
       assert_equal 'Error: file not found: nope.txt', result
     end
@@ -162,7 +162,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'refuses binary files (null byte in sample)' do
       write_file('bin.dat', "abc\x00def\x00ghi")
 
-      result = described_class.read(workspace: workspace, path: 'bin.dat', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'bin.dat', offset: 1, limit: 2000).to_s
 
       assert_equal 'Error: cannot read binary file: bin.dat', result
     end
@@ -172,7 +172,7 @@ RSpec.describe Pikuri::Workspace::Read do
       content = (['a', "\x01"] * 200).join
       write_file('ctrl.dat', content)
 
-      result = described_class.read(workspace: workspace, path: 'ctrl.dat', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'ctrl.dat', offset: 1, limit: 2000).to_s
 
       assert_equal 'Error: cannot read binary file: ctrl.dat', result
     end
@@ -180,14 +180,14 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'allows UTF-8 multi-byte text (continuation bytes are not non-printable)' do
       write_file('utf8.txt', "héllo\nwörld\n")
 
-      result = described_class.read(workspace: workspace, path: 'utf8.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'utf8.txt', offset: 1, limit: 2000).to_s
 
       assert_includes result, "     1\théllo"
       assert_includes result, "     2\twörld"
     end
 
     it 'converts workspace-boundary violations to "Error: ..." strings' do
-      result = described_class.read(workspace: workspace, path: '../escape.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: '../escape.txt', offset: 1, limit: 2000).to_s
 
       assert result.start_with?('Error: path'), "expected workspace error, got #{result.inspect}"
       assert_includes result, 'is outside the workspace'
@@ -198,7 +198,7 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'validates args and produces a cat-n observation for the LLM' do
       write_file('integ.txt', "one\ntwo\nthree\n")
 
-      result = tool.run('path' => 'integ.txt')
+      result = tool.run('path' => 'integ.txt').to_s
 
       assert_includes result, "     1\tone"
       assert_includes result, '(End of file - total 3 lines)'
@@ -207,14 +207,14 @@ RSpec.describe Pikuri::Workspace::Read do
     it 'reports unknown parameters via the Parameters validator' do
       write_file('integ.txt', "x\n")
 
-      result = tool.run('path' => 'integ.txt', 'depth' => 3)
+      result = tool.run('path' => 'integ.txt', 'depth' => 3).to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'depth'
     end
 
     it 'reports a missing required path' do
-      result = tool.run({})
+      result = tool.run({}).to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'path'
@@ -259,7 +259,7 @@ RSpec.describe Pikuri::Workspace::Read do
       path = root + 'huge.png'
       File.binwrite(path, PNG_MAGIC + ("\x00".b * (Pikuri::Workspace::Read::MAX_IMAGE_BYTES + 1)))
 
-      result = described_class.read(workspace: workspace, path: 'huge.png', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'huge.png', offset: 1, limit: 2000).to_s
 
       assert_kind_of String, result
       assert result.start_with?('Error: image too large to inline: huge.png is'),
@@ -281,7 +281,7 @@ RSpec.describe Pikuri::Workspace::Read do
       # Plausible ZIP magic — not an image.
       write_image('thing.zip', "PK\x03\x04".b, 32)
 
-      result = described_class.read(workspace: workspace, path: 'thing.zip', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'thing.zip', offset: 1, limit: 2000).to_s
 
       assert_equal 'Error: cannot read binary file: thing.zip', result
     end
@@ -315,7 +315,7 @@ RSpec.describe Pikuri::Workspace::Read do
     end
 
     it 'does not mark the path read when the file is missing' do
-      result = described_class.read(workspace: workspace, path: 'absent.txt', offset: 1, limit: 2000)
+      result = described_class.read(workspace: workspace, path: 'absent.txt', offset: 1, limit: 2000).to_s
 
       assert result.start_with?('Error: file not found'), result
       refute workspace.read?(root + 'absent.txt')

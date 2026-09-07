@@ -53,13 +53,25 @@ module Pikuri
         )
       end
 
+      # Renders bare: the one required argument is the whole Markdown plan, and
+      # the confirmer is already showing it.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String] +""+
+      def describe_call(_arguments)
+        ''
+      end
+
       # Present +plan+ for approval; on yes deactivate plan mode, on no
       # keep it active. Returns the observation the model reacts to.
       #
       # @param read_only [Pikuri::Workspace::ReadOnly]
       # @param confirmer [Pikuri::Workspace::Confirmer]
       # @param plan [String] the LLM-authored plan to show the user
-      # @return [String] tool observation
+      # @return [Pikuri::Tool::Result, String] tool observation — a
+      #   {Pikuri::Tool::Result} (+"Plan mode off"+ / +"Plan not approved"+)
+      #   once the user has answered; a bare +"Error: ..."+ when there was no
+      #   plan mode to exit
       def self.run(read_only:, confirmer:, plan:)
         unless read_only.active?
           return 'Error: not in plan mode, so there is nothing to exit. ' \
@@ -73,11 +85,17 @@ module Pikuri
 
         if confirmer.confirm?(request: request)
           read_only.deactivate!
-          'Plan approved — you are no longer in plan mode. Implement the plan now.'
+          Pikuri::Tool::Result.new(
+            content: 'Plan approved — you are no longer in plan mode. Implement the plan now.',
+            summary: 'Plan mode off'
+          )
         else
-          'The user did not approve the plan; you are still in plan mode (read-only). ' \
-            'Ask what they would like changed, revise the plan, and call exit_plan_mode ' \
-            'again when ready. Do not edit any files.'
+          Pikuri::Tool::Result.new(
+            content: 'The user did not approve the plan; you are still in plan mode (read-only). ' \
+                     'Ask what they would like changed, revise the plan, and call exit_plan_mode ' \
+                     'again when ready. Do not edit any files.',
+            summary: 'Plan not approved'
+          )
         end
       end
     end

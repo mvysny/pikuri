@@ -121,7 +121,11 @@ module Pikuri
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
-      # @return [String] tool observation
+      # @return [Tool::Result, String] the observation — a {Pikuri::Tool::Result}
+      #   (+"Created, 88 lines"+ / +"Updated, 88 lines (was 90)"+) on a write, a
+      #   bare +"Error: ..."+ or the confirmer's decline otherwise. The line
+      #   counts rather than a diff: pikuri has no in-process differ (a
+      #   diff-capable chrome renders the {Confirmer::Change} itself).
       def self.write(workspace:, confirmer:, path:, content:, read_only: nil, confirm_all_writes: false)
         return "Error: cannot write #{path} — #{read_only.message}" if read_only&.active?
 
@@ -152,7 +156,11 @@ module Pikuri
 
           write_bytes(resolved, content)
           workspace.mark_read(resolved)
-          "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)"
+          Tool::Result.new(
+            content: "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)",
+            summary: "Updated, #{Pikuri::Tool.pluralize(content.lines.size, 'line')} " \
+                     "(was #{existing.lines.size})"
+          )
         else
           if confirm_all_writes
             gate = WriteGate.check(
@@ -167,7 +175,8 @@ module Pikuri
           # A just-authored file counts as read: the model supplied its
           # full bytes, so a follow-up edit needn't re-read it.
           workspace.mark_read(resolved)
-          "Created #{path} (#{content.bytesize} bytes)"
+          Tool::Result.new(content: "Created #{path} (#{content.bytesize} bytes)",
+                           summary: "Created, #{Pikuri::Tool.pluralize(content.lines.size, 'line')}")
         end
       rescue Filesystem::Error, Error => e
         "Error: #{e.message}"

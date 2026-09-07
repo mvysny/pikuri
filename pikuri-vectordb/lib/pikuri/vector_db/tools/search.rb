@@ -116,14 +116,19 @@ module Pikuri
         # @param backend [#query]
         # @param reranker [#rerank, nil]
         # @param query [String]
-        # @return [String] formatted observation.
+        # @return [Pikuri::Tool::Result, String] the formatted observation as a
+        #   {Pikuri::Tool::Result} (+"Found 8 matches"+); a bare +"Error: ..."+
+        #   for an empty query.
         def self.execute(embedder:, backend:, reranker:, query:)
           return 'Error: query is empty' if query.nil? || query.strip.empty?
 
           candidate_k = reranker ? CANDIDATE_K : FINAL_K
           query_vector = embedder.embed([query]).first
           candidates = backend.query(vector: query_vector, top_k: candidate_k)
-          return 'No matches found in the indexed corpus.' if candidates.empty?
+          if candidates.empty?
+            return Pikuri::Tool::Result.new(content: 'No matches found in the indexed corpus.',
+                                            summary: 'Found 0 matches')
+          end
 
           final = if reranker
                     reranked_or_fallback(reranker: reranker, query: query, candidates: candidates)
@@ -171,7 +176,9 @@ module Pikuri
         # {.reranked_or_fallback}.
         #
         # @param results [Array<Backend::Result>]
-        # @return [String]
+        # @return [Pikuri::Tool::Result] the observation, carrying +"Found 8
+        #   matches"+ — the count, never a snippet: these are corpus bytes, and
+        #   a display line is read as status.
         def self.format_observation(results)
           header = "Found #{results.length} match#{'es' unless results.length == 1}.\n\n"
           body = results.each_with_index.map do |result, i|
@@ -180,7 +187,10 @@ module Pikuri
             score = format('%.2f', result.score)
             "[#{i + 1}] #{result.chunk.source} (score=#{score})\n#{snippet}"
           end.join("\n\n")
-          header + body
+          Pikuri::Tool::Result.new(
+            content: header + body,
+            summary: "Found #{Pikuri::Tool.pluralize(results.length, 'match', 'matches')}"
+          )
         end
       end
     end

@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
   describe 'execution' do
     it 'returns the skill body wrapped with the base directory when the name resolves' do
       tool = described_class.new(activation: activation)
-      out = tool.run('name' => 'pdf-tools')
+      out = tool.run('name' => 'pdf-tools').to_s
 
       assert out.include?('<skill name="pdf-tools"'), out
       assert out.include?('pdftotext'), out
@@ -49,9 +49,17 @@ RSpec.describe Pikuri::Skill::SkillTool do
       assert out.include?('</skill>'), out
     end
 
+    it 'reports the loaded size as its display line, never a slice of the body' do
+      tool = described_class.new(activation: activation)
+      result = tool.run('name' => 'pdf-tools')
+
+      assert_match(/\ALoaded \d+(\.\d+)? (B|kB|MB)\z/, result.summary)
+      refute_includes result.summary, 'pdftotext'
+    end
+
     it 'returns an LLM-actionable Error: string for an unknown name, listing what is available' do
       tool = described_class.new(activation: activation)
-      out = tool.run('name' => 'no-such-skill')
+      out = tool.run('name' => 'no-such-skill').to_s
 
       assert out.start_with?('Error:'), out
       assert out.include?("'no-such-skill'"), out
@@ -63,7 +71,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
 
     it 'returns an Error: string mentioning "none" when the catalog is empty' do
       tool = described_class.new(activation: Pikuri::Skill::Activation.new(catalog: Pikuri::Skill::Catalog::EMPTY))
-      out = tool.run('name' => 'anything')
+      out = tool.run('name' => 'anything').to_s
 
       assert out.start_with?('Error:'), out
       assert out.include?('none'), out
@@ -96,7 +104,7 @@ RSpec.describe Pikuri::Skill::SkillTool do
 
     it 'still resolves the ungated skills the persona was told about' do
       child = described_class.new(activation: activation).for_sub_agent
-      out = child.run('name' => 'pdf-tools')
+      out = child.run('name' => 'pdf-tools').to_s
 
       assert out.include?('<skill name="pdf-tools"'), out
     end

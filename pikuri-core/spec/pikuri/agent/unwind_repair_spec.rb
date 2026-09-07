@@ -157,6 +157,30 @@ RSpec.describe 'Pikuri::Agent unwound tool batch' do
     agent&.close
   end
 
+  it 'marks a repaired call Interrupted, naming the call it answered' do
+    events = []
+    listener = Class.new(Pikuri::Agent::Listener::Base) do
+      define_method(:initialize) { |sink| @sink = sink }
+      define_method(:on_event) { |e| @sink << e if e.is_a?(Pikuri::Agent::Event::ToolResult) }
+    end
+    transport = Pikuri::Testing.fake_transport do |llm|
+      llm.tool_batch(['boom', { x: 'a' }], ['boom', { x: 'b' }])
+    end
+    agent = Pikuri::Agent.new(transport: transport, system_prompt: 'test') do |c|
+      c.add_tool(probe_tool('boom') { raise TypeError, 'nope' })
+      c.add_listener listener.new(events)
+    end
+
+    assert_raises(TypeError) { agent.run_loop(user_message: 'go') }
+
+    repaired = events.last
+    assert_equal Pikuri::Agent::INTERRUPTED_SUMMARY, repaired.summary
+    assert_equal 'boom', repaired.name
+    refute_nil repaired.tool_call_id
+  ensure
+    agent&.close
+  end
+
   it 'leaves a turn that answered every call alone' do
     transport = Pikuri::Testing.fake_transport do |llm|
       llm.tool_batch(['probe', { x: 'a' }], ['probe', { x: 'b' }])

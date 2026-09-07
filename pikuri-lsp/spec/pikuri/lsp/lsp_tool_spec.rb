@@ -84,7 +84,7 @@ describe Pikuri::Lsp::LspTool do
   describe 'routing, and the three answers that must stay distinct' do
     it 'routes on the file and names the file type nothing claims' do
       wired.call(files: { 'README.md' => "# hi\n" }) do |tool|
-        answer = tool.run('operation' => 'hover', 'symbol' => 'hi', 'file' => 'README.md', 'line' => 1)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'hi', 'file' => 'README.md', 'line' => 1).to_s
 
         assert_equal 'Error: no language server is configured for .md files', answer
       end
@@ -94,7 +94,7 @@ describe Pikuri::Lsp::LspTool do
       capabilities = all_capabilities.reject { |key, _| key == 'implementationProvider' }
       wired.call(files: { 'read.rb' => read_rb }, servers: { 'ruby' => ruby_server.call(capabilities) }) do |tool|
         answer = tool.run('operation' => 'goToImplementation', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/does not support goToImplementation/, answer)
         assert_match(/advertises no implementationProvider/, answer)
@@ -106,7 +106,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['ruby'].on('textDocument/definition') { |_params| [] }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/answered no results/, answer)
         assert_match(/not proof that none exist/, answer)
@@ -132,9 +132,39 @@ describe Pikuri::Lsp::LspTool do
           fake.crash!
         end
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/died while its index was building/, answer)
+      end
+    end
+  end
+
+  describe 'the display line a chrome renders' do
+    it 'is the acronym plus the operation and symbol, never the enum alone' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool|
+        assert_equal 'LSP', tool.display_name
+        assert_equal 'findReferences resolve_for_read',
+                     tool.describe_call('operation' => 'findReferences', 'symbol' => 'resolve_for_read')
+      end
+    end
+
+    it 'counts the rows the renderer kept' do
+      wired.call(files: { 'a.rb' => "names = names.trim\n" }) do |tool, fakes, root|
+        fakes['ruby'].on('textDocument/definition') { |_params| [at.call("file://#{root}/a.rb", 0)] }
+
+        result = tool.run('operation' => 'goToDefinition', 'symbol' => 'names', 'file' => 'a.rb', 'line' => 1)
+
+        assert_equal '1 result', result.summary
+      end
+    end
+
+    it 'reports nothing found as a count, not as silence' do
+      wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
+        fakes['ruby'].on('textDocument/definition') { |_params| [] }
+
+        result = tool.run('operation' => 'goToDefinition', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+
+        assert_equal '0 results', result.summary
       end
     end
   end
@@ -161,7 +191,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['ruby'].on('textDocument/definition') { |_params| [at.call("file://#{root}/a.rb", 0)] }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'names',
-                          'file' => 'a.rb', 'line' => 1)
+                          'file' => 'a.rb', 'line' => 1).to_s
         sent = fakes['ruby'].received.select { |message| message['method'] == 'textDocument/definition' }
 
         assert_equal [0, 8], sent.map { |message| message.dig('params', 'position', 'character') }
@@ -176,7 +206,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'names',
-                          'file' => 'a.rb', 'line' => 1)
+                          'file' => 'a.rb', 'line' => 1).to_s
 
         assert_match(/At a\.rb:1:1/, answer)
         assert_match(/At a\.rb:1:9/, answer)
@@ -185,7 +215,7 @@ describe Pikuri::Lsp::LspTool do
 
     it 'refuses a line the symbol is not on, and shows the line' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool|
-        answer = tool.run('operation' => 'hover', 'symbol' => 'nope', 'file' => 'read.rb', 'line' => 4)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'nope', 'file' => 'read.rb', 'line' => 4).to_s
 
         assert_equal 'Error: "nope" is not on line 4 of read.rb, which reads: "def call(path)"', answer
       end
@@ -193,7 +223,7 @@ describe Pikuri::Lsp::LspTool do
 
     it 'refuses a line past the end of the file' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool|
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 99)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 99).to_s
 
         assert_match(/has 7 lines; line 99 was asked for/, answer)
       end
@@ -203,7 +233,7 @@ describe Pikuri::Lsp::LspTool do
   describe 'a reply, an argument or a wiring pikuri did not expect' do
     it 'refuses a line below 1 instead of silently consulting the last line' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
-        answer = tool.run('operation' => 'hover', 'symbol' => 'end', 'file' => 'read.rb', 'line' => 0)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'end', 'file' => 'read.rb', 'line' => 0).to_s
 
         assert_equal 'Error: line must be 1-based, got 0', answer
         assert_empty fakes['ruby'].received.select { |message| message['method'] == 'textDocument/hover' }
@@ -217,7 +247,7 @@ describe Pikuri::Lsp::LspTool do
           fakes['ruby'].on('textDocument/definition') { |_params| malformed }
 
           answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                            'file' => 'read.rb', 'line' => 4)
+                            'file' => 'read.rb', 'line' => 4).to_s
 
           assert_match(/goToDefinition reply could not be read/, answer)
         end
@@ -233,7 +263,7 @@ describe Pikuri::Lsp::LspTool do
         end
         fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'scanned instead' } }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'Read')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'Read').to_s
         sent = fakes['ruby'].await('textDocument/hover')
 
         assert_match(/scanned instead/, answer)
@@ -263,7 +293,7 @@ describe Pikuri::Lsp::LspTool do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
         fakes['ruby'].on('textDocument/hover') { |_params| 'a bare string' }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/a bare string/, answer)
       end
@@ -330,7 +360,7 @@ describe Pikuri::Lsp::LspTool do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
         fakes['ruby'].refuse('textDocument/hover')
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/^Error: /, answer)
         refute_nil fakes['ruby'].await('textDocument/didClose'), 'the ensure owes the close either way'
@@ -367,7 +397,7 @@ describe Pikuri::Lsp::LspTool do
         end
         fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'the Read tool' } }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'Read')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'Read').to_s
         sent = fakes['ruby'].await('textDocument/hover')
 
         assert_match(/the Read tool/, answer)
@@ -384,7 +414,7 @@ describe Pikuri::Lsp::LspTool do
              'location' => at.call('file:///elsewhere/gems/pikuri-0.0.6/read.rb', 2) }]
         end
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'Read')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'Read').to_s
 
         assert_match(/no index match can anchor a query/, answer)
         assert_match(/is outside the workspace \(read\.rb\)/, answer)
@@ -395,7 +425,7 @@ describe Pikuri::Lsp::LspTool do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
         fakes['ruby'].on('workspace/symbol') { |_params| [] }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'Confirmer')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'Confirmer').to_s
 
         assert_match(/is not in any server's index/, answer)
         assert_match(/Pass file: \(and line:\)/, answer)
@@ -408,7 +438,7 @@ describe Pikuri::Lsp::LspTool do
       wired.call(files: { 'read.rb' => read_rb }, servers: servers) do |tool, fakes|
         fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'scanned' } }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb').to_s
 
         assert_match(/scanned/, answer)
         assert_empty fakes['ruby'].received.select { |message| message['method'] == 'workspace/symbol' }
@@ -420,7 +450,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['ruby'].on('workspace/symbol') { |_params| [] }
         fakes['ruby'].on('textDocument/hover') { |_params| { 'contents' => 'found anyway' } }
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb')
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb').to_s
 
         assert_match(/found anyway/, answer)
         assert_match(/anchored on line 4, the first occurrence/, answer)
@@ -441,7 +471,7 @@ describe Pikuri::Lsp::LspTool do
           [{ 'name' => 'Same', 'kind' => 5, 'location' => at.call("file://#{root}/B.java", 0) }]
         end
 
-        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'Same')
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'Same').to_s
 
         assert_match(/From the ruby server:/, answer)
         assert_match(/From the java server:/, answer)
@@ -460,7 +490,7 @@ describe Pikuri::Lsp::LspTool do
           [{ 'name' => 'A', 'kind' => 5, 'location' => at.call("file://#{root}/a.rb", 0) }]
         end
 
-        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A')
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A').to_s
 
         assert_match(/the java server does not support workspaceSymbol/, answer)
         assert_match(%r{a\.rb:1}, answer)
@@ -491,7 +521,7 @@ describe Pikuri::Lsp::LspTool do
           [{ 'name' => 'A', 'kind' => 5, 'location' => at.call("file://#{root}/a.rb", 0) }]
         end
 
-        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A')
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A').to_s
 
         assert_equal %w[ruby], runtime.started_ids
         refute_match(/java/, answer, 'a server with nothing to say here is not mentioned')
@@ -501,7 +531,7 @@ describe Pikuri::Lsp::LspTool do
 
     it 'says which servers are configured when none of them has files here' do
       wired.call(files: { 'README.md' => "# hi\n" }) do |tool, _fakes, _root, runtime|
-        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A')
+        answer = tool.run('operation' => 'workspaceSymbol', 'symbol' => 'A').to_s
 
         assert_match(/no configured language server has files in this project/, answer)
         assert_match(/configured: ruby/, answer)
@@ -522,7 +552,7 @@ describe Pikuri::Lsp::LspTool do
         tool.on_progress = ->(progress) { seen << progress }
 
         call = Thread.new do
-          tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+          tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4).to_s
         end
         sleep 0.2
         assert_nil fake.received.find { |message| message['method'] == 'textDocument/hover' },
@@ -548,7 +578,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'findReferences', 'symbol' => 'resolve_for_read',
-                          'file' => 'read.rb', 'line' => 5)
+                          'file' => 'read.rb', 'line' => 5).to_s
 
         assert_match(/findReferences "resolve_for_read" — 13 results/, answer)
         assert_match(/In source \(1\):/, answer)
@@ -567,7 +597,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'findReferences', 'symbol' => 'resolve_for_read',
-                          'file' => 'read.rb', 'line' => 5)
+                          'file' => 'read.rb', 'line' => 5).to_s
 
         assert_match(/findReferences "resolve_for_read" — 1 result$/, answer.lines.first.chomp)
         assert_equal 1, answer.scan(/read\.rb:5/).length, 'one row, not two identical ones'
@@ -591,7 +621,7 @@ describe Pikuri::Lsp::LspTool do
           { 'contents' => { 'kind' => 'markdown', 'value' => "line\n" * 4000 } }
         end
 
-        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4)
+        answer = tool.run('operation' => 'hover', 'symbol' => 'call', 'file' => 'read.rb', 'line' => 4).to_s
 
         assert answer.bytesize < Pikuri::Lsp::Renderer::MAX_HOVER_BYTES + 500
         assert_match(/bytes omitted/, answer)
@@ -612,7 +642,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'incomingCalls', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
         asked = fakes['ruby'].received.map { |message| message['method'] }
 
         assert_includes asked, 'textDocument/prepareCallHierarchy'
@@ -637,7 +667,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'supertypes', 'symbol' => 'Read',
-                          'file' => 'read.rb', 'line' => 3)
+                          'file' => 'read.rb', 'line' => 3).to_s
 
         assert_match(/supertypes "Read" — 1 level/, answer)
         assert_match(/1\. Pikuri::Tool/, answer)
@@ -655,7 +685,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['ruby'].on('typeHierarchy/supertypes') { |_params| nil }
 
         answer = tool.run('operation' => 'supertypes', 'symbol' => 'Read',
-                          'file' => 'read.rb', 'line' => 3)
+                          'file' => 'read.rb', 'line' => 3).to_s
 
         assert_match(/answered no results for supertypes/, answer)
       end
@@ -674,7 +704,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['java'].on('java/classFileContents') { |_params| "package org.slf4j;\npublic class LoggerFactory {\n" }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'LoggerFactory',
-                          'file' => 'Main.java', 'line' => 1)
+                          'file' => 'Main.java', 'line' => 1).to_s
 
         assert_match(/org\.slf4j\.LoggerFactory \(slf4j-api-2\.0\.18\.jar\):2/, answer)
         assert_match(/public class LoggerFactory/, answer)
@@ -692,7 +722,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['java'].on('workspace/textDocumentContent') { |_params| { 'text' => "the standard reply\n" } }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'Main',
-                          'file' => 'Main.java', 'line' => 1)
+                          'file' => 'Main.java', 'line' => 1).to_s
 
         assert_match(/the standard reply/, answer)
         assert_empty fakes['java'].received.select { |m| m['method'] == 'java/classFileContents' }
@@ -706,7 +736,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['java'].refuse('java/classFileContents')
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'Main',
-                          'file' => 'Main.java', 'line' => 1)
+                          'file' => 'Main.java', 'line' => 1).to_s
 
         assert_match(/\[the server would not read this jdt: URI/, answer)
         assert_match(/org\.slf4j\.LoggerFactory/, answer, 'the row survives its missing snippet')
@@ -718,7 +748,7 @@ describe Pikuri::Lsp::LspTool do
         fakes['ruby'].on('textDocument/definition') { |_params| [at.call('zipfile:///g.zip::a.rb', 0)] }
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(/need LSP 3\.18 content support, which it does not advertise/, answer)
       end
@@ -731,7 +761,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
 
         assert_match(%r{https://attacker\.example/leak\?ctx=secret}, answer)
         assert_match(/never fetches a remote URI/, answer)
@@ -749,7 +779,7 @@ describe Pikuri::Lsp::LspTool do
           fakes['ruby'].on('textDocument/definition') { |_params| [at.call("file://#{elsewhere}", 0)] }
 
           answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                            'file' => 'read.rb', 'line' => 4)
+                            'file' => 'read.rb', 'line' => 4).to_s
 
           assert_match(/#{Regexp.escape(elsewhere)}:1  def resolve_for_read/, answer)
           refute_match(/outside the workspace/, answer)
@@ -766,7 +796,7 @@ describe Pikuri::Lsp::LspTool do
           end
 
           answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                            'file' => 'read.rb', 'line' => 4)
+                            'file' => 'read.rb', 'line' => 4).to_s
 
           assert_match(/outside the workspace: filesystem\.rb:1  def resolve_for_read/, answer)
           refute_match(/#{Regexp.escape(other)}/, answer)
@@ -796,7 +826,7 @@ describe Pikuri::Lsp::LspTool do
         end
 
         answer = tool.run('operation' => 'goToDefinition', 'symbol' => 'call',
-                          'file' => 'read.rb', 'line' => 4)
+                          'file' => 'read.rb', 'line' => 4).to_s
 
         refute_match(/secrets/, answer)
         assert_match(/read\.rb:4/, answer)
@@ -807,7 +837,7 @@ describe Pikuri::Lsp::LspTool do
   describe 'the tool surface' do
     it 'validates the operation enum before anything is spawned at' do
       wired.call(files: { 'read.rb' => read_rb }) do |tool, fakes|
-        answer = tool.run('operation' => 'rename', 'symbol' => 'call')
+        answer = tool.run('operation' => 'rename', 'symbol' => 'call').to_s
 
         assert_match(/Error:/, answer)
         assert_empty fakes['ruby'].received.reject { |m| %w[initialize initialized].include?(m['method']) }

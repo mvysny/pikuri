@@ -419,7 +419,11 @@ module Pikuri
 
             count = servers.register_tools_with_agent(id, ctx)
             activated << id
-            "Connected to MCP server '#{id}'. Added #{count} tool#{'s' if count != 1} to your toolset."
+            Pikuri::Tool::Result.new(
+              content: "Connected to MCP server '#{id}'. Added #{count} tool#{'s' if count != 1} " \
+                       'to your toolset.',
+              summary: "Connected, #{Pikuri::Tool.pluralize(count, 'tool')}"
+            )
           }
         )
       end

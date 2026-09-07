@@ -110,7 +110,7 @@ RSpec.describe 'Pikuri::Skill::Extension agent integration' do
 
     # Verify the bound catalog is the one we passed (the tool resolves
     # the sample skill we put in it).
-    result = skill_tool.run('name' => 'sample')
+    result = skill_tool.run('name' => 'sample').to_s
     assert result.include?('do the thing'), result
   end
 

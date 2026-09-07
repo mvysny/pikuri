@@ -79,6 +79,113 @@ design.
 
 ---
 
+## D_tool_summary_lines — The tool composes its own display line, in code (2026-09-07)
+
+**Status:** Accepted; shipped 2026-09-07. Graduated from
+`ideas/tool-summary-lines.md`.
+
+**Context.** Three chromes (pikuri's `Listener::Terminal`, pikuri-web's
+`SseListener`, pikuri-tui's conversation view) each printed
+`→ name(k=v, k=v)` and a 200-char slice of the observation. A transcript
+wants `Write(lib/foo.rb)` / `Added 2 lines, removed 3 lines` instead, and
+the question is *who composes those strings*.
+
+**Decision.** The **tool** does, at `execute` time, where it still holds the
+structure it is about to flatten for the model. Three strings ride the
+events, computed once by `Agent` and never composed by a renderer:
+`display_name` and `argument` on `Event::ToolCall`
+({Pikuri::Tool#display_name} / {Pikuri::Tool#describe_call}), `summary` on
+`Event::ToolResult` — from a {Pikuri::Tool::Result} returned by `execute`,
+else {Pikuri::Tool#describe_result}. Every default is mechanical
+({Pikuri::Tool.display_name_for}, the first required parameter,
+{Pikuri::Tool.describe_content}), so a tool that declares nothing still
+renders; nine bundled tools override a method. The two rules a summary obeys
+live on {Pikuri::Tool::Result}: **structural, never excerpted** and
+**summaries are code**.
+
+**Alternatives rejected.**
+
+- **`O_llm_narrates` — ask the model to say what it did.** The model is the
+  one component an attacker steers, through a fetched page, a file, an
+  email. A narrated `Saved successfully` over a failed write is precisely
+  what an injection aims for, and nothing a human reads as *status* may
+  originate there. This is the rejection that makes the feature worth doing
+  carefully.
+- **`O_renderer_parses` — a per-tool table in each renderer, reconstructing
+  the line from the flattened observation.** The summary is derived from
+  data the renderer never sees: `web_search` had 23 result structs before it
+  rendered a Markdown list, `read` a line count, `bash` an exit status.
+  Re-parsing is fragile and breaks the day the Markdown shape changes, and
+  three renderers would carry three drifting copies. Two *local* residues of
+  this are accepted where a cache hit leaves nothing else to count:
+  `Search::Engines` counts its own rendered rows, and `Fetch` / `WebScrape`
+  report bytes rather than a content-type their caches never store.
+- **`Tool::Observation` as the name.** "Observation" is the word
+  `Tool#execute`'s rdoc uses, but it reads as something the call keeps
+  producing where "result" is finite — the call is over. Accepted cost: two
+  things named "tool result", `Tool::Result` (what `execute` returns) and
+  `Agent::Event::ToolResult` (what listeners see); they are the same thing
+  at two stages.
+- **A `Result` that may wrap `RubyLLM::Content`.** Two ways in, both
+  rejected: teach pikuri's `to_ruby_llm_tool` wrapper to unwrap the `Result`
+  before ruby_llm sees it and stash the summary in a per-call slot (a second
+  single-slot pairing trick, and it breaks the moment `tool_concurrency`
+  goes on), or extend ruby_llm's `content_like?` through
+  `ruby_llm_patches.rb` (smallest code, another monkey-patch to carry across
+  bumps). The governing rule is **touch no ruby_llm internal**: a `Result`
+  holds a `String` only, and the sole behaviour relied on is the public one
+  `Tool::Halt` also rides — a non-`Content` payload is stored via `to_s`. A
+  tool answering `Content` keeps returning it bare and gets the generic
+  line, because multimodal observations are rare and `Returned image/png,
+  40 kB` is fine.
+- **A `tool:` reference on the events instead of strings.** Events are plain
+  serializable `Data` (pikuri-web ships them over SSE, a history replay
+  synthesizes them), and three cases have no `Pikuri::Tool` to reference at
+  all — an MCP tool, ruby_llm's unavailable-tool error, a replayed
+  conversation — so the field would be `nil` there and every renderer would
+  grow a branch.
+- **Not persisting the strings in `History`.** A summary is derived from
+  structured data that is gone once the observation is flattened, so nothing
+  can recompute it on reload; even the call-side strings need the tool,
+  which a later wiring may no longer have (a removed extension, a renamed
+  MCP server). All three are short by definition, so they are cheap to keep,
+  and they are local-only like `id` / `kind` (`D_history_local_ids`).
+- **`describe_call:` as a constructor kwarg rather than an overridable
+  method.** 33 of the 34 shipped tools are `Pikuri::Tool` *subclasses*,
+  `for_sub_agent` / `with_workspace` are the precedent, and two overrides
+  need the tool's own state (the `task_*` tools look a title up in the
+  `List` they hold, which a kwarg lambda could only reach by closing over
+  it).
+
+**Consequences.**
+
+- **Breaking**: `Event::ToolCall` and `Event::ToolResult` both gained
+  required keywords (`tool_call_id`, `name`, and the display strings). With
+  the id on both, a renderer pairs a result to its call by key instead of by
+  strict ordering; inside `Agent` that assumption survives only at the one
+  stash pairing ruby_llm's call-less `after_tool_result` with its
+  `before_tool_call`. Reopen path if `tool_concurrency` ever goes on:
+  ruby_llm's `instrumenter` config option, whose `tool_call.ruby_llm` payload
+  carries `tool_call` and `result` together.
+- `Listener::Terminal` no longer echoes a slice of the observation at all,
+  and routes all three strings through {Pikuri::Sanitizer} — the old
+  `→ name(k=v)` line was safe only because `inspect` escaped control bytes.
+  The argument cap is the renderer's, since only it knows its width.
+- `write` reports line counts (`Updated, 88 lines (was 90)`) rather than the
+  note's `Added N lines, removed M lines`: pikuri has no in-process differ,
+  and shelling out to `diff` for a status line is not worth a subprocess. On
+  `edit` the same wording *is* exact — the replaced text and its substitute
+  are both arguments.
+- {Pikuri::Tool.pluralize} replaced three private copies of the same helper
+  in pikuri-workspace; `Listing.render_with_count` was added beside `render`
+  because a row count cannot be recovered from the rendered text.
+- pikuri-web's `HistoryReplay` and pikuri-tui's conversation view must be
+  updated in the same release: the event constructors changed, and both
+  should retire their own composition (pikuri-tui's `@pending_formatter`
+  ordering trick included).
+
+---
+
 ## D_calculator_functions — `math.` is an optional prefix, and `radians` ships with the trigonometry (2026-09-07)
 
 **Status:** Accepted, shipped: `Tool::Calculator::FUNCTIONS` / `CONSTANTS`, the

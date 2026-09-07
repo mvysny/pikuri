@@ -216,7 +216,7 @@ module Pikuri
         # mtime-sort descending (path-ascending tiebreaker), head-truncate at
         # {MAX_BYTES}, append a count footer.
         #
-        # @return [String]
+        # @return [Tool::Result] the listing, carrying +"Found 12 files"+
         def self.format_output(raw, workspace:, pattern:, path:)
           all_paths = raw.split("\n").reject(&:empty?).map { |p| p.sub(%r{\A\./}, '') }
           paths = all_paths.select { |p| File.fnmatch?(pattern, p, FNMATCH_FLAGS) }
@@ -230,8 +230,9 @@ module Pikuri
           stripped = content.chomp
           count = stripped.split("\n").size
 
-          footer = "Found #{pluralize(count, 'file', 'files')}."
-          [stripped, '', footer + truncation_marker].join("\n")
+          footer = "Found #{Pikuri::Tool.pluralize(count, 'file', 'files')}."
+          Tool::Result.new(content: [stripped, '', footer + truncation_marker].join("\n"),
+                           summary: "Found #{Pikuri::Tool.pluralize(count, 'file', 'files')}")
         end
         private_class_method :format_output
 
@@ -283,19 +284,14 @@ module Pikuri
         end
         private_class_method :truncate_error
 
-        # @return [String]
+        # @return [Tool::Result] the "nothing matched" observation, carrying
+        #   +"Found 0 files"+
         def self.no_match_message(pattern:, path:)
           base = "No files match pattern '#{pattern}'"
           base += " in #{path}" if path
-          "#{base}."
+          Tool::Result.new(content: "#{base}.", summary: 'Found 0 files')
         end
         private_class_method :no_match_message
-
-        # @return [String] +"1 file"+ / +"2 files"+
-        def self.pluralize(n, sing, plural)
-          "#{n} #{n == 1 ? sing : plural}"
-        end
-        private_class_method :pluralize
 
         # Verify +rg+ is on +PATH+ (via {Pikuri::Subprocess.spawn}, honoring the
         # subprocess seam). Missing → +Errno::ENOENT+; installed → exit 0.

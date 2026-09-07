@@ -70,7 +70,8 @@ module Pikuri
 
       # @param recurrence [String, nil] +"recurring"+, +"single"+, or +nil+ for
       #   both (mapped to the backend's tri-state +recurring:+ flag).
-      # @return [String]
+      # @return [Pikuri::Tool::Result, String] the events as a
+      #   {Pikuri::Tool::Result} (+"Found 8 events"+), or a bare +"Error: …"+.
       def self.run_search(backend:, query:, after:, before:, recurrence: nil, limit:)
         # Refuse a match-everything call: with no query and no date bound this
         # would dump every cached event. "What's on my calendar" should name a
@@ -88,11 +89,17 @@ module Pikuri
         # full page as the whole calendar.
         hits = backend.search(query:, limit: limit + 1, recurring:,
                               after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
-        return offline_or_no_match(backend, query) if hits.empty?
+        if hits.empty?
+          return Pikuri::Tool::Result.new(content: offline_or_no_match(backend, query),
+                                          summary: 'Found 0 events')
+        end
 
         has_more = hits.size > limit
         hits = hits.first(limit)
-        [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n")
+        Pikuri::Tool::Result.new(
+          content: [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n"),
+          summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'event')}#{'+' if has_more}"
+        )
       rescue ArgumentError => e
         "Error: bad date filter (#{e.message})."
       end

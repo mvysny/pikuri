@@ -222,9 +222,17 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     it 'runs the sub-agent loop and returns its final assistant message' do
       tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
 
-      result = tool.run('name' => 'researcher', 'task' => 'do the thing')
+      result = tool.run('name' => 'researcher', 'task' => 'do the thing').to_s
 
       assert_equal 'sub-agent reply', result
+    end
+
+    it 'shows the persona and its task on the call line, and the answer size on the result' do
+      tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
+
+      assert_equal 'researcher: do the thing',
+                   tool.describe_call('name' => 'researcher', 'task' => 'do the thing')
+      assert_equal 'Answered, 15 B', tool.run('name' => 'researcher', 'task' => 'x').summary
     end
 
     it "configures the sub-agent's chat with the *persona's* system prompt, not the parent's" do
@@ -276,7 +284,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
       # ValidationError formatted into "Error: ..." by the Tool's
       # run path — same contract every other strict-validated tool
       # uses.
-      result = tool.run('name' => 'planner', 'task' => 'x')
+      result = tool.run('name' => 'planner', 'task' => 'x').to_s
       assert_match(/must be one of `researcher`/, result)
     end
   end
@@ -602,7 +610,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
-      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+      result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
       assert_equal 'sub-agent reply', result
       assert_equal 1, confirmer.requests.size
@@ -620,7 +628,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
-      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+      result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
       assert_equal 'sub-agent reply', result
       sub_chat = @fake_chats.last
@@ -634,7 +642,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
-      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+      result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
       assert_equal 'Error: user declined delegation to researcher.', result
       # Only the parent's chat exists; no sub-agent was spawned.
@@ -647,7 +655,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
         build_parent, personas: { 'researcher' => simple_persona }, confirmer: confirmer
       )
 
-      result = tool.run('name' => 'researcher', 'task' => 'look up X')
+      result = tool.run('name' => 'researcher', 'task' => 'look up X').to_s
 
       assert_equal 'Error: user declined delegation to researcher. Reason: use the local docs, not the web', result
       assert_equal 1, @fake_chats.size
@@ -656,7 +664,7 @@ RSpec.describe Pikuri::SubAgent::SubAgentTool do
     it 'delegates without asking when no confirmer is wired (default)' do
       tool = described_class.new(build_parent, personas: { 'researcher' => simple_persona })
 
-      result = tool.run('name' => 'researcher', 'task' => 'go')
+      result = tool.run('name' => 'researcher', 'task' => 'go').to_s
 
       assert_equal 'sub-agent reply', result
       assert_equal 2, @fake_chats.size

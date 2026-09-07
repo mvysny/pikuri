@@ -60,7 +60,7 @@ RSpec.describe 'credential denylist' do
   describe 'read' do
     it 'refuses a denied path' do
       result = Pikuri::Workspace::Read.read(workspace: workspace, path: '.ssh/inner_key',
-                                            offset: 1, limit: 100)
+                                            offset: 1, limit: 100).to_s
 
       assert_includes result, 'denied credential location'
       refute_includes result, 'BEGIN PRIVATE KEY'
@@ -69,14 +69,14 @@ RSpec.describe 'credential denylist' do
 
   describe 'file_list' do
     it 'marks a denied directory instead of descending into it' do
-      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 3)
+      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 3).to_s
 
       assert_includes result, ".ssh/  #{Pikuri::Workspace::Listing::DENIED}"
       refute_includes result, 'inner_key'
     end
 
     it 'marks denied symlink decoys rather than following them' do
-      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 3)
+      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 3).to_s
 
       assert_includes result, "decoy_dir/  #{Pikuri::Workspace::Listing::DENIED}"
       assert_includes result, "decoy_file  #{Pikuri::Workspace::Listing::DENIED}"
@@ -84,7 +84,7 @@ RSpec.describe 'credential denylist' do
     end
 
     it 'refuses when pointed straight at a denied path' do
-      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: '.ssh', depth: 1)
+      result = Pikuri::Workspace::FileList.list(workspace: workspace, path: '.ssh', depth: 1).to_s
 
       assert_includes result, 'denied credential location'
     end
@@ -93,7 +93,7 @@ RSpec.describe 'credential denylist' do
   describe 'glob' do
     it 'omits denied paths from the match list' do
       result = Pikuri::Workspace::Search::Glob.search(workspace: workspace, pattern: '**/*',
-                                                      path: nil)
+                                                      path: nil).to_s
 
       assert_includes result, 'ok.txt'
       refute_includes result, 'inner_key'
@@ -101,7 +101,7 @@ RSpec.describe 'credential denylist' do
 
     it 'omits them under include_gitignored too, where a negative glob could be overridden' do
       result = Pikuri::Workspace::Search::Glob.search(workspace: workspace, pattern: '**/*',
-                                                      path: nil, include_gitignored: true)
+                                                      path: nil, include_gitignored: true).to_s
 
       refute_includes result, 'inner_key'
     end
@@ -113,7 +113,7 @@ RSpec.describe 'credential denylist' do
         result = Pikuri::Workspace::Search::Grep.search(
           workspace: workspace, pattern: 'BEGIN PRIVATE KEY', path: nil, glob: nil,
           case_insensitive: false, output_mode: mode
-        )
+        ).to_s
 
         assert_includes result, 'ok.txt'
         refute_includes result, 'inner_key'
@@ -141,7 +141,7 @@ RSpec.describe 'credential denylist' do
 
     it 'glob still omits denied paths' do
       result = Pikuri::Workspace::Search::Glob.search(workspace: workspace, pattern: '**/*',
-                                                      path: nil)
+                                                      path: nil).to_s
 
       assert_includes result, 'ok.txt'
       refute_includes result, 'inner_key'
@@ -151,7 +151,7 @@ RSpec.describe 'credential denylist' do
       result = Pikuri::Workspace::Search::Grep.search(
         workspace: workspace, pattern: 'BEGIN PRIVATE KEY', path: nil, glob: nil,
         case_insensitive: false, output_mode: 'content'
-      )
+      ).to_s
 
       refute_includes result, 'inner_key'
       refute_includes result, 'secret'
@@ -167,11 +167,11 @@ RSpec.describe 'credential denylist' do
     end
 
     it 'lists and searches credential paths as ordinary ones' do
-      listing = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 2)
+      listing = Pikuri::Workspace::FileList.list(workspace: workspace, path: nil, depth: 2).to_s
       grepped = Pikuri::Workspace::Search::Grep.search(
         workspace: workspace, pattern: 'BEGIN PRIVATE KEY', path: nil, glob: nil,
         case_insensitive: false, output_mode: 'files_with_matches'
-      )
+      ).to_s
 
       assert_includes listing, 'inner_key'
       assert_includes grepped, 'inner_key'

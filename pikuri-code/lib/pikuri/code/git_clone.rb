@@ -138,7 +138,10 @@ module Pikuri
         result = Pikuri::Subprocess.spawn(*argv, chdir: @filesystem.project_root.to_s).wait
 
         if result.status.success?
-          "Cloned #{url} → #{target_name}/ (depth=1, no submodules)."
+          Pikuri::Tool::Result.new(
+            content: "Cloned #{url} → #{target_name}/ (depth=1, no submodules).",
+            summary: "Cloned to #{target_name}/"
+          )
         else
           # Exit codes 124 / 137 / 125 = timeout (see Bash class header).
           ec = result.status.exitstatus

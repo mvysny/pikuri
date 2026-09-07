@@ -160,9 +160,10 @@ module Pikuri
       # @param path [String] raw path from the LLM
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] maximum lines
-      # @return [String, RubyLLM::Content] text/PDF → +String+; a supported
-      #   image → +RubyLLM::Content+ with the file attached (see "Image
-      #   attachments")
+      # @return [Tool::Result, String, RubyLLM::Content] text/PDF → a
+      #   {Pikuri::Tool::Result} (+"Read 214 lines"+) wrapping the cat-n slice,
+      #   or a bare +"Error: ..."+; a supported image → +RubyLLM::Content+ with
+      #   the file attached (see "Image attachments")
       def self.read(workspace:, path:, offset:, limit:)
         return "Error: offset must be >= 1, got #{offset}" if offset < 1
         return "Error: limit must be >= 1, got #{limit}"   if limit < 1
@@ -235,7 +236,9 @@ module Pikuri
       # extractor; +kind+ only changes trailer wording.
       #
       # @param page [Pikuri::Extractor::Page]
-      # @return [String]
+      # @return [Tool::Result, String] the observation, carrying +"Read N
+      #   lines"+ where a page was rendered; a bare +"Error: ..."+ / empty-file
+      #   note otherwise.
       def self.render_page(page)
         if page.lines.empty?
           return empty_message(page) if page.total_lines.zero?
@@ -260,7 +263,8 @@ module Pikuri
             "(End of #{page.kind == :pdf ? 'PDF' : 'file'} - total #{page.total_lines} lines)"
           end
 
-        "#{body}\n\n#{trailer}"
+        Tool::Result.new(content: "#{body}\n\n#{trailer}",
+                         summary: "Read #{page.lines.length} #{page.kind == :pdf ? 'PDF ' : ''}lines")
       end
       private_class_method :render_page
 

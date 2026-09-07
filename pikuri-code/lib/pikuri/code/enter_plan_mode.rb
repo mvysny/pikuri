@@ -44,11 +44,14 @@ module Pikuri
       # confirms the posture to the model.
       #
       # @param read_only [Pikuri::Workspace::ReadOnly]
-      # @return [String] tool observation
+      # @return [Pikuri::Tool::Result] tool observation, carrying +"Plan mode on"+
       def self.run(read_only:)
         read_only.activate!
-        'You are now in plan mode (read-only): research and design only, do not edit ' \
-          'files. When the plan is ready, call exit_plan_mode to present it for approval.'
+        Pikuri::Tool::Result.new(
+          content: 'You are now in plan mode (read-only): research and design only, do not edit ' \
+                   'files. When the plan is ready, call exit_plan_mode to present it for approval.',
+          summary: 'Plan mode on'
+        )
       end
     end
   end

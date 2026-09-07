@@ -12,7 +12,7 @@ RSpec.describe Pikuri::Code::EnterPlanMode do
 
   describe '.run' do
     it 'activates the flag and returns a plan-mode observation' do
-      result = described_class.run(read_only: read_only)
+      result = described_class.run(read_only: read_only).to_s
 
       assert read_only.active?
       assert_match(/plan mode/i, result)

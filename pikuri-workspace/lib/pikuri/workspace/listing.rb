@@ -85,14 +85,30 @@ module Pikuri
       #   +""+ when +dir+ has no entries
       # @raise [SystemCallError] if +dir+ itself can't be opened
       def self.render(dir, filesystem:, depth: DEFAULT_DEPTH)
+        render_with_count(dir, filesystem: filesystem, depth: depth).first
+      end
+
+      # {render} plus how many rows it walked — what a caller needs for a
+      # display line, and not recoverable from the rendered text (nested rows
+      # and a truncation marker are lines too).
+      #
+      #   listing, entries = Listing.render_with_count(root, filesystem: fs)
+      #
+      # @param dir [String, Pathname] directory to list
+      # @param filesystem [Filesystem] consulted per row via +denied?+
+      # @param depth [Integer] levels to descend, clamped to {MAX_DEPTH}
+      # @return [Array(String, Integer)] the listing (+""+ when empty) and its
+      #   row count
+      # @raise [SystemCallError] if +dir+ itself can't be opened
+      def self.render_with_count(dir, filesystem:, depth: DEFAULT_DEPTH)
         rows = child_rows(dir.to_s, filesystem: filesystem,
                           depth: depth.clamp(1, MAX_DEPTH), indent: '')
-        return '' if rows.empty?
+        return ['', 0] if rows.empty?
 
         content, marker = Search::Utils.head_truncate(
           rows.join("\n"), max_bytes: MAX_BYTES, hint: 'list a subdirectory instead'
         )
-        content + marker
+        [content + marker, rows.size]
       end
 
       # Rows for +dir+'s immediate children, recursing while +depth+ allows.
@@ -134,7 +150,7 @@ module Pikuri
         dirs, files = partition_children(absolute)
         return '[empty]' if dirs.empty? && files.empty?
 
-        "[#{pluralize(dirs.size, 'dir')}, #{pluralize(files.size, 'file')}]"
+        "[#{Pikuri::Tool.pluralize(dirs.size, 'dir')}, #{Pikuri::Tool.pluralize(files.size, 'file')}]"
       end
       private_class_method :summary
 
@@ -184,11 +200,6 @@ module Pikuri
       end
       private_class_method :human_size
 
-      # @return [String] +"1 dir"+ / +"4 dirs"+
-      def self.pluralize(count, noun)
-        "#{count} #{noun}#{'s' unless count == 1}"
-      end
-      private_class_method :pluralize
     end
   end
 end

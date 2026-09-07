@@ -43,7 +43,7 @@ RSpec.describe Pikuri::Code::Bash do
   describe '.run happy path' do
     it 'runs the command and returns command-echo + output + exit status' do
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
-                                   command: 'echo hello', description: nil, timeout: 120)
+                                   command: 'echo hello', description: nil, timeout: 120).to_s
 
       assert_equal "$ echo hello\nhello\n\n\nexit status: 0", result
     end
@@ -51,7 +51,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'combines stdout and stderr into one stream' do
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo out; echo err >&2',
-                                   description: nil, timeout: 120)
+                                   description: nil, timeout: 120).to_s
 
       assert_includes result, 'out'
       assert_includes result, 'err'
@@ -60,7 +60,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'reports non-zero exit status as a normal observation (not an Error)' do
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
-                                   command: 'exit 3', description: nil, timeout: 120)
+                                   command: 'exit 3', description: nil, timeout: 120).to_s
 
       refute result.start_with?('Error:'), "expected non-Error observation, got #{result.inspect}"
       assert_includes result, 'exit status: 3'
@@ -68,7 +68,7 @@ RSpec.describe Pikuri::Code::Bash do
 
     it 'runs in the workspace project_root' do
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
-                                   command: 'pwd', description: nil, timeout: 120)
+                                   command: 'pwd', description: nil, timeout: 120).to_s
 
       assert_includes result, root.to_s
     end
@@ -128,7 +128,7 @@ RSpec.describe Pikuri::Code::Bash do
       cf = build_confirmer(false)
 
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: 'rm -rf /', description: nil, timeout: 120)
+                                   command: 'rm -rf /', description: nil, timeout: 120).to_s
 
       assert_equal 'Error: user declined the bash command.', result
       assert_equal 1, cf.requests.size
@@ -138,7 +138,7 @@ RSpec.describe Pikuri::Code::Bash do
       cf = build_confirmer(Pikuri::Workspace::Confirmer::Rejected.new(reason: 'too risky right now'))
 
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: 'rm -rf /', description: nil, timeout: 120)
+                                   command: 'rm -rf /', description: nil, timeout: 120).to_s
 
       assert_equal 'Error: user declined the bash command. Reason: too risky right now', result
     end
@@ -155,7 +155,7 @@ RSpec.describe Pikuri::Code::Bash do
       cf = build_confirmer # empty queue → #ask raises if reached
       result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    passive_detector: approver_for('echo hi'),
-                                   command: 'echo hi', description: nil, timeout: 120)
+                                   command: 'echo hi', description: nil, timeout: 120).to_s
 
       assert_equal "$ echo hi\nhi\n\n\nexit status: 0", result
       assert_empty cf.requests, 'an approved command must not reach the confirmer'
@@ -165,7 +165,7 @@ RSpec.describe Pikuri::Code::Bash do
       cf = build_confirmer(false) # rejects
       result = described_class.run(filesystem: filesystem, confirmer: cf,
                                    passive_detector: approver_for('echo hi'),
-                                   command: 'rm -rf /', description: nil, timeout: 120)
+                                   command: 'rm -rf /', description: nil, timeout: 120).to_s
 
       assert_equal 'Error: user declined the bash command.', result
       assert_equal 1, cf.requests.size
@@ -177,7 +177,7 @@ RSpec.describe Pikuri::Code::Bash do
       cf = build_confirmer # no answers queued
 
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: '', description: nil, timeout: 120)
+                                   command: '', description: nil, timeout: 120).to_s
 
       assert_equal 'Error: empty bash command.', result
       assert_equal [], cf.requests
@@ -186,7 +186,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'rejects whitespace-only command' do
       cf = build_confirmer
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: "  \t\n  ", description: nil, timeout: 120)
+                                   command: "  \t\n  ", description: nil, timeout: 120).to_s
 
       assert_equal 'Error: empty bash command.', result
       assert_equal [], cf.requests
@@ -195,7 +195,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'rejects timeout < 1 before consulting the confirmer' do
       cf = build_confirmer
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: 'echo hi', description: nil, timeout: 0)
+                                   command: 'echo hi', description: nil, timeout: 0).to_s
 
       assert_equal 'Error: timeout must be >= 1, got 0', result
       assert_equal [], cf.requests
@@ -204,7 +204,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'rejects timeout > MAX_TIMEOUT before consulting the confirmer' do
       cf = build_confirmer
       result = described_class.run(filesystem: filesystem, confirmer: cf,
-                                   command: 'echo hi', description: nil, timeout: 601)
+                                   command: 'echo hi', description: nil, timeout: 601).to_s
 
       assert_equal 'Error: timeout must be <= 600, got 601', result
       assert_equal [], cf.requests
@@ -216,7 +216,7 @@ RSpec.describe Pikuri::Code::Bash do
       # 1s timeout, sleeping 3s: timeout sends SIGTERM, sleep handles it,
       # exits via signal — `timeout` exits 124.
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
-                                   command: 'sleep 3', description: nil, timeout: 1)
+                                   command: 'sleep 3', description: nil, timeout: 1).to_s
 
       assert result.start_with?('Error: command timed out after 1s'),
              "expected timeout Error, got #{result.inspect}"
@@ -230,7 +230,7 @@ RSpec.describe Pikuri::Code::Bash do
       # the line lands before the sleep.
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo partial; sleep 3',
-                                   description: nil, timeout: 1)
+                                   description: nil, timeout: 1).to_s
 
       assert result.start_with?('Error: command timed out'),
              "expected timeout Error, got #{result.inspect}"
@@ -297,7 +297,7 @@ RSpec.describe Pikuri::Code::Bash do
 
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'git config core.fsmonitor',
-                                   description: nil, timeout: 30)
+                                   description: nil, timeout: 30).to_s
 
       assert_includes result, 'false'
       refute_includes result, 'HOSTILE_FSMONITOR_RAN'
@@ -313,7 +313,7 @@ RSpec.describe Pikuri::Code::Bash do
 
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'echo "[${BUNDLE_GEMFILE:-unset}]"',
-                                   description: nil, timeout: 30)
+                                   description: nil, timeout: 30).to_s
 
       assert_includes result, '[unset]'
     end
@@ -321,7 +321,7 @@ RSpec.describe Pikuri::Code::Bash do
     it 'preserves the host PATH so the command still finds its tools' do
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'command -v echo >/dev/null && echo ok',
-                                   description: nil, timeout: 30)
+                                   description: nil, timeout: 30).to_s
 
       assert_includes result, 'ok'
     end
@@ -391,7 +391,7 @@ RSpec.describe Pikuri::Code::Bash do
       # exercises the cap with a small margin.
       result = described_class.run(filesystem: filesystem, confirmer: confirmer,
                                    command: 'yes x | head -c 32768',
-                                   description: nil, timeout: 30)
+                                   description: nil, timeout: 30).to_s
 
       assert_includes result, 'bytes omitted'
       assert_includes result, 'exit status: 0'
@@ -415,7 +415,7 @@ RSpec.describe Pikuri::Code::Bash do
 
   describe 'tool integration (via #run)' do
     it 'validates args and produces a normal observation' do
-      result = tool.run('command' => 'echo integ')
+      result = tool.run('command' => 'echo integ').to_s
 
       assert_includes result, '$ echo integ'
       assert_includes result, 'integ'
@@ -423,13 +423,13 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'accepts timeout as an integer' do
-      result = tool.run('command' => 'echo ok', 'timeout' => 30)
+      result = tool.run('command' => 'echo ok', 'timeout' => 30).to_s
 
       assert_includes result, 'exit status: 0'
     end
 
     it 'accepts timeout as a numeric String (Parameters coerces)' do
-      result = tool.run('command' => 'echo ok', 'timeout' => '30')
+      result = tool.run('command' => 'echo ok', 'timeout' => '30').to_s
 
       assert_includes result, 'exit status: 0'
     end
@@ -444,14 +444,14 @@ RSpec.describe Pikuri::Code::Bash do
     end
 
     it 'reports a missing required command via the Parameters validator' do
-      result = tool.run('description' => 'no command here')
+      result = tool.run('description' => 'no command here').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'command'
     end
 
     it 'reports unknown parameters via the Parameters validator' do
-      result = tool.run('command' => 'echo ok', 'shell' => 'zsh')
+      result = tool.run('command' => 'echo ok', 'shell' => 'zsh').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'shell'

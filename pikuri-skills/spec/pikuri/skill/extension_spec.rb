@@ -217,7 +217,7 @@ RSpec.describe Pikuri::Skill::Extension do
       ext.configure(configurator_with_interloper)
       tool = configurator_with_interloper.tools.first
 
-      out = tool.run('name' => 'gated')
+      out = tool.run('name' => 'gated').to_s
       assert out.start_with?('Error:'), out
       refute out.include?('Available skills: gated'), out
       assert out.include?('sample'), out
@@ -228,7 +228,7 @@ RSpec.describe Pikuri::Skill::Extension do
       ext.configure(configurator_with_interloper)
       ext.activation.activate([gated_skill])
 
-      out = configurator_with_interloper.tools.first.run('name' => 'gated')
+      out = configurator_with_interloper.tools.first.run('name' => 'gated').to_s
       assert out.include?('do the gated thing.'), out
     end
 

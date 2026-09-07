@@ -196,6 +196,16 @@ module Pikuri
         { type: 'object', properties: @properties, required: @required }
       end
 
+      # @return [Array<Symbol>] every declared property, in declaration order.
+      def names
+        @properties.keys
+      end
+
+      # @return [Array<String>] the required properties, in declaration order —
+      #   so +required.first+ is the argument a tool was declared around, which
+      #   is what {Pikuri::Tool#describe_call} shows.
+      attr_reader :required
+
       # Validate a tool-call argument hash against the schema. Returns a
       # symbol-keyed hash safe to splat as kwargs into a tool's +execute+;
       # raises {ValidationError} with an LLM-actionable message listing every

@@ -27,6 +27,10 @@ describe Pikuri::VectorDb::Tools::Read do
   end
 
   def read(source:, offset: 1, limit: Pikuri::VectorDb::Tools::Read::DEFAULT_LIMIT)
+    read_result(source: source, offset: offset, limit: limit).to_s
+  end
+
+  def read_result(source:, offset: 1, limit: Pikuri::VectorDb::Tools::Read::DEFAULT_LIMIT)
     Pikuri::VectorDb::Tools::Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
   end
 

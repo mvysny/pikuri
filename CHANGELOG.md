@@ -10,6 +10,10 @@ shipped without one.
 
 ## [Unreleased]
 
+- Add `Tool::Result(content:, summary:)` plus `Tool#display_name` / `#describe_call` / `#describe_result` — a tool composes its own one-line display form where it still holds the structure it flattens for the model, so a chrome renders `Write(lib/foo.rb)` / `Added 2 lines, removed 3 lines` instead of an argument dump and a slice of the observation. See `DECISIONS.md` `D_tool_summary_lines`.
+- Add `Tool.display_name_for` / `.describe_arguments` / `.describe_content` / `.pluralize` / `.format_bytes` — the mechanical defaults every tool gets for free, including an MCP tool (`server__tool` renders `Server::Tool`) and a replayed history with no tool left to ask.
+- Add `Workspace::Listing.render_with_count` — `render` plus the row count, which the rendered text cannot be counted for (nested rows and a truncation marker are lines too).
+- Add `Tool::Parameters#required` / `#names` — the declared parameters, in declaration order, so `describe_call` can show the first required one.
 - Add functions and constants to `calculator` — `Tool::Calculator::FUNCTIONS` (sin cos tan asin acos atan atan2 hypot sqrt exp log log10 log2 floor ceil abs radians degrees) and `CONSTANTS` (pi, e), each accepted bare or under an optional `math.` prefix. See `DECISIONS.md` `D_calculator_functions`.
 - Add `pikuri-rag` — hybrid retrieval over a local corpus as four tools: `rag_search` (a vector leg and an FTS5 keyword leg fused by reciprocal rank, optionally reranked), `rag_find` (every document containing the stemmed terms, no cutoff), plus `rag_read` / `rag_reindex` from pikuri-vectordb under `family: 'rag'`. See `book/rag.md` and `DECISIONS.md` `D_rag_gem`.
 - Add `Rag::Backend::Fts5` — the keyword store, chunks in an SQLite FTS5 table with `#keyword_query` (bm25 top-k) and `#find` (every document holding all the terms); usable on its own, and the only class in the gem that speaks SQL.
@@ -28,6 +32,8 @@ shipped without one.
 - Fix `require 'pikuri'` not booting pikuri-lsp — the metagem depended on it but never required it, so `gem install pikuri` installed the `lsp` tool and `require 'pikuri'` left `Pikuri::Lsp` undefined.
 - Fix `VectorDb::Extension#configure` accepting a pre-registered `rag_*` tool — the two tool sets replace each other over one corpus, so both extensions now refuse the other's names whichever is wired second.
 - Fix `vectordb_reindex` declaring an untrusted leg — its observation is a chunk count, never corpus content, so it now declares no legs, like `write`.
+- **Breaking:** `Event::ToolCall` now takes `tool_call_id:`, `name:`, `arguments:`, `display_name:`, `argument:` and `Event::ToolResult` takes `tool_call_id:`, `name:`, `content:`, `summary:` — all required. A renderer reads the two display strings and the summary instead of formatting `arguments` and excerpting `content`, and pairs a result to its call by `tool_call_id` rather than by arrival order; `Listener::Terminal` no longer echoes the observation.
+- **Breaking:** the file, search, bash, skill, task, LSP, retrieval, memory and Thunderbird tools now return a `Tool::Result` rather than a `String` — the model still sees `#to_s`, but a caller reading a tool's class-level `.read` / `.search` / `.execute` return as a String must unwrap it.
 
 ## [0.1.0] - 2026-08-30
 

@@ -144,6 +144,13 @@ module Pikuri
     # @see CANCELLED_RESULT
     FAILED_SKIPPED_RESULT = '[Not executed — a previous tool call in this batch failed]'
 
+    # Display line ({Event::ToolResult}'s +summary+) for a call answered by a
+    # repair rather than by its tool — this loop's unwound-batch +ensure+ and
+    # {History#repair_interrupted_tool_calls} alike. One word for all four
+    # causes above: the *content* says which, and a status line only has to say
+    # that no observation came back.
+    INTERRUPTED_SUMMARY = 'Interrupted'
+
     # @param transport [ChatTransport] model-resolution bundle (+model+ /
     #   +provider+ / +assume_model_exists+ and, off the global server,
     #   +api_base+ / +api_key+). A +nil+ +transport.model+ is filled from
@@ -461,7 +468,10 @@ module Pikuri
     def export_history
       exported = @chat.messages.reject { |m| m.role == :system }.map do |msg|
         meta = @message_meta[msg] || { id: History.mint_id, kind: 'user' }
-        exported_msg = History::Message.from_ruby_llm(msg, id: meta[:id], kind: meta[:kind])
+        exported_msg = History::Message.from_ruby_llm(
+          msg, id: meta[:id], kind: meta[:kind],
+               summary: meta[:summary], tool_call_lines: meta[:tool_calls] || {}
+        )
         meta[:thinking] ? exported_msg.with(thinking: meta[:thinking]) : exported_msg
       end
       History.new(messages: exported)
@@ -519,7 +529,8 @@ module Pikuri
       repaired.messages.each do |m|
         keep = keep_thinking?(m.thinking, m.model_id, current_model)
         track_message(@chat.add_message(m.to_ruby_llm(keep_thinking: keep)),
-                      kind: m.kind, id: m.id, thinking: (m.thinking unless keep))
+                      kind: m.kind, id: m.id, thinking: (m.thinking unless keep),
+                      summary: m.summary, tool_calls: restored_tool_call_lines(m))
       end
 
       last = repaired.messages.reverse.find { |m| m.role == 'assistant' && m.tokens }
@@ -635,19 +646,44 @@ module Pikuri
       # never saw is simply absent here, and {#export_history} mints it an id
       # rather than silently pairing it with someone else's.
       @message_meta = {}.compare_by_identity
+      # The call ruby_llm is running right now, so +after_tool_result+ — which
+      # receives the result *alone* — can name it, and so +after_message+ can
+      # put the summary on the +:tool+ message. A single slot, i.e. the
+      # ordering assumption, is valid only while +tool_concurrency+ stays off,
+      # which {Pikuri::Tool}'s +== Sharing+ asks for on separate grounds. Turn
+      # it on and the fix is ruby_llm's +instrumenter+ config option, whose
+      # +tool_call.ruby_llm+ payload carries +tool_call+ and +result+ together.
+      @pending_tool_call = nil
 
       @chat.after_message do |msg|
-        track_message(msg)
+        # A +:tool+ message is the one the summary computed just above belongs to.
+        summary = @pending_tool_call[:summary] if msg.role == :tool && @pending_tool_call
+        track_message(msg, summary: summary)
         emit_after_message(msg)
         drain_interloper if @interloper && tool_batch_complete?(msg)
       end
       @chat.before_tool_call do |tc|
-        @listeners.emit(Event::ToolCall.new(name: tc.name, arguments: tc.arguments))
+        tool = pikuri_tool_for(tc.name)
+        display_name = tool ? tool.display_name : Tool.display_name_for(tc.name)
+        argument = tool ? tool.describe_call(tc.arguments) : Tool.describe_arguments(tc.arguments)
+        @pending_tool_call = { tool_call_id: tc.id, name: tc.name, tool: tool, summary: nil }
+        record_tool_call_lines(tc.id, display_name: display_name, argument: argument)
+        @listeners.emit(Event::ToolCall.new(
+                          tool_call_id: tc.id, name: tc.name, arguments: tc.arguments,
+                          display_name: display_name, argument: argument
+                        ))
         @step_limit&.tick!
         @cancellable&.check!
       end
       @chat.after_tool_result do |result|
-        @listeners.emit(Event::ToolResult.new(content: result))
+        pending = @pending_tool_call || {}
+        summary = summarize_tool_result(result, pending[:tool])
+        pending[:summary] = summary
+        @listeners.emit(Event::ToolResult.new(
+                          tool_call_id: pending[:tool_call_id], name: pending[:name],
+                          content: result.is_a?(Tool::Result) ? result.content : result,
+                          summary: summary
+                        ))
       end
 
       # Context-window cap on the stream before any Tokens event; re-fires
@@ -875,12 +911,72 @@ module Pikuri
     #   conversation); +nil+ mints a fresh one.
     # @param thinking [History::Thinking, nil] a block withheld from +msg+
     #   because another model produced it, kept so the export stays faithful.
+    # @param summary [String, nil] a +:tool+ message's display line (see
+    #   {Pikuri::Tool::Result}); nothing can recompute one after the fact, so
+    #   the export carries it.
+    # @param tool_calls [Hash{String=>Hash}, nil] per-call display strings for
+    #   an assistant turn, +{call_id => {display_name:, argument:}}+.
     # @return [RubyLLM::Message] +msg+, so call sites can wrap in place.
-    def track_message(msg, kind: 'user', id: nil, thinking: nil)
+    def track_message(msg, kind: 'user', id: nil, thinking: nil, summary: nil, tool_calls: nil)
       unless msg.role == :system
-        @message_meta[msg] = { id: id || History.mint_id, kind: kind, thinking: thinking }
+        @message_meta[msg] = { id: id || History.mint_id, kind: kind, thinking: thinking,
+                               summary: summary, tool_calls: tool_calls }
       end
       msg
+    end
+
+    # @param msg [History::Message] a message being restored.
+    # @return [Hash{String=>Hash}, nil] its calls' persisted display strings,
+    #   in {#track_message}'s shape, so a re-export round-trips them; +nil+
+    #   when the message asked for no tools.
+    def restored_tool_call_lines(msg)
+      return nil if msg.tool_calls.empty?
+
+      msg.tool_calls.to_h { |c| [c.id, { display_name: c.display_name, argument: c.argument }] }
+    end
+
+    # The {Pikuri::Tool} behind a registered tool name, or +nil+ for one that
+    # never was a +Pikuri::Tool+ (an MCP tool) or a name ruby_llm has no tool
+    # for (its unavailable-tool error).
+    #
+    # Read off ruby_llm's own +Chat#tools+ table rather than {#tools}: the
+    # +agent+ and +mcp_connect+ tools register through
+    # {ExtensionContext#add_raw_tool}, which deliberately keeps them out of
+    # that list, and an index over it would miss their overrides.
+    #
+    # @param name [String] the tool name ruby_llm is calling.
+    # @return [Pikuri::Tool, nil]
+    def pikuri_tool_for(name)
+      wrapper = @chat.tools[name.to_sym]
+      wrapper.respond_to?(:pikuri_tool) ? wrapper.pikuri_tool : nil
+    end
+
+    # Record one call's display strings on the assistant message that asked for
+    # it, so {#export_history} can persist them — a later wiring may no longer
+    # have the tool (a removed extension, a renamed MCP server), and then
+    # nothing could recompute the line.
+    #
+    # @param call_id [String] the provider's tool-call id.
+    # @param display_name [String] see {Pikuri::Tool#display_name}.
+    # @param argument [String] see {Pikuri::Tool#describe_call}.
+    # @return [void]
+    def record_tool_call_lines(call_id, display_name:, argument:)
+      opener = @chat.messages.reverse.find { |m| m.role == :assistant && m.tool_calls&.key?(call_id) }
+      meta = opener && @message_meta[opener]
+      return unless meta
+
+      (meta[:tool_calls] ||= {})[call_id] = { display_name: display_name, argument: argument }
+      nil
+    end
+
+    # @param result [Pikuri::Tool::Result, String, RubyLLM::Content, Hash] what
+    #   the tool returned.
+    # @param tool [Pikuri::Tool, nil] the tool that ran, when there was one.
+    # @return [String] the one-line result summary for the listener stream.
+    def summarize_tool_result(result, tool)
+      return result.summary if result.is_a?(Tool::Result)
+
+      tool ? tool.describe_result(result) : Tool.describe_content(result)
     end
 
     # Whether a turn's thinking may be replayed to +current+ — true only where
@@ -972,8 +1068,10 @@ module Pikuri
       culprit, skipped = unanswered_results(cause)
       dangling.each_with_index do |call, i|
         content = i.zero? ? culprit : skipped
-        track_message(@chat.add_message(role: :tool, content: content, tool_call_id: call.id))
-        @listeners.emit(Event::ToolResult.new(content: content))
+        track_message(@chat.add_message(role: :tool, content: content, tool_call_id: call.id),
+                      summary: INTERRUPTED_SUMMARY)
+        @listeners.emit(Event::ToolResult.new(tool_call_id: call.id, name: call.name,
+                                             content: content, summary: INTERRUPTED_SUMMARY))
       end
       LOGGER.warn { "answered #{dangling.size} dangling tool call(s) after #{cause.class}" }
       nil
