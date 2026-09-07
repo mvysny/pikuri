@@ -23,7 +23,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
 
   describe '.search' do
     it 'rejects an empty query without touching the backend' do
-      assert_equal 'Error: empty query.', described_class.search(query: '   ', backend: backend)
+      assert_equal 'Error: empty query.', described_class.search(query: '   ', backend: backend).to_s
     end
 
     it 'renders path + snippet per hit and a one-match-per-file disclaimer' do
@@ -32,7 +32,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
          { path: '/home/u/b.txt', snippet: nil }]
       end
       begin
-        out = described_class.search(query: 'beta', limit: 10, backend: backend)
+        out = described_class.search(query: 'beta', limit: 10, backend: backend).to_s
         assert_includes out, "/home/u/a.pdf\n  alpha beta"
         assert_includes out, '/home/u/b.txt'
         assert_includes out, 'one match shown per file'
@@ -45,7 +45,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
     it 'reports no matches on an empty result' do
       original = stub_backend_search { |**| [] }
       begin
-        assert_includes described_class.search(query: 'nonesuch', backend: backend),
+        assert_includes described_class.search(query: 'nonesuch', backend: backend).to_s,
                         "No files found matching 'nonesuch'"
       ensure
         restore_backend_search(original)
@@ -55,7 +55,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
     it 'renders a backend CommandError as an Error observation, prefixed with its label' do
       original = stub_backend_search { |**| raise Pikuri::Os::LocalSearch::CommandError, 'bad query' }
       begin
-        assert_equal 'Error: localsearch: bad query', described_class.search(query: 'x', backend: backend)
+        assert_equal 'Error: localsearch: bad query', described_class.search(query: 'x', backend: backend).to_s
       ensure
         restore_backend_search(original)
       end
@@ -65,7 +65,7 @@ RSpec.describe Pikuri::Os::FileindexSearch do
       huge = 'x' * (described_class::MAX_BYTES * 3)
       original = stub_backend_search { |**| raise Pikuri::Os::LocalSearch::CommandError, huge }
       begin
-        result = described_class.search(query: 'x', backend: backend)
+        result = described_class.search(query: 'x', backend: backend).to_s
         assert result.start_with?('Error: localsearch:'), "got #{result[0, 40].inspect}"
         assert_includes result, 'bytes omitted'
         assert result.bytesize <= described_class::MAX_BYTES + 200,

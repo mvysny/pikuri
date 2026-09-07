@@ -126,32 +126,32 @@ module Pikuri
         # @param limit [Integer] maximum lines to return
         # @param family [String] the tool-name prefix the error strings use
         #   to name the sibling search / reindex tools.
-        # @return [String] tool observation — the windowed text or an
-        #   +"Error: ..."+ string.
+        # @return [Pikuri::Tool::Result] the windowed text (+"Read 214
+        #   lines"+), or {Pikuri::Tool::Result.error}.
         def self.read(backend:, root:, source:, offset:, limit:, family: DEFAULT_FAMILY)
-          return "Error: offset must be >= 1, got #{offset}" if offset < 1
-          return "Error: limit must be >= 1, got #{limit}"   if limit < 1
+          return Pikuri::Tool::Result.error("offset must be >= 1, got #{offset}") if offset < 1
+          return Pikuri::Tool::Result.error("limit must be >= 1, got #{limit}") if limit < 1
 
           unless backend.source_indexed?(source)
-            return "Error: \"#{source}\" is not in the indexed corpus. " \
-                   "Use #{family}_search to find a source path, then read that."
+            return Pikuri::Tool::Result.error("\"#{source}\" is not in the indexed corpus. " \
+                                              "Use #{family}_search to find a source path, then read that.")
           end
 
           resolved = root.join(source).expand_path
           unless contained?(resolved, root)
-            return "Error: \"#{source}\" resolves outside the corpus root."
+            return Pikuri::Tool::Result.error("\"#{source}\" resolves outside the corpus root.")
           end
 
           render(Pikuri::FileType.read_as_text_paged(resolved, offset: offset, limit: limit), source: source)
         rescue Errno::ENOENT
-          "Error: indexed document \"#{source}\" is no longer on disk; the index may be stale " \
-            "(run #{family}_reindex to refresh)."
+          Pikuri::Tool::Result.error("indexed document \"#{source}\" is no longer on disk; the index may be stale " \
+                                     "(run #{family}_reindex to refresh).")
         rescue ArgumentError => e
           # read_as_text refusing an image / binary / directory.
-          "Error: cannot read \"#{source}\" as text: #{e.message}"
+          Pikuri::Tool::Result.error("cannot read \"#{source}\" as text: #{e.message}")
         rescue RuntimeError => e
           # read_as_text on a malformed / unsupported PDF.
-          "Error: #{e.message}"
+          Pikuri::Tool::Result.error("#{e.message}")
         end
 
         # Lexical containment: +resolved+ must be the root or sit beneath it.
@@ -178,13 +178,17 @@ module Pikuri
         # @param page [Pikuri::Extractor::Page]
         # @param source [String] the citation, used in the empty /
         #   end-of-document messages.
-        # @return [String]
+        # @return [Pikuri::Tool::Result] the window (+"Read 214 lines"+), the
+        #   empty-document note, or {Pikuri::Tool::Result.error}
         def self.render(page, source:)
           if page.lines.empty?
-            return "(#{source} is empty)" if page.total_lines.zero?
+            if page.total_lines.zero?
+              note = "(#{source} is empty)"
+              return Pikuri::Tool::Result.new(content: note, summary: note)
+            end
 
-            return "Error: offset #{page.start_line} is beyond end of document " \
-                   "(#{page.total_lines} lines total)."
+            return Pikuri::Tool::Result.error("offset #{page.start_line} is beyond end of document " \
+                                              "(#{page.total_lines} lines total).")
           end
 
           last = page.start_line + page.lines.length - 1
@@ -200,7 +204,8 @@ module Pikuri
               "(End of #{source} — #{page.total_lines} lines.)"
             end
 
-          "#{body}\n\n#{trailer}"
+          Pikuri::Tool::Result.new(content: "#{body}\n\n#{trailer}",
+                                   summary: "Read #{Pikuri::Tool.pluralize(page.lines.length, 'line')}")
         end
         private_class_method :render
       end

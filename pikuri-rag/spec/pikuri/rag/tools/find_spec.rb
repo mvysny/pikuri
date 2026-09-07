@@ -42,6 +42,10 @@ describe Pikuri::Rag::Tools::Find do
   end
 
   def execute(terms)
+    result(terms).to_s
+  end
+
+  def result(terms)
     Pikuri::Rag::Tools::Find.execute(backend: hybrid, root: @root, terms: terms)
   end
 
@@ -61,6 +65,22 @@ describe Pikuri::Rag::Tools::Find do
 
     it 'promises completeness in those words' do
       assert_includes tool.description, 'No cutoff, no top-k'
+    end
+  end
+
+  describe 'the display line' do
+    it 'counts the documents, and carries no corpus text' do
+      populate
+
+      display = result('Acme pricing').summary
+
+      assert_equal 'Found 2 documents', display
+      refute_includes display, 'Acme'
+    end
+
+    it 'says zero rather than going silent' do
+      populate
+      assert_equal 'Found 0 documents', result('nothingmatchesthis').summary
     end
   end
 

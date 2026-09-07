@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Code::ExitPlanMode do
     it 'exits plan mode and tells the model to proceed when approved' do
       confirmer = build_confirmer(true)
 
-      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X')
+      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X').to_s
 
       refute read_only.active?
       assert_match(/no longer in plan mode/i, result)
@@ -51,7 +51,7 @@ RSpec.describe Pikuri::Code::ExitPlanMode do
     it 'stays in plan mode and steers a refine when declined' do
       confirmer = build_confirmer(false)
 
-      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X')
+      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X').to_s
 
       assert read_only.active?
       assert_match(/still in plan mode/i, result)
@@ -62,7 +62,7 @@ RSpec.describe Pikuri::Code::ExitPlanMode do
     it 'returns a nothing-to-exit observation without consulting the confirmer' do
       confirmer = build_confirmer # raises if consulted
 
-      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X')
+      result = described_class.run(read_only: read_only, confirmer: confirmer, plan: 'do X').to_s
 
       assert_match(/nothing to exit/i, result)
       assert_empty confirmer.requests

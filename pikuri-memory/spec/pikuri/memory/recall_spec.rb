@@ -42,29 +42,34 @@ describe Pikuri::Memory::Recall do
                                      record('lives in Brno', created_at: '2026-05-01T17:04:11.884889+00:00'),
                                      record('writes Ruby', created_at: '2026-05-02T09:30:00+00:00')
                                    ])
-    out = described_class.execute(client: client, user_id: 'martin', topic: 'where?')
+    result = described_class.execute(client: client, user_id: 'martin', topic: 'where?')
+    out = result.to_s
 
     assert_equal({ query: 'where?', user_id: 'martin', top_k: Pikuri::Memory::Recall::TOP_K }, client.searched)
     assert_match(/Recalled 2 memories/, out)
+    # The display line counts and stops: a memory's text is attacker-authorable.
+    assert_equal 'Recalled 2 memories', result.summary
+    refute_includes result.summary, 'Brno'
     # created_at is trimmed to whole-second wall-clock — no sub-second / offset noise.
     assert_match(/\(2026-05-01 17:04:11\) lives in Brno/, out)
     assert_match(/\(2026-05-02 09:30:00\) writes Ruby/, out)
   end
 
   it 'reports no-match cleanly' do
-    out = described_class.execute(client: fake_client_class.new(rows: []), user_id: 'u', topic: 'x')
-    assert_equal 'No relevant memories found.', out
+    result = described_class.execute(client: fake_client_class.new(rows: []), user_id: 'u', topic: 'x')
+    assert_equal 'No relevant memories found.', result.to_s
+    assert_equal 'Recalled 0 memories', result.summary
   end
 
   it 'returns an Error: observation (not a raise) when the client fails' do
     client = fake_client_class.new(error: RuntimeError.new('mem0 down'))
     out = described_class.execute(client: client, user_id: 'u', topic: 'x')
 
-    assert_match(/\AError: memory recall failed: mem0 down/, out)
+    assert_match(/\AError: memory recall failed: mem0 down/, out.content)
   end
 
   it 'rejects a blank topic' do
     out = described_class.execute(client: fake_client_class.new, user_id: 'u', topic: '  ')
-    assert_equal 'Error: topic is empty', out
+    assert_equal 'Error: topic is empty', out.content
   end
 end

@@ -31,7 +31,7 @@ RSpec.describe Pikuri::Tasks::Extension do
       task_create = tools.find { |t| t.name == 'task_create' }
       task_completed = tools.find { |t| t.name == 'task_completed' }
       task_create.run('items' => ['one item'])
-      out = task_completed.run('id' => 1)
+      out = task_completed.run('id' => 1).to_s
       assert out.include?('- #1 [completed] one item'), out
       assert_equal 'completed', ext.list.items.first.status
     end

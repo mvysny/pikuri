@@ -70,14 +70,15 @@ module Pikuri
 
       # @param recurrence [String, nil] +"recurring"+, +"single"+, or +nil+ for
       #   both (mapped to the backend's tri-state +recurring:+ flag).
-      # @return [String]
+      # @return [Pikuri::Tool::Result] the events (+"Found 8 events"+), or
+      #   {Pikuri::Tool::Result.error}.
       def self.run_search(backend:, query:, after:, before:, recurrence: nil, limit:)
         # Refuse a match-everything call: with no query and no date bound this
         # would dump every cached event. "What's on my calendar" should name a
         # span — steer the model to add after/before (e.g. this week). A lone
         # recurrence filter is still too broad to stand in for a span.
         if [query, after, before].all? { |v| v.to_s.strip.empty? }
-          return 'Error: give a query and/or a date range (after/before) to search for'
+          return Pikuri::Tool::Result.error('give a query and/or a date range (after/before) to search for')
         end
 
         limit = limit.to_i.clamp(1, MAX_LIMIT)
@@ -88,13 +89,19 @@ module Pikuri
         # full page as the whole calendar.
         hits = backend.search(query:, limit: limit + 1, recurring:,
                               after: DateHelpers.parse_after(after), before: DateHelpers.parse_before(before))
-        return offline_or_no_match(backend, query) if hits.empty?
+        if hits.empty?
+          return Pikuri::Tool::Result.new(content: offline_or_no_match(backend, query),
+                                          summary: 'Found 0 events')
+        end
 
         has_more = hits.size > limit
         hits = hits.first(limit)
-        [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n")
+        Pikuri::Tool::Result.new(
+          content: [header(shown: hits.size, has_more:), *hits.map { |h| render(h) }].join("\n\n"),
+          summary: "Found #{Pikuri::Tool.pluralize(hits.size, 'event')}#{'+' if has_more}"
+        )
       rescue ArgumentError => e
-        "Error: bad date filter (#{e.message})."
+        Pikuri::Tool::Result.error("bad date filter (#{e.message}).")
       end
 
       # The leading line: affirm completeness when every event fit ("all

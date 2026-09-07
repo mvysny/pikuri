@@ -278,8 +278,8 @@ RSpec.describe Pikuri::Mcp::Servers do
       ctx = fake_ctx
       tool = servers.build_mcp_connect_tool(ctx)
       result = tool.run('id' => 'unknown')
-      assert_match(/\AError: unknown MCP server id/, result)
-      assert_match(/Available: test/, result)
+      assert_match(/\AError: unknown MCP server id/, result.content)
+      assert_match(/Available: test/, result.content)
     ensure
       servers&.close
     end
@@ -289,8 +289,11 @@ RSpec.describe Pikuri::Mcp::Servers do
       ctx = fake_ctx
       tool = servers.build_mcp_connect_tool(ctx)
       result = tool.run('id' => 'test')
-      assert_match(/Connected to MCP server 'test'/, result)
-      assert_match(/Added 5 tools/, result)
+      assert_match(/Connected to MCP server 'test'/, result.to_s)
+      assert_match(/Added 5 tools/, result.to_s)
+      assert_equal 'Connected, 5 tools', result.summary
+      assert_equal 'McpConnect', tool.display_name
+      assert_equal 'test', tool.describe_call('id' => 'test')
       assert_equal 5, ctx.added_tools.size
     ensure
       servers&.close
@@ -302,7 +305,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       tool = servers.build_mcp_connect_tool(ctx)
       tool.run('id' => 'test')
       result = tool.run('id' => 'test')
-      assert_match(/\AError: server 'test' is already connected/, result)
+      assert_match(/\AError: server 'test' is already connected/, result.content)
       assert_equal 5, ctx.added_tools.size # not 10
     ensure
       servers&.close
@@ -315,7 +318,7 @@ RSpec.describe Pikuri::Mcp::Servers do
       tool1 = servers.build_mcp_connect_tool(ctx1)
       tool2 = servers.build_mcp_connect_tool(ctx2)
       tool1.run('id' => 'test')
-      result2 = tool2.run('id' => 'test') # fresh activation set
+      result2 = tool2.run('id' => 'test').to_s # fresh activation set
       assert_match(/Connected to MCP server 'test'/, result2)
       assert_equal 5, ctx1.added_tools.size
       assert_equal 5, ctx2.added_tools.size

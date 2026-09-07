@@ -9,7 +9,12 @@ module Pikuri
       # Terminal renderer for the normalized event stream: dim grey reasoning,
       # assistant Markdown printed raw, tool-call/result lines in Kuri's coat
       # ({TOOL_COLOR}), yellow fallback notice, red cancelled, magenta
-      # model-switch.
+      # model-switch. A tool call renders as the two strings the tool composed,
+      # never an argument dump or a slice of the observation:
+      #
+      #   → Write(lib/shared/config.rb)
+      #   = Added 2 lines, removed 3 lines
+      #
       # {Event::UserTurn} / {Event::Tokens} / {Event::ContextCap} are silent
       # (echo, or {TokenLog}'s business); {Event::SystemInjected} renders dim
       # grey with a +⊕+ marker. Any unrecognized event — notably a gem
@@ -37,10 +42,15 @@ module Pikuri
       # not their content (already landed via deltas). With +streaming: false+
       # (default) the deltas are ignored and the bookends render full text.
       class Terminal < Base
-        # Char cap on tool-result content rendered to the terminal; longer is
-        # truncated with a marker reporting the original byte size (so a
-        # 200-char return is distinguishable from a 50KB dump).
-        MAX_TOOL_RESULT_CHARS = 200
+        # Char cap on a tool's display strings ({Event::ToolResult}'s summary, a
+        # display name). Generous — these are one short line by construction,
+        # and the cap is a backstop against an +"Error: ..."+ observation
+        # passing a long message through.
+        MAX_SUMMARY_CHARS = 200
+
+        # Floor on the room a tool-call argument gets, for the narrow terminal
+        # where the budget arithmetic would otherwise leave it nothing.
+        MIN_ARGUMENT_CHARS = 20
 
         # Color of the +→ call+ / += result+ lines: Kuri's Talus coat
         # (+assets/kuri.svg+) with the chroma lifted, because the coat verbatim
@@ -106,11 +116,10 @@ module Pikuri
             stream_fragment(content) if @streaming
           in Event::SystemInjected(content:)
             println(indent(Rainbow("⊕ #{content}").color(85, 85, 85)))
-          in Event::ToolCall(name:, arguments:)
-            args = arguments.map { |k, v| "#{k}=#{v.inspect}" }.join(', ')
-            println(indent(Rainbow("→ #{name}(#{args})").color(TOOL_COLOR)))
-          in Event::ToolResult(content:)
-            println(indent(Rainbow("= #{truncate_tool_result(content)}").color(TOOL_COLOR)))
+          in Event::ToolCall(display_name:, argument:)
+            println(indent(Rainbow("→ #{tool_call_line(display_name, argument)}").color(TOOL_COLOR)))
+          in Event::ToolResult(summary:)
+            println(indent(Rainbow("= #{defang(summary, MAX_SUMMARY_CHARS)}").color(TOOL_COLOR)))
           in Event::ModelSwitched(from:, to:)
             println(indent(Rainbow("⇄ model: #{from.model} → #{to.model}").magenta))
           in Event::FallbackNotice(reason:)
@@ -213,11 +222,7 @@ module Pikuri
         # @param text [String]
         # @return [String]
         def cut(text)
-          width = begin
-            $stdout.winsize[1]
-          rescue StandardError
-            80
-          end
+          width = terminal_width
           text.length < width ? text : "#{text[0, width - 2]}…"
         end
 
@@ -273,23 +278,50 @@ module Pikuri
           text.to_s.each_line.map { |line| prefix + line }.join
         end
 
-        # Flatten whitespace and cap to {MAX_TOOL_RESULT_CHARS}; a truncated
-        # result's byte-count suffix distinguishes "returned exactly this" from
-        # "returned much more, you're seeing a slice."
+        # The +Name(argument)+ half of a tool-call line, the argument capped to
+        # whatever the row has left — a +command+ can be a 4 kB script and a
+        # +path+ a very long one, and only a renderer knows its width.
         #
-        # Whitespace is flattened first (fine — this passive echo is a status
-        # line, not an approval artifact), then run through {Pikuri::Sanitizer}
-        # so a tool observation can't smuggle an ESC/control byte into this
-        # line. Its warnings are dropped (they belong at a confirmation prompt).
+        #   tool_call_line('Write', 'lib/shared/config.rb')  # => "Write(lib/shared/config.rb)"
+        #   tool_call_line('EnterPlanMode', '')              # => "EnterPlanMode"
         #
-        # @param content [String] tool observation
-        # @return [String] single-line display form, possibly truncated
-        def truncate_tool_result(content)
-          original_bytes = content.to_s.bytesize
-          flattened = Sanitizer.sanitize(content.to_s.gsub(/\s+/, ' ').strip).text
-          return flattened if flattened.length <= MAX_TOOL_RESULT_CHARS
+        # @param display_name [String] see {Pikuri::Tool#display_name}
+        # @param argument [String] see {Pikuri::Tool#describe_call}
+        # @return [String]
+        def tool_call_line(display_name, argument)
+          name = defang(display_name, MAX_SUMMARY_CHARS)
+          return name if argument.to_s.empty?
 
-          "#{flattened[0, MAX_TOOL_RESULT_CHARS]}… (#{original_bytes} bytes total)"
+          # "→ ", the parens, and the padding are all on this row too.
+          budget = terminal_width - @padding - name.length - 5
+          "#{name}(#{defang(argument, [budget, MIN_ARGUMENT_CHARS].max)})"
+        end
+
+        # Flatten whitespace, defang, and cap to +limit+ — every display string
+        # off the event stream goes through this.
+        #
+        # Whitespace flattening is safe here (a passive status line, not an
+        # approval artifact); {Pikuri::Sanitizer} is what stops a path carrying
+        # +ESC[+ or a CR from recoloring or overwriting the transcript, now that
+        # these strings no longer pass through +inspect+. Its warnings are
+        # dropped — they belong at a confirmation prompt.
+        #
+        # @param text [String, nil]
+        # @param limit [Integer] max characters, +…+ marking a cut
+        # @return [String]
+        def defang(text, limit)
+          flattened = Sanitizer.sanitize(text.to_s.gsub(/\s+/, ' ').strip).text
+          return flattened if flattened.length <= limit
+
+          "#{flattened[0, limit - 1]}…"
+        end
+
+        # @return [Integer] terminal columns; 80 when stdout has no window size
+        #   (a pipe, a file, a captured StringIO).
+        def terminal_width
+          $stdout.winsize[1]
+        rescue StandardError
+          80
         end
       end
     end

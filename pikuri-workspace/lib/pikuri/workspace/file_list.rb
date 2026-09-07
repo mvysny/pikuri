@@ -81,6 +81,16 @@ module Pikuri
         )
       end
 
+      # The workspace root renders as +.+ rather than as nothing: +path+ is
+      # optional and the model usually omits it, which the generic default
+      # would show as a bare +FileList+.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        Pikuri::Tool.one_line((arguments['path'] || arguments[:path] || '.').to_s)
+      end
+
       # A new {FileList} bound to +workspace+. Used by
       # {Pikuri::SubAgent::SubAgentTool} when a persona supplies a
       # +workspace_factory:+, so paths resolve against the sub-agent's root.
@@ -97,25 +107,29 @@ module Pikuri
       # @param path [String, nil] raw path from the LLM; +nil+ means the
       #   workspace root
       # @param depth [Integer] levels to descend
-      # @return [String] the listing, +"(Empty directory)"+, or +"Error: ..."+
+      # @return [Tool::Result] the listing (+"Listed 31 entries"+), or
+      #   {Pikuri::Tool::Result.error}
       def self.list(workspace:, path:, depth:)
-        return "Error: depth must be >= 1, got #{depth}" if depth < 1
+        return Tool::Result.error("depth must be >= 1, got #{depth}") if depth < 1
 
         resolved = path ? workspace.resolve_for_read(path) : workspace.project_root
-        return "Error: path not found: #{path}" unless resolved.exist?
-        return "Error: #{path} is a file, not a directory; use the read tool to view it." if resolved.file?
+        return Tool::Result.error("path not found: #{path}") unless resolved.exist?
+        return Tool::Result.error("#{path} is a file, not a directory; use the read tool to view it.") if resolved.file?
 
         if (refusal = Search::Utils.oversized_root_refusal(resolved, filesystem: workspace.filesystem,
                                                           verb: 'list'))
-          return refusal
+          return Tool::Result.error(refusal)
         end
 
-        listing = Listing.render(resolved, filesystem: workspace.filesystem, depth: depth)
-        listing.empty? ? '(Empty directory)' : listing
+        listing, entries = Listing.render_with_count(resolved, filesystem: workspace.filesystem, depth: depth)
+        return Tool::Result.new(content: '(Empty directory)', summary: 'Listed 0 entries') if listing.empty?
+
+        Tool::Result.new(content: listing,
+                         summary: "Listed #{Pikuri::Tool.pluralize(entries, 'entry', 'entries')}")
       rescue Filesystem::Error => e
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       rescue SystemCallError => e
-        "Error: cannot list #{path || '.'}: #{e.message}"
+        Tool::Result.error("cannot list #{path || '.'}: #{e.message}")
       end
     end
   end

@@ -27,7 +27,7 @@ describe Pikuri::Thunderbird::CalendarCreate do
 
   it 'stages an .ics under the outbox and hands off its path' do
     Dir.mktmpdir do |dir|
-      out = tool(dir).run('title' => 'Dentist', 'start' => '2026-07-20 14:00')
+      out = tool(dir).run('title' => 'Dentist', 'start' => '2026-07-20 14:00').to_s
       assert_equal 1, @opened.size
       path = @opened.first
       assert_equal File.join(dir, 'pikuri-outbox'), File.dirname(path)
@@ -60,7 +60,7 @@ describe Pikuri::Thunderbird::CalendarCreate do
 
   it 'Errors on an unparseable date and stages nothing' do
     Dir.mktmpdir do |dir|
-      out = tool(dir).run('title' => 'x', 'start' => 'not-a-date')
+      out = tool(dir).run('title' => 'x', 'start' => 'not-a-date').to_s
       assert_empty @opened
       assert_match(/\AError: bad date/, out)
     end
@@ -68,7 +68,7 @@ describe Pikuri::Thunderbird::CalendarCreate do
 
   it 'turns a hand-off failure into an Error observation' do
     Dir.mktmpdir do |dir|
-      out = tool(dir, raising: true).run('title' => 'x', 'start' => '2026-07-20 14:00')
+      out = tool(dir, raising: true).run('title' => 'x', 'start' => '2026-07-20 14:00').to_s
       assert_match(/\AError: thunderbird not found/, out)
     end
   end

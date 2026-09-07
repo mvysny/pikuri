@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('a.txt', "alpha\nbeta\n")
       write_file('sub/b.txt', "alpha here\nalpha again\n")
 
-      result = described_class.search(**search_args)
+      result = described_class.search(**search_args).to_s
 
       assert_equal "a.txt:1:alpha\nsub/b.txt:1:alpha here\nsub/b.txt:2:alpha again\n\n" \
                    'Found 3 matches in 2 files.',
@@ -44,7 +44,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'singularizes the footer at 1 match / 1 file' do
       write_file('only.txt', "alpha\nbeta\n")
 
-      result = described_class.search(**search_args)
+      result = described_class.search(**search_args).to_s
 
       assert_includes result, 'Found 1 match in 1 file.'
     end
@@ -54,7 +54,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       # --with-filename keeps the output shape consistent.
       write_file('single.txt', "alpha line\n")
 
-      result = described_class.search(**search_args(path: 'single.txt'))
+      result = described_class.search(**search_args(path: 'single.txt')).to_s
 
       assert_includes result, 'single.txt:1:alpha line'
     end
@@ -62,8 +62,8 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'outputs paths relative to the workspace, regardless of how path was passed' do
       write_file('sub/c.txt', "alpha in sub\n")
 
-      result_rel = described_class.search(**search_args(path: 'sub'))
-      result_abs = described_class.search(**search_args(path: (root + 'sub').to_s))
+      result_rel = described_class.search(**search_args(path: 'sub')).to_s
+      result_abs = described_class.search(**search_args(path: (root + 'sub').to_s)).to_s
 
       assert_includes result_rel, 'c.txt:1:alpha in sub'
       assert_includes result_abs, 'c.txt:1:alpha in sub'
@@ -78,7 +78,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('b.txt', "alpha here\nalpha again\n")
       write_file('c.txt', "no match\n")
 
-      result = described_class.search(**search_args(output_mode: 'files_with_matches'))
+      result = described_class.search(**search_args(output_mode: 'files_with_matches')).to_s
 
       assert_equal "a.txt\nb.txt\n\nFound 2 files.", result
     end
@@ -86,7 +86,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'singularizes at 1 file' do
       write_file('only.txt', "alpha\nalpha\n")
 
-      result = described_class.search(**search_args(output_mode: 'files_with_matches'))
+      result = described_class.search(**search_args(output_mode: 'files_with_matches')).to_s
 
       assert_includes result, 'Found 1 file.'
     end
@@ -97,7 +97,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('a.txt', "alpha\nbeta\n")
       write_file('b.txt', "alpha\nalpha\nalpha\n")
 
-      result = described_class.search(**search_args(output_mode: 'count'))
+      result = described_class.search(**search_args(output_mode: 'count')).to_s
 
       assert_equal "a.txt:1\nb.txt:3\n\nFound 4 matches in 2 files.", result
     end
@@ -108,7 +108,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('keep.rb',  "alpha in rb\n")
       write_file('skip.txt', "alpha in txt\n")
 
-      result = described_class.search(**search_args(glob: '*.rb'))
+      result = described_class.search(**search_args(glob: '*.rb')).to_s
 
       assert_includes result, 'keep.rb:1:alpha in rb'
       refute_includes result, 'skip.txt'
@@ -119,7 +119,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'matches both cases when on' do
       write_file('mixed.txt', "Alpha\nALPHA\nalpha\n")
 
-      result = described_class.search(**search_args(pattern: 'alpha', case_insensitive: true))
+      result = described_class.search(**search_args(pattern: 'alpha', case_insensitive: true)).to_s
 
       assert_includes result, 'mixed.txt:1:Alpha'
       assert_includes result, 'mixed.txt:2:ALPHA'
@@ -130,7 +130,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'is case-sensitive by default' do
       write_file('mixed.txt', "Alpha\nALPHA\nalpha\n")
 
-      result = described_class.search(**search_args(pattern: 'alpha', case_insensitive: false))
+      result = described_class.search(**search_args(pattern: 'alpha', case_insensitive: false)).to_s
 
       assert_includes result, 'mixed.txt:3:alpha'
       refute_includes result, 'Alpha'
@@ -142,7 +142,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'returns a "No matches" string (not Error) on exit 1' do
       write_file('a.txt', "nothing here\n")
 
-      result = described_class.search(**search_args(pattern: 'nonexistent'))
+      result = described_class.search(**search_args(pattern: 'nonexistent')).to_s
 
       assert_equal "No matches for pattern 'nonexistent'.", result
       refute result.start_with?('Error:')
@@ -151,7 +151,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'includes the path in the no-matches message when given' do
       write_file('sub/a.txt', "nothing here\n")
 
-      result = described_class.search(**search_args(pattern: 'absent', path: 'sub'))
+      result = described_class.search(**search_args(pattern: 'absent', path: 'sub')).to_s
 
       assert_equal "No matches for pattern 'absent' in sub.", result
     end
@@ -159,13 +159,13 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
 
   describe '.search input validation' do
     it 'rejects an empty pattern' do
-      result = described_class.search(**search_args(pattern: ''))
+      result = described_class.search(**search_args(pattern: '')).to_s
 
       assert_equal 'Error: empty pattern.', result
     end
 
     it 'rejects an unknown output_mode listing the valid set' do
-      result = described_class.search(**search_args(output_mode: 'bogus'))
+      result = described_class.search(**search_args(output_mode: 'bogus')).to_s
 
       assert result.start_with?('Error:'), "got #{result.inspect}"
       assert_includes result, 'output_mode must be one of content, files_with_matches, count'
@@ -175,7 +175,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'reports a bad regex via rg (exit 2)' do
       write_file('a.txt', "anything\n")
 
-      result = described_class.search(**search_args(pattern: '['))
+      result = described_class.search(**search_args(pattern: '[')).to_s
 
       assert result.start_with?('Error: ripgrep:'), "got #{result.inspect}"
       assert_includes result, 'regex parse error'
@@ -196,7 +196,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       original = Pikuri::Subprocess.method(:spawn)
       Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| spawner }
       begin
-        result = described_class.search(**search_args)
+        result = described_class.search(**search_args).to_s
       ensure
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
       end
@@ -213,7 +213,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       Dir.mktmpdir('pikuri-grep-outside-') do |outside|
         File.write(File.join(outside, 'leak.txt'), "alpha\n")
 
-        result = described_class.search(**search_args(path: outside))
+        result = described_class.search(**search_args(path: outside)).to_s
 
         assert result.start_with?('Error:'), "got #{result.inspect}"
         assert_includes result, 'outside the workspace'
@@ -221,7 +221,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     end
 
     it 'rejects a nonexistent path before reaching rg' do
-      result = described_class.search(**search_args(path: 'does/not/exist'))
+      result = described_class.search(**search_args(path: 'does/not/exist')).to_s
 
       assert_equal 'Error: path not found: does/not/exist', result
     end
@@ -236,7 +236,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
         result = described_class.search(
           workspace: ws, pattern: 'x', path: danger, glob: nil,
           case_insensitive: false, output_mode: 'content'
-        )
+        ).to_s
         assert result.start_with?('Error: refusing to search'), "got #{result[0, 80].inspect}"
         assert_includes result, 'too broad'
         # The refusal hands back a listing to narrow into, not a dead-end.
@@ -253,7 +253,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       huge = (1..2500).map { |i| "line #{i} HIT" }.join("\n") + "\n"
       write_file('big.txt', huge)
 
-      result = described_class.search(**search_args(pattern: 'HIT'))
+      result = described_class.search(**search_args(pattern: 'HIT')).to_s
 
       assert_includes result, 'bytes omitted'
       assert_includes result, 'refine pattern or path'
@@ -269,7 +269,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'is a no-op when output fits within MAX_BYTES' do
       write_file('small.txt', "alpha\n")
 
-      result = described_class.search(**search_args)
+      result = described_class.search(**search_args).to_s
 
       refute_includes result, 'bytes omitted'
     end
@@ -280,7 +280,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       long_line = ('a' * 3000) + 'NEEDLE' + ('b' * 3000)
       write_file('long.txt', long_line + "\n")
 
-      result = described_class.search(**search_args(pattern: 'NEEDLE'))
+      result = described_class.search(**search_args(pattern: 'NEEDLE')).to_s
 
       assert_includes result, 'long.txt:1:'
       assert_includes result, 'omitted'  # rg's preview marker
@@ -294,7 +294,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('top.txt', "alpha at top\n")
       write_file('deep/nested.txt', "alpha deep\n")
 
-      result = described_class.search(**search_args)
+      result = described_class.search(**search_args).to_s
 
       assert_includes result, 'top.txt:1:alpha at top'
       assert_includes result, 'deep/nested.txt:1:alpha deep'
@@ -307,7 +307,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('ignored.txt', "alpha ignored\n")
       write_file('visible.txt', "alpha visible\n")
 
-      result = described_class.search(**search_args)
+      result = described_class.search(**search_args).to_s
 
       assert_includes result, 'visible.txt:1:alpha visible'
       refute_includes result, 'ignored.txt'
@@ -319,7 +319,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
       write_file('ignored.txt', "alpha ignored\n")
       write_file('visible.txt', "alpha visible\n")
 
-      result = described_class.search(**search_args(include_gitignored: true))
+      result = described_class.search(**search_args(include_gitignored: true)).to_s
 
       assert_includes result, 'ignored.txt:1:alpha ignored'
       assert_includes result, 'visible.txt:1:alpha visible'
@@ -330,7 +330,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'validates args and produces content-mode output by default' do
       write_file('hit.rb', "alpha here\n")
 
-      result = tool.run('pattern' => 'alpha')
+      result = tool.run('pattern' => 'alpha').to_s
 
       assert_includes result, 'hit.rb:1:alpha here'
       assert_includes result, 'Found 1 match in 1 file.'
@@ -339,7 +339,7 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'accepts case_insensitive as a boolean' do
       write_file('hit.rb', "ALPHA\n")
 
-      result = tool.run('pattern' => 'alpha', 'case_insensitive' => true)
+      result = tool.run('pattern' => 'alpha', 'case_insensitive' => true).to_s
 
       assert_includes result, 'hit.rb:1:ALPHA'
     end
@@ -347,20 +347,20 @@ RSpec.describe Pikuri::Workspace::Search::Grep do
     it 'accepts case_insensitive as the literal String "true"' do
       write_file('hit.rb', "ALPHA\n")
 
-      result = tool.run('pattern' => 'alpha', 'case_insensitive' => 'true')
+      result = tool.run('pattern' => 'alpha', 'case_insensitive' => 'true').to_s
 
       assert_includes result, 'hit.rb:1:ALPHA'
     end
 
     it 'reports a missing required pattern via the Parameters validator' do
-      result = tool.run('path' => '.')
+      result = tool.run('path' => '.').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'pattern'
     end
 
     it 'reports unknown parameters via the Parameters validator' do
-      result = tool.run('pattern' => 'x', 'regex' => true)
+      result = tool.run('pattern' => 'x', 'regex' => true).to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'regex'

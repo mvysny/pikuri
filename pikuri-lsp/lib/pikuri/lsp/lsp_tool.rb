@@ -136,6 +136,25 @@ module Pikuri
         )
       end
 
+      # +LSP+, not the +Lsp+ the mechanical CamelCase produces: it is an acronym,
+      # and a chrome shows this string to a human.
+      #
+      # @return [String]
+      def display_name
+        'LSP'
+      end
+
+      # Operation *and* symbol, because the first required parameter is the
+      # operation enum and +LSP(references)+ says nothing about what was asked.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        operation = arguments['operation'] || arguments[:operation]
+        symbol = arguments['symbol'] || arguments[:symbol]
+        Pikuri::Tool.one_line([operation, symbol].compact.join(' '))
+      end
+
       # Run one call.
       #
       # A fresh {Navigator} per call, rather than one captured in the +execute+
@@ -146,7 +165,9 @@ module Pikuri
       # @param symbol [String]
       # @param file [String, nil]
       # @param line [Integer, nil]
-      # @return [String] the observation.
+      # @return [Pikuri::Tool::Result] the renderer's observation (+"3
+      #   results"+), or {Pikuri::Tool::Result.error} when the call was
+      #   refused.
       def navigate(operation:, symbol:, file: nil, line: nil)
         Navigator.new(servers: @servers, filesystem: @filesystem,
                       on_progress: @on_progress, cancellable: @cancellable)

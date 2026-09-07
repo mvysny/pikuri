@@ -147,15 +147,15 @@ module Pikuri
         #   +.gitignore+'d files are listed too. Defaults to false.
         # @return [String]
         def self.search(workspace:, pattern:, path:, include_gitignored: false)
-          return 'Error: empty pattern.' if pattern.empty?
+          return Tool::Result.error('empty pattern.') if pattern.empty?
 
           search_target = '.'
           resolved_root = workspace.project_root
           if path
             resolved = workspace.resolve_for_read(path)
-            return "Error: path not found: #{path}" unless resolved.exist?
+            return Tool::Result.error("path not found: #{path}") unless resolved.exist?
             if resolved.file?
-              return "Error: #{path} is a file, not a directory; use the read tool to view it."
+              return Tool::Result.error("#{path} is a file, not a directory; use the read tool to view it.")
             end
 
             resolved_root = resolved
@@ -165,7 +165,7 @@ module Pikuri
 
           if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
                                                      verb: 'list'))
-            return refusal
+            return Tool::Result.error(refusal)
           end
 
           argv = build_argv(path: search_target, include_gitignored: include_gitignored,
@@ -181,10 +181,10 @@ module Pikuri
           when 1
             no_match_message(pattern: pattern, path: path)
           else
-            "Error: ripgrep: #{truncate_error(result.output, exit_code)}"
+            Tool::Result.error("ripgrep: #{truncate_error(result.output, exit_code)}")
           end
         rescue Filesystem::Error => e
-          "Error: #{e.message}"
+          Tool::Result.error(e.message)
         end
 
         # @return [Integer] flags for {File.fnmatch?}: +FNM_PATHNAME+ for
@@ -216,7 +216,7 @@ module Pikuri
         # mtime-sort descending (path-ascending tiebreaker), head-truncate at
         # {MAX_BYTES}, append a count footer.
         #
-        # @return [String]
+        # @return [Tool::Result] the listing, carrying +"Found 12 files"+
         def self.format_output(raw, workspace:, pattern:, path:)
           all_paths = raw.split("\n").reject(&:empty?).map { |p| p.sub(%r{\A\./}, '') }
           paths = all_paths.select { |p| File.fnmatch?(pattern, p, FNMATCH_FLAGS) }
@@ -230,8 +230,9 @@ module Pikuri
           stripped = content.chomp
           count = stripped.split("\n").size
 
-          footer = "Found #{pluralize(count, 'file', 'files')}."
-          [stripped, '', footer + truncation_marker].join("\n")
+          footer = "Found #{Pikuri::Tool.pluralize(count, 'file', 'files')}."
+          Tool::Result.new(content: [stripped, '', footer + truncation_marker].join("\n"),
+                           summary: "Found #{Pikuri::Tool.pluralize(count, 'file', 'files')}")
         end
         private_class_method :format_output
 
@@ -283,19 +284,14 @@ module Pikuri
         end
         private_class_method :truncate_error
 
-        # @return [String]
+        # @return [Tool::Result] the "nothing matched" observation, carrying
+        #   +"Found 0 files"+
         def self.no_match_message(pattern:, path:)
           base = "No files match pattern '#{pattern}'"
           base += " in #{path}" if path
-          "#{base}."
+          Tool::Result.new(content: "#{base}.", summary: 'Found 0 files')
         end
         private_class_method :no_match_message
-
-        # @return [String] +"1 file"+ / +"2 files"+
-        def self.pluralize(n, sing, plural)
-          "#{n} #{n == 1 ? sing : plural}"
-        end
-        private_class_method :pluralize
 
         # Verify +rg+ is on +PATH+ (via {Pikuri::Subprocess.spawn}, honoring the
         # subprocess seam). Missing → +Errno::ENOENT+; installed → exit 0.

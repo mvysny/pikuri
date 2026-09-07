@@ -17,14 +17,14 @@ RSpec.describe Pikuri::Tasks::InProgress do
   describe 'execution' do
     it 'sets the matching item to in_progress and returns the rendered list' do
       item = list.add('task')
-      out = tool.run('id' => item.id)
+      out = tool.run('id' => item.id).to_s
       assert_equal 'in_progress', list.items.first.status
       assert out.include?("- ##{item.id} [in_progress] task"), out
     end
 
     it 'returns an LLM-actionable Error: string with the current list when no match' do
       list.add('something else')
-      out = tool.run('id' => 42)
+      out = tool.run('id' => 42).to_s
       assert out.start_with?('Error: no such task id: 42'), out
       assert out.include?('- #1 [pending] something else'), out
       # Nothing changed

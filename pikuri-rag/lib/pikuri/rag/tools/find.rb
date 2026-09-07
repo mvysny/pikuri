@@ -88,22 +88,29 @@ module Pikuri
         # @param backend [#find]
         # @param root [Pathname]
         # @param terms [String] as supplied by the LLM.
-        # @return [String] the listing, a no-matches line, or +"Error: ..."+.
+        # @return [Pikuri::Tool::Result] the listing (+"Found 8 documents"+),
+        #   or {Pikuri::Tool::Result.error}.
         def self.execute(backend:, root:, terms:)
           phrases = Pikuri::Rag::Query.terms(terms)
           if phrases.empty?
-            return "Error: no searchable terms in #{terms.to_s.strip.inspect} — " \
-                   'pass a word, a name or an id.'
+            return Pikuri::Tool::Result.error("no searchable terms in #{terms.to_s.strip.inspect} — " \
+                                              'pass a word, a name or an id.')
           end
 
           listed = phrases.join(' ')
           rows = backend.find(terms: phrases).sort_by { |source, count| [-count, source] }
-          return "No indexed document contains all of: #{listed}." if rows.empty?
+          if rows.empty?
+            return Pikuri::Tool::Result.new(content: "No indexed document contains all of: #{listed}.",
+                                            summary: 'Found 0 documents')
+          end
 
           subject = rows.length == 1 ? '1 document contains' : "#{rows.length} documents contain"
           header = "#{subject} all of: #{listed}. " \
                    "Counts are how many of the document's chunks matched, not occurrences.\n\n"
-          header + rows.map { |source, count| row(root, source, count) }.join("\n")
+          Pikuri::Tool::Result.new(
+            content: header + rows.map { |source, count| row(root, source, count) }.join("\n"),
+            summary: "Found #{Pikuri::Tool.pluralize(rows.length, 'document')}"
+          )
         end
 
         # One listing row: citation, match count, and the file's current size.

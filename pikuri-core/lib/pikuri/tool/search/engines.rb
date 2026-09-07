@@ -281,9 +281,12 @@ module Pikuri
             render(results)
           end
           LOGGER.info { "cache=hit query=#{cleaned.inspect} bytes=#{result.bytesize}" } if hit
-          result
+          Tool::Result.new(
+            content: result,
+            summary: "Returned #{Pikuri::Tool.pluralize(count_rendered(result), 'search result')}"
+          )
         rescue Unavailable => e
-          "Error: #{e.message}"
+          Pikuri::Tool::Result.error(e.message)
         end
 
         private
@@ -298,6 +301,18 @@ module Pikuri
           return "## Search Results\n\nNo results found." if results.empty?
 
           "## Search Results\n\n" + results.map { |r| "[#{r.title}](#{r.url})\n#{r.body}" }.join("\n\n")
+        end
+
+        # How many rows a rendering holds, counted back off the Markdown rather
+        # than off the {Result} structs: a cache hit has only the Markdown, and
+        # a display line that appeared on a miss and vanished on a hit would be
+        # worse than one a hostile snippet can inflate by opening with a link of
+        # its own.
+        #
+        # @param markdown [String] what {#render} produced
+        # @return [Integer]
+        def count_rendered(markdown)
+          markdown.lines.count { |line| line.match?(%r{\A\[[^\]]*\]\(\S+\)}) }
         end
 
         # INFO-log the currently-available providers, but only when the set

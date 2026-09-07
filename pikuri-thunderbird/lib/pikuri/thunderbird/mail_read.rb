@@ -42,13 +42,15 @@ module Pikuri
         )
       end
 
-      # @return [String] formatted message or +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the formatted message (+"Read 4.2 kB"+ —
+      #   a size, because the subject is whatever the sender wrote), or
+      #   {Pikuri::Tool::Result.error}.
       def self.run_read(backend:, message_id:)
         rec = backend.read(message_id:)
-        return "Error: no message found with id #{message_id.inspect}." unless rec
+        return Pikuri::Tool::Result.error("no message found with id #{message_id.inspect}.") unless rec
 
         attachments = rec[:attachment_names].to_s.strip
-        <<~MSG.chomp
+        message = <<~MSG.chomp
           Subject: #{rec[:subject]}
           From: #{rec[:from]}
           To: #{rec[:to]}
@@ -58,6 +60,8 @@ module Pikuri
 
           #{body(rec[:body])}
         MSG
+        Pikuri::Tool::Result.new(content: message,
+                                 summary: "Read #{Pikuri::Tool.format_bytes(message.bytesize)}")
       end
 
       # @return [String] the body, truncated with a marker if over {MAX_BODY}.

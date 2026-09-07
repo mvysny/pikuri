@@ -27,6 +27,10 @@ describe Pikuri::VectorDb::Tools::Read do
   end
 
   def read(source:, offset: 1, limit: Pikuri::VectorDb::Tools::Read::DEFAULT_LIMIT)
+    read_result(source: source, offset: offset, limit: limit).to_s
+  end
+
+  def read_result(source:, offset: 1, limit: Pikuri::VectorDb::Tools::Read::DEFAULT_LIMIT)
     Pikuri::VectorDb::Tools::Read.read(backend: backend, root: root, source: source, offset: offset, limit: limit)
   end
 
@@ -81,8 +85,8 @@ describe Pikuri::VectorDb::Tools::Read do
       result = Pikuri::VectorDb::Tools::Read.read(
         backend: backend, root: root, source: 'nope.md', offset: 1, limit: 10, family: 'rag'
       )
-      assert_includes result, 'Use rag_search'
-      refute_includes result, 'vectordb'
+      assert_includes result.content, 'Use rag_search'
+      refute_includes result.content, 'vectordb'
     end
   end
 
@@ -96,7 +100,7 @@ describe Pikuri::VectorDb::Tools::Read do
       result = Pikuri::VectorDb::Tools::Read.read(
         backend: evil, root: root, source: '../escape.txt', offset: 1, limit: 10
       )
-      assert_match(/resolves outside the corpus root/, result)
+      assert_match(/resolves outside the corpus root/, result.content)
     end
   end
 
@@ -174,7 +178,7 @@ describe Pikuri::VectorDb::Tools::Read do
       result = Pikuri::VectorDb::Tools::Read.read(
         backend: backend, root: root, source: 'gone.md', offset: 1, limit: 10, family: 'rag'
       )
-      assert_includes result, 'run rag_reindex'
+      assert_includes result.content, 'run rag_reindex'
     end
 
     it 'refuses a binary indexed document as an Error string' do

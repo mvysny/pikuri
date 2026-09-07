@@ -29,14 +29,14 @@ describe Pikuri::Lsp::Renderer do
 
   describe '#finish' do
     it 'leaves a short answer alone' do
-      built.call { |renderer| assert_equal 'body', renderer.finish('body') }
+      built.call { |renderer| assert_equal 'body', renderer.finish('body').to_s }
     end
 
     it 'appends the notes after the cut, so a long answer cannot lose them' do
       built.call do |renderer|
         renderer.note('a match is outside the workspace.')
 
-        answer = renderer.finish("x#{'y' * described_class::MAX_BYTES}")
+        answer = renderer.finish("x#{'y' * described_class::MAX_BYTES}").to_s
 
         assert_match(/bytes omitted/, answer)
         assert answer.end_with?("Notes:\n- a match is outside the workspace."),

@@ -12,7 +12,7 @@ RSpec.describe Pikuri::Workspace::FileList do
   after { FileUtils.rm_rf(root) }
 
   def list(path: nil, depth: 1)
-    described_class.list(workspace: workspace, path: path, depth: depth)
+    described_class.list(workspace: workspace, path: path, depth: depth).to_s
   end
 
   describe '.list' do
@@ -75,7 +75,7 @@ RSpec.describe Pikuri::Workspace::FileList do
       allow_all = Pikuri::Workspace::Filesystem::AllowAll.new(project_root: root)
       ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
 
-      result = described_class.list(workspace: ws, path: Dir.home, depth: 1)
+      result = described_class.list(workspace: ws, path: Dir.home, depth: 1).to_s
 
       assert result.start_with?('Error: refusing to list'), result[0, 80].inspect
     end
@@ -85,11 +85,11 @@ RSpec.describe Pikuri::Workspace::FileList do
     it 'produces a listing observation for the LLM' do
       FileUtils.mkdir_p(root + 'lib')
 
-      assert_equal 'lib/  [empty]', tool.run({})
+      assert_equal 'lib/  [empty]', tool.run({}).to_s
     end
 
     it 'reports unknown parameters via the Parameters validator' do
-      result = tool.run({ 'path' => 'lib', 'recursive' => true })
+      result = tool.run({ 'path' => 'lib', 'recursive' => true }).to_s
 
       assert_includes result, 'recursive'
     end
@@ -117,7 +117,7 @@ RSpec.describe Pikuri::Workspace::FileList do
         filesystem: Pikuri::Workspace::Filesystem.new(project_root: other_root)
       )
 
-      assert_equal 'elsewhere/  [empty]', tool.with_workspace(other).run({})
+      assert_equal 'elsewhere/  [empty]', tool.with_workspace(other).run({}).to_s
     ensure
       FileUtils.rm_rf(other_root)
     end

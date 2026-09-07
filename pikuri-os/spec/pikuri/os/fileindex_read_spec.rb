@@ -22,14 +22,14 @@ RSpec.describe Pikuri::Os::FileindexRead do
 
   describe '.read' do
     it 'rejects offset < 1 and limit < 1' do
-      assert_includes described_class.read(path: '/x', offset: 0, limit: 10, backend: backend), 'offset must be >= 1'
-      assert_includes described_class.read(path: '/x', offset: 1, limit: 0, backend: backend), 'limit must be >= 1'
+      assert_includes described_class.read(path: '/x', offset: 0, limit: 10, backend: backend).to_s, 'offset must be >= 1'
+      assert_includes described_class.read(path: '/x', offset: 1, limit: 0, backend: backend).to_s, 'limit must be >= 1'
     end
 
     it 'returns a not-in-index error when the backend has no text' do
       original = stub_backend_read { |_path| nil }
       begin
-        out = described_class.read(path: '/home/u/missing.pdf', offset: 1, limit: 10, backend: backend)
+        out = described_class.read(path: '/home/u/missing.pdf', offset: 1, limit: 10, backend: backend).to_s
         assert_includes out, 'is not in the index'
         assert_includes out, 'use the read tool'
       ensure
@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Os::FileindexRead do
       text = (1..30).map { |i| "line #{i}" }.join("\n")
       original = stub_backend_read { |_path| text }
       begin
-        out = described_class.read(path: '/x', offset: 1, limit: 10, backend: backend)
+        out = described_class.read(path: '/x', offset: 1, limit: 10, backend: backend).to_s
         assert_includes out, "     1\tline 1"
         assert_includes out, "    10\tline 10"
         refute_includes out, 'line 11'
@@ -55,7 +55,7 @@ RSpec.describe Pikuri::Os::FileindexRead do
       text = (1..5).map { |i| "line #{i}" }.join("\n")
       original = stub_backend_read { |_path| text }
       begin
-        out = described_class.read(path: '/x', offset: 3, limit: 100, backend: backend)
+        out = described_class.read(path: '/x', offset: 3, limit: 100, backend: backend).to_s
         assert_includes out, "     3\tline 3"
         assert_includes out, "     5\tline 5"
         refute_includes out, 'line 2'

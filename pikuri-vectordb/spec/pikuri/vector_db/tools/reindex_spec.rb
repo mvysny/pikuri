@@ -53,7 +53,7 @@ describe Pikuri::VectorDb::Tools::Reindex do
   describe '#execute happy paths' do
     it 'returns a one-line summary including the chunk count' do
       indexer = stub_indexer(return_value: 247)
-      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer).to_s
 
       assert_equal 'Reindexed: 247 chunk(s) now in the index.', observation
     end
@@ -66,7 +66,7 @@ describe Pikuri::VectorDb::Tools::Reindex do
 
     it 'returns a helpful empty-corpus message when reindex returns 0' do
       indexer = stub_indexer(return_value: 0)
-      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer).to_s
 
       assert_includes observation, 'Reindexed: 0 chunks'
       assert_includes observation, 'No indexable files'
@@ -76,7 +76,7 @@ describe Pikuri::VectorDb::Tools::Reindex do
   describe '#execute error path' do
     it 'returns "Error: ..." when the indexer raises a RuntimeError' do
       indexer = stub_indexer(raise_with: 'Backend::Chroma: HTTP 503 ...')
-      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer)
+      observation = Pikuri::VectorDb::Tools::Reindex.execute(indexer: indexer).to_s
 
       assert_match(/^Error: reindex failed:/, observation)
       assert_match(/HTTP 503/, observation)

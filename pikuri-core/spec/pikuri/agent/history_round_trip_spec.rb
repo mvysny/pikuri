@@ -204,6 +204,44 @@ RSpec.describe 'Pikuri::Agent history round trip' do
       assert_equal history, Pikuri::Agent::History.parse(history.to_json)
     end
 
+    it 'keeps the display strings, which nothing could recompute on reload' do
+      agent.run_loop(user_message: 'What is 2 + 2?')
+      history = agent.export_history
+
+      call = history.messages[1].tool_calls.first
+      assert_equal 'Calculator', call.display_name
+      assert_equal '2 + 2', call.argument
+      assert_equal '4', history.messages[2].summary
+    end
+
+    it 'round-trips the display strings through the JSON and back out again' do
+      agent.run_loop(user_message: 'What is 2 + 2?')
+      reloaded = Pikuri::Agent::History.parse(agent.export_history.to_json)
+
+      agent.load_history!(reloaded)
+      again = agent.export_history
+
+      assert_equal 'Calculator', again.messages[1].tool_calls.first.display_name
+      assert_equal '2 + 2', again.messages[1].tool_calls.first.argument
+      assert_equal '4', again.messages[2].summary
+    end
+
+    it 'loads a pre-summary file with nils rather than refusing it' do
+      agent.run_loop(user_message: 'What is 2 + 2?')
+      raw = agent.export_history.to_h
+      raw['messages'].each do |m|
+        m.delete('summary')
+        (m['tool_calls'] || []).each { |c| c.delete('display_name') && c.delete('argument') }
+      end
+
+      old = Pikuri::Agent::History.from_h(raw)
+
+      assert_nil old.messages[1].tool_calls.first.display_name
+      assert_nil old.messages[2].summary
+      # And an absent string is simply absent again on the way out.
+      refute_includes old.to_h['messages'][2].keys, 'summary'
+    end
+
     it 'mints a stable id per message: exporting twice does not renumber' do
       agent.run_loop(user_message: 'What is 2 + 2?')
 

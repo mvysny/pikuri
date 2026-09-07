@@ -32,7 +32,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('lib/b.rb')
       write_file('lib/c.txt')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       assert_includes result, 'a.rb'
       assert_includes result, 'lib/b.rb'
@@ -43,7 +43,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'singularizes the footer at 1 file' do
       write_file('only.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       assert_includes result, 'Found 1 file.'
     end
@@ -53,7 +53,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('b.tsx')
       write_file('c.txt')
 
-      result = described_class.search(**search_args(pattern: '**/*.{ts,tsx}'))
+      result = described_class.search(**search_args(pattern: '**/*.{ts,tsx}')).to_s
 
       assert_includes result, 'a.ts'
       assert_includes result, 'b.tsx'
@@ -66,7 +66,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('lib/keep.rb')
       write_file('spec/skip.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb', path: 'lib'))
+      result = described_class.search(**search_args(pattern: '**/*.rb', path: 'lib')).to_s
 
       assert_includes result, 'keep.rb'
       refute_includes result, 'skip.rb'
@@ -75,8 +75,8 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'outputs paths relative to the workspace whether path is relative or absolute' do
       write_file('lib/sub/file.rb')
 
-      result_rel = described_class.search(**search_args(pattern: '**/*.rb', path: 'lib'))
-      result_abs = described_class.search(**search_args(pattern: '**/*.rb', path: (root + 'lib').to_s))
+      result_rel = described_class.search(**search_args(pattern: '**/*.rb', path: 'lib')).to_s
+      result_abs = described_class.search(**search_args(pattern: '**/*.rb', path: (root + 'lib').to_s)).to_s
 
       assert_includes result_rel, 'sub/file.rb'
       assert_includes result_abs, 'sub/file.rb'
@@ -87,7 +87,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
 
   describe '.search rejections' do
     it 'rejects an empty pattern' do
-      result = described_class.search(**search_args(pattern: ''))
+      result = described_class.search(**search_args(pattern: '')).to_s
 
       assert_equal 'Error: empty pattern.', result
     end
@@ -95,7 +95,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'rejects a path that is a regular file, pointing at the read tool' do
       write_file('lonely.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb', path: 'lonely.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb', path: 'lonely.rb')).to_s
 
       assert result.start_with?('Error:'), "got #{result.inspect}"
       assert_includes result, 'is a file, not a directory'
@@ -103,7 +103,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     end
 
     it 'rejects a nonexistent path before reaching rg' do
-      result = described_class.search(**search_args(pattern: '**/*', path: 'does/not/exist'))
+      result = described_class.search(**search_args(pattern: '**/*', path: 'does/not/exist')).to_s
 
       assert_equal 'Error: path not found: does/not/exist', result
     end
@@ -113,7 +113,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       ws = Pikuri::Workspace::Workspace.new(filesystem: allow_all)
 
       [Dir.home, '/'].each do |danger|
-        result = described_class.search(workspace: ws, pattern: '**/*', path: danger)
+        result = described_class.search(workspace: ws, pattern: '**/*', path: danger).to_s
         assert result.start_with?('Error: refusing to list'), "got #{result[0, 80].inspect}"
         assert_includes result, 'too broad'
         # The refusal hands back a listing to narrow into, not a dead-end.
@@ -125,7 +125,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       Dir.mktmpdir('pikuri-glob-outside-') do |outside|
         File.write(File.join(outside, 'leak.rb'), '')
 
-        result = described_class.search(**search_args(pattern: '**/*.rb', path: outside))
+        result = described_class.search(**search_args(pattern: '**/*.rb', path: outside)).to_s
 
         assert result.start_with?('Error:'), "got #{result.inspect}"
         assert_includes result, 'outside the workspace'
@@ -144,7 +144,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       original = Pikuri::Subprocess.method(:spawn)
       Pikuri::Subprocess.define_singleton_method(:spawn) { |*_a, **_k| spawner }
       begin
-        result = described_class.search(**search_args)
+        result = described_class.search(**search_args).to_s
       ensure
         Pikuri::Subprocess.define_singleton_method(:spawn, original)
       end
@@ -160,7 +160,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'returns a "No files match" string (not Error)' do
       write_file('a.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.foo'))
+      result = described_class.search(**search_args(pattern: '**/*.foo')).to_s
 
       assert_equal "No files match pattern '**/*.foo'.", result
       refute result.start_with?('Error:')
@@ -169,7 +169,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'includes the path in the no-matches message when given' do
       write_file('lib/a.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.foo', path: 'lib'))
+      result = described_class.search(**search_args(pattern: '**/*.foo', path: 'lib')).to_s
 
       assert_equal "No files match pattern '**/*.foo' in lib.", result
     end
@@ -182,7 +182,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('ignored.rb')
       write_file('visible.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       assert_includes result, 'visible.rb'
       refute_includes result, 'ignored.rb'
@@ -194,7 +194,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('ignored.rb')
       write_file('visible.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb', include_gitignored: true))
+      result = described_class.search(**search_args(pattern: '**/*.rb', include_gitignored: true)).to_s
 
       assert_includes result, 'ignored.rb'
       assert_includes result, 'visible.rb'
@@ -204,7 +204,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       Pikuri::Subprocess.spawn('git', 'init', '-q', chdir: root.to_s).wait
       write_file('visible.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*', include_gitignored: true))
+      result = described_class.search(**search_args(pattern: '**/*', include_gitignored: true)).to_s
 
       assert_includes result, 'visible.rb'
       refute_match(%r{\.git/}, result)
@@ -215,7 +215,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'includes hidden files because --hidden is set' do
       write_file('.dotfile')
 
-      result = described_class.search(**search_args(pattern: '**/*'))
+      result = described_class.search(**search_args(pattern: '**/*')).to_s
 
       assert_includes result, '.dotfile'
     end
@@ -226,7 +226,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       Pikuri::Subprocess.spawn('git', 'init', '-q', chdir: root.to_s).wait
       write_file('visible.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*'))
+      result = described_class.search(**search_args(pattern: '**/*')).to_s
 
       assert_includes result, 'visible.rb'
       refute_match(%r{\.git/}, result)
@@ -241,7 +241,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       File.utime(Time.now - 3600, Time.now - 3600, old)
       File.utime(Time.now,        Time.now,        new)
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
       idx_new = result.index('new.rb')
       idx_old = result.index('old.rb')
 
@@ -257,7 +257,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       File.utime(ts, ts, a)
       File.utime(ts, ts, b)
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       assert result.index('a.rb') < result.index('b.rb'),
              "expected a.rb before b.rb on tie, got:\n#{result}"
@@ -269,7 +269,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('top.rb')
       write_file('lib/nested.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       refute_match(%r{(\A|\n)\./}, result, "found leading ./ in output:\n#{result}")
       assert_includes result, 'top.rb'
@@ -285,7 +285,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
         write_file("#{base}/file_with_a_longer_name_#{format('%04d', i)}.txt")
       end
 
-      result = described_class.search(**search_args(pattern: '**/*.txt'))
+      result = described_class.search(**search_args(pattern: '**/*.txt')).to_s
 
       assert_includes result, 'bytes omitted'
       assert_includes result, 'refine pattern or path'
@@ -301,7 +301,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     it 'is a no-op when output fits within MAX_BYTES' do
       write_file('a.rb')
 
-      result = described_class.search(**search_args(pattern: '**/*.rb'))
+      result = described_class.search(**search_args(pattern: '**/*.rb')).to_s
 
       refute_includes result, 'bytes omitted'
     end
@@ -312,7 +312,7 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
       write_file('a.rb')
       write_file('b.rb')
 
-      result = tool.run('pattern' => '**/*.rb')
+      result = tool.run('pattern' => '**/*.rb').to_s
 
       assert_includes result, 'a.rb'
       assert_includes result, 'b.rb'
@@ -320,14 +320,14 @@ RSpec.describe Pikuri::Workspace::Search::Glob do
     end
 
     it 'reports a missing required pattern via the Parameters validator' do
-      result = tool.run('path' => '.')
+      result = tool.run('path' => '.').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'pattern'
     end
 
     it 'reports unknown parameters via the Parameters validator' do
-      result = tool.run('pattern' => '**/*', 'recursive' => true)
+      result = tool.run('pattern' => '**/*', 'recursive' => true).to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'recursive'

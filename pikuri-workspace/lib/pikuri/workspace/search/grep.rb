@@ -172,17 +172,17 @@ module Pikuri
         # @return [String]
         def self.search(workspace:, pattern:, path:, glob:, case_insensitive:, output_mode:,
                         include_gitignored: false)
-          return 'Error: empty pattern.' if pattern.empty?
+          return Tool::Result.error('empty pattern.') if pattern.empty?
           unless OUTPUT_MODES.include?(output_mode)
-            return "Error: output_mode must be one of #{OUTPUT_MODES.join(', ')}, " \
-                   "got #{output_mode.inspect}."
+            return Tool::Result.error("output_mode must be one of #{OUTPUT_MODES.join(', ')}, " \
+                                      "got #{output_mode.inspect}.")
           end
 
           search_target = '.'
           resolved_root = workspace.project_root
           if path
             resolved = workspace.resolve_for_read(path)
-            return "Error: path not found: #{path}" unless resolved.exist?
+            return Tool::Result.error("path not found: #{path}") unless resolved.exist?
 
             resolved_root = resolved
             rel = resolved.relative_path_from(workspace.project_root).to_s
@@ -191,7 +191,7 @@ module Pikuri
 
           if (refusal = Utils.oversized_root_refusal(resolved_root, filesystem: workspace.filesystem,
                                                      verb: 'search'))
-            return refusal
+            return Tool::Result.error(refusal)
           end
 
           denied_prefixes = Utils.denied_prefixes(filesystem: workspace.filesystem,
@@ -213,10 +213,10 @@ module Pikuri
           when 1
             no_match_message(pattern: pattern, path: path)
           else
-            "Error: ripgrep: #{truncate_error(result.output, exit_code)}"
+            Tool::Result.error("ripgrep: #{truncate_error(result.output, exit_code)}")
           end
         rescue Filesystem::Error => e
-          "Error: #{e.message}"
+          Tool::Result.error(e.message)
         end
 
         # Build the +rg+ argv. Path is always passed (defaults to +.+) — see the
@@ -252,7 +252,8 @@ module Pikuri
         # Render rg output: strip the +./+ prefix, head-truncate at {MAX_BYTES},
         # append a count footer.
         #
-        # @return [String]
+        # @return [Tool::Result] the hits, carrying +"Found 7 matches in 3
+        #   files"+
         def self.format_output(raw, output_mode:, pattern:, path:, denied_prefixes:)
           # The guarantee, after build_argv's pruning did the cheap 99%. Runs on
           # ./-stripped text so the prefixes are workspace-relative like rg's.
@@ -262,8 +263,9 @@ module Pikuri
 
           return no_match_message(pattern: pattern, path: path) if stripped.empty?
 
-          footer = build_footer(stripped, output_mode)
-          [stripped, '', footer + truncation_marker].join("\n")
+          phrase = match_phrase(stripped, output_mode)
+          Tool::Result.new(content: [stripped, '', "Found #{phrase}." + truncation_marker].join("\n"),
+                           summary: "Found #{phrase}")
         end
         private_class_method :format_output
 
@@ -303,37 +305,34 @@ module Pikuri
         end
         private_class_method :truncate_error
 
-        # One-line footer summarizing the result; format depends on +output_mode+.
+        # The counted phrase the observation's footer and the display summary are
+        # both built from — +"7 matches in 3 files"+, +"3 files"+ in
+        # +files_with_matches+ mode.
         #
         # @return [String]
-        def self.build_footer(content, output_mode)
+        def self.match_phrase(content, output_mode)
           lines = content.split("\n").reject(&:empty?)
           case output_mode
           when 'content'
             files = lines.map { |l| l.split(':', 2).first }.uniq
-            "Found #{pluralize(lines.size, 'match', 'matches')} in " \
-              "#{pluralize(files.size, 'file', 'files')}."
+            "#{Pikuri::Tool.pluralize(lines.size, 'match', 'matches')} in " \
+              "#{Pikuri::Tool.pluralize(files.size, 'file', 'files')}"
           when 'files_with_matches'
-            "Found #{pluralize(lines.size, 'file', 'files')}."
+            Pikuri::Tool.pluralize(lines.size, 'file', 'files')
           when 'count'
             total = lines.sum { |l| Integer(l.split(':').last) }
-            "Found #{pluralize(total, 'match', 'matches')} in " \
-              "#{pluralize(lines.size, 'file', 'files')}."
+            "#{Pikuri::Tool.pluralize(total, 'match', 'matches')} in " \
+              "#{Pikuri::Tool.pluralize(lines.size, 'file', 'files')}"
           end
         end
-        private_class_method :build_footer
+        private_class_method :match_phrase
 
-        # @return [String] +"1 match"+ / +"2 matches"+
-        def self.pluralize(n, sing, plural)
-          "#{n} #{n == 1 ? sing : plural}"
-        end
-        private_class_method :pluralize
-
-        # @return [String]
+        # @return [Tool::Result] the "nothing matched" observation, carrying
+        #   +"Found 0 matches"+
         def self.no_match_message(pattern:, path:)
           base = "No matches for pattern '#{pattern}'"
           base += " in #{path}" if path
-          "#{base}."
+          Tool::Result.new(content: "#{base}.", summary: 'Found 0 matches')
         end
         private_class_method :no_match_message
 

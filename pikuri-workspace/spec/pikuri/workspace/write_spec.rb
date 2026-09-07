@@ -56,7 +56,7 @@ RSpec.describe Pikuri::Workspace::Write do
   describe '.write new-file path' do
     it 'creates the file and returns a Created observation' do
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'hello.txt', content: "alpha\nbeta\n")
+                                     path: 'hello.txt', content: "alpha\nbeta\n").to_s
 
       assert_equal 'Created hello.txt (11 bytes)', result
       assert_equal "alpha\nbeta\n", (root + 'hello.txt').read
@@ -64,7 +64,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
     it 'creates missing parent directories' do
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'lib/new/dir/foo.rb', content: "x\n")
+                                     path: 'lib/new/dir/foo.rb', content: "x\n").to_s
 
       assert_equal 'Created lib/new/dir/foo.rb (2 bytes)', result
       assert_equal "x\n", (root + 'lib/new/dir/foo.rb').read
@@ -72,7 +72,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
     it 'allows empty content' do
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'empty.txt', content: '')
+                                     path: 'empty.txt', content: '').to_s
 
       assert_equal 'Created empty.txt (0 bytes)', result
       assert (root + 'empty.txt').exist?
@@ -92,7 +92,7 @@ RSpec.describe Pikuri::Workspace::Write do
       write_file('same.txt', "exact bytes\n")
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'same.txt', content: "exact bytes\n")
+                                     path: 'same.txt', content: "exact bytes\n").to_s
 
       assert_equal(
         'Error: same.txt already contains exactly this content — no write needed. ' \
@@ -110,7 +110,7 @@ RSpec.describe Pikuri::Workspace::Write do
       cf = build_confirmer(true)
 
       result = described_class.write(workspace: workspace, confirmer: cf,
-                                     path: 'target.txt', content: "new content\n")
+                                     path: 'target.txt', content: "new content\n").to_s
 
       assert_equal 'Updated target.txt (4 → 12 bytes)', result
       assert_equal "new content\n", (root + 'target.txt').read
@@ -133,7 +133,7 @@ RSpec.describe Pikuri::Workspace::Write do
       cf = build_confirmer(false)
 
       result = described_class.write(workspace: workspace, confirmer: cf,
-                                     path: 'target.txt', content: "replacement\n")
+                                     path: 'target.txt', content: "replacement\n").to_s
 
       assert_equal 'Error: user declined the write to target.txt.', result
       assert_equal "original\n", (root + 'target.txt').read
@@ -144,7 +144,7 @@ RSpec.describe Pikuri::Workspace::Write do
       cf = build_confirmer(true)
 
       result = described_class.write(workspace: workspace, confirmer: cf,
-                                     path: 'trail.txt', content: 'line')
+                                     path: 'trail.txt', content: 'line').to_s
 
       assert_equal 'Updated trail.txt (5 → 4 bytes)', result
       assert_equal 'line', (root + 'trail.txt').read
@@ -157,7 +157,7 @@ RSpec.describe Pikuri::Workspace::Write do
       bytes_equal_content.force_encoding(Encoding::BINARY)
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'utf.txt', content: bytes_equal_content)
+                                     path: 'utf.txt', content: bytes_equal_content).to_s
 
       assert result.start_with?('Error: utf.txt already contains'),
              "expected identical-content error, got #{result.inspect}"
@@ -170,7 +170,7 @@ RSpec.describe Pikuri::Workspace::Write do
       create_unread('unread.txt', "old\n")
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'unread.txt', content: "new\n")
+                                     path: 'unread.txt', content: "new\n").to_s
 
       assert result.start_with?('Error: unread.txt exists but has not been read this conversation'),
              "expected read-first error, got #{result.inspect}"
@@ -184,7 +184,7 @@ RSpec.describe Pikuri::Workspace::Write do
       cf = build_confirmer(true)
 
       result = described_class.write(workspace: workspace, confirmer: cf,
-                                     path: 'viaread.txt', content: "new\n")
+                                     path: 'viaread.txt', content: "new\n").to_s
 
       assert_equal 'Updated viaread.txt (4 → 4 bytes)', result
       assert_equal "new\n", (root + 'viaread.txt').read
@@ -192,7 +192,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
     it 'does not gate a new file (nothing to read)' do
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'brand-new.txt', content: "hi\n")
+                                     path: 'brand-new.txt', content: "hi\n").to_s
 
       assert_equal 'Created brand-new.txt (3 bytes)', result
     end
@@ -201,7 +201,7 @@ RSpec.describe Pikuri::Workspace::Write do
   describe '.write refusals' do
     it 'converts workspace-boundary violations to "Error: ..." strings' do
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: '../escape.txt', content: 'x')
+                                     path: '../escape.txt', content: 'x').to_s
 
       assert result.start_with?('Error: path'), "expected workspace error, got #{result.inspect}"
       assert_includes result, 'is outside the workspace'
@@ -212,7 +212,7 @@ RSpec.describe Pikuri::Workspace::Write do
       FileUtils.mkdir_p(root + 'subdir')
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                     path: 'subdir', content: 'x')
+                                     path: 'subdir', content: 'x').to_s
 
       assert_equal 'Error: subdir is a directory', result
       assert_equal [], confirmer.requests
@@ -224,7 +224,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       begin
         result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                       path: 'locked.txt', content: 'replacement')
+                                       path: 'locked.txt', content: 'replacement').to_s
 
         assert result.start_with?('Error: cannot read locked.txt for overwrite check:'),
                "expected read-side error, got #{result.inspect}"
@@ -240,7 +240,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       begin
         result = described_class.write(workspace: workspace, confirmer: confirmer,
-                                       path: 'ro/new.txt', content: 'x')
+                                       path: 'ro/new.txt', content: 'x').to_s
 
         assert result.start_with?('Error: cannot write ro/new.txt:'),
                "expected write-side error, got #{result.inspect}"
@@ -252,28 +252,28 @@ RSpec.describe Pikuri::Workspace::Write do
 
   describe 'tool integration (via #run)' do
     it 'validates args and produces a Created observation for the LLM' do
-      result = tool.run('path' => 'integ.txt', 'content' => "hi\n")
+      result = tool.run('path' => 'integ.txt', 'content' => "hi\n").to_s
 
       assert_equal 'Created integ.txt (3 bytes)', result
       assert_equal "hi\n", (root + 'integ.txt').read
     end
 
     it 'reports a missing required path via the Parameters validator' do
-      result = tool.run('content' => 'x')
+      result = tool.run('content' => 'x').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'path'
     end
 
     it 'reports a missing required content via the Parameters validator' do
-      result = tool.run('path' => 'foo.txt')
+      result = tool.run('path' => 'foo.txt').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'content'
     end
 
     it 'reports unknown parameters via the Parameters validator' do
-      result = tool.run('path' => 'foo.txt', 'content' => 'x', 'mode' => '0644')
+      result = tool.run('path' => 'foo.txt', 'content' => 'x', 'mode' => '0644').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'mode'
@@ -304,7 +304,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
                                      read_only: read_only, path: 'hello.txt',
-                                     content: "alpha\n")
+                                     content: "alpha\n").to_s
 
       assert_match(/read-only/, result)
       refute (root + 'hello.txt').exist?
@@ -318,7 +318,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       result = described_class.write(workspace: workspace, confirmer: guard,
                                      read_only: read_only, path: 'foo.rb',
-                                     content: "new\n")
+                                     content: "new\n").to_s
 
       assert_match(/read-only/, result)
       assert_empty guard.requests
@@ -331,7 +331,7 @@ RSpec.describe Pikuri::Workspace::Write do
 
       result = described_class.write(workspace: workspace, confirmer: confirmer,
                                      read_only: read_only, path: 'hello.txt',
-                                     content: "alpha\n")
+                                     content: "alpha\n").to_s
 
       assert_equal 'Created hello.txt (6 bytes)', result
     end
@@ -356,7 +356,7 @@ RSpec.describe Pikuri::Workspace::Write do
     it 'confirms a NEW file (change.old is nil) and writes on approve' do
       cf = deciding(:approve)
       result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
-                                     path: 'new.txt', content: "hi\n")
+                                     path: 'new.txt', content: "hi\n").to_s
       assert_equal 'Created new.txt (3 bytes)', result
       assert_equal "hi\n", File.read(root + 'new.txt')
       change = cf.requests.first.change
@@ -379,7 +379,7 @@ RSpec.describe Pikuri::Workspace::Write do
       write_file('a.txt', "old\n")
       cf = deciding('use the other config')
       result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
-                                     path: 'a.txt', content: "new\n")
+                                     path: 'a.txt', content: "new\n").to_s
       assert_includes result, 'use the other config'
       assert_equal "old\n", File.read(root + 'a.txt')
     end
@@ -388,7 +388,7 @@ RSpec.describe Pikuri::Workspace::Write do
       write_file('a.txt', "same\n")
       cf = deciding(:approve)
       result = described_class.write(workspace: workspace, confirmer: cf, confirm_all_writes: true,
-                                     path: 'a.txt', content: "same\n")
+                                     path: 'a.txt', content: "same\n").to_s
       assert_match(/already contains/, result)
       assert_equal [], cf.requests
     end

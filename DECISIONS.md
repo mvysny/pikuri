@@ -79,6 +79,187 @@ design.
 
 ---
 
+## D_tool_summary_lines — The tool composes its own display line, in code (2026-09-07)
+
+**Status:** Accepted; shipped 2026-09-07. Graduated from
+`ideas/tool-summary-lines.md`.
+
+**Context.** Three chromes (pikuri's `Listener::Terminal`, pikuri-web's
+`SseListener`, pikuri-tui's conversation view) each printed
+`→ name(k=v, k=v)` and a 200-char slice of the observation. A transcript
+wants `Write(lib/foo.rb)` / `Added 2 lines, removed 3 lines` instead, and
+the question is *who composes those strings*.
+
+**Decision.** The **tool** does, at `execute` time, where it still holds the
+structure it is about to flatten for the model. Three strings ride the
+events, computed once by `Agent` and never composed by a renderer:
+`display_name` and `argument` on `Event::ToolCall`
+({Pikuri::Tool#display_name} / {Pikuri::Tool#describe_call}), `summary` on
+`Event::ToolResult` — from the {Pikuri::Tool::Result} `execute` returns
+(`D_tool_always_returns_result`). Every default is mechanical
+({Pikuri::Tool.display_name_for}, the first required parameter,
+{Pikuri::Tool.describe_content}), so a tool that declares nothing still
+renders; nine bundled tools override a method. The two rules a summary obeys
+live on {Pikuri::Tool::Result}: **structural, never excerpted** and
+**summaries are code**.
+
+**Alternatives rejected.**
+
+- **`O_llm_narrates` — ask the model to say what it did.** The model is the
+  one component an attacker steers, through a fetched page, a file, an
+  email. A narrated `Saved successfully` over a failed write is precisely
+  what an injection aims for, and nothing a human reads as *status* may
+  originate there. This is the rejection that makes the feature worth doing
+  carefully.
+- **`O_renderer_parses` — a per-tool table in each renderer, reconstructing
+  the line from the flattened observation.** The summary is derived from
+  data the renderer never sees: `web_search` had 23 result structs before it
+  rendered a Markdown list, `read` a line count, `bash` an exit status.
+  Re-parsing is fragile and breaks the day the Markdown shape changes, and
+  three renderers would carry three drifting copies. Two *local* residues of
+  this are accepted where a cache hit leaves nothing else to count:
+  `Search::Engines` counts its own rendered rows, and `Fetch` / `WebScrape`
+  report bytes rather than a content-type their caches never store.
+- **`Tool::Observation` as the name.** "Observation" is the word
+  `Tool#execute`'s rdoc uses, but it reads as something the call keeps
+  producing where "result" is finite — the call is over. Accepted cost: two
+  things named "tool result", `Tool::Result` (what `execute` returns) and
+  `Agent::Event::ToolResult` (what listeners see); they are the same thing
+  at two stages.
+- **A `Result` that may wrap `RubyLLM::Content`.** Rejected here, then
+  accepted a day later by a third route neither option below considered —
+  see `D_tool_always_returns_result`. The two rejected *ways* stand: stash
+  the summary in a per-call slot (a second single-slot pairing trick), or
+  extend `content_like?` through `ruby_llm_patches.rb` (another monkey-patch
+  to carry across bumps). What was wrong here was the inference that
+  therefore `Result` must hold a `String` — an attachment needs no stash,
+  because its display line is derivable from mime and size.
+- **A `tool:` reference on the events instead of strings.** Events are plain
+  serializable `Data` (pikuri-web ships them over SSE, a history replay
+  synthesizes them), and three cases have no `Pikuri::Tool` to reference at
+  all — an MCP tool, ruby_llm's unavailable-tool error, a replayed
+  conversation — so the field would be `nil` there and every renderer would
+  grow a branch.
+- **Not persisting the strings in `History`.** A summary is derived from
+  structured data that is gone once the observation is flattened, so nothing
+  can recompute it on reload; even the call-side strings need the tool,
+  which a later wiring may no longer have (a removed extension, a renamed
+  MCP server). All three are short by definition, so they are cheap to keep,
+  and they are local-only like `id` / `kind` (`D_history_local_ids`).
+- **`describe_call:` as a constructor kwarg rather than an overridable
+  method.** 33 of the 34 shipped tools are `Pikuri::Tool` *subclasses*,
+  `for_sub_agent` / `with_workspace` are the precedent, and two overrides
+  need the tool's own state (the `task_*` tools look a title up in the
+  `List` they hold, which a kwarg lambda could only reach by closing over
+  it).
+
+**Consequences.**
+
+- **Breaking**: `Event::ToolCall` and `Event::ToolResult` both gained
+  required keywords (`tool_call_id`, `name`, and the display strings). With
+  the id on both, a renderer pairs a result to its call by key instead of by
+  strict ordering; inside `Agent` that assumption survives only at the one
+  stash pairing ruby_llm's call-less `after_tool_result` with its
+  `before_tool_call`. Reopen path if `tool_concurrency` ever goes on:
+  ruby_llm's `instrumenter` config option, whose `tool_call.ruby_llm` payload
+  carries `tool_call` and `result` together.
+- `Listener::Terminal` no longer echoes a slice of the observation at all,
+  and routes all three strings through {Pikuri::Sanitizer} — the old
+  `→ name(k=v)` line was safe only because `inspect` escaped control bytes.
+  The argument cap is the renderer's, since only it knows its width.
+- `write` reports line counts (`Updated, 88 lines (was 90)`) rather than the
+  note's `Added N lines, removed M lines`: pikuri has no in-process differ,
+  and shelling out to `diff` for a status line is not worth a subprocess. On
+  `edit` the same wording *is* exact — the replaced text and its substitute
+  are both arguments.
+- {Pikuri::Tool.pluralize} replaced three private copies of the same helper
+  in pikuri-workspace; `Listing.render_with_count` was added beside `render`
+  because a row count cannot be recovered from the rendered text.
+- pikuri-web's `HistoryReplay` and pikuri-tui's conversation view must be
+  updated in the same release: the event constructors changed, and both
+  should retire their own composition (pikuri-tui's `@pending_formatter`
+  ordering trick included).
+
+---
+
+## D_tool_always_returns_result — One return type, and the attachment rides inside it (2026-09-08)
+
+**Status:** Accepted; shipped 2026-09-08. Refines `D_tool_summary_lines`,
+which had rejected an attachment-carrying `Result`.
+
+**Context.** A day after shipping display lines, `Tool#execute` had three
+success shapes — a bare `String`, a `Tool::Result`, a `RubyLLM::Content` —
+and 26 `@return` tags spent three lines each re-explaining which arrived
+when. A tool author had no test for choosing between them, and
+`Tool#describe_result`, the hook for summarizing a bare String, had ended up
+with zero overrides in the whole tree.
+
+**Decision.** `execute` answers a `Result`, always. `Result.error(message,
+detail:)` is the recoverable failure (content keeps every line the model
+needs, the summary takes only the first — a `ValidationError` reprints the
+schema). `Result#content` is a `String` except for an **attachment
+observation**, where it is a `RubyLLM::Content`. `Tool#run` enforces the
+type, wrapping a bare String from a third-party `Tool` through
+`Tool.describe_content` rather than refusing it. `Tool#describe_result` is
+deleted.
+
+The union survives in exactly one place, the four-line wrapper in
+`to_ruby_llm_tool`: ruby_llm hands the *same* value to `after_tool_result`
+and to the `:tool` message it builds, and the latter tests `content_like?`
+— an `is_a?(RubyLLM::Content)` a `Result` cannot pass. So an attachment is
+handed over bare and its display line is *derived*; text keeps the `Result`
+and its authored summary reaches the listeners untouched. No tool sees this.
+
+**Alternatives rejected.**
+
+- **`O_result_to_s_returns_content` — let `Result#to_s` answer the
+  `RubyLLM::Content`, so one value serves both callbacks.** It works, today,
+  on ruby_llm 1.16.0's `tool_payload.to_s` — which is exactly what makes it
+  dangerous. A `to_s` that returns a non-String breaks its contract
+  everywhere else: interpolation silently renders
+  `#<Pikuri::Tool::Result:0x…>` (Ruby falls back to the default `to_s`
+  rather than raising) and `String(result)` raises `TypeError`. Verified
+  both. Nothing in the suite would catch the day ruby_llm interpolates.
+- **`O_summary_side_channel` — unwrap in the wrapper for every call and pass
+  the summary out of band.** `ExecuteContext` is a frozen `Data` whose
+  `.default` is a process-wide singleton, so the slot would have to live on
+  the wrapper instance — action at a distance replacing an `is_a?`, to buy
+  an authored summary for the one observation that has nothing to author
+  from.
+- **`O_result_subclasses_content` — make `Result < RubyLLM::Content` so
+  `content_like?` passes.** Subclassing a third-party value type to smuggle
+  a field, and it changes the wire format of *every* text tool result (a
+  `Content` with no attachments serializes as a content array, not a plain
+  string) to fix the one case that is an attachment.
+- **Leaving the three-way union and only tidying the rdoc.** The cheaper
+  half of this was real — 26 tags restating one convention — but the
+  ambiguity was in the API, not the prose: nothing told an author when to
+  return which, and the evidence was `describe_result`'s zero overrides.
+
+**Consequences.**
+
+- **Breaking** for anything calling a tool's class-level entry point
+  (`Workspace::Read.read`, `Code::Bash.run`, and ~30 siblings): they answer
+  a `Result`, so a caller wanting the observation needs `.content`. Inside
+  an agent nothing changes — the wrapper and `Agent` were the only readers.
+- `Agent#summarize_tool_result` lost its per-tool arm and its `tool`
+  parameter. Its remaining non-`Result` branch is no longer "a pikuri tool
+  that returned a String" but the three payloads that never went through
+  `Tool#run`: an MCP tool's String, ruby_llm's unavailable-tool `Hash`, and
+  an unwrapped attachment `Content`.
+- ~120 `"Error: ..."` returns became `Result.error(...)`, and the `Error: `
+  prefix now lives in one place. Refusal *composers* that build message text
+  for a caller to return (`WriteGate.check`, `Search::Utils
+  .oversized_root_refusal`, `Read.directory_refusal`, `GitClone#parse_url`)
+  stay as they are — the entry point wraps them, and `Result.error` does not
+  double an existing prefix.
+- A tool returning something that is neither String, `Content` nor `Result`
+  now raises from `Result#initialize` instead of being silently `to_s`'d by
+  ruby_llm. That is the loud-errors rule, and it can only fire on
+  third-party tool code.
+
+---
+
 ## D_calculator_functions — `math.` is an optional prefix, and `radians` ships with the trigonometry (2026-09-07)
 
 **Status:** Accepted, shipped: `Tool::Calculator::FUNCTIONS` / `CONSTANTS`, the

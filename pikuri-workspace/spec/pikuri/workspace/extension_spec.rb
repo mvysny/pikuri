@@ -118,12 +118,12 @@ RSpec.describe Pikuri::Workspace::Extension do
       edit = configurator.tools.find { |t| t.name == 'edit' }
 
       # Edit refuses before the shared record knows the file was read.
-      refused = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA')
+      refused = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA').to_s
       assert refused.start_with?('Error: foo.rb has not been read'), refused
 
       # Read (same composite) marks it; the edit now clears the gate.
       read.run('path' => 'foo.rb')
-      edited = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA')
+      edited = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA').to_s
       assert_equal 'Edited foo.rb: replaced 1 occurrence.', edited
     end
   end
@@ -137,13 +137,13 @@ RSpec.describe Pikuri::Workspace::Extension do
       read = configurator.tools.find { |t| t.name == 'read' }
       edit = configurator.tools.find { |t| t.name == 'edit' }
 
-      read.run('path' => 'foo.rb') # gate now open for foo.rb
+      read.run('path' => 'foo.rb').to_s # gate now open for foo.rb
 
       ext.on_conversation_reset(nil) # the ctx is unused by this hook
 
       # The read-before-edit gate must refuse again — the cleared
       # conversation has "seen" nothing.
-      refused = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA')
+      refused = edit.run('path' => 'foo.rb', 'old_string' => 'beta', 'new_string' => 'BETA').to_s
       assert refused.start_with?('Error: foo.rb has not been read'), refused
     end
   end

@@ -34,7 +34,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'foo.rb',
                                     old_string: 'beta', new_string: 'BETA',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Edited foo.rb: replaced 1 occurrence.', result
       assert_equal "alpha\nBETA\ngamma\n", (root + 'foo.rb').binread
@@ -46,7 +46,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       result = described_class.edit(workspace: workspace, path: 'm.rb',
                                     old_string: "def foo\n  bar\nend",
                                     new_string: "def foo\n  baz\nend",
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Edited m.rb: replaced 1 occurrence.', result
       assert_equal "def foo\n  baz\nend\n", (root + 'm.rb').binread
@@ -58,7 +58,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       result = described_class.edit(workspace: workspace, path: 'w.rb',
                                     old_string: 'foo bar', # one space
                                     new_string: 'FOO BAR',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert result.start_with?('Error: old_string not found'), "expected not-found, got #{result.inspect}"
       assert_equal "foo  bar\n", (root + 'w.rb').binread
@@ -69,7 +69,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert result.start_with?('Error: old_string matches 3 times'),
              "expected multi-match error, got #{result.inspect}"
@@ -83,7 +83,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: true)
+                                    replace_all: true).to_s
 
       assert_equal 'Edited many.txt: replaced 3 occurrences.', result
       assert_equal "bar\nbar\nbar\n", (root + 'many.txt').binread
@@ -94,7 +94,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'once.txt',
                                     old_string: 'once', new_string: 'twice',
-                                    replace_all: true)
+                                    replace_all: true).to_s
 
       assert_equal 'Edited once.txt: replaced 1 occurrence.', result
       assert_equal 'just twice', (root + 'once.txt').binread
@@ -107,7 +107,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false, occurrence: 2)
+                                    replace_all: false, occurrence: 2).to_s
 
       assert_equal 'Edited many.txt: replaced occurrence 2 of 3.', result
       assert_equal "foo\nbar\nfoo\n", (root + 'many.txt').binread
@@ -118,7 +118,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'fo o', new_string: 'bar',
-                                    replace_all: false, occurrence: 1)
+                                    replace_all: false, occurrence: 1).to_s
 
       assert result.start_with?('Error: old_string not found'), "expected not-found, got #{result.inspect}"
       assert_equal "foo\nfoo\nfoo\n", (root + 'many.txt').binread
@@ -149,7 +149,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'aaaa.txt',
                                     old_string: 'aa', new_string: 'B',
-                                    replace_all: false, occurrence: 2)
+                                    replace_all: false, occurrence: 2).to_s
 
       assert_equal 'Edited aaaa.txt: replaced occurrence 2 of 2.', result
       assert_equal 'aaB', (root + 'aaaa.txt').binread
@@ -160,7 +160,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'm.rb',
                                     old_string: "  x\nend", new_string: "  y\nend",
-                                    replace_all: false, occurrence: 2)
+                                    replace_all: false, occurrence: 2).to_s
 
       assert_equal 'Edited m.rb: replaced occurrence 2 of 2.', result
       assert_equal "def a\n  x\nend\ndef b\n  y\nend\n", (root + 'm.rb').binread
@@ -171,7 +171,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'crlf.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false, occurrence: 2)
+                                    replace_all: false, occurrence: 2).to_s
 
       assert_equal 'Edited crlf.txt: replaced occurrence 2 of 2.', result
       assert_equal "foo\r\nbar\r\n", (root + 'crlf.txt').binread
@@ -182,7 +182,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false, occurrence: 3)
+                                    replace_all: false, occurrence: 3).to_s
 
       assert_equal 'Error: old_string matches 2 times in many.txt, so occurrence 3 does not exist.', result
       assert_equal "foo\nfoo\n", (root + 'many.txt').binread
@@ -193,7 +193,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false, occurrence: 0)
+                                    replace_all: false, occurrence: 0).to_s
 
       assert_equal 'Error: occurrence must be 1 or greater, got 0.', result
       assert_equal "foo\nfoo\n", (root + 'many.txt').binread
@@ -204,7 +204,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: true, occurrence: 1)
+                                    replace_all: true, occurrence: 1).to_s
 
       assert result.start_with?('Error: occurrence and replace_all are mutually exclusive'),
              "expected exclusivity error, got #{result.inspect}"
@@ -216,7 +216,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'many.txt',
                                     old_string: 'foo', new_string: 'bar',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_includes result, 'Set occurrence=N'
     end
@@ -250,7 +250,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'crlf.txt',
                                     old_string: 'line two', new_string: 'LINE TWO',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Edited crlf.txt: replaced 1 occurrence.', result
       assert_equal "line one\r\nLINE TWO\r\nline three\r\n", (root + 'crlf.txt').binread
@@ -262,7 +262,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       result = described_class.edit(workspace: workspace, path: 'crlf2.txt',
                                     old_string: "a\nb",
                                     new_string: "A\nB",
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Edited crlf2.txt: replaced 1 occurrence.', result
       assert_equal "A\r\nB\r\nc\r\n", (root + 'crlf2.txt').binread
@@ -296,7 +296,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'any.txt',
                                     old_string: '', new_string: 'new',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Error: old_string is empty; use the write tool to create or overwrite a file.', result
       assert_equal 'hi', (root + 'any.txt').binread
@@ -307,7 +307,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'any.txt',
                                     old_string: 'hi', new_string: 'hi',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Error: old_string and new_string are identical — this edit is a no-op.', result
     end
@@ -315,7 +315,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'rejects a missing file' do
       result = described_class.edit(workspace: workspace, path: 'nope.txt',
                                     old_string: 'a', new_string: 'b',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Error: file not found: nope.txt', result
     end
@@ -325,7 +325,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'subdir',
                                     old_string: 'a', new_string: 'b',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Error: subdir is a directory', result
     end
@@ -335,7 +335,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'bin.dat',
                                     old_string: 'abc', new_string: 'xyz',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Error: cannot edit binary file: bin.dat', result
       assert_equal "abc\x00def\x00ghi", (root + 'bin.dat').binread
@@ -344,7 +344,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'converts workspace-boundary violations to "Error: ..." strings' do
       result = described_class.edit(workspace: workspace, path: '../escape.txt',
                                     old_string: 'a', new_string: 'b',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert result.start_with?('Error: path'), "expected workspace error, got #{result.inspect}"
       assert_includes result, 'is outside the workspace'
@@ -357,7 +357,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       begin
         result = described_class.edit(workspace: workspace, path: 'locked.txt',
                                       old_string: 'a', new_string: 'b',
-                                      replace_all: false)
+                                      replace_all: false).to_s
 
         assert result.start_with?('Error: cannot edit locked.txt:'),
                "expected EACCES error, got #{result.inspect}"
@@ -373,7 +373,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'unread.rb',
                                     old_string: 'beta', new_string: 'BETA',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert result.start_with?('Error: unread.rb has not been read this conversation'),
              "expected read-first error, got #{result.inspect}"
@@ -386,7 +386,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, path: 'via_read.rb',
                                     old_string: 'beta', new_string: 'BETA',
-                                    replace_all: false)
+                                    replace_all: false).to_s
 
       assert_equal 'Edited via_read.rb: replaced 1 occurrence.', result
     end
@@ -396,9 +396,9 @@ RSpec.describe Pikuri::Workspace::Edit do
       Pikuri::Workspace::Read.read(workspace: workspace, path: 'refresh.rb', offset: 1, limit: 2000)
 
       first = described_class.edit(workspace: workspace, path: 'refresh.rb',
-                                   old_string: 'a', new_string: 'A', replace_all: false)
+                                   old_string: 'a', new_string: 'A', replace_all: false).to_s
       second = described_class.edit(workspace: workspace, path: 'refresh.rb',
-                                    old_string: 'b', new_string: 'B', replace_all: false)
+                                    old_string: 'b', new_string: 'B', replace_all: false).to_s
 
       assert_equal 'Edited refresh.rb: replaced 1 occurrence.', first
       assert_equal 'Edited refresh.rb: replaced 1 occurrence.', second
@@ -410,7 +410,7 @@ RSpec.describe Pikuri::Workspace::Edit do
     it 'validates args and produces an observation for the LLM' do
       write_file('integ.txt', "alpha\nbeta\n")
 
-      result = tool.run('path' => 'integ.txt', 'old_string' => 'alpha', 'new_string' => 'A')
+      result = tool.run('path' => 'integ.txt', 'old_string' => 'alpha', 'new_string' => 'A').to_s
 
       assert_equal 'Edited integ.txt: replaced 1 occurrence.', result
       assert_equal "A\nbeta\n", (root + 'integ.txt').binread
@@ -420,7 +420,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       write_file('ra.txt', "x\nx\n")
 
       result = tool.run('path' => 'ra.txt', 'old_string' => 'x',
-                        'new_string' => 'y', 'replace_all' => true)
+                        'new_string' => 'y', 'replace_all' => true).to_s
 
       assert_equal 'Edited ra.txt: replaced 2 occurrences.', result
     end
@@ -429,7 +429,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       write_file('ra2.txt', "x\nx\n")
 
       result = tool.run('path' => 'ra2.txt', 'old_string' => 'x',
-                        'new_string' => 'y', 'replace_all' => 'true')
+                        'new_string' => 'y', 'replace_all' => 'true').to_s
 
       assert_equal 'Edited ra2.txt: replaced 2 occurrences.', result
     end
@@ -438,14 +438,14 @@ RSpec.describe Pikuri::Workspace::Edit do
       write_file('occ.txt', "x\nx\nx\n")
 
       result = tool.run('path' => 'occ.txt', 'old_string' => 'x',
-                        'new_string' => 'y', 'occurrence' => '2')
+                        'new_string' => 'y', 'occurrence' => '2').to_s
 
       assert_equal 'Edited occ.txt: replaced occurrence 2 of 3.', result
       assert_equal "x\ny\nx\n", (root + 'occ.txt').binread
     end
 
     it 'reports missing required fields via the Parameters validator' do
-      result = tool.run('path' => 'foo.txt', 'old_string' => 'a')
+      result = tool.run('path' => 'foo.txt', 'old_string' => 'a').to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'new_string'
@@ -453,7 +453,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
     it 'reports unknown parameters via the Parameters validator' do
       result = tool.run('path' => 'foo.txt', 'old_string' => 'a',
-                        'new_string' => 'b', 'regex' => true)
+                        'new_string' => 'b', 'regex' => true).to_s
 
       assert result.start_with?('Error:'), "expected validator error, got #{result.inspect}"
       assert_includes result, 'regex'
@@ -486,7 +486,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, read_only: read_only,
                                     path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false)
+                                    new_string: 'BETA', replace_all: false).to_s
 
       assert_match(/read-only/, result)
       assert_equal "alpha\nbeta\n", (root + 'foo.rb').binread
@@ -499,7 +499,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, read_only: custom,
                                     path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false)
+                                    new_string: 'BETA', replace_all: false).to_s
 
       assert_match(/cannot edit foo\.rb — plan mode is on; call exit_plan_mode/, result)
     end
@@ -511,7 +511,7 @@ RSpec.describe Pikuri::Workspace::Edit do
 
       result = described_class.edit(workspace: workspace, read_only: read_only,
                                     path: 'foo.rb', old_string: 'beta',
-                                    new_string: 'BETA', replace_all: false)
+                                    new_string: 'BETA', replace_all: false).to_s
 
       assert_equal 'Edited foo.rb: replaced 1 occurrence.', result
     end
@@ -538,7 +538,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       cf = deciding(:approve)
       result = described_class.edit(workspace: workspace, confirmer: cf,
                                     path: 'a.txt', old_string: 'two', new_string: 'TWO',
-                                    replace_all: false)
+                                    replace_all: false).to_s
       assert_equal 'Edited a.txt: replaced 1 occurrence.', result
       assert_equal "one\nTWO\n", (root + 'a.txt').binread
       change = cf.requests.first.change
@@ -551,7 +551,7 @@ RSpec.describe Pikuri::Workspace::Edit do
       cf = deciding('leave it as is')
       result = described_class.edit(workspace: workspace, confirmer: cf,
                                     path: 'a.txt', old_string: 'two', new_string: 'TWO',
-                                    replace_all: false)
+                                    replace_all: false).to_s
       assert_includes result, 'leave it as is'
       assert_equal "one\ntwo\n", (root + 'a.txt').binread
     end

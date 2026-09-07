@@ -88,9 +88,9 @@ module Pikuri
 
         dispatch(op, symbol, file, line, renderer)
       rescue Refusal, Pikuri::Workspace::Filesystem::Error, ClientWrapper::ServerDied => e
-        "Error: #{e.message}"
+        Pikuri::Tool::Result.error("#{e.message}")
       rescue Connection::ServerError => e
-        "Error: the language server refused #{operation}: #{e.message}"
+        Pikuri::Tool::Result.error("the language server refused #{operation}: #{e.message}")
       ensure
         release_documents
       end

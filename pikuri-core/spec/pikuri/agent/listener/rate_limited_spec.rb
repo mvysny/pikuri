@@ -117,7 +117,8 @@ RSpec.describe Pikuri::Agent::Listener::RateLimited do
       # Both buffers now empty. Stay inside the next period.
       listener.on_event(Pikuri::Agent::Event::ThinkingDelta.new(content: 'T2'))
       listener.on_event(Pikuri::Agent::Event::AssistantDelta.new(content: 'A3'))
-      listener.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'do', arguments: {}))
+      listener.on_event(Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: 'do', arguments: {},
+                                                     display_name: 'Do', argument: ''))
 
       tail = inner.events.last(3)
       assert_kind_of Pikuri::Agent::Event::ThinkingDelta, tail[0]
@@ -128,7 +129,8 @@ RSpec.describe Pikuri::Agent::Listener::RateLimited do
     end
 
     it 'does not emit empty-buffer deltas before the non-delta event' do
-      listener.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
+      listener.on_event(Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: 'echo', arguments: {},
+                                                           display_name: 'Echo', argument: ''))
       assert_equal 1, inner.events.size
       assert_kind_of Pikuri::Agent::Event::ToolCall, inner.events.first
     end
@@ -178,8 +180,10 @@ RSpec.describe Pikuri::Agent::Listener::RateLimited do
       Pikuri::Agent::Event::UserTurn.new(content: 'hi'),
       Pikuri::Agent::Event::Thinking.new(content: 'pondered'),
       Pikuri::Agent::Event::Assistant.new(content: 'reply'),
-      Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }),
-      Pikuri::Agent::Event::ToolResult.new(content: 'done'),
+      Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: 'echo', arguments: { 'text' => 'hi' },
+                                         display_name: 'Echo', argument: 'hi'),
+      Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: 'echo', content: 'done',
+                                           summary: 'Returned 4 bytes'),
       Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'),
       Pikuri::Agent::Event::Cancelled.new,
       Pikuri::Agent::Event::ContextCap.new(cap: 32_768),

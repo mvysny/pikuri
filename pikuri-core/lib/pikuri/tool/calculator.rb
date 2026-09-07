@@ -335,7 +335,12 @@ module Pikuri
                           'E.g. "155 / (58 * 1000.0 / 3600)", "2**10", or ' \
                           '"hypot(3, 4)".'
       },
-      execute: ->(expression:) { Calculator.calculate(expression) },
+      # The one tool whose display line *is* its observation: the value was
+      # computed here, so echoing it is structural rather than an excerpt.
+      execute: ->(expression:) {
+        value = Calculator.calculate(expression)
+        Tool::Result.new(content: value, summary: value)
+      },
       # No legs: pure arithmetic over the argument, no I/O of any kind.
       trifecta_legs: Pikuri::Tool::TrifectaLegs::NONE
     )

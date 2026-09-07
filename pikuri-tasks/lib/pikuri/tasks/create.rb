@@ -50,33 +50,45 @@ module Pikuri
         )
       end
 
+      # The batch's size rather than an +Array#to_s+ dump of every item.
+      #
+      # @param arguments [Hash] raw tool-call arguments
+      # @return [String]
+      def describe_call(arguments)
+        items = arguments['items'] || arguments[:items]
+        items.is_a?(Array) ? Pikuri::Tool.pluralize(items.size, 'item') : Pikuri::Tool.describe_arguments(arguments)
+      end
+
       # Validate and apply the batch.
       #
       # @param list [List]
       # @param items [Array<String>] raw +items+ argument from the LLM
       #   (already type-validated by {Pikuri::Tool::Parameters}).
-      # @return [String] either {List#render} on success or an
-      #   +"Error: ..."+ string the LLM can react to.
+      # @return [Pikuri::Tool::Result] {List#render} (+"3 tasks, 1 done"+) on
+      #   success, or {Pikuri::Tool::Result.error} the LLM can react to.
       def self.execute(list:, items:)
-        return 'Error: task_create requires at least one item' if items.empty?
+        return Pikuri::Tool::Result.error('task_create requires at least one item') if items.empty?
 
         cleaned = items.map(&:strip)
         blank = cleaned.index('')
-        return "Error: blank item at index #{blank} — every element must be non-blank task text" if blank
+        if blank
+          return Pikuri::Tool::Result.error("blank item at index #{blank} — every element " \
+                                            'must be non-blank task text')
+        end
 
         seen_in_batch = {}
         cleaned.each do |c|
-          return "Error: duplicate item in batch: '#{c}'" if seen_in_batch[c]
+          return Pikuri::Tool::Result.error("duplicate item in batch: '#{c}'") if seen_in_batch[c]
 
           seen_in_batch[c] = true
         end
 
         existing = list.items.map(&:content)
         clash = cleaned.find { |c| existing.include?(c) }
-        return "Error: task already exists: '#{clash}'" if clash
+        return Pikuri::Tool::Result.error("task already exists: '#{clash}'") if clash
 
         cleaned.each { |c| list.add(c) }
-        list.render
+        Pikuri::Tool::Result.new(content: list.render, summary: list.summary)
       end
     end
   end

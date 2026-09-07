@@ -73,6 +73,28 @@ module Pikuri
         @items.empty?
       end
 
+      # One-line count of the list, for a chrome's display line.
+      #
+      #   list.summary   # => "3 tasks, 1 done"
+      #
+      # @return [String]
+      def summary
+        done = @items.count { |i| i.status == 'completed' }
+        "#{Pikuri::Tool.pluralize(@items.size, 'task')}, #{done} done"
+      end
+
+      # The content of the item +id+ names, for a chrome's display line —
+      # +TaskCompleted(Write the specs)+ rather than +TaskCompleted(3)+.
+      #
+      # @param id [Integer, String, nil] the raw +id+ argument, whatever the
+      #   model sent — matched by +to_s+, so +3+ and +"3"+ both find item 3
+      # @return [String] that item's content, or +"#<id>"+ when the list holds
+      #   no such item — which is what the call is about to be refused for
+      def label_for(id)
+        item = @items.find { |i| i.id.to_s == id.to_s }
+        item ? item.content : "##{id}"
+      end
+
       # Append a new item with status +pending+ and the next id from a
       # monotonic per-list counter. Ids are never reused: after a
       # delete, the freed id stays dead, so a stale id held by the LLM

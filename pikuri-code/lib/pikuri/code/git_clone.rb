@@ -122,12 +122,12 @@ module Pikuri
 
       def execute_clone(url:)
         uri = parse_url(url)
-        return uri if uri.is_a?(String) # error message
+        return uri if uri.is_a?(Pikuri::Tool::Result) # a validation refusal
 
         target_name = derive_target_name(uri)
         target_path = @filesystem.project_root.join(target_name)
         if target_path.exist?
-          return "Error: target directory #{target_name.inspect} already exists in the workspace."
+          return Pikuri::Tool::Result.error("target directory #{target_name.inspect} already exists in the workspace.")
         end
 
         argv = sandbox.wrap([
@@ -138,32 +138,36 @@ module Pikuri
         result = Pikuri::Subprocess.spawn(*argv, chdir: @filesystem.project_root.to_s).wait
 
         if result.status.success?
-          "Cloned #{url} → #{target_name}/ (depth=1, no submodules)."
+          Pikuri::Tool::Result.new(
+            content: "Cloned #{url} → #{target_name}/ (depth=1, no submodules).",
+            summary: "Cloned to #{target_name}/"
+          )
         else
           # Exit codes 124 / 137 / 125 = timeout (see Bash class header).
           ec = result.status.exitstatus
           tail = result.output.to_s.lines.last(20).join.strip
           if [124, 125, 137].include?(ec)
-            "Error: git clone timed out after #{TIMEOUT_SECONDS}s.\n#{tail}"
+            Pikuri::Tool::Result.error("git clone timed out after #{TIMEOUT_SECONDS}s.\n#{tail}")
           else
-            "Error: git clone failed (exit #{ec}).\n#{tail}"
+            Pikuri::Tool::Result.error("git clone failed (exit #{ec}).\n#{tail}")
           end
         end
       end
 
-      # Returns either a +URI+ on success or an +"Error: ..."+ string
-      # on validation failure. Rejects non-+http(s)+ schemes, empty
-      # host, and malformed URIs before +git+ ever sees the string.
+      # Returns a +URI+ on success or a {Pikuri::Tool::Result.error} on
+      # validation failure. Rejects non-+http(s)+ schemes, empty host, and
+      # malformed URIs before +git+ ever sees the string.
       def parse_url(url)
         uri = URI.parse(url)
         unless VALID_SCHEMES.include?(uri.scheme)
-          return "Error: only #{VALID_SCHEMES.join(' / ')} URLs are accepted (got #{uri.scheme.inspect})."
+          return Pikuri::Tool::Result.error("only #{VALID_SCHEMES.join(' / ')} URLs are accepted " \
+                                            "(got #{uri.scheme.inspect}).")
         end
-        return 'Error: URL must include a host.' if uri.host.nil? || uri.host.empty?
+        return Pikuri::Tool::Result.error('URL must include a host.') if uri.host.nil? || uri.host.empty?
 
         uri
       rescue URI::InvalidURIError => e
-        "Error: malformed URL: #{e.message}"
+        Pikuri::Tool::Result.error("malformed URL: #{e.message}")
       end
 
       # Last path segment, sans +.git+ suffix; falls back to +repo+

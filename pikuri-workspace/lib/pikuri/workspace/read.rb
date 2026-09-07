@@ -42,9 +42,10 @@ module Pikuri
     # == Image attachments
     #
     # PNG/JPEG/GIF/WebP (magic-byte detected) route to {.format_image} ahead of
-    # the binary sniff, returning a +RubyLLM::Content+: a metadata note ("Read
-    # image: …") the model cites, plus the file as an attachment the model
-    # looks at. +offset+/+limit+ are ignored (no line paging). Over
+    # the binary sniff, answering the one {Pikuri::Tool::Result} in pikuri whose
+    # +content+ is a +RubyLLM::Content+: a metadata note ("Read image: …") the
+    # model cites, plus the file as an attachment the model looks at.
+    # +offset+/+limit+ are ignored (no line paging). Over
     # {MAX_IMAGE_BYTES} → +"Error: image too large…"+ rather than a payload the
     # provider rejects; no auto-resize (see +ideas/coding-agent.md+). Vision
     # capability is not checked — a non-vision model's provider error is
@@ -154,22 +155,25 @@ module Pikuri
       end
 
       # Resolve +path+ against +workspace+, refuse directories/binaries/missing
-      # files, return the cat-n slice or an +"Error: ..."+ observation.
+      # files, return the cat-n slice.
       #
       # @param workspace [Workspace]
       # @param path [String] raw path from the LLM
       # @param offset [Integer] 1-indexed start line
       # @param limit [Integer] maximum lines
-      # @return [String, RubyLLM::Content] text/PDF → +String+; a supported
-      #   image → +RubyLLM::Content+ with the file attached (see "Image
-      #   attachments")
+      # @return [Tool::Result] text/PDF → the cat-n slice (+"Read 214 lines"+);
+      #   a supported image → a +RubyLLM::Content+ {Tool::Result#content} with
+      #   the file attached (see "Image attachments"); else
+      #   {Pikuri::Tool::Result.error}
       def self.read(workspace:, path:, offset:, limit:)
-        return "Error: offset must be >= 1, got #{offset}" if offset < 1
-        return "Error: limit must be >= 1, got #{limit}"   if limit < 1
+        return Tool::Result.error("offset must be >= 1, got #{offset}") if offset < 1
+        return Tool::Result.error("limit must be >= 1, got #{limit}")   if limit < 1
 
         resolved = workspace.resolve_for_read(path)
-        return "Error: file not found: #{path}" unless resolved.exist?
-        return directory_refusal(workspace: workspace, path: path, resolved: resolved) if resolved.directory?
+        return Tool::Result.error("file not found: #{path}") unless resolved.exist?
+        if resolved.directory?
+          return Tool::Result.error(directory_refusal(workspace: workspace, path: path, resolved: resolved))
+        end
 
         mime = Pikuri::FileType.detect_mime(resolved)
         return format_image(path: path, resolved: resolved, mime: mime) if mime&.start_with?('image/')
@@ -185,18 +189,18 @@ module Pikuri
         workspace.mark_read(resolved)
         render_page(page)
       rescue Filesystem::Error => e
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       rescue Errno::EACCES => e
-        "Error: cannot read #{path}: #{e.message}"
+        Tool::Result.error("cannot read #{path}: #{e.message}")
       rescue ArgumentError
         # Nothing in the Extractor registry claimed the content —
         # read_as_text_paged's binary refusal (directories and images
         # were already handled above).
-        "Error: cannot read binary file: #{path}"
+        Tool::Result.error("cannot read binary file: #{path}")
       rescue RuntimeError => e
         # Extraction failure (malformed / unsupported PDF, ...)
         # surfaced by read_as_text_paged.
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       end
 
       # Refuses, but hands back the directory's entries so the model recovers
@@ -217,7 +221,8 @@ module Pikuri
       # @param workspace [Workspace]
       # @param path [String] raw path from the LLM (for the message)
       # @param resolved [Pathname] workspace-resolved path
-      # @return [String] +"Error: ..."+ carrying the depth-1 listing
+      # @return [String] the refusal message, carrying the depth-1 listing —
+      #   text for {Tool::Result.error} to wrap, not an observation itself
       def self.directory_refusal(workspace:, path:, resolved:)
         base = "Error: #{path} is a directory, not a file."
         listing = Listing.render(resolved, filesystem: workspace.filesystem)
@@ -235,13 +240,18 @@ module Pikuri
       # extractor; +kind+ only changes trailer wording.
       #
       # @param page [Pikuri::Extractor::Page]
-      # @return [String]
+      # @return [Tool::Result] the observation, carrying +"Read N lines"+ where
+      #   a page was rendered; the empty-file note or
+      #   {Pikuri::Tool::Result.error} otherwise.
       def self.render_page(page)
         if page.lines.empty?
-          return empty_message(page) if page.total_lines.zero?
+          if page.total_lines.zero?
+            note = empty_message(page)
+            return Tool::Result.new(content: note, summary: Pikuri::Tool.one_line(note))
+          end
 
-          return "Error: offset #{page.start_line} is beyond end of file " \
-                 "(#{page.total_lines} lines total)"
+          return Tool::Result.error("offset #{page.start_line} is beyond end of file " \
+                                    "(#{page.total_lines} lines total)")
         end
 
         noun = page.kind == :pdf ? 'PDF ' : ''
@@ -260,7 +270,8 @@ module Pikuri
             "(End of #{page.kind == :pdf ? 'PDF' : 'file'} - total #{page.total_lines} lines)"
           end
 
-        "#{body}\n\n#{trailer}"
+        Tool::Result.new(content: "#{body}\n\n#{trailer}",
+                         summary: "Read #{page.lines.length} #{noun}lines")
       end
       private_class_method :render_page
 
@@ -285,20 +296,26 @@ module Pikuri
       # avoids loading bytes just to over-cap them, and +RubyLLM::Attachment+
       # base64-encodes lazily at format time.
       #
+      # The one place a {Tool::Result#content} is a +RubyLLM::Content+ rather
+      # than a String: the attached bytes *are* the observation, so the display
+      # line is derived from mime and size rather than authored here (see
+      # {Pikuri::Tool::Result}'s +== Text or an attachment+).
+      #
       # @param path [String] raw path from the LLM (for the note)
       # @param resolved [Pathname] workspace-resolved path
       # @param mime [String] MIME type
-      # @return [String, RubyLLM::Content] +RubyLLM::Content+ on success;
-      #   +"Error: ..."+ on size refusal
+      # @return [Tool::Result] attachment-carrying on success;
+      #   {Pikuri::Tool::Result.error} on size refusal
       def self.format_image(path:, resolved:, mime:)
         size = resolved.size
         if size > MAX_IMAGE_BYTES
-          return "Error: image too large to inline: #{path} is " \
-                 "#{size} bytes; max #{MAX_IMAGE_BYTES_LABEL}."
+          return Tool::Result.error("image too large to inline: #{path} is " \
+                                    "#{size} bytes; max #{MAX_IMAGE_BYTES_LABEL}.")
         end
 
         note = "Read image: #{path} (#{size} bytes, #{mime})"
-        RubyLLM::Content.new(note, [resolved.to_s])
+        Tool::Result.new(content: RubyLLM::Content.new(note, [resolved.to_s]),
+                         summary: Pikuri::Tool.one_line(note))
       end
       private_class_method :format_image
     end

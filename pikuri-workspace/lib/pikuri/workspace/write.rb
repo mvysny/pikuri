@@ -121,26 +121,30 @@ module Pikuri
       # @param read_only [ReadOnly, nil] read-only gate; see {#initialize}
       #   (default +nil+ for direct callers/specs).
       # @param confirm_all_writes [Boolean] see {#initialize} (default +false+).
-      # @return [String] tool observation
+      # @return [Tool::Result] +"Created, 88 lines"+ / +"Updated, 88 lines (was
+      #   90)"+ on a write; {Pikuri::Tool::Result.error} for a refusal or the
+      #   confirmer's decline. The line counts rather than a diff: pikuri has no
+      #   in-process differ (a diff-capable chrome renders the
+      #   {Confirmer::Change} itself).
       def self.write(workspace:, confirmer:, path:, content:, read_only: nil, confirm_all_writes: false)
-        return "Error: cannot write #{path} — #{read_only.message}" if read_only&.active?
+        return Tool::Result.error("cannot write #{path} — #{read_only.message}") if read_only&.active?
 
         resolved = workspace.resolve_for_write(path)
 
         if resolved.exist?
-          return "Error: #{path} is a directory" if resolved.directory?
+          return Tool::Result.error("#{path} is a directory") if resolved.directory?
 
           unless workspace.read?(resolved)
-            return "Error: #{path} exists but has not been read this conversation; " \
-                   'use the read tool first so you do not clobber unread changes.'
+            return Tool::Result.error("#{path} exists but has not been read this conversation; " \
+                                      'use the read tool first so you do not clobber unread changes.')
           end
 
           existing = read_for_compare(resolved, path)
 
           if existing == content.b
-            return "Error: #{path} already contains exactly this content — " \
-                   'no write needed. If you intended a change, re-read the ' \
-                   'file and try again.'
+            return Tool::Result.error("#{path} already contains exactly this content — " \
+                                      'no write needed. If you intended a change, re-read the ' \
+                                      'file and try again.')
           end
 
           gate = WriteGate.check(
@@ -148,11 +152,15 @@ module Pikuri
             question: "OK to overwrite #{path}: #{existing.bytesize} → #{content.bytesize} bytes?",
             change: Confirmer::Change.new(path: path, old: existing, new: content.b)
           )
-          return gate if gate
+          return Tool::Result.error(gate) if gate
 
           write_bytes(resolved, content)
           workspace.mark_read(resolved)
-          "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)"
+          Tool::Result.new(
+            content: "Updated #{path} (#{existing.bytesize} → #{content.bytesize} bytes)",
+            summary: "Updated, #{Pikuri::Tool.pluralize(content.lines.size, 'line')} " \
+                     "(was #{existing.lines.size})"
+          )
         else
           if confirm_all_writes
             gate = WriteGate.check(
@@ -160,19 +168,20 @@ module Pikuri
               question: "OK to create #{path} (#{content.bytesize} bytes)?",
               change: Confirmer::Change.new(path: path, old: nil, new: content.b)
             )
-            return gate if gate
+            return Tool::Result.error(gate) if gate
           end
 
           write_bytes(resolved, content)
           # A just-authored file counts as read: the model supplied its
           # full bytes, so a follow-up edit needn't re-read it.
           workspace.mark_read(resolved)
-          "Created #{path} (#{content.bytesize} bytes)"
+          Tool::Result.new(content: "Created #{path} (#{content.bytesize} bytes)",
+                           summary: "Created, #{Pikuri::Tool.pluralize(content.lines.size, 'line')}")
         end
       rescue Filesystem::Error, Error => e
-        "Error: #{e.message}"
+        Tool::Result.error(e.message)
       rescue Errno::EACCES => e
-        "Error: cannot write #{path}: #{e.message}"
+        Tool::Result.error("cannot write #{path}: #{e.message}")
       end
 
       # Internal-only signal for an LLM-actionable precondition Write detects

@@ -15,39 +15,45 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     assert_includes out, '**hi**'
   end
 
-  it 'prints ToolCall with name and arguments' do
+  it 'prints ToolCall as the display name and the primary argument' do
+    out = capture_stdout { listener.on_event(tool_call(display_name: 'Write', argument: 'lib/foo.rb')) }
+    assert_includes out, 'Write(lib/foo.rb)'
+  end
+
+  it 'prints a no-argument ToolCall bare, without empty parens' do
+    out = capture_stdout { listener.on_event(tool_call(display_name: 'EnterPlanMode', argument: '')) }
+    assert_includes out, 'EnterPlanMode'
+    refute_includes out, '()'
+  end
+
+  it 'prints the ToolResult summary, not the observation' do
     out = capture_stdout do
-      listener.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
+      listener.on_event(tool_result(content: "a\nb\nc" * 100, summary: 'Returned 23 search results'))
     end
-    assert_includes out, 'echo'
-    assert_includes out, 'text='
+    assert_includes out, 'Returned 23 search results'
+    refute_includes out, 'a\nb'
   end
 
-  it 'prints ToolResult with its content' do
-    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: '42')) }
-    assert_includes out, '42'
+  it 'flattens a multi-line display string to a single line' do
+    out = capture_stdout { listener.on_event(tool_call(display_name: 'Write', argument: "a\n  b")) }
+    assert_includes out, 'Write(a b)'
   end
 
-  it 'flattens whitespace in ToolResult content to a single line' do
-    content = "line one\n  line two\n\n\tline three"
-    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: content)) }
-    assert_includes out, 'line one line two line three'
-    refute_includes out, "\n  line two"
+  it 'defangs control bytes in display strings, which no longer pass through inspect' do
+    out = capture_stdout { listener.on_event(tool_call(display_name: 'Write', argument: "ev\e[31mil")) }
+    refute_includes out, "\e[31m"
   end
 
-  it 'truncates long ToolResult content and reports the original byte count' do
-    long_content = 'x' * 5_000
-    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: long_content)) }
+  it 'caps a long argument to the row' do
+    out = capture_stdout { listener.on_event(tool_call(display_name: 'Bash', argument: 'x' * 5_000)) }
     assert_includes out, '…'
-    assert_includes out, '5000 bytes total'
     refute_includes out, 'x' * 5_000
   end
 
-  it 'leaves short ToolResult content untouched (no truncation marker)' do
-    out = capture_stdout { listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: 'hello')) }
-    assert_includes out, 'hello'
-    refute_includes out, '…'
-    refute_includes out, 'bytes total'
+  it 'caps a long summary' do
+    out = capture_stdout { listener.on_event(tool_result(content: 'boom', summary: "Error: #{'x' * 5_000}")) }
+    assert_includes out, '…'
+    refute_includes out, 'x' * 5_000
   end
 
   it 'prints SystemInjected content with a marker so injected memory/context is visible' do
@@ -195,12 +201,12 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
         $stdout = captured
         begin
           listener.on_event(progress.new(text: 'Indexing 10%', done: false))
-          listener.on_event(Pikuri::Agent::Event::ToolResult.new(content: '42'))
+          listener.on_event(tool_result(content: '42', summary: 'Returned 2 bytes'))
         ensure
           $stdout = original
         end
 
-        assert_match(/\r\e\[K.*42/m, captured.string)
+        assert_match(/\r\e\[K.*Returned 2 bytes/m, captured.string)
       end
     end
   end
@@ -236,8 +242,8 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     it 'prepends N spaces to ToolCall, ToolResult, Thinking, and FallbackNotice' do
       out = capture_stdout do
         padded.on_event(Pikuri::Agent::Event::Thinking.new(content: 'pondered'))
-        padded.on_event(Pikuri::Agent::Event::ToolCall.new(name: 'echo', arguments: { 'text' => 'hi' }))
-        padded.on_event(Pikuri::Agent::Event::ToolResult.new(content: '42'))
+        padded.on_event(tool_call)
+        padded.on_event(tool_result)
         padded.on_event(Pikuri::Agent::Event::FallbackNotice.new(reason: 'budget exhausted'))
       end
       out.each_line do |line|
@@ -364,5 +370,14 @@ RSpec.describe Pikuri::Agent::Listener::Terminal do
     captured.string
   ensure
     $stdout = original
+  end
+
+  def tool_call(display_name: 'Echo', argument: 'hi', name: 'echo', arguments: { 'text' => 'hi' })
+    Pikuri::Agent::Event::ToolCall.new(tool_call_id: 'c1', name: name, arguments: arguments,
+                                       display_name: display_name, argument: argument)
+  end
+
+  def tool_result(content: '42', summary: 'Returned 2 bytes', name: 'echo')
+    Pikuri::Agent::Event::ToolResult.new(tool_call_id: 'c1', name: name, content: content, summary: summary)
   end
 end

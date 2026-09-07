@@ -33,7 +33,13 @@ describe Pikuri::Rag::Tools::Search do
     )
   end
 
+  # +.to_s+ because the observation is a Pikuri::Tool::Result; the display line
+  # has its own test below.
   def execute(query: 'what did we agree about pricing?', reranker: nil)
+    result(query: query, reranker: reranker).to_s
+  end
+
+  def result(query: 'what did we agree about pricing?', reranker: nil)
     Pikuri::Rag::Tools::Search.execute(
       embedder: embedder, backend: hybrid, reranker: reranker, query: query
     )
@@ -130,6 +136,16 @@ describe Pikuri::Rag::Tools::Search do
       hybrid.upsert(chunks: chunks, vectors: chunks.map { |_c| [1.0, 0.0] })
       out = execute(query: 'pricing')
       assert_equal Pikuri::Rag::Tools::Search::FINAL_K, out.scan(/^\[\d+\] /).length
+    end
+  end
+
+  describe 'the display line' do
+    it 'counts the fused matches, and carries no corpus text' do
+      populate
+
+      display = result.summary
+
+      assert_match(/\AFound \d+ match(es)?\z/, display)
     end
   end
 

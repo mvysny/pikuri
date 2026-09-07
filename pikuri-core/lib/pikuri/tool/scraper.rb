@@ -118,6 +118,27 @@ module Pikuri
         end
       end
 
+      # Display line for a downloaded body — what the model got, plus the full
+      # size when the cap cut it:
+      #
+      #   Scraper.transfer_summary(verb: 'Fetched', full: body, max_chars: 5_000)
+      #   # => "Fetched 5.0 kB of 41.2 kB"
+      #
+      # No content-type in it: both wrappers cache the *body*, so a cache hit
+      # has no header to report, and a line that came and went with the cache
+      # would be worse than one that never names the type.
+      #
+      # @param verb [String] +"Fetched"+ or +"Scraped"+
+      # @param full [String] the whole body, before truncation
+      # @param max_chars [Integer] the cap applied to it
+      # @return [String]
+      def self.transfer_summary(verb:, full:, max_chars:)
+        return "#{verb} #{Pikuri::Tool.format_bytes(full.bytesize)}" if full.length <= max_chars
+
+        "#{verb} #{Pikuri::Tool.format_bytes(full[0, max_chars].bytesize)} " \
+          "of #{Pikuri::Tool.format_bytes(full.bytesize)}"
+      end
+
       # Lower-case +raw+ and strip any +; charset=...+ parameters so the
       # extractors can match on a canonical token.
       #

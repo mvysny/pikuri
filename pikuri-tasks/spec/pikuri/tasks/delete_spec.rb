@@ -18,7 +18,7 @@ RSpec.describe Pikuri::Tasks::Delete do
     it 'removes the matching item and returns the rendered list' do
       list.add('keep')
       drop = list.add('drop')
-      out = tool.run('id' => drop.id)
+      out = tool.run('id' => drop.id).to_s
       assert_equal %w[keep], list.items.map(&:content)
       assert out.include?('- #1 [pending] keep'), out
       refute out.include?('drop'), out
@@ -26,13 +26,13 @@ RSpec.describe Pikuri::Tasks::Delete do
 
     it 'returns the empty marker after the last item is removed' do
       only = list.add('only')
-      out = tool.run('id' => only.id)
+      out = tool.run('id' => only.id).to_s
       assert_equal '<tasks>(empty)</tasks>', out
     end
 
     it 'returns an LLM-actionable Error: string with the current list when no match' do
       list.add('survivor')
-      out = tool.run('id' => 9)
+      out = tool.run('id' => 9).to_s
       assert out.start_with?('Error: no such task id: 9'), out
       assert out.include?('- #1 [pending] survivor'), out
     end
@@ -41,7 +41,7 @@ RSpec.describe Pikuri::Tasks::Delete do
       gone = list.add('gone')
       list.delete(gone.id)
       list.add('newer')
-      out = tool.run('id' => gone.id)
+      out = tool.run('id' => gone.id).to_s
       assert out.start_with?("Error: no such task id: #{gone.id}"), out
       assert_equal %w[newer], list.items.map(&:content)
     end

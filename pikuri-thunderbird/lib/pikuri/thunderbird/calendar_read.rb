@@ -46,13 +46,14 @@ module Pikuri
         )
       end
 
-      # @return [String] formatted event or +"Error: …"+.
+      # @return [Pikuri::Tool::Result] the formatted event (+"Read 1 event"+),
+      #   or {Pikuri::Tool::Result.error}.
       def self.run_read(backend:, event_id:)
         ev = backend.read(event_id:)
-        return "Error: no event found with id #{event_id.inspect}." unless ev
+        return Pikuri::Tool::Result.error("no event found with id #{event_id.inspect}.") unless ev
 
         desc = ev[:description].to_s.strip
-        [
+        detail = [
           "Title: #{ev[:title]}",
           "When: #{DateHelpers.when_label(ev)}",
           "Where: #{ev[:location].to_s.strip.empty? ? '(none)' : ev[:location].strip}",
@@ -61,6 +62,7 @@ module Pikuri
           '',
           desc.empty? ? '(no description)' : desc
         ].join("\n")
+        Pikuri::Tool::Result.new(content: detail, summary: 'Read 1 event')
       end
 
       # The +Organizer:+ + +Attendees:+ block, or +[]+ when the event has no

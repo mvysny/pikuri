@@ -62,6 +62,30 @@ RSpec.describe Pikuri::Testing do
     agent&.close
   end
 
+  it 'carries the tool\'s own display strings, looked up through the real Chat tool table' do
+    listener = capture_class.new
+    transport = Pikuri::Testing.fake_transport do |llm|
+      llm.tool_call('calculator', expression: '2 + 2')
+      llm.reply('The answer is 4.')
+    end
+    agent = build_agent(transport, listener)
+
+    agent.run_loop(user_message: 'What is 2 + 2?')
+
+    call = listener.events.grep(Pikuri::Agent::Event::ToolCall).first
+    result = listener.events.grep(Pikuri::Agent::Event::ToolResult).first
+
+    assert_equal 'Calculator', call.display_name
+    assert_equal '2 + 2', call.argument
+    # The calculator's own Tool::Result — the value, not "Returned 1 bytes".
+    assert_equal '4', result.summary
+    # And the two events name the same call, so a renderer pairs them by key.
+    assert_equal call.tool_call_id, result.tool_call_id
+    assert_equal 'calculator', result.name
+  ensure
+    agent&.close
+  end
+
   it 'streams text through the real streaming path: deltas + assembled final (L2)' do
     listener = capture_class.new
     transport = Pikuri::Testing.fake_transport { |llm| llm.stream('The ', 'answer ', 'is ', '4.') }

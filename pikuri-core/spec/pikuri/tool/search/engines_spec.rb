@@ -197,11 +197,11 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   end
 
   it 'returns the first successful provider output rendered as Markdown' do
-    assert_equal good_markdown('ruby', 10), engine_with([good]).search('ruby', max_results: 10)
+    assert_equal good_markdown('ruby', 10), engine_with([good]).search('ruby', max_results: 10).to_s
   end
 
   it 'falls back past an Unavailable provider to one that succeeds' do
-    assert_equal good_markdown('ruby', 5), engine_with([bad, good]).search('ruby', max_results: 5)
+    assert_equal good_markdown('ruby', 5), engine_with([bad, good]).search('ruby', max_results: 5).to_s
   end
 
   it 'renders an empty result list as the standard no-results stub' do
@@ -209,11 +209,11 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
       def self.label = 'Empty'
       def self.search(_q, max_results:, cancellable: nil) = (_ = [max_results, cancellable]; [])
     end
-    assert_equal "## Search Results\n\nNo results found.", engine_with([empty]).search('ruby', max_results: 10)
+    assert_equal "## Search Results\n\nNo results found.", engine_with([empty]).search('ruby', max_results: 10).to_s
   end
 
   it 'returns an "Error: ..." string when every provider is unavailable' do
-    result = engine_with([bad, bad]).search('ruby', max_results: 10)
+    result = engine_with([bad, bad]).search('ruby', max_results: 10).to_s
     assert_match(/\AError: all search providers temporarily unavailable/, result)
     assert_includes result, 'Bad (rate-limited)'
   end
@@ -230,7 +230,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
     # Single provider — the cascade shuffles its provider list, so a
     # multi-provider stub would non-deterministically pick a different one
     # first and never trigger boom.
-    assert_raises(RuntimeError) { engine_with([boom]).search('ruby', max_results: 10) }
+    assert_raises(RuntimeError) { engine_with([boom]).search('ruby', max_results: 10).to_s }
   end
 
   it 'normalizes the query (trim + collapse whitespace) before dispatch' do
@@ -248,7 +248,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
   end
 
   it 'rejects an empty query' do
-    assert_raises(ArgumentError) { engine_with([good]).search('   ', max_results: 10) }
+    assert_raises(ArgumentError) { engine_with([good]).search('   ', max_results: 10).to_s }
   end
 
   it 'caches the answer so a subsequent call with the same query skips providers' do
@@ -265,8 +265,8 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
       engine = engine_with([once], cache: cache)
 
       expected = "## Search Results\n\n[ok: ruby (10)](https://example.com)\n"
-      assert_equal expected, engine.search('ruby', max_results: 10)
-      assert_equal expected, engine.search('ruby', max_results: 10)
+      assert_equal expected, engine.search('ruby', max_results: 10).to_s
+      assert_equal expected, engine.search('ruby', max_results: 10).to_s
       assert_equal 1, calls, 'second call should be served from cache'
     end
   end
@@ -280,7 +280,7 @@ RSpec.describe Pikuri::Tool::Search::Engines, '#search' do
       # been cached, this would still return the previous "Error: ..." string.
       working = good
       engine.define_singleton_method(:providers) { [working] }
-      assert_equal good_markdown('ruby', 10), engine.search('ruby', max_results: 10)
+      assert_equal good_markdown('ruby', 10), engine.search('ruby', max_results: 10).to_s
     end
   end
 end

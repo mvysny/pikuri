@@ -100,6 +100,7 @@ module Pikuri
       def initialize(sources:)
         @sources = sources
         @notes = []
+        @counted = {}
       end
 
       # Record something the model should know about *how* the answer was reached
@@ -218,7 +219,8 @@ module Pikuri
         end
         return nothing(operation: operation, symbol: symbol) if lines.empty?
 
-        [header(operation, symbol, lines.length, 'level'), '', *lines].join("\n")
+        counting([header(operation, symbol, lines.length, 'level'), '', *lines].join("\n"),
+                 lines.length, 'level')
       end
 
       # The *server answered nothing* string, which is not the same claim as "this
@@ -228,14 +230,16 @@ module Pikuri
       # @param symbol [String]
       # @return [String]
       def nothing(operation:, symbol:)
-        "The server answered no results for #{operation.name} on #{symbol.inspect}. " \
-          'That is what it said, not proof that none exist.'
+        counting("The server answered no results for #{operation.name} on #{symbol.inspect}. " \
+                 'That is what it said, not proof that none exist.', 0, 'result')
       end
 
       # Append the notes footer and cap the whole thing.
       #
       # @param text [String] a body from one of the methods above.
-      # @return [String] the observation.
+      # @return [Pikuri::Tool::Result] the observation, carrying the display line
+      #   the shapers tallied (+"3 results"+; the answer's size for +hover+,
+      #   which has no rows to count).
       def finish(text)
         # The notes are appended *after* the cut, not truncated with the body: they
         # are what says a match was dropped or a server could not answer, and a
@@ -243,10 +247,39 @@ module Pikuri
         kept, marker = Pikuri::Workspace::Search::Utils.head_truncate(
           text, max_bytes: MAX_BYTES, hint: 'narrow the query with file: and line:'
         )
-        [kept + marker, *footer].join("\n")
+        Pikuri::Tool::Result.new(content: [kept + marker, *footer].join("\n"),
+                                 summary: summary_for(text))
       end
 
       private
+
+      # Remember what a rendered block counted, keyed by the block itself.
+      #
+      # Keyed rather than summed because the caller may render more blocks than
+      # it keeps: two anchors on one line produce two answers, and identical
+      # ones collapse into a single block, which must count once. A fan-out
+      # across two servers keeps both, and sums.
+      #
+      # @param block [String] the composed block, as returned to the caller
+      # @param number [Integer] rows in it
+      # @param noun [String] what was counted, as the header words it
+      # @return [String] +block+, so a shaper can return it in place
+      def counting(block, number, noun)
+        @counted[block] = [number, noun]
+        block
+      end
+
+      # @param text [String] the assembled answer, *before* truncation — so
+      #   nothing the cap removed changes the count.
+      # @return [String] the counts of the blocks this answer kept, or the size
+      #   for an answer with no rows in it (+hover+)
+      def summary_for(text)
+        kept = @counted.select { |block, _| text.include?(block) }.values
+        return "Returned #{Pikuri::Tool.format_bytes(text.bytesize)}" if kept.empty?
+
+        totals = kept.each_with_object(Hash.new(0)) { |(number, noun), acc| acc[noun] += number }
+        totals.map { |noun, number| Pikuri::Tool.pluralize(number, noun) }.join(', ')
+      end
 
       # A row is a path (for the source/tests split) plus the line to print.
       Row = Data.define(:path, :text)
@@ -270,7 +303,8 @@ module Pikuri
       end
 
       def compose(operation, symbol, rows, noun)
-        [header(operation, symbol, rows.length, noun), '', *body(rows, operation)].join("\n")
+        counting([header(operation, symbol, rows.length, noun), '', *body(rows, operation)].join("\n"),
+                 rows.length, noun)
       end
 
       def header(operation, symbol, count, noun)

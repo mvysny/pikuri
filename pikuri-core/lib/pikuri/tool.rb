@@ -33,6 +33,38 @@ module Pikuri
   # +execute+ Proc follows the same convention for its own recoverable failures
   # and lets bugs raise.
   #
+  # == Display lines
+  #
+  # A chrome shows one call as three short strings it styles, caps and defangs
+  # but never composes:
+  #
+  #   Write(lib/shared/config.rb)
+  #     Added 2 lines, removed 3 lines
+  #
+  # The tool owns all three, because at +execute+ time it still holds the
+  # structure it is about to flatten for the model — 23 result structs, a line
+  # count, an exit status — which no renderer can recover from the Markdown it
+  # gets. {#display_name} and {#describe_call} answer the call side;
+  # {Result#summary} answers the result side. Each default is mechanical
+  # ({.display_name_for}, the first required parameter, {.describe_content}), so
+  # a tool declaring nothing — every MCP tool, every third-party +Tool+ — still
+  # renders.
+  #
+  # Never the *model*: a narrated status line is steerable through a fetched
+  # page. {Result} carries the two rules a summary obeys.
+  #
+  # == One return type
+  #
+  # An +execute+ returns a {Result}, always — the observation plus its display
+  # line, with {Result.error} for a recoverable failure. {#run} enforces it,
+  # wrapping a bare String from a third-party +Tool+ rather than refusing it.
+  #
+  # There is no second success shape to choose between: an *attachment*
+  # observation (the image {Pikuri::Workspace::Read} answers for a PNG) is a
+  # +Result+ whose {Result#content} is a +RubyLLM::Content+, and the sole place
+  # that distinction is visible is the four-line wrapper in
+  # {#to_ruby_llm_tool}, which no tool reads.
+  #
   # == Sharing: may one instance serve two agents?
   #
   # {Pikuri::Agent} is thread-unsafe, so a host running ten agents in one VM
@@ -103,10 +135,7 @@ module Pikuri
     attr_reader :parameters
 
     # @return [Proc] callable invoked with validated keyword arguments,
-    #   returning the observation — usually a +String+, or a +RubyLLM::Content+
-    #   with attachments for multimodal observations (e.g.
-    #   {Pikuri::Workspace::Read} on a PNG), which +RubyLLM::Chat+ turns into
-    #   the right image/document blocks.
+    #   returning the observation as a {Result} — see +== One return type+.
     attr_reader :execute
 
     # @return [Tool::TrifectaLegs] which lethal-trifecta legs this tool
@@ -118,8 +147,8 @@ module Pikuri
     #   to decide when to call the tool
     # @param parameters [Tool::Parameters] declared schema
     # @param execute [Proc] callable invoked with validated keyword arguments,
-    #   returning a +String+ or +RubyLLM::Content+ (see {#execute}). Recoverable
-    #   failures return +"Error: <message>"+ rather than raise.
+    #   returning a {Result} (see {#execute}). Recoverable failures answer
+    #   {Result.error} rather than raise.
     # @param trifecta_legs [Tool::TrifectaLegs] legs this tool contributes.
     #   Compute them here rather than at a later resolution pass: construction
     #   *is* wiring time, since every collaborator that decides a leg (the
@@ -148,9 +177,191 @@ module Pikuri
     #   section.
     attr_reader :wants_context
 
+    # CamelCase display form of a *raw* tool name, for the three cases with no
+    # +Tool+ instance to ask: an MCP tool (which bypasses {Pikuri::Tool}),
+    # ruby_llm's unavailable-tool error, a replayed history.
+    #
+    #   Tool.display_name_for('web_search')                # => "WebSearch"
+    #   Tool.display_name_for('openlibrary__search_books') # => "Openlibrary::SearchBooks"
+    #
+    # +__+ is {Pikuri::Mcp::Servers}' server separator, so the halves CamelCase
+    # and join with +::+; inside a half any non-alphanumeric run is a word break
+    # (an MCP name may carry +-+ or +.+, which ruby_llm sanitizes to +_+).
+    #
+    # Deterministic beats pretty — +vectordb_search+ becomes +VectordbSearch+
+    # and a tool wanting +LSP+ overrides {#display_name}.
+    #
+    # @param name [String] the function name advertised to the LLM
+    # @return [String] display form; +""+ for a blank name
+    def self.display_name_for(name)
+      name.to_s.split('__').filter_map { |segment|
+        words = segment.split(/[^A-Za-z0-9]+/).reject(&:empty?)
+        words.map { |w| w[0].upcase + w[1..] }.join unless words.empty?
+      }.join('::')
+    end
+
+    # Every supplied argument as +k=v+ — the display line for a tool whose
+    # {Parameters} are unknown (an MCP tool, a replayed call) or which declares
+    # no required parameter.
+    #
+    #   Tool.describe_arguments('from' => 'bob', 'after' => '2026-09')
+    #   # => "from=bob after=2026-09"
+    #
+    # @param arguments [Hash] raw tool-call arguments
+    # @return [String] one line; +""+ for no arguments or a non-Hash
+    def self.describe_arguments(arguments)
+      return '' unless arguments.is_a?(Hash)
+
+      one_line(arguments.map { |k, v| "#{k}=#{describe_value(v)}" }.join(' '))
+    end
+
+    # Generic structural summary of an observation — the result line for a tool
+    # that returned a bare String rather than a {Result}.
+    #
+    #   Tool.describe_content("a\nb\nc")              # => "Returned 3 lines"
+    #   Tool.describe_content('Error: no such file')  # => "Error: no such file"
+    #
+    # An +"Error: ..."+ observation shows its own first line, because that *is*
+    # the status the reader needs. ruby_llm's unavailable-tool +Hash+ passes its
+    # +:error+ through the same way.
+    #
+    # @param content [String, RubyLLM::Content, Hash] whatever {Tool#run}
+    #   returned
+    # @return [String] one line
+    def self.describe_content(content)
+      return one_line(content[:error].to_s) if content.is_a?(Hash) && content[:error]
+      return describe_ruby_llm_content(content) if content.is_a?(RubyLLM::Content)
+
+      text = content.to_s
+      return one_line(text.lines.first.to_s) if text.start_with?('Error:')
+
+      lines = text.lines.size
+      lines > 1 ? "Returned #{lines} lines" : "Returned #{text.bytesize} bytes"
+    end
+
+    # Flatten +text+ to one line — every display string a tool composes goes
+    # through this, since a summary or an argument spanning two lines would
+    # break the one-call-one-line shape every renderer assumes.
+    #
+    # @param text [String, nil]
+    # @return [String] whitespace runs collapsed to single spaces, stripped
+    def self.one_line(text)
+      text.to_s.gsub(/\s+/, ' ').strip
+    end
+
+    # A count with its noun pluralized — display lines are mostly counting.
+    #
+    #   "Matched #{Tool.pluralize(1, 'file')}"              # => "Matched 1 file"
+    #   "Matched #{Tool.pluralize(7, 'match', 'matches')}"  # => "Matched 7 matches"
+    #
+    # @param number [Integer]
+    # @param singular [String]
+    # @param plural [String, nil] defaults to +singular+ + +"s"+
+    # @return [String]
+    def self.pluralize(number, singular, plural = nil)
+      number == 1 ? "#{number} #{singular}" : "#{number} #{plural || "#{singular}s"}"
+    end
+
+    # Byte count in the largest unit that keeps it short.
+    #
+    #   Tool.format_bytes(3_162)  # => "3.1 kB"
+    #
+    # @param bytes [Integer]
+    # @return [String]
+    def self.format_bytes(bytes)
+      return "#{bytes} B" if bytes < 1024
+      return format('%.1f kB', bytes / 1024.0) if bytes < 1024 * 1024
+
+      format('%.1f MB', bytes / (1024.0 * 1024))
+    end
+
+    # @param value [String, Numeric, Boolean, Array, nil] one argument value,
+    #   as ruby_llm parsed it out of the model's JSON
+    # @return [String] +to_s+, except an Array, which joins with +", "+ so a
+    #   list argument reads as a list rather than as +["a", "b"]+
+    def self.describe_value(value)
+      value.is_a?(Array) ? value.join(', ') : value.to_s
+    end
+
+    # @param content [RubyLLM::Content]
+    # @return [String] +"Returned image/png, 40.2 kB"+, or the mime alone when
+    #   the size isn't free
+    def self.describe_ruby_llm_content(content)
+      attachment = content.attachments.first
+      return "Returned #{content.text.to_s.bytesize} bytes" if attachment.nil?
+
+      size = attachment_bytesize(attachment)
+      size ? "Returned #{attachment.mime_type}, #{format_bytes(size)}" : "Returned #{attachment.mime_type}"
+    end
+    private_class_method :describe_ruby_llm_content
+
+    # @param attachment [RubyLLM::Attachment]
+    # @return [Integer, nil] the attachment's size, or +nil+ when reading it
+    #   would cost more than a display line is worth
+    def self.attachment_bytesize(attachment)
+      # +Attachment#content+ fetches a URL-backed source over the network — a
+      # display line must never do that, and no test would catch it.
+      return File.size(attachment.source.to_s) if attachment.path?
+      return attachment.content&.bytesize if attachment.io_like?
+
+      nil
+    rescue SystemCallError
+      nil
+    end
+    private_class_method :attachment_bytesize
+
+    # This tool's name as a chrome shows it — {.display_name_for} of {#name}.
+    # Override where the mechanical form misreads it:
+    #
+    #   class LspTool < Pikuri::Tool
+    #     def display_name = 'LSP'
+    #   end
+    #
+    # @return [String]
+    def display_name
+      Tool.display_name_for(@name)
+    end
+
+    # The one argument worth showing beside {#display_name} — by default the
+    # value of the first *required* parameter, which is the primary argument for
+    # most tools (+path+ for read/write/edit, +query+ for web_search, +command+
+    # for bash):
+    #
+    #   read.describe_call('path' => 'lib/code/app.rb')   # => "lib/code/app.rb"
+    #   #  → Read(lib/code/app.rb)
+    #
+    # Override when that parameter is the wrong one to show — an enum, an
+    # integer id, a whole Markdown plan:
+    #
+    #   def describe_call(arguments)
+    #     Tool.one_line("#{arguments['operation']} #{arguments['symbol']}")
+    #   end
+    #
+    # Runs on the *unvalidated* arguments ruby_llm parsed from the model's JSON,
+    # before +execute+, so an override tolerates a missing or wrong-typed value.
+    # Neither capped nor sanitized here: only the renderer knows its width, and
+    # defanging is its job too.
+    #
+    # @param arguments [Hash] raw tool-call arguments; keys String or Symbol
+    # @return [String] one line; +""+ renders the call bare (+EnterPlanMode+)
+    def describe_call(arguments)
+      key = @parameters.required.first
+      return Tool.describe_arguments(arguments) if key.nil? || !arguments.is_a?(Hash)
+
+      value = arguments.key?(key) ? arguments[key] : arguments[key.to_sym]
+      return Tool.describe_arguments(arguments) if value.nil?
+
+      Tool.one_line(Tool.describe_value(value))
+    end
+
+    # The display line for an observation this tool returned as a bare String —
     # Validate +args+ against {#parameters} and forward them as kwargs to
-    # {#execute}. Validation failures come back as +"Error: <message>"+ Strings
-    # for the next observation; everything else bubbles up.
+    # {#execute}, always answering a {Result}. Validation failures come back as
+    # {Result.error} for the next observation; everything else bubbles up.
+    #
+    # A bare String from +execute+ is wrapped here, with
+    # {.describe_content}'s generic display line — that is the floor a
+    # third-party +Tool+ subclass lands on, not a shape pikuri's own tools use.
     #
     # @param args [Hash] raw arguments supplied by the LLM
     # @param context [ExecuteContext] this invocation's environment, forwarded
@@ -160,17 +371,17 @@ module Pikuri
     #   method *any* keyword and Ruby 3 re-reads the bare hash in
     #   +run('text' => 'hi')+ as keywords, so +args+ arrives empty at every
     #   existing call site.
-    # @return [String, RubyLLM::Content] tool observation — validation failures
-    #   always +"Error: ..."+; success is whatever +execute+ returns.
+    # @return [Result] tool observation.
     def run(args, context = ExecuteContext.default)
       validated = @parameters.validate(args)
-      if @wants_context
-        @execute.call(**validated, context: context)
-      else
-        @execute.call(**validated)
-      end
+      raw = if @wants_context
+              @execute.call(**validated, context: context)
+            else
+              @execute.call(**validated)
+            end
+      raw.is_a?(Result) ? raw : Result.new(content: raw, summary: Tool.describe_content(raw))
     rescue Tool::Parameters::ValidationError => e
-      "Error: #{e.message}"
+      Result.error(e.message)
     end
 
     # Build a synthetic +RubyLLM::Tool+ subclass wrapping this Tool — what
@@ -179,6 +390,28 @@ module Pikuri
     #
     # A wrapper is per *agent* even when this +Tool+ is shared between several,
     # which is what lets it close over one agent's cancellation token.
+    #
+    # The wrapper instance answers +#pikuri_tool+ with this Tool, so a holder of
+    # ruby_llm's +Chat#tools+ table can get from a called name back to
+    # {#display_name} / {#describe_call}.
+    #
+    # == The one place a Result is unwrapped
+    #
+    # ruby_llm hands the *same* value to +after_tool_result+ and to the +:tool+
+    # message it builds, where the test is +content_like?+ — an +is_a?+ against
+    # +RubyLLM::Content+ that a {Result} cannot pass. So an attachment
+    # {Result#content} is handed over bare and its display line is derived
+    # ({.describe_content}: mime plus size, which is all the structure there
+    # is); text keeps the +Result+, so {Result#summary} reaches the listeners
+    # verbatim. Those two lines below are the whole boundary — {#run} answers a
+    # +Result+ either way, and no tool sees this.
+    #
+    # Do not "simplify" it by teaching {Result#to_s} to answer the
+    # +RubyLLM::Content+: ruby_llm's +tool_payload.to_s+ would pass it through
+    # and the attachment would survive, but a +to_s+ that breaks its contract
+    # renders as +#<Pikuri::Tool::Result:0x…>+ under interpolation and raises
+    # +TypeError+ under +String()+ — silently, in whichever caller reaches it
+    # first.
     #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.
@@ -194,7 +427,11 @@ module Pikuri
         params(schema)
 
         define_singleton_method(:name) { tool_name }
-        define_method(:execute) { |**args| pikuri_tool.run(args, context) }
+        define_method(:execute) do |**args|
+          result = pikuri_tool.run(args, context)
+          result.attachment? ? result.content : result
+        end
+        define_method(:pikuri_tool) { pikuri_tool }
       end
     end
   end

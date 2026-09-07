@@ -124,9 +124,10 @@ module Pikuri
         # @param backend [#query, #keyword_query]
         # @param reranker [#rerank, nil]
         # @param query [String]
-        # @return [String] the formatted observation, or +"Error: ..."+.
+        # @return [Pikuri::Tool::Result] the formatted observation (+"Found 8
+        #   matches"+), or {Pikuri::Tool::Result.error}.
         def self.execute(embedder:, backend:, reranker:, query:)
-          return 'Error: query is empty' if query.nil? || query.strip.empty?
+          return Pikuri::Tool::Result.error('query is empty') if query.nil? || query.strip.empty?
 
           vector_hits = backend.query(vector: embedder.embed([query]).first, top_k: CANDIDATE_K)
           match = Pikuri::Rag::Query.any(query)
@@ -138,7 +139,10 @@ module Pikuri
           # vectordb_search pays for the same knob. The fused ranking decides
           # which 50 survive, which is what fusion is for.
           fused = fuse(vector_hits, keyword_hits).first(CANDIDATE_K)
-          return 'No matches found in the indexed corpus.' if fused.empty?
+          if fused.empty?
+            return Pikuri::Tool::Result.new(content: 'No matches found in the indexed corpus.',
+                                            summary: 'Found 0 matches')
+          end
 
           final = if reranker
                     Pikuri::VectorDb::Tools::Search.reranked_or_fallback(
