@@ -278,13 +278,48 @@ MCP `__` separator the one worth a rule (`::`); both decided above.
 
 `Event::ToolCall(name:, arguments:)` gains the two precomputed strings —
 `display_name:` and `argument:` — and `Event::ToolResult(content:)` gains
-`summary:`. Both are emitted from `Agent`, which has the tool by name, so the
-agent computes once and renderers only style. `Q_event_shape`: strings on
-the event versus a `tool:` reference the renderer queries. Lean **strings**:
-events stay plain serializable `Data` (pikuri-web ships them over SSE;
-`HistoryReplay` synthesizes them), and the *unavailable tool* case (ruby_llm's
-"Model tried to call unavailable tool" error) has no `Tool` to reference —
-the agent falls back to CamelCasing the raw name.
+`summary:`. Both are emitted from `Agent`, so the agent computes once and
+renderers only style. `Q_event_shape` — **decided 2026-09-07: strings**, not
+a `tool:` reference the renderer queries: events stay plain serializable
+`Data` (pikuri-web ships them over SSE; `HistoryReplay` synthesizes them),
+and three cases have no `Pikuri::Tool` to reference at all — an MCP tool,
+ruby_llm's "Model tried to call unavailable tool" error, and a replayed
+history — so a reference would be `nil` there and every renderer would grow
+a branch.
+
+**How the agent computes them.** In `before_tool_call` it holds only
+ruby_llm's `tc` (`id`, `name`, `arguments`), and it needs the
+`Pikuri::Tool` to call `display_name` / `describe_call`. Not from
+`Agent#tools`: the `agent` and `mcp_connect` tools register through
+`ExtensionContext#add_raw_tool`, which deliberately keeps them out of that
+list (sub-agents must not snapshot them), so an index over it would miss
+the `agent` override. Instead the synthetic wrapper `Tool#to_ruby_llm_tool`
+mints exposes its `Pikuri::Tool` (a `pikuri_tool` reader), and the agent
+looks the instance up in `@chat.tools[tc.name.to_sym]` — ruby_llm's own
+public name→instance table, which every registration path feeds. A tool
+that responds to `pikuri_tool` yields the two strings via the tool; anything
+else (an MCP raw tool, an unknown name) gets `Tool.display_name_for(name)`
+and the generic `k=v` argument.
+
+```ruby
+@chat.before_tool_call do |tc|
+  tool = @chat.tools[tc.name.to_sym]
+  tool = tool.respond_to?(:pikuri_tool) ? tool.pikuri_tool : nil
+  @listeners.emit(Event::ToolCall.new(
+    tool_call_id: tc.id, name: tc.name, arguments: tc.arguments,
+    display_name: tool ? tool.display_name : Tool.display_name_for(tc.name),
+    argument:     tool ? tool.describe_call(tc.arguments) : Tool.describe_arguments(tc.arguments)))
+  …
+end
+```
+
+Two strings rather than one composed `WebSearch(rails 8)`: `argument:` *is*
+the outcome of `tool.describe_call(arguments)`, and it travels beside
+`display_name:` because the two are treated differently downstream — the
+cap (decided: the renderer's) and any styling apply to the argument alone,
+and a bare no-arg call renders `EnterPlanMode`, not `EnterPlanMode()`. The
+renderer's one composition is the format string `name(arg)`; the *content*
+of either half is never its to compose.
 
 **Decided 2026-09-07: both `ToolCall` and `ToolResult` carry `name:` and
 `tool_call_id:`.** Today every renderer pairs a result with its call by
@@ -398,13 +433,14 @@ the tool's.
 
 Settled 2026-09-07 (recorded in place above): `Tool::Result` over
 `Observation`; `String`-only `Result`, no ruby_llm internals touched; both
-events carry `name:` + `tool_call_id:`; the argument cap is the renderer's.
-Still open:
+events carry `name:` + `tool_call_id:`; the argument cap is the renderer's;
+strings on the events, computed by the agent via the wrapper's
+`pikuri_tool` reader (`Q_event_shape`). Still open:
 
-- `Q_event_shape` — precomputed strings on the events vs a `tool:` reference.
-  Lean strings.
 - `Q_persist_summary` — store `summary` on the `tool` history message? Lean
-  no for v1.
+  no for v1. `History` already carries local-only additive fields (`id`,
+  `kind`; an absent field reads as its default), so adding it later is one
+  field and old files keep loading.
 
 ## When this is done
 
