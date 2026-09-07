@@ -3,15 +3,8 @@
 module Pikuri
   class Tool
     # Evaluates a basic arithmetic expression with Python operator syntax and
-    # semantics, via the hand-rolled recursive-descent {Parser} below.
-    #
-    # Hand-rolled rather than a gem: the previous backend (dentaku) pulled in
-    # concurrent-ruby (~16k lines — pikuri's single heaviest audit item) plus
-    # bigdecimal and tsort just for four-function arithmetic. The ~100 lines
-    # here implement Python's grammar directly, which also retires the old
-    # +**+→+^+ preprocessing (the model's native syntax is now the grammar).
-    #
-    # A great-circle distance, the call that motivated {FUNCTIONS}:
+    # semantics, via the hand-rolled recursive-descent {Parser} below. A
+    # great-circle distance, the call that motivated {FUNCTIONS}:
     #
     #   Calculator.calculate('6371 * acos(sin(radians(60.1699)) * sin(radians(41.3874)) + ' \
     #                        'cos(radians(60.1699)) * cos(radians(41.3874)) * ' \
@@ -20,21 +13,27 @@ module Pikuri
     # Scope is intentionally narrow: operators (+, -, *, /, //, %, **), unary
     # minus, parentheses, numeric literals, and the fixed-arity real functions
     # and constants in {FUNCTIONS} / {CONSTANTS}. No variables, sequences,
-    # assignment or comparisons — that keeps the surface enumerable, and every
-    # name is spelled the way Python spells it rather than as a pikuri dialect.
+    # assignment or comparisons — every name is spelled the way Python spells
+    # it rather than as a pikuri dialect. See +DECISIONS.md+
+    # +D_calculator_functions+.
+    #
+    # Hand-rolled rather than a gem: the previous backend (dentaku) pulled in
+    # concurrent-ruby (~16k lines — pikuri's single heaviest audit item) plus
+    # bigdecimal and tsort just for four-function arithmetic. The parser here
+    # implements Python's grammar directly, which also retires the old
+    # +**+→+^+ preprocessing (the model's native syntax is now the grammar).
     module Calculator
       # Raised internally for anything {.calculate} should return as an
-      # +"Error: ..."+ observation rather than crash the loop: parse failures,
-      # division by zero, complex or non-finite results. Names the offending
-      # token/operands.
+      # +"Error: ..."+ observation rather than crash the loop. Names the
+      # offending token, operands or call.
       class Error < StandardError; end
 
       # The callable names, as +name => [permitted argument counts, callable]+.
-      # Every entry is pure, fixed-arity and real→real, which is what keeps this
-      # table the whole function surface rather than the start of a registry.
-      # Trigonometry is in radians, as Python's is — +radians+ / +degrees+ are
-      # here because the conversion is otherwise unexpressible, and a model that
-      # feeds degrees to {Math.sin} gets a plausible wrong answer, not an error.
+      # Every entry is pure, fixed-arity and real→real: that shape *is* the
+      # closed surface, so a new entry has to fit it. Trigonometry is in
+      # radians, as Python's is — +radians+ / +degrees+ are here because the
+      # conversion is otherwise unexpressible, and a model that feeds degrees
+      # to +sin+ gets a plausible wrong answer rather than an error.
       #
       # @return [Hash{String => Array(Range, #call)}]
       FUNCTIONS = {
@@ -58,7 +57,7 @@ module Pikuri
         'degrees' => [1..1, ->(rad) { rad * 180 / Math::PI }]
       }.freeze
 
-      # The bare names that evaluate to a number.
+      # The names that evaluate to a number with no call syntax.
       #
       # @return [Hash{String => Float}]
       CONSTANTS = { 'pi' => Math::PI, 'e' => Math::E }.freeze
@@ -112,17 +111,15 @@ module Pikuri
       class Parser
         # One number, name or operator. +**+/+//+ listed before their
         # single-char prefixes so the two-char operators win; number literals
-        # cover +42+, +4.2+, +5.+, +.5+, and e-notation. A name carries an
-        # optional +math.+ (or +Math.+) qualifier as part of the token: a model
-        # reaching for Python's +math.cos+ and one writing a bare +cos+ both
-        # parse, since accepting only one leaves the other instinct erroring.
-        # +\G+ anchors each match at the scan position so nothing between tokens
-        # is missed.
+        # cover +42+, +4.2+, +5.+, +.5+, and e-notation; a name carries an
+        # optional +math.+ / +Math.+ qualifier as part of the token, so
+        # +math.cos+ and a bare +cos+ both parse. +\G+ anchors each match at
+        # the scan position so nothing between tokens is missed.
         TOKEN_RE = %r{\G\s*(\*\*|//|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|(?:[Mm]ath\.)?[A-Za-z_]\w*|[-+*/%(),])}
 
-        # Tail of every unknown-name error. The tool description lists the same
-        # set, but repeating it at the point of failure is what lets a small
-        # model recover on the next turn instead of guessing a second name.
+        # Tail of every unknown-name error: the tool description lists the same
+        # set, but a small model recovers from the error string on the next
+        # turn instead of guessing a second name.
         AVAILABLE = "available functions: #{FUNCTIONS.keys.join(', ')}; " \
                     "constants: #{CONSTANTS.keys.join(', ')}"
 
