@@ -79,6 +79,94 @@ design.
 
 ---
 
+## D_calculator_functions — `math.` is an optional prefix, and `radians` ships with the trigonometry (2026-09-07)
+
+**Status:** Accepted, shipped: `Tool::Calculator::FUNCTIONS` / `CONSTANTS`, the
+`NAME` arm of the parser's `atom` rule, and the radians warning in the
+`expression` parameter description. Refines the module's original "no
+variables, functions, or booleans" scope note, which never had an entry here.
+
+**Context.** A local model, asked for a great-circle distance, called the tool
+with `6371 * math.acos(math.sin(60.1699) * math.sin(41.3874) + …)` and got
+`Error: unexpected character "m"`. Unlike a long multiplication, this is not
+something the model can decompose into the four operators and retry — sine is
+not expressible in the grammar, so the only paths left were to give up or to
+invent a number. In the seven wirings that carry no `bash` (`D_keep_calculator`
+enumerates them) there is no fallback at all.
+
+**Decision.** Ship the fixed-arity real functions and constants, spelled
+exactly as Python spells them, with `math.` (and `Math.`) accepted as an
+*optional* qualifier on every name.
+
+The governing rule, which is also the answer to "which name?": **be a superset
+of Python, never a subset.** The grammar is Python's because "the model's
+native syntax is now the grammar" — so the failure to avoid is a name the
+model already knows being rejected.
+
+**Alternatives rejected.**
+
+- **Keep the tool operators-only.** The original scope note reasoned that
+  functions "would teach the model a dialect." That holds against *inventing*
+  names; it inverts once the names are `math`'s, which is the same move that
+  already retired the old `**`→`^` preprocessing. And the note was written
+  when the gap was cosmetic — this one is a capability the wiring cannot get
+  anywhere else.
+- **Accept bare `cos` only.** Rejected because it fails the observed input.
+  The model wrote `math.cos` unprompted, and stripping a qualifier it already
+  emits is a subset of Python — precisely the dialect the scope note feared.
+- **Accept `math.cos` only.** The mirror failure: models routinely write bare
+  `cos` when a schema says "arithmetic expression", and Python itself accepts
+  the bare form under `from math import *`. Choosing either name alone leaves
+  one common instinct erroring for no gain, and the prefix is unambiguous —
+  there is no second namespace it could denote, so accepting both costs one
+  optional group in `TOKEN_RE` and no grammar change. `Math.` rides along for
+  the Ruby/JS habit; that one *is* outside Python, and it is the one place this
+  is deliberately a superset in the other direction.
+- **Ship `sin`/`cos` without `radians` and `pi`.** The trap that decides
+  whether the feature helps at all, and the reason it is listed as a rejected
+  road rather than a follow-up. The model's expression is wrong *as Python* —
+  those are degrees going into a radians function. Today it fails loudly;
+  with trigonometry but no conversion it would return `11953.814` where the
+  answer is `2603.339`. That converts a visible error into a confident wrong
+  number, which is strictly worse than the status quo for a 3B-active-parameter
+  default. So `radians` / `degrees` are load-bearing, and *"Trigonometric
+  functions take RADIANS"* belongs in the parameter description, where the
+  model reads it, rather than in the tool description or this file.
+- **A registry — `Calculator.register(name, &fn)`.** No caller wants it, and
+  it would trade the one property that makes the surface auditable (a frozen
+  table you can read in ten seconds) for configurability nothing asked for.
+  Straight *no abstraction "just in case"*.
+- **Variadic and sequence functions (`sum`, `min`, `max`).** Where the line
+  goes, and it is drawn at the *shape* rather than the name list so it does not
+  need re-litigating per function: **fixed-arity, real→real, pure.** `min`/`max`
+  are variadic in Python and pull toward list literals; a list literal pulls
+  toward indexing, and indexing toward variables. `abs` and `round` are Python
+  *builtins* rather than `math` members, and `abs` is in anyway — a uniform
+  optional prefix makes `math.abs` legal here and not in Python, which is the
+  harmless direction to differ.
+
+**Consequences.**
+
+- **Two Ruby exceptions now reach the tool boundary** where Python raises
+  `ValueError`: `Math::DomainError` (`acos(1.0000000001)`, reachable from real
+  haversine rounding, and an `ArgumentError` — it would have crashed the loop)
+  and `FloatDomainError` from `floor`/`ceil` on an infinite argument. Both
+  become `"Error: …"` observations, per *Errors are loud*'s tool split.
+- **Unknown-name errors name the whole set.** The tool description lists it
+  too, but a small model recovers on the next turn from the error string and
+  guesses again from the description. Costs tokens only on the failing path.
+- **The degrees/radians mistake stays the model's to make.** A calculator that
+  faithfully evaluates a wrong expression is doing its job; the mitigation is
+  the parameter description, not a heuristic that second-guesses the argument.
+  Revisit only if a real transcript shows a model reading that line and still
+  passing degrees.
+- **Not a `D_keep_calculator` reopening.** That entry's arm (1) — an
+  interpreter can never join the passive allowlist — is what makes this the
+  only unconfirmed path to a sine in a bash-carrying wiring too, so the
+  function set widens the tool's lead rather than narrowing it.
+
+---
+
 ## D_briefing_with_mail — One binary with a `--with-mail` flag that raises, not a second binary (2026-09-02)
 
 **Status:** Accepted, shipped: `--with-mail` in `pikuri-rag/bin/pikuri-briefing`,

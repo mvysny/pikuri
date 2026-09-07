@@ -3,27 +3,69 @@
 module Pikuri
   class Tool
     # Evaluates a basic arithmetic expression with Python operator syntax and
-    # semantics, via the hand-rolled recursive-descent {Parser} below.
+    # semantics, via the hand-rolled recursive-descent {Parser} below. A
+    # great-circle distance, the call that motivated {FUNCTIONS}:
+    #
+    #   Calculator.calculate('6371 * acos(sin(radians(60.1699)) * sin(radians(41.3874)) + ' \
+    #                        'cos(radians(60.1699)) * cos(radians(41.3874)) * ' \
+    #                        'cos(radians(2.1734) - radians(24.9410)))')   # => "2603.339"
+    #
+    # Scope is intentionally narrow: operators (+, -, *, /, //, %, **), unary
+    # minus, parentheses, numeric literals, and the fixed-arity real functions
+    # and constants in {FUNCTIONS} / {CONSTANTS}. No variables, sequences,
+    # assignment or comparisons — every name is spelled the way Python spells
+    # it rather than as a pikuri dialect. See +DECISIONS.md+
+    # +D_calculator_functions+.
     #
     # Hand-rolled rather than a gem: the previous backend (dentaku) pulled in
     # concurrent-ruby (~16k lines — pikuri's single heaviest audit item) plus
-    # bigdecimal and tsort just for four-function arithmetic. The ~100 lines
-    # here implement Python's grammar directly, which also retires the old
+    # bigdecimal and tsort just for four-function arithmetic. The parser here
+    # implements Python's grammar directly, which also retires the old
     # +**+→+^+ preprocessing (the model's native syntax is now the grammar).
-    #
-    # Scope is intentionally narrow: operators (+, -, *, /, //, %, **), unary
-    # minus, parentheses, and integer/decimal/e-notation literals. No variables,
-    # functions, or booleans — those would teach the model a dialect.
     module Calculator
       # Raised internally for anything {.calculate} should return as an
-      # +"Error: ..."+ observation rather than crash the loop: parse failures,
-      # division by zero, complex or non-finite results. Names the offending
-      # token/operands.
+      # +"Error: ..."+ observation rather than crash the loop. Names the
+      # offending token, operands or call.
       class Error < StandardError; end
+
+      # The callable names, as +name => [permitted argument counts, callable]+.
+      # Every entry is pure, fixed-arity and real→real: that shape *is* the
+      # closed surface, so a new entry has to fit it. Trigonometry is in
+      # radians, as Python's is — +radians+ / +degrees+ are here because the
+      # conversion is otherwise unexpressible, and a model that feeds degrees
+      # to +sin+ gets a plausible wrong answer rather than an error.
+      #
+      # @return [Hash{String => Array(Range, #call)}]
+      FUNCTIONS = {
+        'sin' => [1..1, Math.method(:sin)],
+        'cos' => [1..1, Math.method(:cos)],
+        'tan' => [1..1, Math.method(:tan)],
+        'asin' => [1..1, Math.method(:asin)],
+        'acos' => [1..1, Math.method(:acos)],
+        'atan' => [1..1, Math.method(:atan)],
+        'atan2' => [2..2, Math.method(:atan2)],
+        'hypot' => [2..2, Math.method(:hypot)],
+        'sqrt' => [1..1, Math.method(:sqrt)],
+        'exp' => [1..1, Math.method(:exp)],
+        'log' => [1..2, Math.method(:log)], # log(x) is natural; log(x, base) is Python's second form
+        'log10' => [1..1, Math.method(:log10)],
+        'log2' => [1..1, Math.method(:log2)],
+        'floor' => [1..1, ->(x) { x.floor }],
+        'ceil' => [1..1, ->(x) { x.ceil }],
+        'abs' => [1..1, ->(x) { x.abs }],
+        'radians' => [1..1, ->(deg) { deg * Math::PI / 180 }],
+        'degrees' => [1..1, ->(rad) { rad * 180 / Math::PI }]
+      }.freeze
+
+      # The names that evaluate to a number with no call syntax.
+      #
+      # @return [Hash{String => Float}]
+      CONSTANTS = { 'pi' => Math::PI, 'e' => Math::E }.freeze
 
       # Evaluate +expression+ and return the result as a String. Parse and
       # arithmetic failures (division by zero, overflow to infinity, complex
-      # results) come back as +"Error: ..."+ so the model self-corrects.
+      # results, a function outside its domain) come back as +"Error: ..."+ so
+      # the model self-corrects.
       #
       # @param expression [String] Python-syntax arithmetic expression
       # @return [String] numeric result, or +"Error: ..."+ on failure
@@ -55,7 +97,8 @@ module Pikuri
       #   multiplicative := unary (('*' | '/' | '//' | '%') unary)*
       #   unary          := ('+' | '-') unary | power
       #   power          := atom ('**' unary)?
-      #   atom           := NUMBER | '(' additive ')'
+      #   atom           := NUMBER | NAME '(' additive (',' additive)* ')'
+      #                   | NAME | '(' additive ')'
       #
       # The +power+→+unary+ recursion on the right operand makes +**+
       # right-associative (+2**3**2+ is 512) and lets a sign follow it
@@ -66,11 +109,19 @@ module Pikuri
       # division, +//+ floors, +2**-1+ is Float 0.5 (not a Rational), and a
       # negative base under a fractional exponent is rejected (not a Complex).
       class Parser
-        # One number or operator. +**+/+//+ listed before their single-char
-        # prefixes so the two-char operators win; number literals cover +42+,
-        # +4.2+, +5.+, +.5+, and e-notation. +\G+ anchors each match at the scan
-        # position so nothing between tokens is missed.
-        TOKEN_RE = %r{\G\s*(\*\*|//|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|[-+*/%()])}
+        # One number, name or operator. +**+/+//+ listed before their
+        # single-char prefixes so the two-char operators win; number literals
+        # cover +42+, +4.2+, +5.+, +.5+, and e-notation; a name carries an
+        # optional +math.+ / +Math.+ qualifier as part of the token, so
+        # +math.cos+ and a bare +cos+ both parse. +\G+ anchors each match at
+        # the scan position so nothing between tokens is missed.
+        TOKEN_RE = %r{\G\s*(\*\*|//|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|(?:[Mm]ath\.)?[A-Za-z_]\w*|[-+*/%(),])}
+
+        # Tail of every unknown-name error: the tool description lists the same
+        # set, but a small model recovers from the error string on the next
+        # turn instead of guessing a second name.
+        AVAILABLE = "available functions: #{FUNCTIONS.keys.join(', ')}; " \
+                    "constants: #{CONSTANTS.keys.join(', ')}"
 
         # @param expression [String] raw expression as the model wrote it
         # @raise [Error] when +expression+ contains a character no token matches
@@ -142,13 +193,16 @@ module Pikuri
         def atom
           return parenthesized if accept('(')
 
-          token = peek
-          unless token&.match?(/\A[.\d]/)
-            raise Error, token ? "unexpected #{token.inspect}" : 'unexpected end of expression'
+          case (token = peek)
+          when nil then raise Error, 'unexpected end of expression'
+          when /\A[.\d]/
+            @pos += 1
+            token.match?(/[.eE]/) ? token.to_f : token.to_i
+          when /\A[A-Za-z_]/
+            @pos += 1
+            named(token)
+          else raise Error, "unexpected #{token.inspect}"
           end
-
-          @pos += 1
-          token.match?(/[.eE]/) ? token.to_f : token.to_i
         end
 
         def parenthesized
@@ -156,6 +210,42 @@ module Pikuri
           raise Error, 'missing closing parenthesis' unless accept(')')
 
           value
+        end
+
+        # A function call if a +(+ follows, a constant otherwise.
+        def named(token)
+          name = token.sub(/\A[Mm]ath\./, '')
+          return apply_function(name, arguments) if accept('(')
+          return CONSTANTS[name] if CONSTANTS.key?(name)
+          raise Error, "#{name} takes arguments; write #{name}(x)" if FUNCTIONS.key?(name)
+
+          raise Error, "unknown name #{token.inspect}; #{AVAILABLE}"
+        end
+
+        # The argument list of a call, positioned just past the opening +(+.
+        #
+        # @return [Array<Integer, Float>] one or more evaluated arguments
+        def arguments
+          args = [additive]
+          args << additive while accept(',')
+          raise Error, 'missing closing parenthesis' unless accept(')')
+
+          args
+        end
+
+        # +Math+ raises +DomainError+ where Python's +math+ raises +ValueError+
+        # (+acos(1.0000000001)+, reachable from real haversine rounding), and
+        # +floor+/+ceil+ raise +FloatDomainError+ on an infinite argument.
+        # Both are the model's error to see, not the loop's to die on.
+        def apply_function(name, args)
+          arities, callable = FUNCTIONS.fetch(name) { raise Error, "unknown function #{name.inspect}; #{AVAILABLE}" }
+          unless arities.cover?(args.size)
+            raise Error, "#{name} takes #{arities.to_a.join(' or ')} argument(s), got #{args.size}"
+          end
+
+          callable.call(*args)
+        rescue Math::DomainError, FloatDomainError
+          raise Error, "#{name}(#{args.join(', ')}) is undefined"
         end
 
         # @return [String, nil] the next token without consuming it
@@ -209,7 +299,8 @@ module Pikuri
 
     # Arithmetic-evaluation tool backed by {Tool::Calculator.calculate}. Accepts
     # Python expression syntax (+, -, *, /, //, %, **, unary minus, parentheses,
-    # decimals) so the model emits syntax it already knows.
+    # decimals) plus {Tool::Calculator::FUNCTIONS} / {Tool::Calculator::CONSTANTS},
+    # so the model emits syntax it already knows.
     #
     # Stays wired even in shells that have +bash+: it is the only *unconfirmed*
     # float arithmetic there, since a shell's own +$((…))+ is integer-only and
@@ -234,7 +325,15 @@ module Pikuri
                           'Arithmetic expression in Python syntax: + - * ' \
                           '/ (true division), // (floor division), % (modulo), ' \
                           '** (exponentiation), unary minus, parentheses, ' \
-                          'decimals. E.g. "155 / (58 * 1000.0 / 3600)" or "2**10".'
+                          'decimals. Also these functions, with or without a ' \
+                          'math. prefix: sin cos tan asin acos atan atan2 ' \
+                          'hypot sqrt exp log (log(x) natural, log(x, base) ' \
+                          'for another base) log10 log2 floor ceil abs ' \
+                          'radians degrees, and the constants pi and e. ' \
+                          'Trigonometric functions take RADIANS, so convert ' \
+                          'degrees first: sin(radians(30)), never sin(30). ' \
+                          'E.g. "155 / (58 * 1000.0 / 3600)", "2**10", or ' \
+                          '"hypot(3, 4)".'
       },
       execute: ->(expression:) { Calculator.calculate(expression) },
       # No legs: pure arithmetic over the argument, no I/O of any kind.
