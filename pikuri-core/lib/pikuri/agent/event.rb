@@ -66,23 +66,21 @@ module Pikuri
       # {ThinkingDelta}; consume {Assistant} for the authoritative text.
       AssistantDelta = Data.define(:content)
 
-      # A tool the LLM requested but hasn't observed yet:
+      # A tool the LLM requested but hasn't observed yet. +display_name+ and
+      # +argument+ are what a chrome puts on the screen:
       #
-      #   #  → Write(lib/shared/config.rb)
-      #   #    display_name    argument
+      #   → Write(lib/shared/config.rb)
       #
       # +arguments+ is the raw hash ruby_llm parsed from the model's
-      # +tool_calls+ JSON — unvalidated; +display_name+ and +argument+ are the
-      # display strings the tool composed ({Tool#display_name} /
-      # {Tool#describe_call}), so every chrome prints the same line and only
-      # styles, caps and defangs it. An +argument+ of +""+ renders the call
-      # bare — +EnterPlanMode+, not +EnterPlanMode()+.
+      # +tool_calls+ JSON — unvalidated; the two display strings are the tool's
+      # own ({Tool#display_name} / {Tool#describe_call}), so every chrome prints
+      # the same line and only styles, caps and defangs it. An +argument+ of
+      # +""+ renders the call bare — +EnterPlanMode+, not +EnterPlanMode()+.
       #
-      # Strings rather than a +tool:+ reference a renderer could query: these
-      # events are plain serializable +Data+ (pikuri-web ships them over SSE, a
-      # history replay synthesizes them), and three cases have no
-      # {Pikuri::Tool} at all — an MCP tool, ruby_llm's unavailable-tool error,
-      # a replayed conversation.
+      # Strings rather than a +tool:+ reference a renderer could query: the
+      # event must stay plain serializable +Data+, and three cases have no
+      # {Pikuri::Tool} to query at all — an MCP tool, ruby_llm's
+      # unavailable-tool error, a replayed conversation.
       #
       # Emitted by +before_tool_call+.
       ToolCall = Data.define(:tool_call_id, :name, :arguments, :display_name, :argument)

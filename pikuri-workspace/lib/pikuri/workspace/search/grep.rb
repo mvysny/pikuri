@@ -252,7 +252,6 @@ module Pikuri
         # Render rg output: strip the +./+ prefix, head-truncate at {MAX_BYTES},
         # append a count footer.
         #
-        # @return [String]
         # @return [Tool::Result] the hits, carrying +"Found 7 matches in 3
         #   files"+
         def self.format_output(raw, output_mode:, pattern:, path:, denied_prefixes:)

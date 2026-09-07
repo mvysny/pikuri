@@ -118,12 +118,6 @@ module Pikuri
         end
       end
 
-      # Lower-case +raw+ and strip any +; charset=...+ parameters so the
-      # extractors can match on a canonical token.
-      #
-      # @param raw [String, nil] raw +Content-Type+ header value
-      # @return [String] normalized content-type, or +""+ when the
-      #   header was missing
       # Display line for a downloaded body — what the model got, plus the full
       # size when the cap cut it:
       #
@@ -131,7 +125,7 @@ module Pikuri
       #   # => "Fetched 5.0 kB of 41.2 kB"
       #
       # No content-type in it: both wrappers cache the *body*, so a cache hit
-      # has no header to report and a line that came and went with the cache
+      # has no header to report, and a line that came and went with the cache
       # would be worse than one that never names the type.
       #
       # @param verb [String] +"Fetched"+ or +"Scraped"+
@@ -145,6 +139,12 @@ module Pikuri
           "of #{Pikuri::Tool.format_bytes(full.bytesize)}"
       end
 
+      # Lower-case +raw+ and strip any +; charset=...+ parameters so the
+      # extractors can match on a canonical token.
+      #
+      # @param raw [String, nil] raw +Content-Type+ header value
+      # @return [String] normalized content-type, or +""+ when the
+      #   header was missing
       def self.normalize_content_type(raw)
         raw.to_s.split(';').first.to_s.strip.downcase
       end

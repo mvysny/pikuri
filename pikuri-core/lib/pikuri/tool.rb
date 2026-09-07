@@ -52,8 +52,7 @@ module Pikuri
   # renders.
   #
   # Never the *model*: a narrated status line is steerable through a fetched
-  # page, and a +Saved successfully+ over a failed write is what that buys. See
-  # {Result} for the two rules a summary obeys.
+  # page. {Result} carries the two rules a summary obeys.
   #
   # == Sharing: may one instance serve two agents?
   #
@@ -213,15 +212,15 @@ module Pikuri
     # Generic structural summary of an observation — the result line for a tool
     # that returned a bare String rather than a {Result}.
     #
-    #   Tool.describe_content("a\nb\nc")        # => "Returned 3 lines"
+    #   Tool.describe_content("a\nb\nc")              # => "Returned 3 lines"
     #   Tool.describe_content('Error: no such file')  # => "Error: no such file"
     #
     # An +"Error: ..."+ observation shows its own first line, because that *is*
     # the status the reader needs. ruby_llm's unavailable-tool +Hash+ passes its
     # +:error+ through the same way.
     #
-    # @param content [String, RubyLLM::Content, Hash, Object] whatever
-    #   {Tool#run} returned
+    # @param content [String, RubyLLM::Content, Hash] whatever {Tool#run}
+    #   returned
     # @return [String] one line
     def self.describe_content(content)
       return one_line(content[:error].to_s) if content.is_a?(Hash) && content[:error]
@@ -270,7 +269,8 @@ module Pikuri
       format('%.1f MB', bytes / (1024.0 * 1024))
     end
 
-    # @param value [Object] one argument value
+    # @param value [String, Numeric, Boolean, Array, nil] one argument value,
+    #   as ruby_llm parsed it out of the model's JSON
     # @return [String] +to_s+, except an Array, which joins with +", "+ so a
     #   list argument reads as a list rather than as +["a", "b"]+
     def self.describe_value(value)
@@ -354,7 +354,7 @@ module Pikuri
     # a function of structure the content has already lost, return a {Result}
     # from +execute+ instead.
     #
-    # @param content [String, RubyLLM::Content, Object] what +execute+ returned
+    # @param content [String, RubyLLM::Content] what +execute+ returned
     # @return [String] one line
     def describe_result(content)
       Tool.describe_content(content)
@@ -392,11 +392,9 @@ module Pikuri
     # A wrapper is per *agent* even when this +Tool+ is shared between several,
     # which is what lets it close over one agent's cancellation token.
     #
-    # The wrapper instance answers +#pikuri_tool+ with this Tool, which is how
-    # {Agent} gets from ruby_llm's +Chat#tools+ table back to {#display_name} /
-    # {#describe_call}. That table is the one index every registration path
-    # feeds — including {ExtensionContext#add_raw_tool}, whose tools are
-    # deliberately absent from {Agent#tools}.
+    # The wrapper instance answers +#pikuri_tool+ with this Tool, so a holder of
+    # ruby_llm's +Chat#tools+ table can get from a called name back to
+    # {#display_name} / {#describe_call}.
     #
     # @param context [ExecuteContext] passed to {#run} on every call; see the
     #   +== Cancellation+ section.

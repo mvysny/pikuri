@@ -56,7 +56,7 @@ module Pikuri
       # Renders bare: the one required argument is the whole Markdown plan, and
       # the confirmer is already showing it.
       #
-      # @param arguments [Hash] raw tool-call arguments
+      # @param _arguments [Hash] raw tool-call arguments; ignored
       # @return [String] +""+
       def describe_call(_arguments)
         ''

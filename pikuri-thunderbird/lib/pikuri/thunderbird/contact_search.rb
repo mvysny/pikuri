@@ -53,8 +53,9 @@ module Pikuri
         )
       end
 
-      # @return [Pikuri::Tool::Result] the ranked candidates as a
-      #   {Pikuri::Tool::Result} (+"Found 3 contacts"+), or the no-match line.
+      # @return [Pikuri::Tool::Result] the ranked candidates (+"Found 3
+      #   contacts"+), or the no-match line (+"Found 0 contacts"+). This tool
+      #   has no failure the LLM can act on, so never an +"Error: …"+.
       def self.run_search(backend:, query:, limit:)
         limit = limit.to_i.clamp(1, MAX_LIMIT)
         candidates = backend.resolve(query:, limit:)

@@ -145,10 +145,9 @@ module Pikuri
     FAILED_SKIPPED_RESULT = '[Not executed — a previous tool call in this batch failed]'
 
     # Display line ({Event::ToolResult}'s +summary+) for a call answered by a
-    # repair rather than by its tool — this loop's unwound-batch +ensure+ and
-    # {History#repair_interrupted_tool_calls} alike. One word for all four
-    # causes above: the *content* says which, and a status line only has to say
-    # that no observation came back.
+    # repair rather than by its tool. One word for all four causes above: the
+    # *content* says which, and a status line only has to report that no
+    # observation came back.
     INTERRUPTED_SUMMARY = 'Interrupted'
 
     # @param transport [ChatTransport] model-resolution bundle (+model+ /
@@ -1116,13 +1115,6 @@ module Pikuri
       }
     end
 
-    # Normalize an +after_message+ payload into zero, one, or two {Event}s
-    # (+Thinking+ and/or +Assistant+) plus one {Event::Tokens}. Empty
-    # thinking/content are filtered here so listeners never see vacuous
-    # events; non-assistant roles are skipped.
-    #
-    # @param msg [RubyLLM::Message]
-    # @return [void]
     # Whether +msg+ closed a tool batch — the only mid-turn moment an injected
     # message may be appended.
     #
@@ -1149,6 +1141,13 @@ module Pikuri
       messages[opener_index].tool_calls.each_key.all? { |id| answered.include?(id) }
     end
 
+    # Normalize an +after_message+ payload into zero, one, or two {Event}s
+    # (+Thinking+ and/or +Assistant+) plus one {Event::Tokens}. Empty
+    # thinking/content are filtered here so listeners never see vacuous
+    # events; non-assistant roles are skipped.
+    #
+    # @param msg [RubyLLM::Message]
+    # @return [void]
     def emit_after_message(msg)
       return unless msg.role == :assistant
 

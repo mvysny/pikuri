@@ -264,7 +264,7 @@ module Pikuri
           end
 
         Tool::Result.new(content: "#{body}\n\n#{trailer}",
-                         summary: "Read #{page.lines.length} #{page.kind == :pdf ? 'PDF ' : ''}lines")
+                         summary: "Read #{page.lines.length} #{noun}lines")
       end
       private_class_method :render_page
 

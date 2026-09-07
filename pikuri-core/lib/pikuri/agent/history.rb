@@ -82,10 +82,10 @@ module Pikuri
       # repeats it, and providers reject a pair that does not match.
       #
       # +display_name+ and +argument+ are the chrome's display line for the call
-      # (+"Write"+ / +"lib/foo.rb"+), local to pikuri like {Message#id}: no
-      # provider is shown either. They are stored because a later wiring may no
-      # longer have the tool that composed them — a removed extension, a
-      # renamed MCP server — and +nil+ (a pre-summary file) falls back to
+      # (+"Write"+ / +"lib/foo.rb"+) — local to pikuri like {Message#id}, so no
+      # provider ever sees them. They are stored because a later wiring may no
+      # longer have the tool that composed them — a removed extension, a renamed
+      # MCP server — and +nil+ (a pre-summary file) falls back to
       # {Pikuri::Tool.display_name_for} / {Pikuri::Tool.describe_arguments}.
       ToolCall = Data.define(:id, :name, :arguments, :display_name, :argument) do
         # @param id [String] the provider's tool-call id

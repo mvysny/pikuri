@@ -199,7 +199,6 @@ module Pikuri
         format('%.1f%s', value, unit)
       end
       private_class_method :human_size
-
     end
   end
 end

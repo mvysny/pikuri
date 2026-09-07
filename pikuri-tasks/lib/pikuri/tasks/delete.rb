@@ -45,7 +45,7 @@ module Pikuri
       end
 
       # The task's title rather than the integer id the model passes —
-      # +TaskCompleted(3)+ names nothing a reader recognizes.
+      # +TaskDelete(3)+ names nothing a reader recognizes.
       #
       # @param arguments [Hash] raw tool-call arguments
       # @return [String]

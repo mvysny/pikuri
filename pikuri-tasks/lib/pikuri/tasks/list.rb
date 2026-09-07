@@ -86,7 +86,8 @@ module Pikuri
       # The content of the item +id+ names, for a chrome's display line —
       # +TaskCompleted(Write the specs)+ rather than +TaskCompleted(3)+.
       #
-      # @param id [Object] the raw +id+ argument, whatever type the model sent
+      # @param id [Integer, String, nil] the raw +id+ argument, whatever the
+      #   model sent — matched by +to_s+, so +3+ and +"3"+ both find item 3
       # @return [String] that item's content, or +"#<id>"+ when the list holds
       #   no such item — which is what the call is about to be refused for
       def label_for(id)

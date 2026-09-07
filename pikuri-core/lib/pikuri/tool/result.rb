@@ -14,8 +14,9 @@ module Pikuri
     #   #      Returned 23 search results
     #
     # The model still sees +content+ and nothing else: ruby_llm stores a
-    # non-+Content+ tool payload via +to_s+, which is {#to_s}, while the summary
-    # rides {Pikuri::Agent::Event::ToolResult} to the listeners. A tool with
+    # non-+Content+ tool payload via +to_s+, which here answers {#content},
+    # while the summary rides {Pikuri::Agent::Event::ToolResult} to the
+    # listeners. A tool with
     # nothing structural to add returns a bare String and gets
     # {Pikuri::Tool.describe_content}'s generic line; one whose summary really
     # is a function of its content (+calculator+: the value) overrides
