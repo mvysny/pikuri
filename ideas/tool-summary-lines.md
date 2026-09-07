@@ -1,12 +1,13 @@
 # Tool summary lines: the tool composes its own one-line display form
 
-Status: **brainstorm — nothing built, hold the implementation.**
-Implementability checked 2026-09-07 against ruby_llm 1.16 and every shipped
-tool (see *Survey* and *Verified against ruby_llm*): feasible without a
-ruby_llm patch; the first-required default covers 25 of 34 tools and the
-other 9 need a per-tool override, which is why `describe_call` is a method
-on `Tool`. Settled the same day: the nine overrides, `LSP` as the one
-display-name override, MCP names as `Server::Tool`. Requested
+Status: **ready for implementation** (2026-09-07). Every open question is
+settled; the ordered plan is in *§Implementation plan* at the end, and the
+rest of this note is the rationale the implementer needs to write the
+yardoc, the DECISIONS entry and the CHANGELOG. Implementability was checked
+against ruby_llm 1.16 and every shipped tool (*§Survey*, *§Verified against
+ruby_llm*): feasible without a ruby_llm patch; the first-required default
+covers 25 of 34 tools and the other 9 override a method on `Tool`.
+Requested
 by pikuri-tui (its `ideas/hide-thinking-and-tool-calls.md`, Part 2), which
 wants its transcript to show `Write(lib/foo.rb)` / `Returned 23 search
 results` instead of the argument dump and the 200-char result excerpt — and
@@ -79,14 +80,14 @@ line count, `bash` had an exit status. Re-parsing the flattened `String` is
 fragile and breaks the day the Markdown shape changes; and three renderers
 would carry three drifting copies.
 
-`O_tool_declares` — **the lean.** The tool composes the summary where the
+`O_tool_declares` — **chosen.** The tool composes the summary where the
 data is; pikuri sends `content` to the model and `summary` to the listeners;
 every renderer prints the same string. Two mechanisms below; they are not
 exclusive.
 
 ## Mechanism for the result summary
 
-### `O_tool_result` — a rich return value (proposed name; the user's lean)
+### `O_tool_result` — a rich return value (chosen; named `Tool::Result` below)
 
 `Tool#execute` may return, besides a `String` or `RubyLLM::Content`, a small
 value object carrying both halves:
@@ -164,9 +165,9 @@ are already `Pikuri::Tool` subclasses, `for_sub_agent` / `with_workspace`
 are the precedent for per-subclass methods, and two of the overrides need
 the tool's own state (`task_*` looks a title up in its `list:`).
 
-**Lean: both.** `Tool::Result` (or `Observation`) for result summaries that
-need structure, `describe_call` overridden on the call side, and the
-defaults in `Tool` covering everything that declares neither.
+**Decided: both.** `Tool::Result` for result summaries that need structure,
+`describe_call` / `describe_result` overridden where a method suffices, and
+the defaults in `Tool` covering everything that declares neither.
 
 ### Verified against ruby_llm 1.16 (2026-09-07)
 
@@ -175,7 +176,7 @@ defaults in `Tool` covering everything that declares neither.
   (`chat.rb` L374–387). The rich return needs no patch. `Tool::Halt` has the
   identical shape (`attr_reader :content`; `to_s = content.to_s`).
 - `content_like?` is `is_a?(Content) || is_a?(Content::Raw)`, so option (a)
-  under `Q_content_wrapping` stands: a `Result` may wrap a `String` only.
+  (the *String-only* decision) stands: a `Result` may wrap a `String` only.
 - **`after_tool_result` receives the result alone — no `tool_call`.** So
   putting `name:` / `tool_call_id:` on `Event::ToolResult` needs a pairing
   mechanism after all. Two: (i) `before_tool_call` stashes the call and
@@ -186,7 +187,7 @@ defaults in `Tool` covering everything that declares neither.
   `instrument('tool_call.ruby_llm', payload)` whose payload carries
   `tool_call`, `tool` and `result` together, so ruby_llm does the pairing
   and it survives concurrency; but the instrumenter sees *every* ruby_llm
-  event (completions, HTTP) and must pass them through. Lean **(i)**,
+  event (completions, HTTP) and must pass them through. **Decided (i)**,
   documented at the stash; (ii) is the reopen path if concurrency ever goes
   on. Either way the event gets `name:` — the assumption moves from three
   renderers into one place in `Agent`.
@@ -334,18 +335,26 @@ it to the result event. The second emit site — the dangling-call repair in
 `Agent` (~L976, `INTERRUPTED_RESULT`) — has the call in hand and gets a
 fixed summary (`Interrupted`).
 
-`History` does not store summaries (`Q_persist_summary`). A reloaded
-conversation's `ToolResult`s are synthesized from `tool` messages and would
-carry the generic default. Lean: **don't persist** for v1; the loss is one
-line of nicety on old conversations, and adding a field to the message
-schema is a migration.
+**`Q_persist_summary` — decided 2026-09-07: persist all three strings in
+`History`.** A summary is derived from structured data that is gone once
+the observation is flattened, so *nothing* can recompute it on reload — and
+even the call-side strings need the tool, which a later wiring may no
+longer have (a removed extension, a renamed MCP server), degrading
+`Write(lib/foo.rb)` to `Write(path=…, content=…)`. All three are short by
+definition, so they are cheap to keep. Schema: each entry of an assistant
+message's `tool_calls` gains `display_name` + `argument`; a `tool` message
+gains `summary`. All three are **local-only** like `id` / `kind` — they
+never reach a provider, and the loader reads an absent one as `nil`
+(additive, old files keep loading; `D_history_local_ids` is the precedent).
+The agent collects them in `@message_meta` the way it already carries
+`thinking` — see *§Implementation plan*.
 
 Third emit site: pikuri-web's `HistoryReplay` builds `ToolCall` /
-`ToolResult` from a saved `History` with no `Tool` in hand. The new fields
-therefore need `Data.define` defaults (a keyword-defaulting `initialize`),
-and a replayed line shows the CamelCased name plus the generic defaults —
-or the replay is handed the agent's toolset so it can call `describe_call`.
-Same fallback the *unavailable tool* case uses, so it costs nothing extra.
+`ToolResult` from a saved `History` with no `Tool` in hand; with the strings
+persisted it simply reads them, and for a `nil` (a pre-summary history, or a
+result repaired at load) falls back to `Tool.display_name_for(name)` /
+`Tool.describe_arguments(arguments)` / `Tool.describe_content(content)` —
+the same fallbacks the *unavailable tool* case uses.
 
 ## Defaults for tools that declare nothing
 
@@ -431,16 +440,125 @@ the tool's.
 
 ## Open questions
 
-Settled 2026-09-07 (recorded in place above): `Tool::Result` over
+None. Settled 2026-09-07, each recorded in place above: `Tool::Result` over
 `Observation`; `String`-only `Result`, no ruby_llm internals touched; both
 events carry `name:` + `tool_call_id:`; the argument cap is the renderer's;
 strings on the events, computed by the agent via the wrapper's
-`pikuri_tool` reader (`Q_event_shape`). Still open:
+`pikuri_tool` reader (`Q_event_shape`); all three strings persisted in
+`History` (`Q_persist_summary`); the nine `describe_call` overrides; `LSP`
+as the one `display_name` override; MCP names as `Server::Tool`.
 
-- `Q_persist_summary` — store `summary` on the `tool` history message? Lean
-  no for v1. `History` already carries local-only additive fields (`id`,
-  `kind`; an absent field reads as its default), so adding it later is one
-  field and old files keep loading.
+## Implementation plan
+
+In this order — each step loads and passes `rake check` on its own. Core
+first, then the tools, then the renderers. pikuri-web and pikuri-tui are
+sibling repos and ship their renderer changes in the same release as the
+pikuri bump, since the event constructors change (see step 3).
+
+1. **`Tool` surface** (`pikuri-core/lib/pikuri/tool.rb`, `tool/result.rb`,
+   `tool/parameters.rb`).
+   - `Tool::Result = Data.define(:content, :summary)` with `to_s = content`;
+     `content` must be a `String` (raise `ArgumentError` otherwise — the
+     *String-only* decision), `summary` a one-line `String`. Its rdoc carries
+     the *structural, never excerpted* rule and the *summaries are code*
+     rule from §Safety.
+   - `Tool.display_name_for(name)` (module function): split on `__`, join
+     with `::`; within a segment any non-alphanumeric run is a word break,
+     each word capitalized. `Tool#display_name` defaults to it.
+   - `Tool.describe_arguments(arguments)` (module function): supplied args
+     as `k=v` joined by space, values `to_s`; `''` for none. Used when no
+     `Parameters` are known (MCP, unavailable, replay fallback).
+   - `Tool#describe_call(arguments)`: value of the first required parameter
+     (`to_s`; an `Array` joins with `, `); no required parameter →
+     `Tool.describe_arguments`; no parameters → `''`. Needs a public
+     `Parameters#required` reader (declaration-ordered `Array<String>`) and
+     `Parameters#names`.
+   - `Tool.describe_content(content)` (module function): `Error: …` →
+     its first line; `RubyLLM::Content` → `Returned <mime>, N kB`; a `Hash`
+     with `:error` (ruby_llm's unavailable-tool result) → the message;
+     otherwise `Returned N lines` when multi-line, else `Returned N bytes`.
+     `Tool#describe_result(content)` defaults to it.
+   - `#to_ruby_llm_tool`: the synthetic class gets `define_method(:pikuri_tool)
+     { pikuri_tool }` (instance method — `Chat#with_tool` stores an
+     instance). Only strings are sanitized *at the renderer*, so none of
+     these methods sanitize.
+2. **Events** (`agent/event.rb`): `ToolCall = Data.define(:tool_call_id,
+   :name, :arguments, :display_name, :argument)`, `ToolResult =
+   Data.define(:tool_call_id, :name, :content, :summary)`. Required
+   keywords, no defaults — the four constructors are pikuri's (three in
+   `agent.rb`/`history.rb`, one in pikuri-web's `HistoryReplay`), and a
+   **Breaking** CHANGELOG entry names the new fields.
+3. **Agent emit sites** (`agent.rb`, wiring ~L644–651 and
+   `repair_dangling_tool_calls!` ~L976).
+   - `before_tool_call`: look up `@chat.tools[tc.name.to_sym]`; if it
+     responds to `pikuri_tool`, use `tool.display_name` /
+     `tool.describe_call(tc.arguments)`, else the two module fallbacks.
+     Stash `{tool_call_id: tc.id, name: tc.name, tool:}` in a single
+     `@pending_tool_call` slot — the ordering trick, valid under the
+     `tool_concurrency: off` contract `Tool`'s `== Sharing` imposes; say so
+     at the slot and name `RubyLLM.instrument('tool_call.ruby_llm')` (the
+     `instrumenter` config option, whose payload pairs `tool_call` with
+     `result`) as the reopen path if concurrency ever goes on. Record
+     `display_name` / `argument` per call id in the *assistant* message's
+     `@message_meta` entry (the message with `tool_calls` is already added
+     by the time `before_tool_call` fires) — `meta[:tool_calls] = {id =>
+     {display_name:, argument:}}`.
+   - `after_tool_result`: summary = `result.is_a?(Tool::Result) ?
+     result.summary : (tool ? tool.describe_result(result) :
+     Tool.describe_content(result))`. Emit `ToolResult` with the stashed id
+     and name; hold the summary until `after_message` delivers the `:tool`
+     message, then `track_message(msg, summary:)` — the same identity-keyed
+     map that already carries `thinking`, so nothing can drift.
+   - Dangling-call repair: `summary: 'Interrupted'`, ids and names from the
+     calls in hand.
+4. **History** (`agent/history.rb`): `History::ToolCall` gains
+   `display_name:` / `argument:` (default `nil`), `History::Message` gains
+   `summary:` (default `nil`); `message_to_h` writes them when non-nil;
+   `load` reads them additively (absent → `nil`); `from_ruby_llm` takes
+   them from `meta`; `repair_interrupted_tool_calls` sets `summary:
+   'Interrupted'`; `load_history!` re-populates `@message_meta` so a
+   re-export round-trips. Extend the `T_history_encapsulated` /
+   round-trip specs with all three fields, including a pre-summary fixture
+   that loads with `nil`s.
+5. **Tool overrides + `Result` returns**, one commit per gem, wording per
+   the §Shipped tools table:
+   - `describe_call`: `exit_plan_mode` (`''`), `lsp` (`"#{operation}
+     #{symbol}"`), `agent` (`"#{name}: #{task}"`), `task_completed` /
+     `task_in_progress` / `task_delete` (title via `list`, falling back to
+     `"##{id}"` when unknown), `task_create` (`"#{items.size} items"`),
+     `file_list` (`path || '.'`). `thunderbird_*_search` need nothing —
+     the no-required default already yields `k=v`.
+   - `display_name`: `LspTool` → `'LSP'`.
+   - `Result` where the summary needs structure the content loses:
+     `web_search` (`Returned N search results`), `read` (`Read N lines`;
+     the `Content` PNG path stays bare), `write` / `edit` (`Wrote N lines` /
+     `Added N lines, removed M lines`), `glob`, `grep`, `bash` (`exit N, M
+     lines`), `file_list`, `fetch` / `web_scrape`, `skill` (`Loaded N kB`),
+     `agent` (`Answered, N kB`), `task_*` (`N tasks, M done`),
+     `mcp_connect` (`Connected, N tools`), `rag_*` / `vectordb_*` /
+     `recall` / `fileindex_search` (`Found N hits`), `thunderbird_*`
+     searches (`Found N messages/events/contacts`), `thunderbird_mail_compose`
+     / `calendar_create` (`Handed to Thunderbird`), `enter_plan_mode` /
+     `exit_plan_mode` (`Plan mode on` / `off`), `git_clone` (`Cloned, N
+     files`), `lsp` (`N results`). `calculator` overrides
+     `describe_result` instead (the value *is* the content). Every `Result`
+     is built from counts the tool computed, never from a substring of
+     `content` — the specs assert the summary for a fixture and that it
+     contains no fetched text.
+6. **Renderers.** `Listener::Terminal` (this repo): `→ Name(arg)` /
+   `= summary`, both through `Pikuri::Sanitizer`, argument capped to the
+   terminal width. pikuri-web `SseListener` and pikuri-tui
+   `ConversationTextView::Listener`: same two strings, sanitized then
+   escaped/parsed as each already does; pair result to call by
+   `tool_call_id`, retiring pikuri-tui's `@pending_formatter`; a renderer
+   showing a diff block drops the summary under it. pikuri-web's
+   `HistoryReplay` reads the persisted strings with the §Event fallbacks.
+7. **Graduate this note** per *When this is done*: DECISIONS entry (roads
+   not taken: `O_llm_narrates`, `O_renderer_parses`, `Observation`, content
+   options (b)/(c), the `tool:`-reference event shape, not persisting),
+   CLAUDE.md seam line, CHANGELOG (one `Add` for `Tool::Result` + the
+   describe methods, one **Breaking** for the event fields), yardoc
+   everywhere named above, then `git rm` this file.
 
 ## When this is done
 
